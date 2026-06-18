@@ -1,33 +1,45 @@
 /* ==========================================================================
    Planners Dashboard — Global styles & design tokens
-   Every page and every module loads this. Use the CSS variables below instead
-   of hard-coded colors so the whole dashboard stays consistent.
+   Aligned to the Megawide Brand Guidelines (Brandbook 2026):
+     Megawide Red #EE3124 · Dark Red #C42127 · Dark Gray #2B2C2B ·
+     Construction Gray #DCDBDB · Black #231F20 · White #FFFFFF
+     Typeface: Gotham (primary) → Montserrat web fallback.
+   Use the CSS variables below instead of hard-coded colors so the whole
+   dashboard stays on-brand and consistent.
    ========================================================================== */
 
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
 :root {
-  --pd-red: #EE3124;          /* Megawide brand red */
-  --pd-red-dark: #c61f14;
-  --pd-ink: #1f2430;
-  --pd-muted: #6b7280;
-  --pd-line: #e5e7eb;
-  --pd-bg: #f4f5f7;
-  --pd-card: #ffffff;
-  --pd-ok: #16a34a;
-  --pd-warn: #d97706;
-  --pd-bad: #dc2626;
+  /* Brand palette */
+  --pd-red: #EE3124;          /* Megawide Red (primary) */
+  --pd-red-dark: #C42127;     /* Dark Red */
+  --pd-dark: #2B2C2B;         /* Dark Gray — dark surfaces (sidebar/topbar dark) */
+  --pd-ink: #231F20;          /* Black — primary text */
+  --pd-muted: #5A5858;        /* secondary text */
+  --pd-line: #DCDBDB;         /* Construction Gray — borders/dividers */
+  --pd-bg: #F4F4F4;           /* app background */
+  --pd-card: #FFFFFF;         /* White — surfaces */
+  /* Status (kept distinct from brand red so "error" ≠ "brand") */
+  --pd-ok: #1f8f4e;
+  --pd-warn: #C77700;
+  --pd-bad: #C42127;
+  /* Type + shape */
+  --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --pd-radius: 10px;
-  --pd-shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+  --pd-shadow: 0 1px 3px rgba(35,31,32,.08), 0 1px 2px rgba(35,31,32,.04);
   --pd-sidebar-w: 240px;
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--pd-font);
   background: var(--pd-bg);
   color: var(--pd-ink);
   font-size: 14px;
   line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
 a { color: var(--pd-red); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -36,10 +48,10 @@ a:hover { text-decoration: underline; }
 .pd-app { display: flex; min-height: 100vh; }
 .pd-sidebar {
   width: var(--pd-sidebar-w); flex: 0 0 var(--pd-sidebar-w);
-  background: var(--pd-ink); color: #fff; padding: 18px 14px;
+  background: var(--pd-dark); color: #fff; padding: 18px 14px;
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
 }
-.pd-sidebar .pd-brand { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+.pd-sidebar .pd-brand { font-weight: 800; font-size: 16px; margin-bottom: 4px; letter-spacing: -.01em; }
 .pd-sidebar .pd-brand small { display: block; font-weight: 400; opacity: .6; font-size: 11px; }
 .pd-sidebar nav { margin-top: 18px; display: flex; flex-direction: column; gap: 2px; }
 .pd-sidebar nav a {
@@ -128,7 +140,7 @@ a:hover { text-decoration: underline; }
 /* ---- Toast ---- */
 .pd-toast {
   position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 20px);
-  background: var(--pd-ink); color: #fff; padding: 11px 18px; border-radius: 10px;
+  background: var(--pd-dark); color: #fff; padding: 11px 18px; border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; transition: all .25s ease; z-index: 1000; font-size: 14px;
 }
 .pd-toast.show { opacity: 1; transform: translate(-50%, 0); }

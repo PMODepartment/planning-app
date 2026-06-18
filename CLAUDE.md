@@ -119,6 +119,19 @@ developer, plug into one shared shell.
   no profile row gets a `pending` row created, then goes to pending.html (never
   back to index.html). Hard stop signs out if profile truly can't be created.
 
+### 2026-06-18 — Prompt 7: Brand alignment (Brandbook 2026)
+- Adapted `assets/css/dashboard.css` design tokens to the Megawide Brandbook:
+  Red `#EE3124`, Dark Red `#C42127`, Dark Gray `#2B2C2B` (dark surfaces), Black
+  `#231F20` (text), Construction Gray `#DCDBDB` (lines), bg `#F4F4F4`.
+- Typeface: Gotham (primary, licensed/not bundled) → **Montserrat** web fallback
+  via Google Fonts `@import` (same convention as the Procurement WPM app). New
+  `--pd-font` token; body + headings use it.
+- Sidebar/topbar-dark and toast now use brand Dark Gray; brand wordmark heavier
+  (800). Status colors kept distinct from brand red so errors ≠ brand.
+- Single source of truth: all pages/modules inherit branding from dashboard.css;
+  no per-page changes needed. If a Gotham webfont license is obtained, self-host
+  it and it's picked up automatically (first in the font stack).
+
 - **Still TODO (next prompts):** run the three migrations in Supabase; create the
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,
