@@ -3,6 +3,33 @@
 This file tracks the **main app** (shell) work, maintained by the Planning team
 owner. Each module keeps its own `modules/<key>/CLAUDE.md`. One entry per prompt.
 
+---
+
+## 👋 START HERE if you are building a module (read before writing code)
+
+If you are a developer (or a developer's Claude) assigned ONE module, do this:
+
+1. **Read [`MODULE_CONTRACT.md`](MODULE_CONTRACT.md)** — the rules: folder layout,
+   required HTML boilerplate, the shared APIs you must use (`AppAuth`, `PDb`,
+   `Fmt`, `UI`), database rules, and the definition of done. This is mandatory.
+2. **Read [`CONTRIBUTING.md`](CONTRIBUTING.md)** — git workflow: work on branch
+   `module/<your-key>`, edit ONLY your `modules/<your-key>/` folder, PR to `main`.
+3. **Copy a reference module** as your starting point:
+   - `modules/risk-register/` — plain CRUD + filters + KPIs + a derived field.
+   - `modules/drawing-register/` — same, PLUS the **file-upload** pattern
+     (private Supabase Storage bucket + signed-URL viewing).
+   - `modules/_template/` — the minimal skeleton.
+4. **Do NOT edit** shared files (`assets/**`, other modules, the HTML shell).
+   The only shared edits allowed: add YOUR table to `supabase-schema.sql`, and
+   flip YOUR module's `enabled: true` in `assets/js/config.js`.
+5. **Keep `modules/<your-key>/CLAUDE.md` updated** each PR (what you built, any
+   columns/buckets you added).
+
+Supabase URL + anon key are already in `assets/js/config.js`. Ask the app owner
+for a test login. The shell (login, roles, project picker context via the
+`pd_project` sessionStorage key, branding) is already done — just build your
+module's screens against the shared APIs.
+
 ## Project summary
 Consolidated dashboard for construction Planning Engineers (Megawide). Replaces
 an existing Power Apps tool. Seven Phase-1 modules, each built by a separate
