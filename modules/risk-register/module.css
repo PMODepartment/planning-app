@@ -1,0 +1,33 @@
+/* Risk Register module styles — all classes prefixed .rr- to avoid collisions. */
+
+.rr-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; }
+
+/* KPIs */
+.rr-kpis { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:18px; }
+.rr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  box-shadow:var(--pd-shadow); padding:14px 16px; }
+.rr-kpi-val { font-size:26px; font-weight:800; line-height:1; }
+.rr-kpi-label { color:var(--pd-muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin-top:6px; }
+.rr-kpi.rr-high .rr-kpi-val { color:var(--pd-bad); }
+.rr-kpi.rr-med  .rr-kpi-val { color:var(--pd-warn); }
+
+/* Table */
+.rr-table td .rr-sub { color:var(--pd-muted); font-size:12px; margin-top:2px;
+  max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rr-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:700; font-size:12px; color:#fff; }
+
+/* Rating bands */
+.rr-low  { background:#16a34a; } .rr-pill.rr-low  { background:#16a34a; }
+.rr-med  { background:#d97706; } .rr-pill.rr-med  { background:#d97706; }
+.rr-high { background:#dc2626; } .rr-pill.rr-high { background:#dc2626; }
+
+/* 5×5 matrix */
+.rr-matrix { border-collapse:collapse; }
+.rr-matrix td, .rr-matrix th { width:54px; height:48px; text-align:center; }
+.rr-axis { color:var(--pd-muted); font-size:12px; font-weight:700; }
+.rr-cell { color:#fff; font-weight:800; cursor:pointer; border:2px solid #fff;
+  border-radius:6px; transition:transform .06s ease; }
+.rr-cell:hover { transform:scale(1.06); }
+.rr-cell-active { outline:3px solid var(--pd-ink); outline-offset:-3px; }
+
+@media (max-width:700px) { .rr-kpis { grid-template-columns:repeat(2,1fr); } }

@@ -3,32 +3,72 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>risk-register · Planners Dashboard</title>
+  <title>Risk Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />
+  <link rel="stylesheet" href="module.css" />
 </head>
 <body>
   <div class="pd-app">
     <aside class="pd-sidebar">
-      <div class="pd-brand">Planners Dashboard<small>Module</small></div>
-      <nav><a href="../../dashboard.html">&larr; All modules</a></nav>
+      <div class="pd-brand">Planners Dashboard<small>Risk Register</small></div>
+      <nav>
+        <a href="../../dashboard.html">← All modules</a>
+        <a href="#" class="active" data-view="list">⚠️ Register</a>
+        <a href="#" data-view="matrix">🔢 Risk Matrix</a>
+      </nav>
     </aside>
+
     <div class="pd-content">
-      <div class="pd-topbar"><h1>risk-register</h1><div id="user-bar"></div></div>
+      <div class="pd-topbar">
+        <h1>Risk Register</h1>
+        <div id="user-bar"></div>
+      </div>
       <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>risk-register</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code>.</p>
+        <!-- Controls -->
+        <div class="rr-controls">
+          <select class="pd-select" id="rr-project" style="max-width:260px;"></select>
+          <select class="pd-select" id="rr-f-status" style="max-width:150px;">
+            <option value="">All statuses</option>
+            <option>Open</option><option>In Progress</option><option>Closed</option>
+          </select>
+          <select class="pd-select" id="rr-f-category" style="max-width:170px;"><option value="">All categories</option></select>
+          <input class="pd-input" id="rr-f-search" placeholder="Search…" style="max-width:200px;" />
+          <button class="pd-btn pd-btn-primary" id="rr-add" style="margin-left:auto;">+ Add risk</button>
+        </div>
+
+        <!-- KPIs -->
+        <div class="rr-kpis" id="rr-kpis"></div>
+
+        <!-- List view -->
+        <div id="rr-view-list">
+          <div class="pd-card" style="padding:0;overflow:auto;">
+            <table class="pd-table rr-table" id="rr-table"></table>
+          </div>
+        </div>
+
+        <!-- Matrix view -->
+        <div id="rr-view-matrix" style="display:none;">
+          <div class="pd-card">
+            <h2 style="margin-top:0;">5 × 5 Risk Matrix</h2>
+            <p style="color:var(--pd-muted);margin-top:0;">Count of risks per Likelihood × Impact. Click a cell to filter the register.</p>
+            <div id="rr-matrix"></div>
+          </div>
         </div>
       </div>
     </div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../../assets/js/config.js"></script>
   <script src="../../assets/js/auth.js"></script>
   <script src="../../assets/js/db.js"></script>
   <script src="../../assets/js/ui.js"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+  <script src="module.js"></script>
+  <script>
+    AppAuth.requireLogin(function (user, profile) {
+      UI.renderUserBar(profile);
+      RiskRegister.init(user, profile);
+    });
+  </script>
 </body>
 </html>

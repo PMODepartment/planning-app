@@ -72,6 +72,18 @@ developer, plug into one shared shell.
   - `.github/pull_request_template.md` — contract checklist.
   - `ONBOARDING.md` — copy/paste per-developer message + assignment tracker.
 
-- **Still TODO (next prompts):** real Supabase project + creds in `config.js`;
-  GitHub Pages deployment + branch protection on `main`; shared project-picker
-  component; first real module build.
+### 2026-06-18 — Prompt 3: Supabase wiring + Risk Register reference module
+- Supabase project connected: URL `https://bgupuqnkqhixpuctyder.supabase.co`
+  set in `config.js`. **anon key still pending** (user to paste; service_role
+  key they shared was flagged for rotation — must NEVER be in client code).
+- Schema already run by user in Supabase SQL editor. GitHub Pages enabled
+  (deploy from `main`).
+- Built **Risk Register** as the end-to-end reference module
+  (`modules/risk-register/`): list view with filters + KPIs, 5×5 risk matrix,
+  add/edit modal with app-computed `rating = likelihood × impact`, delete.
+  Demonstrates every contract pattern (auth, pd_project, created_by, Fmt.esc).
+- Flipped `risk-register` to `enabled: true` in `config.js`.
+
+- **Still TODO (next prompts):** paste anon key into `config.js`; branch
+  protection on `main`; verify live end-to-end after anon key is in; build the
+  remaining modules (or hand to developers).
