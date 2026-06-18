@@ -172,6 +172,16 @@ create table if not exists material_submittal (
 );
 
 -- ============================================================================
+-- TABLE PRIVILEGES (GRANTs) — required IN ADDITION to RLS.
+-- PostgREST runs queries as the `authenticated`/`anon` role; without these
+-- grants every request fails with "42501 permission denied", before RLS runs.
+-- ============================================================================
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to authenticated;
+
+-- ============================================================================
 -- ROW-LEVEL SECURITY
 -- Baseline policy: any authenticated, approved user may read; insert/update/
 -- delete allowed for the row's creator or admins. Tighten per module later.

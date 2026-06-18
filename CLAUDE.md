@@ -99,7 +99,16 @@ developer, plug into one shared shell.
   private buckets (`drawing-register`, `progress-photos`, `material-submittal`)
   + policies. **User must run this migration too.**
 
-- **Still TODO (next prompts):** run the two migrations in Supabase; create the
+### 2026-06-18 — Prompt 5: Live verification
+- GitHub Pages live at `https://pmodepartment.github.io/planning-app/`; login
+  page + deployed `config.js` (correct URL + anon key) confirmed serving.
+- **Bug found via live REST probe:** all tables returned `42501 permission
+  denied` for `anon`/`authenticated` — table GRANTs were missing (separate layer
+  from RLS). Fix: `migrations/2026-06-18-grants.sql` (grant DML to authenticated
+  + default privileges for future module tables); folded into `supabase-schema.sql`.
+  **User must run this migration.**
+
+- **Still TODO (next prompts):** run the three migrations in Supabase; create the
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,
   material-submittal, progress-photos) — or hand to developers.
