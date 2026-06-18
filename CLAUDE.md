@@ -199,6 +199,20 @@ developer, plug into one shared shell.
   is automatic — use tokens, never hard-code #fff/#000" rule. Reference modules
   + `_template` already wired via injection, so new modules inherit dark mode.
 
+### 2026-06-18 — Prompt 12: Sidebar default-collapsed, PRC-style logo, profile menu, split name, forgot-password
+- Sidebar now **collapsed by default** on entry (clean look); only an explicit
+  expand (localStorage `pd_sidebar_collapsed='0'`) keeps it open.
+- Sidebar brand restyled to match PRC-App: white wordmark fills width
+  (left-aligned), red uppercase app label, divider beneath.
+- **Profile avatar menu** (PRC-style): `UI.renderUserBar` now renders a round
+  initials avatar; click → dropdown with name, role, and **Sign out**. Outside-
+  click closes. Token-based (dark-mode ready).
+- `register.html`: Full name split into **First name / Last name** (joined into
+  `users.name`).
+- New **forgot-password.html** (shared styles + theme.js) using
+  `resetPasswordForEmail` with a redirect back to `index.html`; linked from the
+  login page ("Forgot password?").
+
 - **Still TODO (next prompts):** run the three migrations in Supabase; create the
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,

@@ -19,9 +19,15 @@
       </div>
       <div class="pd-card">
         <form id="reg-form">
-          <div class="pd-field">
-            <label for="name">Full name</label>
-            <input class="pd-input" type="text" id="name" required />
+          <div style="display:flex;gap:10px;">
+            <div class="pd-field" style="flex:1;">
+              <label for="first-name">First name</label>
+              <input class="pd-input" type="text" id="first-name" required autocomplete="given-name" />
+            </div>
+            <div class="pd-field" style="flex:1;">
+              <label for="last-name">Last name</label>
+              <input class="pd-input" type="text" id="last-name" required autocomplete="family-name" />
+            </div>
           </div>
           <div class="pd-field">
             <label for="email">Email</label>
@@ -49,7 +55,9 @@
       e.preventDefault();
       var msg = document.getElementById('msg');
       msg.style.color = 'var(--pd-bad)'; msg.textContent = '';
-      var name = document.getElementById('name').value.trim();
+      var first = document.getElementById('first-name').value.trim();
+      var last = document.getElementById('last-name').value.trim();
+      var name = (first + ' ' + last).trim();
       var email = document.getElementById('email').value.trim();
       var pw = document.getElementById('password').value;
       var { error } = await AppAuth.register(email, pw, name);

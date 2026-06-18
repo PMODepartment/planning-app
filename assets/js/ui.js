@@ -19,16 +19,38 @@
     }, 3000);
   }
 
-  // ---- User bar (top-right): name + role + logout ----
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ---- User bar (top-right): clickable avatar → dropdown with Sign out ----
   function renderUserBar(profile, mountId) {
     var mount = document.getElementById(mountId || 'user-bar');
     if (!mount || !profile) return;
+    var label = profile.name || profile.email || 'U';
+    var initials = label.trim().split(/\s+/).map(function (n) { return n[0]; }).join('').slice(0, 2).toUpperCase();
     mount.innerHTML =
-      '<span class="pd-userbar-name">' + (profile.name || profile.email) + '</span>' +
-      '<span class="pd-userbar-role">' + (profile.role || '') + '</span>' +
-      '<button class="pd-userbar-logout" id="pd-logout">Logout</button>';
-    var btn = document.getElementById('pd-logout');
-    if (btn) btn.onclick = function () { window.AppAuth.logout(); };
+      '<div class="pd-user">' +
+        '<button class="pd-avatar" id="pd-avatar-btn" type="button" title="' + esc(label) + '" aria-label="Account menu">' + esc(initials) + '</button>' +
+        '<div class="pd-usermenu" id="pd-usermenu">' +
+          '<div class="pd-usermenu-head">' +
+            '<div class="pd-usermenu-name">' + esc(label) + '</div>' +
+            '<div class="pd-usermenu-role">' + esc((profile.role || '').replace(/_/g, ' ')) + '</div>' +
+          '</div>' +
+          '<button class="pd-usermenu-signout" id="pd-signout" type="button">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>' +
+            'Sign out</button>' +
+        '</div>' +
+      '</div>';
+    var btn = document.getElementById('pd-avatar-btn');
+    var menu = document.getElementById('pd-usermenu');
+    btn.onclick = function (e) { e.stopPropagation(); menu.classList.toggle('open'); };
+    document.getElementById('pd-signout').onclick = function () { window.AppAuth.logout(); };
+    document.addEventListener('click', function (e) {
+      if (!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove('open');
+    });
   }
 
   // ---- Modal ----
@@ -55,7 +77,8 @@
     var topbar = document.querySelector('.pd-topbar');
     if (!app || !sidebar || !topbar || topbar.querySelector('.pd-sidebar-toggle')) return;
 
-    if (localStorage.getItem('pd_sidebar_collapsed') === '1') app.classList.add('pd-collapsed');
+    // Default to collapsed for a clean entry; only an explicit '0' keeps it open.
+    if (localStorage.getItem('pd_sidebar_collapsed') !== '0') app.classList.add('pd-collapsed');
 
     var btn = document.createElement('button');
     btn.className = 'pd-sidebar-toggle';

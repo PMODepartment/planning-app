@@ -54,10 +54,21 @@ a:hover { text-decoration: underline; }
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
   transition: width .2s ease, flex-basis .2s ease, padding .2s ease;
 }
-/* Brand block: white Megawide wordmark + small page caption underneath */
-.pd-sidebar .pd-brand { font-size: 0; margin-bottom: 6px; }   /* hides inline text node beside logo */
-.pd-brand-logo { display: block; width: 150px; max-width: 100%; height: auto; margin: 2px 0 10px; }
-.pd-sidebar .pd-brand small { display: block; font-size: 11px; font-weight: 500; opacity: .65; letter-spacing: .02em; }
+/* Brand block: white Megawide wordmark filling the width + red app label,
+   with a divider beneath — matches the PRC-App sidebar header. */
+.pd-sidebar .pd-brand {
+  font-size: 0;                                  /* hides the inline text node beside the logo */
+  display: block; margin: -4px -4px 14px; padding: 4px 4px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+}
+.pd-brand-logo {
+  display: block; width: 100%; max-width: 188px; height: auto;
+  margin: 0 0 9px; object-fit: contain; object-position: left center;
+}
+.pd-sidebar .pd-brand small {
+  display: block; font-size: 9px; font-weight: 700; letter-spacing: .14em;
+  color: var(--pd-red); text-transform: uppercase; opacity: 1;
+}
 .pd-sidebar nav { margin-top: 18px; display: flex; flex-direction: column; gap: 2px; }
 .pd-sidebar nav a {
   color: #cbd2dd; padding: 10px 12px; border-radius: 8px; font-size: 13.5px;
@@ -99,6 +110,30 @@ a:hover { text-decoration: underline; }
   padding: 5px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
 }
 .pd-userbar-logout:hover { background: var(--pd-bg); }
+
+/* Avatar + account dropdown (top-right) */
+.pd-user { position: relative; }
+.pd-avatar {
+  width: 36px; height: 36px; border-radius: 50%; background: var(--pd-red); color: #fff;
+  border: none; cursor: pointer; font-size: 13px; font-weight: 700; font-family: inherit;
+  display: flex; align-items: center; justify-content: center;
+}
+.pd-avatar:hover { background: var(--pd-red-dark); }
+.pd-usermenu {
+  display: none; position: absolute; right: 0; top: 46px; width: 224px; z-index: 9999;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18); overflow: hidden;
+}
+.pd-usermenu.open { display: block; }
+.pd-usermenu-head { padding: 14px 16px; border-bottom: 1px solid var(--pd-line); }
+.pd-usermenu-name { font-size: 13px; font-weight: 600; color: var(--pd-ink); }
+.pd-usermenu-role { font-size: 11px; color: var(--pd-muted); margin-top: 2px; text-transform: capitalize; }
+.pd-usermenu-signout {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px;
+  font-size: 13px; font-weight: 600; font-family: inherit; color: var(--pd-red);
+  background: none; border: none; cursor: pointer; text-align: left;
+}
+.pd-usermenu-signout:hover { background: var(--pd-bg); }
 .pd-main { padding: 22px; }
 
 /* ---- Cards ---- */
