@@ -16,10 +16,12 @@
   max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .rr-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:700; font-size:12px; color:#fff; }
 
-/* Rating bands */
-.rr-low  { background:#16a34a; } .rr-pill.rr-low  { background:#16a34a; }
-.rr-med  { background:#d97706; } .rr-pill.rr-med  { background:#d97706; }
-.rr-high { background:#dc2626; } .rr-pill.rr-high { background:#dc2626; }
+/* Rating band backgrounds — ONLY on pills and matrix cells, never the KPI
+   cards (the KPI cards keep the normal card surface; only their number is
+   colored, via the .rr-kpi.* rules above, so the text stays readable). */
+.rr-pill.rr-low,  .rr-cell.rr-low  { background:#16a34a; color:#fff; }
+.rr-pill.rr-med,  .rr-cell.rr-med  { background:#d97706; color:#fff; }
+.rr-pill.rr-high, .rr-cell.rr-high { background:#dc2626; color:#fff; }
 
 /* 5×5 matrix */
 .rr-matrix { border-collapse:collapse; }
