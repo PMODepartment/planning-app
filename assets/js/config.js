@@ -34,5 +34,10 @@ window.APP_CONFIG = {
     { key: 'stakeholder-map',   name: 'Stakeholder Map',                       path: 'modules/stakeholder-map/index.html',   icon: '🧭', enabled: false },
     { key: 'drawing-register',  name: 'Drawing Register',                      path: 'modules/drawing-register/index.html',  icon: '📐', enabled: true },
     { key: 'material-submittal',name: 'Material Submittal Log',                path: 'modules/material-submittal/index.html',icon: '🧱', enabled: false },
+    // ---- Phase 2 ----
+    { key: 'project-schedule',  name: 'Project Schedule, Cost Loading & S-Curve', path: 'modules/project-schedule/index.html', icon: '📅', enabled: false },
+    { key: 'resource-loading',  name: 'Resource Loading',                      path: 'modules/resource-loading/index.html',  icon: '👷', enabled: false },
+    { key: 'productivity-rates',name: 'Productivity Rates',                    path: 'modules/productivity-rates/index.html',icon: '📊', enabled: false },
+    { key: 'cash-flow',         name: 'Cash Flow',                             path: 'modules/cash-flow/index.html',         icon: '💵', enabled: false },
   ],
 };

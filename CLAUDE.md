@@ -213,7 +213,19 @@ developer, plug into one shared shell.
   `resetPasswordForEmail` with a redirect back to `index.html`; linked from the
   login page ("Forgot password?").
 
-- **Still TODO (next prompts):** run the three migrations in Supabase; create the
+### 2026-06-18 — Prompt 13: Add 4 Phase-2 modules to the dashboard
+- Registered 4 new modules in `config.js` (enabled:false → "In development"
+  cards): `project-schedule` (Project Schedule, Cost Loading & S-Curve),
+  `resource-loading`, `productivity-rates`, `cash-flow`.
+- Created each module folder with a branded placeholder `index.html` +
+  onboarding `CLAUDE.md` (same pattern as Phase-1 placeholders).
+- Added starter tables to `supabase-schema.sql` + the RLS array; new migration
+  `migrations/2026-06-18-phase2-modules.sql` (tables + grants + per-project RLS).
+  **User must run this migration in Supabase.**
+- Updated ONBOARDING.md assignment tracker.
+
+- **Still TODO (next prompts):** run the migrations in Supabase (incl. phase2);
+  create the
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,
   material-submittal, progress-photos) — or hand to developers.

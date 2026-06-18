@@ -55,5 +55,9 @@ Send each developer the message below, filling in their **module** and **key**.
 | Contracts & Claims Register | `contracts-claims` | _ | _ | Not started |
 | Risk Register | `risk-register` | _ | _ | Not started |
 | Stakeholder Map | `stakeholder-map` | _ | _ | Not started |
-| Drawing Register | `drawing-register` | _ | _ | Not started |
+| Drawing Register | `drawing-register` | _ | _ | Reference module (built) |
 | Material Submittal Log | `material-submittal` | _ | _ | Not started |
+| Project Schedule, Cost Loading & S-Curve | `project-schedule` | _ | _ | Not started (Phase 2) |
+| Resource Loading | `resource-loading` | _ | _ | Not started (Phase 2) |
+| Productivity Rates | `productivity-rates` | _ | _ | Not started (Phase 2) |
+| Cash Flow | `cash-flow` | _ | _ | Not started (Phase 2) |

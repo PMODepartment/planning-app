@@ -172,6 +172,82 @@ create table if not exists material_submittal (
 );
 
 -- ============================================================================
+-- MODULE TABLES (Phase 2) — starter columns only; developers extend as needed.
+-- ============================================================================
+
+-- Project Schedule, Cost Loading & S-Curve ----------------------------------
+create table if not exists project_schedule (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      text references projects(id),
+  activity_id     text,
+  activity_name   text,
+  wbs             text,
+  start_date      date,
+  end_date        date,
+  duration_days   numeric,
+  percent_complete numeric,        -- 0..100
+  predecessors    text,
+  planned_cost    numeric(18,2),   -- cost loading
+  actual_cost     numeric(18,2),
+  earned_value    numeric(18,2),
+  period          date,            -- for S-curve bucketing
+  remarks         text,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+
+-- Resource Loading -----------------------------------------------------------
+create table if not exists resource_loading (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      text references projects(id),
+  resource_name   text,
+  resource_type   text,            -- Labor | Equipment | Material
+  unit            text,
+  period          date,
+  planned_qty     numeric,
+  actual_qty      numeric,
+  rate            numeric(18,2),
+  cost            numeric(18,2),
+  remarks         text,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+
+-- Productivity Rates ---------------------------------------------------------
+create table if not exists productivity_rates (
+  id                uuid primary key default gen_random_uuid(),
+  project_id        text references projects(id),
+  activity          text,
+  unit              text,
+  output_qty        numeric,
+  manhours          numeric,
+  productivity_rate numeric,       -- output per manhour (app-computed)
+  crew              text,
+  period            date,
+  remarks           text,
+  created_by        uuid references users(id),
+  created_at        timestamptz default now(),
+  updated_at        timestamptz default now()
+);
+
+-- Cash Flow ------------------------------------------------------------------
+create table if not exists cash_flow (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      text references projects(id),
+  period          date,
+  category        text,            -- Inflow | Outflow
+  description     text,
+  planned_amount  numeric(18,2),
+  actual_amount   numeric(18,2),
+  remarks         text,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+
+-- ============================================================================
 -- TABLE PRIVILEGES (GRANTs) — required IN ADDITION to RLS.
 -- PostgREST runs queries as the `authenticated`/`anon` role; without these
 -- grants every request fails with "42501 permission denied", before RLS runs.
@@ -236,7 +312,8 @@ declare t text;
 begin
   foreach t in array array[
     'progress_photos','issues_lessons','contracts_claims','risk_register',
-    'stakeholder_map','drawing_register','material_submittal'
+    'stakeholder_map','drawing_register','material_submittal',
+    'project_schedule','resource_loading','productivity_rates','cash_flow'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
