@@ -56,12 +56,19 @@ Your page is **one level deeper** than the shell, so shared assets load with a
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <title>Risk Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />
   <link rel="stylesheet" href="module.css" />
 </head>
 <body>
   <!-- use the shared shell layout: .pd-app > .pd-sidebar + .pd-content -->
+  <!-- sidebar brand block: logo + your module name as the caption -->
+  <div class="pd-brand">
+    <img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">
+    Planners Dashboard<small>Risk Register</small>
+  </div>
   ...
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../../assets/js/config.js"></script>

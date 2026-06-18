@@ -159,6 +159,18 @@ developer, plug into one shared shell.
   no per-page changes needed. If a Gotham webfont license is obtained, self-host
   it and it's picked up automatically (first in the font stack).
 
+### 2026-06-18 — Prompt 9: Logo + favicon across all pages
+- Added brand assets in `assets/img/`: `favicon.png` (red Megawide "M" block
+  icon), `logo-white.png` (white wordmark, cropped to content), `icon.png`
+  (apple-touch). Mirrors the Procurement WPM convention.
+- Favicon + apple-touch link injected into every page's `<head>` (root + all
+  module pages, with correct `../../` prefix).
+- Sidebar `.pd-brand` now leads with the white wordmark (`.pd-brand-logo`) and
+  shows the page label as a caption; auth pages show the red mark
+  (`.pd-auth-mark`). CSS added to `dashboard.css`.
+- `MODULE_CONTRACT.md` boilerplate updated so new modules include favicon + logo.
+  Reference modules + `_template` already updated, so future modules inherit it.
+
 - **Still TODO (next prompts):** run the three migrations in Supabase; create the
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,
