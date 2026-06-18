@@ -100,13 +100,19 @@ grant select, insert, update, delete on all tables in schema public to authentic
 alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
 
 -- ───────────────────────── Helper functions ─────────────────────────
-create or replace function is_admin() returns boolean language sql stable as $$
+-- SECURITY DEFINER so they read `users` bypassing RLS — prevents infinite
+-- recursion when policies (incl. users' own policy) call them. set search_path
+-- keeps them safe; they only check the current auth.uid()'s own attributes.
+create or replace function is_admin() returns boolean
+  language sql stable security definer set search_path = public as $$
   select exists (select 1 from users u where u.id = auth.uid() and u.status='approved' and u.role in ('admin','super_admin'));
 $$;
-create or replace function is_approved() returns boolean language sql stable as $$
+create or replace function is_approved() returns boolean
+  language sql stable security definer set search_path = public as $$
   select exists (select 1 from users u where u.id = auth.uid() and u.status='approved');
 $$;
-create or replace function can_access_project(pid text) returns boolean language sql stable as $$
+create or replace function can_access_project(pid text) returns boolean
+  language sql stable security definer set search_path = public as $$
   select exists (select 1 from users u where u.id = auth.uid() and u.status='approved'
     and (u.role in ('admin','super_admin') or pid = any(u.projects)));
 $$;

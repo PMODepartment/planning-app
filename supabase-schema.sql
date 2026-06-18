@@ -263,8 +263,14 @@ alter default privileges in schema public
 -- delete allowed for the row's creator or admins. Tighten per module later.
 -- ============================================================================
 
+-- Helpers are SECURITY DEFINER so they read `users` bypassing RLS — this
+-- prevents infinite recursion (54001) when policies (including users' own
+-- policy) call them. `set search_path` keeps them safe; each only inspects the
+-- current auth.uid()'s own attributes.
+
 -- Helper: is the current user an approved admin?
-create or replace function is_admin() returns boolean language sql stable as $$
+create or replace function is_admin() returns boolean
+  language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from users u
     where u.id = auth.uid()
@@ -273,14 +279,16 @@ create or replace function is_admin() returns boolean language sql stable as $$
   );
 $$;
 
-create or replace function is_approved() returns boolean language sql stable as $$
+create or replace function is_approved() returns boolean
+  language sql stable security definer set search_path = public as $$
   select exists (select 1 from users u where u.id = auth.uid() and u.status = 'approved');
 $$;
 
 -- Helper: may the current user access this project? Admins: all. Others: only
 -- projects listed in their users.projects array. This enforces the admin
 -- "Assign projects" feature at the database level.
-create or replace function can_access_project(pid text) returns boolean language sql stable as $$
+create or replace function can_access_project(pid text) returns boolean
+  language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from users u
     where u.id = auth.uid() and u.status = 'approved'

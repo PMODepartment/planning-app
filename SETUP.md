@@ -50,7 +50,10 @@ rebuilding from scratch.
 ## Verifying it works (data layer)
 A logged-in user's queries should return `200` (not `42501 permission denied`).
 If you see `42501`, the GRANTs didn't apply — re-run the grants section of
-`supabase-setup.sql`. If login loops between sign-in and the dashboard, the
+`supabase-setup.sql`. If you see **`54001 stack depth limit exceeded`** on
+tables that contain rows, the RLS helper functions need `SECURITY DEFINER` —
+run `migrations/2026-06-18-fix-rls-recursion.sql` (already folded into the
+current `supabase-setup.sql`). If login loops between sign-in and the dashboard, the
 user has no `users` profile row — the app now self-heals this to `pending`, and
 the bootstrap statement creates the owner's row.
 

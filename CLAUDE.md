@@ -237,7 +237,22 @@ developer, plug into one shared shell.
 - Updated README, ONBOARDING (DEMO01 access flow).
 - Decision: developers get access via **self-register + owner approval**.
 
-- **Still TODO (handover):** run `supabase-setup.sql` (adds DEMO01 + phase2
+### 2026-06-18 — Prompt 15: Verify setup + fix RLS recursion (54001)
+- Verified live: pages serve latest (forgot-password, theme.js, phase2 config);
+  Phase-2 tables exist + grants OK (200 []).
+- **Bug found:** `projects`/`risk_register`/`drawing_register` returned
+  `500 — 54001 stack depth limit exceeded` (RLS infinite recursion via helper
+  functions querying `users`, whose own policy calls them back). Surfaced only
+  now because those tables have rows (DEMO01 seed); empty tables didn't trip it.
+- **Fix:** helper functions `is_admin()/is_approved()/can_access_project()` now
+  `SECURITY DEFINER set search_path = public` (bypass `users` RLS → no recursion).
+  Migration `2026-06-18-fix-rls-recursion.sql`; folded into both
+  `supabase-setup.sql` and `supabase-schema.sql`. SETUP.md troubleshooting noted.
+  **User must run the fix migration on the live DB.**
+
+- **Still TODO (handover):** run `2026-06-18-fix-rls-recursion.sql` (or re-run
+  the helper-function block of supabase-setup.sql) on the live DB; run
+  `supabase-setup.sql` (adds DEMO01 + phase2
   tables); set Auth email-confirmation OFF + reset redirect URL; add devs as
   collaborators + fill CODEOWNERS usernames; send ONBOARDING messages.
   buckets via the migration; branch protection on `main`; live end-to-end test;
