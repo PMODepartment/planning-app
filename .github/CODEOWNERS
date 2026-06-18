@@ -1,0 +1,20 @@
+# Code ownership — routes PR review automatically.
+# Replace @placeholders with each developer's GitHub username once assigned.
+# (Only effective when developers have individual GitHub accounts as collaborators.)
+
+# Shared shell & infra → app owner reviews every change
+/assets/                @PMODepartment
+/supabase-schema.sql    @PMODepartment
+/MODULE_CONTRACT.md     @PMODepartment
+/CONTRIBUTING.md        @PMODepartment
+/CLAUDE.md              @PMODepartment
+*.html                  @PMODepartment
+
+# Module folders → assigned developer (+ app owner)
+/modules/progress-photos/      @PMODepartment
+/modules/issues-lessons/       @PMODepartment
+/modules/contracts-claims/     @PMODepartment
+/modules/risk-register/        @PMODepartment
+/modules/stakeholder-map/      @PMODepartment
+/modules/drawing-register/     @PMODepartment
+/modules/material-submittal/   @PMODepartment

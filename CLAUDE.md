@@ -59,6 +59,19 @@ developer, plug into one shared shell.
 - Added `modules/_template/` (full working CRUD example) and placeholder
   `index.html` + `CLAUDE.md` for all 7 module folders.
 - Added `README.md`, `.gitignore`.
+### 2026-06-18 — Prompt 2: Admin screen + multi-dev git workflow
+- Added `admin.html`: Users tab (approve/reject, inline role change with
+  super_admin guard, per-user project assignment modal) + Projects tab
+  (create/edit/archive via modal). Admin-gated by `AppAuth.requireAdmin`.
+- Multi-developer collaboration handling:
+  - `CONTRIBUTING.md` — per-developer git author identity, branch-per-module,
+    rebase-before-PR, PR-into-main workflow. Recommends individual GitHub
+    collaborator accounts over a shared login.
+  - `.github/CODEOWNERS` — shared files → app owner, module folders → dev
+    (placeholders to fill once devs assigned).
+  - `.github/pull_request_template.md` — contract checklist.
+  - `ONBOARDING.md` — copy/paste per-developer message + assignment tracker.
+
 - **Still TODO (next prompts):** real Supabase project + creds in `config.js`;
-  `admin.html` (user approval + project management); project picker polish;
-  GitHub Pages deployment + branch protection.
+  GitHub Pages deployment + branch protection on `main`; shared project-picker
+  component; first real module build.

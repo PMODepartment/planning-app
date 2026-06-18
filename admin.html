@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin · Planners Dashboard</title>
+  <link rel="stylesheet" href="assets/css/dashboard.css" />
+  <style>
+    .pd-tabs { display:flex; gap:4px; border-bottom:1px solid var(--pd-line); margin-bottom:18px; }
+    .pd-tab { padding:10px 16px; cursor:pointer; border-bottom:2px solid transparent; color:var(--pd-muted); font-weight:600; }
+    .pd-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
+    .pd-tabpane { display:none; } .pd-tabpane.active { display:block; }
+    .pd-chip { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; background:var(--pd-bg); margin:2px 3px 2px 0; }
+    .pd-status-pending { color:var(--pd-warn); font-weight:600; }
+    .pd-status-approved { color:var(--pd-ok); font-weight:600; }
+    .pd-status-rejected { color:var(--pd-bad); font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="pd-app">
+    <aside class="pd-sidebar">
+      <div class="pd-brand">Planners Dashboard<small>Admin</small></div>
+      <nav>
+        <a href="dashboard.html">🏠 Home</a>
+        <a href="admin.html" class="active">🛠️ Admin</a>
+      </nav>
+    </aside>
+    <div class="pd-content">
+      <div class="pd-topbar"><h1>Admin</h1><div id="user-bar"></div></div>
+      <div class="pd-main">
+        <div class="pd-tabs">
+          <div class="pd-tab active" data-tab="users">Users</div>
+          <div class="pd-tab" data-tab="projects">Projects</div>
+        </div>
+
+        <div class="pd-tabpane active" id="pane-users">
+          <div class="pd-card" style="padding:0;overflow:auto;">
+            <table class="pd-table" id="users-table"></table>
+          </div>
+        </div>
+
+        <div class="pd-tabpane" id="pane-projects">
+          <div style="margin-bottom:14px;"><button class="pd-btn pd-btn-primary" id="btn-add-project">+ New project</button></div>
+          <div class="pd-card" style="padding:0;overflow:auto;">
+            <table class="pd-table" id="projects-table"></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/db.js"></script>
+  <script src="assets/js/ui.js"></script>
+  <script>
+    var ME = null, ALL_PROJECTS = [];
+
+    AppAuth.requireAdmin(function (user, profile) {
+      ME = profile;
+      UI.renderUserBar(profile);
+      wireTabs();
+      loadUsers();
+      loadProjects();
+    });
+
+    function wireTabs() {
+      document.querySelectorAll('.pd-tab').forEach(function (t) {
+        t.onclick = function () {
+          document.querySelectorAll('.pd-tab').forEach(function (x){ x.classList.remove('active'); });
+          document.querySelectorAll('.pd-tabpane').forEach(function (x){ x.classList.remove('active'); });
+          t.classList.add('active');
+          document.getElementById('pane-' + t.dataset.tab).classList.add('active');
+        };
+      });
+      document.getElementById('btn-add-project').onclick = function () { editProject(null); };
+    }
+
+    // -------- Users --------
+    async function loadUsers() {
+      var users = await PDb.getAllUsers();
+      ALL_PROJECTS = await PDb.getProjects();
+      var t = document.getElementById('users-table');
+      t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Projects</th><th>Actions</th></tr></thead><tbody>' +
+        users.map(function (u) {
+          var canSuper = ME.role === 'super_admin';
+          var roleOpts = AppAuth.ROLES
+            .filter(function (r){ return r !== 'super_admin' || canSuper; })
+            .map(function (r){ return '<option value="'+r+'"'+(u.role===r?' selected':'')+'>'+r+'</option>'; }).join('');
+          var projChips = (u.projects||[]).map(function(p){ return '<span class="pd-chip">'+Fmt.esc(p)+'</span>'; }).join('') || '<span style="color:var(--pd-muted);">—</span>';
+          return '<tr>' +
+            '<td>'+Fmt.esc(u.name)+'</td>' +
+            '<td>'+Fmt.esc(u.email)+'</td>' +
+            '<td><select class="pd-select" style="min-width:130px;" data-role="'+u.id+'">'+roleOpts+'</select></td>' +
+            '<td class="pd-status-'+u.status+'">'+u.status+'</td>' +
+            '<td>'+projChips+'</td>' +
+            '<td style="white-space:nowrap;">' +
+              (u.status!=='approved' ? '<button class="pd-btn pd-btn-primary" data-approve="'+u.id+'">Approve</button> ' : '') +
+              (u.status!=='rejected' ? '<button class="pd-btn" data-reject="'+u.id+'">Reject</button> ' : '') +
+              '<button class="pd-btn" data-projects="'+u.id+'">Projects</button>' +
+            '</td>' +
+          '</tr>';
+        }).join('') + '</tbody>';
+
+      t.querySelectorAll('[data-role]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.role, { role: s.value }); }; });
+      t.querySelectorAll('[data-approve]').forEach(function(b){ b.onclick = function(){ setUser(b.dataset.approve, { status:'approved' }); }; });
+      t.querySelectorAll('[data-reject]').forEach(function(b){ b.onclick = function(){ setUser(b.dataset.reject, { status:'rejected' }); }; });
+      t.querySelectorAll('[data-projects]').forEach(function(b){ b.onclick = function(){ assignProjects(users.find(function(x){return x.id===b.dataset.projects;})); }; });
+    }
+
+    async function setUser(id, patch) {
+      try { await PDb.updateUser(id, patch); UI.toast('Saved','ok'); loadUsers(); }
+      catch (e) { UI.toast(e.message,'error'); }
+    }
+
+    function assignProjects(u) {
+      var checks = ALL_PROJECTS.map(function(p){
+        var on = (u.projects||[]).indexOf(p.id) !== -1;
+        return '<label style="display:block;padding:5px 0;"><input type="checkbox" value="'+p.id+'"'+(on?' checked':'')+'> '+Fmt.esc(p.name)+' <span style="color:var(--pd-muted);">('+p.id+')</span></label>';
+      }).join('') || '<p style="color:var(--pd-muted);">No projects yet — create one in the Projects tab.</p>';
+      var m = UI.modal(
+        '<h2 style="margin-top:0;">Assign projects — '+Fmt.esc(u.name)+'</h2>' +
+        '<div style="max-height:50vh;overflow:auto;">'+checks+'</div>' +
+        '<div style="margin-top:16px;text-align:right;"><button class="pd-btn" id="ap-cancel">Cancel</button> ' +
+        '<button class="pd-btn pd-btn-primary" id="ap-save">Save</button></div>');
+      m.el.querySelector('#ap-cancel').onclick = m.close;
+      m.el.querySelector('#ap-save').onclick = async function () {
+        var ids = Array.prototype.slice.call(m.el.querySelectorAll('input:checked')).map(function(c){return c.value;});
+        try { await PDb.updateUser(u.id, { projects: ids }); UI.toast('Projects updated','ok'); m.close(); loadUsers(); }
+        catch (e) { UI.toast(e.message,'error'); }
+      };
+    }
+
+    // -------- Projects --------
+    async function loadProjects() {
+      var ps = await PDb.getProjects();
+      var t = document.getElementById('projects-table');
+      t.innerHTML = '<thead><tr><th>ID</th><th>Name</th><th>Location</th><th>Status</th><th>Dates</th><th></th></tr></thead><tbody>' +
+        (ps.length ? ps.map(function(p){
+          return '<tr>' +
+            '<td><strong>'+Fmt.esc(p.id)+'</strong></td>' +
+            '<td>'+Fmt.esc(p.name)+'</td>' +
+            '<td>'+Fmt.esc(p.location)+'</td>' +
+            '<td>'+Fmt.esc(p.status)+'</td>' +
+            '<td>'+Fmt.date(p.start_date)+' – '+Fmt.date(p.end_date)+'</td>' +
+            '<td><button class="pd-btn" data-edit="'+p.id+'">Edit</button></td>' +
+          '</tr>';
+        }).join('') : '<tr><td style="padding:24px;color:var(--pd-muted);">No projects yet.</td></tr>') + '</tbody>';
+      t.querySelectorAll('[data-edit]').forEach(function(b){ b.onclick = function(){ editProject(ps.find(function(x){return x.id===b.dataset.edit;})); }; });
+    }
+
+    function editProject(p) {
+      var isNew = !p; p = p || {};
+      var m = UI.modal(
+        '<h2 style="margin-top:0;">'+(isNew?'New project':'Edit project')+'</h2>' +
+        '<div class="pd-field"><label>Project ID '+(isNew?'(e.g. AVR101)':'')+'</label><input class="pd-input" id="p-id" value="'+Fmt.esc(p.id)+'"'+(isNew?'':' disabled')+'></div>' +
+        '<div class="pd-field"><label>Name</label><input class="pd-input" id="p-name" value="'+Fmt.esc(p.name)+'"></div>' +
+        '<div class="pd-field"><label>Location</label><input class="pd-input" id="p-loc" value="'+Fmt.esc(p.location)+'"></div>' +
+        '<div class="pd-field"><label>Status</label><select class="pd-select" id="p-status">' +
+          ['active','archived'].map(function(s){return '<option'+(p.status===s?' selected':'')+'>'+s+'</option>';}).join('') + '</select></div>' +
+        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Start</label><input class="pd-input" type="date" id="p-start" value="'+(p.start_date||'')+'"></div>' +
+        '<div class="pd-field" style="flex:1;"><label>End</label><input class="pd-input" type="date" id="p-end" value="'+(p.end_date||'')+'"></div></div>' +
+        '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="p-cancel">Cancel</button> ' +
+        '<button class="pd-btn pd-btn-primary" id="p-save">Save</button></div>');
+      m.el.querySelector('#p-cancel').onclick = m.close;
+      m.el.querySelector('#p-save').onclick = async function () {
+        var data = {
+          name: m.el.querySelector('#p-name').value.trim(),
+          location: m.el.querySelector('#p-loc').value.trim(),
+          status: m.el.querySelector('#p-status').value,
+          start_date: m.el.querySelector('#p-start').value || null,
+          end_date: m.el.querySelector('#p-end').value || null,
+        };
+        try {
+          if (isNew) {
+            var id = m.el.querySelector('#p-id').value.trim();
+            if (!id) { UI.toast('Project ID required','warn'); return; }
+            data.id = id; await PDb.createProject(data);
+          } else { await PDb.updateProject(p.id, data); }
+          UI.toast('Saved','ok'); m.close(); loadProjects();
+        } catch (e) { UI.toast(e.message,'error'); }
+      };
+    }
+  </script>
+</body>
+</html>
