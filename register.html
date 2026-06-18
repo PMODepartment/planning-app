@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Request access · Planners Dashboard</title>
+  <link rel="stylesheet" href="assets/css/dashboard.css" />
+</head>
+<body>
+  <div class="pd-auth-wrap">
+    <div class="pd-auth-card">
+      <div class="pd-auth-logo">
+        <div class="pd-brand">Planners Dashboard</div>
+        <small>Request access</small>
+      </div>
+      <div class="pd-card">
+        <form id="reg-form">
+          <div class="pd-field">
+            <label for="name">Full name</label>
+            <input class="pd-input" type="text" id="name" required />
+          </div>
+          <div class="pd-field">
+            <label for="email">Email</label>
+            <input class="pd-input" type="email" id="email" required autocomplete="email" />
+          </div>
+          <div class="pd-field">
+            <label for="password">Password</label>
+            <input class="pd-input" type="password" id="password" required minlength="6" autocomplete="new-password" />
+          </div>
+          <button class="pd-btn pd-btn-primary" type="submit" style="width:100%;justify-content:center;">Create account</button>
+          <p id="msg" style="font-size:13px;margin:12px 0 0;"></p>
+        </form>
+        <p style="text-align:center;margin:16px 0 0;font-size:13px;color:var(--pd-muted);">
+          Already have an account? <a href="index.html">Sign in</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script>
+    document.getElementById('reg-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var msg = document.getElementById('msg');
+      msg.style.color = 'var(--pd-bad)'; msg.textContent = '';
+      var name = document.getElementById('name').value.trim();
+      var email = document.getElementById('email').value.trim();
+      var pw = document.getElementById('password').value;
+      var { error } = await AppAuth.register(email, pw, name);
+      if (error) { msg.textContent = error.message; return; }
+      msg.style.color = 'var(--pd-ok)';
+      msg.textContent = 'Account created. An admin must approve your access before you can sign in.';
+      setTimeout(function () { location.href = 'pending.html'; }, 1800);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Planners Dashboard</title>
+  <link rel="stylesheet" href="assets/css/dashboard.css" />
+</head>
+<body>
+  <div class="pd-app">
+    <aside class="pd-sidebar">
+      <div class="pd-brand">Planners Dashboard<small>Megawide Construction</small></div>
+      <nav>
+        <a href="dashboard.html" class="active">🏠 Home</a>
+        <a href="admin.html" id="nav-admin" style="display:none;">🛠️ Admin</a>
+      </nav>
+    </aside>
+
+    <div class="pd-content">
+      <div class="pd-topbar">
+        <h1>Modules</h1>
+        <div id="user-bar"></div>
+      </div>
+      <div class="pd-main">
+        <p style="color:var(--pd-muted);margin-top:0;">Select a module to begin.</p>
+        <div class="pd-module-grid" id="module-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/db.js"></script>
+  <script src="assets/js/ui.js"></script>
+  <script>
+    AppAuth.requireLogin(function (user, profile) {
+      UI.renderUserBar(profile);
+      if (profile.role === 'admin' || profile.role === 'super_admin') {
+        document.getElementById('nav-admin').style.display = '';
+      }
+      renderModules();
+    });
+
+    function renderModules() {
+      var grid = document.getElementById('module-grid');
+      grid.innerHTML = (APP_CONFIG.MODULES || []).map(function (m) {
+        if (m.enabled) {
+          return '<a class="pd-module-card" href="' + m.path + '">' +
+            '<div class="pd-module-icon">' + m.icon + '</div>' +
+            '<div><div class="pd-module-title">' + m.name + '</div>' +
+            '<div class="pd-module-sub">Open module →</div></div></a>';
+        }
+        return '<div class="pd-module-card disabled">' +
+          '<div class="pd-module-icon">' + m.icon + '</div>' +
+          '<div><div class="pd-module-title">' + m.name + '</div>' +
+          '<div class="pd-module-sub"><span class="pd-badge-soon">In development</span></div></div></div>';
+      }).join('');
+    }
+  </script>
+</body>
+</html>

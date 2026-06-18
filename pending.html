@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pending approval · Planners Dashboard</title>
+  <link rel="stylesheet" href="assets/css/dashboard.css" />
+</head>
+<body>
+  <div class="pd-auth-wrap">
+    <div class="pd-auth-card">
+      <div class="pd-auth-logo">
+        <div class="pd-brand">Planners Dashboard</div>
+      </div>
+      <div class="pd-card" style="text-align:center;">
+        <div style="font-size:40px;margin-bottom:8px;">⏳</div>
+        <h2 style="margin:0 0 8px;">Awaiting approval</h2>
+        <p style="color:var(--pd-muted);margin:0 0 18px;">
+          Your account has been created but needs an administrator's approval before you can access the dashboard.
+        </p>
+        <button class="pd-btn" id="logout" style="margin:0 auto;">Back to sign in</button>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script>
+    document.getElementById('logout').onclick = function () { AppAuth.logout(); };
+  </script>
+</body>
+</html>

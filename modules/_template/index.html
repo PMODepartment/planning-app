@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Module Template · Planners Dashboard</title>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css" />
+  <link rel="stylesheet" href="module.css" />
+</head>
+<body>
+  <div class="pd-app">
+    <aside class="pd-sidebar">
+      <div class="pd-brand">Planners Dashboard<small>Module Template</small></div>
+      <nav>
+        <a href="../../dashboard.html">← All modules</a>
+        <a href="#" class="active">📦 Records</a>
+      </nav>
+    </aside>
+    <div class="pd-content">
+      <div class="pd-topbar">
+        <h1 id="page-title">Module Template</h1>
+        <div id="user-bar"></div>
+      </div>
+      <div class="pd-main">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
+          <select class="pd-select" id="project-picker" style="max-width:280px;"></select>
+          <button class="pd-btn pd-btn-primary" id="btn-add">+ Add record</button>
+        </div>
+        <div class="pd-card" style="padding:0;overflow:auto;">
+          <table class="pd-table" id="records"></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../../assets/js/config.js"></script>
+  <script src="../../assets/js/auth.js"></script>
+  <script src="../../assets/js/db.js"></script>
+  <script src="../../assets/js/ui.js"></script>
+  <script src="module.js"></script>
+  <script>
+    AppAuth.requireLogin(function (user, profile) {
+      UI.renderUserBar(profile);
+      MyModule.init(user, profile);
+    });
+  </script>
+</body>
+</html>

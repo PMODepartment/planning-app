@@ -1,0 +1,13 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*~
+.vscode/
+.idea/
+
+# Local env / secrets (config.js holds only the PUBLIC anon key, so it IS tracked)
+.env
+.env.local
+
+# Node (only if a dev adds tooling later — there is no build step by default)
+node_modules/
