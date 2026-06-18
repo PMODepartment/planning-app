@@ -191,6 +191,17 @@ create or replace function is_approved() returns boolean language sql stable as 
   select exists (select 1 from users u where u.id = auth.uid() and u.status = 'approved');
 $$;
 
+-- Helper: may the current user access this project? Admins: all. Others: only
+-- projects listed in their users.projects array. This enforces the admin
+-- "Assign projects" feature at the database level.
+create or replace function can_access_project(pid text) returns boolean language sql stable as $$
+  select exists (
+    select 1 from users u
+    where u.id = auth.uid() and u.status = 'approved'
+      and (u.role in ('admin','super_admin') or pid = any(u.projects))
+  );
+$$;
+
 -- users + projects
 alter table users    enable row level security;
 alter table projects enable row level security;
@@ -203,7 +214,7 @@ drop policy if exists users_admin_update on users;
 create policy users_admin_update on users for update using (auth.uid() = id or is_admin());
 
 drop policy if exists projects_read on projects;
-create policy projects_read on projects for select using (is_approved());
+create policy projects_read on projects for select using (is_admin() or can_access_project(id));
 drop policy if exists projects_admin_write on projects;
 create policy projects_admin_write on projects for all using (is_admin()) with check (is_admin());
 
@@ -219,13 +230,13 @@ begin
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
-    execute format('create policy %I on %I for select using (is_approved())', t||'_read', t);
+    execute format('create policy %I on %I for select using (can_access_project(project_id))', t||'_read', t);
     execute format('drop policy if exists %I on %I', t||'_ins', t);
-    execute format('create policy %I on %I for insert with check (is_approved() and created_by = auth.uid())', t||'_ins', t);
+    execute format('create policy %I on %I for insert with check (is_approved() and created_by = auth.uid() and can_access_project(project_id))', t||'_ins', t);
     execute format('drop policy if exists %I on %I', t||'_upd', t);
-    execute format('create policy %I on %I for update using (created_by = auth.uid() or is_admin())', t||'_upd', t);
+    execute format('create policy %I on %I for update using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_upd', t);
     execute format('drop policy if exists %I on %I', t||'_del', t);
-    execute format('create policy %I on %I for delete using (created_by = auth.uid() or is_admin())', t||'_del', t);
+    execute format('create policy %I on %I for delete using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_del', t);
   end loop;
 end $$;
 

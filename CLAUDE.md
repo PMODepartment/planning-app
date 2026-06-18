@@ -84,6 +84,22 @@ developer, plug into one shared shell.
   Demonstrates every contract pattern (auth, pd_project, created_by, Fmt.esc).
 - Flipped `risk-register` to `enabled: true` in `config.js`.
 
-- **Still TODO (next prompts):** paste anon key into `config.js`; branch
-  protection on `main`; verify live end-to-end after anon key is in; build the
-  remaining modules (or hand to developers).
+### 2026-06-18 — Prompt 4: Per-project RLS + Drawing Register reference module
+- **anon key** pasted into `config.js` (verified role=anon). App can now reach DB.
+- **Per-project access enforced at the DB level:** added `can_access_project()`
+  helper; rewrote `projects` + all module-table RLS so admins see everything and
+  planner/user/viewer only see projects in their `users.projects` array.
+  Migration: `migrations/2026-06-18-project-access-rls.sql` (also folded into
+  `supabase-schema.sql`). **User must run this migration in Supabase.**
+- Built **Drawing Register** (`modules/drawing-register/`) as the file-upload
+  reference module: status/discipline/search filters, revision + status pills,
+  add/edit modal with file upload to a **private** Storage bucket, view via
+  short-lived signed URL, delete (removes object + row). Enabled in `config.js`.
+- Storage setup migration `migrations/2026-06-18-storage-buckets.sql` creates
+  private buckets (`drawing-register`, `progress-photos`, `material-submittal`)
+  + policies. **User must run this migration too.**
+
+- **Still TODO (next prompts):** run the two migrations in Supabase; create the
+  buckets via the migration; branch protection on `main`; live end-to-end test;
+  remaining modules (issues-lessons, contracts-claims, stakeholder-map,
+  material-submittal, progress-photos) — or hand to developers.

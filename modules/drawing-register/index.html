@@ -3,32 +3,55 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>drawing-register · Planners Dashboard</title>
+  <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />
+  <link rel="stylesheet" href="module.css" />
 </head>
 <body>
   <div class="pd-app">
     <aside class="pd-sidebar">
-      <div class="pd-brand">Planners Dashboard<small>Module</small></div>
-      <nav><a href="../../dashboard.html">&larr; All modules</a></nav>
+      <div class="pd-brand">Planners Dashboard<small>Drawing Register</small></div>
+      <nav>
+        <a href="../../dashboard.html">← All modules</a>
+        <a href="#" class="active">📐 Drawings</a>
+      </nav>
     </aside>
+
     <div class="pd-content">
-      <div class="pd-topbar"><h1>drawing-register</h1><div id="user-bar"></div></div>
+      <div class="pd-topbar">
+        <h1>Drawing Register</h1>
+        <div id="user-bar"></div>
+      </div>
       <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>drawing-register</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code>.</p>
+        <div class="dr-controls">
+          <select class="pd-select" id="dr-project" style="max-width:260px;"></select>
+          <select class="pd-select" id="dr-f-status" style="max-width:160px;">
+            <option value="">All statuses</option>
+            <option>For Review</option><option>Approved</option><option>Superseded</option>
+          </select>
+          <select class="pd-select" id="dr-f-discipline" style="max-width:170px;"><option value="">All disciplines</option></select>
+          <input class="pd-input" id="dr-f-search" placeholder="Search…" style="max-width:200px;" />
+          <button class="pd-btn pd-btn-primary" id="dr-add" style="margin-left:auto;">+ Add drawing</button>
+        </div>
+
+        <div class="pd-card" style="padding:0;overflow:auto;">
+          <table class="pd-table dr-table" id="dr-table"></table>
         </div>
       </div>
     </div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../../assets/js/config.js"></script>
   <script src="../../assets/js/auth.js"></script>
   <script src="../../assets/js/db.js"></script>
   <script src="../../assets/js/ui.js"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+  <script src="module.js"></script>
+  <script>
+    AppAuth.requireLogin(function (user, profile) {
+      UI.renderUserBar(profile);
+      DrawingRegister.init(user, profile);
+    });
+  </script>
 </body>
 </html>

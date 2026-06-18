@@ -1,0 +1,10 @@
+/* Drawing Register module styles — all classes prefixed .dr- */
+
+.dr-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; }
+.dr-table td .dr-sub { color:var(--pd-muted); font-size:12px; margin-top:2px;
+  max-width:380px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.dr-pill { display:inline-block; padding:2px 10px; border-radius:999px; font-weight:700; font-size:12px; color:#fff; }
+.dr-review { background:#d97706; }   /* For Review  */
+.dr-ok     { background:#16a34a; }   /* Approved    */
+.dr-old    { background:#6b7280; }   /* Superseded  */
