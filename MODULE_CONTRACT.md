@@ -58,6 +58,7 @@ Your page is **one level deeper** than the shell, so shared assets load with a
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
+  <script src="../../assets/js/theme.js"></script>   <!-- dark mode; load in <head> -->
   <title>Risk Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />
   <link rel="stylesheet" href="module.css" />
@@ -114,6 +115,13 @@ users to login automatically — you never roll your own auth.
 `.pd-btn`, `.pd-btn-primary`, `.pd-input`, `.pd-select`, `.pd-table`,
 `.pd-field`, and the CSS variables (`--pd-red`, `--pd-ink`, …). Put anything
 truly module-specific in your own `module.css`, prefixed `.<key>-…`.
+
+**Dark mode is automatic** — `theme.js` (in your `<head>`) handles the toggle
+and persistence; the toggle button auto-appears in the top bar. For your module
+to adapt correctly, **use the shared tokens** for surfaces/text/borders
+(`--pd-bg`, `--pd-card`, `--pd-ink`, `--pd-muted`, `--pd-line`) and **never
+hard-code** `#fff`/`#000`/light backgrounds in `module.css`. Semantic data
+colors (status greens/ambers/reds) are fine to keep fixed.
 
 ---
 

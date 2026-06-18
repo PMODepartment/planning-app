@@ -184,6 +184,21 @@ developer, plug into one shared shell.
 - Added welcome header ("Welcome, <first name>") above the grid.
 - New tokens `--pd-red-light` / `--pd-red-mid`.
 
+### 2026-06-18 — Prompt 11: Dark mode (shared, automatic)
+- Followed the Procurement app pattern: token remap on `html.pd-dark`, applied
+  before paint to avoid FOUC, persisted in localStorage `pd_theme`, with
+  `color-scheme: dark` for native controls.
+- New `assets/js/theme.js` (loaded in every page's `<head>`): applies saved/
+  system theme immediately + auto-injects a 🌙/☀️ toggle into the top bar
+  (shell pages) or as a floating round button (auth pages). Zero work for devs.
+- `dashboard.css`: converted hard-coded `#fff`/`#fafbfc`/`#fbfbfb` component
+  backgrounds to tokens so they adapt; added the `html.pd-dark` override block
+  (bg #1C1C1C, card #2B2C2B, sidebar #161717, light text/borders) + toggle btn
+  styles.
+- `MODULE_CONTRACT.md`: boilerplate now includes `theme.js`; added a "dark mode
+  is automatic — use tokens, never hard-code #fff/#000" rule. Reference modules
+  + `_template` already wired via injection, so new modules inherit dark mode.
+
 - **Still TODO (next prompts):** run the three migrations in Supabase; create the
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,
