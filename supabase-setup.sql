@@ -94,6 +94,13 @@ create table if not exists cash_flow (
   period date, category text, description text, planned_amount numeric(18,2), actual_amount numeric(18,2), remarks text,
   created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
 
+create table if not exists s_curve (
+  id uuid primary key default gen_random_uuid(), project_id text references projects(id),
+  period date, planned_value numeric(18,2), actual_value numeric(18,2),
+  planned_cumulative numeric(18,2), actual_cumulative numeric(18,2),
+  percent_planned numeric, percent_actual numeric, remarks text,
+  created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
+
 -- ───────────────────────── Grants (API roles) ─────────────────────────
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
@@ -138,7 +145,7 @@ begin
   foreach t in array array[
     'progress_photos','issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
-    'project_schedule','resource_loading','productivity_rates','cash_flow'
+    'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);

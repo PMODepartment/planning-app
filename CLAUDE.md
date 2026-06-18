@@ -237,6 +237,17 @@ developer, plug into one shared shell.
 - Updated README, ONBOARDING (DEMO01 access flow).
 - Decision: developers get access via **self-register + owner approval**.
 
+### 2026-06-18 — Prompt 16: Split S-Curve into its own module + KPI contrast fix
+- Renamed `project-schedule` to **"Project Schedule & Cost Loading"**; added a
+  separate **`s-curve`** module (📈) with folder, placeholder, onboarding CLAUDE.md.
+- New `s_curve` table (period, planned/actual value + cumulative, % planned/
+  actual) in `supabase-schema.sql` + `supabase-setup.sql` + RLS arrays; migration
+  `migrations/2026-06-18-s-curve-module.sql`. **User must run it on the live DB.**
+- ONBOARDING tracker updated (now 13 modules total).
+- Fixed Risk Register KPI card contrast (High/Medium were unreadable): scoped
+  rating-band backgrounds to pills + matrix cells only; KPI cards keep the card
+  surface with a token-colored number.
+
 ### 2026-06-18 — Prompt 15: Verify setup + fix RLS recursion (54001)
 - Verified live: pages serve latest (forgot-password, theme.js, phase2 config);
   Phase-2 tables exist + grants OK (200 []).

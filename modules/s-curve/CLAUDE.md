@@ -1,11 +1,11 @@
-# Module: project-schedule
+# Module: s-curve
 
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).
-> 2. This module is **Project Schedule & Cost Loading** (Phase 2). Your DB table is `project_schedule`
+> 2. This module is **S-Curve** (Phase 2). Your DB table is `s_curve`
 >    (defined in `../../supabase-schema.sql`; starter columns only — extend as needed).
-> 3. Best reference to copy: **risk-register (plain CRUD; add a Gantt/cost-loading table as needed)**.
-> 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
+> 3. Best reference to copy: **risk-register (plain CRUD; render a cumulative planned-vs-actual line chart)**.
+> 4. Work only inside this folder, on branch `module/s-curve`, then PR to `main`.
 > 5. Update this file as you build.
 
 ## Status

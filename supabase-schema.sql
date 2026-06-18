@@ -247,6 +247,23 @@ create table if not exists cash_flow (
   updated_at      timestamptz default now()
 );
 
+-- S-Curve --------------------------------------------------------------------
+create table if not exists s_curve (
+  id                 uuid primary key default gen_random_uuid(),
+  project_id         text references projects(id),
+  period             date,
+  planned_value      numeric(18,2),   -- per-period planned
+  actual_value       numeric(18,2),   -- per-period actual
+  planned_cumulative numeric(18,2),
+  actual_cumulative  numeric(18,2),
+  percent_planned    numeric,         -- 0..100
+  percent_actual     numeric,         -- 0..100
+  remarks            text,
+  created_by         uuid references users(id),
+  created_at         timestamptz default now(),
+  updated_at         timestamptz default now()
+);
+
 -- ============================================================================
 -- TABLE PRIVILEGES (GRANTs) — required IN ADDITION to RLS.
 -- PostgREST runs queries as the `authenticated`/`anon` role; without these
@@ -321,7 +338,7 @@ begin
   foreach t in array array[
     'progress_photos','issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
-    'project_schedule','resource_loading','productivity_rates','cash_flow'
+    'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
