@@ -11,7 +11,7 @@
 <body>
   <div class="pd-app">
     <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Megawide Construction</small></div>
+      <div class="pd-brand"><img class="pd-brand-logo" src="assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planners Dashboard</small></div>
       <nav>
         <a href="dashboard.html" class="active">🏠 Home</a>
         <a href="admin.html" id="nav-admin" style="display:none;">🛠️ Admin</a>
@@ -20,11 +20,15 @@
 
     <div class="pd-content">
       <div class="pd-topbar">
-        <h1>Modules</h1>
+        <img class="pd-topbar-mark" src="assets/img/favicon.png" alt="Megawide" />
+        <h1>Project Management Portal</h1>
         <div id="user-bar"></div>
       </div>
       <div class="pd-main">
-        <p style="color:var(--pd-muted);margin-top:0;">Select a module to begin.</p>
+        <div class="pd-home-head">
+          <h2 id="welcome">Welcome</h2>
+          <p>Select a module to begin.</p>
+        </div>
         <div class="pd-module-grid" id="module-grid"></div>
       </div>
     </div>
@@ -38,6 +42,8 @@
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
+      var first = (profile.name || profile.email || '').split(' ')[0];
+      document.getElementById('welcome').textContent = first ? ('Welcome, ' + first) : 'Welcome';
       if (profile.role === 'admin' || profile.role === 'super_admin') {
         document.getElementById('nav-admin').style.display = '';
       }
@@ -50,12 +56,12 @@
         if (m.enabled) {
           return '<a class="pd-module-card" href="' + m.path + '">' +
             '<div class="pd-module-icon">' + m.icon + '</div>' +
-            '<div><div class="pd-module-title">' + m.name + '</div>' +
+            '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
             '<div class="pd-module-sub">Open module →</div></div></a>';
         }
         return '<div class="pd-module-card disabled">' +
           '<div class="pd-module-icon">' + m.icon + '</div>' +
-          '<div><div class="pd-module-title">' + m.name + '</div>' +
+          '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
           '<div class="pd-module-sub"><span class="pd-badge-soon">In development</span></div></div></div>';
       }).join('');
     }

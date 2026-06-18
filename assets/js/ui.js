@@ -45,5 +45,36 @@
     return { el: overlay, close: close };
   }
 
-  window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal };
+  // ---- Collapsible sidebar ----
+  // Auto-injects a hamburger toggle into the topbar of any shell page (a page
+  // with both .pd-sidebar and .pd-topbar). Desktop: collapses the sidebar to
+  // zero width (persisted). Mobile (≤820px): slides the sidebar in/out.
+  function initShell() {
+    var app = document.querySelector('.pd-app');
+    var sidebar = document.querySelector('.pd-sidebar');
+    var topbar = document.querySelector('.pd-topbar');
+    if (!app || !sidebar || !topbar || topbar.querySelector('.pd-sidebar-toggle')) return;
+
+    if (localStorage.getItem('pd_sidebar_collapsed') === '1') app.classList.add('pd-collapsed');
+
+    var btn = document.createElement('button');
+    btn.className = 'pd-sidebar-toggle';
+    btn.setAttribute('aria-label', 'Toggle menu');
+    btn.innerHTML = '<span></span><span></span><span></span>';
+    btn.onclick = function () {
+      if (window.matchMedia('(max-width: 820px)').matches) {
+        sidebar.classList.toggle('open');
+      } else {
+        app.classList.toggle('pd-collapsed');
+        localStorage.setItem('pd_sidebar_collapsed', app.classList.contains('pd-collapsed') ? '1' : '0');
+      }
+    };
+    topbar.insertBefore(btn, topbar.firstChild);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initShell);
+  } else { initShell(); }
+
+  window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal, initShell: initShell };
 })();

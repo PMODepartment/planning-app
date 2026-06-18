@@ -171,6 +171,19 @@ developer, plug into one shared shell.
 - `MODULE_CONTRACT.md` boilerplate updated so new modules include favicon + logo.
   Reference modules + `_template` already updated, so future modules inherit it.
 
+### 2026-06-18 — Prompt 10: Dashboard UX polish (PowerApps-inspired)
+- Topbar: title "Modules" → **"Project Management Portal"** with the red
+  Megawide "M" mark (`.pd-topbar-mark`) beside it; user-bar pushed right.
+- **Collapsible sidebar:** `UI.initShell()` (ui.js) auto-injects a hamburger
+  toggle into the topbar of every shell page; desktop collapses sidebar to zero
+  width (persisted in localStorage `pd_sidebar_collapsed`), mobile slides it in.
+- Logo sizing optimized (sidebar wordmark 150px; topbar mark 30px).
+- **Module cards redesigned** for the big white space: fixed 4-col grid
+  (→3/2/1 responsive) so 7 cards distribute as 4+3; larger tiles with
+  red-tinted icon squares, brand-red hover accent strip, clearer CTA/badge.
+- Added welcome header ("Welcome, <first name>") above the grid.
+- New tokens `--pd-red-light` / `--pd-red-mid`.
+
 - **Still TODO (next prompts):** run the three migrations in Supabase; create the
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,
