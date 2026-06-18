@@ -50,13 +50,35 @@
     location.href = depth + page;
   }
 
-  // requireLogin(cb): ensures an approved, signed-in user; else redirects to login.
+  // ensureProfile(user): self-heal — if an auth user has no profile row yet
+  // (e.g. created via email confirmation, or an earlier insert failed), create
+  // a pending one so they go to pending.html instead of looping on login.
+  async function ensureProfile(user) {
+    var ins = await getSB().from('users').insert({
+      id: user.id, email: user.email,
+      name: (user.user_metadata && user.user_metadata.name) || user.email,
+      role: 'user', status: 'pending', projects: [],
+    }).select().single();
+    if (!ins.error && ins.data) return ins.data;
+    // Insert may race / already exist — re-read.
+    var re = await getSB().from('users').select('*').eq('id', user.id).single();
+    return re.error ? null : re.data;
+  }
+
+  // requireLogin(cb): ensures an approved, signed-in user; else redirects.
+  // IMPORTANT: a sessioned user with a missing/unapproved profile must NEVER be
+  // sent back to index.html — index.html bounces sessions to dashboard, which
+  // would create an infinite loop. Send them to pending.html (or sign out).
   async function requireLogin(cb) {
     var { data: { session } } = await getSB().auth.getSession();
     if (!session) return redirect('index.html');
 
     var profile = await loadProfile(session.user);
-    if (!profile) return redirect('index.html');
+    if (!profile) profile = await ensureProfile(session.user);   // self-heal
+    if (!profile) {                 // truly cannot load/create → break the loop
+      await getSB().auth.signOut();
+      return redirect('index.html');
+    }
     if (profile.status !== 'approved') return redirect('pending.html');
 
     window.__profile = profile;

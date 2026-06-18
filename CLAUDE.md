@@ -108,6 +108,17 @@ developer, plug into one shared shell.
   + default privileges for future module tables); folded into `supabase-schema.sql`.
   **User must run this migration.**
 
+### 2026-06-18 — Prompt 6: Fix index↔dashboard redirect loop
+- Verified data layer live: authed REST queries now return 200 (grants fix
+  confirmed), RLS returns [] for unapproved users, anon blocked.
+- **Bug:** infinite redirect loop index.html ↔ dashboard.html for users whose
+  `auth.users` account has no `users` profile row (the promote UPDATE matched 0
+  rows because the row never existed). `requireLogin` sent profile-less sessions
+  back to index.html, which bounces sessions to dashboard → loop.
+- **Fix (auth.js):** added `ensureProfile()` self-heal — a sessioned user with
+  no profile row gets a `pending` row created, then goes to pending.html (never
+  back to index.html). Hard stop signs out if profile truly can't be created.
+
 - **Still TODO (next prompts):** run the three migrations in Supabase; create the
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,
