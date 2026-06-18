@@ -36,9 +36,10 @@ Send each developer the message below, filling in their **module** and **key**.
 > - Run `Fmt.esc()` on any user text you put into HTML.
 >
 > **5. To test locally**, run a static server in the repo root, e.g.
-> `python -m http.server 8000`, then open `http://localhost:8000`.
-> (Ask me for the Supabase URL + anon key to put in `assets/js/config.js`, or
-> I'll provide a shared dev config.)
+> `python -m http.server 8000`, then open `http://localhost:8000` (see
+> `CONTRIBUTING.md` §1b). Supabase keys are already in `assets/js/config.js`.
+> **Get access:** register on the live site — I'll approve you and assign the
+> **`DEMO01`** sandbox project, which has sample data to build against.
 >
 > **6. When done**, push your branch and open a Pull Request into `main`. I'll
 > review and merge. Keep `modules/{{module-key}}/CLAUDE.md` updated.

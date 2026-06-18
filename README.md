@@ -34,11 +34,16 @@ planning-app/
 ```
 
 ## First-time setup
-1. Create a Supabase project; paste its URL + anon key into `assets/js/config.js`.
-2. Run `supabase-schema.sql` in the Supabase SQL editor.
-3. In Supabase Auth settings, disable email confirmation (users go to `pending`).
-4. Open `index.html`, register, then promote yourself to `super_admin` (see the
-   bootstrap note at the bottom of `supabase-schema.sql`).
+See **[SETUP.md](SETUP.md)** for the full checklist. In short:
+1. Paste the Supabase URL + anon key into `assets/js/config.js`.
+2. Run **[supabase-setup.sql](supabase-setup.sql)** (one paste — schema, RLS,
+   storage, demo data, bootstrap admin).
+3. Supabase Auth: turn **off** email confirmation; add the site + reset redirect
+   URLs (SETUP.md §2).
+4. Register on the live site; the bootstrap promotes you to `super_admin`.
+
+Developers: start with **[MODULE_CONTRACT.md](MODULE_CONTRACT.md)** +
+**[CONTRIBUTING.md](CONTRIBUTING.md)**. Reviewers: **[REVIEW_CHECKLIST.md](REVIEW_CHECKLIST.md)**.
 
 ## Phase 1 modules
 Progress Photos · Issues/Concerns/Lessons Learned · Contracts & Claims Register ·

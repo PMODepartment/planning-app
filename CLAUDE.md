@@ -224,8 +224,22 @@ developer, plug into one shared shell.
   **User must run this migration in Supabase.**
 - Updated ONBOARDING.md assignment tracker.
 
-- **Still TODO (next prompts):** run the migrations in Supabase (incl. phase2);
-  create the
+### 2026-06-18 — Prompt 14: Handover readiness kit
+- **`supabase-setup.sql`** — one-paste consolidated setup (all tables, grants,
+  helpers, RLS, storage buckets, **demo project `DEMO01` + sample risk/drawing
+  rows**, bootstrap admin). Supersedes running individual migrations.
+- **`SETUP.md`** — owner checklist: config keys, run the SQL, **Supabase Auth
+  settings** (email confirmation OFF, password-reset redirect URLs), bootstrap,
+  GitHub Pages/branch-protection/CODEOWNERS, per-dev onboarding (self-register +
+  approve + assign DEMO01), troubleshooting (42501 grants, login loop).
+- **`REVIEW_CHECKLIST.md`** — PR review checklist against the contract.
+- **`CONTRIBUTING.md` §1b** — run-locally runbook (static server, DEMO01 login).
+- Updated README, ONBOARDING (DEMO01 access flow).
+- Decision: developers get access via **self-register + owner approval**.
+
+- **Still TODO (handover):** run `supabase-setup.sql` (adds DEMO01 + phase2
+  tables); set Auth email-confirmation OFF + reset redirect URL; add devs as
+  collaborators + fill CODEOWNERS usernames; send ONBOARDING messages.
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,
   material-submittal, progress-photos) — or hand to developers.

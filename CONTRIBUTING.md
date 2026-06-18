@@ -22,6 +22,29 @@ git config user.email "jdelacruz@megawide.com.ph"
 
 ---
 
+## 1b. Run it locally
+
+No build step. Serve the repo root with any static server and open it:
+
+```bash
+# Python (any OS)
+python -m http.server 8000
+#   then open http://localhost:8000
+
+# or Node
+npx serve .
+```
+
+- Supabase URL + anon key are already in `assets/js/config.js` — no env setup.
+- **Log in:** register on the **live** site, ask the app owner to approve you and
+  assign the **`DEMO01`** sandbox project. Then sign in locally with that account.
+  (Auth/data go to the shared Supabase, so local and live use the same login.)
+- Select **`DEMO01`** in your module's project picker — it has sample data.
+- Open your module at `http://localhost:8000/modules/<your-key>/`.
+
+> Open the page via the server URL, not by double-clicking the file
+> (`file://`), or the Supabase calls and relative paths won't work.
+
 ## 2. One branch per module — never commit to `main`
 
 ```bash
