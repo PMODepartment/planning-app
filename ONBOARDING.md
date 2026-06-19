@@ -1,50 +1,43 @@
 # Developer Onboarding — copy/paste per developer
 
-Send each developer the message below, filling in their **module** and **key**.
+These developers are **non-coders using Claude Code**. The flow is: accept the
+GitHub invite → install GitHub Desktop + Claude Code → clone → let Claude build
+their module → save/PR via GitHub Desktop. Full walkthrough is in
+**`GETTING_STARTED.md`** (send them there). Below is the short message + the
+starter prompt they paste into Claude Code.
 
 ---
 
-> Hi! You're building the **{{MODULE NAME}}** module of the Megawide Planners
-> Dashboard. Your module key is **`{{module-key}}`**.
+### Message to send each developer
+
+> Hi {{NAME}}! You're building the **{{MODULE NAME}}** module of the Megawide
+> Planners Dashboard. No prior web-dev experience needed — Claude Code does the
+> coding.
 >
-> **1. Get the code**
+> 1. Accept the GitHub invite I sent (repo `PMODepartment/planning-app`).
+> 2. Open the live site `https://pmodepartment.github.io/planning-app/`, click
+>    **Request access**, register with your Megawide email, and tell me — I'll
+>    approve you and assign the **DEMO01** test project.
+> 3. Follow **`GETTING_STARTED.md`** in the repo (install GitHub Desktop +
+>    Claude Code, clone, make your branch `module/{{module-key}}`).
+> 4. In Claude Code, paste this starter prompt:
+>
 > ```
-> git clone https://github.com/PMODepartment/planning-app.git
-> cd planning-app
-> git config user.name  "Your Name"
-> git config user.email "you@megawide.com.ph"
-> git checkout -b module/{{module-key}}
+> I'm building the "{{module-key}}" module of this project. Read MODULE_CONTRACT.md
+> and CONTRIBUTING.md, then build my module inside modules/{{module-key}}/ by
+> copying {{REFERENCE}} as the starting point. Use the shared login (AppAuth),
+> styling, and database helpers — don't reinvent them. Only change files inside
+> my module folder. Then help me test it locally and open a Pull Request.
 > ```
 >
-> **2. Read these two files first**
-> - `MODULE_CONTRACT.md` — what to build and the rules (folder, shared APIs, DB)
-> - `CONTRIBUTING.md` — git workflow (branch per module, PR into main)
->
-> **3. Start from the template**
-> Copy `modules/_template/` into `modules/{{module-key}}/` (it already exists as a
-> placeholder — replace its contents). It's a working CRUD example using the
-> shared auth, styles, and Supabase patterns.
->
-> **4. Rules of thumb**
-> - Vanilla HTML/CSS/JS only — no build step, no frameworks.
-> - Use the shared `AppAuth`, `PDb`, `Fmt`, `UI` helpers — don't reinvent login,
->   formatting, or toasts.
-> - Only edit files inside `modules/{{module-key}}/`. The two exceptions: add your
->   table to `supabase-schema.sql`, and flip your module's `enabled: true` in
->   `assets/js/config.js`.
-> - Stamp `created_by` and `project_id` on every row you insert (RLS needs it).
-> - Run `Fmt.esc()` on any user text you put into HTML.
->
-> **5. To test locally**, run a static server in the repo root, e.g.
-> `python -m http.server 8000`, then open `http://localhost:8000` (see
-> `CONTRIBUTING.md` §1b). Supabase keys are already in `assets/js/config.js`.
-> **Get access:** register on the live site — I'll approve you and assign the
-> **`DEMO01`** sandbox project, which has sample data to build against.
->
-> **6. When done**, push your branch and open a Pull Request into `main`. I'll
-> review and merge. Keep `modules/{{module-key}}/CLAUDE.md` updated.
->
-> Questions about anything shared → ask me, don't change shared files yourself.
+> Then just describe, in plain English, what your module should do (the fields,
+> the columns, how it should behave). Save your work with GitHub Desktop and
+> submit a Pull Request when ready — I'll review it. Don't edit shared files;
+> ask me if you think you need to.
+
+Fill in `{{REFERENCE}}` with: **`modules/risk-register/`** for plain
+list/form modules, or **`modules/drawing-register/`** for modules that upload
+files/photos.
 
 ---
 
