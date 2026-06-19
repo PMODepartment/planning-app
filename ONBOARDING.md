@@ -51,13 +51,13 @@ Send each developer the message below, filling in their **module** and **key**.
 ## Assignment tracker
 | Module | key | Developer | GitHub | Status |
 |---|---|---|---|---|
-| Progress Photos | `progress-photos` | _ | _ | Not started |
-| Issues, Concerns & Lessons Learned | `issues-lessons` | _ | _ | Not started |
-| Contracts & Claims Register | `contracts-claims` | _ | _ | Not started |
-| Risk Register | `risk-register` | _ | _ | Not started |
-| Stakeholder Map | `stakeholder-map` | _ | _ | Not started |
-| Drawing Register | `drawing-register` | _ | _ | Reference module (built) |
-| Material Submittal Log | `material-submittal` | _ | _ | Not started |
+| Progress Photos | `progress-photos` | Johanne May Panganiban | yohanmay | Assigned |
+| Issues, Concerns & Lessons Learned | `issues-lessons` | Georgette Dela Cruz | gyvmd | Assigned |
+| Contracts & Claims Register | `contracts-claims` | Rachelle Ann Lungsod | rachellelungsod | Assigned |
+| Risk Register | `risk-register` | — (reference module) | — | Built |
+| Stakeholder Map | `stakeholder-map` | Art Lyndon Rovelo | ArtRovelo | Assigned |
+| Drawing Register | `drawing-register` | Ethan Patrick Robles | ethanrobles10 | Assigned (extend reference) |
+| Material Submittal Log | `material-submittal` | Art Lyndon Rovelo | ArtRovelo | Assigned |
 | Project Schedule & Cost Loading | `project-schedule` | _ | _ | Not started (Phase 2) |
 | S-Curve | `s-curve` | _ | _ | Not started (Phase 2) |
 | Resource Loading | `resource-loading` | _ | _ | Not started (Phase 2) |

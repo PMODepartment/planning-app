@@ -11,10 +11,17 @@
 *.html                  @PMODepartment
 
 # Module folders → assigned developer (+ app owner)
-/modules/progress-photos/      @PMODepartment
-/modules/issues-lessons/       @PMODepartment
-/modules/contracts-claims/     @PMODepartment
+# Phase 1
+/modules/progress-photos/      @PMODepartment @yohanmay
+/modules/issues-lessons/       @PMODepartment @gyvmd
+/modules/contracts-claims/     @PMODepartment @rachellelungsod
 /modules/risk-register/        @PMODepartment
-/modules/stakeholder-map/      @PMODepartment
-/modules/drawing-register/     @PMODepartment
-/modules/material-submittal/   @PMODepartment
+/modules/stakeholder-map/      @PMODepartment @ArtRovelo
+/modules/drawing-register/     @PMODepartment @ethanrobles10
+/modules/material-submittal/   @PMODepartment @ArtRovelo
+# Phase 2 (unassigned)
+/modules/project-schedule/     @PMODepartment
+/modules/s-curve/              @PMODepartment
+/modules/resource-loading/     @PMODepartment
+/modules/productivity-rates/   @PMODepartment
+/modules/cash-flow/            @PMODepartment
