@@ -237,6 +237,16 @@ developer, plug into one shared shell.
 - Updated README, ONBOARDING (DEMO01 access flow).
 - Decision: developers get access via **self-register + owner approval**.
 
+### 2026-06-18 — Prompt 17: Admin "delete user completely"
+- New SECURITY DEFINER function `admin_delete_user(uuid)` — deletes `auth.users`
+  (cascades to `public.users`), **freeing the email so the person can Request
+  Access again**. Nulls their `created_by` authorship first (data kept) so FKs
+  don't block. Admin-only; no self-delete; only super_admin deletes super_admin.
+  Migration `2026-06-18-admin-delete-user.sql`; folded into setup + schema.
+  **User must run this migration.**
+- `PDb.deleteUser(id)` → calls the RPC; `admin.html` red **Delete** button per
+  user (hidden on own row) with a confirm modal; shared `.pd-btn-danger` style.
+
 ### 2026-06-18 — Prompt 16: Split S-Curve into its own module + KPI contrast fix
 - Renamed `project-schedule` to **"Project Schedule & Cost Loading"**; added a
   separate **`s-curve`** module (📈) with folder, placeholder, onboarding CLAUDE.md.

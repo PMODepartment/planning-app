@@ -194,6 +194,8 @@ a:hover { text-decoration: underline; }
 .pd-btn:hover { background: var(--pd-bg); text-decoration: none; }
 .pd-btn-primary { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 .pd-btn-primary:hover { background: var(--pd-red-dark); }
+.pd-btn-danger { background: transparent; border-color: var(--pd-bad); color: var(--pd-bad); }
+.pd-btn-danger:hover { background: var(--pd-bad); border-color: var(--pd-bad); color: #fff; }
 
 /* ---- Forms ---- */
 .pd-field { margin-bottom: 14px; }

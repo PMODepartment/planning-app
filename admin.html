@@ -102,6 +102,7 @@
               (u.status!=='approved' ? '<button class="pd-btn pd-btn-primary" data-approve="'+u.id+'">Approve</button> ' : '') +
               (u.status!=='rejected' ? '<button class="pd-btn" data-reject="'+u.id+'">Reject</button> ' : '') +
               '<button class="pd-btn" data-projects="'+u.id+'">Projects</button>' +
+              (u.id!==ME.id ? ' <button class="pd-btn pd-btn-danger" data-del="'+u.id+'">Delete</button>' : '') +
             '</td>' +
           '</tr>';
         }).join('') + '</tbody>';
@@ -110,6 +111,22 @@
       t.querySelectorAll('[data-approve]').forEach(function(b){ b.onclick = function(){ setUser(b.dataset.approve, { status:'approved' }); }; });
       t.querySelectorAll('[data-reject]').forEach(function(b){ b.onclick = function(){ setUser(b.dataset.reject, { status:'rejected' }); }; });
       t.querySelectorAll('[data-projects]').forEach(function(b){ b.onclick = function(){ assignProjects(users.find(function(x){return x.id===b.dataset.projects;})); }; });
+      t.querySelectorAll('[data-del]').forEach(function(b){ b.onclick = function(){ deleteUser(users.find(function(x){return x.id===b.dataset.del;})); }; });
+    }
+
+    function deleteUser(u) {
+      var m = UI.modal(
+        '<h2 style="margin-top:0;">Delete user</h2>' +
+        '<p>Permanently delete <strong>'+Fmt.esc(u.name||u.email)+'</strong> ('+Fmt.esc(u.email)+')?</p>' +
+        '<p style="color:var(--pd-muted);font-size:13px;">This removes their account completely. Their email is freed, so they can <strong>Request Access again</strong> in the future. Records they created are kept (their authorship is cleared). This cannot be undone.</p>' +
+        '<div style="margin-top:16px;text-align:right;"><button class="pd-btn" id="du-cancel">Cancel</button> ' +
+        '<button class="pd-btn pd-btn-danger" id="du-confirm">Delete permanently</button></div>');
+      m.el.querySelector('#du-cancel').onclick = m.close;
+      m.el.querySelector('#du-confirm').onclick = async function () {
+        var btn = m.el.querySelector('#du-confirm'); btn.disabled = true; btn.textContent = 'Deleting…';
+        try { await PDb.deleteUser(u.id); UI.toast('User deleted','ok'); m.close(); loadUsers(); }
+        catch (e) { UI.toast(e.message,'error'); btn.disabled = false; btn.textContent = 'Delete permanently'; }
+      };
     }
 
     async function setUser(id, patch) {

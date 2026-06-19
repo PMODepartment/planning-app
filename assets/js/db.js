@@ -43,6 +43,12 @@
       var { error } = await sb().from('users').update(u).eq('id', id);
       if (error) throw error;
     },
+    // Delete a user completely (auth + profile) via the admin RPC. Frees their
+    // email so they can request access again later. Admin-only (enforced in DB).
+    async deleteUser(id) {
+      var { error } = await sb().rpc('admin_delete_user', { target: id });
+      if (error) throw error;
+    },
     async updateLastLogin(id) {
       try { await sb().from('users').update({ last_login: new Date().toISOString() }).eq('id', id); } catch (e) {}
     },
