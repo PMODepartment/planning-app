@@ -248,6 +248,16 @@ developer, plug into one shared shell.
   rating-band backgrounds to pills + matrix cells only; KPI cards keep the card
   surface with a token-colored number.
 
+### 2026-06-18 — Prompt 16: Split S-Curve into its own module
+- `project-schedule` renamed to **"Project Schedule & Cost Loading"**; new
+  **`s-curve`** module ("S-Curve", 📈) added to `config.js`.
+- New `modules/s-curve/` folder (placeholder + onboarding CLAUDE.md); refreshed
+  `project-schedule` placeholder for the new name.
+- DB: new `s_curve` table (period, planned/actual + cumulative, % planned/actual)
+  in `supabase-schema.sql` + `supabase-setup.sql` + RLS arrays; migration
+  `migrations/2026-06-18-s-curve-module.sql`. **User must run this migration.**
+- ONBOARDING tracker updated (project-schedule renamed + s-curve row).
+
 ### 2026-06-18 — Prompt 15: Verify setup + fix RLS recursion (54001)
 - Verified live: pages serve latest (forgot-password, theme.js, phase2 config);
   Phase-2 tables exist + grants OK (200 []).
