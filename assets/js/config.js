@@ -35,7 +35,7 @@ window.APP_CONFIG = {
     { key: 'drawing-register',  name: 'Drawing Register',                      path: 'modules/drawing-register/index.html',  icon: '📐', enabled: true },
     { key: 'material-submittal',name: 'Material Submittal Log',                path: 'modules/material-submittal/index.html',icon: '🧱', enabled: false },
     // ---- Phase 2 ----
-    { key: 'project-schedule',  name: 'Project Schedule & Cost Loading',       path: 'modules/project-schedule/index.html', icon: '📅', enabled: false },
+    { key: 'project-schedule',  name: 'Project Schedule & Cost Loading',       path: 'modules/project-schedule/index.html', icon: '📅', enabled: true },
     { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: '📈', enabled: false },
     { key: 'resource-loading',  name: 'Resource Loading',                      path: 'modules/resource-loading/index.html',  icon: '👷', enabled: false },
     { key: 'productivity-rates',name: 'Productivity Rates',                    path: 'modules/productivity-rates/index.html',icon: '📊', enabled: false },

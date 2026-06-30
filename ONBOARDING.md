@@ -41,18 +41,17 @@ files/photos.
 
 ---
 
-## Assignment tracker
-| Module | key | Developer | GitHub | Status |
-|---|---|---|---|---|
-| Progress Photos | `progress-photos` | Johanne May Panganiban | yohanmay | Assigned |
-| Issues, Concerns & Lessons Learned | `issues-lessons` | Georgette Dela Cruz | gyvmd | Assigned |
-| Contracts & Claims Register | `contracts-claims` | Rachelle Ann Lungsod | rachellelungsod | Assigned |
-| Risk Register | `risk-register` | — (reference module) | — | Built |
-| Stakeholder Map | `stakeholder-map` | Art Lyndon Rovelo | ArtRovelo | Assigned |
-| Drawing Register | `drawing-register` | Ethan Patrick Robles | ethanrobles10 | Assigned (extend reference) |
-| Material Submittal Log | `material-submittal` | Art Lyndon Rovelo | ArtRovelo | Assigned |
-| Project Schedule & Cost Loading | `project-schedule` | _ | _ | Not started (Phase 2) |
-| S-Curve | `s-curve` | _ | _ | Not started (Phase 2) |
-| Resource Loading | `resource-loading` | _ | _ | Not started (Phase 2) |
-| Productivity Rates | `productivity-rates` | _ | _ | Not started (Phase 2) |
-| Cash Flow | `cash-flow` | _ | _ | Not started (Phase 2) |
+## Ready-to-send messages (priority modules)
+
+### Georgette — Cash Flow (`module/cash-flow`, gvymd)
+
+> Hi Georgette! You're building the **Cash Flow** module of the Megawide Planners Dashboard. No prior web-dev experience needed — Claude Code does all the coding, you just describe what you want.
+>
+> **Steps:**
+> 1. Accept the GitHub invite to `PMODepartment/planning-app`.
+> 2. Open `https://pmodepartment.github.io/planning-app/`, click **Request Access**, register with your Megawide email, and let me know — I'll approve you and assign the DEMO01 test project.
+> 3. Follow `GETTING_STARTED.md` in the repo: install **GitHub Desktop** + **Claude Code**, clone the repo, and create branch **`module/cash-flow`**.
+> 4. Open the project folder in Claude Code and paste this starter prompt:
+>
+> ```
+> I'm building the "cash-flow" module of this project. Read MODULE_CONTRACT.md and CONTRIBUTING.md first. Then build my module inside modules/cash-flow/ by copying modules/risk-register/ as the starting point. Use the shared login (AppAuth), styling (dashboard.css), and database helpers (PDb, Fm

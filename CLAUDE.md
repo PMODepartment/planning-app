@@ -72,6 +72,18 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-06-30 — Team restructure + priority modules
+- **New developer assignments (priority phase):**
+  - Cash Flow → **Georgette Dela Cruz** (gvymd)
+  - Contracts, PMI & Claims Register → **Rachelle Ann Lungsod** (rachellelungsod)
+  - Project Schedule & Cost Loading → **Loz Lozano** (fmlozano-pmo / PMODepartment)
+- Georgette reassigned from `issues-lessons` to `cash-flow`; `issues-lessons` now unassigned.
+- ONBOARDING.md tracker updated; priority modules marked.
+- Development sequence: Cash Flow, Contracts & Claims, and Project Schedule are
+  built first before resuming other modules.
+
+---
+
 ### 2026-06-18 — Prompt 1: Foundation scaffold
 - Initial project structure, shared shell, and developer contract.
 - Added: `index.html` (login), `register.html`, `pending.html`, `dashboard.html`
@@ -279,13 +291,4 @@ developer, plug into one shared shell.
   `SECURITY DEFINER set search_path = public` (bypass `users` RLS → no recursion).
   Migration `2026-06-18-fix-rls-recursion.sql`; folded into both
   `supabase-setup.sql` and `supabase-schema.sql`. SETUP.md troubleshooting noted.
-  **User must run the fix migration on the live DB.**
-
-- **Still TODO (handover):** run `2026-06-18-fix-rls-recursion.sql` (or re-run
-  the helper-function block of supabase-setup.sql) on the live DB; run
-  `supabase-setup.sql` (adds DEMO01 + phase2
-  tables); set Auth email-confirmation OFF + reset redirect URL; add devs as
-  collaborators + fill CODEOWNERS usernames; send ONBOARDING messages.
-  buckets via the migration; branch protection on `main`; live end-to-end test;
-  remaining modules (issues-lessons, contracts-claims, stakeholder-map,
-  material-submittal, progress-photos) — or hand to developers.
+  **User

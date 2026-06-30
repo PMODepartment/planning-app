@@ -9,13 +9,15 @@
 > 5. Update this file as you build.
 
 ## Status
-- [ ] Read MODULE_CONTRACT.md + CONTRIBUTING.md
-- [ ] Copied a reference module as the starting point
-- [ ] CRUD implemented (add / edit / view / list / delete)
-- [ ] Project-scoped via `pd_project`; `created_by` + `project_id` stamped
-- [ ] `Fmt.esc()` on all user text injected into HTML
-- [ ] `enabled: true` set in `assets/js/config.js`
+- [x] Read MODULE_CONTRACT.md + CONTRIBUTING.md
+- [x] Built from scratch (Primavera Cloud reference, not a module copy)
+- [x] CRUD implemented (add / edit / view / list / delete)
+- [x] Project-scoped via `pd_project`; `created_by` + `project_id` stamped
+- [x] `Fmt.esc()` on all user text injected into HTML
+- [x] `enabled: true` set in `assets/js/config.js`
+- [ ] Run DB migration (see below)
 - [ ] PR opened into `main`
 
-## Notes
-(Record decisions, columns added via `alter table ... add column if not exists`, etc.)
+## Schema additions (2026-06-30)
+
+Run `../.
