@@ -45,9 +45,9 @@
   <script src="assets/js/auth.js"></script>
   <script src="assets/js/db.js"></script>
   <script>
-    // If already signed in, skip straight to the dashboard.
+    // If already signed in, skip straight to the project selector.
     AppAuth.getSB().auth.getSession().then(function (r) {
-      if (r.data.session) location.href = 'dashboard.html';
+      if (r.data.session) location.href = 'projects.html';
     });
 
     document.getElementById('login-form').addEventListener('submit', async function (e) {
@@ -59,7 +59,7 @@
       var { data, error } = await AppAuth.login(email, pw);
       if (error) { msg.textContent = error.message; return; }
       if (data && data.user) { try { PDb.updateLastLogin(data.user.id); } catch (e) {} }
-      location.href = 'dashboard.html';
+      location.href = 'projects.html';
     });
   </script>
 </body>

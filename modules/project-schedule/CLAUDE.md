@@ -20,4 +20,31 @@
 
 ## Schema additions (2026-06-30)
 
-Run `../.
+Run `../../migrations/2026-06-30-project-schedule-columns.sql` in the Supabase
+SQL editor before testing. Adds:
+
+| Column | Type | Default |
+|---|---|---|
+| `actual_start` | date | — |
+| `actual_finish` | date | — |
+| `activity_type` | text | `'Task'` |
+| `status` | text | `'Not Started'` |
+| `responsible_party` | text | — |
+
+## Module design
+
+**Two-tab layout (Primavera Cloud reference):**
+
+- **Schedule tab** — WBS, Activity ID, Activity Name, Type, Status, Planned Start/Finish,
+  Actual Start/Finish, Duration, % Complete (progress bar), Responsible Party, Edit/Delete
+- **Cost Loading tab** — WBS, Activity Name, Planned Cost, Actual Cost, Earned Value,
+  Cost Variance, CPI, % Complete — with TOTALS row
+
+**KPI cards:** Overall % Complete, Completed count, In Progress count,
+Planned Cost / Actual Cost, CPI (green/red), SPI (green/red)
+
+**Filters:** Status, Activity Type, text search across WBS / ID / Name / Responsible Party
+
+**Modal fields:** WBS Code, Activity ID, Activity Name, Activity Type, Status,
+Planned Start, Planned Finish, Actual Start, Actual Finish, % Complete,
+Responsible Party, Planned Cost, Actual Cost, Earned Value, Predecessors, Remarks

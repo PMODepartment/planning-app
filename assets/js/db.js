@@ -33,6 +33,23 @@
       if (error) throw error;
     },
 
+    // ---- Workspaces (Workspace → Program → Project tree; shared) ----
+    async getWorkspaces() {
+      var { data, error } = await sb()
+        .from('workspaces').select('*').order('sort_order').order('name');
+      if (error) throw error;
+      return data || [];
+    },
+    async createWorkspace(w) {
+      var { data, error } = await sb().from('workspaces').insert(w).select().single();
+      if (error) throw error;
+      return data;
+    },
+    async updateWorkspace(id, w) {
+      var { error } = await sb().from('workspaces').update(w).eq('id', id);
+      if (error) throw error;
+    },
+
     // ---- Users (admin screens) ----
     async getAllUsers() {
       var { data, error } = await sb().from('users').select('*').order('name');

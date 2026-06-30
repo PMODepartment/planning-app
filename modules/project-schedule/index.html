@@ -35,4 +35,671 @@
     .ps-kpi-green { color: #22c55e !important; }
 
     /* ── Tabs ───────────────────────────────────────────────── */
-    
+    .ps-tabs {
+      display: flex; border-bottom: 2px solid var(--pd-border);
+      margin-bottom: 16px; gap: 0;
+    }
+    .ps-tab {
+      padding: 8px 20px; cursor: pointer; font-weight: 600; font-size: 13px;
+      color: var(--pd-muted); border: none; border-bottom: 2px solid transparent;
+      margin-bottom: -2px; background: none;
+    }
+    .ps-tab.active { color: var(--pd-red); border-bottom-color: var(--pd-red); }
+    .ps-tab:hover:not(.active) { color: var(--pd-text); }
+
+    /* ── Table ──────────────────────────────────────────────── */
+    .ps-table-wrap { overflow-x: auto; }
+    .ps-table {
+      width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px;
+    }
+    .ps-table th {
+      background: var(--pd-card); padding: 9px 12px; text-align: left;
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--pd-muted);
+      border-bottom: 2px solid var(--pd-border); white-space: nowrap;
+      position: sticky; top: 0; z-index: 2;
+    }
+    .ps-table th.ps-num, .ps-table td.ps-num { text-align: right; }
+    .ps-table td {
+      padding: 8px 12px; border-bottom: 1px solid var(--pd-border);
+      vertical-align: middle; white-space: nowrap;
+    }
+    .ps-table tr:hover td { background: var(--pd-hover, rgba(0,0,0,.03)); }
+    .ps-table tr.ps-wbs-row > td {
+      background: var(--pd-card); font-weight: 600;
+      border-top: 1px solid var(--pd-border);
+    }
+
+    /* ── Status Pills ───────────────────────────────────────── */
+    .ps-pill {
+      display: inline-block; padding: 2px 9px; border-radius: 12px;
+      font-size: 11px; font-weight: 600;
+    }
+    .ps-pill-ns   { background: #f3f4f6; color: #6b7280; }
+    .ps-pill-ip   { background: #fef3c7; color: #b45309; }
+    .ps-pill-done { background: #dcfce7; color: #16a34a; }
+    html.pd-dark .ps-pill-ns   { background: #374151; color: #9ca3af; }
+    html.pd-dark .ps-pill-ip   { background: #451a03; color: #fbbf24; }
+    html.pd-dark .ps-pill-done { background: #14532d; color: #4ade80; }
+
+    /* ── Progress Bar ───────────────────────────────────────── */
+    .ps-prog-wrap { display: flex; align-items: center; gap: 8px; }
+    .ps-prog-bar {
+      width: 90px; height: 7px; background: var(--pd-border);
+      border-radius: 4px; overflow: hidden; flex-shrink: 0;
+    }
+    .ps-prog-fill { height: 100%; border-radius: 4px; background: var(--pd-red); }
+    .ps-prog-label { font-size: 12px; color: var(--pd-muted); }
+
+    /* ── Cost variance colours ──────────────────────────────── */
+    .ps-red   { color: #ef4444; }
+    .ps-green { color: #22c55e; }
+
+    /* ── Row actions ────────────────────────────────────────── */
+    .ps-actions { display: flex; gap: 5px; }
+    .ps-btn-sm {
+      padding: 3px 9px; font-size: 11px; border-radius: 4px;
+      border: 1px solid var(--pd-border); background: var(--pd-card);
+      color: var(--pd-text); cursor: pointer; white-space: nowrap;
+    }
+    .ps-btn-sm:hover { border-color: var(--pd-red); color: var(--pd-red); }
+    .ps-btn-del { border-color: transparent; color: var(--pd-muted); }
+    .ps-btn-del:hover { border-color: #ef4444; color: #ef4444; background: none; }
+
+    /* ── Empty state ────────────────────────────────────────── */
+    .ps-empty {
+      text-align: center; padding: 48px 24px;
+      color: var(--pd-muted); font-size: 14px;
+    }
+
+    /* ── Modal grid ─────────────────────────────────────────── */
+    .ps-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .ps-form-full { grid-column: 1 / -1; }
+
+    /* ── Totals row ─────────────────────────────────────────── */
+    .ps-totals-row > td {
+      font-weight: 700; border-top: 2px solid var(--pd-border);
+      background: var(--pd-card);
+    }
+
+    /* ── Activity type badge ────────────────────────────────── */
+    .ps-type-badge {
+      font-size: 10px; color: var(--pd-muted);
+      background: var(--pd-border); border-radius: 4px;
+      padding: 1px 6px; font-weight: 600; letter-spacing: .03em;
+    }
+    .ps-milestone-badge { color: var(--pd-red); background: rgba(238,49,36,.1); }
+  </style>
+</head>
+<body>
+<div class="pd-app">
+
+  <!-- Sidebar -->
+  <aside class="pd-sidebar">
+    <div class="pd-brand">
+      <img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction" />
+      Planners Dashboard<small>Project Schedule &amp; Cost Loading</small>
+    </div>
+    <nav>
+      <a href="../../dashboard.html">&#8592; All modules</a>
+      <a href="#" class="active" data-view="schedule">&#128197; Schedule</a>
+      <a href="#" data-view="cost">&#128176; Cost Loading</a>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <div class="pd-content">
+    <div class="pd-topbar">
+      <h1>Project Schedule &amp; Cost Loading</h1>
+      <div id="user-bar"></div>
+    </div>
+
+    <div class="pd-main">
+
+      <!-- Controls -->
+      <div class="ps-controls">
+        <select class="pd-select" id="ps-project" style="max-width:320px;"></select>
+        <select class="pd-select" id="ps-f-status" style="max-width:150px;">
+          <option value="">All statuses</option>
+          <option>Not Started</option>
+          <option>In Progress</option>
+          <option>Completed</option>
+        </select>
+        <select class="pd-select" id="ps-f-type" style="max-width:160px;">
+          <option value="">All types</option>
+          <option>Task</option>
+          <option>WBS Summary</option>
+          <option>Milestone</option>
+        </select>
+        <input class="pd-input" id="ps-f-search" placeholder="Search activity…" style="max-width:200px;" />
+        <button class="pd-btn pd-btn-primary" id="ps-add" style="margin-left:auto;">+ Add activity</button>
+      </div>
+
+      <!-- KPIs -->
+      <div class="ps-kpis" id="ps-kpis"></div>
+
+      <!-- Tabs -->
+      <div class="ps-tabs">
+        <button class="ps-tab active" data-tab="schedule">&#128197; Schedule</button>
+        <button class="ps-tab"        data-tab="cost">&#128176; Cost Loading</button>
+      </div>
+
+      <!-- ─── Schedule view ──────────────────────────────────── -->
+      <div id="ps-view-schedule">
+        <div class="pd-card" style="padding:0;overflow:hidden;">
+          <div class="ps-table-wrap">
+            <table class="ps-table">
+              <thead>
+                <tr>
+                  <th style="min-width:80px;">WBS</th>
+                  <th style="min-width:80px;">Activity ID</th>
+                  <th style="min-width:240px;">Activity Name</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Planned Start</th>
+                  <th>Planned Finish</th>
+                  <th>Actual Start</th>
+                  <th>Actual Finish</th>
+                  <th class="ps-num" style="min-width:80px;">Duration</th>
+                  <th style="min-width:150px;">% Complete</th>
+                  <th>Responsible</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="ps-sched-body">
+                <tr><td colspan="13" class="ps-empty">Select a project to view the schedule.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Cost Loading view ──────────────────────────────── -->
+      <div id="ps-view-cost" style="display:none;">
+        <div class="pd-card" style="padding:0;overflow:hidden;">
+          <div class="ps-table-wrap">
+            <table class="ps-table">
+              <thead>
+                <tr>
+                  <th style="min-width:80px;">WBS</th>
+                  <th style="min-width:240px;">Activity Name</th>
+                  <th class="ps-num">Planned Cost (&#8369;)</th>
+                  <th class="ps-num">Actual Cost (&#8369;)</th>
+                  <th class="ps-num">Earned Value (&#8369;)</th>
+                  <th class="ps-num">Cost Variance (&#8369;)</th>
+                  <th class="ps-num">CPI</th>
+                  <th class="ps-num">% Complete</th>
+                </tr>
+              </thead>
+              <tbody id="ps-cost-body">
+                <tr><td colspan="8" class="ps-empty">Select a project to view cost loading.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /pd-main -->
+  </div><!-- /pd-content -->
+</div><!-- /pd-app -->
+
+<!-- ─── Add / Edit Modal ──────────────────────────────────────── -->
+<div class="pd-modal-overlay" id="ps-modal" style="display:none;">
+  <div class="pd-modal" style="max-width:700px;width:95vw;">
+    <div class="pd-modal-header">
+      <span id="ps-modal-title">Add Activity</span>
+      <button class="pd-modal-close" id="ps-modal-close">&#215;</button>
+    </div>
+    <div class="pd-modal-body">
+      <form id="ps-form" class="ps-form-grid" onsubmit="return false;">
+
+        <div>
+          <label class="pd-label">WBS Code *</label>
+          <input class="pd-input" id="ps-f-wbs" placeholder="e.g. 1.2.3" required />
+        </div>
+        <div>
+          <label class="pd-label">Activity ID</label>
+          <input class="pd-input" id="ps-f-actid" placeholder="e.g. A1010" />
+        </div>
+
+        <div class="ps-form-full">
+          <label class="pd-label">Activity Name *</label>
+          <input class="pd-input" id="ps-f-name" placeholder="Describe the activity" required />
+        </div>
+
+        <div>
+          <label class="pd-label">Activity Type</label>
+          <select class="pd-select" id="ps-f-type-sel">
+            <option>Task</option>
+            <option>WBS Summary</option>
+            <option>Milestone</option>
+          </select>
+        </div>
+        <div>
+          <label class="pd-label">Status</label>
+          <select class="pd-select" id="ps-f-status-sel">
+            <option>Not Started</option>
+            <option>In Progress</option>
+            <option>Completed</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="pd-label">Planned Start *</label>
+          <input class="pd-input" id="ps-f-start" type="date" required />
+        </div>
+        <div>
+          <label class="pd-label">Planned Finish *</label>
+          <input class="pd-input" id="ps-f-finish" type="date" required />
+        </div>
+
+        <div>
+          <label class="pd-label">Actual Start</label>
+          <input class="pd-input" id="ps-f-astart" type="date" />
+        </div>
+        <div>
+          <label class="pd-label">Actual Finish</label>
+          <input class="pd-input" id="ps-f-afinish" type="date" />
+        </div>
+
+        <div>
+          <label class="pd-label">% Complete</label>
+          <input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" />
+        </div>
+        <div>
+          <label class="pd-label">Responsible Party</label>
+          <input class="pd-input" id="ps-f-resp" placeholder="Name or team" />
+        </div>
+
+        <div>
+          <label class="pd-label">Planned Cost (&#8369;)</label>
+          <input class="pd-input" id="ps-f-pcost" type="number" min="0" step="0.01" placeholder="0.00" />
+        </div>
+        <div>
+          <label class="pd-label">Actual Cost (&#8369;)</label>
+          <input class="pd-input" id="ps-f-acost" type="number" min="0" step="0.01" placeholder="0.00" />
+        </div>
+
+        <div>
+          <label class="pd-label">Earned Value (&#8369;)</label>
+          <input class="pd-input" id="ps-f-ev" type="number" min="0" step="0.01" placeholder="0.00" />
+        </div>
+        <div>
+          <label class="pd-label">Predecessors</label>
+          <input class="pd-input" id="ps-f-pred" placeholder="e.g. A1000, A1005" />
+        </div>
+
+        <div class="ps-form-full">
+          <label class="pd-label">Remarks</label>
+          <textarea class="pd-input" id="ps-f-remarks" rows="2" style="resize:vertical;"></textarea>
+        </div>
+
+      </form>
+    </div>
+    <div class="pd-modal-footer">
+      <button class="pd-btn" id="ps-modal-cancel">Cancel</button>
+      <button class="pd-btn pd-btn-primary" id="ps-modal-save">Save activity</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Scripts ──────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/db.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var TABLE  = 'project_schedule';
+  var pid    = null;
+  var rows   = [];
+  var editId = null;
+  var filters = { status: '', type: '', search: '' };
+
+  function sb() { return AppAuth.getSB(); }
+
+  /* ── helpers ──────────────────────────────────────────────── */
+  function pill(status) {
+    var map = { 'Not Started': 'ps-pill-ns', 'In Progress': 'ps-pill-ip', 'Completed': 'ps-pill-done' };
+    return '<span class="ps-pill ' + (map[status] || 'ps-pill-ns') + '">' + Fmt.esc(status || 'Not Started') + '</span>';
+  }
+
+  function typeBadge(t) {
+    if (t === 'Milestone')   return '<span class="ps-type-badge ps-milestone-badge">Milestone</span>';
+    if (t === 'WBS Summary') return '<span class="ps-type-badge">WBS</span>';
+    return '<span class="ps-type-badge">Task</span>';
+  }
+
+  function progBar(pct) {
+    var p = Math.min(100, Math.max(0, pct || 0));
+    return '<div class="ps-prog-wrap"><div class="ps-prog-bar"><div class="ps-prog-fill" style="width:' + p + '%;"></div></div><span class="ps-prog-label">' + p + '%</span></div>';
+  }
+
+  function strVal(id) { return document.getElementById(id).value.trim(); }
+  function dateVal(id){ return document.getElementById(id).value || null; }
+
+  /* ── project picker ───────────────────────────────────────── */
+  async function loadProjects() {
+    var projects = await PDb.getProjects();
+    var sel = document.getElementById('ps-project');
+    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    sel.innerHTML = '<option value="">— Select project —</option>' +
+      projects.map(function (p) {
+        return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>';
+      }).join('');
+    if (pid) load();
+  }
+
+  /* ── data load ────────────────────────────────────────────── */
+  async function load() {
+    if (!pid) return;
+    var res = await sb().from(TABLE).select('*')
+      .eq('project_id', pid)
+      .order('wbs',         { ascending: true })
+      .order('activity_id', { ascending: true });
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    rows = res.data || [];
+    render();
+  }
+
+  /* ── filter ───────────────────────────────────────────────── */
+  function filtered() {
+    return rows.filter(function (r) {
+      if (filters.status && r.status !== filters.status) return false;
+      if (filters.type   && r.activity_type !== filters.type) return false;
+      if (filters.search) {
+        var hay = [r.wbs, r.activity_id, r.activity_name, r.responsible_party].join(' ').toLowerCase();
+        if (hay.indexOf(filters.search) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  /* ── render ───────────────────────────────────────────────── */
+  function render() { renderKpis(); renderSchedule(); renderCost(); }
+
+  function renderKpis() {
+    var total     = rows.length;
+    var completed = rows.filter(function (r) { return r.status === 'Completed';   }).length;
+    var inProg    = rows.filter(function (r) { return r.status === 'In Progress'; }).length;
+    var notStart  = rows.filter(function (r) { return !r.status || r.status === 'Not Started'; }).length;
+    var avgPct    = total ? Math.round(rows.reduce(function (s,r) { return s + (r.percent_complete || 0); }, 0) / total) : 0;
+    var totPlan   = rows.reduce(function (s,r) { return s + (r.planned_cost || 0); }, 0);
+    var totAct    = rows.reduce(function (s,r) { return s + (r.actual_cost  || 0); }, 0);
+    var totEV     = rows.reduce(function (s,r) { return s + (r.earned_value || 0); }, 0);
+    var cpi = totAct  > 0 ? totEV / totAct  : null;
+    var spi = totPlan > 0 ? totEV / totPlan : null;
+
+    function kpi(label, val, sub, colorCls) {
+      return '<div class="ps-kpi"><div class="ps-kpi-label">' + label + '</div>' +
+             '<div class="ps-kpi-value ' + (colorCls||'') + '">' + val + '</div>' +
+             (sub ? '<div class="ps-kpi-sub">' + sub + '</div>' : '') + '</div>';
+    }
+
+    document.getElementById('ps-kpis').innerHTML =
+      kpi('Overall Progress', avgPct + '%', total + ' activities', '') +
+      kpi('Completed',        completed,    notStart + ' not started', '') +
+      kpi('In Progress',      inProg,       '', '') +
+      kpi('Planned Cost',     Fmt.moneyShort(totPlan), 'Actual: ' + Fmt.moneyShort(totAct), '') +
+      kpi('CPI',
+          cpi !== null ? cpi.toFixed(2) : '—',
+          cpi !== null ? (cpi >= 1 ? 'On/under budget' : 'Over budget') : 'No cost data',
+          cpi === null ? '' : cpi >= 1 ? 'ps-kpi-green' : 'ps-kpi-red') +
+      kpi('SPI',
+          spi !== null ? spi.toFixed(2) : '—',
+          spi !== null ? (spi >= 1 ? 'On/ahead of schedule' : 'Behind schedule') : 'No EV data',
+          spi === null ? '' : spi >= 1 ? 'ps-kpi-green' : 'ps-kpi-red');
+  }
+
+  function renderSchedule() {
+    var f    = filtered();
+    var body = document.getElementById('ps-sched-body');
+    if (!f.length) {
+      body.innerHTML = '<tr><td colspan="13" class="ps-empty">' +
+        (pid ? 'No activities match the filter. Add one to get started.' : 'Select a project to view the schedule.') +
+        '</td></tr>';
+      return;
+    }
+    body.innerHTML = f.map(function (r) {
+      var isWbs  = r.activity_type === 'WBS Summary';
+      var indent = isWbs ? '' : 'padding-left:24px;';
+      return '<tr class="' + (isWbs ? 'ps-wbs-row' : '') + '">' +
+        '<td><code style="font-size:11px;">'             + Fmt.esc(r.wbs           || '') + '</code></td>' +
+        '<td style="font-size:12px;color:var(--pd-muted);">' + Fmt.esc(r.activity_id   || '—') + '</td>' +
+        '<td style="' + indent + '">'                    + Fmt.esc(r.activity_name  || '') + '</td>' +
+        '<td>'  + typeBadge(r.activity_type) + '</td>' +
+        '<td>'  + pill(r.status)             + '</td>' +
+        '<td>'  + Fmt.date(r.start_date)     + '</td>' +
+        '<td>'  + Fmt.date(r.end_date)       + '</td>' +
+        '<td>'  + Fmt.date(r.actual_start)   + '</td>' +
+        '<td>'  + Fmt.date(r.actual_finish)  + '</td>' +
+        '<td class="ps-num">' + (r.duration_days ? r.duration_days + 'd' : '—') + '</td>' +
+        '<td>'  + progBar(r.percent_complete) + '</td>' +
+        '<td style="font-size:12px;color:var(--pd-muted);">' + Fmt.esc(r.responsible_party || '—') + '</td>' +
+        '<td><div class="ps-actions">' +
+          '<button class="ps-btn-sm" onclick="PS.edit(\'' + r.id + '\')">Edit</button>' +
+          '<button class="ps-btn-sm ps-btn-del" onclick="PS.del(\'' + r.id + '\')">&#215;</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function renderCost() {
+    var f    = filtered();
+    var body = document.getElementById('ps-cost-body');
+    if (!f.length) {
+      body.innerHTML = '<tr><td colspan="8" class="ps-empty">' +
+        (pid ? 'No activities match the filter.' : 'Select a project to view cost loading.') +
+        '</td></tr>';
+      return;
+    }
+    var totPlan = f.reduce(function (s,r) { return s + (r.planned_cost || 0); }, 0);
+    var totAct  = f.reduce(function (s,r) { return s + (r.actual_cost  || 0); }, 0);
+    var totEV   = f.reduce(function (s,r) { return s + (r.earned_value || 0); }, 0);
+    var totCV   = totEV - totAct;
+    var totCPI  = totAct > 0 ? totEV / totAct : null;
+
+    function varCls(n)  { return n > 0 ? 'ps-green' : n < 0 ? 'ps-red' : ''; }
+    function cpiCls(c)  { return c === null ? '' : c >= 1 ? 'ps-green' : 'ps-red'; }
+    function sign(n)    { return n >= 0 ? '+' : ''; }
+
+    body.innerHTML = f.map(function (r) {
+      var cv  = (r.earned_value || 0) - (r.actual_cost || 0);
+      var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
+      return '<tr>' +
+        '<td><code style="font-size:11px;">' + Fmt.esc(r.wbs || '') + '</code></td>' +
+        '<td>' + Fmt.esc(r.activity_name || '') + '</td>' +
+        '<td class="ps-num">' + Fmt.money(r.planned_cost || 0) + '</td>' +
+        '<td class="ps-num">' + Fmt.money(r.actual_cost  || 0) + '</td>' +
+        '<td class="ps-num">' + Fmt.money(r.earned_value || 0) + '</td>' +
+        '<td class="ps-num ' + varCls(cv)  + '">' + sign(cv)  + Fmt.money(cv)  + '</td>' +
+        '<td class="ps-num ' + cpiCls(cpi) + '">' + (cpi !== null ? cpi.toFixed(2) : '—') + '</td>' +
+        '<td class="ps-num">' + (r.percent_complete || 0) + '%</td>' +
+      '</tr>';
+    }).join('') +
+    '<tr class="ps-totals-row">' +
+      '<td colspan="2">TOTAL (' + f.length + ' activities)</td>' +
+      '<td class="ps-num">' + Fmt.money(totPlan) + '</td>' +
+      '<td class="ps-num">' + Fmt.money(totAct)  + '</td>' +
+      '<td class="ps-num">' + Fmt.money(totEV)   + '</td>' +
+      '<td class="ps-num ' + varCls(totCV)  + '">' + sign(totCV)  + Fmt.money(totCV)  + '</td>' +
+      '<td class="ps-num ' + cpiCls(totCPI) + '">' + (totCPI !== null ? totCPI.toFixed(2) : '—') + '</td>' +
+      '<td></td>' +
+    '</tr>';
+  }
+
+  /* ── modal ────────────────────────────────────────────────── */
+  function openForm(row) {
+    editId = row ? row.id : null;
+    document.getElementById('ps-modal-title').textContent = row ? 'Edit Activity' : 'Add Activity';
+
+    var set = function (id, val) { document.getElementById(id).value = val != null ? val : ''; };
+    set('ps-f-wbs',       row ? (row.wbs            || '') : '');
+    set('ps-f-actid',     row ? (row.activity_id     || '') : '');
+    set('ps-f-name',      row ? (row.activity_name   || '') : '');
+    set('ps-f-type-sel',  row ? (row.activity_type   || 'Task') : 'Task');
+    set('ps-f-status-sel',row ? (row.status          || 'Not Started') : 'Not Started');
+    set('ps-f-start',     row ? (row.start_date      || '') : '');
+    set('ps-f-finish',    row ? (row.end_date        || '') : '');
+    set('ps-f-astart',    row ? (row.actual_start    || '') : '');
+    set('ps-f-afinish',   row ? (row.actual_finish   || '') : '');
+    set('ps-f-pct',       row && row.percent_complete != null ? row.percent_complete : '');
+    set('ps-f-resp',      row ? (row.responsible_party || '') : '');
+    set('ps-f-pcost',     row && row.planned_cost  != null ? row.planned_cost  : '');
+    set('ps-f-acost',     row && row.actual_cost   != null ? row.actual_cost   : '');
+    set('ps-f-ev',        row && row.earned_value  != null ? row.earned_value  : '');
+    set('ps-f-pred',      row ? (row.predecessors   || '') : '');
+    set('ps-f-remarks',   row ? (row.remarks        || '') : '');
+
+    document.getElementById('ps-modal').style.display = 'flex';
+  }
+
+  function closeModal() {
+    document.getElementById('ps-modal').style.display = 'none';
+    editId = null;
+  }
+
+  async function save() {
+    var wbs    = strVal('ps-f-wbs');
+    var name   = strVal('ps-f-name');
+    var start  = dateVal('ps-f-start');
+    var finish = dateVal('ps-f-finish');
+    if (!wbs)    { UI.toast('WBS Code is required.',       'error'); return; }
+    if (!name)   { UI.toast('Activity Name is required.',  'error'); return; }
+    if (!start)  { UI.toast('Planned Start is required.',  'error'); return; }
+    if (!finish) { UI.toast('Planned Finish is required.', 'error'); return; }
+    if (!pid)    { UI.toast('Select a project first.',     'error'); return; }
+
+    var startMs  = new Date(start).getTime();
+    var finishMs = new Date(finish).getTime();
+    if (finishMs < startMs) { UI.toast('Planned Finish must be after Planned Start.', 'error'); return; }
+    var dur = Math.round((finishMs - startMs) / 86400000) + 1;
+
+    var rawPcost = strVal('ps-f-pcost');
+    var rawAcost = strVal('ps-f-acost');
+    var rawEV    = strVal('ps-f-ev');
+    var rawPct   = strVal('ps-f-pct');
+
+    var payload = {
+      project_id:        pid,
+      wbs:               wbs,
+      activity_id:       strVal('ps-f-actid') || null,
+      activity_name:     name,
+      activity_type:     document.getElementById('ps-f-type-sel').value,
+      status:            document.getElementById('ps-f-status-sel').value,
+      start_date:        start,
+      end_date:          finish,
+      actual_start:      dateVal('ps-f-astart')  || null,
+      actual_finish:     dateVal('ps-f-afinish') || null,
+      duration_days:     dur,
+      percent_complete:  rawPct   !== '' ? parseFloat(rawPct)   : 0,
+      responsible_party: strVal('ps-f-resp') || null,
+      planned_cost:      rawPcost !== '' ? parseFloat(rawPcost) : null,
+      actual_cost:       rawAcost !== '' ? parseFloat(rawAcost) : null,
+      earned_value:      rawEV    !== '' ? parseFloat(rawEV)    : null,
+      predecessors:      strVal('ps-f-pred')    || null,
+      remarks:           strVal('ps-f-remarks') || null,
+      updated_at:        new Date().toISOString()
+    };
+
+    var res;
+    if (editId) {
+      res = await sb().from(TABLE).update(payload).eq('id', editId);
+    } else {
+      payload.created_by = AppAuth.getUser().id;
+      res = await sb().from(TABLE).insert(payload);
+    }
+
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
+    closeModal();
+    load();
+  }
+
+  /* ── tab switch ───────────────────────────────────────────── */
+  function switchTab(tab) {
+    document.querySelectorAll('.ps-tab').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.tab === tab);
+    });
+    document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
+    document.getElementById('ps-view-cost').style.display     = tab === 'cost'     ? '' : 'none';
+    document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) {
+      a.classList.toggle('active', a.dataset.view === tab);
+    });
+  }
+
+  /* ── public API (inline onclick) ─────────────────────────── */
+  window.PS = {
+    edit: function (id) {
+      var row = rows.find(function (r) { return r.id === id; });
+      if (row) openForm(row);
+    },
+    del: function (id) {
+      if (!confirm('Delete this activity? This cannot be undone.')) return;
+      sb().from(TABLE).delete().eq('id', id).then(function (res) {
+        if (res.error) { UI.toast(res.error.message, 'error'); return; }
+        UI.toast('Activity deleted.', 'success');
+        load();
+      });
+    }
+  };
+
+  /* ── init ─────────────────────────────────────────────────── */
+  AppAuth.requireLogin(function (user, profile) {
+    UI.renderUserBar(profile);
+    UI.initShell();
+
+    // sidebar nav
+    document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) {
+      a.onclick = function (e) { e.preventDefault(); switchTab(a.dataset.view); };
+    });
+
+    // tab buttons
+    document.querySelectorAll('.ps-tab').forEach(function (btn) {
+      btn.onclick = function () { switchTab(btn.dataset.tab); };
+    });
+
+    // project picker
+    document.getElementById('ps-project').onchange = function (e) {
+      pid = e.target.value || null;
+      if (pid) sessionStorage.setItem('pd_project', pid);
+      rows = [];
+      render();
+      if (pid) load();
+    };
+
+    // filters
+    ['ps-f-status', 'ps-f-type', 'ps-f-search'].forEach(function (id) {
+      var el = document.getElementById(id);
+      el.oninput = el.onchange = function () {
+        filters.status = document.getElementById('ps-f-status').value;
+        filters.type   = document.getElementById('ps-f-type').value;
+        filters.search = document.getElementById('ps-f-search').value.toLowerCase().trim();
+        render();
+      };
+    });
+
+    // add button
+    document.getElementById('ps-add').onclick = function () {
+      if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+      openForm(null);
+    };
+
+    // modal controls
+    document.getElementById('ps-modal-close').onclick  = closeModal;
+    document.getElementById('ps-modal-cancel').onclick = closeModal;
+    document.getElementById('ps-modal-save').onclick   = save;
+    document.getElementById('ps-modal').onclick = function (e) {
+      if (e.target === this) closeModal();
+    };
+
+    loadProjects();
+  });
+
+})();
+</script>
+</body>
+</html>

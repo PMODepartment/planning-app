@@ -1,0 +1,13 @@
+# Normalize line endings so OneDrive/Windows can't create LF↔CRLF churn.
+# Text files are stored as LF in the repo; checked out as-is.
+* text=auto eol=lf
+
+# Treat binary assets as binary (never line-ending converted)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

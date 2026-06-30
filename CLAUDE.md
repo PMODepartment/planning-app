@@ -72,6 +72,46 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-06-30 — Prompt 19: Program/Workspace rollups + Flores Group
+- **Program & Workspace tabs now show real portfolio rollups** (no longer scaffold).
+  Program tab = nearest Program ancestor (falls back to the Group Head node when a
+  branch has no Program); Workspace tab = the project's workspace branch (node +
+  descendants). Each shows KPI cards (Projects / Active / Original Budget /
+  Estimated Cost / Budget Variance) and a project table (status, forecast dates,
+  original vs estimated cost + variance). Rows are clickable to switch the active
+  project. New tree helpers in `dashboard.html` (descendantIds, ancestorOfType,
+  projectsInSubtree).
+- **Added Group Head "Flores Group"** under Operations. Folded into the main
+  migration seed + `supabase-setup.sql` + `supabase-schema.sql`; standalone
+  `migrations/2026-06-30-add-flores-group.sql` for the live DB. **Run it (or
+  re-run the workspaces migration) in Supabase.**
+
+### 2026-06-30 — Prompt 18: Project Selector + Workspace hierarchy (Primavera-style)
+- **New entry flow:** login now lands on **`projects.html`** (a Project Selector),
+  not the module grid. You pick a project, then enter its **Project Home**.
+- **Workspace → Program → Project hierarchy** (mirrors Oracle Primavera Cloud):
+  new `workspaces` table (self-referencing tree; `node_type` workspace/program/
+  group; `group_head` on group nodes = the assignment basis). Seeded the Megawide
+  tree (Corporate Root → Production → Megawide EPC → Operations → Calimag/Rodrin/
+  Ronquillo/Tan Groups, + PMO program, HoldCo, Bids).
+- **`projects.html`:** left **workspace tree** (filter by node, counts) + right
+  **projects list** grouped by workspace (Name/ID/Status/Group Head/forecast dates/
+  budget) with **card/list toggle**, project search, workspace-scope context chip.
+  **Add Project** and **Add Workspace/Program** (admin + planner) via modals.
+  Selecting a project sets `pd_project`/`pd_project_name`/`pd_workspace` → Project Home.
+- **`dashboard.html` → Project Home:** requires a selected project (else bounces to
+  selector); topbar **project switcher** (jump between projects / back to selector);
+  **Primavera-style tab bar Project | Program | Workspace** — module grid lives under
+  **Project**, Program/Workspace are scaffold landing areas showing group-head + scope.
+- **DB:** `projects` gains `workspace_id, group_head, description, project_manager,
+  forecast_start, forecast_finish, original_budget, estimated_cost`. New `is_planner()`
+  helper (SECURITY DEFINER). **Projects write policy widened to admins + planners**
+  (`projects_write`); `workspaces` RLS (read = approved, write = planner+).
+  Migration `migrations/2026-06-30-workspaces-project-selector.sql` (folded into
+  `supabase-setup.sql` + `supabase-schema.sql`). **User must run this migration.**
+- `db.js`: `PDb.getWorkspaces/createWorkspace/updateWorkspace`. Login redirects in
+  `index.html` + `auth.js` fallback now point to `projects.html`.
+
 ### 2026-06-30 — Team restructure + priority modules
 - **New developer assignments (priority phase):**
   - Cash Flow → **Georgette Dela Cruz** (gvymd)
@@ -291,4 +331,13 @@ developer, plug into one shared shell.
   `SECURITY DEFINER set search_path = public` (bypass `users` RLS → no recursion).
   Migration `2026-06-18-fix-rls-recursion.sql`; folded into both
   `supabase-setup.sql` and `supabase-schema.sql`. SETUP.md troubleshooting noted.
-  **User
+  **User must run the fix migration on the live DB.**
+
+- **Still TODO (handover):** run `2026-06-18-fix-rls-recursion.sql` (or re-run
+  the helper-function block of supabase-setup.sql) on the live DB; run
+  `supabase-setup.sql` (adds DEMO01 + phase2
+  tables); set Auth email-confirmation OFF + reset redirect URL; add devs as
+  collaborators + fill CODEOWNERS usernames; send ONBOARDING messages.
+  buckets via the migration; branch protection on `main`; live end-to-end test;
+  remaining modules (issues-lessons, contracts-claims, stakeholder-map,
+  material-submittal, progress-photos) — or hand to developers.

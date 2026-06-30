@@ -379,3 +379,52 @@ end $$;
 --   update users set role = 'super_admin', status = 'approved'
 --   where email = 'fmlozano@megawide.com.ph';
 -- ============================================================================
+
+-- ============================================================================
+-- Workspaces (Workspace → Program → Project hierarchy) + Project Selector
+-- Added 2026-06-30. Mirrors Oracle Primavera Cloud structure. Idempotent.
+-- (Standalone copy: migrations/2026-06-30-workspaces-project-selector.sql)
+-- ============================================================================
+create table if not exists workspaces (
+  id text primary key, name text not null, code text,
+  parent_id text references workspaces(id),
+  node_type text default 'workspace' check (node_type in ('workspace','program','group')),
+  group_head text, sort_order int default 0, created_at timestamptz default now()
+);
+alter table projects add column if not exists workspace_id    text references workspaces(id);
+alter table projects add column if not exists group_head      text;
+alter table projects add column if not exists description     text;
+alter table projects add column if not exists project_manager text;
+alter table projects add column if not exists forecast_start  date;
+alter table projects add column if not exists forecast_finish date;
+alter table projects add column if not exists original_budget numeric;
+alter table projects add column if not exists estimated_cost  numeric;
+create or replace function is_planner() returns boolean
+  language sql stable security definer set search_path = public as $fn$
+  select exists (select 1 from users where id = auth.uid() and status = 'approved'
+    and role in ('super_admin','admin','planner')); $fn$;
+alter table workspaces enable row level security;
+drop policy if exists workspaces_read on workspaces;
+create policy workspaces_read on workspaces for select using (is_approved());
+drop policy if exists workspaces_write on workspaces;
+create policy workspaces_write on workspaces for all using (is_planner()) with check (is_planner());
+grant select, insert, update, delete on workspaces to authenticated;
+drop policy if exists projects_admin_write on projects;
+drop policy if exists projects_write on projects;
+create policy projects_write on projects for all using (is_planner()) with check (is_planner());
+insert into workspaces (id, name, code, parent_id, node_type, group_head, sort_order) values
+  ('CORP','Corporate Root','Corp',null,'workspace',null,0),
+  ('NONPROD','Non Production','NonP','CORP','workspace',null,1),
+  ('PROD','Production','Prod','CORP','workspace',null,2),
+  ('EPC','Megawide EPC','EPC','PROD','workspace',null,0),
+  ('HOLDCO','Megawide HoldCo','HoldCo','PROD','workspace',null,1),
+  ('BIDS','Bids','Bids','EPC','workspace',null,0),
+  ('OPS','Operations','Ops','EPC','workspace',null,1),
+  ('PMO','PMO','PMO','EPC','program',null,2),
+  ('CALIMAG','Calimag Group','CAL','OPS','group','Calimag Group',0),
+  ('RODRIN','Rodrin Group','ROD','OPS','group','Rodrin Group',1),
+  ('RONQUILLO','Ronquillo Group','RON','OPS','group','Ronquillo Group',2),
+  ('TAN','Tan Group','TAN','OPS','group','Tan Group',3),
+  ('FLORES','Flores Group','FLO','OPS','group','Flores Group',4)
+on conflict (id) do nothing;
+update projects set workspace_id='PMO' where id='DEMO01' and workspace_id is null;

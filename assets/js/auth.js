@@ -91,7 +91,7 @@
     return requireLogin(function (user, profile) {
       if (roles.indexOf(profile.role) === -1) {
         alert('You do not have access to this page.');
-        return redirect('dashboard.html');
+        return redirect('projects.html');
       }
       if (cb) cb(user, profile);
     });

@@ -5,6 +5,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Cowork / FUSE sandbox temp files (never commit these)
+.fuse_hidden*
+
 # Local env / secrets (config.js holds only the PUBLIC anon key, so it IS tracked)
 .env
 .env.local
