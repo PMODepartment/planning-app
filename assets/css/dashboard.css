@@ -424,3 +424,36 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
   .pd-tree-pane { flex: 1 1 auto; width: 100%; }
   .pd-ws-context { display: none; }
 }
+
+/* ============================================================================
+   ICONS — alignment + theming for the shared SVG icon set (icons.js)
+   ============================================================================ */
+.pd-ico { display: inline-block; vertical-align: -0.18em; flex: none; }
+[data-ico] { display: inline-flex; align-items: center; }
+
+/* sidebar nav: icon + label on one row */
+.pd-sidebar nav a { display: flex; align-items: center; }
+.pd-navico { width: 18px; height: 18px; margin-right: 11px; flex: none; opacity: .9; }
+
+/* module launcher tiles: brand-red glyph centered in the tinted square */
+.pd-module-icon { display: flex; align-items: center; justify-content: center; }
+.pd-module-icon .pd-ico { color: var(--pd-red); }
+.pd-module-sub { display: inline-flex; align-items: center; gap: 5px; }
+
+/* KPI / info cards: brand-red glyph */
+.pd-info-ic { display: flex; }
+.pd-info-ic .pd-ico { color: var(--pd-red); }
+
+/* tree, project rows, switcher, context chip: muted glyphs that inherit color */
+.pd-tree-ic { display: inline-flex; align-items: center; color: var(--pd-muted); }
+.pd-tree-node.active .pd-tree-ic { color: var(--pd-red); }
+.pd-proj-ic { display: inline-flex; align-items: center; color: var(--pd-red); }
+.pd-projsw-ic { display: inline-flex; align-items: center; color: var(--pd-red); }
+.pd-rollup-gh { display: inline-flex; align-items: center; gap: 5px; }
+
+/* toolbar buttons: center glyphs */
+.pd-vt { display: inline-flex; align-items: center; justify-content: center; }
+.pd-btn [data-ico], .pd-btn .pd-ico { vertical-align: middle; }
+.pd-icon-btn { display: inline-flex; align-items: center; justify-content: center; }
+.pd-projsw-all { display: inline-flex; align-items: center; gap: 6px; }
+.pd-theme-toggle { display: inline-flex !important; align-items: center; justify-content: center; }

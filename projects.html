@@ -14,8 +14,8 @@
     <aside class="pd-sidebar">
       <div class="pd-brand"><img class="pd-brand-logo" src="assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Project Portfolio</small></div>
       <nav>
-        <a href="projects.html" class="active">🗂️ Projects</a>
-        <a href="admin.html" id="nav-admin" style="display:none;">🛠️ Admin</a>
+        <a href="projects.html" class="active"><span class="pd-navico" data-ico="grid"></span>Projects</a>
+        <a href="admin.html" id="nav-admin" style="display:none;"><span class="pd-navico" data-ico="settings"></span>Admin</a>
       </nav>
     </aside>
 
@@ -24,7 +24,7 @@
         <img class="pd-topbar-mark" src="assets/img/favicon.png" alt="Megawide" />
         <h1>Projects</h1>
         <button class="pd-ws-context" id="ws-context" type="button" title="Current workspace scope">
-          <span class="pd-ws-context-ic">▥</span>
+          <span class="pd-ws-context-ic" data-ico="org" data-ico-size="18"></span>
           <span class="pd-ws-context-txt"><strong id="ws-context-name">Corporate Root</strong><small id="ws-context-sub">All workspaces</small></span>
         </button>
         <div id="user-bar"></div>
@@ -35,7 +35,7 @@
         <aside class="pd-tree-pane">
           <div class="pd-tree-head">
             <span>Workspaces</span>
-            <button class="pd-icon-btn" id="add-ws" title="Add workspace / program" style="display:none;">＋</button>
+            <button class="pd-icon-btn" id="add-ws" title="Add workspace / program" style="display:none;"><span data-ico="plus" data-ico-size="18"></span></button>
           </div>
           <div class="pd-tree-search"><input class="pd-input pd-input-sm" id="tree-search" placeholder="Search workspaces…" /></div>
           <div class="pd-tree" id="ws-tree"></div>
@@ -46,7 +46,7 @@
           <div class="pd-toolbar">
             <div class="pd-toolbar-left">
               <div class="pd-add-wrap" id="add-wrap" style="display:none;">
-                <button class="pd-btn pd-btn-primary" id="add-btn">＋ Add ▾</button>
+                <button class="pd-btn pd-btn-primary" id="add-btn"><span data-ico="plus" data-ico-size="16"></span> Add <span data-ico="chevronDown" data-ico-size="14"></span></button>
                 <div class="pd-add-menu" id="add-menu">
                   <button data-add="project">New Project</button>
                   <button data-add="workspace">New Workspace / Program</button>
@@ -55,10 +55,10 @@
               <span class="pd-proj-count" id="proj-count"></span>
             </div>
             <div class="pd-toolbar-right">
-              <input class="pd-input pd-input-sm" id="proj-search" placeholder="🔎 Search projects…" />
+              <input class="pd-input pd-input-sm" id="proj-search" placeholder="Search projects…" />
               <div class="pd-viewtoggle" role="group" aria-label="View">
-                <button class="pd-vt active" id="vt-list" title="List view">☰</button>
-                <button class="pd-vt" id="vt-cards" title="Card view">▦</button>
+                <button class="pd-vt active" id="vt-list" title="List view"><span data-ico="listView" data-ico-size="16"></span></button>
+                <button class="pd-vt" id="vt-cards" title="Card view"><span data-ico="gridView" data-ico-size="16"></span></button>
               </div>
             </div>
           </div>
@@ -73,6 +73,7 @@
   <script src="assets/js/auth.js"></script>
   <script src="assets/js/db.js"></script>
   <script src="assets/js/ui.js"></script>
+  <script src="assets/js/icons.js"></script>
   <script>
   (function () {
     var WS = [], PROJ = [], wsById = {}, childrenMap = {};
@@ -135,7 +136,7 @@
       var host = document.getElementById('ws-tree');
       function nodeHtml(w, depth) {
         var kids = childrenOf(w.id);
-        var typeIc = w.node_type === 'group' ? '👤' : (w.node_type === 'program' ? '🗓️' : '📁');
+        var typeIc = Icons.svg(w.node_type === 'group' ? 'group' : (w.node_type === 'program' ? 'program' : 'workspace'), 15);
         var match = !q || w.name.toLowerCase().indexOf(q) !== -1;
         var kidHtml = kids.map(function (k) { return nodeHtml(k, depth + 1); }).join('');
         if (q && !match && kidHtml.indexOf('pd-tree-node') === -1) return '';
@@ -146,7 +147,7 @@
           '<span class="pd-tree-count">' + countInScope(w.id) + '</span></div>' + kidHtml;
       }
       var html = '<div class="pd-tree-node' + (selectedWs === null ? ' active' : '') + '" data-ws="__all__" style="padding-left:8px;">' +
-        '<span class="pd-tree-ic">🏛️</span><span class="pd-tree-name">All Projects</span>' +
+        '<span class="pd-tree-ic">' + Icons.svg('org', 15) + '</span><span class="pd-tree-name">All Projects</span>' +
         '<span class="pd-tree-count">' + PROJ.length + '</span></div>';
       html += rootNodes().map(function (w) { return nodeHtml(w, 0); }).join('');
       host.innerHTML = html;
@@ -216,7 +217,7 @@
         rows += '<tr class="pd-group-row"><td colspan="' + (canWrite ? 8 : 7) + '">' + Fmt.esc(label) + '</td></tr>';
         groups[k].forEach(function (p) {
           rows += '<tr class="pd-proj-row" data-open="' + Fmt.esc(p.id) + '">' +
-            '<td class="pd-proj-name"><span class="pd-proj-ic">🏗️</span>' + Fmt.esc(p.name) + '</td>' +
+            '<td class="pd-proj-name"><span class="pd-proj-ic">' + Icons.svg('project', 16) + '</span>' + Fmt.esc(p.name) + '</td>' +
             '<td><code>' + Fmt.esc(p.id) + '</code></td>' +
             '<td>' + statusPill(p.status) + '</td>' +
             '<td>' + Fmt.esc(resolveGroupHead(p) || '—') + '</td>' +
@@ -239,14 +240,14 @@
         var gh = resolveGroupHead(p);
         var w = p.workspace_id ? wsById[p.workspace_id] : null;
         return '<div class="pd-proj-card" data-open="' + Fmt.esc(p.id) + '">' +
-          '<div class="pd-proj-card-top"><span class="pd-proj-ic">🏗️</span>' + statusPill(p.status) + '</div>' +
+          '<div class="pd-proj-card-top"><span class="pd-proj-ic">' + Icons.svg('project', 22) + '</span>' + statusPill(p.status) + '</div>' +
           '<div class="pd-proj-card-title">' + Fmt.esc(p.name) + '</div>' +
           '<div class="pd-proj-card-id"><code>' + Fmt.esc(p.id) + '</code></div>' +
           '<div class="pd-proj-card-meta">' +
             '<div><span>Group Head</span>' + Fmt.esc(gh || '—') + '</div>' +
             '<div><span>Workspace</span>' + Fmt.esc(w ? w.name : '—') + '</div>' +
           '</div>' +
-          (p.location ? '<div class="pd-proj-card-loc">📍 ' + Fmt.esc(p.location) + '</div>' : '') +
+          (p.location ? '<div class="pd-proj-card-loc">' + Icons.svg('mapPin', 13) + ' ' + Fmt.esc(p.location) + '</div>' : '') +
         '</div>';
       }).join('') + '</div>';
     }

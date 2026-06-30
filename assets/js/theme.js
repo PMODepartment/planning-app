@@ -31,7 +31,15 @@
   // FOUC-prevention: run immediately (this script is in <head>).
   apply(preferred());
 
-  function icon(mode) { return mode === 'dark' ? '☀️' : '🌙'; }
+  function icon(mode) {
+    var s = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+    if (mode === 'dark') {
+      // sun (click to go light)
+      return s + '<circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.2" y1="4.2" x2="5.6" y2="5.6"/><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.2" y1="19.8" x2="5.6" y2="18.4"/><line x1="18.4" y1="5.6" x2="19.8" y2="4.2"/></svg>';
+    }
+    // moon (click to go dark)
+    return s + '<path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8z"/></svg>';
+  }
 
   function inject() {
     if (document.getElementById('pd-theme-toggle')) return;
@@ -40,12 +48,12 @@
     btn.type = 'button';
     btn.setAttribute('aria-label', 'Toggle dark mode');
     btn.title = 'Toggle dark mode';
-    btn.textContent = icon(current());
+    btn.innerHTML = icon(current());
     btn.onclick = function () {
       var next = current() === 'dark' ? 'light' : 'dark';
       apply(next);
       try { localStorage.setItem(KEY, next); } catch (e) {}
-      btn.textContent = icon(next);
+      btn.innerHTML = icon(next);
     };
     var topbar = document.querySelector('.pd-topbar');
     if (topbar) {

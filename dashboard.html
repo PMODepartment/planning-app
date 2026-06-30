@@ -14,9 +14,9 @@
     <aside class="pd-sidebar">
       <div class="pd-brand"><img class="pd-brand-logo" src="assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Project Home</small></div>
       <nav>
-        <a href="projects.html">🗂️ All Projects</a>
-        <a href="dashboard.html" class="active">🏠 Project Home</a>
-        <a href="admin.html" id="nav-admin" style="display:none;">🛠️ Admin</a>
+        <a href="projects.html"><span class="pd-navico" data-ico="grid"></span>All Projects</a>
+        <a href="dashboard.html" class="active"><span class="pd-navico" data-ico="home"></span>Project Home</a>
+        <a href="admin.html" id="nav-admin" style="display:none;"><span class="pd-navico" data-ico="settings"></span>Admin</a>
       </nav>
     </aside>
 
@@ -26,7 +26,7 @@
         <!-- Project switcher -->
         <div class="pd-projsw" id="projsw">
           <button class="pd-projsw-btn" id="projsw-btn" type="button">
-            <span class="pd-projsw-ic">🏗️</span>
+            <span class="pd-projsw-ic" data-ico="project" data-ico-size="20"></span>
             <span class="pd-projsw-txt"><strong id="projsw-name">Project</strong><small id="projsw-path"></small></span>
             <span class="pd-projsw-caret">▾</span>
           </button>
@@ -72,6 +72,7 @@
   <script src="assets/js/auth.js"></script>
   <script src="assets/js/db.js"></script>
   <script src="assets/js/ui.js"></script>
+  <script src="assets/js/icons.js"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
@@ -152,7 +153,7 @@
           '<strong>' + Fmt.esc(p.name || p.id) + '</strong><small>' + Fmt.esc(p.id) + (w ? ' · ' + Fmt.esc(w.name) : '') + '</small></button>';
       }).join('');
       menu.innerHTML = '<div class="pd-projsw-menu-head">Switch project</div>' + items +
-        '<a class="pd-projsw-all" href="projects.html">⮕ All projects / selector</a>';
+        '<a class="pd-projsw-all" href="projects.html">' + Icons.svg('arrowRight', 15) + ' All projects / selector</a>';
       menu.querySelectorAll('[data-pick]').forEach(function (b) {
         b.onclick = function () {
           var np = PROJ.find(function (x) { return x.id === b.dataset.pick; });
@@ -172,12 +173,12 @@
       grid.innerHTML = (APP_CONFIG.MODULES || []).map(function (m) {
         if (m.enabled) {
           return '<a class="pd-module-card" href="' + m.path + '">' +
-            '<div class="pd-module-icon">' + m.icon + '</div>' +
+            '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
             '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
-            '<div class="pd-module-sub">Open module →</div></div></a>';
+            '<div class="pd-module-sub">Open module ' + Icons.svg('arrowRight', 14) + '</div></div></a>';
         }
         return '<div class="pd-module-card disabled">' +
-          '<div class="pd-module-icon">' + m.icon + '</div>' +
+          '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
           '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
           '<div class="pd-module-sub"><span class="pd-badge-soon">In development</span></div></div></div>';
       }).join('');
@@ -227,18 +228,18 @@
       var sum = function (f) { return list.reduce(function (a, p) { return a + (Number(p[f]) || 0); }, 0); };
       var orig = sum('original_budget'), est = sum('estimated_cost'), variance = est - orig;
       var head = '<div class="pd-rollup-head"><span class="pd-rollup-kind">' + Fmt.esc(kind) + '</span>' +
-        '<h3>' + Fmt.esc(node.name) + '</h3>' + (node.group_head ? '<span class="pd-rollup-gh">👤 ' + Fmt.esc(node.group_head) + '</span>' : '') + '</div>';
+        '<h3>' + Fmt.esc(node.name) + '</h3>' + (node.group_head ? '<span class="pd-rollup-gh">' + Icons.svg('user', 15) + ' ' + Fmt.esc(node.group_head) + '</span>' : '') + '</div>';
       var kpis = '<div class="pd-info-grid">' +
-        card('📊', 'Projects', String(list.length)) +
-        card('🟢', 'Active', String(active)) +
-        card('💰', 'Original Budget', orig ? Fmt.moneyShort(orig) : '—') +
-        card('🧮', 'Estimated Cost', est ? Fmt.moneyShort(est) : '—') +
-        card(variance > 0 ? '🔺' : '🔻', 'Budget Variance', (orig || est) ? Fmt.moneyShort(variance) : '—') +
+        card('layers', 'Projects', String(list.length)) +
+        card('check', 'Active', String(active)) +
+        card('cash', 'Original Budget', orig ? Fmt.moneyShort(orig) : '—') +
+        card('calculator', 'Estimated Cost', est ? Fmt.moneyShort(est) : '—') +
+        card(variance > 0 ? 'triangleUp' : 'triangleDown', 'Budget Variance', (orig || est) ? Fmt.moneyShort(variance) : '—') +
         '</div>';
       var rows = list.length ? list.map(function (p) {
         var v = (Number(p.estimated_cost) || 0) - (Number(p.original_budget) || 0);
         return '<tr class="pd-proj-row' + (p.id === curProj.id ? ' cur' : '') + '" data-pick="' + Fmt.esc(p.id) + '">' +
-          '<td class="pd-proj-name"><span class="pd-proj-ic">🏗️</span>' + Fmt.esc(p.name || p.id) + '</td>' +
+          '<td class="pd-proj-name"><span class="pd-proj-ic">' + Icons.svg('project', 16) + '</span>' + Fmt.esc(p.name || p.id) + '</td>' +
           '<td><code>' + Fmt.esc(p.id) + '</code></td>' +
           '<td>' + statusPill(p.status) + '</td>' +
           '<td>' + Fmt.esc(groupHead(p) || '—') + '</td>' +
@@ -276,7 +277,7 @@
     }
 
     function card(ic, label, val) {
-      return '<div class="pd-info-card"><div class="pd-info-ic">' + ic + '</div><div class="pd-info-label">' + Fmt.esc(label) + '</div><div class="pd-info-val">' + Fmt.esc(val) + '</div></div>';
+      return '<div class="pd-info-card"><div class="pd-info-ic">' + Icons.svg(ic, 22) + '</div><div class="pd-info-label">' + Fmt.esc(label) + '</div><div class="pd-info-val">' + Fmt.esc(val) + '</div></div>';
     }
 
     function wireTabs() {

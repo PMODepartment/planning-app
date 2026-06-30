@@ -72,6 +72,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-06-30 — Prompt 20: Professional UI pass (de-emoji, SVG icon set)
+- Replaced playful emoji throughout the app with a **professional monochrome
+  line-icon set**. New `assets/js/icons.js` (`Icons.svg(name,size)` + `data-ico`
+  auto-hydration); dependency-free, brand-colored via `currentColor`.
+- `config.js` module `icon` values now icon **names** (camera, clipboard,
+  contract, risk, compass, ruler, box, calendar, trendingUp, users, barChart, cash).
+- Updated shell + pages to use icons: `dashboard.html` (sidebar nav, project
+  switcher, module tiles, KPI cards, rollup tables), `projects.html` (nav,
+  workspace tree, toolbar Add/▾/search/list-grid toggle, project rows & cards,
+  workspace context chip), `admin.html` (nav). `theme.js` sun/moon toggle now
+  inline SVG. Module pages (risk-register, drawing-register, project-schedule,
+  _template) nav + tabs de-emojified and load `icons.js`.
+- `dashboard.css`: icon alignment/theming block (`.pd-ico`, `.pd-navico`,
+  module-tile glyph = brand red, tree/KPI/toolbar glyph alignment).
+- Net effect: cleaner, enterprise-grade look appropriate for a construction firm;
+  no functional changes. Auth-page `←`/`✓` kept (typographic, not playful).
+
 ### 2026-06-30 — Prompt 19: Program/Workspace rollups + Flores Group
 - **Program & Workspace tabs now show real portfolio rollups** (no longer scaffold).
   Program tab = nearest Program ancestor (falls back to the Group Head node when a
