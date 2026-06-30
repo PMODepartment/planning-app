@@ -49,12 +49,17 @@ developer, plug into one shared shell.
 ## Key files
 | File | Purpose |
 |---|---|
-| `assets/js/config.js` | Supabase creds + `MODULES` registry (flip `enabled` per module) |
-| `assets/js/auth.js` | `AppAuth` — login, roles, `requireLogin/requireRole/requireAdmin` |
-| `assets/js/db.js` | `PDb` (projects/users) + `Fmt` formatters |
-| `assets/js/ui.js` | `UI` — toasts, user bar, modal |
+| `assets/js/config.js` | Supabase creds + `MODULES` registry (flip `enabled` per module; `icon` = icon **name**) |
+| `assets/js/auth.js` | `AppAuth` — login, roles, `requireLogin/requireRole/requireAdmin`. Login lands on `projects.html` |
+| `assets/js/db.js` | `PDb` (projects/users/**workspaces**) + `Fmt` formatters |
+| `assets/js/ui.js` | `UI` — toasts, avatar/user menu, modal, collapsible sidebar (`initShell`) |
+| `assets/js/icons.js` | `Icons.svg(name,size)` + `data-ico` auto-hydration — the pro line-icon set (replaces emoji) |
+| `assets/js/theme.js` | Dark mode (`html.pd-dark`), sun/moon toggle, FOUC guard |
 | `assets/css/dashboard.css` | Global styles + design tokens (`--pd-*`) |
-| `supabase-schema.sql` | All shared + module tables, RLS, bootstrap notes |
+| `projects.html` | **Project Selector** (entry point): Workspace→Program→Project tree + project list |
+| `dashboard.html` | **Project Home** for the selected project (Project/Program/Workspace tabs + module grid) |
+| `admin.html` | User approval/roles/project-assignment + project & workspace management |
+| `supabase-schema.sql` / `supabase-setup.sql` | All shared + module tables, RLS, grants, helpers, bootstrap |
 | `MODULE_CONTRACT.md` | Rules every module developer must follow |
 
 ## Roles
@@ -71,6 +76,32 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-06-30 — Catch-up (Desktop): Project Schedule build + design direction
+Recorded here to sync the Desktop CLAUDE.md with the Teams ("Planners App
+Project") work that has since landed on `main`.
+
+- **`project-schedule` module built** (Primavera Cloud reference, not a module
+  copy) and `enabled`. Two-tab layout: **Schedule** (WBS / Activity ID / Name /
+  Type / Status / Planned & Actual Start-Finish / Duration / % Complete progress
+  bar / Responsible Party) and **Cost Loading** (Planned/Actual cost, Earned
+  Value, Cost Variance, CPI, % Complete + TOTALS). KPI cards (Overall % Complete,
+  Completed, In Progress, Planned/Actual Cost, CPI, SPI). Filters + add/edit
+  modal. Schema add: `migrations/2026-06-30-project-schedule-columns.sql`
+  (`actual_start/finish`, `activity_type`, `status`, `responsible_party`).
+  **No Gantt chart yet** — see direction below.
+
+- **NEW DESIGN DIRECTION (2026-06-30):** mirror the **Procurement (WPM)** app —
+  a **Portfolio Overview** and a **Project View**. **Focus the Project View
+  first.** For **Project Schedule**, add an **Oracle Primavera Cloud (OPC)-style
+  Gantt**: an **Activities grid on the left** (the existing Schedule table) with
+  a **time-scaled Gantt bar chart on the right** (planned vs actual bars, today
+  line, WBS grouping, zoom by day/week/month). The Gantt lives **inside the
+  `project-schedule` module**, as a third view/tab alongside Schedule and Cost
+  Loading. (Sample of the OPC activities + Gantt view to be provided by owner.)
+- De-emoji / professional UI pass is complete (icons.js); the codebase contains
+  no emoji. Any emoji still seen in the browser = stale GitHub Pages cache
+  (hard-refresh) rather than source.
 
 ### 2026-06-30 — Prompt 20: Professional UI pass (de-emoji, SVG icon set)
 - Replaced playful emoji throughout the app with a **professional monochrome

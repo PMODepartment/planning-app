@@ -33,10 +33,17 @@ SQL editor before testing. Adds:
 
 ## Module design
 
-**Two-tab layout (Primavera Cloud reference):**
+**Three-tab layout (Primavera Cloud reference):**
 
 - **Schedule tab** — WBS, Activity ID, Activity Name, Type, Status, Planned Start/Finish,
   Actual Start/Finish, Duration, % Complete (progress bar), Responsible Party, Edit/Delete
+- **Gantt tab** — Oracle Primavera-style: frozen Activities column (Activity ID + name,
+  WBS-indented) on the left + time-scaled bar chart on the right. Planned bars with a
+  progress fill (% complete), green Actual bars (actual_start→actual_finish||today),
+  milestone diamonds, WBS-summary brackets, month/year timescale, **Week/Month/Quarter
+  zoom**, month gridlines, and a red **Data date** (today) line. Pure HTML/CSS — no libs.
+  Respects the same Status/Type/Search filters. `renderGantt()` in the IIFE; `pdate/dDiff/iso`
+  date helpers; `ganttZoom` + `PX_PER_DAY` control scale.
 - **Cost Loading tab** — WBS, Activity Name, Planned Cost, Actual Cost, Earned Value,
   Cost Variance, CPI, % Complete — with TOTALS row
 

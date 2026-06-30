@@ -129,6 +129,43 @@
       padding: 1px 6px; font-weight: 600; letter-spacing: .03em;
     }
     .ps-milestone-badge { color: var(--pd-red); background: rgba(238,49,36,.1); }
+
+    /* ── Gantt (Oracle Primavera-style activities + bar chart) ── */
+    .ps-gantt-toolbar { display:flex; align-items:center; gap:16px; margin-bottom:10px; flex-wrap:wrap; }
+    .ps-zoom { display:inline-flex; border:1px solid var(--pd-border); border-radius:7px; overflow:hidden; }
+    .ps-zoom button { border:none; background:var(--pd-card); color:var(--pd-muted); padding:6px 13px; font-size:12px; font-weight:600; cursor:pointer; }
+    .ps-zoom button + button { border-left:1px solid var(--pd-border); }
+    .ps-zoom button.active { background:var(--pd-red); color:#fff; }
+    .ps-legend { display:flex; gap:14px; font-size:11px; color:var(--pd-muted); align-items:center; flex-wrap:wrap; }
+    .ps-legend span { display:inline-flex; align-items:center; gap:5px; }
+    .ps-legend i { width:14px; height:9px; border-radius:2px; display:inline-block; }
+
+    .ps-gantt { position:relative; overflow:auto; border:1px solid var(--pd-border); border-radius:10px; background:var(--pd-card); max-height:72vh; }
+    .ps-g-headrow { display:flex; position:sticky; top:0; z-index:5; }
+    .ps-g-corner { position:sticky; left:0; z-index:6; background:var(--pd-card); border-right:1px solid var(--pd-border); border-bottom:1px solid var(--pd-border); display:flex; align-items:flex-end; }
+    .ps-g-timehead { box-sizing:border-box; border-bottom:1px solid var(--pd-border); }
+    .ps-g-yr, .ps-g-morow { display:flex; }
+    .ps-g-yrcell { box-sizing:border-box; border-right:1px solid var(--pd-border); font-size:11px; font-weight:700; padding:3px 6px; white-space:nowrap; height:19px; }
+    .ps-g-mocell { box-sizing:border-box; border-right:1px solid var(--pd-border-soft, rgba(125,125,125,.18)); font-size:10px; color:var(--pd-muted); padding:2px 0; text-align:center; white-space:nowrap; overflow:hidden; height:19px; }
+
+    .ps-g-body { position:relative; }
+    .ps-g-row { display:flex; height:30px; }
+    .ps-g-label { position:sticky; left:0; z-index:4; background:var(--pd-card); border-right:1px solid var(--pd-border); border-bottom:1px solid var(--pd-border-soft, rgba(125,125,125,.14)); box-sizing:border-box; height:30px; display:flex; align-items:center; gap:7px; overflow:hidden; }
+    .ps-g-label .ps-g-id { font-size:11px; color:var(--pd-muted); flex:0 0 auto; }
+    .ps-g-label .ps-g-name { font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ps-g-row.ps-g-summary .ps-g-label { font-weight:700; background:var(--pd-hover, rgba(125,125,125,.07)); }
+    .ps-g-track { position:relative; box-sizing:border-box; height:30px; border-bottom:1px solid var(--pd-border-soft, rgba(125,125,125,.10)); }
+
+    .ps-g-grid { position:absolute; top:0; bottom:0; width:1px; background:rgba(125,125,125,.14); z-index:0; }
+    .ps-bar { position:absolute; height:12px; top:50%; transform:translateY(-50%); border-radius:3px; background:#60a5fa; box-shadow:inset 0 0 0 1px rgba(0,0,0,.08); z-index:1; }
+    .ps-bar-fill { position:absolute; left:0; top:0; height:100%; background:#2563eb; border-radius:3px 0 0 3px; }
+    .ps-bar-sum { position:absolute; height:7px; top:50%; transform:translateY(-50%); background:#475569; z-index:1; }
+    .ps-bar-sum::before, .ps-bar-sum::after { content:""; position:absolute; bottom:-4px; border-top:7px solid #475569; border-left:4px solid transparent; border-right:4px solid transparent; }
+    .ps-bar-sum::before { left:0; } .ps-bar-sum::after { right:0; }
+    .ps-bar-actual { position:absolute; height:5px; top:calc(50% + 9px); transform:translateY(-50%); border-radius:2px; background:#22c55e; z-index:1; }
+    .ps-ms { position:absolute; width:12px; height:12px; top:50%; transform:translate(-50%,-50%) rotate(45deg); background:var(--pd-red); z-index:1; }
+    .ps-dd-line { position:absolute; top:0; bottom:0; width:2px; background:#ef4444; z-index:3; pointer-events:none; }
+    .ps-dd-flag { position:absolute; top:0; left:0; font-size:9px; color:#fff; background:#ef4444; padding:1px 4px; border-radius:0 0 4px 0; white-space:nowrap; font-weight:600; }
   </style>
 </head>
 <body>
@@ -143,6 +180,7 @@
     <nav>
       <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
       <a href="#" class="active" data-view="schedule"><span class="pd-navico" data-ico="calendar"></span>Schedule</a>
+      <a href="#" data-view="gantt"><span class="pd-navico" data-ico="barChart"></span>Gantt</a>
       <a href="#" data-view="cost"><span class="pd-navico" data-ico="cash"></span>Cost Loading</a>
     </nav>
   </aside>
@@ -181,6 +219,7 @@
       <!-- Tabs -->
       <div class="ps-tabs">
         <button class="ps-tab active" data-tab="schedule"><span class="pd-navico" data-ico="calendar"></span>Schedule</button>
+        <button class="ps-tab"        data-tab="gantt"><span class="pd-navico" data-ico="barChart"></span>Gantt</button>
         <button class="ps-tab"        data-tab="cost"><span class="pd-navico" data-ico="cash"></span>Cost Loading</button>
       </div>
 
@@ -236,6 +275,28 @@
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <!-- ─── Gantt view (Primavera-style activities + bar chart) ─ -->
+      <div id="ps-view-gantt" style="display:none;">
+        <div class="ps-gantt-toolbar">
+          <div class="ps-zoom" id="ps-zoom">
+            <button data-zoom="week">Week</button>
+            <button data-zoom="month" class="active">Month</button>
+            <button data-zoom="quarter">Quarter</button>
+          </div>
+          <div class="ps-legend">
+            <span><i style="background:#60a5fa;"></i>Planned</span>
+            <span><i style="background:#2563eb;"></i>Progress</span>
+            <span><i style="background:#22c55e;"></i>Actual</span>
+            <span><i style="background:#475569;"></i>WBS Summary</span>
+            <span><i style="background:var(--pd-red);width:10px;height:10px;transform:rotate(45deg);border-radius:1px;"></i>Milestone</span>
+            <span><i style="background:#ef4444;width:2px;height:13px;border-radius:0;"></i>Data date</span>
+          </div>
+        </div>
+        <div class="ps-gantt" id="ps-gantt">
+          <div class="ps-empty">Select a project to view the Gantt.</div>
         </div>
       </div>
 
@@ -359,6 +420,8 @@
   var rows   = [];
   var editId = null;
   var filters = { status: '', type: '', search: '' };
+  var ganttZoom = 'month';
+  var PX_PER_DAY = { week: 20, month: 6.5, quarter: 2.4 };
 
   function sb() { return AppAuth.getSB(); }
 
@@ -420,7 +483,99 @@
   }
 
   /* ── render ───────────────────────────────────────────────── */
-  function render() { renderKpis(); renderSchedule(); renderCost(); }
+  function render() { renderKpis(); renderSchedule(); renderCost(); renderGantt(); }
+
+  /* ── Gantt helpers ────────────────────────────────────────── */
+  var MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function pdate(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; }
+  function dDiff(a, b) { return Math.round((b - a) / 86400000); }
+  function iso(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+
+  function renderGantt() {
+    var host = document.getElementById('ps-gantt');
+    if (!host) return;
+    var f = filtered();
+    var times = [];
+    f.forEach(function (r) {
+      ['start_date','end_date','actual_start','actual_finish'].forEach(function (k) {
+        var d = pdate(r[k]); if (d) times.push(d.getTime());
+      });
+    });
+    if (!f.length || !times.length) {
+      host.innerHTML = '<div class="ps-empty">' + (pid ? 'No activities with dates to chart yet.' : 'Select a project to view the Gantt.') + '</div>';
+      return;
+    }
+
+    var today = new Date(); today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    var min = new Date(Math.min.apply(null, times)), max = new Date(Math.max.apply(null, times));
+    var ds = new Date(min.getFullYear(), min.getMonth(), 1);
+    var de = new Date(max.getFullYear(), max.getMonth() + 1, 0);
+    if (today < ds) ds = new Date(today.getFullYear(), today.getMonth(), 1);
+    if (today > de) de = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+    var px = PX_PER_DAY[ganttZoom] || 6.5;
+    var labelW = 280;
+    var totalW = (dDiff(ds, de) + 1) * px;
+    function xOf(d) { return dDiff(ds, d) * px; }
+
+    // month + year scale
+    var months = [], c = new Date(ds);
+    while (c <= de) {
+      var dim = new Date(c.getFullYear(), c.getMonth() + 1, 0).getDate();
+      months.push({ d: new Date(c), w: dim * px });
+      c.setMonth(c.getMonth() + 1);
+    }
+    var years = [], yi = {};
+    months.forEach(function (m) {
+      var y = m.d.getFullYear();
+      if (yi[y] == null) { yi[y] = years.length; years.push({ y: y, w: 0 }); }
+      years[yi[y]].w += m.w;
+    });
+    var yrHtml = years.map(function (o) { return '<div class="ps-g-yrcell" style="width:' + o.w + 'px;">' + o.y + '</div>'; }).join('');
+    var moHtml = months.map(function (m) { return '<div class="ps-g-mocell" style="width:' + m.w + 'px;">' + (m.w > 24 ? MO[m.d.getMonth()] : '') + '</div>'; }).join('');
+
+    var head = '<div class="ps-g-headrow">' +
+        '<div class="ps-g-corner" style="width:' + labelW + 'px;"><div style="padding:5px 10px;font-size:11px;font-weight:700;">Activity</div></div>' +
+        '<div class="ps-g-timehead" style="width:' + totalW + 'px;"><div class="ps-g-yr">' + yrHtml + '</div><div class="ps-g-morow">' + moHtml + '</div></div>' +
+      '</div>';
+
+    var rowsHtml = f.map(function (r) {
+      var s = pdate(r.start_date), e = pdate(r.end_date);
+      var isMs = r.activity_type === 'Milestone', isSum = r.activity_type === 'WBS Summary';
+      var bar = '';
+      if (isMs && s) {
+        bar = '<div class="ps-ms" style="left:' + xOf(s) + 'px;" title="' + Fmt.esc(r.activity_name) + '"></div>';
+      } else if (s && e) {
+        var left = xOf(s), w = Math.max(3, (dDiff(s, e) + 1) * px);
+        if (isSum) {
+          bar = '<div class="ps-bar-sum" style="left:' + left + 'px;width:' + w + 'px;"></div>';
+        } else {
+          var pct = Math.min(100, Math.max(0, r.percent_complete || 0));
+          bar = '<div class="ps-bar" style="left:' + left + 'px;width:' + w + 'px;" title="' + Fmt.esc(r.activity_name) + ' · ' + pct + '%"><div class="ps-bar-fill" style="width:' + pct + '%;"></div></div>';
+          var as = pdate(r.actual_start);
+          if (as) {
+            var af = pdate(r.actual_finish) || today;
+            bar += '<div class="ps-bar-actual" style="left:' + xOf(as) + 'px;width:' + Math.max(3, (dDiff(as, af) + 1) * px) + 'px;"></div>';
+          }
+        }
+      }
+      var indent = isSum ? 0 : 14;
+      return '<div class="ps-g-row' + (isSum ? ' ps-g-summary' : '') + '">' +
+          '<div class="ps-g-label" style="width:' + labelW + 'px;padding:0 10px 0 ' + (10 + indent) + 'px;">' +
+            (r.activity_id ? '<span class="ps-g-id">' + Fmt.esc(r.activity_id) + '</span>' : '') +
+            '<span class="ps-g-name">' + Fmt.esc(r.activity_name || '') + '</span>' +
+          '</div>' +
+          '<div class="ps-g-track" style="width:' + totalW + 'px;">' + bar + '</div>' +
+        '</div>';
+    }).join('');
+
+    // month gridlines + data-date line overlay
+    var grid = '', acc = 0;
+    months.forEach(function (m) { grid += '<div class="ps-g-grid" style="left:' + (labelW + acc) + 'px;"></div>'; acc += m.w; });
+    var dd = '<div class="ps-dd-line" style="left:' + (labelW + xOf(today)) + 'px;"><div class="ps-dd-flag">Data ' + Fmt.date(iso(today)) + '</div></div>';
+
+    host.innerHTML = head + '<div class="ps-g-body" style="width:' + (labelW + totalW) + 'px;">' + grid + rowsHtml + dd + '</div>';
+  }
 
   function renderKpis() {
     var total     = rows.length;
@@ -626,10 +781,12 @@
       b.classList.toggle('active', b.dataset.tab === tab);
     });
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
+    document.getElementById('ps-view-gantt').style.display    = tab === 'gantt'    ? '' : 'none';
     document.getElementById('ps-view-cost').style.display     = tab === 'cost'     ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) {
       a.classList.toggle('active', a.dataset.view === tab);
     });
+    if (tab === 'gantt') renderGantt();   // ensure correct sizing when shown
   }
 
   /* ── public API (inline onclick) ─────────────────────────── */
@@ -661,6 +818,15 @@
     // tab buttons
     document.querySelectorAll('.ps-tab').forEach(function (btn) {
       btn.onclick = function () { switchTab(btn.dataset.tab); };
+    });
+
+    // gantt zoom
+    document.querySelectorAll('#ps-zoom button').forEach(function (b) {
+      b.onclick = function () {
+        ganttZoom = b.dataset.zoom;
+        document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.toggle('active', x === b); });
+        renderGantt();
+      };
     });
 
     // project picker
