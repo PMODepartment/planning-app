@@ -8,7 +8,7 @@
 // Project URL and the public "anon" API key below (Settings → API).
 // The anon key is safe to expose in client-side code — row-level security (RLS)
 // in Supabase is what actually protects the data.
-// ============================================================================
+// =================================================================h===========
 
 window.APP_CONFIG = {
   // ---- Supabase ----
