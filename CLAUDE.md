@@ -77,6 +77,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-06-30 — Prompt 27: Brand-color Gantt + legend + timeline header + admin-gated Clear
+- **Brandbook colors only** (red #EE3124 / dark red / dark gray #2B2C2B / black #231F20 /
+  construction gray #DCDBDB): recolored the Gantt — activity bar = dark gray track with a
+  **red %-complete fill**, WBS summary = black bracket, milestone = red diamond, baseline =
+  gray outline, data-date = red line. Bars use `--ps-bar/--ps-sum/--ps-bl` tokens that flip
+  **lighter in dark mode** (the old dark summary bars were invisible on the dark theme).
+- **Legend** added above the Gantt explaining each mark.
+- **Timeline header fixed:** two tiers — year band on top, period labels below
+  (Month → Jan/Feb…, Quarter → "Q1 ’20" with the year embedded, Year → years). Previously
+  the top showed nothing useful when scrolled.
+- **Excel-style collapse:** clicking anywhere on a WBS summary row expands/collapses it
+  (the ▼/► toggle still works too).
+- **Clear is admin-only** (hidden for non-admins) and now requires **typing the project code
+  to confirm** instead of a browser popup. Note: a real password is intentionally NOT used —
+  it can't be verified securely in client-side code; role restriction + type-to-confirm is the
+  secure equivalent (RLS also blocks non-admin deletes server-side).
+
 ### 2026-06-30 — Prompt 26: Gantt virtualization + Clear button
 - **Row virtualization:** the grid and Gantt now render only the rows in the viewport
   (+buffer) via a windowed renderer (`doRender` builds the shell + timeline scale + static

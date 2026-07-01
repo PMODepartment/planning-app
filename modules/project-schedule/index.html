@@ -65,20 +65,33 @@
     .ps-row-bg.alt { background:rgba(0,0,0,.015); }
     .ps-datedate { position:absolute; top:0; bottom:0; width:2px; background:var(--pd-red); z-index:6; }
     .ps-datedate-lbl { position:absolute; top:2px; transform:translateX(4px); font-size:9px; color:var(--pd-red); font-weight:700; z-index:6; }
-    .ps-bar { position:absolute; height:15px; border-radius:3px; background:#6b7280; cursor:grab; z-index:3;
+    .ps-bar { position:absolute; height:15px; border-radius:3px; background:var(--ps-bar); cursor:grab; z-index:3;
       box-shadow:0 1px 2px rgba(0,0,0,.15); }
-    .ps-bar.task { background:#3b6ea5; }
-    .ps-bar-fill { position:absolute; left:0; top:0; bottom:0; background:rgba(255,255,255,.45); border-radius:3px 0 0 3px; }
+    .ps-bar.task { background:var(--ps-bar); }
+    .ps-bar-fill { position:absolute; left:0; top:0; bottom:0; background:var(--pd-red); border-radius:3px 0 0 3px; }
     .ps-bar.dragging { cursor:grabbing; opacity:.85; z-index:8; }
     .ps-handle { position:absolute; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:4; }
     .ps-handle.l { left:0; } .ps-handle.r { right:0; }
-    .ps-sum { position:absolute; height:9px; background:var(--pd-dark); z-index:3;
+    .ps-sum { position:absolute; height:9px; background:var(--ps-sum); z-index:3;
       clip-path:polygon(0 0,100% 0,100% 60%,calc(100% - 6px) 100%,6px 100%,0 60%); }
-    .ps-bl { position:absolute; height:5px; background:none; border:1px solid #b45309; border-radius:2px; z-index:2; opacity:.8; }
+    .ps-bl { position:absolute; height:5px; background:none; border:1.5px solid var(--ps-bl); border-radius:2px; z-index:2; }
     .ps-mile { position:absolute; width:13px; height:13px; background:var(--pd-red); transform:rotate(45deg); z-index:3; cursor:grab; }
     .ps-bar-lbl { position:absolute; font-size:10px; color:var(--pd-muted); white-space:nowrap; z-index:3; line-height:15px; }
-    html.pd-dark .ps-bar.task { background:#5b8fd6; }
     html.pd-dark .ps-row-bg.alt { background:rgba(255,255,255,.03); }
+    /* Brand-compliant Gantt colors (light defaults; dark-mode overrides for visibility) */
+    .ps-gantt-pane { --ps-bar:#2B2C2B; --ps-sum:#231F20; --ps-bl:#9a9a9a; }
+    html.pd-dark .ps-gantt-pane { --ps-bar:#c7ccd1; --ps-sum:#e0e0e0; --ps-bl:#7d7d7d; }
+    html.pd-dark .ps-bar-lbl { color:var(--pd-muted); }
+    /* legend */
+    .ps-legend { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:8px 2px; font-size:12px; color:var(--pd-muted); }
+    .ps-legend .lg { display:inline-flex; align-items:center; gap:6px; }
+    .lg-swatch { display:inline-block; width:22px; height:11px; border-radius:2px; }
+    .lg-task { background:var(--ps-bar,#2B2C2B); position:relative; overflow:hidden; }
+    .lg-task::after { content:""; position:absolute; left:0; top:0; bottom:0; width:55%; background:var(--pd-red); }
+    .lg-sum { background:var(--ps-sum,#231F20); height:7px; }
+    .lg-bl { background:none; border:1.5px solid var(--ps-bl,#9a9a9a); height:7px; }
+    .lg-mile { width:12px; height:12px; background:var(--pd-red); transform:rotate(45deg); border-radius:2px; }
+    .lg-dd { width:3px; height:14px; background:var(--pd-red); border-radius:1px; }
     /* virtualization layers + row striping */
     .ps-tl-static { position:absolute; inset:0; z-index:1; }
     #ps-tl-bars { position:absolute; inset:0; z-index:3; }
@@ -173,6 +186,13 @@
 
       <!-- SCHEDULE: split activities + gantt -->
       <div id="ps-view-schedule">
+        <div class="ps-legend">
+          <span class="lg"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>
+          <span class="lg"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>
+          <span class="lg"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>
+          <span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>
+          <span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>
+        </div>
         <div class="ps-split">
           <div class="ps-grid-pane">
             <div class="ps-grid-head" id="ps-grid-head"></div>
@@ -257,6 +277,7 @@
   var pid = null, rows = [], editId = null, UID = null;
   var zoom = 'quarter', collapsed = {}, selId = null, search = '';
   var filters = { status: {}, type: {} };   // empty sets = show all
+  var isAdmin = false;
   var DAYW = { month: 4.2, quarter: 1.55, year: 0.62 };
   function sb() { return AppAuth.getSB(); }
 
@@ -564,7 +585,7 @@
     var altc = (i % 2) ? ' ps-alt' : '';
     if (isWbs(r)) {
       var sp = wbsSpan(r), arrow = collapsed[r.wbs] ? '►' : '▼';
-      return '<div class="ps-grid-row ps-wbs-row' + altc + '" data-i="' + i + '">' +
+      return '<div class="ps-grid-row ps-wbs-row' + altc + '" data-i="' + i + '" data-wbs="' + esc(r.wbs) + '">' +
         '<div class="ps-cell c-id">' + esc(r.wbs || '') + '</div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + r._depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(r.wbs) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
         '<div class="ps-cell c-date"></div><div class="ps-cell c-date"></div>' +
@@ -590,14 +611,28 @@
     var rg = range(), min = rg.min, max = rg.max, dayw = DAYW[zoom];
     _rMin = min; _rDayw = dayw;
     var totalDays = dayDiff(min, max) + 1, W = Math.max(totalDays * dayw, 300), H = DL.length * ROWH;
-    // gantt header (year + month scale)
+    // gantt header — two tiers: year band (top) + period labels (bottom)
+    var MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     var head = document.getElementById('ps-gantt-head');
-    var yrs = '', mos = '', cur = new Date(min.getFullYear(), min.getMonth(), 1);
-    while (cur <= max) {
-      var x = dayDiff(min, cur) * dayw, next = new Date(cur.getFullYear(), cur.getMonth() + 1, 1), wmo = dayDiff(cur, next) * dayw;
-      if (zoom !== 'year') mos += '<div class="ps-mo" style="left:' + x + 'px;width:' + wmo + 'px;">' + (cur.getMonth()+1) + '</div>';
-      if (cur.getMonth() === 0 || dayDiff(min, cur) === 0) { var yend = new Date(cur.getFullYear()+1,0,1); if (yend > max) yend = max; var wy = dayDiff(cur, yend) * dayw; yrs += '<div class="ps-yr" style="left:' + x + 'px;width:' + Math.max(wy,30) + 'px;">' + cur.getFullYear() + '</div>'; }
-      cur = next;
+    var yrs = '', mos = '';
+    var yc = new Date(min.getFullYear(), min.getMonth(), 1);
+    while (yc <= max) {
+      var yx = dayDiff(min, yc) * dayw;
+      if (yc.getMonth() === 0 || dayDiff(min, yc) === 0) {
+        var yend = new Date(yc.getFullYear()+1,0,1); if (yend > max) yend = max;
+        var wy = dayDiff(yc, yend) * dayw;
+        yrs += '<div class="ps-yr" style="left:' + yx + 'px;width:' + Math.max(wy,34) + 'px;">' + yc.getFullYear() + '</div>';
+      }
+      yc = new Date(yc.getFullYear(), yc.getMonth()+1, 1);
+    }
+    if (zoom === 'quarter') {
+      var q = new Date(min.getFullYear(), Math.floor(min.getMonth()/3)*3, 1);
+      while (q <= max) { var qx = dayDiff(min, q) * dayw, qn = new Date(q.getFullYear(), q.getMonth()+3, 1), qw = dayDiff(q, qn) * dayw;
+        mos += '<div class="ps-mo" style="left:' + qx + 'px;width:' + qw + 'px;">Q' + (Math.floor(q.getMonth()/3)+1) + ' ’' + String(q.getFullYear()).slice(2) + '</div>'; q = qn; }
+    } else if (zoom === 'month') {
+      var mm = new Date(min.getFullYear(), min.getMonth(), 1);
+      while (mm <= max) { var mx = dayDiff(min, mm) * dayw, mn = new Date(mm.getFullYear(), mm.getMonth()+1, 1), mw = dayDiff(mm, mn) * dayw;
+        mos += '<div class="ps-mo" style="left:' + mx + 'px;width:' + mw + 'px;">' + MABBR[mm.getMonth()] + '</div>'; mm = mn; }
     }
     head.innerHTML = '<div style="position:relative;width:' + W + 'px;height:38px;">' + yrs + mos + '</div>';
     // gantt static layer (grid lines + data-date) + windowed bars container
@@ -628,6 +663,8 @@
     var host = document.getElementById('ps-grid-rows');
     host.innerHTML = '<div style="transform:translateY(' + (first * ROWH) + 'px);">' + gh + '</div>';
     host.querySelectorAll('[data-toggle]').forEach(function (t) { t.onclick = function (e) { e.stopPropagation(); collapsed[t.dataset.toggle] = !collapsed[t.dataset.toggle]; renderGrid(); }; });
+    // Excel-like: click anywhere on a WBS summary row to expand/collapse it
+    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.wbs; collapsed[w] = !collapsed[w]; renderGrid(); }); });
     host.querySelectorAll('.ps-editable').forEach(function (c) { c.onclick = function () { beginEdit(c); }; });
     host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function () { selId = rw.dataset.rowid; highlightRow(); }); });
     // gantt: window bars
@@ -814,6 +851,8 @@
   // ----- init -----
   AppAuth.requireLogin(function (user, profile) {
     UID = (user && user.id) || (profile && profile.id) || null;
+    isAdmin = !!(profile && (profile.role === 'admin' || profile.role === 'super_admin'));
+    var clrBtn = document.getElementById('ps-clear'); if (clrBtn && !isAdmin) clrBtn.style.display = 'none';
     UI.renderUserBar(profile);
     UI.initShell();
     renderHeader();
@@ -837,14 +876,25 @@
     fMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.addEventListener('click', function () { cMenu.classList.remove('open'); fMenu.classList.remove('open'); });
     document.getElementById('ps-refresh').onclick = function () { load(); };
-    document.getElementById('ps-clear').onclick = async function () {
+    document.getElementById('ps-clear').onclick = function () {
+      if (!isAdmin) { UI.toast('Clearing the schedule is restricted to admins.', 'error'); return; }
       if (!pid) { UI.toast('Select a project first.', 'error'); return; }
-      if (!confirm('Delete ALL activities for this project? This cannot be undone.')) return;
-      showLoading('Clearing schedule…');
-      var del = await sb().from(TABLE).delete().eq('project_id', pid);
-      hideLoading();
-      if (del.error) { UI.toast(del.error.message, 'error'); return; }
-      UI.toast('Schedule cleared.', 'success'); collapsed = {}; load();
+      var m = UI.modal('<h2 style="margin-top:0;">Clear schedule</h2>' +
+        '<p style="color:var(--pd-muted);font-size:13px;">This permanently deletes <strong>all activities</strong> for project <strong>' + esc(pid) + '</strong> and cannot be undone. To confirm, type the project code below.</p>' +
+        '<input class="pd-input" id="ps-clr-in" placeholder="Type ' + esc(pid) + ' to confirm" autocomplete="off" />' +
+        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-clr-x">Cancel</button> <button class="pd-btn pd-btn-danger" id="ps-clr-go" disabled>Delete all activities</button></div>');
+      var inp = m.el.querySelector('#ps-clr-in'), go = m.el.querySelector('#ps-clr-go');
+      inp.oninput = function () { go.disabled = inp.value.trim() !== String(pid); };
+      inp.focus();
+      m.el.querySelector('#ps-clr-x').onclick = m.close;
+      go.onclick = async function () {
+        if (inp.value.trim() !== String(pid)) return;
+        m.close(); showLoading('Clearing schedule…');
+        var del = await sb().from(TABLE).delete().eq('project_id', pid);
+        hideLoading();
+        if (del.error) { UI.toast(del.error.message, 'error'); return; }
+        UI.toast('Schedule cleared.', 'success'); collapsed = {}; load();
+      };
     };
     document.getElementById('ps-add').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } openForm(null); };
     document.getElementById('ps-import').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } document.getElementById('ps-import-file').click(); };
