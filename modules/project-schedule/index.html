@@ -9,183 +9,100 @@
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />
   <style>
-    /* ── Controls ───────────────────────────────────────────── */
-    .ps-controls {
-      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-      margin-bottom: 16px;
-    }
+    .ps-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; }
+    .ps-spacer { margin-left:auto; }
+    .ps-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+    .ps-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
+    .ps-kpi-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
+    .ps-kpi-value { font-size:22px; font-weight:700; }
+    .ps-kpi-sub { font-size:12px; color:var(--pd-muted); margin-top:2px; }
+    .ps-kpi-red { color:var(--pd-bad); } .ps-kpi-green { color:var(--pd-ok); }
+    .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
+    .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
+    .ps-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
+    .ps-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .ps-seg button { border:none; background:var(--pd-card); padding:6px 12px; cursor:pointer; color:var(--pd-muted); font-size:12px; font-weight:600; }
+    .ps-seg button.active { background:var(--pd-red); color:#fff; }
 
-    /* ── KPI Cards ──────────────────────────────────────────── */
-    .ps-kpis {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 12px; margin-bottom: 20px;
-    }
-    .ps-kpi {
-      background: var(--pd-card); border: 1px solid var(--pd-border);
-      border-radius: 8px; padding: 16px;
-    }
-    .ps-kpi-label {
-      font-size: 11px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .06em; color: var(--pd-muted); margin-bottom: 6px;
-    }
-    .ps-kpi-value { font-size: 24px; font-weight: 700; color: var(--pd-text); }
-    .ps-kpi-sub   { font-size: 12px; color: var(--pd-muted); margin-top: 3px; }
-    .ps-kpi-red   { color: #ef4444 !important; }
-    .ps-kpi-green { color: #22c55e !important; }
+    /* ---- Split Activities + Gantt ---- */
+    .ps-split { display:flex; height:62vh; min-height:420px; border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius); overflow:hidden; background:var(--pd-card); }
+    .ps-grid-pane { flex:0 0 660px; max-width:70%; display:flex; flex-direction:column; border-right:2px solid var(--pd-line); min-width:0; }
+    .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    /* ── Tabs ───────────────────────────────────────────────── */
-    .ps-tabs {
-      display: flex; border-bottom: 2px solid var(--pd-border);
-      margin-bottom: 16px; gap: 0;
-    }
-    .ps-tab {
-      padding: 8px 20px; cursor: pointer; font-weight: 600; font-size: 13px;
-      color: var(--pd-muted); border: none; border-bottom: 2px solid transparent;
-      margin-bottom: -2px; background: none;
-    }
-    .ps-tab.active { color: var(--pd-red); border-bottom-color: var(--pd-red); }
-    .ps-tab:hover:not(.active) { color: var(--pd-text); }
+    .ps-grid-head, .ps-grid-scroll { overflow-x:auto; }
+    .ps-grid-scroll { overflow-y:auto; flex:1 1 auto; }
+    .ps-grid-head { overflow-y:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); }
+    .ps-grid-row { display:flex; align-items:stretch; height:34px; border-bottom:1px solid var(--pd-line);
+      min-width:640px; font-size:12.5px; }
+    .ps-grid-row.head { height:38px; font-weight:700; }
+    .ps-cell { padding:0 8px; display:flex; align-items:center; border-right:1px solid var(--pd-line);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; }
+    .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .c-name { flex:1 1 auto; min-width:180px; } .c-id { flex:0 0 78px; } .c-date { flex:0 0 92px; }
+    .c-dur { flex:0 0 54px; justify-content:flex-end; } .c-pct { flex:0 0 60px; justify-content:flex-end; }
+    .ps-wbs-row { background:var(--pd-bg); font-weight:700; }
+    .ps-wbs-row .c-name { color:var(--pd-ink); }
+    .ps-toggle { cursor:pointer; width:16px; display:inline-flex; align-items:center; justify-content:center;
+      color:var(--pd-muted); flex:none; }
+    .ps-editable { cursor:text; } .ps-editable:hover { background:var(--pd-red-light); }
+    .ps-cell input { width:100%; border:1px solid var(--pd-red); border-radius:3px; font:inherit; padding:2px 4px; box-sizing:border-box; background:var(--pd-card); color:var(--pd-ink); }
+    .ps-row-sel { background:var(--pd-red-light) !important; }
+    .ps-mile-badge { color:var(--pd-red); font-weight:700; }
 
-    /* ── Table ──────────────────────────────────────────────── */
-    .ps-table-wrap { overflow-x: auto; }
-    .ps-table {
-      width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px;
-    }
-    .ps-table th {
-      background: var(--pd-card); padding: 9px 12px; text-align: left;
-      font-size: 11px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .05em; color: var(--pd-muted);
-      border-bottom: 2px solid var(--pd-border); white-space: nowrap;
-      position: sticky; top: 0; z-index: 2;
-    }
-    .ps-table th.ps-num, .ps-table td.ps-num { text-align: right; }
-    .ps-table td {
-      padding: 8px 12px; border-bottom: 1px solid var(--pd-border);
-      vertical-align: middle; white-space: nowrap;
-    }
-    .ps-table tr:hover td { background: var(--pd-hover, rgba(0,0,0,.03)); }
-    .ps-table tr.ps-wbs-row > td {
-      background: var(--pd-card); font-weight: 600;
-      border-top: 1px solid var(--pd-border);
-    }
+    /* ---- Gantt ---- */
+    .ps-gantt-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); position:relative; height:38px; }
+    .ps-gantt-scroll { overflow:auto; flex:1 1 auto; position:relative; }
+    .ps-tl { position:relative; }
+    .ps-yr { position:absolute; top:0; height:18px; font-size:11px; font-weight:700; color:var(--pd-ink);
+      border-left:1px solid var(--pd-line); padding-left:5px; box-sizing:border-box; overflow:hidden; }
+    .ps-mo { position:absolute; top:19px; height:18px; font-size:9.5px; color:var(--pd-muted);
+      border-left:1px solid var(--pd-line); padding-left:3px; box-sizing:border-box; overflow:hidden; }
+    .ps-grid-v { position:absolute; top:0; bottom:0; width:1px; background:var(--pd-line); opacity:.5; }
+    .ps-row-bg { position:absolute; left:0; right:0; height:34px; border-bottom:1px solid var(--pd-line); }
+    .ps-row-bg.alt { background:rgba(0,0,0,.015); }
+    .ps-datedate { position:absolute; top:0; bottom:0; width:2px; background:var(--pd-red); z-index:6; }
+    .ps-datedate-lbl { position:absolute; top:2px; transform:translateX(4px); font-size:9px; color:var(--pd-red); font-weight:700; z-index:6; }
+    .ps-bar { position:absolute; height:15px; border-radius:3px; background:#6b7280; cursor:grab; z-index:3;
+      box-shadow:0 1px 2px rgba(0,0,0,.15); }
+    .ps-bar.task { background:#3b6ea5; }
+    .ps-bar-fill { position:absolute; left:0; top:0; bottom:0; background:rgba(255,255,255,.45); border-radius:3px 0 0 3px; }
+    .ps-bar.dragging { cursor:grabbing; opacity:.85; z-index:8; }
+    .ps-handle { position:absolute; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:4; }
+    .ps-handle.l { left:0; } .ps-handle.r { right:0; }
+    .ps-sum { position:absolute; height:9px; background:var(--pd-dark); z-index:3;
+      clip-path:polygon(0 0,100% 0,100% 60%,calc(100% - 6px) 100%,6px 100%,0 60%); }
+    .ps-bl { position:absolute; height:5px; background:none; border:1px solid #b45309; border-radius:2px; z-index:2; opacity:.8; }
+    .ps-mile { position:absolute; width:13px; height:13px; background:var(--pd-red); transform:rotate(45deg); z-index:3; cursor:grab; }
+    .ps-bar-lbl { position:absolute; font-size:10px; color:var(--pd-muted); white-space:nowrap; z-index:3; line-height:15px; }
+    html.pd-dark .ps-bar.task { background:#5b8fd6; }
+    html.pd-dark .ps-row-bg.alt { background:rgba(255,255,255,.03); }
 
-    /* ── Status Pills ───────────────────────────────────────── */
-    .ps-pill {
-      display: inline-block; padding: 2px 9px; border-radius: 12px;
-      font-size: 11px; font-weight: 600;
-    }
-    .ps-pill-ns   { background: #f3f4f6; color: #6b7280; }
-    .ps-pill-ip   { background: #fef3c7; color: #b45309; }
-    .ps-pill-done { background: #dcfce7; color: #16a34a; }
-    html.pd-dark .ps-pill-ns   { background: #374151; color: #9ca3af; }
-    html.pd-dark .ps-pill-ip   { background: #451a03; color: #fbbf24; }
-    html.pd-dark .ps-pill-done { background: #14532d; color: #4ade80; }
-
-    /* ── Progress Bar ───────────────────────────────────────── */
-    .ps-prog-wrap { display: flex; align-items: center; gap: 8px; }
-    .ps-prog-bar {
-      width: 90px; height: 7px; background: var(--pd-border);
-      border-radius: 4px; overflow: hidden; flex-shrink: 0;
-    }
-    .ps-prog-fill { height: 100%; border-radius: 4px; background: var(--pd-red); }
-    .ps-prog-label { font-size: 12px; color: var(--pd-muted); }
-
-    /* ── Cost variance colours ──────────────────────────────── */
-    .ps-red   { color: #ef4444; }
-    .ps-green { color: #22c55e; }
-
-    /* ── Row actions ────────────────────────────────────────── */
-    .ps-actions { display: flex; gap: 5px; }
-    .ps-btn-sm {
-      padding: 3px 9px; font-size: 11px; border-radius: 4px;
-      border: 1px solid var(--pd-border); background: var(--pd-card);
-      color: var(--pd-text); cursor: pointer; white-space: nowrap;
-    }
-    .ps-btn-sm:hover { border-color: var(--pd-red); color: var(--pd-red); }
-    .ps-btn-del { border-color: transparent; color: var(--pd-muted); }
-    .ps-btn-del:hover { border-color: #ef4444; color: #ef4444; background: none; }
-
-    /* ── Empty state ────────────────────────────────────────── */
-    .ps-empty {
-      text-align: center; padding: 48px 24px;
-      color: var(--pd-muted); font-size: 14px;
-    }
-
-    /* ── Modal grid ─────────────────────────────────────────── */
-    .ps-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .ps-form-full { grid-column: 1 / -1; }
-
-    /* ── Totals row ─────────────────────────────────────────── */
-    .ps-totals-row > td {
-      font-weight: 700; border-top: 2px solid var(--pd-border);
-      background: var(--pd-card);
-    }
-
-    /* ── Activity type badge ────────────────────────────────── */
-    .ps-type-badge {
-      font-size: 10px; color: var(--pd-muted);
-      background: var(--pd-border); border-radius: 4px;
-      padding: 1px 6px; font-weight: 600; letter-spacing: .03em;
-    }
-    .ps-milestone-badge { color: var(--pd-red); background: rgba(238,49,36,.1); }
-
-    /* ── Gantt (Oracle Primavera-style activities + bar chart) ── */
-    .ps-gantt-toolbar { display:flex; align-items:center; gap:16px; margin-bottom:10px; flex-wrap:wrap; }
-    .ps-zoom { display:inline-flex; border:1px solid var(--pd-border); border-radius:7px; overflow:hidden; }
-    .ps-zoom button { border:none; background:var(--pd-card); color:var(--pd-muted); padding:6px 13px; font-size:12px; font-weight:600; cursor:pointer; }
-    .ps-zoom button + button { border-left:1px solid var(--pd-border); }
-    .ps-zoom button.active { background:var(--pd-red); color:#fff; }
-    .ps-legend { display:flex; gap:14px; font-size:11px; color:var(--pd-muted); align-items:center; flex-wrap:wrap; }
-    .ps-legend span { display:inline-flex; align-items:center; gap:5px; }
-    .ps-legend i { width:14px; height:9px; border-radius:2px; display:inline-block; }
-
-    .ps-gantt { position:relative; overflow:auto; border:1px solid var(--pd-border); border-radius:10px; background:var(--pd-card); max-height:72vh; }
-    .ps-g-headrow { display:flex; position:sticky; top:0; z-index:5; }
-    .ps-g-corner { position:sticky; left:0; z-index:6; background:var(--pd-card); border-right:1px solid var(--pd-border); border-bottom:1px solid var(--pd-border); display:flex; align-items:flex-end; }
-    .ps-g-timehead { box-sizing:border-box; border-bottom:1px solid var(--pd-border); }
-    .ps-g-yr, .ps-g-morow { display:flex; }
-    .ps-g-yrcell { box-sizing:border-box; border-right:1px solid var(--pd-border); font-size:11px; font-weight:700; padding:3px 6px; white-space:nowrap; height:19px; }
-    .ps-g-mocell { box-sizing:border-box; border-right:1px solid var(--pd-border-soft, rgba(125,125,125,.18)); font-size:10px; color:var(--pd-muted); padding:2px 0; text-align:center; white-space:nowrap; overflow:hidden; height:19px; }
-
-    .ps-g-body { position:relative; }
-    .ps-g-row { display:flex; height:30px; }
-    .ps-g-label { position:sticky; left:0; z-index:4; background:var(--pd-card); border-right:1px solid var(--pd-border); border-bottom:1px solid var(--pd-border-soft, rgba(125,125,125,.14)); box-sizing:border-box; height:30px; display:flex; align-items:center; gap:7px; overflow:hidden; }
-    .ps-g-label .ps-g-id { font-size:11px; color:var(--pd-muted); flex:0 0 auto; }
-    .ps-g-label .ps-g-name { font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ps-g-row.ps-g-summary .ps-g-label { font-weight:700; background:var(--pd-hover, rgba(125,125,125,.07)); }
-    .ps-g-track { position:relative; box-sizing:border-box; height:30px; border-bottom:1px solid var(--pd-border-soft, rgba(125,125,125,.10)); }
-
-    .ps-g-grid { position:absolute; top:0; bottom:0; width:1px; background:rgba(125,125,125,.14); z-index:0; }
-    .ps-bar { position:absolute; height:12px; top:50%; transform:translateY(-50%); border-radius:3px; background:#60a5fa; box-shadow:inset 0 0 0 1px rgba(0,0,0,.08); z-index:1; }
-    .ps-bar-fill { position:absolute; left:0; top:0; height:100%; background:#2563eb; border-radius:3px 0 0 3px; }
-    .ps-bar-sum { position:absolute; height:7px; top:50%; transform:translateY(-50%); background:#475569; z-index:1; }
-    .ps-bar-sum::before, .ps-bar-sum::after { content:""; position:absolute; bottom:-4px; border-top:7px solid #475569; border-left:4px solid transparent; border-right:4px solid transparent; }
-    .ps-bar-sum::before { left:0; } .ps-bar-sum::after { right:0; }
-    .ps-bar-actual { position:absolute; height:5px; top:calc(50% + 9px); transform:translateY(-50%); border-radius:2px; background:#22c55e; z-index:1; }
-    .ps-ms { position:absolute; width:12px; height:12px; top:50%; transform:translate(-50%,-50%) rotate(45deg); background:var(--pd-red); z-index:1; }
-    .ps-dd-line { position:absolute; top:0; bottom:0; width:2px; background:#ef4444; z-index:3; pointer-events:none; }
-    .ps-dd-flag { position:absolute; top:0; left:0; font-size:9px; color:#fff; background:#ef4444; padding:1px 4px; border-radius:0 0 4px 0; white-space:nowrap; font-weight:600; }
+    /* Cost table */
+    .ps-table-wrap { overflow-x:auto; }
+    .ps-table { width:100%; border-collapse:collapse; font-size:13px; min-width:760px; }
+    .ps-table th { background:var(--pd-bg); padding:9px 12px; text-align:left; font-size:11px; font-weight:700;
+      text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    .ps-table th.ps-num, .ps-table td.ps-num { text-align:right; }
+    .ps-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
+    .ps-totals-row > td { font-weight:700; border-top:2px solid var(--pd-line); background:var(--pd-bg); }
+    .ps-empty { text-align:center; padding:40px; color:var(--pd-muted); }
+    .ps-red { color:var(--pd-bad); } .ps-green { color:var(--pd-ok); }
+    .ps-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .ps-form-full { grid-column:1 / -1; }
   </style>
 </head>
 <body>
 <div class="pd-app">
-
-  <!-- Sidebar -->
   <aside class="pd-sidebar">
-    <div class="pd-brand">
-      <img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction" />
-      Planners Dashboard<small>Project Schedule &amp; Cost Loading</small>
-    </div>
+    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Project Schedule &amp; Cost Loading</small></div>
     <nav>
       <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
       <a href="#" class="active" data-view="schedule"><span class="pd-navico" data-ico="calendar"></span>Schedule</a>
-      <a href="#" data-view="gantt"><span class="pd-navico" data-ico="barChart"></span>Gantt</a>
       <a href="#" data-view="cost"><span class="pd-navico" data-ico="cash"></span>Cost Loading</a>
     </nav>
   </aside>
 
-  <!-- Main -->
   <div class="pd-content">
     <div class="pd-topbar">
       <h1>Project Schedule &amp; Cost Loading</h1>
@@ -193,208 +110,85 @@
     </div>
 
     <div class="pd-main">
-
-      <!-- Controls -->
       <div class="ps-controls">
-        <select class="pd-select" id="ps-project" style="max-width:320px;"></select>
-        <select class="pd-select" id="ps-f-status" style="max-width:150px;">
-          <option value="">All statuses</option>
-          <option>Not Started</option>
-          <option>In Progress</option>
-          <option>Completed</option>
-        </select>
-        <select class="pd-select" id="ps-f-type" style="max-width:160px;">
-          <option value="">All types</option>
-          <option>Task</option>
-          <option>WBS Summary</option>
-          <option>Milestone</option>
-        </select>
-        <input class="pd-input" id="ps-f-search" placeholder="Search activity…" style="max-width:200px;" />
-        <button class="pd-btn pd-btn-primary" id="ps-add" style="margin-left:auto;">+ Add activity</button>
+        <select class="pd-select" id="ps-project" style="max-width:340px;"></select>
+        <input class="pd-input" id="ps-search" placeholder="Search activity…" style="max-width:200px;" />
+        <div class="ps-seg" id="ps-zoom" title="Timeline scale">
+          <button data-zoom="month">Month</button>
+          <button data-zoom="quarter" class="active">Quarter</button>
+          <button data-zoom="year">Year</button>
+        </div>
+        <button class="pd-btn" id="ps-expand">Expand all</button>
+        <button class="pd-btn" id="ps-collapse">Collapse all</button>
+        <button class="pd-btn pd-btn-primary ps-spacer" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
       </div>
 
-      <!-- KPIs -->
       <div class="ps-kpis" id="ps-kpis"></div>
 
-      <!-- Tabs -->
       <div class="ps-tabs">
-        <button class="ps-tab active" data-tab="schedule"><span class="pd-navico" data-ico="calendar"></span>Schedule</button>
-        <button class="ps-tab"        data-tab="gantt"><span class="pd-navico" data-ico="barChart"></span>Gantt</button>
-        <button class="ps-tab"        data-tab="cost"><span class="pd-navico" data-ico="cash"></span>Cost Loading</button>
+        <button class="ps-tab active" data-tab="schedule"><span data-ico="calendar" data-ico-size="15"></span> Schedule &amp; Gantt</button>
+        <button class="ps-tab" data-tab="cost"><span data-ico="cash" data-ico-size="15"></span> Cost Loading</button>
       </div>
 
-      <!-- ─── Schedule view ──────────────────────────────────── -->
+      <!-- SCHEDULE: split activities + gantt -->
       <div id="ps-view-schedule">
-        <div class="pd-card" style="padding:0;overflow:hidden;">
-          <div class="ps-table-wrap">
-            <table class="ps-table">
-              <thead>
-                <tr>
-                  <th style="min-width:80px;">WBS</th>
-                  <th style="min-width:80px;">Activity ID</th>
-                  <th style="min-width:240px;">Activity Name</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Planned Start</th>
-                  <th>Planned Finish</th>
-                  <th>Actual Start</th>
-                  <th>Actual Finish</th>
-                  <th class="ps-num" style="min-width:80px;">Duration</th>
-                  <th style="min-width:150px;">% Complete</th>
-                  <th>Responsible</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="ps-sched-body">
-                <tr><td colspan="13" class="ps-empty">Select a project to view the schedule.</td></tr>
-              </tbody>
-            </table>
+        <div class="ps-split">
+          <div class="ps-grid-pane">
+            <div class="ps-grid-head" id="ps-grid-head"></div>
+            <div class="ps-grid-scroll" id="ps-grid-scroll"><div id="ps-grid-rows"></div></div>
+          </div>
+          <div class="ps-gantt-pane">
+            <div class="ps-gantt-head" id="ps-gantt-head"></div>
+            <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
           </div>
         </div>
+        <p style="font-size:12px;color:var(--pd-muted);margin-top:8px;">
+          Tip: click any activity cell to edit inline. Drag a bar to move it; drag its edges to resize. WBS summary rows roll up automatically.
+        </p>
       </div>
 
-      <!-- ─── Cost Loading view ──────────────────────────────── -->
+      <!-- COST LOADING -->
       <div id="ps-view-cost" style="display:none;">
         <div class="pd-card" style="padding:0;overflow:hidden;">
           <div class="ps-table-wrap">
             <table class="ps-table">
-              <thead>
-                <tr>
-                  <th style="min-width:80px;">WBS</th>
-                  <th style="min-width:240px;">Activity Name</th>
-                  <th class="ps-num">Planned Cost (&#8369;)</th>
-                  <th class="ps-num">Actual Cost (&#8369;)</th>
-                  <th class="ps-num">Earned Value (&#8369;)</th>
-                  <th class="ps-num">Cost Variance (&#8369;)</th>
-                  <th class="ps-num">CPI</th>
-                  <th class="ps-num">% Complete</th>
-                </tr>
-              </thead>
-              <tbody id="ps-cost-body">
-                <tr><td colspan="8" class="ps-empty">Select a project to view cost loading.</td></tr>
-              </tbody>
+              <thead><tr>
+                <th style="min-width:80px;">WBS</th><th style="min-width:240px;">Activity Name</th>
+                <th class="ps-num">Planned Cost (&#8369;)</th><th class="ps-num">Actual Cost (&#8369;)</th>
+                <th class="ps-num">Earned Value (&#8369;)</th><th class="ps-num">Cost Variance (&#8369;)</th>
+                <th class="ps-num">CPI</th><th class="ps-num">% Complete</th>
+              </tr></thead>
+              <tbody id="ps-cost-body"><tr><td colspan="8" class="ps-empty">Select a project to view cost loading.</td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
-
-      <!-- ─── Gantt view (Primavera-style activities + bar chart) ─ -->
-      <div id="ps-view-gantt" style="display:none;">
-        <div class="ps-gantt-toolbar">
-          <div class="ps-zoom" id="ps-zoom">
-            <button data-zoom="week">Week</button>
-            <button data-zoom="month" class="active">Month</button>
-            <button data-zoom="quarter">Quarter</button>
-          </div>
-          <div class="ps-legend">
-            <span><i style="background:#60a5fa;"></i>Planned</span>
-            <span><i style="background:#2563eb;"></i>Progress</span>
-            <span><i style="background:#22c55e;"></i>Actual</span>
-            <span><i style="background:#475569;"></i>WBS Summary</span>
-            <span><i style="background:var(--pd-red);width:10px;height:10px;transform:rotate(45deg);border-radius:1px;"></i>Milestone</span>
-            <span><i style="background:#ef4444;width:2px;height:13px;border-radius:0;"></i>Data date</span>
-          </div>
-        </div>
-        <div class="ps-gantt" id="ps-gantt">
-          <div class="ps-empty">Select a project to view the Gantt.</div>
-        </div>
-      </div>
-
-    </div><!-- /pd-main -->
-  </div><!-- /pd-content -->
-</div><!-- /pd-app -->
-
-<!-- ─── Add / Edit Modal ──────────────────────────────────────── -->
-<div class="pd-modal-overlay" id="ps-modal" style="display:none;">
-  <div class="pd-modal" style="max-width:700px;width:95vw;">
-    <div class="pd-modal-header">
-      <span id="ps-modal-title">Add Activity</span>
-      <button class="pd-modal-close" id="ps-modal-close">&#215;</button>
     </div>
+  </div>
+</div>
+
+<!-- Add / Edit modal -->
+<div class="pd-modal-overlay" id="ps-modal" style="display:none;">
+  <div class="pd-modal" style="max-width:720px;width:95vw;">
+    <div class="pd-modal-header"><span id="ps-modal-title">Add Activity</span>
+      <button class="pd-modal-close" id="ps-modal-close">&#215;</button></div>
     <div class="pd-modal-body">
       <form id="ps-form" class="ps-form-grid" onsubmit="return false;">
-
-        <div>
-          <label class="pd-label">WBS Code *</label>
-          <input class="pd-input" id="ps-f-wbs" placeholder="e.g. 1.2.3" required />
-        </div>
-        <div>
-          <label class="pd-label">Activity ID</label>
-          <input class="pd-input" id="ps-f-actid" placeholder="e.g. A1010" />
-        </div>
-
-        <div class="ps-form-full">
-          <label class="pd-label">Activity Name *</label>
-          <input class="pd-input" id="ps-f-name" placeholder="Describe the activity" required />
-        </div>
-
-        <div>
-          <label class="pd-label">Activity Type</label>
-          <select class="pd-select" id="ps-f-type-sel">
-            <option>Task</option>
-            <option>WBS Summary</option>
-            <option>Milestone</option>
-          </select>
-        </div>
-        <div>
-          <label class="pd-label">Status</label>
-          <select class="pd-select" id="ps-f-status-sel">
-            <option>Not Started</option>
-            <option>In Progress</option>
-            <option>Completed</option>
-          </select>
-        </div>
-
-        <div>
-          <label class="pd-label">Planned Start *</label>
-          <input class="pd-input" id="ps-f-start" type="date" required />
-        </div>
-        <div>
-          <label class="pd-label">Planned Finish *</label>
-          <input class="pd-input" id="ps-f-finish" type="date" required />
-        </div>
-
-        <div>
-          <label class="pd-label">Actual Start</label>
-          <input class="pd-input" id="ps-f-astart" type="date" />
-        </div>
-        <div>
-          <label class="pd-label">Actual Finish</label>
-          <input class="pd-input" id="ps-f-afinish" type="date" />
-        </div>
-
-        <div>
-          <label class="pd-label">% Complete</label>
-          <input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" />
-        </div>
-        <div>
-          <label class="pd-label">Responsible Party</label>
-          <input class="pd-input" id="ps-f-resp" placeholder="Name or team" />
-        </div>
-
-        <div>
-          <label class="pd-label">Planned Cost (&#8369;)</label>
-          <input class="pd-input" id="ps-f-pcost" type="number" min="0" step="0.01" placeholder="0.00" />
-        </div>
-        <div>
-          <label class="pd-label">Actual Cost (&#8369;)</label>
-          <input class="pd-input" id="ps-f-acost" type="number" min="0" step="0.01" placeholder="0.00" />
-        </div>
-
-        <div>
-          <label class="pd-label">Earned Value (&#8369;)</label>
-          <input class="pd-input" id="ps-f-ev" type="number" min="0" step="0.01" placeholder="0.00" />
-        </div>
-        <div>
-          <label class="pd-label">Predecessors</label>
-          <input class="pd-input" id="ps-f-pred" placeholder="e.g. A1000, A1005" />
-        </div>
-
-        <div class="ps-form-full">
-          <label class="pd-label">Remarks</label>
-          <textarea class="pd-input" id="ps-f-remarks" rows="2" style="resize:vertical;"></textarea>
-        </div>
-
+        <div><label class="pd-label">WBS Code *</label><input class="pd-input" id="ps-f-wbs" placeholder="e.g. 1.2.3" required /></div>
+        <div><label class="pd-label">Activity ID</label><input class="pd-input" id="ps-f-actid" placeholder="e.g. A1010" /></div>
+        <div class="ps-form-full"><label class="pd-label">Activity Name *</label><input class="pd-input" id="ps-f-name" required /></div>
+        <div><label class="pd-label">Activity Type</label><select class="pd-select" id="ps-f-type-sel"><option>Task</option><option>WBS Summary</option><option>Milestone</option></select></div>
+        <div><label class="pd-label">Status</label><select class="pd-select" id="ps-f-status-sel"><option>Not Started</option><option>In Progress</option><option>Completed</option></select></div>
+        <div><label class="pd-label">Baseline Start</label><input class="pd-input" id="ps-f-bls" type="date" /></div>
+        <div><label class="pd-label">Baseline Finish</label><input class="pd-input" id="ps-f-blf" type="date" /></div>
+        <div><label class="pd-label">Planned Start *</label><input class="pd-input" id="ps-f-start" type="date" required /></div>
+        <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
+        <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
+        <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
+        <div><label class="pd-label">Planned Cost (&#8369;)</label><input class="pd-input" id="ps-f-pcost" type="number" min="0" step="0.01" /></div>
+        <div><label class="pd-label">Actual Cost (&#8369;)</label><input class="pd-input" id="ps-f-acost" type="number" min="0" step="0.01" /></div>
+        <div><label class="pd-label">Earned Value (&#8369;)</label><input class="pd-input" id="ps-f-ev" type="number" min="0" step="0.01" /></div>
+        <div class="ps-form-full"><label class="pd-label">Remarks</label><textarea class="pd-input" id="ps-f-remarks" rows="2" style="resize:vertical;"></textarea></div>
       </form>
     </div>
     <div class="pd-modal-footer">
@@ -404,7 +198,6 @@
   </div>
 </div>
 
-<!-- ─── Scripts ──────────────────────────────────────────────── -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js"></script>
 <script src="../../assets/js/auth.js"></script>
@@ -414,458 +207,440 @@
 <script>
 (function () {
   'use strict';
-
-  var TABLE  = 'project_schedule';
-  var pid    = null;
-  var rows   = [];
-  var editId = null;
-  var filters = { status: '', type: '', search: '' };
-  var ganttZoom = 'month';
-  var PX_PER_DAY = { week: 20, month: 6.5, quarter: 2.4 };
-
+  var TABLE = 'project_schedule';
+  var pid = null, rows = [], editId = null;
+  var zoom = 'quarter', collapsed = {}, selId = null, search = '';
+  var DAYW = { month: 4.2, quarter: 1.55, year: 0.62 };
   function sb() { return AppAuth.getSB(); }
 
-  /* ── helpers ──────────────────────────────────────────────── */
-  function pill(status) {
-    var map = { 'Not Started': 'ps-pill-ns', 'In Progress': 'ps-pill-ip', 'Completed': 'ps-pill-done' };
-    return '<span class="ps-pill ' + (map[status] || 'ps-pill-ns') + '">' + Fmt.esc(status || 'Not Started') + '</span>';
-  }
+  // ---- date helpers (format-agnostic, local midnight) ----
+  function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); if (!m) return null; return new Date(+m[1], +m[2]-1, +m[3]); }
+  function dstr(d) { if (!d) return null; return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+  function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate()+n); return x; }
+  function dayDiff(a, b) { return Math.round((b - a) / 86400000); }
+  function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
+  function esc(s) { return Fmt.esc(s); }
 
-  function typeBadge(t) {
-    if (t === 'Milestone')   return '<span class="ps-type-badge ps-milestone-badge">Milestone</span>';
-    if (t === 'WBS Summary') return '<span class="ps-type-badge">WBS</span>';
-    return '<span class="ps-type-badge">Task</span>';
-  }
-
-  function progBar(pct) {
-    var p = Math.min(100, Math.max(0, pct || 0));
-    return '<div class="ps-prog-wrap"><div class="ps-prog-bar"><div class="ps-prog-fill" style="width:' + p + '%;"></div></div><span class="ps-prog-label">' + p + '%</span></div>';
-  }
-
-  function strVal(id) { return document.getElementById(id).value.trim(); }
-  function dateVal(id){ return document.getElementById(id).value || null; }
-
-  /* ── project picker ───────────────────────────────────────── */
+  // ---- data ----
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = document.getElementById('ps-project');
     pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
-    sel.innerHTML = '<option value="">— Select project —</option>' +
-      projects.map(function (p) {
-        return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>';
-      }).join('');
+    sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
+    }).join('');
     if (pid) load();
   }
-
-  /* ── data load ────────────────────────────────────────────── */
   async function load() {
-    if (!pid) return;
-    var res = await sb().from(TABLE).select('*')
-      .eq('project_id', pid)
-      .order('wbs',         { ascending: true })
-      .order('activity_id', { ascending: true });
+    if (!pid) { rows = []; renderAll(); return; }
+    var res = await sb().from(TABLE).select('*').eq('project_id', pid)
+      .order('wbs', { ascending: true }).order('activity_id', { ascending: true });
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     rows = res.data || [];
-    render();
+    renderAll();
+  }
+  async function persist(id, patch) {
+    var res = await sb().from(TABLE).update(patch).eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return false; }
+    var r = rows.find(function (x) { return x.id === id; });
+    if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
+    return true;
   }
 
-  /* ── filter ───────────────────────────────────────────────── */
-  function filtered() {
-    return rows.filter(function (r) {
-      if (filters.status && r.status !== filters.status) return false;
-      if (filters.type   && r.activity_type !== filters.type) return false;
-      if (filters.search) {
-        var hay = [r.wbs, r.activity_id, r.activity_name, r.responsible_party].join(' ').toLowerCase();
-        if (hay.indexOf(filters.search) === -1) return false;
-      }
-      return true;
-    });
-  }
+  function isWbs(r) { return r.activity_type === 'WBS Summary'; }
+  function isMile(r) { return r.activity_type === 'Milestone'; }
 
-  /* ── render ───────────────────────────────────────────────── */
-  function render() { renderKpis(); renderSchedule(); renderCost(); renderGantt(); }
-
-  /* ── Gantt helpers ────────────────────────────────────────── */
-  var MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  function pdate(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; }
-  function dDiff(a, b) { return Math.round((b - a) / 86400000); }
-  function iso(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
-
-  function renderGantt() {
-    var host = document.getElementById('ps-gantt');
-    if (!host) return;
-    var f = filtered();
-    var times = [];
-    f.forEach(function (r) {
-      ['start_date','end_date','actual_start','actual_finish'].forEach(function (k) {
-        var d = pdate(r[k]); if (d) times.push(d.getTime());
+  // ---- build ordered, collapse-aware display list ----
+  function displayList() {
+    var q = search.trim().toLowerCase();
+    var list = rows.slice();
+    if (q) {
+      // keep matching tasks + their WBS ancestors
+      var keepWbs = {};
+      list.forEach(function (r) {
+        var hay = [r.activity_id, r.activity_name, r.wbs, r.responsible_party].join(' ').toLowerCase();
+        if (!isWbs(r) && hay.indexOf(q) !== -1 && r.wbs) keepWbs[r.wbs] = true;
       });
-    });
-    if (!f.length || !times.length) {
-      host.innerHTML = '<div class="ps-empty">' + (pid ? 'No activities with dates to chart yet.' : 'Select a project to view the Gantt.') + '</div>';
-      return;
+      list = list.filter(function (r) {
+        var hay = [r.activity_id, r.activity_name, r.wbs, r.responsible_party].join(' ').toLowerCase();
+        if (isWbs(r)) { return Object.keys(keepWbs).some(function (w) { return w === r.wbs || w.indexOf(r.wbs + '.') === 0; }); }
+        return hay.indexOf(q) !== -1;
+      });
     }
-
-    var today = new Date(); today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    var min = new Date(Math.min.apply(null, times)), max = new Date(Math.max.apply(null, times));
-    var ds = new Date(min.getFullYear(), min.getMonth(), 1);
-    var de = new Date(max.getFullYear(), max.getMonth() + 1, 0);
-    if (today < ds) ds = new Date(today.getFullYear(), today.getMonth(), 1);
-    if (today > de) de = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-    var px = PX_PER_DAY[ganttZoom] || 6.5;
-    var labelW = 280;
-    var totalW = (dDiff(ds, de) + 1) * px;
-    function xOf(d) { return dDiff(ds, d) * px; }
-
-    // month + year scale
-    var months = [], c = new Date(ds);
-    while (c <= de) {
-      var dim = new Date(c.getFullYear(), c.getMonth() + 1, 0).getDate();
-      months.push({ d: new Date(c), w: dim * px });
-      c.setMonth(c.getMonth() + 1);
+    var wbsRows = list.filter(isWbs).sort(function (a, b) { return String(a.wbs).localeCompare(String(b.wbs)); });
+    var out = [];
+    function ancestorCollapsed(code) {
+      return Object.keys(collapsed).some(function (c) { return collapsed[c] && code.indexOf(c + '.') === 0; });
     }
-    var years = [], yi = {};
-    months.forEach(function (m) {
-      var y = m.d.getFullYear();
-      if (yi[y] == null) { yi[y] = years.length; years.push({ y: y, w: 0 }); }
-      years[yi[y]].w += m.w;
+    var used = {};
+    wbsRows.forEach(function (w) {
+      if (ancestorCollapsed(String(w.wbs))) return;
+      w._depth = String(w.wbs).split('.').length - 1;
+      out.push(w);
+      used[w.id] = true;
+      if (collapsed[w.wbs]) return;
+      list.filter(function (r) { return !isWbs(r) && r.wbs === w.wbs; })
+        .sort(function (a, b) { return String(a.activity_id||'').localeCompare(String(b.activity_id||'')); })
+        .forEach(function (t) { t._depth = w._depth + 1; out.push(t); used[t.id] = true; });
     });
-    var yrHtml = years.map(function (o) { return '<div class="ps-g-yrcell" style="width:' + o.w + 'px;">' + o.y + '</div>'; }).join('');
-    var moHtml = months.map(function (m) { return '<div class="ps-g-mocell" style="width:' + m.w + 'px;">' + (m.w > 24 ? MO[m.d.getMonth()] : '') + '</div>'; }).join('');
-
-    var head = '<div class="ps-g-headrow">' +
-        '<div class="ps-g-corner" style="width:' + labelW + 'px;"><div style="padding:5px 10px;font-size:11px;font-weight:700;">Activity</div></div>' +
-        '<div class="ps-g-timehead" style="width:' + totalW + 'px;"><div class="ps-g-yr">' + yrHtml + '</div><div class="ps-g-morow">' + moHtml + '</div></div>' +
-      '</div>';
-
-    var rowsHtml = f.map(function (r) {
-      var s = pdate(r.start_date), e = pdate(r.end_date);
-      var isMs = r.activity_type === 'Milestone', isSum = r.activity_type === 'WBS Summary';
-      var bar = '';
-      if (isMs && s) {
-        bar = '<div class="ps-ms" style="left:' + xOf(s) + 'px;" title="' + Fmt.esc(r.activity_name) + '"></div>';
-      } else if (s && e) {
-        var left = xOf(s), w = Math.max(3, (dDiff(s, e) + 1) * px);
-        if (isSum) {
-          bar = '<div class="ps-bar-sum" style="left:' + left + 'px;width:' + w + 'px;"></div>';
-        } else {
-          var pct = Math.min(100, Math.max(0, r.percent_complete || 0));
-          bar = '<div class="ps-bar" style="left:' + left + 'px;width:' + w + 'px;" title="' + Fmt.esc(r.activity_name) + ' · ' + pct + '%"><div class="ps-bar-fill" style="width:' + pct + '%;"></div></div>';
-          var as = pdate(r.actual_start);
-          if (as) {
-            var af = pdate(r.actual_finish) || today;
-            bar += '<div class="ps-bar-actual" style="left:' + xOf(as) + 'px;width:' + Math.max(3, (dDiff(as, af) + 1) * px) + 'px;"></div>';
-          }
-        }
-      }
-      var indent = isSum ? 0 : 14;
-      return '<div class="ps-g-row' + (isSum ? ' ps-g-summary' : '') + '">' +
-          '<div class="ps-g-label" style="width:' + labelW + 'px;padding:0 10px 0 ' + (10 + indent) + 'px;">' +
-            (r.activity_id ? '<span class="ps-g-id">' + Fmt.esc(r.activity_id) + '</span>' : '') +
-            '<span class="ps-g-name">' + Fmt.esc(r.activity_name || '') + '</span>' +
-          '</div>' +
-          '<div class="ps-g-track" style="width:' + totalW + 'px;">' + bar + '</div>' +
-        '</div>';
-    }).join('');
-
-    // month gridlines + data-date line overlay
-    var grid = '', acc = 0;
-    months.forEach(function (m) { grid += '<div class="ps-g-grid" style="left:' + (labelW + acc) + 'px;"></div>'; acc += m.w; });
-    var dd = '<div class="ps-dd-line" style="left:' + (labelW + xOf(today)) + 'px;"><div class="ps-dd-flag">Data ' + Fmt.date(iso(today)) + '</div></div>';
-
-    host.innerHTML = head + '<div class="ps-g-body" style="width:' + (labelW + totalW) + 'px;">' + grid + rowsHtml + dd + '</div>';
+    // ungrouped tasks (no matching WBS row)
+    list.filter(function (r) { return !isWbs(r) && !used[r.id]; }).forEach(function (t) { t._depth = 0; out.push(t); });
+    return out;
   }
+
+  // rolled-up span for a WBS row (over descendants)
+  function wbsSpan(w) {
+    var kids = rows.filter(function (r) { return !isWbs(r) && (r.wbs === w.wbs || String(r.wbs).indexOf(w.wbs + '.') === 0); });
+    var starts = [], ends = [];
+    kids.forEach(function (r) { var s = pd(r.start_date), e = pd(r.end_date); if (s) starts.push(s); if (e) ends.push(e); });
+    if (!starts.length) return null;
+    return { s: new Date(Math.min.apply(null, starts)), e: new Date(Math.max.apply(null, ends.length ? ends : starts)) };
+  }
+
+  // ---- timeline range ----
+  function range() {
+    var ds = [], de = [];
+    rows.forEach(function (r) {
+      [pd(r.start_date), pd(r.bl_start)].forEach(function (d) { if (d) ds.push(d); });
+      [pd(r.end_date), pd(r.bl_finish)].forEach(function (d) { if (d) de.push(d); });
+    });
+    var t = today(); ds.push(t); de.push(t);
+    if (!ds.length) { var n = today(); return { min: addDays(n,-30), max: addDays(n,90) }; }
+    var min = new Date(Math.min.apply(null, ds)), max = new Date(Math.max.apply(null, de));
+    min = new Date(min.getFullYear(), min.getMonth(), 1);
+    max = new Date(max.getFullYear(), max.getMonth() + 2, 0);
+    return { min: min, max: max };
+  }
+
+  // ---- render everything ----
+  function renderAll() { renderKpis(); renderGrid(); renderGantt(); renderCost(); }
 
   function renderKpis() {
-    var total     = rows.length;
-    var completed = rows.filter(function (r) { return r.status === 'Completed';   }).length;
-    var inProg    = rows.filter(function (r) { return r.status === 'In Progress'; }).length;
-    var notStart  = rows.filter(function (r) { return !r.status || r.status === 'Not Started'; }).length;
-    var avgPct    = total ? Math.round(rows.reduce(function (s,r) { return s + (r.percent_complete || 0); }, 0) / total) : 0;
-    var totPlan   = rows.reduce(function (s,r) { return s + (r.planned_cost || 0); }, 0);
-    var totAct    = rows.reduce(function (s,r) { return s + (r.actual_cost  || 0); }, 0);
-    var totEV     = rows.reduce(function (s,r) { return s + (r.earned_value || 0); }, 0);
-    var cpi = totAct  > 0 ? totEV / totAct  : null;
-    var spi = totPlan > 0 ? totEV / totPlan : null;
-
-    function kpi(label, val, sub, colorCls) {
-      return '<div class="ps-kpi"><div class="ps-kpi-label">' + label + '</div>' +
-             '<div class="ps-kpi-value ' + (colorCls||'') + '">' + val + '</div>' +
-             (sub ? '<div class="ps-kpi-sub">' + sub + '</div>' : '') + '</div>';
-    }
-
+    var tasks = rows.filter(function (r) { return !isWbs(r); });
+    var total = tasks.length;
+    var done = tasks.filter(function (r) { return r.status === 'Completed'; }).length;
+    var prog = tasks.filter(function (r) { return r.status === 'In Progress'; }).length;
+    var avg = total ? Math.round(tasks.reduce(function (s, r) { return s + (r.percent_complete || 0); }, 0) / total) : 0;
+    var tp = tasks.reduce(function (s, r) { return s + (r.planned_cost || 0); }, 0);
+    var ta = tasks.reduce(function (s, r) { return s + (r.actual_cost || 0); }, 0);
+    var ev = tasks.reduce(function (s, r) { return s + (r.earned_value || 0); }, 0);
+    var cpi = ta > 0 ? ev / ta : null, spi = tp > 0 ? ev / tp : null;
+    function k(l, v, sub, cls) { return '<div class="ps-kpi"><div class="ps-kpi-label">' + l + '</div><div class="ps-kpi-value ' + (cls||'') + '">' + v + '</div>' + (sub ? '<div class="ps-kpi-sub">' + sub + '</div>' : '') + '</div>'; }
     document.getElementById('ps-kpis').innerHTML =
-      kpi('Overall Progress', avgPct + '%', total + ' activities', '') +
-      kpi('Completed',        completed,    notStart + ' not started', '') +
-      kpi('In Progress',      inProg,       '', '') +
-      kpi('Planned Cost',     Fmt.moneyShort(totPlan), 'Actual: ' + Fmt.moneyShort(totAct), '') +
-      kpi('CPI',
-          cpi !== null ? cpi.toFixed(2) : '—',
-          cpi !== null ? (cpi >= 1 ? 'On/under budget' : 'Over budget') : 'No cost data',
-          cpi === null ? '' : cpi >= 1 ? 'ps-kpi-green' : 'ps-kpi-red') +
-      kpi('SPI',
-          spi !== null ? spi.toFixed(2) : '—',
-          spi !== null ? (spi >= 1 ? 'On/ahead of schedule' : 'Behind schedule') : 'No EV data',
-          spi === null ? '' : spi >= 1 ? 'ps-kpi-green' : 'ps-kpi-red');
+      k('Overall Progress', avg + '%', total + ' activities') +
+      k('Completed', done, prog + ' in progress') +
+      k('Planned Cost', Fmt.moneyShort(tp), 'Actual: ' + Fmt.moneyShort(ta)) +
+      k('CPI', cpi !== null ? cpi.toFixed(2) : '—', cpi !== null ? (cpi >= 1 ? 'On/under budget' : 'Over budget') : 'No cost data', cpi === null ? '' : cpi >= 1 ? 'ps-kpi-green' : 'ps-kpi-red') +
+      k('SPI', spi !== null ? spi.toFixed(2) : '—', spi !== null ? (spi >= 1 ? 'On/ahead' : 'Behind') : 'No EV data', spi === null ? '' : spi >= 1 ? 'ps-kpi-green' : 'ps-kpi-red');
   }
 
-  function renderSchedule() {
-    var f    = filtered();
-    var body = document.getElementById('ps-sched-body');
-    if (!f.length) {
-      body.innerHTML = '<tr><td colspan="13" class="ps-empty">' +
-        (pid ? 'No activities match the filter. Add one to get started.' : 'Select a project to view the schedule.') +
-        '</td></tr>';
-      return;
-    }
-    body.innerHTML = f.map(function (r) {
-      var isWbs  = r.activity_type === 'WBS Summary';
-      var indent = isWbs ? '' : 'padding-left:24px;';
-      return '<tr class="' + (isWbs ? 'ps-wbs-row' : '') + '">' +
-        '<td><code style="font-size:11px;">'             + Fmt.esc(r.wbs           || '') + '</code></td>' +
-        '<td style="font-size:12px;color:var(--pd-muted);">' + Fmt.esc(r.activity_id   || '—') + '</td>' +
-        '<td style="' + indent + '">'                    + Fmt.esc(r.activity_name  || '') + '</td>' +
-        '<td>'  + typeBadge(r.activity_type) + '</td>' +
-        '<td>'  + pill(r.status)             + '</td>' +
-        '<td>'  + Fmt.date(r.start_date)     + '</td>' +
-        '<td>'  + Fmt.date(r.end_date)       + '</td>' +
-        '<td>'  + Fmt.date(r.actual_start)   + '</td>' +
-        '<td>'  + Fmt.date(r.actual_finish)  + '</td>' +
-        '<td class="ps-num">' + (r.duration_days ? r.duration_days + 'd' : '—') + '</td>' +
-        '<td>'  + progBar(r.percent_complete) + '</td>' +
-        '<td style="font-size:12px;color:var(--pd-muted);">' + Fmt.esc(r.responsible_party || '—') + '</td>' +
-        '<td><div class="ps-actions">' +
-          '<button class="ps-btn-sm" onclick="PS.edit(\'' + r.id + '\')">Edit</button>' +
-          '<button class="ps-btn-sm ps-btn-del" onclick="PS.del(\'' + r.id + '\')">&#215;</button>' +
-        '</div></td>' +
-      '</tr>';
+  // ----- LEFT GRID -----
+  function renderGrid() {
+    var head = document.getElementById('ps-grid-head');
+    head.innerHTML = '<div class="ps-grid-row head">' +
+      '<div class="ps-cell c-id">Activity ID</div>' +
+      '<div class="ps-cell c-name">Activity Name</div>' +
+      '<div class="ps-cell c-date">BL Start</div>' +
+      '<div class="ps-cell c-date">BL Finish</div>' +
+      '<div class="ps-cell c-date">Start</div>' +
+      '<div class="ps-cell c-date">Finish</div>' +
+      '<div class="ps-cell c-dur">Dur</div>' +
+      '<div class="ps-cell c-pct">%</div></div>';
+    var rowsHost = document.getElementById('ps-grid-rows');
+    var dl = displayList();
+    if (!dl.length) { rowsHost.innerHTML = '<div class="ps-empty">' + (pid ? 'No activities yet. Use “Add activity”.' : 'Select a project.') + '</div>'; return; }
+    rowsHost.innerHTML = dl.map(function (r, i) {
+      if (isWbs(r)) {
+        var sp = wbsSpan(r);
+        var arrow = collapsed[r.wbs] ? '►' : '▼';
+        return '<div class="ps-grid-row ps-wbs-row" data-i="' + i + '">' +
+          '<div class="ps-cell c-id">' + esc(r.wbs || '') + '</div>' +
+          '<div class="ps-cell c-name" style="padding-left:' + (6 + r._depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(r.wbs) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
+          '<div class="ps-cell c-date"></div><div class="ps-cell c-date"></div>' +
+          '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
+          '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.e)) : '—') + '</div>' +
+          '<div class="ps-cell c-dur"></div><div class="ps-cell c-pct"></div></div>';
+      }
+      var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : (r.duration_days || '');
+      var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
+      function ed(field, val, type) {
+        return '<div class="ps-cell ' + (type==='date'?'c-date':'') + ' ps-editable" data-id="' + r.id + '" data-field="' + field + '" data-type="' + type + '">' + val + '</div>';
+      }
+      return '<div class="ps-grid-row' + (r.id===selId?' ps-row-sel':'') + '" data-i="' + i + '" data-rowid="' + r.id + '">' +
+        '<div class="ps-cell c-id ps-editable" data-id="' + r.id + '" data-field="activity_id" data-type="text">' + esc(r.activity_id || '') + '</div>' +
+        '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + r._depth*14) + 'px;">' + mile + esc(r.activity_name || '') + '</div>' +
+        '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_start" data-type="date">' + (r.bl_start ? Fmt.date(r.bl_start) : '—') + '</div>' +
+        '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_finish" data-type="date">' + (r.bl_finish ? Fmt.date(r.bl_finish) : '—') + '</div>' +
+        '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="start_date" data-type="date">' + (r.start_date ? Fmt.date(r.start_date) : '—') + '</div>' +
+        '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="end_date" data-type="date">' + (r.end_date ? Fmt.date(r.end_date) : '—') + '</div>' +
+        '<div class="ps-cell c-dur">' + (dur ? dur + 'd' : '') + '</div>' +
+        '<div class="ps-cell c-pct ps-editable" data-id="' + r.id + '" data-field="percent_complete" data-type="number">' + (r.percent_complete != null ? r.percent_complete + '%' : '') + '</div></div>';
     }).join('');
+    // toggles
+    rowsHost.querySelectorAll('[data-toggle]').forEach(function (t) {
+      t.onclick = function (e) { e.stopPropagation(); var w = t.dataset.toggle; collapsed[w] = !collapsed[w]; renderGrid(); renderGantt(); };
+    });
+    // inline edit
+    rowsHost.querySelectorAll('.ps-editable').forEach(function (c) {
+      c.onclick = function () { beginEdit(c); };
+    });
+    rowsHost.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) {
+      rw.addEventListener('click', function () { selId = rw.dataset.rowid; highlightRow(); });
+    });
   }
 
-  function renderCost() {
-    var f    = filtered();
-    var body = document.getElementById('ps-cost-body');
-    if (!f.length) {
-      body.innerHTML = '<tr><td colspan="8" class="ps-empty">' +
-        (pid ? 'No activities match the filter.' : 'Select a project to view cost loading.') +
-        '</td></tr>';
-      return;
+  function highlightRow() {
+    document.querySelectorAll('#ps-grid-rows .ps-grid-row').forEach(function (rw) { rw.classList.toggle('ps-row-sel', rw.dataset.rowid === selId); });
+    document.querySelectorAll('#ps-tl .ps-bar, #ps-tl .ps-mile').forEach(function (b) { b.style.outline = (b.dataset.id === selId) ? '2px solid var(--pd-red)' : ''; });
+  }
+
+  function beginEdit(cell) {
+    if (cell.querySelector('input')) return;
+    var id = cell.dataset.id, field = cell.dataset.field, type = cell.dataset.type;
+    var r = rows.find(function (x) { return x.id === id; });
+    if (!r) return;
+    var cur = r[field]; var raw = cur == null ? '' : cur;
+    if (type === 'date') raw = r[field] ? String(r[field]).slice(0,10) : '';
+    var inp = document.createElement('input');
+    inp.type = type === 'date' ? 'date' : (type === 'number' ? 'number' : 'text');
+    inp.value = raw;
+    cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); if (inp.select) inp.select();
+    var done = false;
+    function commit(save) {
+      if (done) return; done = true;
+      if (!save) { renderGrid(); return; }
+      var val = inp.value;
+      var patch = {};
+      if (type === 'number') { patch[field] = val === '' ? null : Math.max(0, Math.min(100, parseFloat(val)||0)); }
+      else if (type === 'date') { patch[field] = val || null; }
+      else { patch[field] = val.trim() || null; }
+      // recompute duration if start/finish changed
+      if (field === 'start_date' || field === 'end_date') {
+        var s = pd(field === 'start_date' ? patch.start_date : r.start_date);
+        var e = pd(field === 'end_date' ? patch.end_date : r.end_date);
+        if (s && e) { if (e < s) { UI.toast('Finish is before start.', 'warn'); } patch.duration_days = dayDiff(s, e) + 1; }
+      }
+      persist(id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); } });
     }
-    var totPlan = f.reduce(function (s,r) { return s + (r.planned_cost || 0); }, 0);
-    var totAct  = f.reduce(function (s,r) { return s + (r.actual_cost  || 0); }, 0);
-    var totEV   = f.reduce(function (s,r) { return s + (r.earned_value || 0); }, 0);
-    var totCV   = totEV - totAct;
-    var totCPI  = totAct > 0 ? totEV / totAct : null;
-
-    function varCls(n)  { return n > 0 ? 'ps-green' : n < 0 ? 'ps-red' : ''; }
-    function cpiCls(c)  { return c === null ? '' : c >= 1 ? 'ps-green' : 'ps-red'; }
-    function sign(n)    { return n >= 0 ? '+' : ''; }
-
-    body.innerHTML = f.map(function (r) {
-      var cv  = (r.earned_value || 0) - (r.actual_cost || 0);
-      var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
-      return '<tr>' +
-        '<td><code style="font-size:11px;">' + Fmt.esc(r.wbs || '') + '</code></td>' +
-        '<td>' + Fmt.esc(r.activity_name || '') + '</td>' +
-        '<td class="ps-num">' + Fmt.money(r.planned_cost || 0) + '</td>' +
-        '<td class="ps-num">' + Fmt.money(r.actual_cost  || 0) + '</td>' +
-        '<td class="ps-num">' + Fmt.money(r.earned_value || 0) + '</td>' +
-        '<td class="ps-num ' + varCls(cv)  + '">' + sign(cv)  + Fmt.money(cv)  + '</td>' +
-        '<td class="ps-num ' + cpiCls(cpi) + '">' + (cpi !== null ? cpi.toFixed(2) : '—') + '</td>' +
-        '<td class="ps-num">' + (r.percent_complete || 0) + '%</td>' +
-      '</tr>';
-    }).join('') +
-    '<tr class="ps-totals-row">' +
-      '<td colspan="2">TOTAL (' + f.length + ' activities)</td>' +
-      '<td class="ps-num">' + Fmt.money(totPlan) + '</td>' +
-      '<td class="ps-num">' + Fmt.money(totAct)  + '</td>' +
-      '<td class="ps-num">' + Fmt.money(totEV)   + '</td>' +
-      '<td class="ps-num ' + varCls(totCV)  + '">' + sign(totCV)  + Fmt.money(totCV)  + '</td>' +
-      '<td class="ps-num ' + cpiCls(totCPI) + '">' + (totCPI !== null ? totCPI.toFixed(2) : '—') + '</td>' +
-      '<td></td>' +
-    '</tr>';
+    inp.onblur = function () { commit(true); };
+    inp.onkeydown = function (e) { if (e.key === 'Enter') { inp.blur(); } else if (e.key === 'Escape') { commit(false); } };
   }
 
-  /* ── modal ────────────────────────────────────────────────── */
+  // ----- RIGHT GANTT -----
+  function renderGantt() {
+    var rg = range(), min = rg.min, max = rg.max;
+    var dayw = DAYW[zoom];
+    var totalDays = dayDiff(min, max) + 1;
+    var W = Math.max(totalDays * dayw, 300);
+    var dl = displayList();
+    var H = dl.length * 34;
+
+    // header
+    var head = document.getElementById('ps-gantt-head');
+    var yrs = '', mos = '';
+    var cur = new Date(min.getFullYear(), min.getMonth(), 1);
+    while (cur <= max) {
+      var x = dayDiff(min, cur) * dayw;
+      var next = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+      var wmo = dayDiff(cur, next) * dayw;
+      if (zoom !== 'year') mos += '<div class="ps-mo" style="left:' + x + 'px;width:' + wmo + 'px;">' + (cur.getMonth()+1) + '</div>';
+      if (cur.getMonth() === 0 || dayDiff(min, cur) === 0) {
+        var yend = new Date(cur.getFullYear() + 1, 0, 1); if (yend > max) yend = max;
+        var wy = dayDiff(cur, yend) * dayw;
+        yrs += '<div class="ps-yr" style="left:' + x + 'px;width:' + Math.max(wy, 30) + 'px;">' + cur.getFullYear() + '</div>';
+      }
+      cur = next;
+    }
+    head.innerHTML = '<div style="position:relative;width:' + W + 'px;height:38px;">' + yrs + mos + '</div>';
+
+    // body
+    var tl = document.getElementById('ps-tl');
+    tl.style.width = W + 'px'; tl.style.height = H + 'px';
+    var parts = [];
+    // vertical month grid
+    var g = new Date(min.getFullYear(), min.getMonth(), 1);
+    while (g <= max) { parts.push('<div class="ps-grid-v" style="left:' + (dayDiff(min, g) * dayw) + 'px;"></div>'); g = new Date(g.getFullYear(), g.getMonth() + 1, 1); }
+    // row backgrounds
+    dl.forEach(function (r, i) { parts.push('<div class="ps-row-bg' + (i%2?' alt':'') + '" style="top:' + (i*34) + 'px;"></div>'); });
+    // data date line
+    var dd = today(); var ddx = dayDiff(min, dd) * dayw;
+    parts.push('<div class="ps-datedate" style="left:' + ddx + 'px;"></div><div class="ps-datedate-lbl" style="left:' + ddx + 'px;">Data ' + Fmt.date(dstr(dd)) + '</div>');
+    // bars
+    dl.forEach(function (r, i) {
+      var top = i * 34;
+      if (isWbs(r)) {
+        var sp = wbsSpan(r); if (!sp) return;
+        var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw;
+        parts.push('<div class="ps-sum" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + 12) + 'px;"></div>');
+        return;
+      }
+      // baseline
+      var bs = pd(r.bl_start), be = pd(r.bl_finish);
+      if (bs && be) { var bx = dayDiff(min, bs)*dayw, bw = (dayDiff(bs, be)+1)*dayw; parts.push('<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + 24) + 'px;"></div>'); }
+      var s = pd(r.start_date), e = pd(r.end_date);
+      if (isMile(r) && s) { var mx = dayDiff(min, s)*dayw; parts.push('<div class="ps-mile" data-id="' + r.id + '" style="left:' + (mx-6) + 'px;top:' + (top + 9) + 'px;"></div>'); return; }
+      if (!s || !e) return;
+      var x2 = dayDiff(min, s) * dayw, w2 = Math.max((dayDiff(s, e) + 1) * dayw, 4);
+      var pct = Math.max(0, Math.min(100, r.percent_complete || 0));
+      parts.push('<div class="ps-bar task" data-id="' + r.id + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + (top + 9) + 'px;">' +
+        '<div class="ps-bar-fill" style="width:' + pct + '%;"></div>' +
+        '<div class="ps-handle l"></div><div class="ps-handle r"></div></div>');
+      parts.push('<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (top + 9) + 'px;">' + esc(r.activity_name || '') + '</div>');
+    });
+    tl.innerHTML = parts.join('');
+    wireDrag(min, dayw);
+    highlightRow();
+  }
+
+  // drag + resize
+  function wireDrag(min, dayw) {
+    document.querySelectorAll('#ps-tl .ps-bar').forEach(function (bar) {
+      var id = bar.dataset.id;
+      var r = rows.find(function (x) { return x.id === id; });
+      if (!r) return;
+      bar.querySelector('.ps-handle.l').addEventListener('mousedown', function (e) { startDrag(e, r, bar, dayw, 'l'); });
+      bar.querySelector('.ps-handle.r').addEventListener('mousedown', function (e) { startDrag(e, r, bar, dayw, 'r'); });
+      bar.addEventListener('mousedown', function (e) { if (e.target.classList.contains('ps-handle')) return; startDrag(e, r, bar, dayw, 'move'); });
+    });
+    document.querySelectorAll('#ps-tl .ps-mile').forEach(function (m) {
+      var r = rows.find(function (x) { return x.id === m.dataset.id; });
+      if (r) m.addEventListener('mousedown', function (e) { startDrag(e, r, m, dayw, 'mile'); });
+    });
+  }
+  function startDrag(e, r, el, dayw, mode) {
+    e.preventDefault(); e.stopPropagation();
+    selId = r.id; highlightRow();
+    var startX = e.clientX;
+    var os = pd(r.start_date), oe = pd(r.end_date) || os;
+    var ox = parseFloat(el.style.left), ow = parseFloat(el.style.width) || 13;
+    el.classList.add('dragging');
+    function mm(ev) {
+      var dd = Math.round((ev.clientX - startX) / dayw);
+      if (mode === 'move' || mode === 'mile') { el.style.left = (ox + dd * dayw) + 'px'; }
+      else if (mode === 'l') { var nw = ow - dd * dayw; if (nw < dayw) return; el.style.left = (ox + dd*dayw) + 'px'; el.style.width = nw + 'px'; }
+      else if (mode === 'r') { var nw2 = ow + dd * dayw; if (nw2 < dayw) return; el.style.width = nw2 + 'px'; }
+    }
+    function up(ev) {
+      document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
+      el.classList.remove('dragging');
+      var dd = Math.round((ev.clientX - startX) / dayw);
+      if (dd === 0 && mode !== 'move') { return; }
+      var ns = os, ne = oe, patch = {};
+      if (mode === 'move' || mode === 'mile') { ns = addDays(os, dd); ne = addDays(oe, dd); }
+      else if (mode === 'l') { ns = addDays(os, dd); if (ns > ne) ns = ne; }
+      else if (mode === 'r') { ne = addDays(oe, dd); if (ne < ns) ne = ns; }
+      patch.start_date = dstr(ns); patch.end_date = dstr(ne); patch.duration_days = dayDiff(ns, ne) + 1;
+      persist(r.id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); } else { renderGantt(); } });
+    }
+    document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
+  }
+
+  // ----- COST TAB -----
+  function renderCost() {
+    var body = document.getElementById('ps-cost-body');
+    var f = rows.filter(function (r) { return !isWbs(r); });
+    if (!f.length) { body.innerHTML = '<tr><td colspan="8" class="ps-empty">' + (pid ? 'No activities.' : 'Select a project to view cost loading.') + '</td></tr>'; return; }
+    var tp = 0, ta = 0, tv = 0;
+    function vc(n) { return n > 0 ? 'ps-green' : n < 0 ? 'ps-red' : ''; }
+    body.innerHTML = f.map(function (r) {
+      var cv = (r.earned_value || 0) - (r.actual_cost || 0);
+      var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
+      tp += r.planned_cost || 0; ta += r.actual_cost || 0; tv += r.earned_value || 0;
+      return '<tr><td><code>' + esc(r.wbs || '') + '</code></td><td>' + esc(r.activity_name || '') + '</td>' +
+        '<td class="ps-num">' + Fmt.money(r.planned_cost || 0) + '</td><td class="ps-num">' + Fmt.money(r.actual_cost || 0) + '</td>' +
+        '<td class="ps-num">' + Fmt.money(r.earned_value || 0) + '</td><td class="ps-num ' + vc(cv) + '">' + (cv>=0?'+':'') + Fmt.money(cv) + '</td>' +
+        '<td class="ps-num">' + (cpi !== null ? cpi.toFixed(2) : '—') + '</td><td class="ps-num">' + (r.percent_complete || 0) + '%</td></tr>';
+    }).join('') + '<tr class="ps-totals-row"><td colspan="2">TOTAL (' + f.length + ')</td>' +
+      '<td class="ps-num">' + Fmt.money(tp) + '</td><td class="ps-num">' + Fmt.money(ta) + '</td>' +
+      '<td class="ps-num">' + Fmt.money(tv) + '</td><td class="ps-num ' + vc(tv-ta) + '">' + ((tv-ta)>=0?'+':'') + Fmt.money(tv-ta) + '</td>' +
+      '<td class="ps-num">' + (ta>0?(tv/ta).toFixed(2):'—') + '</td><td></td></tr>';
+  }
+
+  // ----- MODAL -----
   function openForm(row) {
     editId = row ? row.id : null;
     document.getElementById('ps-modal-title').textContent = row ? 'Edit Activity' : 'Add Activity';
-
-    var set = function (id, val) { document.getElementById(id).value = val != null ? val : ''; };
-    set('ps-f-wbs',       row ? (row.wbs            || '') : '');
-    set('ps-f-actid',     row ? (row.activity_id     || '') : '');
-    set('ps-f-name',      row ? (row.activity_name   || '') : '');
-    set('ps-f-type-sel',  row ? (row.activity_type   || 'Task') : 'Task');
-    set('ps-f-status-sel',row ? (row.status          || 'Not Started') : 'Not Started');
-    set('ps-f-start',     row ? (row.start_date      || '') : '');
-    set('ps-f-finish',    row ? (row.end_date        || '') : '');
-    set('ps-f-astart',    row ? (row.actual_start    || '') : '');
-    set('ps-f-afinish',   row ? (row.actual_finish   || '') : '');
-    set('ps-f-pct',       row && row.percent_complete != null ? row.percent_complete : '');
-    set('ps-f-resp',      row ? (row.responsible_party || '') : '');
-    set('ps-f-pcost',     row && row.planned_cost  != null ? row.planned_cost  : '');
-    set('ps-f-acost',     row && row.actual_cost   != null ? row.actual_cost   : '');
-    set('ps-f-ev',        row && row.earned_value  != null ? row.earned_value  : '');
-    set('ps-f-pred',      row ? (row.predecessors   || '') : '');
-    set('ps-f-remarks',   row ? (row.remarks        || '') : '');
-
+    var set = function (id, v) { document.getElementById(id).value = v != null ? v : ''; };
+    set('ps-f-wbs', row ? row.wbs : ''); set('ps-f-actid', row ? row.activity_id : '');
+    set('ps-f-name', row ? row.activity_name : ''); set('ps-f-type-sel', row ? (row.activity_type || 'Task') : 'Task');
+    set('ps-f-status-sel', row ? (row.status || 'Not Started') : 'Not Started');
+    set('ps-f-bls', row && row.bl_start ? String(row.bl_start).slice(0,10) : '');
+    set('ps-f-blf', row && row.bl_finish ? String(row.bl_finish).slice(0,10) : '');
+    set('ps-f-start', row && row.start_date ? String(row.start_date).slice(0,10) : '');
+    set('ps-f-finish', row && row.end_date ? String(row.end_date).slice(0,10) : '');
+    set('ps-f-pct', row && row.percent_complete != null ? row.percent_complete : '');
+    set('ps-f-resp', row ? row.responsible_party : '');
+    set('ps-f-pcost', row && row.planned_cost != null ? row.planned_cost : '');
+    set('ps-f-acost', row && row.actual_cost != null ? row.actual_cost : '');
+    set('ps-f-ev', row && row.earned_value != null ? row.earned_value : '');
+    set('ps-f-remarks', row ? row.remarks : '');
     document.getElementById('ps-modal').style.display = 'flex';
   }
-
-  function closeModal() {
-    document.getElementById('ps-modal').style.display = 'none';
-    editId = null;
-  }
-
+  function closeModal() { document.getElementById('ps-modal').style.display = 'none'; editId = null; }
   async function save() {
-    var wbs    = strVal('ps-f-wbs');
-    var name   = strVal('ps-f-name');
-    var start  = dateVal('ps-f-start');
-    var finish = dateVal('ps-f-finish');
-    if (!wbs)    { UI.toast('WBS Code is required.',       'error'); return; }
-    if (!name)   { UI.toast('Activity Name is required.',  'error'); return; }
-    if (!start)  { UI.toast('Planned Start is required.',  'error'); return; }
-    if (!finish) { UI.toast('Planned Finish is required.', 'error'); return; }
-    if (!pid)    { UI.toast('Select a project first.',     'error'); return; }
-
-    var startMs  = new Date(start).getTime();
-    var finishMs = new Date(finish).getTime();
-    if (finishMs < startMs) { UI.toast('Planned Finish must be after Planned Start.', 'error'); return; }
-    var dur = Math.round((finishMs - startMs) / 86400000) + 1;
-
-    var rawPcost = strVal('ps-f-pcost');
-    var rawAcost = strVal('ps-f-acost');
-    var rawEV    = strVal('ps-f-ev');
-    var rawPct   = strVal('ps-f-pct');
-
+    var v = function (id) { return document.getElementById(id).value.trim(); };
+    var wbs = v('ps-f-wbs'), name = v('ps-f-name'), start = v('ps-f-start') || null, finish = v('ps-f-finish') || null;
+    if (!wbs) { UI.toast('WBS Code required.', 'error'); return; }
+    if (!name) { UI.toast('Activity Name required.', 'error'); return; }
+    var type = document.getElementById('ps-f-type-sel').value;
+    var dur = (start && finish) ? dayDiff(pd(start), pd(finish)) + 1 : null;
+    var num = function (id) { var x = v(id); return x === '' ? null : parseFloat(x); };
     var payload = {
-      project_id:        pid,
-      wbs:               wbs,
-      activity_id:       strVal('ps-f-actid') || null,
-      activity_name:     name,
-      activity_type:     document.getElementById('ps-f-type-sel').value,
-      status:            document.getElementById('ps-f-status-sel').value,
-      start_date:        start,
-      end_date:          finish,
-      actual_start:      dateVal('ps-f-astart')  || null,
-      actual_finish:     dateVal('ps-f-afinish') || null,
-      duration_days:     dur,
-      percent_complete:  rawPct   !== '' ? parseFloat(rawPct)   : 0,
-      responsible_party: strVal('ps-f-resp') || null,
-      planned_cost:      rawPcost !== '' ? parseFloat(rawPcost) : null,
-      actual_cost:       rawAcost !== '' ? parseFloat(rawAcost) : null,
-      earned_value:      rawEV    !== '' ? parseFloat(rawEV)    : null,
-      predecessors:      strVal('ps-f-pred')    || null,
-      remarks:           strVal('ps-f-remarks') || null,
-      updated_at:        new Date().toISOString()
+      project_id: pid, wbs: wbs, activity_id: v('ps-f-actid') || null, activity_name: name,
+      activity_type: type, status: document.getElementById('ps-f-status-sel').value,
+      bl_start: v('ps-f-bls') || null, bl_finish: v('ps-f-blf') || null,
+      start_date: start, end_date: finish, duration_days: dur,
+      percent_complete: num('ps-f-pct') != null ? num('ps-f-pct') : 0,
+      responsible_party: v('ps-f-resp') || null,
+      planned_cost: num('ps-f-pcost'), actual_cost: num('ps-f-acost'), earned_value: num('ps-f-ev'),
+      remarks: v('ps-f-remarks') || null, updated_at: new Date().toISOString()
     };
-
     var res;
-    if (editId) {
-      res = await sb().from(TABLE).update(payload).eq('id', editId);
-    } else {
-      payload.created_by = AppAuth.getUser().id;
-      res = await sb().from(TABLE).insert(payload);
-    }
-
+    if (editId) { res = await sb().from(TABLE).update(payload).eq('id', editId); }
+    else { try { payload.created_by = AppAuth.getUser().id; } catch (e) {} res = await sb().from(TABLE).insert(payload); }
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
-    closeModal();
-    load();
+    closeModal(); load();
   }
 
-  /* ── tab switch ───────────────────────────────────────────── */
+  // ----- tabs / view switch -----
   function switchTab(tab) {
-    document.querySelectorAll('.ps-tab').forEach(function (b) {
-      b.classList.toggle('active', b.dataset.tab === tab);
-    });
+    document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
-    document.getElementById('ps-view-gantt').style.display    = tab === 'gantt'    ? '' : 'none';
-    document.getElementById('ps-view-cost').style.display     = tab === 'cost'     ? '' : 'none';
-    document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) {
-      a.classList.toggle('active', a.dataset.view === tab);
-    });
-    if (tab === 'gantt') renderGantt();   // ensure correct sizing when shown
+    document.getElementById('ps-view-cost').style.display = tab === 'cost' ? '' : 'none';
+    document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
+    if (tab === 'schedule') renderGantt();
   }
 
-  /* ── public API (inline onclick) ─────────────────────────── */
-  window.PS = {
-    edit: function (id) {
-      var row = rows.find(function (r) { return r.id === id; });
-      if (row) openForm(row);
-    },
-    del: function (id) {
-      if (!confirm('Delete this activity? This cannot be undone.')) return;
-      sb().from(TABLE).delete().eq('id', id).then(function (res) {
-        if (res.error) { UI.toast(res.error.message, 'error'); return; }
-        UI.toast('Activity deleted.', 'success');
-        load();
-      });
-    }
-  };
+  window.PS = { edit: function (id) { var r = rows.find(function (x) { return x.id === id; }); if (r) openForm(r); } };
 
-  /* ── init ─────────────────────────────────────────────────── */
+  // ----- init -----
   AppAuth.requireLogin(function (user, profile) {
     UI.renderUserBar(profile);
     UI.initShell();
-
-    // sidebar nav
-    document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) {
-      a.onclick = function (e) { e.preventDefault(); switchTab(a.dataset.view); };
+    document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.onclick = function (e) { e.preventDefault(); switchTab(a.dataset.view); }; });
+    document.querySelectorAll('.ps-tab').forEach(function (b) { b.onclick = function () { switchTab(b.dataset.tab); }; });
+    document.getElementById('ps-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); collapsed = {}; load(); };
+    document.getElementById('ps-search').oninput = function (e) { search = e.target.value; renderGrid(); renderGantt(); };
+    document.getElementById('ps-zoom').querySelectorAll('[data-zoom]').forEach(function (b) {
+      b.onclick = function () { zoom = b.dataset.zoom; document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.remove('active'); }); b.classList.add('active'); renderGantt(); };
     });
-
-    // tab buttons
-    document.querySelectorAll('.ps-tab').forEach(function (btn) {
-      btn.onclick = function () { switchTab(btn.dataset.tab); };
-    });
-
-    // gantt zoom
-    document.querySelectorAll('#ps-zoom button').forEach(function (b) {
-      b.onclick = function () {
-        ganttZoom = b.dataset.zoom;
-        document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.toggle('active', x === b); });
-        renderGantt();
-      };
-    });
-
-    // project picker
-    document.getElementById('ps-project').onchange = function (e) {
-      pid = e.target.value || null;
-      if (pid) sessionStorage.setItem('pd_project', pid);
-      rows = [];
-      render();
-      if (pid) load();
-    };
-
-    // filters
-    ['ps-f-status', 'ps-f-type', 'ps-f-search'].forEach(function (id) {
-      var el = document.getElementById(id);
-      el.oninput = el.onchange = function () {
-        filters.status = document.getElementById('ps-f-status').value;
-        filters.type   = document.getElementById('ps-f-type').value;
-        filters.search = document.getElementById('ps-f-search').value.toLowerCase().trim();
-        render();
-      };
-    });
-
-    // add button
-    document.getElementById('ps-add').onclick = function () {
-      if (!pid) { UI.toast('Select a project first.', 'error'); return; }
-      openForm(null);
-    };
-
-    // modal controls
-    document.getElementById('ps-modal-close').onclick  = closeModal;
+    document.getElementById('ps-expand').onclick = function () { collapsed = {}; renderGrid(); renderGantt(); };
+    document.getElementById('ps-collapse').onclick = function () { rows.filter(isWbs).forEach(function (w) { collapsed[w.wbs] = true; }); renderGrid(); renderGantt(); };
+    document.getElementById('ps-add').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } openForm(null); };
+    document.getElementById('ps-modal-close').onclick = closeModal;
     document.getElementById('ps-modal-cancel').onclick = closeModal;
-    document.getElementById('ps-modal-save').onclick   = save;
-    document.getElementById('ps-modal').onclick = function (e) {
-      if (e.target === this) closeModal();
-    };
+    document.getElementById('ps-modal-save').onclick = save;
+    document.getElementById('ps-modal').onclick = function (e) { if (e.target === this) closeModal(); };
+
+    // scroll sync (vertical grid<->gantt, horizontal head<->body)
+    var gs = document.getElementById('ps-grid-scroll'), gz = document.getElementById('ps-gantt-scroll'), gh = document.getElementById('ps-gantt-head');
+    var lock = false;
+    gs.addEventListener('scroll', function () { if (lock) return; lock = true; gz.scrollTop = gs.scrollTop; lock = false; });
+    gz.addEventListener('scroll', function () { if (!lock) { lock = true; gs.scrollTop = gz.scrollTop; lock = false; } gh.scrollLeft = gz.scrollLeft; });
 
     loadProjects();
   });
-
 })();
 </script>
 </body>

@@ -77,6 +77,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-06-30 — Prompt 21: Project Schedule → OPC-style Activities + interactive Gantt
+- Rebuilt the **Schedule tab** of `modules/project-schedule/` into a Primavera-Cloud-style
+  **split view**: WBS-grouped, collapsible **activities grid** (left) beside an
+  **interactive Gantt** (right), with synced vertical scroll and a shared timeline.
+- **Inline (Excel-like) editing at the activity level only** — click any activity cell
+  (ID, Name, BL Start/Finish, Start, Finish, %) to edit; saves to Supabase on Enter/blur and
+  recomputes duration. WBS summary rows are read-only and roll up their children's span.
+- **Interactive Gantt:** drag a bar to move, drag edges to resize (updates start/finish +
+  duration, persists); WBS summary bars, milestone diamonds, **baseline (BL0) bars**,
+  **%-complete fill**, month grid, and a red **data-date line** (today). Month/Quarter/Year
+  zoom; Expand/Collapse all; activity search.
+- **DB:** `project_schedule` gains `bl_start`, `bl_finish` (migration
+  `migrations/2026-06-30-schedule-baseline-columns.sql`, seeds BL0 from current plan).
+  **User must run this migration.**
+- Cost Loading tab, KPIs, Add/Edit modal preserved (modal now also takes baseline dates).
+
 ### 2026-06-30 — Catch-up (Desktop): Project Schedule build + design direction
 Recorded here to sync the Desktop CLAUDE.md with the Teams ("Planners App
 Project") work that has since landed on `main`.
