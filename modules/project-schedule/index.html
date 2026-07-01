@@ -150,6 +150,10 @@
     .ps-dl { display:grid; grid-template-columns:160px 1fr; gap:6px 16px; font-size:13px; align-items:baseline; }
     .ps-dl dt { color:var(--pd-muted); }
     .ps-dl dd { margin:0; }
+    /* OPC-style grouped Activity Details (General / Status) */
+    .ps-det-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px 26px; align-items:start; }
+    .ps-det-group h5 { margin:0 0 8px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-red); border-bottom:1px solid var(--pd-line); padding-bottom:4px; }
+    .ps-det-group .ps-dl { grid-template-columns:118px 1fr; gap:5px 10px; }
     .ps-rel-tables { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
     @media (max-width:760px) { .ps-rel-tables { grid-template-columns:1fr; } }
     .ps-rel-tables h5 { margin:0 0 6px; font-size:12px; }
@@ -754,26 +758,43 @@
   function selRow() { return selId ? rows.find(function (x) { return x.id === selId; }) : null; }
   function actName(id) { if (!id) return ''; var r = rows.find(function (x) { return String(x.activity_id) === String(id); }); return r ? (r.activity_name || '') : ''; }
   function dlHtml(pairs) { return '<dl class="ps-dl">' + pairs.map(function (p) { var v = (p[1] == null || p[1] === '') ? '—' : p[1]; return '<dt>' + p[0] + '</dt><dd>' + v + '</dd>'; }).join('') + '</dl>'; }
+  function detSection(title, pairs) { return '<div class="ps-det-group"><h5>' + esc(title) + '</h5>' + dlHtml(pairs) + '</div>'; }
   function detGeneral(r) {
-    return dlHtml([['WBS', esc(r.wbs || '')], ['Activity ID', esc(r.activity_id || '')], ['Name', esc(r.activity_name || '')],
-      ['Type', esc(r.activity_type || 'Task')], ['Status', esc(r.status || '')], ['Responsible', esc(r.responsible_party || '')],
-      ['Remarks', esc(r.remarks || '')]]);
+    // OPC-style grouped General (Identification / Classification / Assignment / Notes)
+    return '<div class="ps-det-groups">' +
+      detSection('Identification', [['WBS', esc(r.wbs || '')], ['Activity ID', esc(r.activity_id || '')], ['Activity Name', esc(r.activity_name || '')]]) +
+      detSection('Classification', [['Type', esc(r.activity_type || 'Task')], ['Status', esc(r.status || '')], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—']]) +
+      detSection('Assignment', [['Responsible', esc(r.responsible_party || '')], ['Predecessors', esc(r.predecessors || '—')]]) +
+      detSection('Notes', [['Remarks', esc(r.remarks || '')]]) +
+    '</div>';
   }
   function detStatus(r) {
+    // OPC-style grouped Status (Activity Status / Dates / Duration & Float)
     var fv = finVar(r);
-    return dlHtml([
-      ['Planned Start', r.start_date ? Fmt.date(r.start_date) : '—'],
-      ['Planned Finish', r.end_date ? Fmt.date(r.end_date) : '—'],
-      ['Actual Start', r.actual_start ? Fmt.date(r.actual_start) : '—'],
-      ['Actual Finish', r.actual_finish ? Fmt.date(r.actual_finish) : '—'],
-      ['Baseline Start', r.bl_start ? Fmt.date(r.bl_start) : '—'],
-      ['Baseline Finish', r.bl_finish ? Fmt.date(r.bl_finish) : '—'],
-      ['Duration', r.duration_days != null ? r.duration_days + 'd' : '—'],
-      ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'],
-      ['Total Float', r._float != null ? r._float + 'd' : '—'],
-      ['Critical', r._critical ? 'Yes' : 'No'],
-      ['Finish Variance (BL)', fv != null ? (fv > 0 ? '+' : '') + fv + 'd' : '—']
-    ]);
+    var started  = r.actual_start  ? 'Started ' + Fmt.date(r.actual_start)  : 'Not started';
+    var finished = r.actual_finish ? 'Finished ' + Fmt.date(r.actual_finish) : 'Not finished';
+    return '<div class="ps-det-groups">' +
+      detSection('Activity Status', [
+        ['Status', esc(r.status || '')],
+        ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'],
+        ['Start', started],
+        ['Finish', finished]
+      ]) +
+      detSection('Dates', [
+        ['Planned Start', r.start_date ? Fmt.date(r.start_date) : '—'],
+        ['Planned Finish', r.end_date ? Fmt.date(r.end_date) : '—'],
+        ['Actual Start', r.actual_start ? Fmt.date(r.actual_start) : '—'],
+        ['Actual Finish', r.actual_finish ? Fmt.date(r.actual_finish) : '—'],
+        ['Baseline Start', r.bl_start ? Fmt.date(r.bl_start) : '—'],
+        ['Baseline Finish', r.bl_finish ? Fmt.date(r.bl_finish) : '—']
+      ]) +
+      detSection('Duration & Float', [
+        ['Duration', r.duration_days != null ? r.duration_days + 'd' : '—'],
+        ['Total Float', r._float != null ? r._float + 'd' : '—'],
+        ['Critical', r._critical ? 'Yes' : 'No'],
+        ['Finish Variance (BL)', fv != null ? (fv > 0 ? '+' : '') + fv + 'd' : '—']
+      ]) +
+    '</div>';
   }
   function relRowHtml(o) { return '<tr><td>' + esc(o.id || '') + '</td><td>' + esc(actName(o.id)) + '</td><td>' + esc(o.type || 'FS') + '</td><td style="text-align:right;">' + (o.lag ? (o.lag > 0 ? '+' : '') + o.lag + 'd' : '0d') + '</td></tr>'; }
   function relPreds(r) { return (r._relObjs && r._relObjs.length) ? r._relObjs.map(function (x) { return { id: x.p.activity_id, type: x.type, lag: x.lag }; }) : predRels(r.predecessors); }
