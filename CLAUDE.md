@@ -77,6 +77,18 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-06-30 — Prompt 23: Schedule UX — per-level outline, import loader, resizable split
+- **Audited** the Westside City Site B OPC export against the parser: all 17 rows import
+  cleanly (4 WBS + 13 activities), no missing dates/%/durations. (Row count varies by
+  export because OPC only exports expanded rows; leaf WBS with no children import as activities.)
+- **Per-level expand/collapse:** added a "Levels: 1 2 3 …" segmented control (auto-sized to
+  the deepest WBS) that expands the outline to a chosen depth; per-row ▼/► toggles and
+  Expand/Collapse-all remain.
+- **Import loading indicator:** full-screen spinner overlay with live status
+  ("Reading …", "Clearing …", "Importing N of M …") during parse + chunked insert.
+- **Resizable split:** draggable divider between the activities grid and the Gantt
+  (drag to favor either pane; min 240px each; width persisted in localStorage).
+
 ### 2026-06-30 — Prompt 22: Import OPC Excel export into Project Schedule
 - Added an **Import Excel (OPC)** button to the Project Schedule toolbar. Parses an
   Oracle Primavera Cloud "Activities" `.xlsx` export **entirely in-browser** (SheetJS

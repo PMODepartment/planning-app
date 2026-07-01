@@ -90,6 +90,19 @@
     .ps-red { color:var(--pd-bad); } .ps-green { color:var(--pd-ok); }
     .ps-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .ps-form-full { grid-column:1 / -1; }
+
+    /* resizable divider between activities grid and Gantt */
+    .ps-divider { flex:0 0 6px; cursor:col-resize; background:var(--pd-line); position:relative; }
+    .ps-divider::before { content:""; position:absolute; left:2px; top:50%; transform:translateY(-50%); width:2px; height:28px; background:var(--pd-muted); border-radius:2px; opacity:.5; }
+    .ps-divider:hover, .ps-divider.drag { background:var(--pd-red); }
+    /* per-level outline buttons (reuses .ps-seg) */
+    #ps-levels button { min-width:26px; }
+    .ps-outline-lbl { font-size:12px; color:var(--pd-muted); }
+    /* loading overlay */
+    .ps-loading { position:fixed; inset:0; background:rgba(20,20,20,.45); display:flex; flex-direction:column;
+      align-items:center; justify-content:center; gap:14px; z-index:9999; color:#fff; font-weight:600; font-size:14px; }
+    .ps-spin { width:40px; height:40px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:ps-spin .8s linear infinite; }
+    @keyframes ps-spin { to { transform:rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -120,6 +133,7 @@
         </div>
         <button class="pd-btn" id="ps-expand">Expand all</button>
         <button class="pd-btn" id="ps-collapse">Collapse all</button>
+        <span class="ps-outline-lbl">Levels:</span><span class="ps-seg" id="ps-levels"></span>
         <button class="pd-btn ps-spacer" id="ps-import"><span data-ico="box" data-ico-size="15"></span> Import Excel (OPC)</button>
         <input type="file" id="ps-import-file" accept=".xlsx,.xls" style="display:none" />
         <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
@@ -139,6 +153,7 @@
             <div class="ps-grid-head" id="ps-grid-head"></div>
             <div class="ps-grid-scroll" id="ps-grid-scroll"><div id="ps-grid-rows"></div></div>
           </div>
+          <div class="ps-divider" id="ps-divider" title="Drag to resize"></div>
           <div class="ps-gantt-pane">
             <div class="ps-gantt-head" id="ps-gantt-head"></div>
             <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
@@ -168,6 +183,9 @@
     </div>
   </div>
 </div>
+
+<!-- Loading overlay -->
+<div class="ps-loading" id="ps-loading" style="display:none;"><div class="ps-spin"></div><span id="ps-loading-msg">Working…</span></div>
 
 <!-- Add / Edit modal -->
 <div class="pd-modal-overlay" id="ps-modal" style="display:none;">
@@ -344,16 +362,20 @@
       percent_complete: pct };
   }
   async function doImport(recs, replace) {
-    if (replace) { var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } }
+    showLoading('Preparing import…');
+    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } }
     var uid = UID;
     var payloads = recs.map(recToPayload); if (uid) payloads.forEach(function(p){ p.created_by=uid; });
-    var ok=0;
+    var ok=0, err=null;
     for (var i=0;i<payloads.length;i+=100) {
+      setLoading('Importing ' + Math.min(i+100, payloads.length) + ' of ' + payloads.length + '…');
       var res = await sb().from(TABLE).insert(payloads.slice(i,i+100));
-      if (res.error) { UI.toast('Insert error: '+res.error.message, 'error'); break; }
+      if (res.error) { err = res.error.message; break; }
       ok += Math.min(100, payloads.length-i);
     }
-    UI.toast('Imported '+ok+' of '+payloads.length+' rows.', ok?'success':'error');
+    hideLoading();
+    if (err) UI.toast('Insert error after '+ok+': '+err, 'error');
+    else UI.toast('Imported '+ok+' of '+payloads.length+' rows.', 'success');
     collapsed={}; load();
   }
   function previewImport(recs, fname) {
@@ -398,8 +420,28 @@
     return { min: min, max: max };
   }
 
+  // ---- loading overlay ----
+  function showLoading(msg) { var m=document.getElementById('ps-loading-msg'); if(m)m.textContent=msg||'Working…'; var el=document.getElementById('ps-loading'); if(el)el.style.display='flex'; }
+  function setLoading(msg) { var m=document.getElementById('ps-loading-msg'); if(m)m.textContent=msg; }
+  function hideLoading() { var el=document.getElementById('ps-loading'); if(el)el.style.display='none'; }
+
+  // ---- per-level outline buttons ----
+  function renderLevelButtons() {
+    var host = document.getElementById('ps-levels'); if (!host) return;
+    var maxD = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > maxD) maxD = d; });
+    if (maxD <= 1) { host.innerHTML = ''; return; }
+    var html = ''; for (var i = 1; i <= maxD; i++) html += '<button data-lvl="' + i + '" title="Show ' + i + ' level' + (i>1?'s':'') + '">' + i + '</button>';
+    host.innerHTML = html;
+    host.querySelectorAll('[data-lvl]').forEach(function (b) { b.onclick = function () { expandToLevel(parseInt(b.dataset.lvl, 10)); }; });
+  }
+  function expandToLevel(n) {
+    collapsed = {};
+    rows.forEach(function (r) { if (isWbs(r) && (segs(r.wbs).length - 1) >= (n - 1)) collapsed[r.wbs] = true; });
+    renderGrid(); renderGantt();
+  }
+
   // ---- render everything ----
-  function renderAll() { renderKpis(); renderGrid(); renderGantt(); renderCost(); }
+  function renderAll() { renderKpis(); renderLevelButtons(); renderGrid(); renderGantt(); renderCost(); }
 
   function renderKpis() {
     var tasks = rows.filter(function (r) { return !isWbs(r); });
@@ -720,7 +762,8 @@
       var file = e.target.files[0]; if (!file) return;
       if (typeof XLSX === 'undefined') { UI.toast('Excel parser still loading — try again in a moment.', 'error'); return; }
       var rd = new FileReader();
-      rd.onload = function () { try { previewImport(parseWorkbook(rd.result), file.name); } catch (err) { UI.toast('Parse failed: ' + err.message, 'error'); } };
+      rd.onload = function () { try { var recs = parseWorkbook(rd.result); hideLoading(); previewImport(recs, file.name); } catch (err) { hideLoading(); UI.toast('Parse failed: ' + err.message, 'error'); } };
+      showLoading('Reading ' + file.name + '…');
       rd.readAsArrayBuffer(file);
       e.target.value = '';
     };
@@ -734,6 +777,28 @@
     var lock = false;
     gs.addEventListener('scroll', function () { if (lock) return; lock = true; gz.scrollTop = gs.scrollTop; lock = false; });
     gz.addEventListener('scroll', function () { if (!lock) { lock = true; gs.scrollTop = gz.scrollTop; lock = false; } gh.scrollLeft = gz.scrollLeft; });
+
+    // resizable split: drag the divider to widen the activities grid or the Gantt
+    var divider = document.getElementById('ps-divider'), gridPane = document.querySelector('.ps-grid-pane'), split = document.querySelector('.ps-split');
+    if (divider && gridPane && split) {
+      var saved = null; try { saved = localStorage.getItem('ps_grid_w'); } catch (e) {}
+      if (saved) { gridPane.style.flexBasis = saved + 'px'; gridPane.style.maxWidth = 'none'; }
+      divider.addEventListener('mousedown', function (e) {
+        e.preventDefault(); divider.classList.add('drag'); document.body.style.cursor = 'col-resize';
+        var sx = e.clientX, sw = gridPane.getBoundingClientRect().width;
+        function mm(ev) {
+          var max = split.getBoundingClientRect().width - 240;
+          var w = Math.max(240, Math.min(sw + (ev.clientX - sx), max));
+          gridPane.style.flexBasis = w + 'px'; gridPane.style.maxWidth = 'none';
+        }
+        function up() {
+          document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
+          divider.classList.remove('drag'); document.body.style.cursor = '';
+          try { localStorage.setItem('ps_grid_w', String(Math.round(parseFloat(gridPane.style.flexBasis)))); } catch (e) {}
+        }
+        document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
+      });
+    }
 
     loadProjects();
   });
