@@ -77,6 +77,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-01 — Prompt 40 (Desktop): Details-panel resize + click/dbl-click editing
+Project Schedule (`modules/project-schedule/index.html`), continuing here after
+Teams usage ran out — this session is now the single line for this module.
+- **Removed leftover KPI-card CSS** (`.ps-kpi*`). The KPI cards themselves were
+  already gone (no container/render); confirmed the OPC-style **Activity Details
+  / Project Usage** panel already exists (General/Status/Relationships/Trace
+  Logic + Activity/Resource/Role Usage, driven by selected activity `selId`).
+- **Resizable bottom details panel:** added a drag grip (`#ps-details-grip`)
+  above the tabs; drag to set `#ps-details-body` height, persisted in
+  `localStorage['ps_details_h']` (min 90 / max 700 px).
+- **Selection vs editing:** single click on an activity now **selects** it and
+  shows its details (row click → `selId`/`renderDetails`); inline cell editing
+  now requires **double-click** (`.ps-editable` → `ondblclick` = `beginEdit`).
+- Still placeholder: **Resource Usage / Role Usage** tabs (need a resource/role
+  assignment model). Possible next: Project Usage S-curve (Planned/Actual/BAC/ETC).
+
 ### 2026-07-01 — Prompt 39: Typed drag-to-link + per-WBS bar colors
 - **Typed relationship on link drop.** Dropping a drag-to-link now opens a chooser
   (`openLinkChooser`) for relationship type **FS / SS / FF / SF** and **lag (days)** instead of
