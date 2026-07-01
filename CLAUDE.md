@@ -77,6 +77,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-01 — Prompt 43 (Desktop): S-Curve fix, table toggle, toolbar, critical-path focus
+- **S-Curve actual-line bug fixed:** the current (data-date) month failed the
+  `mEnd <= tnow` guard so `actualC[ti]` was 0 → the red actual line dropped to
+  zero at the data date (and "Actual to date" read 0%). Now the actual curve is
+  anchored at the data date to true overall % complete; nothing is drawn past it.
+- **S-Curve data table** is now toggleable (Show/Hide data table button; hidden
+  by default) — Period / Planned % / Actual %.
+- **Data date** clarified: it's the as-of/status date (= today); planned is the
+  full baseline, actual is only plotted up to it. (Legitimate; label kept.)
+- **Project Schedule toolbar** reorganized into two tidy grouped rows with
+  separators + consistent 36px control height (was a scattered single wrap).
+- **Critical Path button** made clearly effective: P6-style focus — non-critical
+  bars/rows dim, critical bars get an amber outline; toast reports the count (or
+  says none found). Previously the red outline blended into the red % bars.
+
 ### 2026-07-01 — Prompt 42 (Desktop): Full OPC Activity Details fields
 - Added all previously-omitted OPC Activity Details fields to Project Schedule
   (General + Status), matching Oracle Primavera Cloud:

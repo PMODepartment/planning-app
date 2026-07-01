@@ -58,6 +58,7 @@
       <div class="sc-controls">
         <select class="pd-select" id="sc-project" style="max-width:340px;"></select>
         <button class="pd-btn" id="sc-refresh"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
+        <button class="pd-btn" id="sc-tabletoggle" style="margin-left:auto;"><span data-ico="listView" data-ico-size="15"></span> Show data table</button>
       </div>
       <div class="sc-kpis" id="sc-kpis"></div>
       <div class="sc-card">
@@ -65,7 +66,7 @@
         <div id="sc-chart"></div>
         <p class="sc-note" id="sc-basis"></p>
       </div>
-      <div class="sc-card" style="padding:0;overflow:hidden;">
+      <div class="sc-card" id="sc-tablecard" style="padding:0;overflow:hidden;display:none;">
         <div style="overflow-x:auto;"><table class="sc-table"><thead><tr>
           <th>Period</th><th>Planned %</th><th>Actual %</th>
         </tr></thead><tbody id="sc-tbody"></tbody></table></div>
@@ -137,6 +138,7 @@
     var months = [], c = new Date(min.getFullYear(), min.getMonth(), 1);
     while (c <= max) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
     var tnow = today();
+    var overallDone = leaves.reduce(function (s, a) { return s + done(a); }, 0);
     var plannedC = [], actualC = [];
     months.forEach(function (m) {
       var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0);
@@ -145,9 +147,10 @@
         var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return;
         var pf = mEnd >= e ? 1 : (mEnd < s ? 0 : (e > s ? (mEnd - s) / (e - s) : 1));
         pv += val(a) * pf;
-        if (mEnd <= tnow) {
+        // Actual accrues for months that have fully ended (before the data date).
+        if (mEnd < tnow) {
           var aS = pd(a.actual_start || a.start_date);
-          var aE = pd(a.actual_finish || ((a.percent_complete || 0) >= 100 ? a.end_date : null)) || tnow;
+          var aE = pd(a.actual_finish) || pd(a.end_date) || aS;
           if (aS) { var af = mEnd >= aE ? 1 : (mEnd < aS ? 0 : (aE > aS ? (mEnd - aS) / (aE - aS) : 1)); av += done(a) * af; }
         }
       });
@@ -156,8 +159,12 @@
     var ti = -1;
     for (var i = 0; i < months.length; i++) { var me = new Date(months[i].getFullYear(), months[i].getMonth() + 1, 0); if (me >= tnow) { ti = i; break; } }
     if (ti < 0) ti = months.length - 1;
+    // Anchor the actual curve at the data date to the true overall % complete, so
+    // the partial current month doesn't read 0 (which made the line drop to zero).
+    actualC[ti] = overallDone;
+    for (var k = ti + 1; k < actualC.length; k++) actualC[k] = 0;  // no actuals past the data date
     var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0;
-    var overallPct = TOT ? leaves.reduce(function (s, a) { return s + done(a); }, 0) / TOT * 100 : 0;
+    var overallPct = TOT ? overallDone / TOT * 100 : 0;
     return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length };
   }
 
@@ -213,6 +220,13 @@
     UI.initShell();
     document.getElementById('sc-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load(); };
     document.getElementById('sc-refresh').onclick = function () { load(); };
+    document.getElementById('sc-tabletoggle').onclick = function () {
+      var card = document.getElementById('sc-tablecard');
+      var show = card.style.display === 'none';
+      card.style.display = show ? '' : 'none';
+      this.innerHTML = '<span data-ico="listView" data-ico-size="15"></span> ' + (show ? 'Hide data table' : 'Show data table');
+      if (window.Icons) Icons.hydrate(this);
+    };
     loadProjects();
   });
 })();

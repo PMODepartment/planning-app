@@ -107,9 +107,14 @@
     .lg-mile { width:12px; height:12px; background:var(--pd-red); transform:rotate(45deg); border-radius:2px; }
     .lg-dd { width:3px; height:14px; background:var(--pd-red); border-radius:1px; }
     /* critical path + dependency lines */
-    .ps-bar.ps-crit { outline:2px solid var(--pd-red); outline-offset:1px; }
-    .ps-mile.ps-crit { outline:2px solid var(--pd-red); }
+    .ps-bar.ps-crit { outline:2px solid #f59e0b; outline-offset:1px; box-shadow:0 0 0 1px #f59e0b; }
+    .ps-mile.ps-crit { outline:2px solid #f59e0b; }
     .ps-critrow .c-name { color:var(--pd-red); font-weight:700; }
+    /* Critical-path focus: dim everything non-critical so the chain stands out */
+    .ps-gantt-pane.ps-critmode .ps-bar:not(.ps-crit),
+    .ps-gantt-pane.ps-critmode .ps-sum,
+    .ps-gantt-pane.ps-critmode .ps-mile:not(.ps-crit) { opacity:.22; }
+    .ps-grid-scroll.ps-critmode .ps-grid-row:not(.ps-critrow):not(.ps-wbs-row):not(.ps-group-row) { opacity:.5; }
     #ps-crit.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-crit.active .pd-ico { color:#fff; }
     .ps-deps .ps-dep { fill:none; stroke:var(--pd-red); stroke-width:1.5; opacity:.75; }
@@ -1642,7 +1647,15 @@
     document.getElementById('ps-crit').onclick = function () {
       critMode = !critMode;
       document.getElementById('ps-crit').classList.toggle('active', critMode);
-      if (critMode) { var res = computeCPM(); UI.toast(res.mode === 'logic' ? 'Critical path from activity relationships.' : 'Critical path derived from planned/actual finish dates.', 'info'); }
+      var gp = document.querySelector('.ps-gantt-pane'), gs = document.querySelector('.ps-grid-scroll');
+      if (gp) gp.classList.toggle('ps-critmode', critMode);
+      if (gs) gs.classList.toggle('ps-critmode', critMode);
+      if (critMode) {
+        var res = computeCPM();
+        var nCrit = rows.filter(function (r) { return !isWbs(r) && r._critical; }).length;
+        if (nCrit) UI.toast(nCrit + ' critical activities highlighted — ' + (res.mode === 'logic' ? 'from relationships' : 'from finish dates') + '. Non-critical work is dimmed.', 'info');
+        else UI.toast('No critical path found. Add predecessor relationships (Link) or activity dates.', 'error');
+      }
       renderGrid(); renderGantt();
     };
     document.getElementById('ps-clear').onclick = function () {
