@@ -17,5 +17,18 @@
 - [ ] `enabled: true` set in `assets/js/config.js`
 - [ ] PR opened into `main`
 
+## Scope note — owns Resource/Role Usage (decision 2026-07-01)
+This module is the home for **resource & role loading** (OPC-style). It should define:
+- a **resource/role master** (name, type e.g. Labor/Equipment/Material, unit of measure);
+- **assignments** linking a role/resource to a `project_schedule` activity with
+  budgeted (and actual) units, time-phased by period;
+- **usage views** (per resource/role → time-phased units/cost, FTE toggle,
+  chart / spreadsheet), mirroring OPC's Resource Usage / Role Usage.
+
+The **Project Schedule** module's "Resource Usage" / "Role Usage" tabs are
+intentionally placeholders today; once this module exists they will **read from
+it** (by `project_id` + `activity_id`) rather than duplicating a resource engine.
+Coordinate the shared shape with the Project Schedule owner before building.
+
 ## Notes
 (Record decisions, columns added via `alter table ... add column if not exists`, etc.)

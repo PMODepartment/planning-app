@@ -77,6 +77,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-01 — Prompt 41 (Desktop): Dock details panel + Resource/Role Usage decision
+- **Fixed the "empty / non-resizable" details panel:** its body was rendering
+  below the fold (the schedule split was a fixed `62vh`). Made this module's
+  `.pd-main` a viewport-height flex column so the schedule split flexes and the
+  **Activity Details / Project Usage panel docks at the bottom, always visible**;
+  the grip now visibly trades height between schedule and panel.
+- Verified against **live OPC** (desktop access): Activity Details (General /
+  Status / Relationships / Trace Logic) and Activity Usage already match; OPC's
+  **Resource Usage / Role Usage** are a role/resource roster + time-phased usage.
+- **Decision:** Resource/Role Usage is **deferred to the dedicated `resource-loading`
+  module** (owns the resource/role master + assignments + usage views); Project
+  Schedule's usage tabs stay placeholders and will later read from it. Noted in
+  `modules/resource-loading/CLAUDE.md`.
+
 ### 2026-07-01 — Prompt 40 (Desktop): Details-panel resize + click/dbl-click editing
 Project Schedule (`modules/project-schedule/index.html`), continuing here after
 Teams usage ran out — this session is now the single line for this module.
