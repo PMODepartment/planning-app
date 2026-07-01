@@ -93,6 +93,10 @@ developer, plug into one shared shell.
   chunked inserts. `displayList` refactored to render a **full WBS tree** by dotted code.
 - Verified: parser dry-run against the actual Westside City Site B export produced the
   correct tree (17 rows → 4 WBS / 13 activities) with right dates, %, durations.
+- **Fix:** inserts were rejected by RLS (`created_by = auth.uid()`) because this app's
+  `auth.js` has no `AppAuth.getUser()` — the module now captures the user id from the
+  `requireLogin(user, profile)` callback (`UID`) and stamps `created_by` on both import
+  inserts and the Add-activity form. (Delete/replace already worked via `is_admin()`.)
 
 ### 2026-06-30 — Prompt 21: Project Schedule → OPC-style Activities + interactive Gantt
 - Rebuilt the **Schedule tab** of `modules/project-schedule/` into a Primavera-Cloud-style

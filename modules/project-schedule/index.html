@@ -211,7 +211,7 @@
 (function () {
   'use strict';
   var TABLE = 'project_schedule';
-  var pid = null, rows = [], editId = null;
+  var pid = null, rows = [], editId = null, UID = null;
   var zoom = 'quarter', collapsed = {}, selId = null, search = '';
   var DAYW = { month: 4.2, quarter: 1.55, year: 0.62 };
   function sb() { return AppAuth.getSB(); }
@@ -345,7 +345,7 @@
   }
   async function doImport(recs, replace) {
     if (replace) { var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } }
-    var uid=null; try { uid=AppAuth.getUser().id; } catch(e){}
+    var uid = UID;
     var payloads = recs.map(recToPayload); if (uid) payloads.forEach(function(p){ p.created_by=uid; });
     var ok=0;
     for (var i=0;i<payloads.length;i+=100) {
@@ -683,7 +683,7 @@
     };
     var res;
     if (editId) { res = await sb().from(TABLE).update(payload).eq('id', editId); }
-    else { try { payload.created_by = AppAuth.getUser().id; } catch (e) {} res = await sb().from(TABLE).insert(payload); }
+    else { payload.created_by = UID; res = await sb().from(TABLE).insert(payload); }
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
     closeModal(); load();
@@ -702,6 +702,7 @@
 
   // ----- init -----
   AppAuth.requireLogin(function (user, profile) {
+    UID = (user && user.id) || (profile && profile.id) || null;
     UI.renderUserBar(profile);
     UI.initShell();
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.onclick = function (e) { e.preventDefault(); switchTab(a.dataset.view); }; });
