@@ -9,14 +9,27 @@
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />
   <style>
-    .ps-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; }
-    .ps-spacer { margin-left:auto; }
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
     .ps-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
     .ps-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .ps-seg button { border:none; background:var(--pd-card); padding:6px 12px; cursor:pointer; color:var(--pd-muted); font-size:12px; font-weight:600; }
     .ps-seg button.active { background:var(--pd-red); color:#fff; }
+
+    /* ---- Toolbar (grouped, consistent) ---- */
+    .ps-toolbar { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+    .ps-tb-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+    .ps-tb-spacer { margin-left:auto; }
+    .ps-tb-div { width:1px; align-self:stretch; min-height:26px; background:var(--pd-line); margin:0 4px; }
+    /* one consistent control height across selects, inputs, buttons & segments */
+    .ps-toolbar .pd-select, .ps-toolbar .pd-input, .ps-toolbar .pd-btn { height:36px; }
+    .ps-toolbar .pd-btn { padding:0 13px; font-size:13px; font-weight:500; white-space:nowrap; }
+    .ps-toolbar .pd-btn [data-ico] { display:inline-flex; }
+    .ps-toolbar .ps-seg { height:36px; }
+    .ps-toolbar .ps-seg button { padding:0 14px; height:100%; }
+    .ps-search { position:relative; display:inline-flex; align-items:center; }
+    .ps-search > [data-ico] { position:absolute; left:10px; display:inline-flex; color:var(--pd-muted); pointer-events:none; }
+    .ps-search .pd-input { padding-left:32px; }
 
     /* ---- Split Activities + Gantt ---- */
     .ps-split { display:flex; height:62vh; min-height:420px; border:1px solid var(--pd-line);
@@ -223,49 +236,45 @@
     </div>
 
     <div class="pd-main">
-      <div class="ps-controls">
-        <select class="pd-select" id="ps-project" style="max-width:340px;"></select>
-        <input class="pd-input" id="ps-search" placeholder="Search activity…" style="max-width:200px;" />
-        <select class="pd-select" id="ps-group" title="Group activities by" style="max-width:170px;">
-          <option value="wbs">Group: WBS</option>
-          <option value="status">Group: Status</option>
-          <option value="responsible">Group: Responsible</option>
-          <option value="type">Group: Type</option>
-        </select>
-        <div class="ps-seg" id="ps-zoom" title="Timeline scale">
-          <button data-zoom="month">Month</button>
-          <button data-zoom="quarter" class="active">Quarter</button>
-          <button data-zoom="year">Year</button>
+      <div class="ps-toolbar">
+        <!-- Row 1: context (project / search / group-by) + primary action -->
+        <div class="ps-tb-row">
+          <select class="pd-select" id="ps-project" style="min-width:240px;max-width:340px;"></select>
+          <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:230px;" /></div>
+          <select class="pd-select" id="ps-group" title="Group activities by" style="max-width:190px;">
+            <option value="wbs">Group: WBS</option>
+            <option value="status">Group: Status</option>
+            <option value="responsible">Group: Responsible</option>
+            <option value="type">Group: Type</option>
+          </select>
+          <span class="ps-tb-spacer"></span>
+          <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
         </div>
-        <button class="pd-btn" id="ps-expand">Expand all</button>
-        <div class="ps-menu-wrap">
-          <button class="pd-btn" id="ps-collapseto">Collapse to ▾</button>
-          <div class="ps-menu" id="ps-collapse-menu"></div>
+        <!-- Row 2: view + actions, grouped by separators -->
+        <div class="ps-tb-row">
+          <div class="ps-seg" id="ps-zoom" title="Timeline scale">
+            <button data-zoom="month">Month</button>
+            <button data-zoom="quarter" class="active">Quarter</button>
+            <button data-zoom="year">Year</button>
+          </div>
+          <span class="ps-tb-div"></span>
+          <button class="pd-btn" id="ps-expand">Expand all</button>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-collapseto">Collapse to ▾</button><div class="ps-menu" id="ps-collapse-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn"><span data-ico="filter" data-ico-size="15"></span> Filter</button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
+          <span class="ps-tb-div"></span>
+          <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="risk" data-ico-size="15"></span> Critical path</button>
+          <button class="pd-btn" id="ps-linkmode" title="Link mode: drag from one activity bar to another to create a Finish-to-Start relationship"><span data-ico="link" data-ico-size="15"></span> Link</button>
+          <span class="ps-tb-div"></span>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-views">Views ▾</button><div class="ps-menu" id="ps-views-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Edit Gantt bar colors">Colors ▾</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-schedbtn" title="Scheduling options">Schedule ▾</button><div class="ps-menu ps-sched-menu" id="ps-sched-menu"></div></div>
+          <span class="ps-tb-spacer"></span>
+          <button class="pd-btn" id="ps-refresh"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
+          <button class="pd-btn" id="ps-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
+          <button class="pd-btn" id="ps-import"><span data-ico="box" data-ico-size="15"></span> Import Excel (OPC)</button>
+          <input type="file" id="ps-import-file" accept=".xlsx,.xls" style="display:none" />
+          <button class="pd-btn pd-btn-danger" id="ps-clear" title="Delete all activities for this project">Clear</button>
         </div>
-        <button class="pd-btn" id="ps-refresh"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
-        <button class="pd-btn" id="ps-clear" title="Delete all activities for this project">Clear</button>
-        <div class="ps-menu-wrap">
-          <button class="pd-btn" id="ps-filterbtn"><span data-ico="filter" data-ico-size="15"></span> Filter</button>
-          <div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div>
-        </div>
-        <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="link" data-ico-size="15"></span> Critical path</button>
-        <div class="ps-menu-wrap">
-          <button class="pd-btn" id="ps-schedbtn" title="Scheduling options">Schedule ▾</button>
-          <div class="ps-menu ps-sched-menu" id="ps-sched-menu"></div>
-        </div>
-        <button class="pd-btn" id="ps-linkmode" title="Link mode: drag from one activity bar to another to create a Finish-to-Start relationship"><span data-ico="link" data-ico-size="15"></span> Link</button>
-        <div class="ps-menu-wrap">
-          <button class="pd-btn" id="ps-colorsbtn" title="Edit Gantt bar colors">Colors ▾</button>
-          <div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div>
-        </div>
-        <div class="ps-menu-wrap">
-          <button class="pd-btn" id="ps-views">Views ▾</button>
-          <div class="ps-menu" id="ps-views-menu"></div>
-        </div>
-        <button class="pd-btn ps-spacer" id="ps-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
-        <button class="pd-btn" id="ps-import"><span data-ico="box" data-ico-size="15"></span> Import Excel (OPC)</button>
-        <input type="file" id="ps-import-file" accept=".xlsx,.xls" style="display:none" />
-        <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
       </div>
 
       <div class="ps-tabs">
