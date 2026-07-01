@@ -31,6 +31,15 @@ SQL editor before testing. Adds:
 | `status` | text | `'Not Started'` |
 | `responsible_party` | text | — |
 
+## Schema additions (2026-07-01) — OPC Activity Details fields
+Run `../../migrations/2026-07-01-project-schedule-opc-fields.sql`. Adds:
+`owner, work_package, calendar, duration_type, percent_complete_type,
+program_milestone(bool), expected_finish, actual_duration, remaining_duration,
+free_float, planned_labor_units, actual_labor_units, remaining_labor_units,
+primary_constraint, primary_constraint_date, secondary_constraint,
+secondary_constraint_date`. All editable in the Add/Edit modal and shown in the
+General/Status detail tabs (At-Completion Duration/Labor are computed).
+
 ## Module design
 
 **Three-tab layout (Primavera Cloud reference):**

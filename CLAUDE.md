@@ -77,6 +77,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-01 — Prompt 42 (Desktop): Full OPC Activity Details fields
+- Added all previously-omitted OPC Activity Details fields to Project Schedule
+  (General + Status), matching Oracle Primavera Cloud:
+  - **General:** Owner, Work Package, Calendar, Duration Type, % Complete Type,
+    Program Milestone.
+  - **Status:** Actual Start/Finish (now editable), Expected Finish, Actual &
+    Remaining Duration (+ computed At Completion), Free Float, Labor Units
+    (Planned/Actual/Remaining + computed At Completion), Primary/Secondary
+    Constraints (+dates).
+- DB: migration `migrations/2026-07-01-project-schedule-opc-fields.sql` (17 new
+  columns); folded into `supabase-schema.sql` + `supabase-setup.sql` (also
+  back-filled the earlier evolved columns activity_type/status/responsible_party/
+  actual_start/finish/bl_start/finish that were only in migrations before).
+  **User must run the migration.**
+- Modal grouped into OPC sections (Classification / Status-Dates & Duration /
+  Labor Units / Constraints); General & Status detail tabs render the new fields
+  in grouped multi-column sections. `.ps-form-sec` header style added.
+
 ### 2026-07-01 — Prompt 41 (Desktop): Dock details panel + Resource/Role Usage decision
 - **Fixed the "empty / non-resizable" details panel:** its body was rendering
   below the fold (the schedule split was a fixed `62vh`). Made this module's

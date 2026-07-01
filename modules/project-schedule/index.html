@@ -154,6 +154,7 @@
     .ps-det-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px 26px; align-items:start; }
     .ps-det-group h5 { margin:0 0 8px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-red); border-bottom:1px solid var(--pd-line); padding-bottom:4px; }
     .ps-det-group .ps-dl { grid-template-columns:118px 1fr; gap:5px 10px; }
+    .ps-form-sec { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-red); border-bottom:1px solid var(--pd-line); padding-bottom:4px; margin-top:8px; }
     .ps-rel-tables { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
     @media (max-width:760px) { .ps-rel-tables { grid-template-columns:1fr; } }
     .ps-rel-tables h5 { margin:0 0 6px; font-size:12px; }
@@ -360,6 +361,34 @@
         <div><label class="pd-label">Planned Cost (&#8369;)</label><input class="pd-input" id="ps-f-pcost" type="number" min="0" step="0.01" /></div>
         <div><label class="pd-label">Actual Cost (&#8369;)</label><input class="pd-input" id="ps-f-acost" type="number" min="0" step="0.01" /></div>
         <div><label class="pd-label">Earned Value (&#8369;)</label><input class="pd-input" id="ps-f-ev" type="number" min="0" step="0.01" /></div>
+
+        <div class="ps-form-full ps-form-sec">Classification (OPC)</div>
+        <div><label class="pd-label">Duration Type</label><select class="pd-select" id="ps-f-durtype"><option>Fixed Duration &amp; Units/Time</option><option>Fixed Units/Time</option><option>Fixed Duration &amp; Units</option><option>Fixed Work</option></select></div>
+        <div><label class="pd-label">% Complete Type</label><select class="pd-select" id="ps-f-pcttype"><option>Duration</option><option>Physical</option><option>Units</option></select></div>
+        <div><label class="pd-label">Calendar</label><input class="pd-input" id="ps-f-cal" placeholder="e.g. MCC Standard 5-day" /></div>
+        <div><label class="pd-label">Owner</label><input class="pd-input" id="ps-f-owner" /></div>
+        <div><label class="pd-label">Work Package</label><input class="pd-input" id="ps-f-wp" /></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:22px;"><input type="checkbox" id="ps-f-progms" /><label class="pd-label" for="ps-f-progms" style="margin:0;">Program Milestone</label></div>
+
+        <div class="ps-form-full ps-form-sec">Status &mdash; Dates &amp; Duration</div>
+        <div><label class="pd-label">Actual Start</label><input class="pd-input" id="ps-f-astart" type="date" /></div>
+        <div><label class="pd-label">Actual Finish</label><input class="pd-input" id="ps-f-afinish" type="date" /></div>
+        <div><label class="pd-label">Expected Finish</label><input class="pd-input" id="ps-f-expf" type="date" /></div>
+        <div><label class="pd-label">Actual Duration (d)</label><input class="pd-input" id="ps-f-adur" type="number" min="0" step="1" /></div>
+        <div><label class="pd-label">Remaining Duration (d)</label><input class="pd-input" id="ps-f-rdur" type="number" min="0" step="1" /></div>
+        <div><label class="pd-label">Free Float (d)</label><input class="pd-input" id="ps-f-ff" type="number" step="1" /></div>
+
+        <div class="ps-form-full ps-form-sec">Status &mdash; Labor Units</div>
+        <div><label class="pd-label">Planned Labor Units</label><input class="pd-input" id="ps-f-plu" type="number" min="0" step="0.01" /></div>
+        <div><label class="pd-label">Actual Labor Units</label><input class="pd-input" id="ps-f-alu" type="number" min="0" step="0.01" /></div>
+        <div><label class="pd-label">Remaining Labor Units</label><input class="pd-input" id="ps-f-rlu" type="number" min="0" step="0.01" /></div>
+
+        <div class="ps-form-full ps-form-sec">Status &mdash; Constraints</div>
+        <div><label class="pd-label">Primary Constraint</label><select class="pd-select" id="ps-f-pcon"><option value="">None</option><option>Start On</option><option>Start On or After</option><option>Start On or Before</option><option>Finish On</option><option>Finish On or After</option><option>Finish On or Before</option><option>Mandatory Start</option><option>Mandatory Finish</option><option>As Late As Possible</option></select></div>
+        <div><label class="pd-label">Primary Constraint Date</label><input class="pd-input" id="ps-f-pcond" type="date" /></div>
+        <div><label class="pd-label">Secondary Constraint</label><select class="pd-select" id="ps-f-scon"><option value="">None</option><option>Start On</option><option>Start On or After</option><option>Start On or Before</option><option>Finish On</option><option>Finish On or After</option><option>Finish On or Before</option></select></div>
+        <div><label class="pd-label">Secondary Constraint Date</label><input class="pd-input" id="ps-f-scond" type="date" /></div>
+
         <div class="ps-form-full"><label class="pd-label">Remarks</label><textarea class="pd-input" id="ps-f-remarks" rows="2" style="resize:vertical;"></textarea></div>
       </form>
     </div>
@@ -760,39 +789,44 @@
   function dlHtml(pairs) { return '<dl class="ps-dl">' + pairs.map(function (p) { var v = (p[1] == null || p[1] === '') ? '—' : p[1]; return '<dt>' + p[0] + '</dt><dd>' + v + '</dd>'; }).join('') + '</dl>'; }
   function detSection(title, pairs) { return '<div class="ps-det-group"><h5>' + esc(title) + '</h5>' + dlHtml(pairs) + '</div>'; }
   function detGeneral(r) {
-    // OPC-style grouped General (Identification / Classification / Assignment / Notes)
     return '<div class="ps-det-groups">' +
-      detSection('Identification', [['WBS', esc(r.wbs || '')], ['Activity ID', esc(r.activity_id || '')], ['Activity Name', esc(r.activity_name || '')]]) +
-      detSection('Classification', [['Type', esc(r.activity_type || 'Task')], ['Status', esc(r.status || '')], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—']]) +
-      detSection('Assignment', [['Responsible', esc(r.responsible_party || '')], ['Predecessors', esc(r.predecessors || '—')]]) +
+      detSection('Identification', [['WBS', esc(r.wbs || '')], ['Activity ID', esc(r.activity_id || '')], ['Activity Name', esc(r.activity_name || '')], ['Work Package', esc(r.work_package || '')]]) +
+      detSection('Classification', [['Type', esc(r.activity_type || 'Task')], ['Duration Type', esc(r.duration_type || '—')], ['% Complete Type', esc(r.percent_complete_type || '—')], ['Program Milestone', r.program_milestone ? 'Yes' : 'No']]) +
+      detSection('Assignment', [['Status', esc(r.status || '')], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'], ['Responsible', esc(r.responsible_party || '')], ['Owner', esc(r.owner || '')], ['Calendar', esc(r.calendar || '')], ['Predecessors', esc(r.predecessors || '—')]]) +
       detSection('Notes', [['Remarks', esc(r.remarks || '')]]) +
     '</div>';
   }
   function detStatus(r) {
-    // OPC-style grouped Status (Activity Status / Dates / Duration & Float)
     var fv = finVar(r);
     var started  = r.actual_start  ? 'Started ' + Fmt.date(r.actual_start)  : 'Not started';
     var finished = r.actual_finish ? 'Finished ' + Fmt.date(r.actual_finish) : 'Not finished';
+    function dd(x) { return x != null ? x + 'd' : '—'; }
+    function nz(x) { return x != null ? (Math.round(x * 100) / 100) : '—'; }
+    var atDur = (r.actual_duration != null || r.remaining_duration != null) ? ((r.actual_duration || 0) + (r.remaining_duration || 0)) : r.duration_days;
+    var atLU  = (r.actual_labor_units != null || r.remaining_labor_units != null) ? ((r.actual_labor_units || 0) + (r.remaining_labor_units || 0)) : r.planned_labor_units;
+    function con(c, dt) { return (c ? esc(c) : 'None') + (dt ? ' (' + Fmt.date(dt) + ')' : ''); }
     return '<div class="ps-det-groups">' +
       detSection('Activity Status', [
-        ['Status', esc(r.status || '')],
-        ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'],
-        ['Start', started],
-        ['Finish', finished]
+        ['Status', esc(r.status || '')], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'],
+        ['Start', started], ['Finish', finished], ['Expected Finish', r.expected_finish ? Fmt.date(r.expected_finish) : '—']
       ]) +
       detSection('Dates', [
-        ['Planned Start', r.start_date ? Fmt.date(r.start_date) : '—'],
-        ['Planned Finish', r.end_date ? Fmt.date(r.end_date) : '—'],
-        ['Actual Start', r.actual_start ? Fmt.date(r.actual_start) : '—'],
-        ['Actual Finish', r.actual_finish ? Fmt.date(r.actual_finish) : '—'],
-        ['Baseline Start', r.bl_start ? Fmt.date(r.bl_start) : '—'],
-        ['Baseline Finish', r.bl_finish ? Fmt.date(r.bl_finish) : '—']
+        ['Planned Start', r.start_date ? Fmt.date(r.start_date) : '—'], ['Planned Finish', r.end_date ? Fmt.date(r.end_date) : '—'],
+        ['Actual Start', r.actual_start ? Fmt.date(r.actual_start) : '—'], ['Actual Finish', r.actual_finish ? Fmt.date(r.actual_finish) : '—'],
+        ['Baseline Start', r.bl_start ? Fmt.date(r.bl_start) : '—'], ['Baseline Finish', r.bl_finish ? Fmt.date(r.bl_finish) : '—']
       ]) +
       detSection('Duration & Float', [
-        ['Duration', r.duration_days != null ? r.duration_days + 'd' : '—'],
-        ['Total Float', r._float != null ? r._float + 'd' : '—'],
-        ['Critical', r._critical ? 'Yes' : 'No'],
-        ['Finish Variance (BL)', fv != null ? (fv > 0 ? '+' : '') + fv + 'd' : '—']
+        ['Planned Duration', dd(r.duration_days)], ['Actual Duration', dd(r.actual_duration)], ['Remaining Duration', dd(r.remaining_duration)],
+        ['At Completion', dd(atDur)], ['Total Float', dd(r._float)], ['Free Float', dd(r.free_float)],
+        ['Critical', r._critical ? 'Yes' : 'No'], ['Finish Variance (BL)', fv != null ? (fv > 0 ? '+' : '') + fv + 'd' : '—']
+      ]) +
+      detSection('Labor Units', [
+        ['Planned', nz(r.planned_labor_units)], ['Actual', nz(r.actual_labor_units)],
+        ['Remaining', nz(r.remaining_labor_units)], ['At Completion', nz(atLU)]
+      ]) +
+      detSection('Constraints', [
+        ['Primary', con(r.primary_constraint, r.primary_constraint_date)],
+        ['Secondary', con(r.secondary_constraint, r.secondary_constraint_date)]
       ]) +
     '</div>';
   }
@@ -1139,6 +1173,29 @@
     set('ps-f-pcost', row && row.planned_cost != null ? row.planned_cost : '');
     set('ps-f-acost', row && row.actual_cost != null ? row.actual_cost : '');
     set('ps-f-ev', row && row.earned_value != null ? row.earned_value : '');
+    // OPC — Classification
+    set('ps-f-durtype', row ? (row.duration_type || 'Fixed Duration & Units/Time') : 'Fixed Duration & Units/Time');
+    set('ps-f-pcttype', row ? (row.percent_complete_type || 'Duration') : 'Duration');
+    set('ps-f-cal', row ? row.calendar : '');
+    set('ps-f-owner', row ? row.owner : '');
+    set('ps-f-wp', row ? row.work_package : '');
+    document.getElementById('ps-f-progms').checked = !!(row && row.program_milestone);
+    // OPC — Status: dates & duration
+    set('ps-f-astart', row && row.actual_start ? String(row.actual_start).slice(0,10) : '');
+    set('ps-f-afinish', row && row.actual_finish ? String(row.actual_finish).slice(0,10) : '');
+    set('ps-f-expf', row && row.expected_finish ? String(row.expected_finish).slice(0,10) : '');
+    set('ps-f-adur', row && row.actual_duration != null ? row.actual_duration : '');
+    set('ps-f-rdur', row && row.remaining_duration != null ? row.remaining_duration : '');
+    set('ps-f-ff', row && row.free_float != null ? row.free_float : '');
+    // OPC — Labor units
+    set('ps-f-plu', row && row.planned_labor_units != null ? row.planned_labor_units : '');
+    set('ps-f-alu', row && row.actual_labor_units != null ? row.actual_labor_units : '');
+    set('ps-f-rlu', row && row.remaining_labor_units != null ? row.remaining_labor_units : '');
+    // OPC — Constraints
+    set('ps-f-pcon', row ? (row.primary_constraint || '') : '');
+    set('ps-f-pcond', row && row.primary_constraint_date ? String(row.primary_constraint_date).slice(0,10) : '');
+    set('ps-f-scon', row ? (row.secondary_constraint || '') : '');
+    set('ps-f-scond', row && row.secondary_constraint_date ? String(row.secondary_constraint_date).slice(0,10) : '');
     set('ps-f-remarks', row ? row.remarks : '');
     document.getElementById('ps-modal').style.display = 'flex';
   }
@@ -1160,6 +1217,29 @@
       responsible_party: v('ps-f-resp') || null,
       predecessors: v('ps-f-pred') || null,
       planned_cost: num('ps-f-pcost'), actual_cost: num('ps-f-acost'), earned_value: num('ps-f-ev'),
+      // OPC — Classification
+      duration_type: document.getElementById('ps-f-durtype').value || null,
+      percent_complete_type: document.getElementById('ps-f-pcttype').value || null,
+      calendar: v('ps-f-cal') || null,
+      owner: v('ps-f-owner') || null,
+      work_package: v('ps-f-wp') || null,
+      program_milestone: document.getElementById('ps-f-progms').checked,
+      // OPC — Status: dates & duration
+      actual_start: v('ps-f-astart') || null,
+      actual_finish: v('ps-f-afinish') || null,
+      expected_finish: v('ps-f-expf') || null,
+      actual_duration: num('ps-f-adur'),
+      remaining_duration: num('ps-f-rdur'),
+      free_float: num('ps-f-ff'),
+      // OPC — Labor units
+      planned_labor_units: num('ps-f-plu'),
+      actual_labor_units: num('ps-f-alu'),
+      remaining_labor_units: num('ps-f-rlu'),
+      // OPC — Constraints
+      primary_constraint: document.getElementById('ps-f-pcon').value || null,
+      primary_constraint_date: v('ps-f-pcond') || null,
+      secondary_constraint: document.getElementById('ps-f-scon').value || null,
+      secondary_constraint_date: v('ps-f-scond') || null,
       remarks: v('ps-f-remarks') || null, updated_at: new Date().toISOString()
     };
     var res;

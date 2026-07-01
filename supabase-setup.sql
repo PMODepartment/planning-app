@@ -75,6 +75,17 @@ create table if not exists project_schedule (
   activity_id text, activity_name text, wbs text, start_date date, end_date date,
   duration_days numeric, percent_complete numeric, predecessors text,
   planned_cost numeric(18,2), actual_cost numeric(18,2), earned_value numeric(18,2), period date, remarks text,
+  -- evolved schedule columns (see migrations)
+  activity_type text default 'Task', status text default 'Not Started', responsible_party text,
+  actual_start date, actual_finish date, bl_start date, bl_finish date,
+  -- OPC Activity Details fields
+  owner text, work_package text, calendar text,
+  duration_type text default 'Fixed Duration & Units/Time', percent_complete_type text default 'Duration',
+  program_milestone boolean default false, expected_finish date,
+  actual_duration numeric, remaining_duration numeric, free_float numeric,
+  planned_labor_units numeric, actual_labor_units numeric, remaining_labor_units numeric,
+  primary_constraint text, primary_constraint_date date,
+  secondary_constraint text, secondary_constraint_date date,
   created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
 
 create table if not exists resource_loading (
