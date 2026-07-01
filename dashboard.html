@@ -229,9 +229,12 @@
       var orig = sum('original_budget'), est = sum('estimated_cost'), variance = est - orig;
       var head = '<div class="pd-rollup-head"><span class="pd-rollup-kind">' + Fmt.esc(kind) + '</span>' +
         '<h3>' + Fmt.esc(node.name) + '</h3>' + (node.group_head ? '<span class="pd-rollup-gh">' + Icons.svg('user', 15) + ' ' + Fmt.esc(node.group_head) + '</span>' : '') + '</div>';
+      var pv = list.map(function (p) { return p.schedule_progress; }).filter(function (x) { return x != null; });
+      var avgProg = pv.length ? Math.round(pv.reduce(function (a, b) { return a + Number(b); }, 0) / pv.length) : null;
       var kpis = '<div class="pd-info-grid">' +
         card('layers', 'Projects', String(list.length)) +
         card('check', 'Active', String(active)) +
+        card('barChart', 'Avg Schedule %', avgProg != null ? avgProg + '%' : '—') +
         card('cash', 'Original Budget', orig ? Fmt.moneyShort(orig) : '—') +
         card('calculator', 'Estimated Cost', est ? Fmt.moneyShort(est) : '—') +
         card(variance > 0 ? 'triangleUp' : 'triangleDown', 'Budget Variance', (orig || est) ? Fmt.moneyShort(variance) : '—') +
@@ -242,6 +245,7 @@
           '<td class="pd-proj-name"><span class="pd-proj-ic">' + Icons.svg('project', 16) + '</span>' + Fmt.esc(p.name || p.id) + '</td>' +
           '<td><code>' + Fmt.esc(p.id) + '</code></td>' +
           '<td>' + statusPill(p.status) + '</td>' +
+          '<td>' + schedCell(p) + '</td>' +
           '<td>' + Fmt.esc(groupHead(p) || '—') + '</td>' +
           '<td>' + Fmt.date(p.forecast_start || p.start_date) + '</td>' +
           '<td>' + Fmt.date(p.forecast_finish || p.end_date) + '</td>' +
@@ -249,11 +253,17 @@
           '<td class="num">' + (p.estimated_cost != null ? Fmt.moneyShort(p.estimated_cost) : '—') + '</td>' +
           '<td class="num">' + ((p.original_budget != null || p.estimated_cost != null) ? Fmt.moneyShort(v) : '—') + '</td>' +
           '</tr>';
-      }).join('') : '<tr><td colspan="9" style="padding:22px;color:var(--pd-muted);">No projects in scope.</td></tr>';
+      }).join('') : '<tr><td colspan="10" style="padding:22px;color:var(--pd-muted);">No projects in scope.</td></tr>';
       var table = '<table class="pd-table pd-proj-table" style="margin-top:14px;"><thead><tr>' +
-        '<th>Project</th><th>ID</th><th>Status</th><th>Group Head</th><th>Forecast Start</th><th>Forecast Finish</th>' +
+        '<th>Project</th><th>ID</th><th>Status</th><th>Schedule</th><th>Group Head</th><th>Forecast Start</th><th>Forecast Finish</th>' +
         '<th class="num">Original</th><th class="num">Estimated</th><th class="num">Variance</th></tr></thead><tbody>' + rows + '</tbody></table>';
       return head + kpis + table;
+    }
+
+    function schedCell(p) {
+      if (p.schedule_progress == null) return '<span style="color:var(--pd-muted);">—</span>';
+      var v = Math.max(0, Math.min(100, Number(p.schedule_progress)));
+      return '<div style="display:flex;align-items:center;gap:6px;"><div style="flex:0 0 56px;height:7px;background:var(--pd-line);border-radius:4px;overflow:hidden;"><div style="width:' + v + '%;height:100%;background:var(--pd-red);"></div></div><span style="font-size:12px;">' + v + '%</span></div>';
     }
 
     function statusPill(s) {

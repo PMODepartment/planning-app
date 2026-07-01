@@ -77,6 +77,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-06-30 — Prompt 28: Export to Excel + dependencies/critical-path + portfolio rollup
+- **Export to Excel:** toolbar Export button writes the full schedule to `.xlsx` (SheetJS) —
+  WBS, IDs, names, type, status, baseline/plan dates, duration, %, predecessors, cost fields.
+- **Dependencies + critical path:** activities take a **Predecessors** field (Activity IDs) in
+  the editor; a **Critical Path** toggle runs a CPM forward/backward pass (total float →
+  critical when float=0), highlights critical bars/rows in red, and draws **dependency
+  connector lines** between visible related activities. (The OPC export has no relationship
+  data, so it prompts to add predecessors first.) New `project_schedule.predecessors` column.
+- **Portfolio rollup:** the schedule module writes a per-project summary
+  (`projects.schedule_progress / schedule_start / schedule_finish / schedule_activities`) on
+  load; the Portfolio → Program/Workspace tables now show an **Avg Schedule %** KPI and a
+  per-project **Schedule** progress bar.
+- Migration `migrations/2026-06-30-schedule-predecessors-and-rollup.sql`. **User must run it.**
+
 ### 2026-06-30 — Prompt 27: Brand-color Gantt + legend + timeline header + admin-gated Clear
 - **Brandbook colors only** (red #EE3124 / dark red / dark gray #2B2C2B / black #231F20 /
   construction gray #DCDBDB): recolored the Gantt — activity bar = dark gray track with a

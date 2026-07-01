@@ -57,7 +57,9 @@
     mapPin:      '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="2.8"/>',
     refresh:     '<path d="M4 12a8 8 0 0 1 13.7-5.7L20 8"/><polyline points="20 3 20 8 15 8"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 16"/><polyline points="4 21 4 16 9 16"/>',
     filter:      '<polygon points="3 4 21 4 14 12.5 14 19 10 21 10 12.5"/>',
-    chevronRight:'<polyline points="9 6 15 12 9 18"/>'
+    chevronRight:'<polyline points="9 6 15 12 9 18"/>',
+    download:    '<path d="M12 3v12"/><polyline points="7 11 12 16 17 11"/><line x1="4" y1="20" x2="20" y2="20"/>',
+    link:        '<path d="M9 15l6-6"/><path d="M11 6l1-1a4 4 0 0 1 6 6l-1 1"/><path d="M13 18l-1 1a4 4 0 0 1-6-6l1-1"/>'
   };
 
   function svg(name, size) {
