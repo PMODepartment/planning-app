@@ -95,9 +95,19 @@
     .ps-divider { flex:0 0 6px; cursor:col-resize; background:var(--pd-line); position:relative; }
     .ps-divider::before { content:""; position:absolute; left:2px; top:50%; transform:translateY(-50%); width:2px; height:28px; background:var(--pd-muted); border-radius:2px; opacity:.5; }
     .ps-divider:hover, .ps-divider.drag { background:var(--pd-red); }
-    /* per-level outline buttons (reuses .ps-seg) */
-    #ps-levels button { min-width:26px; }
-    .ps-outline-lbl { font-size:12px; color:var(--pd-muted); }
+    /* dropdown menus (Collapse to / Filter) */
+    .ps-menu-wrap { position:relative; display:inline-block; }
+    .ps-menu { position:absolute; top:calc(100% + 4px); left:0; z-index:50; display:none; min-width:180px;
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow); overflow:hidden; }
+    .ps-menu.open { display:block; }
+    .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
+      cursor:pointer; color:var(--pd-ink); font-size:13px; }
+    .ps-menu button:hover { background:var(--pd-red-light); }
+    .ps-filter-menu { min-width:230px; padding:10px 12px; }
+    .ps-filter-menu.open { display:block; }
+    .ps-filter-menu h4 { margin:8px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .ps-filter-menu label { display:flex; align-items:center; gap:7px; padding:3px 0; font-size:13px; cursor:pointer; }
+    .ps-filter-foot { display:flex; justify-content:space-between; margin-top:10px; border-top:1px solid var(--pd-line); padding-top:8px; }
     /* loading overlay */
     .ps-loading { position:fixed; inset:0; background:rgba(20,20,20,.45); display:flex; flex-direction:column;
       align-items:center; justify-content:center; gap:14px; z-index:9999; color:#fff; font-weight:600; font-size:14px; }
@@ -132,8 +142,15 @@
           <button data-zoom="year">Year</button>
         </div>
         <button class="pd-btn" id="ps-expand">Expand all</button>
-        <button class="pd-btn" id="ps-collapse">Collapse all</button>
-        <span class="ps-outline-lbl">Levels:</span><span class="ps-seg" id="ps-levels"></span>
+        <div class="ps-menu-wrap">
+          <button class="pd-btn" id="ps-collapseto">Collapse to ▾</button>
+          <div class="ps-menu" id="ps-collapse-menu"></div>
+        </div>
+        <button class="pd-btn" id="ps-refresh"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
+        <div class="ps-menu-wrap">
+          <button class="pd-btn" id="ps-filterbtn"><span data-ico="filter" data-ico-size="15"></span> Filter</button>
+          <div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div>
+        </div>
         <button class="pd-btn ps-spacer" id="ps-import"><span data-ico="box" data-ico-size="15"></span> Import Excel (OPC)</button>
         <input type="file" id="ps-import-file" accept=".xlsx,.xls" style="display:none" />
         <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
@@ -231,6 +248,7 @@
   var TABLE = 'project_schedule';
   var pid = null, rows = [], editId = null, UID = null;
   var zoom = 'quarter', collapsed = {}, selId = null, search = '';
+  var filters = { status: {}, type: {} };   // empty sets = show all
   var DAYW = { month: 4.2, quarter: 1.55, year: 0.62 };
   function sb() { return AppAuth.getSB(); }
 
@@ -254,10 +272,23 @@
   }
   async function load() {
     if (!pid) { rows = []; renderAll(); return; }
-    var res = await sb().from(TABLE).select('*').eq('project_id', pid)
-      .order('wbs', { ascending: true }).order('activity_id', { ascending: true });
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
-    rows = res.data || [];
+    showLoading('Loading schedule…');
+    var all = [], from = 0, page = 1000;   // Supabase caps at 1000/req — paginate
+    while (true) {
+      var res = await sb().from(TABLE).select('*').eq('project_id', pid)
+        .order('wbs', { ascending: true }).order('activity_id', { ascending: true })
+        .range(from, from + page - 1);
+      if (res.error) { hideLoading(); UI.toast(res.error.message, 'error'); return; }
+      all = all.concat(res.data || []);
+      if (!res.data || res.data.length < page) break;
+      from += page; setLoading('Loading schedule… ' + all.length + ' rows');
+    }
+    hideLoading();
+    rows = all;
+    // Large schedule: default to a collapsed outline so we don't render thousands of DOM rows.
+    if (rows.length > 400 && Object.keys(collapsed).length === 0) {
+      rows.forEach(function (r) { if (isWbs(r) && (segs(r.wbs).length - 1) >= 3) collapsed[r.wbs] = true; });
+    }
     renderAll();
   }
   async function persist(id, patch) {
@@ -287,18 +318,11 @@
   }
   function hiddenRow(r) { return ancestorCollapsed(r.wbs) || (collapsed[r.wbs] && !isWbs(r)); }
   function displayList() {
-    var q = search.trim().toLowerCase();
     var list = rows.slice();
-    if (q) {
+    if (anyFilter()) {
       var keep = {};
-      list.forEach(function (r) {
-        var hay = [r.activity_id, r.activity_name, r.wbs, r.responsible_party].join(' ').toLowerCase();
-        if (hay.indexOf(q) !== -1) { var s = segs(r.wbs); for (var i = 1; i <= s.length; i++) keep[s.slice(0, i).join('.')] = true; }
-      });
-      list = list.filter(function (r) {
-        var hay = [r.activity_id, r.activity_name].join(' ').toLowerCase();
-        return keep[String(r.wbs || '')] || hay.indexOf(q) !== -1;
-      });
+      list.forEach(function (r) { if (rowMatches(r)) { var s = segs(r.wbs); for (var i = 1; i <= s.length; i++) keep[s.slice(0, i).join('.')] = true; } });
+      list = list.filter(function (r) { return keep[String(r.wbs || '')] || rowMatches(r); });
     }
     list.sort(function (a, b) {
       var c = cmpCode(a.wbs, b.wbs); if (c !== 0) return c;
@@ -353,12 +377,18 @@
   }
   function recToPayload(r) {
     var pct = r.pct!=null?r.pct:0;
+    var type = r.isLeaf ? 'Task' : 'WBS Summary';
+    var start = r.start, finish = r.finish;
+    if (r.isLeaf) {
+      var mile = (r.dur === 0) || (!!finish && !start) || (!!start && !finish) || (start && finish && start === finish);
+      if (mile) { type = 'Milestone'; var dt = start || finish; start = dt; finish = dt; }
+    }
     return { project_id: pid, wbs: r.code, activity_id: r.id, activity_name: r.name,
-      activity_type: r.isLeaf ? 'Task' : 'WBS Summary',
+      activity_type: type,
       status: pct>=100?'Completed':(pct>0?'In Progress':'Not Started'),
-      start_date: r.start, end_date: r.finish,
-      actual_start: r.sA?r.start:null, actual_finish: r.fA?r.finish:null,
-      duration_days: r.dur!=null?r.dur:((r.start&&r.finish)?dayDiff(pd(r.start),pd(r.finish))+1:null),
+      start_date: start, end_date: finish,
+      actual_start: r.sA?start:null, actual_finish: r.fA?finish:null,
+      duration_days: r.dur!=null?r.dur:((start&&finish)?dayDiff(pd(start),pd(finish))+1:null),
       percent_complete: pct };
   }
   async function doImport(recs, replace) {
@@ -366,12 +396,12 @@
     if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } }
     var uid = UID;
     var payloads = recs.map(recToPayload); if (uid) payloads.forEach(function(p){ p.created_by=uid; });
-    var ok=0, err=null;
-    for (var i=0;i<payloads.length;i+=100) {
-      setLoading('Importing ' + Math.min(i+100, payloads.length) + ' of ' + payloads.length + '…');
-      var res = await sb().from(TABLE).insert(payloads.slice(i,i+100));
+    var ok=0, err=null, CH=500;
+    for (var i=0;i<payloads.length;i+=CH) {
+      setLoading('Importing ' + Math.min(i+CH, payloads.length) + ' of ' + payloads.length + '…');
+      var res = await sb().from(TABLE).insert(payloads.slice(i,i+CH));
       if (res.error) { err = res.error.message; break; }
-      ok += Math.min(100, payloads.length-i);
+      ok += Math.min(CH, payloads.length-i);
     }
     hideLoading();
     if (err) UI.toast('Insert error after '+ok+': '+err, 'error');
@@ -425,14 +455,17 @@
   function setLoading(msg) { var m=document.getElementById('ps-loading-msg'); if(m)m.textContent=msg; }
   function hideLoading() { var el=document.getElementById('ps-loading'); if(el)el.style.display='none'; }
 
-  // ---- per-level outline buttons ----
-  function renderLevelButtons() {
-    var host = document.getElementById('ps-levels'); if (!host) return;
-    var maxD = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > maxD) maxD = d; });
-    if (maxD <= 1) { host.innerHTML = ''; return; }
-    var html = ''; for (var i = 1; i <= maxD; i++) html += '<button data-lvl="' + i + '" title="Show ' + i + ' level' + (i>1?'s':'') + '">' + i + '</button>';
-    host.innerHTML = html;
-    host.querySelectorAll('[data-lvl]').forEach(function (b) { b.onclick = function () { expandToLevel(parseInt(b.dataset.lvl, 10)); }; });
+  // ---- OPC-style "Collapse to → WBS Level N" dropdown ----
+  function maxDepth() { var m = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > m) m = d; }); return m; }
+  function renderCollapseMenu() {
+    var menu = document.getElementById('ps-collapse-menu'); if (!menu) return;
+    var mx = Math.max(1, maxDepth());
+    var html = '';
+    for (var i = 1; i <= mx; i++) html += '<button data-lvl="' + i + '">WBS Level ' + i + '</button>';
+    menu.innerHTML = html;
+    menu.querySelectorAll('[data-lvl]').forEach(function (b) {
+      b.onclick = function () { menu.classList.remove('open'); expandToLevel(parseInt(b.dataset.lvl, 10)); };
+    });
   }
   function expandToLevel(n) {
     collapsed = {};
@@ -440,8 +473,31 @@
     renderGrid(); renderGantt();
   }
 
+  // ---- Filter (OPC-style) ----
+  function anyFilter() { return search.trim() || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}); }
+  function rowMatches(r) {
+    if (search.trim()) { var hay=[r.activity_id,r.activity_name,r.wbs].join(' ').toLowerCase(); if (hay.indexOf(search.trim().toLowerCase())===-1) return false; }
+    var sA = Object.keys(filters.status).some(function(k){return filters.status[k];});
+    if (sA && !filters.status[r.status || 'Not Started']) return false;
+    var tA = Object.keys(filters.type).some(function(k){return filters.type[k];});
+    if (tA && !filters.type[r.activity_type || 'Task']) return false;
+    return true;
+  }
+  function buildFilterMenu() {
+    var menu = document.getElementById('ps-filter-menu'); if (!menu) return;
+    function cb(group, val) { return '<label><input type="checkbox" data-fg="'+group+'" data-fv="'+val+'"'+(filters[group][val]?' checked':'')+'> '+val+'</label>'; }
+    menu.innerHTML = '<h4>Status</h4>' + ['Not Started','In Progress','Completed'].map(function(s){return cb('status',s);}).join('') +
+      '<h4>Type</h4>' + ['WBS Summary','Task','Milestone'].map(function(t){return cb('type',t);}).join('') +
+      '<div class="ps-filter-foot"><button class="pd-btn pd-btn-sm" id="ps-filter-clear">Clear</button><button class="pd-btn pd-btn-sm pd-btn-primary" id="ps-filter-done">Done</button></div>';
+    menu.querySelectorAll('input[type=checkbox]').forEach(function (c) {
+      c.onchange = function () { filters[c.dataset.fg][c.dataset.fv] = c.checked; renderGrid(); renderGantt(); };
+    });
+    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{} }; buildFilterMenu(); renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-filter-done').onclick = function () { menu.classList.remove('open'); };
+  }
+
   // ---- render everything ----
-  function renderAll() { renderKpis(); renderLevelButtons(); renderGrid(); renderGantt(); renderCost(); }
+  function renderAll() { renderKpis(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); }
 
   function renderKpis() {
     var tasks = rows.filter(function (r) { return !isWbs(r); });
@@ -754,8 +810,18 @@
     document.getElementById('ps-zoom').querySelectorAll('[data-zoom]').forEach(function (b) {
       b.onclick = function () { zoom = b.dataset.zoom; document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.remove('active'); }); b.classList.add('active'); renderGantt(); };
     });
-    document.getElementById('ps-expand').onclick = function () { collapsed = {}; renderGrid(); renderGantt(); };
-    document.getElementById('ps-collapse').onclick = function () { rows.filter(isWbs).forEach(function (w) { collapsed[w.wbs] = true; }); renderGrid(); renderGantt(); };
+    document.getElementById('ps-expand').onclick = function () {
+      if (rows.length > 4000 && !confirm('This schedule has ' + rows.length + ' rows. Expanding all may be slow. Continue?')) return;
+      collapsed = {}; renderGrid(); renderGantt();
+    };
+    var cMenu = document.getElementById('ps-collapse-menu'), fMenu = document.getElementById('ps-filter-menu');
+    document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); fMenu.classList.remove('open'); cMenu.classList.toggle('open'); };
+    document.getElementById('ps-filterbtn').onclick = function (e) { e.stopPropagation(); cMenu.classList.remove('open'); fMenu.classList.toggle('open'); };
+    buildFilterMenu();
+    cMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    fMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', function () { cMenu.classList.remove('open'); fMenu.classList.remove('open'); });
+    document.getElementById('ps-refresh').onclick = function () { load(); };
     document.getElementById('ps-add').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } openForm(null); };
     document.getElementById('ps-import').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } document.getElementById('ps-import-file').click(); };
     document.getElementById('ps-import-file').onchange = function (e) {

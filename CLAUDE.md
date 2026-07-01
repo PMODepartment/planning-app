@@ -77,6 +77,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-06-30 — Prompt 24: OPC-style outline/refresh/filter + big-file import fixes
+- Audited the FULL Westside export ("… (2).xlsx"): **20,716 rows** (16,223 activities +
+  WBS), nested to **14 levels**, many 0-day milestones. Drove these changes:
+- **Collapse-To dropdown** (replaces the 1-2-3 level bar): "Collapse to ▾ → WBS Level N",
+  matching OPC's menu; "Expand all" kept (guarded with a confirm above 4,000 rows).
+- **Refresh button** — re-fetches the schedule from the DB and re-renders (for when the
+  Gantt should re-sync after edits).
+- **Filter** (OPC-style dropdown) — by Activity **Status** (Not Started/In Progress/
+  Completed) and **Type** (WBS Summary/Task/Milestone); keeps matching rows' WBS ancestors.
+- **Milestone detection on import:** 0-day / date-only leaves import as **Milestone**
+  (diamonds) with a single date.
+- **Paginated load** (`.range()` loop) — Supabase caps at 1000 rows/req, so the full 20k
+  now loads; **chunked insert raised to 500/req**; **large schedules default to a collapsed
+  outline** (levels ≤3) so the browser doesn't render thousands of rows at once.
+- Known follow-up: true **row virtualization** for "Expand all" on 20k-row schedules.
+
 ### 2026-06-30 — Prompt 23: Schedule UX — per-level outline, import loader, resizable split
 - **Audited** the Westside City Site B OPC export against the parser: all 17 rows import
   cleanly (4 WBS + 13 activities), no missing dates/%/durations. (Row count varies by
