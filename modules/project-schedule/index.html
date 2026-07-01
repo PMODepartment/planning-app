@@ -120,7 +120,9 @@
         </div>
         <button class="pd-btn" id="ps-expand">Expand all</button>
         <button class="pd-btn" id="ps-collapse">Collapse all</button>
-        <button class="pd-btn pd-btn-primary ps-spacer" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
+        <button class="pd-btn ps-spacer" id="ps-import"><span data-ico="box" data-ico-size="15"></span> Import Excel (OPC)</button>
+        <input type="file" id="ps-import-file" accept=".xlsx,.xls" style="display:none" />
+        <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
       </div>
 
       <div class="ps-kpis" id="ps-kpis"></div>
@@ -204,6 +206,7 @@
 <script src="../../assets/js/db.js"></script>
 <script src="../../assets/js/ui.js"></script>
 <script src="../../assets/js/icons.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
   'use strict';
@@ -250,42 +253,125 @@
   function isWbs(r) { return r.activity_type === 'WBS Summary'; }
   function isMile(r) { return r.activity_type === 'Milestone'; }
 
-  // ---- build ordered, collapse-aware display list ----
+  // ---- WBS-code helpers + ordered, collapse-aware display list (full tree) ----
+  function segs(c) { return String(c == null ? '' : c).split('.'); }
+  function cmpCode(a, b) {
+    var A = segs(a), B = segs(b), n = Math.max(A.length, B.length);
+    for (var i = 0; i < n; i++) {
+      var x = parseInt(A[i], 10), y = parseInt(B[i], 10);
+      if (isNaN(x) && isNaN(y)) { if ((A[i]||'') !== (B[i]||'')) return (A[i]||'') < (B[i]||'') ? -1 : 1; }
+      else { x = isNaN(x) ? -1 : x; y = isNaN(y) ? -1 : y; if (x !== y) return x - y; }
+    }
+    return 0;
+  }
+  function ancestorCollapsed(code) {
+    return Object.keys(collapsed).some(function (c) { return collapsed[c] && c !== code && String(code).indexOf(c + '.') === 0; });
+  }
+  function hiddenRow(r) { return ancestorCollapsed(r.wbs) || (collapsed[r.wbs] && !isWbs(r)); }
   function displayList() {
     var q = search.trim().toLowerCase();
     var list = rows.slice();
     if (q) {
-      // keep matching tasks + their WBS ancestors
-      var keepWbs = {};
+      var keep = {};
       list.forEach(function (r) {
         var hay = [r.activity_id, r.activity_name, r.wbs, r.responsible_party].join(' ').toLowerCase();
-        if (!isWbs(r) && hay.indexOf(q) !== -1 && r.wbs) keepWbs[r.wbs] = true;
+        if (hay.indexOf(q) !== -1) { var s = segs(r.wbs); for (var i = 1; i <= s.length; i++) keep[s.slice(0, i).join('.')] = true; }
       });
       list = list.filter(function (r) {
-        var hay = [r.activity_id, r.activity_name, r.wbs, r.responsible_party].join(' ').toLowerCase();
-        if (isWbs(r)) { return Object.keys(keepWbs).some(function (w) { return w === r.wbs || w.indexOf(r.wbs + '.') === 0; }); }
-        return hay.indexOf(q) !== -1;
+        var hay = [r.activity_id, r.activity_name].join(' ').toLowerCase();
+        return keep[String(r.wbs || '')] || hay.indexOf(q) !== -1;
       });
     }
-    var wbsRows = list.filter(isWbs).sort(function (a, b) { return String(a.wbs).localeCompare(String(b.wbs)); });
-    var out = [];
-    function ancestorCollapsed(code) {
-      return Object.keys(collapsed).some(function (c) { return collapsed[c] && code.indexOf(c + '.') === 0; });
-    }
-    var used = {};
-    wbsRows.forEach(function (w) {
-      if (ancestorCollapsed(String(w.wbs))) return;
-      w._depth = String(w.wbs).split('.').length - 1;
-      out.push(w);
-      used[w.id] = true;
-      if (collapsed[w.wbs]) return;
-      list.filter(function (r) { return !isWbs(r) && r.wbs === w.wbs; })
-        .sort(function (a, b) { return String(a.activity_id||'').localeCompare(String(b.activity_id||'')); })
-        .forEach(function (t) { t._depth = w._depth + 1; out.push(t); used[t.id] = true; });
+    list.sort(function (a, b) {
+      var c = cmpCode(a.wbs, b.wbs); if (c !== 0) return c;
+      if (isWbs(a) !== isWbs(b)) return isWbs(a) ? -1 : 1;
+      return String(a.activity_id || '').localeCompare(String(b.activity_id || ''));
     });
-    // ungrouped tasks (no matching WBS row)
-    list.filter(function (r) { return !isWbs(r) && !used[r.id]; }).forEach(function (t) { t._depth = 0; out.push(t); });
+    var out = list.filter(function (r) { return !hiddenRow(r); });
+    out.forEach(function (r) { r._depth = Math.max(0, segs(r.wbs).length - 1); });
     return out;
+  }
+
+  // ---- IMPORT from Oracle Primavera Cloud .xlsx export ----
+  var MON = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+  function opcDate(v) {
+    if (v == null || v === '') return { d: null, actual: false };
+    var s = String(v).trim(); var actual = /\bA$/.test(s); s = s.replace(/\s*A$/, '').trim();
+    var m = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
+    if (m) { var day=+m[1], mo=MON[m[2].toLowerCase()], yr=+m[3]; if (yr<100) yr+=2000; if (mo) return { d: yr+'-'+String(mo).padStart(2,'0')+'-'+String(day).padStart(2,'0'), actual: actual }; }
+    var dd = pd(s); return { d: dd ? dstr(dd) : null, actual: actual };
+  }
+  function opcPct(v) { if (v==null||v==='') return null; var s=String(v).trim(); var hp=s.indexOf('%')!==-1; var n=parseFloat(s.replace(/[%,]/g,'')); if(isNaN(n))return null; if(!hp&&n<=1)n=n*100; return Math.round(n*10)/10; }
+  function opcDur(v) { if(v==null)return null; var n=parseInt(String(v).replace(/[^0-9]/g,''),10); return isNaN(n)?null:n; }
+  function parseWorkbook(ab) {
+    var wb = XLSX.read(new Uint8Array(ab), { type:'array', cellStyles:true });
+    var ws = wb.Sheets[wb.SheetNames[0]];
+    var maxR=0, maxC=0;   // OPC writes a stale <dimension>; recompute from cells
+    Object.keys(ws).forEach(function(k){ if(k[0]==='!')return; var c=XLSX.utils.decode_cell(k); if(c.r>maxR)maxR=c.r; if(c.c>maxC)maxC=c.c; });
+    ws['!ref'] = XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:maxR,c:maxC} });
+    var meta = ws['!rows'] || [];
+    var aoa = XLSX.utils.sheet_to_json(ws, { header:1, raw:true });
+    if (!aoa.length) return [];
+    var hdr = (aoa[0]||[]).map(function(h){ return String(h==null?'':h).trim().toLowerCase(); });
+    function col(cands){ for(var i=0;i<hdr.length;i++) for(var j=0;j<cands.length;j++) if(hdr[i]===cands[j]||hdr[i].indexOf(cands[j])!==-1) return i; return -1; }
+    var cId=col(['id']), cAct=col(['activity']), cS=col(['start']), cF=col(['finish']), cP=col(['percent']), cD=col(['duration']);
+    if (cId<0) cId=0;
+    var counters=[], recs=[];
+    for (var R=1; R<=maxR; R++) {
+      var row=aoa[R]||[];
+      var nameId = row[cId]!=null?String(row[cId]).trim():'';
+      var act = (cAct>=0 && row[cAct]!=null)?String(row[cAct]).trim():'';
+      if (!nameId && !act) continue;
+      var lvl = (meta[R] && meta[R].level!=null) ? meta[R].level : 0;   // WBS depth from outline level
+      counters[lvl]=(counters[lvl]||0)+1; counters.length=lvl+1;
+      var code=counters.join('.');
+      var s=opcDate(cS>=0?row[cS]:null), f=opcDate(cF>=0?row[cF]:null);
+      recs.push({ _depth:lvl, code:code, name: act||nameId, id: act?nameId:null,
+        start:s.d, finish:f.d, sA:s.actual, fA:f.actual,
+        pct: opcPct(cP>=0?row[cP]:null), dur: opcDur(cD>=0?row[cD]:null) });
+    }
+    recs.forEach(function(r){ r.isLeaf = !recs.some(function(o){ return o!==r && o.code.indexOf(r.code+'.')===0; }); });
+    return recs;
+  }
+  function recToPayload(r) {
+    var pct = r.pct!=null?r.pct:0;
+    return { project_id: pid, wbs: r.code, activity_id: r.id, activity_name: r.name,
+      activity_type: r.isLeaf ? 'Task' : 'WBS Summary',
+      status: pct>=100?'Completed':(pct>0?'In Progress':'Not Started'),
+      start_date: r.start, end_date: r.finish,
+      actual_start: r.sA?r.start:null, actual_finish: r.fA?r.finish:null,
+      duration_days: r.dur!=null?r.dur:((r.start&&r.finish)?dayDiff(pd(r.start),pd(r.finish))+1:null),
+      percent_complete: pct };
+  }
+  async function doImport(recs, replace) {
+    if (replace) { var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } }
+    var uid=null; try { uid=AppAuth.getUser().id; } catch(e){}
+    var payloads = recs.map(recToPayload); if (uid) payloads.forEach(function(p){ p.created_by=uid; });
+    var ok=0;
+    for (var i=0;i<payloads.length;i+=100) {
+      var res = await sb().from(TABLE).insert(payloads.slice(i,i+100));
+      if (res.error) { UI.toast('Insert error: '+res.error.message, 'error'); break; }
+      ok += Math.min(100, payloads.length-i);
+    }
+    UI.toast('Imported '+ok+' of '+payloads.length+' rows.', ok?'success':'error');
+    collapsed={}; load();
+  }
+  function previewImport(recs, fname) {
+    if (!recs.length) { UI.toast('No rows found in file.', 'warn'); return; }
+    var wbsN = recs.filter(function(r){return !r.isLeaf;}).length, actN = recs.length - wbsN;
+    var body = recs.slice(0,12).map(function(r){
+      return '<tr><td style="padding-left:'+(6+r._depth*14)+'px;">'+(r.isLeaf?'':'▸ ')+esc(r.name).slice(0,52)+'</td>'+
+        '<td>'+(r.start?Fmt.date(r.start):'—')+'</td><td>'+(r.finish?Fmt.date(r.finish):'—')+'</td>'+
+        '<td style="text-align:right;">'+(r.pct!=null?r.pct+'%':'')+'</td></tr>';
+    }).join('');
+    var m = UI.modal('<h2 style="margin-top:0;">Import Schedule</h2>'+
+      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">From <strong>'+esc(fname)+'</strong> — found <strong>'+recs.length+'</strong> rows ('+wbsN+' WBS, '+actN+' activities).</p>'+
+      '<div style="max-height:260px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th></tr></thead><tbody>'+body+'</tbody></table></div>'+
+      (recs.length>12?'<p style="font-size:12px;color:var(--pd-muted);">…and '+(recs.length-12)+' more.</p>':'')+
+      '<label style="display:flex;align-items:center;gap:8px;margin:12px 0;"><input type="checkbox" id="ps-imp-rep" checked> Replace existing activities for this project</label>'+
+      '<div style="text-align:right;"><button class="pd-btn" id="ps-imp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-imp-go">Import '+recs.length+' rows</button></div>');
+    m.el.querySelector('#ps-imp-x').onclick = m.close;
+    m.el.querySelector('#ps-imp-go').onclick = function(){ var rep=m.el.querySelector('#ps-imp-rep').checked; m.close(); doImport(recs, rep); };
   }
 
   // rolled-up span for a WBS row (over descendants)
@@ -628,6 +714,15 @@
     document.getElementById('ps-expand').onclick = function () { collapsed = {}; renderGrid(); renderGantt(); };
     document.getElementById('ps-collapse').onclick = function () { rows.filter(isWbs).forEach(function (w) { collapsed[w.wbs] = true; }); renderGrid(); renderGantt(); };
     document.getElementById('ps-add').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } openForm(null); };
+    document.getElementById('ps-import').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } document.getElementById('ps-import-file').click(); };
+    document.getElementById('ps-import-file').onchange = function (e) {
+      var file = e.target.files[0]; if (!file) return;
+      if (typeof XLSX === 'undefined') { UI.toast('Excel parser still loading — try again in a moment.', 'error'); return; }
+      var rd = new FileReader();
+      rd.onload = function () { try { previewImport(parseWorkbook(rd.result), file.name); } catch (err) { UI.toast('Parse failed: ' + err.message, 'error'); } };
+      rd.readAsArrayBuffer(file);
+      e.target.value = '';
+    };
     document.getElementById('ps-modal-close').onclick = closeModal;
     document.getElementById('ps-modal-cancel').onclick = closeModal;
     document.getElementById('ps-modal-save').onclick = save;

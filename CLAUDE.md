@@ -77,6 +77,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-06-30 — Prompt 22: Import OPC Excel export into Project Schedule
+- Added an **Import Excel (OPC)** button to the Project Schedule toolbar. Parses an
+  Oracle Primavera Cloud "Activities" `.xlsx` export **entirely in-browser** (SheetJS
+  from cdnjs) and loads it into `project_schedule` for the current project.
+- **Hierarchy from outline level:** OPC encodes the WBS tree via row outline levels
+  (`!rows[r].level`), not columns — the parser reads those and generates dotted WBS
+  codes (1, 1.1, 1.1.1, …). It also recomputes the sheet range because OPC writes a
+  stale `<dimension>` that otherwise hides most rows.
+- **Field mapping:** ID/Name, Activity (→ leaf task), Start/Finish (`DD-Mon-YY`, ` A`
+  = actual → also fills actual_start/finish), Percent Complete (fraction → %),
+  Planned Duration (`2,422d` → days). Leaf nodes import as **Task** (draggable bars),
+  parents as **WBS Summary** (roll-ups) — so the whole tree shows on the Gantt.
+- Preview modal (row counts + sample + "Replace existing" toggle) before writing;
+  chunked inserts. `displayList` refactored to render a **full WBS tree** by dotted code.
+- Verified: parser dry-run against the actual Westside City Site B export produced the
+  correct tree (17 rows → 4 WBS / 13 activities) with right dates, %, durations.
+
 ### 2026-06-30 — Prompt 21: Project Schedule → OPC-style Activities + interactive Gantt
 - Rebuilt the **Schedule tab** of `modules/project-schedule/` into a Primavera-Cloud-style
   **split view**: WBS-grouped, collapsible **activities grid** (left) beside an
