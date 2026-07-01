@@ -75,14 +75,14 @@
     .ps-bar { position:absolute; height:15px; border-radius:3px; background:var(--ps-bar); cursor:grab; z-index:3;
       box-shadow:0 1px 2px rgba(0,0,0,.15); }
     .ps-bar.task { background:var(--ps-bar); }
-    .ps-bar-fill { position:absolute; left:0; top:0; bottom:0; background:var(--pd-red); border-radius:3px 0 0 3px; }
+    .ps-bar-fill { position:absolute; left:0; top:0; bottom:0; background:var(--ps-prog,var(--pd-red)); border-radius:3px 0 0 3px; }
     .ps-bar.dragging { cursor:grabbing; opacity:.85; z-index:8; }
     .ps-handle { position:absolute; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:4; }
     .ps-handle.l { left:0; } .ps-handle.r { right:0; }
     .ps-sum { position:absolute; height:9px; background:var(--ps-sum); z-index:3;
       clip-path:polygon(0 0,100% 0,100% 60%,calc(100% - 6px) 100%,6px 100%,0 60%); }
     .ps-bl { position:absolute; height:5px; background:none; border:1.5px solid var(--ps-bl); border-radius:2px; z-index:2; }
-    .ps-mile { position:absolute; width:13px; height:13px; background:var(--pd-red); transform:rotate(45deg); z-index:3; cursor:grab; }
+    .ps-mile { position:absolute; width:13px; height:13px; background:var(--ps-mile,var(--pd-red)); transform:rotate(45deg); z-index:3; cursor:grab; }
     .ps-bar-lbl { position:absolute; font-size:10px; color:var(--pd-muted); white-space:nowrap; z-index:3; line-height:15px; }
     html.pd-dark .ps-row-bg.alt { background:rgba(255,255,255,.03); }
     /* Brand-compliant Gantt colors (light defaults; dark-mode overrides for visibility) */
@@ -117,6 +117,21 @@
     .ps-group-row { background:var(--pd-red-light) !important; }
     .ps-group-row .c-name { color:var(--pd-red); }
     .ps-sum-group { background:var(--pd-red) !important; opacity:.85; }
+    /* Schedule options + Colors menus */
+    .ps-sched-menu, .ps-colors-menu { min-width:250px; padding:12px 14px; }
+    .ps-sched-menu.open, .ps-colors-menu.open { display:block; }
+    .ps-sched-menu h4, .ps-colors-menu h4 { margin:2px 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .ps-sched-menu label { display:flex; align-items:flex-start; gap:8px; padding:5px 0; font-size:13px; cursor:pointer; }
+    .ps-sched-menu label small { display:block; color:var(--pd-muted); font-size:11px; }
+    .ps-colors-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 0; font-size:13px; }
+    .ps-colors-row input[type=color] { width:34px; height:24px; border:1px solid var(--pd-line); border-radius:4px; background:none; cursor:pointer; padding:0; }
+    /* Link mode */
+    #ps-linkmode.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    #ps-linkmode.active .pd-ico { color:#fff; }
+    .ps-gantt-pane.linkmode .ps-bar, .ps-gantt-pane.linkmode .ps-mile { cursor:crosshair; }
+    .ps-bar.link-src, .ps-mile.link-src { outline:2px solid var(--pd-red); outline-offset:1px; }
+    .ps-bar.link-tgt, .ps-mile.link-tgt { outline:2px dashed var(--pd-red); outline-offset:2px; }
+    .ps-linkline { stroke:var(--pd-red); stroke-width:2; stroke-dasharray:4 3; fill:none; pointer-events:none; }
 
     /* Cost table */
     .ps-table-wrap { overflow-x:auto; }
@@ -200,6 +215,15 @@
         </div>
         <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="link" data-ico-size="15"></span> Critical path</button>
         <div class="ps-menu-wrap">
+          <button class="pd-btn" id="ps-schedbtn" title="Scheduling options">Schedule ▾</button>
+          <div class="ps-menu ps-sched-menu" id="ps-sched-menu"></div>
+        </div>
+        <button class="pd-btn" id="ps-linkmode" title="Link mode: drag from one activity bar to another to create a Finish-to-Start relationship"><span data-ico="link" data-ico-size="15"></span> Link</button>
+        <div class="ps-menu-wrap">
+          <button class="pd-btn" id="ps-colorsbtn" title="Edit Gantt bar colors">Colors ▾</button>
+          <div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div>
+        </div>
+        <div class="ps-menu-wrap">
           <button class="pd-btn" id="ps-views">Views ▾</button>
           <div class="ps-menu" id="ps-views-menu"></div>
         </div>
@@ -282,7 +306,8 @@
         <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
         <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
         <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
-        <div class="ps-form-full"><label class="pd-label">Predecessors <small>(Activity IDs, comma-separated — drives the critical path)</small></label><input class="pd-input" id="ps-f-pred" placeholder="e.g. 1010, 1020" /></div>
+        <div class="ps-form-full"><label class="pd-label">Predecessors <small>(Activity IDs, comma-separated; type/lag optional e.g. 1020 SS+3 — drives the critical path)</small></label><input class="pd-input" id="ps-f-pred" placeholder="e.g. 1010, 1020 SS+3" /></div>
+        <div class="ps-form-full"><label class="pd-label">Successors <small>(derived from predecessors — read-only)</small></label><input class="pd-input" id="ps-f-succ" readonly style="background:var(--pd-bg);color:var(--pd-muted);" placeholder="—" /></div>
         <div><label class="pd-label">Planned Cost (&#8369;)</label><input class="pd-input" id="ps-f-pcost" type="number" min="0" step="0.01" /></div>
         <div><label class="pd-label">Actual Cost (&#8369;)</label><input class="pd-input" id="ps-f-acost" type="number" min="0" step="0.01" /></div>
         <div><label class="pd-label">Earned Value (&#8369;)</label><input class="pd-input" id="ps-f-ev" type="number" min="0" step="0.01" /></div>
@@ -894,16 +919,17 @@
   // ----- RIGHT GANTT: per-row bar builder (used by the windowed renderer) -----
   function ganttRowHTML(r, i, min, dayw) {
     var top = i * ROWH, out = '';
-    if (isWbsNode(r)) { var sp = wbsSpan(r); if (!sp) return ''; var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw; return '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + 12) + 'px;"></div>'; }
+    if (isWbsNode(r)) { var sp = wbsSpan(r); if (!sp) return ''; var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw; var wcS = (r._dkind === 'group') ? null : effWbsColor(r); return '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + 12) + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '"></div>'; }
     var bs = pd(r.bl_start), be = pd(r.bl_finish);
     if (bs && be) { var bx = dayDiff(min, bs) * dayw, bw = (dayDiff(bs, be) + 1) * dayw; out += '<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + 24) + 'px;"></div>'; }
     var s = pd(r.start_date), e = pd(r.end_date);
     var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && r._near) ? ' ps-near' : '');
-    if (isMile(r) && s) { var mx = dayDiff(min, s) * dayw; return out + '<div class="ps-mile' + crit + '" data-id="' + r.id + '" style="left:' + (mx-6) + 'px;top:' + (top + 9) + 'px;"></div>'; }
+    var wc = effWbsColor(r);
+    if (isMile(r) && s) { var mx = dayDiff(min, s) * dayw; return out + '<div class="ps-mile' + crit + '" data-id="' + r.id + '" style="left:' + (mx-6) + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>'; }
     if (!s || !e) return out;
     var x2 = dayDiff(min, s) * dayw, w2 = Math.max((dayDiff(s, e) + 1) * dayw, 4);
     var pct = Math.max(0, Math.min(100, r.percent_complete || 0));
-    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + (top + 9) + 'px;"><div class="ps-bar-fill" style="width:' + pct + '%;"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
+    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"><div class="ps-bar-fill" style="width:' + pct + '%;"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
     out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (top + 9) + 'px;">' + esc(r.activity_name || '') + '</div>';
     return out;
   }
@@ -914,13 +940,13 @@
       var id = bar.dataset.id;
       var r = rows.find(function (x) { return x.id === id; });
       if (!r) return;
-      bar.querySelector('.ps-handle.l').addEventListener('mousedown', function (e) { startDrag(e, r, bar, dayw, 'l'); });
-      bar.querySelector('.ps-handle.r').addEventListener('mousedown', function (e) { startDrag(e, r, bar, dayw, 'r'); });
-      bar.addEventListener('mousedown', function (e) { if (e.target.classList.contains('ps-handle')) return; startDrag(e, r, bar, dayw, 'move'); });
+      bar.querySelector('.ps-handle.l').addEventListener('mousedown', function (e) { if (linkMode) { startLink(e, r, bar, dayw); return; } startDrag(e, r, bar, dayw, 'l'); });
+      bar.querySelector('.ps-handle.r').addEventListener('mousedown', function (e) { if (linkMode) { startLink(e, r, bar, dayw); return; } startDrag(e, r, bar, dayw, 'r'); });
+      bar.addEventListener('mousedown', function (e) { if (linkMode) { startLink(e, r, bar, dayw); return; } if (e.target.classList.contains('ps-handle')) return; startDrag(e, r, bar, dayw, 'move'); });
     });
     document.querySelectorAll('#ps-tl .ps-mile').forEach(function (m) {
       var r = rows.find(function (x) { return x.id === m.dataset.id; });
-      if (r) m.addEventListener('mousedown', function (e) { startDrag(e, r, m, dayw, 'mile'); });
+      if (r) m.addEventListener('mousedown', function (e) { if (linkMode) { startLink(e, r, m, dayw); return; } startDrag(e, r, m, dayw, 'mile'); });
     });
   }
   function startDrag(e, r, el, dayw, mode) {
@@ -987,6 +1013,7 @@
     set('ps-f-pct', row && row.percent_complete != null ? row.percent_complete : '');
     set('ps-f-resp', row ? row.responsible_party : '');
     set('ps-f-pred', row ? row.predecessors : '');
+    set('ps-f-succ', (row && row._succObjs && row._succObjs.length) ? row._succObjs.map(function (s) { return s.id + (s.type && s.type !== 'FS' ? ' ' + s.type : '') + (s.lag ? (s.lag > 0 ? '+' : '') + s.lag : ''); }).join(', ') : '');
     set('ps-f-pcost', row && row.planned_cost != null ? row.planned_cost : '');
     set('ps-f-acost', row && row.actual_cost != null ? row.actual_cost : '');
     set('ps-f-ev', row && row.earned_value != null ? row.earned_value : '');
@@ -1042,7 +1069,9 @@
         'Start': r.start_date || '', 'Finish': r.end_date || '',
         'Duration (d)': r.duration_days != null ? r.duration_days : '',
         '% Complete': r.percent_complete != null ? r.percent_complete : '',
-        'Predecessors': r.predecessors || '', 'Responsible': r.responsible_party || '',
+        'Predecessors': r.predecessors || '',
+        'Successors': (r._succObjs && r._succObjs.length) ? r._succObjs.map(function (s) { return s.id + (s.type && s.type !== 'FS' ? ' ' + s.type : '') + (s.lag ? (s.lag > 0 ? '+' : '') + s.lag : ''); }).join(', ') : '',
+        'Responsible': r.responsible_party || '',
         'Planned Cost': r.planned_cost != null ? r.planned_cost : '',
         'Actual Cost': r.actual_cost != null ? r.actual_cost : '',
         'Earned Value': r.earned_value != null ? r.earned_value : ''
@@ -1078,6 +1107,9 @@
 
   // ----- Critical Path -----
   var critMode = false, NEARDAYS = 5;
+  // scheduling options (see Schedule ▾ menu). schedMode: 'retained' | 'override'.
+  var schedMode = (function () { try { return localStorage.getItem('ps_schedmode') || 'retained'; } catch (e) { return 'retained'; } })();
+  var useActuals = (function () { try { return localStorage.getItem('ps_useactuals') !== '0'; } catch (e) { return true; } })();
   // Extract predecessor Activity IDs from an OPC cell — tolerates "A1010 (FS)",
   // "A1010: FS+2d", "A1010; A1020", "1010, 1020", etc. (takes the leading token).
   function predIds(str) {
@@ -1102,22 +1134,215 @@
     var byId = {}; tasks.forEach(function (t) { byId[String(t.activity_id)] = t; t._succ = []; t._pred = []; });
     var hasRel = false;
     tasks.forEach(function (t) { t._relObjs = []; predRels(t.predecessors).forEach(function (rel) { var p = byId[rel.id]; if (p) { t._pred.push(p); p._succ.push(t); t._relObjs.push({ p: p, type: rel.type, lag: rel.lag }); hasRel = true; } }); });
+    // successors are the inverse of predecessors — expose them (form + export) with type/lag
+    tasks.forEach(function (t) { t._succObjs = t._succ.map(function (s) { var rel = (s._relObjs || []).find(function (x) { return x.p === t; }) || { type: 'FS', lag: 0 }; return { id: s.activity_id, type: rel.type, lag: rel.lag }; }); });
     if (hasRel) { cpmLogic(tasks); return { mode: 'logic' }; }
     drivingPath();
     return { mode: 'driving' };
   }
+  // Full CPM honoring relationship type (FS/SS/FF/SF) + lag, actual dates, a data date,
+  // and Retained-Logic vs Progress-Override handling of in-progress work.
+  function relCandidateES(rel, dur) {
+    var p = rel.p; if (p._ef == null || p._es == null) return null;
+    if (rel.type === 'SS') return p._es + rel.lag;
+    if (rel.type === 'FF') return p._ef + rel.lag - dur;
+    if (rel.type === 'SF') return p._es + rel.lag - dur;
+    return p._ef + rel.lag; // FS (default)
+  }
   function cpmLogic(tasks) {
-    var base = null; tasks.forEach(function (t) { var s = pd(t.start_date); if (s && (!base || s < base)) base = s; });
+    var base = null; tasks.forEach(function (t) { var s = pd((useActuals && t.actual_start) || t.start_date); if (s && (!base || s < base)) base = s; });
     if (!base) return;
-    tasks.forEach(function (t) { t._dur = (pd(t.end_date) - pd(t.start_date)) / 86400000 + 1; t._es = null; t._ef = null; });
-    tasks.forEach(function (t) { if (!t._pred.length) { t._es = (pd(t.start_date) - base) / 86400000; t._ef = t._es + t._dur; } });
+    var A = function (d) { var x = pd(d); return x ? dayDiff(base, x) : null; };
+    var DD = useActuals ? dayDiff(base, today()) : null;   // data date offset
+    tasks.forEach(function (t) {
+      t._dur = (pd(t.end_date) - pd(t.start_date)) / 86400000 + 1;
+      t._done = useActuals && !!t.actual_finish;
+      t._started = useActuals && (!!t.actual_start || (t.percent_complete > 0));
+      t._es = null; t._ef = null; t._out = [];
+    });
+    tasks.forEach(function (t) { (t._relObjs || []).forEach(function (rel) { if (rel.p) rel.p._out.push({ s: t, type: rel.type, lag: rel.lag }); }); });
+    // forward pass
     var chg = true, guard = 0;
-    while (chg && guard++ < tasks.length + 5) { chg = false; tasks.forEach(function (t) { if (t._pred.length) { var es = 0; t._pred.forEach(function (p) { if (p._ef != null && p._ef > es) es = p._ef; }); if (t._es !== es) { t._es = es; t._ef = es + t._dur; chg = true; } } }); }
+    while (chg && guard++ < tasks.length + 5) {
+      chg = false;
+      tasks.forEach(function (t) {
+        var es;
+        if (useActuals && t.actual_start) { es = A(t.actual_start); }
+        else {
+          var esL = null; (t._relObjs || []).forEach(function (rel) { var c = relCandidateES(rel, t._dur); if (c != null && (esL == null || c > esL)) esL = c; });
+          es = (esL != null) ? esL : A(t.start_date);
+          // Progress Override: a started-but-unfinished activity ignores predecessor logic
+          if (schedMode === 'override' && t._started && !t._done) { es = (DD != null) ? Math.max(A(t.start_date), DD) : A(t.start_date); }
+          // future (unstarted, incomplete) work cannot be scheduled before the data date
+          if (useActuals && DD != null && !t._done && !t._started && es < DD) { es = DD; }
+        }
+        var ef = (useActuals && t.actual_finish) ? A(t.actual_finish) : es + t._dur;
+        if (t._es !== es || t._ef !== ef) { t._es = es; t._ef = ef; chg = true; }
+      });
+    }
     var projEnd = 0; tasks.forEach(function (t) { if (t._ef != null && t._ef > projEnd) projEnd = t._ef; });
-    tasks.forEach(function (t) { if (!t._succ.length) { t._lf = projEnd; t._ls = t._lf - t._dur; } else { t._lf = null; t._ls = null; } });
+    // backward pass (type/lag aware)
+    tasks.forEach(function (t) { if (!t._out.length) { t._lf = projEnd; t._ls = t._lf - t._dur; } else { t._lf = null; t._ls = null; } });
     chg = true; guard = 0;
-    while (chg && guard++ < tasks.length + 5) { chg = false; tasks.forEach(function (t) { if (t._succ.length) { var lf = Infinity; t._succ.forEach(function (s) { if (s._ls != null && s._ls < lf) lf = s._ls; }); if (lf !== Infinity && t._lf !== lf) { t._lf = lf; t._ls = lf - t._dur; chg = true; } } }); }
+    while (chg && guard++ < tasks.length + 5) {
+      chg = false;
+      tasks.forEach(function (t) {
+        if (!t._out.length) return;
+        var lf = Infinity;
+        t._out.forEach(function (o) {
+          var s = o.s; if (s._ls == null || s._lf == null) return; var cand;
+          if (o.type === 'SS') cand = (s._ls - o.lag) + t._dur;
+          else if (o.type === 'FF') cand = s._lf - o.lag;
+          else if (o.type === 'SF') cand = s._lf - o.lag;
+          else cand = s._ls - o.lag; // FS
+          if (cand < lf) lf = cand;
+        });
+        if (lf !== Infinity && t._lf !== lf) { t._lf = lf; t._ls = lf - t._dur; chg = true; }
+      });
+    }
     tasks.forEach(function (t) { t._float = (t._ls != null && t._es != null) ? Math.round(t._ls - t._es) : null; t._critical = (t._float === 0); t._near = (!t._critical && t._float != null && t._float > 0 && t._float <= NEARDAYS); });
+  }
+  function recomputeCPM() { computeCPM(); renderGrid(); renderGantt(); }
+
+  // ---- Schedule options menu ----
+  function renderSchedMenu() {
+    var m = document.getElementById('ps-sched-menu'); if (!m) return;
+    m.innerHTML = '<h4>Schedule calculation</h4>' +
+      '<label><input type="radio" name="ps-sm" value="retained"' + (schedMode === 'retained' ? ' checked' : '') + '><span>Retained Logic<small>In-progress work keeps its predecessor logic (OPC default).</small></span></label>' +
+      '<label><input type="radio" name="ps-sm" value="override"' + (schedMode === 'override' ? ' checked' : '') + '><span>Progress Override<small>Started activities ignore predecessor logic for their remaining work.</small></span></label>' +
+      '<h4 style="margin-top:10px;">Dates</h4>' +
+      '<label><input type="checkbox" id="ps-useact"' + (useActuals ? ' checked' : '') + '><span>Use actual dates &amp; data date<small>Actual start/finish pin the schedule; future work can’t precede the data date (' + Fmt.date(dstr(today())) + ').</small></span></label>';
+    m.querySelectorAll('input[name=ps-sm]').forEach(function (rb) { rb.onchange = function () { if (rb.checked) { schedMode = rb.value; try { localStorage.setItem('ps_schedmode', schedMode); } catch (e) {} recomputeCPM(); } }; });
+    m.querySelector('#ps-useact').onchange = function (e) { useActuals = e.target.checked; try { localStorage.setItem('ps_useactuals', useActuals ? '1' : '0'); } catch (er) {} recomputeCPM(); };
+  }
+
+  // ---- Global Gantt colors ----
+  var COLORDEFS = [
+    { k: 'bar', v: '--ps-bar', label: 'Task bar', def: '#2B2C2B' },
+    { k: 'prog', v: '--ps-prog', label: 'Progress fill', def: '#EE3124' },
+    { k: 'sum', v: '--ps-sum', label: 'Summary bar', def: '#231F20' },
+    { k: 'bl', v: '--ps-bl', label: 'Baseline', def: '#9A9A9A' },
+    { k: 'mile', v: '--ps-mile', label: 'Milestone', def: '#EE3124' }
+  ];
+  function loadColors() { try { return JSON.parse(localStorage.getItem('ps_colors') || '{}'); } catch (e) { return {}; } }
+  function applyColors() { var c = loadColors(); var pane = document.querySelector('.ps-gantt-pane'); if (!pane) return; COLORDEFS.forEach(function (d) { if (c[d.k]) pane.style.setProperty(d.v, c[d.k]); else pane.style.removeProperty(d.v); }); }
+  // ---- Per-WBS color overrides (cascade to descendant activities), scoped per project ----
+  function wbsColorMap() { try { var all = JSON.parse(localStorage.getItem('ps_wbscolors') || '{}'); return all[pid] || {}; } catch (e) { return {}; } }
+  function saveWbsColor(code, color) {
+    var all = {}; try { all = JSON.parse(localStorage.getItem('ps_wbscolors') || '{}'); } catch (e) {}
+    all[pid] = all[pid] || {}; if (color) all[pid][code] = color; else delete all[pid][code];
+    try { localStorage.setItem('ps_wbscolors', JSON.stringify(all)); } catch (e) {}
+  }
+  var _wcCache = null, _wcCacheKey = null;
+  function effWbsColor(r) {
+    if (!pid) return null;
+    if (_wcCacheKey !== pid) { _wcCache = wbsColorMap(); _wcCacheKey = pid; }
+    var map = _wcCache; if (!map || !Object.keys(map).length) return null;
+    var chain = [];
+    if (isWbs(r) && r.wbs) chain.push(r.wbs);        // self first (most specific)
+    var anc = r._anc || []; for (var i = anc.length - 1; i >= 0; i--) chain.push(anc[i]);  // nearest ancestor → root
+    for (var j = 0; j < chain.length; j++) if (map[chain[j]]) return map[chain[j]];
+    return null;
+  }
+  function renderColorsMenu() {
+    var m = document.getElementById('ps-colors-menu'); if (!m) return; var c = loadColors();
+    var html = '<h4>Global bar colors</h4>';
+    COLORDEFS.forEach(function (d) { html += '<div class="ps-colors-row"><span>' + d.label + '</span><input type="color" data-ck="' + d.k + '" value="' + (c[d.k] || d.def) + '"></div>'; });
+    html += '<div style="text-align:right;margin-top:8px;"><button class="pd-btn" id="ps-colors-reset">Reset to brand</button></div>';
+    // per-WBS overrides
+    html += '<h4 style="margin-top:14px;">By WBS branch</h4><p style="font-size:11px;color:var(--pd-muted);margin:0 0 6px;">A WBS color cascades to its activities (nearest branch wins).</p>';
+    var wbsList = rows.filter(function (r) { return isWbs(r) && r.wbs; }).sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
+    if (!wbsList.length) { html += '<p style="font-size:12px;color:var(--pd-muted);">Load a schedule to color WBS branches.</p>'; }
+    else {
+      html += '<div class="ps-colors-row"><select id="ps-wbc-sel" style="flex:1;min-width:0;max-width:160px;">' +
+        wbsList.map(function (w) { return '<option value="' + esc(w.wbs) + '">' + esc(w.wbs) + ' — ' + esc((w.activity_name || '').slice(0, 28)) + '</option>'; }).join('') +
+        '</select><input type="color" id="ps-wbc-clr" value="#EE3124"><button class="pd-btn" id="ps-wbc-add">Add</button></div>';
+      var wm = wbsColorMap(); var codes = Object.keys(wm).sort(cmpCodeStr);
+      codes.forEach(function (code) {
+        html += '<div class="ps-colors-row"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:' + wm[code] + ';vertical-align:middle;margin-right:6px;"></span>' + esc(code) + '</span><input type="color" class="ps-wbc-edit" data-code="' + esc(code) + '" value="' + wm[code] + '"><button class="pd-btn ps-wbc-rm" data-code="' + esc(code) + '">✕</button></div>';
+      });
+    }
+    m.innerHTML = html;
+    m.querySelectorAll('input[data-ck]').forEach(function (inp) { inp.oninput = function () { var cc = loadColors(); cc[inp.dataset.ck] = inp.value; try { localStorage.setItem('ps_colors', JSON.stringify(cc)); } catch (e) {} applyColors(); }; });
+    m.querySelector('#ps-colors-reset').onclick = function () { try { localStorage.removeItem('ps_colors'); } catch (e) {} applyColors(); renderColorsMenu(); };
+    var addBtn = m.querySelector('#ps-wbc-add');
+    if (addBtn) addBtn.onclick = function () { var code = m.querySelector('#ps-wbc-sel').value, clr = m.querySelector('#ps-wbc-clr').value; if (!code) return; saveWbsColor(code, clr); _wcCacheKey = null; renderGantt(); renderColorsMenu(); };
+    m.querySelectorAll('.ps-wbc-edit').forEach(function (inp) { inp.oninput = function () { saveWbsColor(inp.dataset.code, inp.value); _wcCacheKey = null; renderGantt(); }; });
+    m.querySelectorAll('.ps-wbc-rm').forEach(function (b) { b.onclick = function () { saveWbsColor(b.dataset.code, null); _wcCacheKey = null; renderGantt(); renderColorsMenu(); }; });
+  }
+
+  // ---- Drag-to-link (OPC-style) ----
+  var linkMode = false;
+  function toggleLinkMode() {
+    linkMode = !linkMode;
+    document.getElementById('ps-linkmode').classList.toggle('active', linkMode);
+    var pane = document.querySelector('.ps-gantt-pane'); if (pane) pane.classList.toggle('linkmode', linkMode);
+    if (linkMode) UI.toast('Link mode on — drag from one activity bar to another to create a Finish-to-Start link.', 'info');
+  }
+  function startLink(e, r, el, dayw) {
+    e.preventDefault(); e.stopPropagation();
+    if (!r.activity_id) { UI.toast('Give this activity an Activity ID before linking it.', 'warn'); return; }
+    var scr = document.getElementById('ps-gantt-scroll'); var rect = scr.getBoundingClientRect();
+    var isM = el.classList.contains('ps-mile');
+    var sx = parseFloat(el.style.left) + (isM ? 6 : parseFloat(el.style.width));
+    var sy = parseFloat(el.style.top) + (isM ? 6 : 7);
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg'); svg.setAttribute('width', _tlW); svg.setAttribute('height', DL.length * ROWH);
+    svg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible;z-index:9;pointer-events:none;';
+    var path = document.createElementNS(NS, 'path'); path.setAttribute('class', 'ps-linkline'); svg.appendChild(path);
+    document.getElementById('ps-tl-bars').appendChild(svg);
+    el.classList.add('link-src');
+    var target = null;
+    function mm(ev) {
+      var cx = ev.clientX - rect.left + scr.scrollLeft, cy = ev.clientY - rect.top + scr.scrollTop;
+      path.setAttribute('d', 'M' + sx + ' ' + sy + ' L' + cx + ' ' + cy);
+      var tg = ev.target && ev.target.closest ? ev.target.closest('.ps-bar,.ps-mile') : null;
+      if (target && target !== tg) target.classList.remove('link-tgt');
+      if (tg && tg !== el && tg.dataset.id) { tg.classList.add('link-tgt'); target = tg; } else target = null;
+    }
+    function up() {
+      document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
+      el.classList.remove('link-src'); if (target) target.classList.remove('link-tgt'); svg.remove();
+      if (!target) return;
+      var tr = rows.find(function (x) { return x.id === target.dataset.id; });
+      if (tr && tr.id !== r.id) linkActivities(r, tr);
+    }
+    document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
+  }
+  function linkActivities(src, tgt) {
+    if (predIds(tgt.predecessors).indexOf(String(src.activity_id)) !== -1) { UI.toast('Already linked.', 'warn'); return; }
+    if (String(tgt.activity_id) && predIds(src.predecessors).indexOf(String(tgt.activity_id)) !== -1) { UI.toast('That would create a circular link.', 'error'); return; }
+    openLinkChooser(src, tgt);
+  }
+  function openLinkChooser(src, tgt) {
+    var m = UI.modal('<h2 style="margin-top:0;">Link activities</h2>' +
+      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;"><strong>' + esc(src.activity_id) + '</strong> ' + esc((src.activity_name || '').slice(0, 36)) + ' → <strong>' + esc(tgt.activity_id || '(no ID)') + '</strong> ' + esc((tgt.activity_name || '').slice(0, 36)) + '</p>' +
+      '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">' +
+        '<div style="flex:1;min-width:180px;"><label class="pd-label">Relationship</label><select class="pd-input" id="ps-rel-type">' +
+          '<option value="FS">Finish → Start (FS)</option><option value="SS">Start → Start (SS)</option>' +
+          '<option value="FF">Finish → Finish (FF)</option><option value="SF">Start → Finish (SF)</option></select></div>' +
+        '<div><label class="pd-label">Lag (days)</label><input class="pd-input" id="ps-rel-lag" type="number" value="0" style="width:110px;"></div>' +
+      '</div>' +
+      '<div style="text-align:right;margin-top:14px;"><button class="pd-btn" id="ps-rel-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-rel-go">Create link</button></div>');
+    m.el.querySelector('#ps-rel-x').onclick = m.close;
+    m.el.querySelector('#ps-rel-go').onclick = function () {
+      var type = m.el.querySelector('#ps-rel-type').value;
+      var lag = parseInt(m.el.querySelector('#ps-rel-lag').value, 10) || 0;
+      m.close(); commitLink(src, tgt, type, lag);
+    };
+  }
+  function commitLink(src, tgt, type, lag) {
+    var tok = String(src.activity_id);
+    if (type && type !== 'FS') tok += ' ' + type;
+    if (lag) tok += (lag > 0 ? '+' : '') + lag;
+    var pstr = tgt.predecessors ? (tgt.predecessors + ', ' + tok) : tok;
+    persist(tgt.id, { predecessors: pstr }).then(function (ok) {
+      if (!ok) return;
+      tgt.predecessors = pstr; computeCPM();
+      if (!critMode) { critMode = true; document.getElementById('ps-crit').classList.add('active'); }
+      renderGrid(); renderGantt();
+      UI.toast(src.activity_id + ' → ' + (tgt.activity_id || tgt.activity_name || 'activity') + ' linked (' + type + (lag ? (lag > 0 ? '+' : '') + lag : '') + ').', 'success');
+    });
   }
   // Automatic driving path (no relationships): starting at the project, follow the
   // latest-finishing child down each WBS level. Effective finish uses actual_finish
@@ -1164,14 +1389,22 @@
     };
     var cMenu = document.getElementById('ps-collapse-menu'), fMenu = document.getElementById('ps-filter-menu');
     var vMenu = document.getElementById('ps-views-menu');
-    document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); fMenu.classList.remove('open'); vMenu.classList.remove('open'); cMenu.classList.toggle('open'); };
-    document.getElementById('ps-filterbtn').onclick = function (e) { e.stopPropagation(); cMenu.classList.remove('open'); vMenu.classList.remove('open'); fMenu.classList.toggle('open'); };
-    document.getElementById('ps-views').onclick = function (e) { e.stopPropagation(); cMenu.classList.remove('open'); fMenu.classList.remove('open'); renderViewsMenu(); vMenu.classList.toggle('open'); };
+    var sMenu = document.getElementById('ps-sched-menu'), colMenu = document.getElementById('ps-colors-menu');
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); sMenu.classList.remove('open'); colMenu.classList.remove('open'); }
+    document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); closeMenus(); cMenu.classList.toggle('open'); };
+    document.getElementById('ps-filterbtn').onclick = function (e) { e.stopPropagation(); var o = fMenu.classList.contains('open'); closeMenus(); if (!o) fMenu.classList.add('open'); };
+    document.getElementById('ps-views').onclick = function (e) { e.stopPropagation(); var o = vMenu.classList.contains('open'); closeMenus(); if (!o) { renderViewsMenu(); vMenu.classList.add('open'); } };
+    document.getElementById('ps-schedbtn').onclick = function (e) { e.stopPropagation(); var o = sMenu.classList.contains('open'); closeMenus(); if (!o) { renderSchedMenu(); sMenu.classList.add('open'); } };
+    document.getElementById('ps-colorsbtn').onclick = function (e) { e.stopPropagation(); var o = colMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colMenu.classList.add('open'); } };
+    document.getElementById('ps-linkmode').onclick = function (e) { e.stopPropagation(); toggleLinkMode(); };
     buildFilterMenu();
     cMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     fMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     vMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.addEventListener('click', function () { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); });
+    sMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    colMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', closeMenus);
+    applyColors();
     document.getElementById('ps-refresh').onclick = function () { load(); };
     document.getElementById('ps-export').onclick = exportExcel;
     document.getElementById('ps-crit').onclick = function () {

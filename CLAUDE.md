@@ -77,6 +77,48 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-01 — Prompt 39: Typed drag-to-link + per-WBS bar colors
+- **Typed relationship on link drop.** Dropping a drag-to-link now opens a chooser
+  (`openLinkChooser`) for relationship type **FS / SS / FF / SF** and **lag (days)** instead of
+  always FS. `commitLink` builds the correct predecessor token (`1020`, `1020+5`, `1020 SS+3`,
+  `1020 FF-2`, …) and appends it; round-trip through `predRels` verified for all types/lag signs.
+- **Per-WBS bar colors (global + overrides).** Kept the global palette and added per-WBS color
+  overrides that **cascade to descendant activity bars** (nearest branch wins via
+  `effWbsColor`, checking self → ancestors). Managed in the **Colors ▾** menu "By WBS branch"
+  section: pick a WBS, choose a color, Add; edit/remove existing ones inline. Stored per project
+  in localStorage (`ps_wbscolors[pid]`), applied as inline bar background in `ganttRowHTML`
+  (WBS summary + its activities + milestones), cached per-pid and invalidated on change.
+- Validated token round-trips and the WBS-color cascade in isolation; syntax-checked the new
+  UI functions. (OneDrive bash mount still stale → no full-file `node --check`.)
+
+### 2026-07-01 — Prompt 38: Relationship-aware CPM, successors, bar colors, drag-to-link
+- **Relationship-type + lag aware CPM.** `cpmLogic` rewritten: forward/backward passes now
+  honor **FS / SS / FF / SF + lag** (previously all treated as FS with 0 lag — types/lag were
+  drawn but ignored in the math). New `relCandidateES()` computes each successor's earliest
+  start per relationship type.
+- **Actual dates + data date.** With "Use actual dates" on: `actual_start`/`actual_finish`
+  pin ES/EF, and unstarted future work is floored at the **data date** (today). New
+  **Schedule ▾** menu exposes **Retained Logic** vs **Progress Override** (started activities
+  ignore predecessor logic for remaining work) and the actual-dates toggle; both persist to
+  localStorage (`ps_schedmode`, `ps_useactuals`) and recompute on change.
+- **Successors (derived).** `computeCPM` now builds `_succObjs` (inverse of predecessors, with
+  type/lag). Shown as a read-only field in the activity form and a new **Successors** column
+  in the Excel export.
+- **Global Gantt colors.** New **Colors ▾** menu with pickers for Task bar / Progress fill /
+  Summary bar / Baseline / Milestone, applied via CSS vars (`--ps-bar/-prog/-sum/-bl/-mile`),
+  persisted (`ps_colors`), with "Reset to brand" (reverts to Brandbook defaults incl.
+  dark-mode overrides).
+- **Drag-to-link.** New **Link** toolbar toggle: drag from one activity bar to another to
+  create a Finish-to-Start predecessor (rubber-band line + target highlight), with
+  already-linked and simple circular-link guards; auto-enables Critical-path view so the new
+  arrow shows. Mirrors OPC's node-drag linking.
+- Validated the CPM engine in isolation across FS chains, FS/SS lag, parallel float, and
+  actuals+data-date scenarios; syntax-checked all new UI functions in isolation (OneDrive
+  bash mount is serving a stale copy, so full-file `node --check` wasn't possible this run).
+- **Note on scope:** before this, the schedule did NOT consider relationship type/lag in the
+  math, nor Retained Logic / Progress Override, and used actuals only in the date-driven
+  fallback. All four are now handled.
+
 ### 2026-07-01 — Prompt 37: Nested Group-by (WBS / Status / Responsible / Type)
 - **"Group:" toolbar select** (WBS default / Status / Responsible / Activity Type). WBS keeps
   the original behavior; the other modes build a **nested tree**: group header → each group's
