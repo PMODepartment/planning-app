@@ -11,12 +11,6 @@
   <style>
     .ps-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; }
     .ps-spacer { margin-left:auto; }
-    .ps-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
-    .ps-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
-    .ps-kpi-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
-    .ps-kpi-value { font-size:22px; font-weight:700; }
-    .ps-kpi-sub { font-size:12px; color:var(--pd-muted); margin-top:2px; }
-    .ps-kpi-red { color:var(--pd-bad); } .ps-kpi-green { color:var(--pd-ok); }
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
     .ps-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
@@ -132,6 +126,30 @@
     .ps-bar.link-src, .ps-mile.link-src { outline:2px solid var(--pd-red); outline-offset:1px; }
     .ps-bar.link-tgt, .ps-mile.link-tgt { outline:2px dashed var(--pd-red); outline-offset:2px; }
     .ps-linkline { stroke:var(--pd-red); stroke-width:2; stroke-dasharray:4 3; fill:none; pointer-events:none; }
+    /* Activity Details / Project Usage panel */
+    .ps-details { margin-top:14px; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .ps-details-tabs { display:flex; flex-wrap:wrap; align-items:center; gap:4px; padding:8px 10px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); }
+    .ps-dt-group { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); font-weight:700; margin-right:4px; }
+    .ps-dtab { border:1px solid transparent; background:none; padding:4px 10px; border-radius:6px; font-size:12px; cursor:pointer; color:var(--pd-text); }
+    .ps-dtab:hover { background:rgba(0,0,0,.05); }
+    html.pd-dark .ps-dtab:hover { background:rgba(255,255,255,.06); }
+    .ps-dtab.active { background:var(--pd-red); color:#fff; }
+    .ps-details-body { padding:14px; min-height:140px; max-height:340px; overflow:auto; }
+    .ps-dl { display:grid; grid-template-columns:160px 1fr; gap:6px 16px; font-size:13px; align-items:baseline; }
+    .ps-dl dt { color:var(--pd-muted); }
+    .ps-dl dd { margin:0; }
+    .ps-rel-tables { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    @media (max-width:760px) { .ps-rel-tables { grid-template-columns:1fr; } }
+    .ps-rel-tables h5 { margin:0 0 6px; font-size:12px; }
+    .ps-mini { width:100%; border-collapse:collapse; font-size:12px; }
+    .ps-mini th, .ps-mini td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--pd-line); }
+    .ps-mini th { color:var(--pd-muted); font-weight:600; }
+    .ps-trace { display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+    .ps-trace-col { display:flex; flex-direction:column; gap:8px; }
+    .ps-trace-arrow { font-size:20px; color:var(--pd-muted); }
+    .ps-trace-node { border:1px solid var(--pd-line); border-radius:6px; padding:8px 10px; font-size:12px; min-width:130px; }
+    .ps-trace-node.cur { border-color:var(--pd-red); background:var(--pd-red-light); }
+    .ps-empty-detail { color:var(--pd-muted); font-size:13px; padding:20px; text-align:center; }
 
     /* Cost table */
     .ps-table-wrap { overflow-x:auto; }
@@ -233,8 +251,6 @@
         <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
       </div>
 
-      <div class="ps-kpis" id="ps-kpis"></div>
-
       <div class="ps-tabs">
         <button class="ps-tab active" data-tab="schedule"><span data-ico="calendar" data-ico-size="15"></span> Schedule &amp; Gantt</button>
         <button class="ps-tab" data-tab="cost"><span data-ico="cash" data-ico-size="15"></span> Cost Loading</button>
@@ -263,6 +279,22 @@
         <p style="font-size:12px;color:var(--pd-muted);margin-top:8px;">
           Tip: click any activity cell to edit inline. Drag a bar to move it; drag its edges to resize. WBS summary rows roll up automatically.
         </p>
+
+        <!-- OPC-style Activity Details / Project Usage panel (driven by selected activity) -->
+        <div class="ps-details" id="ps-details">
+          <div class="ps-details-tabs">
+            <span class="ps-dt-group">Activity Details:</span>
+            <button class="ps-dtab active" data-dtab="general">General</button>
+            <button class="ps-dtab" data-dtab="status">Status</button>
+            <button class="ps-dtab" data-dtab="rels">Relationships</button>
+            <button class="ps-dtab" data-dtab="trace">Trace Logic</button>
+            <span class="ps-dt-group" style="margin-left:14px;">Project Usage:</span>
+            <button class="ps-dtab" data-dtab="ausage">Activity Usage</button>
+            <button class="ps-dtab" data-dtab="rusage">Resource Usage</button>
+            <button class="ps-dtab" data-dtab="roleusage">Role Usage</button>
+          </div>
+          <div class="ps-details-body" id="ps-details-body"></div>
+        </div>
       </div>
 
       <!-- COST LOADING -->
@@ -702,25 +734,81 @@
   }
 
   // ---- render everything ----
-  function renderAll() { renderKpis(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); }
+  function renderAll() { renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); }
 
-  function renderKpis() {
-    var tasks = rows.filter(function (r) { return !isWbs(r); });
-    var total = tasks.length;
-    var done = tasks.filter(function (r) { return r.status === 'Completed'; }).length;
-    var prog = tasks.filter(function (r) { return r.status === 'In Progress'; }).length;
-    var avg = total ? Math.round(tasks.reduce(function (s, r) { return s + (r.percent_complete || 0); }, 0) / total) : 0;
-    var tp = tasks.reduce(function (s, r) { return s + (r.planned_cost || 0); }, 0);
-    var ta = tasks.reduce(function (s, r) { return s + (r.actual_cost || 0); }, 0);
-    var ev = tasks.reduce(function (s, r) { return s + (r.earned_value || 0); }, 0);
-    var cpi = ta > 0 ? ev / ta : null, spi = tp > 0 ? ev / tp : null;
-    function k(l, v, sub, cls) { return '<div class="ps-kpi"><div class="ps-kpi-label">' + l + '</div><div class="ps-kpi-value ' + (cls||'') + '">' + v + '</div>' + (sub ? '<div class="ps-kpi-sub">' + sub + '</div>' : '') + '</div>'; }
-    document.getElementById('ps-kpis').innerHTML =
-      k('Overall Progress', avg + '%', total + ' activities') +
-      k('Completed', done, prog + ' in progress') +
-      k('Planned Cost', Fmt.moneyShort(tp), 'Actual: ' + Fmt.moneyShort(ta)) +
-      k('CPI', cpi !== null ? cpi.toFixed(2) : '—', cpi !== null ? (cpi >= 1 ? 'On/under budget' : 'Over budget') : 'No cost data', cpi === null ? '' : cpi >= 1 ? 'ps-kpi-green' : 'ps-kpi-red') +
-      k('SPI', spi !== null ? spi.toFixed(2) : '—', spi !== null ? (spi >= 1 ? 'On/ahead' : 'Behind') : 'No EV data', spi === null ? '' : spi >= 1 ? 'ps-kpi-green' : 'ps-kpi-red');
+  // ----- OPC-style Activity Details / Project Usage panel -----
+  var detailTab = 'general';
+  function selRow() { return selId ? rows.find(function (x) { return x.id === selId; }) : null; }
+  function actName(id) { if (!id) return ''; var r = rows.find(function (x) { return String(x.activity_id) === String(id); }); return r ? (r.activity_name || '') : ''; }
+  function dlHtml(pairs) { return '<dl class="ps-dl">' + pairs.map(function (p) { var v = (p[1] == null || p[1] === '') ? '—' : p[1]; return '<dt>' + p[0] + '</dt><dd>' + v + '</dd>'; }).join('') + '</dl>'; }
+  function detGeneral(r) {
+    return dlHtml([['WBS', esc(r.wbs || '')], ['Activity ID', esc(r.activity_id || '')], ['Name', esc(r.activity_name || '')],
+      ['Type', esc(r.activity_type || 'Task')], ['Status', esc(r.status || '')], ['Responsible', esc(r.responsible_party || '')],
+      ['Remarks', esc(r.remarks || '')]]);
+  }
+  function detStatus(r) {
+    var fv = finVar(r);
+    return dlHtml([
+      ['Planned Start', r.start_date ? Fmt.date(r.start_date) : '—'],
+      ['Planned Finish', r.end_date ? Fmt.date(r.end_date) : '—'],
+      ['Actual Start', r.actual_start ? Fmt.date(r.actual_start) : '—'],
+      ['Actual Finish', r.actual_finish ? Fmt.date(r.actual_finish) : '—'],
+      ['Baseline Start', r.bl_start ? Fmt.date(r.bl_start) : '—'],
+      ['Baseline Finish', r.bl_finish ? Fmt.date(r.bl_finish) : '—'],
+      ['Duration', r.duration_days != null ? r.duration_days + 'd' : '—'],
+      ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'],
+      ['Total Float', r._float != null ? r._float + 'd' : '—'],
+      ['Critical', r._critical ? 'Yes' : 'No'],
+      ['Finish Variance (BL)', fv != null ? (fv > 0 ? '+' : '') + fv + 'd' : '—']
+    ]);
+  }
+  function relRowHtml(o) { return '<tr><td>' + esc(o.id || '') + '</td><td>' + esc(actName(o.id)) + '</td><td>' + esc(o.type || 'FS') + '</td><td style="text-align:right;">' + (o.lag ? (o.lag > 0 ? '+' : '') + o.lag + 'd' : '0d') + '</td></tr>'; }
+  function relPreds(r) { return (r._relObjs && r._relObjs.length) ? r._relObjs.map(function (x) { return { id: x.p.activity_id, type: x.type, lag: x.lag }; }) : predRels(r.predecessors); }
+  function detRels(r) {
+    var preds = relPreds(r), succs = r._succObjs || [];
+    function tbl(title, arr) {
+      return '<div><h5>' + title + ' (' + arr.length + ')</h5>' + (arr.length
+        ? '<table class="ps-mini"><thead><tr><th>ID</th><th>Name</th><th>Type</th><th style="text-align:right;">Lag</th></tr></thead><tbody>' + arr.map(relRowHtml).join('') + '</tbody></table>'
+        : '<p style="color:var(--pd-muted);font-size:12px;margin:4px 0;">None.</p>') + '</div>';
+    }
+    return '<div class="ps-rel-tables">' + tbl('Predecessors', preds) + tbl('Successors', succs) + '</div>';
+  }
+  function traceNode(label, sub, cur) { return '<div class="ps-trace-node' + (cur ? ' cur' : '') + '"><strong>' + esc(label) + '</strong>' + (sub ? '<div style="color:var(--pd-muted);">' + esc(sub) + '</div>' : '') + '</div>'; }
+  function detTrace(r) {
+    var preds = relPreds(r).map(function (p) { return { id: p.id, name: actName(p.id), type: p.type }; });
+    var succs = (r._succObjs || []).map(function (s) { return { id: s.id, name: actName(s.id), type: s.type }; });
+    function col(arr, label) {
+      return '<div class="ps-trace-col"><div class="ps-dt-group">' + label + '</div>' + (arr.length
+        ? arr.map(function (a) { return traceNode(((a.id || '') + ' ' + (a.name || '')).trim(), a.type, false); }).join('')
+        : '<div style="color:var(--pd-muted);font-size:12px;">None</div>') + '</div>';
+    }
+    return '<div class="ps-trace">' + col(preds, 'Predecessors') +
+      '<div class="ps-trace-arrow">→</div>' +
+      '<div class="ps-trace-col"><div class="ps-dt-group">This activity</div>' + traceNode(((r.activity_id || '') + ' ' + (r.activity_name || '')).trim(), r.activity_type, true) + '</div>' +
+      '<div class="ps-trace-arrow">→</div>' + col(succs, 'Successors') + '</div>';
+  }
+  function detActUsage(r) {
+    var pc = r.planned_cost || 0, ac = r.actual_cost || 0, ev = r.earned_value || 0, cv = ev - ac;
+    return dlHtml([['Planned Cost', Fmt.money(pc)], ['Actual Cost', Fmt.money(ac)], ['Earned Value', Fmt.money(ev)],
+      ['Cost Variance', (cv >= 0 ? '+' : '') + Fmt.money(cv)], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—']]) +
+      '<p style="font-size:11px;color:var(--pd-muted);margin-top:10px;">Time-phased usage curves require resource/role loading (handled in the Resource Loading module).</p>';
+  }
+  function detNoResource(kind) {
+    return '<div class="ps-empty-detail">No ' + kind + ' assignments for this activity.<br><span style="font-size:12px;">' +
+      kind.charAt(0).toUpperCase() + kind.slice(1) + ' loading is handled in the separate Resource Loading module (not yet enabled).</span></div>';
+  }
+  function renderDetails() {
+    var body = document.getElementById('ps-details-body'); if (!body) return;
+    var r = selRow();
+    if (!r || isWbs(r)) { body.innerHTML = '<div class="ps-empty-detail">Select an activity (click a row or its bar) to see its details.</div>'; return; }
+    var t = detailTab;
+    if (t === 'general') body.innerHTML = detGeneral(r);
+    else if (t === 'status') body.innerHTML = detStatus(r);
+    else if (t === 'rels') body.innerHTML = detRels(r);
+    else if (t === 'trace') body.innerHTML = detTrace(r);
+    else if (t === 'ausage') body.innerHTML = detActUsage(r);
+    else if (t === 'rusage') body.innerHTML = detNoResource('resource');
+    else if (t === 'roleusage') body.innerHTML = detNoResource('role');
   }
 
   // ----- COLUMN HEADER (static, resizable) -----
@@ -852,7 +940,7 @@
     // Excel-like: click anywhere on a WBS/group summary row to expand/collapse it
     host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); }); });
     host.querySelectorAll('.ps-editable').forEach(function (c) { c.onclick = function () { beginEdit(c); }; });
-    host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function () { selId = rw.dataset.rowid; highlightRow(); }); });
+    host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function () { selId = rw.dataset.rowid; highlightRow(); renderDetails(); }); });
     // gantt: window bars
     var bc = document.getElementById('ps-tl-bars');
     if (bc) {
@@ -951,7 +1039,7 @@
   }
   function startDrag(e, r, el, dayw, mode) {
     e.preventDefault(); e.stopPropagation();
-    selId = r.id; highlightRow();
+    selId = r.id; highlightRow(); renderDetails();
     var startX = e.clientX;
     var os = pd(r.start_date), oe = pd(r.end_date) || os;
     var ox = parseFloat(el.style.left), ow = parseFloat(el.style.width) || 13;
@@ -1397,6 +1485,7 @@
     document.getElementById('ps-schedbtn').onclick = function (e) { e.stopPropagation(); var o = sMenu.classList.contains('open'); closeMenus(); if (!o) { renderSchedMenu(); sMenu.classList.add('open'); } };
     document.getElementById('ps-colorsbtn').onclick = function (e) { e.stopPropagation(); var o = colMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colMenu.classList.add('open'); } };
     document.getElementById('ps-linkmode').onclick = function (e) { e.stopPropagation(); toggleLinkMode(); };
+    document.querySelectorAll('.ps-dtab').forEach(function (b) { b.onclick = function () { detailTab = b.dataset.dtab; document.querySelectorAll('.ps-dtab').forEach(function (x) { x.classList.toggle('active', x === b); }); renderDetails(); }; });
     buildFilterMenu();
     cMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     fMenu.addEventListener('click', function (e) { e.stopPropagation(); });
