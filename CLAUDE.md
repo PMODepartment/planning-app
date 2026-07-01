@@ -77,6 +77,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-06-30 — Prompt 26: Gantt virtualization + Clear button
+- **Row virtualization:** the grid and Gantt now render only the rows in the viewport
+  (+buffer) via a windowed renderer (`doRender` builds the shell + timeline scale + static
+  layer once; `renderWindow` paints just the visible slice on scroll, rAF-throttled).
+  Grid uses a full-height spacer with a `translateY` window; Gantt bars go in `#ps-tl-bars`
+  over a static `.ps-tl-static` layer; row striping via `.ps-alt`. **Expand-all on 20k rows
+  is now smooth** (only ~40 rows in the DOM at a time). renderGrid/renderGantt collapse to a
+  single rAF render to avoid double work.
+- **Clear button** — deletes all activities for the current project (confirm) for clean re-imports.
+- Vertical scroll (either pane) drives the window; header still H-scroll-syncs.
+- Remaining from the batch (next): Export-to-Excel, dependencies + critical path, portfolio rollup.
+
+### 2026-06-30 — Prompt 25: Resizable columns, header fix, big-file perf optimization
+- **Resizable columns:** each column header has a drag grip; widths driven by CSS vars
+  (`--c-id/-name/-date/-dur/-pct`) so header + all rows stay aligned; widths persist
+  (localStorage `ps_cols`). Date columns share one width.
+- **Header always visible:** moved the column header out of `renderGrid` into a static
+  `renderHeader()` rendered at init (was blank until data finished loading).
+- **Performance (20k rows):** the sort + per-row segment parsing + date-range scan now run
+  **once per data change** (`rebuild()`), not on every Collapse/Filter click; `hiddenRow`
+  walks precomputed ancestor codes (O(depth)) instead of scanning all collapsed keys;
+  **WBS roll-up spans precomputed** into `_spanMap` (summary bars were rescanning all rows).
+  Collapse-to / Filter clicks are now near-instant.
+- **Faster load:** `load()` gets the row count then fetches all pages **in parallel**
+  (`Promise.all`) instead of 21 sequential requests (~1 min → a few seconds); grid header
+  horizontal-scrolls in sync with the rows.
+- Known follow-up: **row virtualization** so "Expand all" on 20k rows is smooth.
+
 ### 2026-06-30 — Prompt 24: OPC-style outline/refresh/filter + big-file import fixes
 - Audited the FULL Westside export ("… (2).xlsx"): **20,716 rows** (16,223 activities +
   WBS), nested to **14 levels**, many 0-day milestones. Drove these changes:
