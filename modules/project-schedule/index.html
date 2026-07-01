@@ -134,7 +134,11 @@
     .ps-dtab:hover { background:rgba(0,0,0,.05); }
     html.pd-dark .ps-dtab:hover { background:rgba(255,255,255,.06); }
     .ps-dtab.active { background:var(--pd-red); color:#fff; }
-    .ps-details-body { padding:14px; min-height:140px; max-height:340px; overflow:auto; }
+    /* Draggable resize handle for the bottom details panel */
+    .ps-details-grip { height:9px; cursor:ns-resize; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); position:relative; }
+    .ps-details-grip::before { content:""; position:absolute; left:50%; top:4px; width:40px; height:2px; border-radius:2px; transform:translateX(-50%); background:var(--pd-muted); opacity:.45; }
+    .ps-details-grip:hover::before { opacity:.8; }
+    .ps-details-body { padding:14px; height:220px; min-height:90px; overflow:auto; }
     .ps-dl { display:grid; grid-template-columns:160px 1fr; gap:6px 16px; font-size:13px; align-items:baseline; }
     .ps-dl dt { color:var(--pd-muted); }
     .ps-dl dd { margin:0; }
@@ -282,6 +286,7 @@
 
         <!-- OPC-style Activity Details / Project Usage panel (driven by selected activity) -->
         <div class="ps-details" id="ps-details">
+          <div class="ps-details-grip" id="ps-details-grip" title="Drag to resize the details panel"></div>
           <div class="ps-details-tabs">
             <span class="ps-dt-group">Activity Details:</span>
             <button class="ps-dtab active" data-dtab="general">General</button>
@@ -939,7 +944,7 @@
     host.querySelectorAll('[data-toggle]').forEach(function (t) { t.onclick = function (e) { e.stopPropagation(); collapsed[t.dataset.toggle] = !collapsed[t.dataset.toggle]; renderGrid(); }; });
     // Excel-like: click anywhere on a WBS/group summary row to expand/collapse it
     host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); }); });
-    host.querySelectorAll('.ps-editable').forEach(function (c) { c.onclick = function () { beginEdit(c); }; });
+    host.querySelectorAll('.ps-editable').forEach(function (c) { c.ondblclick = function (e) { e.stopPropagation(); beginEdit(c); }; });
     host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function () { selId = rw.dataset.rowid; highlightRow(); renderDetails(); }); });
     // gantt: window bars
     var bc = document.getElementById('ps-tl-bars');
@@ -1486,6 +1491,26 @@
     document.getElementById('ps-colorsbtn').onclick = function (e) { e.stopPropagation(); var o = colMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colMenu.classList.add('open'); } };
     document.getElementById('ps-linkmode').onclick = function (e) { e.stopPropagation(); toggleLinkMode(); };
     document.querySelectorAll('.ps-dtab').forEach(function (b) { b.onclick = function () { detailTab = b.dataset.dtab; document.querySelectorAll('.ps-dtab').forEach(function (x) { x.classList.toggle('active', x === b); }); renderDetails(); }; });
+
+    // Resizable bottom details panel (drag the grip up/down; height persisted).
+    (function () {
+      var grip = document.getElementById('ps-details-grip');
+      var dbody = document.getElementById('ps-details-body');
+      if (!grip || !dbody) return;
+      try { var savedH = localStorage.getItem('ps_details_h'); if (savedH) dbody.style.height = savedH + 'px'; } catch (e) {}
+      grip.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        var startY = e.clientY, startH = dbody.getBoundingClientRect().height;
+        document.body.style.userSelect = 'none';
+        function mm(ev) { dbody.style.height = Math.min(700, Math.max(90, startH - (ev.clientY - startY))) + 'px'; }
+        function up() {
+          document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
+          document.body.style.userSelect = '';
+          try { localStorage.setItem('ps_details_h', parseInt(dbody.style.height, 10)); } catch (e2) {}
+        }
+        document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
+      });
+    })();
     buildFilterMenu();
     cMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     fMenu.addEventListener('click', function (e) { e.stopPropagation(); });
