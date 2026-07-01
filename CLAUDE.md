@@ -77,6 +77,97 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-01 — Prompt 37: Nested Group-by (WBS / Status / Responsible / Type)
+- **"Group:" toolbar select** (WBS default / Status / Responsible / Activity Type). WBS keeps
+  the original behavior; the other modes build a **nested tree**: group header → each group's
+  pruned WBS ancestry → the group's activities.
+- Refactored the renderer onto a **display-node model** (`buildNodes()`): every rendered row is
+  a node annotated with `_dcode` (unique display code), `_ddepth`, `_danc` (ancestor codes),
+  `_dkind` (`group` | `wbs` | `task`). Collapse/expand, span rollups, virtualization,
+  critical-path connectors, and `Collapse to → Level N` all key off `_dcode`/`_dkind` now
+  (was `data-wbs` / `isWbs`).
+- Grouped mode clones WBS ancestor rows per group (originals untouched), recomputes summary
+  bar spans per display code (`_dspan`), and shows an activity **count** on each group header.
+- Group headers render with `.ps-group-row` (red-tinted) in the grid and `.ps-sum-group` in
+  the Gantt to distinguish them from WBS summaries.
+- Validated `buildNodes()` in isolation against synthetic multi-WBS data across all four modes
+  incl. collapse behavior; nesting, counts, and span keys confirmed correct.
+
+### 2026-06-30 — Prompt 36: Look-ahead + saved views + typed FS/SS/FF arrows
+- **Look-ahead filter:** Filter → Schedule → Look-ahead (All / next 2/4/8/12 weeks) keeps
+  activities active within the window (start ≤ window end and finish ≥ today).
+- **Saved views:** "Views ▾" toolbar menu saves/loads/deletes named views (zoom + search +
+  filters) in localStorage (`ps_views`).
+- **Typed dependency arrows:** predecessor parsing now captures **relationship type
+  (FS/SS/FF/SF) + lag** (`predRels`); Critical-Path arrows anchor by type (SS/SF from
+  predecessor start, FF/SF to successor finish) with arrowheads and a type/lag label.
+- Next: **Group-by** (WBS / Status / Responsible) — needs a careful pass on the virtualized
+  tree renderer, doing it next.
+
+### 2026-06-30 — Prompt 35: Build the S-Curve module (progress; EVM deferred)
+- Built the dedicated **S-Curve module** (`modules/s-curve/`, enabled in config): live
+  **Planned vs Actual cumulative-% progress curve** derived from `project_schedule`
+  (paginated load), **duration-weighted**, with a data-date line, month/year axis, legend,
+  and a monthly Planned%/Actual% table. KPIs: Overall progress, Planned-to-date,
+  Actual-to-date, Schedule Variance (pp, red/green).
+- **EVM intentionally excluded** (SPI/CPI/EAC/PV/EV/AC, cost) — a separate team owns the EVM
+  dashboard. (An earlier draft that read the IBB cost columns was reverted per that scope.)
+  Brand-colored: planned line dark gray, actual line red.
+
+### 2026-06-30 — Prompt 34: Baseline variance + behind-schedule + near-critical
+- **Var (BL) column** (resizable, persisted): finish variance vs BL0 finish in days —
+  **+red = late, −green = early** (uses actual finish when set). Shown for activities & WBS.
+- **Behind-schedule filter:** Filter → Schedule → "Behind schedule (overdue / late vs
+  baseline)" — keeps activities that are late vs baseline or past-due & incomplete (plus WBS ancestors).
+- **Near-critical highlighting:** activities with total float ≤ 5 days (but not critical) get an
+  **amber dashed** bar/row when Critical Path is on. `NEARDAYS` tunable.
+- Next round (remaining from the batch): S-curve + EVM metrics; look-ahead + group-by + saved
+  views; typed FS/SS/FF dependency arrows with lag.
+
+### 2026-06-30 — Prompt 33: Relationship (predecessor) import from OPC
+- Importer now detects a **Predecessors / Relationships** column and stores it. The critical-path
+  parser (`predIds`) extracts leading Activity IDs from OPC cell formats — `A1010 (FS)`,
+  `A1010: FS+2d`, `A1010; A1020`, `1010,1020` — so relationships come in automatically.
+- When predecessors are present the critical path uses **true logic-based CPM** (float from
+  the network); otherwise it falls back to the date-driven driving path. No new column needed
+  (`predecessors` already exists).
+
+### 2026-06-30 — Prompt 32: Float column + CP tag in the activities grid
+- Added a **Float** column to the activities grid (resizable, `--c-flt`, persisted). Each
+  activity shows its total float in days; **critical/driving activities show a red "CP" tag**.
+  Always visible (computeCPM runs in rebuild), so planners see float without toggling.
+
+### 2026-06-30 — Prompt 31: Automatic critical path from dates + WBS levels
+- Critical path is now **auto-derived from the schedule dates** (no predecessors required):
+  a **driving-path** walk starting at the project follows the **latest-finishing child down
+  each WBS level** to the leaves. Effective finish = `actual_finish` if set, else planned
+  `end_date`, so it reflects actuals. Explicit predecessor logic (CPM) is still used when
+  predecessors exist.
+- **Auto-updates:** `computeCPM()` now runs inside `rebuild()`, so the path recomputes on
+  every load/import and on any edit to planned or actual dates. The Critical Path toggle just
+  shows/hides the highlight (bars + rows red, dependency lines when logic exists).
+- Validated on Westside: driving path = Project → Phase 1 → Package 2 (Superstructure),
+  the branch that sets the 21-Dec-2025 finish.
+
+### 2026-06-30 — Prompt 30: Support the newer OPC export format (Avesta) in the importer
+- The Avesta export uses OPC's richer layout (`ID, Name, Status, BL0 Start, BL0 Finish, Start,
+  Finish, Planned/Earned Value POC, Planned/Actual/Earned Value IBB, …`) which broke the old
+  importer: the activity name is in **Name** (not `Activity`), and loose matching grabbed
+  **BL0 Start** for "Start".
+- Rewrote `parseWorkbook` column detection to be **format-agnostic** (exact-match first,
+  normalized headers): maps Name/Activity → name, real Start/Finish (not baseline),
+  **BL0 Start/Finish → baseline bars**, **Status → activity status**, **Earned Value POC → %**,
+  and **Planned/Actual/Earned Value IBB → planned/actual/earned cost** (₱ parsed). Old
+  `Activity/Percent Complete/Planned Duration` exports still import unchanged.
+- Verified by dry-run against both files (Avesta: 6,017 rows, names/status/baselines/costs
+  correct; Westside old format: unchanged). No new migration — all fields already exist.
+- **Action:** re-import the Avesta file with "Replace existing" to refresh it correctly.
+
+### 2026-06-30 — Prompt 29: Fix schedule headers vanishing on Expand-all
+- Grid + Gantt column headers disappeared when the schedule was fully expanded: in the flex
+  column, the huge scroll content was shrinking the auto-height header to 0. Fixed with
+  `flex:none` on `.ps-grid-head` / `.ps-gantt-head` and `min-height:0` on the scroll panes.
+
 ### 2026-06-30 — Prompt 28: Export to Excel + dependencies/critical-path + portfolio rollup
 - **Export to Excel:** toolbar Export button writes the full schedule to `.xlsx` (SheetJS) —
   WBS, IDs, names, type, status, baseline/plan dates, duration, %, predecessors, cost fields.

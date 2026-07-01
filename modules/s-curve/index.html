@@ -8,30 +8,215 @@
   <script src="../../assets/js/theme.js"></script>
   <title>S-Curve · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />
+  <style>
+    .sc-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
+    .sc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
+    .sc-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
+    .sc-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
+    .sc-kpi-v { font-size:22px; font-weight:700; } .sc-kpi-s { font-size:12px; color:var(--pd-muted); margin-top:2px; }
+    .sc-ok { color:var(--pd-ok); } .sc-bad { color:var(--pd-bad); }
+    .sc-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:16px; margin-bottom:18px; }
+    .sc-card h3 { margin:0 0 12px; font-size:15px; }
+    .sc-svg { width:100%; height:auto; display:block; }
+    .sc-grid { stroke:var(--pd-line); stroke-width:1; }
+    .sc-ylab { fill:var(--pd-muted); font-size:11px; text-anchor:end; }
+    .sc-xlab { fill:var(--pd-muted); font-size:11px; text-anchor:middle; }
+    .sc-planned { fill:none; stroke:var(--pd-dark); stroke-width:2; }
+    html.pd-dark .sc-planned { stroke:#c7ccd1; }
+    .sc-earned { fill:none; stroke:var(--pd-red); stroke-width:2.5; }
+    .sc-today { stroke:var(--pd-red); stroke-width:1.5; stroke-dasharray:4 3; }
+    .sc-today-lab { fill:var(--pd-red); font-size:10px; font-weight:700; }
+    .sc-legend { display:flex; flex-wrap:wrap; gap:18px; margin-top:12px; font-size:12px; color:var(--pd-muted); }
+    .sc-lg { display:inline-flex; align-items:center; }
+    .sw { display:inline-block; width:18px; height:3px; margin-right:6px; }
+    .sw-planned { background:var(--pd-dark); } html.pd-dark .sw-planned { background:#c7ccd1; }
+    .sw-earned { background:var(--pd-red); } .sw-today { background:var(--pd-red); width:3px; height:12px; }
+    .sc-empty { text-align:center; padding:40px; color:var(--pd-muted); }
+    .sc-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .sc-table th { background:var(--pd-bg); padding:8px 12px; text-align:right; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
+    .sc-table th:first-child, .sc-table td:first-child { text-align:left; }
+    .sc-table td { padding:7px 12px; border-bottom:1px solid var(--pd-line); text-align:right; }
+    .sc-note { font-size:12px; color:var(--pd-muted); margin-top:8px; }
+    .sc-loading { position:fixed; inset:0; background:rgba(20,20,20,.4); display:flex; align-items:center; justify-content:center; gap:12px; z-index:999; color:#fff; font-weight:600; }
+    .sc-spin { width:36px; height:36px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:sc-spin .8s linear infinite; }
+    @keyframes sc-spin { to { transform:rotate(360deg); } }
+  </style>
 </head>
 <body>
-  <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>S-Curve</small></div>
-      <nav><a href="../../dashboard.html">&larr; All modules</a></nav>
-    </aside>
-    <div class="pd-content">
-      <div class="pd-topbar"><h1>S-Curve</h1><div id="user-bar"></div></div>
-      <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>S-Curve</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code> or a reference module.</p>
-        </div>
+<div class="pd-app">
+  <aside class="pd-sidebar">
+    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>S-Curve</small></div>
+    <nav>
+      <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
+      <a href="../project-schedule/index.html"><span class="pd-navico" data-ico="calendar"></span>Project Schedule</a>
+      <a href="#" class="active"><span class="pd-navico" data-ico="trendingUp"></span>S-Curve</a>
+    </nav>
+  </aside>
+  <div class="pd-content">
+    <div class="pd-topbar"><h1>Progress S-Curve</h1><div id="user-bar"></div></div>
+    <div class="pd-main">
+      <div class="sc-controls">
+        <select class="pd-select" id="sc-project" style="max-width:340px;"></select>
+        <button class="pd-btn" id="sc-refresh"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
+      </div>
+      <div class="sc-kpis" id="sc-kpis"></div>
+      <div class="sc-card">
+        <h3>Progress S-Curve — Planned vs Actual (cumulative %)</h3>
+        <div id="sc-chart"></div>
+        <p class="sc-note" id="sc-basis"></p>
+      </div>
+      <div class="sc-card" style="padding:0;overflow:hidden;">
+        <div style="overflow-x:auto;"><table class="sc-table"><thead><tr>
+          <th>Period</th><th>Planned %</th><th>Actual %</th>
+        </tr></thead><tbody id="sc-tbody"></tbody></table></div>
       </div>
     </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js"></script>
-  <script src="../../assets/js/auth.js"></script>
-  <script src="../../assets/js/db.js"></script>
-  <script src="../../assets/js/ui.js"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+</div>
+<div class="sc-loading" id="sc-loading" style="display:none;"><div class="sc-spin"></div><span>Loading schedule…</span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/db.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/icons.js"></script>
+<script>
+(function () {
+  'use strict';
+  var TABLE = 'project_schedule', pid = null, rows = [];
+  function sb() { return AppAuth.getSB(); }
+  function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); if (!m) return null; return new Date(+m[1], +m[2]-1, +m[3]); }
+  function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
+  function esc(s) { return Fmt.esc(s); }
+  function isWbs(r) { return r.activity_type === 'WBS Summary'; }
+  function showLoading() { var e = document.getElementById('sc-loading'); if (e) e.style.display = 'flex'; }
+  function hideLoading() { var e = document.getElementById('sc-loading'); if (e) e.style.display = 'none'; }
+
+  async function loadProjects() {
+    var projects = await PDb.getProjects();
+    var sel = document.getElementById('sc-project');
+    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
+    }).join('');
+    if (pid) load();
+  }
+  async function load() {
+    if (!pid) { rows = []; render(); return; }
+    showLoading();
+    var all = [];
+    try {
+      var cnt = await sb().from(TABLE).select('*', { count: 'exact', head: true }).eq('project_id', pid);
+      var total = (cnt && cnt.count) || 0;
+      if (total > 0) {
+        var pages = Math.ceil(total / 1000), reqs = [];
+        for (var p = 0; p < pages; p++) reqs.push(sb().from(TABLE).select('*').eq('project_id', pid).range(p * 1000, p * 1000 + 999));
+        var res = await Promise.all(reqs);
+        for (var i = 0; i < res.length; i++) { if (res[i].error) throw res[i].error; all = all.concat(res[i].data || []); }
+      } else {
+        var from = 0;
+        while (true) { var r1 = await sb().from(TABLE).select('*').eq('project_id', pid).range(from, from + 999); if (r1.error) throw r1.error; all = all.concat(r1.data || []); if ((r1.data || []).length < 1000) break; from += 1000; }
+      }
+    } catch (e) { hideLoading(); UI.toast('Load failed: ' + (e.message || e), 'error'); return; }
+    hideLoading(); rows = all; render();
+  }
+
+  // Schedule progress S-curve (duration-weighted). Cost / earned-value (EVM) is
+  // intentionally out of scope here — a separate team owns the EVM dashboard.
+  function compute() {
+    var leaves = rows.filter(function (r) { return !isWbs(r); });
+    if (!leaves.length) return { empty: true };
+    function val(a) { if (a.duration_days) return a.duration_days; var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; }
+    function done(a) { return val(a) * (Math.max(0, Math.min(100, a.percent_complete || 0)) / 100); }
+    var TOT = leaves.reduce(function (s, a) { return s + val(a); }, 0);
+    var ds = [], de = [];
+    leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date); if (s) ds.push(+s); if (e) de.push(+e); });
+    if (!ds.length) return { empty: true };
+    var min = new Date(Math.min.apply(null, ds)), max = new Date(Math.max.apply(null, de.length ? de : ds));
+    var months = [], c = new Date(min.getFullYear(), min.getMonth(), 1);
+    while (c <= max) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    var tnow = today();
+    var plannedC = [], actualC = [];
+    months.forEach(function (m) {
+      var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0);
+      var pv = 0, av = 0;
+      leaves.forEach(function (a) {
+        var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return;
+        var pf = mEnd >= e ? 1 : (mEnd < s ? 0 : (e > s ? (mEnd - s) / (e - s) : 1));
+        pv += val(a) * pf;
+        if (mEnd <= tnow) {
+          var aS = pd(a.actual_start || a.start_date);
+          var aE = pd(a.actual_finish || ((a.percent_complete || 0) >= 100 ? a.end_date : null)) || tnow;
+          if (aS) { var af = mEnd >= aE ? 1 : (mEnd < aS ? 0 : (aE > aS ? (mEnd - aS) / (aE - aS) : 1)); av += done(a) * af; }
+        }
+      });
+      plannedC.push(pv); actualC.push(av);
+    });
+    var ti = -1;
+    for (var i = 0; i < months.length; i++) { var me = new Date(months[i].getFullYear(), months[i].getMonth() + 1, 0); if (me >= tnow) { ti = i; break; } }
+    if (ti < 0) ti = months.length - 1;
+    var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0;
+    var overallPct = TOT ? leaves.reduce(function (s, a) { return s + done(a); }, 0) / TOT * 100 : 0;
+    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length };
+  }
+
+  function render() { var d = compute(); renderKpis(d); renderChart(d); renderTable(d); }
+
+  function renderKpis(d) {
+    var host = document.getElementById('sc-kpis');
+    if (d.empty) { host.innerHTML = ''; return; }
+    function k(l, v, sub, cls) { return '<div class="sc-kpi"><div class="sc-kpi-l">' + l + '</div><div class="sc-kpi-v ' + (cls || '') + '">' + v + '</div>' + (sub ? '<div class="sc-kpi-s">' + sub + '</div>' : '') + '</div>'; }
+    var r1 = function (x) { return Math.round(x * 10) / 10; };
+    var v = r1(d.variance);
+    host.innerHTML =
+      k('Overall Progress', r1(d.overallPct) + '%', d.activities + ' activities') +
+      k('Planned to date', r1(d.plannedPct) + '%', 'Where the plan says we should be') +
+      k('Actual to date', r1(d.actualPct) + '%', 'Physical progress achieved') +
+      k('Schedule Variance', (v > 0 ? '+' : '') + v + ' pp', v >= 0 ? 'On / ahead of plan' : 'Behind plan', v >= 0 ? 'sc-ok' : 'sc-bad');
+  }
+
+  function renderChart(d) {
+    var host = document.getElementById('sc-chart');
+    var basis = document.getElementById('sc-basis');
+    if (d.empty) { host.innerHTML = '<div class="sc-empty">' + (pid ? 'This project has no dated activities. Import or add a schedule first.' : 'Select a project.') + '</div>'; basis.textContent = ''; return; }
+    basis.textContent = 'Progress weighted by activity duration across ' + d.activities + ' activities. Actual line stops at the data date. (Cost / earned-value is handled by the EVM dashboard.)';
+    var W = 1000, H = 340, padL = 40, padR = 16, padT = 16, padB = 40, n = d.months.length, maxV = d.TOT || 1;
+    function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
+    function y(v) { return padT + (1 - (v / maxV)) * (H - padT - padB); }
+    var grid = '';
+    [0, .25, .5, .75, 1].forEach(function (p) { var yy = y(maxV * p); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="sc-grid"/><text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="sc-ylab">' + Math.round(p * 100) + '%</text>'; });
+    var xlab = '';
+    d.months.forEach(function (mo, i) { if (mo.getMonth() === 0 || i === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="sc-xlab">' + mo.getFullYear() + '</text>'; });
+    var pl = d.plannedC.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ');
+    var ac = []; d.actualC.forEach(function (v, i) { if (i <= d.ti) ac.push(x(i) + ',' + y(v)); });
+    var tx = x(d.ti);
+    var todayL = '<line x1="' + tx + '" y1="' + padT + '" x2="' + tx + '" y2="' + (H - padB) + '" class="sc-today"/><text x="' + (tx + 4) + '" y="' + (padT + 10) + '" class="sc-today-lab">Data date</text>';
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="sc-svg">' + grid + todayL +
+      '<polyline class="sc-planned" points="' + pl + '"/>' + (ac.length ? '<polyline class="sc-earned" points="' + ac.join(' ') + '"/>' : '') + xlab + '</svg>' +
+      '<div class="sc-legend"><span class="sc-lg"><span class="sw sw-planned"></span> Planned progress</span><span class="sc-lg"><span class="sw sw-earned"></span> Actual progress</span><span class="sc-lg"><span class="sw sw-today"></span> Data date (today)</span></div>';
+  }
+
+  function renderTable(d) {
+    var body = document.getElementById('sc-tbody');
+    if (d.empty) { body.innerHTML = '<tr><td colspan="3" class="sc-empty">No data.</td></tr>'; return; }
+    var MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    body.innerHTML = d.months.map(function (mo, i) {
+      var pPct = d.TOT ? Math.round(d.plannedC[i] / d.TOT * 1000) / 10 : 0;
+      var aPct = (i <= d.ti && d.TOT) ? Math.round(d.actualC[i] / d.TOT * 1000) / 10 : null;
+      return '<tr><td>' + MABBR[mo.getMonth()] + ' ' + mo.getFullYear() + '</td><td>' + pPct + '%</td><td>' + (aPct != null ? aPct + '%' : '—') + '</td></tr>';
+    }).join('');
+  }
+
+  AppAuth.requireLogin(function (user, profile) {
+    UI.renderUserBar(profile);
+    UI.initShell();
+    document.getElementById('sc-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load(); };
+    document.getElementById('sc-refresh').onclick = function () { load(); };
+    loadProjects();
+  });
+})();
+</script>
 </body>
 </html>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     

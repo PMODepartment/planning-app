@@ -30,9 +30,9 @@
     .ps-grid-pane { flex:0 0 660px; max-width:70%; display:flex; flex-direction:column; border-right:2px solid var(--pd-line); min-width:0; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    .ps-grid-pane { --c-id:80px; --c-name:300px; --c-date:92px; --c-dur:58px; --c-pct:60px; }
-    .ps-grid-scroll { overflow:auto; flex:1 1 auto; }
-    .ps-grid-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); }
+    .ps-grid-pane { --c-id:80px; --c-name:300px; --c-date:92px; --c-dur:58px; --c-pct:60px; --c-flt:64px; --c-var:76px; }
+    .ps-grid-scroll { overflow:auto; flex:1 1 auto; min-height:0; }
+    .ps-grid-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); flex:none; }
     .ps-grid-row { display:flex; align-items:stretch; height:34px; border-bottom:1px solid var(--pd-line);
       width:max-content; min-width:100%; font-size:12.5px; }
     .ps-grid-row.head { height:38px; font-weight:700; }
@@ -41,6 +41,13 @@
     .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative; }
     .c-name { width:var(--c-name); } .c-id { width:var(--c-id); } .c-date { width:var(--c-date); }
     .c-dur { width:var(--c-dur); justify-content:flex-end; } .c-pct { width:var(--c-pct); justify-content:flex-end; }
+    .c-flt { width:var(--c-flt); justify-content:flex-end; }
+    .c-var { width:var(--c-var); justify-content:flex-end; }
+    .ps-cp-tag { background:var(--pd-red); color:#fff; font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; letter-spacing:.03em; }
+    .ps-var-late { color:var(--pd-bad); font-weight:600; }
+    .ps-var-early { color:var(--pd-ok); }
+    .ps-bar.ps-near { outline:2px dashed #C77700; outline-offset:1px; }
+    .ps-nearrow .c-name { color:#C77700; }
     .ps-colgrip { position:absolute; right:0; top:0; bottom:0; width:7px; cursor:col-resize; z-index:2; }
     .ps-colgrip:hover { background:var(--pd-red); opacity:.4; }
     .ps-wbs-row { background:var(--pd-bg); font-weight:700; }
@@ -53,8 +60,8 @@
     .ps-mile-badge { color:var(--pd-red); font-weight:700; }
 
     /* ---- Gantt ---- */
-    .ps-gantt-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); position:relative; height:38px; }
-    .ps-gantt-scroll { overflow:auto; flex:1 1 auto; position:relative; }
+    .ps-gantt-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); position:relative; height:38px; flex:none; }
+    .ps-gantt-scroll { overflow:auto; flex:1 1 auto; position:relative; min-height:0; }
     .ps-tl { position:relative; }
     .ps-yr { position:absolute; top:0; height:18px; font-size:11px; font-weight:700; color:var(--pd-ink);
       border-left:1px solid var(--pd-line); padding-left:5px; box-sizing:border-box; overflow:hidden; }
@@ -100,11 +107,16 @@
     #ps-crit.active .pd-ico { color:#fff; }
     .ps-deps .ps-dep { fill:none; stroke:var(--pd-red); stroke-width:1.5; opacity:.75; }
     .ps-deps .ps-depdot { fill:var(--pd-red); }
+    .ps-deps .ps-deptype { fill:var(--pd-red); font-size:8px; font-weight:700; }
+    .ps-deps .ps-deplag { fill:var(--pd-muted); font-size:8px; }
     /* virtualization layers + row striping */
     .ps-tl-static { position:absolute; inset:0; z-index:1; }
     #ps-tl-bars { position:absolute; inset:0; z-index:3; }
     .ps-alt { background:rgba(0,0,0,.02); }
     html.pd-dark .ps-alt { background:rgba(255,255,255,.03); }
+    .ps-group-row { background:var(--pd-red-light) !important; }
+    .ps-group-row .c-name { color:var(--pd-red); }
+    .ps-sum-group { background:var(--pd-red) !important; opacity:.85; }
 
     /* Cost table */
     .ps-table-wrap { overflow-x:auto; }
@@ -164,6 +176,12 @@
       <div class="ps-controls">
         <select class="pd-select" id="ps-project" style="max-width:340px;"></select>
         <input class="pd-input" id="ps-search" placeholder="Search activity…" style="max-width:200px;" />
+        <select class="pd-select" id="ps-group" title="Group activities by" style="max-width:170px;">
+          <option value="wbs">Group: WBS</option>
+          <option value="status">Group: Status</option>
+          <option value="responsible">Group: Responsible</option>
+          <option value="type">Group: Type</option>
+        </select>
         <div class="ps-seg" id="ps-zoom" title="Timeline scale">
           <button data-zoom="month">Month</button>
           <button data-zoom="quarter" class="active">Quarter</button>
@@ -181,6 +199,10 @@
           <div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div>
         </div>
         <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="link" data-ico-size="15"></span> Critical path</button>
+        <div class="ps-menu-wrap">
+          <button class="pd-btn" id="ps-views">Views ▾</button>
+          <div class="ps-menu" id="ps-views-menu"></div>
+        </div>
         <button class="pd-btn ps-spacer" id="ps-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
         <button class="pd-btn" id="ps-import"><span data-ico="box" data-ico-size="15"></span> Import Excel (OPC)</button>
         <input type="file" id="ps-import-file" accept=".xlsx,.xls" style="display:none" />
@@ -287,7 +309,9 @@
   var TABLE = 'project_schedule';
   var pid = null, rows = [], editId = null, UID = null;
   var zoom = 'quarter', collapsed = {}, selId = null, search = '';
-  var filters = { status: {}, type: {} };   // empty sets = show all
+  var filters = { status: {}, type: {}, behind: false, look: 0 };   // empty sets = show all; look = weeks (0 = all)
+  var groupBy = 'wbs';   // 'wbs' | 'status' | 'responsible' | 'type'
+  var _dspan = {};       // span map keyed by display code (real WBS codes in WBS mode)
   var isAdmin = false;
   var DAYW = { month: 4.2, quarter: 1.55, year: 0.62 };
   function sb() { return AppAuth.getSB(); }
@@ -400,21 +424,70 @@
       var codes = [r.wbs].concat(r._anc || []);
       for (var i = 0; i < codes.length; i++) { var m = _spanMap[codes[i]]; if (!m) _spanMap[codes[i]] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
     });
+    computeCPM();   // auto-derive critical path on every data change
   }
-  function hiddenRow(r) {
-    if (collapsed[r.wbs] && !isWbs(r)) return true;
-    for (var i = 0; i < (r._anc || []).length; i++) if (collapsed[r._anc[i]]) return true;
+  // ---- display-node accessors (node = data row annotated with display fields) ----
+  function dcode(nd) { return nd._dcode != null ? nd._dcode : nd.wbs; }
+  function ddepth(nd) { return nd._ddepth != null ? nd._ddepth : (nd._depth || 0); }
+  function danc(nd) { return nd._danc || nd._anc || []; }
+  function isWbsNode(nd) { return nd._dkind ? (nd._dkind !== 'task') : isWbs(nd); }
+  function hiddenRow(nd) {
+    if (collapsed[dcode(nd)] && nd._dkind === 'task') return true;
+    var a = danc(nd); for (var i = 0; i < a.length; i++) if (collapsed[a[i]]) return true;
     return false;
   }
-  function displayList() {
-    var list = _sorted;
-    if (anyFilter()) {
-      var keep = {};
-      list.forEach(function (r) { if (rowMatches(r)) { keep[r.wbs] = true; for (var i = 0; i < r._anc.length; i++) keep[r._anc[i]] = true; } });
-      list = list.filter(function (r) { return keep[r.wbs] || rowMatches(r); });
-    }
-    return list.filter(function (r) { return !hiddenRow(r); });
+  function groupKeyOf(r) {
+    if (groupBy === 'status') return r.status || 'Not Started';
+    if (groupBy === 'responsible') return r.responsible_party || 'Unassigned';
+    if (groupBy === 'type') return r.activity_type || 'Task';
+    return null;
   }
+  function cmpCodeStr(a, b) {
+    var A = String(a).split('.'), B = String(b).split('.'), n = Math.max(A.length, B.length);
+    for (var i = 0; i < n; i++) { var x = parseInt(A[i], 10), y = parseInt(B[i], 10); if (isNaN(x) && isNaN(y)) { if ((A[i]||'') !== (B[i]||'')) return (A[i]||'') < (B[i]||'') ? -1 : 1; } else { x = isNaN(x) ? -1 : x; y = isNaN(y) ? -1 : y; if (x !== y) return x - y; } }
+    return 0;
+  }
+  // Build the full annotated node list for the current groupBy + filters (no collapse).
+  function buildNodes() {
+    if (groupBy === 'wbs') {
+      _dspan = _spanMap;
+      var list = _sorted;
+      if (anyFilter()) {
+        var keep = {};
+        list.forEach(function (r) { if (rowMatches(r)) { keep[r.wbs] = true; for (var i = 0; i < r._anc.length; i++) keep[r._anc[i]] = true; } });
+        list = list.filter(function (r) { return keep[r.wbs] || rowMatches(r); });
+      }
+      list.forEach(function (r) { r._dcode = r.wbs; r._ddepth = r._depth; r._danc = r._anc; r._dkind = isWbs(r) ? 'wbs' : 'task'; r._realCode = r.wbs; });
+      return list;
+    }
+    // grouped: group leaf activities, then rebuild each group's pruned WBS tree
+    var acts = _sorted.filter(function (r) { return !isWbs(r); });
+    if (anyFilter()) acts = acts.filter(rowMatches);
+    var groups = {}; acts.forEach(function (a) { var g = groupKeyOf(a) || '—'; (groups[g] = groups[g] || []).push(a); });
+    var gnames = Object.keys(groups).sort();
+    var realByCode = {}; rows.forEach(function (r) { if (isWbs(r)) realByCode[r.wbs] = r; });
+    var out = [], span = {}, SEP = '';
+    function addSpan(code, s, e) { if (!s && !e) return; if (!s) s = e; if (!e) e = s; var m = span[code]; if (!m) span[code] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
+    gnames.forEach(function (g) {
+      var gcode = '§' + g;
+      out.push({ _dkind: 'group', _dcode: gcode, _ddepth: 0, _danc: [], activity_name: g, _gcount: groups[g].length, id: 'grp:' + g });
+      var ancSet = {}; groups[g].forEach(function (a) { (a._anc || []).forEach(function (c) { ancSet[c] = true; }); });
+      var entries = [];
+      Object.keys(ancSet).forEach(function (c) { entries.push({ real: c, isW: true }); });
+      groups[g].forEach(function (a) { entries.push({ real: a.wbs, isW: false, a: a }); });
+      entries.sort(function (x, y) { var c = cmpCodeStr(x.real, y.real); if (c !== 0) return c; return x.isW === y.isW ? 0 : (x.isW ? -1 : 1); });
+      entries.forEach(function (en) {
+        var rsegs = String(en.real).split('.'), rdepth = rsegs.length - 1;
+        var da = [gcode]; for (var i = 1; i < rsegs.length; i++) da.push(gcode + SEP + rsegs.slice(0, i).join('.'));
+        var dc = gcode + SEP + en.real;
+        if (en.isW) { var wr = realByCode[en.real]; var node = wr ? Object.assign({}, wr) : { wbs: en.real, activity_name: '' }; node._dkind = 'wbs'; node._dcode = dc; node._ddepth = 1 + rdepth; node._danc = da; node._realCode = en.real; out.push(node); }
+        else { var a = en.a; a._dcode = dc; a._ddepth = 1 + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; out.push(a); var s = pd(a.start_date), e = pd(a.end_date); addSpan(dc, s, e); da.forEach(function (x) { addSpan(x, s, e); }); }
+      });
+    });
+    _dspan = span;
+    return out;
+  }
+  function displayList() { return buildNodes().filter(function (nd) { return !hiddenRow(nd); }); }
 
   // ---- IMPORT from Oracle Primavera Cloud .xlsx export ----
   var MON = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
@@ -427,6 +500,7 @@
   }
   function opcPct(v) { if (v==null||v==='') return null; var s=String(v).trim(); var hp=s.indexOf('%')!==-1; var n=parseFloat(s.replace(/[%,]/g,'')); if(isNaN(n))return null; if(!hp&&n<=1)n=n*100; return Math.round(n*10)/10; }
   function opcDur(v) { if(v==null)return null; var n=parseInt(String(v).replace(/[^0-9]/g,''),10); return isNaN(n)?null:n; }
+  function opcMoney(v) { if (v == null || v === '') return null; var n = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : n; }
   function parseWorkbook(ab) {
     var wb = XLSX.read(new Uint8Array(ab), { type:'array', cellStyles:true });
     var ws = wb.Sheets[wb.SheetNames[0]];
@@ -436,23 +510,43 @@
     var meta = ws['!rows'] || [];
     var aoa = XLSX.utils.sheet_to_json(ws, { header:1, raw:true });
     if (!aoa.length) return [];
-    var hdr = (aoa[0]||[]).map(function(h){ return String(h==null?'':h).trim().toLowerCase(); });
-    function col(cands){ for(var i=0;i<hdr.length;i++) for(var j=0;j<cands.length;j++) if(hdr[i]===cands[j]||hdr[i].indexOf(cands[j])!==-1) return i; return -1; }
-    var cId=col(['id']), cAct=col(['activity']), cS=col(['start']), cF=col(['finish']), cP=col(['percent']), cD=col(['duration']);
+    // Normalize headers (strip '*', collapse spaces) and match EXACTLY-first to avoid
+    // false hits like "Start" matching "BL0 Start". Handles both OPC export layouts.
+    var H = (aoa[0]||[]).map(function(h){ return String(h==null?'':h).trim().toLowerCase().replace(/\*/g,'').replace(/\s+/g,' ').trim(); });
+    function find(preds){ for(var i=0;i<H.length;i++){ for(var j=0;j<preds.length;j++){ if(preds[j](H[i])) return i; } } return -1; }
+    function eq(n){ return function(h){ return h===n; }; }
+    function has(s){ return function(h){ return h.indexOf(s)!==-1; }; }
+    var cId    = find([eq('id'), has('activity id'), function(h){return h.indexOf('id')===0;}]);
+    var cName  = find([eq('name'), eq('activity'), has('activity name')]);
+    var cStart = find([eq('start')]);
+    var cFin   = find([eq('finish')]);
+    var cBLS   = find([eq('bl0 start'), eq('bl start'), eq('baseline start')]);
+    var cBLF   = find([eq('bl0 finish'), eq('bl finish'), eq('baseline finish')]);
+    var cStat  = find([eq('status')]);
+    var cPct   = find([eq('percent complete'), eq('% complete'), eq('earned value poc'), function(h){return h.indexOf('percent complete')!==-1 && h.indexOf('type')===-1;}]);
+    var cDur   = find([eq('planned duration'), function(h){return h.indexOf('duration')!==-1 && h.indexOf('type')===-1 && h.indexOf('percent')===-1;}]);
+    var cPCost = find([eq('planned ibb'), has('planned cost'), eq('at completion ibb')]);
+    var cACost = find([eq('actual ibb to date'), has('actual cost'), has('actual ibb')]);
+    var cEV    = find([eq('earned value ibb'), has('earned value ibb')]);
+    var cPred  = find([eq('predecessors'), eq('predecessor'), has('predecessor'), has('relationship')]);
     if (cId<0) cId=0;
     var counters=[], recs=[];
     for (var R=1; R<=maxR; R++) {
       var row=aoa[R]||[];
       var nameId = row[cId]!=null?String(row[cId]).trim():'';
-      var act = (cAct>=0 && row[cAct]!=null)?String(row[cAct]).trim():'';
+      var act = (cName>=0 && row[cName]!=null)?String(row[cName]).trim():'';
       if (!nameId && !act) continue;
       var lvl = (meta[R] && meta[R].level!=null) ? meta[R].level : 0;   // WBS depth from outline level
       counters[lvl]=(counters[lvl]||0)+1; counters.length=lvl+1;
       var code=counters.join('.');
-      var s=opcDate(cS>=0?row[cS]:null), f=opcDate(cF>=0?row[cF]:null);
+      var s=opcDate(cStart>=0?row[cStart]:null), f=opcDate(cFin>=0?row[cFin]:null);
+      var bls=opcDate(cBLS>=0?row[cBLS]:null), blf=opcDate(cBLF>=0?row[cBLF]:null);
       recs.push({ _depth:lvl, code:code, name: act||nameId, id: act?nameId:null,
-        start:s.d, finish:f.d, sA:s.actual, fA:f.actual,
-        pct: opcPct(cP>=0?row[cP]:null), dur: opcDur(cD>=0?row[cD]:null) });
+        start:s.d, finish:f.d, sA:s.actual, fA:f.actual, bls:bls.d, blf:blf.d,
+        status: (cStat>=0 && row[cStat]!=null) ? String(row[cStat]).trim() : null,
+        pct: opcPct(cPct>=0?row[cPct]:null), dur: opcDur(cDur>=0?row[cDur]:null),
+        pcost: opcMoney(cPCost>=0?row[cPCost]:null), acost: opcMoney(cACost>=0?row[cACost]:null), ev: opcMoney(cEV>=0?row[cEV]:null),
+        pred: (cPred>=0 && row[cPred]!=null) ? String(row[cPred]).trim() : null });
     }
     recs.forEach(function(r){ r.isLeaf = !recs.some(function(o){ return o!==r && o.code.indexOf(r.code+'.')===0; }); });
     return recs;
@@ -467,11 +561,14 @@
     }
     return { project_id: pid, wbs: r.code, activity_id: r.id, activity_name: r.name,
       activity_type: type,
-      status: pct>=100?'Completed':(pct>0?'In Progress':'Not Started'),
+      status: r.status || (pct>=100?'Completed':(pct>0?'In Progress':'Not Started')),
       start_date: start, end_date: finish,
+      bl_start: r.bls || null, bl_finish: r.blf || null,
       actual_start: r.sA?start:null, actual_finish: r.fA?finish:null,
       duration_days: r.dur!=null?r.dur:((start&&finish)?dayDiff(pd(start),pd(finish))+1:null),
-      percent_complete: pct };
+      percent_complete: pct,
+      predecessors: r.pred || null,
+      planned_cost: r.pcost, actual_cost: r.acost, earned_value: r.ev };
   }
   async function doImport(recs, replace) {
     showLoading('Preparing import…');
@@ -510,7 +607,7 @@
 
   // rolled-up span for a WBS row (over descendants)
   function wbsSpan(w) {
-    var m = _spanMap[w.wbs]; if (!m) return null;
+    var m = _dspan[dcode(w)]; if (!m) return null;
     return { s: new Date(m.s), e: new Date(m.e) };
   }
 
@@ -523,7 +620,7 @@
   function hideLoading() { var el=document.getElementById('ps-loading'); if(el)el.style.display='none'; }
 
   // ---- OPC-style "Collapse to → WBS Level N" dropdown ----
-  function maxDepth() { var m = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > m) m = d; }); return m; }
+  function maxDepth() { var m = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > m) m = d; }); return groupBy === 'wbs' ? m : m + 1; }
   function renderCollapseMenu() {
     var menu = document.getElementById('ps-collapse-menu'); if (!menu) return;
     var mx = Math.max(1, maxDepth());
@@ -536,18 +633,29 @@
   }
   function expandToLevel(n) {
     collapsed = {};
-    rows.forEach(function (r) { if (isWbs(r) && (segs(r.wbs).length - 1) >= (n - 1)) collapsed[r.wbs] = true; });
+    buildNodes().forEach(function (nd) { if (nd._dkind !== 'task' && ddepth(nd) >= (n - 1)) collapsed[dcode(nd)] = true; });
     renderGrid(); renderGantt();
   }
 
   // ---- Filter (OPC-style) ----
-  function anyFilter() { return search.trim() || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}); }
+  function anyFilter() { return search.trim() || filters.behind || filters.look || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}); }
   function rowMatches(r) {
     if (search.trim()) { var hay=[r.activity_id,r.activity_name,r.wbs].join(' ').toLowerCase(); if (hay.indexOf(search.trim().toLowerCase())===-1) return false; }
     var sA = Object.keys(filters.status).some(function(k){return filters.status[k];});
     if (sA && !filters.status[r.status || 'Not Started']) return false;
     var tA = Object.keys(filters.type).some(function(k){return filters.type[k];});
     if (tA && !filters.type[r.activity_type || 'Task']) return false;
+    if (filters.behind) {
+      var late = false; var fv = finVar(r); if (fv != null && fv > 0) late = true;
+      var e = pd(r.end_date); if (e && e < today() && (r.percent_complete || 0) < 100) late = true;
+      if (!late) return false;
+    }
+    if (filters.look) {
+      var win = addDays(today(), filters.look * 7), t0 = today();
+      var s = pd(r.start_date), ee = pd(r.actual_finish || r.end_date) || s;
+      var inWin = (s ? s <= win : true) && (ee ? ee >= t0 : true);
+      if (!inWin) return false;
+    }
     return true;
   }
   function buildFilterMenu() {
@@ -555,11 +663,16 @@
     function cb(group, val) { return '<label><input type="checkbox" data-fg="'+group+'" data-fv="'+val+'"'+(filters[group][val]?' checked':'')+'> '+val+'</label>'; }
     menu.innerHTML = '<h4>Status</h4>' + ['Not Started','In Progress','Completed'].map(function(s){return cb('status',s);}).join('') +
       '<h4>Type</h4>' + ['WBS Summary','Task','Milestone'].map(function(t){return cb('type',t);}).join('') +
+      '<h4>Schedule</h4><label><input type="checkbox" id="ps-f-behind"' + (filters.behind?' checked':'') + '> Behind schedule (overdue / late vs baseline)</label>' +
+      '<label style="margin-top:4px;">Look-ahead: <select id="ps-f-look" class="pd-select pd-input-sm" style="max-width:150px;">' +
+        [[0,'All'],[2,'Next 2 weeks'],[4,'Next 4 weeks'],[8,'Next 8 weeks'],[12,'Next 12 weeks']].map(function(o){return '<option value="'+o[0]+'"'+(filters.look===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('') + '</select></label>' +
       '<div class="ps-filter-foot"><button class="pd-btn pd-btn-sm" id="ps-filter-clear">Clear</button><button class="pd-btn pd-btn-sm pd-btn-primary" id="ps-filter-done">Done</button></div>';
-    menu.querySelectorAll('input[type=checkbox]').forEach(function (c) {
+    menu.querySelectorAll('input[data-fg]').forEach(function (c) {
       c.onchange = function () { filters[c.dataset.fg][c.dataset.fv] = c.checked; renderGrid(); renderGantt(); };
     });
-    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{} }; buildFilterMenu(); renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-f-behind').onchange = function (e) { filters.behind = e.target.checked; renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-f-look').onchange = function (e) { filters.look = parseInt(e.target.value, 10) || 0; renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, look:0 }; buildFilterMenu(); renderGrid(); renderGantt(); };
     menu.querySelector('#ps-filter-done').onclick = function () { menu.classList.remove('open'); };
   }
 
@@ -588,7 +701,7 @@
   // ----- COLUMN HEADER (static, resizable) -----
   function renderHeader() {
     var head = document.getElementById('ps-grid-head'); if (!head) return;
-    var cols = [['id','Activity ID','c-id'],['name','Activity Name','c-name'],['date','BL Start','c-date'],['date','BL Finish','c-date'],['date','Start','c-date'],['date','Finish','c-date'],['dur','Dur','c-dur'],['pct','%','c-pct']];
+    var cols = [['id','Activity ID','c-id'],['name','Activity Name','c-name'],['date','BL Start','c-date'],['date','BL Finish','c-date'],['date','Start','c-date'],['date','Finish','c-date'],['dur','Dur','c-dur'],['pct','%','c-pct'],['flt','Float','c-flt'],['var','Var (BL)','c-var']];
     head.innerHTML = '<div class="ps-grid-row head">' + cols.map(function (c) {
       return '<div class="ps-cell ' + c[2] + '">' + c[1] + '<span class="ps-colgrip" data-col="' + c[0] + '" title="Drag to resize column"></span></div>';
     }).join('') + '</div>';
@@ -601,7 +714,7 @@
     function mm(ev) { pane.style.setProperty(vn, Math.max(40, cur + (ev.clientX - sx)) + 'px'); }
     function up() {
       document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
-      try { var w = {}; ['id','name','date','dur','pct'].forEach(function (c) { w[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e2) {}
+      try { var w = {}; ['id','name','date','dur','pct','flt','var'].forEach(function (c) { w[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e2) {}
     }
     document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
   }
@@ -613,33 +726,47 @@
   function renderGantt() { scheduleRender(); }
   function scheduleRender() { if (_rafP) return; _rafP = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { _rafP = false; doRender(); }); }
 
+  function finVar(r) { if (!r.bl_finish) return null; var b = pd(r.bl_finish), f = pd(r.actual_finish || r.end_date); if (!b || !f) return null; return dayDiff(b, f); }
+  function varCellHtml(r) { var d = finVar(r); if (d == null) return '<div class="ps-cell c-var"></div>'; var cls = d > 0 ? 'ps-var-late' : (d < 0 ? 'ps-var-early' : ''); return '<div class="ps-cell c-var ' + cls + '">' + (d > 0 ? '+' : '') + d + 'd</div>'; }
   function gridRowHTML(r, i) {
     var altc = (i % 2) ? ' ps-alt' : '';
-    if (isWbs(r)) {
-      var sp = wbsSpan(r), arrow = collapsed[r.wbs] ? '►' : '▼';
-      return '<div class="ps-grid-row ps-wbs-row' + altc + '" data-i="' + i + '" data-wbs="' + esc(r.wbs) + '">' +
-        '<div class="ps-cell c-id">' + esc(r.wbs || '') + '</div>' +
-        '<div class="ps-cell c-name" style="padding-left:' + (6 + r._depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(r.wbs) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
+    var depth = ddepth(r), code = dcode(r);
+    if (r._dkind === 'group') {
+      var gsp = wbsSpan(r), garr = collapsed[code] ? '►' : '▼';
+      return '<div class="ps-grid-row ps-wbs-row ps-group-row' + altc + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
+        '<div class="ps-cell c-id"></div>' +
+        '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + garr + '</span><strong>' + esc(r.activity_name || '') + '</strong> <span style="color:var(--pd-muted);font-weight:400;">(' + r._gcount + ')</span></div>' +
+        '<div class="ps-cell c-date"></div><div class="ps-cell c-date"></div>' +
+        '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.s)) : '—') + '</div>' +
+        '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.e)) : '—') + '</div>' +
+        '<div class="ps-cell c-dur"></div><div class="ps-cell c-pct"></div><div class="ps-cell c-flt"></div><div class="ps-cell c-var"></div></div>';
+    }
+    if (isWbsNode(r)) {
+      var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
+      return '<div class="ps-grid-row ps-wbs-row' + altc + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
+        '<div class="ps-cell c-id">' + esc(r._realCode || r.wbs || '') + '</div>' +
+        '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
         '<div class="ps-cell c-date"></div><div class="ps-cell c-date"></div>' +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.e)) : '—') + '</div>' +
-        '<div class="ps-cell c-dur"></div><div class="ps-cell c-pct"></div></div>';
+        '<div class="ps-cell c-dur"></div><div class="ps-cell c-pct"></div>' +
+        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + varCellHtml(r) + '</div>';
     }
     var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : (r.duration_days || '');
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
-    return '<div class="ps-grid-row' + altc + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '">' +
+    return '<div class="ps-grid-row' + altc + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && r._near && !r._critical)?' ps-nearrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '">' +
       '<div class="ps-cell c-id ps-editable" data-id="' + r.id + '" data-field="activity_id" data-type="text">' + esc(r.activity_id || '') + '</div>' +
-      '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + r._depth*14) + 'px;">' + mile + esc(r.activity_name || '') + '</div>' +
+      '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r.activity_name || '') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_start" data-type="date">' + (r.bl_start ? Fmt.date(r.bl_start) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_finish" data-type="date">' + (r.bl_finish ? Fmt.date(r.bl_finish) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="start_date" data-type="date">' + (r.start_date ? Fmt.date(r.start_date) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="end_date" data-type="date">' + (r.end_date ? Fmt.date(r.end_date) : '—') + '</div>' +
       '<div class="ps-cell c-dur">' + (dur ? dur + 'd' : '') + '</div>' +
-      '<div class="ps-cell c-pct ps-editable" data-id="' + r.id + '" data-field="percent_complete" data-type="number">' + (r.percent_complete != null ? r.percent_complete + '%' : '') + '</div></div>';
+      '<div class="ps-cell c-pct ps-editable" data-id="' + r.id + '" data-field="percent_complete" data-type="number">' + (r.percent_complete != null ? r.percent_complete + '%' : '') + '</div>' +
+      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + '</div>';
   }
 
   function doRender() {
-    if (critMode) computeCPM();
     DL = displayList();
     var rg = range(), min = rg.min, max = rg.max, dayw = DAYW[zoom];
     _rMin = min; _rDayw = dayw;
@@ -697,8 +824,8 @@
     var host = document.getElementById('ps-grid-rows');
     host.innerHTML = '<div style="transform:translateY(' + (first * ROWH) + 'px);">' + gh + '</div>';
     host.querySelectorAll('[data-toggle]').forEach(function (t) { t.onclick = function (e) { e.stopPropagation(); collapsed[t.dataset.toggle] = !collapsed[t.dataset.toggle]; renderGrid(); }; });
-    // Excel-like: click anywhere on a WBS summary row to expand/collapse it
-    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.wbs; collapsed[w] = !collapsed[w]; renderGrid(); }); });
+    // Excel-like: click anywhere on a WBS/group summary row to expand/collapse it
+    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); }); });
     host.querySelectorAll('.ps-editable').forEach(function (c) { c.onclick = function () { beginEdit(c); }; });
     host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function () { selId = rw.dataset.rowid; highlightRow(); }); });
     // gantt: window bars
@@ -707,10 +834,21 @@
       var bars = ''; for (var j = first; j < last; j++) bars += ganttRowHTML(DL[j], j, _rMin, _rDayw); bc.innerHTML = bars; wireDrag(_rMin, _rDayw);
       if (critMode) {
         var vis = {};
-        for (var vi = first; vi < last; vi++) { var vr = DL[vi]; if (!isWbs(vr) && vr.activity_id) { var vs = pd(vr.start_date), ve = pd(vr.end_date); if (vs && ve) vis[String(vr.activity_id)] = { y: vi * ROWH + 16, sx: dayDiff(_rMin, vs) * _rDayw, ex: (dayDiff(_rMin, ve) + 1) * _rDayw }; } }
+        for (var vi = first; vi < last; vi++) { var vr = DL[vi]; if (vr._dkind === 'task' && vr.activity_id) { var vs = pd(vr.start_date), ve = pd(vr.end_date); if (vs && ve) vis[String(vr.activity_id)] = { y: vi * ROWH + 16, sx: dayDiff(_rMin, vs) * _rDayw, ex: (dayDiff(_rMin, ve) + 1) * _rDayw }; } }
         var lines = '';
-        for (var vk = first; vk < last; vk++) { var t = DL[vk]; if (isWbs(t) || !t._pred) continue; var b = vis[String(t.activity_id)]; if (!b) continue; t._pred.forEach(function (p) { var a = vis[String(p.activity_id)]; if (!a) return; var midx = a.ex + 8; lines += '<path d="M' + a.ex + ' ' + a.y + ' L' + midx + ' ' + a.y + ' L' + midx + ' ' + b.y + ' L' + b.sx + ' ' + b.y + '" class="ps-dep"/><circle cx="' + b.sx + '" cy="' + b.y + '" r="2.6" class="ps-depdot"/>'; }); }
-        if (lines) bc.insertAdjacentHTML('beforeend', '<svg class="ps-deps" width="' + _tlW + '" height="' + (last * ROWH) + '" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5;">' + lines + '</svg>');
+        for (var vk = first; vk < last; vk++) {
+          var t = DL[vk]; if (t._dkind !== 'task' || !t._relObjs) continue; var b = vis[String(t.activity_id)]; if (!b) continue;
+          t._relObjs.forEach(function (rel) {
+            var a = vis[String(rel.p.activity_id)]; if (!a) return;
+            var fromX = (rel.type === 'SS' || rel.type === 'SF') ? a.sx : a.ex;
+            var toX = (rel.type === 'FF' || rel.type === 'SF') ? b.ex : b.sx;
+            var midx = fromX + 8;
+            lines += '<path d="M' + fromX + ' ' + a.y + ' L' + midx + ' ' + a.y + ' L' + midx + ' ' + b.y + ' L' + toX + ' ' + b.y + '" class="ps-dep" marker-end="url(#ps-arrow)"/>';
+            if (rel.type !== 'FS') lines += '<text x="' + (midx + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deptype">' + rel.type + (rel.lag ? (rel.lag > 0 ? '+' : '') + rel.lag : '') + '</text>';
+            else if (rel.lag) lines += '<text x="' + (midx + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
+          });
+        }
+        if (lines) bc.insertAdjacentHTML('beforeend', '<svg class="ps-deps" width="' + _tlW + '" height="' + (last * ROWH) + '" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5;"><defs><marker id="ps-arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--pd-red)"/></marker></defs>' + lines + '</svg>');
       }
     }
     highlightRow();
@@ -756,11 +894,11 @@
   // ----- RIGHT GANTT: per-row bar builder (used by the windowed renderer) -----
   function ganttRowHTML(r, i, min, dayw) {
     var top = i * ROWH, out = '';
-    if (isWbs(r)) { var sp = wbsSpan(r); if (!sp) return ''; var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw; return '<div class="ps-sum" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + 12) + 'px;"></div>'; }
+    if (isWbsNode(r)) { var sp = wbsSpan(r); if (!sp) return ''; var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw; return '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + 12) + 'px;"></div>'; }
     var bs = pd(r.bl_start), be = pd(r.bl_finish);
     if (bs && be) { var bx = dayDiff(min, bs) * dayw, bw = (dayDiff(bs, be) + 1) * dayw; out += '<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + 24) + 'px;"></div>'; }
     var s = pd(r.start_date), e = pd(r.end_date);
-    var crit = (critMode && r._critical) ? ' ps-crit' : '';
+    var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && r._near) ? ' ps-near' : '');
     if (isMile(r) && s) { var mx = dayDiff(min, s) * dayw; return out + '<div class="ps-mile' + crit + '" data-id="' + r.id + '" style="left:' + (mx-6) + 'px;top:' + (top + 9) + 'px;"></div>'; }
     if (!s || !e) return out;
     var x2 = dayDiff(min, s) * dayw, w2 = Math.max((dayDiff(s, e) + 1) * dayw, 4);
@@ -915,20 +1053,62 @@
     XLSX.writeFile(wb, 'Schedule_' + (pid || 'project') + '_' + dstr(today()) + '.xlsx');
   }
 
-  // ----- Critical Path (CPM) -----
-  var critMode = false;
+  // ----- Saved Views (zoom + search + filters, per browser) -----
+  function loadViews() { try { return JSON.parse(localStorage.getItem('ps_views') || '{}'); } catch (e) { return {}; } }
+  function saveViews(v) { try { localStorage.setItem('ps_views', JSON.stringify(v)); } catch (e) {} }
+  function renderViewsMenu() {
+    var menu = document.getElementById('ps-views-menu'); if (!menu) return;
+    var vs = loadViews(), names = Object.keys(vs);
+    var html = names.length ? names.map(function (n) { return '<div style="display:flex;align-items:center;"><button data-view="' + esc(n) + '" style="flex:1;">' + esc(n) + '</button><button data-delview="' + esc(n) + '" title="Delete" style="width:30px;color:var(--pd-muted);">✕</button></div>'; }).join('') : '<div style="padding:8px 14px;color:var(--pd-muted);font-size:12px;">No saved views yet</div>';
+    html += '<button data-saveview="1" style="border-top:1px solid var(--pd-line);color:var(--pd-red);font-weight:600;">＋ Save current view…</button>';
+    menu.innerHTML = html;
+    menu.querySelectorAll('[data-view]').forEach(function (b) { b.onclick = function () { menu.classList.remove('open'); applyView(loadViews()[b.dataset.view]); }; });
+    menu.querySelectorAll('[data-delview]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); var v = loadViews(); delete v[b.dataset.delview]; saveViews(v); renderViewsMenu(); }; });
+    menu.querySelector('[data-saveview]').onclick = function () { var n = prompt('Save current view as:'); if (!n) return; var v = loadViews(); v[n] = { zoom: zoom, search: search, filters: JSON.parse(JSON.stringify(filters)) }; saveViews(v); menu.classList.remove('open'); UI.toast('View “' + n + '” saved.', 'success'); };
+  }
+  function applyView(v) {
+    if (!v) return;
+    zoom = v.zoom || zoom; search = v.search || '';
+    filters = v.filters ? JSON.parse(JSON.stringify(v.filters)) : { status:{}, type:{}, behind:false, look:0 };
+    var si = document.getElementById('ps-search'); if (si) si.value = search;
+    document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.toggle('active', x.dataset.zoom === zoom); });
+    buildFilterMenu();
+    renderGrid(); renderGantt();
+  }
+
+  // ----- Critical Path -----
+  var critMode = false, NEARDAYS = 5;
+  // Extract predecessor Activity IDs from an OPC cell — tolerates "A1010 (FS)",
+  // "A1010: FS+2d", "A1010; A1020", "1010, 1020", etc. (takes the leading token).
+  function predIds(str) {
+    if (!str) return [];
+    return String(str).split(/[,;\n]+/).map(function (x) { var m = String(x).trim().match(/^([A-Za-z0-9._\-]+)/); return m ? m[1] : ''; }).filter(Boolean);
+  }
+  // Parse predecessor entries into { id, type (FS/SS/FF/SF), lag(days) }.
+  function predRels(str) {
+    if (!str) return [];
+    return String(str).split(/[,;\n]+/).map(function (x) {
+      x = String(x).trim(); if (!x) return null;
+      var m = x.match(/^([A-Za-z0-9._\-]+)[\s:(]*\s*(FS|SS|FF|SF)?\s*([+\-]?\d+)?/i);
+      if (!m || !m[1]) return null;
+      return { id: m[1], type: (m[2] || 'FS').toUpperCase(), lag: m[3] ? (parseInt(m[3], 10) || 0) : 0 };
+    }).filter(Boolean);
+  }
+  // Recomputed automatically on every data change (see rebuild). Uses explicit
+  // predecessor logic when it exists; otherwise derives a date-driven driving path.
   function computeCPM() {
+    rows.forEach(function (r) { r._critical = false; r._float = null; });
     var tasks = rows.filter(function (r) { return !isWbs(r) && r.start_date && r.end_date && r.activity_id; });
-    var byId = {}; tasks.forEach(function (t) { byId[String(t.activity_id)] = t; t._succ = []; t._pred = []; t._critical = false; t._float = null; });
+    var byId = {}; tasks.forEach(function (t) { byId[String(t.activity_id)] = t; t._succ = []; t._pred = []; });
     var hasRel = false;
-    tasks.forEach(function (t) {
-      String(t.predecessors || '').split(/[,;\s]+/).forEach(function (ps) {
-        ps = ps.trim(); if (!ps) return; var p = byId[ps]; if (p) { t._pred.push(p); p._succ.push(t); hasRel = true; }
-      });
-    });
-    if (!hasRel) return { hasRel: false };
+    tasks.forEach(function (t) { t._relObjs = []; predRels(t.predecessors).forEach(function (rel) { var p = byId[rel.id]; if (p) { t._pred.push(p); p._succ.push(t); t._relObjs.push({ p: p, type: rel.type, lag: rel.lag }); hasRel = true; } }); });
+    if (hasRel) { cpmLogic(tasks); return { mode: 'logic' }; }
+    drivingPath();
+    return { mode: 'driving' };
+  }
+  function cpmLogic(tasks) {
     var base = null; tasks.forEach(function (t) { var s = pd(t.start_date); if (s && (!base || s < base)) base = s; });
-    if (!base) return { hasRel: true };
+    if (!base) return;
     tasks.forEach(function (t) { t._dur = (pd(t.end_date) - pd(t.start_date)) / 86400000 + 1; t._es = null; t._ef = null; });
     tasks.forEach(function (t) { if (!t._pred.length) { t._es = (pd(t.start_date) - base) / 86400000; t._ef = t._es + t._dur; } });
     var chg = true, guard = 0;
@@ -937,8 +1117,26 @@
     tasks.forEach(function (t) { if (!t._succ.length) { t._lf = projEnd; t._ls = t._lf - t._dur; } else { t._lf = null; t._ls = null; } });
     chg = true; guard = 0;
     while (chg && guard++ < tasks.length + 5) { chg = false; tasks.forEach(function (t) { if (t._succ.length) { var lf = Infinity; t._succ.forEach(function (s) { if (s._ls != null && s._ls < lf) lf = s._ls; }); if (lf !== Infinity && t._lf !== lf) { t._lf = lf; t._ls = lf - t._dur; chg = true; } } }); }
-    tasks.forEach(function (t) { t._float = (t._ls != null && t._es != null) ? Math.round(t._ls - t._es) : null; t._critical = (t._float === 0); });
-    return { hasRel: true };
+    tasks.forEach(function (t) { t._float = (t._ls != null && t._es != null) ? Math.round(t._ls - t._es) : null; t._critical = (t._float === 0); t._near = (!t._critical && t._float != null && t._float > 0 && t._float <= NEARDAYS); });
+  }
+  // Automatic driving path (no relationships): starting at the project, follow the
+  // latest-finishing child down each WBS level. Effective finish uses actual_finish
+  // when set, else the planned end_date — so it updates as actuals/plans change.
+  function drivingPath() {
+    var kids = {}; rows.forEach(function (r) { var p = (r._anc && r._anc.length) ? r._anc[r._anc.length - 1] : '__root__'; (kids[p] = kids[p] || []).push(r); });
+    function ef(r) { var d = pd(r.actual_finish || r.end_date); return d ? +d : null; }
+    var projF = null; rows.forEach(function (r) { var f = ef(r); if (f != null && (projF == null || f > projF)) projF = f; });
+    var queue = (kids['__root__'] || []).slice(); queue.forEach(function (r) { r._critical = true; });
+    var i = 0, guard = 0;
+    while (i < queue.length && guard++ < rows.length + 5) {
+      var node = queue[i++];
+      if (!isWbs(node)) continue;
+      var ch = kids[node.code] || []; if (!ch.length) continue;
+      var maxF = null; ch.forEach(function (c) { var f = ef(c); if (f != null && (maxF == null || f > maxF)) maxF = f; });
+      if (maxF == null) continue;
+      ch.forEach(function (c) { var f = ef(c); if (f != null && f === maxF) { c._critical = true; queue.push(c); } });
+    }
+    rows.forEach(function (r) { if (!isWbs(r)) { var f = ef(r); r._float = (f != null && projF != null) ? Math.round((projF - f) / 86400000) : null; r._near = (!r._critical && r._float != null && r._float > 0 && r._float <= NEARDAYS); } });
   }
 
   window.PS = { edit: function (id) { var r = rows.find(function (x) { return x.id === id; }); if (r) openForm(r); } };
@@ -956,6 +1154,7 @@
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.onclick = function () { switchTab(b.dataset.tab); }; });
     document.getElementById('ps-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); collapsed = {}; load(); };
     document.getElementById('ps-search').oninput = function (e) { search = e.target.value; renderGrid(); renderGantt(); };
+    document.getElementById('ps-group').onchange = function (e) { groupBy = e.target.value; collapsed = {}; renderCollapseMenu(); renderGrid(); renderGantt(); };
     document.getElementById('ps-zoom').querySelectorAll('[data-zoom]').forEach(function (b) {
       b.onclick = function () { zoom = b.dataset.zoom; document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.remove('active'); }); b.classList.add('active'); renderGantt(); };
     });
@@ -964,18 +1163,21 @@
       collapsed = {}; renderGrid(); renderGantt();
     };
     var cMenu = document.getElementById('ps-collapse-menu'), fMenu = document.getElementById('ps-filter-menu');
-    document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); fMenu.classList.remove('open'); cMenu.classList.toggle('open'); };
-    document.getElementById('ps-filterbtn').onclick = function (e) { e.stopPropagation(); cMenu.classList.remove('open'); fMenu.classList.toggle('open'); };
+    var vMenu = document.getElementById('ps-views-menu');
+    document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); fMenu.classList.remove('open'); vMenu.classList.remove('open'); cMenu.classList.toggle('open'); };
+    document.getElementById('ps-filterbtn').onclick = function (e) { e.stopPropagation(); cMenu.classList.remove('open'); vMenu.classList.remove('open'); fMenu.classList.toggle('open'); };
+    document.getElementById('ps-views').onclick = function (e) { e.stopPropagation(); cMenu.classList.remove('open'); fMenu.classList.remove('open'); renderViewsMenu(); vMenu.classList.toggle('open'); };
     buildFilterMenu();
     cMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     fMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.addEventListener('click', function () { cMenu.classList.remove('open'); fMenu.classList.remove('open'); });
+    vMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', function () { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); });
     document.getElementById('ps-refresh').onclick = function () { load(); };
     document.getElementById('ps-export').onclick = exportExcel;
     document.getElementById('ps-crit').onclick = function () {
       critMode = !critMode;
       document.getElementById('ps-crit').classList.toggle('active', critMode);
-      if (critMode) { var res = computeCPM(); if (!res.hasRel) UI.toast('No dependencies defined yet — add Predecessors (Activity IDs) in the activity editor to see the critical path.', 'warn'); }
+      if (critMode) { var res = computeCPM(); UI.toast(res.mode === 'logic' ? 'Critical path from activity relationships.' : 'Critical path derived from planned/actual finish dates.', 'info'); }
       renderGrid(); renderGantt();
     };
     document.getElementById('ps-clear').onclick = function () {
