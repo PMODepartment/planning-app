@@ -36,6 +36,8 @@
     .ps-toolbar .pd-btn:not(.pd-btn-primary):hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .ps-toolbar .pd-select { background:transparent; border-color:transparent; }
     .ps-toolbar .pd-select:hover, .ps-toolbar .pd-select:focus { background:var(--pd-card); border-color:var(--pd-line); }
+    .ps-toolbar .pd-btn:disabled { opacity:.35; cursor:not-allowed; }
+    .ps-toolbar .pd-btn:disabled:hover { background:transparent; border-color:transparent; }
     .ps-search { position:relative; display:inline-flex; align-items:center; }
     .ps-search > [data-ico] { position:absolute; left:10px; display:inline-flex; color:var(--pd-muted); pointer-events:none; }
     .ps-search .pd-input { padding-left:32px; }
@@ -220,6 +222,38 @@
       cursor:pointer; color:var(--pd-ink); font-size:13px; }
     .ps-menu button:hover { background:var(--pd-red-light); }
     .ps-menu button.ps-menu-danger { color:var(--pd-bad); }
+
+    /* ---- Schedule Health panel (DCMA-14-style quality checklist, OPC-inspired) ---- */
+    .ps-health-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:none; }
+    .ps-health-backdrop.open { display:block; }
+    .ps-health-panel { position:fixed; top:0; right:0; bottom:0; width:420px; max-width:92vw; background:var(--pd-card);
+      box-shadow:-8px 0 28px rgba(0,0,0,.22); z-index:201; transform:translateX(100%); transition:transform .2s ease;
+      display:flex; flex-direction:column; }
+    .ps-health-panel.open { transform:translateX(0); }
+    .ps-health-head { display:flex; align-items:center; gap:12px; padding:16px; border-bottom:1px solid var(--pd-line); }
+    .ps-health-score { width:56px; height:56px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+      font-weight:700; font-size:16px; flex:none; color:#fff; }
+    .ps-health-head h3 { margin:0; font-size:15px; }
+    .ps-health-head p { margin:2px 0 0; font-size:12px; color:var(--pd-muted); }
+    .ps-health-close { margin-left:auto; background:none; border:none; cursor:pointer; color:var(--pd-muted);
+      font-size:18px; line-height:1; padding:4px; }
+    .ps-health-close:hover { color:var(--pd-ink); }
+    .ps-health-list { overflow:auto; flex:1; padding:4px 0; }
+    .ps-health-row { padding:10px 16px; border-bottom:1px solid var(--pd-line); cursor:pointer; }
+    .ps-health-row-head { display:flex; align-items:center; gap:8px; }
+    .ps-health-row-head .lbl { font-weight:600; font-size:13px; flex:1; }
+    .ps-health-row-head .pct { font-size:12px; color:var(--pd-muted); width:32px; text-align:right; }
+    .ps-health-row-head .cnt { background:var(--pd-bg); color:var(--pd-ink); font-size:11px; font-weight:700;
+      border-radius:999px; padding:2px 8px; min-width:20px; text-align:center; }
+    .ps-health-row-desc { font-size:11px; color:var(--pd-muted); margin-top:3px; }
+    .ps-health-bar { height:3px; background:var(--pd-line); border-radius:2px; margin-top:7px; overflow:hidden; }
+    .ps-health-bar > div { height:100%; }
+    .ps-health-items { display:none; margin-top:8px; max-height:160px; overflow:auto; border-top:1px dashed var(--pd-line); padding-top:6px; }
+    .ps-health-row.open .ps-health-items { display:block; }
+    .ps-health-item { padding:5px 8px; font-size:12px; border-radius:6px; cursor:pointer; }
+    .ps-health-item:hover { background:var(--pd-red-light); }
+    .ps-health-item b { font-weight:700; }
+    .ps-health-empty { padding:30px 16px; text-align:center; color:var(--pd-muted); font-size:13px; }
     .ps-filter-menu { min-width:230px; padding:10px 12px; }
     .ps-filter-menu.open { display:block; }
     .ps-filter-menu h4 { margin:8px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
@@ -253,6 +287,9 @@
       <div class="ps-toolbar">
         <!-- Single OPC-style row: Actions/Add, context selectors, layout controls, toggles, search -->
         <div class="ps-tb-row">
+          <button class="pd-btn" id="ps-undo" title="Undo" disabled><span data-ico="undo" data-ico-size="15"></span></button>
+          <button class="pd-btn" id="ps-redo" title="Redo" disabled><span data-ico="redo" data-ico-size="15"></span></button>
+          <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-actionsbtn"><span data-ico="box" data-ico-size="15"></span> Actions ▾</button>
             <div class="ps-menu" id="ps-actions-menu">
               <button id="ps-import"><span data-ico="box" data-ico-size="14"></span> Import Excel (OPC)</button>
@@ -284,6 +321,7 @@
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="risk" data-ico-size="15"></span> Critical path</button>
           <button class="pd-btn" id="ps-linkmode" title="Link mode: drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="15"></span> Link</button>
+          <button class="pd-btn" id="ps-health" title="Schedule Health Score"><span data-ico="pulse" data-ico-size="15"></span> Health</button>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="15"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
           <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="15"></span></button>
           <span class="ps-tb-spacer"></span>
@@ -419,6 +457,20 @@
   </div>
 </div>
 
+<!-- Schedule Health Score (OPC-inspired quality checklist) -->
+<div class="ps-health-backdrop" id="ps-health-backdrop"></div>
+<div class="ps-health-panel" id="ps-health-panel">
+  <div class="ps-health-head">
+    <div class="ps-health-score" id="ps-health-score">—</div>
+    <div>
+      <h3>Schedule Health</h3>
+      <p><span id="ps-health-total">0</span> activities checked</p>
+    </div>
+    <button class="ps-health-close" id="ps-health-close" title="Close">&times;</button>
+  </div>
+  <div class="ps-health-list" id="ps-health-list"></div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js"></script>
 <script src="../../assets/js/auth.js"></script>
@@ -504,13 +556,61 @@
       });
     } catch (e) { /* non-writer roles can't update projects — ignore */ }
   }
-  async function persist(id, patch) {
+  async function persist(id, patch, skipUndo) {
+    var r = rows.find(function (x) { return x.id === id; });
+    var before = null;
+    if (r && !skipUndo) { before = {}; Object.keys(patch).forEach(function (k) { before[k] = (r[k] === undefined ? null : r[k]); }); }
     var res = await sb().from(TABLE).update(patch).eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return false; }
-    var r = rows.find(function (x) { return x.id === id; });
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
+    if (before) pushUndo({ type: 'update', id: id, before: before, after: patch });
     rebuild();
     return true;
+  }
+
+  // ---- Undo / Redo ----
+  // Hooks into persist() (used by inline cell edits, Gantt drag/resize, and link creation) so
+  // those three mutation paths get undo support for free. The Add/Edit modal's save() records
+  // its own entries (an 'update' diff when editing, an 'insert' entry when creating) since it
+  // writes via a raw Supabase call rather than persist(). Bulk operations (Import replace, Clear
+  // schedule) are NOT undoable — they already have their own confirm/type-to-confirm gates.
+  var undoStack = [], redoStack = [], UNDO_MAX = 50;
+  function pushUndo(action) { undoStack.push(action); if (undoStack.length > UNDO_MAX) undoStack.shift(); redoStack = []; updateUndoButtons(); }
+  function resetUndo() { undoStack = []; redoStack = []; updateUndoButtons(); }
+  function updateUndoButtons() {
+    var u = document.getElementById('ps-undo'), r = document.getElementById('ps-redo');
+    if (u) u.disabled = !undoStack.length;
+    if (r) r.disabled = !redoStack.length;
+  }
+  async function undo() {
+    var a = undoStack.pop(); if (!a) return;
+    if (a.type === 'update') {
+      if (!(await persist(a.id, a.before, true))) { undoStack.push(a); return; }
+    } else if (a.type === 'insert') {
+      var res = await sb().from(TABLE).delete().eq('id', a.id);
+      if (res.error) { UI.toast(res.error.message, 'error'); undoStack.push(a); return; }
+      rows = rows.filter(function (r) { return r.id !== a.id; });
+      if (selId === a.id) selId = null;
+      rebuild();
+    }
+    redoStack.push(a); updateUndoButtons();
+    renderGrid(); renderGantt(); renderDetails();
+    UI.toast('Undone.', 'info');
+  }
+  async function redo() {
+    var a = redoStack.pop(); if (!a) return;
+    if (a.type === 'update') {
+      if (!(await persist(a.id, a.after, true))) { redoStack.push(a); return; }
+    } else if (a.type === 'insert') {
+      var payload = Object.assign({}, a.payload, { id: a.id });
+      var res = await sb().from(TABLE).insert(payload);
+      if (res.error) { UI.toast(res.error.message, 'error'); redoStack.push(a); return; }
+      rows.push(payload);
+      rebuild();
+    }
+    undoStack.push(a); updateUndoButtons();
+    renderGrid(); renderGantt(); renderDetails();
+    UI.toast('Redone.', 'info');
   }
 
   function isWbs(r) { return r.activity_type === 'WBS Summary'; }
@@ -708,7 +808,7 @@
     hideLoading();
     if (err) UI.toast('Insert error after '+ok+': '+err, 'error');
     else UI.toast('Imported '+ok+' of '+payloads.length+' rows.', 'success');
-    collapsed={}; load();
+    collapsed={}; resetUndo(); load();
   }
   function previewImport(recs, fname) {
     if (!recs.length) { UI.toast('No rows found in file.', 'warn'); return; }
@@ -1270,10 +1370,17 @@
       secondary_constraint_date: v('ps-f-scond') || null,
       remarks: v('ps-f-remarks') || null, updated_at: new Date().toISOString()
     };
-    var res;
-    if (editId) { res = await sb().from(TABLE).update(payload).eq('id', editId); }
-    else { payload.created_by = UID; res = await sb().from(TABLE).insert(payload); }
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (editId) {
+      var cur = rows.find(function (x) { return x.id === editId; });
+      var patch = {};
+      if (cur) { Object.keys(payload).forEach(function (k) { if (JSON.stringify(cur[k] === undefined ? null : cur[k]) !== JSON.stringify(payload[k])) patch[k] = payload[k]; }); }
+      if (!(await persist(editId, Object.keys(patch).length ? patch : payload))) return;
+    } else {
+      payload.created_by = UID;
+      var res = await sb().from(TABLE).insert(payload).select().single();
+      if (res.error) { UI.toast(res.error.message, 'error'); return; }
+      if (res.data && res.data.id) pushUndo({ type: 'insert', id: res.data.id, payload: payload });
+    }
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
     closeModal(); load();
   }
@@ -1433,6 +1540,122 @@
     tasks.forEach(function (t) { t._float = (t._ls != null && t._es != null) ? Math.round(t._ls - t._es) : null; t._critical = (t._float === 0); t._near = (!t._critical && t._float != null && t._float > 0 && t._float <= NEARDAYS); });
   }
   function recomputeCPM() { computeCPM(); renderGrid(); renderGantt(); }
+
+  // ---- Schedule Health Score (DCMA-14-style quality checklist, OPC-inspired) ----
+  // Every metric's % is "count of affected activities ÷ its own eligible denominator" (e.g.
+  // Late Activity is scored against activities that HAVE a baseline, not the whole schedule) —
+  // shown as "count of denom" in the UI so it never reads as a mystery percentage.
+  var HEALTH_LARGE_FLOAT = 44, HEALTH_LARGE_DUR = 44; // DCMA-14 conventional thresholds (days)
+  function isHardConstraint(c) { return /must|mandatory/i.test(c || ''); }
+  function isAnyConstraint(c) { return !!c && !/as (soon|late) as possible/i.test(c); }
+  function computeHealth() {
+    computeCPM();
+    var tasks = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    var t0 = today();
+    var started = tasks.filter(function (r) { return !!r.actual_start; });
+    var lateElig = tasks.filter(function (r) { return !!r.bl_finish; });
+    var floatElig = tasks.filter(function (r) { return r._float != null; });
+    var durElig = tasks.filter(function (r) { return pd(r.start_date) && pd(r.end_date); });
+
+    var openEnds = tasks.filter(function (r) { return !(r._relObjs || []).length && !(r._succObjs || []).length; });
+    var dangStart = tasks.filter(function (r) { return !(r._relObjs || []).length; });
+    var dangFinish = tasks.filter(function (r) { return !(r._succObjs || []).length; });
+    var lagged = tasks.filter(function (r) { return (r._relObjs || []).some(function (rel) { return rel.lag; }); });
+    var negLag = tasks.filter(function (r) { return (r._relObjs || []).some(function (rel) { return rel.lag < 0; }); });
+    var oos = started.filter(function (r) {
+      return (r._relObjs || []).some(function (rel) {
+        if (!rel.p) return false;
+        var pDone = rel.type === 'SS' ? rel.p.actual_start : rel.p.actual_finish;
+        return !pDone || pd(pDone) > pd(r.actual_start);
+      });
+    });
+    var hardCon = tasks.filter(function (r) { return isHardConstraint(r.primary_constraint) || isHardConstraint(r.secondary_constraint); });
+    var softCon = tasks.filter(function (r) { return !isHardConstraint(r.primary_constraint) && !isHardConstraint(r.secondary_constraint) &&
+      (isAnyConstraint(r.primary_constraint) || isAnyConstraint(r.secondary_constraint)); });
+    var invalidProg = tasks.filter(function (r) { var as = pd(r.actual_start), af = pd(r.actual_finish); return (as && as > t0) || (af && af > t0); });
+    var late = lateElig.filter(function (r) { var v = finVar(r); return v != null && v > 0; });
+    var negFloat = floatElig.filter(function (r) { return r._float < 0; });
+    var largeFloat = floatElig.filter(function (r) { return r._float > HEALTH_LARGE_FLOAT; });
+    var largeDur = durElig.filter(function (r) { return (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) > HEALTH_LARGE_DUR; });
+
+    function mk(key, label, desc, items, denom) {
+      return { key: key, label: label, desc: desc, items: items, denom: denom.length, count: items.length,
+        pct: denom.length ? Math.round(items.length / denom.length * 100) : 0 };
+    }
+    var metrics = [
+      mk('open', 'Open Ends', 'No predecessor and no successor', openEnds, tasks),
+      mk('dstart', 'Dangling Start', 'No predecessor', dangStart, tasks),
+      mk('dfinish', 'Dangling Finish', 'No successor', dangFinish, tasks),
+      mk('lag', 'Predecessor Lag', 'Has a lead/lag on a relationship', lagged, tasks),
+      mk('neglag', 'Predecessor Negative Lag', 'Has a negative lag (lead)', negLag, tasks),
+      mk('oos', 'Out of Sequence', 'Started before its predecessor logic allows', oos, started),
+      mk('hardcon', 'Hard Constraint', 'A Must/Mandatory Start or Finish constraint', hardCon, tasks),
+      mk('softcon', 'Soft Constraint', 'Any other date constraint', softCon, tasks),
+      mk('invprog', 'Invalid Progress Date', 'An actual date is set in the future', invalidProg, tasks),
+      mk('late', 'Late Activity', 'Finishing later than its baseline', late, lateElig),
+      mk('negfloat', 'Negative Float', 'Total float is negative', negFloat, floatElig),
+      mk('largefloat', 'Large Float (> ' + HEALTH_LARGE_FLOAT + 'd)', 'Total float exceeds ' + HEALTH_LARGE_FLOAT + ' days', largeFloat, floatElig),
+      mk('largedur', 'Large Duration (> ' + HEALTH_LARGE_DUR + 'd)', 'Duration exceeds ' + HEALTH_LARGE_DUR + ' days', largeDur, durElig)
+    ];
+    var scoredPcts = metrics.filter(function (m) { return m.denom > 0; }).map(function (m) { return m.pct; });
+    var avgBad = scoredPcts.length ? scoredPcts.reduce(function (s, p) { return s + p; }, 0) / scoredPcts.length : 0;
+    var score = Math.max(0, Math.min(100, Math.round(100 - avgBad)));
+    return { score: score, total: tasks.length, metrics: metrics };
+  }
+  function healthColor(pct) { return pct >= 80 ? 'var(--pd-ok)' : pct >= 50 ? 'var(--pd-warn)' : 'var(--pd-bad)'; }
+  function renderHealthPanel() {
+    var h = computeHealth();
+    var scoreEl = document.getElementById('ps-health-score');
+    scoreEl.textContent = h.score + '%';
+    scoreEl.style.background = healthColor(h.score);
+    document.getElementById('ps-health-total').textContent = h.total;
+    var list = document.getElementById('ps-health-list');
+    if (!h.total) { list.innerHTML = '<div class="ps-health-empty">No activities to check yet.</div>'; return; }
+    list.innerHTML = h.metrics.map(function (m) {
+      var barPct = Math.min(100, m.pct), color = healthColor(100 - m.pct);
+      var items = m.items.slice(0, 200).map(function (r) {
+        return '<div class="ps-health-item" data-goto="' + esc(r.id) + '"><b>' + esc(r.activity_id || '') + '</b> ' + esc(r.activity_name || '') + '</div>';
+      }).join('') || '<div class="ps-health-item" style="cursor:default;color:var(--pd-muted);">None — clean.</div>';
+      return '<div class="ps-health-row" data-key="' + m.key + '">' +
+        '<div class="ps-health-row-head"><span class="lbl">' + esc(m.label) + '</span><span class="pct">' + m.pct + '%</span><span class="cnt">' + m.count + '</span></div>' +
+        '<div class="ps-health-row-desc">' + esc(m.desc) + ' — ' + m.count + ' of ' + m.denom + '</div>' +
+        '<div class="ps-health-bar"><div style="width:' + barPct + '%;background:' + color + ';"></div></div>' +
+        '<div class="ps-health-items">' + items + '</div>' +
+        '</div>';
+    }).join('');
+    list.querySelectorAll('.ps-health-row').forEach(function (row) {
+      row.querySelector('.ps-health-row-head').onclick = function () { row.classList.toggle('open'); };
+    });
+    list.querySelectorAll('.ps-health-item[data-goto]').forEach(function (it) {
+      it.onclick = function (e) { e.stopPropagation(); gotoActivity(it.dataset.goto); };
+    });
+  }
+  function gotoActivity(id) {
+    var r = rows.find(function (x) { return x.id === id; });
+    if (!r) return;
+    (r._anc || []).forEach(function (a) { collapsed[a] = false; });
+    selId = id;
+    closeHealthPanel();
+    switchTab('schedule');
+    renderGrid(); renderGantt();
+    requestAnimationFrame(function () {
+      var idx = DL.findIndex(function (x) { return x.id === id; });
+      if (idx < 0) return;
+      var top = Math.max(0, idx * ROWH - 120);
+      var gs = document.getElementById('ps-grid-scroll'), gz = document.getElementById('ps-gantt-scroll');
+      if (gs) gs.scrollTop = top; if (gz) gz.scrollTop = top;
+      renderDetails();
+    });
+  }
+  function openHealthPanel() {
+    renderHealthPanel();
+    document.getElementById('ps-health-backdrop').classList.add('open');
+    document.getElementById('ps-health-panel').classList.add('open');
+  }
+  function closeHealthPanel() {
+    document.getElementById('ps-health-backdrop').classList.remove('open');
+    document.getElementById('ps-health-panel').classList.remove('open');
+  }
 
   // ---- Schedule options menu ----
   function renderSchedMenu() {
@@ -1607,7 +1830,7 @@
     try { var cw = JSON.parse(localStorage.getItem('ps_cols') || 'null'); if (cw) { var gp = document.querySelector('.ps-grid-pane'); Object.keys(cw).forEach(function (c) { if (cw[c]) gp.style.setProperty('--c-' + c, cw[c]); }); } } catch (e) {}
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.onclick = function (e) { e.preventDefault(); switchTab(a.dataset.view); }; });
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.onclick = function () { switchTab(b.dataset.tab); }; });
-    document.getElementById('ps-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); collapsed = {}; load(); };
+    document.getElementById('ps-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); collapsed = {}; resetUndo(); load(); };
     document.getElementById('ps-search').oninput = function (e) { search = e.target.value; renderGrid(); renderGantt(); };
     document.getElementById('ps-group').onchange = function (e) { groupBy = e.target.value; collapsed = {}; renderCollapseMenu(); renderGrid(); renderGantt(); };
     document.getElementById('ps-zoom').querySelectorAll('[data-zoom]').forEach(function (b) {
@@ -1629,6 +1852,18 @@
     document.getElementById('ps-colorsbtn').onclick = function (e) { e.stopPropagation(); var o = colMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colMenu.classList.add('open'); } };
     document.getElementById('ps-actionsbtn').onclick = function (e) { e.stopPropagation(); var o = aMenu.classList.contains('open'); closeMenus(); if (!o) aMenu.classList.add('open'); };
     document.getElementById('ps-linkmode').onclick = function (e) { e.stopPropagation(); toggleLinkMode(); };
+    document.getElementById('ps-health').onclick = function (e) { e.stopPropagation(); openHealthPanel(); };
+    document.getElementById('ps-undo').onclick = function (e) { e.stopPropagation(); undo(); };
+    document.getElementById('ps-redo').onclick = function (e) { e.stopPropagation(); redo(); };
+    document.addEventListener('keydown', function (e) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      var tag = document.activeElement && document.activeElement.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return; // let native field undo/redo happen
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); redo(); }
+    });
+    document.getElementById('ps-health-close').onclick = closeHealthPanel;
+    document.getElementById('ps-health-backdrop').onclick = closeHealthPanel;
     document.querySelectorAll('.ps-dtab').forEach(function (b) { b.onclick = function () { detailTab = b.dataset.dtab; document.querySelectorAll('.ps-dtab').forEach(function (x) { x.classList.toggle('active', x === b); }); renderDetails(); }; });
 
     // Resizable bottom details panel (drag the grip up/down; height persisted).
@@ -1691,7 +1926,7 @@
         var del = await sb().from(TABLE).delete().eq('project_id', pid);
         hideLoading();
         if (del.error) { UI.toast(del.error.message, 'error'); return; }
-        UI.toast('Schedule cleared.', 'success'); collapsed = {}; load();
+        UI.toast('Schedule cleared.', 'success'); collapsed = {}; resetUndo(); load();
       };
     };
     document.getElementById('ps-add').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } openForm(null); };

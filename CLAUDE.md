@@ -77,6 +77,37 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-02 — Prompt 47: Schedule Health Score + Undo/Redo (OPC top-bar icon parity)
+- User shared a screenshot of OPC's top-right icon strip (save-status, undo, redo, Schedule
+  Health Score, Run Report, Share). Checked each against this module: **Undo/Redo** and
+  **Schedule Health Score** were genuine gaps; save-status doesn't apply (we persist per-field
+  immediately, no staged commit), Run Report/Share are different-shaped features already loosely
+  covered by Export/Views. Built the two real gaps:
+- **Schedule Health Score** (`ps-health` toolbar button, `#ps-health-panel` slide-over): a
+  DCMA-14-inspired quality checklist computed from data already on hand (no new columns) —
+  Open Ends, Dangling Start/Finish, Predecessor Lag/Negative Lag, Out of Sequence, Hard/Soft
+  Constraint, Invalid Progress Date, Late Activity, Negative/Large Float (>44d), Large Duration
+  (>44d). Each metric shows "count of its own eligible denominator" (e.g. Late Activity is
+  scored against activities that HAVE a baseline, not the whole schedule) rather than a bare %,
+  and expands to list the affected activities — clicking one selects it in the grid/Gantt and
+  opens its Activity Details. Overall score = 100 − average(metric %). Skipped OPC's "No
+  Roles/Resources" metric — no resource/role assignment model yet (owned by the future
+  `resource-loading` module).
+- **Undo/Redo** (`ps-undo`/`ps-redo` toolbar buttons + Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, disabled
+  when the stack is empty): hooked into `persist()` — the single function already used by inline
+  cell edits, Gantt drag/resize, **and** link creation — so all three get undo for free from one
+  change. The Add/Edit modal's `save()` now routes edits through `persist()` too (diffs old vs
+  new field values) and records its own `insert` entry for new activities (added `.select()` to
+  the insert so we get the new row's id back; redo re-inserts with that same id). Bulk ops
+  (Import replace/append, Clear schedule) reset the stack instead of being undoable — they
+  already have their own confirm/type-to-confirm gates. 50-action cap; stack also resets on
+  project switch.
+- Verified both features against actual rendered behavior (not just code review) with a
+  throwaway local test harness (stubbed `AppAuth`/`PDb`/Supabase with a small **mutable**
+  in-memory row store this time, so insert/update/delete round-trip realistically) — confirmed
+  Health's math by hand against a synthetic fixture, and the full add → undo (deletes) →
+  redo (re-inserts, same id) and edit → undo → redo cycles. Deleted after use.
+
 ### 2026-07-02 — Prompt 46: Flatten the toolbar to match OPC's clean look
 - User compared a screenshot of live OPC against ours and asked to match its "cleanly executed"
   feel. Root cause: our shared `.pd-btn`/`.pd-select` (used site-wide) always render a visible
