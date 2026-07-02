@@ -77,6 +77,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-02 — Prompt 46: Flatten the toolbar to match OPC's clean look
+- User compared a screenshot of live OPC against ours and asked to match its "cleanly executed"
+  feel. Root cause: our shared `.pd-btn`/`.pd-select` (used site-wide) always render a visible
+  border + card background, so the Project Schedule toolbar read as a row of ~14 separate boxed
+  buttons, whereas OPC's toolbar controls are flat/borderless at rest and only pick up a
+  background on hover — the row reads as one continuous strip.
+- Added toolbar-scoped overrides (`.ps-toolbar .pd-btn:not(.pd-btn-primary)`,
+  `.ps-toolbar .pd-select`) that go transparent/borderless at rest, with a light `--pd-bg`
+  background on hover/focus. Deliberately scoped to `.ps-toolbar` only — the shared `.pd-btn`/
+  `.pd-select` keep their normal bordered look everywhere else (modals, forms, other modules).
+  Kept exactly one color-blocked control (**+ Add activity**, red primary) plus existing active-
+  state red fills (Quarter/Year zoom, Critical path, Link) — same "one accent CTA, flat
+  everything else" pattern OPC uses.
+- Verified visually (not just by reading code) via the same throwaway local test harness as
+  Prompt 45 (stubbed auth/DB, synthetic rows, deleted after use) — screenshotted both light and
+  dark mode before/after.
+
 ### 2026-07-02 — Prompt 45: Toolbar consolidation + OPC-style layout + dependency-line fix
 - **Removed the bottom "Tip: click any activity cell…" hint line** in Project Schedule —
   it was `flex:none` (fixed height) inside the viewport-height flex column, so removing it

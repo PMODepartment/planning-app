@@ -27,6 +27,15 @@
     .ps-toolbar .pd-btn [data-ico] { display:inline-flex; }
     .ps-toolbar .ps-seg { height:36px; }
     .ps-toolbar .ps-seg button { padding:0 14px; height:100%; }
+    /* OPC-style flat toolbar: only the primary action (+Add) is color-blocked; every other
+       control is borderless/transparent at rest and only picks up a background on hover or
+       when active, so the row reads as one continuous strip instead of a line of boxed
+       buttons. Scoped to .ps-toolbar only — the shared .pd-btn/.pd-select keep their normal
+       bordered look everywhere else in the app (modals, forms, other modules). */
+    .ps-toolbar .pd-btn:not(.pd-btn-primary) { background:transparent; border-color:transparent; }
+    .ps-toolbar .pd-btn:not(.pd-btn-primary):hover { background:var(--pd-bg); border-color:var(--pd-line); }
+    .ps-toolbar .pd-select { background:transparent; border-color:transparent; }
+    .ps-toolbar .pd-select:hover, .ps-toolbar .pd-select:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .ps-search { position:relative; display:inline-flex; align-items:center; }
     .ps-search > [data-ico] { position:absolute; left:10px; display:inline-flex; color:var(--pd-muted); pointer-events:none; }
     .ps-search .pd-input { padding-left:32px; }
