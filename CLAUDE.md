@@ -77,6 +77,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-02 — Prompt 45: Toolbar consolidation + OPC-style layout + dependency-line fix
+- **Removed the bottom "Tip: click any activity cell…" hint line** in Project Schedule —
+  it was `flex:none` (fixed height) inside the viewport-height flex column, so removing it
+  (plus its now-dead `#ps-view-schedule > p` CSS rule) hands that space straight back to the
+  `.ps-split` (grid+Gantt) panel, which is `flex:1 1 auto`.
+- **Toolbar rebuilt as a single OPC-style row** (was two rows): compared live against Oracle
+  Primavera Cloud (`primavera.oraclecloud.com`) — Actions/Add first, context selectors next,
+  layout/view controls grouped with dividers, toggle icons, search docked far right. Rare
+  data-ops (**Import Excel, Export, Clear**) consolidated into a new **Actions ▾** menu
+  (mirrors OPC's Actions▾), matching the existing `.ps-menu-wrap` pattern; `ps-clear`'s
+  admin-only visibility logic unchanged (still keyed off the same element id). Filter and
+  Refresh are now icon-only (title tooltip), matching OPC's icon-button density.
+- **Fixed FS/SS/FF/SF dependency-line rendering** (Gantt, Critical Path mode): the connector
+  always stepped 8px *right* before turning, which is correct for FS/FF (anchored at a bar's
+  finish/right edge — stepping right moves away from the bar) but for SS/SF (anchored at a
+  bar's *start*/left edge) it stepped straight through the bar's own body, and FF/SF's arrival
+  at a target's finish edge cut through the target bar the same way. Now each end steps
+  *outward* based on which edge it's anchored to (start-anchors step left, finish-anchors step
+  right) before the elbow turn, so the line always approaches/leaves a bar from outside it.
+  Verified against actual rendered bar coordinates (synthetic FS/SS/FF/SF fixture) that none
+  of the four relationship types' connector paths cross their own source/target bar anymore.
+- Verification note: this environment's Preview tool had a stalled compositor (`requestAnimationFrame`
+  never fired, screenshots timed out) — worked around for this session only with a throwaway,
+  git-ignored test harness (stubbed `AppAuth`/`PDb`/Supabase with synthetic rows, no real
+  credentials or backend touched) to confirm the render tree and connector math; deleted after use.
+
 ### 2026-07-01 — Prompt 44 (Desktop): S-Curve forecast line + transposed data table
 - Added a **red dashed forecast-to-finish line** from the actual point at the
   data date up to 100% at a **manual Forecast finish date** (date input in the

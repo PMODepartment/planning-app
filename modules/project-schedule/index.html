@@ -163,7 +163,6 @@
     .pd-main { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
     #ps-view-schedule { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
     #ps-view-schedule .ps-split { flex:1 1 auto; min-height:200px; height:auto; }
-    #ps-view-schedule > p { flex:none; margin:8px 0; }
     #ps-view-schedule .ps-details { flex:none; margin-top:10px; display:flex; flex-direction:column; min-height:0; }
     .ps-dl { display:grid; grid-template-columns:160px 1fr; gap:6px 16px; font-size:13px; align-items:baseline; }
     .ps-dl dt { color:var(--pd-muted); }
@@ -211,6 +210,7 @@
     .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
       cursor:pointer; color:var(--pd-ink); font-size:13px; }
     .ps-menu button:hover { background:var(--pd-red-light); }
+    .ps-menu button.ps-menu-danger { color:var(--pd-bad); }
     .ps-filter-menu { min-width:230px; padding:10px 12px; }
     .ps-filter-menu.open { display:block; }
     .ps-filter-menu h4 { margin:8px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
@@ -242,43 +242,43 @@
 
     <div class="pd-main">
       <div class="ps-toolbar">
-        <!-- Row 1: context (project / search / group-by) + primary action -->
+        <!-- Single OPC-style row: Actions/Add, context selectors, layout controls, toggles, search -->
         <div class="ps-tb-row">
-          <select class="pd-select" id="ps-project" style="min-width:240px;max-width:340px;"></select>
-          <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:230px;" /></div>
-          <select class="pd-select" id="ps-group" title="Group activities by" style="max-width:190px;">
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-actionsbtn"><span data-ico="box" data-ico-size="15"></span> Actions ▾</button>
+            <div class="ps-menu" id="ps-actions-menu">
+              <button id="ps-import"><span data-ico="box" data-ico-size="14"></span> Import Excel (OPC)</button>
+              <button id="ps-export"><span data-ico="download" data-ico-size="14"></span> Export to Excel</button>
+              <button id="ps-clear" class="ps-menu-danger" title="Delete all activities for this project">Clear schedule…</button>
+            </div>
+          </div>
+          <input type="file" id="ps-import-file" accept=".xlsx,.xls" style="display:none" />
+          <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
+          <span class="ps-tb-div"></span>
+          <select class="pd-select" id="ps-project" style="min-width:220px;max-width:320px;"></select>
+          <select class="pd-select" id="ps-group" title="Group activities by" style="max-width:180px;">
             <option value="wbs">Group: WBS</option>
             <option value="status">Group: Status</option>
             <option value="responsible">Group: Responsible</option>
             <option value="type">Group: Type</option>
           </select>
-          <span class="ps-tb-spacer"></span>
-          <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
-        </div>
-        <!-- Row 2: view + actions, grouped by separators -->
-        <div class="ps-tb-row">
+          <span class="ps-tb-div"></span>
           <div class="ps-seg" id="ps-zoom" title="Timeline scale">
             <button data-zoom="month">Month</button>
             <button data-zoom="quarter" class="active">Quarter</button>
             <button data-zoom="year">Year</button>
           </div>
-          <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-expand">Expand all</button>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-collapseto">Collapse to ▾</button><div class="ps-menu" id="ps-collapse-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn"><span data-ico="filter" data-ico-size="15"></span> Filter</button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
-          <span class="ps-tb-div"></span>
-          <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="risk" data-ico-size="15"></span> Critical path</button>
-          <button class="pd-btn" id="ps-linkmode" title="Link mode: drag from one activity bar to another to create a Finish-to-Start relationship"><span data-ico="link" data-ico-size="15"></span> Link</button>
-          <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-views">Views ▾</button><div class="ps-menu" id="ps-views-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Edit Gantt bar colors">Colors ▾</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-schedbtn" title="Scheduling options">Schedule ▾</button><div class="ps-menu ps-sched-menu" id="ps-sched-menu"></div></div>
+          <span class="ps-tb-div"></span>
+          <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="risk" data-ico-size="15"></span> Critical path</button>
+          <button class="pd-btn" id="ps-linkmode" title="Link mode: drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="15"></span> Link</button>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="15"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
+          <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="15"></span></button>
           <span class="ps-tb-spacer"></span>
-          <button class="pd-btn" id="ps-refresh"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
-          <button class="pd-btn" id="ps-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
-          <button class="pd-btn" id="ps-import"><span data-ico="box" data-ico-size="15"></span> Import Excel (OPC)</button>
-          <input type="file" id="ps-import-file" accept=".xlsx,.xls" style="display:none" />
-          <button class="pd-btn pd-btn-danger" id="ps-clear" title="Delete all activities for this project">Clear</button>
+          <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:200px;" /></div>
         </div>
       </div>
 
@@ -307,9 +307,6 @@
             <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
           </div>
         </div>
-        <p style="font-size:12px;color:var(--pd-muted);margin-top:8px;">
-          Tip: click any activity cell to edit inline. Drag a bar to move it; drag its edges to resize. WBS summary rows roll up automatically.
-        </p>
 
         <!-- OPC-style Activity Details / Project Usage panel (driven by selected activity) -->
         <div class="ps-details" id="ps-details">
@@ -1035,12 +1032,20 @@
           var t = DL[vk]; if (t._dkind !== 'task' || !t._relObjs) continue; var b = vis[String(t.activity_id)]; if (!b) continue;
           t._relObjs.forEach(function (rel) {
             var a = vis[String(rel.p.activity_id)]; if (!a) return;
-            var fromX = (rel.type === 'SS' || rel.type === 'SF') ? a.sx : a.ex;
-            var toX = (rel.type === 'FF' || rel.type === 'SF') ? b.ex : b.sx;
-            var midx = fromX + 8;
-            lines += '<path d="M' + fromX + ' ' + a.y + ' L' + midx + ' ' + a.y + ' L' + midx + ' ' + b.y + ' L' + toX + ' ' + b.y + '" class="ps-dep" marker-end="url(#ps-arrow)"/>';
-            if (rel.type !== 'FS') lines += '<text x="' + (midx + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deptype">' + rel.type + (rel.lag ? (rel.lag > 0 ? '+' : '') + rel.lag : '') + '</text>';
-            else if (rel.lag) lines += '<text x="' + (midx + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
+            // Anchor each end on the correct edge for the relationship type, then step OUT of the
+            // bar before turning — SS/SF leave from a bar's start (left) edge so the step must go
+            // left (into the bar would cut through it); FF/SF arrive at a bar's finish (right) edge
+            // so the approach must come from the right. Previously both steps always went +8px
+            // (rightward), which routed straight through the source/target bar for SS/SF/FF.
+            var isSrcStart = (rel.type === 'SS' || rel.type === 'SF');
+            var isDstEnd = (rel.type === 'FF' || rel.type === 'SF');
+            var fromX = isSrcStart ? a.sx : a.ex;
+            var toX = isDstEnd ? b.ex : b.sx;
+            var srcOut = fromX + (isSrcStart ? -8 : 8);
+            var dstOut = toX + (isDstEnd ? 8 : -8);
+            lines += '<path d="M' + fromX + ' ' + a.y + ' L' + srcOut + ' ' + a.y + ' L' + srcOut + ' ' + b.y + ' L' + dstOut + ' ' + b.y + ' L' + toX + ' ' + b.y + '" class="ps-dep" marker-end="url(#ps-arrow)"/>';
+            if (rel.type !== 'FS') lines += '<text x="' + (srcOut + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deptype">' + rel.type + (rel.lag ? (rel.lag > 0 ? '+' : '') + rel.lag : '') + '</text>';
+            else if (rel.lag) lines += '<text x="' + (srcOut + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
           });
         }
         if (lines) bc.insertAdjacentHTML('beforeend', '<svg class="ps-deps" width="' + _tlW + '" height="' + (last * ROWH) + '" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5;"><defs><marker id="ps-arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--pd-red)"/></marker></defs>' + lines + '</svg>');
@@ -1606,12 +1611,14 @@
     var cMenu = document.getElementById('ps-collapse-menu'), fMenu = document.getElementById('ps-filter-menu');
     var vMenu = document.getElementById('ps-views-menu');
     var sMenu = document.getElementById('ps-sched-menu'), colMenu = document.getElementById('ps-colors-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); sMenu.classList.remove('open'); colMenu.classList.remove('open'); }
+    var aMenu = document.getElementById('ps-actions-menu');
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); sMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); }
     document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); closeMenus(); cMenu.classList.toggle('open'); };
     document.getElementById('ps-filterbtn').onclick = function (e) { e.stopPropagation(); var o = fMenu.classList.contains('open'); closeMenus(); if (!o) fMenu.classList.add('open'); };
     document.getElementById('ps-views').onclick = function (e) { e.stopPropagation(); var o = vMenu.classList.contains('open'); closeMenus(); if (!o) { renderViewsMenu(); vMenu.classList.add('open'); } };
     document.getElementById('ps-schedbtn').onclick = function (e) { e.stopPropagation(); var o = sMenu.classList.contains('open'); closeMenus(); if (!o) { renderSchedMenu(); sMenu.classList.add('open'); } };
     document.getElementById('ps-colorsbtn').onclick = function (e) { e.stopPropagation(); var o = colMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colMenu.classList.add('open'); } };
+    document.getElementById('ps-actionsbtn').onclick = function (e) { e.stopPropagation(); var o = aMenu.classList.contains('open'); closeMenus(); if (!o) aMenu.classList.add('open'); };
     document.getElementById('ps-linkmode').onclick = function (e) { e.stopPropagation(); toggleLinkMode(); };
     document.querySelectorAll('.ps-dtab').forEach(function (b) { b.onclick = function () { detailTab = b.dataset.dtab; document.querySelectorAll('.ps-dtab').forEach(function (x) { x.classList.toggle('active', x === b); }); renderDetails(); }; });
 
