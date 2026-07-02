@@ -1144,8 +1144,13 @@
             // Anchor each end on the correct edge for the relationship type, then step OUT of the
             // bar before turning — SS/SF leave from a bar's start (left) edge so the step must go
             // left (into the bar would cut through it); FF/SF arrive at a bar's finish (right) edge
-            // so the approach must come from the right. Previously both steps always went +8px
-            // (rightward), which routed straight through the source/target bar for SS/SF/FF.
+            // so the approach must come from the right.
+            //
+            // The arrowhead alone isn't enough to tell types apart at a glance: FS and SS both end
+            // with an arrow pointing into the successor's START, and FF/SF both end pointing into
+            // its FINISH — the only difference is which edge the line leaves the PREDECESSOR from,
+            // which is easy to miss without tracing the line back. A filled dot at the origin point
+            // makes both anchor edges visible without reading the FS/SS/FF/SF text label at all.
             var isSrcStart = (rel.type === 'SS' || rel.type === 'SF');
             var isDstEnd = (rel.type === 'FF' || rel.type === 'SF');
             var fromX = isSrcStart ? a.sx : a.ex;
@@ -1153,6 +1158,7 @@
             var srcOut = fromX + (isSrcStart ? -8 : 8);
             var dstOut = toX + (isDstEnd ? 8 : -8);
             lines += '<path d="M' + fromX + ' ' + a.y + ' L' + srcOut + ' ' + a.y + ' L' + srcOut + ' ' + b.y + ' L' + dstOut + ' ' + b.y + ' L' + toX + ' ' + b.y + '" class="ps-dep" marker-end="url(#ps-arrow)"/>';
+            lines += '<circle cx="' + fromX + '" cy="' + a.y + '" r="2.5" class="ps-depdot"/>';
             if (rel.type !== 'FS') lines += '<text x="' + (srcOut + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deptype">' + rel.type + (rel.lag ? (rel.lag > 0 ? '+' : '') + rel.lag : '') + '</text>';
             else if (rel.lag) lines += '<text x="' + (srcOut + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
           });

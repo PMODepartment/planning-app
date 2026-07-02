@@ -77,6 +77,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-02 — Prompt 48: Fix FS/SS/FF/SF still reading as "just a label"
+- User reported the relationship arrows still weren't "working" after the earlier routing fix.
+  Root cause found by testing interactively (drag-to-link, manual predecessor entry, both
+  verified end-to-end against a clean fixture — the earlier routing math was correct): the
+  arrowhead alone doesn't distinguish types at a glance. FS and SS both end with an arrow
+  pointing into the successor's **start**; FF and SF both end pointing into its **finish**. The
+  only visual difference between, say, FS and SS is which edge the line *leaves the
+  predecessor* from — easy to miss without deliberately tracing the line back to the source bar.
+  So in practice it read as "same-looking line + a small FS/SS/FF/SF text tag," exactly what the
+  user described not wanting.
+- **Fix:** added a filled dot (`.ps-depdot` — the CSS already existed from an earlier prompt but
+  was never actually emitted) at the line's origin point on the predecessor bar. Now both ends
+  are explicitly marked: a dot at the predecessor's start-or-finish edge, an arrowhead at the
+  successor's start-or-finish edge — the relationship type is visible from the shape alone, the
+  text label is now reinforcement rather than the only signal.
+- Verified against a synthetic 5-activity fixture (one source, one FS/SS/FF/SF descendant each):
+  confirmed via computed pixel coordinates that FS/FF dots land exactly on the source's finish
+  edge and SS/SF dots land exactly on its start edge, then visually confirmed the rendered SVG
+  shapes read correctly at 4x scale. Also re-confirmed the live GitHub Pages deploy matches
+  `main` byte-for-byte, ruling out a stale-cache explanation for "not working."
+
 ### 2026-07-02 — Prompt 47: Schedule Health Score + Undo/Redo (OPC top-bar icon parity)
 - User shared a screenshot of OPC's top-right icon strip (save-status, undo, redo, Schedule
   Health Score, Run Report, Share). Checked each against this module: **Undo/Redo** and
