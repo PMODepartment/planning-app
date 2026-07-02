@@ -79,7 +79,9 @@ developer, plug into one shared shell.
 
 ### 2026-07-01 — Prompt 44 (Desktop): S-Curve forecast line + transposed data table
 - Added a **red dashed forecast-to-finish line** from the actual point at the
-  data date up to 100% at the final period (`.sc-forecast`; legend updated).
+  data date up to 100% at a **manual Forecast finish date** (date input in the
+  controls; per-project, saved in `localStorage['sc_fc_<pid>']`; defaults to the
+  planned finish). Timeline extends to cover a slipped forecast. `.sc-forecast`.
 - **Data table transposed** to OPC-style: months across the top (scrolls left↔
   right), two rows (Planned % / Actual POC); first column (POC labels) is sticky.
 

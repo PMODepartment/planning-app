@@ -63,6 +63,7 @@
       <div class="sc-controls">
         <select class="pd-select" id="sc-project" style="max-width:340px;"></select>
         <button class="pd-btn" id="sc-refresh"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--pd-muted);">Forecast finish <input class="pd-input" type="date" id="sc-forecast" style="max-width:160px;" title="Forecast completion date — sets the end of the red dashed forecast line" /></label>
         <button class="pd-btn" id="sc-tabletoggle" style="margin-left:auto;"><span data-ico="listView" data-ico-size="15"></span> Show data table</button>
       </div>
       <div class="sc-kpis" id="sc-kpis"></div>
@@ -88,10 +89,13 @@
 <script>
 (function () {
   'use strict';
-  var TABLE = 'project_schedule', pid = null, rows = [];
+  var TABLE = 'project_schedule', pid = null, rows = [], forecastFinish = null;
   function sb() { return AppAuth.getSB(); }
   function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); if (!m) return null; return new Date(+m[1], +m[2]-1, +m[3]); }
   function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
+  function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function fcKey() { return 'sc_fc_' + pid; }
+  function plannedFinishDate() { var mx = null; rows.forEach(function (a) { if (a.activity_type === 'WBS Summary') return; var e = pd(a.end_date); if (e && (!mx || e > mx)) mx = e; }); return mx; }
   function esc(s) { return Fmt.esc(s); }
   function isWbs(r) { return r.activity_type === 'WBS Summary'; }
   function showLoading() { var e = document.getElementById('sc-loading'); if (e) e.style.display = 'flex'; }
@@ -123,7 +127,12 @@
         while (true) { var r1 = await sb().from(TABLE).select('*').eq('project_id', pid).range(from, from + 999); if (r1.error) throw r1.error; all = all.concat(r1.data || []); if ((r1.data || []).length < 1000) break; from += 1000; }
       }
     } catch (e) { hideLoading(); UI.toast('Load failed: ' + (e.message || e), 'error'); return; }
-    hideLoading(); rows = all; render();
+    hideLoading(); rows = all;
+    // Load saved forecast finish for this project (default = planned finish).
+    var saved = null; try { var sv = localStorage.getItem(fcKey()); if (sv) saved = pd(sv); } catch (e) {}
+    forecastFinish = saved || plannedFinishDate();
+    var fi = document.getElementById('sc-forecast'); if (fi) fi.value = forecastFinish ? iso(forecastFinish) : '';
+    render();
   }
 
   // Schedule progress S-curve (duration-weighted). Cost / earned-value (EVM) is
@@ -138,9 +147,14 @@
     leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date); if (s) ds.push(+s); if (e) de.push(+e); });
     if (!ds.length) return { empty: true };
     var min = new Date(Math.min.apply(null, ds)), max = new Date(Math.max.apply(null, de.length ? de : ds));
-    var months = [], c = new Date(min.getFullYear(), min.getMonth(), 1);
-    while (c <= max) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    var plannedEnd = max;
     var tnow = today();
+    // Manual forecast finish (defaults to the planned finish); the timeline is
+    // extended to cover it so a slipped forecast is visible past the plan.
+    var fc = forecastFinish || plannedEnd;
+    var domainMax = new Date(Math.max(+max, +tnow, +fc));
+    var months = [], c = new Date(min.getFullYear(), min.getMonth(), 1);
+    while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
     var overallDone = leaves.reduce(function (s, a) { return s + done(a); }, 0);
     var plannedC = [], actualC = [];
     months.forEach(function (m) {
@@ -168,7 +182,7 @@
     for (var k = ti + 1; k < actualC.length; k++) actualC[k] = 0;  // no actuals past the data date
     var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0;
     var overallPct = TOT ? overallDone / TOT * 100 : 0;
-    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length };
+    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length, plannedEnd: plannedEnd, fcFinish: fc };
   }
 
   function render() { var d = compute(); renderKpis(d); renderChart(d); renderTable(d); }
@@ -201,10 +215,16 @@
     var pl = d.plannedC.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ');
     var ac = []; d.actualC.forEach(function (v, i) { if (i <= d.ti) ac.push(x(i) + ',' + y(v)); });
     // Forecast to finish: red dashed line from the actual point at the data date
-    // up to project completion (100%) at the final period.
+    // up to 100% at the manual forecast-finish date (mapped precisely on the axis).
+    function xAt(D) {
+      var m0 = d.months[0];
+      var fi = (D.getFullYear() - m0.getFullYear()) * 12 + (D.getMonth() - m0.getMonth()) + (D.getDate() - 1) / new Date(D.getFullYear(), D.getMonth() + 1, 0).getDate();
+      fi = Math.max(0, Math.min(n - 1, fi));
+      return padL + (n <= 1 ? 0 : fi / (n - 1) * (W - padL - padR));
+    }
     var fc = '';
-    if (d.ti < n - 1) {
-      fc = '<polyline class="sc-forecast" points="' + x(d.ti) + ',' + y(d.actualC[d.ti]) + ' ' + x(n - 1) + ',' + y(d.TOT) + '"/>';
+    if (d.fcFinish) {
+      fc = '<polyline class="sc-forecast" points="' + x(d.ti) + ',' + y(d.actualC[d.ti]) + ' ' + xAt(d.fcFinish) + ',' + y(d.TOT) + '"/>';
     }
     var tx = x(d.ti);
     var todayL = '<line x1="' + tx + '" y1="' + padT + '" x2="' + tx + '" y2="' + (H - padB) + '" class="sc-today"/><text x="' + (tx + 4) + '" y="' + (padT + 10) + '" class="sc-today-lab">Data date</text>';
@@ -238,6 +258,12 @@
     UI.initShell();
     document.getElementById('sc-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load(); };
     document.getElementById('sc-refresh').onclick = function () { load(); };
+    document.getElementById('sc-forecast').onchange = function (e) {
+      var v = e.target.value;
+      forecastFinish = v ? pd(v) : plannedFinishDate();
+      try { if (v) localStorage.setItem(fcKey(), v); else localStorage.removeItem(fcKey()); } catch (er) {}
+      render();
+    };
     document.getElementById('sc-tabletoggle').onclick = function () {
       var card = document.getElementById('sc-tablecard');
       var show = card.style.display === 'none';
