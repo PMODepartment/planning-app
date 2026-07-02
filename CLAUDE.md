@@ -77,6 +77,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-02 — Prompt 49: Match Avesta's live OPC columns
+- Pulled the exact column list off Avesta's live "OPS. Edit Cost Load…" view (Primavera Cloud)
+  and compared to ours. Gaps closed:
+  - **Status** — new column in the Schedule grid (ID, Name, **Status**, BL Start/Finish, Start,
+    Finish, matching OPC's order), rendered as a colored pill (muted/amber/green for Not
+    Started/In Progress/Completed). Field already existed (used for filtering); just wasn't
+    shown as a grid column before.
+  - **% Complete Type** — new column in the Cost Loading table (field already existed from the
+    2026-07-01 OPC fields migration, wasn't displayed anywhere but the modal).
+  - **Planned % (POC)** — new computed column: the schedule-*expected* % complete by today,
+    linearly interpolated between baseline start/finish (`plannedPOC()`). We had no per-activity
+    "where should this be by now" metric before — only the actual/earned %.
+  - **At Completion (EAC)** — new computed column: standard `AC + (BAC-EV)/CPI` estimate-at-
+    completion cost, falling back to the plan itself when there's no actual cost/CPI yet
+    (`eac()`). No new column needed.
+  - **Baseline Cost** (OPC's "BL Planned IBB") — the one true schema gap; we stored baseline
+    *dates* (`bl_start`/`bl_finish`) but never a baseline *cost* snapshot. Added `bl_cost`
+    (migration `2026-07-02-baseline-cost-column.sql`, seeded from current Planned Cost — same
+    pattern as the original bl_start/bl_finish seeding). New field in the Add/Edit modal, new
+    column in Cost Loading + the Activity Usage detail tab + Excel export. **User must run this
+    migration.**
+- Verified against a synthetic fixture with real baseline dates/costs: hand-checked Planned%
+  (79% for a Jun 1–Jul 10 baseline as of Jul 2), CPI (0.92), and EAC (₱109,090.91) all computed
+  correctly, and confirmed the Baseline Cost field round-trips through the Add/Edit modal into
+  the Cost Loading table.
+
 ### 2026-07-02 — Prompt 48: Fix FS/SS/FF/SF still reading as "just a label"
 - User reported the relationship arrows still weren't "working" after the earlier routing fix.
   Root cause found by testing interactively (drag-to-link, manual predecessor entry, both

@@ -200,6 +200,7 @@ create table if not exists project_schedule (
   actual_finish   date,
   bl_start        date,
   bl_finish       date,
+  bl_cost         numeric(18,2),   -- baseline planned cost (migration 2026-07-02-baseline-cost-column.sql)
   -- OPC Activity Details fields (migration 2026-07-01-project-schedule-opc-fields.sql)
   owner                   text,
   work_package            text,

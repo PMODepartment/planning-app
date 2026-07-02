@@ -77,7 +77,7 @@ create table if not exists project_schedule (
   planned_cost numeric(18,2), actual_cost numeric(18,2), earned_value numeric(18,2), period date, remarks text,
   -- evolved schedule columns (see migrations)
   activity_type text default 'Task', status text default 'Not Started', responsible_party text,
-  actual_start date, actual_finish date, bl_start date, bl_finish date,
+  actual_start date, actual_finish date, bl_start date, bl_finish date, bl_cost numeric(18,2),
   -- OPC Activity Details fields
   owner text, work_package text, calendar text,
   duration_type text default 'Fixed Duration & Units/Time', percent_complete_type text default 'Duration',

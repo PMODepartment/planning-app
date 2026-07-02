@@ -40,6 +40,11 @@ primary_constraint, primary_constraint_date, secondary_constraint,
 secondary_constraint_date`. All editable in the Add/Edit modal and shown in the
 General/Status detail tabs (At-Completion Duration/Labor are computed).
 
+## Schema additions (2026-07-02) — Baseline cost
+Run `../../migrations/2026-07-02-baseline-cost-column.sql`. Adds `bl_cost` (baseline
+planned cost, matches OPC's "BL Planned IBB"), seeded from the current Planned Cost.
+Editable in the modal; shown in the Cost Loading table.
+
 ## Module design
 
 **Three-tab layout (Primavera Cloud reference):**
