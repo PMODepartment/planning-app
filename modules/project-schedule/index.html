@@ -48,7 +48,7 @@
     .ps-grid-pane { flex:0 0 660px; max-width:70%; display:flex; flex-direction:column; border-right:2px solid var(--pd-line); min-width:0; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    .ps-grid-pane { --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-pct:60px; --c-flt:64px; --c-var:76px; }
+    .ps-grid-pane { --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; }
     .ps-grid-scroll { overflow:auto; flex:1 1 auto; min-height:0; }
     .ps-grid-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); flex:none; }
     .ps-grid-row { display:flex; align-items:stretch; height:34px; border-bottom:1px solid var(--pd-line);
@@ -63,6 +63,9 @@
     .ps-status-inprogress { background:rgba(199,119,0,.14); color:var(--pd-warn); }
     .ps-status-completed { background:rgba(31,143,78,.14); color:var(--pd-ok); }
     .c-dur { width:var(--c-dur); justify-content:flex-end; } .c-pct { width:var(--c-pct); justify-content:flex-end; }
+    .c-poc { width:var(--c-poc); justify-content:flex-end; }
+    .c-cost { width:var(--c-cost); justify-content:flex-end; }
+    .c-ctype { width:var(--c-ctype); }
     .c-flt { width:var(--c-flt); justify-content:flex-end; }
     .c-var { width:var(--c-var); justify-content:flex-end; }
     .ps-cp-tag { background:var(--pd-red); color:#fff; font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; letter-spacing:.03em; }
@@ -626,7 +629,7 @@
 
   // ---- WBS-code helpers + precomputed caches (rebuilt only when rows change) ----
   function segs(c) { return String(c == null ? '' : c).split('.'); }
-  var _sorted = [], _min = null, _max = null, _spanMap = {};
+  var _sorted = [], _min = null, _max = null, _spanMap = {}, _costMap = {};
   function rebuild() {
     rows.forEach(function (r) {
       r._segs = segs(r.wbs); r._depth = Math.max(0, r._segs.length - 1);
@@ -654,6 +657,26 @@
       var s = pd(r.start_date), e = pd(r.end_date); if (!s && !e) return; if (!s) s = e; if (!e) e = s;
       var codes = [r.wbs].concat(r._anc || []);
       for (var i = 0; i < codes.length; i++) { var m = _spanMap[codes[i]]; if (!m) _spanMap[codes[i]] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
+    });
+    // precompute cost/POC roll-ups per WBS code (OPC shows IBB sums + weighted POC on summary
+    // rows). Costs sum; POC %s are duration-weighted (planned POC only over rows that have a
+    // baseline, hence the separate wdPoc denominator).
+    _costMap = {};
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : 0;
+      var poc = plannedPOC(r);
+      var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
+      var codes2 = [r.wbs].concat(r._anc || []);
+      for (var j = 0; j < codes2.length; j++) {
+        var cm = _costMap[codes2[j]] || (_costMap[codes2[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0 });
+        cm.pc += r.planned_cost || 0; cm.ac += r.actual_cost || 0; cm.ev += r.earned_value || 0; cm.bl += r.bl_cost || 0;
+        cm.eac += eac(r, cpi);
+        if (dur > 0) {
+          cm.wd += dur; cm.wearn += dur * (r.percent_complete || 0);
+          if (poc != null) { cm.wdPoc += dur; cm.wpoc += dur * poc; }
+        }
+      }
     });
     computeCPM();   // auto-derive critical path on every data change
   }
@@ -1014,9 +1037,18 @@
   // ----- COLUMN HEADER (static, resizable) -----
   function renderHeader() {
     var head = document.getElementById('ps-grid-head'); if (!head) return;
-    var cols = [['id','Activity ID','c-id'],['name','Activity Name','c-name'],['status','Status','c-status'],['date','BL Start','c-date'],['date','BL Finish','c-date'],['date','Start','c-date'],['date','Finish','c-date'],['dur','Dur','c-dur'],['pct','%','c-pct'],['flt','Float','c-flt'],['var','Var (BL)','c-var']];
+    // Column set + order mirrors OPC's Activities view (Avesta "Edit Cost Load" layout):
+    // ID, Name, Status, BL0 Start/Finish, Start, Finish, then the POC/IBB cost columns.
+    var cols = [['id','Activity ID','c-id'],['name','Activity Name','c-name'],['status','Status','c-status'],
+      ['date','BL Start','c-date'],['date','BL Finish','c-date'],['date','Start','c-date'],['date','Finish','c-date'],
+      ['dur','Dur','c-dur'],
+      ['poc','Planned Value POC','c-poc'],['pct','Earned Value POC','c-pct'],
+      ['cost','Planned IBB','c-cost'],['cost','Actual IBB to date','c-cost'],['cost','Earned Value IBB','c-cost'],
+      ['cost','At Completion IBB','c-cost'],['cost','BL Planned IBB','c-cost'],
+      ['ctype','Percent Complete Type','c-ctype'],
+      ['flt','Float','c-flt'],['var','Var (BL)','c-var']];
     head.innerHTML = '<div class="ps-grid-row head">' + cols.map(function (c) {
-      return '<div class="ps-cell ' + c[2] + '">' + c[1] + '<span class="ps-colgrip" data-col="' + c[0] + '" title="Drag to resize column"></span></div>';
+      return '<div class="ps-cell ' + c[2] + '" title="' + c[1] + '">' + c[1] + '<span class="ps-colgrip" data-col="' + c[0] + '" title="Drag to resize column"></span></div>';
     }).join('') + '</div>';
     head.querySelectorAll('.ps-colgrip').forEach(function (g) { g.addEventListener('mousedown', function (e) { startColResize(e, g.dataset.col); }); });
   }
@@ -1027,7 +1059,7 @@
     function mm(ev) { pane.style.setProperty(vn, Math.max(40, cur + (ev.clientX - sx)) + 'px'); }
     function up() {
       document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
-      try { var w = {}; ['id','name','status','date','dur','pct','flt','var'].forEach(function (c) { w[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e2) {}
+      try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var'].forEach(function (c) { w[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e2) {}
     }
     document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
   }
@@ -1046,6 +1078,44 @@
     var cls = s === 'Completed' ? 'ps-status-completed' : (s === 'In Progress' ? 'ps-status-inprogress' : 'ps-status-notstarted');
     return '<div class="ps-cell c-status"><span class="ps-status-pill ' + cls + '">' + esc(s) + '</span></div>';
   }
+  // POC/IBB cell block shared by the WBS-summary and task branches. For summaries the values
+  // are the _costMap roll-ups (sums + duration-weighted %s); for tasks they're the row's own
+  // fields, with the cost cells inline-editable ('money' type — like 'number' but not clamped
+  // to 100). Group headers (status/responsible/type groupings) get blank cells: their members
+  // are scattered across the WBS tree, so the per-WBS-code roll-up map doesn't apply.
+  function costCellsHtml(r) {
+    if (r._dkind === 'group') {
+      return '<div class="ps-cell c-poc"></div><div class="ps-cell c-pct"></div>' +
+        '<div class="ps-cell c-cost"></div><div class="ps-cell c-cost"></div><div class="ps-cell c-cost"></div>' +
+        '<div class="ps-cell c-cost"></div><div class="ps-cell c-cost"></div><div class="ps-cell c-ctype"></div>';
+    }
+    if (isWbsNode(r)) {
+      var cm = _costMap[r._realCode || r.wbs];
+      var wPoc = (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) + '%' : '';
+      var wEarn = (cm && cm.wd > 0) ? Math.round(cm.wearn / cm.wd) + '%' : '';
+      function s(v) { return (cm && v) ? Fmt.money(v) : ''; }
+      return '<div class="ps-cell c-poc">' + wPoc + '</div><div class="ps-cell c-pct">' + wEarn + '</div>' +
+        '<div class="ps-cell c-cost">' + s(cm && cm.pc) + '</div>' +
+        '<div class="ps-cell c-cost">' + s(cm && cm.ac) + '</div>' +
+        '<div class="ps-cell c-cost">' + s(cm && cm.ev) + '</div>' +
+        '<div class="ps-cell c-cost">' + s(cm && cm.eac) + '</div>' +
+        '<div class="ps-cell c-cost">' + s(cm && cm.bl) + '</div>' +
+        '<div class="ps-cell c-ctype"></div>';
+    }
+    var poc = plannedPOC(r);
+    var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
+    var hasCost = r.planned_cost != null || r.actual_cost != null || r.earned_value != null;
+    function money(field) {
+      var v = r[field];
+      return '<div class="ps-cell c-cost ps-editable" data-id="' + r.id + '" data-field="' + field + '" data-type="money">' + (v != null ? Fmt.money(v) : '') + '</div>';
+    }
+    return '<div class="ps-cell c-poc">' + (poc != null ? poc + '%' : '') + '</div>' +
+      '<div class="ps-cell c-pct ps-editable" data-id="' + r.id + '" data-field="percent_complete" data-type="number">' + (r.percent_complete != null ? r.percent_complete + '%' : '') + '</div>' +
+      money('planned_cost') + money('actual_cost') + money('earned_value') +
+      '<div class="ps-cell c-cost">' + (hasCost ? Fmt.money(eac(r, cpi)) : '') + '</div>' +
+      money('bl_cost') +
+      '<div class="ps-cell c-ctype">' + esc(r.percent_complete_type || '') + '</div>';
+  }
   function gridRowHTML(r, i) {
     var altc = (i % 2) ? ' ps-alt' : '';
     var depth = ddepth(r), code = dcode(r);
@@ -1058,7 +1128,8 @@
         '<div class="ps-cell c-date"></div><div class="ps-cell c-date"></div>' +
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.e)) : '—') + '</div>' +
-        '<div class="ps-cell c-dur"></div><div class="ps-cell c-pct"></div><div class="ps-cell c-flt"></div><div class="ps-cell c-var"></div></div>';
+        '<div class="ps-cell c-dur"></div>' + costCellsHtml(r) +
+        '<div class="ps-cell c-flt"></div><div class="ps-cell c-var"></div></div>';
     }
     if (isWbsNode(r)) {
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
@@ -1069,7 +1140,7 @@
         '<div class="ps-cell c-date"></div><div class="ps-cell c-date"></div>' +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.e)) : '—') + '</div>' +
-        '<div class="ps-cell c-dur"></div><div class="ps-cell c-pct"></div>' +
+        '<div class="ps-cell c-dur"></div>' + costCellsHtml(r) +
         '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + varCellHtml(r) + '</div>';
     }
     var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : (r.duration_days || '');
@@ -1083,7 +1154,7 @@
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="start_date" data-type="date">' + (r.start_date ? Fmt.date(r.start_date) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="end_date" data-type="date">' + (r.end_date ? Fmt.date(r.end_date) : '—') + '</div>' +
       '<div class="ps-cell c-dur">' + (dur ? dur + 'd' : '') + '</div>' +
-      '<div class="ps-cell c-pct ps-editable" data-id="' + r.id + '" data-field="percent_complete" data-type="number">' + (r.percent_complete != null ? r.percent_complete + '%' : '') + '</div>' +
+      costCellsHtml(r) +
       '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + '</div>';
   }
 
@@ -1202,7 +1273,7 @@
     var cur = r[field]; var raw = cur == null ? '' : cur;
     if (type === 'date') raw = r[field] ? String(r[field]).slice(0,10) : '';
     var inp = document.createElement('input');
-    inp.type = type === 'date' ? 'date' : (type === 'number' ? 'number' : 'text');
+    inp.type = type === 'date' ? 'date' : (type === 'number' || type === 'money' ? 'number' : 'text');
     inp.value = raw;
     cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); if (inp.select) inp.select();
     var done = false;
@@ -1212,6 +1283,7 @@
       var val = inp.value;
       var patch = {};
       if (type === 'number') { patch[field] = val === '' ? null : Math.max(0, Math.min(100, parseFloat(val)||0)); }
+      else if (type === 'money') { patch[field] = val === '' ? null : Math.max(0, parseFloat(val) || 0); }
       else if (type === 'date') { patch[field] = val || null; }
       else { patch[field] = val.trim() || null; }
       // recompute duration if start/finish changed
@@ -1463,10 +1535,13 @@
         'Predecessors': r.predecessors || '',
         'Successors': (r._succObjs && r._succObjs.length) ? r._succObjs.map(function (s) { return s.id + (s.type && s.type !== 'FS' ? ' ' + s.type : '') + (s.lag ? (s.lag > 0 ? '+' : '') + s.lag : ''); }).join(', ') : '',
         'Responsible': r.responsible_party || '',
-        'Baseline Cost': r.bl_cost != null ? r.bl_cost : '',
-        'Planned Cost': r.planned_cost != null ? r.planned_cost : '',
-        'Actual Cost': r.actual_cost != null ? r.actual_cost : '',
-        'Earned Value': r.earned_value != null ? r.earned_value : ''
+        'Planned Value POC': (function () { var p = plannedPOC(r); return p != null ? p : ''; })(),
+        'Planned IBB': r.planned_cost != null ? r.planned_cost : '',
+        'Actual IBB to date': r.actual_cost != null ? r.actual_cost : '',
+        'Earned Value IBB': r.earned_value != null ? r.earned_value : '',
+        'At Completion IBB': (function () { if (r.planned_cost == null && r.actual_cost == null && r.earned_value == null) return ''; var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; return Math.round(eac(r, cpi) * 100) / 100; })(),
+        'BL Planned IBB': r.bl_cost != null ? r.bl_cost : '',
+        'Percent Complete Type': r.percent_complete_type || ''
       };
     });
     var ws = XLSX.utils.json_to_sheet(data);

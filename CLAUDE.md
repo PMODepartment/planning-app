@@ -77,6 +77,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-02 — Prompt 50: POC/IBB columns into the Activities grid itself
+- User asked why the OPC columns (Planned/Earned Value POC, Planned/Actual/EV/At Completion/BL
+  IBB, Percent Complete Type) weren't visible in the **activities view** — Prompt 49 had put
+  them in the Cost Loading *tab*, but in OPC they're columns of the main Activities grid. Moved
+  them into the Schedule grid with **OPC's exact names and order**: ID, Name, Status, BL
+  Start/Finish, Start, Finish, Dur, Planned Value POC, Earned Value POC, Planned IBB, Actual
+  IBB to date, Earned Value IBB, At Completion IBB, BL Planned IBB, Percent Complete Type,
+  Float, Var (BL). The old "%" column became "Earned Value POC" (same field). Grid h-scrolls
+  (as OPC's does); all columns resizable/persisted.
+- **WBS summary rows roll up like OPC's**: new `_costMap` precomputed in `rebuild()` (one pass,
+  same pattern as `_spanMap`) — IBB costs sum up the tree; POC %s are duration-weighted
+  (planned POC weighted only over rows that have a baseline — separate denominator). EAC sums
+  per-activity estimates. Roll-ups shown in WBS grouping mode; blank on Status/Responsible/Type
+  group headers (their members span multiple WBS branches, so per-code roll-ups don't apply).
+- **Cost cells are inline-editable** (dblclick, like dates/%): new `'money'` edit type in
+  `beginEdit` — the existing `'number'` type clamps to 0–100 (built for %) and would have
+  silently corrupted any cost > 100. Money edits go through `persist()` so they're undoable and
+  the roll-ups recompute live.
+- Excel export renamed/extended to the same OPC vocabulary (Planned/Actual/EV/At Completion/BL
+  IBB, Planned Value POC, Percent Complete Type).
+- Verified in the harness: 18 headers, all three row branches emit exactly 18 cells (group/WBS/
+  task), roll-up math hand-checked (79% weighted POC, ₱159,090.91 EAC sum incl. the
+  no-actuals fallback), money edit of ₱75,000 not clamped + roll-up updated live + undo
+  reverted both.
+
 ### 2026-07-02 — Prompt 49: Match Avesta's live OPC columns
 - Pulled the exact column list off Avesta's live "OPS. Edit Cost Load…" view (Primavera Cloud)
   and compared to ours. Gaps closed:
