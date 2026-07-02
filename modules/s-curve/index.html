@@ -26,6 +26,8 @@
     .sc-earned { fill:none; stroke:var(--pd-red); stroke-width:2.5; }
     .sc-today { stroke:var(--pd-red); stroke-width:1.5; stroke-dasharray:4 3; }
     .sc-today-lab { fill:var(--pd-red); font-size:10px; font-weight:700; }
+    .sc-forecast { fill:none; stroke:var(--pd-red); stroke-width:2; stroke-dasharray:7 5; }
+    .sw-forecast { width:18px; height:0; border-top:2px dashed var(--pd-red); }
     .sc-legend { display:flex; flex-wrap:wrap; gap:18px; margin-top:12px; font-size:12px; color:var(--pd-muted); }
     .sc-lg { display:inline-flex; align-items:center; }
     .sw { display:inline-block; width:18px; height:3px; margin-right:6px; }
@@ -34,7 +36,10 @@
     .sc-empty { text-align:center; padding:40px; color:var(--pd-muted); }
     .sc-table { width:100%; border-collapse:collapse; font-size:13px; }
     .sc-table th { background:var(--pd-bg); padding:8px 12px; text-align:right; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
-    .sc-table th:first-child, .sc-table td:first-child { text-align:left; }
+    .sc-table th, .sc-table td { white-space:nowrap; }
+    .sc-table th:first-child, .sc-table td:first-child { text-align:left; position:sticky; left:0; z-index:1; font-weight:700; }
+    .sc-table td:first-child { background:var(--pd-card); }
+    .sc-table th:first-child { background:var(--pd-bg); }
     .sc-table td { padding:7px 12px; border-bottom:1px solid var(--pd-line); text-align:right; }
     .sc-note { font-size:12px; color:var(--pd-muted); margin-top:8px; }
     .sc-loading { position:fixed; inset:0; background:rgba(20,20,20,.4); display:flex; align-items:center; justify-content:center; gap:12px; z-index:999; color:#fff; font-weight:600; }
@@ -67,9 +72,7 @@
         <p class="sc-note" id="sc-basis"></p>
       </div>
       <div class="sc-card" id="sc-tablecard" style="padding:0;overflow:hidden;display:none;">
-        <div style="overflow-x:auto;"><table class="sc-table"><thead><tr>
-          <th>Period</th><th>Planned %</th><th>Actual %</th>
-        </tr></thead><tbody id="sc-tbody"></tbody></table></div>
+        <div style="overflow-x:auto;" id="sc-tablewrap"></div>
       </div>
     </div>
   </div>
@@ -187,7 +190,7 @@
     var host = document.getElementById('sc-chart');
     var basis = document.getElementById('sc-basis');
     if (d.empty) { host.innerHTML = '<div class="sc-empty">' + (pid ? 'This project has no dated activities. Import or add a schedule first.' : 'Select a project.') + '</div>'; basis.textContent = ''; return; }
-    basis.textContent = 'Progress weighted by activity duration across ' + d.activities + ' activities. Actual line stops at the data date. (Cost / earned-value is handled by the EVM dashboard.)';
+    basis.textContent = 'Progress weighted by activity duration across ' + d.activities + ' activities. Solid = planned & actual (to data date); the red dashed line is the forecast to finish. (Cost / earned-value is handled by the EVM dashboard.)';
     var W = 1000, H = 340, padL = 40, padR = 16, padT = 16, padB = 40, n = d.months.length, maxV = d.TOT || 1;
     function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
     function y(v) { return padT + (1 - (v / maxV)) * (H - padT - padB); }
@@ -197,22 +200,37 @@
     d.months.forEach(function (mo, i) { if (mo.getMonth() === 0 || i === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="sc-xlab">' + mo.getFullYear() + '</text>'; });
     var pl = d.plannedC.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ');
     var ac = []; d.actualC.forEach(function (v, i) { if (i <= d.ti) ac.push(x(i) + ',' + y(v)); });
+    // Forecast to finish: red dashed line from the actual point at the data date
+    // up to project completion (100%) at the final period.
+    var fc = '';
+    if (d.ti < n - 1) {
+      fc = '<polyline class="sc-forecast" points="' + x(d.ti) + ',' + y(d.actualC[d.ti]) + ' ' + x(n - 1) + ',' + y(d.TOT) + '"/>';
+    }
     var tx = x(d.ti);
     var todayL = '<line x1="' + tx + '" y1="' + padT + '" x2="' + tx + '" y2="' + (H - padB) + '" class="sc-today"/><text x="' + (tx + 4) + '" y="' + (padT + 10) + '" class="sc-today-lab">Data date</text>';
     host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="sc-svg">' + grid + todayL +
-      '<polyline class="sc-planned" points="' + pl + '"/>' + (ac.length ? '<polyline class="sc-earned" points="' + ac.join(' ') + '"/>' : '') + xlab + '</svg>' +
-      '<div class="sc-legend"><span class="sc-lg"><span class="sw sw-planned"></span> Planned progress</span><span class="sc-lg"><span class="sw sw-earned"></span> Actual progress</span><span class="sc-lg"><span class="sw sw-today"></span> Data date (today)</span></div>';
+      '<polyline class="sc-planned" points="' + pl + '"/>' + fc + (ac.length ? '<polyline class="sc-earned" points="' + ac.join(' ') + '"/>' : '') + xlab + '</svg>' +
+      '<div class="sc-legend"><span class="sc-lg"><span class="sw sw-planned"></span> Planned progress</span><span class="sc-lg"><span class="sw sw-earned"></span> Actual progress</span><span class="sc-lg"><span class="sw sw-forecast"></span> Forecast to finish</span><span class="sc-lg"><span class="sw sw-today"></span> Data date (today)</span></div>';
   }
 
   function renderTable(d) {
-    var body = document.getElementById('sc-tbody');
-    if (d.empty) { body.innerHTML = '<tr><td colspan="3" class="sc-empty">No data.</td></tr>'; return; }
+    var wrap = document.getElementById('sc-tablewrap');
+    if (!wrap) return;
+    if (d.empty) { wrap.innerHTML = '<div class="sc-empty">No data.</div>'; return; }
     var MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    body.innerHTML = d.months.map(function (mo, i) {
-      var pPct = d.TOT ? Math.round(d.plannedC[i] / d.TOT * 1000) / 10 : 0;
-      var aPct = (i <= d.ti && d.TOT) ? Math.round(d.actualC[i] / d.TOT * 1000) / 10 : null;
-      return '<tr><td>' + MABBR[mo.getMonth()] + ' ' + mo.getFullYear() + '</td><td>' + pPct + '%</td><td>' + (aPct != null ? aPct + '%' : '—') + '</td></tr>';
+    // Transposed: months across the top, one row each for Planned & Actual POC.
+    var head = '<th>POC</th>' + d.months.map(function (mo) {
+      return '<th>' + MABBR[mo.getMonth()] + " '" + String(mo.getFullYear()).slice(2) + '</th>';
     }).join('');
+    var planned = '<td>Planned %</td>' + d.months.map(function (mo, i) {
+      var p = d.TOT ? Math.round(d.plannedC[i] / d.TOT * 1000) / 10 : 0;
+      return '<td>' + p + '%</td>';
+    }).join('');
+    var actual = '<td>Actual %</td>' + d.months.map(function (mo, i) {
+      var a = (i <= d.ti && d.TOT) ? Math.round(d.actualC[i] / d.TOT * 1000) / 10 : null;
+      return '<td>' + (a != null ? a + '%' : '—') + '</td>';
+    }).join('');
+    wrap.innerHTML = '<table class="sc-table"><thead><tr>' + head + '</tr></thead><tbody><tr>' + planned + '</tr><tr>' + actual + '</tr></tbody></table>';
   }
 
   AppAuth.requireLogin(function (user, profile) {

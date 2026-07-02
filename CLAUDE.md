@@ -77,6 +77,12 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-01 — Prompt 44 (Desktop): S-Curve forecast line + transposed data table
+- Added a **red dashed forecast-to-finish line** from the actual point at the
+  data date up to 100% at the final period (`.sc-forecast`; legend updated).
+- **Data table transposed** to OPC-style: months across the top (scrolls left↔
+  right), two rows (Planned % / Actual POC); first column (POC labels) is sticky.
+
 ### 2026-07-01 — Prompt 43 (Desktop): S-Curve fix, table toggle, toolbar, critical-path focus
 - **S-Curve actual-line bug fixed:** the current (data-date) month failed the
   `mEnd <= tnow` guard so `actualC[ti]` was 0 → the red actual line dropped to
