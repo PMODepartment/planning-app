@@ -41,6 +41,8 @@
     /* Topbar tools (OPC puts undo/redo/health/share up in the page header) — same flat style,
        sized to sit beside the theme toggle; the filter dropdown right-aligns so it can't
        overflow the viewport edge. */
+    .ps-datadate-badge { font-size:12px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
+      border:1px solid var(--pd-line); border-radius:999px; padding:3px 11px; white-space:nowrap; }
     .ps-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; min-width:0; }
     /* OPC-style project context: project name + workspace subline */
     .ps-projctx { display:flex; flex-direction:column; gap:1px; }
@@ -103,6 +105,23 @@
     .ps-rep-form { padding:16px; display:grid; grid-template-columns:1fr 1fr; gap:12px; overflow:auto; }
     .ps-rep-form .full { grid-column:1 / -1; }
     .ps-rep-form label { display:block; font-size:11px; font-weight:600; color:var(--pd-muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.03em; }
+    /* Schedule dialog (OPC "Schedule" — Data Date + calc options + float paths) */
+    .ps-sched-back { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:none; }
+    .ps-sched-back.open { display:flex; align-items:center; justify-content:center; }
+    .ps-sched-dlg { background:var(--pd-card); border-radius:12px; box-shadow:var(--pd-shadow); width:560px; max-width:94vw; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; }
+    .ps-sched-hd { display:flex; align-items:center; padding:16px 18px 12px; }
+    .ps-sched-hd h2 { margin:0; font-size:18px; flex:1; }
+    .ps-sched-hd button { background:none; border:none; font-size:20px; cursor:pointer; color:var(--pd-muted); }
+    .ps-sched-tabs { display:flex; gap:4px; padding:0 18px; border-bottom:1px solid var(--pd-line); }
+    .ps-sched-tabs button { border:none; background:none; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer;
+      color:var(--pd-muted); border-bottom:2px solid transparent; margin-bottom:-1px; }
+    .ps-sched-tabs button.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
+    .ps-sched-body { padding:18px; overflow:auto; font-size:13px; }
+    .ps-sched-body label { display:flex; align-items:flex-start; gap:8px; padding:6px 0; cursor:pointer; }
+    .ps-sched-body label small { display:block; color:var(--pd-muted); font-size:11px; }
+    .ps-sched-body .fld { margin:10px 0; }
+    .ps-sched-body .fld > span { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-bottom:4px; }
+    .ps-sched-foot { display:flex; align-items:center; gap:8px; padding:12px 18px; border-top:1px solid var(--pd-line); }
     /* Print / PDF: show only the schedule content */
     @media print {
       .pd-sidebar, .pd-topbar, .ps-toolbar, .ps-tabs, #ps-details, .ps-legend { display:none !important; }
@@ -414,6 +433,7 @@
   <div class="pd-content">
     <div class="pd-topbar">
       <h1>Project Schedule &amp; Cost Loading</h1>
+      <span class="ps-datadate-badge" id="ps-datadate-badge" title="As-of date driving the schedule — change it in Schedule ▸ Data Date">Data Date: —</span>
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
            before #user-bar, so these sit immediately beside the night-mode button -->
       <div class="ps-topbar-tools" id="ps-topbar-tools">
@@ -465,7 +485,7 @@
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-collapseto">Collapse to ▾</button><div class="ps-menu" id="ps-collapse-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-views">Views ▾</button><div class="ps-menu" id="ps-views-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Edit Gantt bar colors">Colors ▾</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-schedbtn" title="Scheduling options">Schedule ▾</button><div class="ps-menu ps-sched-menu" id="ps-sched-menu"></div></div>
+          <button class="pd-btn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="refresh" data-ico-size="15"></span> Schedule…</button>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="15"></span> Layout ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colsbtn" title="Columns — choose which grid columns to show"><span data-ico="settings" data-ico-size="15"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
           <span class="ps-tb-div"></span>
@@ -632,6 +652,26 @@
   <div class="ps-health-list" id="ps-health-list"></div>
 </div>
 
+<!-- Schedule dialog (OPC "Schedule"): Schedule Project / Settings / Multiple Float Paths -->
+<div class="ps-sched-back" id="ps-sched-back">
+  <div class="ps-sched-dlg" role="dialog" aria-modal="true">
+    <div class="ps-sched-hd"><h2>Schedule</h2><button id="ps-sched-x" title="Close">&times;</button></div>
+    <div class="ps-sched-tabs" id="ps-sched-tabs">
+      <button data-stab="project" class="active">Schedule Project</button>
+      <button data-stab="settings">Settings</button>
+      <button data-stab="float">Multiple Float Paths</button>
+    </div>
+    <div class="ps-sched-body" id="ps-sched-body"></div>
+    <div class="ps-sched-foot">
+      <button class="pd-btn" id="ps-sched-reset">Reset Default Options</button>
+      <button class="pd-btn" id="ps-sched-log" style="display:none;">View Log…</button>
+      <span style="flex:1;"></span>
+      <button class="pd-btn" id="ps-sched-cancel">Cancel</button>
+      <button class="pd-btn pd-btn-primary" id="ps-sched-now">Schedule Now</button>
+    </div>
+  </div>
+</div>
+
 <!-- Reports (OPC "Select Report to Run"): view list / search / select / view / edit / run / new -->
 <div class="ps-rep-back" id="ps-rep-back">
   <div class="ps-rep" role="dialog" aria-modal="true">
@@ -678,7 +718,20 @@
   function dstr(d) { if (!d) return null; return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
   function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate()+n); return x; }
   function dayDiff(a, b) { return Math.round((b - a) / 86400000); }
-  function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
+  function wallToday() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
+  // Data Date (OPC's as-of date): drives CPM remaining-work floor, the Gantt data-date line,
+  // usage remaining spread, look-ahead origin, and behind-schedule. Settable via the Schedule
+  // dialog and persisted per project; defaults to the wall-clock date. Every existing today()
+  // call means "the data date", so today() returns dataDate (falling back to wall clock).
+  var dataDate = null;
+  function today() { return dataDate || wallToday(); }
+  function ddKey() { return 'ps_datadate_' + (pid || 'none'); }
+  function loadDataDate() { try { var s = localStorage.getItem(ddKey()); dataDate = s ? pd(s) : null; } catch (e) { dataDate = null; } renderDataDateBadge(); }
+  function setDataDate(d) { dataDate = d || null; try { if (d) localStorage.setItem(ddKey(), dstr(d)); else localStorage.removeItem(ddKey()); } catch (e) {} renderDataDateBadge(); }
+  // OPC date format: DD-Mon-YY (e.g. 26-Jun-26), with a trailing " A" flag for actual dates.
+  var MON3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function fmtOPCDate(v, actual) { var d = pd(v); if (!d) return ''; return String(d.getDate()).padStart(2,'0') + '-' + MON3[d.getMonth()] + '-' + String(d.getFullYear()).slice(2) + (actual ? ' A' : ''); }
+  function renderDataDateBadge() { var b = document.getElementById('ps-datadate-badge'); if (b) b.textContent = 'Data Date: ' + fmtOPCDate(dstr(today())); }
   function esc(s) { return Fmt.esc(s); }
 
   // ---- data ----
@@ -703,6 +756,7 @@
     el.title = el.textContent;
   }
   async function load() {
+    loadDataDate();   // per-project data date (persisted); drives CPM / gantt line / usage
     if (!pid) { rows = []; rebuild(); renderAll(); return; }
     showLoading('Loading schedule…');
     var all = [];
@@ -1474,7 +1528,10 @@
       m.acts++; m.pu += r.planned_labor_units || 0; m.au += r.actual_labor_units || 0; m.ru += r.remaining_labor_units || 0;
       m.rows.push(r);
     });
-    return Object.keys(map).sort().map(function (k) { return map[k]; });
+    return Object.keys(map).sort().map(function (k) { var m = map[k];
+      // stable short ID from the name (OPC shows a resource ID column)
+      m.code = 'R-' + k.replace(/[^A-Za-z0-9]/g, '').slice(0, 6).toUpperCase();
+      return m; });
   }
   function resUnitsData(parties) {
     var M = usageMonths(), DD = today();
@@ -1498,9 +1555,12 @@
   }
   function usageResourceHtml() {
     var roster = resRoster();
+    // OPC roster columns: Name, ID, Type, Unit of Measure, Activities, Planned/Actual/Remaining.
+    // Type/UoM default to Labor/days (we have no resource master yet — that arrives with the
+    // Resource Loading module; Default Units/Time & Primary Role need it too).
     var rowsHtml = roster.map(function (m, i) {
       return '<tr data-res="' + i + '"' + (resSel[m.name] ? ' class="sel"' : '') + '><td><input type="checkbox"' + (resSel[m.name] ? ' checked' : '') + '></td>' +
-        '<td>' + esc(m.name) + '</td><td class="num">' + m.acts + '</td>' +
+        '<td>' + esc(m.name) + '</td><td>' + esc(m.code) + '</td><td>Labor</td><td>days</td><td class="num">' + m.acts + '</td>' +
         '<td class="num">' + Math.round(m.pu) + 'd</td><td class="num">' + Math.round(m.au) + 'd</td><td class="num">' + Math.round(m.ru) + 'd</td></tr>';
     }).join('');
     var sel = roster.filter(function (m) { return resSel[m.name]; });
@@ -1509,13 +1569,36 @@
     else if (resView === 'sheet') right = resSheetHtml(sel);
     else right = '<div class="ps-usage-chart" id="ps-res-chart"></div>';
     return '<div class="ps-res-split">' +
-      '<div class="ps-res-roster"><table><thead><tr><th></th><th>Name</th><th class="num">Activities</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Remaining</th></tr></thead><tbody>' +
-      (rowsHtml || '<tr><td colspan="6" style="color:var(--pd-muted);">No activities yet.</td></tr>') + '</tbody></table>' +
-      '<p class="ps-usage-note" style="margin:8px 2px;">Roster = distinct Responsible Party values; units come from each activity\'s Labor Units fields. Full resource/role definitions arrive with the Resource Loading module.</p></div>' +
+      '<div class="ps-res-roster"><table><thead><tr><th></th><th>Name</th><th>ID</th><th>Type</th><th>Unit of Measure</th><th class="num">Activities</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Remaining</th></tr></thead><tbody>' +
+      (rowsHtml || '<tr><td colspan="9" style="color:var(--pd-muted);">No activities yet.</td></tr>') + '</tbody></table>' +
+      '<p class="ps-usage-note" style="margin:8px 2px;">Roster = distinct Responsible Party values; units come from each activity\'s Labor Units fields. Default Units/Time &amp; Primary Role arrive with the Resource Loading module.</p></div>' +
       '<div class="ps-res-chart"><div class="ps-usage-head">' +
       '<div class="ps-seg" style="height:28px;"><button data-rv="hist"' + (resView === 'hist' ? ' class="active"' : '') + ' style="padding:0 12px;">Histogram</button>' +
       '<button data-rv="sheet"' + (resView === 'sheet' ? ' class="active"' : '') + ' style="padding:0 12px;">Spreadsheet</button></div>' +
+      '<button class="pd-btn" id="ps-res-download" style="height:28px;font-size:12px;"><span data-ico="download" data-ico-size="13"></span> Download</button>' +
       '<span class="ps-usage-note">Units in person-days per month</span></div>' + right + '</div></div>';
+  }
+  // Export the resource usage spread (selected resources, or all if none selected) to Excel —
+  // matches OPC's Resource Usage "Download": roster row + monthly Planned/Actual/Remaining units.
+  function downloadResUsage() {
+    if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
+    var roster = resRoster();
+    var sel = roster.filter(function (m) { return resSel[m.name]; }); if (!sel.length) sel = roster;
+    if (!sel.length) { UI.toast('No resources to export.', 'warn'); return; }
+    var M = usageMonths(), data = [];
+    var monthKeys = []; for (var i = 0; i < M.n; i++) { var lm = new Date(M.y0, M.mo0 + i, 1); monthKeys.push(MON3[lm.getMonth()] + ' ' + String(lm.getFullYear()).slice(2)); }
+    sel.forEach(function (m) {
+      var d = resUnitsData([m]);
+      [['Planned Units', d.S.planned], ['Actual Units', d.S.actual], ['Remaining Units', d.S.reme]].forEach(function (line) {
+        var tot = 0; line[1].forEach(function (v) { tot += v; });
+        var row = { 'Resource': m.name, 'ID': m.code, 'Type': 'Labor', 'Unit of Measure': 'days', 'Units': line[0], 'Total': Math.round(tot * 10) / 10 };
+        line[1].forEach(function (v, k) { row[monthKeys[k]] = Math.round(v * 10) / 10; });
+        data.push(row);
+      });
+    });
+    var ws = XLSX.utils.json_to_sheet(data, { header: ['Resource','ID','Type','Unit of Measure','Units','Total'].concat(monthKeys) });
+    var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Resource Usage');
+    XLSX.writeFile(wb, 'Resource Usage - ' + projName() + '.xlsx');
   }
   function resSheetHtml(sel) {
     var M = usageMonths();
@@ -1549,6 +1632,7 @@
       tr.onclick = function () { var m = roster[parseInt(tr.dataset.res, 10)]; if (!m) return; resSel[m.name] = !resSel[m.name]; renderDetails(); };
     });
     document.querySelectorAll('[data-rv]').forEach(function (b) { b.onclick = function () { resView = b.dataset.rv; renderDetails(); }; });
+    var dl = document.getElementById('ps-res-download'); if (dl) dl.onclick = downloadResUsage;
   }
   function renderDetails() {
     var body = document.getElementById('ps-details-body'); if (!body) return;
@@ -1709,7 +1793,7 @@
     }
     var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : (r.duration_days || '');
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
-    return '<div class="ps-grid-row' + altc + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && r._near && !r._critical)?' ps-nearrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '">' +
+    return '<div class="ps-grid-row' + altc + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '">' +
       '<div class="ps-cell c-id ps-editable" data-id="' + r.id + '" data-field="activity_id" data-type="text">' + esc(r.activity_id || '') + '</div>' +
       '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r.activity_name || '') + '</div>' +
       statusCellHtml(r) +
@@ -1869,7 +1953,7 @@
     var bs = pd(r.bl_start), be = pd(r.bl_finish);
     if (bs && be) { var bx = dayDiff(min, bs) * dayw, bw = (dayDiff(bs, be) + 1) * dayw; out += '<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + 24) + 'px;"></div>'; }
     var s = pd(r.start_date), e = pd(r.end_date);
-    var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && r._near) ? ' ps-near' : '');
+    var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && mfpOn && r._near) ? ' ps-near' : '');
     var wc = effWbsColor(r);
     if (isMile(r) && s) { var mx = dayDiff(min, s) * dayw; return out + '<div class="ps-mile' + crit + '" data-id="' + r.id + '" style="left:' + (mx-6) + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>'; }
     if (!s || !e) return out;
@@ -2084,33 +2168,51 @@
     if (tab === 'schedule') renderGantt();
   }
 
-  // ----- EXPORT to Excel -----
+  // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
+  //        row set (incl. WBS summaries), and OPC date formatting DD-Mon-YY + " A" flag) -----
   function exportExcel() {
     if (!rows.length) { UI.toast('Nothing to export — load or import a schedule first.', 'warn'); return; }
     if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
+    var n = 0;
     var data = _sorted.map(function (r) {
-      return {
-        'WBS': r.wbs, 'Activity ID': r.activity_id || '', 'Activity Name': r.activity_name || '',
-        'Type': r.activity_type || '', 'Status': r.status || '',
-        'BL Start': r.bl_start || '', 'BL Finish': r.bl_finish || '',
-        'Start': r.start_date || '', 'Finish': r.end_date || '',
-        'Duration (d)': r.duration_days != null ? r.duration_days : '',
-        '% Complete': r.percent_complete != null ? r.percent_complete : '',
-        'Predecessors': r.predecessors || '',
-        'Successors': (r._succObjs && r._succObjs.length) ? r._succObjs.map(function (s) { return s.id + (s.type && s.type !== 'FS' ? ' ' + s.type : '') + (s.lag ? (s.lag > 0 ? '+' : '') + s.lag : ''); }).join(', ') : '',
-        'Responsible': r.responsible_party || '',
-        'Planned Value POC': (function () { var p = plannedPOC(r); return p != null ? p : ''; })(),
-        'Planned IBB': r.planned_cost != null ? r.planned_cost : '',
-        'Actual IBB to date': r.actual_cost != null ? r.actual_cost : '',
-        'Earned Value IBB': r.earned_value != null ? r.earned_value : '',
-        'At Completion IBB': (function () { if (r.planned_cost == null && r.actual_cost == null && r.earned_value == null) return ''; var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; return Math.round(eac(r, cpi) * 100) / 100; })(),
-        'BL Planned IBB': r.bl_cost != null ? r.bl_cost : '',
-        'Percent Complete Type': r.percent_complete_type || ''
-      };
+      var wbs = isWbs(r);
+      var span = wbs ? _spanMap[r.wbs] : null;   // rolled-up dates for summary rows
+      var startStr = wbs ? (span ? fmtOPCDate(dstr(new Date(span.s))) : '') : fmtOPCDate(r.actual_start || r.start_date, !!r.actual_start);
+      var finishStr = wbs ? (span ? fmtOPCDate(dstr(new Date(span.e))) : '') : fmtOPCDate(r.actual_finish || r.end_date, !!r.actual_finish);
+      var poc = wbs ? null : plannedPOC(r);
+      var eacV = (!wbs && (r.planned_cost != null || r.actual_cost != null || r.earned_value != null))
+        ? Math.round(eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null) * 100) / 100 : '';
+      var row = {};
+      row['#'] = ++n;
+      row['ID'] = wbs ? (r._realCode || r.wbs || '') : (r.activity_id || '');
+      row['Name'] = r.activity_name || '';
+      row['Status'] = wbs ? '' : (r.status || '');
+      row['BL0 Start'] = wbs ? '' : fmtOPCDate(r.bl_start);
+      row['BL0 Finish'] = wbs ? '' : fmtOPCDate(r.bl_finish);
+      row['Start'] = startStr;
+      row['Finish'] = finishStr;
+      row['Planned Value POC'] = poc != null ? poc / 100 : '';
+      row['Earned Value POC'] = wbs ? '' : (r.percent_complete != null ? r.percent_complete / 100 : '');
+      row['Planned IBB'] = wbs ? '' : (r.planned_cost != null ? r.planned_cost : '');
+      row['Actual IBB to date'] = wbs ? '' : (r.actual_cost != null ? r.actual_cost : '');
+      row['Earned Value IBB'] = wbs ? '' : (r.earned_value != null ? r.earned_value : '');
+      row['At Completion IBB'] = eacV;
+      row['BL Planned IBB'] = wbs ? '' : (r.bl_cost != null ? r.bl_cost : '');
+      row['Percent Complete Type'] = wbs ? '' : (r.percent_complete_type || '');
+      return row;
     });
-    var ws = XLSX.utils.json_to_sheet(data);
-    var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Schedule');
-    XLSX.writeFile(wb, 'Schedule_' + (pid || 'project') + '_' + dstr(today()) + '.xlsx');
+    var headers = ['#','ID','Name','Status','BL0 Start','BL0 Finish','Start','Finish','Planned Value POC','Earned Value POC','Planned IBB','Actual IBB to date','Earned Value IBB','At Completion IBB','BL Planned IBB','Percent Complete Type'];
+    var ws = XLSX.utils.json_to_sheet(data, { header: headers });
+    // format POC columns as percentages, IBB columns as ₱ currency (like the OPC download)
+    var pctCols = ['I','J'], curCols = ['K','L','M','N','O'];  // 0-based col letters for headers above
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    for (var R = 1; R <= range.e.r; R++) {
+      pctCols.forEach(function (c) { var cell = ws[c + (R + 1)]; if (cell && typeof cell.v === 'number') cell.z = '0.00%'; });
+      curCols.forEach(function (c) { var cell = ws[c + (R + 1)]; if (cell && typeof cell.v === 'number') cell.z = '₱#,##0.00'; });
+    }
+    ws['!cols'] = [{ wch: 5 },{ wch: 12 },{ wch: 40 },{ wch: 12 },{ wch: 12 },{ wch: 12 },{ wch: 13 },{ wch: 13 },{ wch: 15 },{ wch: 15 },{ wch: 16 },{ wch: 16 },{ wch: 16 },{ wch: 16 },{ wch: 16 },{ wch: 18 }];
+    var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Activities');
+    XLSX.writeFile(wb, 'Activities - ' + projName() + '.xlsx');
   }
 
   // ----- Saved Views (zoom + search + filters, per browser) -----
@@ -2137,7 +2239,9 @@
   }
 
   // ----- Critical Path -----
-  var critMode = false, NEARDAYS = 5;
+  var critMode = false;
+  var NEARDAYS = (function () { try { return parseInt(localStorage.getItem('ps_neardays'), 10) || 5; } catch (e) { return 5; } })();
+  var mfpOn = (function () { try { return localStorage.getItem('ps_mfp') !== '0'; } catch (e) { return true; } })();
   // scheduling options (see Schedule ▾ menu). schedMode: 'retained' | 'override'.
   var schedMode = (function () { try { return localStorage.getItem('ps_schedmode') || 'retained'; } catch (e) { return 'retained'; } })();
   var useActuals = (function () { try { return localStorage.getItem('ps_useactuals') !== '0'; } catch (e) { return true; } })();
@@ -2515,16 +2619,60 @@
   }
   function closeReports() { document.getElementById('ps-rep-back').classList.remove('open'); }
 
-  // ---- Schedule options menu ----
-  function renderSchedMenu() {
-    var m = document.getElementById('ps-sched-menu'); if (!m) return;
-    m.innerHTML = '<h4>Schedule calculation</h4>' +
-      '<label><input type="radio" name="ps-sm" value="retained"' + (schedMode === 'retained' ? ' checked' : '') + '><span>Retained Logic<small>In-progress work keeps its predecessor logic (OPC default).</small></span></label>' +
-      '<label><input type="radio" name="ps-sm" value="override"' + (schedMode === 'override' ? ' checked' : '') + '><span>Progress Override<small>Started activities ignore predecessor logic for their remaining work.</small></span></label>' +
-      '<h4 style="margin-top:10px;">Dates</h4>' +
-      '<label><input type="checkbox" id="ps-useact"' + (useActuals ? ' checked' : '') + '><span>Use actual dates &amp; data date<small>Actual start/finish pin the schedule; future work can’t precede the data date (' + Fmt.date(dstr(today())) + ').</small></span></label>';
-    m.querySelectorAll('input[name=ps-sm]').forEach(function (rb) { rb.onchange = function () { if (rb.checked) { schedMode = rb.value; try { localStorage.setItem('ps_schedmode', schedMode); } catch (e) {} recomputeCPM(); } }; });
-    m.querySelector('#ps-useact').onchange = function (e) { useActuals = e.target.checked; try { localStorage.setItem('ps_useactuals', useActuals ? '1' : '0'); } catch (er) {} recomputeCPM(); };
+  // ---- Schedule dialog (OPC "Schedule": Data Date + calc options + float paths) ----
+  var schedTab = 'project', schedShowLog = false, schedLastLog = '';
+  function renderSchedTab() {
+    var b = document.getElementById('ps-sched-body'); if (!b) return;
+    if (schedTab === 'project') {
+      b.innerHTML =
+        '<label><input type="radio" name="ps-dd" value="own"' + (dataDate ? '' : ' checked') + '><span>Use the current (system) date<small>The data date follows today’s date automatically.</small></span></label>' +
+        '<label><input type="radio" name="ps-dd" value="set"' + (dataDate ? ' checked' : '') + '><span>Apply a specific data date<small>Pin the as-of date used for progress &amp; remaining work.</small></span></label>' +
+        '<div class="fld"><span>Data Date</span><input class="pd-input" type="date" id="ps-dd-date" value="' + dstr(today()) + '" style="max-width:200px;"></div>' +
+        '<label><input type="checkbox" id="ps-dd-log"' + (schedShowLog ? ' checked' : '') + '> Display scheduling log upon completion</label>';
+    } else if (schedTab === 'settings') {
+      b.innerHTML = '<div class="fld"><span>Schedule calculation</span>' +
+        '<label><input type="radio" name="ps-sm" value="retained"' + (schedMode === 'retained' ? ' checked' : '') + '><span>Retained Logic<small>In-progress work keeps its predecessor logic (OPC default).</small></span></label>' +
+        '<label><input type="radio" name="ps-sm" value="override"' + (schedMode === 'override' ? ' checked' : '') + '><span>Progress Override<small>Started activities ignore predecessor logic for their remaining work.</small></span></label></div>' +
+        '<div class="fld"><span>Dates</span><label><input type="checkbox" id="ps-useact"' + (useActuals ? ' checked' : '') + '><span>Use actual dates &amp; data date<small>Actual start/finish pin the schedule; future work can’t precede the data date.</small></span></label></div>';
+    } else {
+      b.innerHTML = '<div class="fld"><span>Multiple Float Paths</span>' +
+        '<label><input type="checkbox" id="ps-mfp"' + (mfpOn ? ' checked' : '') + '><span>Highlight near-critical paths<small>When Critical Path is on, activities with total float at or below the threshold are flagged (amber) alongside the critical path.</small></span></label></div>' +
+        '<div class="fld"><span>Float threshold (days)</span><input class="pd-input" type="number" min="1" id="ps-mfp-days" value="' + NEARDAYS + '" style="max-width:120px;"></div>' +
+        '<p style="color:var(--pd-muted);font-size:11.5px;margin:4px 0 0;">Turn on <strong>Critical path</strong> in the toolbar to see the paths highlighted on the grid and Gantt.</p>';
+    }
+  }
+  function openSchedule() {
+    schedTab = 'project'; schedLastLog = schedLastLog || '';
+    document.querySelectorAll('#ps-sched-tabs button').forEach(function (t) { t.classList.toggle('active', t.dataset.stab === 'project'); });
+    document.getElementById('ps-sched-log').style.display = schedLastLog ? '' : 'none';
+    renderSchedTab();
+    document.getElementById('ps-sched-back').classList.add('open');
+  }
+  function closeSchedule() { document.getElementById('ps-sched-back').classList.remove('open'); }
+  function scheduleNow() {
+    var b = document.getElementById('ps-sched-body');
+    // commit whichever tab's controls are present
+    var ddRadio = b.querySelector('input[name=ps-dd]:checked');
+    if (ddRadio) { var di = document.getElementById('ps-dd-date'); setDataDate(ddRadio.value === 'set' && di && di.value ? pd(di.value) : null); schedShowLog = !!(document.getElementById('ps-dd-log') || {}).checked; }
+    var sm = b.querySelector('input[name=ps-sm]:checked'); if (sm) { schedMode = sm.value; try { localStorage.setItem('ps_schedmode', schedMode); } catch (e) {} }
+    var ua = document.getElementById('ps-useact'); if (ua) { useActuals = ua.checked; try { localStorage.setItem('ps_useactuals', useActuals ? '1' : '0'); } catch (e) {} }
+    var mfp = document.getElementById('ps-mfp'); if (mfp) { mfpOn = mfp.checked; try { localStorage.setItem('ps_mfp', mfpOn ? '1' : '0'); } catch (e) {} }
+    var md = document.getElementById('ps-mfp-days'); if (md) { NEARDAYS = Math.max(1, parseInt(md.value, 10) || 5); try { localStorage.setItem('ps_neardays', NEARDAYS); } catch (e) {} }
+    var res = computeCPM();
+    var tasks = rows.filter(function (r) { return !isWbs(r); });
+    var nCrit = tasks.filter(function (r) { return r._critical; }).length;
+    var fins = tasks.map(function (r) { return pd(r.actual_finish || r.end_date); }).filter(Boolean);
+    var projFin = fins.length ? new Date(Math.max.apply(null, fins.map(Number))) : null;
+    schedLastLog = 'Scheduled ' + Fmt.date(dstr(wallToday())) + '\n' +
+      'Data date: ' + Fmt.date(dstr(today())) + '\n' +
+      'Mode: ' + (res.mode === 'logic' ? 'Logic (CPM)' : 'Driving path (dates)') + ', ' + (schedMode === 'override' ? 'Progress Override' : 'Retained Logic') + '\n' +
+      'Activities scheduled: ' + tasks.length + '\n' +
+      'Critical activities: ' + nCrit + '\n' +
+      'Project finish: ' + (projFin ? Fmt.date(dstr(projFin)) : '—');
+    renderAll();
+    closeSchedule();
+    if (schedShowLog) alert(schedLastLog);
+    else UI.toast('Scheduled — ' + tasks.length + ' activities, ' + nCrit + ' critical. Data date ' + Fmt.date(dstr(today())) + '.', 'success');
   }
 
   // ---- Global Gantt colors ----
@@ -2700,11 +2848,11 @@
     };
     var cMenu = document.getElementById('ps-collapse-menu'), fMenu = document.getElementById('ps-filter-menu');
     var vMenu = document.getElementById('ps-views-menu');
-    var sMenu = document.getElementById('ps-sched-menu'), colMenu = document.getElementById('ps-colors-menu');
+    var colMenu = document.getElementById('ps-colors-menu');
     var aMenu = document.getElementById('ps-actions-menu');
     var lMenu = document.getElementById('ps-layout-menu');
     var colsMenu = document.getElementById('ps-cols-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); sMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); }
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); }
     // ---- Layout menu (view arrangement, like OPC's Layout / grid settings) ----
     try { layoutMode = localStorage.getItem('ps_layout') || 'split'; } catch (e) {}
     var detailsHidden = false; try { detailsHidden = localStorage.getItem('ps_details_hidden') === '1'; } catch (e) {}
@@ -2730,7 +2878,20 @@
     document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); closeMenus(); cMenu.classList.toggle('open'); };
     document.getElementById('ps-filterbtn').onclick = function (e) { e.stopPropagation(); var o = fMenu.classList.contains('open'); closeMenus(); if (!o) fMenu.classList.add('open'); };
     document.getElementById('ps-views').onclick = function (e) { e.stopPropagation(); var o = vMenu.classList.contains('open'); closeMenus(); if (!o) { renderViewsMenu(); vMenu.classList.add('open'); } };
-    document.getElementById('ps-schedbtn').onclick = function (e) { e.stopPropagation(); var o = sMenu.classList.contains('open'); closeMenus(); if (!o) { renderSchedMenu(); sMenu.classList.add('open'); } };
+    document.getElementById('ps-schedbtn').onclick = function (e) { e.stopPropagation(); closeMenus(); openSchedule(); };
+    document.getElementById('ps-sched-x').onclick = closeSchedule;
+    document.getElementById('ps-sched-cancel').onclick = closeSchedule;
+    document.getElementById('ps-sched-back').onclick = function (e) { if (e.target === this) closeSchedule(); };
+    document.getElementById('ps-sched-now').onclick = scheduleNow;
+    document.getElementById('ps-sched-reset').onclick = function () {
+      setDataDate(null); schedMode = 'retained'; useActuals = true; mfpOn = true; NEARDAYS = 5;
+      try { localStorage.setItem('ps_schedmode','retained'); localStorage.setItem('ps_useactuals','1'); localStorage.setItem('ps_mfp','1'); localStorage.setItem('ps_neardays','5'); } catch (e) {}
+      renderSchedTab();
+    };
+    document.getElementById('ps-sched-log').onclick = function () { if (schedLastLog) alert(schedLastLog); };
+    document.querySelectorAll('#ps-sched-tabs button').forEach(function (t) {
+      t.onclick = function () { schedTab = t.dataset.stab; document.querySelectorAll('#ps-sched-tabs button').forEach(function (x) { x.classList.toggle('active', x === t); }); renderSchedTab(); };
+    });
     document.getElementById('ps-colorsbtn').onclick = function (e) { e.stopPropagation(); var o = colMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colMenu.classList.add('open'); } };
     document.getElementById('ps-actionsbtn').onclick = function (e) { e.stopPropagation(); var o = aMenu.classList.contains('open'); closeMenus(); if (!o) aMenu.classList.add('open'); };
     document.getElementById('ps-linkmode').onclick = function (e) { e.stopPropagation(); toggleLinkMode(); };
@@ -2803,7 +2964,6 @@
     cMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     fMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     vMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    sMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     colMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.addEventListener('click', closeMenus);
     applyColors();

@@ -77,6 +77,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-03 — Prompt 54: Data Date, OPC Schedule dialog, export & Resource-Usage parity
+- **Editable Data Date (OPC parity)** — the data date was hard-coded to `today()` at ~15 sites,
+  all of which semantically mean the as-of date. Renamed the wall-clock helper to `wallToday()`
+  and made `today()` return a settable `dataDate` (fallback = wall clock), so every consumer
+  (CPM remaining-work floor, Gantt data-date line, usage remaining spread, look-ahead origin,
+  behind-schedule) becomes data-date-aware with no site-by-site changes. Persisted per project
+  (`localStorage['ps_datadate_<pid>']`), loaded in `load()`. New **"Data Date: DD-Mon-YY" badge**
+  in the top bar beside the title (OPC's badge).
+- **Schedule dialog (OPC "Schedule")** — replaced the `Schedule ▾` dropdown with a modal matching
+  OPC: tabs **Schedule Project** (data-date radio: system vs specific + date input + "Display
+  scheduling log"), **Settings** (Retained Logic / Progress Override + Use-actual-dates), and
+  **Multiple Float Paths** (near-critical highlight toggle + float threshold, `mfpOn`/`NEARDAYS`
+  now persisted and gate the near-critical display). Footer: **Reset Default Options / View Log… /
+  Cancel / Schedule Now**. Schedule Now commits the data date + options, recomputes CPM, re-renders,
+  and writes a scheduling log (shown if the log box is ticked, else a toast).
+- **Export matches OPC's Download exactly** — `exportExcel` rebuilt to OPC's Activities layout:
+  columns `#, ID, Name, Status, BL0 Start, BL0 Finish, Start, Finish, Planned Value POC, Earned
+  Value POC, Planned IBB, Actual IBB to date, Earned Value IBB, At Completion IBB, BL Planned IBB,
+  Percent Complete Type` (exact order); WBS summary rows included with rolled dates; **OPC date
+  format DD-Mon-YY with " A" actual flag** (new `fmtOPCDate` — note the pre-existing `opcDate` is
+  the importer's *parser*, kept separate); POC cells as `0.00%`, IBB as `₱#,##0.00`; sheet
+  "Activities"; filename "Activities - <project>.xlsx".
+- **Resource Usage parity** — roster gains OPC's **ID / Type / Unit of Measure** columns (Type=Labor,
+  UoM=days defaults; Default Units/Time & Primary Role still pending the resource-loading module,
+  noted in-panel) + a **Download** button exporting the monthly units spread (Planned/Actual/
+  Remaining × Total × months) to "Resource Usage - <project>.xlsx".
+- Verified in harness: badge/gantt line move with the data date (→15-Jul-26); dialog tabs render &
+  persist; export header/dates/%/₱ formats + WBS rows + EAC (A1020 BAC/CPI=180k) all correct;
+  resource roster columns + download spread correct.
+
 ### 2026-07-03 — Prompt 53: Reports library + column chooser + network auto-filter
 - **Reports (OPC "Select Report to Run" parity)** — new clipboard button in the top bar beside
   Health opens a modal with: **View** dropdown (All / Built-in / Saved), **Search**, **Create
