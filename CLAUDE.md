@@ -77,6 +77,33 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-03 — Prompt 53: Reports library + column chooser + network auto-filter
+- **Reports (OPC "Select Report to Run" parity)** — new clipboard button in the top bar beside
+  Health opens a modal with: **View** dropdown (All / Built-in / Saved), **Search**, **Create
+  New Report**, a **report list**, a live **preview** pane, and per-report actions **Run (PDF)**,
+  **Edit / Edit & Save As**, **Delete**. Five built-in templates (Schedule, Cost/EVM with totals,
+  Predecessor & Successor, Critical Path, Look-ahead) render from the loaded schedule; users
+  save custom reports (template + name + look-ahead weeks + include-completed) to
+  `localStorage['ps_reports']`. **Run** opens a print-ready, brand-styled window and triggers the
+  print dialog (Save as PDF) — mirroring OPC's PDF output. Verified: totals correct
+  (₱640k/₱200k/₱290k/CPI 1.00), search filters, create/edit/delete round-trip.
+- **Column chooser (OPC grid-settings wrench)** — new wrench button in the toolbar (next to
+  Layout) lists all 18 grid columns with checkboxes (Activity Name locked as the anchor column)
+  + Show-all/Reset. Hides columns via an injected `nth-child` stylesheet scoped to
+  `.ps-grid-pane` (columns share CSS classes, so class-based hiding wasn't an option — every row
+  emits one `.ps-cell` per `GRID_COLS` entry in order, making `nth-child` exact). Persisted in
+  `localStorage['ps_colhidden']`; `GRID_COLS` is now the single source of truth for header + chooser.
+- **Activity Network auto-filters to linked activities** — the PERT view now shows only
+  activities that have a predecessor or successor by default (was showing every leaf, forcing
+  manual filtering), with a header readout ("Showing N of M · K unlinked hidden") and a **Show
+  unlinked activities too** toggle. Also raises the ≤300-node ceiling in practice since unlinked
+  noise is dropped.
+- Repo hygiene: removed a `_ui_test.html` smoke-test harness that leaked into the repo in
+  prompt-`0236155`, and added `**/_ui_test.html` to `.gitignore` so throwaway harnesses can't be
+  committed again.
+- Note: the single-row toolbar + top-bar Print/Export were already live (committed `3612dc2`);
+  the screenshot that prompted this showed a stale GitHub Pages cache — hard-refresh to see them.
+
 ### 2026-07-03 — Prompt 52: Usage-chart clipping fix + OPC grouped detail tabs
 - **Chart clipping fixed** (user: "the whole graph is not seen even when the view is
   extended"): `usageChartSVG` guessed its height from the details-panel height minus an

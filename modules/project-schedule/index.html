@@ -63,6 +63,46 @@
     .ps-net-edge { fill:none; stroke:var(--pd-muted); stroke-width:1.3; opacity:.55; }
     .ps-net-edge.crit { stroke:#f59e0b; opacity:1; stroke-width:2; }
     .ps-net-arrow { fill:var(--pd-muted); }
+    /* Activity Network header (auto-filter toggle) */
+    .ps-net-head { display:flex; align-items:center; gap:14px; padding:8px 12px; border-bottom:1px solid var(--pd-line);
+      background:var(--pd-bg); font-size:12px; color:var(--pd-muted); position:sticky; top:0; z-index:2; }
+    .ps-net-head label { display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:var(--pd-ink); }
+    /* Column chooser menu */
+    .ps-cols-menu { min-width:220px; max-height:340px; overflow:auto; padding:6px 4px; }
+    .ps-cols-menu label { display:flex; align-items:center; gap:8px; padding:5px 12px; font-size:13px; cursor:pointer; color:var(--pd-ink); }
+    .ps-cols-menu label:hover { background:var(--pd-bg); }
+    .ps-cols-menu .ps-cols-foot { display:flex; gap:6px; border-top:1px solid var(--pd-line); margin-top:4px; padding:8px 10px 4px; }
+    .ps-cols-menu .ps-cols-foot button { flex:1; font-size:12px; padding:5px; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card); cursor:pointer; color:var(--pd-ink); }
+    .ps-cols-menu .ps-cols-foot button:hover { background:var(--pd-bg); }
+    /* Reports modal (OPC "Select Report to Run") */
+    .ps-rep-back { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:none; }
+    .ps-rep-back.open { display:flex; align-items:center; justify-content:center; }
+    .ps-rep { background:var(--pd-card); border-radius:12px; box-shadow:var(--pd-shadow); width:760px; max-width:94vw;
+      max-height:88vh; display:flex; flex-direction:column; overflow:hidden; }
+    .ps-rep-hd { display:flex; align-items:center; gap:10px; padding:16px 18px; border-bottom:1px solid var(--pd-line); }
+    .ps-rep-hd h2 { margin:0; font-size:16px; flex:1; }
+    .ps-rep-x { background:none; border:none; font-size:20px; line-height:1; cursor:pointer; color:var(--pd-muted); }
+    .ps-rep-x:hover { color:var(--pd-ink); }
+    .ps-rep-bar { display:flex; align-items:center; gap:10px; padding:10px 18px; border-bottom:1px solid var(--pd-line); flex-wrap:wrap; }
+    .ps-rep-bar .ps-search { flex:1; min-width:180px; }
+    .ps-rep-bar .ps-search .pd-input { width:100%; }
+    .ps-rep-body { display:flex; min-height:0; flex:1; }
+    .ps-rep-list { flex:0 0 300px; border-right:1px solid var(--pd-line); overflow:auto; }
+    .ps-rep-item { padding:11px 16px; border-bottom:1px solid var(--pd-line); cursor:pointer; }
+    .ps-rep-item:hover { background:var(--pd-bg); }
+    .ps-rep-item.sel { background:var(--pd-red-light); box-shadow:inset 3px 0 0 var(--pd-red); }
+    .ps-rep-item .nm { font-weight:600; font-size:13px; }
+    .ps-rep-item .mt { font-size:11px; color:var(--pd-muted); margin-top:2px; }
+    .ps-rep-side { flex:1; display:flex; flex-direction:column; min-width:0; }
+    .ps-rep-prev { flex:1; overflow:auto; padding:16px; font-size:12px; }
+    .ps-rep-prev table { border-collapse:collapse; width:100%; }
+    .ps-rep-prev th, .ps-rep-prev td { border:1px solid var(--pd-line); padding:4px 8px; text-align:left; white-space:nowrap; }
+    .ps-rep-prev th { background:var(--pd-bg); font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); }
+    .ps-rep-empty { padding:40px 16px; text-align:center; color:var(--pd-muted); }
+    .ps-rep-acts { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--pd-line); flex-wrap:wrap; }
+    .ps-rep-form { padding:16px; display:grid; grid-template-columns:1fr 1fr; gap:12px; overflow:auto; }
+    .ps-rep-form .full { grid-column:1 / -1; }
+    .ps-rep-form label { display:block; font-size:11px; font-weight:600; color:var(--pd-muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.03em; }
     /* Print / PDF: show only the schedule content */
     @media print {
       .pd-sidebar, .pd-topbar, .ps-toolbar, .ps-tabs, #ps-details, .ps-legend { display:none !important; }
@@ -385,6 +425,7 @@
         <button class="pd-btn" id="ps-undo" title="Undo" disabled><span data-ico="undo" data-ico-size="15"></span></button>
         <button class="pd-btn" id="ps-redo" title="Redo" disabled><span data-ico="redo" data-ico-size="15"></span></button>
         <button class="pd-btn" id="ps-health" title="Schedule Health Score"><span data-ico="pulse" data-ico-size="15"></span></button>
+        <button class="pd-btn" id="ps-report" title="Reports — run, view, edit &amp; create"><span data-ico="clipboard" data-ico-size="15"></span></button>
         <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="15"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
         <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="15"></span></button>
         <button class="pd-btn" id="ps-export-top" title="Export to Excel"><span data-ico="download" data-ico-size="15"></span></button>
@@ -426,6 +467,7 @@
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Edit Gantt bar colors">Colors ▾</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-schedbtn" title="Scheduling options">Schedule ▾</button><div class="ps-menu ps-sched-menu" id="ps-sched-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="15"></span> Layout ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colsbtn" title="Columns — choose which grid columns to show"><span data-ico="settings" data-ico-size="15"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="risk" data-ico-size="15"></span> Critical path</button>
           <button class="pd-btn" id="ps-linkmode" title="Link mode: drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="15"></span> Link</button>
@@ -588,6 +630,26 @@
     <button class="ps-health-close" id="ps-health-close" title="Close">&times;</button>
   </div>
   <div class="ps-health-list" id="ps-health-list"></div>
+</div>
+
+<!-- Reports (OPC "Select Report to Run"): view list / search / select / view / edit / run / new -->
+<div class="ps-rep-back" id="ps-rep-back">
+  <div class="ps-rep" role="dialog" aria-modal="true">
+    <div class="ps-rep-hd"><h2 id="ps-rep-title">Reports</h2><button class="ps-rep-x" id="ps-rep-x" title="Close">&times;</button></div>
+    <div class="ps-rep-bar" id="ps-rep-bar">
+      <select class="pd-select" id="ps-rep-view" style="width:auto;">
+        <option value="all">View: All Reports</option>
+        <option value="builtin">Built-in templates</option>
+        <option value="saved">My saved reports</option>
+      </select>
+      <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-rep-search" placeholder="Search reports…" /></div>
+      <button class="pd-btn pd-btn-primary" id="ps-rep-new"><span data-ico="plus" data-ico-size="14"></span> Create New Report</button>
+    </div>
+    <div class="ps-rep-body">
+      <div class="ps-rep-list" id="ps-rep-list"></div>
+      <div class="ps-rep-side" id="ps-rep-side"></div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1056,12 +1118,21 @@
   function renderAll() { renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (layoutMode === 'network') renderNetwork(); }
 
   // ---- Activity Network View (PERT diagram) ----
+  var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
   function renderNetwork() {
     var host = document.getElementById('ps-network'); if (!host) return;
-    var leaves = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
-    if (!leaves.length) { host.innerHTML = '<div class="ps-empty">No activities to show. Add activities and link them (Predecessors / Link).</div>'; return; }
-    if (leaves.length > 300) { host.innerHTML = '<div class="ps-empty">Activity Network view is best with &le; 300 activities (currently ' + leaves.length + '). Use Filter or Search to narrow the set.</div>'; return; }
-    computeCPM();
+    computeCPM();   // populates _relObjs / _succObjs so we can detect linked activities
+    var all = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    var linked = all.filter(function (t) { return (t._relObjs && t._relObjs.length) || (t._succObjs && t._succObjs.length); });
+    var head = '<div class="ps-net-head">' +
+      '<label><input type="checkbox" id="ps-net-all"' + (netShowAll ? ' checked' : '') + '> Show unlinked activities too</label>' +
+      '<span>Showing <strong>' + (netShowAll ? all.length : linked.length) + '</strong> of ' + all.length + ' activities' +
+      (netShowAll ? '' : ' · ' + (all.length - linked.length) + ' unlinked hidden') + '</span></div>';
+    function wireHead() { var cb = document.getElementById('ps-net-all'); if (cb) cb.onchange = function () { netShowAll = cb.checked; renderNetwork(); }; }
+    if (!all.length) { host.innerHTML = head + '<div class="ps-empty">No activities to show. Add activities and link them (Predecessors / Link).</div>'; wireHead(); return; }
+    var leaves = netShowAll ? all : linked;
+    if (!leaves.length) { host.innerHTML = head + '<div class="ps-empty">No linked activities yet. Use the <strong>Link</strong> tool or add Predecessors, or tick “Show unlinked activities too”.</div>'; wireHead(); return; }
+    if (leaves.length > 300) { host.innerHTML = head + '<div class="ps-empty">Activity Network view is best with &le; 300 activities (currently ' + leaves.length + '). Use Filter or Search to narrow the set.</div>'; wireHead(); return; }
     var rank = {};
     function getRank(t, seen) {
       var id = String(t.activity_id);
@@ -1092,7 +1163,8 @@
         '<text x="9" y="17" class="ps-net-id">' + esc(t.activity_id || '') + '</text>' +
         '<text x="9" y="33" class="ps-net-name">' + esc((t.activity_name || '').slice(0, 26)) + '</text></g>';
     }).join('');
-    host.innerHTML = '<svg width="' + W + '" height="' + H + '" style="min-width:100%;display:block;"><defs><marker id="psarrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L9 4 L0 8 z" class="ps-net-arrow"/></marker></defs>' + edges + nodes + '</svg>';
+    host.innerHTML = head + '<svg width="' + W + '" height="' + H + '" style="min-width:100%;display:block;"><defs><marker id="psarrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L9 4 L0 8 z" class="ps-net-arrow"/></marker></defs>' + edges + nodes + '</svg>';
+    wireHead();
   }
 
   // ----- OPC-style Activity Details / Project Usage panel -----
@@ -1494,22 +1566,55 @@
   }
 
   // ----- COLUMN HEADER (static, resizable) -----
+  // Column set + order mirrors OPC's Activities view (Avesta "Edit Cost Load" layout):
+  // ID, Name, Status, BL0 Start/Finish, Start, Finish, then the POC/IBB cost columns.
+  // Order here is the single source of truth for BOTH the header and the nth-child column
+  // chooser — every grid row (group/WBS/task) emits exactly one .ps-cell per entry in order.
+  var GRID_COLS = [
+    ['id','Activity ID','c-id'], ['name','Activity Name','c-name'], ['status','Status','c-status'],
+    ['date','BL Start','c-date'], ['date','BL Finish','c-date'], ['date','Start','c-date'], ['date','Finish','c-date'],
+    ['dur','Dur','c-dur'],
+    ['poc','Planned Value POC','c-poc'], ['pct','Earned Value POC','c-pct'],
+    ['cost','Planned IBB','c-cost'], ['cost','Actual IBB to date','c-cost'], ['cost','Earned Value IBB','c-cost'],
+    ['cost','At Completion IBB','c-cost'], ['cost','BL Planned IBB','c-cost'],
+    ['ctype','Percent Complete Type','c-ctype'],
+    ['flt','Float','c-flt'], ['var','Var (BL)','c-var']
+  ];
+  var colHidden = {};   // keyed by column label
+  try { colHidden = JSON.parse(localStorage.getItem('ps_colhidden') || '{}') || {}; } catch (e) { colHidden = {}; }
+  function applyColHidden() {
+    var st = document.getElementById('ps-colstyle');
+    if (!st) { st = document.createElement('style'); st.id = 'ps-colstyle'; document.head.appendChild(st); }
+    var rules = [];
+    GRID_COLS.forEach(function (c, i) {
+      if (colHidden[c[1]]) rules.push('.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (i + 1) + ')');
+    });
+    st.textContent = rules.length ? rules.join(',') + '{display:none !important;}' : '';
+  }
   function renderHeader() {
     var head = document.getElementById('ps-grid-head'); if (!head) return;
-    // Column set + order mirrors OPC's Activities view (Avesta "Edit Cost Load" layout):
-    // ID, Name, Status, BL0 Start/Finish, Start, Finish, then the POC/IBB cost columns.
-    var cols = [['id','Activity ID','c-id'],['name','Activity Name','c-name'],['status','Status','c-status'],
-      ['date','BL Start','c-date'],['date','BL Finish','c-date'],['date','Start','c-date'],['date','Finish','c-date'],
-      ['dur','Dur','c-dur'],
-      ['poc','Planned Value POC','c-poc'],['pct','Earned Value POC','c-pct'],
-      ['cost','Planned IBB','c-cost'],['cost','Actual IBB to date','c-cost'],['cost','Earned Value IBB','c-cost'],
-      ['cost','At Completion IBB','c-cost'],['cost','BL Planned IBB','c-cost'],
-      ['ctype','Percent Complete Type','c-ctype'],
-      ['flt','Float','c-flt'],['var','Var (BL)','c-var']];
-    head.innerHTML = '<div class="ps-grid-row head">' + cols.map(function (c) {
+    head.innerHTML = '<div class="ps-grid-row head">' + GRID_COLS.map(function (c) {
       return '<div class="ps-cell ' + c[2] + '" title="' + c[1] + '">' + c[1] + '<span class="ps-colgrip" data-col="' + c[0] + '" title="Drag to resize column"></span></div>';
     }).join('') + '</div>';
     head.querySelectorAll('.ps-colgrip').forEach(function (g) { g.addEventListener('mousedown', function (e) { startColResize(e, g.dataset.col); }); });
+    applyColHidden();
+  }
+  // Column chooser (the OPC grid-settings wrench). Activity Name can't be hidden (anchor column).
+  function renderColsMenu() {
+    var m = document.getElementById('ps-cols-menu'); if (!m) return;
+    m.innerHTML = GRID_COLS.map(function (c) {
+      var locked = c[1] === 'Activity Name';
+      return '<label' + (locked ? ' style="opacity:.5;cursor:default;"' : '') + '><input type="checkbox" data-col="' + esc(c[1]) + '"' +
+        (colHidden[c[1]] ? '' : ' checked') + (locked ? ' disabled' : '') + '> ' + esc(c[1]) + '</label>';
+    }).join('') +
+      '<div class="ps-cols-foot"><button data-colact="all">Show all</button><button data-colact="reset">Reset</button></div>';
+    m.querySelectorAll('input[data-col]').forEach(function (cb) {
+      cb.onchange = function () { if (cb.checked) delete colHidden[cb.dataset.col]; else colHidden[cb.dataset.col] = 1;
+        try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} applyColHidden(); };
+    });
+    m.querySelectorAll('[data-colact]').forEach(function (b) {
+      b.onclick = function () { colHidden = {}; try { localStorage.setItem('ps_colhidden', '{}'); } catch (e) {} applyColHidden(); renderColsMenu(); };
+    });
   }
   function startColResize(e, col) {
     e.preventDefault(); e.stopPropagation();
@@ -2246,6 +2351,170 @@
     document.getElementById('ps-health-panel').classList.remove('open');
   }
 
+  // ============================================================================
+  // Reports (OPC "Select Report to Run" parity): view list / search / select /
+  // view / edit / run / create new. Built-in templates + user-saved reports
+  // (localStorage 'ps_reports'). "Run" produces a print-ready document (Save as PDF),
+  // mirroring OPC's PDF report output. All rows derive from the loaded schedule.
+  // ============================================================================
+  function activityRows() { return _sorted.filter(function (r) { return !isWbs(r); }); }
+  function succStr(r) { return (r._succObjs && r._succObjs.length) ? r._succObjs.map(function (s) { return s.id + (s.type && s.type !== 'FS' ? ' ' + s.type : '') + (s.lag ? (s.lag > 0 ? '+' : '') + s.lag : ''); }).join(', ') : ''; }
+  function eacOf(r) { var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; return eac(r, cpi); }
+  function repSchedule() {
+    return { headers: ['WBS', 'ID', 'Activity Name', 'Status', 'Start', 'Finish', 'Dur', '%'],
+      align: ['l','l','l','l','l','l','r','r'],
+      rows: activityRows().map(function (r) { return [r.wbs || '', r.activity_id || '', r.activity_name || '', r.status || '',
+        r.start_date ? Fmt.date(r.start_date) : '—', r.end_date ? Fmt.date(r.end_date) : '—',
+        (r.duration_days != null ? r.duration_days + 'd' : ''), (r.percent_complete != null ? r.percent_complete + '%' : '')]; }) };
+  }
+  function repCost() {
+    var t = { pc: 0, ac: 0, ev: 0, eac: 0, bl: 0 };
+    var rws = activityRows().map(function (r) {
+      t.pc += r.planned_cost || 0; t.ac += r.actual_cost || 0; t.ev += r.earned_value || 0; t.eac += eacOf(r); t.bl += r.bl_cost || 0;
+      var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
+      return [r.activity_id || '', r.activity_name || '',
+        r.planned_cost != null ? Fmt.money(r.planned_cost) : '—', r.actual_cost != null ? Fmt.money(r.actual_cost) : '—',
+        r.earned_value != null ? Fmt.money(r.earned_value) : '—', Fmt.money(eacOf(r)),
+        r.bl_cost != null ? Fmt.money(r.bl_cost) : '—', cpi != null ? cpi.toFixed(2) : '—'];
+    });
+    return { headers: ['ID', 'Activity Name', 'Planned IBB', 'Actual IBB', 'Earned IBB', 'At Completion', 'BL Planned', 'CPI'],
+      align: ['l','l','r','r','r','r','r','r'], rows: rws,
+      totals: ['', 'TOTAL', Fmt.money(t.pc), Fmt.money(t.ac), Fmt.money(t.ev), Fmt.money(t.eac), Fmt.money(t.bl), t.ac > 0 ? (t.ev / t.ac).toFixed(2) : '—'] };
+  }
+  function repRels() {
+    return { headers: ['ID', 'Activity Name', 'Predecessors', 'Successors'], align: ['l','l','l','l'],
+      rows: activityRows().map(function (r) { return [r.activity_id || '', r.activity_name || '', r.predecessors || '—', succStr(r) || '—']; }) };
+  }
+  function repCritical() {
+    computeCPM();
+    return { headers: ['ID', 'Activity Name', 'Start', 'Finish', 'Total Float'], align: ['l','l','l','l','r'],
+      note: 'Critical activities only (total float = 0).',
+      rows: activityRows().filter(function (r) { return r._critical; }).map(function (r) {
+        return [r.activity_id || '', r.activity_name || '', r.start_date ? Fmt.date(r.start_date) : '—', r.end_date ? Fmt.date(r.end_date) : '—', (r._float != null ? r._float + 'd' : '0d')]; }) };
+  }
+  function repLookahead(opts) {
+    var weeks = (opts && opts.weeks) || 4, t0 = today(), end = addDays(t0, weeks * 7);
+    var rws = activityRows().filter(function (r) {
+      var s = pd(r.start_date), e = pd(r.end_date); if (!s || !e) return false;
+      return s <= end && e >= t0 && (opts && opts.includeCompleted ? true : (r.percent_complete || 0) < 100);
+    }).map(function (r) { return [r.activity_id || '', r.activity_name || '', r.status || '',
+      Fmt.date(r.start_date), Fmt.date(r.end_date), (r.percent_complete != null ? r.percent_complete + '%' : ''), r.responsible_party || '']; });
+    return { headers: ['ID', 'Activity Name', 'Status', 'Start', 'Finish', '%', 'Responsible'], align: ['l','l','l','l','l','r','l'],
+      note: 'Activities active within the next ' + weeks + ' weeks (from ' + Fmt.date(dstr(t0)) + ').', rows: rws };
+  }
+  var REPORT_TEMPLATES = [
+    { id: 'schedule',  name: 'Schedule Report',                 desc: 'WBS, dates, duration & % complete',            build: repSchedule },
+    { id: 'cost',      name: 'Cost / EVM Report',               desc: 'IBB planned/actual/earned, EAC & CPI + totals', build: repCost },
+    { id: 'rels',      name: 'Predecessor & Successor Report',   desc: 'Activity relationships (FS/SS/FF/SF + lag)',   build: repRels },
+    { id: 'critical',  name: 'Critical Path Report',             desc: 'Critical activities, float & dates',           build: repCritical },
+    { id: 'lookahead', name: 'Look-ahead Report',                desc: 'Activities active within the next N weeks',    build: repLookahead, opts: { weeks: 4, includeCompleted: false } }
+  ];
+  function tplById(id) { return REPORT_TEMPLATES.filter(function (t) { return t.id === id; })[0]; }
+  function loadReports() { try { return JSON.parse(localStorage.getItem('ps_reports') || '[]') || []; } catch (e) { return []; } }
+  function saveReports(a) { try { localStorage.setItem('ps_reports', JSON.stringify(a)); } catch (e) {} }
+  var repSel = null, repMode = 'preview', repSearch = '', repViewFilter = 'all';
+  function repEntries() {
+    var out = [];
+    if (repViewFilter !== 'saved') REPORT_TEMPLATES.forEach(function (t) { out.push({ kind: 'builtin', id: t.id, name: t.name, desc: t.desc }); });
+    if (repViewFilter !== 'builtin') loadReports().forEach(function (r, i) { var t = tplById(r.template); out.push({ kind: 'saved', id: 'saved:' + i, idx: i, name: r.name, desc: 'Saved · ' + (t ? t.name : r.template) }); });
+    var q = repSearch.trim().toLowerCase();
+    return q ? out.filter(function (e) { return (e.name + ' ' + e.desc).toLowerCase().indexOf(q) !== -1; }) : out;
+  }
+  function resolveReport(sel) {
+    if (!sel) return null;
+    if (sel.indexOf('saved:') === 0) { var r = loadReports()[parseInt(sel.slice(6), 10)]; if (!r) return null; var t = tplById(r.template); return t ? { name: r.name, tpl: t, opts: r.opts || {}, saved: r, savedIdx: parseInt(sel.slice(6), 10) } : null; }
+    var tp = tplById(sel); return tp ? { name: tp.name, tpl: tp, opts: JSON.parse(JSON.stringify(tp.opts || {})) } : null;
+  }
+  function buildModel(rep) { return rep.tpl.build(rep.opts); }
+  function reportTableHTML(model) {
+    if (!model.rows.length) return '<div class="ps-rep-empty">No rows match this report for the current schedule.</div>';
+    var thead = '<tr>' + model.headers.map(function (h, i) { return '<th style="text-align:' + (model.align[i] === 'r' ? 'right' : 'left') + '">' + esc(h) + '</th>'; }).join('') + '</tr>';
+    var body = model.rows.map(function (row) { return '<tr>' + row.map(function (c, i) { return '<td style="text-align:' + (model.align[i] === 'r' ? 'right' : 'left') + '">' + esc(String(c)) + '</td>'; }).join('') + '</tr>'; }).join('');
+    if (model.totals) body += '<tr style="font-weight:700;background:var(--pd-bg);">' + model.totals.map(function (c, i) { return '<td style="text-align:' + (model.align[i] === 'r' ? 'right' : 'left') + '">' + esc(String(c)) + '</td>'; }).join('') + '</tr>';
+    return (model.note ? '<p style="color:var(--pd-muted);font-size:12px;margin:0 0 10px;">' + esc(model.note) + '</p>' : '') +
+      '<table><thead>' + thead + '</thead><tbody>' + body + '</tbody></table>';
+  }
+  function projName() { var s = document.getElementById('ps-project'); var o = s && s.options[s.selectedIndex]; return (o && o.text) || pid || 'Project'; }
+  function runReport(rep) {
+    var model = buildModel(rep);
+    var w = window.open('', '_blank'); if (!w) { UI.toast('Allow pop-ups to run the report.', 'error'); return; }
+    var thead = '<tr>' + model.headers.map(function (h, i) { return '<th class="' + (model.align[i] === 'r' ? 'r' : '') + '">' + esc(h) + '</th>'; }).join('') + '</tr>';
+    var body = model.rows.map(function (row) { return '<tr>' + row.map(function (c, i) { return '<td class="' + (model.align[i] === 'r' ? 'r' : '') + '">' + esc(String(c)) + '</td>'; }).join('') + '</tr>'; }).join('');
+    if (model.totals) body += '<tr class="tot">' + model.totals.map(function (c, i) { return '<td class="' + (model.align[i] === 'r' ? 'r' : '') + '">' + esc(String(c)) + '</td>'; }).join('') + '</tr>';
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(rep.name) + ' — ' + esc(projName()) + '</title>' +
+      '<style>body{font-family:Arial,Helvetica,sans-serif;color:#231F20;margin:28px;}' +
+      'h1{font-size:18px;margin:0 0 2px;}.sub{color:#666;font-size:12px;margin:0 0 4px;}.note{color:#666;font-size:12px;margin:6px 0 12px;}' +
+      'table{border-collapse:collapse;width:100%;font-size:11px;}th,td{border:1px solid #ccc;padding:4px 7px;text-align:left;}' +
+      'th{background:#EE3124;color:#fff;text-transform:uppercase;font-size:9.5px;letter-spacing:.03em;}.r{text-align:right;}tr.tot td{font-weight:700;background:#f0f0f0;}' +
+      '@media print{@page{margin:14mm;}}</style></head><body>' +
+      '<h1>' + esc(rep.name) + '</h1><p class="sub">' + esc(projName()) + ' · Data date ' + Fmt.date(dstr(today())) + ' · ' + model.rows.length + ' rows</p>' +
+      (model.note ? '<p class="note">' + esc(model.note) + '</p>' : '') +
+      '<table><thead>' + thead + '</thead><tbody>' + (body || '<tr><td colspan="' + model.headers.length + '">No rows.</td></tr>') + '</tbody></table>' +
+      '<scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print();},250);};</scr' + 'ipt></body></html>');
+    w.document.close();
+  }
+  function renderReportList() {
+    var list = document.getElementById('ps-rep-list'); if (!list) return;
+    var entries = repEntries();
+    if (!entries.length) { list.innerHTML = '<div class="ps-rep-empty" style="padding:24px 12px;">No reports match.</div>'; return; }
+    list.innerHTML = entries.map(function (e) {
+      return '<div class="ps-rep-item' + (repSel === e.id ? ' sel' : '') + '" data-rep="' + esc(e.id) + '"><div class="nm">' + esc(e.name) + '</div><div class="mt">' + esc(e.desc) + '</div></div>';
+    }).join('');
+    list.querySelectorAll('[data-rep]').forEach(function (it) { it.onclick = function () { repSel = it.dataset.rep; repMode = 'preview'; renderReportList(); renderReportSide(); }; });
+  }
+  function renderReportSide() {
+    var side = document.getElementById('ps-rep-side'); if (!side) return;
+    if (repMode === 'new' || repMode === 'edit') { renderReportForm(side); return; }
+    var rep = resolveReport(repSel);
+    if (!rep) { side.innerHTML = '<div class="ps-rep-empty">Select a report on the left to preview it, or create a new one.</div>'; return; }
+    var model = buildModel(rep);
+    var acts = '<div class="ps-rep-acts">' +
+      '<button class="pd-btn pd-btn-primary" data-repact="run"><span data-ico="printer" data-ico-size="14"></span> Run (PDF)</button>' +
+      '<button class="pd-btn" data-repact="edit"><span data-ico="settings" data-ico-size="14"></span> ' + (rep.saved ? 'Edit' : 'Edit &amp; Save As') + '</button>' +
+      (rep.saved ? '<button class="pd-btn pd-btn-danger" data-repact="del">Delete</button>' : '') + '</div>';
+    side.innerHTML = '<div class="ps-rep-prev"><h3 style="margin:0 0 8px;font-size:15px;">' + esc(rep.name) + '</h3>' + reportTableHTML(model) + '</div>' + acts;
+    if (typeof Icons !== 'undefined') Icons.hydrate(side);
+    side.querySelector('[data-repact="run"]').onclick = function () { runReport(rep); };
+    side.querySelector('[data-repact="edit"]').onclick = function () { repMode = rep.saved ? 'edit' : 'new'; renderReportSide(); };
+    var del = side.querySelector('[data-repact="del"]');
+    if (del) del.onclick = function () { if (!confirm('Delete report “' + rep.name + '”?')) return; var a = loadReports(); a.splice(rep.savedIdx, 1); saveReports(a); repSel = null; renderReportList(); renderReportSide(); };
+  }
+  function renderReportForm(side) {
+    var editing = repMode === 'edit', rep = editing ? resolveReport(repSel) : null;
+    var curTpl = rep ? rep.tpl.id : 'schedule', curName = rep ? rep.name : '', curOpts = rep ? rep.opts : { weeks: 4, includeCompleted: false };
+    side.innerHTML = '<div class="ps-rep-form">' +
+      '<div class="full"><label>Report name</label><input class="pd-input" id="ps-rep-f-name" value="' + esc(curName) + '" placeholder="e.g. 4-Week Look-ahead"></div>' +
+      '<div class="full"><label>Based on template</label><select class="pd-select" id="ps-rep-f-tpl">' +
+        REPORT_TEMPLATES.map(function (t) { return '<option value="' + t.id + '"' + (t.id === curTpl ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('') + '</select></div>' +
+      '<div><label>Look-ahead weeks <small>(look-ahead only)</small></label><input class="pd-input" id="ps-rep-f-weeks" type="number" min="1" value="' + ((curOpts && curOpts.weeks) || 4) + '"></div>' +
+      '<div><label>Include completed</label><select class="pd-select" id="ps-rep-f-inc"><option value="0"' + (curOpts && curOpts.includeCompleted ? '' : ' selected') + '>No</option><option value="1"' + (curOpts && curOpts.includeCompleted ? ' selected' : '') + '>Yes</option></select></div>' +
+      '</div>' +
+      '<div class="ps-rep-acts"><button class="pd-btn pd-btn-primary" id="ps-rep-save">' + (editing ? 'Save changes' : 'Save report') + '</button>' +
+      '<button class="pd-btn" id="ps-rep-cancel">Cancel</button></div>';
+    side.querySelector('#ps-rep-cancel').onclick = function () { repMode = 'preview'; renderReportSide(); };
+    side.querySelector('#ps-rep-save').onclick = function () {
+      var name = side.querySelector('#ps-rep-f-name').value.trim(); if (!name) { UI.toast('Give the report a name.', 'warn'); return; }
+      var entry = { name: name, template: side.querySelector('#ps-rep-f-tpl').value,
+        opts: { weeks: parseInt(side.querySelector('#ps-rep-f-weeks').value, 10) || 4, includeCompleted: side.querySelector('#ps-rep-f-inc').value === '1' } };
+      var a = loadReports();
+      if (editing) { a[rep.savedIdx] = entry; } else { a.push(entry); }
+      saveReports(a);
+      repViewFilter = 'saved';
+      var vf = document.getElementById('ps-rep-view'); if (vf) vf.value = 'saved';
+      repSel = 'saved:' + (editing ? rep.savedIdx : a.length - 1); repMode = 'preview';
+      renderReportList(); renderReportSide();
+      UI.toast('Report “' + name + '” saved.', 'success');
+    };
+  }
+  function openReports() {
+    if (!rows.length) { UI.toast('Load or import a schedule first.', 'warn'); return; }
+    repSel = repSel || 'schedule'; repMode = 'preview';
+    document.getElementById('ps-rep-search').value = repSearch;
+    renderReportList(); renderReportSide();
+    document.getElementById('ps-rep-back').classList.add('open');
+  }
+  function closeReports() { document.getElementById('ps-rep-back').classList.remove('open'); }
+
   // ---- Schedule options menu ----
   function renderSchedMenu() {
     var m = document.getElementById('ps-sched-menu'); if (!m) return;
@@ -2434,7 +2703,8 @@
     var sMenu = document.getElementById('ps-sched-menu'), colMenu = document.getElementById('ps-colors-menu');
     var aMenu = document.getElementById('ps-actions-menu');
     var lMenu = document.getElementById('ps-layout-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); sMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); }
+    var colsMenu = document.getElementById('ps-cols-menu');
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); sMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); }
     // ---- Layout menu (view arrangement, like OPC's Layout / grid settings) ----
     try { layoutMode = localStorage.getItem('ps_layout') || 'split'; } catch (e) {}
     var detailsHidden = false; try { detailsHidden = localStorage.getItem('ps_details_hidden') === '1'; } catch (e) {}
@@ -2469,6 +2739,16 @@
     document.getElementById('ps-redo').onclick = function (e) { e.stopPropagation(); redo(); };
     document.getElementById('ps-layoutbtn').onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { renderLayoutMenu(); lMenu.classList.add('open'); } };
     lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.getElementById('ps-colsbtn').onclick = function (e) { e.stopPropagation(); var o = colsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColsMenu(); colsMenu.classList.add('open'); } };
+    colsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    // Reports modal (OPC "Select Report to Run")
+    document.getElementById('ps-report').onclick = function (e) { e.stopPropagation(); openReports(); };
+    document.getElementById('ps-rep-x').onclick = closeReports;
+    document.getElementById('ps-rep-back').onclick = function (e) { if (e.target === this) closeReports(); };
+    document.getElementById('ps-rep-search').oninput = function (e) { repSearch = e.target.value; renderReportList(); };
+    document.getElementById('ps-rep-view').onchange = function (e) { repViewFilter = e.target.value; renderReportList(); };
+    document.getElementById('ps-rep-new').onclick = function () { repMode = 'new'; repSel = null; renderReportList(); renderReportSide(); };
+    applyColHidden();
     document.getElementById('ps-print').onclick = function () { window.print(); };
     document.getElementById('ps-export-top').onclick = exportExcel;
     document.addEventListener('keydown', function (e) {
