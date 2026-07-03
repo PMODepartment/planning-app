@@ -267,6 +267,17 @@ developer, plug into one shared shell.
   git-ignored test harness (stubbed `AppAuth`/`PDb`/Supabase with synthetic rows, no real
   credentials or backend touched) to confirm the render tree and connector math; deleted after use.
 
+### 2026-07-01 — Prompt 46 (Desktop): Activity Network view + toolbar single-row + Print moved
+- **Activity Network View** (PERT) added as a Layout option: activities as nodes
+  ranked by predecessor depth (columns), relationship arrows between them,
+  critical chain in amber, completed nodes tinted. Guarded to ≤300 activities
+  (asks to filter beyond that). `renderNetwork()` + `.ps-net-*` styles; toggled
+  via Layout ▾ → "Activity Network" (adds `.ps-net-mode` to the schedule view).
+- **Print** button moved to the top-bar cluster **beside the Export/download icon**
+  (removed from the lower toolbar).
+- **Toolbar single row:** the Actions→Link action row is now `nowrap` with
+  horizontal scroll on overflow, compact buttons — no more wrapping to two rows.
+
 ### 2026-07-01 — Prompt 45 (Desktop): Project Schedule top-bar polish (OPC parity)
 - **Workspace subline** under the project name in the top-bar selector (OPC-style
   "project / workspace"), via `PDb.getWorkspaces()` + `projects.workspace_id`

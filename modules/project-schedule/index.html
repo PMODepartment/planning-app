@@ -48,6 +48,21 @@
     /* Layout modes: hide a pane for grid-only / gantt-only */
     .ps-split.ps-grid-only .ps-gantt-pane, .ps-split.ps-grid-only .ps-divider { display:none; }
     .ps-split.ps-gantt-only .ps-grid-pane, .ps-split.ps-gantt-only .ps-divider { display:none; }
+    /* Keep the action toolbar on a single row (scrolls horizontally if needed) */
+    .ps-toolbar .ps-tb-row { flex-wrap:nowrap; overflow-x:auto; overflow-y:visible; scrollbar-width:thin; padding-bottom:2px; }
+    .ps-toolbar .pd-btn { padding:0 11px; }
+    /* Activity Network View (PERT) */
+    .ps-network { overflow:auto; height:62vh; min-height:420px; border:1px solid var(--pd-line); border-radius:var(--pd-radius); background:var(--pd-card); }
+    #ps-view-schedule.ps-net-mode .ps-split, #ps-view-schedule.ps-net-mode .ps-grid-foot, #ps-view-schedule.ps-net-mode .ps-legend { display:none; }
+    #ps-view-schedule.ps-net-mode .ps-network { display:block !important; flex:1 1 auto; min-height:0; height:auto; }
+    .ps-net-node { fill:var(--pd-card); stroke:var(--pd-line); stroke-width:1.5; }
+    .ps-net-node.crit { stroke:#f59e0b; stroke-width:2.5; }
+    .ps-net-node.done { fill:var(--pd-red-light); }
+    .ps-net-id { font-size:11px; font-weight:700; fill:var(--pd-ink); }
+    .ps-net-name { font-size:10px; fill:var(--pd-muted); }
+    .ps-net-edge { fill:none; stroke:var(--pd-muted); stroke-width:1.3; opacity:.55; }
+    .ps-net-edge.crit { stroke:#f59e0b; opacity:1; stroke-width:2; }
+    .ps-net-arrow { fill:var(--pd-muted); }
     /* Print / PDF: show only the schedule content */
     @media print {
       .pd-sidebar, .pd-topbar, .ps-toolbar, .ps-tabs, #ps-details, .ps-legend { display:none !important; }
@@ -373,6 +388,7 @@
         <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="15"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
         <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="15"></span></button>
         <button class="pd-btn" id="ps-export-top" title="Export to Excel"><span data-ico="download" data-ico-size="15"></span></button>
+        <button class="pd-btn" id="ps-print" title="Print / Save as PDF"><span data-ico="printer" data-ico-size="15"></span></button>
         <span class="ps-tb-div"></span>
       </div>
       <div id="user-bar"></div>
@@ -409,8 +425,7 @@
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-views">Views ▾</button><div class="ps-menu" id="ps-views-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Edit Gantt bar colors">Colors ▾</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-schedbtn" title="Scheduling options">Schedule ▾</button><div class="ps-menu ps-sched-menu" id="ps-sched-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="Layout — switch Grid / Gantt / Split and toggle the details panel"><span data-ico="layout" data-ico-size="15"></span> Layout ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
-          <button class="pd-btn" id="ps-print" title="Print / Save as PDF"><span data-ico="printer" data-ico-size="15"></span> Print</button>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="15"></span> Layout ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="risk" data-ico-size="15"></span> Critical path</button>
           <button class="pd-btn" id="ps-linkmode" title="Link mode: drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="15"></span> Link</button>
@@ -444,6 +459,9 @@
             <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
           </div>
         </div>
+
+        <!-- Activity Network View (PERT diagram) — shown via the Layout menu -->
+        <div class="ps-network" id="ps-network" style="display:none;"></div>
 
         <!-- OPC-style grid footer: activity count + Download (mirrors OPC's strip under its grid) -->
         <div class="ps-grid-foot">
@@ -1035,7 +1053,47 @@
   }
 
   // ---- render everything ----
-  function renderAll() { renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); }
+  function renderAll() { renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (layoutMode === 'network') renderNetwork(); }
+
+  // ---- Activity Network View (PERT diagram) ----
+  function renderNetwork() {
+    var host = document.getElementById('ps-network'); if (!host) return;
+    var leaves = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    if (!leaves.length) { host.innerHTML = '<div class="ps-empty">No activities to show. Add activities and link them (Predecessors / Link).</div>'; return; }
+    if (leaves.length > 300) { host.innerHTML = '<div class="ps-empty">Activity Network view is best with &le; 300 activities (currently ' + leaves.length + '). Use Filter or Search to narrow the set.</div>'; return; }
+    computeCPM();
+    var rank = {};
+    function getRank(t, seen) {
+      var id = String(t.activity_id);
+      if (rank[id] != null) return rank[id];
+      if (seen[id]) return 0; seen[id] = 1;
+      var mx = 0; (t._relObjs || []).forEach(function (rel) { if (rel.p) mx = Math.max(mx, getRank(rel.p, seen) + 1); });
+      rank[id] = mx; return mx;
+    }
+    leaves.forEach(function (t) { getRank(t, {}); });
+    var cols = {}, maxRows = 1;
+    leaves.forEach(function (t) { var r = rank[String(t.activity_id)] || 0; (cols[r] = cols[r] || []).push(t); });
+    var COLW = 210, ROWH = 62, NODEW = 172, NODEH = 44, padX = 20, padY = 20, pos = {};
+    var ranks = Object.keys(cols).map(Number), maxRank = ranks.length ? Math.max.apply(null, ranks) : 0;
+    Object.keys(cols).forEach(function (rk) { cols[rk].forEach(function (t, i) { pos[String(t.activity_id)] = { x: padX + rk * COLW, y: padY + i * ROWH }; }); maxRows = Math.max(maxRows, cols[rk].length); });
+    var W = padX * 2 + (maxRank + 1) * COLW, H = padY * 2 + maxRows * ROWH;
+    var edges = '';
+    leaves.forEach(function (t) {
+      (t._relObjs || []).forEach(function (rel) {
+        if (!rel.p) return; var a = pos[String(rel.p.activity_id)], b = pos[String(t.activity_id)]; if (!a || !b) return;
+        var x1 = a.x + NODEW, y1 = a.y + NODEH / 2, x2 = b.x, y2 = b.y + NODEH / 2, mx = (x1 + x2) / 2;
+        var c = (critMode && rel.p._critical && t._critical) ? ' crit' : '';
+        edges += '<path d="M' + x1 + ' ' + y1 + ' C ' + mx + ' ' + y1 + ', ' + mx + ' ' + y2 + ', ' + x2 + ' ' + y2 + '" class="ps-net-edge' + c + '" marker-end="url(#psarrow)"/>';
+      });
+    });
+    var nodes = leaves.map(function (t) {
+      var p = pos[String(t.activity_id)], cls = 'ps-net-node' + (t._critical ? ' crit' : '') + ((t.percent_complete || 0) >= 100 ? ' done' : '');
+      return '<g transform="translate(' + p.x + ',' + p.y + ')"><rect width="' + NODEW + '" height="' + NODEH + '" rx="6" class="' + cls + '"/>' +
+        '<text x="9" y="17" class="ps-net-id">' + esc(t.activity_id || '') + '</text>' +
+        '<text x="9" y="33" class="ps-net-name">' + esc((t.activity_name || '').slice(0, 26)) + '</text></g>';
+    }).join('');
+    host.innerHTML = '<svg width="' + W + '" height="' + H + '" style="min-width:100%;display:block;"><defs><marker id="psarrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L9 4 L0 8 z" class="ps-net-arrow"/></marker></defs>' + edges + nodes + '</svg>';
+  }
 
   // ----- OPC-style Activity Details / Project Usage panel -----
   var detailTab = 'general';
@@ -2381,16 +2439,18 @@
     try { layoutMode = localStorage.getItem('ps_layout') || 'split'; } catch (e) {}
     var detailsHidden = false; try { detailsHidden = localStorage.getItem('ps_details_hidden') === '1'; } catch (e) {}
     function applyLayout() {
+      var vs = document.getElementById('ps-view-schedule'), net = layoutMode === 'network';
+      if (vs) vs.classList.toggle('ps-net-mode', net);
       var sp = document.querySelector('.ps-split');
       if (sp) { sp.classList.toggle('ps-grid-only', layoutMode === 'grid'); sp.classList.toggle('ps-gantt-only', layoutMode === 'gantt'); }
       var det = document.getElementById('ps-details'); if (det) det.style.display = detailsHidden ? 'none' : '';
-      renderGantt();
+      if (net) renderNetwork(); else renderGantt();
     }
     function renderLayoutMenu() {
       function radio(v, label) { return '<button data-lay="' + v + '">' + (layoutMode === v ? '● ' : '○ ') + label + '</button>'; }
       lMenu.innerHTML =
         '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">View</div>' +
-        radio('split', 'Split (Grid + Gantt)') + radio('grid', 'Grid only') + radio('gantt', 'Gantt only') +
+        radio('split', 'Split (Grid + Gantt)') + radio('grid', 'Grid only') + radio('gantt', 'Gantt only') + radio('network', 'Activity Network') +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<button data-dettoggle>' + (detailsHidden ? '○ ' : '● ') + 'Show details panel</button>';
       lMenu.querySelectorAll('[data-lay]').forEach(function (b) { b.onclick = function () { layoutMode = b.dataset.lay; try { localStorage.setItem('ps_layout', layoutMode); } catch (e) {} applyLayout(); renderLayoutMenu(); }; });
