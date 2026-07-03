@@ -354,6 +354,21 @@ developer, plug into one shared shell.
   git-ignored test harness (stubbed `AppAuth`/`PDb`/Supabase with synthetic rows, no real
   credentials or backend touched) to confirm the render tree and connector math; deleted after use.
 
+### 2026-07-03 — Prompt 48 (Desktop): UI density pass, dropdown clip fix, dbl-click auto-size, assignments DB
+- **Dropdown clipping fixed:** the single-row toolbar's `overflow-x:auto` was
+  clipping the icon-menu popovers (Collapse/Views/Layout/Columns/Colors). Set the
+  row `overflow:visible` so menus show fully (like the native WBS Group select).
+- **Denser / squarer (OPC-like):** global `--pd-radius` 10px→4px; trimmed the
+  schedule module's `.pd-main`/toolbar/legend margins; square split/network edges.
+- **Double-click auto-size** on the grid⇄Gantt divider (fits grid to column
+  content) and the details-panel grip (fits panel to content).
+- **Assignments DB foundation:** `resource_assignments` table (activity↔resource/
+  role, budgeted/actual/remaining units) — migration
+  `2026-07-03-resource-assignments.sql` + folded into `supabase-setup.sql`.
+  **NEXT (in progress):** assignment UI + wire real Resource/Role Usage + FTE.
+- **Still to do (this thread's asks):** full assignments UI/usage wiring; make the
+  detail sub-panels (Relationships, Resource Usage) resizable + dbl-click auto-size.
+
 ### 2026-07-01 — Prompt 47 (Desktop): Title switcher, colors icon, Resource/Role master
 - **Project Schedule:** replaced the Schedule/Cost tab strip with a **clickable
   title switcher** (title shows the active view; dropdown switches Project

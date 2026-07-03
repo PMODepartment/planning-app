@@ -72,7 +72,13 @@
     .ps-split.ps-grid-only .ps-gantt-pane, .ps-split.ps-grid-only .ps-divider { display:none; }
     .ps-split.ps-gantt-only .ps-grid-pane, .ps-split.ps-gantt-only .ps-divider { display:none; }
     /* Keep the action toolbar on a single row (scrolls horizontally if needed) */
-    .ps-toolbar .ps-tb-row { flex-wrap:nowrap; overflow-x:auto; overflow-y:visible; scrollbar-width:thin; padding-bottom:2px; }
+    .ps-toolbar .ps-tb-row { flex-wrap:nowrap; overflow:visible; min-width:0; }
+    /* Denser, OPC-like layout — trim dead space, square edges */
+    .pd-main { padding:10px 12px; }
+    .ps-toolbar { margin-bottom:8px; }
+    .ps-legend { margin:4px 0 6px; }
+    .ps-split { border-radius:2px; }
+    .ps-network { border-radius:2px; }
     .ps-toolbar .pd-btn { padding:0 11px; }
     /* Activity Network View (PERT) */
     .ps-network { overflow:auto; height:62vh; min-height:420px; border:1px solid var(--pd-line); border-radius:var(--pd-radius); background:var(--pd-card); }
@@ -3054,6 +3060,15 @@
         }
         document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
       });
+      // Double-click the grip to auto-size the details panel to its content
+      grip.addEventListener('dblclick', function () {
+        var inner = dbody.firstElementChild;
+        var need = (inner ? inner.scrollHeight : dbody.scrollHeight) + 28;
+        dbody.style.height = Math.min(700, Math.max(90, need)) + 'px';
+        try { localStorage.setItem('ps_details_h', parseInt(dbody.style.height, 10)); } catch (e2) {}
+        if (detailTab === 'ausage' || detailTab === 'rusage') renderDetails();
+      });
+      grip.title = 'Drag to resize · double-click to auto-size';
     })();
     buildFilterMenu();
     cMenu.addEventListener('click', function (e) { e.stopPropagation(); });
@@ -3142,6 +3157,16 @@
         }
         document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
       });
+      // Double-click the divider to auto-size the grid to its column content
+      divider.addEventListener('dblclick', function () {
+        var head = document.getElementById('ps-grid-head');
+        var content = head && head.firstElementChild ? head.firstElementChild.scrollWidth : (head ? head.scrollWidth : 0);
+        var max = split.getBoundingClientRect().width - 240;
+        var w = Math.max(240, Math.min(content + 2, max));
+        gridPane.style.flexBasis = w + 'px'; gridPane.style.maxWidth = 'none';
+        try { localStorage.setItem('ps_grid_w', String(Math.round(w))); } catch (e) {}
+      });
+      divider.title = 'Drag to resize · double-click to auto-size';
     }
 
     loadProjects();

@@ -123,6 +123,11 @@ create table if not exists resources (
   default_units_per_time numeric default 100, max_units_per_time numeric default 100,
   uom text default 'hours', calendar text, remarks text,
   created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
+create table if not exists resource_assignments (
+  id uuid primary key default gen_random_uuid(), project_id text references projects(id),
+  activity_id text, resource_id uuid references resources(id), resource_code text, role text,
+  budgeted_units numeric, actual_units numeric, remaining_units numeric, uom text default 'hours', remarks text,
+  created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
 
 -- ───────────────────────── Grants (API roles) ─────────────────────────
 grant usage on schema public to anon, authenticated;
@@ -190,7 +195,7 @@ begin
     'progress_photos','issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
     'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve',
-    'resource_roles','resources'
+    'resource_roles','resources','resource_assignments'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);

@@ -28,7 +28,7 @@
   --pd-bad: #C42127;
   /* Type + shape */
   --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --pd-radius: 10px;
+  --pd-radius: 4px;
   --pd-shadow: 0 1px 3px rgba(35,31,32,.08), 0 1px 2px rgba(35,31,32,.04);
   --pd-sidebar-w: 240px;
 }
