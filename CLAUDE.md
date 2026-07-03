@@ -77,6 +77,35 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-03 — Prompt 51: Project Usage tabs copied from OPC (Activity + Resource Usage)
+- Studied the live Avesta OPC Project Usage panel (Activity Usage settings dialog, Resource
+  Usage roster + histogram/spreadsheet views, Role Usage) and replicated it in the details
+  panel. **Usage tabs are now project-level** (render without an activity selected, like OPC);
+  the per-activity detail tabs (General/Status/Relationships/Trace) still require a selection.
+- **Activity Usage** — time-phased monthly **cost chart** (SVG, no libs): 8 OPC series
+  (Planned, Period Actual, Remaining Early/Late, Budget At Completion, Period Planned Value,
+  Period Earned Value, Estimate To Complete), each toggleable as period **bars** and/or
+  cumulative **curves** via a Settings ▾ menu that mirrors OPC's Histogram settings dialog
+  (incl. graph options: legend, data-date line, sight lines, values on curves; persisted in
+  `localStorage['ps_usage_cfg']`). Defaults match OPC's: curves for Planned/Actual/BAC/ETC.
+  Costs spread **linearly (day-weighted)** across each activity's dates — OPC's default spread.
+  Remaining uses planned × (1 − %complete) from the data date; Remaining Late shifts by total
+  float (late dates); ETC = EAC − Actual (CPI-adjusted). Scope select: All activities /
+  Selected activity (OPC's "Show all activities above").
+- **Resource Usage** — OPC's roster-left/chart-right layout: roster = distinct **Responsible
+  Party** values (name, activity count, Planned/Actual/Remaining labor-unit totals); checkbox
+  multi-select aggregates; right pane = **units histogram** (Planned/Actual/Remaining
+  Early/Late person-days per month) or the OPC-style **Spreadsheet** (per-resource
+  Planned/Actual/Remaining Units rows × Total + monthly columns). Unselected state shows OPC's
+  "Select a resource…" prompt. No Max-Availability line or FTE toggle — we have no
+  calendar/availability model yet (noted in-panel; full rosters arrive with resource-loading).
+- **Role Usage** stays an honest placeholder (no role data model — owned by resource-loading).
+- Charts redraw on details-panel resize (grip release). Verified in the harness against a
+  3-activity fixture: all four default curve endpoints hand-checked (Planned ₱600k, Actual
+  ₱200k, BAC ₱590k incl. bl_cost fallback, ETC ₱390k incl. CPI-adjusted EAC and
+  done-activity exclusion); roster totals exact; settings toggles live-update; spreadsheet
+  totals match roster.
+
 ### 2026-07-02 — Prompt 50: POC/IBB columns into the Activities grid itself
 - User asked why the OPC columns (Planned/Earned Value POC, Planned/Actual/EV/At Completion/BL
   IBB, Percent Complete Type) weren't visible in the **activities view** — Prompt 49 had put

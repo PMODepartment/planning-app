@@ -261,6 +261,40 @@
     .ps-health-item:hover { background:var(--pd-red-light); }
     .ps-health-item b { font-weight:700; }
     .ps-health-empty { padding:30px 16px; text-align:center; color:var(--pd-muted); font-size:13px; }
+
+    /* ---- Project Usage (OPC-style time-phased charts) ---- */
+    .ps-usage { display:flex; flex-direction:column; gap:8px; height:100%; min-height:0; }
+    .ps-usage-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; flex:none; }
+    .ps-usage-head .pd-select { height:30px; font-size:12px; width:auto; }
+    .ps-usage-note { font-size:11px; color:var(--pd-muted); }
+    .ps-usage-chart { flex:1 1 auto; min-height:0; overflow:hidden; }
+    .ps-usage-chart svg { display:block; }
+    .ps-usage-empty { padding:26px; text-align:center; color:var(--pd-muted); font-size:13px; }
+    .ps-usage-cfg { position:relative; margin-left:auto; }
+    .ps-usage-cfg-menu { position:absolute; right:0; top:calc(100% + 4px); z-index:60; display:none; width:290px;
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow); padding:10px 12px; font-size:12px; }
+    .ps-usage-cfg-menu.open { display:block; }
+    .ps-usage-cfg-menu h4 { margin:6px 0 4px; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .ps-usage-cfg-row { display:flex; align-items:center; gap:6px; padding:2px 0; }
+    .ps-usage-cfg-row .sw { width:14px; height:9px; border-radius:2px; flex:none; }
+    .ps-usage-cfg-row .lbl { flex:1; }
+    .ps-usage-cfg-row label { display:inline-flex; align-items:center; gap:3px; font-size:11px; color:var(--pd-muted); cursor:pointer; }
+    /* Resource Usage: roster + chart split */
+    .ps-res-split { display:flex; gap:0; height:100%; min-height:0; }
+    .ps-res-roster { flex:0 0 340px; border-right:1px solid var(--pd-line); overflow:auto; min-height:0; padding-right:8px; }
+    .ps-res-chart { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:6px; padding-left:10px; min-height:0; }
+    .ps-res-roster table { width:100%; border-collapse:collapse; font-size:12px; }
+    .ps-res-roster th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted);
+      border-bottom:2px solid var(--pd-line); padding:5px 6px; position:sticky; top:0; background:var(--pd-card); }
+    .ps-res-roster td { padding:5px 6px; border-bottom:1px solid var(--pd-line); }
+    .ps-res-roster td.num, .ps-res-roster th.num { text-align:right; }
+    .ps-res-roster tr.sel td { background:var(--pd-red-light); }
+    .ps-usage-sheet { overflow:auto; flex:1 1 auto; min-height:0; }
+    .ps-usage-sheet table { border-collapse:collapse; font-size:11.5px; white-space:nowrap; }
+    .ps-usage-sheet th, .ps-usage-sheet td { border:1px solid var(--pd-line); padding:4px 8px; text-align:right; }
+    .ps-usage-sheet th { background:var(--pd-bg); font-size:10.5px; color:var(--pd-muted); }
+    .ps-usage-sheet td:first-child, .ps-usage-sheet th:first-child { text-align:left; position:sticky; left:0; background:var(--pd-card); }
+    .ps-usage-sheet tr.res-head td { font-weight:700; background:var(--pd-bg); }
     .ps-filter-menu { min-width:230px; padding:10px 12px; }
     .ps-filter-menu.open { display:block; }
     .ps-filter-menu h4 { margin:8px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
@@ -1006,32 +1040,321 @@
       '<div class="ps-trace-col"><div class="ps-dt-group">This activity</div>' + traceNode(((r.activity_id || '') + ' ' + (r.activity_name || '')).trim(), r.activity_type, true) + '</div>' +
       '<div class="ps-trace-arrow">→</div>' + col(succs, 'Successors') + '</div>';
   }
-  function detActUsage(r) {
-    var pc = r.planned_cost || 0, ac = r.actual_cost || 0, ev = r.earned_value || 0, cv = ev - ac;
-    var cpi = ac > 0 ? ev / ac : null;
-    var poc = plannedPOC(r);
-    return dlHtml([['Baseline Cost', r.bl_cost != null ? Fmt.money(r.bl_cost) : '—'], ['Planned Cost', Fmt.money(pc)], ['Actual Cost', Fmt.money(ac)], ['Earned Value', Fmt.money(ev)],
-      ['At Completion', Fmt.money(eac(r, cpi))],
-      ['Cost Variance', (cv >= 0 ? '+' : '') + Fmt.money(cv)], ['CPI', cpi != null ? cpi.toFixed(2) : '—'],
-      ['Planned % (POC)', poc != null ? poc + '%' : '—'], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—']]) +
-      '<p style="font-size:11px;color:var(--pd-muted);margin-top:10px;">Time-phased usage curves require resource/role loading (handled in the Resource Loading module).</p>';
-  }
   function detNoResource(kind) {
-    return '<div class="ps-empty-detail">No ' + kind + ' assignments for this activity.<br><span style="font-size:12px;">' +
-      kind.charAt(0).toUpperCase() + kind.slice(1) + ' loading is handled in the separate Resource Loading module (not yet enabled).</span></div>';
+    return '<div class="ps-empty-detail">No ' + kind + ' data yet.<br><span style="font-size:12px;">' +
+      kind.charAt(0).toUpperCase() + kind.slice(1) + ' definitions are owned by the separate Resource Loading module (not yet enabled).</span></div>';
+  }
+
+  // ---- Project Usage (OPC-style time-phased charts) ----
+  // Costs/units are spread LINEARLY (day-weighted) across each activity's dates into monthly
+  // buckets — OPC's default spread when no resource curve is assigned. Curves are cumulative,
+  // bars are per-period, mirroring OPC's Bars/Curves settings model.
+  var USAGE_SERIES = [
+    { k: 'planned', label: 'Planned',              color: '#EFC862' },
+    { k: 'actual',  label: 'Period Actual',        color: '#7FB8DC' },
+    { k: 'reme',    label: 'Remaining Early',      color: '#7FC97F' },
+    { k: 'reml',    label: 'Remaining Late',       color: '#1B7837' },
+    { k: 'bac',     label: 'Budget At Completion', color: '#1F6FB2' },
+    { k: 'pv',      label: 'Period Planned Value', color: '#F2B8C6' },
+    { k: 'ev',      label: 'Period Earned Value',  color: '#F5A623' },
+    { k: 'etc',     label: 'Estimate To Complete', color: '#1D8C8C' }
+  ];
+  // OPC's own defaults: no bars, cumulative curves for Planned / Period Actual / BAC / ETC.
+  function usageDefaults() {
+    return { bars: {}, curves: { planned: true, actual: true, bac: true, etc: true },
+      legend: true, ddline: true, sight: true, curveVals: true };
+  }
+  var usageCfg = usageDefaults();
+  try { var uc = JSON.parse(localStorage.getItem('ps_usage_cfg') || 'null'); if (uc && uc.bars && uc.curves) usageCfg = uc; } catch (e) {}
+  function saveUsageCfg() { try { localStorage.setItem('ps_usage_cfg', JSON.stringify(usageCfg)); } catch (e) {} }
+  var usageScope = 'all';          // 'all' | 'sel' — OPC's "Show all activities above" scope
+  var resSel = {}, resView = 'hist'; // Resource Usage: selected parties + histogram/spreadsheet view
+
+  function fmtCompact(v) {
+    var a = Math.abs(v);
+    if (a >= 1e9) return (v / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
+    if (a >= 1e6) return (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (a >= 1e3) return (v / 1e3).toFixed(0) + 'k';
+    return String(Math.round(v * 10) / 10);
+  }
+  function usageMonths() {
+    var m0 = _min || today(), m1 = _max || today();
+    var n = (m1.getFullYear() - m0.getFullYear()) * 12 + (m1.getMonth() - m0.getMonth()) + 1;
+    return { y0: m0.getFullYear(), mo0: m0.getMonth(), n: Math.max(1, n) };
+  }
+  function monthIdx(M, d) { return (d.getFullYear() - M.y0) * 12 + (d.getMonth() - M.mo0); }
+  // Add `val` into arr, day-weighted across [s, e] (inclusive), clipped to the chart window.
+  function spreadAdd(arr, M, val, s, e) {
+    if (!val || !s || !e) return;
+    if (e < s) e = s;
+    var totalDays = dayDiff(s, e) + 1;
+    var i0 = Math.max(0, monthIdx(M, s)), i1 = Math.min(M.n - 1, monthIdx(M, e));
+    for (var i = i0; i <= i1; i++) {
+      var ms = new Date(M.y0, M.mo0 + i, 1), me = new Date(M.y0, M.mo0 + i + 1, 0);
+      var os = s > ms ? s : ms, oe = e < me ? e : me;
+      var od = dayDiff(os, oe) + 1;
+      if (od > 0) arr[i] += val * od / totalDays;
+    }
+  }
+  function zeros(n) { var a = []; for (var i = 0; i < n; i++) a.push(0); return a; }
+  function usageTasks() {
+    var t = rows.filter(function (r) { return !isWbs(r) && pd(r.start_date) && pd(r.end_date); });
+    if (usageScope === 'sel') { var r = selRow(); t = (r && !isWbs(r)) ? [r] : t; }
+    return t;
+  }
+  // Cost series (Activity Usage). Remaining cost = planned × (1 − % complete); Remaining Late
+  // shifts that window by the activity's total float (its late dates) when CPM computed one.
+  function usageCostData() {
+    var M = usageMonths(), DD = today();
+    var S = {}; USAGE_SERIES.forEach(function (d) { S[d.k] = zeros(M.n); });
+    usageTasks().forEach(function (r) {
+      var s = pd(r.start_date), e = pd(r.end_date);
+      var as = pd(r.actual_start) || s, ae = pd(r.actual_finish) || (DD < e ? DD : e);
+      var done = (r.percent_complete || 0) >= 100 || !!r.actual_finish;
+      var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
+      spreadAdd(S.planned, M, r.planned_cost || 0, s, e);
+      spreadAdd(S.actual, M, r.actual_cost || 0, as, ae < as ? as : ae);
+      spreadAdd(S.bac, M, (r.bl_cost != null ? r.bl_cost : r.planned_cost) || 0, pd(r.bl_start) || s, pd(r.bl_finish) || e);
+      spreadAdd(S.pv, M, (r.bl_cost != null ? r.bl_cost : r.planned_cost) || 0, pd(r.bl_start) || s, pd(r.bl_finish) || e);
+      spreadAdd(S.ev, M, r.earned_value || 0, as, ae < as ? as : ae);
+      if (!done) {
+        var remCost = Math.max((r.planned_cost || 0) * (1 - (r.percent_complete || 0) / 100), 0);
+        var rs = s > DD ? s : DD, re = e > rs ? e : rs;
+        spreadAdd(S.reme, M, remCost, rs, re);
+        var fl = (r._float != null && r._float > 0) ? r._float : 0;
+        spreadAdd(S.reml, M, remCost, addDays(rs, fl), addDays(re, fl));
+        spreadAdd(S.etc, M, Math.max(eac(r, cpi) - (r.actual_cost || 0), 0), rs, re);
+      }
+    });
+    return { M: M, S: S };
+  }
+  // Shared SVG renderer: per-period bars + cumulative curves + axes + data-date line + legend.
+  function usageChartSVG(M, seriesDefs, S, opts) {
+    var host = document.getElementById('ps-details-body');
+    var W = Math.max(560, (host ? host.clientWidth : 900) - 24);
+    var H = Math.max(150, (host ? host.clientHeight : 240) - (opts.headH || 46) - 14);
+    var legendW = opts.legend ? 170 : 10, padL = 58, padB = 26, padT = 8;
+    var cw = W - padL - legendW, ch = H - padT - padB;
+    var barsOn = seriesDefs.filter(function (d) { return opts.bars[d.k]; });
+    var curvesOn = seriesDefs.filter(function (d) { return opts.curves[d.k]; });
+    if (!barsOn.length && !curvesOn.length) return '<div class="ps-usage-empty">All series are hidden — enable Bars or Curves in Settings.</div>';
+    var ymax = 0;
+    barsOn.forEach(function (d) { S[d.k].forEach(function (v) { if (v > ymax) ymax = v; }); });
+    curvesOn.forEach(function (d) { var c = 0; S[d.k].forEach(function (v) { c += v; }); if (c > ymax) ymax = c; });
+    if (ymax <= 0) return '<div class="ps-usage-empty">' + (opts.emptyMsg || 'No data to plot yet.') + '</div>';
+    ymax *= 1.06;
+    var xw = cw / M.n, out = '';
+    // horizontal sight lines + y labels
+    var steps = 4;
+    for (var yi = 0; yi <= steps; yi++) {
+      var yv = ymax * yi / steps, yy = padT + ch - ch * yi / steps;
+      if (opts.sight && yi > 0) out += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (padL + cw) + '" y2="' + yy + '" stroke="var(--pd-line)" stroke-width="1"/>';
+      out += '<text x="' + (padL - 6) + '" y="' + (yy + 3.5) + '" text-anchor="end" font-size="10" fill="var(--pd-muted)">' + (opts.unit === 'd' ? Math.round(yv) + 'd' : '₱' + fmtCompact(yv)) + '</text>';
+    }
+    out += '<line x1="' + padL + '" y1="' + (padT + ch) + '" x2="' + (padL + cw) + '" y2="' + (padT + ch) + '" stroke="var(--pd-muted)" stroke-width="1"/>';
+    // x labels — at most ~10
+    var step = Math.max(1, Math.ceil(M.n / 10));
+    var MABBR2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    for (var mi = 0; mi < M.n; mi += step) {
+      var lm = new Date(M.y0, M.mo0 + mi, 1);
+      out += '<text x="' + (padL + mi * xw + xw / 2) + '" y="' + (padT + ch + 14) + '" text-anchor="middle" font-size="9.5" fill="var(--pd-muted)">' + MABBR2[lm.getMonth()] + ' ' + String(lm.getFullYear()).slice(2) + '</text>';
+    }
+    // bars (side-by-side per period)
+    if (barsOn.length) {
+      var bw = (xw * 0.72) / barsOn.length;
+      barsOn.forEach(function (d, bi) {
+        S[d.k].forEach(function (v, i) {
+          if (v <= 0) return;
+          var bh = ch * v / ymax;
+          out += '<rect x="' + (padL + i * xw + xw * 0.14 + bi * bw) + '" y="' + (padT + ch - bh) + '" width="' + Math.max(bw - 0.5, 0.5) + '" height="' + bh + '" fill="' + d.color + '"/>';
+        });
+      });
+    }
+    // cumulative curves
+    curvesOn.forEach(function (d) {
+      var c = 0, pts = [];
+      S[d.k].forEach(function (v, i) { c += v; pts.push((padL + i * xw + xw / 2) + ',' + (padT + ch - ch * c / ymax)); });
+      out += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + d.color + '" stroke-width="2"/>';
+      if (opts.curveVals && c > 0) {
+        var last = pts[pts.length - 1].split(',');
+        out += '<text x="' + (Math.min(parseFloat(last[0]) + 3, padL + cw - 2)) + '" y="' + (parseFloat(last[1]) - 4) + '" font-size="9.5" font-weight="700" fill="' + d.color + '">' + (opts.unit === 'd' ? Math.round(c) + 'd' : '₱' + fmtCompact(c)) + '</text>';
+      }
+    });
+    // data date line
+    if (opts.ddline) {
+      var DD = today(), di = monthIdx(M, DD);
+      if (di >= 0 && di < M.n) {
+        var frac = (DD.getDate() - 1) / (new Date(DD.getFullYear(), DD.getMonth() + 1, 0).getDate());
+        var dx = padL + (di + frac) * xw;
+        out += '<line x1="' + dx + '" y1="' + padT + '" x2="' + dx + '" y2="' + (padT + ch) + '" stroke="var(--pd-red)" stroke-width="1.5"/>' +
+          '<text x="' + (dx + 3) + '" y="' + (padT + 10) + '" font-size="9.5" fill="var(--pd-red)" font-weight="700">Data ' + Fmt.date(dstr(DD)) + '</text>';
+      }
+    }
+    // legend (right, like OPC)
+    if (opts.legend) {
+      var shown = seriesDefs.filter(function (d) { return opts.bars[d.k] || opts.curves[d.k]; });
+      shown.forEach(function (d, li) {
+        var ly = padT + 8 + li * 17;
+        out += '<rect x="' + (padL + cw + 14) + '" y="' + (ly - 7) + '" width="14" height="8" rx="2" fill="' + d.color + '"/>' +
+          '<text x="' + (padL + cw + 33) + '" y="' + ly + '" font-size="10.5" fill="var(--pd-ink)">' + d.label + '</text>';
+      });
+    }
+    return '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
+  }
+  function usageActivityHtml() {
+    var r = selRow(), hasSel = !!(r && !isWbs(r));
+    var d = usageCostData();
+    var head = '<div class="ps-usage-head">' +
+      '<select class="pd-select" id="ps-usage-scope"><option value="all">All activities</option>' +
+      (hasSel ? '<option value="sel"' + (usageScope === 'sel' ? ' selected' : '') + '>Selected: ' + esc(r.activity_id || r.activity_name || '') + '</option>' : '') + '</select>' +
+      '<span class="ps-usage-note">Data Date: ' + Fmt.date(dstr(today())) + ' · costs spread linearly across activity dates</span>' +
+      '<span class="ps-usage-cfg"><button class="pd-btn" id="ps-usage-cfgbtn" style="height:30px;font-size:12px;">Settings ▾</button>' +
+      '<div class="ps-usage-cfg-menu" id="ps-usage-cfg-menu"></div></span></div>';
+    return '<div class="ps-usage">' + head +
+      '<div class="ps-usage-chart" id="ps-usage-chart">' +
+      usageChartSVG(d.M, USAGE_SERIES, d.S, { bars: usageCfg.bars, curves: usageCfg.curves, legend: usageCfg.legend,
+        ddline: usageCfg.ddline, sight: usageCfg.sight, curveVals: usageCfg.curveVals, unit: '₱',
+        emptyMsg: 'No cost data yet — enter Planned/Actual IBB on activities (grid or modal).' }) +
+      '</div></div>';
+  }
+  function wireActUsage() {
+    var sc = document.getElementById('ps-usage-scope');
+    if (sc) { sc.value = usageScope === 'sel' && sc.querySelector('[value="sel"]') ? 'sel' : 'all';
+      sc.onchange = function () { usageScope = sc.value; renderDetails(); }; }
+    var btn = document.getElementById('ps-usage-cfgbtn'), menu = document.getElementById('ps-usage-cfg-menu');
+    if (!btn || !menu) return;
+    btn.onclick = function (e) {
+      e.stopPropagation();
+      if (menu.classList.contains('open')) { menu.classList.remove('open'); return; }
+      var html = '<h4>Series — bars & curves</h4>';
+      USAGE_SERIES.forEach(function (d) {
+        html += '<div class="ps-usage-cfg-row"><span class="sw" style="background:' + d.color + ';"></span><span class="lbl">' + d.label + '</span>' +
+          '<label><input type="checkbox" data-uk="bars:' + d.k + '"' + (usageCfg.bars[d.k] ? ' checked' : '') + '> Bars</label>' +
+          '<label><input type="checkbox" data-uk="curves:' + d.k + '"' + (usageCfg.curves[d.k] ? ' checked' : '') + '> Curve</label></div>';
+      });
+      html += '<h4>Graph</h4>' +
+        ['legend:Legend', 'ddline:Data date line', 'sight:Sight lines', 'curveVals:Values on curves'].map(function (g) {
+          var p = g.split(':');
+          return '<div class="ps-usage-cfg-row"><label style="font-size:12px;color:var(--pd-ink);"><input type="checkbox" data-uk="opt:' + p[0] + '"' + (usageCfg[p[0]] ? ' checked' : '') + '> ' + p[1] + '</label></div>';
+        }).join('');
+      menu.innerHTML = html; menu.classList.add('open');
+      menu.onclick = function (ev) { ev.stopPropagation(); };
+      menu.querySelectorAll('[data-uk]').forEach(function (cb) {
+        cb.onchange = function () {
+          var p = cb.dataset.uk.split(':');
+          if (p[0] === 'opt') usageCfg[p[1]] = cb.checked; else usageCfg[p[0]][p[1]] = cb.checked;
+          saveUsageCfg();
+          var d = usageCostData();
+          document.getElementById('ps-usage-chart').innerHTML = usageChartSVG(d.M, USAGE_SERIES, d.S,
+            { bars: usageCfg.bars, curves: usageCfg.curves, legend: usageCfg.legend, ddline: usageCfg.ddline,
+              sight: usageCfg.sight, curveVals: usageCfg.curveVals, unit: '₱' });
+        };
+      });
+      document.addEventListener('click', function close() { menu.classList.remove('open'); document.removeEventListener('click', close); });
+    };
+  }
+  // ---- Resource Usage: responsible_party as the roster, labor units as the loading ----
+  var RES_SERIES = [
+    { k: 'planned', label: 'Planned', color: '#EFC862' },
+    { k: 'actual',  label: 'Actual',  color: '#7FB8DC' },
+    { k: 'reme',    label: 'Remaining Early', color: '#7FC97F' },
+    { k: 'reml',    label: 'Remaining Late',  color: '#1B7837' }
+  ];
+  function resRoster() {
+    var map = {};
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      var key = (r.responsible_party || '').trim() || '(Unassigned)';
+      var m = map[key] || (map[key] = { name: key, acts: 0, pu: 0, au: 0, ru: 0, rows: [] });
+      m.acts++; m.pu += r.planned_labor_units || 0; m.au += r.actual_labor_units || 0; m.ru += r.remaining_labor_units || 0;
+      m.rows.push(r);
+    });
+    return Object.keys(map).sort().map(function (k) { return map[k]; });
+  }
+  function resUnitsData(parties) {
+    var M = usageMonths(), DD = today();
+    var S = { planned: zeros(M.n), actual: zeros(M.n), reme: zeros(M.n), reml: zeros(M.n) };
+    parties.forEach(function (p) {
+      p.rows.forEach(function (r) {
+        var s = pd(r.start_date), e = pd(r.end_date); if (!s || !e) return;
+        var as = pd(r.actual_start) || s, ae = pd(r.actual_finish) || (DD < e ? DD : e);
+        spreadAdd(S.planned, M, r.planned_labor_units || 0, s, e);
+        spreadAdd(S.actual, M, r.actual_labor_units || 0, as, ae < as ? as : ae);
+        var done = (r.percent_complete || 0) >= 100 || !!r.actual_finish;
+        if (!done && r.remaining_labor_units) {
+          var rs = s > DD ? s : DD, re = e > rs ? e : rs;
+          spreadAdd(S.reme, M, r.remaining_labor_units, rs, re);
+          var fl = (r._float != null && r._float > 0) ? r._float : 0;
+          spreadAdd(S.reml, M, r.remaining_labor_units, addDays(rs, fl), addDays(re, fl));
+        }
+      });
+    });
+    return { M: M, S: S };
+  }
+  function usageResourceHtml() {
+    var roster = resRoster();
+    var rowsHtml = roster.map(function (m, i) {
+      return '<tr data-res="' + i + '"' + (resSel[m.name] ? ' class="sel"' : '') + '><td><input type="checkbox"' + (resSel[m.name] ? ' checked' : '') + '></td>' +
+        '<td>' + esc(m.name) + '</td><td class="num">' + m.acts + '</td>' +
+        '<td class="num">' + Math.round(m.pu) + 'd</td><td class="num">' + Math.round(m.au) + 'd</td><td class="num">' + Math.round(m.ru) + 'd</td></tr>';
+    }).join('');
+    var sel = roster.filter(function (m) { return resSel[m.name]; });
+    var right;
+    if (!sel.length) right = '<div class="ps-usage-empty">Select a resource in the list to display usage data.</div>';
+    else if (resView === 'sheet') right = resSheetHtml(sel);
+    else {
+      var d = resUnitsData(sel);
+      right = '<div class="ps-usage-chart" id="ps-res-chart">' +
+        usageChartSVG(d.M, RES_SERIES, d.S, { bars: { planned: 1, actual: 1, reme: 1, reml: 1 }, curves: {},
+          legend: true, ddline: true, sight: true, unit: 'd', headH: 40,
+          emptyMsg: 'No labor units on these activities yet — set Planned/Actual/Remaining Labor Units in the activity form.' }) + '</div>';
+    }
+    return '<div class="ps-res-split">' +
+      '<div class="ps-res-roster"><table><thead><tr><th></th><th>Name</th><th class="num">Activities</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Remaining</th></tr></thead><tbody>' +
+      (rowsHtml || '<tr><td colspan="6" style="color:var(--pd-muted);">No activities yet.</td></tr>') + '</tbody></table>' +
+      '<p class="ps-usage-note" style="margin:8px 2px;">Roster = distinct Responsible Party values; units come from each activity\'s Labor Units fields. Full resource/role definitions arrive with the Resource Loading module.</p></div>' +
+      '<div class="ps-res-chart"><div class="ps-usage-head">' +
+      '<div class="ps-seg" style="height:28px;"><button data-rv="hist"' + (resView === 'hist' ? ' class="active"' : '') + ' style="padding:0 12px;">Histogram</button>' +
+      '<button data-rv="sheet"' + (resView === 'sheet' ? ' class="active"' : '') + ' style="padding:0 12px;">Spreadsheet</button></div>' +
+      '<span class="ps-usage-note">Units in person-days per month</span></div>' + right + '</div></div>';
+  }
+  function resSheetHtml(sel) {
+    var M = usageMonths();
+    var MABBR3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var heads = '';
+    for (var i = 0; i < M.n; i++) { var lm = new Date(M.y0, M.mo0 + i, 1); heads += '<th>' + MABBR3[lm.getMonth()] + ' ' + String(lm.getFullYear()).slice(2) + '</th>'; }
+    var body = '';
+    sel.forEach(function (m) {
+      var d = resUnitsData([m]);
+      body += '<tr class="res-head"><td>' + esc(m.name) + '</td><td></td>' + new Array(M.n + 1).join('<td></td>') + '</tr>';
+      [['Planned Units', d.S.planned], ['Actual Units', d.S.actual], ['Remaining Units', d.S.reme]].forEach(function (line) {
+        var tot = 0; line[1].forEach(function (v) { tot += v; });
+        body += '<tr><td style="padding-left:18px;">' + line[0] + '</td><td><b>' + Math.round(tot) + 'd</b></td>' +
+          line[1].map(function (v) { return '<td>' + (v > 0 ? (Math.round(v * 10) / 10) + 'd' : '') + '</td>'; }).join('') + '</tr>';
+      });
+    });
+    return '<div class="ps-usage-sheet"><table><thead><tr><th>Name / Units</th><th>Total</th>' + heads + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+  function wireResUsage() {
+    var roster = resRoster();
+    document.querySelectorAll('.ps-res-roster tr[data-res]').forEach(function (tr) {
+      tr.onclick = function () { var m = roster[parseInt(tr.dataset.res, 10)]; if (!m) return; resSel[m.name] = !resSel[m.name]; renderDetails(); };
+    });
+    document.querySelectorAll('[data-rv]').forEach(function (b) { b.onclick = function () { resView = b.dataset.rv; renderDetails(); }; });
   }
   function renderDetails() {
     var body = document.getElementById('ps-details-body'); if (!body) return;
+    var t = detailTab;
+    // Project Usage tabs are project-level (like OPC) — they render without a selection.
+    if (t === 'ausage') { body.innerHTML = usageActivityHtml(); wireActUsage(); return; }
+    if (t === 'rusage') { body.innerHTML = usageResourceHtml(); wireResUsage(); return; }
+    if (t === 'roleusage') { body.innerHTML = detNoResource('role'); return; }
     var r = selRow();
     if (!r || isWbs(r)) { body.innerHTML = '<div class="ps-empty-detail">Select an activity (click a row or its bar) to see its details.</div>'; return; }
-    var t = detailTab;
     if (t === 'general') body.innerHTML = detGeneral(r);
     else if (t === 'status') body.innerHTML = detStatus(r);
     else if (t === 'rels') body.innerHTML = detRels(r);
     else if (t === 'trace') body.innerHTML = detTrace(r);
-    else if (t === 'ausage') body.innerHTML = detActUsage(r);
-    else if (t === 'rusage') body.innerHTML = detNoResource('resource');
-    else if (t === 'roleusage') body.innerHTML = detNoResource('role');
   }
 
   // ----- COLUMN HEADER (static, resizable) -----
@@ -2011,6 +2334,8 @@
           document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
           document.body.style.userSelect = '';
           try { localStorage.setItem('ps_details_h', parseInt(dbody.style.height, 10)); } catch (e2) {}
+          // usage charts are sized to the panel — redraw at the new height
+          if (detailTab === 'ausage' || detailTab === 'rusage') renderDetails();
         }
         document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
       });
