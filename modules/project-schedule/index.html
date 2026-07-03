@@ -12,6 +12,13 @@
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
     .ps-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
+    /* Clickable title switcher (replaces the tab strip; frees vertical space) */
+    .ps-title-switch { position:relative; }
+    .ps-title-btn { display:inline-flex; align-items:center; gap:5px; background:none; border:none; cursor:pointer;
+      font-family:inherit; font-size:18px; font-weight:800; letter-spacing:-.01em; color:var(--pd-ink); padding:3px 6px; border-radius:7px; }
+    .ps-title-btn:hover { background:var(--pd-bg); }
+    .ps-title-btn [data-ico] { color:var(--pd-muted); }
+    #ps-title-menu button { font-size:14px; font-weight:600; }
     .ps-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .ps-seg button { border:none; background:var(--pd-card); padding:6px 12px; cursor:pointer; color:var(--pd-muted); font-size:12px; font-weight:600; }
     .ps-seg button.active { background:var(--pd-red); color:#fff; }
@@ -449,7 +456,13 @@
 
   <div class="pd-content">
     <div class="pd-topbar">
-      <h1>Project Schedule &amp; Cost Loading</h1>
+      <div class="ps-title-switch ps-menu-wrap">
+        <button class="ps-title-btn" id="ps-title-btn" title="Switch view"><span id="ps-title-txt">Project Schedule</span><span data-ico="chevronDown" data-ico-size="16"></span></button>
+        <div class="ps-menu" id="ps-title-menu">
+          <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
+          <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
+        </div>
+      </div>
       <!-- Project context sits next to the title (OPC-style), name over workspace, left-aligned -->
       <div class="ps-projctx">
         <select class="pd-select" id="ps-project" title="Project"></select>
@@ -501,18 +514,14 @@
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" title="Saved views"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
           <button class="pd-btn ps-icobtn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="16"></span></button>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Columns — choose which grid columns to show"><span data-ico="settings" data-ico-size="16"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Columns — choose which grid columns to show"><span data-ico="columns" data-ico-size="16"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colorsbtn" title="Gantt bar colors"><span data-ico="palette" data-ico-size="16"></span></button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <span class="ps-tb-div"></span>
           <button class="pd-btn ps-icobtn" id="ps-crit" title="Critical path — compute &amp; highlight"><span data-ico="risk" data-ico-size="16"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-linkmode" title="Link mode — drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="16"></span></button>
           <span class="ps-tb-spacer"></span>
           <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:200px;" /></div>
         </div>
-      </div>
-
-      <div class="ps-tabs">
-        <button class="ps-tab active" data-tab="schedule"><span data-ico="calendar" data-ico-size="15"></span> Schedule &amp; Gantt</button>
-        <button class="ps-tab" data-tab="cost"><span data-ico="cash" data-ico-size="15"></span> Cost Loading</button>
       </div>
 
       <!-- SCHEDULE: split activities + gantt -->
@@ -531,11 +540,6 @@
           </div>
           <div class="ps-divider" id="ps-divider" title="Drag to resize"></div>
           <div class="ps-gantt-pane">
-            <!-- Bar colors live with the Gantt (it's a Gantt-only feature) -->
-            <div class="ps-gantt-tools ps-menu-wrap">
-              <button class="pd-btn ps-icobtn" id="ps-colorsbtn" title="Gantt bar colors"><span data-ico="settings" data-ico-size="15"></span></button>
-              <div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div>
-            </div>
             <div class="ps-gantt-head" id="ps-gantt-head"></div>
             <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
           </div>
@@ -2258,6 +2262,10 @@
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     document.getElementById('ps-view-cost').style.display = tab === 'cost' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
+    // Drive the clickable title (frees the tab-strip row for the panels)
+    var name = tab === 'cost' ? 'Cost Loading' : 'Project Schedule';
+    var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
+    document.title = name + ' · Planners Dashboard';
     if (tab === 'schedule') renderGantt();
   }
 
@@ -2945,7 +2953,12 @@
     var aMenu = document.getElementById('ps-actions-menu');
     var lMenu = document.getElementById('ps-layout-menu');
     var colsMenu = document.getElementById('ps-cols-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); }
+    var tMenu = document.getElementById('ps-title-menu');
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); }
+    // Title dropdown → switch Project Schedule / Cost Loading
+    document.getElementById('ps-title-btn').onclick = function (e) { e.stopPropagation(); var o = tMenu.classList.contains('open'); closeMenus(); if (!o) tMenu.classList.add('open'); };
+    tMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    tMenu.querySelectorAll('[data-tab]').forEach(function (b) { b.onclick = function () { tMenu.classList.remove('open'); switchTab(b.dataset.tab); }; });
     // ---- Layout menu (view arrangement, like OPC's Layout / grid settings) ----
     try { layoutMode = localStorage.getItem('ps_layout') || 'split'; } catch (e) {}
     var detailsHidden = false; try { detailsHidden = localStorage.getItem('ps_details_hidden') === '1'; } catch (e) {}
