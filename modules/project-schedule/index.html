@@ -165,11 +165,18 @@
     /* Activity Details / Project Usage panel */
     .ps-details { margin-top:14px; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .ps-details-tabs { display:flex; flex-wrap:wrap; align-items:center; gap:4px; padding:8px 10px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); }
-    .ps-dt-group { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); font-weight:700; margin-right:4px; }
+    .ps-dt-group { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); font-weight:700;
+      margin-right:4px; border:none; background:none; padding:4px 8px; border-radius:6px; cursor:pointer; }
+    .ps-dt-group:hover { background:rgba(0,0,0,.05); color:var(--pd-ink); }
+    html.pd-dark .ps-dt-group:hover { background:rgba(255,255,255,.06); }
+    .ps-dt-group.active { color:var(--pd-red); }
     .ps-dtab { border:1px solid transparent; background:none; padding:4px 10px; border-radius:6px; font-size:12px; cursor:pointer; color:var(--pd-text); }
     .ps-dtab:hover { background:rgba(0,0,0,.05); }
     html.pd-dark .ps-dtab:hover { background:rgba(255,255,255,.06); }
     .ps-dtab.active { background:var(--pd-red); color:#fff; }
+    /* OPC behavior: only the active group's tabs are visible */
+    .ps-details-tabs[data-group="details"] .ps-dtab[data-dgroup="usage"],
+    .ps-details-tabs[data-group="usage"] .ps-dtab[data-dgroup="details"] { display:none; }
     /* Draggable resize handle for the bottom details panel */
     .ps-details-grip { height:9px; cursor:ns-resize; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); position:relative; }
     .ps-details-grip::before { content:""; position:absolute; left:50%; top:4px; width:40px; height:2px; border-radius:2px; transform:translateX(-50%); background:var(--pd-muted); opacity:.45; }
@@ -399,16 +406,17 @@
         <!-- OPC-style Activity Details / Project Usage panel (driven by selected activity) -->
         <div class="ps-details" id="ps-details">
           <div class="ps-details-grip" id="ps-details-grip" title="Drag to resize the details panel"></div>
-          <div class="ps-details-tabs">
-            <span class="ps-dt-group">Activity Details:</span>
-            <button class="ps-dtab active" data-dtab="general">General</button>
-            <button class="ps-dtab" data-dtab="status">Status</button>
-            <button class="ps-dtab" data-dtab="rels">Relationships</button>
-            <button class="ps-dtab" data-dtab="trace">Trace Logic</button>
-            <span class="ps-dt-group" style="margin-left:14px;">Project Usage:</span>
-            <button class="ps-dtab" data-dtab="ausage">Activity Usage</button>
-            <button class="ps-dtab" data-dtab="rusage">Resource Usage</button>
-            <button class="ps-dtab" data-dtab="roleusage">Role Usage</button>
+          <!-- OPC-style grouped tabs: click a group header to show ONLY that group's tabs -->
+          <div class="ps-details-tabs" id="ps-details-tabs" data-group="details">
+            <button class="ps-dt-group active" data-dgroup="details">Activity Details ▾</button>
+            <button class="ps-dtab active" data-dtab="general" data-dgroup="details">General</button>
+            <button class="ps-dtab" data-dtab="status" data-dgroup="details">Status</button>
+            <button class="ps-dtab" data-dtab="rels" data-dgroup="details">Relationships</button>
+            <button class="ps-dtab" data-dtab="trace" data-dgroup="details">Trace Logic</button>
+            <button class="ps-dt-group" data-dgroup="usage" style="margin-left:14px;">Project Usage ▾</button>
+            <button class="ps-dtab" data-dtab="ausage" data-dgroup="usage">Activity Usage</button>
+            <button class="ps-dtab" data-dtab="rusage" data-dgroup="usage">Resource Usage</button>
+            <button class="ps-dtab" data-dtab="roleusage" data-dgroup="usage">Role Usage</button>
           </div>
           <div class="ps-details-body" id="ps-details-body"></div>
         </div>
@@ -1129,10 +1137,12 @@
     return { M: M, S: S };
   }
   // Shared SVG renderer: per-period bars + cumulative curves + axes + data-date line + legend.
+  // opts.W/opts.H are the MEASURED size of the chart container (two-pass render: the layout is
+  // inserted first with an empty chart div, then the SVG is drawn at the div's real size — the
+  // old approach guessed the header height off the panel and clipped the bottom axis).
   function usageChartSVG(M, seriesDefs, S, opts) {
-    var host = document.getElementById('ps-details-body');
-    var W = Math.max(560, (host ? host.clientWidth : 900) - 24);
-    var H = Math.max(150, (host ? host.clientHeight : 240) - (opts.headH || 46) - 14);
+    var W = Math.max(420, opts.W || 560);
+    var H = Math.max(140, opts.H || 200);
     var legendW = opts.legend ? 170 : 10, padL = 58, padB = 26, padT = 8;
     var cw = W - padL - legendW, ch = H - padT - padB;
     var barsOn = seriesDefs.filter(function (d) { return opts.bars[d.k]; });
@@ -1210,14 +1220,20 @@
       '<span class="ps-usage-note">Data Date: ' + Fmt.date(dstr(today())) + ' · costs spread linearly across activity dates</span>' +
       '<span class="ps-usage-cfg"><button class="pd-btn" id="ps-usage-cfgbtn" style="height:30px;font-size:12px;">Settings ▾</button>' +
       '<div class="ps-usage-cfg-menu" id="ps-usage-cfg-menu"></div></span></div>';
-    return '<div class="ps-usage">' + head +
-      '<div class="ps-usage-chart" id="ps-usage-chart">' +
-      usageChartSVG(d.M, USAGE_SERIES, d.S, { bars: usageCfg.bars, curves: usageCfg.curves, legend: usageCfg.legend,
-        ddline: usageCfg.ddline, sight: usageCfg.sight, curveVals: usageCfg.curveVals, unit: '₱',
-        emptyMsg: 'No cost data yet — enter Planned/Actual IBB on activities (grid or modal).' }) +
-      '</div></div>';
+    return '<div class="ps-usage">' + head + '<div class="ps-usage-chart" id="ps-usage-chart"></div></div>';
+  }
+  // Draw (or redraw) the Activity Usage SVG at the chart container's real, laid-out size.
+  function drawActUsageChart() {
+    var host = document.getElementById('ps-usage-chart'); if (!host) return;
+    var d = usageCostData();
+    host.innerHTML = usageChartSVG(d.M, USAGE_SERIES, d.S, {
+      W: host.clientWidth, H: host.clientHeight,
+      bars: usageCfg.bars, curves: usageCfg.curves, legend: usageCfg.legend,
+      ddline: usageCfg.ddline, sight: usageCfg.sight, curveVals: usageCfg.curveVals, unit: '₱',
+      emptyMsg: 'No cost data yet — enter Planned/Actual IBB on activities (grid or modal).' });
   }
   function wireActUsage() {
+    drawActUsageChart();
     var sc = document.getElementById('ps-usage-scope');
     if (sc) { sc.value = usageScope === 'sel' && sc.querySelector('[value="sel"]') ? 'sel' : 'all';
       sc.onchange = function () { usageScope = sc.value; renderDetails(); }; }
@@ -1244,10 +1260,7 @@
           var p = cb.dataset.uk.split(':');
           if (p[0] === 'opt') usageCfg[p[1]] = cb.checked; else usageCfg[p[0]][p[1]] = cb.checked;
           saveUsageCfg();
-          var d = usageCostData();
-          document.getElementById('ps-usage-chart').innerHTML = usageChartSVG(d.M, USAGE_SERIES, d.S,
-            { bars: usageCfg.bars, curves: usageCfg.curves, legend: usageCfg.legend, ddline: usageCfg.ddline,
-              sight: usageCfg.sight, curveVals: usageCfg.curveVals, unit: '₱' });
+          drawActUsageChart();
         };
       });
       document.addEventListener('click', function close() { menu.classList.remove('open'); document.removeEventListener('click', close); });
@@ -1302,13 +1315,7 @@
     var right;
     if (!sel.length) right = '<div class="ps-usage-empty">Select a resource in the list to display usage data.</div>';
     else if (resView === 'sheet') right = resSheetHtml(sel);
-    else {
-      var d = resUnitsData(sel);
-      right = '<div class="ps-usage-chart" id="ps-res-chart">' +
-        usageChartSVG(d.M, RES_SERIES, d.S, { bars: { planned: 1, actual: 1, reme: 1, reml: 1 }, curves: {},
-          legend: true, ddline: true, sight: true, unit: 'd', headH: 40,
-          emptyMsg: 'No labor units on these activities yet — set Planned/Actual/Remaining Labor Units in the activity form.' }) + '</div>';
-    }
+    else right = '<div class="ps-usage-chart" id="ps-res-chart"></div>';
     return '<div class="ps-res-split">' +
       '<div class="ps-res-roster"><table><thead><tr><th></th><th>Name</th><th class="num">Activities</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Remaining</th></tr></thead><tbody>' +
       (rowsHtml || '<tr><td colspan="6" style="color:var(--pd-muted);">No activities yet.</td></tr>') + '</tbody></table>' +
@@ -1337,6 +1344,15 @@
   }
   function wireResUsage() {
     var roster = resRoster();
+    var host = document.getElementById('ps-res-chart');
+    if (host) {
+      var d = resUnitsData(roster.filter(function (m) { return resSel[m.name]; }));
+      host.innerHTML = usageChartSVG(d.M, RES_SERIES, d.S, {
+        W: host.clientWidth, H: host.clientHeight,
+        bars: { planned: 1, actual: 1, reme: 1, reml: 1 }, curves: {},
+        legend: true, ddline: true, sight: true, unit: 'd',
+        emptyMsg: 'No labor units on these activities yet — set Planned/Actual/Remaining Labor Units in the activity form.' });
+    }
     document.querySelectorAll('.ps-res-roster tr[data-res]').forEach(function (tr) {
       tr.onclick = function () { var m = roster[parseInt(tr.dataset.res, 10)]; if (!m) return; resSel[m.name] = !resSel[m.name]; renderDetails(); };
     });
@@ -2317,7 +2333,23 @@
     });
     document.getElementById('ps-health-close').onclick = closeHealthPanel;
     document.getElementById('ps-health-backdrop').onclick = closeHealthPanel;
-    document.querySelectorAll('.ps-dtab').forEach(function (b) { b.onclick = function () { detailTab = b.dataset.dtab; document.querySelectorAll('.ps-dtab').forEach(function (x) { x.classList.toggle('active', x === b); }); renderDetails(); }; });
+    // OPC-style grouped detail tabs: the Activity Details / Project Usage headers switch which
+    // group's tabs are shown (the other group's tabs hide); each group remembers its last tab.
+    var lastGroupTab = { details: 'general', usage: 'ausage' };
+    function setDetailTab(tab) {
+      detailTab = tab;
+      document.querySelectorAll('.ps-dtab').forEach(function (x) { x.classList.toggle('active', x.dataset.dtab === tab); });
+      renderDetails();
+    }
+    function setDetailGroup(g) {
+      document.getElementById('ps-details-tabs').dataset.group = g;
+      document.querySelectorAll('.ps-dt-group').forEach(function (x) { x.classList.toggle('active', x.dataset.dgroup === g); });
+      setDetailTab(lastGroupTab[g]);
+    }
+    document.querySelectorAll('.ps-dtab').forEach(function (b) {
+      b.onclick = function () { lastGroupTab[b.dataset.dgroup] = b.dataset.dtab; setDetailTab(b.dataset.dtab); };
+    });
+    document.querySelectorAll('.ps-dt-group').forEach(function (b) { b.onclick = function () { setDetailGroup(b.dataset.dgroup); }; });
 
     // Resizable bottom details panel (drag the grip up/down; height persisted).
     (function () {

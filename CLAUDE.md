@@ -77,6 +77,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-03 — Prompt 52: Usage-chart clipping fix + OPC grouped detail tabs
+- **Chart clipping fixed** (user: "the whole graph is not seen even when the view is
+  extended"): `usageChartSVG` guessed its height from the details-panel height minus an
+  assumed header height — the guess overshot the real space, so the SVG overflowed its
+  `overflow:hidden` container and the bottom axis/labels were cut off at every panel height.
+  Now a **two-pass render**: the layout is inserted with an empty chart div first, then the
+  SVG is drawn at the div's real measured `clientWidth/clientHeight` (`drawActUsageChart` /
+  the res-chart branch of `wireResUsage`). Verified: SVG height exactly equals container
+  height at both default (154px) and extended (354px) panel sizes, no V/H clipping.
+- **OPC grouped detail tabs**: "Activity Details ▾" and "Project Usage ▾" are now clickable
+  group headers — clicking one shows only that group's tabs and hides the other's (CSS
+  `[data-group]` rules on the tab bar), matching OPC's panel-group dropdown behavior. Each
+  group remembers its last-used tab (`lastGroupTab`); the active group header is highlighted
+  brand-red.
+
 ### 2026-07-03 — Prompt 51: Project Usage tabs copied from OPC (Activity + Resource Usage)
 - Studied the live Avesta OPC Project Usage panel (Activity Usage settings dialog, Resource
   Usage roster + histogram/spreadsheet views, Role Usage) and replicated it in the details
