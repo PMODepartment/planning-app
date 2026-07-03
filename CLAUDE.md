@@ -267,6 +267,21 @@ developer, plug into one shared shell.
   git-ignored test harness (stubbed `AppAuth`/`PDb`/Supabase with synthetic rows, no real
   credentials or backend touched) to confirm the render tree and connector math; deleted after use.
 
+### 2026-07-01 — Prompt 45 (Desktop): Project Schedule top-bar polish (OPC parity)
+- **Workspace subline** under the project name in the top-bar selector (OPC-style
+  "project / workspace"), via `PDb.getWorkspaces()` + `projects.workspace_id`
+  (falls back to `group_head`).
+- **Export to Excel** icon added to the top-bar tool cluster (beside Refresh) —
+  convenient placement in addition to the Actions menu.
+- **Print / PDF** button beside Schedule (window.print() + a print stylesheet
+  that shows only the schedule/Gantt).
+- **Layout ▾** menu (next to Schedule): switch **Split / Grid only / Gantt only**
+  and toggle the details panel; persisted in localStorage (`ps_layout`,
+  `ps_details_hidden`).
+- Note: undo/redo/Health/Filter/Refresh/project-selector were already in the top
+  bar (Teams line); this pass added the missing OPC-parity items. Added `printer`
+  + `layout` icons to `icons.js`.
+
 ### 2026-07-01 — Prompt 44 (Desktop): S-Curve forecast line + transposed data table
 - Added a **red dashed forecast-to-finish line** from the actual point at the
   data date up to 100% at a **manual Forecast finish date** (date input in the

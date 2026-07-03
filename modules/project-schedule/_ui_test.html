@@ -42,20 +42,6 @@
        sized to sit beside the theme toggle; the filter dropdown right-aligns so it can't
        overflow the viewport edge. */
     .ps-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; min-width:0; }
-    /* OPC-style project context: project name + workspace subline */
-    .ps-projctx { display:flex; flex-direction:column; gap:1px; }
-    .ps-ws { font-size:10px; color:var(--pd-muted); line-height:1.1; padding-left:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
-    /* Layout modes: hide a pane for grid-only / gantt-only */
-    .ps-split.ps-grid-only .ps-gantt-pane, .ps-split.ps-grid-only .ps-divider { display:none; }
-    .ps-split.ps-gantt-only .ps-grid-pane, .ps-split.ps-gantt-only .ps-divider { display:none; }
-    /* Print / PDF: show only the schedule content */
-    @media print {
-      .pd-sidebar, .pd-topbar, .ps-toolbar, .ps-tabs, #ps-details, .ps-legend { display:none !important; }
-      .pd-app, .pd-content, .pd-main { display:block !important; height:auto !important; }
-      #ps-view-schedule { display:block !important; }
-      .ps-split { height:auto !important; min-height:0 !important; border:none; }
-      .ps-grid-scroll, .ps-gantt-scroll { overflow:visible !important; }
-    }
     .ps-topbar-tools .pd-btn { height:34px; padding:0 9px; background:transparent; border-color:transparent; font-size:13px; }
     .ps-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .ps-topbar-tools .pd-btn:disabled { opacity:.35; cursor:not-allowed; }
@@ -362,17 +348,13 @@
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
            before #user-bar, so these sit immediately beside the night-mode button -->
       <div class="ps-topbar-tools" id="ps-topbar-tools">
-        <div class="ps-projctx">
-          <select class="pd-select" id="ps-project" title="Project" style="min-width:150px;max-width:260px;"></select>
-          <div class="ps-ws" id="ps-workspace"></div>
-        </div>
+        <select class="pd-select" id="ps-project" title="Project" style="min-width:150px;max-width:260px;"></select>
         <span class="ps-tb-div"></span>
         <button class="pd-btn" id="ps-undo" title="Undo" disabled><span data-ico="undo" data-ico-size="15"></span></button>
         <button class="pd-btn" id="ps-redo" title="Redo" disabled><span data-ico="redo" data-ico-size="15"></span></button>
         <button class="pd-btn" id="ps-health" title="Schedule Health Score"><span data-ico="pulse" data-ico-size="15"></span></button>
         <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="15"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
         <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="15"></span></button>
-        <button class="pd-btn" id="ps-export-top" title="Export to Excel"><span data-ico="download" data-ico-size="15"></span></button>
         <span class="ps-tb-div"></span>
       </div>
       <div id="user-bar"></div>
@@ -409,8 +391,6 @@
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-views">Views ▾</button><div class="ps-menu" id="ps-views-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Edit Gantt bar colors">Colors ▾</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-schedbtn" title="Scheduling options">Schedule ▾</button><div class="ps-menu ps-sched-menu" id="ps-sched-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="Layout — switch Grid / Gantt / Split and toggle the details panel"><span data-ico="layout" data-ico-size="15"></span> Layout ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
-          <button class="pd-btn" id="ps-print" title="Print / Save as PDF"><span data-ico="printer" data-ico-size="15"></span> Print</button>
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="risk" data-ico-size="15"></span> Critical path</button>
           <button class="pd-btn" id="ps-linkmode" title="Link mode: drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="15"></span> Link</button>
@@ -584,7 +564,6 @@
   'use strict';
   var TABLE = 'project_schedule';
   var pid = null, rows = [], editId = null, UID = null;
-  var PROJECTS = [], WORKSPACES = [], layoutMode = 'split';
   var zoom = 'quarter', collapsed = {}, selId = null, search = '';
   var filters = { status: {}, type: {}, behind: false, look: 0 };   // empty sets = show all; look = weeks (0 = all)
   var groupBy = 'wbs';   // 'wbs' | 'status' | 'responsible' | 'type'
@@ -604,23 +583,12 @@
   // ---- data ----
   async function loadProjects() {
     var projects = await PDb.getProjects();
-    PROJECTS = projects;
-    try { WORKSPACES = await PDb.getWorkspaces(); } catch (e) { WORKSPACES = []; }
     var sel = document.getElementById('ps-project');
     pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
-    updateWorkspaceCaption();
     if (pid) load();
-  }
-  // OPC-style: show the project's workspace/program under the project name.
-  function updateWorkspaceCaption() {
-    var el = document.getElementById('ps-workspace'); if (!el) return;
-    var p = PROJECTS.find(function (x) { return x.id === pid; });
-    var ws = p && p.workspace_id ? WORKSPACES.find(function (w) { return w.id === p.workspace_id; }) : null;
-    el.textContent = ws ? ws.name : (p && p.group_head ? p.group_head : '');
-    el.title = el.textContent;
   }
   async function load() {
     if (!pid) { rows = []; rebuild(); renderAll(); return; }
@@ -2361,7 +2329,7 @@
     try { var cw = JSON.parse(localStorage.getItem('ps_cols') || 'null'); if (cw) { var gp = document.querySelector('.ps-grid-pane'); Object.keys(cw).forEach(function (c) { if (cw[c]) gp.style.setProperty('--c-' + c, cw[c]); }); } } catch (e) {}
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.onclick = function (e) { e.preventDefault(); switchTab(a.dataset.view); }; });
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.onclick = function () { switchTab(b.dataset.tab); }; });
-    document.getElementById('ps-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); updateWorkspaceCaption(); collapsed = {}; resetUndo(); load(); };
+    document.getElementById('ps-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); collapsed = {}; resetUndo(); load(); };
     document.getElementById('ps-search').oninput = function (e) { search = e.target.value; renderGrid(); renderGantt(); };
     document.getElementById('ps-group').onchange = function (e) { groupBy = e.target.value; collapsed = {}; renderCollapseMenu(); renderGrid(); renderGantt(); };
     document.getElementById('ps-zoom').querySelectorAll('[data-zoom]').forEach(function (b) {
@@ -2375,28 +2343,7 @@
     var vMenu = document.getElementById('ps-views-menu');
     var sMenu = document.getElementById('ps-sched-menu'), colMenu = document.getElementById('ps-colors-menu');
     var aMenu = document.getElementById('ps-actions-menu');
-    var lMenu = document.getElementById('ps-layout-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); sMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); }
-    // ---- Layout menu (view arrangement, like OPC's Layout / grid settings) ----
-    try { layoutMode = localStorage.getItem('ps_layout') || 'split'; } catch (e) {}
-    var detailsHidden = false; try { detailsHidden = localStorage.getItem('ps_details_hidden') === '1'; } catch (e) {}
-    function applyLayout() {
-      var sp = document.querySelector('.ps-split');
-      if (sp) { sp.classList.toggle('ps-grid-only', layoutMode === 'grid'); sp.classList.toggle('ps-gantt-only', layoutMode === 'gantt'); }
-      var det = document.getElementById('ps-details'); if (det) det.style.display = detailsHidden ? 'none' : '';
-      renderGantt();
-    }
-    function renderLayoutMenu() {
-      function radio(v, label) { return '<button data-lay="' + v + '">' + (layoutMode === v ? '● ' : '○ ') + label + '</button>'; }
-      lMenu.innerHTML =
-        '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">View</div>' +
-        radio('split', 'Split (Grid + Gantt)') + radio('grid', 'Grid only') + radio('gantt', 'Gantt only') +
-        '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
-        '<button data-dettoggle>' + (detailsHidden ? '○ ' : '● ') + 'Show details panel</button>';
-      lMenu.querySelectorAll('[data-lay]').forEach(function (b) { b.onclick = function () { layoutMode = b.dataset.lay; try { localStorage.setItem('ps_layout', layoutMode); } catch (e) {} applyLayout(); renderLayoutMenu(); }; });
-      lMenu.querySelector('[data-dettoggle]').onclick = function () { detailsHidden = !detailsHidden; try { localStorage.setItem('ps_details_hidden', detailsHidden ? '1' : '0'); } catch (e) {} applyLayout(); renderLayoutMenu(); };
-    }
-    applyLayout();
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); sMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); }
     document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); closeMenus(); cMenu.classList.toggle('open'); };
     document.getElementById('ps-filterbtn').onclick = function (e) { e.stopPropagation(); var o = fMenu.classList.contains('open'); closeMenus(); if (!o) fMenu.classList.add('open'); };
     document.getElementById('ps-views').onclick = function (e) { e.stopPropagation(); var o = vMenu.classList.contains('open'); closeMenus(); if (!o) { renderViewsMenu(); vMenu.classList.add('open'); } };
@@ -2407,10 +2354,6 @@
     document.getElementById('ps-health').onclick = function (e) { e.stopPropagation(); openHealthPanel(); };
     document.getElementById('ps-undo').onclick = function (e) { e.stopPropagation(); undo(); };
     document.getElementById('ps-redo').onclick = function (e) { e.stopPropagation(); redo(); };
-    document.getElementById('ps-layoutbtn').onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { renderLayoutMenu(); lMenu.classList.add('open'); } };
-    lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.getElementById('ps-print').onclick = function () { window.print(); };
-    document.getElementById('ps-export-top').onclick = exportExcel;
     document.addEventListener('keydown', function (e) {
       if (!(e.ctrlKey || e.metaKey)) return;
       var tag = document.activeElement && document.activeElement.tagName;
