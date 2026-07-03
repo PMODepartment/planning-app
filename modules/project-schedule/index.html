@@ -42,11 +42,25 @@
        sized to sit beside the theme toggle; the filter dropdown right-aligns so it can't
        overflow the viewport edge. */
     .ps-datadate-badge { font-size:12px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
-      border:1px solid var(--pd-line); border-radius:999px; padding:3px 11px; white-space:nowrap; }
-    .ps-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; min-width:0; }
-    /* OPC-style project context: project name + workspace subline */
-    .ps-projctx { display:flex; flex-direction:column; gap:1px; }
-    .ps-ws { font-size:10px; color:var(--pd-muted); line-height:1.1; padding-left:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
+      border:1px solid var(--pd-line); border-radius:999px; padding:3px 11px; white-space:nowrap; margin-left:6px; }
+    .ps-topbar-tools { display:flex; align-items:center; gap:2px; margin-left:auto; min-width:0; }
+    .ps-topbar-tools .pd-btn { width:36px; padding:0; justify-content:center; }
+    /* OPC-style project context: project name over workspace subline, both left-aligned.
+       The select is borderless and title-styled; name & workspace share left padding so they line up. */
+    .ps-projctx { display:flex; flex-direction:column; justify-content:center; gap:0; min-width:0; margin-left:6px; }
+    .ps-projctx .pd-select { border-color:transparent; background:transparent; font-weight:700; font-size:15px;
+      height:24px; line-height:24px; padding:0 24px 0 6px; max-width:300px; color:var(--pd-ink); cursor:pointer; }
+    .ps-projctx .pd-select:hover, .ps-projctx .pd-select:focus { background:var(--pd-bg); border-color:var(--pd-line); outline:none; }
+    .ps-ws { font-size:11px; color:var(--pd-muted); line-height:1.15; padding-left:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; }
+    /* icon-only toolbar buttons (square, centered glyph; tooltip via title) */
+    .ps-toolbar .ps-icobtn { width:36px; padding:0; justify-content:center; }
+    /* Gantt-local colors control (bar colors are a Gantt-only feature) */
+    .ps-gantt-pane { position:relative; }
+    .ps-gantt-tools { position:absolute; top:5px; right:10px; z-index:6; }
+    .ps-gantt-tools .pd-btn { width:32px; height:32px; padding:0; justify-content:center; background:var(--pd-card); border:1px solid var(--pd-line); box-shadow:var(--pd-shadow); }
+    .ps-gantt-tools .ps-menu { left:auto; right:0; }
+    /* tab-group separator in the single detail-tab strip */
+    .ps-dt-sep { width:1px; align-self:stretch; background:var(--pd-line); margin:3px 8px; flex:none; }
     /* Layout modes: hide a pane for grid-only / gantt-only */
     .ps-split.ps-grid-only .ps-gantt-pane, .ps-split.ps-grid-only .ps-divider { display:none; }
     .ps-split.ps-gantt-only .ps-grid-pane, .ps-split.ps-gantt-only .ps-divider { display:none; }
@@ -180,6 +194,10 @@
     .ps-nearrow .c-name { color:#C77700; }
     .ps-colgrip { position:absolute; right:0; top:0; bottom:0; width:7px; cursor:col-resize; z-index:2; }
     .ps-colgrip:hover { background:var(--pd-red); opacity:.4; }
+    .ps-colhdr { cursor:pointer; }
+    .ps-colhdr:hover { background:var(--pd-red-light); color:var(--pd-ink); }
+    .ps-sort-ind { margin-left:4px; color:var(--pd-red); font-size:9px; }
+    .ps-colhdr-menu { min-width:196px; }
     .ps-wbs-row { background:var(--pd-bg); font-weight:700; }
     .ps-wbs-row .c-name { color:var(--pd-ink); }
     .ps-toggle { cursor:pointer; width:16px; display:inline-flex; align-items:center; justify-content:center;
@@ -279,13 +297,12 @@
     .ps-dtab:hover { background:rgba(0,0,0,.05); }
     html.pd-dark .ps-dtab:hover { background:rgba(255,255,255,.06); }
     .ps-dtab.active { background:var(--pd-red); color:#fff; }
-    /* OPC behavior: only the active group's tabs are visible */
-    .ps-details-tabs[data-group="details"] .ps-dtab[data-dgroup="usage"],
-    .ps-details-tabs[data-group="usage"] .ps-dtab[data-dgroup="details"] { display:none; }
-    /* Draggable resize handle for the bottom details panel */
+    /* Draggable resize handle for the bottom details panel — turns red on hover, like the
+       grid/Gantt divider, so the resize affordance is consistent across the app. */
     .ps-details-grip { height:9px; cursor:ns-resize; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); position:relative; }
     .ps-details-grip::before { content:""; position:absolute; left:50%; top:4px; width:40px; height:2px; border-radius:2px; transform:translateX(-50%); background:var(--pd-muted); opacity:.45; }
-    .ps-details-grip:hover::before { opacity:.8; }
+    .ps-details-grip:hover, .ps-details-grip.drag { background:var(--pd-red); }
+    .ps-details-grip:hover::before, .ps-details-grip.drag::before { background:#fff; opacity:1; }
     .ps-details-body { padding:14px; height:220px; min-height:90px; overflow:auto; }
     /* Dock the schedule + details into the viewport so the details panel is
        ALWAYS visible; the grip then trades height between schedule and details. */
@@ -433,24 +450,22 @@
   <div class="pd-content">
     <div class="pd-topbar">
       <h1>Project Schedule &amp; Cost Loading</h1>
+      <!-- Project context sits next to the title (OPC-style), name over workspace, left-aligned -->
+      <div class="ps-projctx">
+        <select class="pd-select" id="ps-project" title="Project"></select>
+        <div class="ps-ws" id="ps-workspace"></div>
+      </div>
       <span class="ps-datadate-badge" id="ps-datadate-badge" title="As-of date driving the schedule — change it in Schedule ▸ Data Date">Data Date: —</span>
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
            before #user-bar, so these sit immediately beside the night-mode button -->
       <div class="ps-topbar-tools" id="ps-topbar-tools">
-        <div class="ps-projctx">
-          <select class="pd-select" id="ps-project" title="Project" style="min-width:150px;max-width:260px;"></select>
-          <div class="ps-ws" id="ps-workspace"></div>
-        </div>
-        <span class="ps-tb-div"></span>
-        <button class="pd-btn" id="ps-undo" title="Undo" disabled><span data-ico="undo" data-ico-size="15"></span></button>
-        <button class="pd-btn" id="ps-redo" title="Redo" disabled><span data-ico="redo" data-ico-size="15"></span></button>
-        <button class="pd-btn" id="ps-health" title="Schedule Health Score"><span data-ico="pulse" data-ico-size="15"></span></button>
-        <button class="pd-btn" id="ps-report" title="Reports — run, view, edit &amp; create"><span data-ico="clipboard" data-ico-size="15"></span></button>
-        <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="15"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
-        <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="15"></span></button>
-        <button class="pd-btn" id="ps-export-top" title="Export to Excel"><span data-ico="download" data-ico-size="15"></span></button>
-        <button class="pd-btn" id="ps-print" title="Print / Save as PDF"><span data-ico="printer" data-ico-size="15"></span></button>
-        <span class="ps-tb-div"></span>
+        <button class="pd-btn" id="ps-undo" title="Undo" disabled><span data-ico="undo" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="ps-redo" title="Redo" disabled><span data-ico="redo" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="ps-health" title="Schedule Health Score"><span data-ico="pulse" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="ps-report" title="Reports — run, view, edit &amp; create"><span data-ico="clipboard" data-ico-size="16"></span></button>
+        <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="16"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
+        <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="ps-print" title="Print / Save as PDF"><span data-ico="printer" data-ico-size="16"></span></button>
       </div>
       <div id="user-bar"></div>
     </div>
@@ -481,16 +496,15 @@
             <button data-zoom="quarter" class="active">Quarter</button>
             <button data-zoom="year">Year</button>
           </div>
-          <button class="pd-btn" id="ps-expand">Expand all</button>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-collapseto">Collapse to ▾</button><div class="ps-menu" id="ps-collapse-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-views">Views ▾</button><div class="ps-menu" id="ps-views-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Edit Gantt bar colors">Colors ▾</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
-          <button class="pd-btn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="refresh" data-ico-size="15"></span> Schedule…</button>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="15"></span> Layout ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colsbtn" title="Columns — choose which grid columns to show"><span data-ico="settings" data-ico-size="15"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
+          <button class="pd-btn ps-icobtn" id="ps-expand" title="Expand all"><span data-ico="layers" data-ico-size="16"></span></button>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-collapseto" title="Collapse to WBS level…"><span data-ico="chevronDown" data-ico-size="16"></span></button><div class="ps-menu" id="ps-collapse-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" title="Saved views"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
+          <button class="pd-btn ps-icobtn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="16"></span></button>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Columns — choose which grid columns to show"><span data-ico="settings" data-ico-size="16"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
           <span class="ps-tb-div"></span>
-          <button class="pd-btn" id="ps-crit" title="Compute & highlight the critical path"><span data-ico="risk" data-ico-size="15"></span> Critical path</button>
-          <button class="pd-btn" id="ps-linkmode" title="Link mode: drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="15"></span> Link</button>
+          <button class="pd-btn ps-icobtn" id="ps-crit" title="Critical path — compute &amp; highlight"><span data-ico="risk" data-ico-size="16"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-linkmode" title="Link mode — drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="16"></span></button>
           <span class="ps-tb-spacer"></span>
           <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:200px;" /></div>
         </div>
@@ -517,6 +531,11 @@
           </div>
           <div class="ps-divider" id="ps-divider" title="Drag to resize"></div>
           <div class="ps-gantt-pane">
+            <!-- Bar colors live with the Gantt (it's a Gantt-only feature) -->
+            <div class="ps-gantt-tools ps-menu-wrap">
+              <button class="pd-btn ps-icobtn" id="ps-colorsbtn" title="Gantt bar colors"><span data-ico="settings" data-ico-size="15"></span></button>
+              <div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div>
+            </div>
             <div class="ps-gantt-head" id="ps-gantt-head"></div>
             <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
           </div>
@@ -534,17 +553,16 @@
         <!-- OPC-style Activity Details / Project Usage panel (driven by selected activity) -->
         <div class="ps-details" id="ps-details">
           <div class="ps-details-grip" id="ps-details-grip" title="Drag to resize the details panel"></div>
-          <!-- OPC-style grouped tabs: click a group header to show ONLY that group's tabs -->
-          <div class="ps-details-tabs" id="ps-details-tabs" data-group="details">
-            <button class="ps-dt-group active" data-dgroup="details">Activity Details ▾</button>
-            <button class="ps-dtab active" data-dtab="general" data-dgroup="details">General</button>
-            <button class="ps-dtab" data-dtab="status" data-dgroup="details">Status</button>
-            <button class="ps-dtab" data-dtab="rels" data-dgroup="details">Relationships</button>
-            <button class="ps-dtab" data-dtab="trace" data-dgroup="details">Trace Logic</button>
-            <button class="ps-dt-group" data-dgroup="usage" style="margin-left:14px;">Project Usage ▾</button>
-            <button class="ps-dtab" data-dtab="ausage" data-dgroup="usage">Activity Usage</button>
-            <button class="ps-dtab" data-dtab="rusage" data-dgroup="usage">Resource Usage</button>
-            <button class="ps-dtab" data-dtab="roleusage" data-dgroup="usage">Role Usage</button>
+          <!-- Single seamless tab strip: Activity Details tabs + Project Usage tabs together -->
+          <div class="ps-details-tabs" id="ps-details-tabs">
+            <button class="ps-dtab active" data-dtab="general">General</button>
+            <button class="ps-dtab" data-dtab="status">Status</button>
+            <button class="ps-dtab" data-dtab="rels">Relationships</button>
+            <button class="ps-dtab" data-dtab="trace">Trace Logic</button>
+            <span class="ps-dt-sep"></span>
+            <button class="ps-dtab" data-dtab="ausage">Activity Usage</button>
+            <button class="ps-dtab" data-dtab="rusage">Resource Usage</button>
+            <button class="ps-dtab" data-dtab="roleusage">Role Usage</button>
           </div>
           <div class="ps-details-body" id="ps-details-body"></div>
         </div>
@@ -872,6 +890,12 @@
       var a = []; for (var i = 1; i < r._segs.length; i++) a.push(r._segs.slice(0, i).join('.')); r._anc = a;
     });
     _sorted = rows.slice().sort(function (a, b) {
+      // Column sort (OPC): reorder leaf siblings sharing the same WBS parent by the chosen
+      // column; the WBS tree structure (ancestry ordering) is otherwise preserved.
+      if (colSort && !isWbs(a) && !isWbs(b) && (a._anc || []).join('.') === (b._anc || []).join('.')) {
+        var va = colSortVal(a, colSort.idx), vb = colSortVal(b, colSort.idx);
+        if (va < vb) return -colSort.dir; if (va > vb) return colSort.dir;
+      }
       var A = a._segs, B = b._segs, n = Math.max(A.length, B.length);
       for (var i = 0; i < n; i++) {
         var x = parseInt(A[i], 10), y = parseInt(B[i], 10);
@@ -1666,6 +1690,31 @@
   ];
   var colHidden = {};   // keyed by column label
   try { colHidden = JSON.parse(localStorage.getItem('ps_colhidden') || '{}') || {}; } catch (e) { colHidden = {}; }
+  var colNames = {};    // renamed headers, keyed by original label
+  try { colNames = JSON.parse(localStorage.getItem('ps_colnames') || '{}') || {}; } catch (e) { colNames = {}; }
+  var colSort = null;   // { idx, dir:1|-1 } — sorts leaf siblings within each WBS parent
+  try { colSort = JSON.parse(localStorage.getItem('ps_colsort') || 'null'); } catch (e) { colSort = null; }
+  function colLabel(c) { return colNames[c[1]] || c[1]; }
+  // Comparable value for sorting by a specific column index (matches GRID_COLS order).
+  function colSortVal(r, idx) {
+    switch (idx) {
+      case 0: return String(r.activity_id || '');
+      case 1: return String(r.activity_name || '');
+      case 2: return String(r.status || '');
+      case 3: return +(pd(r.bl_start) || 0); case 4: return +(pd(r.bl_finish) || 0);
+      case 5: return +(pd(r.start_date) || 0); case 6: return +(pd(r.end_date) || 0);
+      case 7: return (pd(r.start_date) && pd(r.end_date)) ? dayDiff(pd(r.start_date), pd(r.end_date)) + 1 : (r.duration_days || 0);
+      case 8: { var p = plannedPOC(r); return p == null ? -1 : p; }
+      case 9: return r.percent_complete == null ? -1 : r.percent_complete;
+      case 10: return r.planned_cost || 0; case 11: return r.actual_cost || 0; case 12: return r.earned_value || 0;
+      case 13: return eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null) || 0;
+      case 14: return r.bl_cost || 0;
+      case 15: return String(r.percent_complete_type || '');
+      case 16: return r._float == null ? 1e9 : r._float;
+      case 17: { var v = finVar(r); return v == null ? -1e9 : v; }
+    }
+    return 0;
+  }
   function applyColHidden() {
     var st = document.getElementById('ps-colstyle');
     if (!st) { st = document.createElement('style'); st.id = 'ps-colstyle'; document.head.appendChild(st); }
@@ -1677,11 +1726,55 @@
   }
   function renderHeader() {
     var head = document.getElementById('ps-grid-head'); if (!head) return;
-    head.innerHTML = '<div class="ps-grid-row head">' + GRID_COLS.map(function (c) {
-      return '<div class="ps-cell ' + c[2] + '" title="' + c[1] + '">' + c[1] + '<span class="ps-colgrip" data-col="' + c[0] + '" title="Drag to resize column"></span></div>';
+    head.innerHTML = '<div class="ps-grid-row head">' + GRID_COLS.map(function (c, i) {
+      var arrow = (colSort && colSort.idx === i) ? '<span class="ps-sort-ind">' + (colSort.dir < 0 ? '▼' : '▲') + '</span>' : '';
+      return '<div class="ps-cell ps-colhdr ' + c[2] + '" data-ci="' + i + '" title="' + esc(colLabel(c)) + ' — click for column options">' + esc(colLabel(c)) + arrow +
+        '<span class="ps-colgrip" data-col="' + c[0] + '" title="Drag to resize column"></span></div>';
     }).join('') + '</div>';
     head.querySelectorAll('.ps-colgrip').forEach(function (g) { g.addEventListener('mousedown', function (e) { startColResize(e, g.dataset.col); }); });
+    head.querySelectorAll('.ps-colhdr').forEach(function (h) { h.addEventListener('click', function (e) { if (e.target.classList.contains('ps-colgrip')) return; openColMenu(parseInt(h.dataset.ci, 10), h); }); });
     applyColHidden();
+  }
+  // OPC-style column header menu (Sort / Adjust to fit / Rename / Hide).
+  function openColMenu(idx, anchor) {
+    closeColMenu();
+    var c = GRID_COLS[idx];
+    var m = document.createElement('div'); m.className = 'ps-menu ps-colhdr-menu open'; m.id = 'ps-colhdr-menu';
+    var asc = colSort && colSort.idx === idx && colSort.dir > 0, desc = colSort && colSort.idx === idx && colSort.dir < 0;
+    m.innerHTML =
+      '<button data-ca="asc">' + (asc ? '● ' : '') + 'Sort Ascending</button>' +
+      '<button data-ca="desc">' + (desc ? '● ' : '') + 'Sort Descending</button>' +
+      (colSort ? '<button data-ca="nosort">Clear sort</button>' : '') +
+      '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
+      '<button data-ca="fit">Adjust to fit content</button>' +
+      '<button data-ca="rename">Rename Column…</button>' +
+      '<button data-ca="hide" class="ps-menu-danger">Hide Column</button>';
+    document.body.appendChild(m);
+    var r = anchor.getBoundingClientRect();
+    m.style.position = 'fixed'; m.style.top = r.bottom + 'px'; m.style.left = Math.min(r.left, window.innerWidth - 210) + 'px'; m.style.zIndex = 300;
+    m.addEventListener('click', function (e) { e.stopPropagation(); });
+    m.querySelectorAll('[data-ca]').forEach(function (b) { b.onclick = function () {
+      var a = b.dataset.ca;
+      if (a === 'asc' || a === 'desc') { colSort = { idx: idx, dir: a === 'asc' ? 1 : -1 }; }
+      else if (a === 'nosort') { colSort = null; }
+      else if (a === 'fit') { fitColumn(idx); closeColMenu(); return; }
+      else if (a === 'rename') { var nn = prompt('Rename column “' + colLabel(c) + '” to:', colLabel(c)); if (nn != null) { nn = nn.trim(); if (nn && nn !== c[1]) colNames[c[1]] = nn; else delete colNames[c[1]]; try { localStorage.setItem('ps_colnames', JSON.stringify(colNames)); } catch (e2) {} renderHeader(); } closeColMenu(); return; }
+      else if (a === 'hide') { if (c[1] === 'Activity Name') { UI.toast('Activity Name can’t be hidden.', 'warn'); closeColMenu(); return; } colHidden[c[1]] = 1; try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e3) {} applyColHidden(); closeColMenu(); return; }
+      try { localStorage.setItem('ps_colsort', JSON.stringify(colSort)); } catch (e4) {}
+      closeColMenu(); rebuild(); renderHeader(); renderGrid(); renderGantt();
+    }; });
+    setTimeout(function () { document.addEventListener('click', closeColMenu); }, 0);
+  }
+  function closeColMenu() { var m = document.getElementById('ps-colhdr-menu'); if (m) m.remove(); document.removeEventListener('click', closeColMenu); }
+  // Adjust-to-fit: size the column's width var to its widest rendered cell (+ padding).
+  function fitColumn(idx) {
+    var key = GRID_COLS[idx][2].replace('c-', ''), pane = document.querySelector('.ps-grid-pane');
+    var max = 40, sel = '.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (idx + 1) + ')';
+    document.querySelectorAll(sel).forEach(function (cell) {
+      var sw = cell.scrollWidth; if (sw > max) max = sw;
+    });
+    pane.style.setProperty('--c-' + key, Math.min(420, max + 16) + 'px');
+    try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var'].forEach(function (k) { w[k] = getComputedStyle(pane).getPropertyValue('--c-' + k).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e) {}
   }
   // Column chooser (the OPC grid-settings wrench). Activity Name can't be hidden (anchor column).
   function renderColsMenu() {
@@ -2911,7 +3004,6 @@
     document.getElementById('ps-rep-new').onclick = function () { repMode = 'new'; repSel = null; renderReportList(); renderReportSide(); };
     applyColHidden();
     document.getElementById('ps-print').onclick = function () { window.print(); };
-    document.getElementById('ps-export-top').onclick = exportExcel;
     document.addEventListener('keydown', function (e) {
       if (!(e.ctrlKey || e.metaKey)) return;
       var tag = document.activeElement && document.activeElement.tagName;
@@ -2921,23 +3013,13 @@
     });
     document.getElementById('ps-health-close').onclick = closeHealthPanel;
     document.getElementById('ps-health-backdrop').onclick = closeHealthPanel;
-    // OPC-style grouped detail tabs: the Activity Details / Project Usage headers switch which
-    // group's tabs are shown (the other group's tabs hide); each group remembers its last tab.
-    var lastGroupTab = { details: 'general', usage: 'ausage' };
+    // Single seamless detail-tab strip (Activity Details + Project Usage together).
     function setDetailTab(tab) {
       detailTab = tab;
       document.querySelectorAll('.ps-dtab').forEach(function (x) { x.classList.toggle('active', x.dataset.dtab === tab); });
       renderDetails();
     }
-    function setDetailGroup(g) {
-      document.getElementById('ps-details-tabs').dataset.group = g;
-      document.querySelectorAll('.ps-dt-group').forEach(function (x) { x.classList.toggle('active', x.dataset.dgroup === g); });
-      setDetailTab(lastGroupTab[g]);
-    }
-    document.querySelectorAll('.ps-dtab').forEach(function (b) {
-      b.onclick = function () { lastGroupTab[b.dataset.dgroup] = b.dataset.dtab; setDetailTab(b.dataset.dtab); };
-    });
-    document.querySelectorAll('.ps-dt-group').forEach(function (b) { b.onclick = function () { setDetailGroup(b.dataset.dgroup); }; });
+    document.querySelectorAll('.ps-dtab').forEach(function (b) { b.onclick = function () { setDetailTab(b.dataset.dtab); }; });
 
     // Resizable bottom details panel (drag the grip up/down; height persisted).
     (function () {
@@ -2948,11 +3030,11 @@
       grip.addEventListener('mousedown', function (e) {
         e.preventDefault();
         var startY = e.clientY, startH = dbody.getBoundingClientRect().height;
-        document.body.style.userSelect = 'none';
+        document.body.style.userSelect = 'none'; grip.classList.add('drag');
         function mm(ev) { dbody.style.height = Math.min(700, Math.max(90, startH - (ev.clientY - startY))) + 'px'; }
         function up() {
           document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
-          document.body.style.userSelect = '';
+          document.body.style.userSelect = ''; grip.classList.remove('drag');
           try { localStorage.setItem('ps_details_h', parseInt(dbody.style.height, 10)); } catch (e2) {}
           // usage charts are sized to the panel — redraw at the new height
           if (detailTab === 'ausage' || detailTab === 'rusage') renderDetails();

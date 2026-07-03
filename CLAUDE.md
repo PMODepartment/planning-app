@@ -77,6 +77,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-03 — Prompt 55: UI polish pass (topbar, icon toolbar, column menu, tab strip)
+- **Removed the duplicate top-bar Download** — kept only the grid-footer Download (OPC has it under
+  the grid). Print/undo/redo/health/reports/filter/refresh remain top-bar icons.
+- **Icon-only toolbar** — Expand all, Collapse to, Views, Schedule, Layout, Columns, Critical path,
+  Link are now square icon buttons with tooltips (no text labels), so the single-row toolbar fits
+  without horizontal scrolling. Actions ▾, +Add activity, Group select, zoom seg, and search keep
+  labels.
+- **OPC column-header menu** — clicking any grid column header opens a menu (verified against OPC's
+  Sort / Align / Adjust to fit / Find&Replace / Unpin / Rename / Format): **Sort Ascending /
+  Descending** (reorders leaf siblings within their WBS parent, tree structure preserved; ▲/▼
+  indicator on the header, persisted), **Adjust to fit content** (auto-sizes the column to its
+  widest cell), **Rename Column…** (persisted in `ps_colnames`), **Hide Column** (Activity Name
+  locked). `GRID_COLS` remains the single source of truth.
+- **Top bar rebuilt** — project name + workspace subline moved next to the title (were pushed to
+  the far right, leaving dead space); the select is borderless/title-styled and the workspace
+  subline shares its left padding so they line up exactly (verified: both start at the same x).
+  Tool icons tightened; theme toggle + avatar stay far right.
+- **Single seamless detail-tab strip** — the "Activity Details ▾ / Project Usage ▾" group-toggle is
+  gone; all seven tabs (General/Status/Relationships/Trace Logic · Activity/Resource/Role Usage)
+  sit in one row separated by a thin divider.
+- **Details-panel grip turns red on hover/drag** (adds a `.drag` class), matching the grid/Gantt
+  divider affordance.
+- **Global Bar Colors moved into the Gantt pane** (it's a Gantt-only feature) — a small floating
+  gear button top-right of the Gantt opens the colors menu; removed from the toolbar.
+- Sidebar auto-hide was already the shipped behavior (`UI.initShell` defaults collapsed; the
+  hamburger toggles it) — the user's expanded state was their own persisted toggle, no code change.
+- Verified in harness: download/colors relocation, 7-tab strip, icon toolbar, and the full column
+  menu (sort reorders Zebra/Alpha/Mike→Alpha/Mike/Zebra, rename Status→State persists, hide Float,
+  fit) all correct; top-bar name/workspace alignment confirmed numerically.
+
 ### 2026-07-03 — Prompt 54: Data Date, OPC Schedule dialog, export & Resource-Usage parity
 - **Editable Data Date (OPC parity)** — the data date was hard-coded to `today()` at ~15 sites,
   all of which semantically mean the as-of date. Renamed the wall-clock helper to `wallToday()`
