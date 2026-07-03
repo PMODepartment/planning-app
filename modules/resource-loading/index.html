@@ -6,32 +6,232 @@
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js"></script>
-  <title>Resource Loading · Planners Dashboard</title>
+  <title>Resource &amp; Role Master · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />
+  <style>
+    .rl-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:14px; }
+    .rl-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
+    .rl-tab { padding:8px 18px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
+    .rl-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
+    .rl-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .rl-table th { background:var(--pd-bg); padding:9px 12px; text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    .rl-table th.num, .rl-table td.num { text-align:right; }
+    .rl-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
+    .rl-table tr:hover td { background:var(--pd-bg); }
+    .rl-badge { font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--pd-bg); }
+    .rl-empty { text-align:center; padding:40px; color:var(--pd-muted); }
+    .rl-actions { display:flex; gap:5px; }
+    .rl-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
+    .rl-btn-sm:hover { border-color:var(--pd-red); color:var(--pd-red); }
+    .rl-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .rl-form-full { grid-column:1 / -1; }
+  </style>
 </head>
 <body>
-  <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Resource Loading</small></div>
-      <nav><a href="../../dashboard.html">&larr; All modules</a></nav>
-    </aside>
-    <div class="pd-content">
-      <div class="pd-topbar"><h1>Resource Loading</h1><div id="user-bar"></div></div>
-      <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>Resource Loading</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code> or a reference module.</p>
-        </div>
+<div class="pd-app">
+  <aside class="pd-sidebar">
+    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Resource &amp; Role Master</small></div>
+    <nav>
+      <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
+      <a href="../project-schedule/index.html"><span class="pd-navico" data-ico="calendar"></span>Project Schedule</a>
+      <a href="#" class="active"><span class="pd-navico" data-ico="users"></span>Resources</a>
+    </nav>
+  </aside>
+  <div class="pd-content">
+    <div class="pd-topbar"><h1>Resource &amp; Role Master</h1><div id="user-bar"></div></div>
+    <div class="pd-main">
+      <div class="rl-controls">
+        <select class="pd-select" id="rl-project" style="max-width:320px;"></select>
+        <input class="pd-input" id="rl-search" placeholder="Search…" style="max-width:220px;" />
+        <button class="pd-btn pd-btn-primary" id="rl-add" style="margin-left:auto;"><span data-ico="plus" data-ico-size="15"></span> <span id="rl-add-lbl">Add resource</span></button>
       </div>
+
+      <div class="rl-tabs">
+        <button class="rl-tab active" data-tab="resources"><span data-ico="users" data-ico-size="15"></span> Resources</button>
+        <button class="rl-tab" data-tab="roles"><span data-ico="group" data-ico-size="15"></span> Roles</button>
+      </div>
+
+      <div class="pd-card" style="padding:0;overflow:auto;">
+        <table class="rl-table" id="rl-table"></table>
+      </div>
+      <p style="font-size:12px;color:var(--pd-muted);margin-top:10px;">
+        OPC-style resource master: Default Units/Time and Max Units/Time (availability) are percentages.
+        Time-phased assignment usage (feeding the schedule's Resource/Role Usage) is the next phase.
+      </p>
     </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js"></script>
-  <script src="../../assets/js/auth.js"></script>
-  <script src="../../assets/js/db.js"></script>
-  <script src="../../assets/js/ui.js"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+</div>
+
+<!-- Modal -->
+<div class="pd-modal-overlay" id="rl-modal" style="display:none;">
+  <div class="pd-modal" style="max-width:620px;width:95vw;">
+    <div class="pd-modal-header"><span id="rl-modal-title">Add</span><button class="pd-modal-close" id="rl-modal-x">&#215;</button></div>
+    <div class="pd-modal-body"><form id="rl-form" class="rl-form-grid" onsubmit="return false;"></form></div>
+    <div class="pd-modal-footer"><button class="pd-btn" id="rl-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="rl-save">Save</button></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/db.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/icons.js"></script>
+<script>
+(function () {
+  'use strict';
+  var pid = null, tab = 'resources', rows = { resources: [], roles: [] }, editId = null, profile = null, search = '';
+  function sb() { return AppAuth.getSB(); }
+  function esc(s) { return Fmt.esc(s); }
+  var TYPES = ['Labor', 'Nonlabor', 'Material'];
+
+  async function loadProjects() {
+    var projects = await PDb.getProjects();
+    var sel = document.getElementById('rl-project');
+    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
+    }).join('');
+    if (pid) load();
+  }
+
+  async function load() {
+    if (!pid) { rows = { resources: [], roles: [] }; render(); return; }
+    var r1 = await sb().from('resources').select('*').eq('project_id', pid).order('resource_code');
+    var r2 = await sb().from('resource_roles').select('*').eq('project_id', pid).order('name');
+    if (r1.error) { UI.toast(r1.error.message, 'error'); return; }
+    if (r2.error) { UI.toast(r2.error.message, 'error'); return; }
+    rows.resources = r1.data || []; rows.roles = r2.data || [];
+    render();
+  }
+
+  function filtered() {
+    var list = rows[tab], q = search.toLowerCase().trim();
+    if (!q) return list;
+    return list.filter(function (r) {
+      var hay = tab === 'resources'
+        ? [r.resource_code, r.name, r.type, r.primary_role, r.calendar].join(' ')
+        : [r.name, r.discipline, r.uom].join(' ');
+      return hay.toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  function render() {
+    document.getElementById('rl-add-lbl').textContent = tab === 'roles' ? 'Add role' : 'Add resource';
+    var t = document.getElementById('rl-table'), f = filtered();
+    if (tab === 'resources') {
+      t.innerHTML = '<thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Primary Role</th>' +
+        '<th class="num">Default Units/Time</th><th class="num">Max Units/Time</th><th>UoM</th><th>Calendar</th><th></th></tr></thead><tbody>' +
+        (f.length ? f.map(function (r) {
+          return '<tr>' +
+            '<td><code style="font-size:12px;">' + esc(r.resource_code || '') + '</code></td>' +
+            '<td>' + esc(r.name || '') + '</td>' +
+            '<td><span class="rl-badge">' + esc(r.type || 'Labor') + '</span></td>' +
+            '<td>' + esc(r.primary_role || '—') + '</td>' +
+            '<td class="num">' + (r.default_units_per_time != null ? r.default_units_per_time + '%' : '—') + '</td>' +
+            '<td class="num">' + (r.max_units_per_time != null ? r.max_units_per_time + '%' : '—') + '</td>' +
+            '<td>' + esc(r.uom || '') + '</td>' +
+            '<td style="font-size:12px;color:var(--pd-muted);">' + esc(r.calendar || '—') + '</td>' +
+            '<td><div class="rl-actions"><button class="rl-btn-sm" data-edit="' + r.id + '">Edit</button><button class="rl-btn-sm" data-del="' + r.id + '">&#215;</button></div></td>' +
+          '</tr>';
+        }).join('') : '<tr><td colspan="9" class="rl-empty">' + (pid ? 'No resources yet. Click “Add resource”.' : 'Select a project.') + '</td></tr>') + '</tbody>';
+    } else {
+      t.innerHTML = '<thead><tr><th>Role</th><th>Discipline</th><th>UoM</th><th>Remarks</th><th></th></tr></thead><tbody>' +
+        (f.length ? f.map(function (r) {
+          return '<tr>' +
+            '<td><strong>' + esc(r.name || '') + '</strong></td>' +
+            '<td>' + esc(r.discipline || '—') + '</td>' +
+            '<td>' + esc(r.uom || '') + '</td>' +
+            '<td style="font-size:12px;color:var(--pd-muted);">' + esc(r.remarks || '') + '</td>' +
+            '<td><div class="rl-actions"><button class="rl-btn-sm" data-edit="' + r.id + '">Edit</button><button class="rl-btn-sm" data-del="' + r.id + '">&#215;</button></div></td>' +
+          '</tr>';
+        }).join('') : '<tr><td colspan="5" class="rl-empty">' + (pid ? 'No roles yet. Click “Add role”.' : 'Select a project.') + '</td></tr>') + '</tbody>';
+    }
+    t.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { openForm(rows[tab].find(function (x) { return x.id === b.dataset.edit; })); }; });
+    t.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { del(b.dataset.del); }; });
+    if (window.Icons) Icons.hydrate(t);
+  }
+
+  function roleOptions(sel) {
+    return '<option value="">—</option>' + rows.roles.map(function (r) {
+      return '<option' + (sel === r.name ? ' selected' : '') + '>' + esc(r.name) + '</option>';
+    }).join('');
+  }
+  function typeOptions(sel) { return TYPES.map(function (o) { return '<option' + (sel === o ? ' selected' : '') + '>' + o + '</option>'; }).join(''); }
+
+  function openForm(row) {
+    if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+    editId = row ? row.id : null;
+    var form = document.getElementById('rl-form');
+    document.getElementById('rl-modal-title').textContent = (row ? 'Edit ' : 'Add ') + (tab === 'roles' ? 'role' : 'resource');
+    if (tab === 'resources') {
+      row = row || {};
+      form.innerHTML =
+        fld('ID', '<input class="pd-input" id="f-code" value="' + esc(row.resource_code) + '" placeholder="e.g. R150082">') +
+        fld('Name', '<input class="pd-input" id="f-name" value="' + esc(row.name) + '">') +
+        fld('Type', '<select class="pd-select" id="f-type">' + typeOptions(row.type || 'Labor') + '</select>') +
+        fld('Primary Role', '<select class="pd-select" id="f-role">' + roleOptions(row.primary_role) + '</select>') +
+        fld('Default Units/Time (%)', '<input class="pd-input" id="f-def" type="number" min="0" step="1" value="' + (row.default_units_per_time != null ? row.default_units_per_time : 100) + '">') +
+        fld('Max Units/Time (%)', '<input class="pd-input" id="f-max" type="number" min="0" step="1" value="' + (row.max_units_per_time != null ? row.max_units_per_time : 100) + '">') +
+        fld('UoM', '<input class="pd-input" id="f-uom" value="' + esc(row.uom || 'hours') + '">') +
+        fld('Calendar', '<input class="pd-input" id="f-cal" value="' + esc(row.calendar) + '" placeholder="e.g. MCC 5-2-1">') +
+        fld('Remarks', '<textarea class="pd-input" id="f-rem" rows="2">' + esc(row.remarks) + '</textarea>', true);
+    } else {
+      row = row || {};
+      form.innerHTML =
+        fld('Role name', '<input class="pd-input" id="f-name" value="' + esc(row.name) + '" placeholder="e.g. Planning Engineer">', true) +
+        fld('Discipline', '<input class="pd-input" id="f-disc" value="' + esc(row.discipline) + '" placeholder="e.g. Labor / Engineering">') +
+        fld('UoM', '<input class="pd-input" id="f-uom" value="' + esc(row.uom || 'hours') + '">') +
+        fld('Remarks', '<textarea class="pd-input" id="f-rem" rows="2">' + esc(row.remarks) + '</textarea>', true);
+    }
+    document.getElementById('rl-modal').style.display = 'flex';
+  }
+  function fld(label, control, full) { return '<div class="' + (full ? 'rl-form-full' : '') + '"><label class="pd-label">' + label + '</label>' + control + '</div>'; }
+
+  function v(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
+  function num(id) { var x = v(id); return x === '' ? null : parseFloat(x); }
+
+  async function save() {
+    var payload, table;
+    if (tab === 'resources') {
+      table = 'resources';
+      if (!v('f-name')) { UI.toast('Name is required.', 'error'); return; }
+      payload = { project_id: pid, resource_code: v('f-code') || null, name: v('f-name'),
+        type: document.getElementById('f-type').value, primary_role: document.getElementById('f-role').value || null,
+        default_units_per_time: num('f-def'), max_units_per_time: num('f-max'),
+        uom: v('f-uom') || null, calendar: v('f-cal') || null, remarks: v('f-rem') || null, updated_at: new Date().toISOString() };
+    } else {
+      table = 'resource_roles';
+      if (!v('f-name')) { UI.toast('Role name is required.', 'error'); return; }
+      payload = { project_id: pid, name: v('f-name'), discipline: v('f-disc') || null, uom: v('f-uom') || null, remarks: v('f-rem') || null, updated_at: new Date().toISOString() };
+    }
+    var res;
+    if (editId) { res = await sb().from(table).update(payload).eq('id', editId); }
+    else { payload.created_by = profile.id; res = await sb().from(table).insert(payload); }
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UI.toast(editId ? 'Saved.' : 'Added.', 'success');
+    document.getElementById('rl-modal').style.display = 'none'; editId = null; load();
+  }
+
+  async function del(id) {
+    if (!confirm('Delete this ' + (tab === 'roles' ? 'role' : 'resource') + '?')) return;
+    var res = await sb().from(tab === 'roles' ? 'resource_roles' : 'resources').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UI.toast('Deleted.', 'success'); load();
+  }
+
+  AppAuth.requireLogin(function (user, prof) {
+    profile = prof; UI.renderUserBar(prof); UI.initShell();
+    document.querySelectorAll('.rl-tab').forEach(function (b) { b.onclick = function () { tab = b.dataset.tab; document.querySelectorAll('.rl-tab').forEach(function (x) { x.classList.toggle('active', x === b); }); render(); }; });
+    document.getElementById('rl-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load(); };
+    document.getElementById('rl-search').oninput = function (e) { search = e.target.value; render(); };
+    document.getElementById('rl-add').onclick = function () { openForm(null); };
+    document.getElementById('rl-modal-x').onclick = document.getElementById('rl-cancel').onclick = function () { document.getElementById('rl-modal').style.display = 'none'; editId = null; };
+    document.getElementById('rl-save').onclick = save;
+    document.getElementById('rl-modal').onclick = function (e) { if (e.target === this) { this.style.display = 'none'; editId = null; } };
+    loadProjects();
+  });
+})();
+</script>
 </body>
 </html>

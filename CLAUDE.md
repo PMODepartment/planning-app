@@ -354,6 +354,21 @@ developer, plug into one shared shell.
   git-ignored test harness (stubbed `AppAuth`/`PDb`/Supabase with synthetic rows, no real
   credentials or backend touched) to confirm the render tree and connector math; deleted after use.
 
+### 2026-07-01 — Prompt 47 (Desktop): Title switcher, colors icon, Resource/Role master
+- **Project Schedule:** replaced the Schedule/Cost tab strip with a **clickable
+  title switcher** (title shows the active view; dropdown switches Project
+  Schedule ↔ Cost Loading) to free a row. Moved the **Gantt bar-colors** gear
+  out of the Gantt (was overlapping the timescale) into the toolbar with a
+  distinct **palette** icon; column chooser got a **columns** icon (both were
+  "settings"). Added `columns`/`palette` to icons.js.
+- **Resource & Role master built** (`resource-loading` module, enabled): OPC-
+  faithful two-tab roster — Resources (ID, Name, Type, Primary Role, Default &
+  Max Units/Time %, UoM, Calendar) + Roles (Name, Discipline, UoM). Tables
+  `resources` + `resource_roles`; migration `2026-07-01-resource-role-master.sql`
+  (folded into `supabase-setup.sql`). **User must run this migration.**
+  Next phase: `resource_assignments` → wire Project Schedule Resource/Role Usage
+  tabs + FTE/availability line.
+
 ### 2026-07-01 — Prompt 46 (Desktop): Activity Network view + toolbar single-row + Print moved
 - **Activity Network View** (PERT) added as a Layout option: activities as nodes
   ranked by predecessor depth (columns), relationship arrows between them,

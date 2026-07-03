@@ -30,5 +30,18 @@ intentionally placeholders today; once this module exists they will **read from
 it** (by `project_id` + `activity_id`) rather than duplicating a resource engine.
 Coordinate the shared shape with the Project Schedule owner before building.
 
+## Built — Resource & Role master (2026-07-01)
+Two-tab roster (OPC-faithful), enabled in config:
+- **Resources**: ID (`resource_code`), Name, Type (Labor/Nonlabor/Material),
+  Primary Role, **Default Units/Time %**, **Max Units/Time %** (availability),
+  UoM, Calendar. Full CRUD.
+- **Roles**: Name, Discipline, UoM, Remarks. Full CRUD (feeds the Primary Role
+  picker on resources).
+Tables `resources` + `resource_roles` — migration
+`../../migrations/2026-07-01-resource-role-master.sql` (folded into
+supabase-setup.sql). **Next phase:** `resource_assignments` (activity↔resource
+budgeted/actual units, time-phased) to drive Project Schedule's Resource/Role
+Usage tabs + FTE/availability line.
+
 ## Notes
 (Record decisions, columns added via `alter table ... add column if not exists`, etc.)

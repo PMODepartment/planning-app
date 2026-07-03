@@ -112,6 +112,18 @@ create table if not exists s_curve (
   percent_planned numeric, percent_actual numeric, remarks text,
   created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
 
+-- Resource & Role master (resource-loading module)
+create table if not exists resource_roles (
+  id uuid primary key default gen_random_uuid(), project_id text references projects(id),
+  name text, discipline text, uom text default 'hours', remarks text,
+  created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
+create table if not exists resources (
+  id uuid primary key default gen_random_uuid(), project_id text references projects(id),
+  resource_code text, name text, type text default 'Labor', primary_role text,
+  default_units_per_time numeric default 100, max_units_per_time numeric default 100,
+  uom text default 'hours', calendar text, remarks text,
+  created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
+
 -- ───────────────────────── Grants (API roles) ─────────────────────────
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
@@ -177,7 +189,8 @@ begin
   foreach t in array array[
     'progress_photos','issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
-    'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve'
+    'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve',
+    'resource_roles','resources'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
