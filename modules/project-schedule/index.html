@@ -575,6 +575,7 @@
           <div class="ps-details-tabs" id="ps-details-tabs">
             <button class="ps-dtab active" data-dtab="general">General</button>
             <button class="ps-dtab" data-dtab="status">Status</button>
+            <button class="ps-dtab" data-dtab="assign">Resource Assignments</button>
             <button class="ps-dtab" data-dtab="rels">Relationships</button>
             <button class="ps-dtab" data-dtab="trace">Trace Logic</button>
             <span class="ps-dt-sep"></span>
@@ -741,6 +742,16 @@
   var TABLE = 'project_schedule';
   var pid = null, rows = [], editId = null, UID = null;
   var PROJECTS = [], WORKSPACES = [], layoutMode = 'split';
+  var RESRC = [], ASSIGN = [];   // resource master + assignments for this project
+  function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
+  async function loadResourcesAssignments() {
+    if (!pid) { RESRC = []; ASSIGN = []; return; }
+    try {
+      var r1 = await sb().from('resources').select('*').eq('project_id', pid).order('name');
+      var r2 = await sb().from('resource_assignments').select('*').eq('project_id', pid);
+      RESRC = (r1 && r1.data) || []; ASSIGN = (r2 && r2.data) || [];
+    } catch (e) { RESRC = []; ASSIGN = []; }
+  }
   var zoom = 'quarter', collapsed = {}, selId = null, search = '';
   var filters = { status: {}, type: {}, behind: false, look: 0 };   // empty sets = show all; look = weeks (0 = all)
   var groupBy = 'wbs';   // 'wbs' | 'status' | 'responsible' | 'type'
@@ -812,6 +823,7 @@
     } catch (err) { hideLoading(); UI.toast('Load failed: ' + (err.message || err), 'error'); return; }
     hideLoading();
     rows = all; rebuild();
+    await loadResourcesAssignments();
     // Large schedule: default to a collapsed outline so we don't render thousands of DOM rows.
     if (rows.length > 400 && Object.keys(collapsed).length === 0) {
       rows.forEach(function (r) { if (isWbs(r) && r._depth >= 3) collapsed[r.wbs] = true; });
@@ -1326,6 +1338,77 @@
       '<div class="ps-vs-b">' + tbl('Successors', succs) + '</div>' +
     '</div>';
   }
+  // ----- Resource Assignments (assign resources to the selected activity) -----
+  function resName(a) {
+    var rr = RESRC.find(function (x) { return (a.resource_id && x.id === a.resource_id) || (a.resource_code && x.resource_code === a.resource_code); });
+    return rr ? rr.name : (a.resource_code || '');
+  }
+  function nzu(x) { return x != null ? (Math.round(x * 10) / 10) : '—'; }
+  function numOrNull(v) { v = String(v).trim(); return v === '' ? null : parseFloat(v); }
+  function detAssign(r) {
+    if (!r.activity_id) return '<div class="ps-empty-detail">Give this activity an <strong>Activity ID</strong> first (double-click the ID cell) so resources can be assigned to it.</div>';
+    var list = assignsFor(r.activity_id);
+    var rowsH = list.length ? list.map(function (a) {
+      return '<tr><td>' + esc(resName(a)) + (a.resource_code ? ' <span style="color:var(--pd-muted);">(' + esc(a.resource_code) + ')</span>' : '') + '</td>' +
+        '<td>' + esc(a.role || '—') + '</td>' +
+        '<td class="num">' + nzu(a.budgeted_units) + '</td><td class="num">' + nzu(a.actual_units) + '</td><td class="num">' + nzu(a.remaining_units) + '</td>' +
+        '<td>' + esc(a.uom || 'hours') + '</td>' +
+        '<td style="white-space:nowrap;"><button class="ps-btn-sm" data-aedit="' + a.id + '">Edit</button> <button class="ps-btn-sm" data-adel="' + a.id + '">&#215;</button></td></tr>';
+    }).join('') : '<tr><td colspan="7" style="color:var(--pd-muted);padding:10px;">No resources assigned yet.</td></tr>';
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">' +
+      '<strong>' + esc(r.activity_id) + ' — ' + esc(r.activity_name || '') + '</strong>' +
+      '<button class="pd-btn pd-btn-primary" id="ps-assign-add" style="margin-left:auto;height:30px;font-size:12px;padding:0 12px;"><span data-ico="plus" data-ico-size="14"></span> Assign resource</button></div>' +
+      '<table class="ps-mini"><thead><tr><th>Resource</th><th>Role</th><th class="num">Budgeted</th><th class="num">Actual</th><th class="num">Remaining</th><th>UoM</th><th></th></tr></thead><tbody>' + rowsH + '</tbody></table>' +
+      (RESRC.length ? '' : '<p class="ps-usage-note" style="margin-top:8px;">No resources defined yet — add them in the <a href="../resource-loading/index.html">Resource &amp; Role Master</a>, then assign here.</p>');
+  }
+  function wireAssign(root, r) {
+    var add = root.querySelector('#ps-assign-add'); if (add) add.onclick = function () { openAssignForm(r, null); };
+    root.querySelectorAll('[data-aedit]').forEach(function (b) { b.onclick = function () { openAssignForm(r, ASSIGN.find(function (x) { return x.id === b.dataset.aedit; })); }; });
+    root.querySelectorAll('[data-adel]').forEach(function (b) { b.onclick = function () { delAssign(b.dataset.adel); }; });
+    if (window.Icons) Icons.hydrate(root);
+  }
+  function openAssignForm(r, a) {
+    a = a || {};
+    var resOpts = '<option value="">— Select resource —</option>' + RESRC.map(function (x) {
+      return '<option value="' + x.id + '"' + (a.resource_id === x.id ? ' selected' : '') + '>' + esc(x.name) + (x.resource_code ? ' (' + esc(x.resource_code) + ')' : '') + '</option>';
+    }).join('');
+    var m = UI.modal('<h2 style="margin-top:0;">' + (a.id ? 'Edit' : 'Assign') + ' resource</h2>' +
+      '<div class="pd-field"><label class="pd-label">Resource</label><select class="pd-select" id="pa-res">' + resOpts + '</select></div>' +
+      '<div class="pd-field"><label class="pd-label">Role</label><input class="pd-input" id="pa-role" value="' + esc(a.role) + '"></div>' +
+      '<div style="display:flex;gap:10px;">' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">Budgeted units</label><input class="pd-input" id="pa-bud" type="number" step="0.1" value="' + (a.budgeted_units != null ? a.budgeted_units : '') + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">Actual units</label><input class="pd-input" id="pa-act" type="number" step="0.1" value="' + (a.actual_units != null ? a.actual_units : '') + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">Remaining units</label><input class="pd-input" id="pa-rem" type="number" step="0.1" value="' + (a.remaining_units != null ? a.remaining_units : '') + '"></div>' +
+      '</div>' +
+      '<div class="pd-field"><label class="pd-label">Unit of Measure</label><input class="pd-input" id="pa-uom" value="' + esc(a.uom || 'hours') + '"></div>' +
+      '<div style="text-align:right;margin-top:6px;"><button class="pd-btn" id="pa-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="pa-save">Save</button></div>');
+    m.el.querySelector('#pa-res').onchange = function (e) {
+      var rr = RESRC.find(function (x) { return x.id === e.target.value; });
+      if (rr) { if (!m.el.querySelector('#pa-role').value) m.el.querySelector('#pa-role').value = rr.primary_role || ''; m.el.querySelector('#pa-uom').value = rr.uom || 'hours'; }
+    };
+    m.el.querySelector('#pa-x').onclick = m.close;
+    m.el.querySelector('#pa-save').onclick = async function () {
+      var resId = m.el.querySelector('#pa-res').value || null;
+      var rr = RESRC.find(function (x) { return x.id === resId; });
+      var payload = { project_id: pid, activity_id: r.activity_id, resource_id: resId, resource_code: rr ? rr.resource_code : null,
+        role: m.el.querySelector('#pa-role').value.trim() || null,
+        budgeted_units: numOrNull(m.el.querySelector('#pa-bud').value), actual_units: numOrNull(m.el.querySelector('#pa-act').value),
+        remaining_units: numOrNull(m.el.querySelector('#pa-rem').value), uom: m.el.querySelector('#pa-uom').value.trim() || 'hours',
+        updated_at: new Date().toISOString() };
+      var res;
+      if (a.id) res = await sb().from('resource_assignments').update(payload).eq('id', a.id);
+      else { payload.created_by = UID; res = await sb().from('resource_assignments').insert(payload); }
+      if (res.error) { UI.toast(res.error.message, 'error'); return; }
+      UI.toast('Assignment saved.', 'success'); m.close();
+      await loadResourcesAssignments(); renderDetails();
+    };
+  }
+  async function delAssign(id) {
+    if (!confirm('Remove this resource assignment?')) return;
+    var res = await sb().from('resource_assignments').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UI.toast('Removed.', 'success'); await loadResourcesAssignments(); renderDetails();
+  }
   function traceNode(label, sub, cur) { return '<div class="ps-trace-node' + (cur ? ' cur' : '') + '"><strong>' + esc(label) + '</strong>' + (sub ? '<div style="color:var(--pd-muted);">' + esc(sub) + '</div>' : '') + '</div>'; }
   function detTrace(r) {
     var preds = relPreds(r).map(function (p) { return { id: p.id, name: actName(p.id), type: p.type }; });
@@ -1565,37 +1648,60 @@
     { k: 'reme',    label: 'Remaining Early', color: '#7FC97F' },
     { k: 'reml',    label: 'Remaining Late',  color: '#1B7837' }
   ];
+  var usageKind = 'res';   // 'res' (by resource) or 'role' (by primary role)
+  // Build a roster from real resource_assignments, grouped by a key (resource or role).
+  function buildRoster(keyFn, nameFn) {
+    if (!ASSIGN.length) return null;   // signal caller to use its fallback
+    var actMap = {}; rows.forEach(function (r) { if (r.activity_id) actMap[r.activity_id] = r; });
+    var map = {};
+    ASSIGN.forEach(function (a) {
+      var key = keyFn(a); if (key == null || key === '') key = '(Unassigned)';
+      var m = map[key] || (map[key] = { name: nameFn(a, key), code: '', type: 'Labor', uom: a.uom || 'hours', acts: 0, pu: 0, au: 0, ru: 0, assigns: [] });
+      var act = actMap[a.activity_id]; if (!act) return;
+      m.acts++; m.pu += a.budgeted_units || 0; m.au += a.actual_units || 0; m.ru += a.remaining_units || 0;
+      m.assigns.push({ a: a, act: act });
+      var rr = RESRC.find(function (x) { return x.id === a.resource_id; });
+      if (rr) { if (!m.code) m.code = rr.resource_code || ''; m.type = rr.type || 'Labor'; m.uom = a.uom || rr.uom || 'hours'; }
+    });
+    return Object.keys(map).map(function (k) { return map[k]; }).sort(function (x, y) { return x.name.localeCompare(y.name); });
+  }
+  function roleRoster() { return buildRoster(function (a) { return a.role; }, function (a, k) { return k; }) || []; }
   function resRoster() {
+    if (usageKind === 'role') return roleRoster();
+    var built = buildRoster(function (a) { return a.resource_id || a.resource_code || resName(a); }, function (a) { return resName(a) || '(Unnamed)'; });
+    if (built) return built;
+    // Fallback (no assignments yet): distinct Responsible Party + the activity's Labor Units.
     var map = {};
     rows.forEach(function (r) {
       if (isWbs(r)) return;
       var key = (r.responsible_party || '').trim() || '(Unassigned)';
-      var m = map[key] || (map[key] = { name: key, acts: 0, pu: 0, au: 0, ru: 0, rows: [] });
+      var m = map[key] || (map[key] = { name: key, type: 'Labor', uom: 'days', acts: 0, pu: 0, au: 0, ru: 0, rows: [] });
       m.acts++; m.pu += r.planned_labor_units || 0; m.au += r.actual_labor_units || 0; m.ru += r.remaining_labor_units || 0;
       m.rows.push(r);
     });
     return Object.keys(map).sort().map(function (k) { var m = map[k];
-      // stable short ID from the name (OPC shows a resource ID column)
       m.code = 'R-' + k.replace(/[^A-Za-z0-9]/g, '').slice(0, 6).toUpperCase();
       return m; });
   }
-  function resUnitsData(parties) {
+  function resUnitsData(entries) {
     var M = usageMonths(), DD = today();
     var S = { planned: zeros(M.n), actual: zeros(M.n), reme: zeros(M.n), reml: zeros(M.n) };
-    parties.forEach(function (p) {
-      p.rows.forEach(function (r) {
-        var s = pd(r.start_date), e = pd(r.end_date); if (!s || !e) return;
-        var as = pd(r.actual_start) || s, ae = pd(r.actual_finish) || (DD < e ? DD : e);
-        spreadAdd(S.planned, M, r.planned_labor_units || 0, s, e);
-        spreadAdd(S.actual, M, r.actual_labor_units || 0, as, ae < as ? as : ae);
-        var done = (r.percent_complete || 0) >= 100 || !!r.actual_finish;
-        if (!done && r.remaining_labor_units) {
-          var rs = s > DD ? s : DD, re = e > rs ? e : rs;
-          spreadAdd(S.reme, M, r.remaining_labor_units, rs, re);
-          var fl = (r._float != null && r._float > 0) ? r._float : 0;
-          spreadAdd(S.reml, M, r.remaining_labor_units, addDays(rs, fl), addDays(re, fl));
-        }
-      });
+    function spread(r, pu, au, ru) {
+      var s = pd(r.start_date), e = pd(r.end_date); if (!s || !e) return;
+      var as = pd(r.actual_start) || s, ae = pd(r.actual_finish) || (DD < e ? DD : e);
+      spreadAdd(S.planned, M, pu || 0, s, e);
+      spreadAdd(S.actual, M, au || 0, as, ae < as ? as : ae);
+      var done = (r.percent_complete || 0) >= 100 || !!r.actual_finish;
+      if (!done && ru) {
+        var rs = s > DD ? s : DD, re = e > rs ? e : rs;
+        spreadAdd(S.reme, M, ru, rs, re);
+        var fl = (r._float != null && r._float > 0) ? r._float : 0;
+        spreadAdd(S.reml, M, ru, addDays(rs, fl), addDays(re, fl));
+      }
+    }
+    entries.forEach(function (p) {
+      if (p.assigns) p.assigns.forEach(function (o) { spread(o.act, o.a.budgeted_units, o.a.actual_units, o.a.remaining_units); });
+      else if (p.rows) p.rows.forEach(function (r) { spread(r, r.planned_labor_units, r.actual_labor_units, r.remaining_labor_units); });
     });
     return { M: M, S: S };
   }
@@ -1606,8 +1712,8 @@
     // Resource Loading module; Default Units/Time & Primary Role need it too).
     var rowsHtml = roster.map(function (m, i) {
       return '<tr data-res="' + i + '"' + (resSel[m.name] ? ' class="sel"' : '') + '><td><input type="checkbox"' + (resSel[m.name] ? ' checked' : '') + '></td>' +
-        '<td>' + esc(m.name) + '</td><td>' + esc(m.code) + '</td><td>Labor</td><td>days</td><td class="num">' + m.acts + '</td>' +
-        '<td class="num">' + Math.round(m.pu) + 'd</td><td class="num">' + Math.round(m.au) + 'd</td><td class="num">' + Math.round(m.ru) + 'd</td></tr>';
+        '<td>' + esc(m.name) + '</td><td>' + esc(m.code || '') + '</td><td>' + esc(m.type || 'Labor') + '</td><td>' + esc(m.uom || 'days') + '</td><td class="num">' + m.acts + '</td>' +
+        '<td class="num">' + Math.round(m.pu) + '</td><td class="num">' + Math.round(m.au) + '</td><td class="num">' + Math.round(m.ru) + '</td></tr>';
     }).join('');
     var sel = roster.filter(function (m) { return resSel[m.name]; });
     var right;
@@ -1617,7 +1723,9 @@
     return '<div class="ps-res-split">' +
       '<div class="ps-res-roster"><table><thead><tr><th></th><th>Name</th><th>ID</th><th>Type</th><th>Unit of Measure</th><th class="num">Activities</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Remaining</th></tr></thead><tbody>' +
       (rowsHtml || '<tr><td colspan="9" style="color:var(--pd-muted);">No activities yet.</td></tr>') + '</tbody></table>' +
-      '<p class="ps-usage-note" style="margin:8px 2px;">Roster = distinct Responsible Party values; units come from each activity\'s Labor Units fields. Default Units/Time &amp; Primary Role arrive with the Resource Loading module.</p></div>' +
+      '<p class="ps-usage-note" style="margin:8px 2px;">' + (ASSIGN.length
+        ? (usageKind === 'role' ? 'Grouped by assigned role; units are time-phased from each Resource Assignment across its activity dates.' : 'Roster from Resource Assignments; units are time-phased across each assigned activity\'s dates.')
+        : 'No assignments yet — roster derived from Responsible Party + Labor Units. Assign resources on the Resource Assignments tab to drive this.') + '</p></div>' +
       '<div class="ps-gutter" data-split="resusage" title="Drag to resize · double-click to reset"></div>' +
       '<div class="ps-res-chart"><div class="ps-usage-head">' +
       '<div class="ps-seg" style="height:28px;"><button data-rv="hist"' + (resView === 'hist' ? ' class="active"' : '') + ' style="padding:0 12px;">Histogram</button>' +
@@ -1702,12 +1810,13 @@
     var t = detailTab;
     // Project Usage tabs are project-level (like OPC) — they render without a selection.
     if (t === 'ausage') { body.innerHTML = usageActivityHtml(); wireActUsage(); return; }
-    if (t === 'rusage') { body.innerHTML = usageResourceHtml(); wireResUsage(); wireDetailSplits(body); return; }
-    if (t === 'roleusage') { body.innerHTML = detNoResource('role'); return; }
+    if (t === 'rusage') { usageKind = 'res'; body.innerHTML = usageResourceHtml(); wireResUsage(); wireDetailSplits(body); return; }
+    if (t === 'roleusage') { usageKind = 'role'; body.innerHTML = usageResourceHtml(); wireResUsage(); wireDetailSplits(body); return; }
     var r = selRow();
     if (!r || isWbs(r)) { body.innerHTML = '<div class="ps-empty-detail">Select an activity (click a row or its bar) to see its details.</div>'; return; }
     if (t === 'general') body.innerHTML = detGeneral(r);
     else if (t === 'status') body.innerHTML = detStatus(r);
+    else if (t === 'assign') { body.innerHTML = detAssign(r); wireAssign(body, r); }
     else if (t === 'rels') { body.innerHTML = detRels(r); wireDetailSplits(body); }
     else if (t === 'trace') body.innerHTML = detTrace(r);
   }

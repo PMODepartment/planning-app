@@ -354,6 +354,22 @@ developer, plug into one shared shell.
   git-ignored test harness (stubbed `AppAuth`/`PDb`/Supabase with synthetic rows, no real
   credentials or backend touched) to confirm the render tree and connector math; deleted after use.
 
+### 2026-07-03 — Prompt 50 (Desktop): Resource assignments phase (real Resource/Role Usage)
+- **Resource Assignments tab** added to the details panel (OPC order: General ·
+  Status · Resource Assignments · Relationships · Trace Logic). For the selected
+  activity: list/add/edit/delete assignments (pick a resource from the master →
+  prefills role/UoM; budgeted/actual/remaining units). Writes `resource_assignments`.
+- **Resource Usage now aggregates real assignments** when they exist — roster
+  grouped by resource (Name/ID/Type/UoM from the master), units **time-phased**
+  from each assignment across its activity's dates (histogram/spreadsheet/download
+  reused). Falls back to the Responsible-Party + Labor-Units derivation when there
+  are no assignments (no regression).
+- **Role Usage enabled** — same engine grouped by assigned role (`usageKind`
+  switch; `buildRoster(keyFn,nameFn)`).
+- Loads `resources` + `resource_assignments` per project on schedule load.
+  **Requires migration `2026-07-03-resource-assignments.sql`** (from Prompt 48).
+- Remaining: FTE / Max-Availability reference line (needs working-calendar math).
+
 ### 2026-07-03 — Prompt 49 (Desktop): Resizable detail sub-panels + Activity ID indent
 - **Detail sub-panels are now resizable** with a draggable gutter + **double-click
   to reset**: Relationships (Predecessors ⇄ Successors) and Resource Usage
