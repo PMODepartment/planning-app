@@ -409,6 +409,8 @@
     .ps-usage-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; flex:none; }
     .ps-usage-head .pd-select { height:30px; font-size:12px; width:auto; }
     .ps-usage-note { font-size:11px; color:var(--pd-muted); }
+    .ps-fte-toggle { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color:var(--pd-ink); cursor:pointer; user-select:none; }
+    .ps-fte-toggle input { cursor:pointer; }
     .ps-usage-chart { flex:1 1 auto; min-height:0; overflow:hidden; }
     .ps-usage-chart svg { display:block; }
     .ps-usage-empty { padding:26px; text-align:center; color:var(--pd-muted); font-size:13px; }
@@ -1452,6 +1454,19 @@
   function saveUsageCfg() { try { localStorage.setItem('ps_usage_cfg', JSON.stringify(usageCfg)); } catch (e) {} }
   var usageScope = 'all';          // 'all' | 'sel' — OPC's "Show all activities above" scope
   var resSel = {}, resView = 'hist'; // Resource Usage: selected parties + histogram/spreadsheet view
+  // FTE mode: express the histogram in Full-Time Equivalents instead of raw units, and draw the
+  // Max Availability line. Working calendar = Mon–Fri (5-day week); hours-based UoM assumes an
+  // 8h working day (OPC's default). A resource's capacity/period = max_units_per_time% ×
+  // working-days-in-period × units-per-full-day (1 day, or HPD hours).
+  var fteOn = (function () { try { return localStorage.getItem('ps_fte') === '1'; } catch (e) { return false; } })();
+  var HPD = 8;   // hours per working day (for hours-based UoM)
+  var _wdCache = {};
+  function workingDaysInMonth(y, mo) {
+    var key = y + '-' + mo; if (_wdCache[key] != null) return _wdCache[key];
+    var d = new Date(y, mo, 1), end = new Date(y, mo + 1, 0), n = 0;
+    for (; d <= end; d.setDate(d.getDate() + 1)) { var wd = d.getDay(); if (wd !== 0 && wd !== 6) n++; }
+    return (_wdCache[key] = n);
+  }
 
   function fmtCompact(v) {
     var a = Math.abs(v);
@@ -1527,6 +1542,7 @@
     barsOn.forEach(function (d) { S[d.k].forEach(function (v) { if (v > ymax) ymax = v; }); });
     curvesOn.forEach(function (d) { var c = 0; S[d.k].forEach(function (v) { c += v; }); if (c > ymax) ymax = c; });
     if (ymax <= 0) return '<div class="ps-usage-empty">' + (opts.emptyMsg || 'No data to plot yet.') + '</div>';
+    if (opts.maxLine) opts.maxLine.forEach(function (v) { if (v > ymax) ymax = v; });   // keep the availability ceiling in view
     ymax *= 1.06;
     var xw = cw / M.n, out = '';
     // horizontal sight lines + y labels
@@ -1534,7 +1550,7 @@
     for (var yi = 0; yi <= steps; yi++) {
       var yv = ymax * yi / steps, yy = padT + ch - ch * yi / steps;
       if (opts.sight && yi > 0) out += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (padL + cw) + '" y2="' + yy + '" stroke="var(--pd-line)" stroke-width="1"/>';
-      out += '<text x="' + (padL - 6) + '" y="' + (yy + 3.5) + '" text-anchor="end" font-size="10" fill="var(--pd-muted)">' + (opts.unit === 'd' ? Math.round(yv) + 'd' : '₱' + fmtCompact(yv)) + '</text>';
+      out += '<text x="' + (padL - 6) + '" y="' + (yy + 3.5) + '" text-anchor="end" font-size="10" fill="var(--pd-muted)">' + (opts.unit === 'fte' ? (Math.round(yv * 100) / 100) : opts.unit === 'd' ? Math.round(yv) + 'd' : '₱' + fmtCompact(yv)) + '</text>';
     }
     out += '<line x1="' + padL + '" y1="' + (padT + ch) + '" x2="' + (padL + cw) + '" y2="' + (padT + ch) + '" stroke="var(--pd-muted)" stroke-width="1"/>';
     // x labels — at most ~10
@@ -1554,6 +1570,17 @@
           out += '<rect x="' + (padL + i * xw + xw * 0.14 + bi * bw) + '" y="' + (padT + ch - bh) + '" width="' + Math.max(bw - 0.5, 0.5) + '" height="' + bh + '" fill="' + d.color + '"/>';
         });
       });
+    }
+    // Max Availability reference line (stepped per period, red dashed) — the resource capacity
+    // ceiling from the working calendar; bars rising above it mean over-allocation.
+    if (opts.maxLine) {
+      var mseg = '';
+      opts.maxLine.forEach(function (v, i) {
+        if (v <= 0) return;
+        var y = padT + ch - ch * Math.min(v, ymax) / ymax;
+        mseg += '<line x1="' + (padL + i * xw) + '" y1="' + y + '" x2="' + (padL + (i + 1) * xw) + '" y2="' + y + '" stroke="#C42127" stroke-width="1.6" stroke-dasharray="5 3"/>';
+      });
+      out += mseg;
     }
     // cumulative curves
     curvesOn.forEach(function (d) {
@@ -1583,6 +1610,11 @@
         out += '<rect x="' + (padL + cw + 14) + '" y="' + (ly - 7) + '" width="14" height="8" rx="2" fill="' + d.color + '"/>' +
           '<text x="' + (padL + cw + 33) + '" y="' + ly + '" font-size="10.5" fill="var(--pd-ink)">' + d.label + '</text>';
       });
+      if (opts.maxLine) {
+        var mly = padT + 8 + shown.length * 17;
+        out += '<line x1="' + (padL + cw + 14) + '" y1="' + (mly - 3) + '" x2="' + (padL + cw + 28) + '" y2="' + (mly - 3) + '" stroke="#C42127" stroke-width="1.6" stroke-dasharray="5 3"/>' +
+          '<text x="' + (padL + cw + 33) + '" y="' + mly + '" font-size="10.5" fill="var(--pd-ink)">Max Availability</text>';
+      }
     }
     return '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + out + '</svg>';
   }
@@ -1656,12 +1688,12 @@
     var map = {};
     ASSIGN.forEach(function (a) {
       var key = keyFn(a); if (key == null || key === '') key = '(Unassigned)';
-      var m = map[key] || (map[key] = { name: nameFn(a, key), code: '', type: 'Labor', uom: a.uom || 'hours', acts: 0, pu: 0, au: 0, ru: 0, assigns: [] });
+      var m = map[key] || (map[key] = { name: nameFn(a, key), code: '', type: 'Labor', uom: a.uom || 'hours', maxpct: 100, acts: 0, pu: 0, au: 0, ru: 0, assigns: [] });
       var act = actMap[a.activity_id]; if (!act) return;
       m.acts++; m.pu += a.budgeted_units || 0; m.au += a.actual_units || 0; m.ru += a.remaining_units || 0;
       m.assigns.push({ a: a, act: act });
       var rr = RESRC.find(function (x) { return x.id === a.resource_id; });
-      if (rr) { if (!m.code) m.code = rr.resource_code || ''; m.type = rr.type || 'Labor'; m.uom = a.uom || rr.uom || 'hours'; }
+      if (rr) { if (!m.code) m.code = rr.resource_code || ''; m.type = rr.type || 'Labor'; m.uom = a.uom || rr.uom || 'hours'; m.maxpct = rr.max_units_per_time != null ? rr.max_units_per_time : 100; }
     });
     return Object.keys(map).map(function (k) { return map[k]; }).sort(function (x, y) { return x.name.localeCompare(y.name); });
   }
@@ -1675,7 +1707,7 @@
     rows.forEach(function (r) {
       if (isWbs(r)) return;
       var key = (r.responsible_party || '').trim() || '(Unassigned)';
-      var m = map[key] || (map[key] = { name: key, type: 'Labor', uom: 'days', acts: 0, pu: 0, au: 0, ru: 0, rows: [] });
+      var m = map[key] || (map[key] = { name: key, type: 'Labor', uom: 'days', maxpct: 100, acts: 0, pu: 0, au: 0, ru: 0, rows: [] });
       m.acts++; m.pu += r.planned_labor_units || 0; m.au += r.actual_labor_units || 0; m.ru += r.remaining_labor_units || 0;
       m.rows.push(r);
     });
@@ -1705,6 +1737,24 @@
     });
     return { M: M, S: S };
   }
+  // Working-calendar capacity for the selected resources, per period:
+  //   capMax[i] = Σ (max_units_per_time% × working-days × units-per-full-day) — the Max
+  //               Availability ceiling, in the same units as the histogram bars.
+  //   perFTE[i] = working-days × units-per-full-day for ONE full-time resource — the FTE
+  //               denominator (so a fully-loaded person reads as 1.0 FTE, a 2-person team 2.0).
+  // Units-per-full-day is HPD for hour-based UoM, else 1 (day-based). A mixed-UoM selection uses
+  // the first entry's UoM as the FTE reference (projects normally use a single UoM).
+  function resCapacity(entries, M) {
+    var capMax = zeros(M.n), perFTE = zeros(M.n);
+    var updRef = entries.length && /hour/i.test(entries[0].uom || 'days') ? HPD : 1;
+    for (var i = 0; i < M.n; i++) perFTE[i] = workingDaysInMonth(M.y0, M.mo0 + i) * updRef;
+    entries.forEach(function (p) {
+      var upd = /hour/i.test(p.uom || 'days') ? HPD : 1;
+      var mp = (p.maxpct != null ? p.maxpct : 100) / 100;
+      for (var j = 0; j < M.n; j++) capMax[j] += mp * workingDaysInMonth(M.y0, M.mo0 + j) * upd;
+    });
+    return { capMax: capMax, perFTE: perFTE };
+  }
   function usageResourceHtml() {
     var roster = resRoster();
     // OPC roster columns: Name, ID, Type, Unit of Measure, Activities, Planned/Actual/Remaining.
@@ -1731,7 +1781,8 @@
       '<div class="ps-seg" style="height:28px;"><button data-rv="hist"' + (resView === 'hist' ? ' class="active"' : '') + ' style="padding:0 12px;">Histogram</button>' +
       '<button data-rv="sheet"' + (resView === 'sheet' ? ' class="active"' : '') + ' style="padding:0 12px;">Spreadsheet</button></div>' +
       '<button class="pd-btn" id="ps-res-download" style="height:28px;font-size:12px;"><span data-ico="download" data-ico-size="13"></span> Download</button>' +
-      '<span class="ps-usage-note">Units in person-days per month</span></div>' + right + '</div></div>';
+      '<label class="ps-fte-toggle" title="Show the histogram in Full-Time Equivalents against each resource\'s Max Units/Time and a 5-day working calendar"><input type="checkbox" id="ps-fte"' + (fteOn ? ' checked' : '') + '> FTE</label>' +
+      '<span class="ps-usage-note">' + (fteOn ? 'Full-Time Equivalents (Mon–Fri, ' + HPD + 'h/day) · dashed line = Max Availability' : 'Units per month · dashed line = Max Availability') + '</span></div>' + right + '</div></div>';
   }
   // Export the resource usage spread (selected resources, or all if none selected) to Excel —
   // matches OPC's Resource Usage "Download": roster row + monthly Planned/Actual/Remaining units.
@@ -1776,11 +1827,22 @@
     var roster = resRoster();
     var host = document.getElementById('ps-res-chart');
     if (host) {
-      var d = resUnitsData(roster.filter(function (m) { return resSel[m.name]; }));
-      host.innerHTML = usageChartSVG(d.M, RES_SERIES, d.S, {
+      var sel = roster.filter(function (m) { return resSel[m.name]; });
+      var d = resUnitsData(sel);
+      var cap = resCapacity(sel, d.M);
+      var S = d.S, maxLine = cap.capMax, unit = 'd';
+      if (fteOn) {
+        // FTE = units ÷ one full-time resource's capacity for the period; Max Availability
+        // line = capMax ÷ that same per-FTE baseline (so it reads e.g. 1.5 for a 100%+50% pair).
+        var conv = function (arr) { return arr.map(function (v, i) { return cap.perFTE[i] > 0 ? v / cap.perFTE[i] : 0; }); };
+        S = { planned: conv(d.S.planned), actual: conv(d.S.actual), reme: conv(d.S.reme), reml: conv(d.S.reml) };
+        maxLine = cap.capMax.map(function (v, i) { return cap.perFTE[i] > 0 ? v / cap.perFTE[i] : 0; });
+        unit = 'fte';
+      }
+      host.innerHTML = usageChartSVG(d.M, RES_SERIES, S, {
         W: host.clientWidth, H: host.clientHeight,
         bars: { planned: 1, actual: 1, reme: 1, reml: 1 }, curves: {},
-        legend: true, ddline: true, sight: true, unit: 'd',
+        legend: true, ddline: true, sight: true, unit: unit, maxLine: maxLine,
         emptyMsg: 'No labor units on these activities yet — set Planned/Actual/Remaining Labor Units in the activity form.' });
     }
     document.querySelectorAll('.ps-res-roster tr[data-res]').forEach(function (tr) {
@@ -1788,6 +1850,7 @@
     });
     document.querySelectorAll('[data-rv]').forEach(function (b) { b.onclick = function () { resView = b.dataset.rv; renderDetails(); }; });
     var dl = document.getElementById('ps-res-download'); if (dl) dl.onclick = downloadResUsage;
+    var fte = document.getElementById('ps-fte'); if (fte) fte.onchange = function () { fteOn = fte.checked; try { localStorage.setItem('ps_fte', fteOn ? '1' : '0'); } catch (e) {} renderDetails(); };
   }
   // Attach drag-resize + double-click-reset to any .ps-gutter in a panel.
   function wireDetailSplits(root) {

@@ -77,6 +77,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-03 — Prompt 56: FTE / Max-Availability line in Resource Usage histogram
+- Completed the last deferred assignments-phase item. Added a working-calendar capacity model to
+  the Resource Usage histogram:
+  - **Working calendar**: `workingDaysInMonth` counts Mon–Fri per period (5-day week, cached);
+    hour-based UoM assumes an 8h working day (`HPD`), day-based UoM = 1 unit/day.
+  - **Max Availability line** (`resCapacity` → `capMax[i]` = Σ `max_units_per_time%` × working-days
+    × units-per-full-day): a red dashed stepped line drawn per period on the histogram (bars above
+    it = over-allocation), with a legend entry; folded into the chart's y-max so it's always in view.
+  - **FTE toggle** (persisted `ps_fte`): converts bars to Full-Time Equivalents by dividing units
+    by a *single* full-time resource's period capacity (`perFTE[i]` = working-days × units/day) —
+    so a fully-loaded person reads 1.0 and a 2-person team 2.0; the availability line becomes the
+    summed max % (e.g. 100%+50% → 1.5 FTE). Axis switches to FTE numbers.
+  - `usageChartSVG` gained `opts.maxLine` (stepped red-dashed line + legend + y-max) and an `fte`
+    axis-unit; roster entries now carry `maxpct`/`uom` (from the resource master, default 100%/days
+    for the Responsible-Party fallback).
+- Verified in harness (2 resources on a June activity, 22 units each; June = 22 working days):
+  Units mode axis tops at 47d (44 planned ×1.06) with the availability line at 33d (22×100% +
+  22×50%); FTE mode axis tops at 2.12 (44÷22 = 2.0 FTE) with the line at 1.5 FTE. Screenshot-confirmed.
+
 ### 2026-07-03 — Prompt 55: UI polish pass (topbar, icon toolbar, column menu, tab strip)
 - **Removed the duplicate top-bar Download** — kept only the grid-footer Download (OPC has it under
   the grid). Print/undo/redo/health/reports/filter/refresh remain top-bar icons.
