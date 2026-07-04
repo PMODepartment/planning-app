@@ -354,6 +354,14 @@ developer, plug into one shared shell.
   git-ignored test harness (stubbed `AppAuth`/`PDb`/Supabase with synthetic rows, no real
   credentials or backend touched) to confirm the render tree and connector math; deleted after use.
 
+### 2026-07-03 — Prompt 49 (Desktop): Resizable detail sub-panels + Activity ID indent
+- **Detail sub-panels are now resizable** with a draggable gutter + **double-click
+  to reset**: Relationships (Predecessors ⇄ Successors) and Resource Usage
+  (roster ⇄ chart). Reusable `.ps-gutter`/`.ps-vsplit` + `wireDetailSplits()`;
+  widths persisted in localStorage (`ps_split_<key>`).
+- **Activity ID indented by WBS level** in the grid (`idPad = 4 + min(depth,6)*8`)
+  so the hierarchy reads clearly, matching the indented Activity Name.
+
 ### 2026-07-03 — Prompt 48 (Desktop): UI density pass, dropdown clip fix, dbl-click auto-size, assignments DB
 - **Dropdown clipping fixed:** the single-row toolbar's `overflow-x:auto` was
   clipping the icon-menu popovers (Collapse/Views/Layout/Columns/Colors). Set the
