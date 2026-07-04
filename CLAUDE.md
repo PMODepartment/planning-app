@@ -77,6 +77,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-03 — Prompt 58: Portfolio placement + project filter; S-Curve performance-based forecast
+- **Portfolio Overview is no longer a per-project module** — removed its `config.js` MODULES entry
+  (with a note explaining why) so it doesn't appear in the per-project module grid and can't imply
+  it belongs to the open project. It stays reachable from the **Projects selector** (`projects.html`
+  top-level nav link, added last prompt). Module files unchanged otherwise.
+- **Project filter in Portfolio Overview** — new "All projects / <project>" select in the toolbar;
+  `projFilter` narrows every view (KPIs, charts, table) to one project. Verified: selecting a
+  project drops the Projects KPI 2→1 and the table to that row.
+- **S-Curve forecast-to-finish redone (performance-based + S-curve shape)** — was a straight line
+  to a manual/planned date, which let a behind project forecast finishing *early*. Now:
+  - **Auto forecast finish** = data date + remaining planned duration ÷ **SPI** (SPI = actual% ÷
+    planned% at the data date, clamped 0.1–3). Behind (SPI<1) → finish slips later; ahead → earlier.
+  - **Forecast curve** follows the *shape of the remaining planned work*, time-stretched to the
+    forecast finish and scaled from the actual% at the data date up to 100% (an S-curve, not a line).
+  - The date input shows the effective finish; **set a date to pin/override, clear it to revert to
+    auto** (`fcManual` + `localStorage['sc_fc_<pid>']`). Basis line reports SPI + auto date.
+  - Verified (one 2024–2027 activity, 20% done at a mid-2026 data date): SPI 0.32, auto finish
+    2031-03-07 (far past the 2027 plan — correctly later), 19-point forecast polyline; manual pin
+    2028-06-30 + revert-to-auto both work.
+- **Heads-up (not code):** Resource & Role Master throws "Could not find the table 'public.resources'"
+  — the `migrations/2026-07-01-resource-role-master.sql` migration hasn't been run on the live
+  Supabase yet. User must run it (creates `resource_roles`, `resources`, `resource_assignments`).
+
 ### 2026-07-03 — Prompt 57: New Portfolio Overview module (cross-project dashboard)
 - Built `modules/portfolio-overview/` — a standalone, **project-agnostic** dashboard over ALL
   accessible projects (RLS-scoped), separate from the per-project Project Home. Reads only

@@ -26,8 +26,10 @@ window.APP_CONFIG = {
   // `path`  — entry page each developer must provide
   // `icon`  — emoji/placeholder until proper icons are added
   // `enabled` — flip to true as each module is delivered
+  // NOTE: Portfolio Overview is intentionally NOT a per-project module — it's a
+  // cross-project view reached from the Projects selector (projects.html), so the
+  // module grid never implies it belongs to the currently-open project.
   MODULES: [
-    { key: 'portfolio-overview',name: 'Portfolio Overview',                    path: 'modules/portfolio-overview/index.html',icon: 'barChart',   enabled: true },
     { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: false },
     { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: false },
     { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: false },

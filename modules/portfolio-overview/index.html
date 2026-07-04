@@ -79,6 +79,9 @@
             <option value="none">None (flat)</option>
           </select>
         </label>
+        <select class="pd-select" id="po-project" title="Filter to a single project" style="max-width:220px;">
+          <option value="">All projects</option>
+        </select>
         <select class="pd-select" id="po-status" title="Status filter" style="max-width:150px;">
           <option value="">All statuses</option>
           <option value="active">Active</option>
@@ -115,7 +118,7 @@
 (function () {
   'use strict';
   var PROJ = [], WS = [], wsById = {}, childrenMap = {};
-  var groupMode = 'workspace', statusFilter = '', behindOnly = false, query = '';
+  var groupMode = 'workspace', statusFilter = '', behindOnly = false, query = '', projFilter = '';
   var sortCol = 'name', sortDir = 1, collapsed = {};
 
   function esc(s) { return Fmt.esc(s); }
@@ -153,6 +156,7 @@
   function filtered() {
     var q = query.trim().toLowerCase();
     return PROJ.filter(function (p) {
+      if (projFilter && p.id !== projFilter) return false;
       if (statusFilter && (p.status || 'active') !== statusFilter) return false;
       if (behindOnly && !isBehind(p)) return false;
       if (q) { var hay = ((p.name || '') + ' ' + (p.id || '') + ' ' + (groupHead(p) || '')).toLowerCase(); if (hay.indexOf(q) === -1) return false; }
@@ -345,6 +349,7 @@
     UI.renderUserBar(profile);
     UI.initShell();
     document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderAll(); };
+    document.getElementById('po-project').onchange = function (e) { projFilter = e.target.value; renderAll(); };
     document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderAll(); };
     document.getElementById('po-behind').onchange = function (e) { behindOnly = e.target.checked; renderAll(); };
     document.getElementById('po-q').oninput = function (e) { query = e.target.value; renderAll(); };
@@ -355,6 +360,10 @@
     } catch (e) { UI.toast('Could not load portfolio: ' + (e.message || e), 'error'); }
     WS.forEach(function (w) { wsById[w.id] = w; });
     buildChildren();
+    // populate the project filter (sorted by name)
+    var psel = document.getElementById('po-project');
+    psel.innerHTML = '<option value="">All projects</option>' + PROJ.slice().sort(function (a, b) { return (a.name || a.id).localeCompare(b.name || b.id); })
+      .map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>'; }).join('');
     renderAll();
   });
 })();

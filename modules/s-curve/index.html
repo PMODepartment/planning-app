@@ -89,7 +89,7 @@
 <script>
 (function () {
   'use strict';
-  var TABLE = 'project_schedule', pid = null, rows = [], forecastFinish = null;
+  var TABLE = 'project_schedule', pid = null, rows = [], forecastFinish = null, fcManual = false;
   function sb() { return AppAuth.getSB(); }
   function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); if (!m) return null; return new Date(+m[1], +m[2]-1, +m[3]); }
   function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
@@ -128,10 +128,11 @@
       }
     } catch (e) { hideLoading(); UI.toast('Load failed: ' + (e.message || e), 'error'); return; }
     hideLoading(); rows = all;
-    // Load saved forecast finish for this project (default = planned finish).
+    // Forecast finish is performance-based (auto) unless the user has pinned a date for this
+    // project; a saved value = manual override. The input is filled in render() with the
+    // effective date (auto or manual) once the SPI-based projection is computed.
     var saved = null; try { var sv = localStorage.getItem(fcKey()); if (sv) saved = pd(sv); } catch (e) {}
-    forecastFinish = saved || plannedFinishDate();
-    var fi = document.getElementById('sc-forecast'); if (fi) fi.value = forecastFinish ? iso(forecastFinish) : '';
+    fcManual = !!saved; forecastFinish = saved || null;
     render();
   }
 
@@ -149,13 +150,22 @@
     var min = new Date(Math.min.apply(null, ds)), max = new Date(Math.max.apply(null, de.length ? de : ds));
     var plannedEnd = max;
     var tnow = today();
-    // Manual forecast finish (defaults to the planned finish); the timeline is
-    // extended to cover it so a slipped forecast is visible past the plan.
-    var fc = forecastFinish || plannedEnd;
+    // Performance-based (SPI) forecast finish: project the current pace forward.
+    // SPI = actual% ÷ planned% at the data date; the remaining planned duration is stretched
+    // by 1/SPI, so a behind-schedule project (SPI<1) forecasts a LATER finish (and vice-versa).
+    // A user-pinned date overrides. The timeline extends to cover whichever is later.
+    var overallDone = leaves.reduce(function (s, a) { return s + done(a); }, 0);
+    function plannedValueAt(D) { var pv = 0; leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return; var pf = D >= e ? 1 : (D < s ? 0 : (e > s ? (D - s) / (e - s) : 1)); pv += val(a) * pf; }); return pv; }
+    var pctNow = TOT ? overallDone / TOT * 100 : 0;
+    var plPctNow = TOT ? plannedValueAt(tnow) / TOT * 100 : 0;
+    var spi = plPctNow > 0 ? pctNow / plPctNow : 1;
+    spi = Math.max(0.1, Math.min(spi, 3));   // clamp so a near-zero planned% can't explode the date
+    var remMs = Math.max(0, +plannedEnd - +tnow);
+    var autoFc = pctNow >= 100 ? tnow : new Date(+tnow + remMs / spi);
+    var fc = (fcManual && forecastFinish) ? forecastFinish : autoFc;
     var domainMax = new Date(Math.max(+max, +tnow, +fc));
     var months = [], c = new Date(min.getFullYear(), min.getMonth(), 1);
     while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
-    var overallDone = leaves.reduce(function (s, a) { return s + done(a); }, 0);
     var plannedC = [], actualC = [];
     months.forEach(function (m) {
       var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0);
@@ -182,10 +192,14 @@
     for (var k = ti + 1; k < actualC.length; k++) actualC[k] = 0;  // no actuals past the data date
     var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0;
     var overallPct = TOT ? overallDone / TOT * 100 : 0;
-    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length, plannedEnd: plannedEnd, fcFinish: fc };
+    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length, plannedEnd: plannedEnd, fcFinish: fc, autoFc: autoFc, spi: spi, manual: fcManual };
   }
 
-  function render() { var d = compute(); renderKpis(d); renderChart(d); renderTable(d); }
+  function render() {
+    var d = compute(); renderKpis(d); renderChart(d); renderTable(d);
+    // reflect the effective forecast finish (auto SPI-based, or the manual override) in the input
+    var fi = document.getElementById('sc-forecast'); if (fi && !d.empty && d.fcFinish) fi.value = iso(d.fcFinish);
+  }
 
   function renderKpis(d) {
     var host = document.getElementById('sc-kpis');
@@ -204,7 +218,9 @@
     var host = document.getElementById('sc-chart');
     var basis = document.getElementById('sc-basis');
     if (d.empty) { host.innerHTML = '<div class="sc-empty">' + (pid ? 'This project has no dated activities. Import or add a schedule first.' : 'Select a project.') + '</div>'; basis.textContent = ''; return; }
-    basis.textContent = 'Progress weighted by activity duration across ' + d.activities + ' activities. Solid = planned & actual (to data date); the red dashed line is the forecast to finish. (Cost / earned-value is handled by the EVM dashboard.)';
+    basis.textContent = 'Progress weighted by activity duration across ' + d.activities + ' activities. Solid = planned & actual (to data date). Red dashed = forecast to finish — ' +
+      (d.manual ? 'pinned to ' + iso(d.fcFinish) : 'performance-based (SPI ' + (Math.round(d.spi * 100) / 100) + ', auto finish ' + iso(d.autoFc) + ')') +
+      '; it follows the plan’s shape from the actual point up to 100%. Set a date to override, clear it to auto-forecast.';
     var W = 1000, H = 340, padL = 40, padR = 16, padT = 16, padB = 40, n = d.months.length, maxV = d.TOT || 1;
     function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
     function y(v) { return padT + (1 - (v / maxV)) * (H - padT - padB); }
@@ -222,9 +238,25 @@
       fi = Math.max(0, Math.min(n - 1, fi));
       return padL + (n <= 1 ? 0 : fi / (n - 1) * (W - padL - padR));
     }
+    // Forecast to finish: an S-CURVE (not a straight line) following the SHAPE of the remaining
+    // planned work, time-stretched to the (SPI-based) forecast finish and scaled from the actual%
+    // at the data date up to 100%. So it starts on the actual point and mirrors the plan's ramp.
     var fc = '';
-    if (d.fcFinish) {
-      fc = '<polyline class="sc-forecast" points="' + x(d.ti) + ',' + y(d.actualC[d.ti]) + ' ' + xAt(d.fcFinish) + ',' + y(d.TOT) + '"/>';
+    if (d.fcFinish && d.actualC[d.ti] < d.TOT) {
+      var dd = today(), rem = d.TOT - d.plannedC[d.ti];
+      var plSpan = +d.plannedEnd - +dd, fcSpan = +d.fcFinish - +dd;
+      var pts = [x(d.ti) + ',' + y(d.actualC[d.ti])];
+      if (rem > 0.0001 && plSpan > 0 && fcSpan > 0) {
+        for (var j = d.ti + 1; j < d.months.length; j++) {
+          var mDate = d.months[j]; if (mDate > d.plannedEnd) break;   // month first-of, matches x(j)
+          var timeFrac = Math.min(1, (+mDate - +dd) / plSpan);
+          var valFrac = Math.min(1, Math.max(0, (d.plannedC[j] - d.plannedC[d.ti]) / rem));
+          var fdate = new Date(+dd + timeFrac * fcSpan);
+          pts.push(xAt(fdate) + ',' + y(d.actualC[d.ti] + valFrac * (d.TOT - d.actualC[d.ti])));
+        }
+      }
+      pts.push(xAt(d.fcFinish) + ',' + y(d.TOT));   // land exactly on 100% at the forecast finish
+      fc = '<polyline class="sc-forecast" points="' + pts.join(' ') + '"/>';
     }
     var tx = x(d.ti);
     var todayL = '<line x1="' + tx + '" y1="' + padT + '" x2="' + tx + '" y2="' + (H - padB) + '" class="sc-today"/><text x="' + (tx + 4) + '" y="' + (padT + 10) + '" class="sc-today-lab">Data date</text>';
@@ -260,7 +292,8 @@
     document.getElementById('sc-refresh').onclick = function () { load(); };
     document.getElementById('sc-forecast').onchange = function (e) {
       var v = e.target.value;
-      forecastFinish = v ? pd(v) : plannedFinishDate();
+      // Set a date to pin (override) the forecast finish; clear it to revert to the auto SPI forecast.
+      if (v) { fcManual = true; forecastFinish = pd(v); } else { fcManual = false; forecastFinish = null; }
       try { if (v) localStorage.setItem(fcKey(), v); else localStorage.removeItem(fcKey()); } catch (er) {}
       render();
     };
