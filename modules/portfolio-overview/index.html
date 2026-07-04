@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
+  <script src="../../assets/js/theme.js"></script>
+  <title>Portfolio Overview · Planners Dashboard</title>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css" />
+  <style>
+    .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
+    .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
+    .po-search { position:relative; display:inline-flex; align-items:center; }
+    .po-search > [data-ico] { position:absolute; left:10px; color:var(--pd-muted); pointer-events:none; display:inline-flex; }
+    .po-search .pd-input { padding-left:32px; width:220px; }
+    .po-spacer { margin-left:auto; }
+    .po-chk { display:inline-flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; color:var(--pd-ink); }
+    /* charts */
+    .po-charts { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:16px; margin:16px 0; }
+    @media (max-width:920px){ .po-charts { grid-template-columns:1fr; } }
+    .po-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; box-shadow:var(--pd-shadow); min-width:0; }
+    .po-card h3 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .po-donut-wrap { display:flex; align-items:center; gap:18px; }
+    .po-legend { display:flex; flex-direction:column; gap:7px; font-size:13px; }
+    .po-legend .lg { display:flex; align-items:center; gap:8px; }
+    .po-legend .sw { width:12px; height:12px; border-radius:3px; flex:none; }
+    .po-legend .ct { margin-left:auto; font-weight:700; color:var(--pd-muted); padding-left:12px; }
+    .po-bars svg { display:block; width:100%; }
+    .po-empty { color:var(--pd-muted); font-size:13px; padding:24px; text-align:center; }
+    /* grouped portfolio table */
+    .po-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .po-table th { position:sticky; top:0; background:var(--pd-bg); text-align:left; font-size:10.5px; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-muted); padding:9px 12px; border-bottom:2px solid var(--pd-line); white-space:nowrap; cursor:pointer; }
+    .po-table th.num { text-align:right; }
+    .po-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
+    .po-table td.num { text-align:right; }
+    .po-grp td { background:var(--pd-bg); font-weight:700; border-top:2px solid var(--pd-line); cursor:pointer; }
+    .po-grp .po-grp-name { display:flex; align-items:center; gap:7px; }
+    .po-grp .po-caret { width:12px; display:inline-block; color:var(--pd-muted); }
+    .po-proj-name { display:flex; align-items:center; gap:8px; }
+    .po-proj-name .ic { color:var(--pd-red); display:inline-flex; }
+    .po-row { cursor:pointer; }
+    .po-row:hover td { background:var(--pd-red-light); }
+    .po-sched { display:flex; align-items:center; gap:7px; }
+    .po-sched .bar { flex:0 0 54px; height:7px; background:var(--pd-line); border-radius:4px; overflow:hidden; }
+    .po-sched .bar > div { height:100%; background:var(--pd-red); }
+    .po-var-up { color:var(--pd-bad); font-weight:600; } .po-var-dn { color:var(--pd-ok); font-weight:600; }
+    .po-health { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+    .po-tot-row td { font-weight:800; border-top:2px solid var(--pd-ink); background:var(--pd-bg); }
+    .po-sort-ind { font-size:9px; color:var(--pd-red); margin-left:4px; }
+  </style>
+</head>
+<body>
+<div class="pd-app">
+  <aside class="pd-sidebar">
+    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Portfolio Overview</small></div>
+    <nav>
+      <a href="../../projects.html"><span class="pd-navico" data-ico="grid"></span>All Projects</a>
+      <a href="../../dashboard.html"><span class="pd-navico" data-ico="home"></span>Project Home</a>
+      <a href="#" class="active"><span class="pd-navico" data-ico="barChart"></span>Portfolio Overview</a>
+    </nav>
+  </aside>
+
+  <div class="pd-content">
+    <div class="pd-topbar">
+      <h1>Portfolio Overview</h1>
+      <div id="user-bar"></div>
+    </div>
+
+    <div class="pd-main">
+      <div class="po-toolbar">
+        <label class="po-chk" style="gap:6px;">Group by
+          <select class="pd-select" id="po-group" style="max-width:170px;">
+            <option value="workspace">Workspace</option>
+            <option value="program">Program</option>
+            <option value="grouphead">Group Head</option>
+            <option value="status">Status</option>
+            <option value="none">None (flat)</option>
+          </select>
+        </label>
+        <select class="pd-select" id="po-status" title="Status filter" style="max-width:150px;">
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="archived">Archived</option>
+        </select>
+        <label class="po-chk"><input type="checkbox" id="po-behind"> Behind schedule only</label>
+        <span class="po-spacer"></span>
+        <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-q" placeholder="Search project…" /></div>
+        <button class="pd-btn" id="po-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
+      </div>
+
+      <div class="pd-info-grid" id="po-kpis"></div>
+
+      <div class="po-charts">
+        <div class="po-card"><h3>Schedule Health</h3><div id="po-donut"></div></div>
+        <div class="po-card"><h3 id="po-bars-title">Budget by Workspace — Original vs Estimated</h3><div class="po-bars" id="po-bars"></div></div>
+      </div>
+
+      <div class="po-card" style="padding:0;overflow:hidden;">
+        <div style="overflow-x:auto;"><table class="po-table" id="po-table"></table></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/db.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/icons.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var PROJ = [], WS = [], wsById = {}, childrenMap = {};
+  var groupMode = 'workspace', statusFilter = '', behindOnly = false, query = '';
+  var sortCol = 'name', sortDir = 1, collapsed = {};
+
+  function esc(s) { return Fmt.esc(s); }
+  function num(v) { return Number(v) || 0; }
+  function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; }
+  function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
+
+  // ---- workspace tree helpers (same model as dashboard.html) ----
+  function buildChildren() { childrenMap = {}; WS.forEach(function (w) { (childrenMap[w.parent_id] = childrenMap[w.parent_id] || []).push(w); }); }
+  function pathOf(id) { var n = [], c = wsById[id]; while (c) { n.unshift(c.name); c = c.parent_id ? wsById[c.parent_id] : null; } return n; }
+  function ancestorOfType(startId, type) { var c = startId ? wsById[startId] : null; while (c) { if (c.node_type === type) return c; c = c.parent_id ? wsById[c.parent_id] : null; } return null; }
+  function groupHead(p) { if (!p) return null; if (p.group_head) return p.group_head; var c = p.workspace_id ? wsById[p.workspace_id] : null; while (c) { if (c.group_head) return c.group_head; c = c.parent_id ? wsById[c.parent_id] : null; } return null; }
+
+  // ---- derived per-project fields ----
+  function progressOf(p) { return p.schedule_progress != null ? Math.max(0, Math.min(100, num(p.schedule_progress))) : null; }
+  function isOverdue(p) { var f = pd(p.forecast_finish || p.schedule_finish || p.end_date); var pr = progressOf(p); return !!(f && f < today() && (pr == null || pr < 100)); }
+  function isBehind(p) {
+    // slipped vs baseline finish, or overdue-and-incomplete
+    var sf = pd(p.schedule_finish), ff = pd(p.forecast_finish);
+    if (sf && ff && sf > ff) return true;
+    return isOverdue(p);
+  }
+  function health(p) { if (progressOf(p) == null) return 'none'; return isBehind(p) ? 'behind' : 'ontrack'; }
+  var HEALTH = { ontrack: { label: 'On Track', color: '#1f8f4e' }, behind: { label: 'Behind', color: '#C42127' }, none: { label: 'No Schedule', color: '#9a9a9a' } };
+  function variance(p) { return num(p.estimated_cost) - num(p.original_budget); }
+
+  function groupKeyOf(p) {
+    if (groupMode === 'workspace') { var w = wsById[p.workspace_id]; return w ? w.name : '(Unassigned)'; }
+    if (groupMode === 'program') { var pr = ancestorOfType(p.workspace_id, 'program'); return pr ? pr.name : '(No program)'; }
+    if (groupMode === 'grouphead') { return groupHead(p) || '(No group head)'; }
+    if (groupMode === 'status') { return (p.status || 'active'); }
+    return 'All Projects';
+  }
+
+  function filtered() {
+    var q = query.trim().toLowerCase();
+    return PROJ.filter(function (p) {
+      if (statusFilter && (p.status || 'active') !== statusFilter) return false;
+      if (behindOnly && !isBehind(p)) return false;
+      if (q) { var hay = ((p.name || '') + ' ' + (p.id || '') + ' ' + (groupHead(p) || '')).toLowerCase(); if (hay.indexOf(q) === -1) return false; }
+      return true;
+    });
+  }
+
+  // ---- KPI cards ----
+  function card(ic, label, val, cls) { return '<div class="pd-info-card"><div class="pd-info-ic">' + Icons.svg(ic, 22) + '</div><div class="pd-info-label">' + esc(label) + '</div><div class="pd-info-val"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + esc(val) + '</div></div>'; }
+  function renderKPIs(list) {
+    var active = list.filter(function (p) { return (p.status || 'active') === 'active'; }).length;
+    var orig = list.reduce(function (a, p) { return a + num(p.original_budget); }, 0);
+    var est = list.reduce(function (a, p) { return a + num(p.estimated_cost); }, 0);
+    var vr = est - orig;
+    var pv = list.map(progressOf).filter(function (x) { return x != null; });
+    var avg = pv.length ? Math.round(pv.reduce(function (a, b) { return a + b; }, 0) / pv.length) : null;
+    var over = list.filter(function (p) { return variance(p) > 0; }).length;
+    var behind = list.filter(isBehind).length;
+    document.getElementById('po-kpis').innerHTML =
+      card('layers', 'Projects', String(list.length)) +
+      card('check', 'Active', String(active)) +
+      card('barChart', 'Avg Schedule %', avg != null ? avg + '%' : '—') +
+      card('cash', 'Original Budget', orig ? Fmt.moneyShort(orig) : '—') +
+      card('calculator', 'Estimated Cost', est ? Fmt.moneyShort(est) : '—') +
+      card(vr > 0 ? 'triangleUp' : 'triangleDown', 'Budget Variance', (orig || est) ? Fmt.moneyShort(vr) : '—', vr > 0 ? '--pd-bad' : '--pd-ok') +
+      card('risk', 'Over Budget', String(over), over ? '--pd-bad' : null) +
+      card('calendar', 'Behind Schedule', String(behind), behind ? '--pd-bad' : null);
+  }
+
+  // ---- Schedule Health donut ----
+  function renderDonut(list) {
+    var counts = { ontrack: 0, behind: 0, none: 0 };
+    list.forEach(function (p) { counts[health(p)]++; });
+    var total = list.length, host = document.getElementById('po-donut');
+    if (!total) { host.innerHTML = '<div class="po-empty">No projects in scope.</div>'; return; }
+    var order = ['ontrack', 'behind', 'none'], R = 52, C = 62, sw = 20, circ = 2 * Math.PI * R, off = 0;
+    var arcs = '';
+    order.forEach(function (k) {
+      var frac = counts[k] / total; if (frac <= 0) return;
+      var len = frac * circ;
+      arcs += '<circle cx="' + C + '" cy="' + C + '" r="' + R + '" fill="none" stroke="' + HEALTH[k].color + '" stroke-width="' + sw + '" ' +
+        'stroke-dasharray="' + len + ' ' + (circ - len) + '" stroke-dashoffset="' + (-off) + '" transform="rotate(-90 ' + C + ' ' + C + ')"/>';
+      off += len;
+    });
+    var svg = '<svg width="124" height="124" viewBox="0 0 124 124">' + arcs +
+      '<text x="' + C + '" y="' + (C - 2) + '" text-anchor="middle" font-size="24" font-weight="800" fill="var(--pd-ink)">' + total + '</text>' +
+      '<text x="' + C + '" y="' + (C + 15) + '" text-anchor="middle" font-size="10" fill="var(--pd-muted)">projects</text></svg>';
+    var legend = '<div class="po-legend">' + order.map(function (k) {
+      return '<div class="lg"><span class="sw" style="background:' + HEALTH[k].color + ';"></span>' + HEALTH[k].label + '<span class="ct">' + counts[k] + '</span></div>';
+    }).join('') + '</div>';
+    host.innerHTML = '<div class="po-donut-wrap">' + svg + legend + '</div>';
+  }
+
+  // ---- Budget-by-group horizontal bars (Original vs Estimated) ----
+  function renderBars(list) {
+    document.getElementById('po-bars-title').textContent = 'Budget by ' + groupLabel() + ' — Original vs Estimated';
+    var groups = {};
+    list.forEach(function (p) { var k = groupKeyOf(p); var g = groups[k] || (groups[k] = { orig: 0, est: 0 }); g.orig += num(p.original_budget); g.est += num(p.estimated_cost); });
+    var arr = Object.keys(groups).map(function (k) { return { name: k, orig: groups[k].orig, est: groups[k].est }; })
+      .filter(function (g) { return g.orig || g.est; })
+      .sort(function (a, b) { return b.est - a.est; }).slice(0, 8);
+    var host = document.getElementById('po-bars');
+    if (!arr.length) { host.innerHTML = '<div class="po-empty">No budget figures captured yet. Add Original Budget / Estimated Cost on projects (Projects selector).</div>'; return; }
+    var max = Math.max.apply(null, arr.map(function (g) { return Math.max(g.orig, g.est); })) || 1;
+    var rowH = 34, padL = 4, W = 560, barW = 360, labelW = 150, valX = padL + labelW + barW + 8;
+    var H = arr.length * rowH + 10, out = '';
+    arr.forEach(function (g, i) {
+      var y = i * rowH + 6, bo = barW * g.orig / max, be = barW * g.est / max;
+      var nm = g.name.length > 22 ? g.name.slice(0, 21) + '…' : g.name;
+      out += '<text x="' + padL + '" y="' + (y + 13) + '" font-size="11" fill="var(--pd-ink)">' + esc(nm) + '</text>' +
+        '<rect x="' + (padL + labelW) + '" y="' + (y + 3) + '" width="' + Math.max(bo, 1) + '" height="9" rx="2" fill="#9a9a9a"/>' +
+        '<rect x="' + (padL + labelW) + '" y="' + (y + 15) + '" width="' + Math.max(be, 1) + '" height="9" rx="2" fill="' + (g.est > g.orig ? '#C42127' : '#1f8f4e') + '"/>' +
+        '<text x="' + valX + '" y="' + (y + 19) + '" font-size="10" fill="var(--pd-muted)">' + Fmt.moneyShort(g.est) + '</text>';
+    });
+    out += '<g font-size="10" fill="var(--pd-muted)"><rect x="' + (padL + labelW) + '" y="' + (H - 2) + '" width="10" height="7" rx="1" fill="#9a9a9a"/><text x="' + (padL + labelW + 14) + '" y="' + (H + 4) + '">Original</text>' +
+      '<rect x="' + (padL + labelW + 74) + '" y="' + (H - 2) + '" width="10" height="7" rx="1" fill="#C42127"/><text x="' + (padL + labelW + 88) + '" y="' + (H + 4) + '">Estimated</text></g>';
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + (H + 12) + '" preserveAspectRatio="xMinYMin meet">' + out + '</svg>';
+  }
+
+  function groupLabel() { return { workspace: 'Workspace', program: 'Program', grouphead: 'Group Head', status: 'Status', none: 'Portfolio' }[groupMode]; }
+
+  // ---- grouped, sortable portfolio table ----
+  var COLS = [
+    { k: 'name', label: 'Project', num: false },
+    { k: 'id', label: 'ID', num: false },
+    { k: 'status', label: 'Status', num: false },
+    { k: 'progress', label: 'Schedule', num: false },
+    { k: 'grouphead', label: 'Group Head', num: false },
+    { k: 'ffin', label: 'Forecast Finish', num: false },
+    { k: 'orig', label: 'Original', num: true },
+    { k: 'est', label: 'Estimated', num: true },
+    { k: 'var', label: 'Variance', num: true }
+  ];
+  function sortVal(p, k) {
+    switch (k) {
+      case 'name': return (p.name || p.id || '').toLowerCase();
+      case 'id': return (p.id || '').toLowerCase();
+      case 'status': return (p.status || 'active');
+      case 'progress': return progressOf(p) == null ? -1 : progressOf(p);
+      case 'grouphead': return (groupHead(p) || '').toLowerCase();
+      case 'ffin': return +(pd(p.forecast_finish || p.end_date) || 0);
+      case 'orig': return num(p.original_budget);
+      case 'est': return num(p.estimated_cost);
+      case 'var': return variance(p);
+    }
+    return 0;
+  }
+  function statusPill(s) { s = (s || 'active').toLowerCase(); return '<span class="pd-pill ' + (s === 'archived' ? 'pd-pill-muted' : 'pd-pill-ok') + '">' + esc(s.charAt(0).toUpperCase() + s.slice(1)) + '</span>'; }
+  function schedCell(p) { var v = progressOf(p); if (v == null) return '<span style="color:var(--pd-muted);">—</span>'; return '<div class="po-sched"><div class="bar"><div style="width:' + v + '%;"></div></div><span>' + v + '%</span></div>'; }
+  function varCell(p) { if (num(p.original_budget) === 0 && num(p.estimated_cost) === 0) return '—'; var v = variance(p); return '<span class="' + (v > 0 ? 'po-var-up' : v < 0 ? 'po-var-dn' : '') + '">' + Fmt.moneyShort(v) + '</span>'; }
+  function projRow(p) {
+    return '<tr class="po-row" data-pick="' + esc(p.id) + '">' +
+      '<td><span class="po-proj-name"><span class="po-health" style="background:' + HEALTH[health(p)].color + ';"></span><span class="ic">' + Icons.svg('project', 15) + '</span>' + esc(p.name || p.id) + '</span></td>' +
+      '<td><code>' + esc(p.id) + '</code></td>' +
+      '<td>' + statusPill(p.status) + '</td>' +
+      '<td>' + schedCell(p) + '</td>' +
+      '<td>' + esc(groupHead(p) || '—') + '</td>' +
+      '<td>' + Fmt.date(p.forecast_finish || p.end_date) + '</td>' +
+      '<td class="num">' + (p.original_budget != null ? Fmt.moneyShort(p.original_budget) : '—') + '</td>' +
+      '<td class="num">' + (p.estimated_cost != null ? Fmt.moneyShort(p.estimated_cost) : '—') + '</td>' +
+      '<td class="num">' + varCell(p) + '</td></tr>';
+  }
+  function subtotal(name, plist) {
+    var orig = plist.reduce(function (a, p) { return a + num(p.original_budget); }, 0);
+    var est = plist.reduce(function (a, p) { return a + num(p.estimated_cost); }, 0);
+    var pv = plist.map(progressOf).filter(function (x) { return x != null; });
+    var avg = pv.length ? Math.round(pv.reduce(function (a, b) { return a + b; }, 0) / pv.length) : null;
+    var open = !collapsed[name];
+    return '<tr class="po-grp" data-grp="' + esc(name) + '"><td colspan="3"><span class="po-grp-name"><span class="po-caret">' + (open ? '▾' : '▸') + '</span>' + esc(name) + ' <span style="color:var(--pd-muted);font-weight:400;">(' + plist.length + ')</span></span></td>' +
+      '<td>' + (avg != null ? avg + '%' : '—') + '</td><td></td><td></td>' +
+      '<td class="num">' + (orig ? Fmt.moneyShort(orig) : '—') + '</td><td class="num">' + (est ? Fmt.moneyShort(est) : '—') + '</td>' +
+      '<td class="num">' + ((orig || est) ? Fmt.moneyShort(est - orig) : '—') + '</td></tr>';
+  }
+  function renderTable(list) {
+    var head = '<thead><tr>' + COLS.map(function (c) {
+      return '<th class="' + (c.num ? 'num' : '') + '" data-sort="' + c.k + '">' + esc(c.label) + (sortCol === c.k ? '<span class="po-sort-ind">' + (sortDir < 0 ? '▼' : '▲') + '</span>' : '') + '</th>';
+    }).join('') + '</tr></thead>';
+    var sorted = list.slice().sort(function (a, b) { var x = sortVal(a, sortCol), y = sortVal(b, sortCol); return x < y ? -sortDir : x > y ? sortDir : 0; });
+    var body = '';
+    if (!sorted.length) { body = '<tr><td colspan="9" class="po-empty">No projects match the current filters.</td></tr>'; }
+    else if (groupMode === 'none') { body = sorted.map(projRow).join(''); }
+    else {
+      var groups = {}, order = [];
+      sorted.forEach(function (p) { var k = groupKeyOf(p); if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(p); });
+      order.sort();
+      body = order.map(function (k) { return subtotal(k, groups[k]) + (collapsed[k] ? '' : groups[k].map(projRow).join('')); }).join('');
+    }
+    // grand total
+    var gOrig = list.reduce(function (a, p) { return a + num(p.original_budget); }, 0), gEst = list.reduce(function (a, p) { return a + num(p.estimated_cost); }, 0);
+    if (sorted.length) body += '<tr class="po-tot-row"><td colspan="3">TOTAL (' + sorted.length + ')</td><td></td><td></td><td></td>' +
+      '<td class="num">' + (gOrig ? Fmt.moneyShort(gOrig) : '—') + '</td><td class="num">' + (gEst ? Fmt.moneyShort(gEst) : '—') + '</td><td class="num">' + ((gOrig || gEst) ? Fmt.moneyShort(gEst - gOrig) : '—') + '</td></tr>';
+    var t = document.getElementById('po-table');
+    t.innerHTML = head + '<tbody>' + body + '</tbody>';
+    t.querySelectorAll('th[data-sort]').forEach(function (th) { th.onclick = function () { var k = th.dataset.sort; if (sortCol === k) sortDir = -sortDir; else { sortCol = k; sortDir = 1; } renderTable(filtered()); }; });
+    t.querySelectorAll('.po-grp[data-grp]').forEach(function (g) { g.onclick = function () { var k = g.dataset.grp; collapsed[k] = !collapsed[k]; renderTable(filtered()); }; });
+    t.querySelectorAll('.po-row[data-pick]').forEach(function (r) { r.onclick = function () { openProject(r.dataset.pick); }; });
+  }
+
+  function openProject(id) {
+    var p = PROJ.find(function (x) { return x.id === id; }); if (!p) return;
+    sessionStorage.setItem('pd_project', p.id);
+    sessionStorage.setItem('pd_project_name', p.name || p.id);
+    sessionStorage.setItem('pd_workspace', p.workspace_id || '');
+    location.href = '../../dashboard.html';
+  }
+
+  function renderAll() { var list = filtered(); renderKPIs(list); renderDonut(list); renderBars(list); renderTable(list); }
+
+  function exportExcel() {
+    if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
+    var list = filtered();
+    if (!list.length) { UI.toast('Nothing to export.', 'warn'); return; }
+    var data = list.map(function (p) {
+      return {
+        'Project': p.name || p.id, 'ID': p.id, 'Status': p.status || 'active',
+        'Workspace': (wsById[p.workspace_id] || {}).name || '', 'Program': ((ancestorOfType(p.workspace_id, 'program') || {}).name) || '',
+        'Group Head': groupHead(p) || '', 'Schedule %': progressOf(p) != null ? progressOf(p) : '',
+        'Health': HEALTH[health(p)].label,
+        'Forecast Start': p.forecast_start || p.start_date || '', 'Forecast Finish': p.forecast_finish || p.end_date || '',
+        'Original Budget': p.original_budget != null ? num(p.original_budget) : '', 'Estimated Cost': p.estimated_cost != null ? num(p.estimated_cost) : '',
+        'Variance': (p.original_budget != null || p.estimated_cost != null) ? variance(p) : ''
+      };
+    });
+    var ws = XLSX.utils.json_to_sheet(data);
+    var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Portfolio');
+    XLSX.writeFile(wb, 'Portfolio Overview.xlsx');
+  }
+
+  AppAuth.requireLogin(async function (user, profile) {
+    UI.renderUserBar(profile);
+    UI.initShell();
+    document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderAll(); };
+    document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderAll(); };
+    document.getElementById('po-behind').onchange = function (e) { behindOnly = e.target.checked; renderAll(); };
+    document.getElementById('po-q').oninput = function (e) { query = e.target.value; renderAll(); };
+    document.getElementById('po-export').onclick = exportExcel;
+    try {
+      var res = await Promise.all([PDb.getProjects(), PDb.getWorkspaces()]);
+      PROJ = res[0]; WS = res[1];
+    } catch (e) { UI.toast('Could not load portfolio: ' + (e.message || e), 'error'); }
+    WS.forEach(function (w) { wsById[w.id] = w; });
+    buildChildren();
+    renderAll();
+  });
+})();
+</script>
+</body>
+</html>

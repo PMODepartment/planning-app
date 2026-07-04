@@ -77,6 +77,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-03 — Prompt 57: New Portfolio Overview module (cross-project dashboard)
+- Built `modules/portfolio-overview/` — a standalone, **project-agnostic** dashboard over ALL
+  accessible projects (RLS-scoped), separate from the per-project Project Home. Reads only
+  `PDb.getProjects()` + `PDb.getWorkspaces()` (no new table / migration); reuses dashboard.html's
+  Workspace→Program→Group-Head tree helpers.
+- **KPI cards**: Projects, Active, Avg Schedule %, Original Budget, Estimated Cost, Budget
+  Variance, Over Budget count, Behind Schedule count.
+- **Schedule Health donut** (SVG): On Track / Behind / No Schedule (behind = slipped vs baseline
+  finish or overdue-and-incomplete). **Budget-by-group bars** (SVG): Original vs Estimated, top 8.
+- **Grouped sortable table**: group by Workspace / Program / Group Head / Status / None with
+  per-group subtotals + grand total, collapsible groups, click-through to a project
+  (sets `pd_project` → dashboard.html). Filters (status, behind-only, search) + Excel export.
+- **Discovery**: registered in `config.js` MODULES (enabled) so it shows on the module grid, and
+  added a top-level nav link in `projects.html`. Icon `barChart`.
+- Verified in harness (5 synthetic projects across a Workspace→Program→Group tree): all KPIs,
+  donut counts (3/1/1), workspace subtotals (Calimag ₱300M/₱310M/+₱10M), grand total, group
+  switching (Group Head), behind-only filter (WCB), and drill-down all correct; screenshot-confirmed.
+
 ### 2026-07-03 — Prompt 56: FTE / Max-Availability line in Resource Usage histogram
 - Completed the last deferred assignments-phase item. Added a working-calendar capacity model to
   the Resource Usage histogram:

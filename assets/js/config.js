@@ -27,6 +27,7 @@ window.APP_CONFIG = {
   // `icon`  — emoji/placeholder until proper icons are added
   // `enabled` — flip to true as each module is delivered
   MODULES: [
+    { key: 'portfolio-overview',name: 'Portfolio Overview',                    path: 'modules/portfolio-overview/index.html',icon: 'barChart',   enabled: true },
     { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: false },
     { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: false },
     { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: false },
