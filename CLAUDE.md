@@ -77,6 +77,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-06 — Prompt 63: Uniform side-panel navigation
+- Made the sidebar nav consistent across the app (was divergent: "All Projects" vs "Projects",
+  Portfolio Overview/Project Home only on some pages, 6 modules using a raw `&larr; All modules`
+  instead of the icon, odd sibling cross-links).
+- **Top-level pages now share ONE nav** (dashboard.html, projects.html, admin.html, and the
+  portfolio-overview module): **Projects · Project Home · Portfolio Overview · Admin**, each
+  marking its own item active; Admin is gated (`#nav-admin`, revealed for admin/super_admin —
+  added the reveal to portfolio-overview; admin.html only admins reach so it's shown active).
+- **Module pages now uniform**: every module has a single `arrowLeft` **"All modules"** back-link
+  + its own in-module view tabs. Fixed the 6 placeholder modules that used a bare `&larr;`; removed
+  the inconsistent "Project Schedule" sibling cross-links from **s-curve** and **resource-loading**
+  (navigation is back-to-grid + the module's own tabs, like every other module).
+- Pure markup (plus one gating line); verified all navs identical per tier and JS still parses.
+
 ### 2026-07-06 — Prompt 62: Fix unstyled modal header/footer (sitewide) + Resource Master form polish
 - User shared screenshots of the Resource & Role Master Add Resource/Role/Calendar modals: the
   title sat cramped right against the × close button instead of spread across the header. Root
