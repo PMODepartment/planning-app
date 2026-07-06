@@ -45,6 +45,17 @@ Run `../../migrations/2026-07-02-baseline-cost-column.sql`. Adds `bl_cost` (base
 planned cost, matches OPC's "BL Planned IBB"), seeded from the current Planned Cost.
 Editable in the modal; shown in the Cost Loading table.
 
+## Schema additions (2026-07-06) — Working calendars
+Run `../../migrations/2026-07-06-working-calendars.sql` (adds `project_schedule.calendar_id`
++ the new `calendars` table, owned by resource-loading). The Activity modal's
+Calendar field is now a dropdown into `calendars` instead of free text. The
+FTE/Max-Availability histogram (`resCapacity`, Resource Usage tab) was rewritten
+to use each resource's *actual assigned calendar* (working-day pattern + hours/day,
+via the shared `assets/js/calendar.js` `PDCal` helper — 6-day/8h Philippine
+Standard by default, PH regular holidays computed automatically) instead of a
+hardcoded 5-day Mon–Fri week. See `modules/resource-loading/CLAUDE.md` for the
+calendar CRUD UI.
+
 ## Module design
 
 **Three-tab layout (Primavera Cloud reference):**

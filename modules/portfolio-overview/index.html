@@ -16,6 +16,22 @@
     .po-search .pd-input { padding-left:32px; width:220px; }
     .po-spacer { margin-left:auto; }
     .po-chk { display:inline-flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; color:var(--pd-ink); }
+    /* multi-select project filter */
+    .po-projfilter { position:relative; }
+    .po-projfilter-menu { position:absolute; top:calc(100% + 6px); left:0; z-index:30; display:none;
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px;
+      box-shadow:var(--pd-shadow); width:260px; overflow:hidden; }
+    .po-projfilter-menu.open { display:block; }
+    .po-projfilter-search { padding:8px; border-bottom:1px solid var(--pd-line); }
+    .po-projfilter-search input { width:100%; }
+    .po-projfilter-actions { display:flex; gap:8px; padding:6px 10px; border-bottom:1px solid var(--pd-line); }
+    .po-projfilter-actions button { border:none; background:none; color:var(--pd-red); font-size:12px;
+      font-weight:600; cursor:pointer; padding:2px 0; }
+    .po-projfilter-list { max-height:260px; overflow-y:auto; padding:4px 0; }
+    .po-projfilter-list label { display:flex; align-items:center; gap:8px; padding:7px 12px;
+      font-size:13px; cursor:pointer; color:var(--pd-ink); }
+    .po-projfilter-list label:hover { background:var(--pd-red-light); }
+    .po-projfilter-list .po-pf-empty { padding:12px; color:var(--pd-muted); font-size:13px; }
     /* charts */
     .po-charts { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:16px; margin:16px 0; }
     @media (max-width:920px){ .po-charts { grid-template-columns:1fr; } }
@@ -79,9 +95,16 @@
             <option value="none">None (flat)</option>
           </select>
         </label>
-        <select class="pd-select" id="po-project" title="Filter to a single project" style="max-width:220px;">
-          <option value="">All projects</option>
-        </select>
+        <div class="po-projfilter" id="po-projfilter-wrap">
+          <button class="pd-btn" id="po-projfilter-btn" type="button" title="Filter to specific projects">
+            <span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span> <span data-ico="chevronDown" data-ico-size="13"></span>
+          </button>
+          <div class="po-projfilter-menu" id="po-projfilter-menu">
+            <div class="po-projfilter-search"><input class="pd-input pd-input-sm" id="po-projfilter-search" placeholder="Search projects…" /></div>
+            <div class="po-projfilter-actions"><button type="button" data-act="all">Select all</button><button type="button" data-act="none">Clear</button></div>
+            <div class="po-projfilter-list" id="po-projfilter-list"></div>
+          </div>
+        </div>
         <select class="pd-select" id="po-status" title="Status filter" style="max-width:150px;">
           <option value="">All statuses</option>
           <option value="active">Active</option>
@@ -118,7 +141,8 @@
 (function () {
   'use strict';
   var PROJ = [], WS = [], wsById = {}, childrenMap = {};
-  var groupMode = 'workspace', statusFilter = '', behindOnly = false, query = '', projFilter = '';
+  var groupMode = 'workspace', statusFilter = '', behindOnly = false, query = '';
+  var projSel = {};   // {projectId: true} for checked projects — empty object = no filter (all projects)
   var sortCol = 'name', sortDir = 1, collapsed = {};
 
   function esc(s) { return Fmt.esc(s); }
@@ -153,10 +177,11 @@
     return 'All Projects';
   }
 
+  function projSelCount() { return Object.keys(projSel).length; }
   function filtered() {
     var q = query.trim().toLowerCase();
     return PROJ.filter(function (p) {
-      if (projFilter && p.id !== projFilter) return false;
+      if (projSelCount() && !projSel[p.id]) return false;
       if (statusFilter && (p.status || 'active') !== statusFilter) return false;
       if (behindOnly && !isBehind(p)) return false;
       if (q) { var hay = ((p.name || '') + ' ' + (p.id || '') + ' ' + (groupHead(p) || '')).toLowerCase(); if (hay.indexOf(q) === -1) return false; }
@@ -323,6 +348,52 @@
     location.href = '../../dashboard.html';
   }
 
+  // ---- multi-select project filter (checklist dropdown) ----
+  var pfQuery = '';
+  function projFilterLabel() {
+    var n = projSelCount();
+    if (!n) return 'All projects';
+    if (n === 1) { var p = PROJ.find(function (x) { return projSel[x.id]; }); return p ? (p.name || p.id) : '1 project'; }
+    return n + ' projects';
+  }
+  function renderProjFilterList() {
+    var q = pfQuery.trim().toLowerCase();
+    var list = PROJ.slice().sort(function (a, b) { return (a.name || a.id).localeCompare(b.name || b.id); })
+      .filter(function (p) { return !q || (p.name || p.id).toLowerCase().indexOf(q) !== -1; });
+    var host = document.getElementById('po-projfilter-list');
+    if (!list.length) { host.innerHTML = '<div class="po-pf-empty">No projects match.</div>'; return; }
+    host.innerHTML = list.map(function (p) {
+      return '<label><input type="checkbox" data-pf="' + esc(p.id) + '"' + (projSel[p.id] ? ' checked' : '') + '> ' + esc(p.name || p.id) + '</label>';
+    }).join('');
+    host.querySelectorAll('input[data-pf]').forEach(function (cb) {
+      cb.onchange = function () {
+        if (cb.checked) projSel[cb.dataset.pf] = true; else delete projSel[cb.dataset.pf];
+        document.getElementById('po-projfilter-label').textContent = projFilterLabel();
+        renderAll();
+      };
+    });
+  }
+  function wireProjFilter() {
+    var wrap = document.getElementById('po-projfilter-wrap'), menu = document.getElementById('po-projfilter-menu');
+    document.getElementById('po-projfilter-btn').onclick = function (e) {
+      e.stopPropagation();
+      var open = menu.classList.toggle('open');
+      if (open) { renderProjFilterList(); document.getElementById('po-projfilter-search').focus(); }
+    };
+    document.getElementById('po-projfilter-search').oninput = function (e) { pfQuery = e.target.value; renderProjFilterList(); };
+    menu.querySelector('[data-act="all"]').onclick = function () {
+      PROJ.forEach(function (p) { projSel[p.id] = true; });
+      document.getElementById('po-projfilter-label').textContent = projFilterLabel();
+      renderProjFilterList(); renderAll();
+    };
+    menu.querySelector('[data-act="none"]').onclick = function () {
+      projSel = {};
+      document.getElementById('po-projfilter-label').textContent = projFilterLabel();
+      renderProjFilterList(); renderAll();
+    };
+    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) menu.classList.remove('open'); });
+  }
+
   function renderAll() { var list = filtered(); renderKPIs(list); renderDonut(list); renderBars(list); renderTable(list); }
 
   function exportExcel() {
@@ -349,7 +420,7 @@
     UI.renderUserBar(profile);
     UI.initShell();
     document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderAll(); };
-    document.getElementById('po-project').onchange = function (e) { projFilter = e.target.value; renderAll(); };
+    wireProjFilter();
     document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderAll(); };
     document.getElementById('po-behind').onchange = function (e) { behindOnly = e.target.checked; renderAll(); };
     document.getElementById('po-q').oninput = function (e) { query = e.target.value; renderAll(); };
@@ -360,10 +431,6 @@
     } catch (e) { UI.toast('Could not load portfolio: ' + (e.message || e), 'error'); }
     WS.forEach(function (w) { wsById[w.id] = w; });
     buildChildren();
-    // populate the project filter (sorted by name)
-    var psel = document.getElementById('po-project');
-    psel.innerHTML = '<option value="">All projects</option>' + PROJ.slice().sort(function (a, b) { return (a.name || a.id).localeCompare(b.name || b.id); })
-      .map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>'; }).join('');
     renderAll();
   });
 })();

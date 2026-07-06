@@ -643,7 +643,7 @@
         <div class="ps-form-full ps-form-sec">Classification (OPC)</div>
         <div><label class="pd-label">Duration Type</label><select class="pd-select" id="ps-f-durtype"><option>Fixed Duration &amp; Units/Time</option><option>Fixed Units/Time</option><option>Fixed Duration &amp; Units</option><option>Fixed Work</option></select></div>
         <div><label class="pd-label">% Complete Type</label><select class="pd-select" id="ps-f-pcttype"><option>Duration</option><option>Physical</option><option>Units</option></select></div>
-        <div><label class="pd-label">Calendar</label><input class="pd-input" id="ps-f-cal" placeholder="e.g. MCC Standard 5-day" /></div>
+        <div><label class="pd-label">Calendar</label><select class="pd-select" id="ps-f-cal"></select></div>
         <div><label class="pd-label">Owner</label><input class="pd-input" id="ps-f-owner" /></div>
         <div><label class="pd-label">Work Package</label><input class="pd-input" id="ps-f-wp" /></div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:22px;"><input type="checkbox" id="ps-f-progms" /><label class="pd-label" for="ps-f-progms" style="margin:0;">Program Milestone</label></div>
@@ -737,6 +737,7 @@
 <script src="../../assets/js/db.js"></script>
 <script src="../../assets/js/ui.js"></script>
 <script src="../../assets/js/icons.js"></script>
+<script src="../../assets/js/calendar.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -744,15 +745,18 @@
   var TABLE = 'project_schedule';
   var pid = null, rows = [], editId = null, UID = null;
   var PROJECTS = [], WORKSPACES = [], layoutMode = 'split';
-  var RESRC = [], ASSIGN = [];   // resource master + assignments for this project
+  var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
+  function calById(id) { return id && CALS.find(function (c) { return c.id === id; }); }
+  function calName(id, legacyText) { var c = calById(id); return c ? c.name : (legacyText || '—'); }
   async function loadResourcesAssignments() {
-    if (!pid) { RESRC = []; ASSIGN = []; return; }
+    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; return; }
     try {
       var r1 = await sb().from('resources').select('*').eq('project_id', pid).order('name');
       var r2 = await sb().from('resource_assignments').select('*').eq('project_id', pid);
-      RESRC = (r1 && r1.data) || []; ASSIGN = (r2 && r2.data) || [];
-    } catch (e) { RESRC = []; ASSIGN = []; }
+      var r3 = await sb().from('calendars').select('*').eq('project_id', pid).order('name');
+      RESRC = (r1 && r1.data) || []; ASSIGN = (r2 && r2.data) || []; CALS = (r3 && r3.data) || [];
+    } catch (e) { RESRC = []; ASSIGN = []; CALS = []; }
   }
   var zoom = 'quarter', collapsed = {}, selId = null, search = '';
   var filters = { status: {}, type: {}, behind: false, look: 0 };   // empty sets = show all; look = weeks (0 = all)
@@ -1287,7 +1291,7 @@
     return '<div class="ps-det-groups">' +
       detSection('Identification', [['WBS', esc(r.wbs || '')], ['Activity ID', esc(r.activity_id || '')], ['Activity Name', esc(r.activity_name || '')], ['Work Package', esc(r.work_package || '')]]) +
       detSection('Classification', [['Type', esc(r.activity_type || 'Task')], ['Duration Type', esc(r.duration_type || '—')], ['% Complete Type', esc(r.percent_complete_type || '—')], ['Program Milestone', r.program_milestone ? 'Yes' : 'No']]) +
-      detSection('Assignment', [['Status', esc(r.status || '')], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'], ['Responsible', esc(r.responsible_party || '')], ['Owner', esc(r.owner || '')], ['Calendar', esc(r.calendar || '')], ['Predecessors', esc(r.predecessors || '—')]]) +
+      detSection('Assignment', [['Status', esc(r.status || '')], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'], ['Responsible', esc(r.responsible_party || '')], ['Owner', esc(r.owner || '')], ['Calendar', esc(calName(r.calendar_id, r.calendar))], ['Predecessors', esc(r.predecessors || '—')]]) +
       detSection('Notes', [['Remarks', esc(r.remarks || '')]]) +
     '</div>';
   }
@@ -1455,17 +1459,18 @@
   var usageScope = 'all';          // 'all' | 'sel' — OPC's "Show all activities above" scope
   var resSel = {}, resView = 'hist'; // Resource Usage: selected parties + histogram/spreadsheet view
   // FTE mode: express the histogram in Full-Time Equivalents instead of raw units, and draw the
-  // Max Availability line. Working calendar = Mon–Fri (5-day week); hours-based UoM assumes an
-  // 8h working day (OPC's default). A resource's capacity/period = max_units_per_time% ×
-  // working-days-in-period × units-per-full-day (1 day, or HPD hours).
+  // Max Availability line. Working calendar comes from each resource's assigned calendar (see
+  // assets/js/calendar.js — PDCal); a resource with no calendar assigned falls back to the
+  // Philippine Standard calendar (6-day week, 8h/day, PH regular holidays off). A resource's
+  // capacity/period = max_units_per_time% × working-days-in-period (per ITS calendar) ×
+  // units-per-full-day (1 day, or the calendar's hours/day for hour-based UoM).
   var fteOn = (function () { try { return localStorage.getItem('ps_fte') === '1'; } catch (e) { return false; } })();
-  var HPD = 8;   // hours per working day (for hours-based UoM)
+  var HPD = 8;   // fallback hours/day when no calendar is resolvable
   var _wdCache = {};
-  function workingDaysInMonth(y, mo) {
-    var key = y + '-' + mo; if (_wdCache[key] != null) return _wdCache[key];
-    var d = new Date(y, mo, 1), end = new Date(y, mo + 1, 0), n = 0;
-    for (; d <= end; d.setDate(d.getDate() + 1)) { var wd = d.getDay(); if (wd !== 0 && wd !== 6) n++; }
-    return (_wdCache[key] = n);
+  function workingDaysInMonth(cal, y, mo) {
+    var key = (cal ? cal.id : '_default') + '|' + y + '-' + mo;
+    if (_wdCache[key] != null) return _wdCache[key];
+    return (_wdCache[key] = PDCal.workingDaysInMonth(cal, y, mo));
   }
 
   function fmtCompact(v) {
@@ -1688,12 +1693,12 @@
     var map = {};
     ASSIGN.forEach(function (a) {
       var key = keyFn(a); if (key == null || key === '') key = '(Unassigned)';
-      var m = map[key] || (map[key] = { name: nameFn(a, key), code: '', type: 'Labor', uom: a.uom || 'hours', maxpct: 100, acts: 0, pu: 0, au: 0, ru: 0, assigns: [] });
+      var m = map[key] || (map[key] = { name: nameFn(a, key), code: '', type: 'Labor', uom: a.uom || 'hours', maxpct: 100, cal: null, acts: 0, pu: 0, au: 0, ru: 0, assigns: [] });
       var act = actMap[a.activity_id]; if (!act) return;
       m.acts++; m.pu += a.budgeted_units || 0; m.au += a.actual_units || 0; m.ru += a.remaining_units || 0;
       m.assigns.push({ a: a, act: act });
       var rr = RESRC.find(function (x) { return x.id === a.resource_id; });
-      if (rr) { if (!m.code) m.code = rr.resource_code || ''; m.type = rr.type || 'Labor'; m.uom = a.uom || rr.uom || 'hours'; m.maxpct = rr.max_units_per_time != null ? rr.max_units_per_time : 100; }
+      if (rr) { if (!m.code) m.code = rr.resource_code || ''; m.type = rr.type || 'Labor'; m.uom = a.uom || rr.uom || 'hours'; m.maxpct = rr.max_units_per_time != null ? rr.max_units_per_time : 100; m.cal = calById(rr.calendar_id) || m.cal; }
     });
     return Object.keys(map).map(function (k) { return map[k]; }).sort(function (x, y) { return x.name.localeCompare(y.name); });
   }
@@ -1707,7 +1712,7 @@
     rows.forEach(function (r) {
       if (isWbs(r)) return;
       var key = (r.responsible_party || '').trim() || '(Unassigned)';
-      var m = map[key] || (map[key] = { name: key, type: 'Labor', uom: 'days', maxpct: 100, acts: 0, pu: 0, au: 0, ru: 0, rows: [] });
+      var m = map[key] || (map[key] = { name: key, type: 'Labor', uom: 'days', maxpct: 100, cal: null, acts: 0, pu: 0, au: 0, ru: 0, rows: [] });
       m.acts++; m.pu += r.planned_labor_units || 0; m.au += r.actual_labor_units || 0; m.ru += r.remaining_labor_units || 0;
       m.rows.push(r);
     });
@@ -1739,19 +1744,23 @@
   }
   // Working-calendar capacity for the selected resources, per period:
   //   capMax[i] = Σ (max_units_per_time% × working-days × units-per-full-day) — the Max
-  //               Availability ceiling, in the same units as the histogram bars.
+  //               Availability ceiling, in the same units as the histogram bars. Working-days
+  //               and units-per-full-day come from EACH resource's own assigned calendar (falls
+  //               back to the Philippine Standard calendar — 6-day, 8h — if none is assigned).
   //   perFTE[i] = working-days × units-per-full-day for ONE full-time resource — the FTE
   //               denominator (so a fully-loaded person reads as 1.0 FTE, a 2-person team 2.0).
-  // Units-per-full-day is HPD for hour-based UoM, else 1 (day-based). A mixed-UoM selection uses
-  // the first entry's UoM as the FTE reference (projects normally use a single UoM).
+  // Units-per-full-day is the calendar's hours/day for hour-based UoM, else 1 (day-based). A
+  // mixed-calendar/UoM selection uses the first entry's calendar/UoM as the FTE reference
+  // (projects normally use a single calendar and UoM).
+  function unitsPerDay(cal, uom) { return /hour/i.test(uom || 'days') ? (cal ? cal.hours_per_day : HPD) || HPD : 1; }
   function resCapacity(entries, M) {
     var capMax = zeros(M.n), perFTE = zeros(M.n);
-    var updRef = entries.length && /hour/i.test(entries[0].uom || 'days') ? HPD : 1;
-    for (var i = 0; i < M.n; i++) perFTE[i] = workingDaysInMonth(M.y0, M.mo0 + i) * updRef;
+    var refCal = entries.length ? entries[0].cal : null, refUpd = entries.length ? unitsPerDay(refCal, entries[0].uom) : 1;
+    for (var i = 0; i < M.n; i++) perFTE[i] = workingDaysInMonth(refCal, M.y0, M.mo0 + i) * refUpd;
     entries.forEach(function (p) {
-      var upd = /hour/i.test(p.uom || 'days') ? HPD : 1;
+      var upd = unitsPerDay(p.cal, p.uom);
       var mp = (p.maxpct != null ? p.maxpct : 100) / 100;
-      for (var j = 0; j < M.n; j++) capMax[j] += mp * workingDaysInMonth(M.y0, M.mo0 + j) * upd;
+      for (var j = 0; j < M.n; j++) capMax[j] += mp * workingDaysInMonth(p.cal, M.y0, M.mo0 + j) * upd;
     });
     return { capMax: capMax, perFTE: perFTE };
   }
@@ -1781,8 +1790,8 @@
       '<div class="ps-seg" style="height:28px;"><button data-rv="hist"' + (resView === 'hist' ? ' class="active"' : '') + ' style="padding:0 12px;">Histogram</button>' +
       '<button data-rv="sheet"' + (resView === 'sheet' ? ' class="active"' : '') + ' style="padding:0 12px;">Spreadsheet</button></div>' +
       '<button class="pd-btn" id="ps-res-download" style="height:28px;font-size:12px;"><span data-ico="download" data-ico-size="13"></span> Download</button>' +
-      '<label class="ps-fte-toggle" title="Show the histogram in Full-Time Equivalents against each resource\'s Max Units/Time and a 5-day working calendar"><input type="checkbox" id="ps-fte"' + (fteOn ? ' checked' : '') + '> FTE</label>' +
-      '<span class="ps-usage-note">' + (fteOn ? 'Full-Time Equivalents (Mon–Fri, ' + HPD + 'h/day) · dashed line = Max Availability' : 'Units per month · dashed line = Max Availability') + '</span></div>' + right + '</div></div>';
+      '<label class="ps-fte-toggle" title="Show the histogram in Full-Time Equivalents against each resource\'s Max Units/Time and its assigned working calendar"><input type="checkbox" id="ps-fte"' + (fteOn ? ' checked' : '') + '> FTE</label>' +
+      '<span class="ps-usage-note">' + (fteOn ? 'Full-Time Equivalents (per resource calendar) · dashed line = Max Availability' : 'Units per month · dashed line = Max Availability') + '</span></div>' + right + '</div></div>';
   }
   // Export the resource usage spread (selected resources, or all if none selected) to Excel —
   // matches OPC's Resource Usage "Download": roster row + monthly Planned/Actual/Remaining units.
@@ -2382,7 +2391,10 @@
     // OPC — Classification
     set('ps-f-durtype', row ? (row.duration_type || 'Fixed Duration & Units/Time') : 'Fixed Duration & Units/Time');
     set('ps-f-pcttype', row ? (row.percent_complete_type || 'Duration') : 'Duration');
-    set('ps-f-cal', row ? row.calendar : '');
+    var calSel = row && row.calendar_id;
+    document.getElementById('ps-f-cal').innerHTML = '<option value="">—</option>' + CALS.map(function (c) {
+      return '<option value="' + esc(c.id) + '"' + (calSel === c.id ? ' selected' : '') + '>' + esc(c.name) + (c.is_default ? ' (Default)' : '') + '</option>';
+    }).join('');
     set('ps-f-owner', row ? row.owner : '');
     set('ps-f-wp', row ? row.work_package : '');
     document.getElementById('ps-f-progms').checked = !!(row && row.program_milestone);
@@ -2427,7 +2439,7 @@
       // OPC — Classification
       duration_type: document.getElementById('ps-f-durtype').value || null,
       percent_complete_type: document.getElementById('ps-f-pcttype').value || null,
-      calendar: v('ps-f-cal') || null,
+      calendar_id: document.getElementById('ps-f-cal').value || null,
       owner: v('ps-f-owner') || null,
       work_package: v('ps-f-wp') || null,
       program_milestone: document.getElementById('ps-f-progms').checked,

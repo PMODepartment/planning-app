@@ -43,5 +43,24 @@ supabase-setup.sql). **Next phase:** `resource_assignments` (activity↔resource
 budgeted/actual units, time-phased) to drive Project Schedule's Resource/Role
 Usage tabs + FTE/availability line.
 
+## Built — Working calendars (2026-07-06)
+Third tab **Calendars** (Resources / Roles / Calendars): name, hours/day, a
+Mon–Sun working-day checklist, and an editable extra-holiday list (for
+Eid'l Fitr/Eid'l Adha/proclamation-moved dates, which are announced yearly and
+can't be computed offline). Table `calendars` — migration
+`../../migrations/2026-07-06-working-calendars.sql` (folded into
+`supabase-setup.sql`). **User must run this migration.**
+- One **"Philippine Standard (6-day, 8h)"** calendar is auto-seeded per project
+  (`ensureDefaultCalendar`) the first time its Calendars tab loads, so
+  Resources/Activities always have something to pick without a manual setup
+  step. PH *regular* holidays (fixed + Easter-derived) are computed at render
+  time by the new shared `assets/js/calendar.js` (`PDCal`), not stored.
+- The Resources tab's **Calendar** field is now a dropdown into `calendars`
+  (`resources.calendar_id`, FK) instead of free text. The old `calendar` text
+  column is kept only as a display fallback for pre-migration rows.
+- Project Schedule's FTE/Max-Availability histogram (`resCapacity`) now reads
+  each resource's own calendar for working-day math instead of a hardcoded
+  5-day week — see that module's CLAUDE.md.
+
 ## Notes
 (Record decisions, columns added via `alter table ... add column if not exists`, etc.)

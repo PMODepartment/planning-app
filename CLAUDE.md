@@ -77,6 +77,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-06 — Prompt 59: Resource & Role Master typo, Portfolio multi-project filter, working calendars
+- **Typo fix**: `config.js` had the resource-loading module name as the literal string
+  `'Resource &amp; Role Master'`. Since module names render through `Fmt.esc()` (which itself
+  HTML-escapes `&`), the double-escaping showed literal `&amp;` on the module tile instead of
+  `&`. Changed to a plain `&` (matches every other module name).
+- **Portfolio Overview project filter is now multi-select**: the old single "All projects /
+  one project" dropdown couldn't show "only the projects that are selected" (plural). Replaced
+  with a checklist dropdown (search + Select all/Clear); KPIs, donut, budget bars, and table all
+  narrow to the checked set, no selection = all projects. Verified in a stubbed harness.
+- **Working calendars** (resource-loading + project-schedule): new `calendars` table
+  (project-scoped) — a Mon–Sun working-day pattern + hours/day + an editable extra-holiday list
+  (for Eid'l Fitr/Eid'l Adha/proclamation-moved dates, announced yearly and not computable
+  offline). New shared `assets/js/calendar.js` (`PDCal`) computes Philippine *regular* holidays
+  (fixed-date + Easter-derived Maundy Thursday/Good Friday) and working-day counts against a
+  calendar. One **"Philippine Standard (6-day, 8h)"** calendar auto-seeds per project.
+  - **Resource Master** gets a third **Calendars** tab (CRUD); the Resources tab's Calendar field
+    is now a dropdown into `calendars` (`resources.calendar_id`) instead of free text.
+  - **Project Schedule**'s Activity modal Calendar field is the same dropdown
+    (`project_schedule.calendar_id`); the FTE/Max-Availability histogram (`resCapacity`) now
+    computes working-day capacity from **each resource's own assigned calendar** instead of a
+    hardcoded 5-day Mon–Fri week (a resource with none assigned falls back to the Philippine
+    Standard shape, which is also now the honest default rather than "5-day" being implied).
+  - Migration `migrations/2026-07-06-working-calendars.sql` (folded into `supabase-setup.sql`).
+    **User must run this migration.**
+  - Verified: PDCal's 2026 regular-holiday set and working-day counts hand-checked (June 2026 =
+    25 working days on the 6-day calendar, 21 on a 5-day comparison calendar); `resCapacity`
+    math against two calendar-shared resources (100%+50% max) reproduced 37.5 exactly. Resource
+    Master's Calendars CRUD + Resources' calendar dropdown verified end-to-end in a stubbed
+    harness (add calendar → shows in dropdown → resource roster resolves the name).
+- **Deferred**: P6 (`.xer`) / MS Project / newer OPC import format detection — user is supplying
+  a sample `.xer` file next prompt so the parser can be built and verified against real data
+  instead of guessed from spec.
+- **Heads-up (not code, carried over)**: Resource & Role Master's "Could not find the table
+  'public.resources'" error means `migrations/2026-07-01-resource-role-master.sql` still hasn't
+  been run on the live Supabase project — same for this prompt's new
+  `2026-07-06-working-calendars.sql`.
+
 ### 2026-07-03 — Prompt 58: Portfolio placement + project filter; S-Curve performance-based forecast
 - **Portfolio Overview is no longer a per-project module** — removed its `config.js` MODULES entry
   (with a note explaining why) so it doesn't appear in the per-project module grid and can't imply
