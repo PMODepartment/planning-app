@@ -77,6 +77,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-06 — Prompt 62: Fix unstyled modal header/footer (sitewide) + Resource Master form polish
+- User shared screenshots of the Resource & Role Master Add Resource/Role/Calendar modals: the
+  title sat cramped right against the × close button instead of spread across the header. Root
+  cause: `.pd-modal-header`/`.pd-modal-close`/`.pd-modal-footer` had **no CSS defined anywhere**
+  — not in resource-loading, not in cash-flow or project-schedule (identical markup), not in
+  the shared `dashboard.css`. This had been true since project-schedule's Add Activity modal
+  was first built, just never flagged before.
+- **Fixed at the shared level** (`assets/css/dashboard.css`): header is flex/space-between with
+  a bottom border, close button is a proper hoverable square, footer buttons are right-aligned
+  with a top border — using negative margins so the fix doesn't disturb the many OTHER modals
+  built via `UI.modal()` that dump raw HTML straight into `.pd-modal` without this header/footer
+  wrapper. Fixes all three modules that use the pattern in one change.
+- **Resource & Role Master modal polish**: Add Resource split into labeled sections
+  (Identification / Classification / Availability & Calendar / Notes); the Calendar dropdown
+  now **defaults to the project's default calendar** for new resources instead of blank "—"
+  (previously every new resource required a manual calendar pick); Add Calendar's one long
+  inline label became a short section header + field label + a proper hint paragraph.
+- Verified in a stubbed harness: `.pd-modal-header` computes to `display:flex` (was `block`),
+  footer is right-aligned, new-resource Calendar select pre-selects "Philippine Standard
+  (6-day, 8h) (Default)", old verbose label confirmed gone.
+
 ### 2026-07-06 — Prompt 61: Cash Flow built + Portfolio Overview cross-project S-Curve/Cash Flow tabs
 - Decided which modules belong in Portfolio Overview: **Project Schedule, S-Curve, Cash Flow,
   Resource Loading** (aggregate meaningfully across projects) — **not** Risk Register, Drawing

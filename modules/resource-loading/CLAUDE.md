@@ -62,5 +62,27 @@ can't be computed offline). Table `calendars` — migration
   each resource's own calendar for working-day math instead of a hardcoded
   5-day week — see that module's CLAUDE.md.
 
+## Modal UI polish (2026-07-06)
+User shared screenshots showing the Add Resource/Role/Calendar modal titles cramped right up
+against the × close button instead of spread across the header. Root cause: `.pd-modal-header`
+/`.pd-modal-close`/`.pd-modal-footer` had **no CSS anywhere** — not in this module, not in
+`cash-flow` or `project-schedule` (which use the identical markup), not in the shared
+`assets/css/dashboard.css`. Fixed at the shared level (`dashboard.css`) so all three modals get
+it for free: header is now flex/space-between with a bottom border, close button is a proper
+hover-able square, footer buttons are right-aligned with a top border (using negative margins
+so modals that dump raw HTML straight into `.pd-modal` without this header/footer wrapper keep
+their existing padding untouched).
+- **Add Resource** form grouped into sections (Identification / Classification / Availability &
+  Calendar / Notes) instead of one flat 8-field grid.
+- **Calendar dropdown now defaults to the project's default calendar** for new resources
+  (`calOptions` falls back to the `is_default` calendar when nothing is selected yet) — every
+  new resource used to default to "—" (no calendar), requiring a manual pick every time.
+- **Add Calendar** form: the long inline label ("Extra holidays (movable/proclaimed — one
+  YYYY-MM-DD per line, e.g. Eid'l Fitr)") split into a short section header + field label +
+  a proper hint paragraph below, added `sec()`/`hint()` helpers for this.
+- Verified in a stubbed harness: confirmed `.pd-modal-header` computes to `display:flex` (was
+  `block`), footer is `flex`/`flex-end`, new-resource Calendar select pre-selects "Philippine
+  Standard (6-day, 8h) (Default)", and the Add Calendar form's old verbose label is gone.
+
 ## Notes
 (Record decisions, columns added via `alter table ... add column if not exists`, etc.)

@@ -236,6 +236,19 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: center; justify-content: center; z-index: 900; padding: 20px; }
 .pd-modal { background: var(--pd-card); color: var(--pd-ink); border-radius: 12px; max-width: 520px; width: 100%;
   max-height: 90vh; overflow-y: auto; padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+/* Header/body/footer sub-structure (used by resource-loading, cash-flow, project-schedule's
+   activity modal). Header/footer escape the modal's own 22px padding via negative margins so
+   they can span full-width with their own border, while modals that dump raw HTML straight
+   into .pd-modal (no header/footer wrapper) keep using that 22px padding untouched. */
+.pd-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  margin: -22px -22px 18px; padding: 14px 20px; border-bottom: 1px solid var(--pd-line);
+  font-size: 16px; font-weight: 700; border-radius: 12px 12px 0 0; }
+.pd-modal-close { border: none; background: none; font-size: 20px; line-height: 1; color: var(--pd-muted);
+  cursor: pointer; width: 30px; height: 30px; border-radius: 6px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center; }
+.pd-modal-close:hover { background: var(--pd-bg); color: var(--pd-ink); }
+.pd-modal-footer { display: flex; justify-content: flex-end; gap: 10px;
+  margin: 18px -22px -22px; padding: 14px 20px; border-top: 1px solid var(--pd-line); }
 
 /* ---- Theme toggle button (injected by theme.js) ---- */
 .pd-theme-toggle {

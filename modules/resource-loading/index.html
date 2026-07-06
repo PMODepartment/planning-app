@@ -23,8 +23,12 @@
     .rl-actions { display:flex; gap:5px; }
     .rl-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
     .rl-btn-sm:hover { border-color:var(--pd-red); color:var(--pd-red); }
-    .rl-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .rl-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; align-content:start; }
     .rl-form-full { grid-column:1 / -1; }
+    .rl-form-sec { grid-column:1 / -1; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+      color:var(--pd-red); margin:14px 0 -2px; padding-top:12px; border-top:1px solid var(--pd-line); }
+    .rl-form-grid > .rl-form-sec:first-child { margin-top:0; padding-top:0; border-top:none; }
+    .rl-hint { grid-column:1 / -1; font-size:11.5px; color:var(--pd-muted); margin:-6px 0 0; }
     .rl-days { display:flex; gap:10px; flex-wrap:wrap; }
     .rl-days label { display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:400; }
   </style>
@@ -199,6 +203,7 @@
     }).join('');
   }
   function calOptions(sel) {
+    if (sel == null) { var def = rows.calendars.find(function (c) { return c.is_default; }); if (def) sel = def.id; }
     return '<option value="">—</option>' + rows.calendars.map(function (c) {
       return '<option value="' + esc(c.id) + '"' + (sel === c.id ? ' selected' : '') + '>' + esc(c.name) + (c.is_default ? ' (Default)' : '') + '</option>';
     }).join('');
@@ -213,14 +218,18 @@
     if (tab === 'resources') {
       row = row || {};
       form.innerHTML =
+        sec('Identification') +
         fld('ID', '<input class="pd-input" id="f-code" value="' + esc(row.resource_code) + '" placeholder="e.g. R150082">') +
         fld('Name', '<input class="pd-input" id="f-name" value="' + esc(row.name) + '">') +
+        sec('Classification') +
         fld('Type', '<select class="pd-select" id="f-type">' + typeOptions(row.type || 'Labor') + '</select>') +
         fld('Primary Role', '<select class="pd-select" id="f-role">' + roleOptions(row.primary_role) + '</select>') +
+        sec('Availability &amp; Calendar') +
         fld('Default Units/Time (%)', '<input class="pd-input" id="f-def" type="number" min="0" step="1" value="' + (row.default_units_per_time != null ? row.default_units_per_time : 100) + '">') +
         fld('Max Units/Time (%)', '<input class="pd-input" id="f-max" type="number" min="0" step="1" value="' + (row.max_units_per_time != null ? row.max_units_per_time : 100) + '">') +
         fld('UoM', '<input class="pd-input" id="f-uom" value="' + esc(row.uom || 'hours') + '">') +
         fld('Calendar', '<select class="pd-select" id="f-cal">' + calOptions(row.calendar_id) + '</select>') +
+        sec('Notes') +
         fld('Remarks', '<textarea class="pd-input" id="f-rem" rows="2">' + esc(row.remarks) + '</textarea>', true);
     } else if (tab === 'roles') {
       row = row || {};
@@ -233,15 +242,18 @@
       row = row || { hours_per_day: 8, work_mon: true, work_tue: true, work_wed: true, work_thu: true, work_fri: true, work_sat: true, work_sun: false };
       form.innerHTML =
         fld('Calendar name', '<input class="pd-input" id="f-name" value="' + esc(row.name) + '" placeholder="e.g. Philippine Standard (6-day, 8h)">', true) +
+        sec('Schedule') +
         fld('Hours per day', '<input class="pd-input" id="f-hpd" type="number" min="1" max="24" step="0.5" value="' + (row.hours_per_day != null ? row.hours_per_day : 8) + '">') +
         fld('Working days', '<div class="rl-days">' + DAYS.map(function (d) { return '<label><input type="checkbox" data-day="' + d[0] + '"' + (row[d[0]] ? ' checked' : '') + '> ' + d[1] + '</label>'; }).join('') + '</div>', true) +
-        fld('Extra holidays (movable/proclaimed — one YYYY-MM-DD per line, e.g. Eid’l Fitr)',
-          '<textarea class="pd-input" id="f-hol" rows="3" placeholder="2026-03-20">' + esc((row.extra_holidays || []).join('\n')) + '</textarea>', true) +
-        '<p style="grid-column:1/-1;font-size:12px;color:var(--pd-muted);margin:0;">PH regular holidays (New Year’s, Holy Week, Araw ng Kagitingan, Labor Day, Independence Day, National Heroes Day, Bonifacio Day, Christmas, Rizal Day) are applied automatically every year — no need to list them here.</p>';
+        sec('Extra holidays') +
+        fld('Movable / proclaimed dates', '<textarea class="pd-input" id="f-hol" rows="3" placeholder="2026-03-20">' + esc((row.extra_holidays || []).join('\n')) + '</textarea>', true) +
+        hint('One YYYY-MM-DD per line — e.g. Eid’l Fitr, Eid’l Adha, or a proclamation-moved date. PH regular holidays (New Year’s, Holy Week, Araw ng Kagitingan, Labor Day, Independence Day, National Heroes Day, Bonifacio Day, Christmas, Rizal Day) are already applied automatically every year.');
     }
     document.getElementById('rl-modal').style.display = 'flex';
   }
   function fld(label, control, full) { return '<div class="' + (full ? 'rl-form-full' : '') + '"><label class="pd-label">' + label + '</label>' + control + '</div>'; }
+  function sec(label) { return '<div class="rl-form-sec">' + label + '</div>'; }
+  function hint(text) { return '<p class="rl-hint">' + text + '</p>'; }
 
   function v(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
   function num(id) { var x = v(id); return x === '' ? null : parseFloat(x); }
