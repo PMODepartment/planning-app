@@ -2874,6 +2874,11 @@
   // Show FS/SS/FF/SF relationship lines on the Gantt independently of Critical Path mode.
   // Defaults ON so imported dependencies are visible without toggling Critical Path.
   var depsOn = (function () { try { return localStorage.getItem('ps_deps') !== '0'; } catch (e) { return true; } })();
+  // Day-offset origin captured by the last cpmLogic() forward pass, so applyScheduleDates()
+  // can convert each activity's computed early start/finish (_es/_ef) back to calendar dates.
+  var _cpmBase = null;
+  // Whether "Schedule" should also WRITE the computed dates back (move successors). Persisted.
+  var reschedOn = (function () { try { return localStorage.getItem('ps_resched') === '1'; } catch (e) { return false; } })();
   var NEARDAYS = (function () { try { return parseInt(localStorage.getItem('ps_neardays'), 10) || 5; } catch (e) { return 5; } })();
   var mfpOn = (function () { try { return localStorage.getItem('ps_mfp') !== '0'; } catch (e) { return true; } })();
   // scheduling options (see Schedule ▾ menu). schedMode: 'retained' | 'override'.
@@ -2921,6 +2926,7 @@
   function cpmLogic(tasks) {
     var base = null; tasks.forEach(function (t) { var s = pd((useActuals && t.actual_start) || t.start_date); if (s && (!base || s < base)) base = s; });
     if (!base) return;
+    _cpmBase = base;
     var A = function (d) { var x = pd(d); return x ? dayDiff(base, x) : null; };
     var DD = useActuals ? dayDiff(base, today()) : null;   // data date offset
     tasks.forEach(function (t) {
@@ -2972,6 +2978,55 @@
     tasks.forEach(function (t) { t._float = (t._ls != null && t._es != null) ? Math.round(t._ls - t._es) : null; t._critical = (t._float === 0); t._near = (!t._critical && t._float != null && t._float > 0 && t._float <= NEARDAYS); });
   }
   function recomputeCPM() { computeCPM(); renderGrid(); renderGantt(); }
+
+  // ---- Reschedule: WRITE the CPM forward-pass early dates back to the activities, so a
+  // successor's Start/Finish moves when a predecessor's (actual or planned) dates change.
+  // Honors relationship type + lag (via _es/_ef from cpmLogic), the data date, and
+  // Retained-Logic vs Progress-Override. Completed activities (with an actual finish) keep
+  // their historical dates; started-but-unfinished activities keep their Start (pinned by the
+  // actual start) and only their Finish moves. Bulk + not per-row undoable, so it confirms first.
+  async function applyScheduleDates() {
+    if (!_cpmBase) { UI.toast('Add relationships (Predecessors / Link) so activities can be rescheduled.', 'warn'); return; }
+    var base = _cpmBase, off = function (n) { return dstr(addDays(base, Math.round(n))); };
+    var patches = [];
+    rows.forEach(function (t) {
+      if (isWbs(t) || !t.activity_id || t._es == null || t._ef == null) return;
+      if (useActuals && t.actual_finish) return;                     // completed — leave as-is
+      var started = !!(useActuals && t.actual_start);
+      var patch = {};
+      if (isMile(t)) {
+        var nd = off(t._es);
+        if (t.start_date !== nd) patch.start_date = nd;
+        if (t.end_date !== nd) patch.end_date = nd;
+      } else {
+        if (!started) { var ns = off(t._es); if (t.start_date !== ns) patch.start_date = ns; }
+        // _ef is start+duration (one day past the inclusive last day) → finish = _ef - 1.
+        var nf = off(t._ef - 1); if (t.end_date !== nf) patch.end_date = nf;
+      }
+      if (!Object.keys(patch).length) return;
+      var fs = pd(patch.start_date || t.start_date), fe = pd(patch.end_date || t.end_date);
+      if (!isMile(t) && fs && fe) patch.duration_days = dayDiff(fs, fe) + 1;
+      patch.updated_at = new Date().toISOString();
+      patches.push({ id: t.id, patch: patch, row: t });
+    });
+    if (!patches.length) { UI.toast('All dates already satisfy the relationships — nothing to move.', 'info'); return; }
+    if (!confirm('Reschedule ' + patches.length + ' activit' + (patches.length === 1 ? 'y' : 'ies') + " so successors follow their predecessors' dates?\n\nCompleted activities keep their actual dates. This bulk change is not per-step undoable.")) return;
+    showLoading('Rescheduling ' + patches.length + ' activities…');
+    var ok = 0, err = null, CH = 40;
+    for (var i = 0; i < patches.length && !err; i += CH) {
+      var slice = patches.slice(i, i + CH);
+      setLoading('Rescheduling ' + Math.min(i + CH, patches.length) + ' of ' + patches.length + '…');
+      var results = await Promise.all(slice.map(function (p) { return sb().from(TABLE).update(p.patch).eq('id', p.id).then(function (res) { return res.error ? res.error.message : null; }); }));
+      for (var k = 0; k < results.length; k++) {
+        if (results[k]) { err = results[k]; break; }
+        var p = slice[k]; Object.keys(p.patch).forEach(function (key) { p.row[key] = p.patch[key]; }); ok++;
+      }
+    }
+    hideLoading();
+    resetUndo(); rebuild(); computeCPM(); renderAll();
+    if (err) UI.toast('Reschedule error after ' + ok + ': ' + err, 'error');
+    else UI.toast('Rescheduled ' + ok + ' activit' + (ok === 1 ? 'y' : 'ies') + ' from relationships.', 'success');
+  }
 
   // ---- Schedule Health Score (DCMA-14-style quality checklist, OPC-inspired) ----
   // Every metric's % is "count of affected activities ÷ its own eligible denominator" (e.g.
@@ -3262,7 +3317,8 @@
         '<label><input type="radio" name="ps-dd" value="own"' + (dataDate ? '' : ' checked') + '><span>Use the current (system) date<small>The data date follows today’s date automatically.</small></span></label>' +
         '<label><input type="radio" name="ps-dd" value="set"' + (dataDate ? ' checked' : '') + '><span>Apply a specific data date<small>Pin the as-of date used for progress &amp; remaining work.</small></span></label>' +
         '<div class="fld"><span>Data Date</span><input class="pd-input" type="date" id="ps-dd-date" value="' + dstr(today()) + '" style="max-width:200px;"></div>' +
-        '<label><input type="checkbox" id="ps-dd-log"' + (schedShowLog ? ' checked' : '') + '> Display scheduling log upon completion</label>';
+        '<label><input type="checkbox" id="ps-dd-log"' + (schedShowLog ? ' checked' : '') + '> Display scheduling log upon completion</label>' +
+        '<label style="margin-top:6px;"><input type="checkbox" id="ps-dd-resched"' + (reschedOn ? ' checked' : '') + '><span>Reschedule dependent activities<small>Move each successor’s Start/Finish to follow its predecessors (FS/SS/FF/SF + lag). Completed activities keep their actual dates; started ones keep their Start.</small></span></label>';
     } else if (schedTab === 'settings') {
       b.innerHTML = '<div class="fld"><span>Schedule calculation</span>' +
         '<label><input type="radio" name="ps-sm" value="retained"' + (schedMode === 'retained' ? ' checked' : '') + '><span>Retained Logic<small>In-progress work keeps its predecessor logic (OPC default).</small></span></label>' +
@@ -3288,6 +3344,7 @@
     // commit whichever tab's controls are present
     var ddRadio = b.querySelector('input[name=ps-dd]:checked');
     if (ddRadio) { var di = document.getElementById('ps-dd-date'); setDataDate(ddRadio.value === 'set' && di && di.value ? pd(di.value) : null); schedShowLog = !!(document.getElementById('ps-dd-log') || {}).checked; }
+    var rc = document.getElementById('ps-dd-resched'); if (rc) { reschedOn = rc.checked; try { localStorage.setItem('ps_resched', reschedOn ? '1' : '0'); } catch (e) {} }
     var sm = b.querySelector('input[name=ps-sm]:checked'); if (sm) { schedMode = sm.value; try { localStorage.setItem('ps_schedmode', schedMode); } catch (e) {} }
     var ua = document.getElementById('ps-useact'); if (ua) { useActuals = ua.checked; try { localStorage.setItem('ps_useactuals', useActuals ? '1' : '0'); } catch (e) {} }
     var mfp = document.getElementById('ps-mfp'); if (mfp) { mfpOn = mfp.checked; try { localStorage.setItem('ps_mfp', mfpOn ? '1' : '0'); } catch (e) {} }
@@ -3306,6 +3363,10 @@
     renderAll();
     closeSchedule();
     if (schedShowLog) alert(schedLastLog);
+    // When "Reschedule dependent activities" is on and we have relationship logic, write the
+    // computed dates back so successors move (applyScheduleDates confirms + re-renders + toasts).
+    if (reschedOn && res.mode === 'logic') { applyScheduleDates(); return; }
+    if (reschedOn && res.mode !== 'logic') UI.toast('No relationships found — add Predecessors / Links so activities can be rescheduled.', 'warn');
     else UI.toast('Scheduled — ' + tasks.length + ' activities, ' + nCrit + ' critical. Data date ' + Fmt.date(dstr(today())) + '.', 'success');
   }
 

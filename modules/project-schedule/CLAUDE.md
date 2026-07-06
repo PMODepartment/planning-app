@@ -68,6 +68,22 @@ and a spot-checked activity's dates/calendar/predecessor all matched the source 
 (Not yet run end-to-end against a live Supabase project — the parsing/mapping logic is
 verified, but nobody has clicked Import on a real login yet.)
 
+## Scheduling (2026-07-06) — Reschedule dependent activities (relationship-driven dates)
+The CPM forward pass (`cpmLogic`) computes each activity's early start/finish (`_es`/`_ef`,
+day offsets from `_cpmBase`) honoring FS/SS/FF/SF + lag, actual dates, the data date, and
+Retained-Logic/Progress-Override — but historically only used them for critical-path highlight.
+`applyScheduleDates()` now WRITES those back so a successor's Start/Finish moves when a
+predecessor's (actual or planned) dates change. Rules: completed activities (actual finish) keep
+their dates; started-but-unfinished keep their Start (actual-pinned) and only Finish moves;
+milestones snap to `_es`. `_ef` is start+duration (one past the inclusive last day) so finish =
+`off(_ef - 1)`. Bulk-writes in chunks of 40 via direct `update().eq('id')`, updates local rows,
+then `rebuild()/computeCPM()/renderAll()`; confirms first and is not per-step undoable
+(`resetUndo()`). Wired into the **Schedule** dialog: a **"Reschedule dependent activities"**
+checkbox (`#ps-dd-resched`, persisted `localStorage.ps_resched`, state `reschedOn`); `scheduleNow()`
+runs `computeCPM()` then, if checked and `mode==='logic'`, calls `applyScheduleDates()`. Without
+relationships it warns instead (nothing to drive the moves). This is P6-F9-style manual reschedule
+(explicit, not automatic on every edit) to avoid silently rewriting dates.
+
 ## Import (2026-07-06) — Predecessors + Successors columns (Excel/OPC)
 `parseWorkbook` now detects BOTH the **Predecessors** (`cPred`) and **Successors**
 (`cSucc`) columns of an OPC/Primavera Cloud `.xlsx` export. Relationships are stored
