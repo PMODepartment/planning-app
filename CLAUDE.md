@@ -77,6 +77,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-06 — Prompt 60: P6 (.xer) import
+- **Project Schedule's importer now accepts Oracle Primavera P6 `.xer` exports** (button
+  renamed "Import Excel/XER (OPC / P6)", auto-detected by file extension). New `parseXER`
+  tokenizes the XER `%T`/`%F`/`%R` tab-delimited table format (Windows-1252 text) and imports:
+  **CALENDAR** → the `calendars` table (a hand-rolled recursive-descent parser reads P6's
+  proprietary `clndr_data` grammar for the working-day pattern + holiday exceptions), **PROJWBS**
+  → WBS rows via the real `parent_wbs_id` tree (not an outline-level guess), **TASK** →
+  activities (with milestone typing + calendar linkage), **TASKPRED** → the same predecessor
+  text format the CPM engine already parses, **RSRC**/**TASKRSRC** → `resources` +
+  `resource_assignments`.
+- User supplied a real 26MB/97,906-line cost-loaded P6 export ("JENARA - COSTLOADED.xer",
+  27,811 activities, 14,495 WBS nodes) as the test fixture instead of building blind from spec.
+  Verified the parser against it directly (Node, extracted from the shipped module code, no
+  reimplementation): parses in ~600ms; exact row-count matches on every table; 100% predecessor
+  resolution (27,796/27,796); 0 activities missing dates; correct milestone typing (11); a
+  spot-checked activity's dates/calendar/predecessor matched the source file exactly. Confirms
+  the file's actual working calendar is genuinely a 6-day/8-hour week (Mon–Sat), the same shape
+  as the "Philippine Standard" default calendar added this week.
+- **Not yet exercised end-to-end against live Supabase** — the parsing/mapping logic is
+  verified against real data, but nobody has actually clicked Import against a live login (that
+  would write ~42k activity rows + 27.7k assignments into whichever project is selected — left
+  for the user to run and confirm rather than done unattended).
+
 ### 2026-07-06 — Prompt 59: Resource & Role Master typo, Portfolio multi-project filter, working calendars
 - **Typo fix**: `config.js` had the resource-loading module name as the literal string
   `'Resource &amp; Role Master'`. Since module names render through `Fmt.esc()` (which itself

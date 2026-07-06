@@ -45,6 +45,29 @@ Run `../../migrations/2026-07-02-baseline-cost-column.sql`. Adds `bl_cost` (base
 planned cost, matches OPC's "BL Planned IBB"), seeded from the current Planned Cost.
 Editable in the modal; shown in the Cost Loading table.
 
+## Import (2026-07-06) — P6 .xer support
+The Import button ("Import Excel/XER (OPC / P6)") now also accepts Oracle Primavera P6
+`.xer` exports (auto-detected by extension, read as Windows-1252 text). `parseXER` tokenizes
+the `%T`/`%F`/`%R` tab-delimited tables and imports:
+- **CALENDAR** → the new `calendars` table (a hand-rolled recursive-descent parser reads P6's
+  proprietary `clndr_data` grammar for the Mon–Sun working-day pattern + non-working
+  Exceptions/holidays; exceptions that carry a shift-time override are treated as special
+  working days, not holidays, and skipped).
+- **PROJWBS** → WBS rows, using the *real* `parent_wbs_id` tree (not an outline-level guess
+  like the Excel path) to generate dotted codes.
+- **TASK** → activities (task_type TT_Mile/TT_FinMile → Milestone), linked to their imported
+  calendar via `calendar_id`.
+- **TASKPRED** → resolved into the same `predecessors` text format the CPM engine already
+  parses (`predRels`) — `"<code> <FS|SS|FF|SF>+<lagDays>"`, lag hours rounded to whole days.
+- **RSRC** / **TASKRSRC** → `resources` + `resource_assignments` (added alongside anything
+  already in Resource & Role Master, not replacing it).
+Verified against a real 26MB/97,906-line cost-loaded P6 export (~600ms parse): exact row-count
+matches (14,495 WBS + 27,811 activities, 2 calendars, 2 resources, 27,744 assignments), 100%
+predecessor resolution (27,796/27,796), 0 activities missing dates, correct milestone typing,
+and a spot-checked activity's dates/calendar/predecessor all matched the source file exactly.
+(Not yet run end-to-end against a live Supabase project — the parsing/mapping logic is
+verified, but nobody has clicked Import on a real login yet.)
+
 ## Schema additions (2026-07-06) — Working calendars
 Run `../../migrations/2026-07-06-working-calendars.sql` (adds `project_schedule.calendar_id`
 + the new `calendars` table, owned by resource-loading). The Activity modal's

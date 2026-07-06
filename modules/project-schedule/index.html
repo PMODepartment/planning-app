@@ -505,12 +505,12 @@
         <div class="ps-tb-row">
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-actionsbtn"><span data-ico="box" data-ico-size="15"></span> Actions ▾</button>
             <div class="ps-menu" id="ps-actions-menu">
-              <button id="ps-import"><span data-ico="box" data-ico-size="14"></span> Import Excel (OPC)</button>
+              <button id="ps-import"><span data-ico="box" data-ico-size="14"></span> Import Excel/XER (OPC / P6)</button>
               <button id="ps-export"><span data-ico="download" data-ico-size="14"></span> Export to Excel</button>
               <button id="ps-clear" class="ps-menu-danger" title="Delete all activities for this project">Clear schedule…</button>
             </div>
           </div>
-          <input type="file" id="ps-import-file" accept=".xlsx,.xls" style="display:none" />
+          <input type="file" id="ps-import-file" accept=".xlsx,.xls,.xer" style="display:none" />
           <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
           <span class="ps-tb-div"></span>
           <select class="pd-select" id="ps-group" title="Group activities by" style="max-width:180px;">
@@ -1155,6 +1155,251 @@
       '<div style="text-align:right;"><button class="pd-btn" id="ps-imp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-imp-go">Import '+recs.length+' rows</button></div>');
     m.el.querySelector('#ps-imp-x').onclick = m.close;
     m.el.querySelector('#ps-imp-go').onclick = function(){ var rep=m.el.querySelector('#ps-imp-rep').checked; m.close(); doImport(recs, rep); };
+  }
+
+  // ---- IMPORT from Oracle Primavera P6 .xer export ----
+  // XER is a tab-delimited text format: %T <table>, %F <field1>\t<field2>..., %R <val1>\t<val2>...
+  // (Windows-1252 encoded.) We read CALENDAR (working-calendar patterns + holidays), PROJWBS
+  // (WBS tree via parent_wbs_id — unlike the Excel path, XER gives us the tree directly rather
+  // than an outline-level guess), TASK (activities), TASKPRED (relationships), RSRC (resource
+  // master), and TASKRSRC (resource assignments).
+  var XER_EPOCH = new Date(1899, 11, 30);   // Lotus/Excel serial-date epoch used inside clndr_data
+  function xerSerialToISO(serial) { var d = new Date(XER_EPOCH); d.setDate(d.getDate() + parseInt(serial, 10)); return dstr(d); }
+  function xerDateOnly(s) { return s ? String(s).slice(0, 10) : null; }   // "2026-02-09 08:00" -> "2026-02-09"
+
+  // Mini recursive-descent parser for P6's proprietary calendar-data grammar:
+  //   NODE := ( 0 || NAME (PARAMS) (CHILD-NODE*) )  — one paren wraps the whole child list,
+  // e.g. (0||CalendarData()((0||DaysOfWeek()((0||1()())(0||2()((0||0(f|16:00|s|08:00)())))...
+  function xerCalNode(s, i) {
+    i++;   // consume '(' opening this node
+    var nameEnd = s.indexOf('(', i);
+    var name = s.slice(i, nameEnd).replace(/^0\|\|/, '');
+    i = nameEnd;
+    var depth = 0, paramsEnd = i;
+    for (var j = i; j < s.length; j++) { if (s[j] === '(') depth++; else if (s[j] === ')') { depth--; if (depth === 0) { paramsEnd = j; break; } } }
+    var params = s.slice(i + 1, paramsEnd);
+    i = paramsEnd + 1;
+    while (i < s.length && s[i] !== '(' && s[i] !== ')') i++;   // skip pretty-print padding between siblings
+    var children = [];
+    if (s[i] === '(') {
+      i++;
+      while (i < s.length && s[i] !== '(' && s[i] !== ')') i++;
+      while (s[i] === '(') {
+        var r = xerCalNode(s, i);
+        children.push(r.node); i = r.next;
+        while (i < s.length && s[i] !== '(' && s[i] !== ')') i++;
+      }
+      i++;   // close the child-list wrapper
+    }
+    while (i < s.length && s[i] !== '(' && s[i] !== ')') i++;
+    i++;   // close this node
+    return { node: { name: name, params: params, children: children }, next: i };
+  }
+  var XER_DOW = ['work_sun', 'work_mon', 'work_tue', 'work_wed', 'work_thu', 'work_fri', 'work_sat'];   // P6: 1=Sunday..7=Saturday
+  function xerParseCalendarData(data) {
+    var out = { work_mon: true, work_tue: true, work_wed: true, work_thu: true, work_fri: true, work_sat: true, work_sun: false, extra_holidays: [] };
+    if (!data) return out;
+    try {
+      var root = xerCalNode(data, 0).node;
+      var dow = root.children.find(function (n) { return n.name === 'DaysOfWeek'; });
+      var exc = root.children.find(function (n) { return n.name === 'Exceptions'; });
+      if (dow) dow.children.forEach(function (d) {
+        var wd = parseInt(d.name, 10);   // 1..7
+        if (wd >= 1 && wd <= 7) out[XER_DOW[wd - 1]] = d.children.length > 0;
+      });
+      if (exc) exc.children.forEach(function (e) {
+        var m = e.params.match(/d\|(\d+)/);
+        if (!m || e.children.length > 0) return;   // has a shift override -> a special working day, not a holiday
+        out.extra_holidays.push(xerSerialToISO(m[1]));
+      });
+    } catch (e) { /* malformed calendar data: keep the 6-day/8h default above */ }
+    return out;
+  }
+
+  // Tokenize the %T/%F/%R structure into { TABLE: { fields:[...], rows:[[...],...] } }.
+  function xerTables(text) {
+    var tables = {}, cur = null;
+    var lines = text.split(/\r\n|\n|\r/);
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i]; if (!ln) continue;
+      var tab = ln.indexOf('\t');
+      var tag = tab === -1 ? ln : ln.slice(0, tab);
+      if (tag === '%T') { cur = ln.slice(tab + 1).trim(); tables[cur] = { fields: [], rows: [] }; }
+      else if (tag === '%F' && cur) { tables[cur].fields = ln.slice(tab + 1).split('\t'); }
+      else if (tag === '%R' && cur) { tables[cur].rows.push(ln.slice(tab + 1).split('\t')); }
+    }
+    return tables;
+  }
+  function xerObjs(tables, name) {
+    var t = tables[name]; if (!t) return [];
+    var f = t.fields;
+    return t.rows.map(function (r) { var o = {}; for (var i = 0; i < f.length; i++) o[f[i]] = r[i]; return o; });
+  }
+
+  function parseXER(text) {
+    var tables = xerTables(text);
+    // ---- Calendars ----
+    var calendars = [], calByClndrId = {};
+    xerObjs(tables, 'CALENDAR').forEach(function (c, i) {
+      var parsed = xerParseCalendarData(c.clndr_data);
+      var tmpId = 'cal' + i;
+      calByClndrId[c.clndr_id] = tmpId;
+      calendars.push({ tmpId: tmpId, name: c.clndr_name || ('Calendar ' + c.clndr_id), hours_per_day: parseFloat(c.day_hr_cnt) || 8,
+        work_mon: parsed.work_mon, work_tue: parsed.work_tue, work_wed: parsed.work_wed, work_thu: parsed.work_thu,
+        work_fri: parsed.work_fri, work_sat: parsed.work_sat, work_sun: parsed.work_sun, extra_holidays: parsed.extra_holidays });
+    });
+    // ---- WBS tree (real parent_wbs_id links, not an outline-level guess) + Tasks ----
+    var wbsRows = xerObjs(tables, 'PROJWBS');
+    var wbsById = {}; wbsRows.forEach(function (w) { wbsById[w.wbs_id] = w; });
+    var childrenOf = {}; wbsRows.forEach(function (w) { (childrenOf[w.parent_wbs_id] = childrenOf[w.parent_wbs_id] || []).push(w); });
+    Object.keys(childrenOf).forEach(function (k) { childrenOf[k].sort(function (a, b) { return (parseInt(a.seq_num, 10) || 0) - (parseInt(b.seq_num, 10) || 0); }); });
+    var taskRows = xerObjs(tables, 'TASK');
+    var tasksByWbs = {}, taskCodeById = {};
+    taskRows.forEach(function (t) { (tasksByWbs[t.wbs_id] = tasksByWbs[t.wbs_id] || []).push(t); taskCodeById[t.task_id] = t.task_code; });
+    // TASKPRED, resolved to "code TYPE+lagDays" text in the SAME format the schedule engine
+    // already parses (predRels) — lag hours rounded to whole days.
+    var predByTask = {}; xerObjs(tables, 'TASKPRED').forEach(function (p) { (predByTask[p.task_id] = predByTask[p.task_id] || []).push(p); });
+    var PRED_TYPE = { PR_FS: 'FS', PR_SS: 'SS', PR_FF: 'FF', PR_SF: 'SF' };
+    function xerPredText(taskId) {
+      var list = predByTask[taskId]; if (!list || !list.length) return null;
+      return list.map(function (p) {
+        var code = taskCodeById[p.pred_task_id]; if (!code) return null;
+        var type = PRED_TYPE[p.pred_type] || 'FS';
+        var lagDays = Math.round((parseFloat(p.lag_hr_cnt) || 0) / 8);
+        return code + ' ' + type + (lagDays ? (lagDays > 0 ? '+' : '') + lagDays : '');
+      }).filter(Boolean).join(', ') || null;
+    }
+
+    // Each rec's isLeaf comes directly from which table it was read from (WBS branches are
+    // never leaves, tasks always are) — no need for the Excel path's O(n²) prefix-scan
+    // inference, which would be far too slow at XER scale (tens of thousands of rows).
+    var recs = [];
+    function taskRec(t, code) {
+      var s = xerDateOnly(t.target_start_date), f = xerDateOnly(t.target_end_date);
+      var as = xerDateOnly(t.act_start_date), af = xerDateOnly(t.act_end_date);
+      var mile = t.task_type === 'TT_Mile' || t.task_type === 'TT_FinMile';
+      var status = t.status_code === 'TK_Complete' ? 'Completed' : t.status_code === 'TK_Active' ? 'In Progress' : 'Not Started';
+      recs.push({ code: code, isLeaf: true, name: t.task_name, id: t.task_code,
+        start: s, finish: mile ? (s || f) : f, sA: !!as, fA: !!af,
+        status: status, pct: parseFloat(t.phys_complete_pct) || 0,
+        type: mile ? 'Milestone' : 'Task', calTmpId: calByClndrId[t.clndr_id] || null,
+        predText: xerPredText(t.task_id) });
+    }
+    function wbsRec(w, code) {
+      recs.push({ code: code, isLeaf: false, name: w.wbs_name, id: null,
+        start: null, finish: null, sA: false, fA: false, status: null, pct: null, type: 'WBS Summary', calTmpId: null, predText: null });
+    }
+    function walk(w, code) {
+      wbsRec(w, code);
+      var n = 0;
+      (childrenOf[w.wbs_id] || []).forEach(function (cw) { walk(cw, code + '.' + (++n)); });
+      (tasksByWbs[w.wbs_id] || []).forEach(function (t) { taskRec(t, code + '.' + (++n)); });
+    }
+    var roots = wbsRows.filter(function (w) { return w.proj_node_flag === 'Y' || !w.parent_wbs_id || !wbsById[w.parent_wbs_id]; });
+    roots.forEach(function (w, i) { walk(w, String(i + 1)); });
+
+    // ---- Resources (RSRC) ----
+    var RTYPE = { RT_Labor: 'Labor', RT_Equip: 'Nonlabor', RT_Mat: 'Material' };
+    var resources = [], resByRsrcId = {};
+    xerObjs(tables, 'RSRC').forEach(function (r, i) {
+      var tmpId = 'rsrc' + i; resByRsrcId[r.rsrc_id] = tmpId;
+      resources.push({ tmpId: tmpId, name: r.rsrc_name || r.rsrc_short_name || ('Resource ' + r.rsrc_id),
+        resource_code: r.rsrc_short_name || null, type: RTYPE[r.rsrc_type] || 'Labor',
+        uom: /hour/i.test(r.cost_qty_type || '') ? 'hours' : 'days', calTmpId: calByClndrId[r.clndr_id] || null });
+    });
+    // ---- Resource assignments (TASKRSRC) ----
+    var assignments = [];
+    xerObjs(tables, 'TASKRSRC').forEach(function (a) {
+      var actId = taskCodeById[a.task_id]; if (!actId) return;
+      assignments.push({ activityId: actId, resourceTmpId: resByRsrcId[a.rsrc_id] || null,
+        uom: 'hours', budgeted_units: parseFloat(a.target_qty) || 0,
+        actual_units: (parseFloat(a.act_reg_qty) || 0) + (parseFloat(a.act_ot_qty) || 0),
+        remaining_units: parseFloat(a.remain_qty) || 0 });
+    });
+
+    return { calendars: calendars, recs: recs, resources: resources, assignments: assignments };
+  }
+  function xerRecToPayload(r, calIdMap) {
+    return { project_id: pid, wbs: r.code, activity_id: r.id, activity_name: r.name,
+      activity_type: r.isLeaf ? (r.type || 'Task') : 'WBS Summary',
+      status: r.status || 'Not Started',
+      start_date: r.start, end_date: r.finish,
+      actual_start: r.sA ? r.start : null, actual_finish: r.fA ? r.finish : null,
+      duration_days: (r.start && r.finish) ? dayDiff(pd(r.start), pd(r.finish)) + 1 : null,
+      percent_complete: r.pct != null ? r.pct : 0,
+      predecessors: r.predText || null,
+      calendar_id: r.calTmpId ? (calIdMap[r.calTmpId] || null) : null };
+  }
+  function previewImportXER(parsed, fname) {
+    var recs = parsed.recs;
+    if (!recs.length) { UI.toast('No activities found in file.', 'warn'); return; }
+    var wbsN = recs.filter(function (r) { return !r.isLeaf; }).length, actN = recs.length - wbsN;
+    var body = recs.slice(0, 12).map(function (r) {
+      return '<tr><td style="padding-left:' + (6 + (r.code.split('.').length - 1) * 14) + 'px;">' + (r.isLeaf ? '' : '▸ ') + esc(r.name || '').slice(0, 52) + '</td>' +
+        '<td>' + (r.start ? Fmt.date(r.start) : '—') + '</td><td>' + (r.finish ? Fmt.date(r.finish) : '—') + '</td>' +
+        '<td style="text-align:right;">' + (r.pct != null ? r.pct + '%' : '') + '</td></tr>';
+    }).join('');
+    var m = UI.modal('<h2 style="margin-top:0;">Import P6 Schedule (.xer)</h2>' +
+      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">From <strong>' + esc(fname) + '</strong> — found <strong>' + recs.length + '</strong> rows (' + wbsN + ' WBS, ' + actN + ' activities), <strong>' + parsed.calendars.length + '</strong> calendar(s), <strong>' + parsed.resources.length + '</strong> resource(s), <strong>' + parsed.assignments.length + '</strong> resource assignment(s).</p>' +
+      '<div style="max-height:260px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
+      (recs.length > 12 ? '<p style="font-size:12px;color:var(--pd-muted);">…and ' + (recs.length - 12) + ' more.</p>' : '') +
+      '<label style="display:flex;align-items:center;gap:8px;margin:12px 0;"><input type="checkbox" id="ps-impx-rep" checked> Replace existing activities for this project</label>' +
+      '<p style="font-size:12px;color:var(--pd-muted);">Also imports the P6 calendar(s) and resource master into Resource &amp; Role Master (added alongside anything already there — not replaced).</p>' +
+      '<div style="text-align:right;"><button class="pd-btn" id="ps-impx-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-impx-go">Import ' + recs.length + ' rows</button></div>');
+    m.el.querySelector('#ps-impx-x').onclick = m.close;
+    m.el.querySelector('#ps-impx-go').onclick = function () { var rep = m.el.querySelector('#ps-impx-rep').checked; m.close(); doImportXER(parsed, rep); };
+  }
+  async function doImportXER(parsed, replace) {
+    showLoading('Preparing import…');
+    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } }
+    var uid = UID, CH = 500;
+    // 1) Calendars first — activities/resources reference their real (DB-generated) ids.
+    var calIdMap = {};
+    setLoading('Importing calendars…');
+    for (var i = 0; i < parsed.calendars.length; i++) {
+      var c = parsed.calendars[i];
+      var cres = await sb().from('calendars').insert({ project_id: pid, name: c.name, hours_per_day: c.hours_per_day,
+        work_mon: c.work_mon, work_tue: c.work_tue, work_wed: c.work_wed, work_thu: c.work_thu,
+        work_fri: c.work_fri, work_sat: c.work_sat, work_sun: c.work_sun, extra_holidays: c.extra_holidays,
+        created_by: uid }).select().single();
+      if (!cres.error) calIdMap[c.tmpId] = cres.data.id;
+    }
+    // 2) Resources
+    var resIdMap = {};
+    setLoading('Importing resources…');
+    for (var j = 0; j < parsed.resources.length; j++) {
+      var r = parsed.resources[j];
+      var rres = await sb().from('resources').insert({ project_id: pid, name: r.name, resource_code: r.resource_code, type: r.type,
+        default_units_per_time: 100, max_units_per_time: 100, uom: r.uom,
+        calendar_id: r.calTmpId ? (calIdMap[r.calTmpId] || null) : null, created_by: uid }).select().single();
+      if (!rres.error) resIdMap[r.tmpId] = rres.data.id;
+    }
+    // 3) Activities (WBS + tasks)
+    var payloads = parsed.recs.map(function (r) { var p = xerRecToPayload(r, calIdMap); p.created_by = uid; return p; });
+    var ok = 0, err = null;
+    for (var k = 0; k < payloads.length; k += CH) {
+      setLoading('Importing activities ' + Math.min(k + CH, payloads.length) + ' of ' + payloads.length + '…');
+      var ares = await sb().from(TABLE).insert(payloads.slice(k, k + CH));
+      if (ares.error) { err = ares.error.message; break; }
+      ok += Math.min(CH, payloads.length - k);
+    }
+    // 4) Resource assignments (only where the resource import above succeeded)
+    if (!err && parsed.assignments.length) {
+      var aPayloads = parsed.assignments.filter(function (a) { return a.resourceTmpId && resIdMap[a.resourceTmpId]; }).map(function (a) {
+        return { project_id: pid, activity_id: a.activityId, resource_id: resIdMap[a.resourceTmpId],
+          budgeted_units: a.budgeted_units, actual_units: a.actual_units, remaining_units: a.remaining_units,
+          uom: a.uom, created_by: uid };
+      });
+      for (var m2 = 0; m2 < aPayloads.length; m2 += CH) {
+        setLoading('Importing resource assignments ' + Math.min(m2 + CH, aPayloads.length) + ' of ' + aPayloads.length + '…');
+        var asres = await sb().from('resource_assignments').insert(aPayloads.slice(m2, m2 + CH));
+        if (asres.error) { err = 'Assignments: ' + asres.error.message; break; }
+      }
+    }
+    hideLoading();
+    if (err) UI.toast('Import error after ' + ok + ' activities: ' + err, 'error');
+    else UI.toast('Imported ' + ok + ' activities, ' + parsed.calendars.length + ' calendar(s), ' + parsed.resources.length + ' resource(s).', 'success');
+    collapsed = {}; resetUndo(); load();
   }
 
   // rolled-up span for a WBS row (over descendants)
@@ -3332,11 +3577,18 @@
     document.getElementById('ps-import').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } document.getElementById('ps-import-file').click(); };
     document.getElementById('ps-import-file').onchange = function (e) {
       var file = e.target.files[0]; if (!file) return;
-      if (typeof XLSX === 'undefined') { UI.toast('Excel parser still loading — try again in a moment.', 'error'); return; }
+      var isXER = /\.xer$/i.test(file.name);
       var rd = new FileReader();
-      rd.onload = function () { try { var recs = parseWorkbook(rd.result); hideLoading(); previewImport(recs, file.name); } catch (err) { hideLoading(); UI.toast('Parse failed: ' + err.message, 'error'); } };
-      showLoading('Reading ' + file.name + '…');
-      rd.readAsArrayBuffer(file);
+      if (isXER) {
+        rd.onload = function () { try { var parsed = parseXER(rd.result); hideLoading(); previewImportXER(parsed, file.name); } catch (err) { hideLoading(); UI.toast('Parse failed: ' + err.message, 'error'); } };
+        showLoading('Reading ' + file.name + '…');
+        rd.readAsText(file, 'windows-1252');   // P6 XER exports are Windows-1252, not UTF-8
+      } else {
+        if (typeof XLSX === 'undefined') { UI.toast('Excel parser still loading — try again in a moment.', 'error'); return; }
+        rd.onload = function () { try { var recs = parseWorkbook(rd.result); hideLoading(); previewImport(recs, file.name); } catch (err) { hideLoading(); UI.toast('Parse failed: ' + err.message, 'error'); } };
+        showLoading('Reading ' + file.name + '…');
+        rd.readAsArrayBuffer(file);
+      }
       e.target.value = '';
     };
     document.getElementById('ps-modal-close').onclick = closeModal;
