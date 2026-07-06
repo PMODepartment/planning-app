@@ -77,11 +77,29 @@ a:hover { text-decoration: underline; }
 .pd-sidebar nav a:hover { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
 .pd-sidebar nav a.active { background: var(--pd-red); color: #fff; }
 .pd-content { flex: 1; min-width: 0; }
-
-/* Collapsible sidebar (desktop): toggle adds .pd-collapsed on .pd-app */
-.pd-app.pd-collapsed .pd-sidebar {
-  width: 0; flex-basis: 0; padding-left: 0; padding-right: 0; overflow: hidden;
+/* Section labels grouping the nav by scope (Portfolio / Project / System) */
+.pd-sidebar .pd-navsec {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: #7c8698; padding: 15px 12px 5px;
 }
+.pd-sidebar nav .pd-navsec:first-child { padding-top: 2px; }
+/* Stacked label + optional sub-caption (e.g. current project under Project Home) */
+.pd-sidebar .pd-navtxt { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.pd-sidebar .pd-nav-sub { font-size: 10.5px; font-weight: 400; color: #96a0b0; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.pd-sidebar nav a.active .pd-nav-sub { color: rgba(255,255,255,.82); }
+
+/* Collapsible sidebar (desktop): the toggle adds .pd-collapsed on .pd-app, which
+   shrinks the sidebar to a slim ICON RAIL (labels/sections hide; hover title = tooltip)
+   instead of hiding it entirely. font-size:0 collapses the bare-text labels while the
+   fixed-size SVG icons stay, so it works whether or not a label is wrapped in a span. */
+.pd-app.pd-collapsed .pd-sidebar { width: 64px; flex-basis: 64px; padding-left: 8px; padding-right: 8px; }
+.pd-app.pd-collapsed .pd-sidebar nav a { justify-content: center; padding: 11px 0; gap: 0; font-size: 0; }
+.pd-app.pd-collapsed .pd-navtxt { display: none; }   /* wrapped labels (with sub-captions whose own font-size ignores the font-size:0 trick) */
+.pd-app.pd-collapsed .pd-navico { margin-right: 0; }
+.pd-app.pd-collapsed .pd-navsec { display: none; }
+.pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: none; }
+.pd-app.pd-collapsed .pd-brand { margin-bottom: 8px; padding-bottom: 8px; }
 .pd-sidebar-toggle {
   display: inline-flex; flex-direction: column; justify-content: center; gap: 4px;
   width: 40px; height: 40px; padding: 0 10px; flex: 0 0 40px;

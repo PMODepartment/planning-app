@@ -90,12 +90,15 @@
 <body>
 <div class="pd-app">
   <aside class="pd-sidebar">
-    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Portfolio Overview</small></div>
+    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
     <nav>
-      <a href="../../projects.html"><span class="pd-navico" data-ico="grid"></span>Projects</a>
-      <a href="../../dashboard.html"><span class="pd-navico" data-ico="home"></span>Project Home</a>
-      <a href="../../modules/portfolio-overview/index.html" class="active"><span class="pd-navico" data-ico="barChart"></span>Portfolio Overview</a>
-      <a href="../../admin.html" id="nav-admin" style="display:none;"><span class="pd-navico" data-ico="settings"></span>Admin</a>
+      <div class="pd-navsec">Portfolio</div>
+      <a href="../../projects.html" title="Projects"><span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>
+      <a href="../../modules/portfolio-overview/index.html" class="active" title="Portfolio Overview"><span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Overview</span></a>
+      <div class="pd-navsec">Project</div>
+      <a href="../../dashboard.html" title="Project Home"><span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Project Home<small class="pd-nav-sub" id="nav-proj">None selected</small></span></a>
+      <div class="pd-navsec" id="nav-sys" style="display:none;">System</div>
+      <a href="../../admin.html" id="nav-admin" style="display:none;" title="Admin"><span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>
     </nav>
   </aside>
 
@@ -693,7 +696,7 @@
   AppAuth.requireLogin(async function (user, profile) {
     UI.renderUserBar(profile);
     UI.initShell();
-    if (profile && (profile.role === 'admin' || profile.role === 'super_admin')) { var na = document.getElementById('nav-admin'); if (na) na.style.display = ''; }
+    if (profile && (profile.role === 'admin' || profile.role === 'super_admin')) { var na = document.getElementById('nav-admin'); if (na) na.style.display = ''; var ns = document.getElementById('nav-sys'); if (ns) ns.style.display = ''; }
     document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderAll(); };
     wireProjFilter();
     document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderAll(); };

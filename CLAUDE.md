@@ -77,6 +77,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-06 — Prompt 64: Side-panel optimization (sections, caption, project sub-label, icon rail)
+- **Grouped the top-level nav into scope sections** — PORTFOLIO (Projects, Portfolio Overview) ·
+  PROJECT (Project Home) · SYSTEM (Admin) — on all four shell pages (dashboard, projects, admin,
+  portfolio-overview). New `.pd-navsec` label style. The SYSTEM section is gated with the Admin
+  link (`#nav-sys` revealed alongside `#nav-admin` for admin/super_admin; admin.html shows it
+  since only admins reach it).
+- **One consistent brand caption** — the four different red captions under the logo ("Project
+  Home"/"Project Portfolio"/"Admin"/"Portfolio Overview") are now all **"Planning Suite"** (the
+  active nav item already indicates the page).
+- **Current project shown under "Project Home"** — a `.pd-nav-sub` sub-caption filled by
+  `UI.initShell` from `sessionStorage['pd_project_name']` (falls back to id, then "None selected").
+  Label + sub stack via a new `.pd-navtxt` flex column.
+- **Icon-rail collapse** — the hamburger now collapses the sidebar to a slim **64px icon rail**
+  (centered icons, `title` tooltips) instead of hiding it to zero width. Bare-text module labels
+  collapse via `font-size:0`; wrapped `.pd-navtxt` labels via `display:none` (their sub-caption's
+  explicit font-size ignores the font-size:0 trick). This shared change gives every module the
+  same icon rail when collapsed (was: fully hidden).
+- Verified in a static sidebar harness (expanded + collapsed side by side): sections render,
+  caption consistent, project sub-label stacks, rail = 64px with icons only and no leaking text.
+  (Note: the preview served a stale cached `dashboard.css` at first — needed a cache-bust query;
+  the live GitHub Pages site will likewise need a hard refresh.)
+
 ### 2026-07-06 — Prompt 63: Uniform side-panel navigation
 - Made the sidebar nav consistent across the app (was divergent: "All Projects" vs "Projects",
   Portfolio Overview/Project Home only on some pages, 6 modules using a raw `&larr; All modules`

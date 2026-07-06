@@ -75,7 +75,11 @@
     var app = document.querySelector('.pd-app');
     var sidebar = document.querySelector('.pd-sidebar');
     var topbar = document.querySelector('.pd-topbar');
-    if (!app || !sidebar || !topbar || topbar.querySelector('.pd-sidebar-toggle')) return;
+    if (!app || !sidebar || !topbar) return;
+    // Fill the "Project Home" sub-caption with the current project (if the nav has that slot).
+    var np = document.getElementById('nav-proj');
+    if (np) { var pn = sessionStorage.getItem('pd_project_name') || sessionStorage.getItem('pd_project'); np.textContent = pn || 'None selected'; }
+    if (topbar.querySelector('.pd-sidebar-toggle')) return;
 
     // Default to collapsed for a clean entry; only an explicit '0' keeps it open.
     if (localStorage.getItem('pd_sidebar_collapsed') !== '0') app.classList.add('pd-collapsed');
