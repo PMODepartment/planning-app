@@ -68,6 +68,28 @@ and a spot-checked activity's dates/calendar/predecessor all matched the source 
 (Not yet run end-to-end against a live Supabase project — the parsing/mapping logic is
 verified, but nobody has clicked Import on a real login yet.)
 
+## Columns (2026-07-07) — eye-icon show/hide, resize everywhere, export toggle
+- **Eye-icon multi-select chooser**: the toolbar column button is now an **eye** icon
+  (`icons.js` gained `eye`/`eyeOff`). `renderColsMenu()` shows a checkbox per column (ticked =
+  visible) with a per-row eye glyph + **Show all / Hide all / Reset** footer. It is
+  **context-aware**: on the Schedule tab it lists `GRID_COLS`; on the Cost Loading tab it lists
+  `COST_COLS` (driven by `activeTab`, set in `switchTab`). Hidden state persists in
+  `localStorage.ps_colhidden` (keyed by label; `saveColHidden()`).
+- **Cost Loading table is now dynamic** (was static HTML). `COST_COLS` defines label / num /
+  locked / default width / `cell(r)` / `tot(T)` renderers; `renderCost()` builds `<colgroup>` +
+  `<thead>` (with `.ps-colgrip` handles) + `<tbody>`, **skipping hidden columns** and applying
+  persisted widths (`localStorage.ps_costcols`, `startCostColResize`). Table is `table-layout:fixed`;
+  the totals row now emits one cell per visible column (no colspan) so hide/resize line up.
+- **Gantt-only layout keeps the columns**: `.ps-split.ps-gantt-only .ps-grid-pane` no longer
+  `display:none` — it stays as a compact (300px default) **resizable + hideable** activity-column
+  table beside the bars (Primavera-style). Drag the divider / hide columns for a leaner view.
+- **Export honors hidden columns**: `exportExcel(includeHidden)` filters out headers whose grid
+  column is hidden (`EXP_TO_GRID`/`expHeaderHidden`); % and ₱ number formats + column widths are
+  resolved by header NAME (so positions stay correct when columns are dropped). `downloadSchedule()`
+  (wired to `#ps-download`) prompts "Include hidden columns?" only when an exportable column is
+  hidden, else exports directly.
+- Module page `?v=` bumped to **20260707** (icons.js changed — shared asset, cache-busted).
+
 ## Scheduling (2026-07-06) — Reschedule dependent activities (relationship-driven dates)
 The CPM forward pass (`cpmLogic`) computes each activity's early start/finish (`_es`/`_ef`,
 day offsets from `_cpmBase`) honoring FS/SS/FF/SF + lag, actual dates, the data date, and

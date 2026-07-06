@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260706"></script>
+  <script src="../../assets/js/theme.js?v=20260707"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260706" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260707" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -68,9 +68,13 @@
     .ps-gantt-tools .ps-menu { left:auto; right:0; }
     /* tab-group separator in the single detail-tab strip */
     .ps-dt-sep { width:1px; align-self:stretch; background:var(--pd-line); margin:3px 8px; flex:none; }
-    /* Layout modes: hide a pane for grid-only / gantt-only */
+    /* Layout modes: grid-only hides the bars. "Gantt" keeps the (resizable/hideable) column
+       table on the left of the bars like Primavera — narrower by default; hide columns via the
+       eye menu or drag the divider to shrink it toward a bars-only view. */
     .ps-split.ps-grid-only .ps-gantt-pane, .ps-split.ps-grid-only .ps-divider { display:none; }
-    .ps-split.ps-gantt-only .ps-grid-pane, .ps-split.ps-gantt-only .ps-divider { display:none; }
+    .ps-split.ps-gantt-only .ps-grid-pane { flex:0 0 300px; }
+    .ps-cost-th { position:relative; }
+    .ps-cost-table th { overflow:hidden; }
     /* Keep the action toolbar on a single row (scrolls horizontally if needed) */
     .ps-toolbar .ps-tb-row { flex-wrap:nowrap; overflow:visible; min-width:0; }
     /* Denser, OPC-like layout — trim dead space, square edges */
@@ -532,7 +536,7 @@
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" title="Saved views"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
           <button class="pd-btn ps-icobtn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="16"></span></button>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Columns — choose which grid columns to show"><span data-ico="columns" data-ico-size="16"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Show / hide columns — tick to show, untick to hide"><span data-ico="eye" data-ico-size="16"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colorsbtn" title="Gantt bar colors"><span data-ico="palette" data-ico-size="16"></span></button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <span class="ps-tb-div"></span>
           <button class="pd-btn ps-icobtn" id="ps-crit" title="Critical path — compute &amp; highlight"><span data-ico="risk" data-ico-size="16"></span></button>
@@ -596,17 +600,10 @@
       <div id="ps-view-cost" style="display:none;">
         <div class="pd-card" style="padding:0;overflow:hidden;">
           <div class="ps-table-wrap">
-            <table class="ps-table">
-              <thead><tr>
-                <th style="min-width:80px;">WBS</th><th style="min-width:240px;">Activity Name</th>
-                <th class="ps-num">Baseline Cost (&#8369;)</th>
-                <th class="ps-num">Planned Cost (&#8369;)</th><th class="ps-num">Actual Cost (&#8369;)</th>
-                <th class="ps-num">Earned Value (&#8369;)</th><th class="ps-num">At Completion (&#8369;)</th>
-                <th class="ps-num">Cost Variance (&#8369;)</th><th class="ps-num">CPI</th>
-                <th class="ps-num">Planned % (POC)</th><th class="ps-num">% Complete</th>
-                <th style="min-width:150px;">% Complete Type</th>
-              </tr></thead>
-              <tbody id="ps-cost-body"><tr><td colspan="12" class="ps-empty">Select a project to view cost loading.</td></tr></tbody>
+            <table class="ps-table ps-cost-table" id="ps-cost-table" style="table-layout:fixed;">
+              <colgroup id="ps-cost-colgroup"></colgroup>
+              <thead id="ps-cost-head"></thead>
+              <tbody id="ps-cost-body"><tr><td class="ps-empty">Select a project to view cost loading.</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -743,19 +740,19 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260706"></script>
-<script src="../../assets/js/auth.js?v=20260706"></script>
-<script src="../../assets/js/db.js?v=20260706"></script>
-<script src="../../assets/js/ui.js?v=20260706"></script>
-<script src="../../assets/js/icons.js?v=20260706"></script>
-<script src="../../assets/js/calendar.js?v=20260706"></script>
+<script src="../../assets/js/config.js?v=20260707"></script>
+<script src="../../assets/js/auth.js?v=20260707"></script>
+<script src="../../assets/js/db.js?v=20260707"></script>
+<script src="../../assets/js/ui.js?v=20260707"></script>
+<script src="../../assets/js/icons.js?v=20260707"></script>
+<script src="../../assets/js/calendar.js?v=20260707"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
   'use strict';
   var TABLE = 'project_schedule';
   var pid = null, rows = [], editId = null, UID = null;
-  var PROJECTS = [], WORKSPACES = [], layoutMode = 'split';
+  var PROJECTS = [], WORKSPACES = [], layoutMode = 'split', activeTab = 'schedule';
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
   function calById(id) { return id && CALS.find(function (c) { return c.id === id; }); }
@@ -2273,20 +2270,36 @@
     try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var'].forEach(function (k) { w[k] = getComputedStyle(pane).getPropertyValue('--c-' + k).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e) {}
   }
   // Column chooser (the OPC grid-settings wrench). Activity Name can't be hidden (anchor column).
+  function saveColHidden() { try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} }
+  // Multi-select show/hide chooser opened from the eye button. Each row is a checkbox
+  // (ticked = visible); footer has Show all / Hide all / Reset. Covers the active view's
+  // columns — the Schedule grid (GRID_COLS) or the Cost Loading table (COST_COLS).
   function renderColsMenu() {
     var m = document.getElementById('ps-cols-menu'); if (!m) return;
-    m.innerHTML = GRID_COLS.map(function (c) {
-      var locked = c[1] === 'Activity Name';
-      return '<label' + (locked ? ' style="opacity:.5;cursor:default;"' : '') + '><input type="checkbox" data-col="' + esc(c[1]) + '"' +
-        (colHidden[c[1]] ? '' : ' checked') + (locked ? ' disabled' : '') + '> ' + esc(c[1]) + '</label>';
-    }).join('') +
-      '<div class="ps-cols-foot"><button data-colact="all">Show all</button><button data-colact="reset">Reset</button></div>';
+    var onCost = activeTab === 'cost';
+    var defs = onCost ? COST_COLS : GRID_COLS.map(function (c) { return { label: c[1], locked: c[1] === 'Activity Name' }; });
+    m.innerHTML =
+      '<div style="padding:6px 12px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' +
+        (onCost ? 'Cost Loading columns' : 'Schedule columns') + '</div>' +
+      defs.map(function (d) {
+        var lbl = d.label, locked = d.locked;
+        return '<label' + (locked ? ' style="opacity:.5;cursor:default;"' : '') + '>' +
+          '<input type="checkbox" data-col="' + esc(lbl) + '"' + (colHidden[lbl] ? '' : ' checked') + (locked ? ' disabled' : '') + '>' +
+          '<span class="pd-ico" data-eye="' + esc(lbl) + '" style="opacity:.6;">' + Icons.svg(colHidden[lbl] ? 'eyeOff' : 'eye', 15) + '</span> ' +
+          esc(lbl) + '</label>';
+      }).join('') +
+      '<div class="ps-cols-foot"><button data-colact="show">Show all</button><button data-colact="hide">Hide all</button><button data-colact="reset">Reset</button></div>';
     m.querySelectorAll('input[data-col]').forEach(function (cb) {
       cb.onchange = function () { if (cb.checked) delete colHidden[cb.dataset.col]; else colHidden[cb.dataset.col] = 1;
-        try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} applyColHidden(); };
+        saveColHidden(); applyColHidden(); renderCost(); renderColsMenu(); };
     });
     m.querySelectorAll('[data-colact]').forEach(function (b) {
-      b.onclick = function () { colHidden = {}; try { localStorage.setItem('ps_colhidden', '{}'); } catch (e) {} applyColHidden(); renderColsMenu(); };
+      b.onclick = function () {
+        var act = b.dataset.colact;
+        if (act === 'show' || act === 'reset') { colHidden = {}; }
+        else if (act === 'hide') { defs.forEach(function (d) { if (!d.locked) colHidden[d.label] = 1; }); }
+        saveColHidden(); applyColHidden(); renderCost(); renderColsMenu();
+      };
     });
   }
   function startColResize(e, col) {
@@ -2615,33 +2628,52 @@
     if (!ac || !cpi) return bac;
     return ac + (bac - ev) / cpi;
   }
+  // Cost Loading columns — each: label, num (right-align), locked (can't hide), default width,
+  // a per-row cell renderer and a totals-row renderer. Rendered dynamically so columns can be
+  // hidden (via the eye chooser — hidden ones are simply skipped) and drag-resized (colgroup).
+  function _vc(n) { return n > 0 ? 'ps-green' : n < 0 ? 'ps-red' : ''; }
+  var COST_COLS = [
+    { label: 'WBS', w: 90, cell: function (r) { return '<code>' + esc(r.wbs || '') + '</code>'; }, tot: function (T) { return 'TOTAL (' + T.n + ')'; } },
+    { label: 'Activity Name', locked: true, w: 240, cell: function (r) { return esc(r.activity_name || ''); }, tot: function () { return ''; } },
+    { label: 'Baseline Cost (₱)', num: true, w: 130, cell: function (r) { return r.bl_cost != null ? Fmt.money(r.bl_cost) : '—'; }, tot: function (T) { return Fmt.money(T.bl); } },
+    { label: 'Planned Cost (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.planned_cost || 0); }, tot: function (T) { return Fmt.money(T.tp); } },
+    { label: 'Actual Cost (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.actual_cost || 0); }, tot: function (T) { return Fmt.money(T.ta); } },
+    { label: 'Earned Value (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.earned_value || 0); }, tot: function (T) { return Fmt.money(T.tv); } },
+    { label: 'At Completion (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null)); }, tot: function (T) { return Fmt.money(T.tac); } },
+    { label: 'Cost Variance (₱)', num: true, w: 130, cell: function (r) { var cv = (r.earned_value || 0) - (r.actual_cost || 0); return '<span class="' + _vc(cv) + '">' + (cv >= 0 ? '+' : '') + Fmt.money(cv) + '</span>'; }, tot: function (T) { var d = T.tv - T.ta; return '<span class="' + _vc(d) + '">' + (d >= 0 ? '+' : '') + Fmt.money(d) + '</span>'; } },
+    { label: 'CPI', num: true, w: 70, cell: function (r) { var c = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; return c !== null ? c.toFixed(2) : '—'; }, tot: function (T) { return T.ta > 0 ? (T.tv / T.ta).toFixed(2) : '—'; } },
+    { label: 'Planned % (POC)', num: true, w: 110, cell: function (r) { var p = plannedPOC(r); return p != null ? p + '%' : '—'; }, tot: function () { return ''; } },
+    { label: '% Complete', num: true, w: 110, cell: function (r) { return (r.percent_complete || 0) + '%'; }, tot: function () { return ''; } },
+    { label: '% Complete Type', w: 150, cell: function (r) { return esc(r.percent_complete_type || '—'); }, tot: function () { return ''; } }
+  ];
+  var costW = {}; try { costW = JSON.parse(localStorage.getItem('ps_costcols') || '{}') || {}; } catch (e) { costW = {}; }
+  function costColW(c) { return costW[c.label] || c.w; }
+  function costVisibleCols() { return COST_COLS.filter(function (c) { return c.locked || !colHidden[c.label]; }); }
   function renderCost() {
-    var body = document.getElementById('ps-cost-body');
+    var body = document.getElementById('ps-cost-body'), head = document.getElementById('ps-cost-head'), cg = document.getElementById('ps-cost-colgroup');
+    if (!body || !head || !cg) return;
+    var cols = costVisibleCols();
+    cg.innerHTML = cols.map(function (c) { return '<col style="width:' + costColW(c) + 'px;">'; }).join('');
+    head.innerHTML = '<tr>' + cols.map(function (c) {
+      return '<th class="' + (c.num ? 'ps-num ' : '') + 'ps-cost-th"' + '>' + esc(c.label) +
+        '<span class="ps-colgrip" data-costcol="' + esc(c.label) + '" title="Drag to resize column"></span></th>';
+    }).join('') + '</tr>';
+    head.querySelectorAll('.ps-colgrip').forEach(function (g) { g.addEventListener('mousedown', function (e) { startCostColResize(e, g.dataset.costcol); }); });
     var f = rows.filter(function (r) { return !isWbs(r); });
-    if (!f.length) { body.innerHTML = '<tr><td colspan="12" class="ps-empty">' + (pid ? 'No activities.' : 'Select a project to view cost loading.') + '</td></tr>'; return; }
-    var tbl = 0, tp = 0, ta = 0, tv = 0, tac = 0;
-    function vc(n) { return n > 0 ? 'ps-green' : n < 0 ? 'ps-red' : ''; }
+    if (!f.length) { body.innerHTML = '<tr><td class="ps-empty" colspan="' + cols.length + '">' + (pid ? 'No activities.' : 'Select a project to view cost loading.') + '</td></tr>'; return; }
+    var T = { n: f.length, bl: 0, tp: 0, ta: 0, tv: 0, tac: 0 };
+    f.forEach(function (r) { T.bl += r.bl_cost || 0; T.tp += r.planned_cost || 0; T.ta += r.actual_cost || 0; T.tv += r.earned_value || 0; T.tac += eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null); });
     body.innerHTML = f.map(function (r) {
-      var cv = (r.earned_value || 0) - (r.actual_cost || 0);
-      var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
-      var ac = eac(r, cpi), poc = plannedPOC(r);
-      tbl += r.bl_cost || 0; tp += r.planned_cost || 0; ta += r.actual_cost || 0; tv += r.earned_value || 0; tac += ac;
-      return '<tr><td><code>' + esc(r.wbs || '') + '</code></td><td>' + esc(r.activity_name || '') + '</td>' +
-        '<td class="ps-num">' + (r.bl_cost != null ? Fmt.money(r.bl_cost) : '—') + '</td>' +
-        '<td class="ps-num">' + Fmt.money(r.planned_cost || 0) + '</td><td class="ps-num">' + Fmt.money(r.actual_cost || 0) + '</td>' +
-        '<td class="ps-num">' + Fmt.money(r.earned_value || 0) + '</td><td class="ps-num">' + Fmt.money(ac) + '</td>' +
-        '<td class="ps-num ' + vc(cv) + '">' + (cv>=0?'+':'') + Fmt.money(cv) + '</td>' +
-        '<td class="ps-num">' + (cpi !== null ? cpi.toFixed(2) : '—') + '</td>' +
-        '<td class="ps-num">' + (poc != null ? poc + '%' : '—') + '</td>' +
-        '<td class="ps-num">' + (r.percent_complete || 0) + '%</td>' +
-        '<td>' + esc(r.percent_complete_type || '—') + '</td></tr>';
-    }).join('') + '<tr class="ps-totals-row"><td colspan="2">TOTAL (' + f.length + ')</td>' +
-      '<td class="ps-num">' + Fmt.money(tbl) + '</td>' +
-      '<td class="ps-num">' + Fmt.money(tp) + '</td><td class="ps-num">' + Fmt.money(ta) + '</td>' +
-      '<td class="ps-num">' + Fmt.money(tv) + '</td><td class="ps-num">' + Fmt.money(tac) + '</td>' +
-      '<td class="ps-num ' + vc(tv-ta) + '">' + ((tv-ta)>=0?'+':'') + Fmt.money(tv-ta) + '</td>' +
-      '<td class="ps-num">' + (ta>0?(tv/ta).toFixed(2):'—') + '</td>' +
-      '<td></td><td></td><td></td></tr>';
+      return '<tr>' + cols.map(function (c) { return '<td class="' + (c.num ? 'ps-num' : '') + '">' + c.cell(r) + '</td>'; }).join('') + '</tr>';
+    }).join('') + '<tr class="ps-totals-row">' + cols.map(function (c) { return '<td class="' + (c.num ? 'ps-num' : '') + '">' + c.tot(T) + '</td>'; }).join('') + '</tr>';
+  }
+  function startCostColResize(e, label) {
+    e.preventDefault(); e.stopPropagation();
+    var col = COST_COLS.filter(function (c) { return c.label === label; })[0]; if (!col) return;
+    var sx = e.clientX, start = costColW(col);
+    function mm(ev) { costW[label] = Math.max(48, start + (ev.clientX - sx)); var cg = document.getElementById('ps-cost-colgroup'); var vis = costVisibleCols(); var idx = vis.indexOf(col); if (cg && cg.children[idx]) cg.children[idx].style.width = costW[label] + 'px'; }
+    function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); document.body.style.cursor = ''; try { localStorage.setItem('ps_costcols', JSON.stringify(costW)); } catch (e2) {} }
+    document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu); document.body.style.cursor = 'col-resize';
   }
 
   // ----- MODAL -----
@@ -2788,6 +2820,7 @@
 
   // ----- tabs / view switch -----
   function switchTab(tab) {
+    activeTab = tab;
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     document.getElementById('ps-view-cost').style.display = tab === 'cost' ? '' : 'none';
@@ -2796,12 +2829,17 @@
     var name = tab === 'cost' ? 'Cost Loading' : 'Project Schedule';
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
-    if (tab === 'schedule') renderGantt();
+    applyColHidden();   // hidden-column rules differ per view (Schedule grid vs Cost table)
+    if (tab === 'schedule') renderGantt(); else renderCost();
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
   //        row set (incl. WBS summaries), and OPC date formatting DD-Mon-YY + " A" flag) -----
-  function exportExcel() {
+  // Map an export header to the Schedule-grid column label (for the hidden-column check).
+  var EXP_TO_GRID = { 'ID': 'Activity ID', 'Name': 'Activity Name', 'BL0 Start': 'BL Start', 'BL0 Finish': 'BL Finish' };
+  function expHeaderHidden(h) { if (h === '#' || h === 'Name') return false; return !!colHidden[EXP_TO_GRID[h] || h]; }
+  function exportExcel(includeHidden) {
+    if (includeHidden === undefined) includeHidden = true;
     if (!rows.length) { UI.toast('Nothing to export — load or import a schedule first.', 'warn'); return; }
     if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
     var n = 0;
@@ -2832,18 +2870,38 @@
       row['Percent Complete Type'] = wbs ? '' : (r.percent_complete_type || '');
       return row;
     });
+    var WIDTHS = { '#': 5, 'ID': 12, 'Name': 40, 'Status': 12, 'BL0 Start': 12, 'BL0 Finish': 12, 'Start': 13, 'Finish': 13, 'Planned Value POC': 15, 'Earned Value POC': 15, 'Planned IBB': 16, 'Actual IBB to date': 16, 'Earned Value IBB': 16, 'At Completion IBB': 16, 'BL Planned IBB': 16, 'Percent Complete Type': 18 };
     var headers = ['#','ID','Name','Status','BL0 Start','BL0 Finish','Start','Finish','Planned Value POC','Earned Value POC','Planned IBB','Actual IBB to date','Earned Value IBB','At Completion IBB','BL Planned IBB','Percent Complete Type'];
+    // Honor the "include hidden columns" choice — drop any header whose grid column is hidden.
+    if (!includeHidden) headers = headers.filter(function (h) { return !expHeaderHidden(h); });
     var ws = XLSX.utils.json_to_sheet(data, { header: headers });
-    // format POC columns as percentages, IBB columns as ₱ currency (like the OPC download)
-    var pctCols = ['I','J'], curCols = ['K','L','M','N','O'];  // 0-based col letters for headers above
+    // Number formats resolved by header NAME (positions shift when columns are filtered out).
+    var pctNames = { 'Planned Value POC': 1, 'Earned Value POC': 1 };
+    var curNames = { 'Planned IBB': 1, 'Actual IBB to date': 1, 'Earned Value IBB': 1, 'At Completion IBB': 1, 'BL Planned IBB': 1 };
+    var pctCols = [], curCols = [];
+    headers.forEach(function (h, i) { var L = XLSX.utils.encode_col(i); if (pctNames[h]) pctCols.push(L); else if (curNames[h]) curCols.push(L); });
     var range = XLSX.utils.decode_range(ws['!ref']);
     for (var R = 1; R <= range.e.r; R++) {
       pctCols.forEach(function (c) { var cell = ws[c + (R + 1)]; if (cell && typeof cell.v === 'number') cell.z = '0.00%'; });
       curCols.forEach(function (c) { var cell = ws[c + (R + 1)]; if (cell && typeof cell.v === 'number') cell.z = '₱#,##0.00'; });
     }
-    ws['!cols'] = [{ wch: 5 },{ wch: 12 },{ wch: 40 },{ wch: 12 },{ wch: 12 },{ wch: 12 },{ wch: 13 },{ wch: 13 },{ wch: 15 },{ wch: 15 },{ wch: 16 },{ wch: 16 },{ wch: 16 },{ wch: 16 },{ wch: 16 },{ wch: 18 }];
+    ws['!cols'] = headers.map(function (h) { return { wch: WIDTHS[h] || 14 }; });
     var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Activities');
     XLSX.writeFile(wb, 'Activities - ' + projName() + '.xlsx');
+  }
+
+  // Download entry point: if any exportable column is hidden, ask whether to include hidden
+  // columns; otherwise export straight away.
+  function downloadSchedule() {
+    if (!rows.length) { UI.toast('Nothing to export — load or import a schedule first.', 'warn'); return; }
+    var expHeaders = ['ID','Status','BL0 Start','BL0 Finish','Start','Finish','Planned Value POC','Earned Value POC','Planned IBB','Actual IBB to date','Earned Value IBB','At Completion IBB','BL Planned IBB','Percent Complete Type'];
+    if (!expHeaders.some(expHeaderHidden)) { exportExcel(true); return; }
+    var m = UI.modal('<h2 style="margin-top:0;">Download schedule</h2>' +
+      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">Some columns are hidden in the view. Choose whether the Excel file includes them.</p>' +
+      '<label style="display:flex;gap:8px;align-items:center;margin:12px 0;"><input type="checkbox" id="ps-dl-hidden" checked> Include hidden columns</label>' +
+      '<div style="text-align:right;"><button class="pd-btn" id="ps-dl-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-dl-go">Download</button></div>');
+    m.el.querySelector('#ps-dl-x').onclick = m.close;
+    m.el.querySelector('#ps-dl-go').onclick = function () { var inc = m.el.querySelector('#ps-dl-hidden').checked; m.close(); exportExcel(inc); };
   }
 
   // ----- Saved Views (zoom + search + filters, per browser) -----
@@ -3667,7 +3725,7 @@
     applyColors();
     document.getElementById('ps-refresh').onclick = function () { load(); };
     document.getElementById('ps-export').onclick = exportExcel;
-    document.getElementById('ps-download').onclick = exportExcel;
+    document.getElementById('ps-download').onclick = downloadSchedule;
     document.getElementById('ps-crit').onclick = function () {
       critMode = !critMode;
       document.getElementById('ps-crit').classList.toggle('active', critMode);
