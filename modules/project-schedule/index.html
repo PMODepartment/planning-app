@@ -242,13 +242,13 @@
     .ps-handle.l { left:0; } .ps-handle.r { right:0; }
     .ps-sum { position:absolute; height:9px; background:var(--ps-sum); z-index:3;
       clip-path:polygon(0 0,100% 0,100% 60%,calc(100% - 6px) 100%,6px 100%,0 60%); }
-    .ps-bl { position:absolute; height:5px; background:none; border:1.5px solid var(--ps-bl); border-radius:2px; z-index:2; }
+    .ps-bl { position:absolute; height:8px; background:var(--ps-bl); border:1px solid rgba(0,0,0,.18); border-radius:2px; z-index:2; box-shadow:0 1px 1px rgba(0,0,0,.12); }
     .ps-mile { position:absolute; width:13px; height:13px; background:var(--ps-mile,var(--pd-red)); transform:rotate(45deg); z-index:3; cursor:grab; }
     .ps-bar-lbl { position:absolute; font-size:10px; color:var(--pd-muted); white-space:nowrap; z-index:3; line-height:15px; }
     html.pd-dark .ps-row-bg.alt { background:rgba(255,255,255,.03); }
     /* Brand-compliant Gantt colors (light defaults; dark-mode overrides for visibility) */
-    .ps-gantt-pane { --ps-bar:#2B2C2B; --ps-sum:#231F20; --ps-bl:#9a9a9a; }
-    html.pd-dark .ps-gantt-pane { --ps-bar:#c7ccd1; --ps-sum:#e0e0e0; --ps-bl:#7d7d7d; }
+    .ps-gantt-pane { --ps-bar:#2B2C2B; --ps-sum:#231F20; --ps-bl:#2F6FB0; }
+    html.pd-dark .ps-gantt-pane { --ps-bar:#c7ccd1; --ps-sum:#e0e0e0; --ps-bl:#5AA0E6; }
     html.pd-dark .ps-bar-lbl { color:var(--pd-muted); }
     /* legend */
     .ps-legend { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:8px 2px; font-size:12px; color:var(--pd-muted); }
@@ -257,7 +257,7 @@
     .lg-task { background:var(--ps-bar,#2B2C2B); position:relative; overflow:hidden; }
     .lg-task::after { content:""; position:absolute; left:0; top:0; bottom:0; width:55%; background:var(--pd-red); }
     .lg-sum { background:var(--ps-sum,#231F20); height:7px; }
-    .lg-bl { background:none; border:1.5px solid var(--ps-bl,#9a9a9a); height:7px; }
+    .lg-bl { background:var(--ps-bl,#2F6FB0); border:1px solid rgba(0,0,0,.18); height:8px; }
     .lg-mile { width:12px; height:12px; background:var(--pd-red); transform:rotate(45deg); border-radius:2px; }
     .lg-dd { width:3px; height:14px; background:var(--pd-red); border-radius:1px; }
     /* critical path + dependency lines */
@@ -271,6 +271,8 @@
     .ps-grid-scroll.ps-critmode .ps-grid-row:not(.ps-critrow):not(.ps-wbs-row):not(.ps-group-row) { opacity:.5; }
     #ps-crit.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-crit.active .pd-ico { color:#fff; }
+    #ps-deps.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    #ps-deps.active .pd-ico { color:#fff; }
     .ps-deps .ps-dep { fill:none; stroke:var(--pd-red); stroke-width:1.5; opacity:.75; }
     .ps-deps .ps-depdot { fill:var(--pd-red); }
     .ps-deps .ps-deptype { fill:var(--pd-red); font-size:8px; font-weight:700; }
@@ -534,6 +536,7 @@
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colorsbtn" title="Gantt bar colors"><span data-ico="palette" data-ico-size="16"></span></button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <span class="ps-tb-div"></span>
           <button class="pd-btn ps-icobtn" id="ps-crit" title="Critical path — compute &amp; highlight"><span data-ico="risk" data-ico-size="16"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-deps" title="Show relationship lines (FS / SS / FF / SF) on the Gantt"><span data-ico="arrowRight" data-ico-size="16"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-linkmode" title="Link mode — drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="16"></span></button>
           <span class="ps-tb-spacer"></span>
           <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:200px;" /></div>
@@ -633,7 +636,15 @@
         <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
         <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
         <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
-        <div class="ps-form-full"><label class="pd-label">Predecessors <small>(Activity IDs, comma-separated; type/lag optional e.g. 1020 SS+3 — drives the critical path)</small></label><input class="pd-input" id="ps-f-pred" placeholder="e.g. 1010, 1020 SS+3" /></div>
+        <div class="ps-form-full"><label class="pd-label">Predecessors <small>(Activity IDs, comma-separated; type/lag optional e.g. 1020 SS+3 — drives the critical path)</small></label><input class="pd-input" id="ps-f-pred" placeholder="e.g. 1010, 1020 SS+3" />
+          <div class="ps-pred-picker" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;">
+            <input class="pd-input" id="ps-pred-search" list="ps-pred-list" placeholder="Pick an activity to add…" style="flex:2 1 200px;min-width:150px;" autocomplete="off" />
+            <datalist id="ps-pred-list"></datalist>
+            <select class="pd-select" id="ps-pred-type" title="Relationship type" style="flex:0 0 auto;width:64px;"><option>FS</option><option>SS</option><option>FF</option><option>SF</option></select>
+            <input class="pd-input" id="ps-pred-lag" type="number" step="1" placeholder="lag" title="Lag in days (optional; negative = lead)" style="flex:0 0 auto;width:64px;" />
+            <button type="button" class="pd-btn" id="ps-pred-add">Add</button>
+          </div>
+        </div>
         <div class="ps-form-full"><label class="pd-label">Successors <small>(derived from predecessors — read-only)</small></label><input class="pd-input" id="ps-f-succ" readonly style="background:var(--pd-bg);color:var(--pd-muted);" placeholder="—" /></div>
         <div><label class="pd-label">Baseline Cost (&#8369;) <small>(BL0 Planned)</small></label><input class="pd-input" id="ps-f-blcost" type="number" min="0" step="0.01" /></div>
         <div><label class="pd-label">Planned Cost (&#8369;)</label><input class="pd-input" id="ps-f-pcost" type="number" min="0" step="0.01" /></div>
@@ -1081,6 +1092,7 @@
     var cACost = find([eq('actual ibb to date'), has('actual cost'), has('actual ibb')]);
     var cEV    = find([eq('earned value ibb'), has('earned value ibb')]);
     var cPred  = find([eq('predecessors'), eq('predecessor'), has('predecessor'), has('relationship')]);
+    var cSucc  = find([eq('successors'), eq('successor'), has('successor')]);
     if (cId<0) cId=0;
     var counters=[], recs=[];
     for (var R=1; R<=maxR; R++) {
@@ -1098,9 +1110,28 @@
         status: (cStat>=0 && row[cStat]!=null) ? String(row[cStat]).trim() : null,
         pct: opcPct(cPct>=0?row[cPct]:null), dur: opcDur(cDur>=0?row[cDur]:null),
         pcost: opcMoney(cPCost>=0?row[cPCost]:null), acost: opcMoney(cACost>=0?row[cACost]:null), ev: opcMoney(cEV>=0?row[cEV]:null),
-        pred: (cPred>=0 && row[cPred]!=null) ? String(row[cPred]).trim() : null });
+        pred: (cPred>=0 && row[cPred]!=null) ? String(row[cPred]).trim() : null,
+        succ: (cSucc>=0 && row[cSucc]!=null) ? String(row[cSucc]).trim() : null });
     }
     recs.forEach(function(r){ r.isLeaf = !recs.some(function(o){ return o!==r && o.code.indexOf(r.code+'.')===0; }); });
+    // Fold the Successors column into predecessors so the imported relationship set is
+    // complete. A successor edge A->B is the same relationship as B listing A as a
+    // predecessor; the CPM engine treats predecessors as the single source of truth and
+    // derives successors as their inverse (no separate successors column is stored).
+    // OPC exports both directions, but either may be sparsely populated — merging both
+    // columns (de-duplicated by Activity ID) captures every relationship regardless.
+    (function mergeSuccessors(){
+      var byId = {}; recs.forEach(function(r){ if (r.id) byId[String(r.id)] = r; });
+      recs.forEach(function(r){
+        if (!r.id || !r.succ) return;
+        predIds(r.succ).forEach(function(sid){
+          var tgt = byId[sid]; if (!tgt || tgt === r) return;
+          if (predIds(tgt.pred).indexOf(String(r.id)) === -1) {
+            tgt.pred = tgt.pred ? (tgt.pred + ', ' + r.id) : String(r.id);
+          }
+        });
+      });
+    })();
     return recs;
   }
   function recToPayload(r) {
@@ -2431,7 +2462,7 @@
     var bc = document.getElementById('ps-tl-bars');
     if (bc) {
       var bars = ''; for (var j = first; j < last; j++) bars += ganttRowHTML(DL[j], j, _rMin, _rDayw); bc.innerHTML = bars; wireDrag(_rMin, _rDayw);
-      if (critMode) {
+      if (critMode || depsOn) {
         var vis = {};
         for (var vi = first; vi < last; vi++) { var vr = DL[vi]; if (vr._dkind === 'task' && vr.activity_id) { var vs = pd(vr.start_date), ve = pd(vr.end_date); if (vs && ve) vis[String(vr.activity_id)] = { y: vi * ROWH + 16, sx: dayDiff(_rMin, vs) * _rDayw, ex: (dayDiff(_rMin, ve) + 1) * _rDayw }; } }
         var lines = '';
@@ -2629,6 +2660,7 @@
     set('ps-f-resp', row ? row.responsible_party : '');
     set('ps-f-pred', row ? row.predecessors : '');
     set('ps-f-succ', (row && row._succObjs && row._succObjs.length) ? row._succObjs.map(function (s) { return s.id + (s.type && s.type !== 'FS' ? ' ' + s.type : '') + (s.lag ? (s.lag > 0 ? '+' : '') + s.lag : ''); }).join(', ') : '');
+    setupPredPicker(row);
     set('ps-f-blcost', row && row.bl_cost != null ? row.bl_cost : '');
     set('ps-f-pcost', row && row.planned_cost != null ? row.planned_cost : '');
     set('ps-f-acost', row && row.actual_cost != null ? row.actual_cost : '');
@@ -2661,6 +2693,39 @@
     set('ps-f-scond', row && row.secondary_constraint_date ? String(row.secondary_constraint_date).slice(0,10) : '');
     set('ps-f-remarks', row ? row.remarks : '');
     document.getElementById('ps-modal').style.display = 'flex';
+  }
+  // Predecessors activity picker — lets the user select an activity from the schedule
+  // (searchable ID — Name datalist) + relationship type + lag and append a correctly
+  // formatted token to the free-text ps-f-pred field, instead of typing Activity IDs.
+  function setupPredPicker(row) {
+    var search = document.getElementById('ps-pred-search');
+    var typeSel = document.getElementById('ps-pred-type');
+    var lagInp = document.getElementById('ps-pred-lag');
+    var addBtn = document.getElementById('ps-pred-add');
+    var predInp = document.getElementById('ps-f-pred');
+    var list = document.getElementById('ps-pred-list');
+    if (!search || !addBtn) return;
+    var selfId = row && row.activity_id != null ? String(row.activity_id) : null;
+    // Candidate activities = leaf tasks with an Activity ID, excluding the current one.
+    var cands = rows.filter(function (t) { return !isWbs(t) && t.activity_id != null && String(t.activity_id) !== '' && String(t.activity_id) !== selfId; })
+      .sort(function (a, b) { return String(a.activity_id).localeCompare(String(b.activity_id), undefined, { numeric: true }); });
+    list.innerHTML = cands.map(function (t) { return '<option value="' + esc(String(t.activity_id) + ' — ' + (t.activity_name || '')) + '"></option>'; }).join('');
+    search.value = ''; lagInp.value = ''; typeSel.value = 'FS';
+    function add() {
+      var ids = predIds(search.value); var sel = ids[0];
+      if (!sel) { UI.toast('Pick an activity from the list first.', 'warn'); return; }
+      if (!cands.some(function (t) { return String(t.activity_id) === sel; })) { UI.toast('No activity with ID "' + sel + '" in this schedule.', 'error'); return; }
+      if (selfId && sel === selfId) { UI.toast('An activity cannot be its own predecessor.', 'error'); return; }
+      if (predIds(predInp.value).indexOf(sel) !== -1) { UI.toast(sel + ' is already a predecessor.', 'warn'); return; }
+      var type = typeSel.value || 'FS';
+      var lag = parseInt(lagInp.value, 10); if (isNaN(lag)) lag = 0;
+      var tok = sel + ((type !== 'FS' || lag) ? ' ' + type : '') + (lag ? (lag > 0 ? '+' : '') + lag : '');
+      var cur = predInp.value.trim();
+      predInp.value = cur ? cur + ', ' + tok : tok;
+      search.value = ''; lagInp.value = ''; typeSel.value = 'FS'; search.focus();
+    }
+    addBtn.onclick = add;
+    search.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } };
   }
   function closeModal() { document.getElementById('ps-modal').style.display = 'none'; editId = null; }
   async function save() {
@@ -2806,6 +2871,9 @@
 
   // ----- Critical Path -----
   var critMode = false;
+  // Show FS/SS/FF/SF relationship lines on the Gantt independently of Critical Path mode.
+  // Defaults ON so imported dependencies are visible without toggling Critical Path.
+  var depsOn = (function () { try { return localStorage.getItem('ps_deps') !== '0'; } catch (e) { return true; } })();
   var NEARDAYS = (function () { try { return parseInt(localStorage.getItem('ps_neardays'), 10) || 5; } catch (e) { return 5; } })();
   var mfpOn = (function () { try { return localStorage.getItem('ps_mfp') !== '0'; } catch (e) { return true; } })();
   // scheduling options (see Schedule ▾ menu). schedMode: 'retained' | 'override'.
@@ -3246,7 +3314,7 @@
     { k: 'bar', v: '--ps-bar', label: 'Task bar', def: '#2B2C2B' },
     { k: 'prog', v: '--ps-prog', label: 'Progress fill', def: '#EE3124' },
     { k: 'sum', v: '--ps-sum', label: 'Summary bar', def: '#231F20' },
-    { k: 'bl', v: '--ps-bl', label: 'Baseline', def: '#9A9A9A' },
+    { k: 'bl', v: '--ps-bl', label: 'Baseline', def: '#2F6FB0' },
     { k: 'mile', v: '--ps-mile', label: 'Milestone', def: '#EE3124' }
   ];
   function loadColors() { try { return JSON.parse(localStorage.getItem('ps_colors') || '{}'); } catch (e) { return {}; } }
@@ -3552,6 +3620,15 @@
         else UI.toast('No critical path found. Add predecessor relationships (Link) or activity dates.', 'error');
       }
       renderGrid(); renderGantt();
+    };
+    // Relationship-lines toggle — show/hide the FS/SS/FF/SF dependency arrows on the Gantt
+    // without needing Critical Path mode. Reflect the persisted state on the button now.
+    document.getElementById('ps-deps').classList.toggle('active', depsOn);
+    document.getElementById('ps-deps').onclick = function () {
+      depsOn = !depsOn;
+      try { localStorage.setItem('ps_deps', depsOn ? '1' : '0'); } catch (e) {}
+      document.getElementById('ps-deps').classList.toggle('active', depsOn);
+      renderGantt();
     };
     document.getElementById('ps-clear').onclick = function () {
       if (!isAdmin) { UI.toast('Clearing the schedule is restricted to admins.', 'error'); return; }

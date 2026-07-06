@@ -68,6 +68,19 @@ and a spot-checked activity's dates/calendar/predecessor all matched the source 
 (Not yet run end-to-end against a live Supabase project — the parsing/mapping logic is
 verified, but nobody has clicked Import on a real login yet.)
 
+## Import (2026-07-06) — Predecessors + Successors columns (Excel/OPC)
+`parseWorkbook` now detects BOTH the **Predecessors** (`cPred`) and **Successors**
+(`cSucc`) columns of an OPC/Primavera Cloud `.xlsx` export. Relationships are stored
+as `predecessors` text only (single source of truth); the CPM engine derives successors
+as the inverse. To make the imported graph complete regardless of which column an edge
+lives in, `mergeSuccessors()` (end of `parseWorkbook`) folds each row's Successors into
+the target activity's predecessors — a successor edge `A→B` is identical to `B` listing
+`A` as a predecessor. Merge is de-duplicated by Activity ID (`predIds`), so symmetric
+exports add 0 duplicates. Verified on the Avesta 4PH file (4,578 activities): both
+columns fully symmetric → 6,841 edges, 0 extra. No schema change (uses existing
+`predecessors` column). OPC exports here use plain comma-separated IDs (no FS/lag);
+`predRels` defaults those to `FS+0`.
+
 ## Schema additions (2026-07-06) — Working calendars
 Run `../../migrations/2026-07-06-working-calendars.sql` (adds `project_schedule.calendar_id`
 + the new `calendars` table, owned by resource-loading). The Activity modal's
@@ -92,6 +105,21 @@ calendar CRUD UI.
   zoom**, month gridlines, and a red **Data date** (today) line. Pure HTML/CSS — no libs.
   Respects the same Status/Type/Search filters. `renderGantt()` in the IIFE; `pdate/dDiff/iso`
   date helpers; `ganttZoom` + `PX_PER_DAY` control scale.
+  - **Baseline (BL0) bar** (`.ps-bl`): drawn under each activity bar from `bl_start`/`bl_finish`.
+    Restyled 2026-07-06 for visibility — was a 5px hollow light-gray (`#9a9a9a`) outline that was
+    effectively invisible; now an **8px solid blue bar** (`--ps-bl` `#2F6FB0` light / `#5AA0E6` dark)
+    with a subtle border + shadow. Legend swatch (`.lg-bl`) and the Gantt color-picker default
+    (`COLORDEFS` `bl` = `#2F6FB0`) updated to match. Blue was chosen to stay clear of the red
+    progress fill / amber critical-path outline.
+  - **Relationship (FS/SS/FF/SF) lines**: drawn in `renderWindow()` as an absolutely-positioned
+    SVG overlay (`.ps-deps`, arrow marker `#ps-arrow`) from each visible task's `_relObjs`. Anchored
+    on the correct bar edges per type (SS/SF leave the start edge, FF/SF arrive at the finish edge),
+    with an origin dot + a type/lag label (non-FS). Only edges whose BOTH endpoints are in the
+    rendered window draw (same as critical-path lines). **Toggle:** the toolbar **`#ps-deps`** button
+    (arrow icon, next to Critical Path) controls visibility via `depsOn` (persisted in
+    `localStorage.ps_deps`, **default ON**). The draw block runs when `critMode || depsOn`, so
+    imported dependencies now show WITHOUT turning on Critical Path (previously they were gated behind
+    `critMode` only — the reason imported FS/SS/FF/SF links didn't appear on the Gantt).
 - **Cost Loading tab** — WBS, Activity Name, Planned Cost, Actual Cost, Earned Value,
   Cost Variance, CPI, % Complete — with TOTALS row
 
@@ -103,3 +131,12 @@ Planned Cost / Actual Cost, CPI (green/red), SPI (green/red)
 **Modal fields:** WBS Code, Activity ID, Activity Name, Activity Type, Status,
 Planned Start, Planned Finish, Actual Start, Actual Finish, % Complete,
 Responsible Party, Planned Cost, Actual Cost, Earned Value, Predecessors, Remarks
+
+**Predecessors activity picker (2026-07-06):** below the free-text `#ps-f-pred` field, a picker
+row (`#ps-pred-search` datalist of `ID — Name` for all leaf activities, `#ps-pred-type` FS/SS/FF/SF,
+`#ps-pred-lag` days, `#ps-pred-add`) lets the user **select an activity from the schedule** instead
+of typing the Activity ID. `setupPredPicker(row)` (called from `openForm`) rebuilds the datalist
+(excludes the current activity + WBS summaries, sorted numeric by ID), and Add appends a
+`predRels`-parseable token (`ID [type][±lag]`, FS omitted unless a lag is set) to `#ps-f-pred`,
+de-duplicated by ID (via `predIds`), rejecting self-links and unknown IDs. The text field is kept
+as the source of truth (typing + CSV/XER import unchanged); the picker only appends to it.
