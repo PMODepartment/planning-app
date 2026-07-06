@@ -77,6 +77,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-06 — Prompt 65: Asset cache-busting (fixes recurring "stale side panel" on deploy)
+- User reported the side panel "still needs work" with screenshots showing `Project HomeNone
+  selected` jammed on one line and projects.html missing the new PORTFOLIO/PROJECT/SYSTEM
+  sections. **Root cause was NOT a code bug** — verified in a preview harness that the source
+  `dashboard.css` is correct: a cache-busted fetch returns `.pd-sidebar .pd-navtxt { display:flex;
+  flex-direction:column }` and the label stacks (30.8px / two lines, sub-caption 10.5px), but the
+  page's `<link>` had loaded a **stale cached copy with no `.pd-navtxt` rule at all**. The three
+  screenshots disagreed with each other because each tab had cached CSS/HTML from a different
+  deploy. This is the same stale-cache symptom flagged in Prompts 45/53/64.
+- **Durable fix:** appended a version query string (`?v=20260706`) to every local `assets/**`
+  `.css`/`.js` reference across all 21 HTML pages (132 refs) so each deploy is a fresh cache key
+  and browsers pick up changes without a hard refresh. CDN scripts (SheetJS/Supabase, `http` URLs)
+  left untouched. The replace is idempotent (pattern requires the extension immediately before `"`,
+  so an already-versioned URL won't re-match).
+- **⚠️ MAINTENANCE — bump the version every deploy that changes a shared asset.** With PowerShell
+  from the repo root (updates all HTML in one pass, no BOM):
+  ```powershell
+  $old='20260706'; $new='20260707'; $u=New-Object System.Text.UTF8Encoding($false)
+  Get-ChildItem planning-app -Recurse -Filter *.html | % {
+    $t=[IO.File]::ReadAllText($_.FullName); $n=$t -replace ("\?v="+$old),("?v="+$new)
+    if($n -ne $t){ [IO.File]::WriteAllText($_.FullName,$n,$u) } }
+  ```
+  (Use the deploy date or any monotonic token. Forgetting to bump = the old stale-cache behavior
+  returns for changed assets.)
+
 ### 2026-07-06 — Prompt 64: Side-panel optimization (sections, caption, project sub-label, icon rail)
 - **Grouped the top-level nav into scope sections** — PORTFOLIO (Projects, Portfolio Overview) ·
   PROJECT (Project Home) · SYSTEM (Admin) — on all four shell pages (dashboard, projects, admin,
