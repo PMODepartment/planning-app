@@ -71,10 +71,16 @@ verified, but nobody has clicked Import on a real login yet.)
 ## Gantt timeline scale (2026-07-07) — adjustable period-column width
 The Gantt timescale width is `dayw = DAYW[zoom] * ganttScale`. `DAYW` sets the base px/day per
 Month/Quarter/Year; **`ganttScale`** (persisted `localStorage.ps_ganttscale`, clamped 0.35–6) lets
-the user widen/narrow the period columns. A `.ps-seg` control `#ps-zoomlvl` (− / % / +) next to the
-Month/Quarter/Year segment calls `setGanttScale()` (×1.25 / ÷1.25 / reset to 1), which saves,
-updates the `#ps-zscale-lbl` percentage, and re-renders. (This is what "adjust the Gantt month/qtr/
-year column width" meant — NOT the activity-grid columns.)
+the user widen/narrow the period columns. Two gestures adjust it (the +/− buttons were removed):
+- **Excel-style drag**: each date-header cell (`.ps-yr`/`.ps-mo`) carries a right-edge grip
+  (`.ps-ts-grip`, `data-days` = its day span). `startTsResize(e, days)` rescales uniformly —
+  `newDayw = startDayw + dragDx/days` → `ganttScale = newDayw / DAYW[zoom]` — re-rendering per rAF,
+  saving on mouseup.
+- **Ctrl + mouse-wheel** over `#ps-gantt-scroll`: `applyGanttScale(ganttScale × 1.15^±1)`, keeping
+  the date under the cursor fixed (capture content-x ratio before, restore `scrollLeft` after a
+  double-rAF since `renderGantt→scheduleRender` batches `doRender` one frame later).
+`applyGanttScale(v)` / `_saveGanttScale()` are module-scope. (This is the Gantt month/qtr/year
+column width — NOT the activity-grid columns.)
 
 ## Columns (2026-07-07) — eye-icon show/hide, resize everywhere, export toggle
 - **Eye-icon multi-select chooser**: the toolbar column button is now an **eye** icon
