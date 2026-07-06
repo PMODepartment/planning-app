@@ -68,6 +68,14 @@ and a spot-checked activity's dates/calendar/predecessor all matched the source 
 (Not yet run end-to-end against a live Supabase project — the parsing/mapping logic is
 verified, but nobody has clicked Import on a real login yet.)
 
+## Gantt timeline scale (2026-07-07) — adjustable period-column width
+The Gantt timescale width is `dayw = DAYW[zoom] * ganttScale`. `DAYW` sets the base px/day per
+Month/Quarter/Year; **`ganttScale`** (persisted `localStorage.ps_ganttscale`, clamped 0.35–6) lets
+the user widen/narrow the period columns. A `.ps-seg` control `#ps-zoomlvl` (− / % / +) next to the
+Month/Quarter/Year segment calls `setGanttScale()` (×1.25 / ÷1.25 / reset to 1), which saves,
+updates the `#ps-zscale-lbl` percentage, and re-renders. (This is what "adjust the Gantt month/qtr/
+year column width" meant — NOT the activity-grid columns.)
+
 ## Columns (2026-07-07) — eye-icon show/hide, resize everywhere, export toggle
 - **Eye-icon multi-select chooser**: the toolbar column button is now an **eye** icon
   (`icons.js` gained `eye`/`eyeOff`). `renderColsMenu()` shows a checkbox per column (ticked =
