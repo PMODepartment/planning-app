@@ -77,6 +77,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-06 — Prompt 61: Cash Flow built + Portfolio Overview cross-project S-Curve/Cash Flow tabs
+- Decided which modules belong in Portfolio Overview: **Project Schedule, S-Curve, Cash Flow,
+  Resource Loading** (aggregate meaningfully across projects) — **not** Risk Register, Drawing
+  Register, Progress Photos, Contracts & Claims, Material Submittal, Stakeholder Map, Issues &
+  Lessons (per-project operational logs with no obvious cross-project rollup). Chose real
+  cross-project data views over quick nav tiles (a tile would just duplicate what
+  `projects.html` already does).
+- **Discovered Cash Flow was never built** — still the bare placeholder screen, no CRUD, so
+  `cash_flow` had zero real rows anywhere. **Built it**: project/category/search filters, KPI
+  cards, a monthly Planned-vs-Actual chart (bars + cumulative lines), sortable table, Add/Edit
+  modal. Flipped `enabled: true`. See `modules/cash-flow/CLAUDE.md`.
+- **Corrected a wrong assumption about S-Curve**: the real single-project S-Curve module
+  computes its curve live from `project_schedule` (duration-weighted per-activity); the
+  `s_curve` DB table is vestigial (no writer, unused). A portfolio S-Curve therefore needs
+  either an approximation or a real fetch across projects — chose the real fetch.
+- **Portfolio Overview gained a tab strip** (Overview / S-Curve / Cash Flow), the existing
+  dashboard moved unchanged into the Overview tab:
+  - **S-Curve tab**: fetches real `project_schedule` rows (paginated, `.in('project_id', ids)`)
+    across whichever projects the existing multi-select project filter resolves to, and reuses
+    the single-project module's exact duration-weighted `compute()` math unmodified — combining
+    activities from multiple projects into one array "just works" since the math never looks at
+    `project_id`. Warns above 20,000 combined activities.
+  - **Cash Flow tab**: fetches `cash_flow` across the same scoped project ids (cheap), monthly
+    Planned/Actual bars + cumulative curves + a category breakdown table.
+  - Both lazy-load on first tab visit, cache by the current project-id scope, and have a
+    Refresh button (so changing the Overview filter while already on a data tab doesn't go
+    stale without also refiring a heavy query on every keystroke).
+  - Resource Loading's portfolio view is intentionally deferred — its `resource_assignments`
+    table showed 27,796 rows for a *single* project in the P6 import (Prompt 60), so it needs a
+    server-side aggregation (Postgres view/RPC) before it's safe to query at portfolio scale.
+- Verified in stubbed harnesses (no real backend touched): Cash Flow module CRUD+chart+KPIs
+  hand-checked exactly; Portfolio's new tabs hand-checked against a synthetic 2-project fixture
+  (S-Curve: TOT=186 duration-days, 33.2% overall, 57.9% planned-to-date, -24.7pp variance; Cash
+  Flow: ₱1.15M planned/₱990k actual across 4 entries, category breakdown to the peso) and
+  confirmed the project filter narrows both new tabs identically to the Overview tab (all-2 →
+  1-of-2 project scoping reproduced the correct smaller totals on both).
+
 ### 2026-07-06 — Prompt 60: P6 (.xer) import
 - **Project Schedule's importer now accepts Oracle Primavera P6 `.xer` exports** (button
   renamed "Import Excel/XER (OPC / P6)", auto-detected by file extension). New `parseXER`

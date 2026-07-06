@@ -65,6 +65,26 @@
     .po-health { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
     .po-tot-row td { font-weight:800; border-top:2px solid var(--pd-ink); background:var(--pd-bg); }
     .po-sort-ind { font-size:9px; color:var(--pd-red); margin-left:4px; }
+    /* module tabs (Overview / S-Curve / Cash Flow) */
+    .po-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:16px; }
+    .po-tab { padding:9px 18px; cursor:pointer; font-weight:600; font-size:13.5px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
+    .po-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
+    /* cross-project S-Curve / Cash Flow views */
+    .po-kpis2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
+    .po-kpi2 { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
+    .po-kpi2-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
+    .po-kpi2-v { font-size:20px; font-weight:700; }
+    .po-svg { width:100%; height:auto; display:block; }
+    .po-grid2 { stroke:var(--pd-line); stroke-width:1; }
+    .po-ylab2 { fill:var(--pd-muted); font-size:10.5px; text-anchor:end; }
+    .po-xlab2 { fill:var(--pd-muted); font-size:10.5px; text-anchor:middle; }
+    .po-legend2 { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
+    .po-lg2 { display:inline-flex; align-items:center; }
+    .sw2 { display:inline-block; width:14px; height:10px; margin-right:6px; border-radius:2px; }
+    .sw2-line { width:18px; height:0; border-top:2px solid; margin-right:6px; }
+    .po-planned2 { fill:none; stroke:var(--pd-dark); stroke-width:2; }
+    html.pd-dark .po-planned2 { stroke:#c7ccd1; }
+    .po-actual2 { fill:none; stroke:var(--pd-red); stroke-width:2.5; }
   </style>
 </head>
 <body>
@@ -85,46 +105,75 @@
     </div>
 
     <div class="pd-main">
-      <div class="po-toolbar">
-        <label class="po-chk" style="gap:6px;">Group by
-          <select class="pd-select" id="po-group" style="max-width:170px;">
-            <option value="workspace">Workspace</option>
-            <option value="program">Program</option>
-            <option value="grouphead">Group Head</option>
-            <option value="status">Status</option>
-            <option value="none">None (flat)</option>
-          </select>
-        </label>
-        <div class="po-projfilter" id="po-projfilter-wrap">
-          <button class="pd-btn" id="po-projfilter-btn" type="button" title="Filter to specific projects">
-            <span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span> <span data-ico="chevronDown" data-ico-size="13"></span>
-          </button>
-          <div class="po-projfilter-menu" id="po-projfilter-menu">
-            <div class="po-projfilter-search"><input class="pd-input pd-input-sm" id="po-projfilter-search" placeholder="Search projects…" /></div>
-            <div class="po-projfilter-actions"><button type="button" data-act="all">Select all</button><button type="button" data-act="none">Clear</button></div>
-            <div class="po-projfilter-list" id="po-projfilter-list"></div>
+      <div class="po-tabs">
+        <button class="po-tab active" data-view="overview"><span data-ico="barChart" data-ico-size="15"></span> Overview</button>
+        <button class="po-tab" data-view="scurve"><span data-ico="trendingUp" data-ico-size="15"></span> S-Curve</button>
+        <button class="po-tab" data-view="cashflow"><span data-ico="cash" data-ico-size="15"></span> Cash Flow</button>
+      </div>
+
+      <div id="po-view-overview">
+        <div class="po-toolbar">
+          <label class="po-chk" style="gap:6px;">Group by
+            <select class="pd-select" id="po-group" style="max-width:170px;">
+              <option value="workspace">Workspace</option>
+              <option value="program">Program</option>
+              <option value="grouphead">Group Head</option>
+              <option value="status">Status</option>
+              <option value="none">None (flat)</option>
+            </select>
+          </label>
+          <div class="po-projfilter" id="po-projfilter-wrap">
+            <button class="pd-btn" id="po-projfilter-btn" type="button" title="Filter to specific projects">
+              <span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span> <span data-ico="chevronDown" data-ico-size="13"></span>
+            </button>
+            <div class="po-projfilter-menu" id="po-projfilter-menu">
+              <div class="po-projfilter-search"><input class="pd-input pd-input-sm" id="po-projfilter-search" placeholder="Search projects…" /></div>
+              <div class="po-projfilter-actions"><button type="button" data-act="all">Select all</button><button type="button" data-act="none">Clear</button></div>
+              <div class="po-projfilter-list" id="po-projfilter-list"></div>
+            </div>
           </div>
+          <select class="pd-select" id="po-status" title="Status filter" style="max-width:150px;">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+          </select>
+          <label class="po-chk"><input type="checkbox" id="po-behind"> Behind schedule only</label>
+          <span class="po-spacer"></span>
+          <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-q" placeholder="Search project…" /></div>
+          <button class="pd-btn" id="po-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
         </div>
-        <select class="pd-select" id="po-status" title="Status filter" style="max-width:150px;">
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="archived">Archived</option>
-        </select>
-        <label class="po-chk"><input type="checkbox" id="po-behind"> Behind schedule only</label>
-        <span class="po-spacer"></span>
-        <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-q" placeholder="Search project…" /></div>
-        <button class="pd-btn" id="po-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
+
+        <div class="pd-info-grid" id="po-kpis"></div>
+
+        <div class="po-charts">
+          <div class="po-card"><h3>Schedule Health</h3><div id="po-donut"></div></div>
+          <div class="po-card"><h3 id="po-bars-title">Budget by Workspace — Original vs Estimated</h3><div class="po-bars" id="po-bars"></div></div>
+        </div>
+
+        <div class="po-card" style="padding:0;overflow:hidden;">
+          <div style="overflow-x:auto;"><table class="po-table" id="po-table"></table></div>
+        </div>
       </div>
 
-      <div class="pd-info-grid" id="po-kpis"></div>
-
-      <div class="po-charts">
-        <div class="po-card"><h3>Schedule Health</h3><div id="po-donut"></div></div>
-        <div class="po-card"><h3 id="po-bars-title">Budget by Workspace — Original vs Estimated</h3><div class="po-bars" id="po-bars"></div></div>
+      <div id="po-view-scurve" style="display:none;">
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> set on the Overview tab (<span id="po-sc-scope">all projects</span>). <button class="pd-btn" id="po-sc-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <div class="po-kpis2" id="po-sc-kpis"></div>
+        <div class="po-card">
+          <h3 style="text-transform:none;font-size:15px;">Portfolio S-Curve — Planned vs Actual (duration-weighted, across selected projects)</h3>
+          <div id="po-sc-chart"></div>
+        </div>
       </div>
 
-      <div class="po-card" style="padding:0;overflow:hidden;">
-        <div style="overflow-x:auto;"><table class="po-table" id="po-table"></table></div>
+      <div id="po-view-cashflow" style="display:none;">
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> set on the Overview tab (<span id="po-cf-scope">all projects</span>). <button class="pd-btn" id="po-cf-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <div class="po-kpis2" id="po-cf-kpis"></div>
+        <div class="po-card">
+          <h3 style="text-transform:none;font-size:15px;">Portfolio Cash Flow — Planned vs Actual by month</h3>
+          <div id="po-cf-chart"></div>
+        </div>
+        <div class="po-card" style="padding:0;overflow:hidden;">
+          <div style="overflow-x:auto;"><table class="po-table" id="po-cf-table"></table></div>
+        </div>
       </div>
     </div>
   </div>
@@ -144,7 +193,9 @@
   var groupMode = 'workspace', statusFilter = '', behindOnly = false, query = '';
   var projSel = {};   // {projectId: true} for checked projects — empty object = no filter (all projects)
   var sortCol = 'name', sortDir = 1, collapsed = {};
+  var view = 'overview';   // 'overview' | 'scurve' | 'cashflow'
 
+  function sb() { return AppAuth.getSB(); }
   function esc(s) { return Fmt.esc(s); }
   function num(v) { return Number(v) || 0; }
   function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; }
@@ -396,6 +447,228 @@
 
   function renderAll() { var list = filtered(); renderKPIs(list); renderDonut(list); renderBars(list); renderTable(list); }
 
+  // ================= Portfolio S-Curve (cross-project) =================
+  // Scoped to whatever the Overview tab's project filter currently resolves to (filtered()).
+  // Fetches REAL project_schedule rows across every selected project (paginated, same
+  // 1000-row-page pattern the single-project modules use) and reuses the exact
+  // duration-weighted math the single-project S-Curve module computes with — project_id
+  // doesn't matter to that math, so a combined multi-project activity list "just works."
+  function scopedProjectIds() { return filtered().map(function (p) { return p.id; }); }
+  function scopeLabel(ids) { return ids.length === PROJ.length ? 'all ' + PROJ.length + ' projects' : ids.length + ' of ' + PROJ.length + ' projects'; }
+  function isWbsRow(r) { return r.activity_type === 'WBS Summary'; }
+  async function fetchScheduleForIds(ids) {
+    if (!ids.length) return [];
+    var all = [];
+    var cnt = await sb().from('project_schedule').select('*', { count: 'exact', head: true }).in('project_id', ids);
+    if (cnt.error) throw cnt.error;
+    var total = cnt.count || 0;
+    if (!total) return [];
+    if (total > 20000) UI.toast('Loading ' + total + ' activities across ' + ids.length + ' project(s) — this may take a moment. Narrow the project filter for a faster view.', 'warn');
+    var pages = Math.ceil(total / 1000), reqs = [];
+    for (var p = 0; p < pages; p++) reqs.push(sb().from('project_schedule').select('*').in('project_id', ids).range(p * 1000, p * 1000 + 999));
+    var res = await Promise.all(reqs);
+    for (var i = 0; i < res.length; i++) { if (res[i].error) throw res[i].error; all = all.concat(res[i].data || []); }
+    return all;
+  }
+  function scCompute(list) {
+    var leaves = list.filter(function (r) { return !isWbsRow(r); });
+    if (!leaves.length) return { empty: true };
+    function val(a) { if (a.duration_days) return a.duration_days; var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; }
+    function done(a) { return val(a) * (Math.max(0, Math.min(100, a.percent_complete || 0)) / 100); }
+    var TOT = leaves.reduce(function (s, a) { return s + val(a); }, 0);
+    var ds = [], de = [];
+    leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date); if (s) ds.push(+s); if (e) de.push(+e); });
+    if (!ds.length) return { empty: true };
+    var min = new Date(Math.min.apply(null, ds));
+    var tnow = today();
+    var overallDone = leaves.reduce(function (s, a) { return s + done(a); }, 0);
+    var maxEnd = new Date(Math.max.apply(null, de.length ? de : ds));
+    var domainMax = new Date(Math.max(+maxEnd, +tnow));
+    var months = [], c = new Date(min.getFullYear(), min.getMonth(), 1);
+    while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    var plannedC = [], actualC = [];
+    months.forEach(function (m) {
+      var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0);
+      var pv = 0, av = 0;
+      leaves.forEach(function (a) {
+        var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return;
+        var pf = mEnd >= e ? 1 : (mEnd < s ? 0 : (e > s ? (mEnd - s) / (e - s) : 1));
+        pv += val(a) * pf;
+        if (mEnd < tnow) {
+          var aS = pd(a.actual_start || a.start_date);
+          var aE = pd(a.actual_finish) || pd(a.end_date) || aS;
+          if (aS) { var af = mEnd >= aE ? 1 : (mEnd < aS ? 0 : (aE > aS ? (mEnd - aS) / (aE - aS) : 1)); av += done(a) * af; }
+        }
+      });
+      plannedC.push(pv); actualC.push(av);
+    });
+    var ti = -1;
+    for (var i = 0; i < months.length; i++) { var me = new Date(months[i].getFullYear(), months[i].getMonth() + 1, 0); if (me >= tnow) { ti = i; break; } }
+    if (ti < 0) ti = months.length - 1;
+    actualC[ti] = overallDone;
+    for (var k = ti + 1; k < actualC.length; k++) actualC[k] = 0;
+    var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0;
+    var overallPct = TOT ? overallDone / TOT * 100 : 0;
+    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length };
+  }
+  function kpi2(l, v, cls) { return '<div class="po-kpi2"><div class="po-kpi2-l">' + l + '</div><div class="po-kpi2-v"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + v + '</div></div>'; }
+  function scRenderKpis(d) {
+    var host = document.getElementById('po-sc-kpis');
+    if (d.empty) { host.innerHTML = ''; return; }
+    var r1 = function (x) { return Math.round(x * 10) / 10; };
+    var v = r1(d.variance);
+    host.innerHTML = kpi2('Activities', String(d.activities)) + kpi2('Overall Progress', r1(d.overallPct) + '%') +
+      kpi2('Planned to date', r1(d.plannedPct) + '%') + kpi2('Actual to date', r1(d.actualPct) + '%') +
+      kpi2('Schedule Variance', (v > 0 ? '+' : '') + v + ' pp', v >= 0 ? '--pd-ok' : '--pd-bad');
+  }
+  function scRenderChart(d) {
+    var host = document.getElementById('po-sc-chart');
+    if (d.empty) { host.innerHTML = '<div class="po-empty">No dated activities found for the selected projects.</div>'; return; }
+    var W = 1000, H = 320, padL = 46, padR = 16, padT = 16, padB = 32, n = d.months.length, maxV = (d.TOT || 1) * 1.02;
+    function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
+    function y(v) { return padT + (1 - (v / maxV)) * (H - padT - padB); }
+    var grid = '';
+    [0, .25, .5, .75, 1].forEach(function (p) { var yy = y(maxV * p); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="po-grid2"/><text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="po-ylab2">' + Math.round(p * 100) + '%</text>'; });
+    var xlab = ''; var step = Math.max(1, Math.ceil(n / 10));
+    d.months.forEach(function (mo, i) { if (i % step === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="po-xlab2">' + mo.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) + '</text>'; });
+    var pl = d.plannedC.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ');
+    var ac = []; d.actualC.forEach(function (v, i) { if (i <= d.ti) ac.push(x(i) + ',' + y(v)); });
+    var tx = x(d.ti);
+    var todayL = '<line x1="' + tx + '" y1="' + padT + '" x2="' + tx + '" y2="' + (H - padB) + '" stroke="var(--pd-red)" stroke-width="1.5" stroke-dasharray="4 3"/>';
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="po-svg">' + grid + todayL +
+      '<polyline class="po-planned2" points="' + pl + '"/>' + (ac.length ? '<polyline class="po-actual2" points="' + ac.join(' ') + '"/>' : '') + xlab + '</svg>' +
+      '<div class="po-legend2"><span class="po-lg2"><span class="sw2-line" style="border-color:var(--pd-dark);"></span>Planned progress</span>' +
+      '<span class="po-lg2"><span class="sw2-line" style="border-color:var(--pd-red);"></span>Actual progress</span></div>';
+  }
+  var scLoadedIds = null;
+  async function loadScurve(force) {
+    var ids = scopedProjectIds();
+    if (!force && scLoadedIds && scLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-sc-scope').textContent = scopeLabel(ids);
+    if (!ids.length) { document.getElementById('po-sc-kpis').innerHTML = ''; document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; return; }
+    document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">Loading schedules across ' + ids.length + ' project(s)…</div>';
+    document.getElementById('po-sc-kpis').innerHTML = '';
+    try {
+      var list = await fetchScheduleForIds(ids);
+      scLoadedIds = ids;
+      var d = scCompute(list);
+      scRenderKpis(d); scRenderChart(d);
+    } catch (e) { UI.toast('Could not load schedules: ' + (e.message || e), 'error'); document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">Load failed.</div>'; }
+  }
+
+  // ================= Portfolio Cash Flow (cross-project) =================
+  async function fetchCashFlowForIds(ids) {
+    if (!ids.length) return [];
+    var res = await sb().from('cash_flow').select('*').in('project_id', ids);
+    if (res.error) throw res.error;
+    return res.data || [];
+  }
+  function cfMonthKey(v) { return v ? String(v).slice(0, 7) : ''; }
+  function cfMonthLabel(k) {
+    var MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var m = k.match(/^(\d{4})-(\d{2})$/); if (!m) return k;
+    return MABBR[+m[2] - 1] + " '" + m[1].slice(2);
+  }
+  function cfMonthlySeries(list) {
+    var byMonth = {};
+    list.forEach(function (r) {
+      var k = cfMonthKey(r.period); if (!k) return;
+      var m = byMonth[k] || (byMonth[k] = { planned: 0, actual: 0 });
+      m.planned += num(r.planned_amount); m.actual += num(r.actual_amount);
+    });
+    var keys = Object.keys(byMonth).sort();
+    var pc = 0, ac = 0;
+    return keys.map(function (k) { pc += byMonth[k].planned; ac += byMonth[k].actual; return { key: k, planned: byMonth[k].planned, actual: byMonth[k].actual, plannedCum: pc, actualCum: ac }; });
+  }
+  function cfRenderKpis(list) {
+    var host = document.getElementById('po-cf-kpis');
+    var planned = list.reduce(function (a, r) { return a + num(r.planned_amount); }, 0);
+    var actual = list.reduce(function (a, r) { return a + num(r.actual_amount); }, 0);
+    var variance = actual - planned;
+    host.innerHTML = kpi2('Entries', String(list.length)) + kpi2('Total Planned', Fmt.moneyShort(planned)) + kpi2('Total Actual', Fmt.moneyShort(actual)) +
+      kpi2('Variance', (variance > 0 ? '+' : '') + Fmt.moneyShort(variance), variance > 0 ? '--pd-bad' : (variance < 0 ? '--pd-ok' : null));
+  }
+  function cfRenderChart(list) {
+    var host = document.getElementById('po-cf-chart');
+    var series = cfMonthlySeries(list);
+    if (!series.length) { host.innerHTML = '<div class="po-empty">No cash flow entries found for the selected projects.</div>'; return; }
+    var W = 1000, H = 320, padL = 58, padR = 16, padT = 16, padB = 32, n = series.length;
+    var cw = W - padL - padR, ch = H - padT - padB;
+    var maxBar = Math.max.apply(null, series.map(function (s) { return Math.max(s.planned, s.actual); })) || 1;
+    var maxCum = Math.max.apply(null, series.map(function (s) { return Math.max(s.plannedCum, s.actualCum); })) || 1;
+    var maxV = Math.max(maxBar, maxCum) * 1.08;
+    function x(i) { return padL + (n <= 1 ? cw / 2 : (i / (n - 1)) * cw); }
+    function y(v) { return padT + ch - (v / maxV) * ch; }
+    var grid = '', steps = 4;
+    for (var i = 0; i <= steps; i++) { var v = maxV * i / steps, yy = y(v); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="po-grid2"/><text x="' + (padL - 6) + '" y="' + (yy + 3.5) + '" class="po-ylab2">' + Fmt.moneyShort(v) + '</text>'; }
+    var xw = cw / n, bw = Math.min(18, xw * 0.32);
+    var bars = '';
+    series.forEach(function (s, i) {
+      var cx = x(i);
+      bars += '<rect x="' + (cx - bw - 1) + '" y="' + y(s.planned) + '" width="' + bw + '" height="' + (ch + padT - y(s.planned)) + '" fill="#9a9a9a"/>';
+      bars += '<rect x="' + (cx + 1) + '" y="' + y(s.actual) + '" width="' + bw + '" height="' + (ch + padT - y(s.actual)) + '" fill="var(--pd-red)"/>';
+    });
+    var plCumPts = series.map(function (s, i) { return x(i) + ',' + y(s.plannedCum); }).join(' ');
+    var acCumPts = series.map(function (s, i) { return x(i) + ',' + y(s.actualCum); }).join(' ');
+    var xlab = ''; var step = Math.max(1, Math.ceil(n / 10));
+    series.forEach(function (s, i) { if (i % step === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="po-xlab2">' + cfMonthLabel(s.key) + '</text>'; });
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="po-svg">' + grid + bars +
+      '<polyline class="po-planned2" points="' + plCumPts + '"/>' + '<polyline class="po-actual2" points="' + acCumPts + '"/>' + xlab + '</svg>' +
+      '<div class="po-legend2">' +
+      '<span class="po-lg2"><span class="sw2" style="background:#9a9a9a;"></span>Planned (period)</span>' +
+      '<span class="po-lg2"><span class="sw2" style="background:var(--pd-red);"></span>Actual (period)</span>' +
+      '<span class="po-lg2"><span class="sw2-line" style="border-color:var(--pd-dark);"></span>Planned (cumulative)</span>' +
+      '<span class="po-lg2"><span class="sw2-line" style="border-color:var(--pd-red);"></span>Actual (cumulative)</span>' +
+      '</div>';
+  }
+  function cfRenderTable(list) {
+    var t = document.getElementById('po-cf-table');
+    var byCat = {};
+    list.forEach(function (r) {
+      var k = r.category || '(Uncategorized)';
+      var g = byCat[k] || (byCat[k] = { planned: 0, actual: 0 });
+      g.planned += num(r.planned_amount); g.actual += num(r.actual_amount);
+    });
+    var cats = Object.keys(byCat).map(function (k) { return { name: k, planned: byCat[k].planned, actual: byCat[k].actual }; })
+      .sort(function (a, b) { return b.planned - a.planned; });
+    var head = '<thead><tr><th>Category</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Variance</th></tr></thead>';
+    var body = cats.length ? cats.map(function (r) {
+      var v = r.actual - r.planned;
+      return '<tr><td>' + esc(r.name) + '</td><td class="num">' + Fmt.moneyShort(r.planned) + '</td><td class="num">' + Fmt.moneyShort(r.actual) + '</td>' +
+        '<td class="num"><span class="' + (v > 0 ? 'po-var-up' : v < 0 ? 'po-var-dn' : '') + '">' + Fmt.moneyShort(v) + '</span></td></tr>';
+    }).join('') : '<tr><td colspan="4" class="po-empty">No entries.</td></tr>';
+    if (cats.length) {
+      var gp = cats.reduce(function (a, r) { return a + r.planned; }, 0), ga = cats.reduce(function (a, r) { return a + r.actual; }, 0);
+      body += '<tr class="po-tot-row"><td>TOTAL</td><td class="num">' + Fmt.moneyShort(gp) + '</td><td class="num">' + Fmt.moneyShort(ga) + '</td><td class="num">' + Fmt.moneyShort(ga - gp) + '</td></tr>';
+    }
+    t.innerHTML = head + '<tbody>' + body + '</tbody>';
+  }
+  var cfLoadedIds = null;
+  async function loadCashflow(force) {
+    var ids = scopedProjectIds();
+    if (!force && cfLoadedIds && cfLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-cf-scope').textContent = scopeLabel(ids);
+    if (!ids.length) { document.getElementById('po-cf-kpis').innerHTML = ''; document.getElementById('po-cf-chart').innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; document.getElementById('po-cf-table').innerHTML = ''; return; }
+    document.getElementById('po-cf-chart').innerHTML = '<div class="po-empty">Loading…</div>';
+    document.getElementById('po-cf-kpis').innerHTML = '';
+    try {
+      var list = await fetchCashFlowForIds(ids);
+      cfLoadedIds = ids;
+      cfRenderKpis(list); cfRenderChart(list); cfRenderTable(list);
+    } catch (e) { UI.toast('Could not load cash flow: ' + (e.message || e), 'error'); document.getElementById('po-cf-chart').innerHTML = '<div class="po-empty">Load failed.</div>'; }
+  }
+
+  // ================= Tab switching =================
+  function switchView(v) {
+    view = v;
+    document.querySelectorAll('.po-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
+    document.getElementById('po-view-overview').style.display = v === 'overview' ? '' : 'none';
+    document.getElementById('po-view-scurve').style.display = v === 'scurve' ? '' : 'none';
+    document.getElementById('po-view-cashflow').style.display = v === 'cashflow' ? '' : 'none';
+    if (v === 'scurve') loadScurve(false);
+    if (v === 'cashflow') loadCashflow(false);
+  }
+
   function exportExcel() {
     if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
     var list = filtered();
@@ -425,6 +698,9 @@
     document.getElementById('po-behind').onchange = function (e) { behindOnly = e.target.checked; renderAll(); };
     document.getElementById('po-q').oninput = function (e) { query = e.target.value; renderAll(); };
     document.getElementById('po-export').onclick = exportExcel;
+    document.querySelectorAll('.po-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view); }; });
+    document.getElementById('po-sc-refresh').onclick = function () { loadScurve(true); };
+    document.getElementById('po-cf-refresh').onclick = function () { loadCashflow(true); };
     try {
       var res = await Promise.all([PDb.getProjects(), PDb.getWorkspaces()]);
       PROJ = res[0]; WS = res[1];

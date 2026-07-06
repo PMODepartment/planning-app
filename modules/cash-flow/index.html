@@ -8,30 +8,270 @@
   <script src="../../assets/js/theme.js"></script>
   <title>Cash Flow · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />
+  <style>
+    .cf-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:14px; }
+    .cf-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:18px; }
+    .cf-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
+    .cf-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
+    .cf-kpi-v { font-size:20px; font-weight:700; }
+    .cf-ok { color:var(--pd-ok); } .cf-bad { color:var(--pd-bad); }
+    .cf-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:16px; margin-bottom:18px; }
+    .cf-card h3 { margin:0 0 12px; font-size:15px; }
+    .cf-svg { width:100%; height:auto; display:block; }
+    .cf-grid { stroke:var(--pd-line); stroke-width:1; }
+    .cf-ylab { fill:var(--pd-muted); font-size:10.5px; text-anchor:end; }
+    .cf-xlab { fill:var(--pd-muted); font-size:10.5px; text-anchor:middle; }
+    .cf-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
+    .cf-lg { display:inline-flex; align-items:center; }
+    .sw { display:inline-block; width:14px; height:10px; margin-right:6px; border-radius:2px; }
+    .sw-line { width:18px; height:0; border-top:2px solid; margin-right:6px; }
+    .cf-empty { text-align:center; padding:40px; color:var(--pd-muted); }
+    .cf-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .cf-table th { background:var(--pd-bg); padding:8px 12px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    .cf-table th.num, .cf-table td.num { text-align:right; }
+    .cf-table td { padding:7px 12px; border-bottom:1px solid var(--pd-line); }
+    .cf-var-up { color:var(--pd-bad); font-weight:600; } .cf-var-dn { color:var(--pd-ok); font-weight:600; }
+    .cf-actions { display:flex; gap:5px; }
+    .cf-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
+    .cf-btn-sm:hover { border-color:var(--pd-red); color:var(--pd-red); }
+    .cf-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .cf-form-full { grid-column:1 / -1; }
+  </style>
 </head>
 <body>
-  <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Cash Flow</small></div>
-      <nav><a href="../../dashboard.html">&larr; All modules</a></nav>
-    </aside>
-    <div class="pd-content">
-      <div class="pd-topbar"><h1>Cash Flow</h1><div id="user-bar"></div></div>
-      <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>Cash Flow</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code> or a reference module.</p>
-        </div>
+<div class="pd-app">
+  <aside class="pd-sidebar">
+    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Cash Flow</small></div>
+    <nav>
+      <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
+      <a href="#" class="active"><span class="pd-navico" data-ico="cash"></span>Cash Flow</a>
+    </nav>
+  </aside>
+  <div class="pd-content">
+    <div class="pd-topbar"><h1>Cash Flow</h1><div id="user-bar"></div></div>
+    <div class="pd-main">
+      <div class="cf-controls">
+        <select class="pd-select" id="cf-project" style="max-width:280px;"></select>
+        <select class="pd-select" id="cf-category" style="max-width:180px;"><option value="">All categories</option></select>
+        <input class="pd-input" id="cf-search" placeholder="Search…" style="max-width:200px;" />
+        <button class="pd-btn pd-btn-primary" id="cf-add" style="margin-left:auto;"><span data-ico="plus" data-ico-size="15"></span> Add entry</button>
+      </div>
+
+      <div class="cf-kpis" id="cf-kpis"></div>
+
+      <div class="cf-card">
+        <h3>Monthly Cash Flow — Planned vs Actual</h3>
+        <div id="cf-chart"></div>
+      </div>
+
+      <div class="cf-card" style="padding:0;overflow:hidden;">
+        <div style="overflow-x:auto;"><table class="cf-table" id="cf-table"></table></div>
       </div>
     </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js"></script>
-  <script src="../../assets/js/auth.js"></script>
-  <script src="../../assets/js/db.js"></script>
-  <script src="../../assets/js/ui.js"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+</div>
+
+<!-- Modal -->
+<div class="pd-modal-overlay" id="cf-modal" style="display:none;">
+  <div class="pd-modal" style="max-width:560px;width:95vw;">
+    <div class="pd-modal-header"><span id="cf-modal-title">Add entry</span><button class="pd-modal-close" id="cf-modal-x">&#215;</button></div>
+    <div class="pd-modal-body"><form id="cf-form" class="cf-form-grid" onsubmit="return false;"></form></div>
+    <div class="pd-modal-footer"><button class="pd-btn" id="cf-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="cf-save">Save</button></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/auth.js"></script>
+<script src="../../assets/js/db.js"></script>
+<script src="../../assets/js/ui.js"></script>
+<script src="../../assets/js/icons.js"></script>
+<script>
+(function () {
+  'use strict';
+  var pid = null, rows = [], editId = null, profile = null, search = '', categoryFilter = '';
+  var CATS = ['Labor', 'Materials', 'Equipment', 'Subcontractor', 'Overhead', 'Other'];
+  function sb() { return AppAuth.getSB(); }
+  function esc(s) { return Fmt.esc(s); }
+  function num(v) { return Number(v) || 0; }
+  function monthKey(v) { return v ? String(v).slice(0, 7) : ''; }   // "YYYY-MM"
+  function monthLabel(k) {
+    var MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var m = k.match(/^(\d{4})-(\d{2})$/); if (!m) return k;
+    return MABBR[+m[2] - 1] + " '" + m[1].slice(2);
+  }
+
+  async function loadProjects() {
+    var projects = await PDb.getProjects();
+    var sel = document.getElementById('cf-project');
+    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
+    }).join('');
+    if (pid) load();
+  }
+
+  async function load() {
+    if (!pid) { rows = []; render(); return; }
+    var res = await sb().from('cash_flow').select('*').eq('project_id', pid).order('period');
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    rows = res.data || [];
+    var catSel = document.getElementById('cf-category');
+    var used = Array.from(new Set(rows.map(function (r) { return r.category; }).filter(Boolean)));
+    catSel.innerHTML = '<option value="">All categories</option>' + used.sort().map(function (c) {
+      return '<option' + (categoryFilter === c ? ' selected' : '') + '>' + esc(c) + '</option>';
+    }).join('');
+    render();
+  }
+
+  function filtered() {
+    var q = search.toLowerCase().trim();
+    return rows.filter(function (r) {
+      if (categoryFilter && r.category !== categoryFilter) return false;
+      if (q) { var hay = ((r.category || '') + ' ' + (r.description || '') + ' ' + (r.remarks || '')).toLowerCase(); if (hay.indexOf(q) === -1) return false; }
+      return true;
+    });
+  }
+
+  // Group by calendar month, summing planned/actual across categories in that period.
+  function monthlySeries(list) {
+    var byMonth = {};
+    list.forEach(function (r) {
+      var k = monthKey(r.period); if (!k) return;
+      var m = byMonth[k] || (byMonth[k] = { planned: 0, actual: 0 });
+      m.planned += num(r.planned_amount); m.actual += num(r.actual_amount);
+    });
+    var keys = Object.keys(byMonth).sort();
+    var plannedCum = 0, actualCum = 0;
+    return keys.map(function (k) {
+      plannedCum += byMonth[k].planned; actualCum += byMonth[k].actual;
+      return { key: k, planned: byMonth[k].planned, actual: byMonth[k].actual, plannedCum: plannedCum, actualCum: actualCum };
+    });
+  }
+
+  function renderKPIs(list) {
+    var host = document.getElementById('cf-kpis');
+    var planned = list.reduce(function (a, r) { return a + num(r.planned_amount); }, 0);
+    var actual = list.reduce(function (a, r) { return a + num(r.actual_amount); }, 0);
+    var variance = actual - planned;
+    function k(l, v, cls) { return '<div class="cf-kpi"><div class="cf-kpi-l">' + l + '</div><div class="cf-kpi-v' + (cls ? ' ' + cls : '') + '">' + v + '</div></div>'; }
+    host.innerHTML =
+      k('Entries', String(list.length)) +
+      k('Total Planned', Fmt.moneyShort(planned)) +
+      k('Total Actual', Fmt.moneyShort(actual)) +
+      k('Variance', (variance > 0 ? '+' : '') + Fmt.moneyShort(variance), variance > 0 ? 'cf-bad' : (variance < 0 ? 'cf-ok' : ''));
+  }
+
+  function renderChart(list) {
+    var host = document.getElementById('cf-chart');
+    var series = monthlySeries(list);
+    if (!series.length) { host.innerHTML = '<div class="cf-empty">' + (pid ? 'No cash flow entries yet. Click "Add entry".' : 'Select a project.') + '</div>'; return; }
+    var W = 1000, H = 320, padL = 58, padR = 16, padT = 16, padB = 32, n = series.length;
+    var cw = W - padL - padR, ch = H - padT - padB;
+    var maxBar = Math.max.apply(null, series.map(function (s) { return Math.max(s.planned, s.actual); })) || 1;
+    var maxCum = Math.max.apply(null, series.map(function (s) { return Math.max(s.plannedCum, s.actualCum); })) || 1;
+    var maxV = Math.max(maxBar, maxCum) * 1.08;
+    function x(i) { return padL + (n <= 1 ? cw / 2 : (i / (n - 1)) * cw); }
+    function y(v) { return padT + ch - (v / maxV) * ch; }
+    var grid = '', steps = 4;
+    for (var i = 0; i <= steps; i++) { var v = maxV * i / steps, yy = y(v); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="cf-grid"/><text x="' + (padL - 6) + '" y="' + (yy + 3.5) + '" class="cf-ylab">' + Fmt.moneyShort(v) + '</text>'; }
+    var xw = cw / n, bw = Math.min(18, xw * 0.32);
+    var bars = '';
+    series.forEach(function (s, i) {
+      var cx = x(i);
+      bars += '<rect x="' + (cx - bw - 1) + '" y="' + y(s.planned) + '" width="' + bw + '" height="' + (ch + padT - y(s.planned)) + '" fill="#9a9a9a"/>';
+      bars += '<rect x="' + (cx + 1) + '" y="' + y(s.actual) + '" width="' + bw + '" height="' + (ch + padT - y(s.actual)) + '" fill="var(--pd-red)"/>';
+    });
+    var plCumPts = series.map(function (s, i) { return x(i) + ',' + y(s.plannedCum); }).join(' ');
+    var acCumPts = series.map(function (s, i) { return x(i) + ',' + y(s.actualCum); }).join(' ');
+    var xlab = ''; var step = Math.max(1, Math.ceil(n / 10));
+    series.forEach(function (s, i) { if (i % step === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="cf-xlab">' + monthLabel(s.key) + '</text>'; });
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid +
+      bars +
+      '<polyline points="' + plCumPts + '" fill="none" stroke="var(--pd-dark)" stroke-width="2"/>' +
+      '<polyline points="' + acCumPts + '" fill="none" stroke="var(--pd-red)" stroke-width="2.5"/>' +
+      xlab + '</svg>' +
+      '<div class="cf-legend">' +
+      '<span class="cf-lg"><span class="sw" style="background:#9a9a9a;"></span>Planned (period)</span>' +
+      '<span class="cf-lg"><span class="sw" style="background:var(--pd-red);"></span>Actual (period)</span>' +
+      '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-dark);"></span>Planned (cumulative)</span>' +
+      '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-red);"></span>Actual (cumulative)</span>' +
+      '</div>';
+  }
+
+  function varCell(r) { var v = num(r.actual_amount) - num(r.planned_amount); if (!r.actual_amount) return '—'; return '<span class="' + (v > 0 ? 'cf-var-up' : v < 0 ? 'cf-var-dn' : '') + '">' + Fmt.moneyShort(v) + '</span>'; }
+  function renderTable(list) {
+    var t = document.getElementById('cf-table');
+    var sorted = list.slice().sort(function (a, b) { return (a.period || '').localeCompare(b.period || ''); });
+    t.innerHTML = '<thead><tr><th>Period</th><th>Category</th><th>Description</th><th class="num">Planned</th><th class="num">Actual</th><th class="num">Variance</th><th></th></tr></thead><tbody>' +
+      (sorted.length ? sorted.map(function (r) {
+        return '<tr>' +
+          '<td>' + Fmt.date(r.period) + '</td>' +
+          '<td>' + esc(r.category || '—') + '</td>' +
+          '<td>' + esc(r.description || '') + '</td>' +
+          '<td class="num">' + Fmt.moneyShort(r.planned_amount) + '</td>' +
+          '<td class="num">' + (r.actual_amount != null ? Fmt.moneyShort(r.actual_amount) : '—') + '</td>' +
+          '<td class="num">' + varCell(r) + '</td>' +
+          '<td><div class="cf-actions"><button class="cf-btn-sm" data-edit="' + r.id + '">Edit</button><button class="cf-btn-sm" data-del="' + r.id + '">&#215;</button></div></td>' +
+        '</tr>';
+      }).join('') : '<tr><td colspan="7" class="cf-empty">' + (pid ? 'No cash flow entries yet.' : 'Select a project.') + '</td></tr>') + '</tbody>';
+    t.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { openForm(rows.find(function (x) { return x.id === b.dataset.edit; })); }; });
+    t.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { del(b.dataset.del); }; });
+  }
+
+  function render() { var list = filtered(); renderKPIs(list); renderChart(list); renderTable(list); }
+
+  function fld(label, control, full) { return '<div class="' + (full ? 'cf-form-full' : '') + '"><label class="pd-label">' + label + '</label>' + control + '</div>'; }
+  function openForm(row) {
+    if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+    editId = row ? row.id : null;
+    row = row || {};
+    document.getElementById('cf-modal-title').textContent = row.id ? 'Edit entry' : 'Add entry';
+    var form = document.getElementById('cf-form');
+    form.innerHTML =
+      fld('Period (month)', '<input class="pd-input" id="f-period" type="month" value="' + (row.period ? String(row.period).slice(0, 7) : '') + '">') +
+      fld('Category', '<input class="pd-input" id="f-cat" list="f-cat-list" value="' + esc(row.category) + '" placeholder="e.g. Labor"><datalist id="f-cat-list">' + CATS.map(function (c) { return '<option value="' + c + '">'; }).join('') + '</datalist>') +
+      fld('Description', '<input class="pd-input" id="f-desc" value="' + esc(row.description) + '">', true) +
+      fld('Planned Amount (&#8369;)', '<input class="pd-input" id="f-plan" type="number" min="0" step="0.01" value="' + (row.planned_amount != null ? row.planned_amount : '') + '">') +
+      fld('Actual Amount (&#8369;)', '<input class="pd-input" id="f-act" type="number" min="0" step="0.01" value="' + (row.actual_amount != null ? row.actual_amount : '') + '">') +
+      fld('Remarks', '<textarea class="pd-input" id="f-rem" rows="2">' + esc(row.remarks) + '</textarea>', true);
+    document.getElementById('cf-modal').style.display = 'flex';
+  }
+
+  function v(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
+  function n(id) { var x = v(id); return x === '' ? null : parseFloat(x); }
+
+  async function save() {
+    var period = v('f-period'); if (!period) { UI.toast('Period is required.', 'error'); return; }
+    var payload = { project_id: pid, period: period + '-01', category: v('f-cat') || null, description: v('f-desc') || null,
+      planned_amount: n('f-plan'), actual_amount: n('f-act'), remarks: v('f-rem') || null, updated_at: new Date().toISOString() };
+    var res;
+    if (editId) { res = await sb().from('cash_flow').update(payload).eq('id', editId); }
+    else { payload.created_by = profile.id; res = await sb().from('cash_flow').insert(payload); }
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UI.toast(editId ? 'Saved.' : 'Added.', 'success');
+    document.getElementById('cf-modal').style.display = 'none'; editId = null; load();
+  }
+
+  async function del(id) {
+    if (!confirm('Delete this cash flow entry?')) return;
+    var res = await sb().from('cash_flow').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UI.toast('Deleted.', 'success'); load();
+  }
+
+  AppAuth.requireLogin(function (user, prof) {
+    profile = prof; UI.renderUserBar(prof); UI.initShell();
+    document.getElementById('cf-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load(); };
+    document.getElementById('cf-category').onchange = function (e) { categoryFilter = e.target.value; render(); };
+    document.getElementById('cf-search').oninput = function (e) { search = e.target.value; render(); };
+    document.getElementById('cf-add').onclick = function () { openForm(null); };
+    document.getElementById('cf-modal-x').onclick = document.getElementById('cf-cancel').onclick = function () { document.getElementById('cf-modal').style.display = 'none'; editId = null; };
+    document.getElementById('cf-save').onclick = save;
+    document.getElementById('cf-modal').onclick = function (e) { if (e.target === this) { this.style.display = 'none'; editId = null; } };
+    loadProjects();
+  });
+})();
+</script>
 </body>
 </html>
