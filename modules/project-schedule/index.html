@@ -498,6 +498,28 @@
     .ps-filter-menu h4 { margin:8px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .ps-filter-menu label { display:flex; align-items:center; gap:7px; padding:3px 0; font-size:13px; cursor:pointer; }
     .ps-filter-foot { display:flex; justify-content:space-between; margin-top:10px; border-top:1px solid var(--pd-line); padding-top:8px; }
+    /* Planner cockpit */
+    .ps-ck-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
+    .ps-ck-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:12px 14px; }
+    .ps-ck-kpi .v { font-size:22px; font-weight:800; color:var(--pd-ink); line-height:1.1; }
+    .ps-ck-kpi .l { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:3px; }
+    .ps-ck-kpi.warn .v { color:var(--pd-red); }
+    .ps-ck-kpi.good .v { color:#2D9B6F; }
+    .ps-ck-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    @media (max-width:900px){ .ps-ck-grid { grid-template-columns:1fr; } }
+    .ps-ck-card { padding:0; overflow:hidden; }
+    .ps-ck-h { display:flex; align-items:center; gap:8px; padding:11px 14px; font-weight:700; font-size:13px;
+      border-bottom:1px solid var(--pd-line); background:var(--pd-bg); }
+    .ps-ck-h [data-ico] { color:var(--pd-red); }
+    .ps-ck-body { max-height:340px; overflow:auto; }
+    .ps-ck-row { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--pd-line); cursor:pointer; font-size:12.5px; }
+    .ps-ck-row:hover { background:var(--pd-red-light); }
+    .ps-ck-row .id { font-weight:700; color:var(--pd-muted); min-width:56px; flex:none; }
+    .ps-ck-row .nm { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ps-ck-row .mt { flex:none; font-size:11.5px; color:var(--pd-muted); }
+    .ps-ck-row .slip { flex:none; font-weight:700; color:var(--pd-red); min-width:56px; text-align:right; }
+    .ps-ck-row .slip.ok { color:#2D9B6F; }
+    .ps-ck-empty { padding:22px 14px; text-align:center; color:var(--pd-muted); font-size:12.5px; }
     /* loading overlay */
     .ps-loading { position:fixed; inset:0; background:rgba(20,20,20,.45); display:flex; flex-direction:column;
       align-items:center; justify-content:center; gap:14px; z-index:9999; color:#fff; font-weight:600; font-size:14px; }
@@ -511,6 +533,7 @@
     <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Project Schedule &amp; Cost Loading</small></div>
     <nav>
       <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
+      <a href="#" data-view="planner"><span class="pd-navico" data-ico="pulse"></span>Planner</a>
       <a href="#" class="active" data-view="schedule"><span class="pd-navico" data-ico="calendar"></span>Schedule</a>
       <a href="#" data-view="cost"><span class="pd-navico" data-ico="cash"></span>Cost Loading</a>
     </nav>
@@ -521,6 +544,7 @@
       <div class="ps-title-switch ps-menu-wrap">
         <button class="ps-title-btn" id="ps-title-btn" title="Switch view"><span id="ps-title-txt">Project Schedule</span><span data-ico="chevronDown" data-ico-size="16"></span></button>
         <div class="ps-menu" id="ps-title-menu">
+          <button data-tab="planner"><span data-ico="pulse" data-ico-size="14"></span> Planner Cockpit</button>
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
           <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
         </div>
@@ -650,6 +674,17 @@
               <tbody id="ps-cost-body"><tr><td class="ps-empty">Select a project to view cost loading.</td></tr></tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <!-- PLANNER COCKPIT -->
+      <div id="ps-view-planner" style="display:none;">
+        <div class="ps-ck-kpis" id="ps-ck-kpis"></div>
+        <div class="ps-ck-grid">
+          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="risk" data-ico-size="15"></span> Milestones at risk</div><div id="ps-ck-miles" class="ps-ck-body"></div></div>
+          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Most behind schedule</div><div id="ps-ck-behind" class="ps-ck-body"></div></div>
+          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="calendar" data-ico-size="15"></span> 3-week lookahead</div><div id="ps-ck-look" class="ps-ck-body"></div></div>
+          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="pulse" data-ico-size="15"></span> Critical-path drivers</div><div id="ps-ck-crit" class="ps-ck-body"></div></div>
         </div>
       </div>
     </div>
@@ -1629,7 +1664,7 @@
   }
 
   // ---- render everything ----
-  function renderAll() { renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (layoutMode === 'network') renderNetwork(); }
+  function renderAll() { renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') renderPlanner(); if (layoutMode === 'network') renderNetwork(); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
@@ -2804,6 +2839,43 @@
     document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu); document.body.style.cursor = 'col-resize';
   }
 
+  // ----- PLANNER COCKPIT: the weekly "Monday morning" view (all from existing data) -----
+  function renderPlanner() {
+    var kp = document.getElementById('ps-ck-kpis'); if (!kp) return;
+    var ids = ['ps-ck-miles', 'ps-ck-behind', 'ps-ck-look', 'ps-ck-crit'];
+    if (!pid || !rows.length) {
+      kp.innerHTML = '';
+      ids.forEach(function (id) { var e = document.getElementById(id); if (e) e.innerHTML = '<div class="ps-ck-empty">' + (pid ? 'No activities.' : 'Select a project.') + '</div>'; });
+      return;
+    }
+    computeCPM();
+    var tasks = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    var dd = today(), lookEnd = addDays(dd, 21);
+    var behind = tasks.map(function (r) { return { r: r, slip: finVar(r) }; }).filter(function (x) { return x.slip != null && x.slip > 0; }).sort(function (a, b) { return b.slip - a.slip; });
+    var milesAtRisk = tasks.filter(isMile).map(function (r) { return { r: r, slip: finVar(r) }; }).filter(function (x) { return x.slip != null && x.slip > 0; }).sort(function (a, b) { return b.slip - a.slip; });
+    var crit = tasks.filter(function (r) { return r._critical; });
+    var avgPct = tasks.length ? Math.round(tasks.reduce(function (s, r) { return s + (r.percent_complete || 0); }, 0) / tasks.length) : 0;
+    var look = tasks.filter(function (r) {
+      if ((r.percent_complete || 0) >= 100 || r.actual_finish) return false;
+      var s = pd(r.start_date), f = pd(r.end_date);
+      return (s && s >= dd && s <= lookEnd) || (f && f >= dd && f <= lookEnd) || (s && f && s <= dd && f >= dd);
+    }).sort(function (a, b) { return (pd(a.start_date) || pd(a.end_date) || 0) - (pd(b.start_date) || pd(b.end_date) || 0); });
+    function kpi(v, l, cls) { return '<div class="ps-ck-kpi' + (cls ? ' ' + cls : '') + '"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; }
+    function slipTag(s) { return '<span class="slip' + (s > 0 ? '' : ' ok') + '">' + (s > 0 ? '+' : '') + s + 'd</span>'; }
+    function row(r, right) { return '<div class="ps-ck-row" data-id="' + esc(r.id) + '"><span class="id">' + esc(r.activity_id || '') + '</span><span class="nm">' + esc(r.activity_name || '') + '</span>' + (right || '') + '</div>'; }
+    function fill(id, arr, fn, empty) { var e = document.getElementById(id); if (!e) return; e.innerHTML = arr.length ? arr.map(fn).join('') : '<div class="ps-ck-empty">' + empty + '</div>'; e.querySelectorAll('.ps-ck-row').forEach(function (rw) { rw.onclick = function () { selId = rw.dataset.id; switchTab('schedule'); renderDetails(); highlightRow(); }; }); }
+    kp.innerHTML = kpi(avgPct + '%', 'Overall % complete') +
+      kpi(behind.length, 'Activities behind', behind.length ? 'warn' : 'good') +
+      kpi(milesAtRisk.length, 'Milestones at risk', milesAtRisk.length ? 'warn' : 'good') +
+      kpi(crit.length, 'Critical activities') +
+      kpi(look.length, 'Due in 3 weeks') +
+      kpi(fmtOPCDate(dstr(dd)), 'Data date');
+    fill('ps-ck-miles', milesAtRisk.slice(0, 60), function (x) { return row(x.r, slipTag(x.slip)); }, 'No milestones are late vs baseline. 🎯');
+    fill('ps-ck-behind', behind.slice(0, 60), function (x) { return row(x.r, slipTag(x.slip)); }, 'Nothing is behind its baseline finish.');
+    fill('ps-ck-look', look.slice(0, 100), function (r) { return row(r, '<span class="mt">' + (pd(r.start_date) ? Fmt.date(r.start_date) : (r.end_date ? Fmt.date(r.end_date) : '—')) + '</span>'); }, 'Nothing due in the next 3 weeks.');
+    fill('ps-ck-crit', crit.slice(0, 100), function (r) { return row(r, '<span class="mt">' + (r._float != null ? r._float + 'd float' : '') + '</span>'); }, 'No critical path found — add relationships or dates.');
+  }
+
   // ----- MODAL -----
   function openForm(row) {
     editId = row ? row.id : null;
@@ -2952,13 +3024,14 @@
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     document.getElementById('ps-view-cost').style.display = tab === 'cost' ? '' : 'none';
+    document.getElementById('ps-view-planner').style.display = tab === 'planner' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'cost' ? 'Cost Loading' : 'Project Schedule';
+    var name = tab === 'cost' ? 'Cost Loading' : (tab === 'planner' ? 'Planner Cockpit' : 'Project Schedule');
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // hidden-column rules differ per view (Schedule grid vs Cost table)
-    if (tab === 'schedule') renderGantt(); else renderCost();
+    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else renderPlanner();
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,

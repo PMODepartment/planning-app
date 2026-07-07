@@ -68,6 +68,16 @@ and a spot-checked activity's dates/calendar/predecessor all matched the source 
 (Not yet run end-to-end against a live Supabase project — the parsing/mapping logic is
 verified, but nobody has clicked Import on a real login yet.)
 
+## Planner Cockpit (2026-07-07) — batch 1 of the planner roadmap
+New third view (`#ps-view-planner`, sidebar `data-view="planner"` + title menu `data-tab="planner"`,
+`activeTab==='planner'`). `renderPlanner()` (called from `switchTab`/`renderAll`) is a read-only
+weekly cockpit built entirely from existing columns (no schema change): KPI row (overall % complete,
+activities behind baseline, milestones at risk, critical count, due-in-3-weeks, data date) + four
+lists — **Milestones at risk** & **Most behind schedule** (via `finVar` = forecast finish − baseline
+finish, days late), **3-week lookahead** (incomplete activities whose start/finish falls in
+[data date, +21d]), **Critical-path drivers** (`_critical` from `computeCPM`). Rows click → jump to
+the Schedule view with the activity selected. CSS `.ps-ck-*`.
+
 ## Topbar + project browser (2026-07-07)
 - **Topbar tools spacing**: the global tool cluster (`#ps-topbar-tools`: undo/redo/health/reports/
   filter/refresh/print) now uses uniform 34×34 buttons, `gap:4px`, a left divider, and a divider
