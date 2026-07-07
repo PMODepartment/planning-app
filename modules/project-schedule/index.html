@@ -1189,7 +1189,8 @@
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
     if (before) pushUndo({ type: 'update', id: id, before: before, after: patch });
     logAudit(r, 'update', _auditChanges(prev, patch));
-    rebuild();
+    // Only re-sort when the edit could change ordering (WBS code or Activity ID); otherwise reuse order.
+    rebuild(!!(patch && (('wbs' in patch) || ('activity_id' in patch))));
     return true;
   }
   // ---- Change audit (fire-and-forget, tolerant of a not-yet-migrated DB) ----
@@ -1256,11 +1257,22 @@
   // ---- WBS-code helpers + precomputed caches (rebuilt only when rows change) ----
   function segs(c) { return String(c == null ? '' : c).split('.'); }
   var _sorted = [], _min = null, _max = null, _spanMap = {}, _costMap = {};
-  function rebuild() {
+  // rebuild(structural): `structural` (default true) means the row SET or ORDER may have changed
+  // (add/delete/import, WBS/Activity-ID edit, column-sort or grouping change) → re-sort. Pure field
+  // edits that don't affect ordering (status/%/dates/costs via persist/bulk/reschedule) pass
+  // `false` to reuse the existing `_sorted` order — skipping the O(n log n) comparator sweep, the
+  // dominant cost on 27k-activity schedules — while still refreshing the rollups + CPM below.
+  // (`_sorted` holds live row references, so field edits show without re-sorting.)
+  function rebuild(structural) {
+    if (structural === undefined) structural = true;
+    // WBS-derived fields are cached per row (`_segsWbs`) and recomputed only when `wbs` changes.
     rows.forEach(function (r) {
+      if (r._segsWbs === r.wbs && r._segs) return;
       r._segs = segs(r.wbs); r._depth = Math.max(0, r._segs.length - 1);
       var a = []; for (var i = 1; i < r._segs.length; i++) a.push(r._segs.slice(0, i).join('.')); r._anc = a;
+      r._segsWbs = r.wbs;
     });
+    if (structural || _sorted.length !== rows.length)
     _sorted = rows.slice().sort(function (a, b) {
       // Column sort (OPC): reorder leaf siblings sharing the same WBS parent by the chosen
       // column; the WBS tree structure (ancestry ordering) is otherwise preserved.
@@ -3313,7 +3325,7 @@
       for (var k = 0; k < res.length; k++) { if (res[k]) { err = res[k]; break; } var id2 = slice[k], rr = rows.find(function (x) { return x.id === id2; }); if (rr) { var e2 = _bulkEdits[id2], prev2 = {}; Object.keys(e2).forEach(function (kk) { prev2[kk] = rr[kk]; }); Object.keys(e2).forEach(function (kk) { rr[kk] = e2[kk]; }); logAudit(rr, 'update', _auditChanges(prev2, e2)); } ok++; }
     }
     hideLoading();
-    _bulkEdits = {}; resetUndo(); rebuild(); ensureCPM(); renderAll();
+    _bulkEdits = {}; resetUndo(); rebuild(false); ensureCPM(); renderAll();
     if (err) UI.toast('Saved ' + ok + ', then error: ' + err, 'error');
     else { UI.toast('Updated ' + ok + ' activit' + (ok === 1 ? 'y' : 'ies') + '.', 'success'); closeBulkUpdate(); }
   }
@@ -3866,7 +3878,7 @@
     }
     hideLoading();
     if (ok) logAudit(null, 'reschedule', { count: ok });
-    resetUndo(); rebuild(); ensureCPM(); renderAll();
+    resetUndo(); rebuild(false); ensureCPM(); renderAll();
     if (err) UI.toast('Reschedule error after ' + ok + ': ' + err, 'error');
     else UI.toast('Rescheduled ' + ok + ' activit' + (ok === 1 ? 'y' : 'ies') + ' from relationships.', 'success');
   }

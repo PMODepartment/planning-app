@@ -86,6 +86,17 @@ change (verified 0 mismatches vs the old algorithm across 2,000 random DAGs):
   `recomputeCPM`, crit-toggle) still force `computeCPM()`.
 - Data fetch was already paged (`load()` fetches all `.range()` pages in parallel) and the Gantt/grid
   already window rows — those were not regressed.
+- **Incremental `rebuild(structural)`**: `rebuild()` ran on every single-cell edit / drag / bulk save
+  and re-did a full O(n log n) WBS sort (~129ms at 27k rows in node, worse in-browser via
+  `localeCompare`). Now `structural` (default true) gates the sort; pure field edits that can't change
+  ordering pass `false` and **reuse the existing `_sorted`** (which holds live row references, so
+  edits still show). Callers passing `false`: `persist` when the patch has no `wbs`/`activity_id`
+  (`rebuild(!!(patch && ('wbs' in patch || 'activity_id' in patch)))`), `saveBulkUpdate`,
+  `applyScheduleDates`. Add/delete/import/column-sort/grouping/WBS-or-ID edits stay structural.
+  A `_sorted.length !== rows.length` guard force-sorts if the row count changed anyway. WBS-derived
+  `_segs/_depth/_anc` are also cached per row (`_segsWbs`) and recomputed only when `wbs` changes.
+  The rollups (`_spanMap`/`_costMap`/`_min`/`_max`) + CPM still refresh every rebuild (needed after
+  date/cost edits); only the sort + segs recompute are skipped.
 
 ## Planner batch 7 (2026-07-07) — Cockpit redeveloped as a client-facing outlook, not tables
 User feedback after batch 6 (which had already turned the two list panels into bar charts): "still
