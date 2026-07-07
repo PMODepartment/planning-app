@@ -703,6 +703,7 @@
               <button id="ps-baselines"><span data-ico="layers" data-ico-size="14"></span> Baselines…</button>
               <button id="ps-risk"><span data-ico="risk" data-ico-size="14"></span> Schedule risk (Monte Carlo)…</button>
               <button id="ps-codesbtn"><span data-ico="palette" data-ico-size="14"></span> Activity Codes…</button>
+              <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
               <button id="ps-clear" class="ps-menu-danger" title="Delete all activities for this project">Clear schedule…</button>
             </div>
           </div>
@@ -927,6 +928,26 @@
     <div class="ps-snap-body">
       <div class="ps-snap-list" id="ps-codes-list"></div>
       <div class="ps-snap-detail" id="ps-codes-detail"><div class="ps-ck-empty">Create a code type (e.g. Phase, Area, Zone) on the left, then add its values here. Assign values to activities in the Add/Edit Activity modal; group or filter the schedule by any code type from the toolbar.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Global Change (rule-based bulk edit) -->
+<div class="ps-bulk-back" id="ps-gc-back">
+  <div class="ps-bulk-panel" style="width:820px;">
+    <div class="ps-bulk-head"><strong>Global Change</strong><span class="ps-bulk-count" id="ps-gc-count"></span><button class="ps-bulk-x" id="ps-gc-x">&#215;</button></div>
+    <div class="ps-risk-body">
+      <p style="font-size:12px;color:var(--pd-muted);margin:0 0 10px;">Change many activities at once by rule. Set <strong>WHERE</strong> conditions (all must match — leave blank to match every activity), then one or more <strong>THEN</strong> changes. Preview the count, then apply. Bulk changes are not individually undoable, so they confirm first.</p>
+      <h4 style="margin:6px 0;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Where (conditions)</h4>
+      <div id="ps-gc-where"></div>
+      <h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Then (changes)</h4>
+      <div id="ps-gc-then"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:16px;">
+        <button class="pd-btn" id="ps-gc-preview"><span data-ico="search" data-ico-size="14"></span> Preview</button>
+        <span id="ps-gc-result" style="font-size:12.5px;color:var(--pd-muted);"></span>
+        <span style="flex:1;"></span>
+        <button class="pd-btn pd-btn-primary" id="ps-gc-apply" disabled><span data-ico="check" data-ico-size="14"></span> Apply changes</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3888,6 +3909,148 @@
       '<h4 style="margin:18px 0 6px;font-size:13px;">Top risk drivers <span style="font-weight:400;color:var(--pd-muted);font-size:11.5px;">(duration sensitivity to project finish)</span></h4>' + tornHTML;
   }
 
+  // ----- GLOBAL CHANGE (rule-based bulk edit, OPC/P6 "Global Change") -----
+  var GC_FIELDS = [
+    { k: 'activity_name', label: 'Activity Name', type: 'text' },
+    { k: 'wbs', label: 'WBS Code', type: 'text' },
+    { k: 'status', label: 'Status', type: 'text' },
+    { k: 'activity_type', label: 'Activity Type', type: 'text' },
+    { k: 'responsible_party', label: 'Responsible Party', type: 'text' },
+    { k: 'owner', label: 'Owner', type: 'text' },
+    { k: 'work_package', label: 'Work Package', type: 'text' },
+    { k: 'remarks', label: 'Remarks', type: 'text' },
+    { k: 'percent_complete', label: '% Complete', type: 'num' },
+    { k: 'duration_days', label: 'Duration (days)', type: 'num' },
+    { k: 'planned_cost', label: 'Planned Cost', type: 'num' },
+    { k: 'actual_cost', label: 'Actual Cost', type: 'num' },
+    { k: 'bl_cost', label: 'Baseline Cost', type: 'num' },
+    { k: 'risk_optimistic_pct', label: 'Risk Optimistic %', type: 'num' },
+    { k: 'risk_pessimistic_pct', label: 'Risk Pessimistic %', type: 'num' },
+    { k: 'start_date', label: 'Start', type: 'date' },
+    { k: 'end_date', label: 'Finish', type: 'date' },
+    { k: 'bl_start', label: 'Baseline Start', type: 'date' },
+    { k: 'bl_finish', label: 'Baseline Finish', type: 'date' },
+    { k: 'contract_date', label: 'Contract Date', type: 'date' }
+  ];
+  function gcField(k) { return GC_FIELDS.find(function (f) { return f.k === k; }); }
+  var GC_WHERE_OPS = { text: ['is', 'is not', 'contains', 'is empty', 'is not empty'], num: ['=', '≠', '≥', '≤', 'is empty', 'is not empty'], date: ['on', 'before', 'after', 'is empty', 'is not empty'] };
+  var GC_THEN_OPS = { text: ['Set to', 'Clear'], num: ['Set to', 'Add', 'Subtract', 'Multiply by', 'Clear'], date: ['Set to', 'Shift by (days)', 'Clear'] };
+  var _gcWhere = [{}, {}, {}], _gcThen = [{}];   // condition/action rows (blank field = ignored)
+  function openGlobalChange() { if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; } _gcWhere = [{}, {}, {}]; _gcThen = [{}]; document.getElementById('ps-gc-back').classList.add('open'); document.getElementById('ps-gc-result').textContent = ''; document.getElementById('ps-gc-apply').disabled = true; renderGCRows(); }
+  function closeGlobalChange() { document.getElementById('ps-gc-back').classList.remove('open'); }
+  function _gcFieldSelect(sel, cls) { return '<select class="pd-select ' + cls + '" style="min-width:150px;"><option value="">— field —</option>' + GC_FIELDS.map(function (f) { return '<option value="' + f.k + '"' + (sel === f.k ? ' selected' : '') + '>' + esc(f.label) + '</option>'; }).join('') + '</select>'; }
+  function _gcNeedsValue(op) { return op !== 'is empty' && op !== 'is not empty' && op !== 'Clear'; }
+  function renderGCRows() {
+    var wh = document.getElementById('ps-gc-where'), th = document.getElementById('ps-gc-then');
+    wh.innerHTML = _gcWhere.map(function (c, i) {
+      var f = gcField(c.field), ops = f ? GC_WHERE_OPS[f.type] : [];
+      var opSel = f ? '<select class="pd-select gc-w-op" style="min-width:120px;">' + ops.map(function (o) { return '<option' + (c.op === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' : '';
+      var valInp = (f && _gcNeedsValue(c.op || ops[0])) ? '<input class="pd-input gc-w-val" ' + (f.type === 'date' ? 'type="date"' : (f.type === 'num' ? 'type="number" step="any"' : '')) + ' value="' + esc(c.val != null ? c.val : '') + '" style="flex:1;min-width:120px;">' : '';
+      return '<div class="ps-risk-cfg" data-gcw="' + i + '" style="margin-bottom:6px;align-items:center;">' + _gcFieldSelect(c.field, 'gc-w-field') + opSel + valInp + '</div>';
+    }).join('');
+    th.innerHTML = _gcThen.map(function (a, i) {
+      var f = gcField(a.field), ops = f ? GC_THEN_OPS[f.type] : [];
+      var opSel = f ? '<select class="pd-select gc-t-op" style="min-width:130px;">' + ops.map(function (o) { return '<option' + (a.op === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' : '';
+      var valInp = (f && _gcNeedsValue(a.op || ops[0])) ? '<input class="pd-input gc-t-val" ' + ((f.type === 'date' && (a.op || ops[0]) === 'Set to') ? 'type="date"' : (f.type === 'num' || ((a.op || '') === 'Shift by (days)') ? 'type="number" step="any"' : '')) + ' value="' + esc(a.val != null ? a.val : '') + '" style="flex:1;min-width:120px;">' : '';
+      return '<div class="ps-risk-cfg" data-gct="' + i + '" style="margin-bottom:6px;align-items:center;">' + _gcFieldSelect(a.field, 'gc-t-field') + opSel + valInp +
+        (i === _gcThen.length - 1 ? '<button class="pd-btn pd-btn-sm" id="ps-gc-addthen">+ change</button>' : '') + '</div>';
+    }).join('');
+    _gcReadRows();   // attach listeners
+  }
+  function _gcReadRows() {
+    document.querySelectorAll('[data-gcw]').forEach(function (row) {
+      var i = +row.dataset.gcw;
+      var fSel = row.querySelector('.gc-w-field'), opSel = row.querySelector('.gc-w-op'), valInp = row.querySelector('.gc-w-val');
+      fSel.onchange = function () { _gcWhere[i] = { field: fSel.value }; renderGCRows(); };
+      if (opSel) opSel.onchange = function () { _gcWhere[i].op = opSel.value; renderGCRows(); };
+      if (valInp) valInp.oninput = function () { _gcWhere[i].val = valInp.value; };
+    });
+    document.querySelectorAll('[data-gct]').forEach(function (row) {
+      var i = +row.dataset.gct;
+      var fSel = row.querySelector('.gc-t-field'), opSel = row.querySelector('.gc-t-op'), valInp = row.querySelector('.gc-t-val');
+      fSel.onchange = function () { _gcThen[i] = { field: fSel.value }; renderGCRows(); };
+      if (opSel) opSel.onchange = function () { _gcThen[i].op = opSel.value; renderGCRows(); };
+      if (valInp) valInp.oninput = function () { _gcThen[i].val = valInp.value; };
+    });
+    var addBtn = document.getElementById('ps-gc-addthen'); if (addBtn) addBtn.onclick = function () { if (_gcThen.length < 5) { _gcThen.push({}); renderGCRows(); } };
+  }
+  function _gcActiveConds() { return _gcWhere.filter(function (c) { return c.field; }); }
+  function _gcActiveActions() { return _gcThen.filter(function (a) { return a.field; }); }
+  function gcMatch(r) {
+    return _gcActiveConds().every(function (c) {
+      var f = gcField(c.field), op = c.op || GC_WHERE_OPS[f.type][0], raw = r[c.field];
+      if (op === 'is empty') return raw == null || raw === '';
+      if (op === 'is not empty') return !(raw == null || raw === '');
+      if (f.type === 'text') {
+        var a = String(raw == null ? '' : raw).toLowerCase(), b = String(c.val == null ? '' : c.val).toLowerCase();
+        if (op === 'is') return a === b; if (op === 'is not') return a !== b; if (op === 'contains') return a.indexOf(b) !== -1;
+      } else if (f.type === 'num') {
+        var x = raw == null ? null : parseFloat(raw), y = parseFloat(c.val);
+        if (x == null || isNaN(x) || isNaN(y)) return false;
+        if (op === '=') return x === y; if (op === '≠') return x !== y; if (op === '≥') return x >= y; if (op === '≤') return x <= y;
+      } else {   // date
+        var dx = pd(raw), dy = pd(c.val); if (!dx || !dy) return false;
+        if (op === 'on') return +dx === +dy; if (op === 'before') return +dx < +dy; if (op === 'after') return +dx > +dy;
+      }
+      return false;
+    });
+  }
+  function gcBuildPatch(r) {
+    var patch = {};
+    _gcActiveActions().forEach(function (a) {
+      var f = gcField(a.field), op = a.op || GC_THEN_OPS[f.type][0];
+      if (op === 'Clear') { patch[a.field] = null; return; }
+      if (f.type === 'text') { patch[a.field] = a.val || null; return; }
+      if (f.type === 'num') {
+        var cur = patch[a.field] != null ? patch[a.field] : (r[a.field] == null ? 0 : parseFloat(r[a.field])); var v = parseFloat(a.val);
+        if (isNaN(v)) return;
+        if (op === 'Set to') patch[a.field] = v; else if (op === 'Add') patch[a.field] = cur + v; else if (op === 'Subtract') patch[a.field] = cur - v; else if (op === 'Multiply by') patch[a.field] = cur * v;
+        return;
+      }
+      // date
+      if (op === 'Set to') { patch[a.field] = a.val || null; }
+      else if (op === 'Shift by (days)') { var base = pd(patch[a.field] != null ? patch[a.field] : r[a.field]); var n = parseInt(a.val, 10); if (base && !isNaN(n)) patch[a.field] = dstr(addDays(base, n)); }
+    });
+    // keep duration_days consistent when a global change moved start/finish
+    if (patch.start_date !== undefined || patch.end_date !== undefined) {
+      var s = pd(patch.start_date !== undefined ? patch.start_date : r.start_date), e = pd(patch.end_date !== undefined ? patch.end_date : r.end_date);
+      if (s && e && e >= s) patch.duration_days = dayDiff(s, e) + 1;
+    }
+    return patch;
+  }
+  function gcPreview() {
+    var conds = _gcActiveConds(), actions = _gcActiveActions();
+    var res = document.getElementById('ps-gc-result'), applyBtn = document.getElementById('ps-gc-apply');
+    if (!actions.length) { res.textContent = 'Add at least one “Then” change.'; applyBtn.disabled = true; return null; }
+    var leaves = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    var matched = leaves.filter(gcMatch);
+    res.textContent = matched.length + ' of ' + leaves.length + ' activities match' + (conds.length ? '' : ' (no conditions = all)') + '.';
+    applyBtn.disabled = matched.length === 0;
+    return matched;
+  }
+  async function gcApply() {
+    var matched = gcPreview(); if (!matched || !matched.length) return;
+    if (!confirm('Apply these changes to ' + matched.length + ' activities? This is a bulk change and cannot be individually undone.')) return;
+    showLoading('Applying to ' + matched.length + ' activities…');
+    var ok = 0, err = null, CH = 40;
+    for (var i = 0; i < matched.length && !err; i += CH) {
+      var slice = matched.slice(i, i + CH);
+      var res = await Promise.all(slice.map(function (r) {
+        var patch = gcBuildPatch(r); if (!Object.keys(patch).length) return Promise.resolve(null);
+        patch.updated_at = new Date().toISOString();
+        return sb().from(TABLE).update(patch).eq('id', r.id).then(function (x) { return x.error ? x.error.message : { id: r.id, patch: patch }; });
+      }));
+      for (var k = 0; k < res.length; k++) {
+        var rr = res[k]; if (typeof rr === 'string') { err = rr; break; }
+        if (rr) { var row = rows.find(function (x) { return x.id === rr.id; }); if (row) Object.keys(rr.patch).forEach(function (kk) { row[kk] = rr.patch[kk]; }); ok++; }
+      }
+    }
+    hideLoading();
+    resetUndo(); rebuild(); computeCPM(); renderAll();
+    if (err) UI.toast('Applied ' + ok + ', then error: ' + err, 'error');
+    else { UI.toast('Global change applied to ' + ok + ' activities.', 'success'); closeGlobalChange(); }
+  }
+
   // ----- ACTIVITY CODES (project-defined code dictionaries: Phase / Area / Zone / etc.) -----
   var _codesSelType = null;
   function openCodes() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-codes-back').classList.add('open'); renderCodesList(); renderCodesDetail(); }
@@ -5346,6 +5509,11 @@
     document.getElementById('ps-codes-x').onclick = closeCodes;
     document.getElementById('ps-codes-back').onclick = function (e) { if (e.target === this) closeCodes(); };
     document.getElementById('ps-codes-add').onclick = addCodeType;
+    document.getElementById('ps-globalchange').onclick = function () { aMenu.classList.remove('open'); openGlobalChange(); };
+    document.getElementById('ps-gc-x').onclick = closeGlobalChange;
+    document.getElementById('ps-gc-back').onclick = function (e) { if (e.target === this) closeGlobalChange(); };
+    document.getElementById('ps-gc-preview').onclick = gcPreview;
+    document.getElementById('ps-gc-apply').onclick = gcApply;
     document.getElementById('ps-lp-prev').onclick = function () { lpMoveWeek(-1); };
     document.getElementById('ps-lp-next').onclick = function () { lpMoveWeek(1); };
     document.getElementById('ps-lp-thisweek').onclick = function () { _lpWeek = mondayOf(wallToday()); try { localStorage.setItem(_lpWeekKey(), dstr(_lpWeek)); } catch (e) {} renderLastPlanner(); };
