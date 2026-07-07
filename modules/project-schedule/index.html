@@ -726,6 +726,7 @@
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-ck-snap"><span data-ico="camera" data-ico-size="15"></span> Take snapshot</button>
           <button class="pd-btn" id="ps-ck-snaps"><span data-ico="layers" data-ico-size="15"></span> Snapshots</button>
+          <button class="pd-btn" id="ps-ck-audit"><span data-ico="clipboard" data-ico-size="15"></span> Change history</button>
         </div>
         <div class="ps-ck-kpis" id="ps-ck-kpis"></div>
         <div class="ps-ck-grid">
@@ -764,6 +765,14 @@
       <button class="pd-btn" id="ps-bulk-cancel">Cancel</button>
       <button class="pd-btn pd-btn-primary" id="ps-bulk-save">Save changes</button>
     </div>
+  </div>
+</div>
+
+<!-- Change history (audit) -->
+<div class="ps-bulk-back" id="ps-audit-back">
+  <div class="ps-bulk-panel" style="width:900px;">
+    <div class="ps-bulk-head"><strong>Change History</strong><span class="ps-bulk-count" id="ps-audit-count"></span><button class="ps-bulk-x" id="ps-audit-x">&#215;</button></div>
+    <div class="ps-bulk-body" id="ps-audit-body" style="padding:0;"></div>
   </div>
 </div>
 
@@ -1116,12 +1125,26 @@
     var r = rows.find(function (x) { return x.id === id; });
     var before = null;
     if (r && !skipUndo) { before = {}; Object.keys(patch).forEach(function (k) { before[k] = (r[k] === undefined ? null : r[k]); }); }
+    var prev = {}; if (r) Object.keys(patch).forEach(function (k) { prev[k] = (r[k] === undefined ? null : r[k]); });   // for audit
     var res = await sb().from(TABLE).update(patch).eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return false; }
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
     if (before) pushUndo({ type: 'update', id: id, before: before, after: patch });
+    logAudit(r, 'update', _auditChanges(prev, patch));
     rebuild();
     return true;
+  }
+  // ---- Change audit (fire-and-forget, tolerant of a not-yet-migrated DB) ----
+  function _auditChanges(prev, patch) {
+    var c = {}; Object.keys(patch || {}).forEach(function (k) { if (k === 'updated_at') return; var from = prev ? prev[k] : undefined; if (JSON.stringify(from == null ? null : from) !== JSON.stringify(patch[k] == null ? null : patch[k])) c[k] = { from: from == null ? null : from, to: patch[k] == null ? null : patch[k] }; });
+    return c;
+  }
+  function logAudit(r, action, changes) {
+    if (action === 'update' && changes && !Object.keys(changes).length) return;   // nothing meaningful changed
+    try {
+      var p = { project_id: pid, activity_pk: (r && r.id) || null, activity_id: (r && r.activity_id) || null, activity_name: (r && r.activity_name) || null, action: action, changes: changes || null, changed_by: UID };
+      sb().from('schedule_audit').insert(p).then(function () {}, function () {});
+    } catch (e) {}
   }
 
   // ---- Undo / Redo ----
@@ -3032,7 +3055,7 @@
         patch.updated_at = new Date().toISOString();
         return sb().from(TABLE).update(patch).eq('id', id).then(function (r) { return r.error ? r.error.message : null; });
       }));
-      for (var k = 0; k < res.length; k++) { if (res[k]) { err = res[k]; break; } var id2 = slice[k], rr = rows.find(function (x) { return x.id === id2; }); if (rr) { var e2 = _bulkEdits[id2]; Object.keys(e2).forEach(function (kk) { rr[kk] = e2[kk]; }); } ok++; }
+      for (var k = 0; k < res.length; k++) { if (res[k]) { err = res[k]; break; } var id2 = slice[k], rr = rows.find(function (x) { return x.id === id2; }); if (rr) { var e2 = _bulkEdits[id2], prev2 = {}; Object.keys(e2).forEach(function (kk) { prev2[kk] = rr[kk]; }); Object.keys(e2).forEach(function (kk) { rr[kk] = e2[kk]; }); logAudit(rr, 'update', _auditChanges(prev2, e2)); } ok++; }
     }
     hideLoading();
     _bulkEdits = {}; resetUndo(); rebuild(); computeCPM(); renderAll();
@@ -3127,6 +3150,38 @@
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     _snaps = _snaps.filter(function (s) { return s.id !== id; }); renderSnapList();
     document.getElementById('ps-snap-detail').innerHTML = '<div class="ps-ck-empty">Select a snapshot to compare.</div>';
+  }
+
+  // ----- CHANGE HISTORY (audit viewer) -----
+  var _AUDIT_LBL = { start_date: 'Start', end_date: 'Finish', actual_start: 'Actual start', actual_finish: 'Actual finish', percent_complete: '% Complete', status: 'Status', bl_start: 'BL start', bl_finish: 'BL finish', contract_date: 'Contract date', predecessors: 'Predecessors', activity_name: 'Name', duration_days: 'Duration', planned_cost: 'Planned cost', actual_cost: 'Actual cost', earned_value: 'Earned value', responsible_party: 'Responsible' };
+  function _auditFieldLabel(k) { return _AUDIT_LBL[k] || k; }
+  function _auditFmtVal(v) { if (v == null || v === '') return '—'; if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) return Fmt.date(v); return String(v); }
+  function _auditSummary(a) {
+    if (a.action === 'insert') return 'Added activity';
+    if (a.action === 'delete') return 'Deleted activity';
+    if (a.action === 'reschedule') return 'Rescheduled ' + ((a.changes && a.changes.count) || '') + ' activities from relationships';
+    var c = a.changes || {}, ks = Object.keys(c); if (!ks.length) return '—';
+    return ks.map(function (k) { return '<b>' + esc(_auditFieldLabel(k)) + '</b>: ' + esc(_auditFmtVal(c[k].from)) + ' → ' + esc(_auditFmtVal(c[k].to)); }).join('; ');
+  }
+  async function openAudit() {
+    if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
+    document.getElementById('ps-audit-back').classList.add('open');
+    var body = document.getElementById('ps-audit-body'); body.innerHTML = '<div class="ps-ck-empty" style="padding:30px;">Loading…</div>';
+    var res = await sb().from('schedule_audit').select('*').eq('project_id', pid).order('changed_at', { ascending: false }).limit(400);
+    if (res.error) { body.innerHTML = '<div class="ps-ck-empty" style="padding:30px;">Could not load — run the schedule-audit migration.</div>'; return; }
+    var names = {}; try { var us = await PDb.getAllUsers(); (us || []).forEach(function (u) { names[u.id] = u.name || u.email; }); } catch (e) {}
+    renderAudit(res.data || [], names);
+  }
+  function closeAudit() { document.getElementById('ps-audit-back').classList.remove('open'); }
+  function renderAudit(arr, names) {
+    var body = document.getElementById('ps-audit-body');
+    document.getElementById('ps-audit-count').textContent = arr.length + ' change' + (arr.length === 1 ? '' : 's') + (arr.length === 400 ? '+' : '');
+    if (!arr.length) { body.innerHTML = '<div class="ps-ck-empty" style="padding:30px;">No changes recorded yet.</div>'; return; }
+    body.innerHTML = '<table class="ps-snap-tbl"><thead><tr><th>When</th><th>Who</th><th>Activity</th><th>Change</th></tr></thead><tbody>' +
+      arr.map(function (a) {
+        var w = a.changed_at ? (Fmt.date(String(a.changed_at).slice(0, 10)) + ' ' + String(a.changed_at).slice(11, 16)) : '—';
+        return '<tr><td style="white-space:nowrap;">' + esc(w) + '</td><td>' + esc(names[a.changed_by] || '—') + '</td><td>' + esc((a.activity_id ? a.activity_id + ' · ' : '') + (a.activity_name || '')) + '</td><td>' + _auditSummary(a) + '</td></tr>';
+      }).join('') + '</tbody></table>';
   }
 
   // ----- MODAL -----
@@ -3267,7 +3322,7 @@
       payload.created_by = UID;
       var res = await sb().from(TABLE).insert(payload).select().single();
       if (res.error) { UI.toast(res.error.message, 'error'); return; }
-      if (res.data && res.data.id) { savedId = res.data.id; pushUndo({ type: 'insert', id: res.data.id, payload: payload }); }
+      if (res.data && res.data.id) { savedId = res.data.id; pushUndo({ type: 'insert', id: res.data.id, payload: payload }); logAudit({ id: savedId, activity_id: payload.activity_id, activity_name: payload.activity_name }, 'insert', null); }
     }
     // contract_date written separately + tolerantly, so a not-yet-migrated DB (missing column)
     // never breaks the main save. Ignore the error if the column doesn't exist yet.
@@ -3540,6 +3595,7 @@
       }
     }
     hideLoading();
+    if (ok) logAudit(null, 'reschedule', { count: ok });
     resetUndo(); rebuild(); computeCPM(); renderAll();
     if (err) UI.toast('Reschedule error after ' + ok + ': ' + err, 'error');
     else UI.toast('Rescheduled ' + ok + ' activit' + (ok === 1 ? 'y' : 'ies') + ' from relationships.', 'success');
@@ -4202,6 +4258,9 @@
     document.getElementById('ps-ck-snaps').onclick = openSnapshots;
     document.getElementById('ps-snap-x').onclick = closeSnapshots;
     document.getElementById('ps-snap-back').onclick = function (e) { if (e.target === this) closeSnapshots(); };
+    document.getElementById('ps-ck-audit').onclick = openAudit;
+    document.getElementById('ps-audit-x').onclick = closeAudit;
+    document.getElementById('ps-audit-back').onclick = function (e) { if (e.target === this) closeAudit(); };
     document.getElementById('ps-crit').onclick = function () {
       critMode = !critMode;
       document.getElementById('ps-crit').classList.toggle('active', critMode);

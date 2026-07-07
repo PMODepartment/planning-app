@@ -78,6 +78,15 @@ finish, days late), **3-week lookahead** (incomplete activities whose start/fini
 [data date, +21d]), **Critical-path drivers** (`_critical` from `computeCPM`). Rows click → jump to
 the Schedule view with the activity selected. CSS `.ps-ck-*`.
 
+## Planner batch 5 (2026-07-07) — Change history (audit trail)
+**Migration:** `../../migrations/2026-07-07-schedule-audit.sql` (`schedule_audit`, insert-only for
+planners, read for approved). `logAudit(r, action, changes)` is **fire-and-forget + tolerant** (a
+missing table never breaks a save). Hooked into `persist()` (inline/grid/drag/link/tracker edits —
+`_auditChanges(prev, patch)` diff), modal `save()` insert, `saveBulkUpdate()` (per row), and
+`applyScheduleDates()` (one `reschedule` event with a count). Cockpit **Change history**
+(`openAudit`, `#ps-audit-back`) lists the last 400 changes (When / Who [resolved via
+`PDb.getAllUsers`] / Activity / field from→to), `_auditSummary` formats dates.
+
 ## Planner batch 4 (2026-07-07) — Schedule snapshots (milestones + summary)
 **Migration:** `../../migrations/2026-07-07-schedule-snapshots.sql` (`schedule_snapshots` table +
 RLS via `is_approved()`/`is_planner()`). Cockpit **Take snapshot** (`takeSnapshot`) captures a
