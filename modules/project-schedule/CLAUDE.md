@@ -68,6 +68,22 @@ and a spot-checked activity's dates/calendar/predecessor all matched the source 
 (Not yet run end-to-end against a live Supabase project — the parsing/mapping logic is
 verified, but nobody has clicked Import on a real login yet.)
 
+## Topbar + project browser (2026-07-07)
+- **Topbar tools spacing**: the global tool cluster (`#ps-topbar-tools`: undo/redo/health/reports/
+  filter/refresh/print) now uses uniform 34×34 buttons, `gap:4px`, a left divider, and a divider
+  before `#user-bar`; the theme toggle (`#pd-theme-toggle`, injected by theme.js before `#user-bar`)
+  is sized to match. Removed the conflicting `width:36px` vs `padding:0 9px` rules.
+- **OPC-style project browser**: the flat project `<select>` is hidden (kept as source of truth for
+  `projName()` / load) behind a `#ps-projsel-btn` that opens `#ps-projsel-menu` — a
+  **Workspace → Program → Group → Project** tree built from `PDb.getWorkspaces()` (`workspaces` table,
+  `node_type` workspace/program/group, `parent_id`) + `PROJECTS` grouped by `workspace_id`.
+  `renderProjectSelector()` walks the tree (collapsible via `_pssCollapse`, node-type badges),
+  lists projects under their node, and has a search box (`_pssSearch`) that flattens to matching
+  projects; unassigned projects fall under an "Unassigned" node. Picking a project calls
+  `selectProject(id)` (syncs the hidden select, `updateProjSelLabel()` + `updateWorkspaceCaption()`,
+  reloads). `.ps-projctx` is `position:relative` (NOT `.ps-menu-wrap`, which forces inline-block and
+  would break the name-over-workspace column).
+
 ## Gantt timeline scale (2026-07-07) — adjustable period-column width
 The Gantt timescale width is `dayw = DAYW[zoom] * ganttScale`. `DAYW` sets the base px/day per
 Month/Quarter/Year; **`ganttScale`** (persisted `localStorage.ps_ganttscale`, clamped 0.35–6) lets

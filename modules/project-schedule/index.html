@@ -50,15 +50,42 @@
        overflow the viewport edge. */
     .ps-datadate-badge { font-size:12px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
       border:1px solid var(--pd-line); border-radius:999px; padding:3px 11px; white-space:nowrap; margin-left:6px; }
-    .ps-topbar-tools { display:flex; align-items:center; gap:2px; margin-left:auto; min-width:0; }
-    .ps-topbar-tools .pd-btn { width:36px; padding:0; justify-content:center; }
+    .ps-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; min-width:0;
+      padding-left:10px; margin-left:auto; border-left:1px solid var(--pd-line); }
+    .ps-topbar-tools .pd-btn { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+    /* Make the theme toggle (injected by theme.js before #user-bar) match the tool cluster,
+       and set off the user avatar from the tools with a divider. */
+    .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
+    .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); }
     /* OPC-style project context: project name over workspace subline, both left-aligned.
        The select is borderless and title-styled; name & workspace share left padding so they line up. */
-    .ps-projctx { display:flex; flex-direction:column; justify-content:center; gap:0; min-width:0; margin-left:6px; }
+    .ps-projctx { display:flex; flex-direction:column; justify-content:center; gap:0; min-width:0; margin-left:6px; position:relative; }
     .ps-projctx .pd-select { border-color:transparent; background:transparent; font-weight:700; font-size:15px;
       height:24px; line-height:24px; padding:0 24px 0 6px; max-width:300px; color:var(--pd-ink); cursor:pointer; }
     .ps-projctx .pd-select:hover, .ps-projctx .pd-select:focus { background:var(--pd-bg); border-color:var(--pd-line); outline:none; }
     .ps-ws { font-size:11px; color:var(--pd-muted); line-height:1.15; padding-left:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; }
+    /* OPC-style project browser (Workspace → Program → Group → Project) */
+    .ps-projsel-btn { display:inline-flex; align-items:center; gap:5px; background:transparent; border:1px solid transparent;
+      border-radius:6px; cursor:pointer; font-weight:700; font-size:15px; color:var(--pd-ink); height:24px; padding:0 6px; max-width:320px; }
+    .ps-projsel-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+    .ps-projsel-btn > span:first-child { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ps-projsel-btn [data-ico] { color:var(--pd-muted); }
+    #ps-projsel-menu.ps-projsel-menu { min-width:340px; max-width:460px; max-height:72vh; overflow:auto; padding:0; }
+    .ps-pss-search { position:sticky; top:0; background:var(--pd-card); padding:8px; border-bottom:1px solid var(--pd-line); z-index:1; }
+    .ps-pss-search input { width:100%; box-sizing:border-box; padding:6px 9px; border:1px solid var(--pd-line); border-radius:6px; font:inherit; background:var(--pd-bg); color:var(--pd-ink); }
+    .ps-pss-tree { padding:4px 0; }
+    .ps-pss-node { display:flex; align-items:center; gap:6px; padding:5px 10px; cursor:pointer; font-size:12.5px; font-weight:700; color:var(--pd-ink); }
+    .ps-pss-node:hover { background:var(--pd-bg); }
+    .ps-pss-caret { width:12px; color:var(--pd-muted); font-size:10px; flex:none; }
+    .ps-pss-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ps-pss-badge { font-size:9px; text-transform:uppercase; letter-spacing:.03em; font-weight:700; padding:1px 6px; border-radius:999px;
+      background:var(--pd-bg); color:var(--pd-muted); border:1px solid var(--pd-line); flex:none; }
+    .ps-pss-badge.ps-pss-program { color:#2563EB; border-color:rgba(37,99,235,.35); }
+    .ps-pss-badge.ps-pss-group { color:var(--pd-red); border-color:rgba(238,49,36,.35); }
+    .ps-pss-proj { display:flex; align-items:center; gap:7px; padding:5px 10px; cursor:pointer; font-size:13px; color:var(--pd-ink); }
+    .ps-pss-proj:hover { background:var(--pd-red-light); }
+    .ps-pss-proj.sel { background:var(--pd-red); color:#fff; }
+    .ps-pss-empty { padding:20px 12px; text-align:center; color:var(--pd-muted); font-size:12.5px; }
     /* icon-only toolbar buttons (square, centered glyph; tooltip via title) */
     .ps-toolbar .ps-icobtn { width:36px; padding:0; justify-content:center; }
     /* Gantt-local colors control (bar colors are a Gantt-only feature) */
@@ -161,7 +188,7 @@
       .ps-split { height:auto !important; min-height:0 !important; border:none; }
       .ps-grid-scroll, .ps-gantt-scroll { overflow:visible !important; }
     }
-    .ps-topbar-tools .pd-btn { height:34px; padding:0 9px; background:transparent; border-color:transparent; font-size:13px; }
+    .ps-topbar-tools .pd-btn { background:transparent; border-color:transparent; font-size:13px; }
     .ps-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .ps-topbar-tools .pd-btn:disabled { opacity:.35; cursor:not-allowed; }
     .ps-topbar-tools .pd-btn:disabled:hover { background:transparent; border-color:transparent; }
@@ -488,10 +515,14 @@
           <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
         </div>
       </div>
-      <!-- Project context sits next to the title (OPC-style), name over workspace, left-aligned -->
+      <!-- Project context sits next to the title (OPC-style), name over workspace, left-aligned.
+           The hidden <select> is kept as the source of truth; the visible button opens an
+           OPC-style Workspace → Program → Group → Project browser. -->
       <div class="ps-projctx">
-        <select class="pd-select" id="ps-project" title="Project"></select>
+        <select class="pd-select" id="ps-project" title="Project" style="display:none;"></select>
+        <button class="ps-projsel-btn" id="ps-projsel-btn" title="Browse projects by Workspace / Program / Group"><span id="ps-projsel-name">— Select project —</span><span class="ps-projsel-chev" data-ico="chevronDown" data-ico-size="15"></span></button>
         <div class="ps-ws" id="ps-workspace"></div>
+        <div class="ps-menu ps-projsel-menu" id="ps-projsel-menu"></div>
       </div>
       <span class="ps-datadate-badge" id="ps-datadate-badge" title="As-of date driving the schedule — change it in Schedule ▸ Data Date">Data Date: —</span>
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
@@ -828,6 +859,7 @@
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
+    updateProjSelLabel();
     updateWorkspaceCaption();
     if (pid) load();
   }
@@ -838,6 +870,60 @@
     var ws = p && p.workspace_id ? WORKSPACES.find(function (w) { return w.id === p.workspace_id; }) : null;
     el.textContent = ws ? ws.name : (p && p.group_head ? p.group_head : '');
     el.title = el.textContent;
+  }
+  function updateProjSelLabel() {
+    var nm = document.getElementById('ps-projsel-name'); if (!nm) return;
+    var p = PROJECTS.find(function (x) { return x.id === pid; });
+    nm.textContent = p ? (p.name || p.id) : '— Select project —';
+    nm.title = nm.textContent;
+  }
+  // Central project switch (used by the browser + kept in sync with the hidden <select>).
+  function selectProject(id) {
+    pid = id || null;
+    var sel = document.getElementById('ps-project'); if (sel) sel.value = pid || '';
+    if (pid) sessionStorage.setItem('pd_project', pid);
+    updateProjSelLabel(); updateWorkspaceCaption();
+    collapsed = {}; resetUndo(); load();
+  }
+  // OPC-style project browser: Workspace → Program → Group → Project tree (from `workspaces`),
+  // collapsible, with a search box that flattens to matching projects.
+  var _pssCollapse = {}, _pssSearch = '';
+  function renderProjectSelector() {
+    var m = document.getElementById('ps-projsel-menu'); if (!m) return;
+    var byParent = {}; WORKSPACES.forEach(function (w) { var k = w.parent_id || ''; (byParent[k] = byParent[k] || []).push(w); });
+    var projByWs = {}; PROJECTS.forEach(function (p) { var k = p.workspace_id || '__none'; (projByWs[k] = projByWs[k] || []).push(p); });
+    var q = _pssSearch.trim().toLowerCase(), out = '';
+    function projRow(p, depth) {
+      return '<div class="ps-pss-proj' + (p.id === pid ? ' sel' : '') + '" data-proj="' + esc(p.id) + '" style="padding-left:' + (12 + (depth || 0) * 16) + 'px;">' +
+        Icons.svg('calendar', 13) + '<span>' + esc(p.name || p.id) + '</span></div>';
+    }
+    function walk(parent, depth) {
+      (byParent[parent] || []).forEach(function (w) {
+        var col = _pssCollapse[w.id], nt = w.node_type || 'workspace';
+        out += '<div class="ps-pss-node" data-node="' + esc(w.id) + '" style="padding-left:' + (8 + depth * 16) + 'px;">' +
+          '<span class="ps-pss-caret">' + (col ? '▸' : '▾') + '</span>' +
+          '<span class="ps-pss-name">' + esc(w.name) + '</span>' +
+          '<span class="ps-pss-badge ps-pss-' + nt + '">' + nt + '</span></div>';
+        if (!col) { walk(w.id, depth + 1); (projByWs[w.id] || []).forEach(function (p) { out += projRow(p, depth + 1); }); }
+      });
+    }
+    if (q) {
+      var matches = PROJECTS.filter(function (p) { return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1; });
+      out = matches.length ? matches.map(function (p) { return projRow(p, 0); }).join('') : '<div class="ps-pss-empty">No projects match “' + esc(_pssSearch) + '”.</div>';
+    } else {
+      walk('', 0);
+      var none = projByWs['__none'];
+      if (none) {
+        out += '<div class="ps-pss-node" data-node="__none" style="padding-left:8px;"><span class="ps-pss-caret">' + (_pssCollapse['__none'] ? '▸' : '▾') + '</span><span class="ps-pss-name">Unassigned</span></div>';
+        if (!_pssCollapse['__none']) none.forEach(function (p) { out += projRow(p, 1); });
+      }
+      if (!out) out = '<div class="ps-pss-empty">No projects yet.</div>';
+    }
+    m.innerHTML = '<div class="ps-pss-search"><input type="text" id="ps-pss-q" placeholder="Search projects…" value="' + esc(_pssSearch) + '"></div><div class="ps-pss-tree">' + out + '</div>';
+    var qi = m.querySelector('#ps-pss-q');
+    if (qi) qi.oninput = function () { var pos = qi.selectionStart; _pssSearch = qi.value; renderProjectSelector(); var q2 = m.querySelector('#ps-pss-q'); if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} } };
+    m.querySelectorAll('.ps-pss-node').forEach(function (n) { n.onclick = function (e) { e.stopPropagation(); var id = n.dataset.node; _pssCollapse[id] = !_pssCollapse[id]; renderProjectSelector(); }; });
+    m.querySelectorAll('.ps-pss-proj').forEach(function (r) { r.onclick = function (e) { e.stopPropagation(); m.classList.remove('open'); selectProject(r.dataset.proj); }; });
   }
   async function load() {
     loadDataDate();   // per-project data date (persisted); drives CPM / gantt line / usage
@@ -3613,7 +3699,7 @@
     try { var cw = JSON.parse(localStorage.getItem('ps_cols') || 'null'); if (cw) { var gp = document.querySelector('.ps-grid-pane'); Object.keys(cw).forEach(function (c) { if (cw[c]) gp.style.setProperty('--c-' + c, cw[c]); }); } } catch (e) {}
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.onclick = function (e) { e.preventDefault(); switchTab(a.dataset.view); }; });
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.onclick = function () { switchTab(b.dataset.tab); }; });
-    document.getElementById('ps-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); updateWorkspaceCaption(); collapsed = {}; resetUndo(); load(); };
+    document.getElementById('ps-project').onchange = function (e) { selectProject(e.target.value); };
     document.getElementById('ps-search').oninput = function (e) { search = e.target.value; renderGrid(); renderGantt(); };
     document.getElementById('ps-group').onchange = function (e) { groupBy = e.target.value; collapsed = {}; renderCollapseMenu(); renderGrid(); renderGantt(); };
     document.getElementById('ps-zoom').querySelectorAll('[data-zoom]').forEach(function (b) {
@@ -3630,7 +3716,10 @@
     var lMenu = document.getElementById('ps-layout-menu');
     var colsMenu = document.getElementById('ps-cols-menu');
     var tMenu = document.getElementById('ps-title-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); }
+    var pssMenu = document.getElementById('ps-projsel-menu');
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); }
+    pssMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.getElementById('ps-projsel-btn').onclick = function (e) { e.stopPropagation(); var o = pssMenu.classList.contains('open'); closeMenus(); if (!o) { renderProjectSelector(); pssMenu.classList.add('open'); var qi = pssMenu.querySelector('#ps-pss-q'); if (qi) qi.focus(); } };
     // Title dropdown → switch Project Schedule / Cost Loading
     document.getElementById('ps-title-btn').onclick = function (e) { e.stopPropagation(); var o = tMenu.classList.contains('open'); closeMenus(); if (!o) tMenu.classList.add('open'); };
     tMenu.addEventListener('click', function (e) { e.stopPropagation(); });
