@@ -82,6 +82,8 @@ create table if not exists project_schedule (
   risk_optimistic_pct numeric(6,2), risk_pessimistic_pct numeric(6,2),
   -- Activity Codes assignment: { "<code_type_id>": "<code_value_id>" } (see 2026-07-07-activity-codes.sql)
   activity_codes jsonb default '{}'::jsonb,
+  -- User-Defined Fields values: { "<udf_def_id>": value } (see 2026-07-07-user-defined-fields.sql)
+  udf jsonb default '{}'::jsonb,
   -- OPC Activity Details fields
   owner text, work_package text, calendar text,
   duration_type text default 'Fixed Duration & Units/Time', percent_complete_type text default 'Duration',
@@ -141,6 +143,13 @@ create table if not exists activity_code_types (
 create table if not exists activity_code_values (
   id uuid primary key default gen_random_uuid(), code_type_id uuid references activity_code_types(id) on delete cascade,
   project_id text not null, value text not null, color text, sort_order int default 0, created_at timestamptz default now());
+
+-- User-Defined Fields (see 2026-07-07-user-defined-fields.sql) — project-defined typed custom
+-- fields on activities; values stored as project_schedule.udf jsonb ({ "<def_id>": value }).
+create table if not exists activity_udf_defs (
+  id uuid primary key default gen_random_uuid(), project_id text not null, name text not null,
+  field_type text default 'text' check (field_type in ('text','number','date','cost')),
+  sort_order int default 0, created_by uuid, created_at timestamptz default now());
 
 -- Weighted Steps (see 2026-07-07-activity-steps.sql) — per-activity checklist
 -- whose weighted % complete can drive project_schedule.percent_complete.
@@ -335,7 +344,7 @@ create policy projects_write on projects for all using (is_planner()) with check
 do $$
 declare t text;
 begin
-  foreach t in array array['activity_code_types','activity_code_values','activity_steps','weekly_commitments','schedule_scenarios'] loop
+  foreach t in array array['activity_code_types','activity_code_values','activity_udf_defs','activity_steps','weekly_commitments','schedule_scenarios'] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
     execute format('create policy %I on %I for select using (is_approved())', t||'_read', t);

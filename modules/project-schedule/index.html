@@ -704,6 +704,7 @@
               <button id="ps-scenarios"><span data-ico="layers" data-ico-size="14"></span> What-if scenarios…</button>
               <button id="ps-risk"><span data-ico="risk" data-ico-size="14"></span> Schedule risk (Monte Carlo)…</button>
               <button id="ps-codesbtn"><span data-ico="palette" data-ico-size="14"></span> Activity Codes…</button>
+              <button id="ps-udfbtn"><span data-ico="listView" data-ico-size="14"></span> User-Defined Fields…</button>
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
               <button id="ps-leveling"><span data-ico="users" data-ico-size="14"></span> Resource leveling…</button>
               <button id="ps-clear" class="ps-menu-danger" title="Delete all activities for this project">Clear schedule…</button>
@@ -919,6 +920,18 @@
   </div>
 </div>
 
+<!-- User-Defined Fields management -->
+<div class="ps-bulk-back" id="ps-udf-back">
+  <div class="ps-bulk-panel" style="width:640px;">
+    <div class="ps-bulk-head"><strong>User-Defined Fields</strong>
+      <button class="pd-btn pd-btn-primary" id="ps-udf-add" style="margin-left:14px;"><span data-ico="plus" data-ico-size="14"></span> New field</button>
+      <span class="ps-bulk-count" id="ps-udf-count"></span>
+      <button class="ps-bulk-x" id="ps-udf-x">&#215;</button>
+    </div>
+    <div class="ps-risk-body" id="ps-udf-body"></div>
+  </div>
+</div>
+
 <!-- Activity Codes management -->
 <div class="ps-bulk-back" id="ps-codes-back">
   <div class="ps-bulk-panel" style="width:900px;">
@@ -1018,6 +1031,7 @@
         <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
         <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
         <div class="ps-form-full" id="ps-f-codes-wrap" style="display:none;"><label class="pd-label">Activity Codes</label><div id="ps-f-codes-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
+        <div class="ps-form-full" id="ps-f-udf-wrap" style="display:none;"><label class="pd-label">User-Defined Fields</label><div id="ps-f-udf-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full"><label class="pd-label">Predecessors <small>(Activity IDs, comma-separated; type/lag optional e.g. 1020 SS+3 — drives the critical path)</small></label><input class="pd-input" id="ps-f-pred" placeholder="e.g. 1010, 1020 SS+3" />
           <div class="ps-pred-picker" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;">
             <input class="pd-input" id="ps-pred-search" list="ps-pred-list" placeholder="Pick an activity to add…" style="flex:2 1 200px;min-width:150px;" autocomplete="off" />
@@ -1139,7 +1153,7 @@
   var pid = null, rows = [], editId = null, UID = null;
   var PROJECTS = [], WORKSPACES = [], layoutMode = 'split', activeTab = 'schedule';
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
-  var CODE_TYPES = [], CODE_VALUES = [], STEPS = [];   // activity codes + weighted steps for this project
+  var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
   function calById(id) { return id && CALS.find(function (c) { return c.id === id; }); }
   function calName(id, legacyText) { var c = calById(id); return c ? c.name : (legacyText || '—'); }
@@ -1169,6 +1183,10 @@
       var r6 = await sb().from('activity_steps').select('*').eq('project_id', pid);
       STEPS = (r6 && r6.data) || [];
     } catch (e) { STEPS = []; }
+    try {
+      var r7 = await sb().from('activity_udf_defs').select('*').eq('project_id', pid).order('sort_order');
+      UDF_DEFS = (r7 && r7.data) || [];
+    } catch (e) { UDF_DEFS = []; }
   }
   var zoom = 'quarter', collapsed = {}, selId = null, search = '';
   var filters = { status: {}, type: {}, behind: false, look: 0, codes: {} };   // empty sets = show all; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }
@@ -2125,10 +2143,15 @@
   function dlHtml(pairs) { return '<dl class="ps-dl">' + pairs.map(function (p) { var v = (p[1] == null || p[1] === '') ? '—' : p[1]; return '<dt>' + p[0] + '</dt><dd>' + v + '</dd>'; }).join('') + '</dl>'; }
   function detSection(title, pairs) { return '<div class="ps-det-group"><h5>' + esc(title) + '</h5>' + dlHtml(pairs) + '</div>'; }
   function detGeneral(r) {
+    // Activity Codes + User-Defined Fields (project-defined) shown when the project has any.
+    var codeRows = CODE_TYPES.map(function (ct) { var vid = r.activity_codes && r.activity_codes[ct.id]; return [esc(ct.name), esc(vid ? (codeValueLabel(vid) || '—') : '—')]; });
+    var udfRows = UDF_DEFS.map(function (d) { return [esc(d.name), esc(udfFmt(d, r.udf && r.udf[d.id]))]; });
     return '<div class="ps-det-groups">' +
       detSection('Identification', [['WBS', esc(r.wbs || '')], ['Activity ID', esc(r.activity_id || '')], ['Activity Name', esc(r.activity_name || '')], ['Work Package', esc(r.work_package || '')]]) +
       detSection('Classification', [['Type', esc(r.activity_type || 'Task')], ['Duration Type', esc(r.duration_type || '—')], ['% Complete Type', esc(r.percent_complete_type || '—')], ['Program Milestone', r.program_milestone ? 'Yes' : 'No']]) +
       detSection('Assignment', [['Status', esc(r.status || '')], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'], ['Responsible', esc(r.responsible_party || '')], ['Owner', esc(r.owner || '')], ['Calendar', esc(calName(r.calendar_id, r.calendar))], ['Predecessors', esc(r.predecessors || '—')]]) +
+      (codeRows.length ? detSection('Activity Codes', codeRows) : '') +
+      (udfRows.length ? detSection('User-Defined Fields', udfRows) : '') +
       detSection('Notes', [['Remarks', esc(r.remarks || '')]]) +
     '</div>';
   }
@@ -4320,6 +4343,54 @@
     renderCodesDetail(); renderCodesList(); buildFilterMenu();
   }
 
+  // ----- USER-DEFINED FIELDS (project-defined typed custom fields on activities) -----
+  var _UDF_TYPES = [['text', 'Text'], ['number', 'Number'], ['date', 'Date'], ['cost', 'Cost']];
+  function udfInputType(t) { return t === 'date' ? 'date' : (t === 'number' || t === 'cost' ? 'number' : 'text'); }
+  function udfFmt(def, v) { if (v == null || v === '') return '—'; if (def.field_type === 'cost') return Fmt.money(v); if (def.field_type === 'date') return Fmt.date(v); return String(v); }
+  function openUdf() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-udf-back').classList.add('open'); renderUdfList(); }
+  function closeUdf() { document.getElementById('ps-udf-back').classList.remove('open'); }
+  function renderUdfList() {
+    var body = document.getElementById('ps-udf-body'), cnt = document.getElementById('ps-udf-count');
+    if (cnt) cnt.textContent = UDF_DEFS.length + ' field' + (UDF_DEFS.length === 1 ? '' : 's');
+    if (!UDF_DEFS.length) { body.innerHTML = '<div class="ps-ck-empty">No user-defined fields yet. Use “New field” to add one (e.g. Cost Code, PO Number, Vendor, Risk Owner).</div>'; return; }
+    body.innerHTML = '<table class="ps-snap-tbl"><thead><tr><th>Field</th><th>Type</th><th style="text-align:right;">Filled on</th><th></th></tr></thead><tbody>' +
+      UDF_DEFS.map(function (d) {
+        var n = rows.filter(function (r) { return r.udf && r.udf[d.id] != null && r.udf[d.id] !== ''; }).length;
+        var typeLabel = (_UDF_TYPES.find(function (t) { return t[0] === d.field_type; }) || ['', d.field_type])[1];
+        return '<tr><td>' + esc(d.name) + '</td><td>' + esc(typeLabel) + '</td><td style="text-align:right;">' + n + '</td><td style="text-align:right;"><button class="ps-btn-sm" data-udf-del="' + esc(d.id) + '">&#215;</button></td></tr>';
+      }).join('') + '</tbody></table>';
+    body.querySelectorAll('[data-udf-del]').forEach(function (b) { b.onclick = function () { delUdfDef(b.dataset.udfDel); }; });
+  }
+  async function addUdfDef() {
+    if (!pid) return;
+    var name = prompt('Field name (e.g. Cost Code, PO Number, Vendor):'); if (!name || !name.trim()) return;
+    var type = prompt('Field type — one of: text, number, date, cost', 'text');
+    if (type === null) return; type = (type || 'text').trim().toLowerCase();
+    if (['text', 'number', 'date', 'cost'].indexOf(type) === -1) { UI.toast('Type must be text, number, date, or cost.', 'warn'); return; }
+    var res = await sb().from('activity_udf_defs').insert({ project_id: pid, name: name.trim(), field_type: type, sort_order: UDF_DEFS.length, created_by: UID }).select().single();
+    if (res.error) { UI.toast(res.error.message + ' — run the user-defined-fields migration.', 'error'); return; }
+    UDF_DEFS.push(res.data); renderUdfList();
+  }
+  async function delUdfDef(id) {
+    if (!confirm('Delete this field? Activities keep their stored value but it will no longer be shown or editable.')) return;
+    var res = await sb().from('activity_udf_defs').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UDF_DEFS = UDF_DEFS.filter(function (x) { return x.id !== id; }); renderUdfList();
+  }
+  // Renders one typed input per UDF def into the Add/Edit modal; hidden when the project has none.
+  function populateUdfFields(row) {
+    var wrap = document.getElementById('ps-f-udf-wrap'), host = document.getElementById('ps-f-udf-fields');
+    if (!wrap || !host) return;
+    if (!UDF_DEFS.length) { wrap.style.display = 'none'; host.innerHTML = ''; return; }
+    wrap.style.display = '';
+    var cur = (row && row.udf) || {};
+    host.innerHTML = UDF_DEFS.map(function (d) {
+      var v = cur[d.id]; var val = v == null ? '' : v;
+      return '<div class="ps-f-codes-row"><label class="pd-label" style="font-size:11px;">' + esc(d.name) + '</label>' +
+        '<input class="pd-input" data-udf="' + esc(d.id) + '" type="' + udfInputType(d.field_type) + '"' + (d.field_type === 'cost' || d.field_type === 'number' ? ' step="any"' : '') + ' value="' + esc(String(val)) + '" style="min-width:150px;"></div>';
+    }).join('');
+  }
+
   // ----- LAST PLANNER: weekly work plan + Percent Plan Complete (PPC) -----
   var LP_REASONS = ['Materials', 'Manpower/Labor', 'Equipment', 'Prior Work Not Complete', 'Design/Information', 'Weather', 'Owner/Client Decision', 'Rework', 'Other'];
   var LP_ALL = [], _lpLoadedFor = null, _lpWeek = mondayOf(wallToday());
@@ -4522,6 +4593,7 @@
     })();
     set('ps-f-resp', row ? row.responsible_party : '');
     populateCodesFields(row);
+    populateUdfFields(row);
     set('ps-f-pred', row ? row.predecessors : '');
     set('ps-f-succ', (row && row._succObjs && row._succObjs.length) ? row._succObjs.map(function (s) { return s.id + (s.type && s.type !== 'FS' ? ' ' + s.type : '') + (s.lag ? (s.lag > 0 ? '+' : '') + s.lag : ''); }).join(', ') : '');
     setupPredPicker(row);
@@ -4658,6 +4730,15 @@
       var codesVal = {};
       document.querySelectorAll('#ps-f-codes-fields [data-code-type]').forEach(function (sel) { if (sel.value) codesVal[sel.dataset.codeType] = sel.value; });
       try { var rr3 = await sb().from(TABLE).update({ activity_codes: codesVal }).eq('id', savedId); if (!rr3.error) { var rrow2 = rows.find(function (x) { return x.id === savedId; }); if (rrow2) rrow2.activity_codes = codesVal; } } catch (e) {}
+    }
+    if (savedId && UDF_DEFS.length) {
+      var udfVal = {};
+      document.querySelectorAll('#ps-f-udf-fields [data-udf]').forEach(function (inp) {
+        if (inp.value === '') return;
+        var def = UDF_DEFS.find(function (d) { return d.id === inp.dataset.udf; });
+        udfVal[inp.dataset.udf] = (def && (def.field_type === 'number' || def.field_type === 'cost')) ? parseFloat(inp.value) : inp.value;
+      });
+      try { var rr4 = await sb().from(TABLE).update({ udf: udfVal }).eq('id', savedId); if (!rr4.error) { var rrow3 = rows.find(function (x) { return x.id === savedId; }); if (rrow3) rrow3.udf = udfVal; } } catch (e) {}
     }
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
     closeModal(); load();
@@ -5708,6 +5789,10 @@
     document.getElementById('ps-codes-x').onclick = closeCodes;
     document.getElementById('ps-codes-back').onclick = function (e) { if (e.target === this) closeCodes(); };
     document.getElementById('ps-codes-add').onclick = addCodeType;
+    document.getElementById('ps-udfbtn').onclick = function () { aMenu.classList.remove('open'); openUdf(); };
+    document.getElementById('ps-udf-x').onclick = closeUdf;
+    document.getElementById('ps-udf-back').onclick = function (e) { if (e.target === this) closeUdf(); };
+    document.getElementById('ps-udf-add').onclick = addUdfDef;
     document.getElementById('ps-globalchange').onclick = function () { aMenu.classList.remove('open'); openGlobalChange(); };
     document.getElementById('ps-leveling').onclick = function () { aMenu.classList.remove('open'); openLeveling(); };
     document.getElementById('ps-lvl-x').onclick = closeLeveling;
