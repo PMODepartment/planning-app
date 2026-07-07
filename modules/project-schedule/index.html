@@ -519,6 +519,20 @@
     .ps-bulk-body input[type=date] { width:140px; }
     .ps-bulk-late { color:var(--pd-red); font-weight:700; }
     .ps-bulk-foot { display:flex; align-items:center; gap:8px; padding:12px 16px; border-top:1px solid var(--pd-line); }
+    /* Snapshots */
+    .ps-snap-body { display:flex; overflow:hidden; flex:1; }
+    .ps-snap-list { width:300px; flex:none; overflow:auto; border-right:1px solid var(--pd-line); }
+    .ps-snap-item { position:relative; padding:10px 34px 10px 14px; border-bottom:1px solid var(--pd-line); cursor:pointer; }
+    .ps-snap-item:hover { background:var(--pd-bg); }
+    .ps-snap-item .t { font-weight:700; font-size:13px; }
+    .ps-snap-item .m { font-size:11.5px; color:var(--pd-muted); margin-top:2px; }
+    .ps-snap-del { position:absolute; right:8px; top:10px; background:none; border:none; font-size:16px; color:var(--pd-muted); cursor:pointer; }
+    .ps-snap-del:hover { color:var(--pd-red); }
+    .ps-snap-detail { flex:1; overflow:auto; padding:14px; }
+    .ps-snap-sum { font-size:12.5px; color:var(--pd-muted); margin-bottom:10px; }
+    .ps-snap-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .ps-snap-tbl th { text-align:left; padding:7px 10px; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:1px solid var(--pd-line); }
+    .ps-snap-tbl td { padding:6px 10px; border-bottom:1px solid var(--pd-line); }
     .ps-ck-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
     .ps-ck-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:12px 14px; }
     .ps-ck-kpi .v { font-size:22px; font-weight:800; color:var(--pd-ink); line-height:1.1; }
@@ -709,6 +723,9 @@
             </select>
           </label>
           <button class="pd-btn" id="ps-ck-export"><span data-ico="download" data-ico-size="15"></span> Export lookahead</button>
+          <span class="ps-tb-div"></span>
+          <button class="pd-btn" id="ps-ck-snap"><span data-ico="camera" data-ico-size="15"></span> Take snapshot</button>
+          <button class="pd-btn" id="ps-ck-snaps"><span data-ico="layers" data-ico-size="15"></span> Snapshots</button>
         </div>
         <div class="ps-ck-kpis" id="ps-ck-kpis"></div>
         <div class="ps-ck-grid">
@@ -746,6 +763,17 @@
       <span style="flex:1;"></span>
       <button class="pd-btn" id="ps-bulk-cancel">Cancel</button>
       <button class="pd-btn pd-btn-primary" id="ps-bulk-save">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule snapshots -->
+<div class="ps-bulk-back" id="ps-snap-back">
+  <div class="ps-bulk-panel" style="width:900px;">
+    <div class="ps-bulk-head"><strong>Schedule Snapshots</strong><span class="ps-bulk-count" id="ps-snap-count"></span><button class="ps-bulk-x" id="ps-snap-x">&#215;</button></div>
+    <div class="ps-snap-body">
+      <div class="ps-snap-list" id="ps-snap-list"></div>
+      <div class="ps-snap-detail" id="ps-snap-detail"><div class="ps-ck-empty">Select a snapshot to compare its milestones against today.</div></div>
     </div>
   </div>
 </div>
@@ -3029,6 +3057,78 @@
     XLSX.writeFile(wb, (_ckLookWeeks || 3) + '-Week Lookahead - ' + projName() + '.xlsx');
   }
 
+  // ----- SCHEDULE SNAPSHOTS ("where we said we'd be": summary + milestones) -----
+  var _snaps = [];
+  function _snapSummary() {
+    computeCPM();
+    var tasks = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    var miles = tasks.filter(isMile);
+    var behind = tasks.filter(function (r) { var v = finVar(r); return v != null && v > 0; }).length;
+    var milesRisk = miles.filter(function (r) { var v = finVar(r); return v != null && v > 0; }).length;
+    var avg = tasks.length ? Math.round(tasks.reduce(function (s, r) { return s + (r.percent_complete || 0); }, 0) / tasks.length) : 0;
+    var fins = tasks.map(function (r) { return pd(r.actual_finish || r.end_date); }).filter(Boolean);
+    var pf = fins.length ? dstr(new Date(Math.max.apply(null, fins.map(Number)))) : null;
+    var mlist = miles.map(function (r) { return { id: r.activity_id, name: r.activity_name || '', forecast: dstr(pd(r.actual_finish || r.end_date)), baseline: r.bl_finish ? String(r.bl_finish).slice(0, 10) : null, contract: r.contract_date ? String(r.contract_date).slice(0, 10) : null }; });
+    return { pct_complete: avg, activities_total: tasks.length, activities_behind: behind, milestones_total: miles.length, milestones_at_risk: milesRisk, project_finish: pf, milestones: mlist };
+  }
+  async function takeSnapshot() {
+    if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
+    var label = prompt('Snapshot label:', 'As of ' + fmtOPCDate(dstr(today())));
+    if (label === null) return;
+    var s = _snapSummary();
+    var payload = { project_id: pid, label: label || ('As of ' + fmtOPCDate(dstr(today()))), data_date: dstr(today()), created_by: UID,
+      pct_complete: s.pct_complete, activities_total: s.activities_total, activities_behind: s.activities_behind,
+      milestones_total: s.milestones_total, milestones_at_risk: s.milestones_at_risk, project_finish: s.project_finish, milestones: s.milestones };
+    showLoading('Saving snapshot…');
+    var res = await sb().from('schedule_snapshots').insert(payload);
+    hideLoading();
+    if (res.error) { UI.toast('Snapshot failed: ' + res.error.message + ' — run the schedule-snapshots migration.', 'error'); return; }
+    UI.toast('Snapshot saved.', 'success');
+  }
+  async function openSnapshots() {
+    if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
+    document.getElementById('ps-snap-back').classList.add('open');
+    var list = document.getElementById('ps-snap-list'); list.innerHTML = '<div class="ps-ck-empty">Loading…</div>';
+    document.getElementById('ps-snap-detail').innerHTML = '<div class="ps-ck-empty">Select a snapshot to compare its milestones against today.</div>';
+    var res = await sb().from('schedule_snapshots').select('*').eq('project_id', pid).order('taken_at', { ascending: false });
+    if (res.error) { list.innerHTML = '<div class="ps-ck-empty">Could not load — run the schedule-snapshots migration.</div>'; return; }
+    _snaps = res.data || []; renderSnapList();
+  }
+  function closeSnapshots() { document.getElementById('ps-snap-back').classList.remove('open'); }
+  function renderSnapList() {
+    var list = document.getElementById('ps-snap-list');
+    document.getElementById('ps-snap-count').textContent = _snaps.length + ' snapshot' + (_snaps.length === 1 ? '' : 's');
+    if (!_snaps.length) { list.innerHTML = '<div class="ps-ck-empty">No snapshots yet. Use “Take snapshot”.</div>'; return; }
+    list.innerHTML = _snaps.map(function (s) {
+      return '<div class="ps-snap-item" data-id="' + esc(s.id) + '"><div class="t">' + esc(s.label || '(unlabeled)') + '</div>' +
+        '<div class="m">' + (s.data_date ? Fmt.date(s.data_date) : '') + ' · ' + (s.pct_complete || 0) + '% · ' + (s.milestones_at_risk || 0) + ' miles at risk</div>' +
+        '<button class="ps-snap-del" data-del="' + esc(s.id) + '" title="Delete">&#215;</button></div>';
+    }).join('');
+    list.querySelectorAll('.ps-snap-item').forEach(function (it) { it.onclick = function (e) { if (e.target.getAttribute('data-del')) return; showSnapDetail(it.dataset.id); }; });
+    list.querySelectorAll('.ps-snap-del').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); deleteSnapshot(b.dataset.del); }; });
+  }
+  function showSnapDetail(id) {
+    var s = _snaps.find(function (x) { return x.id === id; }); if (!s) return;
+    var det = document.getElementById('ps-snap-detail');
+    var byId = {}; rows.forEach(function (r) { if (r.activity_id) byId[String(r.activity_id)] = r; });
+    var mils = s.milestones || [];
+    var body = mils.map(function (m) {
+      var cur = byId[String(m.id)], curF = cur ? dstr(pd(cur.actual_finish || cur.end_date)) : null;
+      var drift = (m.forecast && curF) ? dayDiff(pd(m.forecast), pd(curF)) : null;
+      return '<tr><td>' + esc(m.name || m.id) + '</td><td>' + (m.forecast ? Fmt.date(m.forecast) : '—') + '</td><td>' + (curF ? Fmt.date(curF) : '—') + '</td>' +
+        '<td class="' + (drift > 0 ? 'ps-bulk-late' : '') + '" style="text-align:right;">' + (drift == null ? '—' : (drift > 0 ? '+' : '') + drift + 'd') + '</td></tr>';
+    }).join('');
+    det.innerHTML = '<div class="ps-snap-sum"><strong>' + esc(s.label || '') + '</strong> — ' + (s.data_date ? Fmt.date(s.data_date) : '') + ' · ' + (s.pct_complete || 0) + '% complete · project finish ' + (s.project_finish ? Fmt.date(s.project_finish) : '—') + '</div>' +
+      '<table class="ps-snap-tbl"><thead><tr><th>Milestone</th><th>Then (forecast)</th><th>Now (forecast)</th><th style="text-align:right;">Drift</th></tr></thead><tbody>' + (body || '<tr><td colspan="4" class="ps-ck-empty">No milestones captured.</td></tr>') + '</tbody></table>';
+  }
+  async function deleteSnapshot(id) {
+    if (!confirm('Delete this snapshot?')) return;
+    var res = await sb().from('schedule_snapshots').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    _snaps = _snaps.filter(function (s) { return s.id !== id; }); renderSnapList();
+    document.getElementById('ps-snap-detail').innerHTML = '<div class="ps-ck-empty">Select a snapshot to compare.</div>';
+  }
+
   // ----- MODAL -----
   function openForm(row) {
     editId = row ? row.id : null;
@@ -4098,6 +4198,10 @@
     document.getElementById('ps-bulk-scope').onchange = renderBulkBody;
     document.getElementById('ps-bulk-search').oninput = renderBulkBody;
     document.getElementById('ps-bulk-back').onclick = function (e) { if (e.target === this) closeBulkUpdate(); };
+    document.getElementById('ps-ck-snap').onclick = takeSnapshot;
+    document.getElementById('ps-ck-snaps').onclick = openSnapshots;
+    document.getElementById('ps-snap-x').onclick = closeSnapshots;
+    document.getElementById('ps-snap-back').onclick = function (e) { if (e.target === this) closeSnapshots(); };
     document.getElementById('ps-crit').onclick = function () {
       critMode = !critMode;
       document.getElementById('ps-crit').classList.toggle('active', critMode);

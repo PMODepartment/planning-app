@@ -78,6 +78,15 @@ finish, days late), **3-week lookahead** (incomplete activities whose start/fini
 [data date, +21d]), **Critical-path drivers** (`_critical` from `computeCPM`). Rows click → jump to
 the Schedule view with the activity selected. CSS `.ps-ck-*`.
 
+## Planner batch 4 (2026-07-07) — Schedule snapshots (milestones + summary)
+**Migration:** `../../migrations/2026-07-07-schedule-snapshots.sql` (`schedule_snapshots` table +
+RLS via `is_approved()`/`is_planner()`). Cockpit **Take snapshot** (`takeSnapshot`) captures a
+summary (avg % / activities total+behind / milestones total+at-risk / project finish) plus every
+milestone's forecast/baseline/contract date as `milestones` jsonb — one row per snapshot (scales to
+27k activities). **Snapshots** (`openSnapshots`, `#ps-snap-back`) lists them; selecting one shows a
+**milestone drift** table (Then forecast vs Now forecast, +Nd drift). `deleteSnapshot` removes one.
+Fully tolerant — missing table just shows a "run the migration" note, never breaks the cockpit.
+
 ## Planner batch 3 (2026-07-07) — Contract date + LD tracker
 **Migration:** `../../migrations/2026-07-07-schedule-contract-date.sql` (adds
 `project_schedule.contract_date date`). A **Contract Date** field is in the Add/Edit modal
