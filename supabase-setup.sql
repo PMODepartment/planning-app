@@ -157,6 +157,12 @@ create table if not exists weekly_commitments (
   reason_code text, reason_notes text, created_by uuid,
   created_at timestamptz default now(), updated_at timestamptz default now());
 
+-- What-if scenarios / Reflections (see 2026-07-07-schedule-scenarios.sql) — restorable checkpoints.
+create table if not exists schedule_scenarios (
+  id uuid primary key default gen_random_uuid(), project_id text not null, name text,
+  taken_at timestamptz default now(), created_by uuid, activity_count int,
+  project_finish date, critical_count int, total_cost numeric, activities jsonb default '{}'::jsonb);
+
 -- ───────────────────────── Grants (API roles) ─────────────────────────
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
@@ -329,7 +335,7 @@ create policy projects_write on projects for all using (is_planner()) with check
 do $$
 declare t text;
 begin
-  foreach t in array array['activity_code_types','activity_code_values','activity_steps','weekly_commitments'] loop
+  foreach t in array array['activity_code_types','activity_code_values','activity_steps','weekly_commitments','schedule_scenarios'] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
     execute format('create policy %I on %I for select using (is_approved())', t||'_read', t);

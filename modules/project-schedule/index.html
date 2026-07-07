@@ -701,6 +701,7 @@
               <button id="ps-import"><span data-ico="box" data-ico-size="14"></span> Import Excel/XER (OPC / P6)</button>
               <button id="ps-export"><span data-ico="download" data-ico-size="14"></span> Export to Excel</button>
               <button id="ps-baselines"><span data-ico="layers" data-ico-size="14"></span> Baselines…</button>
+              <button id="ps-scenarios"><span data-ico="layers" data-ico-size="14"></span> What-if scenarios…</button>
               <button id="ps-risk"><span data-ico="risk" data-ico-size="14"></span> Schedule risk (Monte Carlo)…</button>
               <button id="ps-codesbtn"><span data-ico="palette" data-ico-size="14"></span> Activity Codes…</button>
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
@@ -929,6 +930,21 @@
     <div class="ps-snap-body">
       <div class="ps-snap-list" id="ps-codes-list"></div>
       <div class="ps-snap-detail" id="ps-codes-detail"><div class="ps-ck-empty">Create a code type (e.g. Phase, Area, Zone) on the left, then add its values here. Assign values to activities in the Add/Edit Activity modal; group or filter the schedule by any code type from the toolbar.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- What-if scenarios (reflections) -->
+<div class="ps-bulk-back" id="ps-scn-back">
+  <div class="ps-bulk-panel" style="width:960px;">
+    <div class="ps-bulk-head"><strong>What-if Scenarios</strong>
+      <button class="pd-btn pd-btn-primary" id="ps-scn-capture" style="margin-left:14px;"><span data-ico="plus" data-ico-size="14"></span> Capture current as scenario</button>
+      <span class="ps-bulk-count" id="ps-scn-count"></span>
+      <button class="ps-bulk-x" id="ps-scn-x">&#215;</button>
+    </div>
+    <div class="ps-snap-body">
+      <div class="ps-snap-list" id="ps-scn-list"></div>
+      <div class="ps-snap-detail" id="ps-scn-detail"><div class="ps-ck-empty">Capture a scenario, experiment on the live schedule, then select the scenario to compare — or restore it to roll your experiment back.</div></div>
     </div>
   </div>
 </div>
@@ -3798,6 +3814,106 @@
       '<table class="ps-snap-tbl"><thead><tr><th>Activity</th><th>Baseline finish</th><th>Current finish</th><th style="text-align:right;">Variance</th></tr></thead><tbody>' + (body || '<tr><td colspan="4" class="ps-ck-empty">No matching activities.</td></tr>') + '</tbody></table>';
   }
 
+  // ----- WHAT-IF SCENARIOS (P6/OPC "Reflections") — restorable schedule checkpoints -----
+  var _scns = [], _scnSel = null;
+  // Summary of the current live schedule (finish / #critical / total planned cost) for compare.
+  function _liveSummary() {
+    computeCPM();
+    var tasks = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    var fins = tasks.map(function (r) { return pd(r.actual_finish || r.end_date); }).filter(Boolean);
+    var fin = fins.length ? new Date(Math.max.apply(null, fins.map(Number))) : null;
+    var crit = tasks.filter(function (r) { return r._critical; }).length;
+    var cost = tasks.reduce(function (s, r) { return s + (r.planned_cost || 0); }, 0);
+    return { finish: fin, critical: crit, cost: cost, n: tasks.length };
+  }
+  function openScenarios() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-scn-back').classList.add('open'); loadScenarios(); }
+  function closeScenarios() { document.getElementById('ps-scn-back').classList.remove('open'); }
+  async function loadScenarios() {
+    var list = document.getElementById('ps-scn-list'); list.innerHTML = '<div class="ps-ck-empty">Loading…</div>';
+    var res = await sb().from('schedule_scenarios').select('*').eq('project_id', pid).order('taken_at', { ascending: false });
+    if (res.error) { list.innerHTML = '<div class="ps-ck-empty">Could not load — run the schedule-scenarios migration.</div>'; return; }
+    _scns = res.data || []; renderScnList();
+  }
+  function renderScnList() {
+    var list = document.getElementById('ps-scn-list'), cnt = document.getElementById('ps-scn-count');
+    if (cnt) cnt.textContent = _scns.length + ' scenario' + (_scns.length === 1 ? '' : 's');
+    if (!_scns.length) { list.innerHTML = '<div class="ps-ck-empty">No scenarios yet. Use “Capture current as scenario”.</div>'; return; }
+    list.innerHTML = _scns.map(function (s) {
+      return '<div class="ps-snap-item' + (_scnSel === s.id ? ' active' : '') + '" data-id="' + esc(s.id) + '"><div class="t">' + esc(s.name || '(unnamed)') + '</div>' +
+        '<div class="m">' + (s.taken_at ? Fmt.date(String(s.taken_at).slice(0, 10)) : '') + ' · finish ' + (s.project_finish ? Fmt.date(s.project_finish) : '—') + ' · ' + (s.critical_count || 0) + ' critical</div>' +
+        '<button class="ps-snap-del" data-del="' + esc(s.id) + '" title="Delete scenario">&#215;</button></div>';
+    }).join('');
+    list.querySelectorAll('.ps-snap-item').forEach(function (it) { it.onclick = function (e) { if (e.target.getAttribute('data-del')) return; _scnSel = it.dataset.id; renderScnList(); showScnCompare(it.dataset.id); }; });
+    list.querySelectorAll('.ps-snap-del').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); deleteScenario(b.dataset.del); }; });
+  }
+  async function captureScenario() {
+    if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
+    var name = prompt('Scenario name:', 'What-if ' + fmtOPCDate(dstr(today())));
+    if (name === null) return;
+    var acts = {}, n = 0;
+    rows.forEach(function (r) { if (isWbs(r) || !r.activity_id) return; acts[String(r.activity_id)] = [r.start_date || null, r.end_date || null, r.duration_days != null ? r.duration_days : null, r.percent_complete != null ? r.percent_complete : null, r.predecessors || null, r.planned_cost != null ? r.planned_cost : null, r.bl_start || null, r.bl_finish || null]; n++; });
+    var sm = _liveSummary();
+    showLoading('Saving scenario…');
+    var res = await sb().from('schedule_scenarios').insert({ project_id: pid, name: name || ('What-if ' + fmtOPCDate(dstr(today()))), created_by: UID, activity_count: n, project_finish: sm.finish ? dstr(sm.finish) : null, critical_count: sm.critical, total_cost: sm.cost, activities: acts });
+    hideLoading();
+    if (res.error) { UI.toast('Scenario failed: ' + res.error.message + ' — run the schedule-scenarios migration.', 'error'); return; }
+    UI.toast('Scenario captured (' + n + ' activities).', 'success'); loadScenarios();
+  }
+  function showScnCompare(id) {
+    var s = _scns.find(function (x) { return x.id === id; }); if (!s) return;
+    var det = document.getElementById('ps-scn-detail'), acts = s.activities || {};
+    var live = _liveSummary();
+    var finDelta = (s.project_finish && live.finish) ? dayDiff(pd(s.project_finish), live.finish) : null;
+    var critDelta = live.critical - (s.critical_count || 0);
+    var costDelta = live.cost - (s.total_cost || 0);
+    function deltaCell(v, unit, goodIsNeg) { if (v == null) return '—'; var cls = (v === 0) ? '' : ((goodIsNeg ? v > 0 : v < 0) ? 'ps-bulk-late' : ''); return '<span class="' + cls + '">' + (v > 0 ? '+' : '') + v + (unit || '') + '</span>'; }
+    // per-activity finish drift live-vs-scenario
+    var recs = rows.filter(function (r) { return !isWbs(r) && r.activity_id && acts[String(r.activity_id)]; }).map(function (r) {
+      var a = acts[String(r.activity_id)], sf = pd(a[1]), lf = pd(r.actual_finish || r.end_date);
+      return { r: r, sf: a[1], lf: r.end_date, dv: (sf && lf) ? dayDiff(sf, lf) : null };
+    }).filter(function (x) { return x.dv != null && x.dv !== 0; });
+    recs.sort(function (a, b) { return Math.abs(b.dv) - Math.abs(a.dv); });
+    var body = recs.slice(0, 200).map(function (x) { return '<tr><td>' + esc((x.r.activity_id ? x.r.activity_id + ' · ' : '') + (x.r.activity_name || '')) + '</td><td>' + (x.sf ? Fmt.date(x.sf) : '—') + '</td><td>' + (x.lf ? Fmt.date(x.lf) : '—') + '</td><td class="' + (x.dv > 0 ? 'ps-bulk-late' : '') + '" style="text-align:right;">' + (x.dv > 0 ? '+' : '') + x.dv + 'd</td></tr>'; }).join('');
+    det.innerHTML = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">' +
+      '<strong>' + esc(s.name || '') + '</strong><span style="color:var(--pd-muted);font-size:12px;">captured ' + (s.taken_at ? Fmt.date(String(s.taken_at).slice(0, 10)) : '') + '</span>' +
+      '<span style="flex:1;"></span>' +
+      '<button class="pd-btn pd-btn-sm" id="ps-scn-restore">Restore this scenario…</button></div>' +
+      '<div class="ps-risk-kpis">' +
+        '<div class="ps-risk-kpi"><div class="v">' + deltaCell(finDelta, 'd', true) + '</div><div class="l">Finish vs scenario</div></div>' +
+        '<div class="ps-risk-kpi"><div class="v">' + (live.finish ? Fmt.date(dstr(live.finish)) : '—') + '</div><div class="l">Live finish (was ' + (s.project_finish ? Fmt.date(s.project_finish) : '—') + ')</div></div>' +
+        '<div class="ps-risk-kpi"><div class="v">' + deltaCell(critDelta, '', true) + '</div><div class="l">Critical Δ (' + (s.critical_count || 0) + ' → ' + live.critical + ')</div></div>' +
+        '<div class="ps-risk-kpi"><div class="v">' + (costDelta ? deltaCell(Math.round(costDelta), '', true) : '0') + '</div><div class="l">Planned cost Δ</div></div>' +
+      '</div>' +
+      '<h4 style="margin:14px 0 6px;font-size:13px;">Activities that moved <span style="font-weight:400;color:var(--pd-muted);font-size:11.5px;">(live finish vs scenario, ' + recs.length + ' changed)</span></h4>' +
+      '<table class="ps-snap-tbl"><thead><tr><th>Activity</th><th>Scenario finish</th><th>Live finish</th><th style="text-align:right;">Δ</th></tr></thead><tbody>' + (body || '<tr><td colspan="4" class="ps-ck-empty">No activities differ from this scenario yet — experiment on the live schedule, then compare.</td></tr>') + '</tbody></table>';
+    var rb = det.querySelector('#ps-scn-restore'); if (rb) rb.onclick = function () { restoreScenario(id); };
+  }
+  async function restoreScenario(id) {
+    var s = _scns.find(function (x) { return x.id === id; }); if (!s) return;
+    if (!confirm('Restore “' + (s.name || '') + '”?\n\nThis OVERWRITES every activity’s Start / Finish / Duration / % Complete / Predecessors / Planned Cost with the scenario’s values, rolling back any changes made since it was captured. Baseline (BL0) and actuals are not touched.')) return;
+    var acts = s.activities || {}, byId = {}; rows.forEach(function (r) { if (r.activity_id) byId[String(r.activity_id)] = r; });
+    var patches = []; Object.keys(acts).forEach(function (aid) { var r = byId[aid]; if (!r) return; var a = acts[aid]; patches.push({ id: r.id, start_date: a[0] || null, end_date: a[1] || null, duration_days: a[2] != null ? a[2] : null, percent_complete: a[3] != null ? a[3] : null, predecessors: a[4] || null, planned_cost: a[5] != null ? a[5] : null }); });
+    showLoading('Restoring scenario…');
+    var ok = 0, err = null, CH = 40;
+    for (var i = 0; i < patches.length && !err; i += CH) {
+      setLoading('Restoring ' + Math.min(i + CH, patches.length) + ' of ' + patches.length + '…');
+      var slice = patches.slice(i, i + CH);
+      var rr = await Promise.all(slice.map(function (p) { var pp = {}; Object.keys(p).forEach(function (k) { if (k !== 'id') pp[k] = p[k]; }); return sb().from(TABLE).update(pp).eq('id', p.id).then(function (x) { return x.error ? x.error.message : null; }); }));
+      for (var k = 0; k < rr.length; k++) { if (rr[k]) { err = rr[k]; break; } ok++; }
+    }
+    hideLoading();
+    if (err) { UI.toast('Restored ' + ok + ', then error: ' + err, 'error'); return; }
+    UI.toast('Scenario restored to ' + ok + ' activities.', 'success');
+    closeScenarios(); await load();
+  }
+  async function deleteScenario(id) {
+    if (!confirm('Delete this scenario?')) return;
+    var res = await sb().from('schedule_scenarios').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    _scns = _scns.filter(function (x) { return x.id !== id; }); if (_scnSel === id) _scnSel = null;
+    renderScnList(); document.getElementById('ps-scn-detail').innerHTML = '<div class="ps-ck-empty">Select a scenario to compare.</div>';
+  }
+
   // ----- MONTE CARLO SCHEDULE RISK (samples incomplete durations, re-runs the CPM forward pass) -----
   function openRisk() { if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-risk-back').classList.add('open'); renderRiskConfig(); }
   function closeRisk() { document.getElementById('ps-risk-back').classList.remove('open'); }
@@ -5581,6 +5697,10 @@
     document.getElementById('ps-bl-capture').onclick = captureBaseline;
     document.getElementById('ps-bl-x').onclick = closeBaselines;
     document.getElementById('ps-bl-back').onclick = function (e) { if (e.target === this) closeBaselines(); };
+    document.getElementById('ps-scenarios').onclick = function () { aMenu.classList.remove('open'); openScenarios(); };
+    document.getElementById('ps-scn-capture').onclick = captureScenario;
+    document.getElementById('ps-scn-x').onclick = closeScenarios;
+    document.getElementById('ps-scn-back').onclick = function (e) { if (e.target === this) closeScenarios(); };
     document.getElementById('ps-risk').onclick = function () { aMenu.classList.remove('open'); openRisk(); };
     document.getElementById('ps-risk-x').onclick = closeRisk;
     document.getElementById('ps-risk-back').onclick = function (e) { if (e.target === this) closeRisk(); };
