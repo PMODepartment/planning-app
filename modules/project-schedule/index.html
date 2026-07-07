@@ -704,6 +704,7 @@
               <button id="ps-risk"><span data-ico="risk" data-ico-size="14"></span> Schedule risk (Monte Carlo)…</button>
               <button id="ps-codesbtn"><span data-ico="palette" data-ico-size="14"></span> Activity Codes…</button>
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
+              <button id="ps-leveling"><span data-ico="users" data-ico-size="14"></span> Resource leveling…</button>
               <button id="ps-clear" class="ps-menu-danger" title="Delete all activities for this project">Clear schedule…</button>
             </div>
           </div>
@@ -929,6 +930,14 @@
       <div class="ps-snap-list" id="ps-codes-list"></div>
       <div class="ps-snap-detail" id="ps-codes-detail"><div class="ps-ck-empty">Create a code type (e.g. Phase, Area, Zone) on the left, then add its values here. Assign values to activities in the Add/Edit Activity modal; group or filter the schedule by any code type from the toolbar.</div></div>
     </div>
+  </div>
+</div>
+
+<!-- Resource leveling / over-allocation resolver -->
+<div class="ps-bulk-back" id="ps-lvl-back">
+  <div class="ps-bulk-panel" style="width:900px;">
+    <div class="ps-bulk-head"><strong>Resource Leveling</strong><span class="ps-bulk-count" id="ps-lvl-count"></span><button class="ps-bulk-x" id="ps-lvl-x">&#215;</button></div>
+    <div class="ps-risk-body" id="ps-lvl-body"></div>
   </div>
 </div>
 
@@ -3909,6 +3918,76 @@
       '<h4 style="margin:18px 0 6px;font-size:13px;">Top risk drivers <span style="font-weight:400;color:var(--pd-muted);font-size:11.5px;">(duration sensitivity to project finish)</span></h4>' + tornHTML;
   }
 
+  // ----- RESOURCE LEVELING / OVER-ALLOCATION RESOLVER -----
+  // Detects periods where a resource's planned demand exceeds its calendar capacity, and lets the
+  // planner delay a flexible (positive-float, not-yet-started) contributing activity within its own
+  // total float — so leveling never pushes the project finish. Each delay goes through persist()
+  // (undoable + recomputes CPM/rollups), then the report re-scans.
+  var _LMON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function _lvlMonLabel(M, i) { var d = new Date(M.y0, M.mo0 + i, 1); return _LMON[d.getMonth()] + " '" + String(d.getFullYear()).slice(2); }
+  function levelScan() {
+    computeCPM();   // fresh _float for every activity
+    var M = usageMonths(), roster = resRoster() || [], report = [];
+    roster.forEach(function (p) {
+      var demand = zeros(M.n);
+      if (p.assigns) p.assigns.forEach(function (o) { spreadAdd(demand, M, o.a.budgeted_units || 0, pd(o.act.start_date), pd(o.act.end_date)); });
+      else if (p.rows) p.rows.forEach(function (r) { spreadAdd(demand, M, r.planned_labor_units || 0, pd(r.start_date), pd(r.end_date)); });
+      var cap = resCapacity([p], M).capMax;
+      var over = [];
+      for (var i = 0; i < M.n; i++) { if (demand[i] > cap[i] + 1e-6 && cap[i] > 0) over.push({ i: i, demand: demand[i], cap: cap[i] }); }
+      if (over.length) {
+        over.sort(function (a, b) { return (b.demand - b.cap) - (a.demand - a.cap); });
+        // flexible contributing activities: incomplete, not started, positive float
+        var acts = (p.assigns ? p.assigns.map(function (o) { return o.act; }) : (p.rows || [])), seen = {}, flex = [];
+        acts.forEach(function (a) {
+          if (!a || seen[a.id]) return; seen[a.id] = 1;
+          if ((a.percent_complete || 0) >= 100 || a.actual_finish || a.actual_start) return;
+          if (a._float == null || a._float <= 0) return;
+          flex.push(a);
+        });
+        flex.sort(function (x, y) { return (y._float || 0) - (x._float || 0); });
+        report.push({ res: p, M: M, over: over, peak: over[0], flex: flex });
+      }
+    });
+    return report;
+  }
+  function openLeveling() { if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-lvl-back').classList.add('open'); renderLeveling(); }
+  function closeLeveling() { document.getElementById('ps-lvl-back').classList.remove('open'); }
+  function renderLeveling() {
+    var body = document.getElementById('ps-lvl-body'), cnt = document.getElementById('ps-lvl-count');
+    if (!ASSIGN.length && !rows.some(function (r) { return r.responsible_party; })) {
+      body.innerHTML = '<div class="ps-ck-empty">No resource assignments or Responsible Party set — assign resources (details panel) so demand can be computed against capacity.</div>';
+      if (cnt) cnt.textContent = ''; return;
+    }
+    var report = levelScan();
+    if (cnt) cnt.textContent = report.length + ' resource' + (report.length === 1 ? '' : 's') + ' over-allocated';
+    if (!report.length) { body.innerHTML = '<div class="ps-ck-empty">No over-allocations found — every resource is within its calendar capacity each period. 🎯</div>'; return; }
+    body.innerHTML = '<p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Demand is planned units spread across each activity’s dates; capacity is the resource’s max units/time × working days (its calendar). Delaying an activity here shifts it within its own <strong>total float</strong>, so the project finish never moves. Each delay is undoable.</p>' +
+      report.map(function (e) {
+        var pk = e.peak, over = Math.round((pk.demand - pk.cap) * 10) / 10;
+        var flexHTML = e.flex.length ? e.flex.slice(0, 8).map(function (a) {
+          var fl = a._float || 0, delay = Math.min(28, fl);
+          return '<div class="ps-risk-torn-row" style="gap:10px;"><span class="nm" title="' + esc(a.activity_name || '') + '">' + esc(a.activity_id || '') + ' — ' + esc(a.activity_name || '') + '</span>' +
+            '<span style="flex:0 0 90px;text-align:right;color:var(--pd-muted);">' + fl + 'd float</span>' +
+            '<button class="pd-btn pd-btn-sm" data-lvl-delay="' + esc(a.id) + '" data-lvl-days="' + delay + '"' + (delay <= 0 ? ' disabled' : '') + '>Delay ' + delay + 'd</button></div>';
+        }).join('') : '<div class="ps-ck-empty" style="padding:8px;">No flexible activities to shift — all contributors are critical or already started. Add capacity or re-sequence.</div>';
+        return '<div class="pd-card" style="padding:12px 14px;margin-bottom:12px;">' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><strong>' + esc(e.res.name) + '</strong>' +
+          '<span style="color:var(--pd-red);font-weight:700;">peak ' + _lvlMonLabel(e.M, pk.i) + ': ' + Math.round(pk.demand * 10) / 10 + ' vs ' + Math.round(pk.cap * 10) / 10 + ' cap (+' + over + ' over)</span>' +
+          '<span style="margin-left:auto;color:var(--pd-muted);font-size:12px;">' + e.over.length + ' period' + (e.over.length === 1 ? '' : 's') + ' over</span></div>' +
+          flexHTML + '</div>';
+      }).join('');
+    body.querySelectorAll('[data-lvl-delay]').forEach(function (b) { b.onclick = function () { levelDelay(b.dataset.lvlDelay, parseInt(b.dataset.lvlDays, 10) || 0); }; });
+  }
+  async function levelDelay(id, days) {
+    if (!days) return;
+    var r = rows.find(function (x) { return x.id === id; }); if (!r) return;
+    var s = pd(r.start_date), e = pd(r.end_date); if (!s || !e) { UI.toast('Activity has no dates to shift.', 'warn'); return; }
+    var patch = { start_date: dstr(addDays(s, days)), end_date: dstr(addDays(e, days)) };
+    var ok = await persist(id, patch);
+    if (ok) { UI.toast('Delayed ' + (r.activity_id || '') + ' by ' + days + ' days (within float).', 'success'); renderGrid(); renderGantt(); renderLeveling(); }
+  }
+
   // ----- GLOBAL CHANGE (rule-based bulk edit, OPC/P6 "Global Change") -----
   var GC_FIELDS = [
     { k: 'activity_name', label: 'Activity Name', type: 'text' },
@@ -5510,6 +5589,9 @@
     document.getElementById('ps-codes-back').onclick = function (e) { if (e.target === this) closeCodes(); };
     document.getElementById('ps-codes-add').onclick = addCodeType;
     document.getElementById('ps-globalchange').onclick = function () { aMenu.classList.remove('open'); openGlobalChange(); };
+    document.getElementById('ps-leveling').onclick = function () { aMenu.classList.remove('open'); openLeveling(); };
+    document.getElementById('ps-lvl-x').onclick = closeLeveling;
+    document.getElementById('ps-lvl-back').onclick = function (e) { if (e.target === this) closeLeveling(); };
     document.getElementById('ps-gc-x').onclick = closeGlobalChange;
     document.getElementById('ps-gc-back').onclick = function (e) { if (e.target === this) closeGlobalChange(); };
     document.getElementById('ps-gc-preview').onclick = gcPreview;
