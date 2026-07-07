@@ -69,5 +69,47 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inject);
   else inject();
 
+  // ---- PWA offline resilience (installable + network-first service worker) ----
+  // Derive the app root from THIS script's own URL so it works at any page depth
+  // (root pages and modules/<name>/ pages alike).
+  var _root = (function () {
+    try {
+      var s = document.currentScript && document.currentScript.src;
+      if (!s) { var els = document.getElementsByTagName('script'); for (var i = 0; i < els.length; i++) { if (/assets\/js\/theme\.js/.test(els[i].src)) { s = els[i].src; break; } } }
+      return s ? s.replace(/assets\/js\/theme\.js.*$/, '') : null;
+    } catch (e) { return null; }
+  })();
+  if (_root) {
+    if (!document.querySelector('link[rel="manifest"]')) {
+      var lk = document.createElement('link'); lk.rel = 'manifest'; lk.href = _root + 'manifest.webmanifest'; document.head.appendChild(lk);
+    }
+    if (!document.querySelector('meta[name="theme-color"]')) {
+      var mc = document.createElement('meta'); mc.name = 'theme-color'; mc.content = '#EE3124'; document.head.appendChild(mc);
+    }
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () { navigator.serviceWorker.register(_root + 'sw.js', { scope: _root }).catch(function () {}); });
+    }
+  }
+
+  // ---- Connectivity indicator (pure UI; no caching risk) ----
+  function offlineBadge() {
+    var ID = 'pd-offline-badge';
+    function upd() {
+      var el = document.getElementById(ID);
+      if (!navigator.onLine) {
+        if (!el) {
+          el = document.createElement('div'); el.id = ID;
+          el.textContent = 'Offline — showing last-loaded data; changes won’t save until you reconnect.';
+          el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:99999;background:#B45309;color:#fff;padding:7px 14px;border-radius:999px;font:600 12px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:92vw;text-align:center;';
+          document.body.appendChild(el);
+        }
+        el.style.display = 'block';
+      } else if (el) { el.style.display = 'none'; }
+    }
+    window.addEventListener('online', upd); window.addEventListener('offline', upd); upd();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', offlineBadge);
+  else offlineBadge();
+
   window.PDTheme = { apply: apply, current: current };
 })();

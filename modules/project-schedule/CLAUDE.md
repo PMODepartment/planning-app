@@ -98,6 +98,23 @@ change (verified 0 mismatches vs the old algorithm across 2,000 random DAGs):
   The rollups (`_spanMap`/`_costMap`/`_min`/`_max`) + CPM still refresh every rebuild (needed after
   date/cost edits); only the sort + segs recompute are skipped.
 
+## PWA / offline resilience (2026-07-07) — app-wide
+For flaky site connectivity. Three new pieces, all safe-by-construction:
+- **`sw.js`** (repo root) — a **network-first** service worker: only same-origin GET is handled;
+  writes and ALL cross-origin (Supabase REST/auth) pass straight through (never cached/queued).
+  Online it always fetches fresh then refreshes the cache; offline it falls back to the last cached
+  asset/page. Because network is tried first, it can only ADD an offline fallback — never serves
+  stale while online. Bump `CACHE` (`pd-shell-v*`) to purge.
+- **`manifest.webmanifest`** (repo root) — installable (name/icons/theme `#EE3124`, `display:standalone`).
+- **`assets/js/theme.js`** (loaded on every page) now, app-wide: derives the app root from its own
+  script URL (works at any page depth), injects the `<link rel=manifest>` + `theme-color` meta,
+  registers `sw.js` on `load`, and shows a fixed **offline indicator** ("Offline — … changes won't
+  save") toggled by `online`/`offline` events (pure UI, no caching risk).
+- **NOT offline writes** — edits still require connectivity (the indicator says so). Full offline
+  write-queue/sync is deliberately out of scope (auth + conflict complexity).
+- Module `?v=` → 20260709 (theme.js changed). NOTE: could not be tested against the live GitHub
+  Pages origin from here; network-first is the safest strategy but verify install/offline on staging.
+
 ## Planner batch 7 (2026-07-07) — Cockpit redeveloped as a client-facing outlook, not tables
 User feedback after batch 6 (which had already turned the two list panels into bar charts): "still
 doesn't feel very useful... shouldn't be full of tables," and asked what a **Client** would want to
