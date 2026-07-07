@@ -764,6 +764,7 @@
         <div><label class="pd-label">Status</label><select class="pd-select" id="ps-f-status-sel"><option>Not Started</option><option>In Progress</option><option>Completed</option></select></div>
         <div><label class="pd-label">Baseline Start</label><input class="pd-input" id="ps-f-bls" type="date" /></div>
         <div><label class="pd-label">Baseline Finish</label><input class="pd-input" id="ps-f-blf" type="date" /></div>
+        <div><label class="pd-label">Contract Date <small>(obligation / LD date)</small></label><input class="pd-input" id="ps-f-contract" type="date" /></div>
         <div><label class="pd-label">Planned Start *</label><input class="pd-input" id="ps-f-start" type="date" required /></div>
         <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
         <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
@@ -2540,6 +2541,8 @@
   function scheduleRender() { if (_rafP) return; _rafP = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { _rafP = false; doRender(); }); }
 
   function finVar(r) { if (!r.bl_finish) return null; var b = pd(r.bl_finish), f = pd(r.actual_finish || r.end_date); if (!b || !f) return null; return dayDiff(b, f); }
+  // Days the forecast finish is past the CONTRACT date (+ = LD exposure). null if no contract date.
+  function contractVar(r) { if (!r.contract_date) return null; var c = pd(r.contract_date), f = pd(r.actual_finish || r.end_date); if (!c || !f) return null; return dayDiff(c, f); }
   function varCellHtml(r) { var d = finVar(r); if (d == null) return '<div class="ps-cell c-var"></div>'; var cls = d > 0 ? 'ps-var-late' : (d < 0 ? 'ps-var-early' : ''); return '<div class="ps-cell c-var ' + cls + '">' + (d > 0 ? '+' : '') + d + 'd</div>'; }
   function statusCellHtml(r) {
     var s = r.status || 'Not Started';
@@ -2920,20 +2923,23 @@
     var behind = tasks.map(function (r) { return { r: r, slip: finVar(r) }; }).filter(function (x) { return x.slip != null && x.slip > 0; }).sort(function (a, b) { return b.slip - a.slip; });
     var milesAtRisk = tasks.filter(isMile).map(function (r) { return { r: r, slip: finVar(r) }; }).filter(function (x) { return x.slip != null && x.slip > 0; }).sort(function (a, b) { return b.slip - a.slip; });
     var crit = tasks.filter(function (r) { return r._critical; });
+    var contractRisk = tasks.filter(function (r) { var c = contractVar(r); return c != null && c > 0; });
     var avgPct = tasks.length ? Math.round(tasks.reduce(function (s, r) { return s + (r.percent_complete || 0); }, 0) / tasks.length) : 0;
     var look = _ckLookSet();
     function kpi(v, l, cls) { return '<div class="ps-ck-kpi' + (cls ? ' ' + cls : '') + '"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; }
     function slipTag(s) { return '<span class="slip' + (s > 0 ? '' : ' ok') + '">' + (s > 0 ? '+' : '') + s + 'd</span>'; }
+    function ldTag(r) { var c = contractVar(r); return (c != null && c > 0) ? ' <span class="slip" title="Days past contract date — LD exposure">LD +' + c + 'd</span>' : ''; }
     function row(r, right) { return '<div class="ps-ck-row" data-id="' + esc(r.id) + '"><span class="id">' + esc(r.activity_id || '') + '</span><span class="nm">' + esc(r.activity_name || '') + '</span>' + (right || '') + '</div>'; }
     function fill(id, arr, fn, empty) { var e = document.getElementById(id); if (!e) return; e.innerHTML = arr.length ? arr.map(fn).join('') : '<div class="ps-ck-empty">' + empty + '</div>'; e.querySelectorAll('.ps-ck-row').forEach(function (rw) { rw.onclick = function () { selId = rw.dataset.id; switchTab('schedule'); renderDetails(); highlightRow(); }; }); }
     kp.innerHTML = kpi(avgPct + '%', 'Overall % complete') +
       kpi(behind.length, 'Activities behind', behind.length ? 'warn' : 'good') +
       kpi(milesAtRisk.length, 'Milestones at risk', milesAtRisk.length ? 'warn' : 'good') +
+      kpi(contractRisk.length, 'Contract dates at risk', contractRisk.length ? 'warn' : 'good') +
       kpi(crit.length, 'Critical activities') +
-      kpi(look.length, 'Due in 3 weeks') +
+      kpi(look.length, (_ckLookWeeks || 3) + '-week lookahead') +
       kpi(fmtOPCDate(dstr(dd)), 'Data date');
-    fill('ps-ck-miles', milesAtRisk.slice(0, 60), function (x) { return row(x.r, slipTag(x.slip)); }, 'No milestones are late vs baseline. 🎯');
-    fill('ps-ck-behind', behind.slice(0, 60), function (x) { return row(x.r, slipTag(x.slip)); }, 'Nothing is behind its baseline finish.');
+    fill('ps-ck-miles', milesAtRisk.slice(0, 60), function (x) { return row(x.r, slipTag(x.slip) + ldTag(x.r)); }, 'No milestones are late vs baseline. 🎯');
+    fill('ps-ck-behind', behind.slice(0, 60), function (x) { return row(x.r, slipTag(x.slip) + ldTag(x.r)); }, 'Nothing is behind its baseline finish.');
     fill('ps-ck-look', look.slice(0, 100), function (r) { return row(r, '<span class="mt">' + (pd(r.start_date) ? Fmt.date(r.start_date) : (r.end_date ? Fmt.date(r.end_date) : '—')) + '</span>'); }, 'Nothing due in the next 3 weeks.');
     fill('ps-ck-crit', crit.slice(0, 100), function (r) { return row(r, '<span class="mt">' + (r._float != null ? r._float + 'd float' : '') + '</span>'); }, 'No critical path found — add relationships or dates.');
   }
@@ -3033,6 +3039,7 @@
     set('ps-f-status-sel', row ? (row.status || 'Not Started') : 'Not Started');
     set('ps-f-bls', row && row.bl_start ? String(row.bl_start).slice(0,10) : '');
     set('ps-f-blf', row && row.bl_finish ? String(row.bl_finish).slice(0,10) : '');
+    set('ps-f-contract', row && row.contract_date ? String(row.contract_date).slice(0,10) : '');
     set('ps-f-start', row && row.start_date ? String(row.start_date).slice(0,10) : '');
     set('ps-f-finish', row && row.end_date ? String(row.end_date).slice(0,10) : '');
     set('ps-f-pct', row && row.percent_complete != null ? row.percent_complete : '');
@@ -3150,6 +3157,7 @@
       secondary_constraint_date: v('ps-f-scond') || null,
       remarks: v('ps-f-remarks') || null, updated_at: new Date().toISOString()
     };
+    var savedId = editId;
     if (editId) {
       var cur = rows.find(function (x) { return x.id === editId; });
       var patch = {};
@@ -3159,8 +3167,11 @@
       payload.created_by = UID;
       var res = await sb().from(TABLE).insert(payload).select().single();
       if (res.error) { UI.toast(res.error.message, 'error'); return; }
-      if (res.data && res.data.id) pushUndo({ type: 'insert', id: res.data.id, payload: payload });
+      if (res.data && res.data.id) { savedId = res.data.id; pushUndo({ type: 'insert', id: res.data.id, payload: payload }); }
     }
+    // contract_date written separately + tolerantly, so a not-yet-migrated DB (missing column)
+    // never breaks the main save. Ignore the error if the column doesn't exist yet.
+    if (savedId) { var cval = v('ps-f-contract') || null; try { var cr = await sb().from(TABLE).update({ contract_date: cval }).eq('id', savedId); if (!cr.error) { var rr = rows.find(function (x) { return x.id === savedId; }); if (rr) rr.contract_date = cval; } } catch (e) {} }
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
     closeModal(); load();
   }

@@ -78,6 +78,15 @@ finish, days late), **3-week lookahead** (incomplete activities whose start/fini
 [data date, +21d]), **Critical-path drivers** (`_critical` from `computeCPM`). Rows click → jump to
 the Schedule view with the activity selected. CSS `.ps-ck-*`.
 
+## Planner batch 3 (2026-07-07) — Contract date + LD tracker
+**Migration:** `../../migrations/2026-07-07-schedule-contract-date.sql` (adds
+`project_schedule.contract_date date`). A **Contract Date** field is in the Add/Edit modal
+(`#ps-f-contract`, next to Baseline Finish). To avoid breaking saves on a not-yet-migrated DB,
+`contract_date` is written **separately + tolerantly** after the main save (a missing-column error
+is swallowed) — it is NOT in the main payload. `contractVar(r)` = forecast finish − contract date
+(+ = LD exposure). Cockpit adds a **"Contract dates at risk"** KPI and an **"LD +Nd"** tag on the
+Milestones-at-risk / Most-behind rows when the forecast passes the contract date.
+
 ## Planner batch 2 (2026-07-07) — bulk progress update + lookahead export
 Both schema-free, driven from the cockpit action bar (`.ps-ck-bar`).
 - **Bulk "Update Progress" grid** (`#ps-bulk-back` overlay): `openBulkUpdate()` → `renderBulkBody()`
