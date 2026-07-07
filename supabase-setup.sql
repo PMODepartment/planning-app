@@ -80,6 +80,8 @@ create table if not exists project_schedule (
   actual_start date, actual_finish date, bl_start date, bl_finish date, bl_cost numeric(18,2),
   -- Monte Carlo schedule risk: per-activity 3-point override (see 2026-07-07-risk-3point-duration.sql)
   risk_optimistic_pct numeric(6,2), risk_pessimistic_pct numeric(6,2),
+  -- Activity Codes assignment: { "<code_type_id>": "<code_value_id>" } (see 2026-07-07-activity-codes.sql)
+  activity_codes jsonb default '{}'::jsonb,
   -- OPC Activity Details fields
   owner text, work_package text, calendar text,
   duration_type text default 'Fixed Duration & Units/Time', percent_complete_type text default 'Duration',
@@ -130,6 +132,30 @@ create table if not exists resource_assignments (
   activity_id text, resource_id uuid references resources(id), resource_code text, role text,
   budgeted_units numeric, actual_units numeric, remaining_units numeric, uom text default 'hours', remarks text,
   created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
+
+-- Activity Codes (see 2026-07-07-activity-codes.sql) — project-defined code
+-- dictionaries for grouping/filtering the schedule orthogonally to the WBS.
+create table if not exists activity_code_types (
+  id uuid primary key default gen_random_uuid(), project_id text not null, name text not null,
+  sort_order int default 0, created_by uuid, created_at timestamptz default now());
+create table if not exists activity_code_values (
+  id uuid primary key default gen_random_uuid(), code_type_id uuid references activity_code_types(id) on delete cascade,
+  project_id text not null, value text not null, color text, sort_order int default 0, created_at timestamptz default now());
+
+-- Weighted Steps (see 2026-07-07-activity-steps.sql) — per-activity checklist
+-- whose weighted % complete can drive project_schedule.percent_complete.
+create table if not exists activity_steps (
+  id uuid primary key default gen_random_uuid(), project_id text not null, activity_id text,
+  name text not null, weight numeric(10,2) default 1, percent_complete numeric(5,2) default 0,
+  sort_order int default 0, created_by uuid,
+  created_at timestamptz default now(), updated_at timestamptz default now());
+
+-- Last Planner weekly work plan + PPC (see 2026-07-07-weekly-commitments.sql).
+create table if not exists weekly_commitments (
+  id uuid primary key default gen_random_uuid(), project_id text not null, week_start date not null,
+  activity_id text, description text not null, responsible text, status text default 'Open',
+  reason_code text, reason_notes text, created_by uuid,
+  created_at timestamptz default now(), updated_at timestamptz default now());
 
 -- ───────────────────────── Grants (API roles) ─────────────────────────
 grant usage on schema public to anon, authenticated;
@@ -294,6 +320,24 @@ grant select, insert, update, delete on workspaces to authenticated;
 drop policy if exists projects_admin_write on projects;
 drop policy if exists projects_write on projects;
 create policy projects_write on projects for all using (is_planner()) with check (is_planner());
+
+-- ───────────────────────── RLS: Activity Codes / Steps / Last Planner ─────────────────────────
+-- These three (added 2026-07-07) use the simpler is_approved()/is_planner() read/write split
+-- (matches schedule_baselines/schedule_audit/schedule_snapshots) rather than the per-project
+-- can_access_project() loop above — kept as standalone blocks so this file matches each
+-- table's own migration exactly. Must come after is_planner() is defined (just above).
+do $$
+declare t text;
+begin
+  foreach t in array array['activity_code_types','activity_code_values','activity_steps','weekly_commitments'] loop
+    execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists %I on %I', t||'_read', t);
+    execute format('create policy %I on %I for select using (is_approved())', t||'_read', t);
+    execute format('drop policy if exists %I on %I', t||'_write', t);
+    execute format('create policy %I on %I for all using (is_planner()) with check (is_planner())', t||'_write', t);
+  end loop;
+end $$;
+
 insert into workspaces (id, name, code, parent_id, node_type, group_head, sort_order) values
   ('CORP','Corporate Root','Corp',null,'workspace',null,0),
   ('NONPROD','Non Production','NonP','CORP','workspace',null,1),

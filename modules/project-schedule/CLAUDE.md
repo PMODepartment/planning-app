@@ -112,6 +112,91 @@ change (verified 0 mismatches vs the old algorithm across 2,000 random DAGs):
   is already windowed (`renderWindow`, cached `DL`, scroll never rebuilds) and client-side
   CPM/critical-path/roll-ups require the full dataset in memory.
 
+## OPC parity batch: Activity Codes, Weighted Steps, Last Planner/PPC (2026-07-07)
+Three requested together (user prioritization: build the one that's more foundational/necessary
+where it matters — see the per-feature notes below).
+
+**1. Activity Codes + code-based grouping/filtering.**
+**Migration:** `../../migrations/2026-07-07-activity-codes.sql` (`activity_code_types`,
+`activity_code_values`, both RLS via `is_approved()`/`is_planner()`; `project_schedule.activity_codes
+jsonb default '{}'` — a compact `{ "<code_type_id>": "<code_value_id>" }` map, matching the
+`schedule_baselines` jsonb-snapshot convention rather than a join table).
+- **Actions ▾ → Activity Codes…** (`#ps-codes-back`, `openCodes`/`renderCodesList`/`renderCodesDetail`)
+  — a two-pane manager (list of code TYPES on the left — e.g. Phase, Area, Zone — their VALUES on
+  the right), reusing the Snapshots modal's `.ps-snap-list`/`.ps-snap-detail` two-pane CSS. Rename/
+  delete a type, add/delete its values; each value's detail row shows how many activities currently
+  use it.
+  - **Add/Edit Activity modal** gets one dynamic `<select>` per code type (`populateCodesFields`,
+    `#ps-f-codes-wrap`/`#ps-f-codes-fields`, hidden entirely when the project has no code types
+    yet). Written **separately + tolerantly** after the main save (own try/catch, same pattern as
+    `contract_date`/`risk_*_pct`).
+  - **Grouping**: `#ps-group` gets one auto-populated "Group: <name>" option per code type
+    (`populateGroupSelect`, called after every project load and after any code-type CRUD); `groupKeyOf`
+    resolves `groupBy==='code:<id>'` via the activity's `activity_codes[id]` → the value's label
+    (falls back to "— Unassigned —"). The existing non-WBS grouping path in `buildNodes()` is fully
+    generic, so no grouping-logic changes were needed beyond `groupKeyOf`.
+  - **Filtering**: `filters.codes = { "<code_type_id>": { "<code_value_id>": true } }`, one checkbox
+    section per code type in the filter menu (`buildFilterMenu`), ANDed across types / ORed within a
+    type in `rowMatches`.
+- Deliberately **not** added as a grid column this round — the sticky-column chain (contiguous-from-
+  the-left invariant noted elsewhere in this file) is easy to break, and grouping+filtering already
+  satisfies the ask; a column can follow later if wanted.
+
+**2. Weighted Steps → physical % complete.**
+**Migration:** `../../migrations/2026-07-07-activity-steps.sql` (`activity_steps`, keyed by
+`activity_id` like `resource_assignments`, not the row's uuid).
+- New **Steps** tab in the Activity Details panel (between Status and Resource Assignments —
+  `detSteps`/`wireSteps`/`openStepForm`/`delStep`, copied structurally from `detAssign`/
+  `wireAssign`/`openAssignForm`/`delAssign`): a per-activity checklist, each step has a name/weight/
+  %-complete. Shows the rolled-up "Weighted physical % complete" above the list.
+- **`physicalPct(activityId)`**: weight-weighted average of each step's own % complete
+  (`Σ(weight·pct)/Σ(weight)`); returns `null` when the activity has no steps (manual entry still
+  applies, no behavior change for activities that don't use Steps).
+- **`syncPhysicalPct(r)`** writes the rolled-up value back onto `project_schedule.percent_complete`
+  via the existing `persist()` (not a raw update) every time a step is added/edited/deleted — so
+  undo, audit, and the CPM/rebuild trigger (`percent_complete` is already in `_RECOMPUTE_FIELDS`)
+  all fire exactly as they would for a manual edit. This is the entire point of the feature: CPM,
+  EVM, Cost Loading, forecasts, the Planner Cockpit, and Monte Carlo actuals all read
+  `percent_complete` already, so they benefit with **zero further changes**.
+- The Add/Edit modal's **% Complete** field is disabled (with an explanatory title) when the
+  activity has steps, pointing to the Steps tab — purely a UX affordance; the field still submits
+  its (already-synced) value if somehow re-enabled, so nothing breaks if steps are deleted mid-edit.
+
+**3. Last Planner System — weekly work plan + Percent Plan Complete (PPC).**
+**Migration:** `../../migrations/2026-07-07-weekly-commitments.sql` (`weekly_commitments`: project +
+`week_start` (Monday) + description + optional `activity_id` link + responsible + status
+(Open/Complete/Not Complete) + reason_code/notes).
+- New 4th view/tab (**Last Planner**, sidebar `data-view="lastplanner"` + title-menu
+  `data-tab="lastplanner"`, `#ps-view-lastplanner`) — same top-level pattern as Planner/Schedule/
+  Cost Loading. The Schedule-only toolbar (Add activity/Group/Zoom/etc.) is hidden here too, same
+  as on Planner/Cost Loading.
+- **Week navigator** (`_lpWeek`, `mondayOf(d)`, prev/next/"This week", persisted per-project in
+  localStorage) + **Add commitment** modal (description, optional linked activity picked from the
+  live schedule, responsible).
+- **Weekly commitments table**: inline **Status** (Open/Complete/Not Complete) and **Reason code**
+  selects per row (reason select disabled unless status is Not Complete) — changes save immediately
+  (`lpUpdate`), matching a real Friday-afternoon review workflow rather than requiring the edit modal
+  for every status flip. Reason codes are a fixed Last-Planner-standard list (`LP_REASONS`: Materials,
+  Manpower/Labor, Equipment, Prior Work Not Complete, Design/Information, Weather, Owner/Client
+  Decision, Rework, Other).
+- **PPC KPI** for the selected week = `Complete ÷ (Complete + Not Complete)` — **Open (not yet
+  reviewed) commitments are excluded from the denominator** so a PPC number doesn't read artificially
+  low mid-week before the review happens; the KPI row also shows the raw Open count so it's clear
+  not everything's been assessed yet.
+- **PPC trend chart** (`renderLPPpcTrend`): all weeks with ≥1 assessed commitment, plotted against a
+  dashed 80% Lean-Construction benchmark line. **PPC trend / Reasons for variance** panels reuse the
+  cockpit's `.ps-ck-trend-card`/`.ps-risk-torn-row` visual language rather than inventing new chart
+  chrome.
+- **Reasons for variance** (`renderLPReasons`): a Pareto-style ranked bar list of reason codes across
+  **all** Not-Complete commitments (not just the current week), so recurring root causes are visible
+  even if this week's variance count is small.
+- Verified in throwaway gitignored harnesses (`_ui_test.html`): `mondayOf()` hand-checked against all
+  7 weekdays (Sun correctly maps back to the *previous* Monday, Mon–Sat map to their own week);
+  `physicalPct` weighted-average matched a hand calc (2·100+3·80+3·0+2·0)/10 = 44%; the Activity-
+  Codes assignment `<select>`s correctly pre-select an activity's existing code values; screenshotted
+  the PPC trend chart and — same lesson as the Milestone Outlook timeline earlier — caught and fixed
+  an edge-label clipping bug (last x-axis date ran off the SVG's right edge) before shipping.
+
 ## Monte Carlo: per-activity 3-point duration override (2026-07-07)
 **Migration:** `../../migrations/2026-07-07-risk-3point-duration.sql` (`project_schedule.risk_optimistic_pct`/
 `risk_pessimistic_pct`, both `numeric(6,2)`, nullable — folded into `supabase-setup.sql`).

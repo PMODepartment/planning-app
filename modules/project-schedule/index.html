@@ -528,6 +528,9 @@
     .ps-snap-item .m { font-size:11.5px; color:var(--pd-muted); margin-top:2px; }
     .ps-snap-del { position:absolute; right:8px; top:10px; background:none; border:none; font-size:16px; color:var(--pd-muted); cursor:pointer; }
     .ps-snap-del:hover { color:var(--pd-red); }
+    .ps-snap-item.active { background:var(--pd-red-light); }
+    /* Activity Codes assignment strip in the Add/Edit modal */
+    .ps-f-codes-row { display:flex; flex-direction:column; gap:3px; }
     .ps-snap-detail { flex:1; overflow:auto; padding:14px; }
     .ps-snap-sum { font-size:12.5px; color:var(--pd-muted); margin-bottom:10px; }
     .ps-snap-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
@@ -640,6 +643,7 @@
       <a href="#" data-view="planner"><span class="pd-navico" data-ico="pulse"></span>Planner</a>
       <a href="#" class="active" data-view="schedule"><span class="pd-navico" data-ico="calendar"></span>Schedule</a>
       <a href="#" data-view="cost"><span class="pd-navico" data-ico="cash"></span>Cost Loading</a>
+      <a href="#" data-view="lastplanner"><span class="pd-navico" data-ico="check"></span>Last Planner</a>
     </nav>
   </aside>
 
@@ -651,6 +655,7 @@
           <button data-tab="planner"><span data-ico="pulse" data-ico-size="14"></span> Planner Cockpit</button>
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
           <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
+          <button data-tab="lastplanner"><span data-ico="check" data-ico-size="14"></span> Last Planner</button>
         </div>
       </div>
       <!-- Project context sits next to the title (OPC-style), name over workspace, left-aligned.
@@ -687,6 +692,7 @@
               <button id="ps-export"><span data-ico="download" data-ico-size="14"></span> Export to Excel</button>
               <button id="ps-baselines"><span data-ico="layers" data-ico-size="14"></span> Baselines…</button>
               <button id="ps-risk"><span data-ico="risk" data-ico-size="14"></span> Schedule risk (Monte Carlo)…</button>
+              <button id="ps-codesbtn"><span data-ico="palette" data-ico-size="14"></span> Activity Codes…</button>
               <button id="ps-clear" class="ps-menu-danger" title="Delete all activities for this project">Clear schedule…</button>
             </div>
           </div>
@@ -758,6 +764,7 @@
           <div class="ps-details-tabs" id="ps-details-tabs">
             <button class="ps-dtab active" data-dtab="general">General</button>
             <button class="ps-dtab" data-dtab="status">Status</button>
+            <button class="ps-dtab" data-dtab="steps">Steps</button>
             <button class="ps-dtab" data-dtab="assign">Resource Assignments</button>
             <button class="ps-dtab" data-dtab="rels">Relationships</button>
             <button class="ps-dtab" data-dtab="trace">Trace Logic</button>
@@ -815,6 +822,27 @@
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="pulse" data-ico-size="15"></span> Critical-path drivers</div><div id="ps-ck-buckets" class="ps-ck-buckets"></div><div id="ps-ck-crit" class="ps-ck-pills"></div></div>
         </div>
       </div>
+
+      <!-- LAST PLANNER: weekly work plan + Percent Plan Complete (PPC) -->
+      <div id="ps-view-lastplanner" style="display:none;">
+        <div class="ps-ck-bar">
+          <button class="pd-btn ps-icobtn" id="ps-lp-prev" title="Previous week"><span data-ico="arrowLeft" data-ico-size="15"></span></button>
+          <strong id="ps-lp-weeklbl" style="min-width:180px;text-align:center;"></strong>
+          <button class="pd-btn ps-icobtn" id="ps-lp-next" title="Next week"><span data-ico="arrowRight" data-ico-size="15"></span></button>
+          <button class="pd-btn" id="ps-lp-thisweek">This week</button>
+          <span class="ps-tb-div"></span>
+          <button class="pd-btn pd-btn-primary" id="ps-lp-add"><span data-ico="plus" data-ico-size="15"></span> Add commitment</button>
+        </div>
+        <div class="ps-ck-kpis" id="ps-lp-kpis"></div>
+        <div class="pd-card ps-ck-card ps-ck-trend-card">
+          <div class="ps-ck-h"><span data-ico="check" data-ico-size="15"></span> Weekly commitments</div>
+          <div id="ps-lp-table"></div>
+        </div>
+        <div class="ps-ck-grid">
+          <div class="pd-card ps-ck-card ps-ck-trend-card"><div class="ps-ck-h"><span data-ico="trendingUp" data-ico-size="15"></span> PPC trend</div><div id="ps-lp-ppc-trend" class="ps-ck-trend-body"></div></div>
+          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Reasons for variance</div><div id="ps-lp-reasons" class="ps-ck-body"></div></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -870,6 +898,21 @@
   </div>
 </div>
 
+<!-- Activity Codes management -->
+<div class="ps-bulk-back" id="ps-codes-back">
+  <div class="ps-bulk-panel" style="width:900px;">
+    <div class="ps-bulk-head"><strong>Activity Codes</strong>
+      <button class="pd-btn pd-btn-primary" id="ps-codes-add" style="margin-left:14px;"><span data-ico="plus" data-ico-size="14"></span> New code type</button>
+      <span class="ps-bulk-count" id="ps-codes-count"></span>
+      <button class="ps-bulk-x" id="ps-codes-x">&#215;</button>
+    </div>
+    <div class="ps-snap-body">
+      <div class="ps-snap-list" id="ps-codes-list"></div>
+      <div class="ps-snap-detail" id="ps-codes-detail"><div class="ps-ck-empty">Create a code type (e.g. Phase, Area, Zone) on the left, then add its values here. Assign values to activities in the Add/Edit Activity modal; group or filter the schedule by any code type from the toolbar.</div></div>
+    </div>
+  </div>
+</div>
+
 <!-- Schedule risk (Monte Carlo) -->
 <div class="ps-bulk-back" id="ps-risk-back">
   <div class="ps-bulk-panel" style="width:940px;">
@@ -910,6 +953,7 @@
         <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
         <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
         <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
+        <div class="ps-form-full" id="ps-f-codes-wrap" style="display:none;"><label class="pd-label">Activity Codes</label><div id="ps-f-codes-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full"><label class="pd-label">Predecessors <small>(Activity IDs, comma-separated; type/lag optional e.g. 1020 SS+3 — drives the critical path)</small></label><input class="pd-input" id="ps-f-pred" placeholder="e.g. 1010, 1020 SS+3" />
           <div class="ps-pred-picker" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;">
             <input class="pd-input" id="ps-pred-search" list="ps-pred-list" placeholder="Pick an activity to add…" style="flex:2 1 200px;min-width:150px;" autocomplete="off" />
@@ -1031,20 +1075,39 @@
   var pid = null, rows = [], editId = null, UID = null;
   var PROJECTS = [], WORKSPACES = [], layoutMode = 'split', activeTab = 'schedule';
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
+  var CODE_TYPES = [], CODE_VALUES = [], STEPS = [];   // activity codes + weighted steps for this project
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
   function calById(id) { return id && CALS.find(function (c) { return c.id === id; }); }
   function calName(id, legacyText) { var c = calById(id); return c ? c.name : (legacyText || '—'); }
+  function stepsFor(actId) { return actId ? STEPS.filter(function (s) { return s.activity_id === actId; }).sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); }) : []; }
+  // Weighted-steps physical % complete: null when the activity has no steps yet (manual entry
+  // still applies); otherwise the weight-weighted average of each step's own % complete.
+  function physicalPct(actId) {
+    var list = stepsFor(actId); if (!list.length) return null;
+    var wsum = 0, wpsum = 0;
+    list.forEach(function (s) { var w = s.weight != null ? s.weight : 1; wsum += w; wpsum += w * (s.percent_complete || 0); });
+    return wsum > 0 ? Math.round((wpsum / wsum) * 100) / 100 : 0;
+  }
   async function loadResourcesAssignments() {
-    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; return; }
+    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; return; }
     try {
       var r1 = await sb().from('resources').select('*').eq('project_id', pid).order('name');
       var r2 = await sb().from('resource_assignments').select('*').eq('project_id', pid);
       var r3 = await sb().from('calendars').select('*').eq('project_id', pid).order('name');
       RESRC = (r1 && r1.data) || []; ASSIGN = (r2 && r2.data) || []; CALS = (r3 && r3.data) || [];
     } catch (e) { RESRC = []; ASSIGN = []; CALS = []; }
+    try {
+      var r4 = await sb().from('activity_code_types').select('*').eq('project_id', pid).order('sort_order');
+      var r5 = await sb().from('activity_code_values').select('*').eq('project_id', pid).order('sort_order');
+      CODE_TYPES = (r4 && r4.data) || []; CODE_VALUES = (r5 && r5.data) || [];
+    } catch (e) { CODE_TYPES = []; CODE_VALUES = []; }
+    try {
+      var r6 = await sb().from('activity_steps').select('*').eq('project_id', pid);
+      STEPS = (r6 && r6.data) || [];
+    } catch (e) { STEPS = []; }
   }
   var zoom = 'quarter', collapsed = {}, selId = null, search = '';
-  var filters = { status: {}, type: {}, behind: false, look: 0 };   // empty sets = show all; look = weeks (0 = all)
+  var filters = { status: {}, type: {}, behind: false, look: 0, codes: {} };   // empty sets = show all; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }
   var groupBy = 'wbs';   // 'wbs' | 'status' | 'responsible' | 'type'
   var _dspan = {};       // span map keyed by display code (real WBS codes in WBS mode)
   var isAdmin = false;
@@ -1198,6 +1261,7 @@
     hideLoading();
     rows = all; rebuild();
     await loadResourcesAssignments();
+    populateGroupSelect();
     // Large schedule: default to a collapsed outline so we don't render thousands of DOM rows.
     if (rows.length > 400 && Object.keys(collapsed).length === 0) {
       rows.forEach(function (r) { if (isWbs(r) && r._depth >= 3) collapsed[r.wbs] = true; });
@@ -1396,10 +1460,28 @@
     var a = danc(nd); for (var i = 0; i < a.length; i++) if (collapsed[a[i]]) return true;
     return false;
   }
+  function codeValueLabel(id) { var v = CODE_VALUES.find(function (x) { return x.id === id; }); return v ? v.value : null; }
+  // Adds/refreshes one "Group: <name>" option per Activity Code type after the 4 built-in
+  // options; removes stale code options (deleted/renamed types) and falls back to WBS if the
+  // currently selected group-by no longer exists.
+  function populateGroupSelect() {
+    var sel = document.getElementById('ps-group'); if (!sel) return;
+    Array.prototype.slice.call(sel.querySelectorAll('option[data-code-opt]')).forEach(function (o) { o.remove(); });
+    CODE_TYPES.forEach(function (ct) {
+      var o = document.createElement('option'); o.value = 'code:' + ct.id; o.textContent = 'Group: ' + ct.name; o.setAttribute('data-code-opt', '1'); sel.appendChild(o);
+    });
+    if (groupBy.indexOf('code:') === 0 && !CODE_TYPES.some(function (ct) { return 'code:' + ct.id === groupBy; })) { groupBy = 'wbs'; }
+    sel.value = groupBy;
+  }
   function groupKeyOf(r) {
     if (groupBy === 'status') return r.status || 'Not Started';
     if (groupBy === 'responsible') return r.responsible_party || 'Unassigned';
     if (groupBy === 'type') return r.activity_type || 'Task';
+    if (groupBy && groupBy.indexOf('code:') === 0) {
+      var typeId = groupBy.slice(5);
+      var valId = r.activity_codes && r.activity_codes[typeId];
+      return valId ? (codeValueLabel(valId) || '— Unknown —') : '— Unassigned —';
+    }
     return null;
   }
   function cmpCodeStr(a, b) {
@@ -1863,7 +1945,7 @@
   }
 
   // ---- Filter (OPC-style) ----
-  function anyFilter() { return search.trim() || filters.behind || filters.look || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}); }
+  function anyFilter() { return search.trim() || filters.behind || filters.look || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}); }
   function rowMatches(r) {
     if (search.trim()) { var hay=[r.activity_id,r.activity_name,r.wbs].join(' ').toLowerCase(); if (hay.indexOf(search.trim().toLowerCase())===-1) return false; }
     var sA = Object.keys(filters.status).some(function(k){return filters.status[k];});
@@ -1881,28 +1963,46 @@
       var inWin = (s ? s <= win : true) && (ee ? ee >= t0 : true);
       if (!inWin) return false;
     }
+    // Activity Codes: each code TYPE with any checked value is its own AND condition
+    // (narrows further); within a type, any checked value matches (OR).
+    for (var ci = 0; ci < CODE_TYPES.length; ci++) {
+      var ctId = CODE_TYPES[ci].id, sel = filters.codes[ctId];
+      if (!sel) continue;
+      var any = Object.keys(sel).some(function (v) { return sel[v]; }); if (!any) continue;
+      var rv = r.activity_codes && r.activity_codes[ctId];
+      if (!rv || !sel[rv]) return false;
+    }
     return true;
   }
   function buildFilterMenu() {
     var menu = document.getElementById('ps-filter-menu'); if (!menu) return;
     function cb(group, val) { return '<label><input type="checkbox" data-fg="'+group+'" data-fv="'+val+'"'+(filters[group][val]?' checked':'')+'> '+val+'</label>'; }
+    function cbCode(ctId, v) { var checked = filters.codes[ctId] && filters.codes[ctId][v.id]; return '<label><input type="checkbox" data-fct="'+esc(ctId)+'" data-fcv="'+esc(v.id)+'"'+(checked?' checked':'')+'> '+esc(v.value)+'</label>'; }
+    var codesHTML = CODE_TYPES.map(function (ct) {
+      var vals = CODE_VALUES.filter(function (v) { return v.code_type_id === ct.id; }).sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+      return '<h4>' + esc(ct.name) + '</h4>' + (vals.length ? vals.map(function (v) { return cbCode(ct.id, v); }).join('') : '<span style="color:var(--pd-muted);font-size:12px;">No values defined yet.</span>');
+    }).join('');
     menu.innerHTML = '<h4>Status</h4>' + ['Not Started','In Progress','Completed'].map(function(s){return cb('status',s);}).join('') +
       '<h4>Type</h4>' + ['WBS Summary','Task','Milestone'].map(function(t){return cb('type',t);}).join('') +
       '<h4>Schedule</h4><label><input type="checkbox" id="ps-f-behind"' + (filters.behind?' checked':'') + '> Behind schedule (overdue / late vs baseline)</label>' +
       '<label style="margin-top:4px;">Look-ahead: <select id="ps-f-look" class="pd-select pd-input-sm" style="max-width:150px;">' +
         [[0,'All'],[2,'Next 2 weeks'],[4,'Next 4 weeks'],[8,'Next 8 weeks'],[12,'Next 12 weeks']].map(function(o){return '<option value="'+o[0]+'"'+(filters.look===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('') + '</select></label>' +
+      codesHTML +
       '<div class="ps-filter-foot"><button class="pd-btn pd-btn-sm" id="ps-filter-clear">Clear</button><button class="pd-btn pd-btn-sm pd-btn-primary" id="ps-filter-done">Done</button></div>';
     menu.querySelectorAll('input[data-fg]').forEach(function (c) {
       c.onchange = function () { filters[c.dataset.fg][c.dataset.fv] = c.checked; renderGrid(); renderGantt(); };
     });
+    menu.querySelectorAll('input[data-fct]').forEach(function (c) {
+      c.onchange = function () { var ct = c.dataset.fct; filters.codes[ct] = filters.codes[ct] || {}; filters.codes[ct][c.dataset.fcv] = c.checked; renderGrid(); renderGantt(); };
+    });
     menu.querySelector('#ps-f-behind').onchange = function (e) { filters.behind = e.target.checked; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-look').onchange = function (e) { filters.look = parseInt(e.target.value, 10) || 0; renderGrid(); renderGantt(); };
-    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, look:0 }; buildFilterMenu(); renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, look:0, codes:{} }; buildFilterMenu(); renderGrid(); renderGantt(); };
     menu.querySelector('#ps-filter-done').onclick = function () { menu.classList.remove('open'); };
   }
 
   // ---- render everything ----
-  function renderAll() { renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') renderPlanner(); if (layoutMode === 'network') renderNetwork(); }
+  function renderAll() { renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') renderPlanner(); else if (activeTab === 'lastplanner') openLastPlanner(); if (layoutMode === 'network') renderNetwork(); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
@@ -2024,6 +2124,67 @@
   }
   function nzu(x) { return x != null ? (Math.round(x * 10) / 10) : '—'; }
   function numOrNull(v) { v = String(v).trim(); return v === '' ? null : parseFloat(v); }
+  // ----- WEIGHTED STEPS → physical % complete (OPC-style checklist) -----
+  function detSteps(r) {
+    if (!r.activity_id) return '<div class="ps-empty-detail">Give this activity an <strong>Activity ID</strong> first (double-click the ID cell) so steps can be added to it.</div>';
+    var list = stepsFor(r.activity_id);
+    var pct = physicalPct(r.activity_id);
+    var rowsH = list.length ? list.map(function (s) {
+      return '<tr><td>' + esc(s.name) + '</td><td class="num">' + (s.weight != null ? s.weight : 1) + '</td>' +
+        '<td class="num">' + (s.percent_complete || 0) + '%</td>' +
+        '<td style="white-space:nowrap;"><button class="ps-btn-sm" data-sedit="' + s.id + '">Edit</button> <button class="ps-btn-sm" data-sdel="' + s.id + '">&#215;</button></td></tr>';
+    }).join('') : '<tr><td colspan="4" style="color:var(--pd-muted);padding:10px;">No steps yet — % Complete is entered manually until steps are added.</td></tr>';
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">' +
+      '<strong>' + esc(r.activity_id) + ' — ' + esc(r.activity_name || '') + '</strong>' +
+      '<button class="pd-btn pd-btn-primary" id="ps-step-add" style="margin-left:auto;height:30px;font-size:12px;padding:0 12px;"><span data-ico="plus" data-ico-size="14"></span> Add step</button></div>' +
+      (list.length ? '<div style="margin-bottom:8px;font-size:12.5px;color:var(--pd-muted);">Weighted physical % complete: <strong style="color:var(--pd-ink);">' + pct + '%</strong> — drives this activity\'s % Complete automatically.</div>' : '') +
+      '<table class="ps-mini"><thead><tr><th>Step</th><th class="num">Weight</th><th class="num">% Complete</th><th></th></tr></thead><tbody>' + rowsH + '</tbody></table>';
+  }
+  function wireSteps(root, r) {
+    var add = root.querySelector('#ps-step-add'); if (add) add.onclick = function () { openStepForm(r, null); };
+    root.querySelectorAll('[data-sedit]').forEach(function (b) { b.onclick = function () { openStepForm(r, STEPS.find(function (x) { return x.id === b.dataset.sedit; })); }; });
+    root.querySelectorAll('[data-sdel]').forEach(function (b) { b.onclick = function () { delStep(b.dataset.sdel, r); }; });
+    if (window.Icons) Icons.hydrate(root);
+  }
+  function openStepForm(r, s) {
+    s = s || {};
+    var m = UI.modal('<h2 style="margin-top:0;">' + (s.id ? 'Edit' : 'Add') + ' step</h2>' +
+      '<div class="pd-field"><label class="pd-label">Step name</label><input class="pd-input" id="pst-name" value="' + esc(s.name || '') + '"></div>' +
+      '<div style="display:flex;gap:10px;">' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">Weight</label><input class="pd-input" id="pst-weight" type="number" step="0.1" min="0" value="' + (s.weight != null ? s.weight : 1) + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">% Complete</label><input class="pd-input" id="pst-pct" type="number" step="1" min="0" max="100" value="' + (s.percent_complete != null ? s.percent_complete : 0) + '"></div>' +
+      '</div>' +
+      '<div style="text-align:right;margin-top:6px;"><button class="pd-btn" id="pst-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="pst-save">Save</button></div>');
+    m.el.querySelector('#pst-x').onclick = m.close;
+    m.el.querySelector('#pst-save').onclick = async function () {
+      var name = m.el.querySelector('#pst-name').value.trim(); if (!name) { UI.toast('Step name required.', 'warn'); return; }
+      var payload = { project_id: pid, activity_id: r.activity_id, name: name,
+        weight: numOrNull(m.el.querySelector('#pst-weight').value) || 0,
+        percent_complete: Math.max(0, Math.min(100, numOrNull(m.el.querySelector('#pst-pct').value) || 0)),
+        updated_at: new Date().toISOString() };
+      var res;
+      if (s.id) res = await sb().from('activity_steps').update(payload).eq('id', s.id);
+      else { payload.sort_order = stepsFor(r.activity_id).length; payload.created_by = UID; res = await sb().from('activity_steps').insert(payload); }
+      if (res.error) { UI.toast(res.error.message + ' — run the activity-steps migration.', 'error'); return; }
+      UI.toast('Step saved.', 'success'); m.close();
+      await loadResourcesAssignments(); await syncPhysicalPct(r); renderDetails();
+    };
+  }
+  async function delStep(id, r) {
+    if (!confirm('Delete this step?')) return;
+    var res = await sb().from('activity_steps').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UI.toast('Removed.', 'success'); await loadResourcesAssignments(); await syncPhysicalPct(r); renderDetails();
+  }
+  // Writes the weighted physical % complete back onto project_schedule.percent_complete (through
+  // persist(), so undo/audit/CPM-rebuild all fire exactly as they would for a manual edit) — the
+  // whole point of Weighted Steps is that every existing consumer of percent_complete (CPM, EVM,
+  // forecasts, cockpit, Monte Carlo actuals) picks it up with no further changes.
+  async function syncPhysicalPct(r) {
+    var pct = physicalPct(r.activity_id); if (pct == null) return;   // no steps (yet) — leave manual value alone
+    if (r.percent_complete === pct) return;
+    await persist(r.id, { percent_complete: pct });
+  }
   function detAssign(r) {
     if (!r.activity_id) return '<div class="ps-empty-detail">Give this activity an <strong>Activity ID</strong> first (double-click the ID cell) so resources can be assigned to it.</div>';
     var list = assignsFor(r.activity_id);
@@ -2561,6 +2722,7 @@
     if (!r || isWbs(r)) { body.innerHTML = '<div class="ps-empty-detail">Select an activity (click a row or its bar) to see its details.</div>'; return; }
     if (t === 'general') body.innerHTML = detGeneral(r);
     else if (t === 'status') body.innerHTML = detStatus(r);
+    else if (t === 'steps') { body.innerHTML = detSteps(r); wireSteps(body, r); }
     else if (t === 'assign') { body.innerHTML = detAssign(r); wireAssign(body, r); }
     else if (t === 'rels') { body.innerHTML = detRels(r); wireDetailSplits(body); }
     else if (t === 'trace') body.innerHTML = detTrace(r);
@@ -3707,7 +3869,261 @@
       '<h4 style="margin:18px 0 6px;font-size:13px;">Top risk drivers <span style="font-weight:400;color:var(--pd-muted);font-size:11.5px;">(duration sensitivity to project finish)</span></h4>' + tornHTML;
   }
 
+  // ----- ACTIVITY CODES (project-defined code dictionaries: Phase / Area / Zone / etc.) -----
+  var _codesSelType = null;
+  function openCodes() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-codes-back').classList.add('open'); renderCodesList(); renderCodesDetail(); }
+  function closeCodes() { document.getElementById('ps-codes-back').classList.remove('open'); }
+  function renderCodesList() {
+    var list = document.getElementById('ps-codes-list'); if (!list) return;
+    var cnt = document.getElementById('ps-codes-count'); if (cnt) cnt.textContent = CODE_TYPES.length + ' code type' + (CODE_TYPES.length === 1 ? '' : 's');
+    if (!CODE_TYPES.length) { list.innerHTML = '<div class="ps-ck-empty">No code types yet. Use “New code type”.</div>'; return; }
+    list.innerHTML = CODE_TYPES.map(function (ct) {
+      var n = CODE_VALUES.filter(function (v) { return v.code_type_id === ct.id; }).length;
+      return '<div class="ps-snap-item' + (_codesSelType === ct.id ? ' active' : '') + '" data-id="' + esc(ct.id) + '"><div class="t">' + esc(ct.name) + '</div><div class="m">' + n + ' value' + (n === 1 ? '' : 's') + '</div>' +
+        '<button class="ps-snap-del" data-del="' + esc(ct.id) + '" title="Delete code type">&#215;</button></div>';
+    }).join('');
+    list.querySelectorAll('.ps-snap-item').forEach(function (it) { it.onclick = function (e) { if (e.target.getAttribute('data-del')) return; _codesSelType = it.dataset.id; renderCodesList(); renderCodesDetail(); }; });
+    list.querySelectorAll('.ps-snap-del').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); delCodeType(b.dataset.del); }; });
+  }
+  function renderCodesDetail() {
+    var det = document.getElementById('ps-codes-detail'); if (!det) return;
+    var ct = CODE_TYPES.find(function (x) { return x.id === _codesSelType; });
+    if (!ct) { det.innerHTML = '<div class="ps-ck-empty">Select a code type on the left to manage its values (or create one first).</div>'; return; }
+    var vals = CODE_VALUES.filter(function (v) { return v.code_type_id === ct.id; }).sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+    det.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">' +
+      '<input class="pd-input" id="ps-codes-rename" value="' + esc(ct.name) + '" style="max-width:220px;">' +
+      '<button class="pd-btn pd-btn-sm" id="ps-codes-rename-save">Rename</button></div>' +
+      '<table class="ps-snap-tbl"><thead><tr><th>Value</th><th style="text-align:right;">Assigned to</th><th></th></tr></thead><tbody>' +
+      (vals.length ? vals.map(function (v) {
+        var n = rows.filter(function (r) { return r.activity_codes && r.activity_codes[ct.id] === v.id; }).length;
+        return '<tr><td>' + esc(v.value) + '</td><td style="text-align:right;">' + n + '</td><td style="text-align:right;"><button class="ps-btn-sm" data-vdel="' + esc(v.id) + '">&#215;</button></td></tr>';
+      }).join('') : '<tr><td colspan="3" class="ps-ck-empty">No values yet.</td></tr>') +
+      '</tbody></table>' +
+      '<div style="display:flex;gap:8px;margin-top:12px;"><input class="pd-input" id="ps-codes-newval" placeholder="New value… (e.g. Design, Procurement, Construction)" style="flex:1;"><button class="pd-btn pd-btn-primary pd-btn-sm" id="ps-codes-addval">Add</button></div>';
+    det.querySelector('#ps-codes-rename-save').onclick = function () { renameCodeType(ct.id, det.querySelector('#ps-codes-rename').value); };
+    det.querySelector('#ps-codes-addval').onclick = function () { addCodeValue(ct.id, det.querySelector('#ps-codes-newval').value); };
+    det.querySelectorAll('[data-vdel]').forEach(function (b) { b.onclick = function () { delCodeValue(b.dataset.vdel); }; });
+  }
+  async function addCodeType() {
+    if (!pid) return;
+    var name = prompt('Code type name (e.g. Phase, Area, Zone):'); if (!name || !name.trim()) return;
+    var res = await sb().from('activity_code_types').insert({ project_id: pid, name: name.trim(), sort_order: CODE_TYPES.length, created_by: UID }).select().single();
+    if (res.error) { UI.toast(res.error.message + ' — run the activity-codes migration.', 'error'); return; }
+    CODE_TYPES.push(res.data); _codesSelType = res.data.id;
+    populateGroupSelect(); renderCodesList(); renderCodesDetail(); buildFilterMenu();
+  }
+  async function renameCodeType(id, name) {
+    name = (name || '').trim(); if (!name) { UI.toast('Name required.', 'warn'); return; }
+    var res = await sb().from('activity_code_types').update({ name: name }).eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    var ct = CODE_TYPES.find(function (x) { return x.id === id; }); if (ct) ct.name = name;
+    UI.toast('Renamed.', 'success'); populateGroupSelect(); renderCodesList(); renderCodesDetail(); buildFilterMenu();
+  }
+  async function delCodeType(id) {
+    if (!confirm('Delete this code type and all its values? Activities keep their history but lose this code assignment.')) return;
+    var res = await sb().from('activity_code_types').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    CODE_TYPES = CODE_TYPES.filter(function (x) { return x.id !== id; });
+    CODE_VALUES = CODE_VALUES.filter(function (x) { return x.code_type_id !== id; });
+    if (_codesSelType === id) _codesSelType = null;
+    UI.toast('Deleted.', 'success'); populateGroupSelect(); renderCodesList(); renderCodesDetail(); buildFilterMenu();
+  }
+  async function addCodeValue(typeId, value) {
+    value = (value || '').trim(); if (!value) return;
+    var n = CODE_VALUES.filter(function (v) { return v.code_type_id === typeId; }).length;
+    var res = await sb().from('activity_code_values').insert({ code_type_id: typeId, project_id: pid, value: value, sort_order: n }).select().single();
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    CODE_VALUES.push(res.data); renderCodesDetail(); renderCodesList(); buildFilterMenu();
+  }
+  async function delCodeValue(id) {
+    if (!confirm('Delete this value? Activities assigned to it will show as unassigned.')) return;
+    var res = await sb().from('activity_code_values').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    CODE_VALUES = CODE_VALUES.filter(function (x) { return x.id !== id; });
+    renderCodesDetail(); renderCodesList(); buildFilterMenu();
+  }
+
+  // ----- LAST PLANNER: weekly work plan + Percent Plan Complete (PPC) -----
+  var LP_REASONS = ['Materials', 'Manpower/Labor', 'Equipment', 'Prior Work Not Complete', 'Design/Information', 'Weather', 'Owner/Client Decision', 'Rework', 'Other'];
+  var LP_ALL = [], _lpLoadedFor = null, _lpWeek = mondayOf(wallToday());
+  function mondayOf(d) { var day = d.getDay(); var diff = (day === 0 ? -6 : 1 - day); return new Date(d.getFullYear(), d.getMonth(), d.getDate() + diff); }
+  function _lpWeekKey() { return 'ps_lp_week_' + pid; }
+  async function loadLPAll() {
+    if (!pid) { LP_ALL = []; _lpLoadedFor = null; return; }
+    try { var res = await sb().from('weekly_commitments').select('*').eq('project_id', pid).order('week_start'); LP_ALL = res.error ? [] : (res.data || []); }
+    catch (e) { LP_ALL = []; }
+    _lpLoadedFor = pid;
+  }
+  async function openLastPlanner() {
+    if (!pid) { renderLastPlanner(); return; }
+    try { var sv = localStorage.getItem(_lpWeekKey()); if (sv) _lpWeek = mondayOf(pd(sv) || wallToday()); else _lpWeek = mondayOf(wallToday()); } catch (e) { _lpWeek = mondayOf(wallToday()); }
+    if (_lpLoadedFor !== pid) await loadLPAll();
+    renderLastPlanner();
+  }
+  function lpWeekRows(weekIso) { return LP_ALL.filter(function (c) { return String(c.week_start).slice(0, 10) === weekIso; }); }
+  function lpMoveWeek(deltaWeeks) {
+    _lpWeek = new Date(_lpWeek.getFullYear(), _lpWeek.getMonth(), _lpWeek.getDate() + deltaWeeks * 7);
+    try { localStorage.setItem(_lpWeekKey(), dstr(_lpWeek)); } catch (e) {}
+    renderLastPlanner();
+  }
+  function renderLastPlanner() {
+    var lbl = document.getElementById('ps-lp-weeklbl');
+    if (!pid) {
+      if (lbl) lbl.textContent = '—';
+      ['ps-lp-kpis', 'ps-lp-table', 'ps-lp-ppc-trend', 'ps-lp-reasons'].forEach(function (id) { var e = document.getElementById(id); if (e) e.innerHTML = '<div class="ps-ck-empty">Select a project.</div>'; });
+      return;
+    }
+    var wIso = dstr(_lpWeek), sunday = new Date(_lpWeek.getFullYear(), _lpWeek.getMonth(), _lpWeek.getDate() + 6);
+    if (lbl) lbl.textContent = 'Week of ' + Fmt.date(wIso) + ' – ' + Fmt.date(dstr(sunday));
+    var weekRows = lpWeekRows(wIso);
+    var complete = weekRows.filter(function (c) { return c.status === 'Complete'; }).length;
+    var notComplete = weekRows.filter(function (c) { return c.status === 'Not Complete'; }).length;
+    var openCt = weekRows.filter(function (c) { return !c.status || c.status === 'Open'; }).length;
+    var assessed = complete + notComplete;
+    var ppc = assessed ? Math.round(complete / assessed * 1000) / 10 : null;
+    function kpi(v, l, cls) { return '<div class="ps-ck-kpi' + (cls ? ' ' + cls : '') + '"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; }
+    var kp = document.getElementById('ps-lp-kpis');
+    if (kp) kp.innerHTML = kpi(weekRows.length, 'Commitments this week') +
+      kpi(ppc == null ? '—' : ppc + '%', 'PPC (this week)', ppc != null && ppc < 80 ? 'warn' : (ppc != null ? 'good' : '')) +
+      kpi(complete, 'Complete', 'good') + kpi(notComplete, 'Not complete', notComplete ? 'warn' : '') + kpi(openCt, 'Open / not yet reviewed');
+    renderLPTable(weekRows);
+    renderLPPpcTrend();
+    renderLPReasons();
+  }
+  function _lpStatusBadgeClass(st) { return st === 'Complete' ? 'ok' : (st === 'Not Complete' ? '' : 'warn'); }
+  function renderLPTable(weekRows) {
+    var host = document.getElementById('ps-lp-table'); if (!host) return;
+    if (!weekRows.length) { host.innerHTML = '<div class="ps-ck-empty">No commitments for this week yet. Use “Add commitment”.</div>'; return; }
+    var STATUS_OPTS = ['Open', 'Complete', 'Not Complete'];
+    host.innerHTML = '<table class="ps-mini"><thead><tr><th>Description</th><th>Activity</th><th>Responsible</th><th>Status</th><th>Reason (if not complete)</th><th></th></tr></thead><tbody>' +
+      weekRows.map(function (c) {
+        var act = c.activity_id ? rows.find(function (r) { return r.activity_id === c.activity_id; }) : null;
+        return '<tr data-id="' + esc(c.id) + '">' +
+          '<td>' + esc(c.description) + '</td>' +
+          '<td>' + (act ? esc(act.activity_id) + ' — ' + esc(act.activity_name || '') : (c.activity_id ? esc(c.activity_id) : '—')) + '</td>' +
+          '<td>' + esc(c.responsible || '—') + '</td>' +
+          '<td><select class="pd-select pd-input-sm" data-lpf="status" style="min-width:120px;">' + STATUS_OPTS.map(function (o) { return '<option' + (o === (c.status || 'Open') ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select></td>' +
+          '<td><select class="pd-select pd-input-sm" data-lpf="reason_code" style="min-width:160px;" ' + (c.status === 'Not Complete' ? '' : 'disabled') + '><option value="">—</option>' + LP_REASONS.map(function (rc) { return '<option' + (rc === c.reason_code ? ' selected' : '') + '>' + rc + '</option>'; }).join('') + '</select></td>' +
+          '<td style="white-space:nowrap;"><button class="ps-btn-sm" data-lpedit="' + esc(c.id) + '">Edit</button> <button class="ps-btn-sm" data-lpdel="' + esc(c.id) + '">&#215;</button></td>' +
+          '</tr>';
+      }).join('') + '</tbody></table>';
+    host.querySelectorAll('tr[data-id]').forEach(function (tr) {
+      var id = tr.dataset.id;
+      var statusSel = tr.querySelector('[data-lpf="status"]'), reasonSel = tr.querySelector('[data-lpf="reason_code"]');
+      statusSel.onchange = async function () {
+        var st = statusSel.value; reasonSel.disabled = st !== 'Not Complete'; if (st !== 'Not Complete') reasonSel.value = '';
+        await lpUpdate(id, { status: st, reason_code: st === 'Not Complete' ? (reasonSel.value || null) : null });
+      };
+      reasonSel.onchange = async function () { await lpUpdate(id, { reason_code: reasonSel.value || null }); };
+      tr.querySelector('[data-lpedit]').onclick = function () { openCommitmentForm(LP_ALL.find(function (x) { return x.id === id; })); };
+      tr.querySelector('[data-lpdel]').onclick = function () { delCommitment(id); };
+    });
+  }
+  async function lpUpdate(id, patch) {
+    patch.updated_at = new Date().toISOString();
+    var res = await sb().from('weekly_commitments').update(patch).eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    var c = LP_ALL.find(function (x) { return x.id === id; }); if (c) Object.keys(patch).forEach(function (k) { c[k] = patch[k]; });
+    renderLastPlanner();
+  }
+  function renderLPPpcTrend() {
+    var host = document.getElementById('ps-lp-ppc-trend'); if (!host) return;
+    var byWeek = {}; LP_ALL.forEach(function (c) { var wk = String(c.week_start).slice(0, 10); (byWeek[wk] = byWeek[wk] || []).push(c); });
+    var weeks = Object.keys(byWeek).sort();
+    var pts = weeks.map(function (wk) {
+      var list = byWeek[wk], comp = list.filter(function (c) { return c.status === 'Complete'; }).length, notc = list.filter(function (c) { return c.status === 'Not Complete'; }).length;
+      var assessed = comp + notc; return { week: wk, ppc: assessed ? Math.round(comp / assessed * 1000) / 10 : null, assessed: assessed };
+    }).filter(function (p) { return p.ppc != null; });
+    if (pts.length < 2) { host.innerHTML = '<div class="ps-ck-empty">' + (pts.length ? 'One assessed week so far — close out another week to start the trend.' : 'No assessed weeks yet — mark commitments Complete/Not Complete at week\'s end.') + '</div>'; return; }
+    var W = Math.max(420, 90 * pts.length), H = 170, padL = 34, padR = 34, padT = 16, padB = 24;
+    var cw = W - padL - padR, ch = H - padT - padB, n = pts.length, xw = n > 1 ? cw / (n - 1) : 0;
+    var out = '';
+    [0, 25, 50, 75, 100].forEach(function (v) {
+      var y = padT + ch - ch * v / 100;
+      out += '<line x1="' + padL + '" y1="' + y + '" x2="' + (padL + cw) + '" y2="' + y + '" stroke="var(--pd-line)" stroke-width="1"/>' +
+        '<text x="' + (padL - 6) + '" y="' + (y + 3.5) + '" text-anchor="end" font-size="10" fill="var(--pd-muted)">' + v + '%</text>';
+    });
+    // 80% PPC benchmark line (common Lean Construction target)
+    var y80 = padT + ch - ch * 80 / 100;
+    out += '<line x1="' + padL + '" y1="' + y80 + '" x2="' + (padL + cw) + '" y2="' + y80 + '" stroke="#2D9B6F" stroke-width="1.2" stroke-dasharray="3 3"/>';
+    var ptsXY = pts.map(function (p, i) { return { x: padL + i * xw, y: padT + ch - ch * p.ppc / 100, p: p }; });
+    out += '<polyline points="' + ptsXY.map(function (p) { return p.x + ',' + p.y; }).join(' ') + '" fill="none" stroke="var(--pd-red)" stroke-width="2.2"/>';
+    var xstep = Math.max(1, Math.ceil(n / 10));
+    ptsXY.forEach(function (p, i) {
+      out += '<circle cx="' + p.x + '" cy="' + p.y + '" r="3.4" fill="var(--pd-red)"><title>' + esc(Fmt.date(p.p.week) + ' · PPC ' + p.p.ppc + '% (' + p.p.assessed + ' assessed)') + '</title></circle>';
+      if (i === 0 || i === n - 1 || i % xstep === 0) {
+        var lx = Math.max(padL + 24, Math.min(padL + cw - 24, p.x));   // keep first/last x-labels inside the viewBox
+        out += '<text x="' + lx + '" y="' + (padT + ch + 15) + '" text-anchor="middle" font-size="9" fill="var(--pd-muted)">' + esc(Fmt.date(p.p.week)) + '</text>';
+      }
+    });
+    var last = ptsXY[ptsXY.length - 1];
+    out += '<text x="' + Math.min(last.x + 4, padL + cw - 4) + '" y="' + Math.max(last.y - 6, 10) + '" font-size="11" font-weight="700" fill="var(--pd-red)">' + last.p.ppc + '%</text>';
+    host.innerHTML = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" style="min-width:100%;">' + out + '</svg>' +
+      '<div class="ps-ck-bucket-legend" style="margin-top:6px;"><span><i style="background:var(--pd-red);border-radius:1px;"></i>Weekly PPC</span><span><i style="background:#2D9B6F;border-radius:1px;"></i>80% benchmark</span></div>';
+  }
+  function renderLPReasons() {
+    var host = document.getElementById('ps-lp-reasons'); if (!host) return;
+    var notComplete = LP_ALL.filter(function (c) { return c.status === 'Not Complete'; });
+    if (!notComplete.length) { host.innerHTML = '<div class="ps-ck-empty">No “Not Complete” commitments yet — nothing to analyze. 🎯</div>'; return; }
+    var counts = {}; notComplete.forEach(function (c) { var rc = c.reason_code || 'Uncategorized'; counts[rc] = (counts[rc] || 0) + 1; });
+    var ranked = Object.keys(counts).map(function (k) { return { label: k, n: counts[k] }; }).sort(function (a, b) { return b.n - a.n; });
+    var max = ranked[0].n;
+    host.innerHTML = ranked.map(function (r) {
+      return '<div class="ps-risk-torn-row"><span class="nm" title="' + esc(r.label) + '">' + esc(r.label) + '</span>' +
+        '<span class="ps-risk-torn-track"><span class="ps-risk-torn-fill" style="width:' + Math.round(r.n / max * 100) + '%"></span></span>' +
+        '<span style="flex:0 0 30px;text-align:right;font-weight:700;">' + r.n + '</span></div>';
+    }).join('');
+  }
+  function openCommitmentForm(c) {
+    c = c || {};
+    var actOpts = '<option value="">— None —</option>' + rows.filter(function (r) { return !isWbs(r) && r.activity_id; })
+      .sort(function (a, b) { return String(a.activity_id).localeCompare(String(b.activity_id), undefined, { numeric: true }); })
+      .map(function (r) { return '<option value="' + esc(r.activity_id) + '"' + (c.activity_id === r.activity_id ? ' selected' : '') + '>' + esc(r.activity_id) + ' — ' + esc(r.activity_name || '') + '</option>'; }).join('');
+    var m = UI.modal('<h2 style="margin-top:0;">' + (c.id ? 'Edit' : 'Add') + ' commitment</h2>' +
+      '<div class="pd-field"><label class="pd-label">Description</label><input class="pd-input" id="lpc-desc" value="' + esc(c.description || '') + '"></div>' +
+      '<div class="pd-field"><label class="pd-label">Linked activity (optional)</label><select class="pd-select" id="lpc-act">' + actOpts + '</select></div>' +
+      '<div class="pd-field"><label class="pd-label">Responsible</label><input class="pd-input" id="lpc-resp" value="' + esc(c.responsible || '') + '"></div>' +
+      '<div style="text-align:right;margin-top:6px;"><button class="pd-btn" id="lpc-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="lpc-save">Save</button></div>');
+    m.el.querySelector('#lpc-x').onclick = m.close;
+    m.el.querySelector('#lpc-save').onclick = async function () {
+      var desc = m.el.querySelector('#lpc-desc').value.trim(); if (!desc) { UI.toast('Description required.', 'warn'); return; }
+      var payload = { project_id: pid, week_start: dstr(_lpWeek), description: desc,
+        activity_id: m.el.querySelector('#lpc-act').value || null, responsible: m.el.querySelector('#lpc-resp').value.trim() || null,
+        updated_at: new Date().toISOString() };
+      var res;
+      if (c.id) res = await sb().from('weekly_commitments').update(payload).eq('id', c.id);
+      else { payload.status = 'Open'; payload.created_by = UID; res = await sb().from('weekly_commitments').insert(payload).select().single(); }
+      if (res.error) { UI.toast(res.error.message + ' — run the weekly-commitments migration.', 'error'); return; }
+      if (!c.id && res.data) LP_ALL.push(res.data); else if (c.id) { var ex = LP_ALL.find(function (x) { return x.id === c.id; }); if (ex) Object.keys(payload).forEach(function (k) { ex[k] = payload[k]; }); }
+      UI.toast('Commitment saved.', 'success'); m.close(); renderLastPlanner();
+    };
+  }
+  async function delCommitment(id) {
+    if (!confirm('Delete this commitment?')) return;
+    var res = await sb().from('weekly_commitments').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    LP_ALL = LP_ALL.filter(function (x) { return x.id !== id; });
+    UI.toast('Removed.', 'success'); renderLastPlanner();
+  }
+
   // ----- MODAL -----
+  // Renders one <select> per defined Activity Code type into the Add/Edit modal; hidden
+  // entirely when the project has no code types yet (nothing to assign).
+  function populateCodesFields(row) {
+    var wrap = document.getElementById('ps-f-codes-wrap'), host = document.getElementById('ps-f-codes-fields');
+    if (!wrap || !host) return;
+    if (!CODE_TYPES.length) { wrap.style.display = 'none'; host.innerHTML = ''; return; }
+    wrap.style.display = '';
+    var cur = (row && row.activity_codes) || {};
+    host.innerHTML = CODE_TYPES.map(function (ct) {
+      var vals = CODE_VALUES.filter(function (v) { return v.code_type_id === ct.id; }).sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+      var sel = cur[ct.id] || '';
+      return '<div class="ps-f-codes-row"><label class="pd-label" style="font-size:11px;">' + esc(ct.name) + '</label>' +
+        '<select class="pd-select" data-code-type="' + esc(ct.id) + '" style="min-width:150px;"><option value="">—</option>' +
+        vals.map(function (v) { return '<option value="' + esc(v.id) + '"' + (sel === v.id ? ' selected' : '') + '>' + esc(v.value) + '</option>'; }).join('') +
+        '</select></div>';
+    }).join('');
+  }
   function openForm(row) {
     editId = row ? row.id : null;
     document.getElementById('ps-modal-title').textContent = row ? 'Edit Activity' : 'Add Activity';
@@ -3723,7 +4139,12 @@
     set('ps-f-start', row && row.start_date ? String(row.start_date).slice(0,10) : '');
     set('ps-f-finish', row && row.end_date ? String(row.end_date).slice(0,10) : '');
     set('ps-f-pct', row && row.percent_complete != null ? row.percent_complete : '');
+    (function () {   // when Weighted Steps exist for this activity, % Complete is derived — disable manual entry, point to the Steps tab
+      var pctInp = document.getElementById('ps-f-pct'), hasSteps = row && row.activity_id && stepsFor(row.activity_id).length;
+      if (pctInp) { pctInp.disabled = !!hasSteps; pctInp.title = hasSteps ? 'Derived from Weighted Steps — edit steps in the Steps tab of the details panel.' : ''; }
+    })();
     set('ps-f-resp', row ? row.responsible_party : '');
+    populateCodesFields(row);
     set('ps-f-pred', row ? row.predecessors : '');
     set('ps-f-succ', (row && row._succObjs && row._succObjs.length) ? row._succObjs.map(function (s) { return s.id + (s.type && s.type !== 'FS' ? ' ' + s.type : '') + (s.lag ? (s.lag > 0 ? '+' : '') + s.lag : ''); }).join(', ') : '');
     setupPredPicker(row);
@@ -3856,6 +4277,11 @@
       var roVal = num('ps-f-risk-opt'), rpVal = num('ps-f-risk-pess');
       try { var rr2 = await sb().from(TABLE).update({ risk_optimistic_pct: roVal, risk_pessimistic_pct: rpVal }).eq('id', savedId); if (!rr2.error) { var rrow = rows.find(function (x) { return x.id === savedId; }); if (rrow) { rrow.risk_optimistic_pct = roVal; rrow.risk_pessimistic_pct = rpVal; } } } catch (e) {}
     }
+    if (savedId && CODE_TYPES.length) {
+      var codesVal = {};
+      document.querySelectorAll('#ps-f-codes-fields [data-code-type]').forEach(function (sel) { if (sel.value) codesVal[sel.dataset.codeType] = sel.value; });
+      try { var rr3 = await sb().from(TABLE).update({ activity_codes: codesVal }).eq('id', savedId); if (!rr3.error) { var rrow2 = rows.find(function (x) { return x.id === savedId; }); if (rrow2) rrow2.activity_codes = codesVal; } } catch (e) {}
+    }
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
     closeModal(); load();
   }
@@ -3867,16 +4293,17 @@
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     document.getElementById('ps-view-cost').style.display = tab === 'cost' ? '' : 'none';
     document.getElementById('ps-view-planner').style.display = tab === 'planner' ? '' : 'none';
+    document.getElementById('ps-view-lastplanner').style.display = tab === 'lastplanner' ? '' : 'none';
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Cockpit or Cost table.
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'cost' ? 'Cost Loading' : (tab === 'planner' ? 'Planner Cockpit' : 'Project Schedule');
+    var name = tab === 'cost' ? 'Cost Loading' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'lastplanner' ? 'Last Planner' : 'Project Schedule'));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // hidden-column rules differ per view (Schedule grid vs Cost table)
-    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else renderPlanner();
+    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'lastplanner') openLastPlanner(); else renderPlanner();
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
@@ -4812,6 +5239,14 @@
     document.getElementById('ps-risk').onclick = function () { aMenu.classList.remove('open'); openRisk(); };
     document.getElementById('ps-risk-x').onclick = closeRisk;
     document.getElementById('ps-risk-back').onclick = function (e) { if (e.target === this) closeRisk(); };
+    document.getElementById('ps-codesbtn').onclick = function () { aMenu.classList.remove('open'); openCodes(); };
+    document.getElementById('ps-codes-x').onclick = closeCodes;
+    document.getElementById('ps-codes-back').onclick = function (e) { if (e.target === this) closeCodes(); };
+    document.getElementById('ps-codes-add').onclick = addCodeType;
+    document.getElementById('ps-lp-prev').onclick = function () { lpMoveWeek(-1); };
+    document.getElementById('ps-lp-next').onclick = function () { lpMoveWeek(1); };
+    document.getElementById('ps-lp-thisweek').onclick = function () { _lpWeek = mondayOf(wallToday()); try { localStorage.setItem(_lpWeekKey(), dstr(_lpWeek)); } catch (e) {} renderLastPlanner(); };
+    document.getElementById('ps-lp-add').onclick = function () { openCommitmentForm(null); };
     document.getElementById('ps-crit').onclick = function () {
       critMode = !critMode;
       document.getElementById('ps-crit').classList.toggle('active', critMode);
