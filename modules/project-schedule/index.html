@@ -499,6 +499,26 @@
     .ps-filter-menu label { display:flex; align-items:center; gap:7px; padding:3px 0; font-size:13px; cursor:pointer; }
     .ps-filter-foot { display:flex; justify-content:space-between; margin-top:10px; border-top:1px solid var(--pd-line); padding-top:8px; }
     /* Planner cockpit */
+    .ps-ck-bar { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+    .ps-ck-look-lbl { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); }
+    /* Bulk update grid */
+    .ps-bulk-back { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:250; display:none; align-items:center; justify-content:center; }
+    .ps-bulk-back.open { display:flex; }
+    .ps-bulk-panel { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:12px; width:940px; max-width:96vw; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; }
+    .ps-bulk-head { display:flex; align-items:center; gap:6px; padding:14px 16px; border-bottom:1px solid var(--pd-line); }
+    .ps-bulk-count { margin-left:auto; font-size:12px; color:var(--pd-muted); }
+    .ps-bulk-x { background:none; border:none; font-size:22px; line-height:1; cursor:pointer; color:var(--pd-muted); margin-left:10px; }
+    .ps-bulk-x:hover { color:var(--pd-ink); }
+    .ps-bulk-body { overflow:auto; flex:1; }
+    .ps-bulk-body table { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .ps-bulk-body th { position:sticky; top:0; background:var(--pd-bg); text-align:left; padding:8px 10px; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:1px solid var(--pd-line); z-index:1; }
+    .ps-bulk-body td { padding:5px 10px; border-bottom:1px solid var(--pd-line); }
+    .ps-bulk-body tr.dirty td { background:var(--pd-red-light); }
+    .ps-bulk-body input, .ps-bulk-body select { font:inherit; padding:4px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); box-sizing:border-box; }
+    .ps-bulk-body input.pct { width:64px; text-align:right; }
+    .ps-bulk-body input[type=date] { width:140px; }
+    .ps-bulk-late { color:var(--pd-red); font-weight:700; }
+    .ps-bulk-foot { display:flex; align-items:center; gap:8px; padding:12px 16px; border-top:1px solid var(--pd-line); }
     .ps-ck-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
     .ps-ck-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:12px 14px; }
     .ps-ck-kpi .v { font-size:22px; font-weight:800; color:var(--pd-ink); line-height:1.1; }
@@ -679,11 +699,22 @@
 
       <!-- PLANNER COCKPIT -->
       <div id="ps-view-planner" style="display:none;">
+        <div class="ps-ck-bar">
+          <button class="pd-btn pd-btn-primary" id="ps-ck-update"><span data-ico="check" data-ico-size="15"></span> Update progress…</button>
+          <span class="ps-tb-div"></span>
+          <label class="ps-ck-look-lbl">Lookahead
+            <select class="pd-select" id="ps-ck-weeks" style="width:auto;">
+              <option value="2">2 weeks</option><option value="3" selected>3 weeks</option>
+              <option value="4">4 weeks</option><option value="6">6 weeks</option>
+            </select>
+          </label>
+          <button class="pd-btn" id="ps-ck-export"><span data-ico="download" data-ico-size="15"></span> Export lookahead</button>
+        </div>
         <div class="ps-ck-kpis" id="ps-ck-kpis"></div>
         <div class="ps-ck-grid">
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="risk" data-ico-size="15"></span> Milestones at risk</div><div id="ps-ck-miles" class="ps-ck-body"></div></div>
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Most behind schedule</div><div id="ps-ck-behind" class="ps-ck-body"></div></div>
-          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="calendar" data-ico-size="15"></span> 3-week lookahead</div><div id="ps-ck-look" class="ps-ck-body"></div></div>
+          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="calendar" data-ico-size="15"></span> <span id="ps-ck-look-h">3-week lookahead</span></div><div id="ps-ck-look" class="ps-ck-body"></div></div>
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="pulse" data-ico-size="15"></span> Critical-path drivers</div><div id="ps-ck-crit" class="ps-ck-body"></div></div>
         </div>
       </div>
@@ -693,6 +724,31 @@
 
 <!-- Loading overlay -->
 <div class="ps-loading" id="ps-loading" style="display:none;"><div class="ps-spin"></div><span id="ps-loading-msg">Working…</span></div>
+
+<!-- Bulk "Update Progress" grid -->
+<div class="ps-bulk-back" id="ps-bulk-back">
+  <div class="ps-bulk-panel">
+    <div class="ps-bulk-head">
+      <strong>Update Progress</strong>
+      <label style="font-size:12px;color:var(--pd-muted);margin-left:14px;">Show
+        <select class="pd-select" id="ps-bulk-scope" style="width:auto;">
+          <option value="14">Due in 2 weeks</option><option value="21" selected>Due in 3 weeks</option>
+          <option value="42">Due in 6 weeks</option><option value="prog">In progress</option><option value="all">All incomplete</option>
+        </select>
+      </label>
+      <input class="pd-input" id="ps-bulk-search" placeholder="Filter…" style="margin-left:10px;width:180px;height:30px;">
+      <span class="ps-bulk-count" id="ps-bulk-count"></span>
+      <button class="ps-bulk-x" id="ps-bulk-x" title="Close">&#215;</button>
+    </div>
+    <div class="ps-bulk-body" id="ps-bulk-body"></div>
+    <div class="ps-bulk-foot">
+      <span id="ps-bulk-dirty" style="font-size:12px;color:var(--pd-muted);">No changes</span>
+      <span style="flex:1;"></span>
+      <button class="pd-btn" id="ps-bulk-cancel">Cancel</button>
+      <button class="pd-btn pd-btn-primary" id="ps-bulk-save">Save changes</button>
+    </div>
+  </div>
+</div>
 
 <!-- Add / Edit modal -->
 <div class="pd-modal-overlay" id="ps-modal" style="display:none;">
@@ -2840,8 +2896,18 @@
   }
 
   // ----- PLANNER COCKPIT: the weekly "Monday morning" view (all from existing data) -----
+  var _ckLookWeeks = 3;
+  function _ckLookSet() {   // incomplete activities whose start/finish falls in [data date, +N weeks]
+    var dd = today(), lookEnd = addDays(dd, (_ckLookWeeks || 3) * 7);
+    return rows.filter(function (r) { return !isWbs(r) && r.activity_id; }).filter(function (r) {
+      if ((r.percent_complete || 0) >= 100 || r.actual_finish) return false;
+      var s = pd(r.start_date), f = pd(r.end_date);
+      return (s && s >= dd && s <= lookEnd) || (f && f >= dd && f <= lookEnd) || (s && f && s <= dd && f >= dd);
+    }).sort(function (a, b) { return (pd(a.start_date) || pd(a.end_date) || 0) - (pd(b.start_date) || pd(b.end_date) || 0); });
+  }
   function renderPlanner() {
     var kp = document.getElementById('ps-ck-kpis'); if (!kp) return;
+    var hh = document.getElementById('ps-ck-look-h'); if (hh) hh.textContent = (_ckLookWeeks || 3) + '-week lookahead';
     var ids = ['ps-ck-miles', 'ps-ck-behind', 'ps-ck-look', 'ps-ck-crit'];
     if (!pid || !rows.length) {
       kp.innerHTML = '';
@@ -2850,16 +2916,12 @@
     }
     computeCPM();
     var tasks = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
-    var dd = today(), lookEnd = addDays(dd, 21);
+    var dd = today();
     var behind = tasks.map(function (r) { return { r: r, slip: finVar(r) }; }).filter(function (x) { return x.slip != null && x.slip > 0; }).sort(function (a, b) { return b.slip - a.slip; });
     var milesAtRisk = tasks.filter(isMile).map(function (r) { return { r: r, slip: finVar(r) }; }).filter(function (x) { return x.slip != null && x.slip > 0; }).sort(function (a, b) { return b.slip - a.slip; });
     var crit = tasks.filter(function (r) { return r._critical; });
     var avgPct = tasks.length ? Math.round(tasks.reduce(function (s, r) { return s + (r.percent_complete || 0); }, 0) / tasks.length) : 0;
-    var look = tasks.filter(function (r) {
-      if ((r.percent_complete || 0) >= 100 || r.actual_finish) return false;
-      var s = pd(r.start_date), f = pd(r.end_date);
-      return (s && s >= dd && s <= lookEnd) || (f && f >= dd && f <= lookEnd) || (s && f && s <= dd && f >= dd);
-    }).sort(function (a, b) { return (pd(a.start_date) || pd(a.end_date) || 0) - (pd(b.start_date) || pd(b.end_date) || 0); });
+    var look = _ckLookSet();
     function kpi(v, l, cls) { return '<div class="ps-ck-kpi' + (cls ? ' ' + cls : '') + '"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; }
     function slipTag(s) { return '<span class="slip' + (s > 0 ? '' : ' ok') + '">' + (s > 0 ? '+' : '') + s + 'd</span>'; }
     function row(r, right) { return '<div class="ps-ck-row" data-id="' + esc(r.id) + '"><span class="id">' + esc(r.activity_id || '') + '</span><span class="nm">' + esc(r.activity_name || '') + '</span>' + (right || '') + '</div>'; }
@@ -2874,6 +2936,91 @@
     fill('ps-ck-behind', behind.slice(0, 60), function (x) { return row(x.r, slipTag(x.slip)); }, 'Nothing is behind its baseline finish.');
     fill('ps-ck-look', look.slice(0, 100), function (r) { return row(r, '<span class="mt">' + (pd(r.start_date) ? Fmt.date(r.start_date) : (r.end_date ? Fmt.date(r.end_date) : '—')) + '</span>'); }, 'Nothing due in the next 3 weeks.');
     fill('ps-ck-crit', crit.slice(0, 100), function (r) { return row(r, '<span class="mt">' + (r._float != null ? r._float + 'd float' : '') + '</span>'); }, 'No critical path found — add relationships or dates.');
+  }
+
+  // ----- BULK "UPDATE PROGRESS" GRID (weekly status entry; schema-free) -----
+  var _bulkEdits = {};
+  function _bulkScopeSet() {
+    var scope = (document.getElementById('ps-bulk-scope') || {}).value || '21';
+    var q = (((document.getElementById('ps-bulk-search') || {}).value) || '').trim().toLowerCase();
+    var dd = today();
+    var arr = rows.filter(function (r) { return !isWbs(r) && r.activity_id && (r.percent_complete || 0) < 100; });
+    if (scope === 'prog') arr = arr.filter(function (r) { return (r.percent_complete || 0) > 0; });
+    else if (scope !== 'all') { var lookEnd = addDays(dd, parseInt(scope, 10) || 21); arr = arr.filter(function (r) { var s = pd(r.start_date), f = pd(r.end_date); return (s && s <= lookEnd) || (f && f <= lookEnd); }); }
+    if (q) arr = arr.filter(function (r) { return (r.activity_name || '').toLowerCase().indexOf(q) !== -1 || (r.activity_id || '').toLowerCase().indexOf(q) !== -1; });
+    return arr.sort(function (a, b) { return (pd(a.end_date) || 0) - (pd(b.end_date) || 0); });
+  }
+  function _bulkFoot() { var n = Object.keys(_bulkEdits).length, el = document.getElementById('ps-bulk-dirty'); if (el) el.textContent = n ? (n + ' activit' + (n === 1 ? 'y' : 'ies') + ' changed') : 'No changes'; }
+  function openBulkUpdate() { if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; } _bulkEdits = {}; renderBulkBody(); document.getElementById('ps-bulk-back').classList.add('open'); }
+  function closeBulkUpdate() { document.getElementById('ps-bulk-back').classList.remove('open'); }
+  function renderBulkBody() {
+    var host = document.getElementById('ps-bulk-body'); if (!host) return;
+    var set = _bulkScopeSet(), dd = today(), STATUS = ['Not Started', 'In Progress', 'Completed'];
+    var cnt = document.getElementById('ps-bulk-count'); if (cnt) cnt.textContent = set.length + ' activit' + (set.length === 1 ? 'y' : 'ies');
+    if (!set.length) { host.innerHTML = '<div class="ps-ck-empty" style="padding:40px;">Nothing matches this filter.</div>'; _bulkFoot(); return; }
+    host.innerHTML = '<table><thead><tr><th>ID</th><th>Activity</th><th>Target finish</th><th>Status</th><th>% Complete</th><th>Actual start</th><th>Actual finish</th></tr></thead><tbody>' +
+      set.map(function (r) {
+        var e = _bulkEdits[r.id] || {};
+        var pct = e.percent_complete != null ? e.percent_complete : (r.percent_complete || 0);
+        var st = e.status != null ? e.status : (r.status || 'Not Started');
+        var as = e.actual_start !== undefined ? (e.actual_start || '') : (r.actual_start ? String(r.actual_start).slice(0, 10) : '');
+        var af = e.actual_finish !== undefined ? (e.actual_finish || '') : (r.actual_finish ? String(r.actual_finish).slice(0, 10) : '');
+        var f = pd(r.end_date), late = f && f < dd, stOpts = STATUS.indexOf(st) === -1 ? [st].concat(STATUS) : STATUS;
+        return '<tr data-id="' + esc(r.id) + '"' + (e && Object.keys(e).length ? ' class="dirty"' : '') + '><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td>' +
+          '<td' + (late ? ' class="ps-bulk-late"' : '') + '>' + (r.end_date ? Fmt.date(r.end_date) : '—') + '</td>' +
+          '<td><select data-f="status">' + stOpts.map(function (o) { return '<option' + (o === st ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></td>' +
+          '<td><input class="pct" type="number" min="0" max="100" step="1" data-f="percent_complete" value="' + pct + '"></td>' +
+          '<td><input type="date" data-f="actual_start" value="' + as + '"></td>' +
+          '<td><input type="date" data-f="actual_finish" value="' + af + '"></td></tr>';
+      }).join('') + '</tbody></table>';
+    host.querySelectorAll('tr[data-id]').forEach(function (tr) {
+      var id = tr.dataset.id;
+      tr.querySelectorAll('[data-f]').forEach(function (inp) {
+        inp.onchange = function () {
+          var f = inp.dataset.f, v;
+          if (f === 'percent_complete') v = inp.value === '' ? 0 : Math.max(0, Math.min(100, parseFloat(inp.value) || 0));
+          else if (f === 'status') v = inp.value;
+          else v = inp.value || null;
+          _bulkEdits[id] = _bulkEdits[id] || {}; _bulkEdits[id][f] = v; tr.classList.add('dirty'); _bulkFoot();
+        };
+      });
+    });
+    _bulkFoot();
+  }
+  async function saveBulkUpdate() {
+    var ids = Object.keys(_bulkEdits); if (!ids.length) { closeBulkUpdate(); return; }
+    showLoading('Saving ' + ids.length + ' activities…');
+    var ok = 0, err = null, CH = 40;
+    for (var i = 0; i < ids.length && !err; i += CH) {
+      var slice = ids.slice(i, i + CH);
+      var res = await Promise.all(slice.map(function (id) {
+        var patch = {}, e = _bulkEdits[id]; Object.keys(e).forEach(function (k) { patch[k] = e[k]; });
+        patch.updated_at = new Date().toISOString();
+        return sb().from(TABLE).update(patch).eq('id', id).then(function (r) { return r.error ? r.error.message : null; });
+      }));
+      for (var k = 0; k < res.length; k++) { if (res[k]) { err = res[k]; break; } var id2 = slice[k], rr = rows.find(function (x) { return x.id === id2; }); if (rr) { var e2 = _bulkEdits[id2]; Object.keys(e2).forEach(function (kk) { rr[kk] = e2[kk]; }); } ok++; }
+    }
+    hideLoading();
+    _bulkEdits = {}; resetUndo(); rebuild(); computeCPM(); renderAll();
+    if (err) UI.toast('Saved ' + ok + ', then error: ' + err, 'error');
+    else { UI.toast('Updated ' + ok + ' activit' + (ok === 1 ? 'y' : 'ies') + '.', 'success'); closeBulkUpdate(); }
+  }
+  // Export the current lookahead window to Excel (site-meeting handout).
+  function exportLookahead() {
+    if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
+    if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
+    var set = _ckLookSet(); if (!set.length) { UI.toast('Nothing due in the next ' + (_ckLookWeeks || 3) + ' weeks.', 'warn'); return; }
+    computeCPM();
+    var headers = ['Activity ID', 'Activity', 'Status', 'Start', 'Finish', '% Complete', 'Critical', 'Total Float (d)', 'Responsible'];
+    var data = set.map(function (r) {
+      return { 'Activity ID': r.activity_id || '', 'Activity': r.activity_name || '', 'Status': r.status || '',
+        'Start': fmtOPCDate(r.actual_start || r.start_date, !!r.actual_start), 'Finish': fmtOPCDate(r.actual_finish || r.end_date, !!r.actual_finish),
+        '% Complete': (r.percent_complete || 0), 'Critical': r._critical ? 'Yes' : '', 'Total Float (d)': r._float != null ? r._float : '', 'Responsible': r.responsible_party || '' };
+    });
+    var ws = XLSX.utils.json_to_sheet(data, { header: headers });
+    ws['!cols'] = [{ wch: 12 }, { wch: 44 }, { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 9 }, { wch: 12 }, { wch: 22 }];
+    var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Lookahead');
+    XLSX.writeFile(wb, (_ckLookWeeks || 3) + '-Week Lookahead - ' + projName() + '.xlsx');
   }
 
   // ----- MODAL -----
@@ -3930,6 +4077,16 @@
     document.getElementById('ps-refresh').onclick = function () { load(); };
     document.getElementById('ps-export').onclick = exportExcel;
     document.getElementById('ps-download').onclick = downloadSchedule;
+    // Planner cockpit + bulk update
+    document.getElementById('ps-ck-update').onclick = openBulkUpdate;
+    document.getElementById('ps-ck-export').onclick = exportLookahead;
+    document.getElementById('ps-ck-weeks').onchange = function (e) { _ckLookWeeks = parseInt(e.target.value, 10) || 3; renderPlanner(); };
+    document.getElementById('ps-bulk-x').onclick = closeBulkUpdate;
+    document.getElementById('ps-bulk-cancel').onclick = closeBulkUpdate;
+    document.getElementById('ps-bulk-save').onclick = saveBulkUpdate;
+    document.getElementById('ps-bulk-scope').onchange = renderBulkBody;
+    document.getElementById('ps-bulk-search').oninput = renderBulkBody;
+    document.getElementById('ps-bulk-back').onclick = function (e) { if (e.target === this) closeBulkUpdate(); };
     document.getElementById('ps-crit').onclick = function () {
       critMode = !critMode;
       document.getElementById('ps-crit').classList.toggle('active', critMode);

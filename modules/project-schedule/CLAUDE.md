@@ -78,6 +78,18 @@ finish, days late), **3-week lookahead** (incomplete activities whose start/fini
 [data date, +21d]), **Critical-path drivers** (`_critical` from `computeCPM`). Rows click → jump to
 the Schedule view with the activity selected. CSS `.ps-ck-*`.
 
+## Planner batch 2 (2026-07-07) — bulk progress update + lookahead export
+Both schema-free, driven from the cockpit action bar (`.ps-ck-bar`).
+- **Bulk "Update Progress" grid** (`#ps-bulk-back` overlay): `openBulkUpdate()` → `renderBulkBody()`
+  lists incomplete activities filtered by `#ps-bulk-scope` (Due 2/3/6 wks / In progress / All
+  incomplete) + a text filter, each row with inline Status / % Complete / Actual start / Actual
+  finish inputs. Edits accumulate in `_bulkEdits{id:{field:val}}` (row goes `.dirty`);
+  `saveBulkUpdate()` writes changed rows in chunks of 40 via direct `update().eq('id')`, updates
+  local `rows`, `rebuild()/computeCPM()/renderAll()`. Overdue target-finish flagged red.
+- **Lookahead window + export**: `_ckLookWeeks` (2/3/4/6, `#ps-ck-weeks`) drives BOTH the cockpit
+  "N-week lookahead" panel (`_ckLookSet()`) and `exportLookahead()` (XLSX handout: ID/Activity/
+  Status/Start/Finish/%/Critical/Float/Responsible for the window).
+
 ## Topbar + project browser (2026-07-07)
 - **Topbar tools spacing**: the global tool cluster (`#ps-topbar-tools`: undo/redo/health/reports/
   filter/refresh/print) now uses uniform 34×34 buttons, `gap:4px`, a left divider, and a divider
