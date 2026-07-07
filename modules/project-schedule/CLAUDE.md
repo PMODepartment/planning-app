@@ -112,6 +112,39 @@ change (verified 0 mismatches vs the old algorithm across 2,000 random DAGs):
   is already windowed (`renderWindow`, cached `DL`, scroll never rebuilds) and client-side
   CPM/critical-path/roll-ups require the full dataset in memory.
 
+## Monte Carlo: per-activity 3-point duration override (2026-07-07)
+**Migration:** `../../migrations/2026-07-07-risk-3point-duration.sql` (`project_schedule.risk_optimistic_pct`/
+`risk_pessimistic_pct`, both `numeric(6,2)`, nullable — folded into `supabase-setup.sql`).
+Prioritized over adding a criticality-index output: the simulation previously applied ONE global
+Optimistic%/Pessimistic% to every activity regardless of type, so a 2-day punch-list item and a
+180-day long-lead procurement activity got the identical relative spread — an input-fidelity gap
+that limits every downstream output (P50/P80/P90, tornado). A criticality index would instead need
+a **backward pass per iteration** (to get float), roughly doubling compute right where 27k-activity/
+1000-iteration runs are already flagged as heavy, and its result would mostly just re-derive what
+the tornado already shows under a uniform-variance model. The override is compute-neutral (same
+forward-pass-only architecture, per-node opt/pess instead of one global pair) and improves every
+existing output immediately, so it came first.
+- **Add/Edit Activity modal** gained **Risk: Optimistic %**/**Risk: Pessimistic %** fields (next to
+  Contract Date) — blank (the default) means "use the simulation-wide default"; set only on the
+  activities a planner actually has a stronger/weaker view on (e.g. long-lead procurement,
+  permitting, weather-sensitive site work). Written **separately + tolerantly** after the main
+  save (own try/catch, like `contract_date`), so a not-yet-migrated DB doesn't break saves — and so
+  a missing `risk_*` column can't also swallow the `contract_date` write, or vice versa (kept as
+  two independent tolerant updates rather than one combined payload).
+- **`_riskPrep()`** captures `riskOpt`/`riskPess` (the activity's own %, `/100`, or `null`) per node.
+  **`runRisk()`** computes each varied node's *effective* range once before the iteration loop
+  (`nd._opt`/`nd._pess` = the override or the global default; re-clamped so pess>opt exactly like
+  the global pair already was) — not per-iteration, since it's invariant across samples — and the
+  sampling loop calls `_triSample(nd._opt, 1, nd._pess)` instead of the global `opt`/`pess`.
+- **Results surface which activities used a custom estimate**: the count line adds "· N with a
+  custom 3-point estimate", and any overridden activity in the **tornado** (top duration drivers)
+  gets a small "(custom)" tag next to its name.
+- Verified in a node harness (no DOM/backend touched): the effective-range fallback/clamp logic
+  hand-checked across 5 cases (both null → global; one overridden → mixed; both overridden with
+  pess≤opt → guard re-clamps, matching the global pair's own guard); `_triSample` re-verified with a
+  realistic per-activity override range (opt 70%/pess 115%) — sampled mean matched `(a+c+b)/3`
+  exactly over 300k draws, bounds respected.
+
 ## OPC parity: Multiple baselines + Monte Carlo risk (2026-07-07)
 Both reached from the **Actions ▾** menu (`#ps-baselines`, `#ps-risk`).
 

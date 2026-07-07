@@ -78,6 +78,8 @@ create table if not exists project_schedule (
   -- evolved schedule columns (see migrations)
   activity_type text default 'Task', status text default 'Not Started', responsible_party text,
   actual_start date, actual_finish date, bl_start date, bl_finish date, bl_cost numeric(18,2),
+  -- Monte Carlo schedule risk: per-activity 3-point override (see 2026-07-07-risk-3point-duration.sql)
+  risk_optimistic_pct numeric(6,2), risk_pessimistic_pct numeric(6,2),
   -- OPC Activity Details fields
   owner text, work_package text, calendar text,
   duration_type text default 'Fixed Duration & Units/Time', percent_complete_type text default 'Duration',

@@ -904,6 +904,8 @@
         <div><label class="pd-label">Baseline Start</label><input class="pd-input" id="ps-f-bls" type="date" /></div>
         <div><label class="pd-label">Baseline Finish</label><input class="pd-input" id="ps-f-blf" type="date" /></div>
         <div><label class="pd-label">Contract Date <small>(obligation / LD date)</small></label><input class="pd-input" id="ps-f-contract" type="date" /></div>
+        <div><label class="pd-label">Risk: Optimistic % <small>(3-point; blank = simulation default)</small></label><input class="pd-input" id="ps-f-risk-opt" type="number" min="10" max="100" step="1" placeholder="e.g. 85" /></div>
+        <div><label class="pd-label">Risk: Pessimistic % <small>(3-point; blank = simulation default)</small></label><input class="pd-input" id="ps-f-risk-pess" type="number" min="100" max="500" step="1" placeholder="e.g. 150" /></div>
         <div><label class="pd-label">Planned Start *</label><input class="pd-input" id="ps-f-start" type="date" required /></div>
         <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
         <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
@@ -3595,7 +3597,7 @@
       '<label>Pessimistic %<input type="number" id="ps-risk-pess" value="130" min="100" max="500"></label>' +
       '<label>Iterations<input type="number" id="ps-risk-iter" value="1000" min="100" max="5000" step="100"></label>' +
       '<button class="pd-btn pd-btn-primary" id="ps-risk-run"><span data-ico="pulse" data-ico-size="14"></span> Run simulation</button></div>' +
-      '<p style="font-size:12px;color:var(--pd-muted);margin:0 0 6px;">Each iteration samples every <strong>incomplete, not-yet-started</strong> activity’s duration from a triangular distribution between Optimistic% and Pessimistic% of plan (mode = 100% = as planned), then recomputes the project finish through the relationship logic. Completed/started work keeps its actual dates.</p>' +
+      '<p style="font-size:12px;color:var(--pd-muted);margin:0 0 6px;">Each iteration samples every <strong>incomplete, not-yet-started</strong> activity’s duration from a triangular distribution between Optimistic% and Pessimistic% of plan (mode = 100% = as planned), then recomputes the project finish through the relationship logic. Completed/started work keeps its actual dates. An activity with its own <strong>Risk: Optimistic %/Pessimistic %</strong> set (Add/Edit Activity modal) uses that range instead of the two defaults above — set one on the specific activities you actually have a stronger or weaker view on (e.g. long-lead procurement, permitting), leave the rest blank to use the defaults.</p>' +
       '<div id="ps-risk-results"></div>';
     b.querySelector('#ps-risk-run').onclick = runRisk;
     document.getElementById('ps-risk-count').textContent = '';
@@ -3603,7 +3605,11 @@
   function _triSample(a, c, b) { var u = Math.random(); var fc = (c - a) / (b - a); if (u < fc) return a + Math.sqrt(u * (b - a) * (c - a)); return b - Math.sqrt((1 - u) * (b - a) * (b - c)); }
   function _riskPrep() {
     var tasks = rows.filter(function (r) { return !isWbs(r) && r.start_date && r.end_date && r.activity_id; });
-    var nodes = tasks.map(function (t, i) { return { i: i, t: t, dur: (pd(t.end_date) - pd(t.start_date)) / 86400000 + 1, done: !!(useActuals && t.actual_finish), started: !!(useActuals && (t.actual_start || t.percent_complete > 0)), rel: [], out: [], indeg: 0 }; });
+    var nodes = tasks.map(function (t, i) { return { i: i, t: t, dur: (pd(t.end_date) - pd(t.start_date)) / 86400000 + 1, done: !!(useActuals && t.actual_finish), started: !!(useActuals && (t.actual_start || t.percent_complete > 0)), rel: [], out: [], indeg: 0,
+      // per-activity 3-point override (risk_optimistic_pct/risk_pessimistic_pct on project_schedule) —
+      // null when unset, so runRisk() falls back to the simulation-wide Optimistic%/Pessimistic%.
+      riskOpt: t.risk_optimistic_pct != null ? t.risk_optimistic_pct / 100 : null,
+      riskPess: t.risk_pessimistic_pct != null ? t.risk_pessimistic_pct / 100 : null }; });
     var idxById = {}; nodes.forEach(function (nd) { idxById[String(nd.t.activity_id)] = nd; });
     var base = null; tasks.forEach(function (t) { var s = pd((useActuals && t.actual_start) || t.start_date); if (s && (!base || s < base)) base = s; });
     var A = function (d) { var x = pd(d); return x ? Math.round((x - base) / 86400000) : null; };
@@ -3639,24 +3645,34 @@
     var N = Math.max(100, Math.min(5000, parseInt(v('ps-risk-iter'), 10) || 1000));
     var nodes = prep.nodes, baseDur = nodes.map(function (nd) { return nd.dur; });
     var varied = nodes.filter(function (nd) { return !nd.done && !nd.started; });
-    varied.forEach(function (nd) { nd._sd = 0; nd._sd2 = 0; nd._sdf = 0; });
+    // Effective per-node range: the activity's own 3-point override when set, else the
+    // simulation-wide Optimistic%/Pessimistic% above. Computed once (not per iteration) since
+    // it doesn't change across samples. Guards a bad override (pess<=opt) the same way as the
+    // global pair does.
+    varied.forEach(function (nd) {
+      nd._sd = 0; nd._sd2 = 0; nd._sdf = 0;
+      nd._opt = nd.riskOpt != null ? nd.riskOpt : opt;
+      nd._pess = nd.riskPess != null ? nd.riskPess : pess;
+      if (nd._pess <= nd._opt) nd._pess = nd._opt + 0.01;
+    });
+    var customCount = varied.filter(function (nd) { return nd.riskOpt != null || nd.riskPess != null; }).length;
     var sF = 0, sF2 = 0, finishes = [], iter = 0;
     var res = document.getElementById('ps-risk-results');
     function chunk() {
       var end = Math.min(iter + 100, N);
       for (; iter < end; iter++) {
         var durs = baseDur.slice();
-        for (var vi = 0; vi < varied.length; vi++) { var nd = varied[vi]; var d = nd.dur * _triSample(opt, 1, pess); d = Math.max(d, isMile(nd.t) ? 0 : 1); durs[nd.i] = d; }
+        for (var vi = 0; vi < varied.length; vi++) { var nd = varied[vi]; var d = nd.dur * _triSample(nd._opt, 1, nd._pess); d = Math.max(d, isMile(nd.t) ? 0 : 1); durs[nd.i] = d; }
         for (var k = 0; k < nodes.length; k++) { nodes[k]._es = null; nodes[k]._ef = null; }
         var F = _riskForward(prep, durs); finishes.push(F); sF += F; sF2 += F * F;
         for (var vj = 0; vj < varied.length; vj++) { var nd2 = varied[vj], dd = durs[nd2.i]; nd2._sd += dd; nd2._sd2 += dd * dd; nd2._sdf += dd * F; }
       }
       if (iter < N) { res.innerHTML = '<div class="ps-ck-empty" style="padding:30px;">Running… ' + Math.round(iter / N * 100) + '%</div>'; (window.requestAnimationFrame || function (f) { setTimeout(f, 0); })(chunk); }
-      else finalizeRisk(prep, finishes, sF, sF2, varied, N);
+      else finalizeRisk(prep, finishes, sF, sF2, varied, N, customCount);
     }
     res.innerHTML = '<div class="ps-ck-empty" style="padding:30px;">Running… 0%</div>'; chunk();
   }
-  function finalizeRisk(prep, finishes, sF, sF2, varied, N) {
+  function finalizeRisk(prep, finishes, sF, sF2, varied, N, customCount) {
     finishes.sort(function (a, b) { return a - b; });
     var base = prep.base;
     function toDate(ef) { return dstr(addDays(base, Math.round(ef) - 1)); }   // finish = base + EF − 1 (inclusive)
@@ -3670,13 +3686,16 @@
     var span = Math.max(1, hi - lo); finishes.forEach(function (f) { bins[Math.min(BINS - 1, Math.floor((f - lo) / span * BINS))]++; });
     var bmax = Math.max.apply(null, bins);
     var p50 = pctv(50), p80 = pctv(80), p90 = pctv(90), slip80 = Math.round(p80 - detEF);
-    document.getElementById('ps-risk-count').textContent = N + ' iterations · ' + varied.length + ' varied activities';
+    document.getElementById('ps-risk-count').textContent = N + ' iterations · ' + varied.length + ' varied activities' + (customCount ? ' · ' + customCount + ' with a custom 3-point estimate' : '');
     function kpi(v, l, cls) { return '<div class="ps-risk-kpi"><div class="v' + (cls ? ' ' + cls : '') + '" style="' + (cls === 'warn' ? 'color:var(--pd-red)' : '') + '">' + v + '</div><div class="l">' + l + '</div></div>'; }
     var hist = '<div class="ps-risk-hist">' + bins.map(function (c) { return '<div class="bar" style="height:' + Math.round(c / bmax * 100) + '%" title="' + c + ' iterations"></div>'; }).join('') + '</div>' +
       '<div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--pd-muted);margin-top:3px;"><span>' + Fmt.date(toDate(lo)) + '</span><span>Project finish distribution</span><span>' + Fmt.date(toDate(hi)) + '</span></div>';
     var torn = sens.slice(0, 12);
     var tmax = torn.length ? Math.abs(torn[0].r) : 1;
-    var tornHTML = torn.length ? torn.map(function (x) { return '<div class="ps-risk-torn-row"><span class="nm" title="' + esc(x.nd.t.activity_name || '') + '">' + esc(x.nd.t.activity_id || x.nd.t.activity_name || '') + '</span><span class="ps-risk-torn-track"><span class="ps-risk-torn-fill" style="width:' + Math.round(Math.abs(x.r) / tmax * 100) + '%"></span></span><span style="flex:0 0 46px;text-align:right;font-weight:700;">' + (x.r * 100).toFixed(0) + '%</span></div>'; }).join('') : '<div class="ps-ck-empty">No duration sensitivity (add relationships so durations flow to the finish).</div>';
+    var tornHTML = torn.length ? torn.map(function (x) {
+      var custom = (x.nd.riskOpt != null || x.nd.riskPess != null) ? ' <span title="Uses this activity\'s own Optimistic/Pessimistic % instead of the simulation default" style="color:var(--pd-muted);font-weight:400;">(custom)</span>' : '';
+      return '<div class="ps-risk-torn-row"><span class="nm" title="' + esc(x.nd.t.activity_name || '') + '">' + esc(x.nd.t.activity_id || x.nd.t.activity_name || '') + custom + '</span><span class="ps-risk-torn-track"><span class="ps-risk-torn-fill" style="width:' + Math.round(Math.abs(x.r) / tmax * 100) + '%"></span></span><span style="flex:0 0 46px;text-align:right;font-weight:700;">' + (x.r * 100).toFixed(0) + '%</span></div>';
+    }).join('') : '<div class="ps-ck-empty">No duration sensitivity (add relationships so durations flow to the finish).</div>';
     document.getElementById('ps-risk-results').innerHTML =
       '<div class="ps-risk-kpis">' +
         kpi(Fmt.date(toDate(detEF)), 'Deterministic (plan)') +
@@ -3699,6 +3718,8 @@
     set('ps-f-bls', row && row.bl_start ? String(row.bl_start).slice(0,10) : '');
     set('ps-f-blf', row && row.bl_finish ? String(row.bl_finish).slice(0,10) : '');
     set('ps-f-contract', row && row.contract_date ? String(row.contract_date).slice(0,10) : '');
+    set('ps-f-risk-opt', row && row.risk_optimistic_pct != null ? row.risk_optimistic_pct : '');
+    set('ps-f-risk-pess', row && row.risk_pessimistic_pct != null ? row.risk_pessimistic_pct : '');
     set('ps-f-start', row && row.start_date ? String(row.start_date).slice(0,10) : '');
     set('ps-f-finish', row && row.end_date ? String(row.end_date).slice(0,10) : '');
     set('ps-f-pct', row && row.percent_complete != null ? row.percent_complete : '');
@@ -3828,9 +3849,13 @@
       if (res.error) { UI.toast(res.error.message, 'error'); return; }
       if (res.data && res.data.id) { savedId = res.data.id; pushUndo({ type: 'insert', id: res.data.id, payload: payload }); logAudit({ id: savedId, activity_id: payload.activity_id, activity_name: payload.activity_name }, 'insert', null); }
     }
-    // contract_date written separately + tolerantly, so a not-yet-migrated DB (missing column)
-    // never breaks the main save. Ignore the error if the column doesn't exist yet.
+    // contract_date / risk_*_pct written separately + tolerantly (own try/catch each), so a
+    // not-yet-migrated DB (missing column) never breaks the main save OR the other field.
     if (savedId) { var cval = v('ps-f-contract') || null; try { var cr = await sb().from(TABLE).update({ contract_date: cval }).eq('id', savedId); if (!cr.error) { var rr = rows.find(function (x) { return x.id === savedId; }); if (rr) rr.contract_date = cval; } } catch (e) {} }
+    if (savedId) {
+      var roVal = num('ps-f-risk-opt'), rpVal = num('ps-f-risk-pess');
+      try { var rr2 = await sb().from(TABLE).update({ risk_optimistic_pct: roVal, risk_pessimistic_pct: rpVal }).eq('id', savedId); if (!rr2.error) { var rrow = rows.find(function (x) { return x.id === savedId; }); if (rrow) { rrow.risk_optimistic_pct = roVal; rrow.risk_pessimistic_pct = rpVal; } } } catch (e) {}
+    }
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
     closeModal(); load();
   }
