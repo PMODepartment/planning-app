@@ -554,6 +554,27 @@
     .ps-ck-row .slip { flex:none; font-weight:700; color:var(--pd-red); min-width:56px; text-align:right; }
     .ps-ck-row .slip.ok { color:#2D9B6F; }
     .ps-ck-empty { padding:22px 14px; text-align:center; color:var(--pd-muted); font-size:12.5px; }
+    /* Cockpit ranked bar-chart rows (Milestones at risk / Most behind schedule) */
+    .ps-ck-barrow { flex-direction:column; align-items:stretch; gap:5px; }
+    .ps-ck-barrow-top { display:flex; align-items:center; gap:8px; }
+    .ps-ck-bartrack { height:6px; border-radius:3px; background:var(--pd-bg); overflow:hidden; }
+    .ps-ck-barfill { height:100%; border-radius:3px; background:var(--pd-red); min-width:3px; }
+    .ps-ck-barfill.sev-1 { opacity:.42; }
+    .ps-ck-barfill.sev-2 { opacity:.7; }
+    .ps-ck-barfill.sev-3 { opacity:1; }
+    /* Critical-path float-bucket summary strip */
+    .ps-ck-buckets { display:flex; align-items:center; gap:12px; padding:10px 14px; border-bottom:1px solid var(--pd-line); flex-wrap:wrap; }
+    .ps-ck-bucket-track { flex:1 1 100px; min-width:80px; height:10px; border-radius:5px; overflow:hidden; display:flex; background:var(--pd-bg); }
+    .ps-ck-bucket-seg { height:100%; }
+    .ps-ck-bucket-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:11px; color:var(--pd-muted); }
+    .ps-ck-bucket-legend span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+    .ps-ck-bucket-legend i { width:8px; height:8px; border-radius:2px; display:inline-block; flex:none; }
+    /* Progress trend chart */
+    .ps-ck-trend-card { margin-bottom:14px; }
+    .ps-ck-trend-body { padding:12px 14px 6px; overflow:auto; }
+    .ps-ck-trend-body svg { display:block; }
+    .ps-ck-trend-sub { margin-left:auto; font-weight:400; font-size:11.5px; color:var(--pd-muted); }
+    .ps-ck-h { position:relative; }
     /* loading overlay */
     .ps-loading { position:fixed; inset:0; background:rgba(20,20,20,.45); display:flex; flex-direction:column;
       align-items:center; justify-content:center; gap:14px; z-index:9999; color:#fff; font-weight:600; font-size:14px; }
@@ -729,11 +750,15 @@
           <button class="pd-btn" id="ps-ck-audit"><span data-ico="clipboard" data-ico-size="15"></span> Change history</button>
         </div>
         <div class="ps-ck-kpis" id="ps-ck-kpis"></div>
+        <div class="pd-card ps-ck-card ps-ck-trend-card">
+          <div class="ps-ck-h"><span data-ico="trendingUp" data-ico-size="15"></span> Progress trend<span class="ps-ck-trend-sub" id="ps-ck-trend-sub"></span></div>
+          <div id="ps-ck-trend" class="ps-ck-trend-body"></div>
+        </div>
         <div class="ps-ck-grid">
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="risk" data-ico-size="15"></span> Milestones at risk</div><div id="ps-ck-miles" class="ps-ck-body"></div></div>
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Most behind schedule</div><div id="ps-ck-behind" class="ps-ck-body"></div></div>
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="calendar" data-ico-size="15"></span> <span id="ps-ck-look-h">3-week lookahead</span></div><div id="ps-ck-look" class="ps-ck-body"></div></div>
-          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="pulse" data-ico-size="15"></span> Critical-path drivers</div><div id="ps-ck-crit" class="ps-ck-body"></div></div>
+          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="pulse" data-ico-size="15"></span> Critical-path drivers</div><div id="ps-ck-buckets" class="ps-ck-buckets"></div><div id="ps-ck-crit" class="ps-ck-body"></div></div>
         </div>
       </div>
     </div>
@@ -2963,9 +2988,12 @@
     var kp = document.getElementById('ps-ck-kpis'); if (!kp) return;
     var hh = document.getElementById('ps-ck-look-h'); if (hh) hh.textContent = (_ckLookWeeks || 3) + '-week lookahead';
     var ids = ['ps-ck-miles', 'ps-ck-behind', 'ps-ck-look', 'ps-ck-crit'];
+    var bk = document.getElementById('ps-ck-buckets');
     if (!pid || !rows.length) {
       kp.innerHTML = '';
+      if (bk) bk.innerHTML = '';
       ids.forEach(function (id) { var e = document.getElementById(id); if (e) e.innerHTML = '<div class="ps-ck-empty">' + (pid ? 'No activities.' : 'Select a project.') + '</div>'; });
+      _ckTrend.pid = null; _renderCkTrend();
       return;
     }
     computeCPM();
@@ -2981,6 +3009,15 @@
     function slipTag(s) { return '<span class="slip' + (s > 0 ? '' : ' ok') + '">' + (s > 0 ? '+' : '') + s + 'd</span>'; }
     function ldTag(r) { var c = contractVar(r); return (c != null && c > 0) ? ' <span class="slip" title="Days past contract date — LD exposure">LD +' + c + 'd</span>' : ''; }
     function row(r, right) { return '<div class="ps-ck-row" data-id="' + esc(r.id) + '"><span class="id">' + esc(r.activity_id || '') + '</span><span class="nm">' + esc(r.activity_name || '') + '</span>' + (right || '') + '</div>'; }
+    // Ranked bar-chart row — bar length = days late relative to the worst item in THIS list,
+    // so "how bad is this one compared to the rest" is visible at a glance, not just a number.
+    function barRow(x, maxSlip) {
+      var pct = Math.max(4, Math.round((x.slip / (maxSlip || x.slip || 1)) * 100));
+      var sev = x.slip > 21 ? 3 : (x.slip > 7 ? 2 : 1);
+      return '<div class="ps-ck-row ps-ck-barrow" data-id="' + esc(x.r.id) + '">' +
+        '<div class="ps-ck-barrow-top"><span class="id">' + esc(x.r.activity_id || '') + '</span><span class="nm">' + esc(x.r.activity_name || '') + '</span>' + slipTag(x.slip) + ldTag(x.r) + '</div>' +
+        '<div class="ps-ck-bartrack"><div class="ps-ck-barfill sev-' + sev + '" style="width:' + pct + '%"></div></div></div>';
+    }
     function fill(id, arr, fn, empty) { var e = document.getElementById(id); if (!e) return; e.innerHTML = arr.length ? arr.map(fn).join('') : '<div class="ps-ck-empty">' + empty + '</div>'; e.querySelectorAll('.ps-ck-row').forEach(function (rw) { rw.onclick = function () { selId = rw.dataset.id; switchTab('schedule'); renderDetails(); highlightRow(); }; }); }
     kp.innerHTML = kpi(avgPct + '%', 'Overall % complete') +
       kpi(behind.length, 'Activities behind', behind.length ? 'warn' : 'good') +
@@ -2989,10 +3026,82 @@
       kpi(crit.length, 'Critical activities') +
       kpi(look.length, (_ckLookWeeks || 3) + '-week lookahead') +
       kpi(fmtOPCDate(dstr(dd)), 'Data date');
-    fill('ps-ck-miles', milesAtRisk.slice(0, 60), function (x) { return row(x.r, slipTag(x.slip) + ldTag(x.r)); }, 'No milestones are late vs baseline. 🎯');
-    fill('ps-ck-behind', behind.slice(0, 60), function (x) { return row(x.r, slipTag(x.slip) + ldTag(x.r)); }, 'Nothing is behind its baseline finish.');
+    var milesMax = milesAtRisk.length ? milesAtRisk[0].slip : 0;
+    var behindMax = behind.length ? behind[0].slip : 0;
+    fill('ps-ck-miles', milesAtRisk.slice(0, 60), function (x) { return barRow(x, milesMax); }, 'No milestones are late vs baseline. 🎯');
+    fill('ps-ck-behind', behind.slice(0, 60), function (x) { return barRow(x, behindMax); }, 'Nothing is behind its baseline finish.');
     fill('ps-ck-look', look.slice(0, 100), function (r) { return row(r, '<span class="mt">' + (pd(r.start_date) ? Fmt.date(r.start_date) : (r.end_date ? Fmt.date(r.end_date) : '—')) + '</span>'); }, 'Nothing due in the next 3 weeks.');
     fill('ps-ck-crit', crit.slice(0, 100), function (r) { return row(r, '<span class="mt">' + (r._float != null ? r._float + 'd float' : '') + '</span>'); }, 'No critical path found — add relationships or dates.');
+    if (bk) bk.innerHTML = _ckFloatBuckets(tasks);
+    _ckLoadTrend();
+  }
+  // Float-bucket summary strip above the Critical-path drivers list — turns "here's a list of
+  // names" into "here's how much of the schedule's slack is already gone" at a glance.
+  function _ckFloatBuckets(tasks) {
+    var elig = tasks.filter(function (r) { return (r.percent_complete || 0) < 100 && r._float != null; });
+    var buckets = [
+      { label: 'Critical (0d)', color: 'var(--pd-red)', test: function (f) { return f <= 0; } },
+      { label: '1–5d float', color: '#E08A3C', test: function (f) { return f > 0 && f <= 5; } },
+      { label: '6–15d float', color: '#D9B23C', test: function (f) { return f > 5 && f <= 15; } },
+      { label: '>15d float', color: '#7C93B8', test: function (f) { return f > 15; } }
+    ];
+    buckets.forEach(function (b) { b.count = elig.filter(function (r) { return b.test(r._float); }).length; });
+    if (!elig.length) return '<div class="ps-ck-bucket-legend" style="padding:0;">No float data yet — compute the critical path (schedule needs relationships/dates).</div>';
+    var total = elig.length;
+    var track = buckets.map(function (b) { return b.count ? '<div class="ps-ck-bucket-seg" style="width:' + (b.count / total * 100) + '%;background:' + b.color + '" title="' + esc(b.label) + ': ' + b.count + '"></div>' : ''; }).join('');
+    var legend = buckets.map(function (b) { return '<span><i style="background:' + b.color + '"></i>' + esc(b.label) + ': ' + b.count + '</span>'; }).join('');
+    return '<div class="ps-ck-bucket-track">' + track + '</div><div class="ps-ck-bucket-legend">' + legend + '</div>';
+  }
+  // ----- Progress trend chart (Planner Cockpit) — plots % complete across weekly snapshots
+  // (schedule_snapshots) so a planner can see whether the project is catching up or slipping,
+  // instead of re-reading the same static KPI number every Monday. -----
+  var _ckTrend = { pid: null, data: null, err: false };
+  async function _ckLoadTrend() {
+    if (!pid) return;
+    if (_ckTrend.pid === pid && (_ckTrend.data != null || _ckTrend.err)) { _renderCkTrend(); return; }
+    _ckTrend.pid = pid; _ckTrend.data = null; _ckTrend.err = false;
+    if (activeTab === 'planner') _renderCkTrend();
+    var res = await sb().from('schedule_snapshots').select('taken_at,data_date,pct_complete').eq('project_id', pid).order('taken_at', { ascending: true }).limit(60);
+    if (_ckTrend.pid !== pid) return;   // project changed while this was in flight
+    if (res.error) { _ckTrend.err = true; } else { _ckTrend.data = res.data || []; }
+    if (activeTab === 'planner') _renderCkTrend();
+  }
+  function _renderCkTrend() {
+    var host = document.getElementById('ps-ck-trend'); if (!host) return;
+    var sub = document.getElementById('ps-ck-trend-sub');
+    if (!pid) { host.innerHTML = ''; if (sub) sub.textContent = ''; return; }
+    if (_ckTrend.err) { host.innerHTML = '<div class="ps-ck-empty">Could not load — run the schedule-snapshots migration.</div>'; if (sub) sub.textContent = ''; return; }
+    if (_ckTrend.data == null) { host.innerHTML = '<div class="ps-ck-empty">Loading…</div>'; if (sub) sub.textContent = ''; return; }
+    var snaps = _ckTrend.data;
+    if (snaps.length < 2) {
+      if (sub) sub.textContent = '';
+      host.innerHTML = '<div class="ps-ck-empty">' + (snaps.length ? 'One snapshot so far — take another next week to start the trend line.' : 'No snapshots yet.') + ' Use “Take snapshot” above each week to track % complete over time.</div>';
+      return;
+    }
+    if (sub) sub.textContent = snaps.length + ' snapshot' + (snaps.length === 1 ? '' : 's');
+    host.innerHTML = _ckTrendSVG(snaps);
+  }
+  function _ckTrendSVG(snaps) {
+    var W = Math.max(420, 90 * snaps.length), H = 170, padL = 34, padR = 16, padT = 16, padB = 24;
+    var cw = W - padL - padR, ch = H - padT - padB, n = snaps.length;
+    var xw = n > 1 ? cw / (n - 1) : 0;
+    var out = '';
+    [0, 25, 50, 75, 100].forEach(function (v) {
+      var y = padT + ch - ch * v / 100;
+      out += '<line x1="' + padL + '" y1="' + y + '" x2="' + (padL + cw) + '" y2="' + y + '" stroke="var(--pd-line)" stroke-width="1"/>' +
+        '<text x="' + (padL - 6) + '" y="' + (y + 3.5) + '" text-anchor="end" font-size="10" fill="var(--pd-muted)">' + v + '%</text>';
+    });
+    var pts = snaps.map(function (s, i) { return { x: padL + i * xw, y: padT + ch - ch * (s.pct_complete || 0) / 100, s: s }; });
+    out += '<polyline points="' + pts.map(function (p) { return p.x + ',' + p.y; }).join(' ') + '" fill="none" stroke="var(--pd-red)" stroke-width="2.2"/>';
+    var xstep = Math.max(1, Math.ceil(n / 10));
+    pts.forEach(function (p, i) {
+      var lbl = p.s.data_date ? Fmt.date(p.s.data_date) : (p.s.taken_at ? Fmt.date(String(p.s.taken_at).slice(0, 10)) : '');
+      out += '<circle cx="' + p.x + '" cy="' + p.y + '" r="3.6" fill="var(--pd-red)"><title>' + esc(lbl + ' · ' + (p.s.pct_complete || 0) + '% complete') + '</title></circle>';
+      if (i === 0 || i === n - 1 || i % xstep === 0) out += '<text x="' + p.x + '" y="' + (padT + ch + 15) + '" text-anchor="middle" font-size="9" fill="var(--pd-muted)">' + esc(lbl) + '</text>';
+    });
+    var last = pts[pts.length - 1];
+    out += '<text x="' + Math.min(last.x + 4, padL + cw - 4) + '" y="' + Math.max(last.y - 6, 10) + '" font-size="11" font-weight="700" fill="var(--pd-red)">' + (last.s.pct_complete || 0) + '%</text>';
+    return '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" style="min-width:100%;">' + out + '</svg>';
   }
 
   // ----- BULK "UPDATE PROGRESS" GRID (weekly status entry; schema-free) -----
@@ -3107,6 +3216,7 @@
     hideLoading();
     if (res.error) { UI.toast('Snapshot failed: ' + res.error.message + ' — run the schedule-snapshots migration.', 'error'); return; }
     UI.toast('Snapshot saved.', 'success');
+    _ckTrend.pid = null; _ckLoadTrend();   // refresh the cockpit's Progress Trend chart with the new point
   }
   async function openSnapshots() {
     if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
@@ -3338,6 +3448,9 @@
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     document.getElementById('ps-view-cost').style.display = tab === 'cost' ? '' : 'none';
     document.getElementById('ps-view-planner').style.display = tab === 'planner' ? '' : 'none';
+    // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
+    // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Cockpit or Cost table.
+    var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
     var name = tab === 'cost' ? 'Cost Loading' : (tab === 'planner' ? 'Planner Cockpit' : 'Project Schedule');

@@ -78,6 +78,42 @@ finish, days late), **3-week lookahead** (incomplete activities whose start/fini
 [data date, +21d]), **Critical-path drivers** (`_critical` from `computeCPM`). Rows click → jump to
 the Schedule view with the activity selected. CSS `.ps-ck-*`.
 
+## Planner batch 6 (2026-07-07) — Cockpit charts (replace list rows) + Schedule-only toolbar hidden
+User feedback: the four cockpit panels were "just scrollable tables," not useful for reporting/
+tracking; also the Schedule grid's toolbar (Actions/Add activity/Group/Zoom/Expand/Views/Schedule/
+Layout/Columns/Colors/Critical path/Link/Search) showed on the Planner and Cost Loading tabs where
+none of it applies.
+- **Milestones at risk / Most behind schedule are now ranked bar charts, not plain rows**: each row
+  (`barRow()` in `renderPlanner()`) got a horizontal bar (`.ps-ck-bartrack`/`.ps-ck-barfill`) whose
+  width is the item's slip days relative to the worst item in that same list (so the worst offender
+  reads as a full bar, not just a bigger number), colored by severity tier (`sev-1/2/3`: ≤7d / 8–21d
+  / >21d, via opacity on `var(--pd-red)`). Same click-to-jump-to-Schedule behavior as before (still
+  `.ps-ck-row`).
+- **New "Progress Trend" chart** (`#ps-ck-trend`, above the 2×2 grid): an SVG line chart
+  (`_ckTrendSVG`) plotting `pct_complete` across the project's saved **Schedule Snapshots**
+  (`schedule_snapshots` — the same table "Take snapshot" already writes to), so a planner can see
+  week-over-week whether the project is catching up or slipping instead of re-reading one static
+  KPI. Lazy-loaded per project (`_ckLoadTrend`/`_ckTrend` cache, invalidated when a project switches
+  or a new snapshot is taken) so opening the cockpit isn't blocked on a network round-trip. Needs
+  ≥2 snapshots to draw a line; otherwise shows an empty-state nudging the user toward "Take
+  snapshot." Tolerant of a missing table (shows a migration hint, same pattern as the rest of the
+  cockpit).
+- **Critical-path drivers gained a float-bucket summary strip** (`_ckFloatBuckets`, `#ps-ck-buckets`,
+  above the existing driver list): a segmented bar + legend counting incomplete activities into
+  Critical (0d) / 1–5d / 6–15d / >15d float, so the panel reads as "how much slack is left in the
+  schedule" before drilling into names.
+- **3-week lookahead is unchanged** (stays a plain list) — it's an action checklist for the coming
+  weeks, not a trend or ranking, so a chart wouldn't add anything.
+- **Schedule-only toolbar now hidden outside the Schedule tab**: `switchTab()` toggles
+  `.ps-toolbar` display — visible only when `tab==='schedule'`, hidden on Planner Cockpit AND Cost
+  Loading (matches how `#ps-view-schedule`/`#ps-view-cost`/`#ps-view-planner` are already toggled).
+- Verified with a throwaway gitignored harness (`_ui_test.html`, matches the `**/_ui_test.html`
+  gitignore pattern from Prompt 53) rendering the real CSS + the new functions against synthetic
+  data, screenshotted, then deleted: bar widths/severity shading scale correctly against each
+  list's own max, LD tags still render, the float-bucket counts matched a hand-count (2 critical /
+  1 each in the other three buckets from a 7-task fixture), and the trend SVG drew a 6-point line
+  with correct gridlines/date labels/end-value callout.
+
 ## Planner batch 5 (2026-07-07) — Change history (audit trail)
 **Migration:** `../../migrations/2026-07-07-schedule-audit.sql` (`schedule_audit`, insert-only for
 planners, read for approved). `logAudit(r, action, changes)` is **fire-and-forget + tolerant** (a
