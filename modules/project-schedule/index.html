@@ -1189,10 +1189,23 @@
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
     if (before) pushUndo({ type: 'update', id: id, before: before, after: patch });
     logAudit(r, 'update', _auditChanges(prev, patch));
-    // Only re-sort when the edit could change ordering (WBS code or Activity ID); otherwise reuse order.
-    rebuild(!!(patch && (('wbs' in patch) || ('activity_id' in patch))));
+    // Incremental rebuild: only recompute what the edit can actually affect.
+    //  • structural (WBS/Activity ID/Type) → re-sort;
+    //  • any field feeding the WBS rollups or the CPM → rebuild (recompute rollups + CPM);
+    //  • purely cosmetic edits (status / responsible / remarks / etc.) → SKIP rebuild entirely —
+    //    `_sorted`, `_spanMap`/`_costMap` and `_critical`/`_float` are unchanged and still valid,
+    //    and the renderers read the live row, so the new value shows without any recompute.
+    var affects = false, structural = false;
+    if (patch) Object.keys(patch).forEach(function (k) { if (_RECOMPUTE_FIELDS[k]) affects = true; if (k === 'wbs' || k === 'activity_id' || k === 'activity_type') structural = true; });
+    if (colSort) { affects = true; structural = true; }   // column-sort order can depend on ANY edited field
+    if (affects) rebuild(structural);
     return true;
   }
+  // Fields that feed the sort, the WBS roll-ups, or the CPM. A patch touching NONE of these
+  // (updated_at aside) is cosmetic and needs no rebuild.
+  var _RECOMPUTE_FIELDS = { wbs: 1, activity_id: 1, activity_type: 1, start_date: 1, end_date: 1,
+    actual_start: 1, actual_finish: 1, bl_start: 1, bl_finish: 1, planned_cost: 1, actual_cost: 1,
+    earned_value: 1, bl_cost: 1, percent_complete: 1, predecessors: 1, duration_days: 1 };
   // ---- Change audit (fire-and-forget, tolerant of a not-yet-migrated DB) ----
   function _auditChanges(prev, patch) {
     var c = {}; Object.keys(patch || {}).forEach(function (k) { if (k === 'updated_at') return; var from = prev ? prev[k] : undefined; if (JSON.stringify(from == null ? null : from) !== JSON.stringify(patch[k] == null ? null : patch[k])) c[k] = { from: from == null ? null : from, to: patch[k] == null ? null : patch[k] }; });

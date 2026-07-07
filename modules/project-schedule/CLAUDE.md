@@ -97,6 +97,20 @@ change (verified 0 mismatches vs the old algorithm across 2,000 random DAGs):
   `_segs/_depth/_anc` are also cached per row (`_segsWbs`) and recomputed only when `wbs` changes.
   The rollups (`_spanMap`/`_costMap`/`_min`/`_max`) + CPM still refresh every rebuild (needed after
   date/cost edits); only the sort + segs recompute are skipped.
+- **Cosmetic-edit skip (in `persist`)**: a patch is classified against `_RECOMPUTE_FIELDS` (the fields
+  feeding the sort / WBS roll-ups / CPM). If it touches **none** of them — a purely cosmetic edit
+  (status, responsible_party, remarks, owner, PO fields, …) — `persist` **skips `rebuild()` entirely**;
+  `_sorted`/`_spanMap`/`_costMap`/`_critical`/`_float` are all unchanged and still valid, and the
+  renderers read the live row, so the value shows with zero recompute. WBS/Activity-ID/Type edits set
+  `structural` (re-sort); any roll-up/CPM field triggers a `rebuild(structural)`. **Guard:** when the
+  OPC column-sort (`colSort`) is active, leaf-sibling order can depend on the edited field, so an edit
+  then forces a structural rebuild regardless. (Grouped views regroup from live rows in `buildNodes`
+  every render, so they need no special handling.) Note: date/%/cost edits still pay the roll-up + CPM
+  recompute — true incremental roll-ups were deliberately NOT added: CPM (~19ms, topological) is the
+  floor and must recompute on any date/predecessor change, and `_spanMap`'s min/max isn't safely
+  reversible, so the risk/reward was poor. Server-side WBS lazy-loading was also rejected — the grid
+  is already windowed (`renderWindow`, cached `DL`, scroll never rebuilds) and client-side
+  CPM/critical-path/roll-ups require the full dataset in memory.
 
 ## PWA / offline resilience (2026-07-07) — app-wide
 For flaky site connectivity. Three new pieces, all safe-by-construction:
