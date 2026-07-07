@@ -112,6 +112,32 @@ change (verified 0 mismatches vs the old algorithm across 2,000 random DAGs):
   is already windowed (`renderWindow`, cached `DL`, scroll never rebuilds) and client-side
   CPM/critical-path/roll-ups require the full dataset in memory.
 
+## OPC parity: Multiple baselines + Monte Carlo risk (2026-07-07)
+Both reached from the **Actions ▾** menu (`#ps-baselines`, `#ps-risk`).
+
+**Multiple baselines** — **Migration:** `../../migrations/2026-07-07-schedule-baselines.sql`
+(`schedule_baselines`: one row/baseline, `activities` jsonb `{ "<activity_id>":[start,finish,dur,
+planned_cost] }`, `is_primary`, RLS via `is_approved`/`is_planner`). Modal `#ps-bl-back` (list + compare
+panes). `captureBaseline()` snapshots all leaf activities; `setPrimaryBaseline()` flags one primary AND
+**writes its dates back onto `project_schedule.bl_start/bl_finish/bl_cost`** (chunked, then `load()`) so
+the existing Gantt BL0 bar + `finVar` variance use it; `showBlCompare()` shows per-activity
+current-vs-baseline finish variance (top 300, sorted by slip, avg + late count); `deleteBaseline()`.
+Tolerant of a missing table (shows a "run the migration" note).
+
+**Monte Carlo schedule risk** — **no migration** (pure client compute). Modal `#ps-risk-back`.
+`_riskPrep()` builds the task graph + topological `order` (same Kahn approach as `cpmLogic`) once;
+`_riskForward(prep,durs)` is a single forward pass returning project finish (max EF) for a given
+duration array. `runRisk()` samples each **incomplete, not-started** activity's duration from a
+**triangular** distribution between Optimistic% and Pessimistic% of plan (mode = 100%; completed/started
+keep actuals) via `_triSample`, runs N iterations (default 1000, chunked 100/frame with a progress %
+so the UI never freezes — leverages the O(n+e) CPM), and accumulates running sums for a
+**duration-sensitivity** (Pearson r of each activity's sampled duration vs the finish — no per-iteration
+backward pass needed). `finalizeRisk()` shows P50/P80/P90 finish dates, deterministic (plan) finish,
+P80-vs-plan slip, a 30-bin finish-date histogram, and a **tornado of the top duration drivers**. Finish
+date = `base + EF − 1` (inclusive, matches `applyScheduleDates`). Verified in a node harness: triangular
+mean = (o+m+p)/3 exactly, bounds respected, percentiles monotonic and right-skewed of the deterministic
+finish.
+
 ## PWA / offline resilience (2026-07-07) — app-wide
 For flaky site connectivity. Three new pieces, all safe-by-construction:
 - **`sw.js`** (repo root) — a **network-first** service worker: only same-origin GET is handled;

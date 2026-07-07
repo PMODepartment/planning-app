@@ -533,6 +533,25 @@
     .ps-snap-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
     .ps-snap-tbl th { text-align:left; padding:7px 10px; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:1px solid var(--pd-line); }
     .ps-snap-tbl td { padding:6px 10px; border-bottom:1px solid var(--pd-line); }
+    .ps-bl-primary { font-size:9px; text-transform:uppercase; letter-spacing:.03em; font-weight:700; padding:1px 6px; border-radius:999px; background:var(--pd-red); color:#fff; margin-left:6px; }
+    .ps-bl-actions { display:flex; gap:6px; margin-top:6px; }
+    .ps-bl-actions button { font-size:11px; padding:3px 8px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); cursor:pointer; color:var(--pd-ink); }
+    .ps-bl-actions button:hover { background:var(--pd-bg); }
+    /* Monte Carlo risk panel */
+    .ps-risk-body { padding:16px; overflow:auto; flex:1; }
+    .ps-risk-cfg { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; margin-bottom:14px; }
+    .ps-risk-cfg label { display:flex; flex-direction:column; gap:3px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .ps-risk-cfg input, .ps-risk-cfg select { font:inherit; padding:6px 9px; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-bg); color:var(--pd-ink); width:120px; }
+    .ps-risk-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin:14px 0; }
+    .ps-risk-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:10px 12px; text-align:center; }
+    .ps-risk-kpi .v { font-size:18px; font-weight:800; }
+    .ps-risk-kpi .l { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:2px; }
+    .ps-risk-hist { display:flex; align-items:flex-end; gap:2px; height:160px; border-bottom:1px solid var(--pd-line); padding-top:8px; }
+    .ps-risk-hist .bar { flex:1; background:var(--pd-red); opacity:.55; border-radius:2px 2px 0 0; min-height:1px; }
+    .ps-risk-torn-row { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:12px; }
+    .ps-risk-torn-row .nm { flex:0 0 220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ps-risk-torn-track { flex:1; height:12px; background:var(--pd-bg); border-radius:3px; overflow:hidden; }
+    .ps-risk-torn-fill { height:100%; background:var(--pd-red); border-radius:3px; }
     .ps-ck-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
     .ps-ck-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:12px 14px; }
     .ps-ck-kpi .v { font-size:22px; font-weight:800; color:var(--pd-ink); line-height:1.1; }
@@ -666,6 +685,8 @@
             <div class="ps-menu" id="ps-actions-menu">
               <button id="ps-import"><span data-ico="box" data-ico-size="14"></span> Import Excel/XER (OPC / P6)</button>
               <button id="ps-export"><span data-ico="download" data-ico-size="14"></span> Export to Excel</button>
+              <button id="ps-baselines"><span data-ico="layers" data-ico-size="14"></span> Baselines…</button>
+              <button id="ps-risk"><span data-ico="risk" data-ico-size="14"></span> Schedule risk (Monte Carlo)…</button>
               <button id="ps-clear" class="ps-menu-danger" title="Delete all activities for this project">Clear schedule…</button>
             </div>
           </div>
@@ -831,6 +852,29 @@
   <div class="ps-bulk-panel" style="width:900px;">
     <div class="ps-bulk-head"><strong>Change History</strong><span class="ps-bulk-count" id="ps-audit-count"></span><button class="ps-bulk-x" id="ps-audit-x">&#215;</button></div>
     <div class="ps-bulk-body" id="ps-audit-body" style="padding:0;"></div>
+  </div>
+</div>
+
+<!-- Baselines -->
+<div class="ps-bulk-back" id="ps-bl-back">
+  <div class="ps-bulk-panel" style="width:960px;">
+    <div class="ps-bulk-head"><strong>Baselines</strong>
+      <button class="pd-btn pd-btn-primary" id="ps-bl-capture" style="margin-left:14px;"><span data-ico="plus" data-ico-size="14"></span> Capture current as baseline</button>
+      <span class="ps-bulk-count" id="ps-bl-count"></span>
+      <button class="ps-bulk-x" id="ps-bl-x">&#215;</button>
+    </div>
+    <div class="ps-snap-body">
+      <div class="ps-snap-list" id="ps-bl-list"></div>
+      <div class="ps-snap-detail" id="ps-bl-detail"><div class="ps-ck-empty">Capture a baseline, then select one to compare the current schedule against it.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule risk (Monte Carlo) -->
+<div class="ps-bulk-back" id="ps-risk-back">
+  <div class="ps-bulk-panel" style="width:940px;">
+    <div class="ps-bulk-head"><strong>Schedule Risk — Monte Carlo</strong><span class="ps-bulk-count" id="ps-risk-count"></span><button class="ps-bulk-x" id="ps-risk-x">&#215;</button></div>
+    <div class="ps-risk-body" id="ps-risk-body"></div>
   </div>
 </div>
 
@@ -3464,6 +3508,186 @@
       }).join('') + '</tbody></table>';
   }
 
+  // ----- MULTIPLE BASELINES (OPC-style: capture / set primary / compare) -----
+  var _bls = [];
+  function openBaselines() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-bl-back').classList.add('open'); loadBaselines(); }
+  function closeBaselines() { document.getElementById('ps-bl-back').classList.remove('open'); }
+  async function loadBaselines() {
+    var list = document.getElementById('ps-bl-list'); list.innerHTML = '<div class="ps-ck-empty">Loading…</div>';
+    document.getElementById('ps-bl-detail').innerHTML = '<div class="ps-ck-empty">Select a baseline to compare the current schedule against it.</div>';
+    var res = await sb().from('schedule_baselines').select('*').eq('project_id', pid).order('taken_at', { ascending: false });
+    if (res.error) { list.innerHTML = '<div class="ps-ck-empty">Could not load — run the schedule-baselines migration.</div>'; return; }
+    _bls = res.data || []; renderBlList();
+  }
+  function renderBlList() {
+    var list = document.getElementById('ps-bl-list');
+    document.getElementById('ps-bl-count').textContent = _bls.length + ' baseline' + (_bls.length === 1 ? '' : 's');
+    if (!_bls.length) { list.innerHTML = '<div class="ps-ck-empty">No baselines yet. Use “Capture current as baseline”.</div>'; return; }
+    list.innerHTML = _bls.map(function (b) {
+      return '<div class="ps-snap-item" data-id="' + esc(b.id) + '"><div class="t">' + esc(b.name || '(unnamed)') + (b.is_primary ? '<span class="ps-bl-primary">Primary</span>' : '') + '</div>' +
+        '<div class="m">' + (b.taken_at ? Fmt.date(String(b.taken_at).slice(0, 10)) : '') + ' · ' + (b.activity_count || 0) + ' activities</div>' +
+        '<div class="ps-bl-actions">' + (b.is_primary ? '' : '<button data-prim="' + esc(b.id) + '">Set primary</button>') + '<button data-cmp="' + esc(b.id) + '">Compare</button><button data-del="' + esc(b.id) + '" style="color:var(--pd-red);">Delete</button></div></div>';
+    }).join('');
+    list.querySelectorAll('[data-prim]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); setPrimaryBaseline(b.dataset.prim); }; });
+    list.querySelectorAll('[data-cmp]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); showBlCompare(b.dataset.cmp); }; });
+    list.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); deleteBaseline(b.dataset.del); }; });
+  }
+  async function captureBaseline() {
+    if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
+    var name = prompt('Baseline name:', 'Baseline ' + fmtOPCDate(dstr(today())));
+    if (name === null) return;
+    var acts = {}, n = 0;
+    rows.forEach(function (r) { if (isWbs(r) || !r.activity_id) return; acts[String(r.activity_id)] = [r.start_date || null, r.end_date || null, r.duration_days != null ? r.duration_days : null, r.planned_cost != null ? r.planned_cost : null]; n++; });
+    showLoading('Saving baseline…');
+    var res = await sb().from('schedule_baselines').insert({ project_id: pid, name: name || ('Baseline ' + fmtOPCDate(dstr(today()))), created_by: UID, activity_count: n, activities: acts });
+    hideLoading();
+    if (res.error) { UI.toast('Baseline failed: ' + res.error.message + ' — run the schedule-baselines migration.', 'error'); return; }
+    UI.toast('Baseline captured (' + n + ' activities).', 'success'); loadBaselines();
+  }
+  async function setPrimaryBaseline(id) {
+    var b = _bls.find(function (x) { return x.id === id; }); if (!b) return;
+    if (!confirm('Set “' + (b.name || '') + '” as the primary baseline?\n\nThis overwrites each activity’s Baseline Start/Finish (BL0) — the Gantt baseline bar and variance will use it.')) return;
+    showLoading('Applying baseline…');
+    await sb().from('schedule_baselines').update({ is_primary: false }).eq('project_id', pid).neq('id', id);
+    await sb().from('schedule_baselines').update({ is_primary: true }).eq('id', id);
+    var acts = b.activities || {}, byId = {}; rows.forEach(function (r) { if (r.activity_id) byId[String(r.activity_id)] = r; });
+    var patches = []; Object.keys(acts).forEach(function (aid) { var r = byId[aid]; if (!r) return; var a = acts[aid]; patches.push({ id: r.id, bl_start: a[0] || null, bl_finish: a[1] || null, bl_cost: a[3] != null ? a[3] : null }); });
+    var ok = 0, err = null, CH = 40;
+    for (var i = 0; i < patches.length && !err; i += CH) {
+      setLoading('Applying baseline ' + Math.min(i + CH, patches.length) + ' of ' + patches.length + '…');
+      var slice = patches.slice(i, i + CH);
+      var rr = await Promise.all(slice.map(function (p) { return sb().from(TABLE).update({ bl_start: p.bl_start, bl_finish: p.bl_finish, bl_cost: p.bl_cost }).eq('id', p.id).then(function (x) { return x.error ? x.error.message : null; }); }));
+      for (var k = 0; k < rr.length; k++) { if (rr[k]) { err = rr[k]; break; } ok++; }
+    }
+    hideLoading();
+    if (err) UI.toast('Applied ' + ok + ', then error: ' + err, 'error'); else UI.toast('Primary baseline applied to ' + ok + ' activities.', 'success');
+    await load(); loadBaselines();
+  }
+  async function deleteBaseline(id) {
+    if (!confirm('Delete this baseline?')) return;
+    var res = await sb().from('schedule_baselines').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    _bls = _bls.filter(function (b) { return b.id !== id; }); renderBlList();
+    document.getElementById('ps-bl-detail').innerHTML = '<div class="ps-ck-empty">Select a baseline to compare.</div>';
+  }
+  function showBlCompare(id) {
+    var b = _bls.find(function (x) { return x.id === id; }); if (!b) return;
+    var det = document.getElementById('ps-bl-detail'), acts = b.activities || {};
+    var recs = rows.filter(function (r) { return !isWbs(r) && r.activity_id && acts[String(r.activity_id)]; }).map(function (r) {
+      var a = acts[String(r.activity_id)], bf = pd(a[1]), cf = pd(r.actual_finish || r.end_date);
+      return { r: r, bf: a[1], cf: r.end_date, dv: (bf && cf) ? dayDiff(bf, cf) : null };
+    });
+    var late = recs.filter(function (x) { return x.dv != null && x.dv > 0; }).length;
+    var avg = recs.length ? Math.round(recs.reduce(function (s, x) { return s + (x.dv || 0); }, 0) / recs.length) : 0;
+    recs.sort(function (a, b2) { return (b2.dv || 0) - (a.dv || 0); });
+    var body = recs.slice(0, 300).map(function (x) { return '<tr><td>' + esc((x.r.activity_id ? x.r.activity_id + ' · ' : '') + (x.r.activity_name || '')) + '</td><td>' + (x.bf ? Fmt.date(x.bf) : '—') + '</td><td>' + (x.cf ? Fmt.date(x.cf) : '—') + '</td><td class="' + (x.dv > 0 ? 'ps-bulk-late' : '') + '" style="text-align:right;">' + (x.dv == null ? '—' : (x.dv > 0 ? '+' : '') + x.dv + 'd') + '</td></tr>'; }).join('');
+    det.innerHTML = '<div class="ps-snap-sum"><strong>' + esc(b.name || '') + '</strong> — ' + recs.length + ' matched activities · ' + late + ' finishing late · avg finish variance ' + (avg > 0 ? '+' : '') + avg + 'd' + (recs.length > 300 ? ' · showing top 300' : '') + '</div>' +
+      '<table class="ps-snap-tbl"><thead><tr><th>Activity</th><th>Baseline finish</th><th>Current finish</th><th style="text-align:right;">Variance</th></tr></thead><tbody>' + (body || '<tr><td colspan="4" class="ps-ck-empty">No matching activities.</td></tr>') + '</tbody></table>';
+  }
+
+  // ----- MONTE CARLO SCHEDULE RISK (samples incomplete durations, re-runs the CPM forward pass) -----
+  function openRisk() { if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-risk-back').classList.add('open'); renderRiskConfig(); }
+  function closeRisk() { document.getElementById('ps-risk-back').classList.remove('open'); }
+  function renderRiskConfig() {
+    var b = document.getElementById('ps-risk-body');
+    b.innerHTML = '<div class="ps-risk-cfg">' +
+      '<label>Optimistic %<input type="number" id="ps-risk-opt" value="90" min="10" max="100"></label>' +
+      '<label>Pessimistic %<input type="number" id="ps-risk-pess" value="130" min="100" max="500"></label>' +
+      '<label>Iterations<input type="number" id="ps-risk-iter" value="1000" min="100" max="5000" step="100"></label>' +
+      '<button class="pd-btn pd-btn-primary" id="ps-risk-run"><span data-ico="pulse" data-ico-size="14"></span> Run simulation</button></div>' +
+      '<p style="font-size:12px;color:var(--pd-muted);margin:0 0 6px;">Each iteration samples every <strong>incomplete, not-yet-started</strong> activity’s duration from a triangular distribution between Optimistic% and Pessimistic% of plan (mode = 100% = as planned), then recomputes the project finish through the relationship logic. Completed/started work keeps its actual dates.</p>' +
+      '<div id="ps-risk-results"></div>';
+    b.querySelector('#ps-risk-run').onclick = runRisk;
+    document.getElementById('ps-risk-count').textContent = '';
+  }
+  function _triSample(a, c, b) { var u = Math.random(); var fc = (c - a) / (b - a); if (u < fc) return a + Math.sqrt(u * (b - a) * (c - a)); return b - Math.sqrt((1 - u) * (b - a) * (b - c)); }
+  function _riskPrep() {
+    var tasks = rows.filter(function (r) { return !isWbs(r) && r.start_date && r.end_date && r.activity_id; });
+    var nodes = tasks.map(function (t, i) { return { i: i, t: t, dur: (pd(t.end_date) - pd(t.start_date)) / 86400000 + 1, done: !!(useActuals && t.actual_finish), started: !!(useActuals && (t.actual_start || t.percent_complete > 0)), rel: [], out: [], indeg: 0 }; });
+    var idxById = {}; nodes.forEach(function (nd) { idxById[String(nd.t.activity_id)] = nd; });
+    var base = null; tasks.forEach(function (t) { var s = pd((useActuals && t.actual_start) || t.start_date); if (s && (!base || s < base)) base = s; });
+    var A = function (d) { var x = pd(d); return x ? Math.round((x - base) / 86400000) : null; };
+    nodes.forEach(function (nd) { predRels(nd.t.predecessors).forEach(function (rel) { var p = idxById[rel.id]; if (p) { nd.rel.push({ p: p, type: rel.type, lag: rel.lag }); p.out.push({ s: nd }); nd.indeg++; } }); });
+    var order = [], q = []; nodes.forEach(function (nd) { if (!nd.indeg) q.push(nd); });
+    for (var qi = 0; qi < q.length; qi++) { order.push(q[qi]); q[qi].out.forEach(function (o) { if (--o.s.indeg === 0) q.push(o.s); }); }
+    if (order.length < nodes.length) { var seen = {}; order.forEach(function (n) { seen[n.i] = 1; }); nodes.forEach(function (n) { if (!seen[n.i]) order.push(n); }); }
+    nodes.forEach(function (nd) { nd.aStart = (useActuals && nd.t.actual_start) ? A(nd.t.actual_start) : null; nd.aFin = (useActuals && nd.t.actual_finish) ? A(nd.t.actual_finish) : null; nd.plStart = A(nd.t.start_date); });
+    return { nodes: nodes, order: order, base: base, DD: useActuals ? Math.round((today() - base) / 86400000) : null };
+  }
+  function _riskForward(prep, durs) {
+    var order = prep.order, DD = prep.DD, maxEF = 0;
+    for (var oi = 0; oi < order.length; oi++) {
+      var nd = order[oi], es;
+      if (nd.aStart != null) { es = nd.aStart; }
+      else {
+        var esL = null;
+        for (var ri = 0; ri < nd.rel.length; ri++) { var rel = nd.rel[ri], p = rel.p; if (p._ef == null || p._es == null) continue; var c; if (rel.type === 'SS') c = p._es + rel.lag; else if (rel.type === 'FF') c = p._ef + rel.lag - durs[nd.i]; else if (rel.type === 'SF') c = p._es + rel.lag - durs[nd.i]; else c = p._ef + rel.lag; if (esL == null || c > esL) esL = c; }
+        es = (esL != null) ? esL : nd.plStart;
+        if (DD != null && !nd.done && !nd.started && es < DD) es = DD;
+      }
+      var ef = (nd.aFin != null) ? nd.aFin : es + durs[nd.i];
+      nd._es = es; nd._ef = ef; if (ef > maxEF) maxEF = ef;
+    }
+    return maxEF;
+  }
+  function runRisk() {
+    function v(id) { return document.getElementById(id).value; }
+    var prep = _riskPrep();
+    if (!prep.order.length) { document.getElementById('ps-risk-results').innerHTML = '<div class="ps-ck-empty">No dated activities to simulate.</div>'; return; }
+    var opt = Math.max(1, parseFloat(v('ps-risk-opt')) || 90) / 100;
+    var pess = Math.max(100, parseFloat(v('ps-risk-pess')) || 130) / 100; if (pess <= opt) pess = opt + 0.01;
+    var N = Math.max(100, Math.min(5000, parseInt(v('ps-risk-iter'), 10) || 1000));
+    var nodes = prep.nodes, baseDur = nodes.map(function (nd) { return nd.dur; });
+    var varied = nodes.filter(function (nd) { return !nd.done && !nd.started; });
+    varied.forEach(function (nd) { nd._sd = 0; nd._sd2 = 0; nd._sdf = 0; });
+    var sF = 0, sF2 = 0, finishes = [], iter = 0;
+    var res = document.getElementById('ps-risk-results');
+    function chunk() {
+      var end = Math.min(iter + 100, N);
+      for (; iter < end; iter++) {
+        var durs = baseDur.slice();
+        for (var vi = 0; vi < varied.length; vi++) { var nd = varied[vi]; var d = nd.dur * _triSample(opt, 1, pess); d = Math.max(d, isMile(nd.t) ? 0 : 1); durs[nd.i] = d; }
+        for (var k = 0; k < nodes.length; k++) { nodes[k]._es = null; nodes[k]._ef = null; }
+        var F = _riskForward(prep, durs); finishes.push(F); sF += F; sF2 += F * F;
+        for (var vj = 0; vj < varied.length; vj++) { var nd2 = varied[vj], dd = durs[nd2.i]; nd2._sd += dd; nd2._sd2 += dd * dd; nd2._sdf += dd * F; }
+      }
+      if (iter < N) { res.innerHTML = '<div class="ps-ck-empty" style="padding:30px;">Running… ' + Math.round(iter / N * 100) + '%</div>'; (window.requestAnimationFrame || function (f) { setTimeout(f, 0); })(chunk); }
+      else finalizeRisk(prep, finishes, sF, sF2, varied, N);
+    }
+    res.innerHTML = '<div class="ps-ck-empty" style="padding:30px;">Running… 0%</div>'; chunk();
+  }
+  function finalizeRisk(prep, finishes, sF, sF2, varied, N) {
+    finishes.sort(function (a, b) { return a - b; });
+    var base = prep.base;
+    function toDate(ef) { return dstr(addDays(base, Math.round(ef) - 1)); }   // finish = base + EF − 1 (inclusive)
+    function pctv(p) { return finishes[Math.min(finishes.length - 1, Math.floor(p / 100 * finishes.length))]; }
+    var nodes = prep.nodes, baseDur = nodes.map(function (nd) { return nd.dur; });
+    for (var k = 0; k < nodes.length; k++) { nodes[k]._es = null; nodes[k]._ef = null; }
+    var detEF = _riskForward(prep, baseDur);
+    var sens = varied.map(function (nd) { var covd = nd._sdf - (nd._sd * sF) / N, vard = nd._sd2 - (nd._sd * nd._sd) / N, varF = sF2 - (sF * sF) / N; var r = (vard > 1e-9 && varF > 1e-9) ? covd / Math.sqrt(vard * varF) : 0; return { nd: nd, r: r }; })
+      .filter(function (x) { return Math.abs(x.r) > 0.01; }).sort(function (a, b) { return Math.abs(b.r) - Math.abs(a.r); });
+    var lo = finishes[0], hi = finishes[finishes.length - 1], BINS = 30, bins = []; for (var i = 0; i < BINS; i++) bins.push(0);
+    var span = Math.max(1, hi - lo); finishes.forEach(function (f) { bins[Math.min(BINS - 1, Math.floor((f - lo) / span * BINS))]++; });
+    var bmax = Math.max.apply(null, bins);
+    var p50 = pctv(50), p80 = pctv(80), p90 = pctv(90), slip80 = Math.round(p80 - detEF);
+    document.getElementById('ps-risk-count').textContent = N + ' iterations · ' + varied.length + ' varied activities';
+    function kpi(v, l, cls) { return '<div class="ps-risk-kpi"><div class="v' + (cls ? ' ' + cls : '') + '" style="' + (cls === 'warn' ? 'color:var(--pd-red)' : '') + '">' + v + '</div><div class="l">' + l + '</div></div>'; }
+    var hist = '<div class="ps-risk-hist">' + bins.map(function (c) { return '<div class="bar" style="height:' + Math.round(c / bmax * 100) + '%" title="' + c + ' iterations"></div>'; }).join('') + '</div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--pd-muted);margin-top:3px;"><span>' + Fmt.date(toDate(lo)) + '</span><span>Project finish distribution</span><span>' + Fmt.date(toDate(hi)) + '</span></div>';
+    var torn = sens.slice(0, 12);
+    var tmax = torn.length ? Math.abs(torn[0].r) : 1;
+    var tornHTML = torn.length ? torn.map(function (x) { return '<div class="ps-risk-torn-row"><span class="nm" title="' + esc(x.nd.t.activity_name || '') + '">' + esc(x.nd.t.activity_id || x.nd.t.activity_name || '') + '</span><span class="ps-risk-torn-track"><span class="ps-risk-torn-fill" style="width:' + Math.round(Math.abs(x.r) / tmax * 100) + '%"></span></span><span style="flex:0 0 46px;text-align:right;font-weight:700;">' + (x.r * 100).toFixed(0) + '%</span></div>'; }).join('') : '<div class="ps-ck-empty">No duration sensitivity (add relationships so durations flow to the finish).</div>';
+    document.getElementById('ps-risk-results').innerHTML =
+      '<div class="ps-risk-kpis">' +
+        kpi(Fmt.date(toDate(detEF)), 'Deterministic (plan)') +
+        kpi(Fmt.date(toDate(p50)), 'P50 finish') +
+        kpi(Fmt.date(toDate(p80)), 'P80 finish', slip80 > 0 ? 'warn' : '') +
+        kpi(Fmt.date(toDate(p90)), 'P90 finish') +
+        kpi((slip80 > 0 ? '+' : '') + slip80 + 'd', 'P80 vs plan', slip80 > 0 ? 'warn' : '') +
+      '</div>' + hist +
+      '<h4 style="margin:18px 0 6px;font-size:13px;">Top risk drivers <span style="font-weight:400;color:var(--pd-muted);font-size:11.5px;">(duration sensitivity to project finish)</span></h4>' + tornHTML;
+  }
+
   // ----- MODAL -----
   function openForm(row) {
     editId = row ? row.id : null;
@@ -4556,6 +4780,13 @@
     document.getElementById('ps-ck-audit').onclick = openAudit;
     document.getElementById('ps-audit-x').onclick = closeAudit;
     document.getElementById('ps-audit-back').onclick = function (e) { if (e.target === this) closeAudit(); };
+    document.getElementById('ps-baselines').onclick = function () { aMenu.classList.remove('open'); openBaselines(); };
+    document.getElementById('ps-bl-capture').onclick = captureBaseline;
+    document.getElementById('ps-bl-x').onclick = closeBaselines;
+    document.getElementById('ps-bl-back').onclick = function (e) { if (e.target === this) closeBaselines(); };
+    document.getElementById('ps-risk').onclick = function () { aMenu.classList.remove('open'); openRisk(); };
+    document.getElementById('ps-risk-x').onclick = closeRisk;
+    document.getElementById('ps-risk-back').onclick = function (e) { if (e.target === this) closeRisk(); };
     document.getElementById('ps-crit').onclick = function () {
       critMode = !critMode;
       document.getElementById('ps-crit').classList.toggle('active', critMode);
