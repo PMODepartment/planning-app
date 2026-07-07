@@ -68,6 +68,25 @@ and a spot-checked activity's dates/calendar/predecessor all matched the source 
 (Not yet run end-to-end against a live Supabase project — the parsing/mapping logic is
 verified, but nobody has clicked Import on a real login yet.)
 
+## Perf hardening (2026-07-07) — topological CPM + compute dedup
+The scheduling engine is the hot path on large imports (27k+ activities). Two changes, no behaviour
+change (verified 0 mismatches vs the old algorithm across 2,000 random DAGs):
+- **`cpmLogic` forward/backward passes rewritten from fixed-point relaxation to a single
+  topological-order pass (Kahn).** The old `while (chg && guard++ < tasks.length+5) { tasks.forEach }`
+  was **O(n²)** on a long dependency chain — a 27k chain = ~730M iterations, which froze the tab.
+  Now each pass is O(n + edges): build `_indeg` (= `_relObjs.length`; each node gets exactly that
+  many decrements via predecessors' `_out`, so duplicate edges are safe), Kahn queue → `order`,
+  forward pass over `order` (preds precede), backward pass over reverse `order` (succs precede).
+  Cycles (bad data) leave nodes un-queued → appended so none is dropped. Measured: 27k-chain **19ms**.
+- **CPM compute dedup**: `_cpmDirty` flag + `ensureCPM()` (recompute only if dirty). `rebuild()` sets
+  dirty then computes (clears it); read/render paths that used to each call `computeCPM()` fresh —
+  `renderPlanner`, `_snapSummary`, `exportLookahead`, `computeHealth`, `repCritical`, and the
+  redundant post-`rebuild()` calls in `saveBulkUpdate`/`applyScheduleDates` — now call `ensureCPM()`
+  (no-op right after a rebuild). Data-changing/option-changing paths (`scheduleNow`, link creation,
+  `recomputeCPM`, crit-toggle) still force `computeCPM()`.
+- Data fetch was already paged (`load()` fetches all `.range()` pages in parallel) and the Gantt/grid
+  already window rows — those were not regressed.
+
 ## Planner batch 7 (2026-07-07) — Cockpit redeveloped as a client-facing outlook, not tables
 User feedback after batch 6 (which had already turned the two list panels into bar charts): "still
 doesn't feel very useful... shouldn't be full of tables," and asked what a **Client** would want to

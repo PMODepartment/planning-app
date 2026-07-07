@@ -1310,6 +1310,7 @@
         }
       }
     });
+    _cpmDirty = true;
     computeCPM();   // auto-derive critical path on every data change
     var tc = document.getElementById('ps-total-count');
     if (tc) tc.textContent = rows.filter(function (r) { return !isWbs(r); }).length;
@@ -3027,7 +3028,7 @@
       ids.forEach(function (id) { var e = document.getElementById(id); if (e) e.innerHTML = '<div class="ps-ck-empty">' + (pid ? 'No activities.' : 'Select a project.') + '</div>'; });
       return;
     }
-    computeCPM();
+    ensureCPM();
     var tasks = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
     var dd = today();
     var behind = tasks.map(function (r) { return { r: r, slip: finVar(r) }; }).filter(function (x) { return x.slip != null && x.slip > 0; }).sort(function (a, b) { return b.slip - a.slip; });
@@ -3312,7 +3313,7 @@
       for (var k = 0; k < res.length; k++) { if (res[k]) { err = res[k]; break; } var id2 = slice[k], rr = rows.find(function (x) { return x.id === id2; }); if (rr) { var e2 = _bulkEdits[id2], prev2 = {}; Object.keys(e2).forEach(function (kk) { prev2[kk] = rr[kk]; }); Object.keys(e2).forEach(function (kk) { rr[kk] = e2[kk]; }); logAudit(rr, 'update', _auditChanges(prev2, e2)); } ok++; }
     }
     hideLoading();
-    _bulkEdits = {}; resetUndo(); rebuild(); computeCPM(); renderAll();
+    _bulkEdits = {}; resetUndo(); rebuild(); ensureCPM(); renderAll();
     if (err) UI.toast('Saved ' + ok + ', then error: ' + err, 'error');
     else { UI.toast('Updated ' + ok + ' activit' + (ok === 1 ? 'y' : 'ies') + '.', 'success'); closeBulkUpdate(); }
   }
@@ -3321,7 +3322,7 @@
     if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
     if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
     var set = _ckLookSet(); if (!set.length) { UI.toast('Nothing due in the next ' + (_ckLookWeeks || 3) + ' weeks.', 'warn'); return; }
-    computeCPM();
+    ensureCPM();
     var headers = ['Activity ID', 'Activity', 'Status', 'Start', 'Finish', '% Complete', 'Critical', 'Total Float (d)', 'Responsible'];
     var data = set.map(function (r) {
       return { 'Activity ID': r.activity_id || '', 'Activity': r.activity_name || '', 'Status': r.status || '',
@@ -3337,7 +3338,7 @@
   // ----- SCHEDULE SNAPSHOTS ("where we said we'd be": summary + milestones) -----
   var _snaps = [];
   function _snapSummary() {
-    computeCPM();
+    ensureCPM();
     var tasks = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
     var miles = tasks.filter(isMile);
     var behind = tasks.filter(function (r) { var v = finVar(r); return v != null && v > 0; }).length;
@@ -3706,6 +3707,11 @@
   // Day-offset origin captured by the last cpmLogic() forward pass, so applyScheduleDates()
   // can convert each activity's computed early start/finish (_es/_ef) back to calendar dates.
   var _cpmBase = null;
+  // CPM is recomputed on every data change (rebuild). `ensureCPM()` lets render paths reuse the
+  // last result within the same tick instead of recomputing (renderAll → rebuild already computed,
+  // then renderPlanner would recompute the same thing). Cleared by computeCPM, set by rebuild.
+  var _cpmDirty = true;
+  function ensureCPM() { if (_cpmDirty) computeCPM(); }
   // Whether "Schedule" should also WRITE the computed dates back (move successors). Persisted.
   var reschedOn = (function () { try { return localStorage.getItem('ps_resched') === '1'; } catch (e) { return false; } })();
   var NEARDAYS = (function () { try { return parseInt(localStorage.getItem('ps_neardays'), 10) || 5; } catch (e) { return 5; } })();
@@ -3732,6 +3738,7 @@
   // Recomputed automatically on every data change (see rebuild). Uses explicit
   // predecessor logic when it exists; otherwise derives a date-driven driving path.
   function computeCPM() {
+    _cpmDirty = false;
     rows.forEach(function (r) { r._critical = false; r._float = null; });
     var tasks = rows.filter(function (r) { return !isWbs(r) && r.start_date && r.end_date && r.activity_id; });
     var byId = {}; tasks.forEach(function (t) { byId[String(t.activity_id)] = t; t._succ = []; t._pred = []; });
@@ -3765,44 +3772,50 @@
       t._es = null; t._ef = null; t._out = [];
     });
     tasks.forEach(function (t) { (t._relObjs || []).forEach(function (rel) { if (rel.p) rel.p._out.push({ s: t, type: rel.type, lag: rel.lag }); }); });
-    // forward pass
-    var chg = true, guard = 0;
-    while (chg && guard++ < tasks.length + 5) {
-      chg = false;
-      tasks.forEach(function (t) {
-        var es;
-        if (useActuals && t.actual_start) { es = A(t.actual_start); }
-        else {
-          var esL = null; (t._relObjs || []).forEach(function (rel) { var c = relCandidateES(rel, t._dur); if (c != null && (esL == null || c > esL)) esL = c; });
-          es = (esL != null) ? esL : A(t.start_date);
-          // Progress Override: a started-but-unfinished activity ignores predecessor logic
-          if (schedMode === 'override' && t._started && !t._done) { es = (DD != null) ? Math.max(A(t.start_date), DD) : A(t.start_date); }
-          // future (unstarted, incomplete) work cannot be scheduled before the data date
-          if (useActuals && DD != null && !t._done && !t._started && es < DD) { es = DD; }
-        }
-        var ef = (useActuals && t.actual_finish) ? A(t.actual_finish) : es + t._dur;
-        if (t._es !== es || t._ef !== ef) { t._es = es; t._ef = ef; chg = true; }
-      });
+    // Topological order (Kahn). A dependency DAG needs only ONE pass per direction once nodes are
+    // in topo order, turning the old fixed-point relaxation (O(n²) on a long chain — it froze
+    // 27k-activity schedules) into O(n + edges). indeg(t) === t._relObjs.length and t receives
+    // exactly that many decrements (one per predecessor's _out entry), so duplicate edges are fine.
+    // Any cycle (bad data) leaves nodes un-queued; they're appended so none is dropped.
+    tasks.forEach(function (t) { t._indeg = (t._relObjs || []).length; });
+    var order = [], queue = [];
+    tasks.forEach(function (t) { if (!t._indeg) queue.push(t); });
+    for (var qi = 0; qi < queue.length; qi++) {
+      order.push(queue[qi]);
+      (queue[qi]._out || []).forEach(function (o) { if (--o.s._indeg === 0) queue.push(o.s); });
     }
+    if (order.length < tasks.length) { var seen = {}; order.forEach(function (t) { seen[String(t.activity_id)] = 1; }); tasks.forEach(function (t) { if (!seen[String(t.activity_id)]) order.push(t); }); }
+    // forward pass — every predecessor precedes its successor in topo order, so a single
+    // evaluation is exact (no relaxation loop needed).
+    order.forEach(function (t) {
+      var es;
+      if (useActuals && t.actual_start) { es = A(t.actual_start); }
+      else {
+        var esL = null; (t._relObjs || []).forEach(function (rel) { var c = relCandidateES(rel, t._dur); if (c != null && (esL == null || c > esL)) esL = c; });
+        es = (esL != null) ? esL : A(t.start_date);
+        // Progress Override: a started-but-unfinished activity ignores predecessor logic
+        if (schedMode === 'override' && t._started && !t._done) { es = (DD != null) ? Math.max(A(t.start_date), DD) : A(t.start_date); }
+        // future (unstarted, incomplete) work cannot be scheduled before the data date
+        if (useActuals && DD != null && !t._done && !t._started && es < DD) { es = DD; }
+      }
+      t._es = es;
+      t._ef = (useActuals && t.actual_finish) ? A(t.actual_finish) : es + t._dur;
+    });
     var projEnd = 0; tasks.forEach(function (t) { if (t._ef != null && t._ef > projEnd) projEnd = t._ef; });
-    // backward pass (type/lag aware)
-    tasks.forEach(function (t) { if (!t._out.length) { t._lf = projEnd; t._ls = t._lf - t._dur; } else { t._lf = null; t._ls = null; } });
-    chg = true; guard = 0;
-    while (chg && guard++ < tasks.length + 5) {
-      chg = false;
-      tasks.forEach(function (t) {
-        if (!t._out.length) return;
-        var lf = Infinity;
-        t._out.forEach(function (o) {
-          var s = o.s; if (s._ls == null || s._lf == null) return; var cand;
-          if (o.type === 'SS') cand = (s._ls - o.lag) + t._dur;
-          else if (o.type === 'FF') cand = s._lf - o.lag;
-          else if (o.type === 'SF') cand = s._lf - o.lag;
-          else cand = s._ls - o.lag; // FS
-          if (cand < lf) lf = cand;
-        });
-        if (lf !== Infinity && t._lf !== lf) { t._lf = lf; t._ls = lf - t._dur; chg = true; }
+    // backward pass — reverse topo order (every successor precedes its predecessor), single pass.
+    for (var bi = order.length - 1; bi >= 0; bi--) {
+      var t2 = order[bi];
+      if (!t2._out.length) { t2._lf = projEnd; t2._ls = t2._lf - t2._dur; continue; }
+      var lf = Infinity;
+      t2._out.forEach(function (o) {
+        var s = o.s; if (s._ls == null || s._lf == null) return; var cand;
+        if (o.type === 'SS') cand = (s._ls - o.lag) + t2._dur;
+        else if (o.type === 'FF') cand = s._lf - o.lag;
+        else if (o.type === 'SF') cand = s._lf - o.lag;
+        else cand = s._ls - o.lag; // FS
+        if (cand < lf) lf = cand;
       });
+      if (lf === Infinity) { t2._lf = projEnd; t2._ls = t2._lf - t2._dur; } else { t2._lf = lf; t2._ls = lf - t2._dur; }
     }
     tasks.forEach(function (t) { t._float = (t._ls != null && t._es != null) ? Math.round(t._ls - t._es) : null; t._critical = (t._float === 0); t._near = (!t._critical && t._float != null && t._float > 0 && t._float <= NEARDAYS); });
   }
@@ -3853,7 +3866,7 @@
     }
     hideLoading();
     if (ok) logAudit(null, 'reschedule', { count: ok });
-    resetUndo(); rebuild(); computeCPM(); renderAll();
+    resetUndo(); rebuild(); ensureCPM(); renderAll();
     if (err) UI.toast('Reschedule error after ' + ok + ': ' + err, 'error');
     else UI.toast('Rescheduled ' + ok + ' activit' + (ok === 1 ? 'y' : 'ies') + ' from relationships.', 'success');
   }
@@ -3866,7 +3879,7 @@
   function isHardConstraint(c) { return /must|mandatory/i.test(c || ''); }
   function isAnyConstraint(c) { return !!c && !/as (soon|late) as possible/i.test(c); }
   function computeHealth() {
-    computeCPM();
+    ensureCPM();
     var tasks = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
     var t0 = today();
     var started = tasks.filter(function (r) { return !!r.actual_start; });
@@ -4009,7 +4022,7 @@
       rows: activityRows().map(function (r) { return [r.activity_id || '', r.activity_name || '', r.predecessors || '—', succStr(r) || '—']; }) };
   }
   function repCritical() {
-    computeCPM();
+    ensureCPM();
     return { headers: ['ID', 'Activity Name', 'Start', 'Finish', 'Total Float'], align: ['l','l','l','l','r'],
       note: 'Critical activities only (total float = 0).',
       rows: activityRows().filter(function (r) { return r._critical; }).map(function (r) {
