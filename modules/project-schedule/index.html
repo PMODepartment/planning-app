@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260707"></script>
+  <script src="../../assets/js/theme.js?v=20260708"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260707" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260708" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -73,7 +73,17 @@
     #ps-projsel-menu.ps-projsel-menu { min-width:340px; max-width:460px; max-height:72vh; overflow:auto; padding:0; }
     .ps-pss-search { position:sticky; top:0; background:var(--pd-card); padding:8px; border-bottom:1px solid var(--pd-line); z-index:1; }
     .ps-pss-search input { width:100%; box-sizing:border-box; padding:6px 9px; border:1px solid var(--pd-line); border-radius:6px; font:inherit; background:var(--pd-bg); color:var(--pd-ink); }
+    .ps-pss-crumbs { display:flex; flex-wrap:wrap; align-items:center; gap:2px; margin-top:8px; font-size:11.5px; }
+    .ps-pss-crumb { cursor:pointer; color:var(--pd-muted); padding:2px 5px; border-radius:5px; white-space:nowrap; }
+    .ps-pss-crumb:hover { background:var(--pd-bg); color:var(--pd-ink); }
+    .ps-pss-crumb:last-child { color:var(--pd-ink); font-weight:700; }
+    .ps-pss-sep { color:var(--pd-muted); opacity:.6; }
     .ps-pss-tree { padding:4px 0; }
+    .ps-pss-folder { display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer; font-size:13px; font-weight:600; color:var(--pd-ink); border-bottom:1px solid var(--pd-line); }
+    .ps-pss-folder:hover { background:var(--pd-bg); }
+    .ps-pss-folder [data-ico], .ps-pss-folder svg { color:var(--pd-red); flex:none; }
+    .ps-pss-count { font-size:11px; font-weight:700; color:var(--pd-muted); background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:999px; padding:1px 8px; flex:none; }
+    .ps-pss-chev { color:var(--pd-muted); font-size:16px; flex:none; }
     .ps-pss-node { display:flex; align-items:center; gap:6px; padding:5px 10px; cursor:pointer; font-size:12.5px; font-weight:700; color:var(--pd-ink); }
     .ps-pss-node:hover { background:var(--pd-bg); }
     .ps-pss-caret { width:12px; color:var(--pd-muted); font-size:10px; flex:none; }
@@ -774,12 +784,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260707"></script>
-<script src="../../assets/js/auth.js?v=20260707"></script>
-<script src="../../assets/js/db.js?v=20260707"></script>
-<script src="../../assets/js/ui.js?v=20260707"></script>
-<script src="../../assets/js/icons.js?v=20260707"></script>
-<script src="../../assets/js/calendar.js?v=20260707"></script>
+<script src="../../assets/js/config.js?v=20260708"></script>
+<script src="../../assets/js/auth.js?v=20260708"></script>
+<script src="../../assets/js/db.js?v=20260708"></script>
+<script src="../../assets/js/ui.js?v=20260708"></script>
+<script src="../../assets/js/icons.js?v=20260708"></script>
+<script src="../../assets/js/calendar.js?v=20260708"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -885,45 +895,53 @@
     updateProjSelLabel(); updateWorkspaceCaption();
     collapsed = {}; resetUndo(); load();
   }
-  // OPC-style project browser: Workspace → Program → Group → Project tree (from `workspaces`),
-  // collapsible, with a search box that flattens to matching projects.
-  var _pssCollapse = {}, _pssSearch = '';
+  // OPC-style project browser — a FOLDER navigator (one level at a time) so it scales to
+  // hundreds of schedules. `_pssPath` = current folder (workspace id; '' = root). Drill into a
+  // folder to see its sub-folders + projects; breadcrumb navigates back up; the search box
+  // flattens to matching projects across the whole tree.
+  var _pssPath = '', _pssSearch = '';
+  function _pssNode(id) { return WORKSPACES.find(function (w) { return w.id === id; }); }
+  function _pssCrumbs(id) { var a = [], c = _pssNode(id); while (c) { a.unshift(c); c = c.parent_id ? _pssNode(c.parent_id) : null; } return a; }
   function renderProjectSelector() {
     var m = document.getElementById('ps-projsel-menu'); if (!m) return;
-    var byParent = {}; WORKSPACES.forEach(function (w) { var k = w.parent_id || ''; (byParent[k] = byParent[k] || []).push(w); });
-    var projByWs = {}; PROJECTS.forEach(function (p) { var k = p.workspace_id || '__none'; (projByWs[k] = projByWs[k] || []).push(p); });
-    var q = _pssSearch.trim().toLowerCase(), out = '';
-    function projRow(p, depth) {
-      return '<div class="ps-pss-proj' + (p.id === pid ? ' sel' : '') + '" data-proj="' + esc(p.id) + '" style="padding-left:' + (12 + (depth || 0) * 16) + 'px;">' +
-        Icons.svg('calendar', 13) + '<span>' + esc(p.name || p.id) + '</span></div>';
-    }
-    function walk(parent, depth) {
-      (byParent[parent] || []).forEach(function (w) {
-        var col = _pssCollapse[w.id], nt = w.node_type || 'workspace';
-        out += '<div class="ps-pss-node" data-node="' + esc(w.id) + '" style="padding-left:' + (8 + depth * 16) + 'px;">' +
-          '<span class="ps-pss-caret">' + (col ? '▸' : '▾') + '</span>' +
-          '<span class="ps-pss-name">' + esc(w.name) + '</span>' +
-          '<span class="ps-pss-badge ps-pss-' + nt + '">' + nt + '</span></div>';
-        if (!col) { walk(w.id, depth + 1); (projByWs[w.id] || []).forEach(function (p) { out += projRow(p, depth + 1); }); }
-      });
-    }
+    var cm = {}; WORKSPACES.forEach(function (w) { var k = w.parent_id || ''; (cm[k] = cm[k] || []).push(w); });
+    var pm = {}; PROJECTS.forEach(function (p) { var k = p.workspace_id || ''; (pm[k] = pm[k] || []).push(p); });
+    var memo = {};
+    function descCount(id) { if (memo[id] != null) return memo[id]; var c = (pm[id] || []).length; (cm[id] || []).forEach(function (w) { c += descCount(w.id); }); return (memo[id] = c); }
+    function projRow(p) { return '<div class="ps-pss-proj' + (p.id === pid ? ' sel' : '') + '" data-proj="' + esc(p.id) + '">' + Icons.svg('calendar', 14) + '<span>' + esc(p.name || p.id) + '</span></div>'; }
+    var q = _pssSearch.trim().toLowerCase(), body = '';
     if (q) {
-      var matches = PROJECTS.filter(function (p) { return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1; });
-      out = matches.length ? matches.map(function (p) { return projRow(p, 0); }).join('') : '<div class="ps-pss-empty">No projects match “' + esc(_pssSearch) + '”.</div>';
+      var matches = PROJECTS.filter(function (p) { return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1; })
+        .sort(function (a, b) { return String(a.name || a.id).localeCompare(String(b.name || b.id)); });
+      body = matches.length ? matches.map(projRow).join('') : '<div class="ps-pss-empty">No projects match “' + esc(_pssSearch) + '”.</div>';
+      m.innerHTML = pssHead('') + '<div class="ps-pss-tree">' + body + '</div>';
     } else {
-      walk('', 0);
-      var none = projByWs['__none'];
-      if (none) {
-        out += '<div class="ps-pss-node" data-node="__none" style="padding-left:8px;"><span class="ps-pss-caret">' + (_pssCollapse['__none'] ? '▸' : '▾') + '</span><span class="ps-pss-name">Unassigned</span></div>';
-        if (!_pssCollapse['__none']) none.forEach(function (p) { out += projRow(p, 1); });
-      }
-      if (!out) out = '<div class="ps-pss-empty">No projects yet.</div>';
+      var folders = (cm[_pssPath] || []).slice().sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)); });
+      var projs = (pm[_pssPath] || []).slice().sort(function (a, b) { return String(a.name || a.id).localeCompare(String(b.name || b.id)); });
+      body += folders.map(function (w) {
+        var nt = w.node_type || 'workspace', n = descCount(w.id);
+        return '<div class="ps-pss-folder" data-open="' + esc(w.id) + '">' + Icons.svg('folder', 15) +
+          '<span class="ps-pss-name">' + esc(w.name) + '</span>' +
+          '<span class="ps-pss-badge ps-pss-' + nt + '">' + nt + '</span>' +
+          '<span class="ps-pss-count" title="' + n + ' project' + (n === 1 ? '' : 's') + '">' + n + '</span>' +
+          '<span class="ps-pss-chev">›</span></div>';
+      }).join('');
+      body += projs.map(projRow).join('');
+      if (!body) body = '<div class="ps-pss-empty">This folder is empty.</div>';
+      m.innerHTML = pssHead(_pssPath) + '<div class="ps-pss-tree">' + body + '</div>';
     }
-    m.innerHTML = '<div class="ps-pss-search"><input type="text" id="ps-pss-q" placeholder="Search projects…" value="' + esc(_pssSearch) + '"></div><div class="ps-pss-tree">' + out + '</div>';
     var qi = m.querySelector('#ps-pss-q');
     if (qi) qi.oninput = function () { var pos = qi.selectionStart; _pssSearch = qi.value; renderProjectSelector(); var q2 = m.querySelector('#ps-pss-q'); if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} } };
-    m.querySelectorAll('.ps-pss-node').forEach(function (n) { n.onclick = function (e) { e.stopPropagation(); var id = n.dataset.node; _pssCollapse[id] = !_pssCollapse[id]; renderProjectSelector(); }; });
+    m.querySelectorAll('.ps-pss-crumb').forEach(function (c) { c.onclick = function (e) { e.stopPropagation(); _pssPath = c.dataset.crumb || ''; renderProjectSelector(); }; });
+    m.querySelectorAll('.ps-pss-folder').forEach(function (f) { f.onclick = function (e) { e.stopPropagation(); _pssPath = f.dataset.open; renderProjectSelector(); }; });
     m.querySelectorAll('.ps-pss-proj').forEach(function (r) { r.onclick = function (e) { e.stopPropagation(); m.classList.remove('open'); selectProject(r.dataset.proj); }; });
+    // Build the sticky header: search box + breadcrumb (hidden while searching).
+    function pssHead(pathId) {
+      var crumbs = _pssCrumbs(pathId);
+      var bc = q ? '' : '<div class="ps-pss-crumbs"><span class="ps-pss-crumb" data-crumb="">All</span>' +
+        crumbs.map(function (w) { return '<span class="ps-pss-sep">›</span><span class="ps-pss-crumb" data-crumb="' + esc(w.id) + '">' + esc(w.name) + '</span>'; }).join('') + '</div>';
+      return '<div class="ps-pss-search"><input type="text" id="ps-pss-q" placeholder="Search all projects…" value="' + esc(_pssSearch) + '">' + bc + '</div>';
+    }
   }
   async function load() {
     loadDataDate();   // per-project data date (persisted); drives CPM / gantt line / usage
@@ -3719,7 +3737,7 @@
     var pssMenu = document.getElementById('ps-projsel-menu');
     function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); }
     pssMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.getElementById('ps-projsel-btn').onclick = function (e) { e.stopPropagation(); var o = pssMenu.classList.contains('open'); closeMenus(); if (!o) { renderProjectSelector(); pssMenu.classList.add('open'); var qi = pssMenu.querySelector('#ps-pss-q'); if (qi) qi.focus(); } };
+    document.getElementById('ps-projsel-btn').onclick = function (e) { e.stopPropagation(); var o = pssMenu.classList.contains('open'); closeMenus(); if (!o) { _pssSearch = ''; _pssPath = (PROJECTS.find(function (p) { return p.id === pid; }) || {}).workspace_id || ''; renderProjectSelector(); pssMenu.classList.add('open'); var qi = pssMenu.querySelector('#ps-pss-q'); if (qi) qi.focus(); } };
     // Title dropdown → switch Project Schedule / Cost Loading
     document.getElementById('ps-title-btn').onclick = function (e) { e.stopPropagation(); var o = tMenu.classList.contains('open'); closeMenus(); if (!o) tMenu.classList.add('open'); };
     tMenu.addEventListener('click', function (e) { e.stopPropagation(); });

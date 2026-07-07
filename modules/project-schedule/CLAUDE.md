@@ -73,16 +73,18 @@ verified, but nobody has clicked Import on a real login yet.)
   filter/refresh/print) now uses uniform 34×34 buttons, `gap:4px`, a left divider, and a divider
   before `#user-bar`; the theme toggle (`#pd-theme-toggle`, injected by theme.js before `#user-bar`)
   is sized to match. Removed the conflicting `width:36px` vs `padding:0 9px` rules.
-- **OPC-style project browser**: the flat project `<select>` is hidden (kept as source of truth for
-  `projName()` / load) behind a `#ps-projsel-btn` that opens `#ps-projsel-menu` — a
-  **Workspace → Program → Group → Project** tree built from `PDb.getWorkspaces()` (`workspaces` table,
-  `node_type` workspace/program/group, `parent_id`) + `PROJECTS` grouped by `workspace_id`.
-  `renderProjectSelector()` walks the tree (collapsible via `_pssCollapse`, node-type badges),
-  lists projects under their node, and has a search box (`_pssSearch`) that flattens to matching
-  projects; unassigned projects fall under an "Unassigned" node. Picking a project calls
-  `selectProject(id)` (syncs the hidden select, `updateProjSelLabel()` + `updateWorkspaceCaption()`,
-  reloads). `.ps-projctx` is `position:relative` (NOT `.ps-menu-wrap`, which forces inline-block and
-  would break the name-over-workspace column).
+- **OPC-style project browser (folder navigator — scales to 100+ schedules)**: the flat project
+  `<select>` is hidden (kept as source of truth for `projName()` / load) behind `#ps-projsel-btn`,
+  which opens `#ps-projsel-menu`. `renderProjectSelector()` shows **one folder level at a time**
+  (state `_pssPath` = current workspace id, `''` = root): sub-folders (workspace/program/group nodes
+  from the `workspaces` tree, with a node-type badge + a **descendant project count**) then the
+  projects directly under the folder. A **breadcrumb** (`.ps-pss-crumb`, `_pssCrumbs`) walks back up;
+  clicking a folder drills in. A **search box** (`_pssSearch`) flattens to matching projects across
+  the whole tree (breadcrumb hidden while searching). Opening the menu sets `_pssPath` to the current
+  project's `workspace_id` so it lands in context. Picking a project → `selectProject(id)` (syncs the
+  hidden select + labels, reloads). `folder` icon added to icons.js. `.ps-projctx` is
+  `position:relative` (NOT `.ps-menu-wrap`, which forces inline-block and breaks the name/workspace
+  column). Module `?v=` → 20260708.
 
 ## Gantt timeline scale (2026-07-07) — adjustable period-column width
 The Gantt timescale width is `dayw = DAYW[zoom] * ganttScale`. `DAYW` sets the base px/day per
