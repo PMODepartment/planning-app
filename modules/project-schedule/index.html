@@ -313,6 +313,16 @@
     .ps-gantt-pane.ps-critmode .ps-sum,
     .ps-gantt-pane.ps-critmode .ps-mile:not(.ps-crit) { opacity:.22; }
     .ps-grid-scroll.ps-critmode .ps-grid-row:not(.ps-critrow):not(.ps-wbs-row):not(.ps-group-row) { opacity:.5; }
+    /* Progress Spotlight: highlight activities that should have progressed in the advanced window */
+    .ps-bar.ps-spot { outline:2px solid #2563EB; outline-offset:1px; box-shadow:0 0 0 1px #2563EB; }
+    .ps-mile.ps-spot { outline:2px solid #2563EB; }
+    .ps-spotrow .c-name { color:#2563EB; font-weight:700; }
+    .ps-gantt-pane.ps-spotmode .ps-bar:not(.ps-spot),
+    .ps-gantt-pane.ps-spotmode .ps-sum,
+    .ps-gantt-pane.ps-spotmode .ps-mile:not(.ps-spot) { opacity:.22; }
+    .ps-grid-scroll.ps-spotmode .ps-grid-row:not(.ps-spotrow):not(.ps-wbs-row):not(.ps-group-row) { opacity:.5; }
+    #ps-spotlight.active { background:#2563EB; color:#fff; border-color:#2563EB; }
+    #ps-spotlight.active .pd-ico { color:#fff; }
     #ps-crit.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-crit.active .pd-ico { color:#fff; }
     #ps-deps.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
@@ -719,6 +729,14 @@
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Show / hide columns — tick to show, untick to hide"><span data-ico="eye" data-ico-size="16"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colorsbtn" title="Gantt bar colors"><span data-ico="palette" data-ico-size="16"></span></button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <span class="ps-tb-div"></span>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-spotlight" title="Progress Spotlight — advance the data date and highlight the activities that should have progressed"><span data-ico="pulse" data-ico-size="16"></span></button>
+            <div class="ps-menu" id="ps-spotlight-menu">
+              <button data-spot="7"><span data-ico="arrowRight" data-ico-size="14"></span> Advance 1 week &amp; spotlight</button>
+              <button data-spot="14"><span data-ico="arrowRight" data-ico-size="14"></span> Advance 2 weeks &amp; spotlight</button>
+              <button data-spot="month"><span data-ico="arrowRight" data-ico-size="14"></span> Advance 1 month &amp; spotlight</button>
+              <button data-spot="clear"><span data-ico="undo" data-ico-size="14"></span> Clear spotlight</button>
+            </div>
+          </div>
           <button class="pd-btn ps-icobtn" id="ps-crit" title="Critical path — compute &amp; highlight"><span data-ico="risk" data-ico-size="16"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-deps" title="Show relationship lines (FS / SS / FF / SF) on the Gantt"><span data-ico="arrowRight" data-ico-size="16"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-linkmode" title="Link mode — drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="16"></span></button>
@@ -2960,7 +2978,7 @@
     }
     var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : (r.duration_days || '');
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
-    return '<div class="ps-grid-row' + altc + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '">' +
+    return '<div class="ps-grid-row' + altc + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '">' +
       '<div class="ps-cell c-id ps-editable" data-id="' + r.id + '" data-field="activity_id" data-type="text" style="padding-left:' + idPad + 'px;">' + esc(r.activity_id || '') + '</div>' +
       '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r.activity_name || '') + '</div>' +
       statusCellHtml(r) +
@@ -3122,6 +3140,7 @@
     if (bs && be) { var bx = dayDiff(min, bs) * dayw, bw = (dayDiff(bs, be) + 1) * dayw; out += '<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + 24) + 'px;"></div>'; }
     var s = pd(r.start_date), e = pd(r.end_date);
     var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && mfpOn && r._near) ? ' ps-near' : '');
+    if (spotlightRow(r)) crit += ' ps-spot';
     var wc = effWbsColor(r);
     if (isMile(r) && s) { var mx = dayDiff(min, s) * dayw; return out + '<div class="ps-mile' + crit + '" data-id="' + r.id + '" style="left:' + (mx-6) + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>'; }
     if (!s || !e) return out;
@@ -4402,6 +4421,37 @@
 
   // ----- Critical Path -----
   var critMode = false;
+  // Progress Spotlight (OPC/P6): advance the data date by a period and highlight the incomplete
+  // activities whose planned work fell in the window just passed — the exact set to status next.
+  var _spotlight = { on: false, start: null, end: null };
+  function spotlightRow(r) {
+    if (!_spotlight.on || isWbs(r) || !r.activity_id) return false;
+    if ((r.percent_complete || 0) >= 100 || r.actual_finish) return false;   // already done → nothing to status
+    var s = pd(r.start_date), e = pd(r.end_date) || s; if (!s) return false;
+    // planned [s,e] intersects the spotlight window [start,end]
+    return s <= _spotlight.end && e >= _spotlight.start;
+  }
+  function advanceSpotlight(unit) {
+    if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
+    var from = today();
+    var to = unit === 'month' ? new Date(from.getFullYear(), from.getMonth() + 1, from.getDate()) : addDays(from, parseInt(unit, 10) || 7);
+    _spotlight = { on: true, start: from, end: to };
+    setDataDate(to);         // advance the data date to the end of the window
+    computeCPM();            // remaining-work floor / late dates follow the new data date
+    var n = rows.filter(spotlightRow).length;
+    var gs = document.getElementById('ps-grid-scroll'), gp = document.querySelector('.ps-gantt-pane');
+    if (gs) gs.classList.add('ps-spotmode'); if (gp) gp.classList.add('ps-spotmode');
+    var btn = document.getElementById('ps-spotlight'); if (btn) btn.classList.add('active');
+    renderAll();
+    UI.toast('Spotlight: ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + ' to status between ' + Fmt.date(dstr(from)) + ' and ' + Fmt.date(dstr(to)) + '. Data date advanced.', 'success');
+  }
+  function clearSpotlight() {
+    _spotlight = { on: false, start: null, end: null };
+    var gs = document.getElementById('ps-grid-scroll'), gp = document.querySelector('.ps-gantt-pane');
+    if (gs) gs.classList.remove('ps-spotmode'); if (gp) gp.classList.remove('ps-spotmode');
+    var btn = document.getElementById('ps-spotlight'); if (btn) btn.classList.remove('active');
+    renderAll();
+  }
   // Show FS/SS/FF/SF relationship lines on the Gantt independently of Critical Path mode.
   // Defaults ON so imported dependencies are visible without toggling Critical Path.
   var depsOn = (function () { try { return localStorage.getItem('ps_deps') !== '0'; } catch (e) { return true; } })();
@@ -5093,7 +5143,11 @@
     var colsMenu = document.getElementById('ps-cols-menu');
     var tMenu = document.getElementById('ps-title-menu');
     var pssMenu = document.getElementById('ps-projsel-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); }
+    var spotMenu = document.getElementById('ps-spotlight-menu');
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); spotMenu.classList.remove('open'); }
+    document.getElementById('ps-spotlight').onclick = function (e) { e.stopPropagation(); var o = spotMenu.classList.contains('open'); closeMenus(); if (!o) spotMenu.classList.add('open'); };
+    spotMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    spotMenu.querySelectorAll('[data-spot]').forEach(function (b) { b.onclick = function () { spotMenu.classList.remove('open'); if (b.dataset.spot === 'clear') clearSpotlight(); else advanceSpotlight(b.dataset.spot); }; });
     pssMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.getElementById('ps-projsel-btn').onclick = function (e) { e.stopPropagation(); var o = pssMenu.classList.contains('open'); closeMenus(); if (!o) { _pssSearch = ''; _pssPath = (PROJECTS.find(function (p) { return p.id === pid; }) || {}).workspace_id || ''; renderProjectSelector(); pssMenu.classList.add('open'); var qi = pssMenu.querySelector('#ps-pss-q'); if (qi) qi.focus(); } };
     // Title dropdown → switch Project Schedule / Cost Loading
