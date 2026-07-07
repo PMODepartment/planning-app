@@ -4510,6 +4510,42 @@
     if (rel.type === 'SF') return p._es + rel.lag - dur;
     return p._ef + rel.lag; // FS (default)
   }
+  // ---- Constraint-aware CPM (P6/OPC date constraints) ----
+  // Returns the active date constraints for a task as {type, cd} where cd is the day-offset
+  // (via A()) of the constraint date; both primary and secondary are honored.
+  function taskConstraints(t, A) {
+    var out = [];
+    if (t.primary_constraint && t.primary_constraint_date) { var c = A(t.primary_constraint_date); if (c != null) out.push({ type: t.primary_constraint, cd: c }); }
+    if (t.secondary_constraint && t.secondary_constraint_date) { var c2 = A(t.secondary_constraint_date); if (c2 != null) out.push({ type: t.secondary_constraint, cd: c2 }); }
+    return out;
+  }
+  // Forward pass: constraints that move the EARLY start/finish. Applied LAST (after the data-date
+  // floor) so Mandatory/On truly pin and "or after" floors further. Returns the adjusted early start.
+  function fwdConstrain(es, dur, cons) {
+    cons.forEach(function (c) {
+      switch (c.type) {
+        case 'Start On or After': if (es < c.cd) es = c.cd; break;
+        case 'Start On': case 'Mandatory Start': es = c.cd; break;                 // hard pin (overrides logic)
+        case 'Finish On or After': if (es + dur < c.cd) es = c.cd - dur; break;
+        case 'Finish On': case 'Mandatory Finish': es = c.cd - dur; break;         // hard pin to finish
+        // 'Start On or Before' / 'Finish On or Before' affect LATE dates only (backward pass)
+      }
+    });
+    return es;
+  }
+  // Backward pass: constraints that cap the LATE finish (can drive float negative when infeasible,
+  // which is the point — an over-constrained schedule should show it). Returns the adjusted late finish.
+  function bwdConstrain(lf, dur, cons) {
+    cons.forEach(function (c) {
+      switch (c.type) {
+        case 'Start On or Before': if (lf > c.cd + dur) lf = c.cd + dur; break;
+        case 'Start On': case 'Mandatory Start': lf = c.cd + dur; break;
+        case 'Finish On or Before': if (lf > c.cd) lf = c.cd; break;
+        case 'Finish On': case 'Mandatory Finish': lf = c.cd; break;
+      }
+    });
+    return lf;
+  }
   function cpmLogic(tasks) {
     var base = null; tasks.forEach(function (t) { var s = pd((useActuals && t.actual_start) || t.start_date); if (s && (!base || s < base)) base = s; });
     if (!base) return;
@@ -4540,6 +4576,7 @@
     // evaluation is exact (no relaxation loop needed).
     order.forEach(function (t) {
       var es;
+      t._cons = taskConstraints(t, A);   // cache for the backward pass + ALAP
       if (useActuals && t.actual_start) { es = A(t.actual_start); }
       else {
         var esL = null; (t._relObjs || []).forEach(function (rel) { var c = relCandidateES(rel, t._dur); if (c != null && (esL == null || c > esL)) esL = c; });
@@ -4548,6 +4585,8 @@
         if (schedMode === 'override' && t._started && !t._done) { es = (DD != null) ? Math.max(A(t.start_date), DD) : A(t.start_date); }
         // future (unstarted, incomplete) work cannot be scheduled before the data date
         if (useActuals && DD != null && !t._done && !t._started && es < DD) { es = DD; }
+        // date constraints applied LAST so Mandatory/On pin and "or after" floors further
+        if (t._cons.length) es = fwdConstrain(es, t._dur, t._cons);
       }
       t._es = es;
       t._ef = (useActuals && t.actual_finish) ? A(t.actual_finish) : es + t._dur;
@@ -4556,8 +4595,7 @@
     // backward pass — reverse topo order (every successor precedes its predecessor), single pass.
     for (var bi = order.length - 1; bi >= 0; bi--) {
       var t2 = order[bi];
-      if (!t2._out.length) { t2._lf = projEnd; t2._ls = t2._lf - t2._dur; continue; }
-      var lf = Infinity;
+      var lf = t2._out.length ? Infinity : projEnd;
       t2._out.forEach(function (o) {
         var s = o.s; if (s._ls == null || s._lf == null) return; var cand;
         if (o.type === 'SS') cand = (s._ls - o.lag) + t2._dur;
@@ -4566,9 +4604,20 @@
         else cand = s._ls - o.lag; // FS
         if (cand < lf) lf = cand;
       });
-      if (lf === Infinity) { t2._lf = projEnd; t2._ls = t2._lf - t2._dur; } else { t2._lf = lf; t2._ls = lf - t2._dur; }
+      if (lf === Infinity) lf = projEnd;
+      // date constraints can cap the late finish tighter than the successor logic (→ negative float
+      // when the schedule is infeasible, which constraint-aware CPM is meant to surface).
+      if (t2._cons && t2._cons.length) lf = bwdConstrain(lf, t2._dur, t2._cons);
+      t2._lf = lf; t2._ls = lf - t2._dur;
     }
-    tasks.forEach(function (t) { t._float = (t._ls != null && t._es != null) ? Math.round(t._ls - t._es) : null; t._critical = (t._float === 0); t._near = (!t._critical && t._float != null && t._float > 0 && t._float <= NEARDAYS); });
+    // As Late As Possible: sit the activity at its late dates (uses up its free float without
+    // delaying successors). Display shows early dates, so shift _es/_ef to _ls/_lf.
+    tasks.forEach(function (t) {
+      if ((t.primary_constraint === 'As Late As Possible' || t.secondary_constraint === 'As Late As Possible') && t._ls != null && !t._done && !(useActuals && t.actual_start)) { t._es = t._ls; t._ef = t._lf; }
+    });
+    // Float ≤ 0 is critical (P6 convention) — an over-constrained activity has NEGATIVE float and
+    // must read critical, so this is `<= 0` not `=== 0`.
+    tasks.forEach(function (t) { t._float = (t._ls != null && t._es != null) ? Math.round(t._ls - t._es) : null; t._critical = (t._float != null && t._float <= 0); t._near = (!t._critical && t._float != null && t._float > 0 && t._float <= NEARDAYS); });
   }
   function recomputeCPM() { computeCPM(); renderGrid(); renderGantt(); }
 
