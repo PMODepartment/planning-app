@@ -68,6 +68,62 @@ and a spot-checked activity's dates/calendar/predecessor all matched the source 
 (Not yet run end-to-end against a live Supabase project — the parsing/mapping logic is
 verified, but nobody has clicked Import on a real login yet.)
 
+## Planner batch 7 (2026-07-07) — Cockpit redeveloped as a client-facing outlook, not tables
+User feedback after batch 6 (which had already turned the two list panels into bar charts): "still
+doesn't feel very useful... shouldn't be full of tables," and asked what a **Client** would want to
+see. Agreed direction: are-we-on-track, when-will-it-finish, what's-at-risk — a snapshot/outlook,
+not an activity punch list. Rebuilt the passive dashboard content (kept the `.ps-ck-bar` action
+buttons — Update progress/Export lookahead/Take snapshot/Snapshots/Change history — since those are
+on-demand tools, not part of the problem):
+- **Status banner** (`_ckStatusHTML`, `#ps-ck-status`, top of the page): a traffic-light chip (On
+  Track / At Risk / Behind Schedule — thresholds 0d / 30d off the forecast-vs-planned finish) plus
+  one auto-generated sentence: "{Project} is X% complete. At the current pace, forecast finish is
+  {date}, {N days past / on pace with} the planned finish ({date}). N milestones at risk. N exposed
+  to contract-date (LD) risk." This is the single thing a client should read first.
+- **New hero chart — Progress S-Curve & Forecast** (`_ckSCurveCompute`/`_ckSCurveSVG`, replaces
+  batch 6's snapshot-based "Progress Trend" line): duration-weighted Planned / Actual / Forecast-
+  to-finish curves, **ported verbatim from the standalone `modules/s-curve/` module's
+  `compute()`/`renderChart()`** (same math — SPI-based forecast clamped 0.1–3, S-curve-shaped
+  forecast tail, data-date line) but reusing this module's **already-loaded `rows`** for the current
+  project instead of a second fetch, so it draws instantly with zero network cost. Strictly better
+  than the snapshot trend it replaced: always available (no dependency on planners remembering to
+  take weekly snapshots), and it's the chart a client actually recognizes from monthly reports. No
+  manual forecast-override input here (that stays a feature of the dedicated s-curve module) — the
+  cockpit's version is auto/SPI-only by design, kept simple.
+- **New "Milestone Outlook" timeline** (`_ckMilestoneTimeline`, replaces the "Milestones at risk"
+  list): every milestone plotted on a single date axis as a dumbbell — a faint gray dot at its
+  baseline finish, a colored dot at its current forecast/actual finish, joined by a line when they
+  differ. Color = status (green on-track / amber ≤14d late / red >14d late, thresholds intentionally
+  tighter than the project-level status banner since a single milestone slipping 2 weeks matters
+  more than the overall project doing so). Shows the WHOLE milestone set, not just the late ones —
+  a client wants "what's coming up," not only "what's already broken." Only at-risk/late milestones
+  get a text label (alternating above/below to reduce overlap); labels are clamped inside the
+  viewBox (`padL+22`/`padL+cw-22`) so the first/last milestone's label doesn't clip off the edge —
+  caught by screenshotting a throwaway harness before shipping.
+- **"Top risk drivers"** (was "Most behind schedule"): same ranked bar rows as batch 6, just capped
+  to the top 5 with a "+N more — see Update progress/Export lookahead" footer instead of a 60-row
+  scrolling list.
+- **Critical-path drivers**: kept the batch-6 float-bucket strip chart; the scrolling row-list below
+  it became compact non-scrolling **pills** (`fillPills`, `.ps-ck-pill`, up to 18 + "+N more") — a
+  name badge per activity, click still jumps to the Schedule view with that activity selected.
+- **"3-week lookahead" panel removed from the passive view entirely** — it's an action checklist,
+  not an outlook metric, and the same scope is still fully available via "Update progress…" (the
+  bulk-edit grid, which has its own Due-2/3/6-weeks scope filter) and "Export lookahead" (the XLSX
+  site-meeting handout); only its count remains, folded into the KPI strip.
+- KPI strip condensed from 7 tiles to 6, swapping "Activities behind"/"Data date" (now in the
+  headline sentence / chart data-date line) for "Forecast finish" (with a +Nd-vs-plan sub-label).
+- Removed the now-dead snapshot-trend code (`_ckLoadTrend`/`_renderCkTrend`/`_ckTrendSVG` and the
+  `_ckTrend` cache/invalidation call in `takeSnapshot`) rather than leaving it unused — "Take
+  snapshot"/"Snapshots"/"Change history" still work exactly as before, just no longer feed a trend
+  chart (the S-curve replaced that need).
+- Verified with a throwaway gitignored harness (`_ui_test.html`) against a hand-built 12-activity/
+  6-milestone fixture (mobilization on-time, substructure done-but-late, superstructure behind,
+  MEPF/finishes not started) with a pinned data date: screenshotted the status banner (correctly
+  read "Behind Schedule", 35% complete, forecast 186 days past plan), the S-curve (planned/actual/
+  dashed-forecast rendered correctly, actual line flat past the data date as expected), and the
+  milestone timeline (all four status colors present, dumbbell baseline-vs-forecast lines correct,
+  labels legible and non-clipping after the padding fix above).
+
 ## Planner Cockpit (2026-07-07) — batch 1 of the planner roadmap
 New third view (`#ps-view-planner`, sidebar `data-view="planner"` + title menu `data-tab="planner"`,
 `activeTab==='planner'`). `renderPlanner()` (called from `switchTab`/`renderAll`) is a read-only
