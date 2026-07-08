@@ -254,6 +254,8 @@
     .ps-colgrip:hover { background:var(--pd-red); opacity:.4; }
     .ps-colhdr { cursor:pointer; }
     .ps-colhdr:hover { background:var(--pd-red-light); color:var(--pd-ink); }
+    .ps-colhdr.ps-coldrag { opacity:.45; }
+    .ps-colhdr.ps-coldrop { box-shadow:inset 3px 0 0 var(--pd-red); }
     .ps-sort-ind { margin-left:4px; color:var(--pd-red); font-size:9px; }
     .ps-colhdr-menu { min-width:196px; }
     .ps-wbs-row { background:var(--pd-bg); font-weight:700; }
@@ -2940,6 +2942,33 @@
     extraColDefs().forEach(function (c) { var k = colKey(c); if (!_colSeen[k]) { _colSeen[k] = 1; if (!(k in colHidden)) colHidden[k] = 1; changed = true; } });
     if (changed) { try { localStorage.setItem('ps_colseen', JSON.stringify(_colSeen)); localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} }
   }
+  // Column display order (drag-to-reorder). Persisted list of colKeys. Applied via CSS flex `order`
+  // on the cells at each column's DOM position — so the DOM stays in data order (nth-child hide,
+  // data-ci → openColMenu, colSortVal all keep working) while the VISUAL order changes.
+  var colOrder = []; try { colOrder = JSON.parse(localStorage.getItem('ps_colorder') || '[]') || []; } catch (e) { colOrder = []; }
+  function normalizeColOrder() {
+    var keys = gridCols().map(colKey);
+    var kept = colOrder.filter(function (k) { return keys.indexOf(k) !== -1; });
+    keys.forEach(function (k) { if (kept.indexOf(k) === -1) kept.push(k); });   // append new columns
+    colOrder = kept;
+  }
+  function applyColOrder() {
+    normalizeColOrder();
+    var st = document.getElementById('ps-colorderstyle'); if (!st) { st = document.createElement('style'); st.id = 'ps-colorderstyle'; document.head.appendChild(st); }
+    var pos = {}; colOrder.forEach(function (k, p) { pos[k] = p; });
+    var rules = gridCols().map(function (c, i) { var p = pos[colKey(c)]; return p == null ? '' : '.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (i + 1) + '){order:' + p + '}'; });
+    st.textContent = rules.join('');
+  }
+  function moveCol(srcKey, tgtKey) {
+    if (!srcKey || srcKey === tgtKey) return;
+    normalizeColOrder();
+    var from = colOrder.indexOf(srcKey); if (from < 0) return;
+    colOrder.splice(from, 1);
+    var to = colOrder.indexOf(tgtKey); if (to < 0) to = colOrder.length;
+    colOrder.splice(to, 0, srcKey);   // drop before the target column
+    try { localStorage.setItem('ps_colorder', JSON.stringify(colOrder)); } catch (e) {}
+    applyColOrder();
+  }
   // Comparable value for sorting by a specific column index (matches GRID_COLS order).
   function colSortVal(r, idx) {
     if (idx >= GRID_COLS.length) { var xc = gridCols()[idx]; return xc && xc[3] ? String(extraCellVal(xc[3], r)).toLowerCase() : ''; }
@@ -2975,12 +3004,22 @@
     seedExtraHidden();
     head.innerHTML = '<div class="ps-grid-row head">' + gridCols().map(function (c, i) {
       var arrow = (colSort && colSort.idx === i) ? '<span class="ps-sort-ind">' + (colSort.dir < 0 ? '▼' : '▲') + '</span>' : '';
-      return '<div class="ps-cell ps-colhdr ' + c[2] + '" data-ci="' + i + '" title="' + esc(colLabel(c)) + ' — click for column options">' + esc(colLabel(c)) + arrow +
+      return '<div class="ps-cell ps-colhdr ' + c[2] + '" draggable="true" data-ci="' + i + '" data-key="' + esc(colKey(c)) + '" title="' + esc(colLabel(c)) + ' — click for options, drag to reorder">' + esc(colLabel(c)) + arrow +
         '<span class="ps-colgrip" data-col="' + c[2].replace('c-', '') + '" title="Drag to resize column"></span></div>';
     }).join('') + '</div>';
     head.querySelectorAll('.ps-colgrip').forEach(function (g) { g.addEventListener('mousedown', function (e) { startColResize(e, g.dataset.col); }); });
-    head.querySelectorAll('.ps-colhdr').forEach(function (h) { h.addEventListener('click', function (e) { if (e.target.classList.contains('ps-colgrip')) return; openColMenu(parseInt(h.dataset.ci, 10), h); }); });
+    head.querySelectorAll('.ps-colhdr').forEach(function (h) {
+      h.addEventListener('click', function (e) { if (e.target.classList.contains('ps-colgrip')) return; openColMenu(parseInt(h.dataset.ci, 10), h); });
+      // Drag-to-reorder (HTML5 DnD). The resize grip preventDefaults its mousedown, so dragging the
+      // grip resizes instead of reordering; a plain click still opens the column menu.
+      h.addEventListener('dragstart', function (e) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', h.dataset.key); } catch (er) {} h.classList.add('ps-coldrag'); });
+      h.addEventListener('dragend', function () { h.classList.remove('ps-coldrag'); head.querySelectorAll('.ps-coldrop').forEach(function (x) { x.classList.remove('ps-coldrop'); }); });
+      h.addEventListener('dragover', function (e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; h.classList.add('ps-coldrop'); });
+      h.addEventListener('dragleave', function () { h.classList.remove('ps-coldrop'); });
+      h.addEventListener('drop', function (e) { e.preventDefault(); h.classList.remove('ps-coldrop'); var src = ''; try { src = e.dataTransfer.getData('text/plain'); } catch (er) {} moveCol(src, h.dataset.key); });
+    });
     applyColHidden();
+    applyColOrder();
   }
   // OPC-style column header menu (Sort / Adjust to fit / Rename / Hide).
   function openColMenu(idx, anchor) {
@@ -3054,7 +3093,7 @@
       b.onclick = function () {
         var act = b.dataset.colact;
         if (act === 'show') { colHidden = {}; defs.forEach(function (d) { _colSeen[d.key] = 1; }); }
-        else if (act === 'reset') { colHidden = {}; _colSeen = {}; try { localStorage.setItem('ps_colseen', '{}'); } catch (e) {} seedExtraHidden(); }
+        else if (act === 'reset') { colHidden = {}; _colSeen = {}; colOrder = []; try { localStorage.setItem('ps_colseen', '{}'); localStorage.setItem('ps_colorder', '[]'); } catch (e) {} seedExtraHidden(); applyColOrder(); }
         else if (act === 'hide') { defs.forEach(function (d) { if (!d.locked) colHidden[d.key] = 1; }); }
         saveColHidden(); applyColHidden(); renderCost(); renderColsMenu();
       };
@@ -4585,7 +4624,7 @@
   function renderUdfList() {
     var body = document.getElementById('ps-udf-body'), cnt = document.getElementById('ps-udf-count');
     if (cnt) cnt.textContent = UDF_DEFS.length + ' field' + (UDF_DEFS.length === 1 ? '' : 's');
-    if (!UDF_DEFS.length) { body.innerHTML = '<div class="ps-ck-empty">No user-defined fields yet. Use “New field” to add one (e.g. Cost Code, PO Number, Vendor, Risk Owner).</div>'; return; }
+    if (!UDF_DEFS.length) { body.innerHTML = '<div class="ps-ck-empty">No user-defined fields yet. Use “New field” to add a custom activity field.</div>'; return; }
     body.innerHTML = '<table class="ps-snap-tbl"><thead><tr><th>Field</th><th>Type</th><th style="text-align:right;">Filled on</th><th></th></tr></thead><tbody>' +
       UDF_DEFS.map(function (d) {
         var n = rows.filter(function (r) { return r.udf && r.udf[d.id] != null && r.udf[d.id] !== ''; }).length;
@@ -4596,7 +4635,7 @@
   }
   async function addUdfDef() {
     if (!pid) return;
-    var name = prompt('Field name (e.g. Cost Code, PO Number, Vendor):'); if (!name || !name.trim()) return;
+    var name = prompt('Field name:'); if (!name || !name.trim()) return;
     var type = prompt('Field type — one of: text, number, date, cost', 'text');
     if (type === null) return; type = (type || 'text').trim().toLowerCase();
     if (['text', 'number', 'date', 'cost'].indexOf(type) === -1) { UI.toast('Type must be text, number, date, or cost.', 'warn'); return; }

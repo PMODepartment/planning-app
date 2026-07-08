@@ -525,6 +525,18 @@ the user widen/narrow the period columns. Two gestures adjust it (the +/− butt
 `applyGanttScale(v)` / `_saveGanttScale()` are module-scope. (This is the Gantt month/qtr/year
 column width — NOT the activity-grid columns.)
 
+## Column drag-to-reorder (2026-07-08)
+Header cells are `draggable` (HTML5 DnD): drag one onto another to reorder. Implemented purely via CSS
+flex `order` — `applyColOrder()` writes `.ps-cell:nth-child(i){order:p}` rules keyed to each column's
+DOM/data index, so the **DOM stays in data order** and everything positional keeps working (nth-child
+hide, `data-ci`→`openColMenu`, `colSortVal`, resize) while only the VISUAL order changes. State is a
+persisted `ps_colorder` list of `colKey`s; `normalizeColOrder()` appends new columns / drops removed
+ones; `moveCol(src,tgt)` drops src before tgt. The resize grip preventDefaults its mousedown so it
+resizes (not drags); a plain click still opens the column menu. Columns ▾ **Reset** also clears the
+order back to default. NOTE (2026-07-08): removed the Procurement-flavoured UDF example text
+("Cost Code / PO Number / Vendor / Risk Owner") — those belong to the separate Procurement Dashboard,
+not the Planning App; the UDF prompt/empty-state are now domain-neutral.
+
 ## Dynamic columns (2026-07-08) — Activity Codes + UDFs as grid columns
 "Define columns" now matches OPC: the project's **Activity Codes** and **User-Defined Fields** appear
 as real, choosable grid columns (no new migration — reuses `CODE_TYPES`/`CODE_VALUES`/`UDF_DEFS` +
