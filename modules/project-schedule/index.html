@@ -727,7 +727,7 @@
           </div>
           <button class="pd-btn ps-icobtn" id="ps-expand" title="Expand all"><span data-ico="layers" data-ico-size="16"></span></button>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-collapseto" title="Collapse to WBS level…"><span data-ico="chevronDown" data-ico-size="16"></span></button><div class="ps-menu" id="ps-collapse-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" title="Saved views"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" title="Saved layouts — filter + grouping + columns as one"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
           <button class="pd-btn ps-icobtn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="16"></span></button>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Show / hide columns — tick to show, untick to hide"><span data-ico="eye" data-ico-size="16"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
@@ -4879,21 +4879,42 @@
   function renderViewsMenu() {
     var menu = document.getElementById('ps-views-menu'); if (!menu) return;
     var vs = loadViews(), names = Object.keys(vs);
-    var html = names.length ? names.map(function (n) { return '<div style="display:flex;align-items:center;"><button data-view="' + esc(n) + '" style="flex:1;">' + esc(n) + '</button><button data-delview="' + esc(n) + '" title="Delete" style="width:30px;color:var(--pd-muted);">✕</button></div>'; }).join('') : '<div style="padding:8px 14px;color:var(--pd-muted);font-size:12px;">No saved views yet</div>';
-    html += '<button data-saveview="1" style="border-top:1px solid var(--pd-line);color:var(--pd-red);font-weight:600;">＋ Save current view…</button>';
+    var html = names.length ? names.map(function (n) { return '<div style="display:flex;align-items:center;"><button data-view="' + esc(n) + '" style="flex:1;">' + esc(n) + '</button><button data-delview="' + esc(n) + '" title="Delete" style="width:30px;color:var(--pd-muted);">✕</button></div>'; }).join('') : '<div style="padding:8px 14px;color:var(--pd-muted);font-size:12px;">No saved layouts yet</div>';
+    html += '<button data-saveview="1" style="border-top:1px solid var(--pd-line);color:var(--pd-red);font-weight:600;">＋ Save current layout…</button>';
     menu.innerHTML = html;
     menu.querySelectorAll('[data-view]').forEach(function (b) { b.onclick = function () { menu.classList.remove('open'); applyView(loadViews()[b.dataset.view]); }; });
     menu.querySelectorAll('[data-delview]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); var v = loadViews(); delete v[b.dataset.delview]; saveViews(v); renderViewsMenu(); }; });
-    menu.querySelector('[data-saveview]').onclick = function () { var n = prompt('Save current view as:'); if (!n) return; var v = loadViews(); v[n] = { zoom: zoom, search: search, filters: JSON.parse(JSON.stringify(filters)) }; saveViews(v); menu.classList.remove('open'); UI.toast('View “' + n + '” saved.', 'success'); };
+    menu.querySelector('[data-saveview]').onclick = function () {
+      var n = prompt('Save current layout as:'); if (!n) return;
+      var v = loadViews();
+      // A saved layout bundles filter + grouping + the whole column setup (hidden/sort/renames/widths)
+      // plus zoom/search, so one click restores the full working arrangement.
+      var pane = document.querySelector('.ps-grid-pane'), cols = {};
+      if (pane) ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var'].forEach(function (c) { cols[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); });
+      v[n] = { zoom: zoom, search: search, filters: JSON.parse(JSON.stringify(filters)),
+        groupBy: groupBy, colHidden: JSON.parse(JSON.stringify(colHidden)),
+        colSort: colSort ? JSON.parse(JSON.stringify(colSort)) : null,
+        colNames: JSON.parse(JSON.stringify(colNames)), cols: cols };
+      saveViews(v); menu.classList.remove('open'); UI.toast('Layout “' + n + '” saved.', 'success');
+    };
   }
   function applyView(v) {
     if (!v) return;
     zoom = v.zoom || zoom; search = v.search || '';
-    filters = v.filters ? JSON.parse(JSON.stringify(v.filters)) : { status:{}, type:{}, behind:false, look:0 };
+    filters = v.filters ? JSON.parse(JSON.stringify(v.filters)) : { status:{}, type:{}, behind:false, look:0, codes:{} };
+    if (filters.codes === undefined) filters.codes = {};
+    // grouping (may be a code-group 'code:<id>')
+    if (v.groupBy !== undefined) { groupBy = v.groupBy; collapsed = {}; populateGroupSelect(); var gsel = document.getElementById('ps-group'); if (gsel) gsel.value = groupBy; }
+    // full column setup — write to the same localStorage keys the renderers read, then apply
+    if (v.colHidden !== undefined) { colHidden = JSON.parse(JSON.stringify(v.colHidden)); try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} }
+    if (v.colSort !== undefined) { colSort = v.colSort ? JSON.parse(JSON.stringify(v.colSort)) : null; try { localStorage.setItem('ps_colsort', JSON.stringify(colSort)); } catch (e) {} }
+    if (v.colNames !== undefined) { colNames = JSON.parse(JSON.stringify(v.colNames)); try { localStorage.setItem('ps_colnames', JSON.stringify(colNames)); } catch (e) {} }
+    if (v.cols) { var pane = document.querySelector('.ps-grid-pane'); if (pane) { Object.keys(v.cols).forEach(function (c) { if (v.cols[c]) pane.style.setProperty('--c-' + c, v.cols[c]); }); try { localStorage.setItem('ps_cols', JSON.stringify(v.cols)); } catch (e) {} } }
     var si = document.getElementById('ps-search'); if (si) si.value = search;
     document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.toggle('active', x.dataset.zoom === zoom); });
     buildFilterMenu();
-    renderGrid(); renderGantt();
+    applyColHidden();
+    renderCollapseMenu(); renderGrid(); renderGantt();
   }
 
   // ----- Critical Path -----
