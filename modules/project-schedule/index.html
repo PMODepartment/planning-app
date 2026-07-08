@@ -707,6 +707,7 @@
               <button id="ps-udfbtn"><span data-ico="listView" data-ico-size="14"></span> User-Defined Fields…</button>
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
               <button id="ps-leveling"><span data-ico="users" data-ico-size="14"></span> Resource leveling…</button>
+              <button id="ps-thresholds"><span data-ico="risk" data-ico-size="14"></span> Threshold monitoring…</button>
               <button id="ps-clear" class="ps-menu-danger" title="Delete all activities for this project">Clear schedule…</button>
             </div>
           </div>
@@ -959,6 +960,19 @@
       <div class="ps-snap-list" id="ps-scn-list"></div>
       <div class="ps-snap-detail" id="ps-scn-detail"><div class="ps-ck-empty">Capture a scenario, experiment on the live schedule, then select the scenario to compare — or restore it to roll your experiment back.</div></div>
     </div>
+  </div>
+</div>
+
+<!-- Threshold monitoring → auto-issues -->
+<div class="ps-bulk-back" id="ps-thr-back">
+  <div class="ps-bulk-panel" style="width:860px;">
+    <div class="ps-bulk-head"><strong>Threshold Monitoring</strong>
+      <button class="pd-btn pd-btn-primary" id="ps-thr-add" style="margin-left:14px;"><span data-ico="plus" data-ico-size="14"></span> New threshold</button>
+      <button class="pd-btn" id="ps-thr-scan" style="margin-left:8px;"><span data-ico="search" data-ico-size="14"></span> Scan now</button>
+      <span class="ps-bulk-count" id="ps-thr-count"></span>
+      <button class="ps-bulk-x" id="ps-thr-x">&#215;</button>
+    </div>
+    <div class="ps-risk-body" id="ps-thr-body"></div>
   </div>
 </div>
 
@@ -4095,6 +4109,130 @@
       '<h4 style="margin:18px 0 6px;font-size:13px;">Top risk drivers <span style="font-weight:400;color:var(--pd-muted);font-size:11.5px;">(duration sensitivity to project finish)</span></h4>' + tornHTML;
   }
 
+  // ----- THRESHOLD MONITORING → AUTO-ISSUES (P6 "Thresholds") -----
+  // Rules that watch a schedule parameter per activity and generate Issues (into the shared
+  // issues_lessons table) when breached. Deduplicated by a deterministic title so repeated scans
+  // don't spam duplicate issues.
+  var _THR_METRICS = [
+    { k: 'float_below', label: 'Total float below (days)', desc: function (v) { return 'total float < ' + v + 'd'; } },
+    { k: 'finish_var_above', label: 'Finish variance above baseline (days late)', desc: function (v) { return 'finishing > ' + v + 'd late vs baseline'; } },
+    { k: 'contract_var_above', label: 'Past contract date by (days) — LD exposure', desc: function (v) { return 'forecast > ' + v + 'd past contract date'; } },
+    { k: 'overdue_days', label: 'Overdue by (days) — incomplete past finish', desc: function (v) { return 'overdue > ' + v + 'd (incomplete past planned finish)'; } }
+  ];
+  function thrMetric(k) { return _THR_METRICS.find(function (m) { return m.k === k; }); }
+  var _thresholds = [];
+  function openThresholds() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-thr-back').classList.add('open'); loadThresholds(); }
+  function closeThresholds() { document.getElementById('ps-thr-back').classList.remove('open'); }
+  async function loadThresholds() {
+    var body = document.getElementById('ps-thr-body'); body.innerHTML = '<div class="ps-ck-empty">Loading…</div>';
+    var res = await sb().from('schedule_thresholds').select('*').eq('project_id', pid).order('created_at');
+    if (res.error) { body.innerHTML = '<div class="ps-ck-empty">Could not load — run the schedule-thresholds migration.</div>'; return; }
+    _thresholds = res.data || []; renderThresholds();
+  }
+  function renderThresholds(breaches) {
+    var body = document.getElementById('ps-thr-body'), cnt = document.getElementById('ps-thr-count');
+    if (cnt) cnt.textContent = _thresholds.length + ' rule' + (_thresholds.length === 1 ? '' : 's');
+    var rules = _thresholds.length ? '<table class="ps-snap-tbl"><thead><tr><th>Name</th><th>Rule</th><th>Severity</th><th>On</th><th></th></tr></thead><tbody>' +
+      _thresholds.map(function (t) { var m = thrMetric(t.metric);
+        return '<tr><td>' + esc(t.name || (m ? m.label : t.metric)) + '</td><td>' + esc(m ? m.desc(t.value) : (t.metric + ' ' + t.value)) + '</td><td>' + esc(t.severity || 'Medium') + '</td>' +
+          '<td><input type="checkbox" data-thr-toggle="' + esc(t.id) + '"' + (t.enabled ? ' checked' : '') + '></td>' +
+          '<td style="text-align:right;"><button class="ps-btn-sm" data-thr-del="' + esc(t.id) + '">&#215;</button></td></tr>';
+      }).join('') + '</tbody></table>' : '<div class="ps-ck-empty">No thresholds yet. Add one, then “Scan now”.</div>';
+    var breachHTML = '';
+    if (breaches) {
+      breachHTML = '<h4 style="margin:16px 0 6px;font-size:13px;">Breaches ' + '<span style="font-weight:400;color:var(--pd-muted);font-size:11.5px;">(' + breaches.length + ' found)</span></h4>';
+      if (!breaches.length) breachHTML += '<div class="ps-ck-empty">No activities breach the enabled thresholds. 🎯</div>';
+      else breachHTML += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;"><button class="pd-btn pd-btn-primary pd-btn-sm" id="ps-thr-gen">Generate ' + breaches.length + ' issues</button><span style="color:var(--pd-muted);font-size:12px;">Creates Issues (skips ones already open for the same activity + rule).</span></div>' +
+        '<table class="ps-snap-tbl"><thead><tr><th>Activity</th><th>Threshold</th><th>Severity</th><th style="text-align:right;">Value</th></tr></thead><tbody>' +
+        breaches.slice(0, 300).map(function (b) { return '<tr><td>' + esc((b.r.activity_id ? b.r.activity_id + ' · ' : '') + (b.r.activity_name || '')) + '</td><td>' + esc(b.desc) + '</td><td>' + esc(b.severity) + '</td><td style="text-align:right;" class="ps-bulk-late">' + esc(b.valStr) + '</td></tr>'; }).join('') +
+        '</tbody></table>';
+    }
+    body.innerHTML = rules + breachHTML;
+    body.querySelectorAll('[data-thr-toggle]').forEach(function (c) { c.onchange = function () { toggleThreshold(c.dataset.thrToggle, c.checked); }; });
+    body.querySelectorAll('[data-thr-del]').forEach(function (b) { b.onclick = function () { delThreshold(b.dataset.thrDel); }; });
+    var gen = document.getElementById('ps-thr-gen'); if (gen && breaches) gen.onclick = function () { generateIssues(breaches); };
+  }
+  async function addThreshold() {
+    if (!pid) return;
+    var opts = _THR_METRICS.map(function (m, i) { return (i + 1) + ') ' + m.label; }).join('\n');
+    var pick = prompt('Which metric?\n' + opts + '\n\nEnter 1-' + _THR_METRICS.length + ':', '1');
+    if (pick === null) return; var mi = parseInt(pick, 10) - 1; var m = _THR_METRICS[mi]; if (!m) { UI.toast('Invalid choice.', 'warn'); return; }
+    var val = prompt(m.label + '\n\nThreshold value (days):', m.k === 'float_below' ? '0' : '10');
+    if (val === null) return; var v = parseFloat(val); if (isNaN(v)) { UI.toast('Value must be a number.', 'warn'); return; }
+    var sev = prompt('Severity — Low / Medium / High:', 'Medium'); if (sev === null) return; sev = (sev || 'Medium').trim();
+    if (['Low', 'Medium', 'High'].indexOf(sev) === -1) sev = 'Medium';
+    var res = await sb().from('schedule_thresholds').insert({ project_id: pid, name: m.label, metric: m.k, value: v, severity: sev, enabled: true, created_by: UID }).select().single();
+    if (res.error) { UI.toast(res.error.message + ' — run the schedule-thresholds migration.', 'error'); return; }
+    _thresholds.push(res.data); renderThresholds();
+  }
+  async function toggleThreshold(id, on) {
+    var res = await sb().from('schedule_thresholds').update({ enabled: on }).eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    var t = _thresholds.find(function (x) { return x.id === id; }); if (t) t.enabled = on;
+  }
+  async function delThreshold(id) {
+    if (!confirm('Delete this threshold?')) return;
+    var res = await sb().from('schedule_thresholds').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    _thresholds = _thresholds.filter(function (x) { return x.id !== id; }); renderThresholds();
+  }
+  // Per-activity metric value for a threshold; returns a number or null (not applicable / no breach data).
+  function thrValue(metric, r) {
+    if (metric === 'float_below') return r._float;
+    if (metric === 'finish_var_above') return finVar(r);
+    if (metric === 'contract_var_above') return contractVar(r);
+    if (metric === 'overdue_days') { var e = pd(r.end_date); var done = (r.percent_complete || 0) >= 100 || r.actual_finish; return (e && !done && e < today()) ? dayDiff(e, today()) : null; }
+    return null;
+  }
+  function thrBreached(metric, val, threshold) {
+    if (val == null) return false;
+    if (metric === 'float_below') return val < threshold;
+    return val > threshold;   // the other three are "above" comparisons
+  }
+  function scanThresholds() {
+    computeCPM();
+    var active = _thresholds.filter(function (t) { return t.enabled; });
+    var tasks = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    var breaches = [];
+    active.forEach(function (t) {
+      var m = thrMetric(t.metric);
+      tasks.forEach(function (r) {
+        var v = thrValue(t.metric, r);
+        if (thrBreached(t.metric, v, t.value)) {
+          breaches.push({ r: r, thr: t, metric: t.metric, severity: t.severity || 'Medium', desc: (m ? m.desc(t.value) : t.metric), valStr: (t.metric === 'float_below' ? v + 'd float' : (v > 0 ? '+' : '') + v + 'd') });
+        }
+      });
+    });
+    breaches.sort(function (a, b) { return ({ High: 0, Medium: 1, Low: 2 }[a.severity] - { High: 0, Medium: 1, Low: 2 }[b.severity]); });
+    renderThresholds(breaches);
+  }
+  function _thrIssueTitle(b) { return '[Threshold] ' + (b.r.activity_id || b.r.activity_name || '') + ' — ' + b.desc; }
+  async function generateIssues(breaches) {
+    if (!breaches.length) return;
+    if (!confirm('Create ' + breaches.length + ' issues from these breaches? Duplicates (same activity + rule, still open) are skipped.')) return;
+    showLoading('Checking existing issues…');
+    // dedup against open Schedule-Threshold issues already in issues_lessons
+    var existing = {};
+    try { var ex = await sb().from('issues_lessons').select('title,status').eq('project_id', pid).eq('category', 'Schedule Threshold'); (ex.data || []).forEach(function (x) { if (x.status !== 'Closed') existing[x.title] = 1; }); } catch (e) {}
+    var toCreate = breaches.filter(function (b) { return !existing[_thrIssueTitle(b)]; });
+    if (!toCreate.length) { hideLoading(); UI.toast('All breaches already have open issues — nothing new to create.', 'info'); return; }
+    var payloads = toCreate.map(function (b) {
+      return { project_id: pid, type: 'Issue', category: 'Schedule Threshold', severity: b.severity, status: 'Open',
+        title: _thrIssueTitle(b),
+        description: 'Auto-generated by threshold monitoring. Activity ' + (b.r.activity_id || '') + ' (' + (b.r.activity_name || '') + ') is ' + b.desc + '. Current: ' + b.valStr + '.',
+        raised_by: 'Threshold Monitor', date_raised: dstr(today()), created_by: UID };
+    });
+    var ok = 0, err = null, CH = 40;
+    for (var i = 0; i < payloads.length && !err; i += CH) {
+      setLoading('Creating issues ' + Math.min(i + CH, payloads.length) + ' of ' + payloads.length + '…');
+      var res = await sb().from('issues_lessons').insert(payloads.slice(i, i + CH));
+      if (res.error) err = res.error.message; else ok += Math.min(CH, payloads.length - i);
+    }
+    hideLoading();
+    if (err) UI.toast('Created ' + ok + ', then error: ' + err, 'error');
+    else UI.toast('Created ' + ok + ' issues' + (breaches.length - toCreate.length ? ' (' + (breaches.length - toCreate.length) + ' skipped as duplicates)' : '') + '. See the Issues & Lessons module.', 'success');
+  }
+
   // ----- RESOURCE LEVELING / OVER-ALLOCATION RESOLVER -----
   // Detects periods where a resource's planned demand exceeds its calendar capacity, and lets the
   // planner delay a flexible (positive-float, not-yet-started) contributing activity within its own
@@ -5856,6 +5994,11 @@
     document.getElementById('ps-leveling').onclick = function () { aMenu.classList.remove('open'); openLeveling(); };
     document.getElementById('ps-lvl-x').onclick = closeLeveling;
     document.getElementById('ps-lvl-back').onclick = function (e) { if (e.target === this) closeLeveling(); };
+    document.getElementById('ps-thresholds').onclick = function () { aMenu.classList.remove('open'); openThresholds(); };
+    document.getElementById('ps-thr-x').onclick = closeThresholds;
+    document.getElementById('ps-thr-back').onclick = function (e) { if (e.target === this) closeThresholds(); };
+    document.getElementById('ps-thr-add').onclick = addThreshold;
+    document.getElementById('ps-thr-scan').onclick = scanThresholds;
     document.getElementById('ps-gc-x').onclick = closeGlobalChange;
     document.getElementById('ps-gc-back').onclick = function (e) { if (e.target === this) closeGlobalChange(); };
     document.getElementById('ps-gc-preview').onclick = gcPreview;

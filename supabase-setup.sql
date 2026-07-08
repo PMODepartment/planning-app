@@ -173,6 +173,12 @@ create table if not exists schedule_scenarios (
   taken_at timestamptz default now(), created_by uuid, activity_count int,
   project_finish date, critical_count int, total_cost numeric, activities jsonb default '{}'::jsonb);
 
+-- Schedule threshold monitors (see 2026-07-07-schedule-thresholds.sql) — auto-generate Issues.
+create table if not exists schedule_thresholds (
+  id uuid primary key default gen_random_uuid(), project_id text not null, name text,
+  metric text not null, value numeric not null, severity text default 'Medium',
+  enabled boolean default true, created_by uuid, created_at timestamptz default now());
+
 -- ───────────────────────── Grants (API roles) ─────────────────────────
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
@@ -345,7 +351,7 @@ create policy projects_write on projects for all using (is_planner()) with check
 do $$
 declare t text;
 begin
-  foreach t in array array['activity_code_types','activity_code_values','activity_udf_defs','activity_steps','weekly_commitments','schedule_scenarios'] loop
+  foreach t in array array['activity_code_types','activity_code_values','activity_udf_defs','activity_steps','weekly_commitments','schedule_scenarios','schedule_thresholds'] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
     execute format('create policy %I on %I for select using (is_approved())', t||'_read', t);
