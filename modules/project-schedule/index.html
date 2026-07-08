@@ -53,6 +53,9 @@
     .ps-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; min-width:0;
       padding-left:10px; margin-left:auto; border-left:1px solid var(--pd-line); }
     .ps-topbar-tools .pd-btn { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+    /* Labeled tool buttons (File / Reports / Health) — auto width with icon + word so they don't read as mystery icons */
+    .ps-topbar-tools .pd-btn.ps-tb-labeled { width:auto; padding:0 10px; gap:6px; }
+    .ps-topbar-tools .ps-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
     /* Make the theme toggle (injected by theme.js before #user-bar) match the tool cluster,
        and set off the user avatar from the tools with a divider. */
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
@@ -321,8 +324,8 @@
     .ps-gantt-pane.ps-spotmode .ps-sum,
     .ps-gantt-pane.ps-spotmode .ps-mile:not(.ps-spot) { opacity:.22; }
     .ps-grid-scroll.ps-spotmode .ps-grid-row:not(.ps-spotrow):not(.ps-wbs-row):not(.ps-group-row) { opacity:.5; }
-    #ps-spotlight.active { background:#2563EB; color:#fff; border-color:#2563EB; }
-    #ps-spotlight.active .pd-ico { color:#fff; }
+    #ps-analyzebtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    #ps-analyzebtn.active .pd-ico { color:#fff; }
     #ps-crit.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-crit.active .pd-ico { color:#fff; }
     #ps-deps.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
@@ -683,11 +686,20 @@
       <div class="ps-topbar-tools" id="ps-topbar-tools">
         <button class="pd-btn" id="ps-undo" title="Undo" disabled><span data-ico="undo" data-ico-size="16"></span></button>
         <button class="pd-btn" id="ps-redo" title="Redo" disabled><span data-ico="redo" data-ico-size="16"></span></button>
-        <button class="pd-btn" id="ps-health" title="Schedule Health Score"><span data-ico="pulse" data-ico-size="16"></span></button>
-        <button class="pd-btn" id="ps-report" title="Reports — run, view, edit &amp; create"><span data-ico="clipboard" data-ico-size="16"></span></button>
+        <span class="ps-tb-sep"></span>
+        <!-- File: Import / Export / Print combined -->
+        <div class="ps-menu-wrap"><button class="pd-btn ps-tb-labeled" id="ps-filebtn" title="Import, Export &amp; Print"><span data-ico="download" data-ico-size="16"></span> File <span data-ico="chevronDown" data-ico-size="13"></span></button>
+          <div class="ps-menu ps-file-menu" id="ps-file-menu">
+            <button id="ps-import"><span data-ico="box" data-ico-size="14"></span> Import Excel/XER (OPC / P6)</button>
+            <button id="ps-export"><span data-ico="download" data-ico-size="14"></span> Export to Excel</button>
+            <button id="ps-print"><span data-ico="printer" data-ico-size="14"></span> Print / Save as PDF</button>
+          </div>
+        </div>
+        <button class="pd-btn ps-tb-labeled" id="ps-report" title="Reports — run, view, edit &amp; create"><span data-ico="clipboard" data-ico-size="16"></span> Reports</button>
+        <button class="pd-btn ps-tb-labeled" id="ps-health" title="Schedule Health Score"><span data-ico="pulse" data-ico-size="16"></span> Health</button>
+        <span class="ps-tb-sep"></span>
         <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="16"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
         <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
-        <button class="pd-btn" id="ps-print" title="Print / Save as PDF"><span data-ico="printer" data-ico-size="16"></span></button>
       </div>
       <div id="user-bar"></div>
     </div>
@@ -698,8 +710,6 @@
         <div class="ps-tb-row">
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-actionsbtn"><span data-ico="box" data-ico-size="15"></span> Actions ▾</button>
             <div class="ps-menu" id="ps-actions-menu">
-              <button id="ps-import"><span data-ico="box" data-ico-size="14"></span> Import Excel/XER (OPC / P6)</button>
-              <button id="ps-export"><span data-ico="download" data-ico-size="14"></span> Export to Excel</button>
               <button id="ps-baselines"><span data-ico="layers" data-ico-size="14"></span> Baselines…</button>
               <button id="ps-scenarios"><span data-ico="layers" data-ico-size="14"></span> What-if scenarios…</button>
               <button id="ps-risk"><span data-ico="risk" data-ico-size="14"></span> Schedule risk (Monte Carlo)…</button>
@@ -726,25 +736,31 @@
             <button data-zoom="quarter" class="active">Quarter</button>
             <button data-zoom="year">Year</button>
           </div>
-          <button class="pd-btn ps-icobtn" id="ps-expand" title="Expand all"><span data-ico="layers" data-ico-size="16"></span></button>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-collapseto" title="Collapse to WBS level…"><span data-ico="chevronDown" data-ico-size="16"></span></button><div class="ps-menu" id="ps-collapse-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" title="Saved layouts — filter + grouping + columns as one"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
-          <button class="pd-btn ps-icobtn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="16"></span></button>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Show / hide columns — tick to show, untick to hide"><span data-ico="eye" data-ico-size="16"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colorsbtn" title="Gantt bar colors"><span data-ico="palette" data-ico-size="16"></span></button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
+          <button class="pd-btn" id="ps-expand" title="Expand all activities"><span data-ico="layers" data-ico-size="15"></span> Expand</button>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-collapseto" title="Collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="15"></span> Outline ▾</button><div class="ps-menu" id="ps-collapse-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-views" title="Saved layouts — filter + grouping + columns as one"><span data-ico="listView" data-ico-size="15"></span> Layouts ▾</button><div class="ps-menu" id="ps-views-menu"></div></div>
+          <button class="pd-btn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
           <span class="ps-tb-div"></span>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-spotlight" title="Progress Spotlight — advance the data date and highlight the activities that should have progressed"><span data-ico="pulse" data-ico-size="16"></span></button>
-            <div class="ps-menu" id="ps-spotlight-menu">
-              <button data-spot="7"><span data-ico="arrowRight" data-ico-size="14"></span> Advance 1 week &amp; spotlight</button>
-              <button data-spot="14"><span data-ico="arrowRight" data-ico-size="14"></span> Advance 2 weeks &amp; spotlight</button>
-              <button data-spot="month"><span data-ico="arrowRight" data-ico-size="14"></span> Advance 1 month &amp; spotlight</button>
-              <button data-spot="clear"><span data-ico="undo" data-ico-size="14"></span> Clear spotlight</button>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="15"></span> Layout ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colsbtn" title="Show / hide columns"><span data-ico="eye" data-ico-size="15"></span> Columns ▾</button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Gantt bar colors"><span data-ico="palette" data-ico-size="15"></span> Colors ▾</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
+          <span class="ps-tb-div"></span>
+          <!-- Analyze: critical path, dependencies, link mode, progress spotlight — grouped so the toolbar isn't a row of mystery icons -->
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-analyzebtn" title="Analysis — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="15"></span> Analyze ▾</button>
+            <div class="ps-menu" id="ps-analyze-menu">
+              <button id="ps-crit"><span data-ico="risk" data-ico-size="14"></span> Critical path (highlight)</button>
+              <button id="ps-deps"><span data-ico="arrowRight" data-ico-size="14"></span> Show dependencies</button>
+              <button id="ps-linkmode"><span data-ico="link" data-ico-size="14"></span> Link mode (drag to link)</button>
+              <div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>
+              <div style="padding:4px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Progress Spotlight</div>
+              <div id="ps-spotlight-menu">
+                <button data-spot="7"><span data-ico="arrowRight" data-ico-size="14"></span> Advance 1 week &amp; spotlight</button>
+                <button data-spot="14"><span data-ico="arrowRight" data-ico-size="14"></span> Advance 2 weeks &amp; spotlight</button>
+                <button data-spot="month"><span data-ico="arrowRight" data-ico-size="14"></span> Advance 1 month &amp; spotlight</button>
+                <button data-spot="clear"><span data-ico="undo" data-ico-size="14"></span> Clear spotlight</button>
+              </div>
             </div>
           </div>
-          <button class="pd-btn ps-icobtn" id="ps-crit" title="Critical path — compute &amp; highlight"><span data-ico="risk" data-ico-size="16"></span></button>
-          <button class="pd-btn ps-icobtn" id="ps-deps" title="Show relationship lines (FS / SS / FF / SF) on the Gantt"><span data-ico="arrowRight" data-ico-size="16"></span></button>
-          <button class="pd-btn ps-icobtn" id="ps-linkmode" title="Link mode — drag from one activity bar to another to create a relationship"><span data-ico="link" data-ico-size="16"></span></button>
           <span class="ps-tb-spacer"></span>
           <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:200px;" /></div>
         </div>
@@ -5077,7 +5093,7 @@
     var n = rows.filter(spotlightRow).length;
     var gs = document.getElementById('ps-grid-scroll'), gp = document.querySelector('.ps-gantt-pane');
     if (gs) gs.classList.add('ps-spotmode'); if (gp) gp.classList.add('ps-spotmode');
-    var btn = document.getElementById('ps-spotlight'); if (btn) btn.classList.add('active');
+    _syncAnalyzeBtn();
     renderAll();
     UI.toast('Spotlight: ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + ' to status between ' + Fmt.date(dstr(from)) + ' and ' + Fmt.date(dstr(to)) + '. Data date advanced.', 'success');
   }
@@ -5085,8 +5101,14 @@
     _spotlight = { on: false, start: null, end: null };
     var gs = document.getElementById('ps-grid-scroll'), gp = document.querySelector('.ps-gantt-pane');
     if (gs) gs.classList.remove('ps-spotmode'); if (gp) gp.classList.remove('ps-spotmode');
-    var btn = document.getElementById('ps-spotlight'); if (btn) btn.classList.remove('active');
+    _syncAnalyzeBtn();
     renderAll();
+  }
+  // Mirror onto the Analyze ▾ button whether any analysis mode is active (critical path /
+  // dependencies / link mode / spotlight), so a grouped toggle still shows an at-a-glance state.
+  function _syncAnalyzeBtn() {
+    var on = _spotlight.on || ['ps-crit', 'ps-deps', 'ps-linkmode'].some(function (id) { var b = document.getElementById(id); return b && b.classList.contains('active'); });
+    var ab = document.getElementById('ps-analyzebtn'); if (ab) ab.classList.toggle('active', on);
   }
   // Show FS/SS/FF/SF relationship lines on the Gantt independently of Critical Path mode.
   // Defaults ON so imported dependencies are visible without toggling Critical Path.
@@ -5828,11 +5850,19 @@
     var colsMenu = document.getElementById('ps-cols-menu');
     var tMenu = document.getElementById('ps-title-menu');
     var pssMenu = document.getElementById('ps-projsel-menu');
-    var spotMenu = document.getElementById('ps-spotlight-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); spotMenu.classList.remove('open'); }
-    document.getElementById('ps-spotlight').onclick = function (e) { e.stopPropagation(); var o = spotMenu.classList.contains('open'); closeMenus(); if (!o) spotMenu.classList.add('open'); };
-    spotMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    spotMenu.querySelectorAll('[data-spot]').forEach(function (b) { b.onclick = function () { spotMenu.classList.remove('open'); if (b.dataset.spot === 'clear') clearSpotlight(); else advanceSpotlight(b.dataset.spot); }; });
+    var fileMenu = document.getElementById('ps-file-menu');
+    var analyzeMenu = document.getElementById('ps-analyze-menu');
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); }
+    // File menu (Import / Export / Print). The item buttons keep their original ids so their
+    // existing handlers work unchanged; the menu just re-homes them from the Actions menu + topbar.
+    document.getElementById('ps-filebtn').onclick = function (e) { e.stopPropagation(); var o = fileMenu.classList.contains('open'); closeMenus(); if (!o) fileMenu.classList.add('open'); };
+    fileMenu.addEventListener('click', function () { fileMenu.classList.remove('open'); });
+    // Analyze menu (critical path / dependencies / link / spotlight). The crit/deps/linkmode items
+    // keep their ids + existing toggle handlers; stopPropagation keeps the menu open so several can
+    // be toggled at once, then _syncAnalyze mirrors any-active onto the Analyze button.
+    document.getElementById('ps-analyzebtn').onclick = function (e) { e.stopPropagation(); var o = analyzeMenu.classList.contains('open'); closeMenus(); if (!o) analyzeMenu.classList.add('open'); };
+    analyzeMenu.addEventListener('click', function (e) { e.stopPropagation(); setTimeout(_syncAnalyzeBtn, 0); });
+    analyzeMenu.querySelectorAll('[data-spot]').forEach(function (b) { b.onclick = function () { analyzeMenu.classList.remove('open'); if (b.dataset.spot === 'clear') clearSpotlight(); else advanceSpotlight(b.dataset.spot); }; });
     pssMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.getElementById('ps-projsel-btn').onclick = function (e) { e.stopPropagation(); var o = pssMenu.classList.contains('open'); closeMenus(); if (!o) { _pssSearch = ''; _pssPath = (PROJECTS.find(function (p) { return p.id === pid; }) || {}).workspace_id || ''; renderProjectSelector(); pssMenu.classList.add('open'); var qi = pssMenu.querySelector('#ps-pss-q'); if (qi) qi.focus(); } };
     // Title dropdown → switch Project Schedule / Cost Loading
@@ -6030,6 +6060,7 @@
       document.getElementById('ps-deps').classList.toggle('active', depsOn);
       renderGantt();
     };
+    _syncAnalyzeBtn();   // reflect the initial deps-on state on the Analyze ▾ button
     document.getElementById('ps-clear').onclick = function () {
       if (!isAdmin) { UI.toast('Clearing the schedule is restricted to admins.', 'error'); return; }
       if (!pid) { UI.toast('Select a project first.', 'error'); return; }

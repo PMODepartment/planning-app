@@ -197,6 +197,31 @@ jsonb default '{}'` — a compact `{ "<code_type_id>": "<code_value_id>" }` map,
   the PPC trend chart and — same lesson as the Milestone Outlook timeline earlier — caught and fixed
   an edge-label clipping bug (last x-axis date ran off the SVG's right edge) before shipping.
 
+## Toolbar/topbar de-clutter (2026-07-07) — File menu + labeled groups
+The top area had ~22 icon-only buttons, several sharing a glyph (pulse=Health & Spotlight, risk=
+Critical & Threshold/Monte-Carlo, listView=Layouts & UDF/GlobalChange, layers=Expand & Baselines) —
+so planners had to guess. Reworked to labeled controls + grouping (no logic changes to the underlying
+actions; ids preserved so all existing handlers work unchanged):
+- **File ▾ menu** (topbar, `#ps-filebtn`/`#ps-file-menu`): **Import, Export, Print** combined. Import/
+  Export were removed from the **Actions ▾** menu and the standalone Print icon removed from the topbar;
+  the three item buttons keep their original ids (`ps-import`/`ps-export`/`ps-print`) so their handlers
+  are untouched. `.ps-tb-labeled` gives topbar buttons auto width (icon + word); `.ps-tb-sep` dividers.
+- **Topbar** now: undo · redo │ **File ▾** · **Reports** · **Health** (last two now show text labels) │
+  filter · refresh. Undo/redo/filter/refresh stay icon-only (universally understood).
+- **Lower toolbar** relabeled every icon button to icon+word: **Expand · Outline ▾ · Layouts ▾ ·
+  Schedule · Layout ▾ · Columns ▾ · Colors ▾** (all keep their existing `.ps-menu-wrap` popovers +
+  ids/handlers — just labels + drop `.ps-icobtn` fixed width).
+- **Analyze ▾ menu** (`#ps-analyzebtn`/`#ps-analyze-menu`): the four analysis controls — **Critical
+  path · Show dependencies · Link mode · Progress Spotlight** (advance 1/2wk·1mo·clear) — grouped into
+  one labeled dropdown. The crit/deps/linkmode items keep their ids so their toggle handlers are
+  unchanged; `analyzeMenu` stops click propagation so several can be toggled without closing, and
+  `_syncAnalyzeBtn()` (module scope) mirrors any-active (crit/deps/link/`_spotlight.on`) onto the
+  Analyze button (`#ps-analyzebtn.active`). The standalone `#ps-spotlight` button was removed (its
+  `#ps-spotlight-menu` data-spot items now live inside Analyze); `advanceSpotlight`/`clearSpotlight`
+  call `_syncAnalyzeBtn()` instead of touching the old button.
+- `closeMenus()` gained `fileMenu` + `analyzeMenu`. Net: ~22 mystery icons → labeled words + 2 grouped
+  dropdowns (File, Analyze), collisions gone.
+
 ## Advanced scheduling batch (2026-07-07) — 9 features, easiest→hardest
 All in `modules/project-schedule/index.html`. Each feature was unit-tested (pure logic extracted
 into a node harness) and committed+pushed separately. **User must run the new migrations** listed.
