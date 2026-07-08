@@ -197,6 +197,60 @@ jsonb default '{}'` — a compact `{ "<code_type_id>": "<code_value_id>" }` map,
   the PPC trend chart and — same lesson as the Milestone Outlook timeline earlier — caught and fixed
   an edge-label clipping bug (last x-axis date ran off the SVG's right edge) before shipping.
 
+## Advanced scheduling batch (2026-07-07) — 9 features, easiest→hardest
+All in `modules/project-schedule/index.html`. Each feature was unit-tested (pure logic extracted
+into a node harness) and committed+pushed separately. **User must run the new migrations** listed.
+
+1. **Progress Spotlight / data-date advancement** (no migration). Toolbar Spotlight menu (`#ps-spotlight`,
+   `advanceSpotlight`/`clearSpotlight`/`spotlightRow`): advance the data date 1/2 weeks or 1 month and
+   blue-highlight (+dim the rest, mirroring critMode) the incomplete activities whose planned work fell
+   in the window just passed — the exact set to status. `_spotlight={on,start,end}`; row class
+   `ps-spotrow`, bar class `ps-spot`, `ps-spotmode` on grid-scroll + gantt-pane.
+2. **Constraint-aware CPM** (no migration; uses existing primary/secondary constraint fields). `cpmLogic`
+   now honors date constraints in both passes via `taskConstraints`/`fwdConstrain`/`bwdConstrain`:
+   Start/Finish On·On-or-After·Mandatory pin/floor early dates (forward, applied LAST after the data-date
+   floor); Start/Finish On-or-Before·Mandatory cap the late finish (backward); As-Late-As-Possible sits
+   the activity at its late dates. **Critical is now `_float <= 0`** (was `=== 0`) so over-constrained
+   (negative-float) activities flag critical — the point of the feature.
+3. **Global Change** (no migration). Actions ▸ Global Change: WHERE conditions (field/op/value, ANDed;
+   blank=all) + THEN changes (Set/Add/Subtract/Multiply/Clear · text/num, Set/Shift-days · date) with a
+   live Preview count. `GC_FIELDS` catalog with per-type ops; `gcMatch`/`gcBuildPatch`; moving start/finish
+   auto-recomputes duration. Chunked writes, resets undo, confirms first (same safety model as the bulk
+   progress grid).
+4. **Resource leveling / over-allocation resolver** (no migration). Actions ▸ Resource leveling
+   (`levelScan`/`renderLeveling`/`levelDelay`): scans each resource's monthly planned demand vs calendar
+   capacity (reuses `spreadAdd`+`resCapacity`), reports over-allocated periods + peak overage, lists the
+   flexible (positive-float, not-started) contributors, and delays one within its own total float per
+   click (through `persist()` → undoable + recomputes CPM; report re-scans). Never moves the project
+   finish; critical/started contributors untouched.
+5. **What-if scenarios (reflections)** — **migration `2026-07-07-schedule-scenarios.sql`**
+   (`schedule_scenarios`). Actions ▸ What-if scenarios: capture the schedule as a named jsonb checkpoint
+   (dates/dur/%/predecessors/cost), experiment on the live schedule, compare live-vs-scenario deltas
+   (finish / critical count / planned cost / activities that moved), or **Restore** to roll the experiment
+   back. Mirrors the baselines two-pane modal.
+6. **User-Defined Fields** — **migration `2026-07-07-user-defined-fields.sql`** (`activity_udf_defs` +
+   `project_schedule.udf jsonb`). Actions ▸ User-Defined Fields defines typed fields (Text/Number/Date/
+   Cost); Add/Edit modal renders one typed input per def (`populateUdfFields`, saved tolerantly to `udf`
+   jsonb, same pattern as `activity_codes`); values show in the details General tab. `UDF_DEFS` loaded in
+   `loadResourcesAssignments`.
+7. **Resource/cost distribution curves** — **migration `2026-07-07-assignment-curve.sql`**
+   (`resource_assignments.curve`). Assignment modal gains a Distribution curve (Linear/Front/Back/Bell);
+   new `curveCdf`+`spreadCurveAdd` shape how planned+remaining units are time-phased in Resource Usage
+   (actuals stay linear). `spreadCurveAdd` uses each curve's cumulative fn → O(months), exact,
+   total-conserving; `linear` reduces to `spreadAdd` exactly (verified). Curve written tolerantly.
+8. **Saved layouts** (no migration; localStorage `ps_views`). The Saved-views control now bundles the
+   FULL working arrangement — filter + grouping (incl. `code:<id>` groups) + zoom/search + the whole
+   column setup (hidden columns / column sort / renamed headers / `--c-*` widths). `applyView` restores
+   all of it and writes back to the same localStorage keys the renderers read; old saved views still
+   apply (each field guarded).
+9. **Threshold monitoring → auto-issues** — **migration `2026-07-07-schedule-thresholds.sql`**
+   (`schedule_thresholds`). Actions ▸ Threshold monitoring: rules watching a per-activity metric
+   (`float_below` / `finish_var_above` / `contract_var_above` / `overdue_days`) at a severity. "Scan now"
+   (`scanThresholds`/`thrValue`/`thrBreached`) lists breaches; "Generate issues" writes them into the
+   shared **`issues_lessons`** table (type=Issue, category='Schedule Threshold'), **deduplicated** against
+   still-open threshold issues for the same activity+rule (deterministic `_thrIssueTitle`) so repeated
+   scans don't spam duplicates.
+
 ## Monte Carlo: per-activity 3-point duration override (2026-07-07)
 **Migration:** `../../migrations/2026-07-07-risk-3point-duration.sql` (`project_schedule.risk_optimistic_pct`/
 `risk_pessimistic_pct`, both `numeric(6,2)`, nullable — folded into `supabase-setup.sql`).
