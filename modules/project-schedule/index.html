@@ -224,7 +224,7 @@
     .ps-grid-pane { flex:0 0 660px; max-width:70%; display:flex; flex-direction:column; border-right:2px solid var(--pd-line); min-width:0; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    .ps-grid-pane { --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; }
+    .ps-grid-pane { --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-x:130px; }
     .ps-grid-scroll { overflow:auto; flex:1 1 auto; min-height:0; }
     .ps-grid-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); flex:none; }
     .ps-grid-row { display:flex; align-items:stretch; height:34px; border-bottom:1px solid var(--pd-line);
@@ -244,6 +244,7 @@
     .c-ctype { width:var(--c-ctype); }
     .c-flt { width:var(--c-flt); justify-content:flex-end; }
     .c-var { width:var(--c-var); justify-content:flex-end; }
+    .c-x { width:var(--c-x); }
     .ps-cp-tag { background:var(--pd-red); color:#fff; font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; letter-spacing:.03em; }
     .ps-var-late { color:var(--pd-bad); font-weight:600; }
     .ps-var-early { color:var(--pd-ok); }
@@ -2898,15 +2899,50 @@
     ['ctype','Percent Complete Type','c-ctype'],
     ['flt','Float','c-flt'], ['var','Var (BL)','c-var']
   ];
+  // Dynamic columns (OPC "define columns"): the project's Activity Codes + User-Defined Fields become
+  // real, choosable grid columns appended after the 18 built-ins. Tuple shape matches GRID_COLS
+  // ([key,label,cssClass]) plus a 4th `meta` used to read the per-activity value; all share the
+  // resizable `c-x` class. Computed live so newly-added codes/UDFs appear without a reload.
+  function extraColDefs() {
+    var out = [];
+    CODE_TYPES.forEach(function (ct) { out.push(['code:' + ct.id, ct.name, 'c-x', { kind: 'code', id: ct.id }]); });
+    UDF_DEFS.forEach(function (d) { out.push(['udf:' + d.id, d.name, 'c-x', { kind: 'udf', def: d }]); });
+    return out;
+  }
+  function gridCols() { return GRID_COLS.concat(extraColDefs()); }
+  // Hide/rename key: built-ins keep their LABEL (back-compat with persisted prefs); extra columns
+  // use their unique id (c[0]) so a code/UDF sharing a built-in's name can't collide with it.
+  function colKey(c) { return c[3] ? c[0] : c[1]; }
+  function extraCellVal(meta, r) {
+    if (!meta) return '';
+    if (meta.kind === 'code') { var vid = r.activity_codes && r.activity_codes[meta.id]; return vid ? (codeValueLabel(vid) || '') : ''; }
+    var raw = r.udf && r.udf[meta.def.id]; return (raw == null || raw === '') ? '' : udfFmt(meta.def, raw);
+  }
+  // Extra-column cells appended to every row (value on leaf tasks, blank on group/WBS summary rows
+  // so the cell count — and therefore the nth-child hide rules — stay aligned across row kinds).
+  function gridExtraHtml(r) {
+    var ex = extraColDefs(); if (!ex.length) return '';
+    var leaf = r._dkind !== 'group' && !isWbsNode(r);
+    return ex.map(function (c) { return '<div class="ps-cell c-x">' + (leaf ? esc(extraCellVal(c[3], r)) : '') + '</div>'; }).join('');
+  }
   var colHidden = {};   // keyed by column label
   try { colHidden = JSON.parse(localStorage.getItem('ps_colhidden') || '{}') || {}; } catch (e) { colHidden = {}; }
   var colNames = {};    // renamed headers, keyed by original label
   try { colNames = JSON.parse(localStorage.getItem('ps_colnames') || '{}') || {}; } catch (e) { colNames = {}; }
   var colSort = null;   // { idx, dir:1|-1 } — sorts leaf siblings within each WBS parent
   try { colSort = JSON.parse(localStorage.getItem('ps_colsort') || 'null'); } catch (e) { colSort = null; }
-  function colLabel(c) { return colNames[c[1]] || c[1]; }
+  function colLabel(c) { return colNames[colKey(c)] || c[1]; }
+  // Extra (code/UDF) columns default to HIDDEN — OPC-style, you add a column deliberately. Each new
+  // one is seeded hidden once (tracked in `_colSeen`) so it doesn't flood the grid on first appearance.
+  var _colSeen = {}; try { _colSeen = JSON.parse(localStorage.getItem('ps_colseen') || '{}') || {}; } catch (e) { _colSeen = {}; }
+  function seedExtraHidden() {
+    var changed = false;
+    extraColDefs().forEach(function (c) { var k = colKey(c); if (!_colSeen[k]) { _colSeen[k] = 1; if (!(k in colHidden)) colHidden[k] = 1; changed = true; } });
+    if (changed) { try { localStorage.setItem('ps_colseen', JSON.stringify(_colSeen)); localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} }
+  }
   // Comparable value for sorting by a specific column index (matches GRID_COLS order).
   function colSortVal(r, idx) {
+    if (idx >= GRID_COLS.length) { var xc = gridCols()[idx]; return xc && xc[3] ? String(extraCellVal(xc[3], r)).toLowerCase() : ''; }
     switch (idx) {
       case 0: return String(r.activity_id || '');
       case 1: return String(r.activity_name || '');
@@ -2929,17 +2965,18 @@
     var st = document.getElementById('ps-colstyle');
     if (!st) { st = document.createElement('style'); st.id = 'ps-colstyle'; document.head.appendChild(st); }
     var rules = [];
-    GRID_COLS.forEach(function (c, i) {
-      if (colHidden[c[1]]) rules.push('.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (i + 1) + ')');
+    gridCols().forEach(function (c, i) {
+      if (colHidden[colKey(c)]) rules.push('.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (i + 1) + ')');
     });
     st.textContent = rules.length ? rules.join(',') + '{display:none !important;}' : '';
   }
   function renderHeader() {
     var head = document.getElementById('ps-grid-head'); if (!head) return;
-    head.innerHTML = '<div class="ps-grid-row head">' + GRID_COLS.map(function (c, i) {
+    seedExtraHidden();
+    head.innerHTML = '<div class="ps-grid-row head">' + gridCols().map(function (c, i) {
       var arrow = (colSort && colSort.idx === i) ? '<span class="ps-sort-ind">' + (colSort.dir < 0 ? '▼' : '▲') + '</span>' : '';
       return '<div class="ps-cell ps-colhdr ' + c[2] + '" data-ci="' + i + '" title="' + esc(colLabel(c)) + ' — click for column options">' + esc(colLabel(c)) + arrow +
-        '<span class="ps-colgrip" data-col="' + c[0] + '" title="Drag to resize column"></span></div>';
+        '<span class="ps-colgrip" data-col="' + c[2].replace('c-', '') + '" title="Drag to resize column"></span></div>';
     }).join('') + '</div>';
     head.querySelectorAll('.ps-colgrip').forEach(function (g) { g.addEventListener('mousedown', function (e) { startColResize(e, g.dataset.col); }); });
     head.querySelectorAll('.ps-colhdr').forEach(function (h) { h.addEventListener('click', function (e) { if (e.target.classList.contains('ps-colgrip')) return; openColMenu(parseInt(h.dataset.ci, 10), h); }); });
@@ -2948,7 +2985,7 @@
   // OPC-style column header menu (Sort / Adjust to fit / Rename / Hide).
   function openColMenu(idx, anchor) {
     closeColMenu();
-    var c = GRID_COLS[idx];
+    var c = gridCols()[idx]; if (!c) return;
     var m = document.createElement('div'); m.className = 'ps-menu ps-colhdr-menu open'; m.id = 'ps-colhdr-menu';
     var asc = colSort && colSort.idx === idx && colSort.dir > 0, desc = colSort && colSort.idx === idx && colSort.dir < 0;
     m.innerHTML =
@@ -2968,8 +3005,8 @@
       if (a === 'asc' || a === 'desc') { colSort = { idx: idx, dir: a === 'asc' ? 1 : -1 }; }
       else if (a === 'nosort') { colSort = null; }
       else if (a === 'fit') { fitColumn(idx); closeColMenu(); return; }
-      else if (a === 'rename') { var nn = prompt('Rename column “' + colLabel(c) + '” to:', colLabel(c)); if (nn != null) { nn = nn.trim(); if (nn && nn !== c[1]) colNames[c[1]] = nn; else delete colNames[c[1]]; try { localStorage.setItem('ps_colnames', JSON.stringify(colNames)); } catch (e2) {} renderHeader(); } closeColMenu(); return; }
-      else if (a === 'hide') { if (c[1] === 'Activity Name') { UI.toast('Activity Name can’t be hidden.', 'warn'); closeColMenu(); return; } colHidden[c[1]] = 1; try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e3) {} applyColHidden(); closeColMenu(); return; }
+      else if (a === 'rename') { var nn = prompt('Rename column “' + colLabel(c) + '” to:', colLabel(c)); if (nn != null) { nn = nn.trim(); if (nn && nn !== c[1]) colNames[colKey(c)] = nn; else delete colNames[colKey(c)]; try { localStorage.setItem('ps_colnames', JSON.stringify(colNames)); } catch (e2) {} renderHeader(); } closeColMenu(); return; }
+      else if (a === 'hide') { if (c[1] === 'Activity Name') { UI.toast('Activity Name can’t be hidden.', 'warn'); closeColMenu(); return; } colHidden[colKey(c)] = 1; try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e3) {} applyColHidden(); closeColMenu(); return; }
       try { localStorage.setItem('ps_colsort', JSON.stringify(colSort)); } catch (e4) {}
       closeColMenu(); rebuild(); renderHeader(); renderGrid(); renderGantt();
     }; });
@@ -2978,13 +3015,14 @@
   function closeColMenu() { var m = document.getElementById('ps-colhdr-menu'); if (m) m.remove(); document.removeEventListener('click', closeColMenu); }
   // Adjust-to-fit: size the column's width var to its widest rendered cell (+ padding).
   function fitColumn(idx) {
-    var key = GRID_COLS[idx][2].replace('c-', ''), pane = document.querySelector('.ps-grid-pane');
+    var col = gridCols()[idx]; if (!col) return;
+    var key = col[2].replace('c-', ''), pane = document.querySelector('.ps-grid-pane');
     var max = 40, sel = '.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (idx + 1) + ')';
     document.querySelectorAll(sel).forEach(function (cell) {
       var sw = cell.scrollWidth; if (sw > max) max = sw;
     });
     pane.style.setProperty('--c-' + key, Math.min(420, max + 16) + 'px');
-    try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var'].forEach(function (k) { w[k] = getComputedStyle(pane).getPropertyValue('--c-' + k).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e) {}
+    try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var','x'].forEach(function (k) { w[k] = getComputedStyle(pane).getPropertyValue('--c-' + k).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e) {}
   }
   // Column chooser (the OPC grid-settings wrench). Activity Name can't be hidden (anchor column).
   function saveColHidden() { try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} }
@@ -2994,17 +3032,19 @@
   function renderColsMenu() {
     var m = document.getElementById('ps-cols-menu'); if (!m) return;
     var onCost = activeTab === 'cost';
-    var defs = onCost ? COST_COLS : GRID_COLS.map(function (c) { return { label: c[1], locked: c[1] === 'Activity Name' }; });
-    m.innerHTML =
-      '<div style="padding:6px 12px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' +
-        (onCost ? 'Cost Loading columns' : 'Schedule columns') + '</div>' +
-      defs.map(function (d) {
-        var lbl = d.label, locked = d.locked;
-        return '<label' + (locked ? ' style="opacity:.5;cursor:default;"' : '') + '>' +
-          '<input type="checkbox" data-col="' + esc(lbl) + '"' + (colHidden[lbl] ? '' : ' checked') + (locked ? ' disabled' : '') + '>' +
-          '<span class="pd-ico" data-eye="' + esc(lbl) + '" style="opacity:.6;">' + Icons.svg(colHidden[lbl] ? 'eyeOff' : 'eye', 15) + '</span> ' +
-          esc(lbl) + '</label>';
-      }).join('') +
+    if (!onCost) seedExtraHidden();
+    var defs = onCost ? COST_COLS.map(function (c) { return { key: c.label, label: c.label, locked: c.locked }; })
+      : gridCols().map(function (c) { return { key: colKey(c), label: colLabel(c), extra: !!c[3], locked: c[1] === 'Activity Name' }; });
+    var builtin = defs.filter(function (d) { return !d.extra; }), extra = defs.filter(function (d) { return d.extra; });
+    function rowHTML(d) {
+      return '<label' + (d.locked ? ' style="opacity:.5;cursor:default;"' : '') + '>' +
+        '<input type="checkbox" data-col="' + esc(d.key) + '"' + (colHidden[d.key] ? '' : ' checked') + (d.locked ? ' disabled' : '') + '>' +
+        '<span class="pd-ico" data-eye="' + esc(d.key) + '" style="opacity:.6;">' + Icons.svg(colHidden[d.key] ? 'eyeOff' : 'eye', 15) + '</span> ' +
+        esc(d.label) + '</label>';
+    }
+    function hdr(t) { return '<div style="padding:6px 12px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' + t + '</div>'; }
+    m.innerHTML = hdr(onCost ? 'Cost Loading columns' : 'Schedule columns') + builtin.map(rowHTML).join('') +
+      (extra.length ? hdr('Activity Codes &amp; User-Defined Fields') + extra.map(rowHTML).join('') : '') +
       '<div class="ps-cols-foot"><button data-colact="show">Show all</button><button data-colact="hide">Hide all</button><button data-colact="reset">Reset</button></div>';
     m.querySelectorAll('input[data-col]').forEach(function (cb) {
       cb.onchange = function () { if (cb.checked) delete colHidden[cb.dataset.col]; else colHidden[cb.dataset.col] = 1;
@@ -3013,8 +3053,9 @@
     m.querySelectorAll('[data-colact]').forEach(function (b) {
       b.onclick = function () {
         var act = b.dataset.colact;
-        if (act === 'show' || act === 'reset') { colHidden = {}; }
-        else if (act === 'hide') { defs.forEach(function (d) { if (!d.locked) colHidden[d.label] = 1; }); }
+        if (act === 'show') { colHidden = {}; defs.forEach(function (d) { _colSeen[d.key] = 1; }); }
+        else if (act === 'reset') { colHidden = {}; _colSeen = {}; try { localStorage.setItem('ps_colseen', '{}'); } catch (e) {} seedExtraHidden(); }
+        else if (act === 'hide') { defs.forEach(function (d) { if (!d.locked) colHidden[d.key] = 1; }); }
         saveColHidden(); applyColHidden(); renderCost(); renderColsMenu();
       };
     });
@@ -3026,7 +3067,7 @@
     function mm(ev) { pane.style.setProperty(vn, Math.max(40, cur + (ev.clientX - sx)) + 'px'); }
     function up() {
       document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
-      try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var'].forEach(function (c) { w[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e2) {}
+      try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var','x'].forEach(function (c) { w[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e2) {}
     }
     document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
   }
@@ -3099,7 +3140,7 @@
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.e)) : '—') + '</div>' +
         '<div class="ps-cell c-dur"></div>' + costCellsHtml(r) +
-        '<div class="ps-cell c-flt"></div><div class="ps-cell c-var"></div></div>';
+        '<div class="ps-cell c-flt"></div><div class="ps-cell c-var"></div>' + gridExtraHtml(r) + '</div>';
     }
     if (isWbsNode(r)) {
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
@@ -3111,7 +3152,7 @@
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.e)) : '—') + '</div>' +
         '<div class="ps-cell c-dur"></div>' + costCellsHtml(r) +
-        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + varCellHtml(r) + '</div>';
+        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + varCellHtml(r) + gridExtraHtml(r) + '</div>';
     }
     var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : (r.duration_days || '');
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
@@ -3125,7 +3166,7 @@
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="end_date" data-type="date">' + (r.end_date ? Fmt.date(r.end_date) : '—') + '</div>' +
       '<div class="ps-cell c-dur">' + (dur ? dur + 'd' : '') + '</div>' +
       costCellsHtml(r) +
-      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + '</div>';
+      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + gridExtraHtml(r) + '</div>';
   }
 
   function doRender() {
@@ -4464,7 +4505,7 @@
   // ----- ACTIVITY CODES (project-defined code dictionaries: Phase / Area / Zone / etc.) -----
   var _codesSelType = null;
   function openCodes() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-codes-back').classList.add('open'); renderCodesList(); renderCodesDetail(); }
-  function closeCodes() { document.getElementById('ps-codes-back').classList.remove('open'); }
+  function closeCodes() { document.getElementById('ps-codes-back').classList.remove('open'); renderHeader(); renderGrid(); }   // reflect code-type columns added/removed
   function renderCodesList() {
     var list = document.getElementById('ps-codes-list'); if (!list) return;
     var cnt = document.getElementById('ps-codes-count'); if (cnt) cnt.textContent = CODE_TYPES.length + ' code type' + (CODE_TYPES.length === 1 ? '' : 's');
@@ -4540,7 +4581,7 @@
   function udfInputType(t) { return t === 'date' ? 'date' : (t === 'number' || t === 'cost' ? 'number' : 'text'); }
   function udfFmt(def, v) { if (v == null || v === '') return '—'; if (def.field_type === 'cost') return Fmt.money(v); if (def.field_type === 'date') return Fmt.date(v); return String(v); }
   function openUdf() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-udf-back').classList.add('open'); renderUdfList(); }
-  function closeUdf() { document.getElementById('ps-udf-back').classList.remove('open'); }
+  function closeUdf() { document.getElementById('ps-udf-back').classList.remove('open'); renderHeader(); renderGrid(); }   // reflect UDF columns added/removed
   function renderUdfList() {
     var body = document.getElementById('ps-udf-body'), cnt = document.getElementById('ps-udf-count');
     if (cnt) cnt.textContent = UDF_DEFS.length + ' field' + (UDF_DEFS.length === 1 ? '' : 's');

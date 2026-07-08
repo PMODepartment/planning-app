@@ -525,6 +525,24 @@ the user widen/narrow the period columns. Two gestures adjust it (the +/− butt
 `applyGanttScale(v)` / `_saveGanttScale()` are module-scope. (This is the Gantt month/qtr/year
 column width — NOT the activity-grid columns.)
 
+## Dynamic columns (2026-07-08) — Activity Codes + UDFs as grid columns
+"Define columns" now matches OPC: the project's **Activity Codes** and **User-Defined Fields** appear
+as real, choosable grid columns (no new migration — reuses `CODE_TYPES`/`CODE_VALUES`/`UDF_DEFS` +
+`project_schedule.activity_codes`/`udf` jsonb). `extraColDefs()` maps them to `[key,label,'c-x',meta]`
+tuples; `gridCols() = GRID_COLS.concat(extraColDefs())` is the single source the whole column pipeline
+now iterates (`renderHeader`, `applyColHidden`, `openColMenu`, `fitColumn`, `renderColsMenu`,
+`colSortVal`). `gridRowHTML` appends `gridExtraHtml(r)` to ALL three row kinds (value on leaf tasks,
+blank on group/WBS) so cell counts — and the `nth-child` hide rules — stay aligned. `extraCellVal`
+reads the code value (`codeValueLabel`) or UDF (`udfFmt`). Extra columns share the resizable `--c-x`
+width. **Collision-safe:** hide/rename use `colKey(c)` — built-ins keep their LABEL key (back-compat),
+extras use their unique id (`code:<id>`/`udf:<id>`), so a code/UDF named e.g. "Status" can't hide the
+built-in Status. Extras **default hidden** (`seedExtraHidden` + `ps_colseen`) — OPC-style deliberate
+add via the Columns ▾ chooser, which now has an "Activity Codes & User-Defined Fields" sub-section
+(Show all / Hide all / Reset — Reset re-seeds extras hidden). New codes/UDFs appear as columns when
+their editor modal closes (`closeCodes`/`closeUdf` → `renderHeader`+`renderGrid`). Verified in a node
+harness (collision-safety + hide-index alignment). NOTE: the Excel export still uses its fixed header
+set — extra columns are grid-only for now.
+
 ## Columns (2026-07-07) — eye-icon show/hide, resize everywhere, export toggle
 - **Eye-icon multi-select chooser**: the toolbar column button is now an **eye** icon
   (`icons.js` gained `eye`/`eyeOff`). `renderColsMenu()` shows a checkbox per column (ticked =
