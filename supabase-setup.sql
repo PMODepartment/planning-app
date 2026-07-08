@@ -133,6 +133,7 @@ create table if not exists resource_assignments (
   id uuid primary key default gen_random_uuid(), project_id text references projects(id),
   activity_id text, resource_id uuid references resources(id), resource_code text, role text,
   budgeted_units numeric, actual_units numeric, remaining_units numeric, uom text default 'hours', remarks text,
+  curve text default 'linear',   -- distribution curve (see 2026-07-07-assignment-curve.sql)
   created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
 
 -- Activity Codes (see 2026-07-07-activity-codes.sql) — project-defined code
