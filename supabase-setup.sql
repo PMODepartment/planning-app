@@ -82,6 +82,8 @@ create table if not exists project_schedule (
   risk_optimistic_pct numeric(6,2), risk_pessimistic_pct numeric(6,2),
   -- Activity Codes assignment: { "<code_type_id>": "<code_value_id>" } (see 2026-07-07-activity-codes.sql)
   activity_codes jsonb default '{}'::jsonb,
+  -- WBS node link (see 2026-07-07-wbs-nodes.sql)
+  wbs_node_id uuid,
   -- User-Defined Fields values: { "<udf_def_id>": value } (see 2026-07-07-user-defined-fields.sql)
   udf jsonb default '{}'::jsonb,
   -- OPC Activity Details fields
@@ -135,6 +137,14 @@ create table if not exists resource_assignments (
   budgeted_units numeric, actual_units numeric, remaining_units numeric, uom text default 'hours', remarks text,
   curve text default 'linear',   -- distribution curve (see 2026-07-07-assignment-curve.sql)
   created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
+
+-- WBS nodes (see 2026-07-07-wbs-nodes.sql) — first-class Work Breakdown Structure tree,
+-- projected into project_schedule WBS-Summary rows for the existing pipeline.
+create table if not exists wbs_nodes (
+  id uuid primary key default gen_random_uuid(), project_id text not null,
+  parent_id uuid references wbs_nodes(id) on delete cascade,
+  code text, code_custom boolean default false, name text not null, sort_order int default 0,
+  created_by uuid, created_at timestamptz default now(), updated_at timestamptz default now());
 
 -- Activity Codes (see 2026-07-07-activity-codes.sql) — project-defined code
 -- dictionaries for grouping/filtering the schedule orthogonally to the WBS.
@@ -351,7 +361,7 @@ create policy projects_write on projects for all using (is_planner()) with check
 do $$
 declare t text;
 begin
-  foreach t in array array['activity_code_types','activity_code_values','activity_udf_defs','activity_steps','weekly_commitments','schedule_scenarios','schedule_thresholds'] loop
+  foreach t in array array['wbs_nodes','activity_code_types','activity_code_values','activity_udf_defs','activity_steps','weekly_commitments','schedule_scenarios','schedule_thresholds'] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
     execute format('create policy %I on %I for select using (is_approved())', t||'_read', t);

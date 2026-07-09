@@ -197,6 +197,37 @@ jsonb default '{}'` — a compact `{ "<code_type_id>": "<code_value_id>" }` map,
   the PPC trend chart and — same lesson as the Milestone Outlook timeline earlier — caught and fixed
   an edge-label clipping bug (last x-axis date ran off the SVG's right edge) before shipping.
 
+## First-class WBS (2026-07-07) — WBS Manager + dedicated wbs_nodes table
+User wanted the Work Breakdown Structure built FIRST (unlimited depth), then activities placed under
+any main- or sub-node — rather than hand-typing dotted codes. **Migration:** `../../migrations/
+2026-07-07-wbs-nodes.sql` (`wbs_nodes` table + `project_schedule.wbs_node_id`).
+- **Architecture (chosen by user): dedicated `wbs_nodes` table** (id, parent_id, code, code_custom,
+  name, sort_order) as the AUTHORING source of truth for the tree. Codes are **auto-numbered from
+  tree position** (`computeWbsCodes` → 1, 1.1, 1.1.2…) but **editable** (`code_custom` keeps a typed
+  code e.g. `CIV-100`; its subtree is prefixed by it).
+- **Projection (key integration):** the existing grid/roll-up/CPM/importer pipeline keys off the
+  dotted `project_schedule.wbs` code + `activity_type='WBS Summary'` rows, so on every tree edit the
+  app PROJECTS the nodes into those summary rows (`_wbsCommit`: recompute codes → update each node's
+  `wbs_nodes.code`, its linked WBS-Summary row's `wbs`+`activity_name`, and the `wbs` of activities
+  under any re-coded node; batched via `_batchUpdate`). This keeps the entire tested pipeline
+  UNCHANGED — no rewrite of grouping/rollups/importers.
+- **WBS Manager** — new view (`#ps-view-wbs`, sidebar `data-view="wbs"` + title menu `data-tab="wbs"`,
+  `renderWbsManager`): indented tree with per-node Add-child, Move up/down, **Indent/Outdent**, Edit
+  code, Delete; inline name edit; badges (sub-count · activity-count). Node CRUD: `wbsAddChild`/
+  `wbsAddRoot` (inserts node + a projected WBS-Summary row), `wbsRename`, `wbsMove` (up/down/indent/
+  outdent using the verified tree algos + `_wbsNormalizeAndPersist`), `wbsEditCode`, `wbsDelete`
+  (**guarded** — blocks if the node still has sub-nodes or activities). Tree algorithms
+  (auto-numbering, custom codes, move/indent/outdent, guards) unit-tested in a node harness.
+- **Adopt existing WBS** (`wbsAdopt`) — one-time bridge for imported/legacy projects: builds `wbs_nodes`
+  from the current WBS-Summary rows (parents resolved by dotted-code prefix, depth-ordered so parents
+  exist first; codes preserved as `code_custom`), then links the summary rows + matching activities via
+  `wbs_node_id`. Importers stay unchanged (they still create summary rows); Adopt pulls them into the
+  manager. The Adopt button auto-shows only when un-adopted summary rows exist.
+- **Add/Edit activity** — new **Parent WBS picker** (`#ps-f-wbs-node`, indented `wbsPickerOptions`)
+  before the WBS Code field: picking a node auto-fills + locks the code and sets `wbs_node_id`
+  (written tolerantly, like `contract_date`). Direct code entry still works when no tree exists yet
+  (back-compat). `wbs_node_id` also added to the Add/Edit save + activity save paths.
+
 ## Toolbar/topbar de-clutter (2026-07-07) — File menu + labeled groups
 The top area had ~22 icon-only buttons, several sharing a glyph (pulse=Health & Spotlight, risk=
 Critical & Threshold/Monte-Carlo, listView=Layouts & UDF/GlobalChange, layers=Expand & Baselines) —
