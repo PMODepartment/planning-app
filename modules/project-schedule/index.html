@@ -115,8 +115,12 @@
     .ps-split.ps-gantt-only .ps-grid-pane { flex:0 0 300px; }
     .ps-cost-th { position:relative; }
     .ps-cost-table th { overflow:hidden; }
-    /* Keep the action toolbar on a single row (scrolls horizontally if needed) */
-    .ps-toolbar .ps-tb-row { flex-wrap:nowrap; overflow:visible; min-width:0; }
+    /* Toolbar wraps to a second line when it doesn't fit, instead of overflowing the page
+       (nowrap pushed the whole page into horizontal scroll and squished the Group/zoom controls
+       down to a bare chevron). overflow:visible keeps the dropdown popovers showing. */
+    .ps-toolbar .ps-tb-row { flex-wrap:wrap; overflow:visible; min-width:0; row-gap:8px; }
+    /* Belt-and-suspenders: let the flex column shrink so nothing forces a page-wide scrollbar. */
+    .pd-content, .pd-main { min-width:0; max-width:100%; }
     /* Denser, OPC-like layout — trim dead space, square edges */
     .pd-main { padding:10px 12px; }
     .ps-toolbar { margin-bottom:8px; }
@@ -3305,7 +3309,17 @@
     tl.innerHTML = '<div class="ps-tl-static">' + stat + '</div><div id="ps-tl-bars"></div>';
     // grid spacer
     var host = document.getElementById('ps-grid-rows');
-    if (!DL.length) { host.style.height = ''; host.innerHTML = '<div class="ps-empty">' + (pid ? 'No activities yet. Use “Add activity”.' : 'Select a project.') + '</div>'; return; }
+    if (!DL.length) {
+      host.style.height = '';
+      var hasWbs = WBS_NODES.length > 0;
+      var msg = pid
+        ? (hasWbs
+          ? 'No activities yet. Use <strong>“Add activity”</strong> and pick a Parent WBS to place each one.'
+          : 'No activities yet. Tip: build your <strong>WBS</strong> first (open the <strong>WBS</strong> tab from the title menu or sidebar), then add activities under any node. You can also just use <strong>“Add activity”</strong>.')
+        : 'Select a project.';
+      host.innerHTML = '<div class="ps-empty">' + msg + '</div>';
+      return;
+    }
     host.style.position = 'relative'; host.style.height = H + 'px';
     renderWindow();
   }
