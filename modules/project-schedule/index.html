@@ -3360,7 +3360,14 @@
     // Excel-like: click anywhere on a WBS/group summary row to expand/collapse it
     host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); }); });
     host.querySelectorAll('.ps-editable').forEach(function (c) { c.ondblclick = function (e) { e.stopPropagation(); beginEdit(c); }; });
-    host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function () { selId = rw.dataset.rowid; highlightRow(); renderDetails(); }); });
+    host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function () {
+      selId = rw.dataset.rowid;
+      // Selecting a row in the grid also targets its WBS for the next Add-activity: a WBS
+      // summary → itself; a task → its parent WBS. Drives the openForm(null) parent preselect.
+      var sr = rows.find(function (x) { return x.id === selId; });
+      _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null;
+      highlightRow(); renderDetails();
+    }); });
     // gantt: window bars
     var bc = document.getElementById('ps-tl-bars');
     if (bc) {
