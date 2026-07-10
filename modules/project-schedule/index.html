@@ -233,7 +233,10 @@
     .ps-grid-pane { flex:0 0 660px; max-width:70%; display:flex; flex-direction:column; border-right:2px solid var(--pd-line); min-width:0; position:relative; }
     /* Column chooser docked as an always-visible "+" at the RIGHT end of the grid header row
        (OPC-style — sits over the header, not on a separate row and not over the first label). */
-    .ps-cols-corner { position:absolute; top:0; right:0; z-index:12; }
+    /* Higher specificity than the generic .ps-menu-wrap{position:relative} rule below, so this
+       stays absolute (a floating "+" over the header) rather than falling into normal flow and
+       creating an extra strip above the header row. */
+    .ps-grid-pane .ps-cols-corner { position:absolute; top:0; right:0; z-index:12; }
     .ps-cols-corner > .ps-icobtn { height:38px !important; width:32px; border-radius:0; border:none;
       border-left:1px solid var(--pd-line); border-bottom:2px solid var(--pd-line);
       background:var(--pd-bg); color:var(--pd-muted); }
@@ -242,6 +245,20 @@
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
     .ps-grid-pane { --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-x:130px; }
+    /* Freeze the Activity ID + Activity Name columns so they stay put (and header/body stay
+       aligned) while the rest of the grid scrolls horizontally. Sticky cells need an opaque
+       background so the scrolling columns don't bleed through — set per row-state. */
+    .ps-grid-row > .ps-cell.c-id { position:sticky; left:0; z-index:3; background:var(--pd-card); }
+    .ps-grid-row > .ps-cell.c-name { position:sticky; left:var(--c-id); z-index:3; background:var(--pd-card);
+      border-right:2px solid var(--pd-line); }
+    .ps-grid-pane .ps-wbs-row > .ps-cell.c-id, .ps-grid-pane .ps-wbs-row > .ps-cell.c-name { background:var(--pd-bg); }
+    .ps-group-row > .ps-cell.c-id, .ps-group-row > .ps-cell.c-name { background:var(--pd-red-light); }
+    .ps-row-sel > .ps-cell.c-id, .ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
+    /* Header sticky needs extra specificity to beat the later `.ps-grid-row.head .ps-cell
+       {position:relative}` rule — otherwise the header wouldn't freeze while the body did,
+       re-introducing the very misalignment we're fixing. */
+    .ps-grid-pane .ps-grid-row.head > .ps-cell.c-id { position:sticky; left:0; z-index:4; background:var(--pd-bg); }
+    .ps-grid-pane .ps-grid-row.head > .ps-cell.c-name { position:sticky; left:var(--c-id); z-index:4; background:var(--pd-bg); }
     .ps-grid-scroll { overflow:auto; flex:1 1 auto; min-height:0; }
     .ps-grid-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); flex:none; }
     .ps-grid-row { display:flex; align-items:stretch; height:34px; border-bottom:1px solid var(--pd-line);
@@ -6175,17 +6192,35 @@
   }
   // Excel-style right-click menu on a grid row — quick insert/edit without hunting the toolbar.
   function closeRowMenu() { var m = document.getElementById('ps-rowctx'); if (m) m.remove(); document.removeEventListener('click', closeRowMenu); }
+  // Delete a row from the right-click menu. WBS rows defer to wbsDelete (which guards against
+  // deleting a WBS that still has sub-nodes or activities); activities delete directly.
+  async function deleteRow(r) {
+    if (!r || !r.id || window.__viewOnly || window.__archived) return;
+    if (isWbsNode(r)) { if (r.wbs_node_id) wbsDelete(r.wbs_node_id); return; }
+    if (!confirm('Delete activity “' + (r.activity_name || r.activity_id || r.id) + '”? This cannot be undone.')) return;
+    var res = await sb().from(TABLE).delete().eq('id', r.id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    rows = rows.filter(function (x) { return x.id !== r.id; });
+    if (selId === r.id) selId = null;
+    rebuild(); renderGrid(); renderGantt(); renderDetails();
+    UI.toast('Activity deleted.', 'success');
+  }
   function openRowMenu(e, r) {
     e.preventDefault(); e.stopPropagation(); closeRowMenu(); closeBarColorMenu(); closeColMenu();
     if (window.__viewOnly || window.__archived) return;   // read-only projects: no insert menu
     var isW = r && isWbsNode(r);
     var node = (r && r.wbs_node_id) ? r.wbs_node_id : null;
     var label = r ? (isW ? ((r.wbs ? r.wbs + ' — ' : '') + (r.activity_name || '')) : ((r.activity_id ? r.activity_id + ' — ' : '') + (r.activity_name || ''))) : '';
+    var sep = '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>';
+    var pnode = node ? wbsById(node) : null;
     var items = [];
-    items.push('<button data-act="add"><span data-ico="plus" data-ico-size="14"></span> Add activity' + (node ? ' in this WBS' : '') + '</button>');
+    items.push('<button data-act="add"><span data-ico="plus" data-ico-size="14"></span> Add activity below</button>');
     if (r && !isW && r._dkind !== 'group') items.push('<button data-act="edit"><span data-ico="edit" data-ico-size="14"></span> Edit activity…</button>');
+    items.push(sep);
     if (node) items.push('<button data-act="childwbs"><span data-ico="layers" data-ico-size="14"></span> Add child WBS…</button>');
+    if (pnode && pnode.parent_id) items.push('<button data-act="siblingwbs"><span data-ico="layers" data-ico-size="14"></span> Add sibling WBS…</button>');
     items.push('<button data-act="rootwbs"><span data-ico="layers" data-ico-size="14"></span> Add top-level WBS…</button>');
+    if (r && r.id && r._dkind !== 'group') items.push(sep + '<button data-act="del" class="ps-menu-danger">Delete ' + (isW ? 'WBS' : 'activity') + '…</button>');
     var m = document.createElement('div'); m.className = 'ps-menu ps-rowctx open'; m.id = 'ps-rowctx';
     m.innerHTML = (label ? '<div style="padding:6px 12px 4px;font-size:11px;color:var(--pd-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;">' + esc(label) + '</div>' : '') + items.join('');
     document.body.appendChild(m);
@@ -6197,7 +6232,9 @@
       if (a === 'add') { if (node) { _wbsSel = node; } if (r && r.id) selId = r.id; openForm(null); }
       else if (a === 'edit') { openForm(r); }
       else if (a === 'childwbs') { wbsAddChild(node); }
+      else if (a === 'siblingwbs') { wbsAddChild(pnode ? pnode.parent_id : null); }
       else if (a === 'rootwbs') { wbsAddChild(null); }
+      else if (a === 'del') { deleteRow(r); }
     }; });
     setTimeout(function () { document.addEventListener('click', closeRowMenu); }, 0);
   }
