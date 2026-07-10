@@ -1322,6 +1322,9 @@
   function wbsDepthOf(id) { var d = 0, n = wbsById(id); while (n && n.parent_id) { d++; n = wbsById(n.parent_id); } return d; }
   function wbsActivityCount(nodeId) { return rows.filter(function (r) { return !isWbs(r) && r.wbs_node_id === nodeId; }).length; }
   var zoom = 'quarter', collapsed = {}, selId = null, search = '';
+  // Multi-row selection + row clipboard (Excel/OPC-style). selId stays the "active"/anchor row;
+  // _selSet holds every selected task-row id; _clip holds copied/cut row payloads.
+  var _selSet = new Set(), _selAnchor = null, _clip = null;
   var filters = { status: {}, type: {}, behind: false, look: 0, codes: {} };   // empty sets = show all; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }
   var groupBy = 'wbs';   // 'wbs' | 'status' | 'responsible' | 'type'
   var _dspan = {};       // span map keyed by display code (real WBS codes in WBS mode)
@@ -3391,21 +3394,32 @@
     host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); });
       rw.addEventListener('contextmenu', function (e) {
         var nd = DL[parseInt(rw.dataset.i, 10)]; if (!nd) return;
+        if (nd.id) selId = nd.id;                       // make this WBS the paste / add target
         if (nd.wbs_node_id) _wbsSel = nd.wbs_node_id;
+        highlightRow();
         openRowMenu(e, nd);
       }); });
     host.querySelectorAll('.ps-editable').forEach(function (c) { c.ondblclick = function (e) { e.stopPropagation(); beginEdit(c); }; });
-    host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function () {
-      selId = rw.dataset.rowid;
-      // Selecting a row in the grid also targets its WBS for the next Add-activity: a WBS
-      // summary → itself; a task → its parent WBS. Drives the openForm(null) parent preselect.
+    host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function (e) {
+      var id = rw.dataset.rowid;
+      // Excel-style selection: Ctrl/Cmd-click toggles a row; Shift-click extends a range from the
+      // anchor; a plain click selects just this row. selId stays the active/anchor row.
+      if (e.ctrlKey || e.metaKey) { if (_selSet.has(id)) _selSet.delete(id); else _selSet.add(id); _selAnchor = id; }
+      else if (e.shiftKey && _selAnchor) { _selRange(_selAnchor, id); }
+      else { _selSet = new Set([id]); _selAnchor = id; }
+      selId = id;
+      // Selecting a row also targets its WBS for the next Add-activity (task → its parent WBS).
       var sr = rows.find(function (x) { return x.id === selId; });
       _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null;
       highlightRow(); renderDetails();
     }); rw.addEventListener('contextmenu', function (e) {
-      selId = rw.dataset.rowid; var sr = rows.find(function (x) { return x.id === selId; });
+      var id = rw.dataset.rowid;
+      // Right-clicking a row that isn't already in the selection selects just it (Excel behavior);
+      // right-clicking inside a multi-selection keeps the whole selection so the action applies to all.
+      if (!_selSet.has(id)) { _selSet = new Set([id]); _selAnchor = id; }
+      selId = id; var sr = rows.find(function (x) { return x.id === selId; });
       _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null; highlightRow();
-      openRowMenu(e, sr || { id: rw.dataset.rowid });
+      openRowMenu(e, sr || { id: id });
     }); });
     // gantt: window bars
     var bc = document.getElementById('ps-tl-bars');
@@ -3455,7 +3469,7 @@
   }
 
   function highlightRow() {
-    document.querySelectorAll('#ps-grid-rows .ps-grid-row').forEach(function (rw) { rw.classList.toggle('ps-row-sel', rw.dataset.rowid === selId); });
+    document.querySelectorAll('#ps-grid-rows .ps-grid-row').forEach(function (rw) { var id = rw.dataset.rowid; rw.classList.toggle('ps-row-sel', !!id && (id === selId || _selSet.has(id))); });
     document.querySelectorAll('#ps-tl .ps-bar, #ps-tl .ps-mile').forEach(function (b) { b.style.outline = (b.dataset.id === selId) ? '2px solid var(--pd-red)' : ''; });
   }
 
@@ -6249,6 +6263,70 @@
     rebuild(); renderGrid(); renderGantt(); renderDetails();
     UI.toast('Activity deleted.', 'success');
   }
+  // ---- Multi-select + row clipboard (Excel/OPC-style) ----
+  function _selRange(aId, bId) {
+    var ia = -1, ib = -1;
+    for (var i = 0; i < DL.length; i++) { if (DL[i].id === aId) ia = i; if (DL[i].id === bId) ib = i; }
+    if (ia < 0 || ib < 0) { _selSet.add(bId); return; }
+    var lo = Math.min(ia, ib), hi = Math.max(ia, ib); _selSet = new Set();
+    for (var k = lo; k <= hi; k++) { var d = DL[k]; if (d && d._dkind === 'task' && d.id) _selSet.add(d.id); }
+  }
+  // Selected task rows (falls back to the single active row). WBS/group rows are excluded — the
+  // clipboard/bulk-delete operate on activities only.
+  function _selectedTaskRows() {
+    var ids = _selSet.size ? Array.from(_selSet) : (selId ? [selId] : []);
+    return ids.map(function (id) { return rows.find(function (x) { return x.id === id; }); }).filter(function (r) { return r && !isWbs(r); });
+  }
+  // Fields duplicated when a row is copied. Identity (id/activity_id), WBS placement and links
+  // (predecessors) are deliberately omitted — placement comes from the paste target and a fresh
+  // activity_id is generated, so pasted copies never collide or carry dangling relationships.
+  var _CLIP_FIELDS = ['activity_name','activity_type','status','start_date','end_date','duration_days',
+    'percent_complete','responsible_party','bl_start','bl_finish','bl_cost','planned_cost','actual_cost',
+    'earned_value','duration_type','percent_complete_type','calendar_id','owner','work_package',
+    'program_milestone','actual_start','actual_finish','expected_finish','actual_duration',
+    'remaining_duration','free_float','planned_labor_units','actual_labor_units','remaining_labor_units',
+    'primary_constraint','primary_constraint_date','secondary_constraint','secondary_constraint_date','remarks'];
+  function _rowClipPayload(r) { var p = {}; _CLIP_FIELDS.forEach(function (k) { if (r[k] !== undefined) p[k] = r[k]; }); return p; }
+  function _uniqueActId(base, taken) { base = (base == null || base === '') ? 'A' : String(base); if (!taken.has(base)) return base; var i = 2; while (taken.has(base + ' (' + i + ')')) i++; return base + ' (' + i + ')'; }
+  function copyRows(mode) {
+    if (window.__viewOnly || window.__archived) return;
+    var rs = _selectedTaskRows(); if (!rs.length) { UI.toast('Select one or more activities first.', 'warn'); return; }
+    _clip = { mode: mode, ids: rs.map(function (r) { return r.id; }), acts: rs.map(function (r) { return r.activity_id; }), data: rs.map(_rowClipPayload) };
+    UI.toast((mode === 'cut' ? 'Cut ' : 'Copied ') + rs.length + ' activit' + (rs.length === 1 ? 'y' : 'ies') + ' — select a target row and paste.', 'success');
+  }
+  async function pasteRows() {
+    if (window.__viewOnly || window.__archived) return;
+    if (!_clip || !_clip.data.length) { UI.toast('Nothing to paste — copy activities first.', 'warn'); return; }
+    // Target WBS = the active row's WBS (task → its parent WBS; WBS row → itself).
+    var target = selId ? rows.find(function (x) { return x.id === selId; }) : null;
+    var wbsCode = target ? (target.wbs || null) : null, wbsNodeId = target ? (target.wbs_node_id || null) : null;
+    if (!wbsCode && _wbsSel) { var n = wbsById(_wbsSel); if (n) { wbsNodeId = n.id; wbsCode = computeWbsCodes()[n.id] || null; } }
+    if (!wbsCode) { UI.toast('Select a target activity or WBS first, then paste.', 'warn'); return; }
+    var taken = new Set(rows.map(function (r) { return String(r.activity_id == null ? '' : r.activity_id); }));
+    showLoading('Pasting ' + _clip.data.length + ' activit' + (_clip.data.length === 1 ? 'y' : 'ies') + '…');
+    var n = 0;
+    for (var i = 0; i < _clip.data.length; i++) {
+      var p = Object.assign({}, _clip.data[i]);
+      p.project_id = pid; p.wbs = wbsCode; p.wbs_node_id = wbsNodeId || null;
+      var newId = _uniqueActId(_clip.acts[i], taken); taken.add(newId); p.activity_id = newId;
+      p.created_by = UID; p.updated_at = new Date().toISOString();
+      var res = await sb().from(TABLE).insert(p).select().single();
+      if (res.error) { hideLoading(); UI.toast('Paste failed: ' + res.error.message, 'error'); return; }
+      n++;
+    }
+    if (_clip.mode === 'cut') { for (var j = 0; j < _clip.ids.length; j++) { await sb().from(TABLE).delete().eq('id', _clip.ids[j]); } _clip = null; }
+    hideLoading(); _selSet = new Set(); UI.toast('Pasted ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '.', 'success'); load();
+  }
+  async function deleteSelected() {
+    if (window.__viewOnly || window.__archived) return;
+    var rs = _selectedTaskRows(); if (!rs.length) return;
+    if (!confirm('Delete ' + rs.length + ' selected activit' + (rs.length === 1 ? 'y' : 'ies') + '? This cannot be undone.')) return;
+    showLoading('Deleting ' + rs.length + '…');
+    for (var i = 0; i < rs.length; i++) { var res = await sb().from(TABLE).delete().eq('id', rs[i].id); if (res.error) { hideLoading(); UI.toast(res.error.message, 'error'); return; } rows = rows.filter(function (x) { return x.id !== rs[i].id; }); }
+    hideLoading(); if (rs.some(function (r) { return r.id === selId; })) selId = null; _selSet = new Set();
+    rebuild(); renderGrid(); renderGantt(); renderDetails();
+    UI.toast('Deleted ' + rs.length + ' activit' + (rs.length === 1 ? 'y' : 'ies') + '.', 'success');
+  }
   function openRowMenu(e, r) {
     e.preventDefault(); e.stopPropagation(); closeRowMenu(); closeBarColorMenu(); closeColMenu();
     if (window.__viewOnly || window.__archived) return;   // read-only projects: no insert menu
@@ -6258,13 +6336,21 @@
     var sep = '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>';
     var pnode = node ? wbsById(node) : null;
     var items = [];
-    items.push('<button data-act="add"><span data-ico="plus" data-ico-size="14"></span> Add activity below</button>');
+    var nSel = _selSet.size || (r && r.id ? 1 : 0), selSfx = nSel > 1 ? ' (' + nSel + ')' : '';
+    items.push('<button data-act="add"><span data-ico="plus" data-ico-size="14"></span> Add activity below <span style="color:var(--pd-muted);font-size:10px;">Insert</span></button>');
     if (r && !isW && r._dkind !== 'group') items.push('<button data-act="edit"><span data-ico="edit" data-ico-size="14"></span> Edit activity…</button>');
+    // Row clipboard (activities only)
+    if (r && !isW && r._dkind !== 'group') {
+      items.push(sep);
+      items.push('<button data-act="copy">Copy' + selSfx + ' <span style="color:var(--pd-muted);font-size:10px;">Ctrl+C</span></button>');
+      items.push('<button data-act="cut">Cut' + selSfx + ' <span style="color:var(--pd-muted);font-size:10px;">Ctrl+X</span></button>');
+    }
+    if (_clip && _clip.data.length) items.push('<button data-act="paste">Paste ' + _clip.data.length + ' here <span style="color:var(--pd-muted);font-size:10px;">Ctrl+V</span></button>');
     items.push(sep);
     if (node) items.push('<button data-act="childwbs"><span data-ico="layers" data-ico-size="14"></span> Add child WBS…</button>');
     if (pnode && pnode.parent_id) items.push('<button data-act="siblingwbs"><span data-ico="layers" data-ico-size="14"></span> Add sibling WBS…</button>');
     items.push('<button data-act="rootwbs"><span data-ico="layers" data-ico-size="14"></span> Add top-level WBS…</button>');
-    if (r && r.id && r._dkind !== 'group') items.push(sep + '<button data-act="del" class="ps-menu-danger">Delete ' + (isW ? 'WBS' : 'activity') + '…</button>');
+    if (r && r.id && r._dkind !== 'group') items.push(sep + '<button data-act="del" class="ps-menu-danger">Delete ' + (isW ? 'WBS' : (nSel > 1 ? nSel + ' activities' : 'activity')) + '… <span style="color:var(--pd-muted);font-size:10px;">Del</span></button>');
     var m = document.createElement('div'); m.className = 'ps-menu ps-rowctx open'; m.id = 'ps-rowctx';
     m.innerHTML = (label ? '<div style="padding:6px 12px 4px;font-size:11px;color:var(--pd-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;">' + esc(label) + '</div>' : '') + items.join('');
     document.body.appendChild(m);
@@ -6278,7 +6364,10 @@
       else if (a === 'childwbs') { wbsAddChild(node); }
       else if (a === 'siblingwbs') { wbsAddChild(pnode ? pnode.parent_id : null); }
       else if (a === 'rootwbs') { wbsAddChild(null); }
-      else if (a === 'del') { deleteRow(r); }
+      else if (a === 'copy') { copyRows('copy'); }
+      else if (a === 'cut') { copyRows('cut'); }
+      else if (a === 'paste') { pasteRows(); }
+      else if (a === 'del') { if (!isW && _selSet.size > 1) deleteSelected(); else deleteRow(r); }
     }; });
     setTimeout(function () { document.addEventListener('click', closeRowMenu); }, 0);
   }
@@ -6514,6 +6603,26 @@
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return; // let native field undo/redo happen
       if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
       else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); redo(); }
+    });
+    // Excel/OPC-style grid shortcuts: Insert = add, Delete = delete selection, Ctrl+C/X/V = copy/cut/
+    // paste rows, Esc = clear selection. Suppressed while editing a field, over an open modal, or when
+    // the Schedule view isn't the visible tab.
+    document.addEventListener('keydown', function (e) {
+      var tag = document.activeElement && document.activeElement.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      var mod = document.getElementById('ps-modal');
+      if (mod && getComputedStyle(mod).display !== 'none') return;
+      if (document.querySelector('.pd-modal-overlay, .ps-back.open, .ps-rep-back.open')) return;
+      var sv = document.getElementById('ps-view-schedule');
+      if (!sv || sv.offsetParent === null) return;           // Schedule view not visible
+      if (window.__viewOnly || window.__archived) return;
+      var k = e.key, ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && (k === 'c' || k === 'C')) { if (_selectedTaskRows().length) { e.preventDefault(); copyRows('copy'); } }
+      else if (ctrl && (k === 'x' || k === 'X')) { if (_selectedTaskRows().length) { e.preventDefault(); copyRows('cut'); } }
+      else if (ctrl && (k === 'v' || k === 'V')) { if (_clip) { e.preventDefault(); pasteRows(); } }
+      else if (!ctrl && k === 'Insert') { e.preventDefault(); if (pid) openForm(null); }
+      else if (!ctrl && (k === 'Delete' || k === 'Backspace')) { if (_selectedTaskRows().length) { e.preventDefault(); deleteSelected(); } }
+      else if (!ctrl && k === 'Escape') { if (_selSet.size) { _selSet = new Set(); highlightRow(); } }
     });
     document.getElementById('ps-health-close').onclick = closeHealthPanel;
     document.getElementById('ps-health-backdrop').onclick = closeHealthPanel;
