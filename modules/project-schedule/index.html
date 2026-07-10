@@ -3273,7 +3273,10 @@
       '<div class="ps-cell c-ctype">' + esc(r.percent_complete_type || '') + '</div>';
   }
   function gridRowHTML(r, i) {
-    var altc = (i % 2) ? ' ps-alt' : '';
+    // Zebra-stripe task rows only. WBS/group summary rows have their own solid background;
+    // striping them makes odd-indexed summaries look different (the dark-mode .ps-alt overlay
+    // out-specifies the WBS row background), so leave summaries unstriped for a uniform look.
+    var altc = (i % 2 && !isWbsNode(r)) ? ' ps-alt' : '';
     var depth = ddepth(r), code = dcode(r);
     var idPad = 4 + Math.min(depth, 6) * 8;   // indent Activity ID by WBS level
     if (r._dkind === 'group') {
