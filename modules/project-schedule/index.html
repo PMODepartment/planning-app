@@ -3419,7 +3419,9 @@
       if (!_selSet.has(id)) { _selSet = new Set([id]); _selAnchor = id; }
       selId = id; var sr = rows.find(function (x) { return x.id === selId; });
       _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null; highlightRow();
-      openRowMenu(e, sr || { id: id });
+      // Which editable cell was clicked (drives "Fill down" for that field).
+      var cell = e.target && e.target.closest ? e.target.closest('.ps-editable') : null;
+      openRowMenu(e, sr || { id: id }, cell ? cell.dataset.field : null);
     }); });
     // gantt: window bars
     var bc = document.getElementById('ps-tl-bars');
@@ -5205,6 +5207,41 @@
     UI.toast('WBS deleted.', 'success');
   }
   async function wbsAddRoot() { await wbsAddChild(null); }
+  // Copy another project's WBS tree into this project (structure only, no activities) — under the
+  // given parent node, or at the top level when parentId is null. Codes are re-derived by _wbsCommit.
+  async function wbsFromProject(parentId) {
+    if (!pid || window.__viewOnly || window.__archived) return;
+    var others = PROJECTS.filter(function (p) { return p.id !== pid; });
+    if (!others.length) { UI.toast('No other projects to copy a WBS from.', 'warn'); return; }
+    var opts = others.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>'; }).join('');
+    var m = UI.modal('<h2 style="margin-top:0;">Add WBS from Project</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Copy the WBS tree from another project ' + (parentId ? 'under the selected WBS' : 'at the top level') + '. Only the WBS structure is copied — activities are not.</p>' +
+      '<div class="pd-field"><label class="pd-label">Source project</label><select class="pd-input" id="wbsfp-proj">' + opts + '</select></div>' +
+      '<div style="text-align:right;margin-top:8px;"><button class="pd-btn" id="wbsfp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="wbsfp-go">Copy WBS</button></div>');
+    m.el.querySelector('#wbsfp-x').onclick = m.close;
+    m.el.querySelector('#wbsfp-go').onclick = async function () {
+      var srcPid = m.el.querySelector('#wbsfp-proj').value; if (!srcPid) return; m.close();
+      showLoading('Reading source WBS…');
+      var res = await sb().from('wbs_nodes').select('*').eq('project_id', srcPid).order('sort_order');
+      if (res.error) { hideLoading(); UI.toast('Could not read source WBS: ' + res.error.message, 'error'); return; }
+      var src = res.data || []; if (!src.length) { hideLoading(); UI.toast('That project has no WBS nodes to copy.', 'warn'); return; }
+      var byId = {}; src.forEach(function (n) { byId[n.id] = n; });
+      function depth(n) { var d = 0, c = n, g = 0; while (c && c.parent_id && byId[c.parent_id] && g++ < 50) { d++; c = byId[c.parent_id]; } return d; }
+      src.sort(function (a, b) { return depth(a) - depth(b) || (a.sort_order || 0) - (b.sort_order || 0); });
+      var map = {}, made = 0;
+      for (var i = 0; i < src.length; i++) {
+        var n = src[i];
+        var newParent = (n.parent_id && map[n.parent_id]) ? map[n.parent_id] : (parentId || null);
+        var ins = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: newParent, name: n.name || 'WBS', code: null, code_custom: false, sort_order: n.sort_order != null ? n.sort_order : i, created_by: UID }).select().single();
+        if (ins.error) { hideLoading(); UI.toast('Copy failed after ' + made + ': ' + ins.error.message, 'error'); await _wbsCommit(); return; }
+        map[n.id] = ins.data.id; WBS_NODES.push(ins.data); made++;
+        var sres = await sb().from(TABLE).insert({ project_id: pid, wbs_node_id: ins.data.id, activity_type: 'WBS Summary', wbs: '', activity_name: n.name || 'WBS', created_by: UID }).select().single();
+        if (!sres.error && sres.data) rows.push(sres.data);
+      }
+      await _wbsCommit();
+      hideLoading(); UI.toast('Copied ' + made + ' WBS node' + (made === 1 ? '' : 's') + ' from ' + (others.find(function (p) { return p.id === srcPid; }) || {}).name + '.', 'success');
+    };
+  }
   // One-time bridge: build the tree from existing project_schedule WBS-Summary rows (import / legacy),
   // preserving their exact codes (as custom) + names, then link summary rows + matching activities.
   async function wbsAdopt() {
@@ -6327,7 +6364,22 @@
     rebuild(); renderGrid(); renderGantt(); renderDetails();
     UI.toast('Deleted ' + rs.length + ' activit' + (rs.length === 1 ? 'y' : 'ies') + '.', 'success');
   }
-  function openRowMenu(e, r) {
+  // Fill the active cell's value DOWN to every other selected row (Excel Ctrl+D).
+  var _FIELD_LABELS = { activity_name: 'Activity Name', activity_id: 'Activity ID', status: 'Status',
+    start_date: 'Start', end_date: 'Finish', bl_start: 'BL Start', bl_finish: 'BL Finish',
+    percent_complete: '% Complete', planned_cost: 'Planned Cost', actual_cost: 'Actual Cost',
+    earned_value: 'Earned Value', responsible_party: 'Responsible' };
+  async function fillDown(field, srcRow) {
+    if (window.__viewOnly || window.__archived || !field || !srcRow) return;
+    var rs = _selectedTaskRows().filter(function (r) { return r.id !== srcRow.id; });
+    if (!rs.length) { UI.toast('Select the rows to fill (Ctrl/Shift-click), then Fill down.', 'warn'); return; }
+    var val = (srcRow[field] === undefined ? null : srcRow[field]);
+    showLoading('Filling ' + rs.length + ' row' + (rs.length === 1 ? '' : 's') + '…');
+    for (var i = 0; i < rs.length; i++) { var patch = {}; patch[field] = val; patch.updated_at = new Date().toISOString(); if (!(await persist(rs[i].id, patch))) { hideLoading(); return; } }
+    hideLoading(); renderGrid(); renderGantt(); renderDetails();
+    UI.toast('Filled ' + (_FIELD_LABELS[field] || field) + ' to ' + rs.length + ' row' + (rs.length === 1 ? '' : 's') + '.', 'success');
+  }
+  function openRowMenu(e, r, cellField) {
     e.preventDefault(); e.stopPropagation(); closeRowMenu(); closeBarColorMenu(); closeColMenu();
     if (window.__viewOnly || window.__archived) return;   // read-only projects: no insert menu
     var isW = r && isWbsNode(r);
@@ -6346,10 +6398,13 @@
       items.push('<button data-act="cut">Cut' + selSfx + ' <span style="color:var(--pd-muted);font-size:10px;">Ctrl+X</span></button>');
     }
     if (_clip && _clip.data.length) items.push('<button data-act="paste">Paste ' + _clip.data.length + ' here <span style="color:var(--pd-muted);font-size:10px;">Ctrl+V</span></button>');
+    // Fill down: only when a data cell was right-clicked AND there are other selected rows to fill.
+    if (cellField && !isW && r && r._dkind !== 'group' && _selSet.size > 1) items.push('<button data-act="filldown">Fill ' + esc(_FIELD_LABELS[cellField] || cellField) + ' down (' + (_selSet.size - 1) + ')</button>');
     items.push(sep);
     if (node) items.push('<button data-act="childwbs"><span data-ico="layers" data-ico-size="14"></span> Add child WBS…</button>');
     if (pnode && pnode.parent_id) items.push('<button data-act="siblingwbs"><span data-ico="layers" data-ico-size="14"></span> Add sibling WBS…</button>');
     items.push('<button data-act="rootwbs"><span data-ico="layers" data-ico-size="14"></span> Add top-level WBS…</button>');
+    items.push('<button data-act="wbsfromproj"><span data-ico="download" data-ico-size="14"></span> Add WBS from Project…</button>');
     if (r && r.id && r._dkind !== 'group') items.push(sep + '<button data-act="del" class="ps-menu-danger">Delete ' + (isW ? 'WBS' : (nSel > 1 ? nSel + ' activities' : 'activity')) + '… <span style="color:var(--pd-muted);font-size:10px;">Del</span></button>');
     var m = document.createElement('div'); m.className = 'ps-menu ps-rowctx open'; m.id = 'ps-rowctx';
     m.innerHTML = (label ? '<div style="padding:6px 12px 4px;font-size:11px;color:var(--pd-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;">' + esc(label) + '</div>' : '') + items.join('');
@@ -6364,9 +6419,11 @@
       else if (a === 'childwbs') { wbsAddChild(node); }
       else if (a === 'siblingwbs') { wbsAddChild(pnode ? pnode.parent_id : null); }
       else if (a === 'rootwbs') { wbsAddChild(null); }
+      else if (a === 'wbsfromproj') { wbsFromProject(isW ? node : null); }
       else if (a === 'copy') { copyRows('copy'); }
       else if (a === 'cut') { copyRows('cut'); }
       else if (a === 'paste') { pasteRows(); }
+      else if (a === 'filldown') { fillDown(cellField, r); }
       else if (a === 'del') { if (!isW && _selSet.size > 1) deleteSelected(); else deleteRow(r); }
     }; });
     setTimeout(function () { document.addEventListener('click', closeRowMenu); }, 0);
