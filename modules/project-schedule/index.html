@@ -780,6 +780,8 @@
           <input type="file" id="ps-import-file" accept=".xlsx,.xls,.xer" style="display:none" />
           <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
           <span class="ps-tb-div"></span>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-openbtn" title="Open schedule — Current, baselines &amp; what-if scenarios"><span data-ico="calendar" data-ico-size="15"></span> Open ▾</button><div class="ps-menu" id="ps-open-menu"></div></div>
+          <span class="ps-tb-div"></span>
           <select class="pd-select" id="ps-group" title="Group activities by" style="max-width:140px;">
             <option value="wbs">Group: WBS</option>
             <option value="status">Group: Status</option>
@@ -3379,7 +3381,12 @@
     host.innerHTML = '<div style="transform:translateY(' + (first * ROWH) + 'px);">' + gh + '</div>';
     host.querySelectorAll('[data-toggle]').forEach(function (t) { t.onclick = function (e) { e.stopPropagation(); collapsed[t.dataset.toggle] = !collapsed[t.dataset.toggle]; renderGrid(); }; });
     // Excel-like: click anywhere on a WBS/group summary row to expand/collapse it
-    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); }); });
+    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); });
+      rw.addEventListener('contextmenu', function (e) {
+        var nd = DL[parseInt(rw.dataset.i, 10)]; if (!nd) return;
+        if (nd.wbs_node_id) _wbsSel = nd.wbs_node_id;
+        openRowMenu(e, nd);
+      }); });
     host.querySelectorAll('.ps-editable').forEach(function (c) { c.ondblclick = function (e) { e.stopPropagation(); beginEdit(c); }; });
     host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function () {
       selId = rw.dataset.rowid;
@@ -4091,6 +4098,36 @@
     hideLoading();
     if (err) UI.toast('Applied ' + ok + ', then error: ' + err, 'error'); else UI.toast('Primary baseline applied to ' + ok + ' activities.', 'success');
     await load(); loadBaselines();
+  }
+  // OPC-style "Open ▾" toolbar menu: Current Schedule + the project's baselines & what-if
+  // scenarios. Picking a baseline applies it as primary (its own confirm); picking a scenario
+  // opens the scenarios panel focused on its compare/restore view.
+  async function renderOpenMenu() {
+    var m = document.getElementById('ps-open-menu'); if (!m) return;
+    m.innerHTML = '<div style="padding:8px 12px;color:var(--pd-muted);font-size:12px;">Loading…</div>';
+    var hdr = function (t) { return '<div style="padding:5px 12px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' + t + '</div>'; };
+    var sep = '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>';
+    var none = '<div style="padding:3px 12px 5px;color:var(--pd-muted);font-size:12px;">None yet</div>';
+    var bl = [], sc = [];
+    try { var rb = await sb().from('schedule_baselines').select('*').eq('project_id', pid).order('taken_at', { ascending: false }); if (!rb.error) bl = rb.data || []; } catch (e) {}
+    try { var rs = await sb().from('schedule_scenarios').select('*').eq('project_id', pid).order('taken_at', { ascending: false }); if (!rs.error) sc = rs.data || []; } catch (e) {}
+    _bls = bl; _scns = sc;
+    var html = hdr('Open schedule') + '<button data-open="current"><span data-ico="calendar" data-ico-size="14"></span> Current Schedule</button>';
+    html += sep + hdr('Baselines (BL0)');
+    html += bl.length ? bl.map(function (b) { return '<button data-bl="' + esc(b.id) + '"><span data-ico="layers" data-ico-size="14"></span> ' + esc(b.name || '(unnamed)') + (b.is_primary ? ' <span style="color:var(--pd-red);font-size:9.5px;font-weight:700;">PRIMARY</span>' : '') + '</button>'; }).join('') : none;
+    html += sep + hdr('What-if scenarios');
+    html += sc.length ? sc.map(function (s) { return '<button data-scn="' + esc(s.id) + '"><span data-ico="box" data-ico-size="14"></span> ' + esc(s.name || '(unnamed)') + '</button>'; }).join('') : none;
+    html += sep + '<button data-open="mng-bl"><span data-ico="layers" data-ico-size="14"></span> Manage baselines…</button>' +
+                  '<button data-open="mng-scn"><span data-ico="box" data-ico-size="14"></span> Manage scenarios…</button>';
+    m.innerHTML = html;
+    m.querySelectorAll('button[data-open],button[data-bl],button[data-scn]').forEach(function (b) { b.onclick = function (e) {
+      e.stopPropagation(); m.classList.remove('open');
+      if (b.dataset.bl) { setPrimaryBaseline(b.dataset.bl); }
+      else if (b.dataset.scn) { document.getElementById('ps-scn-back').classList.add('open'); _scnSel = b.dataset.scn; renderScnList(); showScnCompare(b.dataset.scn); }
+      else if (b.dataset.open === 'current') { load(); }
+      else if (b.dataset.open === 'mng-bl') { openBaselines(); }
+      else if (b.dataset.open === 'mng-scn') { openScenarios(); }
+    }; });
   }
   async function deleteBaseline(id) {
     if (!confirm('Delete this baseline?')) return;
@@ -6387,7 +6424,10 @@
     var pssMenu = document.getElementById('ps-projsel-menu');
     var fileMenu = document.getElementById('ps-file-menu');
     var analyzeMenu = document.getElementById('ps-analyze-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
+    var oMenu = document.getElementById('ps-open-menu');
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
+    oMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.getElementById('ps-openbtn').onclick = function (e) { e.stopPropagation(); var o = oMenu.classList.contains('open'); closeMenus(); if (!o) { renderOpenMenu(); oMenu.classList.add('open'); } };
     // File menu (Import / Export / Print). The item buttons keep their original ids so their
     // existing handlers work unchanged; the menu just re-homes them from the Actions menu + topbar.
     document.getElementById('ps-filebtn').onclick = function (e) { e.stopPropagation(); var o = fileMenu.classList.contains('open'); closeMenus(); if (!o) fileMenu.classList.add('open'); };
