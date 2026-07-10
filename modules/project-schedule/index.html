@@ -292,7 +292,11 @@
     .ps-colhdr.ps-coldrop { box-shadow:inset 3px 0 0 var(--pd-red); }
     .ps-sort-ind { margin-left:4px; color:var(--pd-red); font-size:9px; }
     .ps-colhdr-menu { min-width:196px; }
-    .ps-grid-pane .ps-wbs-row { background:var(--pd-bg); font-weight:700; }
+    /* Reset the WBS-Manager tree styling (.ps-wbs-row, defined later) that leaks into the
+       schedule grid's summary rows — its gap/padding/border-left pushed the level-1/2 summary
+       cells out of alignment with the data rows. Keep grid rows on the exact same cell grid. */
+    .ps-grid-pane .ps-wbs-row { background:var(--pd-bg); font-weight:700; gap:0; padding:0;
+      border-left:0; border-radius:0; align-items:stretch; }
     .ps-grid-pane .ps-wbs-row .c-name { color:var(--pd-ink); }
     .ps-toggle { cursor:pointer; width:16px; display:inline-flex; align-items:center; justify-content:center;
       color:var(--pd-muted); flex:none; }
