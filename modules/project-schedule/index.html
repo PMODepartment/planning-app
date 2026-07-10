@@ -27,17 +27,17 @@
     .ps-toolbar { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
     /* Single row: never wrap. Menus (.ps-menu) escape via overflow:visible. Items shrink-proof
        (flex:none) except the search, which absorbs slack; tightened gap/padding keeps it on one line. */
-    .ps-tb-row { display:flex; flex-wrap:nowrap; align-items:center; gap:6px; overflow:visible; min-width:0; }
+    .ps-tb-row { display:flex; flex-wrap:nowrap; align-items:center; gap:5px; overflow:visible; min-width:0; }
     .ps-tb-row > *:not(.ps-search):not(.ps-tb-spacer) { flex:none; }
-    .ps-tb-row .ps-search { flex:0 1 auto; min-width:120px; }
+    .ps-tb-row .ps-search { flex:0 1 auto; min-width:110px; }
     .ps-tb-spacer { margin-left:auto; }
-    .ps-tb-div { width:1px; align-self:stretch; min-height:26px; background:var(--pd-line); margin:0 4px; }
+    .ps-tb-div { width:1px; align-self:stretch; min-height:26px; background:var(--pd-line); margin:0 2px; }
     /* one consistent control height across selects, inputs, buttons & segments */
     .ps-toolbar .pd-select, .ps-toolbar .pd-input, .ps-toolbar .pd-btn { height:36px; }
-    .ps-toolbar .pd-btn { padding:0 13px; font-size:13px; font-weight:500; white-space:nowrap; }
+    .ps-toolbar .pd-btn { padding:0 10px; font-size:13px; font-weight:500; white-space:nowrap; }
     .ps-toolbar .pd-btn [data-ico] { display:inline-flex; }
     .ps-toolbar .ps-seg { height:36px; }
-    .ps-toolbar .ps-seg button { padding:0 14px; height:100%; }
+    .ps-toolbar .ps-seg button { padding:0 11px; height:100%; }
     /* OPC-style flat toolbar: only the primary action (+Add) is color-blocked; every other
        control is borderless/transparent at rest and only picks up a background on hover or
        when active, so the row reads as one continuous strip instead of a line of boxed
@@ -119,10 +119,11 @@
     .ps-split.ps-gantt-only .ps-grid-pane { flex:0 0 300px; }
     .ps-cost-th { position:relative; }
     .ps-cost-table th { overflow:hidden; }
-    /* Toolbar wraps to a second line when it doesn't fit, instead of overflowing the page
-       (nowrap pushed the whole page into horizontal scroll and squished the Group/zoom controls
-       down to a bare chevron). overflow:visible keeps the dropdown popovers showing. */
-    .ps-toolbar .ps-tb-row { flex-wrap:wrap; overflow:visible; min-width:0; row-gap:8px; }
+    /* Single row, never wraps. Items are flex:none (see .ps-tb-row rule above) so they don't
+       squish; the search is the only flexible item and shrinks first. If the row still can't fit
+       an extremely narrow viewport it scrolls horizontally inside itself (only then does overflow
+       clip — the dropdown popovers stay visible at all normal widths). */
+    .ps-toolbar .ps-tb-row { flex-wrap:nowrap; overflow:visible; min-width:0; }
     /* Belt-and-suspenders: let the flex column shrink so nothing forces a page-wide scrollbar. */
     .pd-content, .pd-main { min-width:0; max-width:100%; }
     /* Denser, OPC-like layout — trim dead space, square edges */
@@ -131,7 +132,7 @@
     .ps-legend { margin:4px 0 6px; }
     .ps-split { border-radius:2px; }
     .ps-network { border-radius:2px; }
-    .ps-toolbar .pd-btn { padding:0 11px; }
+    .ps-toolbar .pd-btn { padding:0 9px; }
     /* Activity Network View (PERT) */
     .ps-network { overflow:auto; height:62vh; min-height:420px; border:1px solid var(--pd-line); border-radius:var(--pd-radius); background:var(--pd-card); }
     #ps-view-schedule.ps-net-mode .ps-split, #ps-view-schedule.ps-net-mode .ps-grid-foot, #ps-view-schedule.ps-net-mode .ps-legend { display:none; }
@@ -230,8 +231,12 @@
     .ps-split { display:flex; height:62vh; min-height:420px; border:1px solid var(--pd-line);
       border-radius:var(--pd-radius) var(--pd-radius) 0 0; overflow:hidden; background:var(--pd-card); }
     .ps-grid-pane { flex:0 0 660px; max-width:70%; display:flex; flex-direction:column; border-right:2px solid var(--pd-line); min-width:0; position:relative; }
-    /* Columns chooser docked in the grid's top-left header corner (moved off the toolbar). */
-    .ps-cols-corner { position:absolute; top:0; left:0; z-index:12; }
+    /* Columns chooser docked in the grid's top-left header corner (moved off the toolbar).
+       Hidden until the header row is hovered (or the menu is open) so it doesn't sit over the
+       first header label. .show is toggled by JS on grid-head hover; :hover/.menu-open keep it up. */
+    .ps-cols-corner { position:absolute; top:0; left:0; z-index:12; opacity:0; pointer-events:none;
+      transition:opacity .12s ease; }
+    .ps-cols-corner.show, .ps-cols-corner:hover, .ps-cols-corner.menu-open { opacity:1; pointer-events:auto; }
     .ps-cols-corner > .ps-icobtn { height:38px !important; width:30px; border-radius:0; border:none;
       border-right:1px solid var(--pd-line); border-bottom:2px solid var(--pd-line);
       background:var(--pd-bg); color:var(--pd-muted); }
@@ -764,7 +769,7 @@
           <input type="file" id="ps-import-file" accept=".xlsx,.xls,.xer" style="display:none" />
           <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
           <span class="ps-tb-div"></span>
-          <select class="pd-select" id="ps-group" title="Group activities by" style="max-width:180px;">
+          <select class="pd-select" id="ps-group" title="Group activities by" style="max-width:140px;">
             <option value="wbs">Group: WBS</option>
             <option value="status">Group: Status</option>
             <option value="responsible">Group: Responsible</option>
@@ -776,8 +781,7 @@
             <button data-zoom="quarter" class="active">Quarter</button>
             <button data-zoom="year">Year</button>
           </div>
-          <button class="pd-btn" id="ps-expand" title="Expand all activities"><span data-ico="layers" data-ico-size="15"></span> Expand</button>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-collapseto" title="Collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="15"></span> Outline ▾</button><div class="ps-menu" id="ps-collapse-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-collapseto" title="Expand all or collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="15"></span> Outline ▾</button><div class="ps-menu" id="ps-collapse-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-views" title="Saved layouts — filter + grouping + columns as one"><span data-ico="listView" data-ico-size="15"></span> Layouts ▾</button><div class="ps-menu" id="ps-views-menu"></div></div>
           <button class="pd-btn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
           <span class="ps-tb-div"></span>
@@ -800,7 +804,7 @@
             </div>
           </div>
           <span class="ps-tb-spacer"></span>
-          <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:200px;" /></div>
+          <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:160px;" /></div>
         </div>
       </div>
 
@@ -2126,11 +2130,18 @@
   function renderCollapseMenu() {
     var menu = document.getElementById('ps-collapse-menu'); if (!menu) return;
     var mx = Math.max(1, maxDepth());
-    var html = '';
+    var html = '<button data-lvl="all"><span data-ico="layers" data-ico-size="14"></span> Expand all</button>';
     for (var i = 1; i <= mx; i++) html += '<button data-lvl="' + i + '">WBS Level ' + i + '</button>';
     menu.innerHTML = html;
     menu.querySelectorAll('[data-lvl]').forEach(function (b) {
-      b.onclick = function () { menu.classList.remove('open'); expandToLevel(parseInt(b.dataset.lvl, 10)); };
+      b.onclick = function () {
+        menu.classList.remove('open');
+        if (b.dataset.lvl === 'all') {
+          if (rows.length > 4000 && !confirm('This schedule has ' + rows.length + ' rows. Expanding all may be slow. Continue?')) return;
+          collapsed = {}; renderGrid(); renderGantt(); return;
+        }
+        expandToLevel(parseInt(b.dataset.lvl, 10));
+      };
     });
   }
   function expandToLevel(n) {
@@ -6304,10 +6315,7 @@
     document.getElementById('ps-zoom').querySelectorAll('[data-zoom]').forEach(function (b) {
       b.onclick = function () { zoom = b.dataset.zoom; document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.remove('active'); }); b.classList.add('active'); renderGantt(); };
     });
-    document.getElementById('ps-expand').onclick = function () {
-      if (rows.length > 4000 && !confirm('This schedule has ' + rows.length + ' rows. Expanding all may be slow. Continue?')) return;
-      collapsed = {}; renderGrid(); renderGantt();
-    };
+    // (Expand-all moved into the Outline ▾ menu — see renderCollapseMenu.)
     var cMenu = document.getElementById('ps-collapse-menu'), fMenu = document.getElementById('ps-filter-menu');
     var vMenu = document.getElementById('ps-views-menu');
     var aMenu = document.getElementById('ps-actions-menu');
@@ -6317,7 +6325,7 @@
     var pssMenu = document.getElementById('ps-projsel-menu');
     var fileMenu = document.getElementById('ps-file-menu');
     var analyzeMenu = document.getElementById('ps-analyze-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); }
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
     // File menu (Import / Export / Print). The item buttons keep their original ids so their
     // existing handlers work unchanged; the menu just re-homes them from the Actions menu + topbar.
     document.getElementById('ps-filebtn').onclick = function (e) { e.stopPropagation(); var o = fileMenu.classList.contains('open'); closeMenus(); if (!o) fileMenu.classList.add('open'); };
@@ -6380,8 +6388,19 @@
     document.getElementById('ps-redo').onclick = function (e) { e.stopPropagation(); redo(); };
     document.getElementById('ps-layoutbtn').onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { renderLayoutMenu(); lMenu.classList.add('open'); } };
     lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.getElementById('ps-colsbtn').onclick = function (e) { e.stopPropagation(); var o = colsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColsMenu(); colsMenu.classList.add('open'); } };
+    document.getElementById('ps-colsbtn').onclick = function (e) { e.stopPropagation(); var o = colsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColsMenu(); colsMenu.classList.add('open'); _colsCorner && _colsCorner.classList.add('menu-open'); } };
     colsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    // Reveal the docked Columns eye only while the grid header (or the button itself) is hovered,
+    // or while its menu is open — so it doesn't permanently sit over the first header label.
+    var _colsCorner = document.querySelector('.ps-cols-corner'), _gridHead = document.getElementById('ps-grid-head');
+    if (_colsCorner && _gridHead) {
+      var _showCorner = function () { _colsCorner.classList.add('show'); };
+      var _hideCorner = function () { _colsCorner.classList.remove('show'); };
+      _gridHead.addEventListener('mouseenter', _showCorner);
+      _gridHead.addEventListener('mouseleave', _hideCorner);
+      _colsCorner.addEventListener('mouseenter', _showCorner);
+      _colsCorner.addEventListener('mouseleave', _hideCorner);
+    }
     // Reports modal (OPC "Select Report to Run")
     document.getElementById('ps-report').onclick = function (e) { e.stopPropagation(); openReports(); };
     document.getElementById('ps-rep-x').onclick = closeReports;
