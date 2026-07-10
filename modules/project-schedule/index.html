@@ -231,17 +231,14 @@
     .ps-split { display:flex; height:62vh; min-height:420px; border:1px solid var(--pd-line);
       border-radius:var(--pd-radius) var(--pd-radius) 0 0; overflow:hidden; background:var(--pd-card); }
     .ps-grid-pane { flex:0 0 660px; max-width:70%; display:flex; flex-direction:column; border-right:2px solid var(--pd-line); min-width:0; position:relative; }
-    /* Columns chooser docked in the grid's top-left header corner (moved off the toolbar).
-       Hidden until the header row is hovered (or the menu is open) so it doesn't sit over the
-       first header label. .show is toggled by JS on grid-head hover; :hover/.menu-open keep it up. */
-    .ps-cols-corner { position:absolute; top:0; left:0; z-index:12; opacity:0; pointer-events:none;
-      transition:opacity .12s ease; }
-    .ps-cols-corner.show, .ps-cols-corner:hover, .ps-cols-corner.menu-open { opacity:1; pointer-events:auto; }
-    .ps-cols-corner > .ps-icobtn { height:38px !important; width:30px; border-radius:0; border:none;
-      border-right:1px solid var(--pd-line); border-bottom:2px solid var(--pd-line);
+    /* Column chooser docked as an always-visible "+" at the RIGHT end of the grid header row
+       (OPC-style — sits over the header, not on a separate row and not over the first label). */
+    .ps-cols-corner { position:absolute; top:0; right:0; z-index:12; }
+    .ps-cols-corner > .ps-icobtn { height:38px !important; width:32px; border-radius:0; border:none;
+      border-left:1px solid var(--pd-line); border-bottom:2px solid var(--pd-line);
       background:var(--pd-bg); color:var(--pd-muted); }
     .ps-cols-corner > .ps-icobtn:hover { background:var(--pd-card); color:var(--pd-ink); }
-    .ps-cols-corner .ps-cols-menu { left:0; }
+    .ps-cols-corner .ps-cols-menu { right:0; left:auto; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
     .ps-grid-pane { --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-x:130px; }
@@ -253,9 +250,6 @@
     .ps-cell { padding:0 8px; display:flex; align-items:center; border-right:1px solid var(--pd-line);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; flex:none; }
     .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative; }
-    /* Clear the docked Columns corner button (30px) so the first header label isn't hidden. Width is
-       fixed per column, so shifting only the header text keeps header/body columns aligned. */
-    .ps-grid-row.head .ps-cell:first-child { padding-left:36px; }
     .c-name { width:var(--c-name); } .c-id { width:var(--c-id); } .c-status { width:var(--c-status); } .c-date { width:var(--c-date); }
     .ps-status-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:10.5px; font-weight:700; white-space:nowrap; }
     .ps-status-notstarted { background:var(--pd-line); color:var(--pd-muted); }
@@ -819,9 +813,8 @@
         </div>
         <div class="ps-split">
           <div class="ps-grid-pane">
-            <!-- Columns (show/hide) chooser docked at the grid's top-left corner, icon-only. Moved off
-                 the toolbar so it sits right before the header columns it controls. -->
-            <div class="ps-menu-wrap ps-cols-corner"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Show / hide columns"><span data-ico="eye" data-ico-size="15"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
+            <!-- Column chooser as an always-visible "+" at the right end of the header row (OPC-style). -->
+            <div class="ps-menu-wrap ps-cols-corner"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Add / remove columns"><span data-ico="plus" data-ico-size="16"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
             <div class="ps-grid-head" id="ps-grid-head"></div>
             <div class="ps-grid-scroll" id="ps-grid-scroll"><div id="ps-grid-rows"></div></div>
           </div>
@@ -3378,6 +3371,10 @@
       var sr = rows.find(function (x) { return x.id === selId; });
       _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null;
       highlightRow(); renderDetails();
+    }); rw.addEventListener('contextmenu', function (e) {
+      selId = rw.dataset.rowid; var sr = rows.find(function (x) { return x.id === selId; });
+      _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null; highlightRow();
+      openRowMenu(e, sr || { id: rw.dataset.rowid });
     }); });
     // gantt: window bars
     var bc = document.getElementById('ps-tl-bars');
@@ -6176,6 +6173,34 @@
     };
     setTimeout(function () { document.addEventListener('click', closeBarColorMenu); }, 0);
   }
+  // Excel-style right-click menu on a grid row — quick insert/edit without hunting the toolbar.
+  function closeRowMenu() { var m = document.getElementById('ps-rowctx'); if (m) m.remove(); document.removeEventListener('click', closeRowMenu); }
+  function openRowMenu(e, r) {
+    e.preventDefault(); e.stopPropagation(); closeRowMenu(); closeBarColorMenu(); closeColMenu();
+    if (window.__viewOnly || window.__archived) return;   // read-only projects: no insert menu
+    var isW = r && isWbsNode(r);
+    var node = (r && r.wbs_node_id) ? r.wbs_node_id : null;
+    var label = r ? (isW ? ((r.wbs ? r.wbs + ' — ' : '') + (r.activity_name || '')) : ((r.activity_id ? r.activity_id + ' — ' : '') + (r.activity_name || ''))) : '';
+    var items = [];
+    items.push('<button data-act="add"><span data-ico="plus" data-ico-size="14"></span> Add activity' + (node ? ' in this WBS' : '') + '</button>');
+    if (r && !isW && r._dkind !== 'group') items.push('<button data-act="edit"><span data-ico="edit" data-ico-size="14"></span> Edit activity…</button>');
+    if (node) items.push('<button data-act="childwbs"><span data-ico="layers" data-ico-size="14"></span> Add child WBS…</button>');
+    items.push('<button data-act="rootwbs"><span data-ico="layers" data-ico-size="14"></span> Add top-level WBS…</button>');
+    var m = document.createElement('div'); m.className = 'ps-menu ps-rowctx open'; m.id = 'ps-rowctx';
+    m.innerHTML = (label ? '<div style="padding:6px 12px 4px;font-size:11px;color:var(--pd-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;">' + esc(label) + '</div>' : '') + items.join('');
+    document.body.appendChild(m);
+    m.style.position = 'fixed'; m.style.top = Math.min(e.clientY, window.innerHeight - 200) + 'px';
+    m.style.left = Math.min(e.clientX, window.innerWidth - 240) + 'px'; m.style.zIndex = 300;
+    m.addEventListener('click', function (ev) { ev.stopPropagation(); });
+    m.querySelectorAll('button[data-act]').forEach(function (b) { b.onclick = function () {
+      var a = b.dataset.act; closeRowMenu();
+      if (a === 'add') { if (node) { _wbsSel = node; } if (r && r.id) selId = r.id; openForm(null); }
+      else if (a === 'edit') { openForm(r); }
+      else if (a === 'childwbs') { wbsAddChild(node); }
+      else if (a === 'rootwbs') { wbsAddChild(null); }
+    }; });
+    setTimeout(function () { document.addEventListener('click', closeRowMenu); }, 0);
+  }
   function renderColorsMenu() {
     var m = document.getElementById('ps-colors-menu'); if (!m) return; var c = loadColors();
     var html = '<h4>Global bar colors</h4>';
@@ -6388,19 +6413,8 @@
     document.getElementById('ps-redo').onclick = function (e) { e.stopPropagation(); redo(); };
     document.getElementById('ps-layoutbtn').onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { renderLayoutMenu(); lMenu.classList.add('open'); } };
     lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.getElementById('ps-colsbtn').onclick = function (e) { e.stopPropagation(); var o = colsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColsMenu(); colsMenu.classList.add('open'); _colsCorner && _colsCorner.classList.add('menu-open'); } };
+    document.getElementById('ps-colsbtn').onclick = function (e) { e.stopPropagation(); var o = colsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColsMenu(); colsMenu.classList.add('open'); } };
     colsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    // Reveal the docked Columns eye only while the grid header (or the button itself) is hovered,
-    // or while its menu is open — so it doesn't permanently sit over the first header label.
-    var _colsCorner = document.querySelector('.ps-cols-corner'), _gridHead = document.getElementById('ps-grid-head');
-    if (_colsCorner && _gridHead) {
-      var _showCorner = function () { _colsCorner.classList.add('show'); };
-      var _hideCorner = function () { _colsCorner.classList.remove('show'); };
-      _gridHead.addEventListener('mouseenter', _showCorner);
-      _gridHead.addEventListener('mouseleave', _hideCorner);
-      _colsCorner.addEventListener('mouseenter', _showCorner);
-      _colsCorner.addEventListener('mouseleave', _hideCorner);
-    }
     // Reports modal (OPC "Select Report to Run")
     document.getElementById('ps-report').onclick = function (e) { e.stopPropagation(); openReports(); };
     document.getElementById('ps-rep-x').onclick = closeReports;
