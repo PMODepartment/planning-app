@@ -262,8 +262,8 @@
     .ps-colhdr.ps-coldrop { box-shadow:inset 3px 0 0 var(--pd-red); }
     .ps-sort-ind { margin-left:4px; color:var(--pd-red); font-size:9px; }
     .ps-colhdr-menu { min-width:196px; }
-    .ps-wbs-row { background:var(--pd-bg); font-weight:700; }
-    .ps-wbs-row .c-name { color:var(--pd-ink); }
+    .ps-grid-pane .ps-wbs-row { background:var(--pd-bg); font-weight:700; }
+    .ps-grid-pane .ps-wbs-row .c-name { color:var(--pd-ink); }
     .ps-toggle { cursor:pointer; width:16px; display:inline-flex; align-items:center; justify-content:center;
       color:var(--pd-muted); flex:none; }
     .ps-editable { cursor:text; } .ps-editable:hover { background:var(--pd-red-light); }
@@ -644,9 +644,12 @@
     .ps-ck-tl-legend i { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:5px; vertical-align:middle; }
     /* WBS Manager tree */
     .ps-wbs-tree { padding:6px 4px 12px; }
-    .ps-wbs-row { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; }
+    .ps-wbs-row { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; cursor:pointer; border-left:3px solid transparent; }
     .ps-wbs-row:hover { background:var(--pd-bg); }
-    .ps-wbs-row:hover .ps-wbs-acts { visibility:visible; }
+    .ps-wbs-row:hover .ps-wbs-acts, .ps-wbs-row.selected .ps-wbs-acts { visibility:visible; }
+    .ps-wbs-row.selected { background:var(--pd-red-light); border-left-color:var(--pd-red); }
+    .ps-wbs-acts button.wbs-act { width:auto; padding:0 8px; font-size:11px; font-weight:700; color:var(--pd-red); }
+    .ps-wbs-acts button.wbs-act:hover { background:var(--pd-red-light); border-color:var(--pd-red-mid); color:var(--pd-red); }
     .ps-wbs-code { font-weight:700; color:var(--pd-red); min-width:64px; flex:none; font-size:12.5px; }
     .ps-wbs-name { flex:1; font-size:13px; }
     .ps-wbs-name input { width:100%; font:inherit; padding:3px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
@@ -1223,6 +1226,7 @@
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
+  var _wbsSel = null;   // selected WBS node id (drives the Add-activity parent preselect)
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
   function calById(id) { return id && CALS.find(function (c) { return c.id === id; }); }
   function calName(id, legacyText) { var c = calById(id); return c ? c.name : (legacyText || '—'); }
@@ -4916,11 +4920,12 @@
     (function walk(parentId) {
       wbsChildren(parentId).forEach(function (n) {
         var depth = wbsDepthOf(n.id), nAct = wbsActivityCount(n.id), nKids = wbsChildren(n.id).length;
-        html += '<div class="ps-wbs-row" data-wid="' + esc(n.id) + '" style="padding-left:' + (8 + depth * 22) + 'px;">' +
+        html += '<div class="ps-wbs-row' + (_wbsSel === n.id ? ' selected' : '') + '" data-wid="' + esc(n.id) + '" style="padding-left:' + (8 + depth * 22) + 'px;">' +
           '<span class="ps-wbs-code" title="' + (n.code_custom ? 'Custom code (click ✎ to change)' : 'Auto-numbered') + '">' + esc(codeOf[n.id]) + (n.code_custom ? ' *' : '') + '</span>' +
           '<span class="ps-wbs-name"><input data-wbs-name="' + esc(n.id) + '" value="' + esc(n.name || '') + '" placeholder="WBS name…"></span>' +
           '<span class="ps-wbs-badge">' + (nKids ? nKids + ' sub' + (nKids === 1 ? '' : 's') + ' · ' : '') + nAct + ' activit' + (nAct === 1 ? 'y' : 'ies') + '</span>' +
           '<span class="ps-wbs-acts">' +
+            '<button class="wbs-act" data-wbs-act="' + esc(n.id) + '" title="Add an activity under this WBS">＋Act</button>' +
             '<button data-wbs-add="' + esc(n.id) + '" title="Add child WBS">＋</button>' +
             '<button data-wbs-up="' + esc(n.id) + '" title="Move up">▲</button>' +
             '<button data-wbs-down="' + esc(n.id) + '" title="Move down">▼</button>' +
@@ -4933,10 +4938,16 @@
       });
     })(null);
     host.innerHTML = html;
+    // Click a row (anywhere but a button) to select it — the selected WBS preselects the parent
+    // when you add an activity. The name input still selects the row (so typing a name selects it).
+    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) {
+      rw.onclick = function (e) { if (e.target.closest('button')) return; wbsSelect(rw.dataset.wid); };
+    });
     host.querySelectorAll('[data-wbs-name]').forEach(function (inp) {
       inp.onchange = function () { wbsRename(inp.dataset.wbsName, inp.value); };
       inp.onkeydown = function (e) { if (e.key === 'Enter') inp.blur(); };
     });
+    host.querySelectorAll('[data-wbs-act]').forEach(function (b) { b.onclick = function () { wbsAddActivity(b.dataset.wbsAct); }; });
     host.querySelectorAll('[data-wbs-add]').forEach(function (b) { b.onclick = function () { wbsAddChild(b.dataset.wbsAdd); }; });
     host.querySelectorAll('[data-wbs-up]').forEach(function (b) { b.onclick = function () { wbsMove(b.dataset.wbsUp, 'up'); }; });
     host.querySelectorAll('[data-wbs-down]').forEach(function (b) { b.onclick = function () { wbsMove(b.dataset.wbsDown, 'down'); }; });
@@ -4969,19 +4980,46 @@
     }
     return true;
   }
-  async function wbsAddChild(parentId) {
+  // Select a WBS node (highlight); its selection preselects the parent when adding an activity.
+  function wbsSelect(id) { _wbsSel = (_wbsSel === id) ? null : id; renderWbsManager(); }
+  // Jump to the Schedule and open the Add-activity form with this WBS preselected as the parent.
+  function wbsAddActivity(id) {
+    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    _wbsSel = id; switchTab('schedule'); openForm(null);
+  }
+  // In-app "Add WBS" modal (replaces the browser prompt): name + optional custom code.
+  function wbsAddChild(parentId) {
     if (!pid) return;
-    var name = prompt('New WBS name:', ''); if (name === null) return; name = name.trim() || 'New WBS';
-    var so = wbsChildren(parentId).length;
-    var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId || null, name: name, sort_order: so, created_by: UID }).select().single();
-    if (res.error) { UI.toast(res.error.message + ' — run the wbs-nodes migration.', 'error'); return; }
-    WBS_NODES.push(res.data);
     var codeOf = computeWbsCodes();
-    // project a WBS-Summary row so the grid shows the node with its name + rolled-up dates
-    var sres = await sb().from(TABLE).insert({ project_id: pid, wbs_node_id: res.data.id, activity_type: 'WBS Summary', wbs: codeOf[res.data.id], activity_name: name, created_by: UID }).select().single();
-    if (!sres.error && sres.data) rows.push(sres.data);
-    await _wbsCommit();
-    UI.toast('WBS “' + name + '” added.', 'success');
+    var parent = parentId ? wbsById(parentId) : null;
+    var where = parent ? ('under <strong>' + esc(codeOf[parent.id]) + ' ' + esc(parent.name || '') + '</strong>') : 'at the <strong>top level</strong>';
+    var m = UI.modal('<h2 style="margin-top:0;">Add WBS</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">New WBS ' + where + '.</p>' +
+      '<div class="pd-field"><label class="pd-label">WBS name</label><input class="pd-input" id="wbsm-name" placeholder="e.g. Substructure"></div>' +
+      '<div class="pd-field"><label class="pd-label">Code <small>(optional — auto-numbered if blank)</small></label><input class="pd-input" id="wbsm-code" placeholder="e.g. CIV-100"></div>' +
+      '<div style="text-align:right;margin-top:8px;"><button class="pd-btn" id="wbsm-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="wbsm-save">Add WBS</button></div>');
+    var nameInp = m.el.querySelector('#wbsm-name'); nameInp.focus();
+    async function doSave() {
+      var name = nameInp.value.trim(); if (!name) { UI.toast('WBS name required.', 'warn'); nameInp.focus(); return; }
+      var code = m.el.querySelector('#wbsm-code').value.trim();
+      m.close();
+      var so = wbsChildren(parentId).length;
+      var payload = { project_id: pid, parent_id: parentId || null, name: name, sort_order: so, created_by: UID };
+      if (code) { payload.code = code; payload.code_custom = true; }
+      var res = await sb().from('wbs_nodes').insert(payload).select().single();
+      if (res.error) { UI.toast(res.error.message + ' — run the wbs-nodes migration.', 'error'); return; }
+      WBS_NODES.push(res.data);
+      var codeOf2 = computeWbsCodes();
+      // project a WBS-Summary row so the grid shows the node with its name + rolled-up dates
+      var sres = await sb().from(TABLE).insert({ project_id: pid, wbs_node_id: res.data.id, activity_type: 'WBS Summary', wbs: codeOf2[res.data.id], activity_name: name, created_by: UID }).select().single();
+      if (!sres.error && sres.data) rows.push(sres.data);
+      _wbsSel = res.data.id;   // select the new node so the next Add-activity targets it
+      await _wbsCommit();
+      UI.toast('WBS “' + name + '” added.', 'success');
+    }
+    m.el.querySelector('#wbsm-save').onclick = doSave;
+    m.el.querySelector('#wbsm-x').onclick = m.close;
+    m.el.querySelectorAll('input').forEach(function (inp) { inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); doSave(); } }; });
   }
   async function wbsRename(id, name) {
     var n = wbsById(id); if (!n) return; name = (name || '').trim(); if (!name || name === n.name) { renderWbsManager(); return; }
@@ -5022,15 +5060,24 @@
     // persist parent_id + sort_order for all (cheap; trees are small)
     _batchUpdate('wbs_nodes', WBS_NODES.map(function (n) { return { id: n.id, patch: { parent_id: n.parent_id || null, sort_order: n.sort_order } }; }));
   }
-  async function wbsEditCode(id) {
+  // In-app "Edit code" modal (replaces the browser prompt): custom code, or blank to auto-number.
+  function wbsEditCode(id) {
     var n = wbsById(id); if (!n) return;
     var cur = computeWbsCodes()[id];
-    var v = prompt('WBS code for “' + n.name + '”.\nLeave as auto, or type a custom code (e.g. CIV-100).\nCurrent: ' + cur, n.code_custom ? (n.code || '') : '');
-    if (v === null) return; v = v.trim();
-    if (v === '') { n.code_custom = false; n.code = null; }   // revert to auto
-    else { n.code_custom = true; n.code = v; }
-    await sb().from('wbs_nodes').update({ code_custom: n.code_custom, code: n.code }).eq('id', id);
-    await _wbsCommit();
+    var m = UI.modal('<h2 style="margin-top:0;">WBS code — ' + esc(n.name || '') + '</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Auto-numbered code is <strong>' + esc(cur) + '</strong>. Type a custom code, or leave blank to auto-number.</p>' +
+      '<div class="pd-field"><label class="pd-label">Custom code</label><input class="pd-input" id="wbscode-in" placeholder="blank = auto" value="' + esc(n.code_custom ? (n.code || '') : '') + '"></div>' +
+      '<div style="text-align:right;margin-top:8px;"><button class="pd-btn" id="wbscode-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="wbscode-save">Save</button></div>');
+    var inp = m.el.querySelector('#wbscode-in'); inp.focus(); inp.select();
+    async function doSave() {
+      var v = inp.value.trim(); m.close();
+      if (v === '') { n.code_custom = false; n.code = null; } else { n.code_custom = true; n.code = v; }
+      await sb().from('wbs_nodes').update({ code_custom: n.code_custom, code: n.code }).eq('id', id);
+      await _wbsCommit();
+    }
+    m.el.querySelector('#wbscode-save').onclick = doSave;
+    m.el.querySelector('#wbscode-x').onclick = m.close;
+    inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); doSave(); } };
   }
   async function wbsDelete(id) {
     var n = wbsById(id); if (!n) return;
@@ -5107,15 +5154,17 @@
     var set = function (id, v) { document.getElementById(id).value = v != null ? v : ''; };
     set('ps-f-wbs', row ? row.wbs : ''); set('ps-f-actid', row ? row.activity_id : '');
     // WBS parent picker — placing an activity under a node auto-fills (and locks) its WBS Code.
+    // For a NEW activity, preselect the WBS currently selected in the WBS Manager (`_wbsSel`).
     var wnSel = document.getElementById('ps-f-wbs-node'), wCode = document.getElementById('ps-f-wbs');
-    wnSel.innerHTML = wbsPickerOptions(row ? row.wbs_node_id : null);
+    var preNode = row ? row.wbs_node_id : (_wbsSel && wbsById(_wbsSel) ? _wbsSel : null);
+    wnSel.innerHTML = wbsPickerOptions(preNode);
     function _syncWbsFromNode() {
       var nid = wnSel.value, n = nid ? wbsById(nid) : null;
       if (n) { var codeOf = computeWbsCodes(); wCode.value = codeOf[nid] || ''; wCode.readOnly = true; wCode.title = 'Set by the parent WBS — change it in the WBS Manager or pick a different parent.'; }
       else { wCode.readOnly = false; wCode.title = ''; if (!WBS_NODES.length) { /* no tree yet → free text as before */ } }
     }
     wnSel.onchange = _syncWbsFromNode;
-    if (row && row.wbs_node_id) _syncWbsFromNode();
+    if (wnSel.value) _syncWbsFromNode();
     set('ps-f-name', row ? row.activity_name : ''); set('ps-f-type-sel', row ? (row.activity_type || 'Task') : 'Task');
     set('ps-f-status-sel', row ? (row.status || 'Not Started') : 'Not Started');
     set('ps-f-bls', row && row.bl_start ? String(row.bl_start).slice(0,10) : '');
