@@ -25,7 +25,11 @@
 
     /* ---- Toolbar (grouped, consistent) ---- */
     .ps-toolbar { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
-    .ps-tb-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+    /* Single row: never wrap. Menus (.ps-menu) escape via overflow:visible. Items shrink-proof
+       (flex:none) except the search, which absorbs slack; tightened gap/padding keeps it on one line. */
+    .ps-tb-row { display:flex; flex-wrap:nowrap; align-items:center; gap:6px; overflow:visible; min-width:0; }
+    .ps-tb-row > *:not(.ps-search):not(.ps-tb-spacer) { flex:none; }
+    .ps-tb-row .ps-search { flex:0 1 auto; min-width:120px; }
     .ps-tb-spacer { margin-left:auto; }
     .ps-tb-div { width:1px; align-self:stretch; min-height:26px; background:var(--pd-line); margin:0 4px; }
     /* one consistent control height across selects, inputs, buttons & segments */
@@ -225,7 +229,14 @@
     /* ---- Split Activities + Gantt ---- */
     .ps-split { display:flex; height:62vh; min-height:420px; border:1px solid var(--pd-line);
       border-radius:var(--pd-radius) var(--pd-radius) 0 0; overflow:hidden; background:var(--pd-card); }
-    .ps-grid-pane { flex:0 0 660px; max-width:70%; display:flex; flex-direction:column; border-right:2px solid var(--pd-line); min-width:0; }
+    .ps-grid-pane { flex:0 0 660px; max-width:70%; display:flex; flex-direction:column; border-right:2px solid var(--pd-line); min-width:0; position:relative; }
+    /* Columns chooser docked in the grid's top-left header corner (moved off the toolbar). */
+    .ps-cols-corner { position:absolute; top:0; left:0; z-index:12; }
+    .ps-cols-corner > .ps-icobtn { height:38px !important; width:30px; border-radius:0; border:none;
+      border-right:1px solid var(--pd-line); border-bottom:2px solid var(--pd-line);
+      background:var(--pd-bg); color:var(--pd-muted); }
+    .ps-cols-corner > .ps-icobtn:hover { background:var(--pd-card); color:var(--pd-ink); }
+    .ps-cols-corner .ps-cols-menu { left:0; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
     .ps-grid-pane { --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-x:130px; }
@@ -237,6 +248,9 @@
     .ps-cell { padding:0 8px; display:flex; align-items:center; border-right:1px solid var(--pd-line);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; flex:none; }
     .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative; }
+    /* Clear the docked Columns corner button (30px) so the first header label isn't hidden. Width is
+       fixed per column, so shifting only the header text keeps header/body columns aligned. */
+    .ps-grid-row.head .ps-cell:first-child { padding-left:36px; }
     .c-name { width:var(--c-name); } .c-id { width:var(--c-id); } .c-status { width:var(--c-status); } .c-date { width:var(--c-date); }
     .ps-status-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:10.5px; font-weight:700; white-space:nowrap; }
     .ps-status-notstarted { background:var(--pd-line); color:var(--pd-muted); }
@@ -768,8 +782,6 @@
           <button class="pd-btn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
           <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="15"></span> Layout ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colsbtn" title="Show / hide columns"><span data-ico="eye" data-ico-size="15"></span> Columns ▾</button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Gantt bar colors"><span data-ico="palette" data-ico-size="15"></span> Colors ▾</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <span class="ps-tb-div"></span>
           <!-- Analyze: critical path, dependencies, link mode, progress spotlight — grouped so the toolbar isn't a row of mystery icons -->
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-analyzebtn" title="Analysis — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="15"></span> Analyze ▾</button>
@@ -803,6 +815,9 @@
         </div>
         <div class="ps-split">
           <div class="ps-grid-pane">
+            <!-- Columns (show/hide) chooser docked at the grid's top-left corner, icon-only. Moved off
+                 the toolbar so it sits right before the header columns it controls. -->
+            <div class="ps-menu-wrap ps-cols-corner"><button class="pd-btn ps-icobtn" id="ps-colsbtn" title="Show / hide columns"><span data-ico="eye" data-ico-size="15"></span></button><div class="ps-menu ps-cols-menu" id="ps-cols-menu"></div></div>
             <div class="ps-grid-head" id="ps-grid-head"></div>
             <div class="ps-grid-scroll" id="ps-grid-scroll"><div id="ps-grid-rows"></div></div>
           </div>
@@ -3350,6 +3365,13 @@
     var bc = document.getElementById('ps-tl-bars');
     if (bc) {
       var bars = ''; for (var j = first; j < last; j++) bars += ganttRowHTML(DL[j], j, _rMin, _rDayw); bc.innerHTML = bars; wireDrag(_rMin, _rDayw);
+      // Right-click a bar / milestone / summary → color picker (delegated; wired once per #ps-tl-bars).
+      if (!bc._ctxWired) { bc._ctxWired = true; bc.addEventListener('contextmenu', function (e) {
+        var el = e.target.closest ? e.target.closest('.ps-bar,.ps-mile,.ps-sum') : null;
+        if (!el || !el.dataset.id) return;
+        var r = rows.find(function (x) { return x.id === el.dataset.id; });
+        if (r) openBarColorMenu(e, r);
+      }); }
       if (critMode || depsOn) {
         var vis = {};
         for (var vi = first; vi < last; vi++) { var vr = DL[vi]; if (vr._dkind === 'task' && vr.activity_id) { var vs = pd(vr.start_date), ve = pd(vr.end_date); if (vs && ve) vis[String(vr.activity_id)] = { y: vi * ROWH + 16, sx: dayDiff(_rMin, vs) * _rDayw, ex: (dayDiff(_rMin, ve) + 1) * _rDayw }; } }
@@ -3427,13 +3449,13 @@
   // ----- RIGHT GANTT: per-row bar builder (used by the windowed renderer) -----
   function ganttRowHTML(r, i, min, dayw) {
     var top = i * ROWH, out = '';
-    if (isWbsNode(r)) { var sp = wbsSpan(r); if (!sp) return ''; var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw; var wcS = (r._dkind === 'group') ? null : effWbsColor(r); return '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + 12) + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '"></div>'; }
+    if (isWbsNode(r)) { var sp = wbsSpan(r); if (!sp) return ''; var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw; var wcS = (r._dkind === 'group') ? null : effWbsColor(r); return '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + 12) + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '"></div>'; }
     var bs = pd(r.bl_start), be = pd(r.bl_finish);
     if (bs && be) { var bx = dayDiff(min, bs) * dayw, bw = (dayDiff(bs, be) + 1) * dayw; out += '<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + 24) + 'px;"></div>'; }
     var s = pd(r.start_date), e = pd(r.end_date);
     var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && mfpOn && r._near) ? ' ps-near' : '');
     if (spotlightRow(r)) crit += ' ps-spot';
-    var wc = effWbsColor(r);
+    var wc = actColor(r) || effWbsColor(r);
     if (isMile(r) && s) { var mx = dayDiff(min, s) * dayw; return out + '<div class="ps-mile' + crit + '" data-id="' + r.id + '" style="left:' + (mx-6) + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>'; }
     if (!s || !e) return out;
     var x2 = dayDiff(min, s) * dayw, w2 = Math.max((dayDiff(s, e) + 1) * dayw, 4);
@@ -6098,6 +6120,44 @@
     for (var j = 0; j < chain.length; j++) if (map[chain[j]]) return map[chain[j]];
     return null;
   }
+  // ---- Per-activity color overrides (right-click a bar), scoped per project ----
+  function actColorMap() { try { var all = JSON.parse(localStorage.getItem('ps_actcolors') || '{}'); return all[pid] || {}; } catch (e) { return {}; } }
+  function saveActColor(id, color) {
+    var all = {}; try { all = JSON.parse(localStorage.getItem('ps_actcolors') || '{}'); } catch (e) {}
+    all[pid] = all[pid] || {}; if (color) all[pid][id] = color; else delete all[pid][id];
+    try { localStorage.setItem('ps_actcolors', JSON.stringify(all)); } catch (e) {}
+  }
+  function actColor(r) { if (!pid || !r) return null; var m = actColorMap(); return m[r.id] || null; }
+  // Right-click color picker on a Gantt bar / milestone / WBS summary. Replaces the old Colors button:
+  // an activity bar sets its own override; a WBS summary sets a branch color (cascades to descendants).
+  function closeBarColorMenu() { var m = document.getElementById('ps-barctx'); if (m) m.remove(); document.removeEventListener('click', closeBarColorMenu); }
+  function openBarColorMenu(e, r) {
+    e.preventDefault(); e.stopPropagation(); closeBarColorMenu(); closeColMenu();
+    var isW = isWbsNode(r);
+    var cur = isW ? (r.wbs && wbsColorMap()[r.wbs]) : actColor(r);
+    var m = document.createElement('div'); m.className = 'ps-menu ps-barctx open'; m.id = 'ps-barctx';
+    m.innerHTML =
+      '<div style="padding:6px 12px 2px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' +
+        (isW ? 'WBS branch color' : 'Activity bar color') + '</div>' +
+      '<div style="padding:4px 12px 8px;font-size:12px;color:var(--pd-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;">' +
+        esc((isW ? (r.wbs ? r.wbs + ' — ' : '') : '') + (r.activity_name || r.activity_id || '')) + '</div>' +
+      '<div class="ps-colors-row" style="padding:4px 12px;display:flex;align-items:center;gap:8px;"><input type="color" id="ps-bc-clr" value="' + (cur || '#EE3124') + '"><span style="font-size:13px;">Pick a color</span></div>' +
+      '<button id="ps-bc-reset">Reset to default</button>';
+    document.body.appendChild(m);
+    m.style.position = 'fixed'; m.style.top = Math.min(e.clientY, window.innerHeight - 150) + 'px';
+    m.style.left = Math.min(e.clientX, window.innerWidth - 210) + 'px'; m.style.zIndex = 300;
+    m.addEventListener('click', function (ev) { ev.stopPropagation(); });
+    m.querySelector('#ps-bc-clr').oninput = function () {
+      var v = this.value;
+      if (isW) { if (r.wbs) { saveWbsColor(r.wbs, v); _wcCacheKey = null; } } else saveActColor(r.id, v);
+      renderGantt();
+    };
+    m.querySelector('#ps-bc-reset').onclick = function () {
+      if (isW) { if (r.wbs) { saveWbsColor(r.wbs, null); _wcCacheKey = null; } } else saveActColor(r.id, null);
+      renderGantt(); closeBarColorMenu();
+    };
+    setTimeout(function () { document.addEventListener('click', closeBarColorMenu); }, 0);
+  }
   function renderColorsMenu() {
     var m = document.getElementById('ps-colors-menu'); if (!m) return; var c = loadColors();
     var html = '<h4>Global bar colors</h4>';
@@ -6243,7 +6303,6 @@
     };
     var cMenu = document.getElementById('ps-collapse-menu'), fMenu = document.getElementById('ps-filter-menu');
     var vMenu = document.getElementById('ps-views-menu');
-    var colMenu = document.getElementById('ps-colors-menu');
     var aMenu = document.getElementById('ps-actions-menu');
     var lMenu = document.getElementById('ps-layout-menu');
     var colsMenu = document.getElementById('ps-cols-menu');
@@ -6251,7 +6310,7 @@
     var pssMenu = document.getElementById('ps-projsel-menu');
     var fileMenu = document.getElementById('ps-file-menu');
     var analyzeMenu = document.getElementById('ps-analyze-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); colMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); }
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); }
     // File menu (Import / Export / Print). The item buttons keep their original ids so their
     // existing handlers work unchanged; the menu just re-homes them from the Actions menu + topbar.
     document.getElementById('ps-filebtn').onclick = function (e) { e.stopPropagation(); var o = fileMenu.classList.contains('open'); closeMenus(); if (!o) fileMenu.classList.add('open'); };
@@ -6307,7 +6366,6 @@
     document.querySelectorAll('#ps-sched-tabs button').forEach(function (t) {
       t.onclick = function () { schedTab = t.dataset.stab; document.querySelectorAll('#ps-sched-tabs button').forEach(function (x) { x.classList.toggle('active', x === t); }); renderSchedTab(); };
     });
-    document.getElementById('ps-colorsbtn').onclick = function (e) { e.stopPropagation(); var o = colMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colMenu.classList.add('open'); } };
     document.getElementById('ps-actionsbtn').onclick = function (e) { e.stopPropagation(); var o = aMenu.classList.contains('open'); closeMenus(); if (!o) aMenu.classList.add('open'); };
     document.getElementById('ps-linkmode').onclick = function (e) { e.stopPropagation(); toggleLinkMode(); };
     document.getElementById('ps-health').onclick = function (e) { e.stopPropagation(); openHealthPanel(); };
@@ -6377,7 +6435,6 @@
     cMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     fMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     vMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    colMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.addEventListener('click', closeMenus);
     applyColors();
     document.getElementById('ps-refresh').onclick = function () { load(); };
