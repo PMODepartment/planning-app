@@ -113,6 +113,7 @@
         <button class="po-tab active" data-view="overview"><span data-ico="barChart" data-ico-size="15"></span> Overview</button>
         <button class="po-tab" data-view="scurve"><span data-ico="trendingUp" data-ico-size="15"></span> S-Curve</button>
         <button class="po-tab" data-view="cashflow"><span data-ico="cash" data-ico-size="15"></span> Cash Flow</button>
+        <button class="po-tab" data-view="resources"><span data-ico="users" data-ico-size="15"></span> Resources</button>
         <!-- Project filter lives here (not in the Overview toolbar) so it's reachable from every tab
              — it scopes the Overview table AND the S-Curve / Cash Flow views. -->
         <div class="po-projfilter" id="po-projfilter-wrap" style="margin-left:auto;align-self:center;">
@@ -179,6 +180,18 @@
         </div>
         <div class="po-card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;"><table class="po-table" id="po-cf-table"></table></div>
+        </div>
+      </div>
+
+      <div id="po-view-resources" style="display:none;">
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-rs-scope">all projects</span>). Aggregated server-side (safe at 27k+ assignments/project). <button class="pd-btn" id="po-rs-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <div class="po-kpis2" id="po-rs-kpis"></div>
+        <div class="po-card">
+          <h3 style="text-transform:none;font-size:15px;">Top resources by budgeted cost</h3>
+          <div id="po-rs-chart"></div>
+        </div>
+        <div class="po-card" style="padding:0;overflow:hidden;">
+          <div style="overflow-x:auto;"><table class="po-table" id="po-rs-table"></table></div>
         </div>
       </div>
     </div>
@@ -664,6 +677,63 @@
     } catch (e) { UI.toast('Could not load cash flow: ' + (e.message || e), 'error'); document.getElementById('po-cf-chart').innerHTML = '<div class="po-empty">Load failed.</div>'; }
   }
 
+  // ================= Portfolio Resources (cross-project, server-aggregated) =================
+  var rsLoadedIds = null;
+  async function loadResources(force) {
+    var ids = scopedProjectIds();
+    if (!force && rsLoadedIds && rsLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-rs-scope').textContent = scopeLabel(ids);
+    var chart = document.getElementById('po-rs-chart'), tbl = document.getElementById('po-rs-table'), kpis = document.getElementById('po-rs-kpis');
+    if (!ids.length) { kpis.innerHTML = ''; chart.innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; tbl.innerHTML = ''; return; }
+    chart.innerHTML = '<div class="po-empty">Aggregating resource demand across ' + ids.length + ' project(s)…</div>'; kpis.innerHTML = '';
+    var res;
+    try { res = await sb().rpc('portfolio_resource_summary', { p_ids: ids }); } catch (e) { res = { error: e }; }
+    if (res.error) {
+      var msg = (res.error.message || '') + '';
+      chart.innerHTML = '<div class="po-empty">' + (/function|does not exist|PGRST202|404/i.test(msg) ? 'Run the <code>2026-07-11-portfolio-resource-rpc.sql</code> migration to enable the portfolio resource view.' : 'Could not load: ' + esc(msg)) + '</div>';
+      tbl.innerHTML = ''; return;
+    }
+    rsLoadedIds = ids;
+    var list = (res.data || []).map(function (r) { return { name: r.resource_name, type: r.resource_type, uom: r.uom, projects: +r.projects || 0, assignments: +r.assignments || 0, bu: +r.budgeted_units || 0, au: +r.actual_units || 0, ru: +r.remaining_units || 0, bc: +r.budgeted_cost || 0, ac: +r.actual_cost || 0 }; });
+    rsRenderKpis(list); rsRenderChart(list); rsRenderTable(list);
+  }
+  function rsRenderKpis(list) {
+    var host = document.getElementById('po-rs-kpis');
+    var bc = list.reduce(function (a, r) { return a + r.bc; }, 0), ac = list.reduce(function (a, r) { return a + r.ac; }, 0);
+    var na = list.reduce(function (a, r) { return a + r.assignments; }, 0);
+    host.innerHTML = kpi2('Resources', String(list.length)) + kpi2('Assignments', na.toLocaleString()) +
+      kpi2('Budgeted Cost', Fmt.moneyShort(bc)) + kpi2('Actual Cost', Fmt.moneyShort(ac));
+  }
+  function rsRenderChart(list) {
+    var host = document.getElementById('po-rs-chart');
+    var top = list.slice().sort(function (a, b) { return b.bc - a.bc; }).filter(function (r) { return r.bc > 0; }).slice(0, 12);
+    if (!top.length) { host.innerHTML = '<div class="po-empty">No costed assignments yet — set a Price/Unit on resources and assign them (cost = units × rate), or enter assignment costs manually.</div>'; return; }
+    var max = top[0].bc || 1;
+    host.innerHTML = '<div style="display:flex;flex-direction:column;gap:8px;padding:4px 2px;">' + top.map(function (r) {
+      var pct = Math.max(2, Math.round(r.bc / max * 100));
+      return '<div style="display:flex;align-items:center;gap:10px;font-size:12.5px;">' +
+        '<div style="width:170px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(r.name) + '">' + esc(r.name) + '</div>' +
+        '<div style="flex:1;background:var(--pd-line);border-radius:4px;height:16px;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:var(--pd-red);"></div></div>' +
+        '<div style="width:110px;flex:none;text-align:right;font-weight:600;">' + Fmt.moneyShort(r.bc) + '</div></div>';
+    }).join('') + '</div>';
+  }
+  function rsRenderTable(list) {
+    var t = document.getElementById('po-rs-table');
+    var head = '<thead><tr><th>Resource</th><th>Type</th><th>UoM</th><th class="num">Projects</th><th class="num">Budgeted units</th><th class="num">Actual units</th><th class="num">Remaining</th><th class="num">Budgeted cost</th><th class="num">Actual cost</th></tr></thead>';
+    var body = list.length ? list.map(function (r) {
+      return '<tr><td>' + esc(r.name) + '</td><td><span class="rl-badge">' + esc(r.type) + '</span></td><td>' + esc(r.uom) + '</td>' +
+        '<td class="num">' + r.projects + '</td>' +
+        '<td class="num">' + (Math.round(r.bu * 100) / 100).toLocaleString() + '</td><td class="num">' + (Math.round(r.au * 100) / 100).toLocaleString() + '</td><td class="num">' + (Math.round(r.ru * 100) / 100).toLocaleString() + '</td>' +
+        '<td class="num">' + Fmt.moneyShort(r.bc) + '</td><td class="num">' + Fmt.moneyShort(r.ac) + '</td></tr>';
+    }).join('') : '<tr><td colspan="9" class="po-empty">No resource assignments found for the selected projects.</td></tr>';
+    if (list.length) {
+      var bu = list.reduce(function (a, r) { return a + r.bu; }, 0), au = list.reduce(function (a, r) { return a + r.au; }, 0), ru = list.reduce(function (a, r) { return a + r.ru; }, 0);
+      var bc = list.reduce(function (a, r) { return a + r.bc; }, 0), ac = list.reduce(function (a, r) { return a + r.ac; }, 0);
+      body += '<tr class="po-tot-row"><td>TOTAL</td><td></td><td></td><td></td><td class="num">' + (Math.round(bu * 100) / 100).toLocaleString() + '</td><td class="num">' + (Math.round(au * 100) / 100).toLocaleString() + '</td><td class="num">' + (Math.round(ru * 100) / 100).toLocaleString() + '</td><td class="num">' + Fmt.moneyShort(bc) + '</td><td class="num">' + Fmt.moneyShort(ac) + '</td></tr>';
+    }
+    t.innerHTML = head + '<tbody>' + body + '</tbody>';
+  }
+
   // ================= Tab switching =================
   function switchView(v) {
     view = v;
@@ -671,8 +741,10 @@
     document.getElementById('po-view-overview').style.display = v === 'overview' ? '' : 'none';
     document.getElementById('po-view-scurve').style.display = v === 'scurve' ? '' : 'none';
     document.getElementById('po-view-cashflow').style.display = v === 'cashflow' ? '' : 'none';
+    document.getElementById('po-view-resources').style.display = v === 'resources' ? '' : 'none';
     if (v === 'scurve') loadScurve(false);
     if (v === 'cashflow') loadCashflow(false);
+    if (v === 'resources') loadResources(false);
   }
 
   function exportExcel() {
@@ -707,6 +779,7 @@
     document.getElementById('po-export').onclick = exportExcel;
     document.querySelectorAll('.po-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view); }; });
     document.getElementById('po-sc-refresh').onclick = function () { loadScurve(true); };
+    document.getElementById('po-rs-refresh').onclick = function () { loadResources(true); };
     document.getElementById('po-cf-refresh').onclick = function () { loadCashflow(true); };
     try {
       var res = await Promise.all([PDb.getProjects(), PDb.getWorkspaces()]);
