@@ -147,6 +147,20 @@ clipboard operating on individual grid cells, independent of the row selection/c
   3×2 target). Page loads with no console errors. **Not yet exercised end-to-end against a live login**
   (same constraint as prior batches — needs a real session + data to click through).
 
+## Resource/cost-side OPC parity — in progress (2026-07-11)
+User approved building all four gaps. **Migration `../../migrations/2026-07-11-resource-cost-parity.sql`
+(USER MUST RUN):** `cost_accounts` (CBS tree), `price_per_unit` on `resources`+`resource_roles`,
+`budgeted/actual/remaining_cost`+`cost_account_id`+`rate_source` on `resource_assignments`,
+`activity_expenses` table, and `project_schedule.cost_rollup` (opt-in bottom-up cost derivation;
+default false = current manual behaviour preserved). Build sequence (UI, next):
+- **3a Cost Accounts / CBS manager** (Actions ▾, two-pane like Activity Codes) — table done, UI pending.
+- **3b Price/Unit + assignment cost + roll-up** — resource-master rate field, assignment-form cost
+  (derive = units × rate, `rate_source` toggle for manual), roll assignment+expense cost up to the
+  activity's planned/actual/earned cost ONLY when `cost_rollup` is on.
+- **3c Expenses tab** — per-activity itemized non-labor costs, optional cost account, feeds the roll-up.
+All UI to be written tolerant of the not-yet-run migration (missing table/column → graceful nudge),
+matching the existing pattern.
+
 ## Excel export now includes dynamic columns (2026-07-11)
 `exportExcel` previously used a fixed header set — the Activity-Code/UDF dynamic grid columns were
 grid-only. Now it appends the extras **currently shown in the grid** (`extraColDefs().filter(c=>!colHidden[colKey(c)])`
