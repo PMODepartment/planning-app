@@ -1385,7 +1385,7 @@
   // values. Independent of the row selection/clipboard above (a click sets both, but Ctrl+C/X/V and
   // the context menu treat cells and whole rows as distinct operations).
   var _cellSel = null, _cellAnchor = null, _cellClip = null;
-  var filters = { status: {}, type: {}, behind: false, look: 0, codes: {}, col: {} };   // empty sets = show all; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }
+  var filters = { status: {}, type: {}, behind: false, look: 0, codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
   var _colFilterOn = false; try { _colFilterOn = localStorage.getItem('ps_colfilter') === '1'; } catch (e) {}
   var _colfT = null;   // debounce timer for column-filter typing
   var _hideEmptyGroups = false; try { _hideEmptyGroups = localStorage.getItem('ps_hideempty') === '1'; } catch (e) {}
@@ -2260,9 +2260,40 @@
   }
 
   // ---- Filter (OPC-style) ----
-  function anyFilter() { return search.trim() || filters.behind || filters.look || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}) || Object.keys(filters.col || {}).some(function(k){return (filters.col[k] || '').trim();}); }
+  function anyFilter() { return search.trim() || filters.behind || filters.look || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}) || Object.keys(filters.col || {}).some(function(k){return (filters.col[k] || '').trim();}) || (filters.adv && filters.adv.rules && filters.adv.rules.length); }
   // Per-column filter helpers. _colByKey resolves a colKey to its column def; _colText returns the
   // displayed text for a column so the filter matches what the user sees in the cell.
+  // Advanced-filter raw value + type per column (for numeric/date comparisons, not just text).
+  function _colType(c) { if (c[3]) return 'text'; var t = c[0]; if (t === 'date') return 'date'; if (t === 'dur' || t === 'poc' || t === 'pct' || t === 'flt' || t === 'var' || t === 'cost') return 'number'; return 'text'; }
+  function _colRaw(r, c) {
+    if (c[3]) return extraCellVal(c[3], r);
+    var t = c[0], lbl = c[1];
+    switch (t) {
+      case 'id': return r.activity_id;
+      case 'name': return r.activity_name;
+      case 'status': return r.status || 'Not Started';
+      case 'ctype': return r.percent_complete_type;
+      case 'dur': { var s = pd(r.start_date), e = pd(r.end_date); return (s && e) ? dayDiff(s, e) + 1 : (r.duration_days != null ? r.duration_days : null); }
+      case 'poc': return plannedPOC(r);
+      case 'pct': return r.percent_complete;
+      case 'flt': return r._float;
+      case 'var': return finVar(r);
+      case 'date': return lbl === 'BL Start' ? r.bl_start : lbl === 'BL Finish' ? r.bl_finish : lbl === 'Start' ? r.start_date : r.end_date;
+      case 'cost': return lbl === 'Planned IBB' ? r.planned_cost : lbl === 'Actual IBB to date' ? r.actual_cost : lbl === 'Earned Value IBB' ? r.earned_value : lbl === 'At Completion IBB' ? eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null) : r.bl_cost;
+    }
+    return null;
+  }
+  function _advMatch(r, rule) {
+    var c = _colByKey(rule.field); if (!c) return true;
+    var type = _colType(c), raw = _colRaw(r, c), op = rule.op, val = rule.val;
+    var isEmpty = raw == null || String(raw).trim() === '';
+    if (op === 'empty') return isEmpty;
+    if (op === 'nempty') return !isEmpty;
+    if (type === 'number') { if (isEmpty) return false; var n = parseFloat(raw), v = parseFloat(val); if (isNaN(v)) return false; switch (op) { case 'eq': return n === v; case 'ne': return n !== v; case 'gt': return n > v; case 'lt': return n < v; case 'ge': return n >= v; case 'le': return n <= v; } return true; }
+    if (type === 'date') { var d = pd(raw), dv = pd(val); if (!d || !dv) return false; switch (op) { case 'on': return dayDiff(dv, d) === 0; case 'before': return d < dv; case 'after': return d > dv; } return true; }
+    var sT = String(raw == null ? '' : raw).toLowerCase(), q = String(val == null ? '' : val).toLowerCase();
+    switch (op) { case 'contains': return sT.indexOf(q) !== -1; case 'ncontains': return sT.indexOf(q) === -1; case 'is': return sT === q; case 'isnot': return sT !== q; } return true;
+  }
   function _colByKey(k) { var cols = gridCols(); for (var i = 0; i < cols.length; i++) if (colKey(cols[i]) === k) return cols[i]; return null; }
   function _colText(r, c) {
     if (c[3]) return extraCellVal(c[3], r);
@@ -2309,6 +2340,7 @@
       if (!rv || !sel[rv]) return false;
     }
     if (filters.col) { for (var fk in filters.col) { var q = (filters.col[fk] || '').trim().toLowerCase(); if (!q) continue; var col = _colByKey(fk); if (!col) continue; if (String(_colText(r, col) || '').toLowerCase().indexOf(q) === -1) return false; } }
+    if (filters.adv && filters.adv.rules && filters.adv.rules.length) { var rl = filters.adv.rules; var ok = filters.adv.match === 'any' ? rl.some(function (x) { return _advMatch(r, x); }) : rl.every(function (x) { return _advMatch(r, x); }); if (!ok) return false; }
     return true;
   }
   function buildFilterMenu() {
@@ -2325,6 +2357,7 @@
       '<label style="margin-top:4px;">Look-ahead: <select id="ps-f-look" class="pd-select pd-input-sm" style="max-width:150px;">' +
         [[0,'All'],[2,'Next 2 weeks'],[4,'Next 4 weeks'],[8,'Next 8 weeks'],[12,'Next 12 weeks']].map(function(o){return '<option value="'+o[0]+'"'+(filters.look===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('') + '</select></label>' +
       codesHTML +
+      '<h4>Advanced</h4><button class="pd-btn pd-btn-sm" id="ps-f-adv" style="width:100%;justify-content:flex-start;"><span data-ico="filter" data-ico-size="14"></span> Advanced filter…' + ((filters.adv && filters.adv.rules && filters.adv.rules.length) ? ' <span style="color:var(--pd-red);font-weight:700;">(' + filters.adv.rules.length + ')</span>' : '') + '</button>' +
       '<div class="ps-filter-foot"><button class="pd-btn pd-btn-sm" id="ps-filter-clear">Clear</button><button class="pd-btn pd-btn-sm pd-btn-primary" id="ps-filter-done">Done</button></div>';
     menu.querySelectorAll('input[data-fg]').forEach(function (c) {
       c.onchange = function () { filters[c.dataset.fg][c.dataset.fv] = c.checked; renderGrid(); renderGantt(); };
@@ -2334,8 +2367,58 @@
     });
     menu.querySelector('#ps-f-behind').onchange = function (e) { filters.behind = e.target.checked; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-look').onchange = function (e) { filters.look = parseInt(e.target.value, 10) || 0; renderGrid(); renderGantt(); };
-    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, look:0, codes:{}, col:{} }; buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-f-adv').onclick = function (e) { e.stopPropagation(); menu.classList.remove('open'); openAdvFilter(); };
+    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, look:0, codes:{}, col:{}, adv:{ match:'all', rules:[] } }; buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
     menu.querySelector('#ps-filter-done').onclick = function () { menu.classList.remove('open'); };
+  }
+  // Advanced multi-condition filter builder (OPC-style): field / operator / value rows combined
+  // with Match All (AND) or Any (OR). Rules live in filters.adv and flow through rowMatches, so
+  // they compose with the checkbox filters, per-column filters and search, and save with Layouts.
+  var ADV_OPS = {
+    text: [['contains', 'contains'], ['ncontains', 'does not contain'], ['is', 'is'], ['isnot', 'is not'], ['empty', 'is empty'], ['nempty', 'is not empty']],
+    number: [['eq', '='], ['ne', '≠'], ['gt', '>'], ['lt', '<'], ['ge', '≥'], ['le', '≤'], ['empty', 'is empty'], ['nempty', 'is not empty']],
+    date: [['on', 'on'], ['before', 'before'], ['after', 'after'], ['empty', 'is empty'], ['nempty', 'is not empty']]
+  };
+  function openAdvFilter() {
+    if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
+    var cols = gridCols();
+    var fieldOpts = cols.map(function (c) { return '<option value="' + esc(colKey(c)) + '">' + esc(colLabel(c)) + '</option>'; }).join('');
+    var m = UI.modal('<h2 style="margin-top:0;">Advanced filter</h2>' +
+      '<div style="margin:-2px 0 10px;font-size:12.5px;">Match <select class="pd-input" id="ps-adv-match" style="width:auto;"><option value="all">All</option><option value="any">Any</option></select> of the following:</div>' +
+      '<div id="ps-adv-list"></div>' +
+      '<div style="margin-top:8px;"><button class="pd-btn" id="ps-adv-add"><span data-ico="plus" data-ico-size="14"></span> Add condition</button></div>' +
+      '<div style="display:flex;justify-content:space-between;margin-top:12px;"><button class="pd-btn" id="ps-adv-clear">Clear all</button><button class="pd-btn pd-btn-primary" id="ps-adv-done">Done</button></div>');
+    m.el.querySelector('#ps-adv-match').value = filters.adv.match || 'all';
+    m.el.querySelector('#ps-adv-match').onchange = function () { filters.adv.match = this.value; apply(); };
+    function apply() { renderGrid(); renderGantt(); }
+    function opsFor(field) { var c = _colByKey(field); return ADV_OPS[c ? _colType(c) : 'text']; }
+    function render() {
+      var list = m.el.querySelector('#ps-adv-list');
+      if (!filters.adv.rules.length) { list.innerHTML = '<div style="color:var(--pd-muted);font-size:12.5px;padding:6px 0;">No conditions yet — add one below.</div>'; return; }
+      list.innerHTML = filters.adv.rules.map(function (r, i) {
+        var c = _colByKey(r.field), type = c ? _colType(c) : 'text';
+        var ops = ADV_OPS[type];
+        var noVal = r.op === 'empty' || r.op === 'nempty';
+        var valInput = noVal ? '<span style="flex:1;"></span>' : '<input class="pd-input ps-adv-val" type="' + (type === 'date' ? 'date' : 'text') + '" value="' + esc(r.val == null ? '' : r.val) + '" placeholder="value" style="flex:1;min-width:0;">';
+        return '<div class="ps-adv-row" data-i="' + i + '" style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--pd-line);">' +
+          '<select class="pd-input ps-adv-field" style="flex:1;min-width:0;">' + cols.map(function (cc) { return '<option value="' + esc(colKey(cc)) + '"' + (colKey(cc) === r.field ? ' selected' : '') + '>' + esc(colLabel(cc)) + '</option>'; }).join('') + '</select>' +
+          '<select class="pd-input ps-adv-op" style="width:auto;">' + ops.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === r.op ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
+          valInput +
+          '<button class="pd-btn ps-adv-del" title="Remove" style="padding:0 8px;">✕</button>' +
+        '</div>';
+      }).join('');
+      list.querySelectorAll('.ps-adv-row').forEach(function (row) {
+        var i = parseInt(row.dataset.i, 10);
+        row.querySelector('.ps-adv-field').onchange = function () { filters.adv.rules[i].field = this.value; var ops = opsFor(this.value); if (!ops.some(function (o) { return o[0] === filters.adv.rules[i].op; })) filters.adv.rules[i].op = ops[0][0]; apply(); render(); };
+        row.querySelector('.ps-adv-op').onchange = function () { filters.adv.rules[i].op = this.value; apply(); render(); };
+        var vi = row.querySelector('.ps-adv-val'); if (vi) vi.oninput = function () { filters.adv.rules[i].val = this.value; apply(); };
+        row.querySelector('.ps-adv-del').onclick = function () { filters.adv.rules.splice(i, 1); apply(); render(); };
+      });
+    }
+    m.el.querySelector('#ps-adv-add').onclick = function () { var c0 = cols[0]; filters.adv.rules.push({ field: colKey(c0), op: ADV_OPS[_colType(c0)][0][0], val: '' }); apply(); render(); };
+    m.el.querySelector('#ps-adv-clear').onclick = function () { filters.adv.rules = []; apply(); render(); };
+    m.el.querySelector('#ps-adv-done').onclick = m.close;
+    render();
   }
 
   // ---- render everything ----
@@ -6012,7 +6095,8 @@
   function applyView(v) {
     if (!v) return;
     zoom = v.zoom || zoom; search = v.search || '';
-    filters = v.filters ? JSON.parse(JSON.stringify(v.filters)) : { status:{}, type:{}, behind:false, look:0, codes:{}, col:{} };
+    filters = v.filters ? JSON.parse(JSON.stringify(v.filters)) : { status:{}, type:{}, behind:false, look:0, codes:{}, col:{}, adv:{ match:'all', rules:[] } };
+    if (!filters.adv) filters.adv = { match: 'all', rules: [] };
     if (!filters.col) filters.col = {};
     if (filters.codes === undefined) filters.codes = {};
     // grouping (may be a code-group 'code:<id>')
