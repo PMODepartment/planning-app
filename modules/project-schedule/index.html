@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260709"></script>
+  <script src="../../assets/js/theme.js?v=20260711"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260709" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260711" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -323,6 +323,16 @@
       color:var(--pd-muted); flex:none; }
     .ps-editable { cursor:text; } .ps-editable:hover { background:var(--pd-red-light); }
     .ps-cell input { width:100%; border:1px solid var(--pd-red); border-radius:3px; font:inherit; padding:2px 4px; box-sizing:border-box; background:var(--pd-card); color:var(--pd-ink); }
+    /* Cell-range selection (Excel/OPC clipboard): tinted block + a solid box on the active cell, a
+       dashed "marching" box on cut-source cells. box-shadow (not outline) so it layers over zebra. */
+    .ps-cell.ps-cell-sel { background:var(--pd-red-light) !important; box-shadow:inset 0 0 0 1px var(--pd-red-mid); }
+    .ps-cell.ps-cell-active { box-shadow:inset 0 0 0 2px var(--pd-red); }
+    .ps-cell.ps-cell-cut { outline:1px dashed var(--pd-red); outline-offset:-2px; }
+    /* Suppress native text selection in the grid so Shift-click builds the CELL range (red block)
+       instead of a browser text selection (blue + the OS/browser selection toolbar). Editing inputs
+       re-enable it so you can still select text while typing in a cell. */
+    .ps-grid-pane .ps-cell { user-select:none; -webkit-user-select:none; }
+    .ps-grid-pane .ps-cell input { user-select:text; -webkit-user-select:text; }
     .ps-row-sel { background:var(--pd-red-light) !important; }
     .ps-mile-badge { color:var(--pd-red); font-weight:700; }
 
@@ -1268,12 +1278,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260709"></script>
-<script src="../../assets/js/auth.js?v=20260709"></script>
-<script src="../../assets/js/db.js?v=20260709"></script>
-<script src="../../assets/js/ui.js?v=20260709"></script>
-<script src="../../assets/js/icons.js?v=20260709"></script>
-<script src="../../assets/js/calendar.js?v=20260709"></script>
+<script src="../../assets/js/config.js?v=20260711"></script>
+<script src="../../assets/js/auth.js?v=20260711"></script>
+<script src="../../assets/js/db.js?v=20260711"></script>
+<script src="../../assets/js/ui.js?v=20260711"></script>
+<script src="../../assets/js/icons.js?v=20260711"></script>
+<script src="../../assets/js/calendar.js?v=20260711"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -1348,6 +1358,11 @@
   // Multi-row selection + row clipboard (Excel/OPC-style). selId stays the "active"/anchor row;
   // _selSet holds every selected task-row id; _clip holds copied/cut row payloads.
   var _selSet = new Set(), _selAnchor = null, _clip = null;
+  // Cell-range selection + cell clipboard (Excel/OPC-style). _cellSel is a rectangle in DL-row ×
+  // grid-column index space; _cellAnchor is the shift-extend anchor; _cellClip holds copied/cut cell
+  // values. Independent of the row selection/clipboard above (a click sets both, but Ctrl+C/X/V and
+  // the context menu treat cells and whole rows as distinct operations).
+  var _cellSel = null, _cellAnchor = null, _cellClip = null;
   var filters = { status: {}, type: {}, behind: false, look: 0, codes: {}, col: {} };   // empty sets = show all; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }
   var _colFilterOn = false; try { _colFilterOn = localStorage.getItem('ps_colfilter') === '1'; } catch (e) {}
   var _colfT = null;   // debounce timer for column-filter typing
@@ -1599,6 +1614,11 @@
       rows = rows.filter(function (r) { return r.id !== a.id; });
       if (selId === a.id) selId = null;
       rebuild();
+    } else if (a.type === 'insertMany') {
+      // Undo a row paste: delete the rows it inserted, then re-insert any cut sources it removed.
+      for (var ui = 0; ui < a.inserted.length; ui++) { var ur = await sb().from(TABLE).delete().eq('id', a.inserted[ui].id); if (ur.error) { UI.toast(ur.error.message, 'error'); undoStack.push(a); return; } }
+      for (var uj = 0; uj < a.deleted.length; uj++) { var ir = await sb().from(TABLE).insert(Object.assign({}, a.deleted[uj].payload, { id: a.deleted[uj].id })); if (ir.error) { UI.toast(ir.error.message, 'error'); undoStack.push(a); return; } }
+      redoStack.push(a); updateUndoButtons(); await load(); UI.toast('Undone.', 'info'); return;
     }
     redoStack.push(a); updateUndoButtons();
     renderGrid(); renderGantt(); renderDetails();
@@ -1614,6 +1634,11 @@
       if (res.error) { UI.toast(res.error.message, 'error'); redoStack.push(a); return; }
       rows.push(payload);
       rebuild();
+    } else if (a.type === 'insertMany') {
+      // Redo a row paste: re-delete the cut sources, then re-insert the pasted rows.
+      for (var rj = 0; rj < a.deleted.length; rj++) { var dr = await sb().from(TABLE).delete().eq('id', a.deleted[rj].id); if (dr.error) { UI.toast(dr.error.message, 'error'); redoStack.push(a); return; } }
+      for (var ri = 0; ri < a.inserted.length; ri++) { var rr = await sb().from(TABLE).insert(Object.assign({}, a.inserted[ri].payload, { id: a.inserted[ri].id })); if (rr.error) { UI.toast(rr.error.message, 'error'); redoStack.push(a); return; } }
+      undoStack.push(a); updateUndoButtons(); await load(); UI.toast('Redone.', 'info'); return;
     }
     undoStack.push(a); updateUndoButtons();
     renderGrid(); renderGantt(); renderDetails();
@@ -3548,6 +3573,7 @@
       else if (e.shiftKey && _selAnchor) { _selRange(_selAnchor, id); }
       else { _selSet = new Set([id]); _selAnchor = id; }
       selId = id;
+      _setCellFromClick(rw, e);
       // Selecting a row also targets its WBS for the next Add-activity (task → its parent WBS).
       var sr = rows.find(function (x) { return x.id === selId; });
       _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null;
@@ -3558,7 +3584,8 @@
       // right-clicking inside a multi-selection keeps the whole selection so the action applies to all.
       if (!_selSet.has(id)) { _selSet = new Set([id]); _selAnchor = id; }
       selId = id; var sr = rows.find(function (x) { return x.id === selId; });
-      _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null; highlightRow();
+      _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null;
+      _setCellFromClick(rw, e); highlightRow();
       // Which editable cell was clicked (drives "Fill down" for that field).
       var cell = e.target && e.target.closest ? e.target.closest('.ps-editable') : null;
       openRowMenu(e, sr || { id: id }, cell ? cell.dataset.field : null);
@@ -3613,6 +3640,23 @@
   function highlightRow() {
     document.querySelectorAll('#ps-grid-rows .ps-grid-row').forEach(function (rw) { var id = rw.dataset.rowid; rw.classList.toggle('ps-row-sel', !!id && (id === selId || _selSet.has(id))); });
     document.querySelectorAll('#ps-tl .ps-bar, #ps-tl .ps-mile').forEach(function (b) { b.style.outline = (b.dataset.id === selId) ? '2px solid var(--pd-red)' : ''; });
+    highlightCells();
+  }
+  // Paint the cell-range selection (and any pending cut-source block) onto the current grid DOM.
+  // Keyed by DL row index (data-i) + DOM column position, so it re-applies correctly after any render.
+  function highlightCells() {
+    var host = document.getElementById('ps-grid-rows'); if (!host) return;
+    host.querySelectorAll('.ps-cell-sel, .ps-cell-active, .ps-cell-cut').forEach(function (c) { c.classList.remove('ps-cell-sel', 'ps-cell-active', 'ps-cell-cut'); });
+    var rc = _cellRect();
+    host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) {
+      var ri = parseInt(rw.dataset.i, 10); if (isNaN(ri)) return;
+      var cells = rw.children;   // child 0 = "#" gutter, child (ci+1) = grid column ci
+      if (rc && ri >= rc.r0 && ri <= rc.r1) {
+        for (var ci = rc.c0; ci <= rc.c1; ci++) { var el = cells[ci + 1]; if (el) el.classList.add('ps-cell-sel'); }
+      }
+      if (_cellAnchor && _cellAnchor.r === ri) { var ae = cells[_cellAnchor.c + 1]; if (ae) ae.classList.add('ps-cell-active'); }
+      if (_cellClip && _cellClip.cut) { _cellClip.refs.forEach(function (ref) { if (ref.ri === ri) { var ce = cells[ref.ci + 1]; if (ce) ce.classList.add('ps-cell-cut'); } }); }
+    });
   }
 
   function beginEdit(cell) {
@@ -6465,11 +6509,16 @@
     'remaining_duration','free_float','planned_labor_units','actual_labor_units','remaining_labor_units',
     'primary_constraint','primary_constraint_date','secondary_constraint','secondary_constraint_date','remarks'];
   function _rowClipPayload(r) { var p = {}; _CLIP_FIELDS.forEach(function (k) { if (r[k] !== undefined) p[k] = r[k]; }); return p; }
+  // A re-insertable payload = every real DB column of a row (drops the underscore-prefixed computed
+  // props added by rebuild(), e.g. _critical/_float/_dcode, which aren't columns). Used to record
+  // row-paste inserts (and cut-source deletions) so they can be undone/redone.
+  function _dbPayload(r) { var p = {}; Object.keys(r || {}).forEach(function (k) { if (k[0] !== '_') p[k] = r[k]; }); return p; }
   function _uniqueActId(base, taken) { base = (base == null || base === '') ? 'A' : String(base); if (!taken.has(base)) return base; var i = 2; while (taken.has(base + ' (' + i + ')')) i++; return base + ' (' + i + ')'; }
   function copyRows(mode) {
     if (window.__viewOnly || window.__archived) return;
     var rs = _selectedTaskRows(); if (!rs.length) { UI.toast('Select one or more activities first.', 'warn'); return; }
     _clip = { mode: mode, ids: rs.map(function (r) { return r.id; }), acts: rs.map(function (r) { return r.activity_id; }), data: rs.map(_rowClipPayload) };
+    _cellClip = null;   // a row copy supersedes any pending cell copy (Ctrl+V is then unambiguous)
     UI.toast((mode === 'cut' ? 'Cut ' : 'Copied ') + rs.length + ' activit' + (rs.length === 1 ? 'y' : 'ies') + ' — select a target row and paste.', 'success');
   }
   async function pasteRows() {
@@ -6482,7 +6531,7 @@
     if (!wbsCode) { UI.toast('Select a target activity or WBS first, then paste.', 'warn'); return; }
     var taken = new Set(rows.map(function (r) { return String(r.activity_id == null ? '' : r.activity_id); }));
     showLoading('Pasting ' + _clip.data.length + ' activit' + (_clip.data.length === 1 ? 'y' : 'ies') + '…');
-    var n = 0;
+    var n = 0, inserted = [];
     for (var i = 0; i < _clip.data.length; i++) {
       var p = Object.assign({}, _clip.data[i]);
       p.project_id = pid; p.wbs = wbsCode; p.wbs_node_id = wbsNodeId || null;
@@ -6490,9 +6539,21 @@
       p.created_by = UID; p.updated_at = new Date().toISOString();
       var res = await sb().from(TABLE).insert(p).select().single();
       if (res.error) { hideLoading(); UI.toast('Paste failed: ' + res.error.message, 'error'); return; }
+      inserted.push({ id: res.data.id, payload: _dbPayload(res.data) });
       n++;
     }
-    if (_clip.mode === 'cut') { for (var j = 0; j < _clip.ids.length; j++) { await sb().from(TABLE).delete().eq('id', _clip.ids[j]); } _clip = null; }
+    // On a cut, capture the source rows (for undo restore) before deleting them.
+    var deleted = [];
+    if (_clip.mode === 'cut') {
+      for (var j = 0; j < _clip.ids.length; j++) {
+        var sr = rows.find(function (x) { return x.id === _clip.ids[j]; });
+        if (sr) deleted.push({ id: sr.id, payload: _dbPayload(sr) });
+        await sb().from(TABLE).delete().eq('id', _clip.ids[j]);
+      }
+      _clip = null;
+    }
+    // Record the whole paste as one undoable step (removes the pasted rows; restores any cut sources).
+    pushUndo({ type: 'insertMany', inserted: inserted, deleted: deleted });
     hideLoading(); _selSet = new Set(); UI.toast('Pasted ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '.', 'success'); load();
   }
   async function deleteSelected() {
@@ -6520,6 +6581,126 @@
     hideLoading(); renderGrid(); renderGantt(); renderDetails();
     UI.toast('Filled ' + (_FIELD_LABELS[field] || field) + ' to ' + rs.length + ' row' + (rs.length === 1 ? '' : 's') + '.', 'success');
   }
+  // ---- Cell clipboard (Excel/OPC-style Cut/Copy/Paste of individual cells) ----
+  // Per-column metadata in GRID_COLS order (built-ins only). `edit` = writable inline; `t` = the
+  // edit/coerce type. Computed columns (POC, At-Completion, Dur, Float, Var) are copy-only.
+  var _CELL_META = [
+    { f: 'activity_id', edit: 1, t: 'text' }, { f: 'activity_name', edit: 1, t: 'text' }, { f: 'status', edit: 0, t: 'text' },
+    { f: 'bl_start', edit: 1, t: 'date' }, { f: 'bl_finish', edit: 1, t: 'date' }, { f: 'start_date', edit: 1, t: 'date' }, { f: 'end_date', edit: 1, t: 'date' },
+    { f: 'duration_days', edit: 0, t: 'text' }, { f: null, edit: 0 }, { f: 'percent_complete', edit: 1, t: 'number' },
+    { f: 'planned_cost', edit: 1, t: 'money' }, { f: 'actual_cost', edit: 1, t: 'money' }, { f: 'earned_value', edit: 1, t: 'money' },
+    { f: null, edit: 0 }, { f: 'bl_cost', edit: 1, t: 'money' }, { f: 'percent_complete_type', edit: 0, t: 'text' }, { f: null, edit: 0 }, { f: null, edit: 0 }
+  ];
+  function _cellRect() { if (!_cellSel) return null; return { r0: Math.min(_cellSel.r0, _cellSel.r1), r1: Math.max(_cellSel.r0, _cellSel.r1), c0: Math.min(_cellSel.c0, _cellSel.c1), c1: Math.max(_cellSel.c0, _cellSel.c1) }; }
+  // Set the active cell / extend the cell range from a grid click. ci is the grid-column index
+  // (DOM child position minus the "#" gutter); a click on the gutter (ci<0) leaves cells untouched.
+  function _setCellFromClick(rw, e) {
+    var ri = parseInt(rw.dataset.i, 10); if (isNaN(ri)) return;
+    var cellEl = e.target && e.target.closest ? e.target.closest('.ps-cell') : null; if (!cellEl) return;
+    var ci = Array.prototype.indexOf.call(rw.children, cellEl) - 1; if (ci < 0 || ci >= gridCols().length) return;
+    if (e.shiftKey && _cellAnchor) { _cellSel = { r0: _cellAnchor.r, c0: _cellAnchor.c, r1: ri, c1: ci }; }
+    else { _cellAnchor = { r: ri, c: ci }; _cellSel = { r0: ri, c0: ci, r1: ri, c1: ci }; }
+  }
+  // Display text for a cell (used for the TSV written to the system clipboard).
+  function _cellText(r, ci) {
+    if (!r) return '';
+    switch (ci) {
+      case 7: { var s = pd(r.start_date), e = pd(r.end_date); var d = (s && e) ? dayDiff(s, e) + 1 : (r.duration_days || ''); return d ? String(d) : ''; }
+      case 8: { var p = plannedPOC(r); return p == null ? '' : p + '%'; }
+      case 13: { var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; var hasCost = r.planned_cost != null || r.actual_cost != null || r.earned_value != null; return hasCost ? String(eac(r, cpi)) : ''; }
+      case 16: return r._critical ? 'CP' : (r._float != null ? r._float + 'd' : '');
+      case 17: { var v = finVar(r); return v == null ? '' : (v > 0 ? '+' : '') + v + 'd'; }
+    }
+    var meta = _CELL_META[ci]; if (!meta || !meta.f) return '';
+    var val = r[meta.f]; if (val == null || val === '') return '';
+    if (meta.t === 'date') return String(val).slice(0, 10);
+    return String(val);
+  }
+  // One packed cell for the clipboard: editable source keeps its raw value (for a clean round-trip);
+  // every cell also carries display text (used when pasting from a computed source or external TSV).
+  function _cellPack(r, ci) { var meta = _CELL_META[ci]; var text = _cellText(r, ci); if (meta && meta.f && meta.edit) return { val: (r[meta.f] === undefined ? null : r[meta.f]), text: text }; return { text: text }; }
+  function _isoFromAny(s) { if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10); var d = new Date(s); if (isNaN(d.getTime())) return null; return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function _coerceCell(t, src) {
+    if (src == null) return null; var s = String(src).trim(); if (s === '') return null;
+    if (t === 'number') { var n = parseFloat(s.replace(/[^0-9.\-]/g, '')); return isNaN(n) ? null : Math.max(0, Math.min(100, n)); }
+    if (t === 'money') { var m = parseFloat(s.replace(/[^0-9.\-]/g, '')); return isNaN(m) ? null : Math.max(0, m); }
+    if (t === 'date') return _isoFromAny(s);
+    return s;
+  }
+  function copyCells(mode) {
+    if (window.__viewOnly || window.__archived) return;
+    var rc = _cellRect(); if (!rc) { UI.toast('Click a cell first, then copy.', 'warn'); return; }
+    var cells = [], refs = [], tsvRows = [];
+    for (var ri = rc.r0; ri <= rc.r1; ri++) {
+      var d = DL[ri], row = [], tsv = [];
+      for (var ci = rc.c0; ci <= rc.c1; ci++) {
+        var pk = d ? _cellPack(d, ci) : { text: '' }; row.push(pk); tsv.push(pk.text || '');
+        var meta = _CELL_META[ci];
+        if (mode === 'cut' && d && d._dkind === 'task' && meta && meta.f && meta.edit) refs.push({ id: d.id, ri: ri, ci: ci, f: meta.f });
+      }
+      cells.push(row); tsvRows.push(tsv.join('\t'));
+    }
+    _cellClip = { h: rc.r1 - rc.r0 + 1, w: rc.c1 - rc.c0 + 1, cells: cells, cut: mode === 'cut', refs: refs, tsv: tsvRows.join('\n') };
+    _clip = null;   // a cell copy supersedes any pending row copy (Ctrl+V is then unambiguous)
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(_cellClip.tsv); } catch (e) {}
+    var n = _cellClip.h * _cellClip.w;
+    UI.toast((mode === 'cut' ? 'Cut ' : 'Copied ') + n + ' cell' + (n === 1 ? '' : 's') + ' — click a target cell and paste.', 'success');
+    highlightCells();
+  }
+  async function pasteCells() {
+    if (window.__viewOnly || window.__archived) return;
+    var rc = _cellRect(); if (!rc) { UI.toast('Click a target cell first, then paste.', 'warn'); return; }
+    var clip = _cellClip;
+    // Fall back to the system clipboard (e.g. cells copied from Excel) when nothing was copied here.
+    if (!clip) {
+      var txt = '';
+      try { if (navigator.clipboard && navigator.clipboard.readText) txt = await navigator.clipboard.readText(); } catch (e) {}
+      if (!txt) { UI.toast('Nothing to paste — copy cells first.', 'warn'); return; }
+      var grid = txt.replace(/\r/g, '').replace(/\n$/, '').split('\n').map(function (ln) { return ln.split('\t').map(function (v) { return { text: v }; }); });
+      clip = { h: grid.length, w: grid.reduce(function (a, r) { return Math.max(a, r.length); }, 0), cells: grid, cut: false, refs: [] };
+    }
+    // Single copied cell fills the whole target rectangle; a block pastes once from the top-left.
+    var single = clip.h === 1 && clip.w === 1;
+    var lastR = single ? rc.r1 : rc.r0 + clip.h - 1, lastC = single ? rc.c1 : rc.c0 + clip.w - 1;
+    var byRow = {}, written = {}, skipped = 0, targeted = 0;
+    for (var tr = rc.r0; tr <= lastR; tr++) {
+      var d = DL[tr]; if (!d) continue;
+      var editable = d._dkind === 'task' && !isWbsNode(d);
+      for (var tc = rc.c0; tc <= lastC; tc++) {
+        if (tc >= gridCols().length) continue;
+        var meta = _CELL_META[tc];
+        var src = single ? clip.cells[0][0] : (clip.cells[tr - rc.r0] && clip.cells[tr - rc.r0][tc - rc.c0]); if (!src) continue;
+        targeted++;
+        if (!editable || !meta || !meta.f || !meta.edit) { skipped++; continue; }
+        var raw = (src.val !== undefined ? src.val : src.text);
+        var v = _coerceCell(meta.t, raw);
+        (byRow[d.id] = byRow[d.id] || {})[meta.f] = v;
+        written[d.id + '|' + meta.f] = 1;
+      }
+    }
+    var ids = Object.keys(byRow);
+    if (!ids.length) { UI.toast(skipped ? 'Those target cells aren’t editable.' : 'Nothing to paste here.', 'warn'); return; }
+    showLoading('Pasting cells…');
+    var cnt = 0;
+    for (var i = 0; i < ids.length; i++) {
+      var patch = byRow[ids[i]]; var r = rows.find(function (x) { return x.id === ids[i]; });
+      // Recompute duration when start/finish were pasted (mirrors inline edit).
+      if (('start_date' in patch || 'end_date' in patch) && r) {
+        var ss = pd('start_date' in patch ? patch.start_date : r.start_date), ee = pd('end_date' in patch ? patch.end_date : r.end_date);
+        if (ss && ee) patch.duration_days = dayDiff(ss, ee) + 1;
+      }
+      patch.updated_at = new Date().toISOString();
+      if (!(await persist(ids[i], patch))) { hideLoading(); return; }
+      cnt += Object.keys(patch).length - 1;
+    }
+    // A cut clears its source cells once pasted — except any that were themselves paste targets.
+    if (clip.cut && clip.refs.length) {
+      for (var j = 0; j < clip.refs.length; j++) { var ref = clip.refs[j]; if (written[ref.id + '|' + ref.f]) continue; var cp = {}; cp[ref.f] = null; cp.updated_at = new Date().toISOString(); await persist(ref.id, cp); }
+      _cellClip = null;
+    }
+    hideLoading(); renderGrid(); renderGantt(); renderDetails();
+    UI.toast('Pasted ' + cnt + ' cell' + (cnt === 1 ? '' : 's') + (skipped ? ' (' + skipped + ' read-only cell' + (skipped === 1 ? '' : 's') + ' skipped)' : '') + '.', 'success');
+  }
   function openRowMenu(e, r, cellField) {
     e.preventDefault(); e.stopPropagation(); closeRowMenu(); closeBarColorMenu(); closeColMenu();
     if (window.__viewOnly || window.__archived) return;   // read-only projects: no insert menu
@@ -6532,13 +6713,22 @@
     var nSel = _selSet.size || (r && r.id ? 1 : 0), selSfx = nSel > 1 ? ' (' + nSel + ')' : '';
     items.push('<button data-act="add"><span data-ico="plus" data-ico-size="14"></span> Add activity below <span style="color:var(--pd-muted);font-size:10px;">Insert</span></button>');
     if (r && !isW && r._dkind !== 'group') items.push('<button data-act="edit"><span data-ico="edit" data-ico-size="14"></span> Edit activity…</button>');
-    // Row clipboard (activities only)
+    // Cell clipboard (Ctrl+C/X/V operate on cells) — shown whenever a cell is active.
+    var rcCell = _cellRect(), nCell = rcCell ? ((rcCell.r1 - rcCell.r0 + 1) * (rcCell.c1 - rcCell.c0 + 1)) : 0;
+    if (nCell) {
+      var cSfx = nCell > 1 ? ' (' + nCell + ')' : '';
+      items.push(sep);
+      items.push('<button data-act="copycells">Copy cell' + (nCell > 1 ? 's' : '') + cSfx + ' <span style="color:var(--pd-muted);font-size:10px;">Ctrl+C</span></button>');
+      items.push('<button data-act="cutcells">Cut cell' + (nCell > 1 ? 's' : '') + cSfx + ' <span style="color:var(--pd-muted);font-size:10px;">Ctrl+X</span></button>');
+      if (_cellClip) items.push('<button data-act="pastecells">Paste cell' + (_cellClip.h * _cellClip.w > 1 ? 's' : '') + ' here <span style="color:var(--pd-muted);font-size:10px;">Ctrl+V</span></button>');
+    }
+    // Row clipboard (whole activities — copies every field, generates a fresh Activity ID on paste)
     if (r && !isW && r._dkind !== 'group') {
       items.push(sep);
-      items.push('<button data-act="copy">Copy' + selSfx + ' <span style="color:var(--pd-muted);font-size:10px;">Ctrl+C</span></button>');
-      items.push('<button data-act="cut">Cut' + selSfx + ' <span style="color:var(--pd-muted);font-size:10px;">Ctrl+X</span></button>');
+      items.push('<button data-act="copy">Copy row' + (nSel > 1 ? 's' : '') + selSfx + '</button>');
+      items.push('<button data-act="cut">Cut row' + (nSel > 1 ? 's' : '') + selSfx + '</button>');
     }
-    if (_clip && _clip.data.length) items.push('<button data-act="paste">Paste ' + _clip.data.length + ' here <span style="color:var(--pd-muted);font-size:10px;">Ctrl+V</span></button>');
+    if (_clip && _clip.data.length) items.push('<button data-act="paste">Paste ' + _clip.data.length + ' row' + (_clip.data.length === 1 ? '' : 's') + ' here</button>');
     // Fill down: only when a data cell was right-clicked AND there are other selected rows to fill.
     if (cellField && !isW && r && r._dkind !== 'group' && _selSet.size > 1) items.push('<button data-act="filldown">Fill ' + esc(_FIELD_LABELS[cellField] || cellField) + ' down (' + (_selSet.size - 1) + ')</button>');
     items.push(sep);
@@ -6564,6 +6754,9 @@
       else if (a === 'copy') { copyRows('copy'); }
       else if (a === 'cut') { copyRows('cut'); }
       else if (a === 'paste') { pasteRows(); }
+      else if (a === 'copycells') { copyCells('copy'); }
+      else if (a === 'cutcells') { copyCells('cut'); }
+      else if (a === 'pastecells') { pasteCells(); }
       else if (a === 'filldown') { fillDown(cellField, r); }
       else if (a === 'del') { if (!isW && _selSet.size > 1) deleteSelected(); else deleteRow(r); }
     }; });
@@ -6815,12 +7008,14 @@
       if (!sv || sv.offsetParent === null) return;           // Schedule view not visible
       if (window.__viewOnly || window.__archived) return;
       var k = e.key, ctrl = e.ctrlKey || e.metaKey;
-      if (ctrl && (k === 'c' || k === 'C')) { if (_selectedTaskRows().length) { e.preventDefault(); copyRows('copy'); } }
-      else if (ctrl && (k === 'x' || k === 'X')) { if (_selectedTaskRows().length) { e.preventDefault(); copyRows('cut'); } }
-      else if (ctrl && (k === 'v' || k === 'V')) { if (_clip) { e.preventDefault(); pasteRows(); } }
+      // Ctrl+C/X/V act on the cell selection when one exists (Excel-style); otherwise they fall back
+      // to the whole-row clipboard. Paste prefers whichever clipboard was filled last.
+      if (ctrl && (k === 'c' || k === 'C')) { if (_cellSel) { e.preventDefault(); copyCells('copy'); } else if (_selectedTaskRows().length) { e.preventDefault(); copyRows('copy'); } }
+      else if (ctrl && (k === 'x' || k === 'X')) { if (_cellSel) { e.preventDefault(); copyCells('cut'); } else if (_selectedTaskRows().length) { e.preventDefault(); copyRows('cut'); } }
+      else if (ctrl && (k === 'v' || k === 'V')) { if (_cellClip || (!_clip && _cellSel)) { e.preventDefault(); pasteCells(); } else if (_clip) { e.preventDefault(); pasteRows(); } }
       else if (!ctrl && k === 'Insert') { e.preventDefault(); if (pid) openForm(null); }
       else if (!ctrl && (k === 'Delete' || k === 'Backspace')) { if (_selectedTaskRows().length) { e.preventDefault(); deleteSelected(); } }
-      else if (!ctrl && k === 'Escape') { if (_selSet.size) { _selSet = new Set(); highlightRow(); } }
+      else if (!ctrl && k === 'Escape') { if (_selSet.size || _cellSel) { _selSet = new Set(); _cellSel = null; _cellAnchor = null; highlightRow(); } }
     });
     document.getElementById('ps-health-close').onclick = closeHealthPanel;
     document.getElementById('ps-health-backdrop').onclick = closeHealthPanel;

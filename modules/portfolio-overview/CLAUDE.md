@@ -62,6 +62,15 @@ per module:
   category breakdown to the peso) both matched exactly; confirmed the project filter narrows
   both new tabs identically to the Overview tab.
 
+## Project selector moved to the tab bar (2026-07-11)
+User feedback during live testing: on the S-Curve tab there was no project selector — it lived only in
+the Overview toolbar, so you had to switch back to Overview to change scope. Moved `#po-projfilter-wrap`
+out of the Overview toolbar into the always-visible `.po-tabs` bar (right-aligned, `margin-left:auto`),
+so the same multi-select filter scopes Overview + S-Curve + Cash Flow from any tab. Handlers are keyed
+by id (no JS change); the scope notes on the S-Curve/Cash Flow tabs now read "the project filter above"
+instead of "set on the Overview tab". Behaviour unchanged: changing scope while on a data tab still needs
+the tab's **Refresh** (cached by scope, per the 2026-07-06 note).
+
 ## Cash Flow module now real (2026-07-06)
 Cash Flow was flipped to `enabled: true` in `config.js` because it stopped being a placeholder
 — see `modules/cash-flow/CLAUDE.md`. This tab reads its `cash_flow` table.

@@ -112,6 +112,54 @@ change (verified 0 mismatches vs the old algorithm across 2,000 random DAGs):
   is already windowed (`renderWindow`, cached `DL`, scroll never rebuilds) and client-side
   CPM/critical-path/roll-ups require the full dataset in memory.
 
+## OPC clipboard extras (2026-07-11) — cell-level Cut/Copy/Paste
+Follows the existing row clipboard (whole-activity Copy/Cut/Paste). Adds an Excel/OPC-style **cell**
+clipboard operating on individual grid cells, independent of the row selection/clipboard.
+- **Cell-range selection** (`_cellSel` = a rectangle in DL-row × grid-column index space; `_cellAnchor`
+  = shift-extend anchor). A plain grid click sets the active cell (still selects the row for the
+  details panel); **Shift-click extends a rectangular block**. Wired via `_setCellFromClick(rw,e)` in
+  both the row click and contextmenu handlers (computes the column index from the clicked `.ps-cell`'s
+  DOM position minus the `#` gutter — the DOM stays in data order, so this equals the `gridCols()`
+  index). Painted by `highlightCells()` (called from `highlightRow()`, so it survives virtualization
+  scroll/re-render): `.ps-cell-sel` tinted block, `.ps-cell-active` solid box, `.ps-cell-cut` dashed box.
+- **`_CELL_META`** = per-column (GRID_COLS order, built-ins only) `{f, edit, t}`. Editable: Activity ID/
+  Name, BL Start/Finish, Start, Finish, % Complete, Planned/Actual/EV/BL IBB. Computed columns (POC,
+  At-Completion, Dur, Float, Var, Status, % Complete Type) are **copy-only** (paste skips them, counted
+  in the toast). Extra code/UDF columns are out of scope (jsonb).
+- **`copyCells(mode)`** packs the rectangle into `_cellClip` `{h,w,cells,cut,refs,tsv}` — each cell keeps
+  its raw `val` (editable source, for a clean round-trip) plus display `text`; also writes a **TSV to the
+  system clipboard** (`navigator.clipboard.writeText`, best-effort) so cells can be pasted into Excel.
+  Clears `_clip` (row clipboard) so Ctrl+V stays unambiguous; `copyRows` reciprocally clears `_cellClip`.
+- **`pasteCells()`** (async): single copied cell **fills** the whole target rectangle; a block **pastes
+  once** from the top-left. Values coerce to the *target* column's type (`_coerceCell`: number clamps
+  0–100, money ≥0 strips currency/commas, date via `_isoFromAny`). Writes are grouped per row and go
+  through **`persist()`** (undoable + audited + triggers rebuild/CPM); **duration recomputes** when
+  Start/Finish are pasted. A **cut** clears its source cells after paste (except any that were themselves
+  paste targets). Falls back to reading the **system clipboard** (Excel paste) when nothing was copied
+  in-grid. Non-editable targets are skipped and reported.
+- **Keyboard:** Ctrl+C/X/V act on the cell selection when one exists (Excel-style), else fall back to the
+  row clipboard; paste prefers whichever clipboard was filled last. **Esc** clears both selections. The
+  right-click menu shows a **Copy/Cut/Paste cell(s)** section (Ctrl+C/X/V) above the relabeled **Copy/Cut
+  row(s)** / **Paste N rows here** items.
+- Verified: the 467k inline module block parses clean; a node harness hand-checked `_coerceCell`/
+  `_isoFromAny` (150→100, "50%"→50, "₱1,250.5"→1250.5, iso+human dates→ISO, empty→null) and the
+  block-vs-fill paste index mapping (2×2 block expands from a single target cell; a 1-cell clip fills a
+  3×2 target). Page loads with no console errors. **Not yet exercised end-to-end against a live login**
+  (same constraint as prior batches — needs a real session + data to click through).
+
+## Clipboard fixes from live DEMO01 testing (2026-07-11)
+Two bugs surfaced during the first real-login click-through (VERIFICATION.md §2), both fixed:
+- **Shift-click made a native browser text-selection** (blue highlight + the browser's selection
+  toolbar) that buried the red cell-range block and made Ctrl+C/X/V feel tied to inline editing. Fix:
+  `user-select:none` on `.ps-grid-pane .ps-cell` (re-enabled `user-select:text` on `.ps-cell input`
+  so editing still allows text selection). The cell block is now the only visible selection and the
+  keyboard clipboard acts on it directly.
+- **Row Copy/Paste (right-click → Copy/Paste row(s)) wasn't undoable** — `pasteRows` inserted directly
+  and never recorded undo. Fix: new **`insertMany`** undo action. `pasteRows` now collects the inserted
+  rows (`_dbPayload(res.data)` = the row minus underscore-prefixed computed props) and, on a cut, the
+  deleted source rows; `undo()` deletes the pasted rows + re-inserts cut sources; `redo()` reverses it;
+  both `await load()` to resync. (Cell paste was already undoable — it routes through `persist()`.)
+
 ## OPC parity batch: Activity Codes, Weighted Steps, Last Planner/PPC (2026-07-07)
 Three requested together (user prioritization: build the one that's more foundational/necessary
 where it matters — see the per-feature notes below).

@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260706"></script>
+  <script src="../../assets/js/theme.js?v=20260711"></script>
   <title>Portfolio Overview · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260706" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260711" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -113,6 +113,18 @@
         <button class="po-tab active" data-view="overview"><span data-ico="barChart" data-ico-size="15"></span> Overview</button>
         <button class="po-tab" data-view="scurve"><span data-ico="trendingUp" data-ico-size="15"></span> S-Curve</button>
         <button class="po-tab" data-view="cashflow"><span data-ico="cash" data-ico-size="15"></span> Cash Flow</button>
+        <!-- Project filter lives here (not in the Overview toolbar) so it's reachable from every tab
+             — it scopes the Overview table AND the S-Curve / Cash Flow views. -->
+        <div class="po-projfilter" id="po-projfilter-wrap" style="margin-left:auto;align-self:center;">
+          <button class="pd-btn" id="po-projfilter-btn" type="button" title="Filter which projects appear in every tab">
+            <span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span> <span data-ico="chevronDown" data-ico-size="13"></span>
+          </button>
+          <div class="po-projfilter-menu" id="po-projfilter-menu">
+            <div class="po-projfilter-search"><input class="pd-input pd-input-sm" id="po-projfilter-search" placeholder="Search projects…" /></div>
+            <div class="po-projfilter-actions"><button type="button" data-act="all">Select all</button><button type="button" data-act="none">Clear</button></div>
+            <div class="po-projfilter-list" id="po-projfilter-list"></div>
+          </div>
+        </div>
       </div>
 
       <div id="po-view-overview">
@@ -126,16 +138,6 @@
               <option value="none">None (flat)</option>
             </select>
           </label>
-          <div class="po-projfilter" id="po-projfilter-wrap">
-            <button class="pd-btn" id="po-projfilter-btn" type="button" title="Filter to specific projects">
-              <span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span> <span data-ico="chevronDown" data-ico-size="13"></span>
-            </button>
-            <div class="po-projfilter-menu" id="po-projfilter-menu">
-              <div class="po-projfilter-search"><input class="pd-input pd-input-sm" id="po-projfilter-search" placeholder="Search projects…" /></div>
-              <div class="po-projfilter-actions"><button type="button" data-act="all">Select all</button><button type="button" data-act="none">Clear</button></div>
-              <div class="po-projfilter-list" id="po-projfilter-list"></div>
-            </div>
-          </div>
           <select class="pd-select" id="po-status" title="Status filter" style="max-width:150px;">
             <option value="">All statuses</option>
             <option value="active">Active</option>
@@ -160,7 +162,7 @@
       </div>
 
       <div id="po-view-scurve" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> set on the Overview tab (<span id="po-sc-scope">all projects</span>). <button class="pd-btn" id="po-sc-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-sc-scope">all projects</span>). <button class="pd-btn" id="po-sc-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
         <div class="po-kpis2" id="po-sc-kpis"></div>
         <div class="po-card">
           <h3 style="text-transform:none;font-size:15px;">Portfolio S-Curve — Planned vs Actual (duration-weighted, across selected projects)</h3>
@@ -169,7 +171,7 @@
       </div>
 
       <div id="po-view-cashflow" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> set on the Overview tab (<span id="po-cf-scope">all projects</span>). <button class="pd-btn" id="po-cf-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-cf-scope">all projects</span>). <button class="pd-btn" id="po-cf-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
         <div class="po-kpis2" id="po-cf-kpis"></div>
         <div class="po-card">
           <h3 style="text-transform:none;font-size:15px;">Portfolio Cash Flow — Planned vs Actual by month</h3>
@@ -184,11 +186,11 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260706"></script>
-<script src="../../assets/js/auth.js?v=20260706"></script>
-<script src="../../assets/js/db.js?v=20260706"></script>
-<script src="../../assets/js/ui.js?v=20260706"></script>
-<script src="../../assets/js/icons.js?v=20260706"></script>
+<script src="../../assets/js/config.js?v=20260711"></script>
+<script src="../../assets/js/auth.js?v=20260711"></script>
+<script src="../../assets/js/db.js?v=20260711"></script>
+<script src="../../assets/js/ui.js?v=20260711"></script>
+<script src="../../assets/js/icons.js?v=20260711"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {

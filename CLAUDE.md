@@ -77,6 +77,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-11 — Live DB verification (first real-login check of the schema)
+- **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
+  against what the code expects — most feature batches to date were only harness-verified. New
+  `planning-app/VERIFICATION.md` playbook (security / migration self-check / click-through).
+- **Security sweep:** repo is clean — only the anon key (JWT `role:anon`) is in `config.js`; no
+  `service_role` key anywhere. The exposed key still needs dashboard rotation (user-only action;
+  ⚠️ legacy JWT keys → rotating the secret also rolls the anon key → must update `config.js` + bump
+  `?v=`). Captured in VERIFICATION.md §0.
+- **Migration gap found + fixed live:** all 21 expected tables present, but `project_schedule` was
+  **missing `activity_codes` and `udf`** (both jsonb) — so per-activity Activity-Code and UDF
+  assignments had been failing to persist *silently* (tolerant writes). Ran
+  `alter table project_schedule add column if not exists activity_codes/udf jsonb default '{}'::jsonb;`
+  in the SQL editor; re-check returned 0 missing. The definition tables (activity_code_types/values,
+  activity_udf_defs) already existed — only the two jsonb columns were absent.
+- **Still pending:** the §2 app click-through (needs a logged-in session on the deployed/preview app),
+  and the key rotation.
+
 ### 2026-07-06 — Prompt 65: Asset cache-busting (fixes recurring "stale side panel" on deploy)
 - User reported the side panel "still needs work" with screenshots showing `Project HomeNone
   selected` jammed on one line and projects.html missing the new PORTFOLIO/PROJECT/SYSTEM
