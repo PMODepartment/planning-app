@@ -167,9 +167,14 @@ default false = current manual behaviour preserved). Build sequence (UI, next):
   `syncActivityCost(r)` sums Σ assignment + Σ expense cost → activity planned/actual via `persist()`
   (undoable) ONLY when the flag is on (default off = manual preserved), called after assignment
   save/delete. (Assignment-form interactive test blocked by the 4,393-row grid freeze — code-verified.)
-- **3c Expenses tab** — per-activity itemized non-labor costs, optional cost account, feeds the roll-up.
-All UI to be written tolerant of the not-yet-run migration (missing table/column → graceful nudge),
-matching the existing pattern.
+- **3c Expenses tab** — DONE + deployed (`3a05035`). New **Expenses** detail tab (between Resource
+  Assignments and Relationships): per-activity CRUD (name, cost account, planned/actual cost, remarks)
+  + Total row (`detExpenses`/`wireExpenses`/`openExpenseForm`/`delExpense`, copied from Steps/Assignments).
+  Feeds `syncActivityCost` so expenses roll into the activity's Planned/Actual cost when `cost_rollup`
+  is on. Tolerant of the not-yet-run migration.
+**Batch complete (2026-07-11).** All UI written tolerant of the migration (missing table/column →
+graceful nudge). Interactive tests for the assignment form / rollup / expenses are blocked by the
+4,393-row grid render freeze (need a small scratch project); resource-master Price/Unit verified live.
 
 ## Excel export now includes dynamic columns (2026-07-11)
 `exportExcel` previously used a fixed header set — the Activity-Code/UDF dynamic grid columns were
