@@ -153,7 +153,12 @@ User approved building all four gaps. **Migration `../../migrations/2026-07-11-r
 `budgeted/actual/remaining_cost`+`cost_account_id`+`rate_source` on `resource_assignments`,
 `activity_expenses` table, and `project_schedule.cost_rollup` (opt-in bottom-up cost derivation;
 default false = current manual behaviour preserved). Build sequence (UI, next):
-- **3a Cost Accounts / CBS manager** (Actions ▾, two-pane like Activity Codes) — table done, UI pending.
+- **3a Cost Accounts / CBS manager** — DONE + deployed (`871279c`). Actions ▾ → Cost Accounts…: a
+  single-pane indented CBS **tree** manager (add top-level / add child / edit / delete with child+usage
+  guards). `COST_ACCTS`/`EXPENSES` loaded in `loadResourcesAssignments` (tolerant). Helpers
+  `costAcctTree`/`costAcctOptions`/`costAcctLabel`/`costAcctUsage` ready for 3b/3c pickers. Tree
+  ordering/indentation node-verified; interactive smoke-test blocked by the 4,393-row render freeze
+  (needs a small project, same blocker as §2 write-actions).
 - **3b Price/Unit + assignment cost + roll-up** — resource-master rate field, assignment-form cost
   (derive = units × rate, `rate_source` toggle for manual), roll assignment+expense cost up to the
   activity's planned/actual/earned cost ONLY when `cost_rollup` is on.

@@ -154,20 +154,21 @@
     var t = document.getElementById('rl-table'), f = filtered();
     if (tab === 'resources') {
       t.innerHTML = '<thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Primary Role</th>' +
-        '<th class="num">Default Units/Time</th><th class="num">Max Units/Time</th><th>UoM</th><th>Calendar</th><th></th></tr></thead><tbody>' +
+        '<th class="num">Price/Unit</th><th class="num">Default Units/Time</th><th class="num">Max Units/Time</th><th>UoM</th><th>Calendar</th><th></th></tr></thead><tbody>' +
         (f.length ? f.map(function (r) {
           return '<tr>' +
             '<td><code style="font-size:12px;">' + esc(r.resource_code || '') + '</code></td>' +
             '<td>' + esc(r.name || '') + '</td>' +
             '<td><span class="rl-badge">' + esc(r.type || 'Labor') + '</span></td>' +
             '<td>' + esc(r.primary_role || '—') + '</td>' +
+            '<td class="num">' + (r.price_per_unit != null ? Fmt.money(r.price_per_unit) : '—') + '</td>' +
             '<td class="num">' + (r.default_units_per_time != null ? r.default_units_per_time + '%' : '—') + '</td>' +
             '<td class="num">' + (r.max_units_per_time != null ? r.max_units_per_time + '%' : '—') + '</td>' +
             '<td>' + esc(r.uom || '') + '</td>' +
             '<td style="font-size:12px;color:var(--pd-muted);">' + esc(calName(r.calendar_id, r.calendar)) + '</td>' +
             '<td><div class="rl-actions"><button class="rl-btn-sm" data-edit="' + r.id + '">Edit</button><button class="rl-btn-sm" data-del="' + r.id + '">&#215;</button></div></td>' +
           '</tr>';
-        }).join('') : '<tr><td colspan="9" class="rl-empty">' + (pid ? 'No resources yet. Click “Add resource”.' : 'Select a project.') + '</td></tr>') + '</tbody>';
+        }).join('') : '<tr><td colspan="10" class="rl-empty">' + (pid ? 'No resources yet. Click “Add resource”.' : 'Select a project.') + '</td></tr>') + '</tbody>';
     } else if (tab === 'roles') {
       t.innerHTML = '<thead><tr><th>Role</th><th>Discipline</th><th>UoM</th><th>Remarks</th><th></th></tr></thead><tbody>' +
         (f.length ? f.map(function (r) {
@@ -223,6 +224,7 @@
         sec('Classification') +
         fld('Type', '<select class="pd-select" id="f-type">' + typeOptions(row.type || 'Labor') + '</select>') +
         fld('Primary Role', '<select class="pd-select" id="f-role">' + roleOptions(row.primary_role) + '</select>') +
+        fld('Price / Unit (₱)', '<input class="pd-input" id="f-rate" type="number" min="0" step="0.01" value="' + (row.price_per_unit != null ? row.price_per_unit : '') + '" placeholder="e.g. 550 per hour/day">') +
         sec('Availability &amp; Calendar') +
         fld('Default Units/Time (%)', '<input class="pd-input" id="f-def" type="number" min="0" step="1" value="' + (row.default_units_per_time != null ? row.default_units_per_time : 100) + '">') +
         fld('Max Units/Time (%)', '<input class="pd-input" id="f-max" type="number" min="0" step="1" value="' + (row.max_units_per_time != null ? row.max_units_per_time : 100) + '">') +
@@ -236,6 +238,7 @@
         fld('Role name', '<input class="pd-input" id="f-name" value="' + esc(row.name) + '" placeholder="e.g. Planning Engineer">', true) +
         fld('Discipline', '<input class="pd-input" id="f-disc" value="' + esc(row.discipline) + '" placeholder="e.g. Labor / Engineering">') +
         fld('UoM', '<input class="pd-input" id="f-uom" value="' + esc(row.uom || 'hours') + '">') +
+        fld('Price / Unit (₱)', '<input class="pd-input" id="f-rate" type="number" min="0" step="0.01" value="' + (row.price_per_unit != null ? row.price_per_unit : '') + '">') +
         fld('Remarks', '<textarea class="pd-input" id="f-rem" rows="2">' + esc(row.remarks) + '</textarea>', true);
     } else {
       row = row || { hours_per_day: 8, work_mon: true, work_tue: true, work_wed: true, work_thu: true, work_fri: true, work_sat: true, work_sun: false };
@@ -263,11 +266,11 @@
       if (!v('f-name')) { UI.toast('Name is required.', 'error'); return; }
       payload = { project_id: pid, resource_code: v('f-code') || null, name: v('f-name'),
         type: document.getElementById('f-type').value, primary_role: document.getElementById('f-role').value || null,
-        default_units_per_time: num('f-def'), max_units_per_time: num('f-max'),
+        default_units_per_time: num('f-def'), max_units_per_time: num('f-max'), price_per_unit: num('f-rate'),
         uom: v('f-uom') || null, calendar_id: document.getElementById('f-cal').value || null, remarks: v('f-rem') || null, updated_at: new Date().toISOString() };
     } else if (tab === 'roles') {
       if (!v('f-name')) { UI.toast('Role name is required.', 'error'); return; }
-      payload = { project_id: pid, name: v('f-name'), discipline: v('f-disc') || null, uom: v('f-uom') || null, remarks: v('f-rem') || null, updated_at: new Date().toISOString() };
+      payload = { project_id: pid, name: v('f-name'), discipline: v('f-disc') || null, uom: v('f-uom') || null, price_per_unit: num('f-rate'), remarks: v('f-rem') || null, updated_at: new Date().toISOString() };
     } else {
       if (!v('f-name')) { UI.toast('Calendar name is required.', 'error'); return; }
       var holidays = v('f-hol').split('\n').map(function (s) { return s.trim(); }).filter(function (s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); });

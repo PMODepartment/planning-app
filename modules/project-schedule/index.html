@@ -2519,6 +2519,21 @@
     if (r.percent_complete === pct) return;
     await persist(r.id, { percent_complete: pct });
   }
+  // Resource rate (Price/Unit) for cost derivation; null when the resource has none set.
+  function resRate(resId) { var rr = RESRC.find(function (x) { return x.id === resId; }); return (rr && rr.price_per_unit != null) ? +rr.price_per_unit : null; }
+  function assignCost(a) { return (a.budgeted_cost || 0); }
+  // Bottom-up cost roll-up: when an activity has cost_rollup on, derive its planned/actual cost from
+  // Σ assignment cost + Σ expense cost and persist (undoable). No-op when the flag is off (default),
+  // so manually-costed activities are never touched. Mirrors syncPhysicalPct.
+  async function syncActivityCost(r) {
+    if (!r || !r.cost_rollup || !r.activity_id) return;
+    var plan = 0, act = 0;
+    assignsFor(r.activity_id).forEach(function (a) { plan += a.budgeted_cost || 0; act += a.actual_cost || 0; });
+    EXPENSES.filter(function (e) { return e.activity_id === r.activity_id; }).forEach(function (e) { plan += e.planned_cost || 0; act += e.actual_cost || 0; });
+    plan = Math.round(plan * 100) / 100; act = Math.round(act * 100) / 100;
+    if ((r.planned_cost || 0) === plan && (r.actual_cost || 0) === act) return;
+    await persist(r.id, { planned_cost: plan, actual_cost: act, updated_at: new Date().toISOString() });
+  }
   function detAssign(r) {
     if (!r.activity_id) return '<div class="ps-empty-detail">Give this activity an <strong>Activity ID</strong> first (double-click the ID cell) so resources can be assigned to it.</div>';
     var list = assignsFor(r.activity_id);
@@ -2526,19 +2541,33 @@
       return '<tr><td>' + esc(resName(a)) + (a.resource_code ? ' <span style="color:var(--pd-muted);">(' + esc(a.resource_code) + ')</span>' : '') + '</td>' +
         '<td>' + esc(a.role || '—') + '</td>' +
         '<td class="num">' + nzu(a.budgeted_units) + '</td><td class="num">' + nzu(a.actual_units) + '</td><td class="num">' + nzu(a.remaining_units) + '</td>' +
-        '<td>' + esc(a.uom || 'hours') + '</td>' +
+        '<td class="num">' + (a.budgeted_cost != null ? Fmt.money(a.budgeted_cost) : '—') + '</td>' +
+        '<td>' + esc(a.cost_account_id ? costAcctLabel(a.cost_account_id) : '—') + '</td>' +
         '<td style="white-space:nowrap;"><button class="ps-btn-sm" data-aedit="' + a.id + '">Edit</button> <button class="ps-btn-sm" data-adel="' + a.id + '">&#215;</button></td></tr>';
-    }).join('') : '<tr><td colspan="7" style="color:var(--pd-muted);padding:10px;">No resources assigned yet.</td></tr>';
-    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">' +
+    }).join('') : '<tr><td colspan="8" style="color:var(--pd-muted);padding:10px;">No resources assigned yet.</td></tr>';
+    var totCost = list.reduce(function (s, a) { return s + (a.budgeted_cost || 0); }, 0);
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">' +
       '<strong>' + esc(r.activity_id) + ' — ' + esc(r.activity_name || '') + '</strong>' +
+      '<label class="ps-usage-note" style="margin-left:8px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;" title="When on, this activity’s Planned/Actual cost is derived from its assignments + expenses (overrides manual entry).">' +
+        '<input type="checkbox" id="ps-costrollup"' + (r.cost_rollup ? ' checked' : '') + '> Roll cost up from assignments/expenses</label>' +
       '<button class="pd-btn pd-btn-primary" id="ps-assign-add" style="margin-left:auto;height:30px;font-size:12px;padding:0 12px;"><span data-ico="plus" data-ico-size="14"></span> Assign resource</button></div>' +
-      '<table class="ps-mini"><thead><tr><th>Resource</th><th>Role</th><th class="num">Budgeted</th><th class="num">Actual</th><th class="num">Remaining</th><th>UoM</th><th></th></tr></thead><tbody>' + rowsH + '</tbody></table>' +
+      '<table class="ps-mini"><thead><tr><th>Resource</th><th>Role</th><th class="num">Budgeted</th><th class="num">Actual</th><th class="num">Remaining</th><th class="num">Cost</th><th>Cost account</th><th></th></tr></thead><tbody>' + rowsH +
+        (list.length ? '<tr><td colspan="5" style="text-align:right;font-weight:600;">Total assignment cost</td><td class="num" style="font-weight:600;">' + Fmt.money(totCost) + '</td><td colspan="2"></td></tr>' : '') +
+      '</tbody></table>' +
       (RESRC.length ? '' : '<p class="ps-usage-note" style="margin-top:8px;">No resources defined yet — add them in the <a href="../resource-loading/index.html">Resource &amp; Role Master</a>, then assign here.</p>');
   }
   function wireAssign(root, r) {
     var add = root.querySelector('#ps-assign-add'); if (add) add.onclick = function () { openAssignForm(r, null); };
     root.querySelectorAll('[data-aedit]').forEach(function (b) { b.onclick = function () { openAssignForm(r, ASSIGN.find(function (x) { return x.id === b.dataset.aedit; })); }; });
     root.querySelectorAll('[data-adel]').forEach(function (b) { b.onclick = function () { delAssign(b.dataset.adel); }; });
+    var roll = root.querySelector('#ps-costrollup');
+    if (roll) roll.onchange = async function () {
+      // cost_rollup written tolerantly (own try/catch) so a not-yet-migrated DB never breaks
+      try { await sb().from(TABLE).update({ cost_rollup: this.checked }).eq('id', r.id); r.cost_rollup = this.checked; } catch (e) { UI.toast('Run the resource-cost-parity migration first.', 'warn'); return; }
+      if (this.checked) { await syncActivityCost(r); UI.toast('Cost now rolled up from assignments/expenses.', 'success'); }
+      else UI.toast('Cost roll-up off — Planned/Actual cost are manual again.', 'info');
+      renderGrid(); renderGantt(); renderDetails();
+    };
     if (window.Icons) Icons.hydrate(root);
   }
   function openAssignForm(r, a) {
@@ -2560,11 +2589,41 @@
           [['linear', 'Linear (uniform)'], ['front', 'Front-loaded'], ['back', 'Back-loaded'], ['bell', 'Bell (mid-peak)']].map(function (o) { return '<option value="' + o[0] + '"' + ((a.curve || 'linear') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></div>' +
       '</div>' +
+      '<div class="ps-form-sec" style="margin-top:4px;">Cost</div>' +
+      '<div style="display:flex;gap:10px;">' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">Cost basis</label><select class="pd-select" id="pa-basis">' +
+          '<option value="derived"' + ((a.rate_source || 'derived') === 'derived' ? ' selected' : '') + '>Derived (units × rate)</option>' +
+          '<option value="manual"' + (a.rate_source === 'manual' ? ' selected' : '') + '>Manual</option></select></div>' +
+        '<div class="pd-field" style="flex:2;"><label class="pd-label">Cost account</label><select class="pd-select" id="pa-acct">' + costAcctOptions(a.cost_account_id || '') + '</select></div>' +
+      '</div>' +
+      '<div style="display:flex;gap:10px;">' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">Budgeted cost</label><input class="pd-input" id="pa-bcost" type="number" step="0.01" value="' + (a.budgeted_cost != null ? a.budgeted_cost : '') + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">Actual cost</label><input class="pd-input" id="pa-acost" type="number" step="0.01" value="' + (a.actual_cost != null ? a.actual_cost : '') + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">Remaining cost</label><input class="pd-input" id="pa-rcost" type="number" step="0.01" value="' + (a.remaining_cost != null ? a.remaining_cost : '') + '"></div>' +
+      '</div>' +
+      '<div class="ps-usage-note" id="pa-ratenote" style="margin:-4px 0 6px;"></div>' +
       '<div style="text-align:right;margin-top:6px;"><button class="pd-btn" id="pa-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="pa-save">Save</button></div>');
+    function selRate() { return resRate(m.el.querySelector('#pa-res').value); }
+    function recalcCost() {
+      var basis = m.el.querySelector('#pa-basis').value, rate = selRate(), note = m.el.querySelector('#pa-ratenote');
+      var bc = m.el.querySelector('#pa-bcost'), ac = m.el.querySelector('#pa-acost'), rc = m.el.querySelector('#pa-rcost');
+      if (basis === 'derived') {
+        bc.disabled = ac.disabled = rc.disabled = true;
+        if (rate != null) {
+          var bu = parseFloat(m.el.querySelector('#pa-bud').value) || 0, au = parseFloat(m.el.querySelector('#pa-act').value) || 0, ru = parseFloat(m.el.querySelector('#pa-rem').value) || 0;
+          bc.value = (bu * rate).toFixed(2); ac.value = (au * rate).toFixed(2); rc.value = (ru * rate).toFixed(2);
+          note.textContent = 'Rate ' + Fmt.money(rate) + '/unit → cost = units × rate.';
+        } else { bc.value = ac.value = rc.value = ''; note.textContent = 'Selected resource has no Price/Unit — set one in the Resource Master, or switch to Manual.'; }
+      } else { bc.disabled = ac.disabled = rc.disabled = false; note.textContent = 'Manual cost entry.'; }
+    }
     m.el.querySelector('#pa-res').onchange = function (e) {
       var rr = RESRC.find(function (x) { return x.id === e.target.value; });
       if (rr) { if (!m.el.querySelector('#pa-role').value) m.el.querySelector('#pa-role').value = rr.primary_role || ''; m.el.querySelector('#pa-uom').value = rr.uom || 'hours'; }
+      recalcCost();
     };
+    m.el.querySelector('#pa-basis').onchange = recalcCost;
+    ['#pa-bud', '#pa-act', '#pa-rem'].forEach(function (id) { m.el.querySelector(id).addEventListener('input', recalcCost); });
+    recalcCost();
     m.el.querySelector('#pa-x').onclick = m.close;
     m.el.querySelector('#pa-save').onclick = async function () {
       var resId = m.el.querySelector('#pa-res').value || null;
@@ -2576,23 +2635,30 @@
         curve: m.el.querySelector('#pa-curve').value || 'linear',
         updated_at: new Date().toISOString() };
       var res;
-      // curve written separately + tolerantly so a not-yet-migrated DB doesn't break the save
-      var curveVal = payload.curve; delete payload.curve;
+      // curve + cost fields written separately + tolerantly so a not-yet-migrated DB doesn't break the save
+      var extra = { curve: payload.curve,
+        budgeted_cost: numOrNull(m.el.querySelector('#pa-bcost').value), actual_cost: numOrNull(m.el.querySelector('#pa-acost').value),
+        remaining_cost: numOrNull(m.el.querySelector('#pa-rcost').value), cost_account_id: m.el.querySelector('#pa-acct').value || null,
+        rate_source: m.el.querySelector('#pa-basis').value || 'derived' };
+      delete payload.curve;
       if (a.id) res = await sb().from('resource_assignments').update(payload).eq('id', a.id);
       else { payload.created_by = UID; res = await sb().from('resource_assignments').insert(payload).select(); }
       if (res.error) { UI.toast(res.error.message, 'error'); return; }
       var savedAid = a.id;
       if (!savedAid && res.data && res.data[0]) savedAid = res.data[0].id;
-      if (savedAid) { try { await sb().from('resource_assignments').update({ curve: curveVal }).eq('id', savedAid); } catch (e) {} }
+      if (savedAid) { try { await sb().from('resource_assignments').update(extra).eq('id', savedAid); } catch (e) {} }
       UI.toast('Assignment saved.', 'success'); m.close();
-      await loadResourcesAssignments(); renderDetails();
+      await loadResourcesAssignments(); await syncActivityCost(r); renderDetails(); renderGrid(); renderGantt();
     };
   }
   async function delAssign(id) {
     if (!confirm('Remove this resource assignment?')) return;
+    var gone = ASSIGN.find(function (x) { return x.id === id; });
     var res = await sb().from('resource_assignments').delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
-    UI.toast('Removed.', 'success'); await loadResourcesAssignments(); renderDetails();
+    UI.toast('Removed.', 'success'); await loadResourcesAssignments();
+    if (gone) { var r = rows.find(function (x) { return x.activity_id === gone.activity_id; }); if (r) await syncActivityCost(r); }
+    renderDetails(); renderGrid(); renderGantt();
   }
   function traceNode(label, sub, cur) { return '<div class="ps-trace-node' + (cur ? ' cur' : '') + '"><strong>' + esc(label) + '</strong>' + (sub ? '<div style="color:var(--pd-muted);">' + esc(sub) + '</div>' : '') + '</div>'; }
   function detTrace(r) {
