@@ -71,6 +71,18 @@ by id (no JS change); the scope notes on the S-Curve/Cash Flow tabs now read "th
 instead of "set on the Overview tab". Behaviour unchanged: changing scope while on a data tab still needs
 the tab's **Refresh** (cached by scope, per the 2026-07-06 note).
 
+## Resources tab — cross-project resource demand (2026-07-11)
+4th tab (Overview / S-Curve / Cash Flow / **Resources**), scoped by the same project filter. Because
+`resource_assignments` can be 27k+ rows for ONE project, it does NOT fetch raw rows — it calls a new
+**`portfolio_resource_summary(text[])` RPC** (migration `../../migrations/2026-07-11-portfolio-resource-rpc.sql`,
+**USER MUST RUN**) that GROUP-BYs on the server and returns one compact row per resource identity
+(name/type/uom) across the scoped projects: distinct projects, assignment count, Σ budgeted/actual/
+remaining units, Σ budgeted/actual cost. UI = KPI row + a top-12-resources-by-budgeted-cost bar list
++ a full per-resource table with a TOTAL row. Lazy-loaded + cached by scope (Refresh button), same as
+the S-Curve/Cash-Flow tabs. **Tolerant:** if the RPC isn't installed, shows a "run the migration"
+nudge (verified live 2026-07-11 — tab opens, nudge shows). RPC is `security invoker` so the caller's
+RLS (`resource_assignments` read = `is_approved`) applies.
+
 ## Cash Flow module now real (2026-07-06)
 Cash Flow was flipped to `enabled: true` in `config.js` because it stopped being a placeholder
 — see `modules/cash-flow/CLAUDE.md`. This tab reads its `cash_flow` table.
