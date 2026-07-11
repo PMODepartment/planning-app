@@ -159,9 +159,14 @@ default false = current manual behaviour preserved). Build sequence (UI, next):
   `costAcctTree`/`costAcctOptions`/`costAcctLabel`/`costAcctUsage` ready for 3b/3c pickers. Tree
   ordering/indentation node-verified; interactive smoke-test blocked by the 4,393-row render freeze
   (needs a small project, same blocker as §2 write-actions).
-- **3b Price/Unit + assignment cost + roll-up** — resource-master rate field, assignment-form cost
-  (derive = units × rate, `rate_source` toggle for manual), roll assignment+expense cost up to the
-  activity's planned/actual/earned cost ONLY when `cost_rollup` is on.
+- **3b Price/Unit + assignment cost + roll-up** — DONE + deployed (`1fdc9b8`). Resource-master
+  Price/Unit field on resources+roles (roster column) — verified live on DEMO01. Assignment form:
+  budgeted/actual/remaining COST + cost-account picker + Derived (units × `resRate`) / Manual toggle
+  (`recalcCost` auto-fills + disables cost inputs when derived); cost fields written tolerantly with
+  `curve`. Panel shows cost + account columns + total + a per-activity **cost_rollup** toggle;
+  `syncActivityCost(r)` sums Σ assignment + Σ expense cost → activity planned/actual via `persist()`
+  (undoable) ONLY when the flag is on (default off = manual preserved), called after assignment
+  save/delete. (Assignment-form interactive test blocked by the 4,393-row grid freeze — code-verified.)
 - **3c Expenses tab** — per-activity itemized non-labor costs, optional cost account, feeds the roll-up.
 All UI to be written tolerant of the not-yet-run migration (missing table/column → graceful nudge),
 matching the existing pattern.

@@ -900,6 +900,7 @@
             <button class="ps-dtab" data-dtab="status">Status</button>
             <button class="ps-dtab" data-dtab="steps">Steps</button>
             <button class="ps-dtab" data-dtab="assign">Resource Assignments</button>
+            <button class="ps-dtab" data-dtab="expenses">Expenses</button>
             <button class="ps-dtab" data-dtab="rels">Relationships</button>
             <button class="ps-dtab" data-dtab="trace">Trace Logic</button>
             <span class="ps-dt-sep"></span>
@@ -2660,6 +2661,65 @@
     if (gone) { var r = rows.find(function (x) { return x.activity_id === gone.activity_id; }); if (r) await syncActivityCost(r); }
     renderDetails(); renderGrid(); renderGantt();
   }
+  // ----- EXPENSES (itemized non-labor costs per activity) -----
+  function expensesFor(actId) { return actId ? EXPENSES.filter(function (e) { return e.activity_id === actId; }) : []; }
+  function detExpenses(r) {
+    if (!r.activity_id) return '<div class="ps-empty-detail">Give this activity an <strong>Activity ID</strong> first (double-click the ID cell) so expenses can be added.</div>';
+    var list = expensesFor(r.activity_id);
+    var tp = 0, ta = 0; list.forEach(function (e) { tp += e.planned_cost || 0; ta += e.actual_cost || 0; });
+    var rowsH = list.length ? list.map(function (e) {
+      return '<tr><td>' + esc(e.name || '') + '</td>' +
+        '<td>' + esc(e.cost_account_id ? costAcctLabel(e.cost_account_id) : '—') + '</td>' +
+        '<td class="num">' + (e.planned_cost != null ? Fmt.money(e.planned_cost) : '—') + '</td>' +
+        '<td class="num">' + (e.actual_cost != null ? Fmt.money(e.actual_cost) : '—') + '</td>' +
+        '<td style="white-space:nowrap;"><button class="ps-btn-sm" data-xedit="' + e.id + '">Edit</button> <button class="ps-btn-sm" data-xdel="' + e.id + '">&#215;</button></td></tr>';
+    }).join('') : '<tr><td colspan="5" style="color:var(--pd-muted);padding:10px;">No expenses yet (materials, fees, permits, equipment rental…).</td></tr>';
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">' +
+      '<strong>' + esc(r.activity_id) + ' — ' + esc(r.activity_name || '') + '</strong>' +
+      '<button class="pd-btn pd-btn-primary" id="ps-exp-add" style="margin-left:auto;height:30px;font-size:12px;padding:0 12px;"><span data-ico="plus" data-ico-size="14"></span> Add expense</button></div>' +
+      '<table class="ps-mini"><thead><tr><th>Expense</th><th>Cost account</th><th class="num">Planned</th><th class="num">Actual</th><th></th></tr></thead><tbody>' + rowsH +
+        (list.length ? '<tr><td colspan="2" style="text-align:right;font-weight:600;">Total</td><td class="num" style="font-weight:600;">' + Fmt.money(tp) + '</td><td class="num" style="font-weight:600;">' + Fmt.money(ta) + '</td><td></td></tr>' : '') +
+      '</tbody></table>' +
+      (r.cost_rollup ? '<p class="ps-usage-note" style="margin-top:8px;">Cost roll-up is <strong>on</strong> — these expenses feed this activity’s Planned/Actual cost (with its resource assignments).</p>' : '<p class="ps-usage-note" style="margin-top:8px;">Tip: turn on “Roll cost up…” in Resource Assignments to have expenses feed the activity’s Planned/Actual cost.</p>');
+  }
+  function wireExpenses(root, r) {
+    var add = root.querySelector('#ps-exp-add'); if (add) add.onclick = function () { openExpenseForm(r, null); };
+    root.querySelectorAll('[data-xedit]').forEach(function (b) { b.onclick = function () { openExpenseForm(r, EXPENSES.find(function (x) { return x.id === b.dataset.xedit; })); }; });
+    root.querySelectorAll('[data-xdel]').forEach(function (b) { b.onclick = function () { delExpense(b.dataset.xdel, r); }; });
+    if (window.Icons) Icons.hydrate(root);
+  }
+  function openExpenseForm(r, e) {
+    e = e || {};
+    var m = UI.modal('<h2 style="margin-top:0;">' + (e.id ? 'Edit' : 'Add') + ' expense</h2>' +
+      '<div class="pd-field"><label class="pd-label">Expense name</label><input class="pd-input" id="px-name" value="' + esc(e.name) + '" placeholder="e.g. Rebar delivery, Building permit"></div>' +
+      '<div class="pd-field"><label class="pd-label">Cost account</label><select class="pd-select" id="px-acct">' + costAcctOptions(e.cost_account_id || '') + '</select></div>' +
+      '<div style="display:flex;gap:10px;">' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">Planned cost</label><input class="pd-input" id="px-plan" type="number" step="0.01" value="' + (e.planned_cost != null ? e.planned_cost : '') + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label class="pd-label">Actual cost</label><input class="pd-input" id="px-act" type="number" step="0.01" value="' + (e.actual_cost != null ? e.actual_cost : '') + '"></div>' +
+      '</div>' +
+      '<div class="pd-field"><label class="pd-label">Remarks</label><input class="pd-input" id="px-rem" value="' + esc(e.remarks) + '"></div>' +
+      '<div style="text-align:right;margin-top:6px;"><button class="pd-btn" id="px-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="px-save">Save</button></div>');
+    m.el.querySelector('#px-x').onclick = m.close;
+    m.el.querySelector('#px-save').onclick = async function () {
+      var name = m.el.querySelector('#px-name').value.trim();
+      if (!name) { UI.toast('Expense name required.', 'warn'); return; }
+      var payload = { project_id: pid, activity_id: r.activity_id, name: name, cost_account_id: m.el.querySelector('#px-acct').value || null,
+        planned_cost: numOrNull(m.el.querySelector('#px-plan').value), actual_cost: numOrNull(m.el.querySelector('#px-act').value),
+        remarks: m.el.querySelector('#px-rem').value.trim() || null, updated_at: new Date().toISOString() };
+      var res;
+      if (e.id) res = await sb().from('activity_expenses').update(payload).eq('id', e.id);
+      else { payload.created_by = UID; res = await sb().from('activity_expenses').insert(payload); }
+      if (res.error) { UI.toast(res.error.message + ' — run the resource-cost-parity migration.', 'error'); return; }
+      UI.toast('Expense saved.', 'success'); m.close();
+      await loadResourcesAssignments(); await syncActivityCost(r); renderDetails(); renderGrid(); renderGantt();
+    };
+  }
+  async function delExpense(id, r) {
+    if (!confirm('Delete this expense?')) return;
+    var res = await sb().from('activity_expenses').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UI.toast('Deleted.', 'success'); await loadResourcesAssignments(); await syncActivityCost(r); renderDetails(); renderGrid(); renderGantt();
+  }
   function traceNode(label, sub, cur) { return '<div class="ps-trace-node' + (cur ? ' cur' : '') + '"><strong>' + esc(label) + '</strong>' + (sub ? '<div style="color:var(--pd-muted);">' + esc(sub) + '</div>' : '') + '</div>'; }
   function detTrace(r) {
     var preds = relPreds(r).map(function (p) { return { id: p.id, name: actName(p.id), type: p.type }; });
@@ -3162,6 +3222,7 @@
     else if (t === 'status') body.innerHTML = detStatus(r);
     else if (t === 'steps') { body.innerHTML = detSteps(r); wireSteps(body, r); }
     else if (t === 'assign') { body.innerHTML = detAssign(r); wireAssign(body, r); }
+    else if (t === 'expenses') { body.innerHTML = detExpenses(r); wireExpenses(body, r); }
     else if (t === 'rels') { body.innerHTML = detRels(r); wireDetailSplits(body); }
     else if (t === 'trace') body.innerHTML = detTrace(r);
   }
