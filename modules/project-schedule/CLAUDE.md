@@ -172,9 +172,14 @@ default false = current manual behaviour preserved). Build sequence (UI, next):
   + Total row (`detExpenses`/`wireExpenses`/`openExpenseForm`/`delExpense`, copied from Steps/Assignments).
   Feeds `syncActivityCost` so expenses roll into the activity's Planned/Actual cost when `cost_rollup`
   is on. Tolerant of the not-yet-run migration.
-**Batch complete (2026-07-11).** All UI written tolerant of the migration (missing table/column →
-graceful nudge). Interactive tests for the assignment form / rollup / expenses are blocked by the
-4,393-row grid render freeze (need a small scratch project); resource-master Price/Unit verified live.
+**Batch complete + verified LIVE end-to-end (2026-07-11).** Created a small scratch project
+`XERTEST` (via the authenticated session) to escape the 4,393-row render freeze, then drove the full
+flow on the live app: added a rated resource (₱500/unit), a cost account (01 Preliminaries), an
+assignment (20 units → derived ₱10,000, tagged to the account), and an expense (₱2,500); toggling the
+activity's **Roll cost up** ran `syncActivityCost` → activity `planned_cost` = **₱12,500** in the DB
+(10,000 + 2,500). Confirms 3a (account shown), 3b (assignment cost + toggle + sync), and 3c (expense
+feeding the rollup) all working together. Resource-master Price/Unit + roster column also verified live.
+`XERTEST` is left in place as the responsive venue for the P6-import test + future interactive checks.
 
 ## Excel export now includes dynamic columns (2026-07-11)
 `exportExcel` previously used a fixed header set — the Activity-Code/UDF dynamic grid columns were
