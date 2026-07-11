@@ -244,21 +244,25 @@
     .ps-cols-corner .ps-cols-menu { right:0; left:auto; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    .ps-grid-pane { --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-x:130px; }
-    /* Freeze the Activity ID + Activity Name columns so they stay put (and header/body stay
-       aligned) while the rest of the grid scrolls horizontally. Sticky cells need an opaque
-       background so the scrolling columns don't bleed through — set per row-state. */
-    .ps-grid-row > .ps-cell.c-id { position:sticky; left:0; z-index:3; background:var(--pd-card); }
-    .ps-grid-row > .ps-cell.c-name { position:sticky; left:var(--c-id); z-index:3; background:var(--pd-card);
+    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-x:130px; }
+    /* Leading row-number (#) gutter + frozen Activity ID/Name columns: they stay put (and header/
+       body stay aligned) while the rest of the grid scrolls. The "#" cell is DOM child 1 but not a
+       data column, so column reorder (CSS `order`) must never move it — pin it with order:-1. Sticky
+       cells need an opaque background so scrolling columns don't bleed through (set per row-state). */
+    .ps-grid-row > .ps-cell.c-num { position:sticky; left:0; z-index:3; order:-1; background:var(--pd-card);
+      justify-content:flex-end; color:var(--pd-muted); font-size:11px; }
+    .ps-grid-row > .ps-cell.c-id { position:sticky; left:var(--c-num); z-index:3; background:var(--pd-card); }
+    .ps-grid-row > .ps-cell.c-name { position:sticky; left:calc(var(--c-num) + var(--c-id)); z-index:3; background:var(--pd-card);
       border-right:2px solid var(--pd-line); }
-    .ps-grid-pane .ps-wbs-row > .ps-cell.c-id, .ps-grid-pane .ps-wbs-row > .ps-cell.c-name { background:var(--pd-bg); }
-    .ps-group-row > .ps-cell.c-id, .ps-group-row > .ps-cell.c-name { background:var(--pd-red-light); }
-    .ps-row-sel > .ps-cell.c-id, .ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
+    .ps-grid-pane .ps-wbs-row > .ps-cell.c-num, .ps-grid-pane .ps-wbs-row > .ps-cell.c-id, .ps-grid-pane .ps-wbs-row > .ps-cell.c-name { background:var(--pd-bg); }
+    .ps-group-row > .ps-cell.c-num, .ps-group-row > .ps-cell.c-id, .ps-group-row > .ps-cell.c-name { background:var(--pd-red-light); }
+    .ps-row-sel > .ps-cell.c-num, .ps-row-sel > .ps-cell.c-id, .ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
     /* Header sticky needs extra specificity to beat the later `.ps-grid-row.head .ps-cell
        {position:relative}` rule — otherwise the header wouldn't freeze while the body did,
        re-introducing the very misalignment we're fixing. */
-    .ps-grid-pane .ps-grid-row.head > .ps-cell.c-id { position:sticky; left:0; z-index:4; background:var(--pd-bg); }
-    .ps-grid-pane .ps-grid-row.head > .ps-cell.c-name { position:sticky; left:var(--c-id); z-index:4; background:var(--pd-bg); }
+    .ps-grid-pane .ps-grid-row.head > .ps-cell.c-num { position:sticky; left:0; z-index:4; order:-1; background:var(--pd-bg); justify-content:center; }
+    .ps-grid-pane .ps-grid-row.head > .ps-cell.c-id { position:sticky; left:var(--c-num); z-index:4; background:var(--pd-bg); }
+    .ps-grid-pane .ps-grid-row.head > .ps-cell.c-name { position:sticky; left:calc(var(--c-num) + var(--c-id)); z-index:4; background:var(--pd-bg); }
     .ps-grid-scroll { overflow:auto; flex:1 1 auto; min-height:0; }
     .ps-grid-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); flex:none; }
     .ps-grid-row { display:flex; align-items:stretch; height:34px; border-bottom:1px solid var(--pd-line);
@@ -267,7 +271,7 @@
     .ps-cell { padding:0 8px; display:flex; align-items:center; border-right:1px solid var(--pd-line);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; flex:none; }
     .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative; }
-    .c-name { width:var(--c-name); } .c-id { width:var(--c-id); } .c-status { width:var(--c-status); } .c-date { width:var(--c-date); }
+    .c-num { width:var(--c-num); } .c-name { width:var(--c-name); } .c-id { width:var(--c-id); } .c-status { width:var(--c-status); } .c-date { width:var(--c-date); }
     .ps-status-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:10.5px; font-weight:700; white-space:nowrap; }
     .ps-status-notstarted { background:var(--pd-line); color:var(--pd-muted); }
     .ps-status-inprogress { background:rgba(199,119,0,.14); color:var(--pd-warn); }
@@ -3066,7 +3070,7 @@
     normalizeColOrder();
     var st = document.getElementById('ps-colorderstyle'); if (!st) { st = document.createElement('style'); st.id = 'ps-colorderstyle'; document.head.appendChild(st); }
     var pos = {}; colOrder.forEach(function (k, p) { pos[k] = p; });
-    var rules = gridCols().map(function (c, i) { var p = pos[colKey(c)]; return p == null ? '' : '.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (i + 1) + '){order:' + p + '}'; });
+    var rules = gridCols().map(function (c, i) { var p = pos[colKey(c)]; return p == null ? '' : '.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (i + 2) + '){order:' + p + '}'; });   // +2: the "#" gutter is DOM child 1
     st.textContent = rules.join('');
   }
   function moveCol(srcKey, tgtKey) {
@@ -3105,14 +3109,14 @@
     if (!st) { st = document.createElement('style'); st.id = 'ps-colstyle'; document.head.appendChild(st); }
     var rules = [];
     gridCols().forEach(function (c, i) {
-      if (colHidden[colKey(c)]) rules.push('.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (i + 1) + ')');
+      if (colHidden[colKey(c)]) rules.push('.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (i + 2) + ')');   // +2: "#" gutter is DOM child 1
     });
     st.textContent = rules.length ? rules.join(',') + '{display:none !important;}' : '';
   }
   function renderHeader() {
     var head = document.getElementById('ps-grid-head'); if (!head) return;
     seedExtraHidden();
-    head.innerHTML = '<div class="ps-grid-row head">' + gridCols().map(function (c, i) {
+    head.innerHTML = '<div class="ps-grid-row head"><div class="ps-cell c-num" title="Row number">#</div>' + gridCols().map(function (c, i) {
       var arrow = (colSort && colSort.idx === i) ? '<span class="ps-sort-ind">' + (colSort.dir < 0 ? '▼' : '▲') + '</span>' : '';
       return '<div class="ps-cell ps-colhdr ' + c[2] + '" draggable="true" data-ci="' + i + '" data-key="' + esc(colKey(c)) + '" title="' + esc(colLabel(c)) + ' — click for options, drag to reorder">' + esc(colLabel(c)) + arrow +
         '<span class="ps-colgrip" data-col="' + c[2].replace('c-', '') + '" title="Drag to resize column"></span></div>';
@@ -3166,7 +3170,7 @@
   function fitColumn(idx) {
     var col = gridCols()[idx]; if (!col) return;
     var key = col[2].replace('c-', ''), pane = document.querySelector('.ps-grid-pane');
-    var max = 40, sel = '.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (idx + 1) + ')';
+    var max = 40, sel = '.ps-grid-pane .ps-grid-row > .ps-cell:nth-child(' + (idx + 2) + ')';   // +2: "#" gutter is DOM child 1
     document.querySelectorAll(sel).forEach(function (cell) {
       var sw = cell.scrollWidth; if (sw > max) max = sw;
     });
@@ -3285,6 +3289,7 @@
     if (r._dkind === 'group') {
       var gsp = wbsSpan(r), garr = collapsed[code] ? '►' : '▼';
       return '<div class="ps-grid-row ps-wbs-row ps-group-row' + altc + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
+        '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
         '<div class="ps-cell c-id"></div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + garr + '</span><strong>' + esc(r.activity_name || '') + '</strong> <span style="color:var(--pd-muted);font-weight:400;">(' + r._gcount + ')</span></div>' +
         '<div class="ps-cell c-status"></div>' +
@@ -3297,6 +3302,7 @@
     if (isWbsNode(r)) {
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
       return '<div class="ps-grid-row ps-wbs-row' + altc + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
+        '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
         '<div class="ps-cell c-id" style="padding-left:' + idPad + 'px;">' + esc(r._realCode || r.wbs || '') + '</div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
         '<div class="ps-cell c-status"></div>' +
@@ -3309,6 +3315,7 @@
     var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : (r.duration_days || '');
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
     return '<div class="ps-grid-row' + altc + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '">' +
+      '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
       '<div class="ps-cell c-id ps-editable" data-id="' + r.id + '" data-field="activity_id" data-type="text" style="padding-left:' + idPad + 'px;">' + esc(r.activity_id || '') + '</div>' +
       '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r.activity_name || '') + '</div>' +
       statusCellHtml(r) +
