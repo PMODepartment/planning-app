@@ -147,6 +147,18 @@ clipboard operating on individual grid cells, independent of the row selection/c
   3×2 target). Page loads with no console errors. **Not yet exercised end-to-end against a live login**
   (same constraint as prior batches — needs a real session + data to click through).
 
+## P6 .xer import RUN LIVE (2026-07-11) — import verified, load-timeout bug found
+The P6 importer had never run end-to-end against live Supabase (parser-only verified). Imported a real
+`.xer` into scratch project **XERTEST**: **42,306 activities, 14,495 WBS summaries, 27,796 predecessors
+resolved, 11 milestones, 4 calendars, 5 resources, 55,489 assignments** — counts match the offline
+parser verification exactly. **Import writes correctly at scale.**
+- **BUG FOUND (new task):** opening a 42k-row project fails with *"canceling statement due to statement
+  timeout."* `load()` fetches ~43 pages via `.range()` **OFFSET** pagination in parallel; far pages
+  (offset ~41k) re-scan tens of thousands of rows each → exceeds Supabase's statement_timeout. 4.4k-row
+  projects (Avesta) load fine; the threshold is a few thousand rows. **Fix planned:** keyset pagination
+  (`order=id.asc&id=gt.<last>&limit=N`) so every page is an indexed range scan. Hot path — verify on a
+  small project + XERTEST before shipping. (A single ordered 1000-row page measured 1.4s.)
+
 ## Resource/cost-side OPC parity — in progress (2026-07-11)
 User approved building all four gaps. **Migration `../../migrations/2026-07-11-resource-cost-parity.sql`
 (USER MUST RUN):** `cost_accounts` (CBS tree), `price_per_unit` on `resources`+`resource_roles`,
