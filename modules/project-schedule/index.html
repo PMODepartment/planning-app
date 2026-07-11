@@ -1530,15 +1530,22 @@
     try {
       var cnt = await sb().from(TABLE).select('*', { count: 'exact', head: true }).eq('project_id', pid);
       var total = (cnt && cnt.count) || 0;
-      if (total > 0) {
-        setLoading('Loading ' + total + ' activities…');
-        var pages = Math.ceil(total / 1000), reqs = [];   // fetch all pages in parallel
-        for (var p = 0; p < pages; p++) reqs.push(sb().from(TABLE).select('*').eq('project_id', pid).range(p * 1000, p * 1000 + 999));
-        var res = await Promise.all(reqs);
-        for (var i = 0; i < res.length; i++) { if (res[i].error) throw res[i].error; all = all.concat(res[i].data || []); }
-      } else {
-        var from = 0;
-        while (true) { var r1 = await sb().from(TABLE).select('*').eq('project_id', pid).range(from, from + 999); if (r1.error) throw r1.error; all = all.concat(r1.data || []); if ((r1.data || []).length < 1000) break; from += 1000; setLoading('Loading… ' + all.length); }
+      if (total > 0) setLoading('Loading ' + total + ' activities…');
+      // Keyset pagination (order by the id PK, fetch id > last) instead of .range()/OFFSET.
+      // OFFSET makes far pages re-scan every preceding row — a 42k-row project's deep pages blew past
+      // Supabase's statement_timeout (found via a live P6 import, 2026-07-11). Keyset is an indexed PK
+      // range scan per page, so it stays fast at any size. Sequential (each page needs the prior page's
+      // last id) — slightly slower than the old parallel fetch for mid-size projects, but it doesn't
+      // time out. Load order (by uuid) is irrelevant: rebuild() sorts by WBS.
+      var last = null;
+      while (true) {
+        var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+        if (last) q = q.gt('id', last);
+        var r1 = await q; if (r1.error) throw r1.error;
+        var batch = r1.data || []; all = all.concat(batch);
+        setLoading(total ? ('Loading ' + all.length + ' / ' + total + '…') : ('Loading… ' + all.length));
+        if (batch.length < 1000) break;
+        last = batch[batch.length - 1].id;
       }
     } catch (err) { hideLoading(); UI.toast('Load failed: ' + (err.message || err), 'error'); return; }
     hideLoading();
