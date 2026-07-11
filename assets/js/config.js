@@ -13,9 +13,11 @@
 window.APP_CONFIG = {
   // ---- Supabase ----
   SUPABASE_URL: 'https://bgupuqnkqhixpuctyder.supabase.co',
-  // Settings → API → Project API keys → "anon" "public". This key is SAFE to
-  // expose (RLS protects the data). NEVER put the service_role key here.
-  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJndXB1cW5rcWhpeHB1Y3R5ZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDc1NDMsImV4cCI6MjA5NzMyMzU0M30.SAgarxCSqFew-2hagcAtDUgdQwKAqDsbPhDRct4RGiI',
+  // Settings → API → API Keys → "publishable" key (sb_publishable_…). This key is
+  // SAFE to expose (RLS protects the data). NEVER put the secret/service_role key here.
+  // Replaced the legacy HS256 "anon" JWT on 2026-07-11 (that JWT can be revoked once
+  // this publishable key is confirmed live in production).
+  SUPABASE_ANON_KEY: 'sb_publishable_5NTpDRZcROZYrV-tZ5wXLg_f88eqUzs',
 
   // ---- App ----
   APP_NAME: 'Planners Dashboard',
