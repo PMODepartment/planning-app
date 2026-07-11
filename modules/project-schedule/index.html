@@ -806,6 +806,7 @@
               <button id="ps-risk"><span data-ico="risk" data-ico-size="14"></span> Schedule risk (Monte Carlo)…</button>
               <button id="ps-codesbtn"><span data-ico="palette" data-ico-size="14"></span> Activity Codes…</button>
               <button id="ps-udfbtn"><span data-ico="listView" data-ico-size="14"></span> User-Defined Fields…</button>
+              <button id="ps-costacctbtn"><span data-ico="cash" data-ico-size="14"></span> Cost Accounts…</button>
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
               <button id="ps-leveling"><span data-ico="users" data-ico-size="14"></span> Resource leveling…</button>
               <button id="ps-thresholds"><span data-ico="risk" data-ico-size="14"></span> Threshold monitoring…</button>
@@ -1058,6 +1059,17 @@
 </div>
 
 <!-- Activity Codes management -->
+<div class="ps-bulk-back" id="ps-cost-back">
+  <div class="ps-bulk-panel" style="width:640px;">
+    <div class="ps-bulk-head"><strong>Cost Accounts (CBS)</strong>
+      <button class="pd-btn pd-btn-primary" id="ps-cost-add" style="margin-left:14px;"><span data-ico="plus" data-ico-size="14"></span> New top-level account</button>
+      <span class="ps-bulk-count" id="ps-cost-count"></span>
+      <button class="ps-bulk-x" id="ps-cost-x">&#215;</button>
+    </div>
+    <div class="ps-snap-detail" id="ps-cost-body" style="padding:14px;"></div>
+  </div>
+</div>
+
 <div class="ps-bulk-back" id="ps-codes-back">
   <div class="ps-bulk-panel" style="width:900px;">
     <div class="ps-bulk-head"><strong>Activity Codes</strong>
@@ -1293,6 +1305,7 @@
   var PROJECTS = [], WORKSPACES = [], layoutMode = 'split', activeTab = 'schedule';
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
+  var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
   var _wbsSel = null;   // selected WBS node id (drives the Add-activity parent preselect)
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
@@ -1308,7 +1321,7 @@
     return wsum > 0 ? Math.round((wpsum / wsum) * 100) / 100 : 0;
   }
   async function loadResourcesAssignments() {
-    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; return; }
+    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; return; }
     try {
       var r1 = await sb().from('resources').select('*').eq('project_id', pid).order('name');
       var r2 = await sb().from('resource_assignments').select('*').eq('project_id', pid);
@@ -1332,6 +1345,14 @@
       var r8 = await sb().from('wbs_nodes').select('*').eq('project_id', pid).order('sort_order');
       WBS_NODES = (r8 && r8.data) || [];
     } catch (e) { WBS_NODES = []; }
+    try {
+      var r9 = await sb().from('cost_accounts').select('*').eq('project_id', pid).order('sort_order');
+      COST_ACCTS = (r9 && r9.data) || [];
+    } catch (e) { COST_ACCTS = []; }
+    try {
+      var r10 = await sb().from('activity_expenses').select('*').eq('project_id', pid);
+      EXPENSES = (r10 && r10.data) || [];
+    } catch (e) { EXPENSES = []; }
   }
   // ---- WBS tree algorithms (verified pure logic) ----
   function wbsChildren(parentId) {
@@ -4988,6 +5009,67 @@
     renderCodesDetail(); renderCodesList(); buildFilterMenu();
   }
 
+  // ----- COST ACCOUNTS / CBS (project cost-breakdown structure; a self-referencing tree) -----
+  function costAcctById(id) { return id && COST_ACCTS.find(function (a) { return a.id === id; }); }
+  function costAcctLabel(id) { var a = costAcctById(id); return a ? ((a.code ? a.code + ' — ' : '') + (a.name || '')) : ''; }
+  function costAcctChildren(parentId) { return COST_ACCTS.filter(function (a) { return (a.parent_id || null) === (parentId || null); }).sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.code || '').localeCompare(String(b.code || '')); }); }
+  // Depth-ordered flat list of {a, depth} for indented display + <option> lists.
+  function costAcctTree() { var out = []; (function walk(parentId, depth) { costAcctChildren(parentId).forEach(function (a) { out.push({ a: a, depth: depth }); walk(a.id, depth + 1); }); })(null, 0); return out; }
+  // Indented <option>s for the assignment/expense cost-account pickers (3b/3c).
+  function costAcctOptions(selId) { return '<option value="">— No cost account —</option>' + costAcctTree().map(function (n) { return '<option value="' + esc(n.a.id) + '"' + (n.a.id === selId ? ' selected' : '') + '>' + esc('  '.repeat(n.depth) + (n.a.code ? n.a.code + ' ' : '') + (n.a.name || '')) + '</option>'; }).join(''); }
+  function costAcctUsage(id) { var n = 0; ASSIGN.forEach(function (x) { if (x.cost_account_id === id) n++; }); EXPENSES.forEach(function (x) { if (x.cost_account_id === id) n++; }); return n; }
+  function openCostAccounts() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-cost-back').classList.add('open'); renderCostAccounts(); }
+  function closeCostAccounts() { document.getElementById('ps-cost-back').classList.remove('open'); }
+  function renderCostAccounts() {
+    var body = document.getElementById('ps-cost-body'); if (!body) return;
+    var cnt = document.getElementById('ps-cost-count'); if (cnt) cnt.textContent = COST_ACCTS.length + ' account' + (COST_ACCTS.length === 1 ? '' : 's');
+    var tree = costAcctTree();
+    if (!tree.length) { body.innerHTML = '<div class="ps-ck-empty">No cost accounts yet. Use “New top-level account”. Build a breakdown (e.g. 01 Preliminaries → 01-100 Site Office) by adding child accounts. Assign accounts to resource assignments and expenses to report cost by account.</div>'; return; }
+    body.innerHTML = tree.map(function (n) {
+      var used = costAcctUsage(n.a.id), kids = costAcctChildren(n.a.id).length;
+      return '<div class="ps-ca-row" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--pd-line);">' +
+        '<span style="padding-left:' + (n.depth * 18) + 'px;font-weight:600;min-width:90px;">' + esc(n.a.code || '—') + '</span>' +
+        '<span style="flex:1;min-width:0;">' + esc(n.a.name || '') + '</span>' +
+        '<span style="color:var(--pd-muted);font-size:11px;white-space:nowrap;">' + (kids ? kids + ' sub · ' : '') + used + ' use' + (used === 1 ? '' : 's') + '</span>' +
+        '<button class="pd-btn pd-btn-sm" data-ca-add="' + esc(n.a.id) + '" title="Add child account">+ child</button>' +
+        '<button class="pd-btn pd-btn-sm" data-ca-edit="' + esc(n.a.id) + '">Edit</button>' +
+        '<button class="pd-btn pd-btn-sm ps-menu-danger" data-ca-del="' + esc(n.a.id) + '">&#215;</button>' +
+      '</div>';
+    }).join('');
+    body.querySelectorAll('[data-ca-add]').forEach(function (b) { b.onclick = function () { addCostAccount(b.dataset.caAdd); }; });
+    body.querySelectorAll('[data-ca-edit]').forEach(function (b) { b.onclick = function () { editCostAccount(b.dataset.caEdit); }; });
+    body.querySelectorAll('[data-ca-del]').forEach(function (b) { b.onclick = function () { delCostAccount(b.dataset.caDel); }; });
+  }
+  async function addCostAccount(parentId) {
+    if (!pid) return;
+    var name = prompt('Cost account name' + (parentId ? ' (child of ' + costAcctLabel(parentId) + ')' : '') + ':'); if (name == null || !name.trim()) return;
+    var code = prompt('Account code (optional, e.g. 01-100):') || '';
+    var sibs = costAcctChildren(parentId || null).length;
+    var res = await sb().from('cost_accounts').insert({ project_id: pid, parent_id: parentId || null, name: name.trim(), code: code.trim() || null, sort_order: sibs, created_by: UID }).select().single();
+    if (res.error) { UI.toast(res.error.message + ' — run the resource-cost-parity migration.', 'error'); return; }
+    COST_ACCTS.push(res.data); renderCostAccounts();
+  }
+  async function editCostAccount(id) {
+    var a = costAcctById(id); if (!a) return;
+    var name = prompt('Account name:', a.name || ''); if (name == null) return; name = name.trim(); if (!name) { UI.toast('Name required.', 'warn'); return; }
+    var code = prompt('Account code (optional):', a.code || ''); if (code == null) code = a.code || '';
+    var res = await sb().from('cost_accounts').update({ name: name, code: code.trim() || null }).eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    a.name = name; a.code = code.trim() || null; UI.toast('Saved.', 'success'); renderCostAccounts();
+  }
+  async function delCostAccount(id) {
+    if (costAcctChildren(id).length) { UI.toast('This account has sub-accounts — delete or move them first.', 'warn'); return; }
+    var used = costAcctUsage(id);
+    if (!confirm('Delete cost account “' + costAcctLabel(id) + '”?' + (used ? ' ' + used + ' assignment/expense reference(s) will become unassigned.' : ''))) return;
+    var res = await sb().from('cost_accounts').delete().eq('id', id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    COST_ACCTS = COST_ACCTS.filter(function (x) { return x.id !== id; });
+    // local references drop to null (DB FK is ON DELETE SET NULL)
+    ASSIGN.forEach(function (x) { if (x.cost_account_id === id) x.cost_account_id = null; });
+    EXPENSES.forEach(function (x) { if (x.cost_account_id === id) x.cost_account_id = null; });
+    UI.toast('Deleted.', 'success'); renderCostAccounts();
+  }
+
   // ----- USER-DEFINED FIELDS (project-defined typed custom fields on activities) -----
   var _UDF_TYPES = [['text', 'Text'], ['number', 'Number'], ['date', 'Date'], ['cost', 'Cost']];
   function udfInputType(t) { return t === 'date' ? 'date' : (t === 'number' || t === 'cost' ? 'number' : 'text'); }
@@ -7108,6 +7190,10 @@
     document.getElementById('ps-codes-x').onclick = closeCodes;
     document.getElementById('ps-codes-back').onclick = function (e) { if (e.target === this) closeCodes(); };
     document.getElementById('ps-codes-add').onclick = addCodeType;
+    document.getElementById('ps-costacctbtn').onclick = function () { aMenu.classList.remove('open'); openCostAccounts(); };
+    document.getElementById('ps-cost-x').onclick = closeCostAccounts;
+    document.getElementById('ps-cost-back').onclick = function (e) { if (e.target === this) closeCostAccounts(); };
+    document.getElementById('ps-cost-add').onclick = function () { addCostAccount(null); };
     document.getElementById('ps-udfbtn').onclick = function () { aMenu.classList.remove('open'); openUdf(); };
     document.getElementById('ps-udf-x').onclick = closeUdf;
     document.getElementById('ps-udf-back').onclick = function (e) { if (e.target === this) closeUdf(); };
