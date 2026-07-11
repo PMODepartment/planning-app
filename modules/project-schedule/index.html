@@ -5698,6 +5698,13 @@
     if (!rows.length) { UI.toast('Nothing to export — load or import a schedule first.', 'warn'); return; }
     if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
     var n = 0;
+    // Dynamic columns (Activity Codes + UDFs): export the ones currently SHOWN in the grid
+    // (WYSIWYG — extras default hidden, so a plain schedule exports none). Header labels are made
+    // unique against the built-ins and each other so json_to_sheet keys can't collide.
+    var exCols = extraColDefs().filter(function (c) { return !colHidden[colKey(c)]; });
+    var _exSeen = { '#': 1 }, BUILTIN = ['#','ID','Name','Status','BL0 Start','BL0 Finish','Start','Finish','Planned Value POC','Earned Value POC','Planned IBB','Actual IBB to date','Earned Value IBB','At Completion IBB','BL Planned IBB','Percent Complete Type'];
+    BUILTIN.forEach(function (h) { _exSeen[h] = 1; });
+    exCols.forEach(function (c) { var base = colLabel(c) || c[1] || 'Column', lbl = base, k = 2; while (_exSeen[lbl]) lbl = base + ' (' + (k++) + ')'; _exSeen[lbl] = 1; c._expHdr = lbl; });
     var data = _sorted.map(function (r) {
       var wbs = isWbs(r);
       var span = wbs ? _spanMap[r.wbs] : null;   // rolled-up dates for summary rows
@@ -5723,12 +5730,14 @@
       row['At Completion IBB'] = eacV;
       row['BL Planned IBB'] = wbs ? '' : (r.bl_cost != null ? r.bl_cost : '');
       row['Percent Complete Type'] = wbs ? '' : (r.percent_complete_type || '');
+      exCols.forEach(function (c) { row[c._expHdr] = wbs ? '' : extraCellVal(c[3], r); });
       return row;
     });
     var WIDTHS = { '#': 5, 'ID': 12, 'Name': 40, 'Status': 12, 'BL0 Start': 12, 'BL0 Finish': 12, 'Start': 13, 'Finish': 13, 'Planned Value POC': 15, 'Earned Value POC': 15, 'Planned IBB': 16, 'Actual IBB to date': 16, 'Earned Value IBB': 16, 'At Completion IBB': 16, 'BL Planned IBB': 16, 'Percent Complete Type': 18 };
     var headers = ['#','ID','Name','Status','BL0 Start','BL0 Finish','Start','Finish','Planned Value POC','Earned Value POC','Planned IBB','Actual IBB to date','Earned Value IBB','At Completion IBB','BL Planned IBB','Percent Complete Type'];
     // Honor the "include hidden columns" choice — drop any header whose grid column is hidden.
     if (!includeHidden) headers = headers.filter(function (h) { return !expHeaderHidden(h); });
+    exCols.forEach(function (c) { headers.push(c._expHdr); WIDTHS[c._expHdr] = 18; });
     var ws = XLSX.utils.json_to_sheet(data, { header: headers });
     // Number formats resolved by header NAME (positions shift when columns are filtered out).
     var pctNames = { 'Planned Value POC': 1, 'Earned Value POC': 1 };

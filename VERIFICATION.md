@@ -120,17 +120,26 @@ for errors as you go.
 > changed, so no `?v=` bump needed — just push + hard-refresh.
 
 **C. Schedule engine**
-- [ ] Edit a predecessor / date → Schedule ▾ → **Schedule Now** with "Reschedule dependent
-      activities" → successor dates move; Critical Path highlight looks right.
-- [ ] Toggle Critical Path / dependency arrows on the Gantt.
+- [x] *Computation verified live 2026-07-11:* the CPM engine ran on production data — Float column
+      computed (`1097d`, `970d`, …) and a `CP` critical-path tag rendered.
+- [ ] *Deferred (needs a small scratch project):* commit a **Schedule Now** reschedule + eyeball
+      dependency arrows — a DB write, not safe to fire on the live 4,393-row project.
 
 **D. Cost & rollups**
-- [ ] Cost Loading tab totals reconcile; WBS summary rows roll up (POC %, IBB sums).
-- [ ] Capture a **baseline** → set primary → BL0 bar + Var (BL) column populate.
+- [x] *Computation verified live 2026-07-11:* cost rollup + baseline variance both compute on
+      production data — `₱1,853,169,392` At-Completion total, Var (BL) column (`-653d`, `+269d`, …).
+- [ ] *Deferred (scratch project):* capture a new **baseline** → BL0 bar (a DB write).
 
 **E. Export & reports**
-- [ ] Grid footer **Download** → Excel opens with the OPC column layout and DD-Mon-YY dates.
-- [ ] Reports → run one built-in to PDF.
+- [x] *Controls wired (confirmed live):* Download + Reports buttons present.
+- [ ] *Deferred (scratch project):* actually trigger the Excel download / PDF report (file dialogs,
+      impractical to fire/inspect on production). NOTE: the export now also includes the dynamic
+      Activity-Code/UDF columns shown in the grid (2026-07-11) — verify those appear.
+
+> **Blocker for the deferred items:** both Avesta *and* the DEMO/sandbox project were loaded with the
+> full 4,393-row dataset, so there is **no small project** on which to safely fire writes / dialogs.
+> Create a tiny throwaway project (5–10 activities) to close these — that same project is also the
+> right venue for the P6-import live test.
 
 **F. Cross-project / portfolio**
 - [ ] Portfolio Overview → S-Curve and Cash Flow tabs load across ≥2 projects.

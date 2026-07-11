@@ -147,6 +147,15 @@ clipboard operating on individual grid cells, independent of the row selection/c
   3×2 target). Page loads with no console errors. **Not yet exercised end-to-end against a live login**
   (same constraint as prior batches — needs a real session + data to click through).
 
+## Excel export now includes dynamic columns (2026-07-11)
+`exportExcel` previously used a fixed header set — the Activity-Code/UDF dynamic grid columns were
+grid-only. Now it appends the extras **currently shown in the grid** (`extraColDefs().filter(c=>!colHidden[colKey(c)])`
+— WYSIWYG; extras default hidden so a plain schedule still exports the 16 built-ins only). Per-row
+value via `extraCellVal` (blank on WBS rows, matching the grid). Header labels are **uniquified**
+against the built-ins and each other (a UDF named "Status" → "Status (2)"; duplicate "Zone" →
+"Zone"/"Zone (2)") so the `json_to_sheet` object keys can't collide. Verified the uniquifier in a node
+harness. Widths default 18 for extras.
+
 ## Clipboard fixes from live DEMO01 testing (2026-07-11)
 Two bugs surfaced during the first real-login click-through (VERIFICATION.md §2), both fixed:
 - **Shift-click made a native browser text-selection** (blue highlight + the browser's selection
