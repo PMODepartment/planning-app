@@ -285,7 +285,10 @@
     .ps-status-notstarted { background:var(--pd-line); color:var(--pd-muted); }
     .ps-status-inprogress { background:rgba(199,119,0,.14); color:var(--pd-warn); }
     .ps-status-completed { background:rgba(31,143,78,.14); color:var(--pd-ok); }
-    .c-dur { width:var(--c-dur); justify-content:flex-end; } .c-pct { width:var(--c-pct); justify-content:flex-end; }
+    .c-dur { width:var(--c-dur); justify-content:flex-end; } .c-pct { width:var(--c-pct); justify-content:flex-end; position:relative; }
+    /* In-cell A/C date badges + % Complete progress bar (OPC-style readability) */
+    .ps-dbadge { display:inline-block; font-size:8.5px; font-weight:700; line-height:1; padding:1px 3px; border-radius:3px; margin-left:4px; vertical-align:middle; background:var(--pd-line); color:var(--pd-muted); flex:none; }
+    .ps-pctbar { position:absolute; left:0; bottom:0; height:3px; background:var(--pd-red); opacity:.5; pointer-events:none; }
     .c-poc { width:var(--c-poc); justify-content:flex-end; }
     .c-cost { width:var(--c-cost); justify-content:flex-end; }
     .c-ctype { width:var(--c-ctype); }
@@ -3324,12 +3327,15 @@
       return '<div class="ps-cell c-cost ps-editable" data-id="' + r.id + '" data-field="' + field + '" data-type="money">' + (v != null ? Fmt.money(v) : '') + '</div>';
     }
     return '<div class="ps-cell c-poc">' + (poc != null ? poc + '%' : '') + '</div>' +
-      '<div class="ps-cell c-pct ps-editable" data-id="' + r.id + '" data-field="percent_complete" data-type="number">' + (r.percent_complete != null ? r.percent_complete + '%' : '') + '</div>' +
+      '<div class="ps-cell c-pct ps-editable" data-id="' + r.id + '" data-field="percent_complete" data-type="number">' + (r.percent_complete != null ? r.percent_complete + '%' : '') + _pctBar(r.percent_complete) + '</div>' +
       money('planned_cost') + money('actual_cost') + money('earned_value') +
       '<div class="ps-cell c-cost">' + (hasCost ? Fmt.money(eac(r, cpi)) : '') + '</div>' +
       money('bl_cost') +
       '<div class="ps-cell c-ctype">' + esc(r.percent_complete_type || '') + '</div>';
   }
+  // OPC-style in-cell adornments: A = actual date, C = constrained date; a thin bar under % Complete.
+  function _dateBadge(kind) { return kind ? '<span class="ps-dbadge" title="' + (kind === 'A' ? 'Actual date' : 'Constrained date') + '">' + kind + '</span>' : ''; }
+  function _pctBar(p) { if (p == null) return ''; var w = Math.max(0, Math.min(100, p)); return '<span class="ps-pctbar" style="width:' + w + '%"></span>'; }
   function gridRowHTML(r, i) {
     // Zebra-stripe task rows only. WBS/group summary rows have their own solid background;
     // striping them makes odd-indexed summaries look different (the dark-mode .ps-alt overlay
@@ -3372,8 +3378,8 @@
       statusCellHtml(r) +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_start" data-type="date">' + (r.bl_start ? Fmt.date(r.bl_start) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_finish" data-type="date">' + (r.bl_finish ? Fmt.date(r.bl_finish) : '—') + '</div>' +
-      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="start_date" data-type="date">' + (r.start_date ? Fmt.date(r.start_date) : '—') + '</div>' +
-      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="end_date" data-type="date">' + (r.end_date ? Fmt.date(r.end_date) : '—') + '</div>' +
+      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="start_date" data-type="date">' + (r.start_date ? Fmt.date(r.start_date) : '—') + _dateBadge(r.actual_start ? 'A' : (r.primary_constraint ? 'C' : '')) + '</div>' +
+      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="end_date" data-type="date">' + (r.end_date ? Fmt.date(r.end_date) : '—') + _dateBadge(r.actual_finish ? 'A' : '') + '</div>' +
       '<div class="ps-cell c-dur">' + (dur ? dur + 'd' : '') + '</div>' +
       costCellsHtml(r) +
       '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + gridExtraHtml(r) + '</div>';
