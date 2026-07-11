@@ -1983,7 +1983,12 @@
   // master), and TASKRSRC (resource assignments).
   var XER_EPOCH = new Date(1899, 11, 30);   // Lotus/Excel serial-date epoch used inside clndr_data
   function xerSerialToISO(serial) { var d = new Date(XER_EPOCH); d.setDate(d.getDate() + parseInt(serial, 10)); return dstr(d); }
-  function xerDateOnly(s) { return s ? String(s).slice(0, 10) : null; }   // "2026-02-09 08:00" -> "2026-02-09"
+  function xerDateOnly(s) { return (s && s !== 'null') ? String(s).slice(0, 10) : null; }   // "2026-02-09 08:00" -> "2026-02-09"
+  function xerPick() { for (var i = 0; i < arguments.length; i++) { var d = xerDateOnly(arguments[i]); if (d) return d; } return null; }
+  // P6 constraint codes → the app's Primary Constraint labels.
+  var XER_CSTR = { CS_MSO: 'Start On', CS_MSOA: 'Start On or After', CS_MSOB: 'Start On or Before',
+    CS_MEO: 'Finish On', CS_MEOA: 'Finish On or After', CS_MEOB: 'Finish On or Before',
+    CS_MANDSTART: 'Mandatory Start', CS_MANDFIN: 'Mandatory Finish', CS_ALAP: 'As Late As Possible' };
 
   // Mini recursive-descent parser for P6's proprietary calendar-data grammar:
   //   NODE := ( 0 || NAME (PARAMS) (CHILD-NODE*) )  — one paren wraps the whole child list,
@@ -2093,12 +2098,19 @@
     // inference, which would be far too slow at XER scale (tens of thousands of rows).
     var recs = [];
     function taskRec(t, code) {
-      var s = xerDateOnly(t.target_start_date), f = xerDateOnly(t.target_end_date);
+      // Current schedule dates: actuals where present, else CPM early dates, else the plan. P6's
+      // target_* dates are the PLANNED/baseline (BL0), NOT the current schedule.
+      var s = xerPick(t.act_start_date, t.early_start_date, t.target_start_date);
+      var f = xerPick(t.act_end_date, t.early_end_date, t.target_end_date);
       var as = xerDateOnly(t.act_start_date), af = xerDateOnly(t.act_end_date);
+      var bls = xerDateOnly(t.target_start_date), blf = xerDateOnly(t.target_end_date);
       var mile = t.task_type === 'TT_Mile' || t.task_type === 'TT_FinMile';
       var status = t.status_code === 'TK_Complete' ? 'Completed' : t.status_code === 'TK_Active' ? 'In Progress' : 'Not Started';
+      var ff = parseFloat(t.free_float_hr_cnt); ff = isNaN(ff) ? null : Math.round(ff / 8);   // P6 stores float in hours
       recs.push({ code: code, isLeaf: true, name: t.task_name, id: t.task_code,
-        start: s, finish: mile ? (s || f) : f, sA: !!as, fA: !!af,
+        start: mile ? (s || f) : s, finish: mile ? (s || f) : f, sA: !!as, fA: !!af, as: as, af: af,
+        bls: bls, blf: mile ? (bls || blf) : blf, freeFloat: ff,
+        cstr: XER_CSTR[t.cstr_type] || null, cstrDate: xerDateOnly(t.cstr_date),
         status: status, pct: parseFloat(t.phys_complete_pct) || 0,
         type: mile ? 'Milestone' : 'Task', calTmpId: calByClndrId[t.clndr_id] || null,
         predText: xerPredText(t.task_id) });
@@ -2142,9 +2154,12 @@
       activity_type: r.isLeaf ? (r.type || 'Task') : 'WBS Summary',
       status: r.status || 'Not Started',
       start_date: r.start, end_date: r.finish,
-      actual_start: r.sA ? r.start : null, actual_finish: r.fA ? r.finish : null,
+      bl_start: r.bls || null, bl_finish: r.blf || null,
+      actual_start: r.as || null, actual_finish: r.af || null,
       duration_days: (r.start && r.finish) ? dayDiff(pd(r.start), pd(r.finish)) + 1 : null,
       percent_complete: r.pct != null ? r.pct : 0,
+      free_float: r.freeFloat != null ? r.freeFloat : null,
+      primary_constraint: r.cstr || null, primary_constraint_date: r.cstrDate || null,
       predecessors: r.predText || null,
       calendar_id: r.calTmpId ? (calIdMap[r.calTmpId] || null) : null };
   }
