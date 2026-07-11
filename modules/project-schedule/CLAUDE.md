@@ -158,6 +158,13 @@ parser verification exactly. **Import writes correctly at scale.**
   projects (Avesta) load fine; the threshold is a few thousand rows. **Fix planned:** keyset pagination
   (`order=id.asc&id=gt.<last>&limit=N`) so every page is an indexed range scan. Hot path — verify on a
   small project + XERTEST before shipping. (A single ordered 1000-row page measured 1.4s.)
+- **FIXED + verified live (`1aaecfb`):** `load()` now uses keyset pagination (`order=id.asc & id>last,
+  limit 1000`) instead of `.range()`/OFFSET — each page is an indexed PK range scan. REST simulation
+  fetched all 42,306 rows across 43 pages (max page ~1.05s, ~12s total, no timeout); then the live app
+  loaded XERTEST fully — **27,811 activities** + 14,495 WBS, Gantt with milestones + dependency lag
+  labels rendering, no timeout toast. Sequential (each page needs the prior page's last id) so mid-size
+  projects load marginally slower than the old parallel fetch, but nothing times out. Small projects =
+  single page (unaffected).
 
 ## Resource/cost-side OPC parity — in progress (2026-07-11)
 User approved building all four gaps. **Migration `../../migrations/2026-07-11-resource-cost-parity.sql`
