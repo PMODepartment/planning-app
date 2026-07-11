@@ -256,6 +256,10 @@
       border-right:2px solid var(--pd-line); }
     .ps-grid-pane .ps-wbs-row > .ps-cell.c-num, .ps-grid-pane .ps-wbs-row > .ps-cell.c-id, .ps-grid-pane .ps-wbs-row > .ps-cell.c-name { background:var(--pd-bg); }
     .ps-group-row > .ps-cell.c-num, .ps-group-row > .ps-cell.c-id, .ps-group-row > .ps-cell.c-name { background:var(--pd-red-light); }
+    /* Conditional formatting: --fmt-bg/--fmt-fg are set inline on the row; custom props inherit so
+       the frozen cells pick up the same tint. Ordered before .ps-row-sel so selection still wins. */
+    .ps-grid-row.ps-fmt { background:var(--fmt-bg, transparent); color:var(--fmt-fg, inherit); }
+    .ps-grid-row.ps-fmt > .ps-cell.c-num, .ps-grid-row.ps-fmt > .ps-cell.c-id, .ps-grid-row.ps-fmt > .ps-cell.c-name { background:var(--fmt-bg, transparent); }
     .ps-row-sel > .ps-cell.c-num, .ps-row-sel > .ps-cell.c-id, .ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
     /* Header sticky needs extra specificity to beat the later `.ps-grid-row.head .ps-cell
        {position:relative}` rule — otherwise the header wouldn't freeze while the body did,
@@ -794,6 +798,7 @@
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
               <button id="ps-leveling"><span data-ico="users" data-ico-size="14"></span> Resource leveling…</button>
               <button id="ps-thresholds"><span data-ico="risk" data-ico-size="14"></span> Threshold monitoring…</button>
+              <button id="ps-fmtbtn"><span data-ico="palette" data-ico-size="14"></span> Conditional formatting…</button>
               <button id="ps-clear" class="ps-menu-danger" title="Delete all activities for this project">Clear schedule…</button>
             </div>
           </div>
@@ -1477,6 +1482,7 @@
   }
   async function load() {
     loadDataDate();   // per-project data date (persisted); drives CPM / gantt line / usage
+    _fmtRules = loadFmtRules();   // per-project conditional-formatting rules
     if (!pid) { rows = []; rebuild(); renderAll(); return; }
     showLoading('Loading schedule…');
     var all = [];
@@ -3333,6 +3339,63 @@
       money('bl_cost') +
       '<div class="ps-cell c-ctype">' + esc(r.percent_complete_type || '') + '</div>';
   }
+  // ---- Conditional formatting (OPC "Format Cell by Filter") ----
+  // Colour activity rows by a rule; rules are checked top-down and the first match wins. Each
+  // predicate reads only row fields (or the CPM-derived _critical/_float/_near), so it re-evaluates
+  // live on every render. Stored per project.
+  var FMT_CONDS = [
+    { k: 'critical', label: 'On the critical path', fn: function (r) { return !!r._critical; } },
+    { k: 'near', label: 'Near critical', fn: function (r) { return !!r._near; } },
+    { k: 'behind', label: 'Behind schedule (overdue / late vs baseline)', fn: function (r) { var fv = finVar(r); if (fv != null && fv > 0) return true; var e = pd(r.end_date); return !!(e && e < today() && (r.percent_complete || 0) < 100); } },
+    { k: 'negfloat', label: 'Negative float', fn: function (r) { return r._float != null && r._float < 0; } },
+    { k: 'complete', label: 'Completed', fn: function (r) { return r.status === 'Completed' || r.percent_complete === 100; } },
+    { k: 'inprogress', label: 'In progress', fn: function (r) { return r.status === 'In Progress' || ((r.percent_complete || 0) > 0 && (r.percent_complete || 0) < 100); } },
+    { k: 'notstarted', label: 'Not started', fn: function (r) { return (r.status || 'Not Started') === 'Not Started' && !((r.percent_complete || 0) > 0); } },
+    { k: 'milestone', label: 'Milestone', fn: function (r) { return isMile(r); } },
+    { k: 'constraint', label: 'Has a constraint', fn: function (r) { return !!r.primary_constraint; } },
+    { k: 'overbudget', label: 'Over budget (actual > planned cost)', fn: function (r) { return (r.actual_cost || 0) > (r.planned_cost || 0) && (r.planned_cost || 0) > 0; } }
+  ];
+  var _fmtRules = [];
+  function loadFmtRules() { try { return JSON.parse(localStorage.getItem('ps_fmtrules_' + pid) || '[]') || []; } catch (e) { return []; } }
+  function saveFmtRules() { try { localStorage.setItem('ps_fmtrules_' + pid, JSON.stringify(_fmtRules)); } catch (e) {} }
+  function _fmtFn(k) { var c = FMT_CONDS.find(function (x) { return x.k === k; }); return c ? c.fn : null; }
+  function _rowFmt(r) { for (var i = 0; i < _fmtRules.length; i++) { var fn = _fmtFn(_fmtRules[i].cond); if (fn && fn(r)) return _fmtRules[i]; } return null; }
+  function _fmtStyleStr(f) { return '--fmt-bg:' + f.bg + ';' + (f.fg ? '--fmt-fg:' + f.fg + ';' : '') + (f.bold ? 'font-weight:600;' : ''); }
+  // Suggested fill per condition when a rule is first added.
+  var _FMT_DEFBG = { critical: '#FDECEA', near: '#FFF4E5', behind: '#FFF0D9', negfloat: '#FDECEA', complete: '#E8F6EF', inprogress: '#FFF9E6', notstarted: '#F1F1F1', milestone: '#EEF3FF', constraint: '#FFF4E5', overbudget: '#FDECEA' };
+  function openFmtRules() {
+    if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
+    var m = UI.modal('<h2 style="margin-top:0;">Conditional formatting</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 10px;">Colour activity rows by a rule. Rules are checked top-down — the first match wins.</p>' +
+      '<div id="ps-fmt-list"></div>' +
+      '<div style="margin-top:8px;"><button class="pd-btn" id="ps-fmt-add"><span data-ico="plus" data-ico-size="14"></span> Add rule</button></div>' +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn pd-btn-primary" id="ps-fmt-done">Done</button></div>');
+    function apply() { saveFmtRules(); renderGrid(); }
+    function render() {
+      var list = m.el.querySelector('#ps-fmt-list');
+      if (!_fmtRules.length) { list.innerHTML = '<div style="color:var(--pd-muted);font-size:12.5px;padding:6px 0;">No rules yet — add one below.</div>'; return; }
+      list.innerHTML = _fmtRules.map(function (r, i) {
+        return '<div class="ps-fmt-row" data-i="' + i + '" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--pd-line);">' +
+          '<select class="pd-input ps-fmt-cond" style="flex:1;min-width:0;">' + FMT_CONDS.map(function (c) { return '<option value="' + c.k + '"' + (c.k === r.cond ? ' selected' : '') + '>' + esc(c.label) + '</option>'; }).join('') + '</select>' +
+          '<label style="font-size:11px;color:var(--pd-muted);white-space:nowrap;">Fill <input type="color" class="ps-fmt-bg" value="' + (r.bg || '#FDECEA') + '"></label>' +
+          '<label style="font-size:11px;color:var(--pd-muted);white-space:nowrap;">Text <input type="color" class="ps-fmt-fg" value="' + (r.fg || '#231F20') + '"></label>' +
+          '<label style="font-size:11px;white-space:nowrap;"><input type="checkbox" class="ps-fmt-bold"' + (r.bold ? ' checked' : '') + '> Bold</label>' +
+          '<button class="pd-btn ps-fmt-del" title="Remove rule" style="padding:0 8px;">✕</button>' +
+        '</div>';
+      }).join('');
+      list.querySelectorAll('.ps-fmt-row').forEach(function (row) {
+        var i = parseInt(row.dataset.i, 10);
+        row.querySelector('.ps-fmt-cond').onchange = function () { _fmtRules[i].cond = this.value; apply(); };
+        row.querySelector('.ps-fmt-bg').oninput = function () { _fmtRules[i].bg = this.value; apply(); };
+        row.querySelector('.ps-fmt-fg').oninput = function () { _fmtRules[i].fg = this.value; apply(); };
+        row.querySelector('.ps-fmt-bold').onchange = function () { _fmtRules[i].bold = this.checked; apply(); };
+        row.querySelector('.ps-fmt-del').onclick = function () { _fmtRules.splice(i, 1); apply(); render(); };
+      });
+    }
+    m.el.querySelector('#ps-fmt-add').onclick = function () { _fmtRules.push({ cond: 'behind', bg: _FMT_DEFBG.behind, fg: '', bold: false }); apply(); render(); };
+    m.el.querySelector('#ps-fmt-done').onclick = m.close;
+    render();
+  }
   // OPC-style in-cell adornments: A = actual date, C = constrained date; a thin bar under % Complete.
   function _dateBadge(kind) { return kind ? '<span class="ps-dbadge" title="' + (kind === 'A' ? 'Actual date' : 'Constrained date') + '">' + kind + '</span>' : ''; }
   function _pctBar(p) { if (p == null) return ''; var w = Math.max(0, Math.min(100, p)); return '<span class="ps-pctbar" style="width:' + w + '%"></span>'; }
@@ -3371,7 +3434,8 @@
     }
     var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : (r.duration_days || '');
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
-    return '<div class="ps-grid-row' + altc + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '">' +
+    var fmt = _fmtRules.length ? _rowFmt(r) : null;
+    return '<div class="ps-grid-row' + altc + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
       '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
       '<div class="ps-cell c-id ps-editable" data-id="' + r.id + '" data-field="activity_id" data-type="text" style="padding-left:' + idPad + 'px;">' + esc(r.activity_id || '') + '</div>' +
       '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r.activity_name || '') + '</div>' +
@@ -6836,6 +6900,7 @@
     document.getElementById('ps-lvl-x').onclick = closeLeveling;
     document.getElementById('ps-lvl-back').onclick = function (e) { if (e.target === this) closeLeveling(); };
     document.getElementById('ps-thresholds').onclick = function () { aMenu.classList.remove('open'); openThresholds(); };
+    document.getElementById('ps-fmtbtn').onclick = function () { aMenu.classList.remove('open'); openFmtRules(); };
     document.getElementById('ps-thr-x').onclick = closeThresholds;
     document.getElementById('ps-thr-back').onclick = function (e) { if (e.target === this) closeThresholds(); };
     document.getElementById('ps-thr-add').onclick = addThreshold;
