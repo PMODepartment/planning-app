@@ -223,6 +223,7 @@
       font-size:12px; color:var(--pd-muted); }
     .ps-grid-foot .pd-btn { height:26px; padding:0 10px; font-size:12px; background:transparent; border-color:transparent; color:var(--pd-red); font-weight:600; }
     .ps-grid-foot .pd-btn:hover { background:var(--pd-red-light); }
+    .ps-foot-chk { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--pd-muted); cursor:pointer; margin-left:auto; }
     .ps-search { position:relative; display:inline-flex; align-items:center; }
     .ps-search > [data-ico] { position:absolute; left:10px; display:inline-flex; color:var(--pd-muted); pointer-events:none; }
     .ps-search .pd-input { padding-left:32px; }
@@ -875,6 +876,7 @@
         <!-- OPC-style grid footer: activity count + Download (mirrors OPC's strip under its grid) -->
         <div class="ps-grid-foot">
           <span>Total: <strong id="ps-total-count">0</strong> activities</span>
+          <label class="ps-foot-chk" title="Hide WBS groups that contain no activities"><input type="checkbox" id="ps-hide-empty"> Hide empty groups</label>
           <button class="pd-btn" id="ps-download" title="Export the schedule to Excel"><span data-ico="download" data-ico-size="14"></span> Download</button>
         </div>
 
@@ -1349,6 +1351,8 @@
   var filters = { status: {}, type: {}, behind: false, look: 0, codes: {}, col: {} };   // empty sets = show all; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }
   var _colFilterOn = false; try { _colFilterOn = localStorage.getItem('ps_colfilter') === '1'; } catch (e) {}
   var _colfT = null;   // debounce timer for column-filter typing
+  var _hideEmptyGroups = false; try { _hideEmptyGroups = localStorage.getItem('ps_hideempty') === '1'; } catch (e) {}
+  var _nonEmptyCodes = {};   // WBS codes that contain at least one visible activity (for Hide empty groups)
   var groupBy = 'wbs';   // 'wbs' | 'status' | 'responsible' | 'type'
   var _dspan = {};       // span map keyed by display code (real WBS codes in WBS mode)
   var isAdmin = false;
@@ -1700,7 +1704,15 @@
   function hiddenRow(nd) {
     if (collapsed[dcode(nd)] && nd._dkind === 'task') return true;
     var a = danc(nd); for (var i = 0; i < a.length; i++) if (collapsed[a[i]]) return true;
+    // Hide empty groups: a WBS summary node with no visible activity anywhere below it.
+    if (_hideEmptyGroups && nd._dkind === 'wbs' && !_nonEmptyCodes[dcode(nd)]) return true;
     return false;
+  }
+  // Codes (in the current display scope) that contain at least one visible activity — a WBS node
+  // whose code isn't here is "empty" and hidden when Hide-empty-groups is on.
+  function _computeNonEmpty(nodes) {
+    _nonEmptyCodes = {};
+    nodes.forEach(function (nd) { if (nd._dkind === 'task') { var c = dcode(nd); if (c != null) _nonEmptyCodes[c] = 1; var a = danc(nd); for (var i = 0; i < a.length; i++) _nonEmptyCodes[a[i]] = 1; } });
   }
   function codeValueLabel(id) { var v = CODE_VALUES.find(function (x) { return x.id === id; }); return v ? v.value : null; }
   // Adds/refreshes one "Group: <name>" option per Activity Code type after the 4 built-in
@@ -1771,7 +1783,7 @@
     _dspan = span;
     return out;
   }
-  function displayList() { return buildNodes().filter(function (nd) { return !hiddenRow(nd); }); }
+  function displayList() { var nodes = buildNodes(); if (_hideEmptyGroups) _computeNonEmpty(nodes); return nodes.filter(function (nd) { return !hiddenRow(nd); }); }
 
   // ---- IMPORT from Oracle Primavera Cloud .xlsx export ----
   var MON = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
@@ -6859,6 +6871,7 @@
     document.getElementById('ps-refresh').onclick = function () { load(); };
     document.getElementById('ps-export').onclick = exportExcel;
     document.getElementById('ps-download').onclick = downloadSchedule;
+    (function () { var he = document.getElementById('ps-hide-empty'); if (he) { he.checked = _hideEmptyGroups; he.onchange = function () { _hideEmptyGroups = he.checked; try { localStorage.setItem('ps_hideempty', _hideEmptyGroups ? '1' : '0'); } catch (e) {} renderGrid(); renderGantt(); }; } })();
     // Planner cockpit + bulk update
     document.getElementById('ps-ck-update').onclick = openBulkUpdate;
     document.getElementById('ps-ck-export').onclick = exportLookahead;
