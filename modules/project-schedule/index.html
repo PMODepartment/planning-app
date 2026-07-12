@@ -2474,7 +2474,7 @@
   }
 
   // ---- render everything ----
-  function renderAll() { renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') renderPlanner(); else if (activeTab === 'lastplanner') openLastPlanner(); else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); }
+  function renderAll() { renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') renderPlanner(); else if (activeTab === 'lastplanner') openLastPlanner(); else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
