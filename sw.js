@@ -12,7 +12,7 @@
 // Because it tries the network first, this can only ADD an offline fallback —
 // it cannot serve stale content while online. Bump CACHE to force a purge.
 // ============================================================================
-var CACHE = 'pd-shell-v1';
+var CACHE = 'pd-shell-v2';
 
 self.addEventListener('install', function () { self.skipWaiting(); });
 
@@ -30,9 +30,13 @@ self.addEventListener('fetch', function (e) {
   var url;
   try { url = new URL(req.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return;                    // never cache Supabase / CDNs
+  // HTML pages (navigations) must ALWAYS come fresh from origin — the default fetch() respects the
+  // HTTP cache, so on GitHub Pages (HTML cached ~10 min) the SW could re-serve a stale module even
+  // after a hard-refresh. Bypass the HTTP cache for HTML so deploys apply immediately.
+  var isHTML = req.mode === 'navigate' || /\.html($|\?)/.test(url.pathname) || (req.headers.get('accept') || '').indexOf('text/html') !== -1;
   e.respondWith((async function () {
     try {
-      var res = await fetch(req);
+      var res = await fetch(isHTML ? new Request(url.href, { cache: 'reload', credentials: 'same-origin' }) : req);
       if (res && res.ok && res.type === 'basic') {
         var c = await caches.open(CACHE);
         c.put(req, res.clone());                                      // refresh cache on every success
