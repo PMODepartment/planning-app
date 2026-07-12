@@ -2262,6 +2262,13 @@
     hideLoading();
     if (err) UI.toast('Import error after ' + ok + ' activities: ' + err, 'error');
     else UI.toast('Imported ' + ok + ' activities, ' + parsed.calendars.length + ' calendar(s), ' + parsed.resources.length + ' resource(s)' + (parsed.udfDefs && parsed.udfDefs.length ? ', ' + parsed.udfDefs.length + ' user-defined field(s)' : '') + '. Add UDF columns via the “+” column chooser.', 'success');
+    // Reset the grid column layout to a clean, predictable state after a full import: natural
+    // built-in order and the newly-imported UDF columns hidden (add them via the "+" chooser).
+    // A stale/custom column order from a previous state could otherwise scramble the new columns.
+    try { localStorage.removeItem('ps_colorder'); localStorage.removeItem('ps_colseen'); } catch (e) {}
+    colOrder = []; _colSeen = {};
+    Object.keys(colHidden).forEach(function (k) { if (k.indexOf('udf:') === 0 || k.indexOf('code:') === 0) delete colHidden[k]; });
+    try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {}
     collapsed = {}; resetUndo(); load();
   }
 
