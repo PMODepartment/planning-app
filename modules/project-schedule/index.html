@@ -6206,12 +6206,17 @@
   function computeCPM() {
     _cpmDirty = false;
     rows.forEach(function (r) { r._critical = false; r._float = null; });
-    var tasks = rows.filter(function (r) { return !isWbs(r) && r.start_date && r.end_date && r.activity_id; });
-    var byId = {}; tasks.forEach(function (t) { byId[String(t.activity_id)] = t; t._succ = []; t._pred = []; });
+    var tasks = rows.filter(function (r) { return !isWbs(r) && r.start_date && r.end_date && r.activity_id; });   // dated tasks — for CPM date math
+    // Relationship graph is built over ALL activities with an Activity ID (not just dated ones), so
+    // predecessors AND successors resolve even for undated / single-dated activities and finish
+    // milestones. cpmLogic only date-schedules the `tasks` subset (relCandidateES already skips
+    // undated predecessors, and the _out push below is guarded to dated predecessors only).
+    var relTasks = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    var byId = {}; relTasks.forEach(function (t) { byId[String(t.activity_id)] = t; t._succ = []; t._pred = []; });
     var hasRel = false;
-    tasks.forEach(function (t) { t._relObjs = []; predRels(t.predecessors).forEach(function (rel) { var p = byId[rel.id]; if (p) { t._pred.push(p); p._succ.push(t); t._relObjs.push({ p: p, type: rel.type, lag: rel.lag }); hasRel = true; } }); });
+    relTasks.forEach(function (t) { t._relObjs = []; predRels(t.predecessors).forEach(function (rel) { var p = byId[rel.id]; if (p) { t._pred.push(p); p._succ.push(t); t._relObjs.push({ p: p, type: rel.type, lag: rel.lag }); hasRel = true; } }); });
     // successors are the inverse of predecessors — expose them (form + export) with type/lag
-    tasks.forEach(function (t) { t._succObjs = t._succ.map(function (s) { var rel = (s._relObjs || []).find(function (x) { return x.p === t; }) || { type: 'FS', lag: 0 }; return { id: s.activity_id, type: rel.type, lag: rel.lag }; }); });
+    relTasks.forEach(function (t) { t._succObjs = t._succ.map(function (s) { var rel = (s._relObjs || []).find(function (x) { return x.p === t; }) || { type: 'FS', lag: 0 }; return { id: s.activity_id, type: rel.type, lag: rel.lag }; }); });
     if (hasRel) { cpmLogic(tasks); return { mode: 'logic' }; }
     drivingPath();
     return { mode: 'driving' };
@@ -6273,13 +6278,13 @@
       t._started = useActuals && (!!t.actual_start || (t.percent_complete > 0));
       t._es = null; t._ef = null; t._out = [];
     });
-    tasks.forEach(function (t) { (t._relObjs || []).forEach(function (rel) { if (rel.p) rel.p._out.push({ s: t, type: rel.type, lag: rel.lag }); }); });
+    tasks.forEach(function (t) { (t._relObjs || []).forEach(function (rel) { if (rel.p && rel.p._out) rel.p._out.push({ s: t, type: rel.type, lag: rel.lag }); }); });   // _out set only on dated tasks — skip edges from undated preds
     // Topological order (Kahn). A dependency DAG needs only ONE pass per direction once nodes are
     // in topo order, turning the old fixed-point relaxation (O(n²) on a long chain — it froze
     // 27k-activity schedules) into O(n + edges). indeg(t) === t._relObjs.length and t receives
     // exactly that many decrements (one per predecessor's _out entry), so duplicate edges are fine.
     // Any cycle (bad data) leaves nodes un-queued; they're appended so none is dropped.
-    tasks.forEach(function (t) { t._indeg = (t._relObjs || []).length; });
+    tasks.forEach(function (t) { t._indeg = 0; (t._relObjs || []).forEach(function (rel) { if (rel.p && rel.p._out) t._indeg++; }); });   // count only dated predecessors (topo)
     var order = [], queue = [];
     tasks.forEach(function (t) { if (!t._indeg) queue.push(t); });
     for (var qi = 0; qi < queue.length; qi++) {
