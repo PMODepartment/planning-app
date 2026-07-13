@@ -170,7 +170,10 @@ zero console errors:**
 - [ ] Expenses tab: add an expense; with roll-up ON, confirm the activity's Planned cost updates.
 - [ ] Grid **Download** → open the .xlsx; confirm columns + any shown Code/UDF columns are present.
 - [ ] Reports → run one to **PDF**.
-- [ ] Portfolio → **Resources** tab after running the RPC migration (real data).
+- [x] Portfolio → **Resources** tab after running the RPC migration — VERIFIED 2026-07-11: RPC
+      aggregated 55,724 assignments → 48 resource rows server-side (~2.3s); tab rendered KPIs + chart +
+      table. (Note: P6-imported "Activity Cost" assignments carry units but ₱0 cost — imported-data
+      quality, not an app issue; only the seeded Test Laborer shows a ₱ cost.)
 - [ ] A quick dark-mode + narrow-window glance.
 
 ## 3. Sign-off
