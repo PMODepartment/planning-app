@@ -147,6 +147,24 @@ clipboard operating on individual grid cells, independent of the row selection/c
   3×2 target). Page loads with no console errors. **Not yet exercised end-to-end against a live login**
   (same constraint as prior batches — needs a real session + data to click through).
 
+## Drag-and-drop row reorder within a WBS (2026-07-11)
+**Migration `../../migrations/2026-07-11-activity-seq-order.sql` (RUN):** adds `project_schedule.seq_order`.
+- **Sort:** in `rebuild()`, leaf siblings (same WBS parent) order by `seq_order` (unset = last → falls
+  back to Activity-ID order = pre-feature behaviour), before the Activity-ID tiebreaker. colSort still
+  takes precedence when active (its sibling branch runs first).
+- **DnD:** task rows get `draggable=true` only when `_reorderEnabled()` (WBS grouping + no colSort +
+  not view-only). Drag listeners rebind each `renderWindow` (rows are windowed). A red insertion line
+  (`.ps-drop-above/.ps-drop-below`) marks the drop position; drop only lands within the SAME WBS parent.
+  `reorderWithinWbs(draggedId,targetId,before)` renumbers that WBS's leaf siblings 0,1,2,… (from the
+  current `_sorted` order) and persists changed `seq_order`s via parallel updates, then rebuild/render.
+  Gantt auto-syncs (same `_sorted`/DL). Not undo-integrated (reversible by dragging back).
+- **Verified:** reorder splice logic + sort integration unit-tested in a node harness; deployed +
+  syntax-clean; migration applied. **Live click-through NOT completed** — the automation browser
+  became unstable (tabs crashing to newtab / detaching) during verification. The change doesn't touch
+  the load fetch path (unchanged keyset loop, already verified on 42k XERTEST), so load is not
+  regressed; the drag *visual* still needs a human confirm on a small project (e.g. QADEMO: drag Q30
+  above Q10 → order persists after reload).
+
 ## P6 .xer import RUN LIVE (2026-07-11) — import verified, load-timeout bug found
 The P6 importer had never run end-to-end against live Supabase (parser-only verified). Imported a real
 `.xer` into scratch project **XERTEST**: **42,306 activities, 14,495 WBS summaries, 27,796 predecessors
