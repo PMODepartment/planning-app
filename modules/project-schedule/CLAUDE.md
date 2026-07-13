@@ -147,6 +147,24 @@ clipboard operating on individual grid cells, independent of the row selection/c
   3×2 target). Page loads with no console errors. **Not yet exercised end-to-end against a live login**
   (same constraint as prior batches — needs a real session + data to click through).
 
+## Trace Logic multi-level · auto-adopt on import · sidebar→back button (2026-07-11)
+- **Trace Logic (multi-level):** `detTrace` now walks predecessor/successor chains N levels deep
+  (`_traceWalk` = BFS with a `seen` set for dedup + cycle safety), rendering one column per level
+  (deepest predecessors far-left). Persisted **Predecessor/Successor Levels** number inputs
+  (`ps_trace_levels`, default 3, up to 99); `.ps-trace` scrolls both ways as it grows. Verified live on
+  Avesta: A1005 now shows L1 A1100 Concept Design + **L2 A1149 Release of NTP** (matching OPC; the old
+  single-level view only showed the immediate predecessor).
+- **Auto-adopt WBS on import:** `wbsAdopt` rewritten to insert a whole **depth level at a time**
+  (chunked, `.insert(batch).select()` → map code→id), instead of one node per await (which stalled on
+  big P6 imports). Resumes cleanly from a partial adoption (seeds `nodeByCode`/`sibCount` from existing
+  `WBS_NODES`). `silent` param skips confirm/toasts. `doImport`/`doImportXER` now `await load()` then
+  `autoAdoptAfterImport()` (tolerant — never blocks the import). The manual WBS-Manager Adopt uses the
+  same fast path now.
+- **Sidebar removed:** the left `.pd-sidebar` (which duplicated the title dropdown's view switcher) is
+  gone; a `.ps-modback` back-to-modules button (→ `../../dashboard.html`) sits where the hamburger was.
+  `UI.initShell()` no-ops without a sidebar (harmless). Verified live: sidebar absent, back button
+  present + correct href, content full-width, grid loads, title dropdown still switches views.
+
 ## Drag-and-drop row reorder within a WBS (2026-07-11)
 **Migration `../../migrations/2026-07-11-activity-seq-order.sql` (RUN):** adds `project_schedule.seq_order`.
 - **Sort:** in `rebuild()`, leaf siblings (same WBS parent) order by `seq_order` (unset = last → falls
