@@ -916,6 +916,8 @@
             <button class="ps-dtab" data-dtab="expenses">Expenses</button>
             <button class="ps-dtab" data-dtab="rels">Relationships</button>
             <button class="ps-dtab" data-dtab="trace">Trace Logic</button>
+            <button class="ps-dtab" data-dtab="notebook">Notebook</button>
+            <button class="ps-dtab" data-dtab="files">Files</button>
             <span class="ps-dt-sep"></span>
             <button class="ps-dtab" data-dtab="ausage">Activity Usage</button>
             <button class="ps-dtab" data-dtab="rusage">Resource Usage</button>
@@ -3443,6 +3445,66 @@
     else if (t === 'expenses') { body.innerHTML = detExpenses(r); wireExpenses(body, r); }
     else if (t === 'rels') { body.innerHTML = detRels(r); wireDetailSplits(body); }
     else if (t === 'trace') { body.innerHTML = detTrace(r); wireTrace(body, r); }
+    else if (t === 'notebook') { body.innerHTML = detNotebook(r); wireNotebook(body, r); }
+    else if (t === 'files') { body.innerHTML = detFiles(r); wireFiles(body, r); }
+  }
+  // Tolerant per-activity field write (used by Notebook/Files). If the column isn't migrated yet
+  // the update just no-ops with a hint, so it's safe to ship before the migration runs.
+  async function _saveActField(r, field, value) {
+    var patch = {}; patch[field] = value;
+    try {
+      var res = await sb().from(TABLE).update(patch).eq('id', r.id);
+      if (res.error) { UI.toast(/column|schema|does not exist|PGRST204/i.test(res.error.message) ? 'Run the notebook/files migration to enable this (see docs).' : res.error.message, 'warn'); return false; }
+      r[field] = value; return true;
+    } catch (e) { UI.toast('Could not save.', 'error'); return false; }
+  }
+  // ---- Notebook (P6-style multi-topic notes) ----
+  function detNotebook(r) {
+    var nb = Array.isArray(r.notebook) ? r.notebook : [];
+    var rows = nb.map(function (n, i) {
+      return '<div class="ps-nb-item" data-i="' + i + '" style="border:1px solid var(--pd-line);border-radius:8px;padding:8px 10px;margin-bottom:8px;">' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;"><input class="pd-input ps-nb-topic" value="' + esc(n.topic || '') + '" placeholder="Topic (e.g. Constraints, RFI)" style="flex:1;font-weight:600;"><button class="pd-btn ps-nb-del" title="Delete topic" style="padding:0 8px;">✕</button></div>' +
+        '<textarea class="pd-input ps-nb-text" rows="3" placeholder="Note…" style="resize:vertical;width:100%;box-sizing:border-box;">' + esc(n.text || '') + '</textarea></div>';
+    }).join('');
+    return '<div style="max-width:720px;">' + (rows || '<div style="color:var(--pd-muted);font-size:12.5px;padding:4px 0 8px;">No notes yet. Add a topic below.</div>') +
+      '<button class="pd-btn" id="ps-nb-add"><span data-ico="plus" data-ico-size="14"></span> Add topic</button></div>';
+  }
+  function wireNotebook(root, r) {
+    var nb = Array.isArray(r.notebook) ? r.notebook.slice() : [];
+    var save = function () { _saveActField(r, 'notebook', nb); };
+    var _t;
+    root.querySelectorAll('.ps-nb-item').forEach(function (it) {
+      var i = parseInt(it.dataset.i, 10);
+      it.querySelector('.ps-nb-topic').oninput = function () { nb[i].topic = this.value; clearTimeout(_t); _t = setTimeout(save, 400); };
+      it.querySelector('.ps-nb-text').oninput = function () { nb[i].text = this.value; clearTimeout(_t); _t = setTimeout(save, 400); };
+      it.querySelector('.ps-nb-del').onclick = function () { nb.splice(i, 1); r.notebook = nb; _saveActField(r, 'notebook', nb); renderDetails(); };
+    });
+    var add = root.querySelector('#ps-nb-add');
+    if (add) add.onclick = function () { nb.push({ topic: '', text: '' }); r.notebook = nb; renderDetails(); };
+    if (window.Icons) Icons.hydrate(root);
+  }
+  // ---- Files (linked documents — paste a URL to a SharePoint/Drive/etc. document) ----
+  function detFiles(r) {
+    var fs = Array.isArray(r.files) ? r.files : [];
+    var rows = fs.map(function (f, i) {
+      return '<div class="ps-file-item" data-i="' + i + '" style="display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--pd-line);padding:6px 0;">' +
+        '<span data-ico="download" data-ico-size="14" style="color:var(--pd-muted);flex:none;"></span>' +
+        '<a href="' + esc(f.url || '#') + '" target="_blank" rel="noopener" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--pd-red);">' + esc(f.name || f.url || '(unnamed)') + '</a>' +
+        '<button class="pd-btn ps-file-del" title="Remove" style="padding:0 8px;">✕</button></div>';
+    }).join('');
+    return '<div style="max-width:720px;">' + (rows || '<div style="color:var(--pd-muted);font-size:12.5px;padding:4px 0 8px;">No files linked. Paste a document link below.</div>') +
+      '<div style="display:flex;gap:8px;margin-top:10px;"><input class="pd-input" id="ps-file-name" placeholder="Label (e.g. Approved drawing)" style="flex:1;"><input class="pd-input" id="ps-file-url" placeholder="https://…" style="flex:2;"><button class="pd-btn pd-btn-primary" id="ps-file-add">Add link</button></div></div>';
+  }
+  function wireFiles(root, r) {
+    var fs = Array.isArray(r.files) ? r.files.slice() : [];
+    root.querySelectorAll('.ps-file-del').forEach(function (b) { b.onclick = function () { var i = parseInt(b.closest('.ps-file-item').dataset.i, 10); fs.splice(i, 1); r.files = fs; _saveActField(r, 'files', fs); renderDetails(); }; });
+    var add = root.querySelector('#ps-file-add');
+    if (add) add.onclick = function () {
+      var url = (root.querySelector('#ps-file-url').value || '').trim(); if (!url) { UI.toast('Paste a URL first.', 'warn'); return; }
+      if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+      fs.push({ name: (root.querySelector('#ps-file-name').value || '').trim() || url, url: url }); r.files = fs; _saveActField(r, 'files', fs); renderDetails();
+    };
+    if (window.Icons) Icons.hydrate(root);
   }
 
   // ----- COLUMN HEADER (static, resizable) -----
@@ -3691,6 +3753,37 @@
   // ----- LEFT GRID -----
   // ===== VIRTUALIZED RENDER PIPELINE =====
   var ROWH = 34, DL = [], _rMin = null, _rDayw = 0, _rafP = false, _tlW = 0;
+  // Gantt display settings (OPC "Gantt Settings"). labels: none|name|dates; toggles for baseline
+  // bar, data-date line, relationship lines. Persisted per browser.
+  var _gset = { labels: 'name', baseline: true, ddline: true, relLines: false };
+  try { var _gs = JSON.parse(localStorage.getItem('ps_gset') || 'null'); if (_gs) _gset = Object.assign(_gset, _gs); } catch (e) {}
+  function saveGset() { try { localStorage.setItem('ps_gset', JSON.stringify(_gset)); } catch (e) {} }
+  function _barTip(r) {
+    var sd = r.start_date ? Fmt.date(r.start_date) : '—', fd = r.end_date ? Fmt.date(r.end_date) : '—';
+    return esc((r.activity_id ? r.activity_id + ' · ' : '') + (r.activity_name || '') + '\n' + (r.status || '') + (r.percent_complete != null ? ' · ' + r.percent_complete + '%' : '') + '\nStart ' + sd + '  Finish ' + fd + (r._float != null ? '  Float ' + r._float + 'd' : ''));
+  }
+  function _barLabel(r) {
+    if (_gset.labels === 'none') return '';
+    if (_gset.labels === 'dates') return (r.start_date ? Fmt.date(r.start_date) : '') + (r.end_date && r.end_date !== r.start_date ? ' – ' + Fmt.date(r.end_date) : '');
+    return r.activity_name || '';
+  }
+  function openGanttSettings() {
+    var m = UI.modal('<h2 style="margin-top:0;">Gantt settings</h2>' +
+      '<div class="pd-field"><label class="pd-label">Bar labels</label><select class="pd-input" id="gs-labels" style="max-width:220px;"><option value="name">Activity name</option><option value="dates">Start – Finish dates</option><option value="none">None</option></select></div>' +
+      '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;"><input type="checkbox" id="gs-baseline"> Show baseline (BL0) bars</label>' +
+      '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;"><input type="checkbox" id="gs-ddline"> Show data-date line</label>' +
+      '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;"><input type="checkbox" id="gs-rel"> Show relationship lines</label>' +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn pd-btn-primary" id="gs-done">Done</button></div>');
+    m.el.querySelector('#gs-labels').value = _gset.labels;
+    m.el.querySelector('#gs-baseline').checked = !!_gset.baseline;
+    m.el.querySelector('#gs-ddline').checked = !!_gset.ddline;
+    m.el.querySelector('#gs-rel').checked = !!depsOn;
+    m.el.querySelector('#gs-labels').onchange = function () { _gset.labels = this.value; saveGset(); renderGantt(); };
+    m.el.querySelector('#gs-baseline').onchange = function () { _gset.baseline = this.checked; saveGset(); renderGantt(); };
+    m.el.querySelector('#gs-ddline').onchange = function () { _gset.ddline = this.checked; saveGset(); renderGantt(); };
+    m.el.querySelector('#gs-rel').onchange = function () { depsOn = this.checked; try { localStorage.setItem('ps_deps', depsOn ? '1' : '0'); } catch (e) {} renderGantt(); };
+    m.el.querySelector('#gs-done').onclick = m.close;
+  }
   function renderGrid() { scheduleRender(); }
   function renderGantt() { scheduleRender(); }
   function scheduleRender() { if (_rafP) return; _rafP = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { _rafP = false; doRender(); }); }
@@ -3888,7 +3981,7 @@
     var stat = '', g = new Date(min.getFullYear(), min.getMonth(), 1);
     while (g <= max) { stat += '<div class="ps-grid-v" style="left:' + (dayDiff(min, g) * dayw) + 'px;"></div>'; g = new Date(g.getFullYear(), g.getMonth()+1, 1); }
     var dd = today(), ddx = dayDiff(min, dd) * dayw;
-    stat += '<div class="ps-datedate" style="left:' + ddx + 'px;"></div><div class="ps-datedate-lbl" style="left:' + ddx + 'px;">Data ' + Fmt.date(dstr(dd)) + '</div>';
+    if (_gset.ddline) stat += '<div class="ps-datedate" style="left:' + ddx + 'px;"></div><div class="ps-datedate-lbl" style="left:' + ddx + 'px;">Data ' + Fmt.date(dstr(dd)) + '</div>';
     tl.innerHTML = '<div class="ps-tl-static">' + stat + '</div><div id="ps-tl-bars"></div>';
     // grid spacer
     var host = document.getElementById('ps-grid-rows');
@@ -4091,19 +4184,33 @@
   // ----- RIGHT GANTT: per-row bar builder (used by the windowed renderer) -----
   function ganttRowHTML(r, i, min, dayw) {
     var top = i * ROWH, out = '';
-    if (isWbsNode(r)) { var sp = wbsSpan(r); if (!sp) return ''; var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw; var wcS = (r._dkind === 'group') ? null : effWbsColor(r); return '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + 12) + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '"></div>'; }
+    var showLbl = _gset.labels !== 'none';
+    if (isWbsNode(r)) {
+      var sp = wbsSpan(r); if (!sp) return '';
+      var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw;
+      var wcS = (r._dkind === 'group') ? null : effWbsColor(r);
+      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + 12) + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '"></div>';
+      if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + 8) + 'px;">' + esc(r.activity_name) + '</div>';
+      return out;
+    }
     var bs = pd(r.bl_start), be = pd(r.bl_finish);
-    if (bs && be) { var bx = dayDiff(min, bs) * dayw, bw = (dayDiff(bs, be) + 1) * dayw; out += '<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + 24) + 'px;"></div>'; }
+    if (_gset.baseline && bs && be) { var bx = dayDiff(min, bs) * dayw, bw = (dayDiff(bs, be) + 1) * dayw; out += '<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + 24) + 'px;"></div>'; }
     var s = pd(r.start_date), e = pd(r.end_date);
     var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && mfpOn && r._near) ? ' ps-near' : '');
     if (spotlightRow(r)) crit += ' ps-spot';
     var wc = actColor(r) || effWbsColor(r);
-    if (isMile(r) && s) { var mx = dayDiff(min, s) * dayw; return out + '<div class="ps-mile' + crit + '" data-id="' + r.id + '" style="left:' + (mx-6) + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>'; }
+    var lbl = _barLabel(r);
+    if (isMile(r) && s) {
+      var mx = dayDiff(min, s) * dayw;
+      out += '<div class="ps-mile' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
+      if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (mx + 9) + 'px;top:' + (top + 9) + 'px;">' + esc(lbl) + '</div>';
+      return out;
+    }
     if (!s || !e) return out;
     var x2 = dayDiff(min, s) * dayw, w2 = Math.max((dayDiff(s, e) + 1) * dayw, 4);
     var pct = Math.max(0, Math.min(100, r.percent_complete || 0));
-    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"><div class="ps-bar-fill" style="width:' + pct + '%;"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
-    out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (top + 9) + 'px;">' + esc(r.activity_name || '') + '</div>';
+    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"><div class="ps-bar-fill" style="width:' + pct + '%;"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
+    if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (top + 9) + 'px;">' + esc(lbl) + '</div>';
     return out;
   }
 
@@ -7515,9 +7622,11 @@
         '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">View</div>' +
         radio('split', 'Split (Grid + Gantt)') + radio('grid', 'Grid only') + radio('gantt', 'Gantt only') + radio('network', 'Activity Network') +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
-        '<button data-dettoggle>' + (detailsHidden ? '○ ' : '● ') + 'Show details panel</button>';
+        '<button data-dettoggle>' + (detailsHidden ? '○ ' : '● ') + 'Show details panel</button>' +
+        '<button data-ganttset><span data-ico="settings" data-ico-size="14"></span> Gantt settings…</button>';
       lMenu.querySelectorAll('[data-lay]').forEach(function (b) { b.onclick = function () { layoutMode = b.dataset.lay; try { localStorage.setItem('ps_layout', layoutMode); } catch (e) {} applyLayout(); renderLayoutMenu(); }; });
       lMenu.querySelector('[data-dettoggle]').onclick = function () { detailsHidden = !detailsHidden; try { localStorage.setItem('ps_details_hidden', detailsHidden ? '1' : '0'); } catch (e) {} applyLayout(); renderLayoutMenu(); };
+      lMenu.querySelector('[data-ganttset]').onclick = function () { lMenu.classList.remove('open'); openGanttSettings(); };
     }
     applyLayout();
     document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); closeMenus(); cMenu.classList.toggle('open'); };
