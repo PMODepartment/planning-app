@@ -333,6 +333,12 @@
        re-enable it so you can still select text while typing in a cell. */
     .ps-grid-pane .ps-cell { user-select:none; -webkit-user-select:none; }
     .ps-grid-pane .ps-cell input { user-select:text; -webkit-user-select:text; }
+    /* Drag-and-drop row reorder (within a WBS): dim the dragged row, show a red insertion line on the
+       hovered target's top or bottom edge. */
+    .ps-grid-row.ps-rowdragging { opacity:.45; }
+    .ps-grid-row.ps-drop-above { box-shadow:inset 0 2px 0 0 var(--pd-red); }
+    .ps-grid-row.ps-drop-below { box-shadow:inset 0 -2px 0 0 var(--pd-red); }
+    .ps-grid-pane.ps-reorder .ps-grid-row[data-rowid] { cursor:grab; }
     .ps-row-sel { background:var(--pd-red-light) !important; }
     .ps-mile-badge { color:var(--pd-red); font-weight:700; }
 
@@ -1385,6 +1391,10 @@
   // values. Independent of the row selection/clipboard above (a click sets both, but Ctrl+C/X/V and
   // the context menu treat cells and whole rows as distinct operations).
   var _cellSel = null, _cellAnchor = null, _cellClip = null;
+  var _dragRowId = null;   // activity row being drag-reordered (within its WBS)
+  // Drag-reorder is only meaningful in WBS grouping with no active column sort (otherwise order is
+  // derived from the grouping / column sort, so a manual sequence wouldn't stick).
+  function _reorderEnabled() { return groupBy === 'wbs' && !colSort && !window.__viewOnly && !window.__archived; }
   var filters = { status: {}, type: {}, behind: false, look: 0, codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
   var _colFilterOn = false; try { _colFilterOn = localStorage.getItem('ps_colfilter') === '1'; } catch (e) {}
   var _colfT = null;   // debounce timer for column-filter typing
@@ -1710,6 +1720,10 @@
         else { x = isNaN(x) ? -1 : x; y = isNaN(y) ? -1 : y; if (x !== y) return x - y; }
       }
       if (isWbs(a) !== isWbs(b)) return isWbs(a) ? -1 : 1;
+      // Leaf siblings (same WBS parent): manual drag-reorder sequence first (unset = last, so it
+      // falls back to Activity-ID order = pre-feature behaviour), then Activity ID as the tiebreaker.
+      var qa = (a.seq_order == null ? Infinity : +a.seq_order), qb = (b.seq_order == null ? Infinity : +b.seq_order);
+      if (qa !== qb) return qa - qb;
       return String(a.activity_id || '').localeCompare(String(b.activity_id || ''));
     });
     var ds = [], de = [];
@@ -3879,7 +3893,35 @@
       // Which editable cell was clicked (drives "Fill down" for that field).
       var cell = e.target && e.target.closest ? e.target.closest('.ps-editable') : null;
       openRowMenu(e, sr || { id: id }, cell ? cell.dataset.field : null);
-    }); });
+    });
+    // Drag-and-drop reorder (task rows, WBS grouping, no column sort). Rebinds each render (rows are
+    // windowed); a red insertion line marks the drop position; drop only lands within the same WBS.
+    if (_reorderEnabled()) {
+      rw.setAttribute('draggable', 'true');
+      rw.addEventListener('dragstart', function (e) {
+        _dragRowId = rw.dataset.rowid;
+        try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', _dragRowId); } catch (er) {}
+        rw.classList.add('ps-rowdragging');
+      });
+      rw.addEventListener('dragover', function (e) {
+        if (!_dragRowId || _dragRowId === rw.dataset.rowid) return;
+        var dg = rows.find(function (x) { return x.id === _dragRowId; }), tg = rows.find(function (x) { return x.id === rw.dataset.rowid; });
+        if (!dg || !tg || dg.wbs !== tg.wbs) return;   // only within the same WBS parent
+        e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (er) {}
+        var rect = rw.getBoundingClientRect(), below = (e.clientY - rect.top) > rect.height / 2;
+        rw.classList.toggle('ps-drop-below', below); rw.classList.toggle('ps-drop-above', !below);
+      });
+      rw.addEventListener('dragleave', function () { rw.classList.remove('ps-drop-above', 'ps-drop-below'); });
+      rw.addEventListener('drop', function (e) {
+        e.preventDefault();
+        var below = rw.classList.contains('ps-drop-below');
+        rw.classList.remove('ps-drop-above', 'ps-drop-below');
+        if (_dragRowId && _dragRowId !== rw.dataset.rowid) reorderWithinWbs(_dragRowId, rw.dataset.rowid, !below);
+      });
+      rw.addEventListener('dragend', function () { rw.classList.remove('ps-rowdragging'); document.querySelectorAll('.ps-drop-above,.ps-drop-below').forEach(function (x) { x.classList.remove('ps-drop-above', 'ps-drop-below'); }); _dragRowId = null; });
+    }
+    });
+    var _gp = document.querySelector('.ps-grid-pane'); if (_gp) _gp.classList.toggle('ps-reorder', _reorderEnabled());
     // gantt: window bars
     var bc = document.getElementById('ps-tl-bars');
     if (bc) {
@@ -6947,6 +6989,33 @@
     hideLoading(); renderGrid(); renderGantt(); renderDetails();
     UI.toast('Filled ' + (_FIELD_LABELS[field] || field) + ' to ' + rs.length + ' row' + (rs.length === 1 ? '' : 's') + '.', 'success');
   }
+  // ---- Drag-and-drop row reorder within a WBS ----
+  // Renumbers the dragged activity's leaf siblings (same wbs) 0,1,2,… in the new order and persists
+  // seq_order. Only leaf activities sharing the drop target's WBS parent are affected; the WBS tree,
+  // roll-ups and Gantt stay in sync (they render from the same rebuilt _sorted/DL).
+  async function reorderWithinWbs(draggedId, targetId, before) {
+    if (window.__viewOnly || window.__archived) return;
+    var dr = rows.find(function (x) { return x.id === draggedId; });
+    var tr = rows.find(function (x) { return x.id === targetId; });
+    if (!dr || !tr || isWbs(dr) || dr.wbs !== tr.wbs) return;   // reorder only within the same WBS parent
+    // Current sibling order (leaf tasks under this WBS) as displayed.
+    var sibs = _sorted.filter(function (r) { return !isWbs(r) && r._dkind !== 'group' && r.wbs === dr.wbs; });
+    sibs = sibs.filter(function (r) { return r.id !== draggedId; });
+    var ti = -1; for (var k = 0; k < sibs.length; k++) { if (sibs[k].id === targetId) { ti = k; break; } }
+    if (ti < 0) ti = sibs.length - 1;
+    sibs.splice(before ? ti : ti + 1, 0, dr);
+    var ups = [];
+    sibs.forEach(function (r, i) { if (+r.seq_order !== i) { r.seq_order = i; ups.push(sb().from(TABLE).update({ seq_order: i, updated_at: new Date().toISOString() }).eq('id', r.id)); } });
+    if (!ups.length) return;
+    showLoading('Reordering…');
+    var res = await Promise.all(ups);
+    hideLoading();
+    var bad = null; for (var j = 0; j < res.length; j++) { if (res[j] && res[j].error) { bad = res[j].error; break; } }
+    if (bad) { UI.toast(bad.message + ' — run the activity-seq-order migration.', 'error'); await load(); return; }
+    rebuild(true); renderGrid(); renderGantt();
+    UI.toast('Reordered ' + sibs.length + ' activit' + (sibs.length === 1 ? 'y' : 'ies') + '.', 'success');
+  }
+
   // ---- Cell clipboard (Excel/OPC-style Cut/Copy/Paste of individual cells) ----
   // Per-column metadata in GRID_COLS order (built-ins only). `edit` = writable inline; `t` = the
   // edit/coerce type. Computed columns (POC, At-Completion, Dur, Float, Var) are copy-only.
