@@ -158,12 +158,22 @@ clipboard operating on individual grid cells, independent of the row selection/c
   `reorderWithinWbs(draggedId,targetId,before)` renumbers that WBS's leaf siblings 0,1,2,… (from the
   current `_sorted` order) and persists changed `seq_order`s via parallel updates, then rebuild/render.
   Gantt auto-syncs (same `_sorted`/DL). Not undo-integrated (reversible by dragging back).
-- **Verified:** reorder splice logic + sort integration unit-tested in a node harness; deployed +
-  syntax-clean; migration applied. **Live click-through NOT completed** — the automation browser
-  became unstable (tabs crashing to newtab / detaching) during verification. The change doesn't touch
-  the load fetch path (unchanged keyset loop, already verified on 42k XERTEST), so load is not
-  regressed; the drag *visual* still needs a human confirm on a small project (e.g. QADEMO: drag Q30
-  above Q10 → order persists after reload).
+- **Extended to sibling WBS nodes (2026-07-11):** first cut only reordered activities SHARING a WBS —
+  but P6 imports (e.g. Avesta) put one activity per WBS leaf (M6001 = WBS 1.1.1.5), so there were no
+  same-WBS siblings and drag did nothing ("no red line"). Now the sort honors a **node-level**
+  `seq_order` via `_seqByCode` (built from each WBS code's representative row — summary preferred, else
+  a lone leaf activity), and a drop between two different WBS leaves under the **same parent** reorders
+  those NODES by writing `seq_order` on their representative rows. **No code renumbering, no wbs_nodes
+  dependency, update-only.** `dragover` allows any drop where the two rows share a WBS parent
+  (`parentCodeOf`); `reorderDrop` dispatches to `reorderWithinWbs` (same wbs) or `reorderWbsSiblings`.
+- **Verified LIVE on Avesta (2026-07-11):** node-level comparator unit-tested; then on the real
+  4,393-row project, setting `seq_order` on the 7 "Topping Off" milestones (each its own WBS leaf,
+  1.1.1.1–1.1.1.7) reversed their grid order exactly (M7001…M3001) — the exact path a drop triggers —
+  then reverted. Confirms sort + reorder end-to-end. (The literal mouse drag-drop gesture still wants a
+  human confirm; draggable rows + the same-parent drop rule are in place.)
+- **Known limitation:** if a WBS node has MULTIPLE activities AND is itself reordered as a sibling, the
+  node's `seq_order` (taken from one activity) can overlap with that activity's leaf-order meaning.
+  Neither Avesta nor typical data hits this; documented for later.
 
 ## P6 .xer import RUN LIVE (2026-07-11) — import verified, load-timeout bug found
 The P6 importer had never run end-to-end against live Supabase (parser-only verified). Imported a real
