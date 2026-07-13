@@ -147,6 +147,14 @@ clipboard operating on individual grid cells, independent of the row selection/c
   3×2 target). Page loads with no console errors. **Not yet exercised end-to-end against a live login**
   (same constraint as prior batches — needs a real session + data to click through).
 
+## Details panel collapse/expand chevron (2026-07-11)
+OPC-style inline toggle (`#ps-det-collapse`) at the right of the detail-tab strip: collapses/expands the
+panel BODY while keeping the tab strip visible (so it can be reopened). Chevron rotates 180° when
+collapsed (`.up`; only `chevronDown` exists in icons.js). Hides `#ps-details-body` + the resize grip;
+state persisted (`ps_details_collapsed`). Clicking any tab while collapsed auto-expands. Independent of
+the Layout-menu "hide whole panel" toggle. Verified live on Avesta (collapse→body/grip display:none +
+chevron up; expand→restored).
+
 ## Trace Logic multi-level · auto-adopt on import · sidebar→back button (2026-07-11)
 - **Trace Logic (multi-level):** `detTrace` now walks predecessor/successor chains N levels deep
   (`_traceWalk` = BFS with a `seen` set for dedup + cycle safety), rendering one column per level
