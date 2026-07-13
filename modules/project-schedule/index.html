@@ -475,8 +475,15 @@
     .ps-mini { width:100%; border-collapse:collapse; font-size:12px; }
     .ps-mini th, .ps-mini td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--pd-line); }
     .ps-mini th { color:var(--pd-muted); font-weight:600; }
-    .ps-trace { display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
-    .ps-trace-col { display:flex; flex-direction:column; gap:8px; }
+    /* Trace Logic: a horizontal chain of level columns. Scrolls both ways as levels/branches grow
+       (the details panel is fixed-height), so deep predecessor/successor chains stay usable. */
+    .ps-trace { display:flex; align-items:flex-start; gap:14px; overflow:auto; padding-bottom:6px; }
+    .ps-trace-col { display:flex; flex-direction:column; gap:8px; flex:none; }
+    .ps-trace-ctl { display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:12px; font-size:12.5px; color:var(--pd-muted); }
+    .ps-trace-ctl input { width:64px; margin-left:4px; }
+    .ps-trace-note { color:var(--pd-muted); font-size:11.5px; }
+    /* Back-to-modules button (replaces the old sidebar hamburger) */
+    .ps-modback { display:inline-flex; align-items:center; justify-content:center; width:38px; height:38px; padding:0; flex:none; text-decoration:none; }
     .ps-trace-arrow { font-size:20px; color:var(--pd-muted); }
     .ps-trace-node { border:1px solid var(--pd-line); border-radius:6px; padding:8px 10px; font-size:12px; min-width:130px; }
     .ps-trace-node.cur { border-color:var(--pd-red); background:var(--pd-red-light); }
@@ -744,20 +751,11 @@
 </head>
 <body>
 <div class="pd-app">
-  <aside class="pd-sidebar">
-    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Project Schedule &amp; Cost Loading</small></div>
-    <nav>
-      <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
-      <a href="#" data-view="planner"><span class="pd-navico" data-ico="pulse"></span>Planner</a>
-      <a href="#" data-view="wbs"><span class="pd-navico" data-ico="layers"></span>WBS</a>
-      <a href="#" class="active" data-view="schedule"><span class="pd-navico" data-ico="calendar"></span>Schedule</a>
-      <a href="#" data-view="cost"><span class="pd-navico" data-ico="cash"></span>Cost Loading</a>
-      <a href="#" data-view="lastplanner"><span class="pd-navico" data-ico="check"></span>Last Planner</a>
-    </nav>
-  </aside>
-
+  <!-- Sidebar removed: views are switched via the title dropdown; the hamburger (below) goes back to
+       the module selector. -->
   <div class="pd-content">
     <div class="pd-topbar">
+      <a class="pd-btn ps-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
       <div class="ps-title-switch ps-menu-wrap">
         <button class="ps-title-btn" id="ps-title-btn" title="Switch view"><span id="ps-title-txt">Project Schedule</span><span data-ico="chevronDown" data-ico-size="16"></span></button>
         <div class="ps-menu" id="ps-title-menu">
@@ -1989,7 +1987,8 @@
     hideLoading();
     if (err) UI.toast('Insert error after '+ok+': '+err, 'error');
     else UI.toast('Imported '+ok+' of '+payloads.length+' rows.', 'success');
-    collapsed={}; resetUndo(); load();
+    collapsed={}; resetUndo(); await load();
+    if (!err) await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
   }
   function previewImport(recs, fname) {
     if (!recs.length) { UI.toast('No rows found in file.', 'warn'); return; }
@@ -2303,7 +2302,8 @@
     colOrder = []; _colSeen = {};
     Object.keys(colHidden).forEach(function (k) { if (k.indexOf('udf:') === 0 || k.indexOf('code:') === 0) delete colHidden[k]; });
     try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {}
-    collapsed = {}; resetUndo(); load();
+    collapsed = {}; resetUndo(); await load();
+    if (!err) await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
   }
 
   // rolled-up span for a WBS row (over descendants)
@@ -2897,18 +2897,50 @@
     UI.toast('Deleted.', 'success'); await loadResourcesAssignments(); await syncActivityCost(r); renderDetails(); renderGrid(); renderGantt();
   }
   function traceNode(label, sub, cur) { return '<div class="ps-trace-node' + (cur ? ' cur' : '') + '"><strong>' + esc(label) + '</strong>' + (sub ? '<div style="color:var(--pd-muted);">' + esc(sub) + '</div>' : '') + '</div>'; }
-  function detTrace(r) {
-    var preds = relPreds(r).map(function (p) { return { id: p.id, name: actName(p.id), type: p.type }; });
-    var succs = (r._succObjs || []).map(function (s) { return { id: s.id, name: actName(s.id), type: s.type }; });
-    function col(arr, label) {
-      return '<div class="ps-trace-col"><div class="ps-dt-group">' + label + '</div>' + (arr.length
-        ? arr.map(function (a) { return traceNode(((a.id || '') + ' ' + (a.name || '')).trim(), a.type, false); }).join('')
-        : '<div style="color:var(--pd-muted);font-size:12px;">None</div>') + '</div>';
+  // Trace Logic — walk the predecessor/successor chain N levels deep (OPC "Predecessor/Successor
+  // Levels"). Level control persisted; a `seen` set dedups and stops cycles.
+  var _traceLevels = { pred: 3, succ: 3 };
+  try { var _tl = JSON.parse(localStorage.getItem('ps_trace_levels') || 'null'); if (_tl) { _traceLevels.pred = Math.max(1, +_tl.pred || 3); _traceLevels.succ = Math.max(1, +_tl.succ || 3); } } catch (e) {}
+  function _predsOf(id) { var r = rows.find(function (x) { return String(x.activity_id) === String(id); }); return r ? relPreds(r).map(function (p) { return { id: p.id, type: p.type }; }) : []; }
+  function _succsOf(id) { var r = rows.find(function (x) { return String(x.activity_id) === String(id); }); return (r && r._succObjs) ? r._succObjs.map(function (s) { return { id: s.id, type: s.type }; }) : []; }
+  function _traceWalk(startId, nextFn, levels) {
+    var out = [], frontier = [startId], seen = {}; seen[String(startId)] = 1;
+    for (var L = 0; L < levels; L++) {
+      var colArr = [], next = [];
+      frontier.forEach(function (id) { nextFn(id).forEach(function (rel) { var k = String(rel.id); if (seen[k]) return; seen[k] = 1; colArr.push({ id: rel.id, name: actName(rel.id), type: rel.type }); next.push(rel.id); }); });
+      if (!colArr.length) break;
+      out.push(colArr); frontier = next;
     }
-    return '<div class="ps-trace">' + col(preds, 'Predecessors') +
-      '<div class="ps-trace-arrow">→</div>' +
-      '<div class="ps-trace-col"><div class="ps-dt-group">This activity</div>' + traceNode(((r.activity_id || '') + ' ' + (r.activity_name || '')).trim(), r.activity_type, true) + '</div>' +
-      '<div class="ps-trace-arrow">→</div>' + col(succs, 'Successors') + '</div>';
+    return out;
+  }
+  function detTrace(r) {
+    var predCols = _traceWalk(r.activity_id, _predsOf, _traceLevels.pred);   // [L1 immediate, L2, …]
+    var succCols = _traceWalk(r.activity_id, _succsOf, _traceLevels.succ);
+    function colHtml(arr, label) {
+      return '<div class="ps-trace-col"><div class="ps-dt-group">' + label + '</div>' +
+        arr.map(function (a) { return traceNode(((a.id || '') + ' ' + (a.name || '')).trim(), a.type, false); }).join('') + '</div>';
+    }
+    var ctl = '<div class="ps-trace-ctl">' +
+      '<label>Predecessor levels <input type="number" min="1" max="99" id="ps-trace-pred" value="' + _traceLevels.pred + '"></label>' +
+      '<label>Successor levels <input type="number" min="1" max="99" id="ps-trace-succ" value="' + _traceLevels.succ + '"></label>' +
+      '<span class="ps-trace-note">' + (predCols.length ? 'showing ' + predCols.length + ' predecessor level' + (predCols.length === 1 ? '' : 's') : 'no predecessors') + ' · ' + (succCols.length ? succCols.length + ' successor level' + (succCols.length === 1 ? '' : 's') : 'no successors') + '</span></div>';
+    var chain = '<div class="ps-trace">';
+    // predecessors: deepest level on the far left, immediate adjacent to This activity
+    predCols.slice().reverse().forEach(function (colArr, i) { chain += colHtml(colArr, 'Predecessors · L' + (predCols.length - i)) + '<div class="ps-trace-arrow">→</div>'; });
+    chain += '<div class="ps-trace-col"><div class="ps-dt-group">This activity</div>' + traceNode(((r.activity_id || '') + ' ' + (r.activity_name || '')).trim(), r.activity_type, true) + '</div>';
+    succCols.forEach(function (colArr, i) { chain += '<div class="ps-trace-arrow">→</div>' + colHtml(colArr, 'Successors · L' + (i + 1)); });
+    chain += '</div>';
+    return ctl + chain;
+  }
+  function wireTrace(root, r) {
+    var p = root.querySelector('#ps-trace-pred'), s = root.querySelector('#ps-trace-succ');
+    function upd() {
+      _traceLevels.pred = Math.max(1, Math.min(99, parseInt(p.value, 10) || 1));
+      _traceLevels.succ = Math.max(1, Math.min(99, parseInt(s.value, 10) || 1));
+      try { localStorage.setItem('ps_trace_levels', JSON.stringify(_traceLevels)); } catch (e) {}
+      renderDetails();
+    }
+    if (p) p.onchange = upd; if (s) s.onchange = upd;
   }
   function detNoResource(kind) {
     return '<div class="ps-empty-detail">No ' + kind + ' data yet.<br><span style="font-size:12px;">' +
@@ -3400,7 +3432,7 @@
     else if (t === 'assign') { body.innerHTML = detAssign(r); wireAssign(body, r); }
     else if (t === 'expenses') { body.innerHTML = detExpenses(r); wireExpenses(body, r); }
     else if (t === 'rels') { body.innerHTML = detRels(r); wireDetailSplits(body); }
-    else if (t === 'trace') body.innerHTML = detTrace(r);
+    else if (t === 'trace') { body.innerHTML = detTrace(r); wireTrace(body, r); }
   }
 
   // ----- COLUMN HEADER (static, resizable) -----
@@ -5843,27 +5875,49 @@
   }
   // One-time bridge: build the tree from existing project_schedule WBS-Summary rows (import / legacy),
   // preserving their exact codes (as custom) + names, then link summary rows + matching activities.
-  async function wbsAdopt() {
+  // Build the wbs_nodes tree from imported/legacy WBS-summary rows. Inserts a whole DEPTH LEVEL at a
+  // time (chunked) rather than one node at a time — each level's parents already exist from the level
+  // above, so it's O(maxDepth) round-trips instead of O(nodes) (the old per-node loop stalled on big
+  // P6 imports). Resumes cleanly from a partial adoption (seeds from existing WBS_NODES). silent=true
+  // skips the confirm + toasts (used by auto-adopt on import). Returns the count adopted.
+  async function wbsAdopt(silent) {
     var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; });
-    if (!legacy.length) { UI.toast('No un-adopted WBS summary rows found.', 'info'); return; }
-    if (!confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return;
-    // order by code depth so parents exist before children
-    legacy.sort(function (a, b) { return String(a.wbs).split('.').length - String(b.wbs).split('.').length || cmpCodeStr(a.wbs, b.wbs); });
-    var nodeByCode = {}, nodeUp = [], schedUp = [];
-    for (var i = 0; i < legacy.length; i++) {
-      var r = legacy[i], code = String(r.wbs), segs2 = code.split('.'), parentCode = segs2.slice(0, -1).join('.');
-      var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;
-      var so = WBS_NODES.filter(function (x) { return (x.parent_id || null) === (parentId || null); }).length;
-      var ins = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId, code: code, code_custom: true, name: r.activity_name || code, sort_order: so, created_by: UID }).select().single();
-      if (ins.error) { UI.toast('Adopt failed: ' + ins.error.message, 'error'); return; }
-      WBS_NODES.push(ins.data); nodeByCode[code] = ins.data.id;
-      r.wbs_node_id = ins.data.id; schedUp.push({ id: r.id, patch: { wbs_node_id: ins.data.id } });
-      // link activities that sit exactly on this code
-      rows.forEach(function (a) { if (!isWbs(a) && !a.wbs_node_id && String(a.wbs) === code) { a.wbs_node_id = ins.data.id; schedUp.push({ id: a.id, patch: { wbs_node_id: ins.data.id } }); } });
+    if (!legacy.length) { if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
+    if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
+    legacy.sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
+    var nodeByCode = {}, sibCount = {}, schedUp = [];
+    WBS_NODES.forEach(function (n) { if (n.code) nodeByCode[n.code] = n.id; var k = n.parent_id || ''; sibCount[k] = (sibCount[k] || 0) + 1; });   // resume from partial
+    var byDepth = {};
+    legacy.forEach(function (r) { var d = String(r.wbs).split('.').length; (byDepth[d] = byDepth[d] || []).push(r); });
+    var depths = Object.keys(byDepth).map(Number).sort(function (a, b) { return a - b; });
+    for (var di = 0; di < depths.length; di++) {
+      var group = byDepth[depths[di]];
+      var payloads = group.map(function (r) {
+        var code = String(r.wbs), parentCode = code.split('.').slice(0, -1).join('.');
+        var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;
+        var k = parentId || '', so = (sibCount[k] || 0); sibCount[k] = so + 1;
+        return { project_id: pid, parent_id: parentId, code: code, code_custom: true, name: r.activity_name || code, sort_order: so, created_by: UID };
+      });
+      for (var c = 0; c < payloads.length; c += 500) {
+        setLoading('Adopting WBS tree… level ' + depths[di] + ' (' + Math.min(c + 500, payloads.length) + '/' + payloads.length + ')');
+        var ins = await sb().from('wbs_nodes').insert(payloads.slice(c, c + 500)).select();
+        if (ins.error) { if (!silent) UI.toast('Adopt failed: ' + ins.error.message, 'error'); return 0; }
+        (ins.data || []).forEach(function (n) { nodeByCode[n.code] = n.id; WBS_NODES.push(n); });
+      }
+      group.forEach(function (r) {
+        var id = nodeByCode[String(r.wbs)]; if (!id) return;
+        r.wbs_node_id = id; schedUp.push({ id: r.id, patch: { wbs_node_id: id } });
+        rows.forEach(function (a) { if (!isWbs(a) && !a.wbs_node_id && String(a.wbs) === String(r.wbs)) { a.wbs_node_id = id; schedUp.push({ id: a.id, patch: { wbs_node_id: id } }); } });
+      });
     }
     await _batchUpdate(TABLE, schedUp);
-    renderWbsManager();
-    UI.toast('Adopted ' + legacy.length + ' WBS nodes into the tree.', 'success');
+    if (!silent) { renderWbsManager(); UI.toast('Adopted ' + legacy.length + ' WBS nodes into the tree.', 'success'); }
+    return legacy.length;
+  }
+  // Auto-adopt after an import (tolerant — never blocks the import if the wbs_nodes table/write fails).
+  async function autoAdoptAfterImport() {
+    try { showLoading('Building WBS tree…'); var n = await wbsAdopt(true); hideLoading(); if (n) UI.toast('WBS tree built (' + n + ' nodes) — open the WBS Manager to edit it.', 'success'); }
+    catch (e) { hideLoading(); }
   }
   // WBS parent picker for the Add/Edit activity modal — flat, indented options of every node.
   function wbsPickerOptions(selectedNodeId) {
