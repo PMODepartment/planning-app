@@ -105,6 +105,11 @@
     .ps-pss-empty { padding:20px 12px; text-align:center; color:var(--pd-muted); font-size:12.5px; }
     /* icon-only toolbar buttons (square, centered glyph; tooltip via title) */
     .ps-toolbar .ps-icobtn { width:36px; padding:0; justify-content:center; }
+    /* Labeled mode: reveal each icon button's word (from data-label) so first-time users aren't
+       facing mystery icons. Toggled by the "Labels" button (persisted in ps_tb_labels). */
+    .ps-toolbar.ps-tb-labeled .ps-icobtn[data-label] { width:auto; padding:0 10px; gap:6px; }
+    .ps-toolbar.ps-tb-labeled .ps-icobtn[data-label]::after { content:attr(data-label); font-size:13px; font-weight:500; white-space:nowrap; }
+    #ps-tb-labeltoggle.active { background:var(--pd-red-light); border-color:var(--pd-red-mid); color:var(--pd-red); }
     /* Gantt-local colors control (bar colors are a Gantt-only feature) */
     .ps-gantt-pane { position:relative; }
     .ps-gantt-tools { position:absolute; top:5px; right:10px; z-index:6; }
@@ -255,7 +260,7 @@
     .ps-grid-row > .ps-cell.c-id { position:sticky; left:var(--c-num); z-index:3; background:var(--pd-card); }
     .ps-grid-row > .ps-cell.c-name { position:sticky; left:calc(var(--c-num) + var(--c-id)); z-index:3; background:var(--pd-card);
       border-right:2px solid var(--pd-line); }
-    .ps-grid-pane .ps-wbs-row > .ps-cell.c-num, .ps-grid-pane .ps-wbs-row > .ps-cell.c-id, .ps-grid-pane .ps-wbs-row > .ps-cell.c-name { background:var(--pd-bg); }
+    .ps-grid-pane .ps-wbs-row > .ps-cell.c-num, .ps-grid-pane .ps-wbs-row > .ps-cell.c-id, .ps-grid-pane .ps-wbs-row > .ps-cell.c-name { background:var(--wl, var(--pd-bg)); }
     .ps-group-row > .ps-cell.c-num, .ps-group-row > .ps-cell.c-id, .ps-group-row > .ps-cell.c-name { background:var(--pd-red-light); }
     /* Conditional formatting: --fmt-bg/--fmt-fg are set inline on the row; custom props inherit so
        the frozen cells pick up the same tint. Ordered before .ps-row-sel so selection still wins. */
@@ -273,6 +278,9 @@
     .ps-grid-row { display:flex; align-items:stretch; height:34px; border-bottom:1px solid var(--pd-line);
       width:max-content; min-width:100%; font-size:12.5px; }
     .ps-grid-row.head { height:38px; font-weight:700; }
+    /* Compact row density (toggled from the Layout menu; ROWH is kept in sync in JS). Header +
+       filter rows keep their height so only the data rows tighten. */
+    .ps-split.ps-compact .ps-grid-row:not(.head):not(.ps-filter-row) { height:27px; font-size:11.5px; }
     .ps-cell { padding:0 8px; display:flex; align-items:center; border-right:1px solid var(--pd-line);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; flex:none; }
     .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative; }
@@ -316,9 +324,27 @@
     /* Reset the WBS-Manager tree styling (.ps-wbs-row, defined later) that leaks into the
        schedule grid's summary rows — its gap/padding/border-left pushed the level-1/2 summary
        cells out of alignment with the data rows. Keep grid rows on the exact same cell grid. */
-    .ps-grid-pane .ps-wbs-row { background:var(--pd-bg); font-weight:700; gap:0; padding:0;
+    .ps-grid-pane .ps-wbs-row { background:var(--wl, var(--pd-bg)); font-weight:700; gap:0; padding:0;
       border-left:0; border-radius:0; align-items:stretch; }
     .ps-grid-pane .ps-wbs-row .c-name { color:var(--pd-ink); }
+    /* WBS depth shading (OPC-style): shallower summary levels are darker/heavier so the tree
+       structure reads at a glance. --wl tints the row + its frozen cells; a left accent on the
+       name cell reinforces depth without shifting layout (inset shadow, no border reflow). */
+    .ps-grid-pane .ps-wbs-row.ps-wl0 { --wl:#dfe1e5; }
+    .ps-grid-pane .ps-wbs-row.ps-wl1 { --wl:#e6e8ec; }
+    .ps-grid-pane .ps-wbs-row.ps-wl2 { --wl:#edeff2; }
+    .ps-grid-pane .ps-wbs-row.ps-wl3 { --wl:#f2f4f6; }
+    .ps-grid-pane .ps-wbs-row.ps-wl4 { --wl:#f6f7f9; }
+    .ps-grid-pane .ps-wbs-row.ps-wl5 { --wl:#fafbfc; }
+    .ps-grid-pane .ps-wbs-row.ps-wl0 > .c-name { box-shadow:inset 3px 0 0 var(--pd-red); }
+    .ps-grid-pane .ps-wbs-row.ps-wl1 > .c-name { box-shadow:inset 3px 0 0 var(--pd-red-mid); }
+    .ps-grid-pane .ps-wbs-row.ps-wl2 > .c-name { box-shadow:inset 2px 0 0 var(--pd-muted); }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl0 { --wl:#3a3b3d; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl1 { --wl:#333436; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl2 { --wl:#2d2e30; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl3 { --wl:#292a2c; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl4 { --wl:#252627; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl5 { --wl:#212223; }
     .ps-toggle { cursor:pointer; width:16px; display:inline-flex; align-items:center; justify-content:center;
       color:var(--pd-muted); flex:none; }
     .ps-editable { cursor:text; } .ps-editable:hover { background:var(--pd-red-light); }
@@ -357,7 +383,11 @@
     .ps-row-bg { position:absolute; left:0; right:0; height:34px; border-bottom:1px solid var(--pd-line); }
     .ps-row-bg.alt { background:rgba(0,0,0,.015); }
     .ps-datedate { position:absolute; top:0; bottom:0; width:2px; background:var(--pd-red); z-index:6; }
-    .ps-datedate-lbl { position:absolute; top:2px; transform:translateX(4px); font-size:9px; color:var(--pd-red); font-weight:700; z-index:6; }
+    /* Pinned to the top of the Gantt viewport (JS keeps `top` = scrollTop) so the data-date stays
+       labelled while scrolling vertically. Pill background keeps it readable over bars/gridlines. */
+    .ps-datedate-lbl { position:absolute; top:2px; transform:translateX(4px); font-size:9px; color:var(--pd-red);
+      font-weight:700; z-index:7; background:var(--pd-card); border:1px solid var(--pd-red); border-radius:3px;
+      padding:1px 4px; line-height:1.2; white-space:nowrap; pointer-events:none; }
     .ps-bar { position:absolute; height:15px; border-radius:3px; background:var(--ps-bar); cursor:grab; z-index:3;
       box-shadow:0 1px 2px rgba(0,0,0,.15); }
     .ps-bar.task { background:var(--ps-bar); }
@@ -756,7 +786,25 @@
       align-items:center; justify-content:center; gap:14px; z-index:9999; color:#fff; font-weight:600; font-size:14px; }
     .ps-spin { width:40px; height:40px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:ps-spin .8s linear infinite; }
     @keyframes ps-spin { to { transform:rotate(360deg); } }
-  </style>
+    /* determinate progress bar (import) — shown under the message when a fraction is known */
+    .ps-load-bar { width:260px; height:8px; background:rgba(255,255,255,.25); border-radius:999px; overflow:hidden; }
+    .ps-load-fill { height:100%; width:0; background:#fff; border-radius:999px; transition:width .2s ease; }
+    /* Import summary "what came in" card */
+    .ps-impsum-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin:14px 0; }
+    .ps-impsum-tile { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; }
+    .ps-impsum-tile .n { font-size:22px; font-weight:800; color:var(--pd-ink); line-height:1.1; }
+    .ps-impsum-tile .l { font-size:11px; color:var(--pd-muted); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
+    .ps-impsum-warn { background:rgba(199,119,0,.1); border:1px solid rgba(199,119,0,.35); border-radius:8px; padding:10px 12px; margin:10px 0; font-size:12.5px; color:var(--pd-ink); }
+    .ps-impsum-warn ul { margin:6px 0 0; padding-left:18px; }
+    /* Keyboard-shortcut help panel */
+    .ps-sc-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:8px 22px; }
+    .ps-sc-sec h3 { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin:10px 0 4px; }
+    .ps-sc-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .ps-sc-tbl td { padding:3px 0; vertical-align:top; color:var(--pd-ink); }
+    .ps-sc-tbl td.k { white-space:nowrap; padding-right:12px; width:1%; }
+    .ps-kbd { display:inline-block; font:600 11px/1.4 var(--pd-font,inherit); background:var(--pd-bg); border:1px solid var(--pd-line);
+      border-bottom-width:2px; border-radius:4px; padding:1px 5px; color:var(--pd-ink); }
+</style>
 </head>
 <body>
 <div class="pd-app">
@@ -844,14 +892,14 @@
             <button data-zoom="quarter" class="active">Quarter</button>
             <button data-zoom="year">Year</button>
           </div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-collapseto" title="Outline — expand all or collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="16"></span></button><div class="ps-menu" id="ps-collapse-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" title="Layouts — saved filter + grouping + columns"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
-          <button class="pd-btn ps-icobtn" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="16"></span></button>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-collapseto" data-label="Outline" title="Outline — expand all or collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="16"></span></button><div class="ps-menu" id="ps-collapse-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" data-label="Layouts" title="Layouts — saved filter + grouping + columns"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
+          <button class="pd-btn ps-icobtn" id="ps-schedbtn" data-label="Schedule" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="16"></span></button>
           <span class="ps-tb-div"></span>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" data-label="Layout" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <span class="ps-tb-div"></span>
           <!-- Analyze: critical path, dependencies, link mode, progress spotlight -->
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-analyzebtn" title="Analyze — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="16"></span></button>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-analyzebtn" data-label="Analyze" title="Analyze — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="16"></span></button>
             <div class="ps-menu" id="ps-analyze-menu">
               <button id="ps-crit"><span data-ico="risk" data-ico-size="14"></span> Critical path (highlight)</button>
               <button id="ps-deps"><span data-ico="arrowRight" data-ico-size="14"></span> Show dependencies</button>
@@ -867,6 +915,8 @@
             </div>
           </div>
           <span class="ps-tb-spacer"></span>
+          <button class="pd-btn" id="ps-tb-labeltoggle" title="Show text labels on the view buttons (Outline, Layouts, Schedule, Layout, Analyze)"><span data-ico="eye" data-ico-size="15"></span> Labels</button>
+          <button class="pd-btn ps-icobtn" id="ps-help-btn" title="Keyboard shortcuts (press ?)" style="font-weight:700;">?</button>
           <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:160px;" /></div>
         </div>
       </div>
@@ -1013,7 +1063,7 @@
 </div>
 
 <!-- Loading overlay -->
-<div class="ps-loading" id="ps-loading" style="display:none;"><div class="ps-spin"></div><span id="ps-loading-msg">Working…</span></div>
+<div class="ps-loading" id="ps-loading" style="display:none;"><div class="ps-spin"></div><span id="ps-loading-msg">Working…</span><div class="ps-load-bar" id="ps-load-bar" style="display:none;"><div class="ps-load-fill" id="ps-load-fill"></div></div></div>
 
 <!-- Bulk "Update Progress" grid -->
 <div class="ps-bulk-back" id="ps-bulk-back">
@@ -1984,23 +2034,30 @@
       predecessors: r.pred || null,
       planned_cost: r.pcost, actual_cost: r.acost, earned_value: r.ev };
   }
-  async function doImport(recs, replace) {
+  async function doImport(recs, replace, fname) {
     showLoading('Preparing import…');
     if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } }
     var uid = UID;
     var payloads = recs.map(recToPayload); if (uid) payloads.forEach(function(p){ p.created_by=uid; });
     var ok=0, err=null, CH=500;
     for (var i=0;i<payloads.length;i+=CH) {
-      setLoading('Importing ' + Math.min(i+CH, payloads.length) + ' of ' + payloads.length + '…');
+      setLoading('Importing ' + Math.min(i+CH, payloads.length) + ' of ' + payloads.length + ' activities…');
+      setProgress((i) / payloads.length);
       var res = await sb().from(TABLE).insert(payloads.slice(i,i+CH));
       if (res.error) { err = res.error.message; break; }
       ok += Math.min(CH, payloads.length-i);
     }
     hideLoading();
-    if (err) UI.toast('Insert error after '+ok+': '+err, 'error');
-    else UI.toast('Imported '+ok+' of '+payloads.length+' rows.', 'success');
+    if (err) { UI.toast('Insert error after '+ok+': '+err, 'error'); collapsed={}; resetUndo(); await load(); return; }
     collapsed={}; resetUndo(); await load();
-    if (!err) await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
+    await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
+    // Post-import "what came in" summary card (better than a bare toast for large imports).
+    var wbsN = recs.filter(function(r){return !r.isLeaf;}).length, actN = recs.length - wbsN;
+    var relN = recs.filter(function(r){return r.isLeaf && r.pred;}).length;
+    var noDate = recs.filter(function(r){return r.isLeaf && !r.start && !r.finish;}).length;
+    showImportSummary({ title:'Import complete', file:fname,
+      tiles:[ {n:actN,l:'Activities'}, {n:wbsN,l:'WBS nodes'}, {n:relN,l:'With predecessors'} ],
+      warnings: noDate ? [noDate + ' activit' + (noDate===1?'y has':'ies have') + ' no start/finish date'] : [] });
   }
   function previewImport(recs, fname) {
     if (!recs.length) { UI.toast('No rows found in file.', 'warn'); return; }
@@ -2017,7 +2074,7 @@
       '<label style="display:flex;align-items:center;gap:8px;margin:12px 0;"><input type="checkbox" id="ps-imp-rep" checked> Replace existing activities for this project</label>'+
       '<div style="text-align:right;"><button class="pd-btn" id="ps-imp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-imp-go">Import '+recs.length+' rows</button></div>');
     m.el.querySelector('#ps-imp-x').onclick = m.close;
-    m.el.querySelector('#ps-imp-go').onclick = function(){ var rep=m.el.querySelector('#ps-imp-rep').checked; m.close(); doImport(recs, rep); };
+    m.el.querySelector('#ps-imp-go').onclick = function(){ var rep=m.el.querySelector('#ps-imp-rep').checked; m.close(); doImport(recs, rep, fname); };
   }
 
   // ---- IMPORT from Oracle Primavera P6 .xer export ----
@@ -2238,9 +2295,9 @@
       '<p style="font-size:12px;color:var(--pd-muted);">Also imports the P6 calendar(s) and resource master into Resource &amp; Role Master (added alongside anything already there — not replaced).</p>' +
       '<div style="text-align:right;"><button class="pd-btn" id="ps-impx-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-impx-go">Import ' + recs.length + ' rows</button></div>');
     m.el.querySelector('#ps-impx-x').onclick = m.close;
-    m.el.querySelector('#ps-impx-go').onclick = function () { var rep = m.el.querySelector('#ps-impx-rep').checked; m.close(); doImportXER(parsed, rep); };
+    m.el.querySelector('#ps-impx-go').onclick = function () { var rep = m.el.querySelector('#ps-impx-rep').checked; m.close(); doImportXER(parsed, rep, fname); };
   }
-  async function doImportXER(parsed, replace) {
+  async function doImportXER(parsed, replace, fname) {
     showLoading('Preparing import…');
     if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } }
     var uid = UID, CH = 500;
@@ -2287,6 +2344,7 @@
     var ok = 0, err = null;
     for (var k = 0; k < payloads.length; k += CH) {
       setLoading('Importing activities ' + Math.min(k + CH, payloads.length) + ' of ' + payloads.length + '…');
+      setProgress(k / payloads.length);
       var ares = await sb().from(TABLE).insert(payloads.slice(k, k + CH));
       if (ares.error) { err = ares.error.message; break; }
       ok += Math.min(CH, payloads.length - k);
@@ -2300,13 +2358,13 @@
       });
       for (var m2 = 0; m2 < aPayloads.length; m2 += CH) {
         setLoading('Importing resource assignments ' + Math.min(m2 + CH, aPayloads.length) + ' of ' + aPayloads.length + '…');
+        setProgress(m2 / aPayloads.length);
         var asres = await sb().from('resource_assignments').insert(aPayloads.slice(m2, m2 + CH));
         if (asres.error) { err = 'Assignments: ' + asres.error.message; break; }
       }
     }
     hideLoading();
     if (err) UI.toast('Import error after ' + ok + ' activities: ' + err, 'error');
-    else UI.toast('Imported ' + ok + ' activities, ' + parsed.calendars.length + ' calendar(s), ' + parsed.resources.length + ' resource(s)' + (parsed.udfDefs && parsed.udfDefs.length ? ', ' + parsed.udfDefs.length + ' user-defined field(s)' : '') + '. Add UDF columns via the “+” column chooser.', 'success');
     // Reset the grid column layout to a clean, predictable state after a full import: natural
     // built-in order and the newly-imported UDF columns hidden (add them via the "+" chooser).
     // A stale/custom column order from a previous state could otherwise scramble the new columns.
@@ -2315,7 +2373,76 @@
     Object.keys(colHidden).forEach(function (k) { if (k.indexOf('udf:') === 0 || k.indexOf('code:') === 0) delete colHidden[k]; });
     try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {}
     collapsed = {}; resetUndo(); await load();
-    if (!err) await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
+    if (err) return;
+    await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
+    // Post-import "what came in" summary card.
+    var recs = parsed.recs;
+    var wbsN = recs.filter(function (r) { return !r.isLeaf; }).length, actN = recs.length - wbsN;
+    var relN = recs.filter(function (r) { return r.isLeaf && r.predText; }).length;
+    var noDate = recs.filter(function (r) { return r.isLeaf && !r.start && !r.finish; }).length;
+    var warns = [];
+    if (noDate) warns.push(noDate + ' activit' + (noDate === 1 ? 'y has' : 'ies have') + ' no start/finish date');
+    var tiles = [ {n:actN,l:'Activities'}, {n:wbsN,l:'WBS nodes'}, {n:relN,l:'With predecessors'},
+      {n:parsed.calendars.length,l:'Calendars'}, {n:parsed.resources.length,l:'Resources'}, {n:parsed.assignments.length,l:'Assignments'} ];
+    if (parsed.udfDefs && parsed.udfDefs.length) tiles.push({n:parsed.udfDefs.length,l:'User-def. fields'});
+    showImportSummary({ title:'P6 import complete', file:fname, tiles:tiles, warnings:warns,
+      note: parsed.udfDefs && parsed.udfDefs.length ? 'Add the imported UDF columns via the “+” column chooser. P6 calendars & resources were added to Resource &amp; Role Master.' : 'P6 calendars &amp; resources were added to Resource &amp; Role Master.' });
+  }
+
+  // Post-import "what came in" card — counts + warnings, shown after a successful import.
+  function showImportSummary(s) {
+    var tiles = (s.tiles || []).map(function (t) {
+      return '<div class="ps-impsum-tile"><div class="n">' + Number(t.n).toLocaleString() + '</div><div class="l">' + esc(t.l) + '</div></div>';
+    }).join('');
+    var warn = (s.warnings && s.warnings.length)
+      ? '<div class="ps-impsum-warn"><strong>' + s.warnings.length + ' warning' + (s.warnings.length === 1 ? '' : 's') + ':</strong><ul>' + s.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></div>'
+      : '';
+    var m = UI.modal('<h2 style="margin-top:0;">' + esc(s.title || 'Import complete') + '</h2>' +
+      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">Imported from <strong>' + esc(s.file || '') + '</strong>.</p>' +
+      '<div class="ps-impsum-grid">' + tiles + '</div>' + warn +
+      (s.note ? '<p style="font-size:12px;color:var(--pd-muted);">' + s.note + '</p>' : '') +
+      '<div style="text-align:right;margin-top:6px;"><button class="pd-btn pd-btn-primary" id="ps-impsum-ok">Done</button></div>');
+    m.el.querySelector('#ps-impsum-ok').onclick = m.close;
+  }
+
+  // Keyboard-shortcut & mouse help panel (the "?" button / pressing ?). Surfaces the otherwise
+  // invisible grid shortcuts (Insert/Delete/Ctrl+C·X·V/Ctrl+D fill-down/cell-select, etc.).
+  function openShortcuts() {
+    var K = function (s) { return '<kbd class="ps-kbd">' + s + '</kbd>'; };
+    var groups = [
+      { h: 'Editing', rows: [
+        [K('Insert'), 'Add a new activity'],
+        [K('Delete') + ' / ' + K('Backspace'), 'Delete the selected activit(ies)'],
+        ['Double-click a cell', 'Edit that cell inline'],
+        [K('Ctrl') + '+' + K('D'), 'Fill the active cell’s value down to the selected rows'],
+        [K('Ctrl') + '+' + K('Z'), 'Undo'],
+        [K('Ctrl') + '+' + K('Shift') + '+' + K('Z') + ' / ' + K('Ctrl') + '+' + K('Y'), 'Redo'] ] },
+      { h: 'Clipboard', rows: [
+        [K('Ctrl') + '+' + K('C'), 'Copy the selected cell block (or rows)'],
+        [K('Ctrl') + '+' + K('X'), 'Cut the selected cell block (or rows)'],
+        [K('Ctrl') + '+' + K('V'), 'Paste — cells fill/paste, or whole rows'] ] },
+      { h: 'Selection', rows: [
+        ['Click', 'Select a row / active cell'],
+        [K('Shift') + '+click', 'Extend a rectangular cell range'],
+        [K('Ctrl') + '/' + K('Cmd') + '+click', 'Add/remove a row from the selection'],
+        ['Right-click', 'Context menu (Fill down, copy/paste, add WBS…)'],
+        [K('Esc'), 'Clear the selection'] ] },
+      { h: 'Gantt & timeline', rows: [
+        ['Drag a bar', 'Move the activity'],
+        ['Drag a bar edge', 'Resize (change start / finish)'],
+        [K('Ctrl') + '+scroll over the Gantt', 'Zoom the timeline in / out'],
+        ['Drag a row', 'Reorder within its WBS (WBS grouping)'] ] }
+    ];
+    var body = groups.map(function (g) {
+      return '<div class="ps-sc-sec"><h3>' + g.h + '</h3><table class="ps-sc-tbl">' +
+        g.rows.map(function (r) { return '<tr><td class="k">' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') +
+        '</table></div>';
+    }).join('');
+    var m = UI.modal('<h2 style="margin-top:0;">Keyboard &amp; mouse shortcuts</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin-top:0;">Grid shortcuts work on the Schedule view (not while editing a field).</p>' +
+      '<div class="ps-sc-grid">' + body + '</div>' +
+      '<div style="text-align:right;margin-top:8px;"><button class="pd-btn pd-btn-primary" id="ps-sc-ok">Got it</button></div>');
+    m.el.querySelector('#ps-sc-ok').onclick = m.close;
   }
 
   // rolled-up span for a WBS row (over descendants)
@@ -2328,9 +2455,11 @@
   function range() { return { min: _min || addDays(today(),-30), max: _max || addDays(today(),90) }; }
 
   // ---- loading overlay ----
-  function showLoading(msg) { var m=document.getElementById('ps-loading-msg'); if(m)m.textContent=msg||'Working…'; var el=document.getElementById('ps-loading'); if(el)el.style.display='flex'; }
+  function showLoading(msg) { var m=document.getElementById('ps-loading-msg'); if(m)m.textContent=msg||'Working…'; var el=document.getElementById('ps-loading'); if(el)el.style.display='flex'; setProgress(null); }
   function setLoading(msg) { var m=document.getElementById('ps-loading-msg'); if(m)m.textContent=msg; }
-  function hideLoading() { var el=document.getElementById('ps-loading'); if(el)el.style.display='none'; }
+  // Determinate progress bar. Pass a 0..1 fraction to show/update it, or null to hide (indeterminate).
+  function setProgress(frac) { var b=document.getElementById('ps-load-bar'), f=document.getElementById('ps-load-fill'); if(!b||!f) return; if(frac==null){ b.style.display='none'; f.style.width='0'; return; } b.style.display='block'; f.style.width=(Math.max(0,Math.min(1,frac))*100)+'%'; }
+  function hideLoading() { var el=document.getElementById('ps-loading'); if(el)el.style.display='none'; setProgress(null); }
 
   // ---- OPC-style "Collapse to → WBS Level N" dropdown ----
   function maxDepth() { var m = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > m) m = d; }); return groupBy === 'wbs' ? m : m + 1; }
@@ -3752,7 +3881,10 @@
 
   // ----- LEFT GRID -----
   // ===== VIRTUALIZED RENDER PIPELINE =====
-  var ROWH = 34, DL = [], _rMin = null, _rDayw = 0, _rafP = false, _tlW = 0;
+  // Row density (comfortable 34px / compact 27px). ROWH is the single source the grid + Gantt
+  // geometry read live, so reassigning it and re-rendering keeps both panes aligned.
+  var _density = 'comfortable'; try { if (localStorage.getItem('ps_density') === 'compact') _density = 'compact'; } catch (e) {}
+  var ROWH = _density === 'compact' ? 27 : 34, DL = [], _rMin = null, _rDayw = 0, _rafP = false, _tlW = 0;
   // Gantt display settings (OPC "Gantt Settings"). labels: none|name|dates; toggles for baseline
   // bar, data-date line, relationship lines. Persisted per browser.
   var _gset = { labels: 'name', baseline: true, ddline: true, relLines: false };
@@ -3917,7 +4049,7 @@
     }
     if (isWbsNode(r)) {
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
-      return '<div class="ps-grid-row ps-wbs-row' + altc + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
+      return '<div class="ps-grid-row ps-wbs-row ps-wl' + Math.min(depth, 5) + altc + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
         '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
         '<div class="ps-cell c-id" style="padding-left:' + idPad + 'px;">' + esc(r._realCode || r.wbs || '') + '</div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
@@ -3981,7 +4113,7 @@
     var stat = '', g = new Date(min.getFullYear(), min.getMonth(), 1);
     while (g <= max) { stat += '<div class="ps-grid-v" style="left:' + (dayDiff(min, g) * dayw) + 'px;"></div>'; g = new Date(g.getFullYear(), g.getMonth()+1, 1); }
     var dd = today(), ddx = dayDiff(min, dd) * dayw;
-    if (_gset.ddline) stat += '<div class="ps-datedate" style="left:' + ddx + 'px;"></div><div class="ps-datedate-lbl" style="left:' + ddx + 'px;">Data ' + Fmt.date(dstr(dd)) + '</div>';
+    if (_gset.ddline) stat += '<div class="ps-datedate" style="left:' + ddx + 'px;"></div><div class="ps-datedate-lbl" id="ps-datedate-lbl" style="left:' + ddx + 'px;">Data date ' + Fmt.date(dstr(dd)) + '</div>';
     tl.innerHTML = '<div class="ps-tl-static">' + stat + '</div><div id="ps-tl-bars"></div>';
     // grid spacer
     var host = document.getElementById('ps-grid-rows');
@@ -4008,6 +4140,8 @@
     if (top > maxTop) { top = maxTop; if (scr) scr.scrollTop = maxTop; }
     var first = Math.max(0, Math.floor(top / ROWH) - 10);
     var last = Math.min(DL.length, Math.ceil((top + vh) / ROWH) + 10);
+    // Pin the data-date label to the top of the Gantt viewport so it stays visible while scrolling.
+    var _ddl = document.getElementById('ps-datedate-lbl'); if (_ddl) _ddl.style.top = (top + 2) + 'px';
     // grid: render only the window, offset with translateY
     var gh = '';
     for (var i = first; i < last; i++) gh += gridRowHTML(DL[i], i);
@@ -4092,7 +4226,8 @@
       }); }
       if (critMode || depsOn) {
         var vis = {};
-        for (var vi = first; vi < last; vi++) { var vr = DL[vi]; if (vr._dkind === 'task' && vr.activity_id) { var vs = pd(vr.start_date), ve = pd(vr.end_date); if (vs && ve) vis[String(vr.activity_id)] = { y: vi * ROWH + 16, sx: dayDiff(_rMin, vs) * _rDayw, ex: (dayDiff(_rMin, ve) + 1) * _rDayw }; } }
+        var _depCY = Math.round(9 * ROWH / 34) + 7;   // bar vertical centre, density-aware (16 at comfortable)
+        for (var vi = first; vi < last; vi++) { var vr = DL[vi]; if (vr._dkind === 'task' && vr.activity_id) { var vs = pd(vr.start_date), ve = pd(vr.end_date); if (vs && ve) vis[String(vr.activity_id)] = { y: vi * ROWH + _depCY, sx: dayDiff(_rMin, vs) * _rDayw, ex: (dayDiff(_rMin, ve) + 1) * _rDayw }; } }
         var lines = '';
         for (var vk = first; vk < last; vk++) {
           var t = DL[vk]; if (t._dkind !== 'task' || !t._relObjs) continue; var b = vis[String(t.activity_id)]; if (!b) continue;
@@ -4184,17 +4319,19 @@
   // ----- RIGHT GANTT: per-row bar builder (used by the windowed renderer) -----
   function ganttRowHTML(r, i, min, dayw) {
     var top = i * ROWH, out = '';
+    // Bar vertical offsets scale with row height so compact rows stay aligned (oY=1 at comfortable).
+    var oY = ROWH / 34, o8 = Math.round(8 * oY), o9 = Math.round(9 * oY), o12 = Math.round(12 * oY), o24 = Math.round(24 * oY);
     var showLbl = _gset.labels !== 'none';
     if (isWbsNode(r)) {
       var sp = wbsSpan(r); if (!sp) return '';
       var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw;
       var wcS = (r._dkind === 'group') ? null : effWbsColor(r);
-      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + 12) + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '"></div>';
-      if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + 8) + 'px;">' + esc(r.activity_name) + '</div>';
+      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + o12) + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '"></div>';
+      if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + '</div>';
       return out;
     }
     var bs = pd(r.bl_start), be = pd(r.bl_finish);
-    if (_gset.baseline && bs && be) { var bx = dayDiff(min, bs) * dayw, bw = (dayDiff(bs, be) + 1) * dayw; out += '<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + 24) + 'px;"></div>'; }
+    if (_gset.baseline && bs && be) { var bx = dayDiff(min, bs) * dayw, bw = (dayDiff(bs, be) + 1) * dayw; out += '<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + o24) + 'px;"></div>'; }
     var s = pd(r.start_date), e = pd(r.end_date);
     var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && mfpOn && r._near) ? ' ps-near' : '');
     if (spotlightRow(r)) crit += ' ps-spot';
@@ -4202,15 +4339,15 @@
     var lbl = _barLabel(r);
     if (isMile(r) && s) {
       var mx = dayDiff(min, s) * dayw;
-      out += '<div class="ps-mile' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
-      if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (mx + 9) + 'px;top:' + (top + 9) + 'px;">' + esc(lbl) + '</div>';
+      out += '<div class="ps-mile' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + (top + o9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
+      if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (mx + 9) + 'px;top:' + (top + o9) + 'px;">' + esc(lbl) + '</div>';
       return out;
     }
     if (!s || !e) return out;
     var x2 = dayDiff(min, s) * dayw, w2 = Math.max((dayDiff(s, e) + 1) * dayw, 4);
     var pct = Math.max(0, Math.min(100, r.percent_complete || 0));
-    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + (top + 9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"><div class="ps-bar-fill" style="width:' + pct + '%;"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
-    if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (top + 9) + 'px;">' + esc(lbl) + '</div>';
+    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + (top + o9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"><div class="ps-bar-fill" style="width:' + pct + '%;"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
+    if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (top + o9) + 'px;">' + esc(lbl) + '</div>';
     return out;
   }
 
@@ -7612,9 +7749,16 @@
       var vs = document.getElementById('ps-view-schedule'), net = layoutMode === 'network';
       if (vs) vs.classList.toggle('ps-net-mode', net);
       var sp = document.querySelector('.ps-split');
-      if (sp) { sp.classList.toggle('ps-grid-only', layoutMode === 'grid'); sp.classList.toggle('ps-gantt-only', layoutMode === 'gantt'); }
+      if (sp) { sp.classList.toggle('ps-grid-only', layoutMode === 'grid'); sp.classList.toggle('ps-gantt-only', layoutMode === 'gantt'); sp.classList.toggle('ps-compact', _density === 'compact'); }
       var det = document.getElementById('ps-details'); if (det) det.style.display = detailsHidden ? 'none' : '';
       if (net) renderNetwork(); else renderGantt();
+    }
+    function applyDensity(d) {
+      _density = (d === 'compact') ? 'compact' : 'comfortable';
+      try { localStorage.setItem('ps_density', _density); } catch (e) {}
+      ROWH = _density === 'compact' ? 27 : 34;
+      var sp = document.querySelector('.ps-split'); if (sp) sp.classList.toggle('ps-compact', _density === 'compact');
+      renderGrid(); renderGantt();
     }
     function renderLayoutMenu() {
       function radio(v, label) { return '<button data-lay="' + v + '">' + (layoutMode === v ? '● ' : '○ ') + label + '</button>'; }
@@ -7622,9 +7766,14 @@
         '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">View</div>' +
         radio('split', 'Split (Grid + Gantt)') + radio('grid', 'Grid only') + radio('gantt', 'Gantt only') + radio('network', 'Activity Network') +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
+        '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Row density</div>' +
+        '<button data-den="comfortable">' + (_density !== 'compact' ? '● ' : '○ ') + 'Comfortable</button>' +
+        '<button data-den="compact">' + (_density === 'compact' ? '● ' : '○ ') + 'Compact</button>' +
+        '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<button data-dettoggle>' + (detailsHidden ? '○ ' : '● ') + 'Show details panel</button>' +
         '<button data-ganttset><span data-ico="settings" data-ico-size="14"></span> Gantt settings…</button>';
       lMenu.querySelectorAll('[data-lay]').forEach(function (b) { b.onclick = function () { layoutMode = b.dataset.lay; try { localStorage.setItem('ps_layout', layoutMode); } catch (e) {} applyLayout(); renderLayoutMenu(); }; });
+      lMenu.querySelectorAll('[data-den]').forEach(function (b) { b.onclick = function () { applyDensity(b.dataset.den); renderLayoutMenu(); }; });
       lMenu.querySelector('[data-dettoggle]').onclick = function () { detailsHidden = !detailsHidden; try { localStorage.setItem('ps_details_hidden', detailsHidden ? '1' : '0'); } catch (e) {} applyLayout(); renderLayoutMenu(); };
       lMenu.querySelector('[data-ganttset]').onclick = function () { lMenu.classList.remove('open'); openGanttSettings(); };
     }
@@ -7689,9 +7838,15 @@
       if (ctrl && (k === 'c' || k === 'C')) { if (_cellSel) { e.preventDefault(); copyCells('copy'); } else if (_selectedTaskRows().length) { e.preventDefault(); copyRows('copy'); } }
       else if (ctrl && (k === 'x' || k === 'X')) { if (_cellSel) { e.preventDefault(); copyCells('cut'); } else if (_selectedTaskRows().length) { e.preventDefault(); copyRows('cut'); } }
       else if (ctrl && (k === 'v' || k === 'V')) { if (_cellClip || (!_clip && _cellSel)) { e.preventDefault(); pasteCells(); } else if (_clip) { e.preventDefault(); pasteRows(); } }
+      else if (ctrl && (k === 'd' || k === 'D')) {
+        // Fill down: use the active cell's field + row (Excel Ctrl+D), filling the selected rows.
+        if (_cellSel) { var _ci = _cellSel.c0, _meta = _CELL_META[_ci]; var _src = DL[_cellSel.r0];
+          if (_meta && _meta.f && _meta.edit && _src && _src._dkind === 'task') { e.preventDefault(); fillDown(_meta.f, _src); } }
+      }
       else if (!ctrl && k === 'Insert') { e.preventDefault(); if (pid) openForm(null); }
       else if (!ctrl && (k === 'Delete' || k === 'Backspace')) { if (_selectedTaskRows().length) { e.preventDefault(); deleteSelected(); } }
       else if (!ctrl && k === 'Escape') { if (_selSet.size || _cellSel) { _selSet = new Set(); _cellSel = null; _cellAnchor = null; highlightRow(); } }
+      else if (!ctrl && (k === '?' || (k === '/' && e.shiftKey))) { e.preventDefault(); openShortcuts(); }
     });
     document.getElementById('ps-health-close').onclick = closeHealthPanel;
     document.getElementById('ps-health-backdrop').onclick = closeHealthPanel;
@@ -7862,6 +8017,16 @@
         UI.toast('Schedule cleared.', 'success'); collapsed = {}; resetUndo(); load();
       };
     };
+    // Labeled-mode toggle: reveals text labels on the view icon buttons (persisted).
+    (function () {
+      var btn = document.getElementById('ps-tb-labeltoggle'), tb = document.querySelector('.ps-toolbar');
+      if (!btn || !tb) return;
+      var on = false; try { on = localStorage.getItem('ps_tb_labels') === '1'; } catch (e) {}
+      function apply() { tb.classList.toggle('ps-tb-labeled', on); btn.classList.toggle('active', on); }
+      apply();
+      btn.onclick = function () { on = !on; try { localStorage.setItem('ps_tb_labels', on ? '1' : '0'); } catch (e) {} apply(); };
+    })();
+    (function () { var hb = document.getElementById('ps-help-btn'); if (hb) hb.onclick = function (e) { e.stopPropagation(); openShortcuts(); }; })();
     document.getElementById('ps-add').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } openForm(null); };
     document.getElementById('ps-import').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } document.getElementById('ps-import-file').click(); };
     document.getElementById('ps-import-file').onchange = function (e) {

@@ -8,6 +8,57 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## UX improvements batch 2 (2026-07-13) — shortcuts help, density, pinned data-date, dark-mode audit
+The remaining four build-improvement asks (3, 4, 6, 7); no migration, no schema change.
+- **3. Keyboard-shortcut help.** New **"?"** button in the toolbar (next to Labels) + the **?** key
+  open `openShortcuts()` — a modal listing the previously-invisible grid shortcuts (Insert / Delete /
+  Ctrl+C·X·V / Ctrl+D fill-down / Ctrl+Z·Y / Esc) plus mouse gestures (shift-click cell range,
+  ctrl-click row, drag bar/edge, Ctrl+scroll zoom, drag-to-reorder). Also **wired Ctrl+D** into the
+  grid keydown handler (was right-click-menu only): fills the active cell's field down to the selected
+  rows via the existing `fillDown`. `.ps-kbd`/`.ps-sc-*` styles.
+- **6. Row-density toggle (comfortable/compact).** `ROWH` is now driven by `_density`
+  (`localStorage.ps_density`; 34px comfortable / 27px compact). A **Row density** section in the
+  **Layout ▾** menu (`applyDensity`) reassigns ROWH + toggles `.ps-compact` on `.ps-split` and
+  re-renders. Grid rows tighten via CSS (`.ps-split.ps-compact .ps-grid-row:not(.head):not(.ps-filter-row)`);
+  Gantt bar offsets were refactored to scale with row height (`oY = ROWH/34`, so comfortable is
+  byte-identical) — summary/baseline/milestone/bar tops + the dependency-line anchor Y all derive
+  from it, keeping the two panes aligned at either density.
+- **7. Pinned data-date label.** The Gantt data-date label (`#ps-datedate-lbl`) is now a readable
+  pill (card bg + red border) and `renderWindow` sets its `top` to the current vertical scrollTop on
+  every scroll, so it stays at the top of the Gantt viewport instead of scrolling out of view.
+- **4. Dark-mode consistency audit.** Swept the named suspects — chart/SVG `<text>` labels, the
+  `.ps-mini` tables, `.ps-trace-node`/trace logic, `.ps-net-node`/PERT text, dependency labels, the
+  bar-colour vars + legend swatches. All already resolve through `var(--pd-*)` / the
+  `#ps-view-schedule`-scoped `--ps-*` bar vars with a `html.pd-dark` override (the fix the original
+  legend bug landed). No remaining mismatches found; the new elements added this session (WBS shading,
+  import card, shortcuts panel, data-date pill) all include dark-mode-safe vars.
+- Verified: full inline script parses clean (`new Function`, 537k chars). Live click-through still
+  pending (needs a session + data), same as batch 1.
+
+## UX improvements batch (2026-07-13) — toolbar labels, WBS shading, import feedback
+Three of the seven build-improvement asks (1, 2, 5); no migration, no schema change.
+- **1. Toolbar discoverability — labeled-mode toggle.** The secondary view cluster
+  (Outline/Layouts/Schedule/Layout/Analyze) was icon-only + tooltips. Added a **"Labels"** toggle
+  button (`#ps-tb-labeltoggle`, eye icon, far right of the toolbar before the search box) that adds a
+  `.ps-tb-labeled` class to `.ps-toolbar`; CSS reveals each icon button's word via
+  `.ps-icobtn[data-label]::after { content:attr(data-label) }` (the five buttons carry `data-label`
+  = Outline/Layouts/Schedule/Layout/Analyze). Persisted in `localStorage.ps_tb_labels`; toggle shows
+  an active red state. Pure CSS reveal — no change to the button render paths or their handlers.
+- **2. WBS level visual hierarchy — depth shading.** WBS summary rows previously all shared
+  `var(--pd-bg)`. `gridRowHTML`'s WBS branch now adds `ps-wl{min(depth,5)}`; CSS tints the row + its
+  frozen c-num/c-id/c-name cells via a `--wl` custom prop (shallower = darker), light + dark variants,
+  plus a left accent (inset box-shadow, no layout reflow) on the name cell for the top 3 levels
+  (red / red-mid / muted). Group rows keep their red-light background (untouched — separate branch).
+- **5. Import feedback — progress bar + "what came in" card.** The loading overlay gained a
+  determinate progress bar (`#ps-load-bar`/`#ps-load-fill`); `setProgress(frac)` (null = hide) is
+  driven by the chunked-insert loops in both `doImport` (Excel) and `doImportXER` (P6). After a
+  successful import, `showImportSummary({title,file,tiles,warnings,note})` shows a modal card of
+  counts (Excel: Activities / WBS nodes / With predecessors; XER also Calendars / Resources /
+  Assignments / UDFs) plus warnings (e.g. activities missing start/finish) — replacing the old bare
+  success toast. `fname` is now threaded into both `doImport`/`doImportXER`.
+- Verified: full inline script block parses clean (`new Function`, 532k chars). Not yet clicked
+  through on a live login (needs a session + an import file).
+
 ## Status
 - [x] Read MODULE_CONTRACT.md + CONTRIBUTING.md
 - [x] Built from scratch (Primavera Cloud reference, not a module copy)
