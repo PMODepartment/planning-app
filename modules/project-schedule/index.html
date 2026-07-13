@@ -1658,6 +1658,9 @@
       for (var ui = 0; ui < a.inserted.length; ui++) { var ur = await sb().from(TABLE).delete().eq('id', a.inserted[ui].id); if (ur.error) { UI.toast(ur.error.message, 'error'); undoStack.push(a); return; } }
       for (var uj = 0; uj < a.deleted.length; uj++) { var ir = await sb().from(TABLE).insert(Object.assign({}, a.deleted[uj].payload, { id: a.deleted[uj].id })); if (ir.error) { UI.toast(ir.error.message, 'error'); undoStack.push(a); return; } }
       redoStack.push(a); updateUndoButtons(); await load(); UI.toast('Undone.', 'info'); return;
+    } else if (a.type === 'reorder') {
+      await _reorderApply(a.changes, 'before');
+      redoStack.push(a); updateUndoButtons(); UI.toast('Undone.', 'info'); return;
     }
     redoStack.push(a); updateUndoButtons();
     renderGrid(); renderGantt(); renderDetails();
@@ -1678,6 +1681,9 @@
       for (var rj = 0; rj < a.deleted.length; rj++) { var dr = await sb().from(TABLE).delete().eq('id', a.deleted[rj].id); if (dr.error) { UI.toast(dr.error.message, 'error'); redoStack.push(a); return; } }
       for (var ri = 0; ri < a.inserted.length; ri++) { var rr = await sb().from(TABLE).insert(Object.assign({}, a.inserted[ri].payload, { id: a.inserted[ri].id })); if (rr.error) { UI.toast(rr.error.message, 'error'); redoStack.push(a); return; } }
       undoStack.push(a); updateUndoButtons(); await load(); UI.toast('Redone.', 'info'); return;
+    } else if (a.type === 'reorder') {
+      await _reorderApply(a.changes, 'after');
+      undoStack.push(a); updateUndoButtons(); UI.toast('Redone.', 'info'); return;
     }
     undoStack.push(a); updateUndoButtons();
     renderGrid(); renderGantt(); renderDetails();
@@ -7020,16 +7026,22 @@
     var ti = -1; for (var k = 0; k < sibs.length; k++) { if (sibs[k].id === targetId) { ti = k; break; } }
     if (ti < 0) ti = sibs.length - 1;
     sibs.splice(before ? ti : ti + 1, 0, dr);
-    var ups = [];
-    sibs.forEach(function (r, i) { if (+r.seq_order !== i) { r.seq_order = i; ups.push(sb().from(TABLE).update({ seq_order: i, updated_at: new Date().toISOString() }).eq('id', r.id)); } });
-    if (!ups.length) return;
+    var changes = [];
+    sibs.forEach(function (r, i) { var old = (r.seq_order == null ? null : +r.seq_order); if (old !== i) { changes.push({ id: r.id, before: old, after: i }); r.seq_order = i; } });
+    if (!changes.length) return;
     showLoading('Reordering…');
-    var res = await Promise.all(ups);
+    var res = await Promise.all(changes.map(function (c) { return sb().from(TABLE).update({ seq_order: c.after, updated_at: new Date().toISOString() }).eq('id', c.id); }));
     hideLoading();
     var bad = null; for (var j = 0; j < res.length; j++) { if (res[j] && res[j].error) { bad = res[j].error; break; } }
     if (bad) { UI.toast(bad.message + ' — run the activity-seq-order migration.', 'error'); await load(); return; }
+    pushUndo({ type: 'reorder', changes: changes });
     rebuild(true); renderGrid(); renderGantt();
     UI.toast('Reordered ' + sibs.length + ' activit' + (sibs.length === 1 ? 'y' : 'ies') + '.', 'success');
+  }
+  // Apply a recorded reorder's before/after seq_order values (used by undo/redo). seq-only, no refetch.
+  async function _reorderApply(changes, key) {
+    await Promise.all(changes.map(function (c) { var v = c[key]; var r = rows.find(function (x) { return x.id === c.id; }); if (r) r.seq_order = v; return sb().from(TABLE).update({ seq_order: v, updated_at: new Date().toISOString() }).eq('id', c.id); }));
+    rebuild(true); renderGrid(); renderGantt();
   }
 
   // Dispatch a drop: same WBS → reorder the activities within it; different WBS leaves under the
@@ -7059,14 +7071,15 @@
     codes = codes.filter(function (c) { return c !== draggedWbs; });
     var ti = codes.indexOf(targetWbs); if (ti < 0) ti = codes.length - 1;
     codes.splice(before ? ti : ti + 1, 0, draggedWbs);
-    var ups = [];
-    codes.forEach(function (c, i) { var r = rep[c]; if (+r.seq_order !== i) { r.seq_order = i; ups.push(sb().from(TABLE).update({ seq_order: i, updated_at: new Date().toISOString() }).eq('id', r.id)); } });
-    if (!ups.length) return;
+    var changes = [];
+    codes.forEach(function (c, i) { var r = rep[c]; var old = (r.seq_order == null ? null : +r.seq_order); if (old !== i) { changes.push({ id: r.id, before: old, after: i }); r.seq_order = i; } });
+    if (!changes.length) return;
     showLoading('Reordering…');
-    var res = await Promise.all(ups);
+    var res = await Promise.all(changes.map(function (c) { return sb().from(TABLE).update({ seq_order: c.after, updated_at: new Date().toISOString() }).eq('id', c.id); }));
     hideLoading();
     var bad = null; for (var k = 0; k < res.length; k++) { if (res[k] && res[k].error) { bad = res[k].error; break; } }
     if (bad) { UI.toast(bad.message + ' — run the activity-seq-order migration.', 'error'); await load(); return; }
+    pushUndo({ type: 'reorder', changes: changes });
     rebuild(true); renderGrid(); renderGantt();
     UI.toast('Reordered ' + codes.length + ' WBS branches.', 'success');
   }

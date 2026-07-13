@@ -166,6 +166,10 @@ clipboard operating on individual grid cells, independent of the row selection/c
   those NODES by writing `seq_order` on their representative rows. **No code renumbering, no wbs_nodes
   dependency, update-only.** `dragover` allows any drop where the two rows share a WBS parent
   (`parentCodeOf`); `reorderDrop` dispatches to `reorderWithinWbs` (same wbs) or `reorderWbsSiblings`.
+- **Undo/redo (2026-07-11):** both reorder paths record `pushUndo({type:'reorder', changes:[{id,before,after}]})`
+  capturing each affected row's old→new `seq_order`; new `reorder` branch in `undo()`/`redo()` calls
+  `_reorderApply(changes,'before'|'after')` (seq-only writes + `rebuild(true)`+render, no refetch). So
+  Ctrl+Z/Ctrl+Y and the toolbar undo/redo revert/replay a drag reorder.
 - **Verified LIVE on Avesta (2026-07-11):** node-level comparator unit-tested; then on the real
   4,393-row project, setting `seq_order` on the 7 "Topping Off" milestones (each its own WBS leaf,
   1.1.1.1–1.1.1.7) reversed their grid order exactly (M7001…M3001) — the exact path a drop triggers —
