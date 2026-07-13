@@ -447,6 +447,11 @@
     .ps-dtab:hover { background:rgba(0,0,0,.05); }
     html.pd-dark .ps-dtab:hover { background:rgba(255,255,255,.06); }
     .ps-dtab.active { background:var(--pd-red); color:#fff; }
+    /* Collapse/expand the details-panel body (OPC-style chevron). Rotates 180° to point up when collapsed. */
+    .ps-det-collapse { margin-left:auto; border:none; background:none; cursor:pointer; color:var(--pd-muted); padding:2px 8px; border-radius:6px; display:inline-flex; align-items:center; }
+    .ps-det-collapse:hover { background:rgba(0,0,0,.05); color:var(--pd-ink); }
+    html.pd-dark .ps-det-collapse:hover { background:rgba(255,255,255,.06); }
+    .ps-det-collapse.up { transform:rotate(180deg); }
     /* Draggable resize handle for the bottom details panel — turns red on hover, like the
        grid/Gantt divider, so the resize affordance is consistent across the app. */
     .ps-details-grip { height:9px; cursor:ns-resize; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); position:relative; }
@@ -911,6 +916,7 @@
             <button class="ps-dtab" data-dtab="ausage">Activity Usage</button>
             <button class="ps-dtab" data-dtab="rusage">Resource Usage</button>
             <button class="ps-dtab" data-dtab="roleusage">Role Usage</button>
+            <button class="ps-det-collapse" id="ps-det-collapse" title="Collapse details panel"><span data-ico="chevronDown" data-ico-size="16"></span></button>
           </div>
           <div class="ps-details-body" id="ps-details-body"></div>
         </div>
@@ -7582,7 +7588,22 @@
       document.querySelectorAll('.ps-dtab').forEach(function (x) { x.classList.toggle('active', x.dataset.dtab === tab); });
       renderDetails();
     }
-    document.querySelectorAll('.ps-dtab').forEach(function (b) { b.onclick = function () { setDetailTab(b.dataset.dtab); }; });
+    // Collapse/expand the details-panel BODY (OPC-style chevron beside the tabs); tab strip stays
+    // visible so it can be reopened. Persisted separately from the Layout-menu "hide whole panel".
+    var _detCollapsed = false; try { _detCollapsed = localStorage.getItem('ps_details_collapsed') === '1'; } catch (e) {}
+    function applyDetailsCollapse() {
+      var body = document.getElementById('ps-details-body'), grip = document.getElementById('ps-details-grip'), btn = document.getElementById('ps-det-collapse');
+      if (body) body.style.display = _detCollapsed ? 'none' : '';
+      if (grip) grip.style.display = _detCollapsed ? 'none' : '';
+      if (btn) { btn.classList.toggle('up', _detCollapsed); btn.title = _detCollapsed ? 'Expand details panel' : 'Collapse details panel'; }
+    }
+    function setDetCollapsed(v) { _detCollapsed = v; try { localStorage.setItem('ps_details_collapsed', v ? '1' : '0'); } catch (e) {} applyDetailsCollapse(); }
+    document.querySelectorAll('.ps-dtab').forEach(function (b) { b.onclick = function () { if (_detCollapsed) { setDetCollapsed(false); } setDetailTab(b.dataset.dtab); }; });
+    (function () {
+      var dc = document.getElementById('ps-det-collapse');
+      if (dc) dc.onclick = function () { setDetCollapsed(!_detCollapsed); if (!_detCollapsed && (detailTab === 'ausage' || detailTab === 'rusage')) renderDetails(); };
+      applyDetailsCollapse();
+    })();
 
     // Resizable bottom details panel (drag the grip up/down; height persisted).
     (function () {
