@@ -149,6 +149,30 @@ for errors as you go.
 
 ---
 
+## 2b. QA sweep (2026-07-11) — seeded QADEMO, automated integrity checks
+
+Built a clean small sandbox project **QADEMO** (WBS + Q10→Q20→Q30 dependency chain with costs/
+baselines, a rated resource, a cost account) and drove an automated sweep on the live app. **All pass,
+zero console errors:**
+- **Load** — no timeout, no console errors, all rows render.
+- **CPM / critical path** — the Q10→Q20→Q30 chain is correctly all-critical (CP tags).
+- **Baseline variance (Var BL)** — +2d / +2d / +10d, matches seeded BL vs actual/planned finishes.
+- **Cost / status / % bars** — ₱50k/₱120k/₱300k, Completed/In-Progress/Not-Started, 100/40/0%.
+- **Cost Loading + EVM** — reconciles: CV ₱2,000 (Q10), **EAC ₱125,000** (Q20, = AC+(BAC−EV)/CPI), Q30 EAC=BAC.
+- **Cell clipboard** — Shift-click makes a 12-cell red block, **0 native text selected** (the fix holds).
+- **Cost Accounts manager (3a)** — opens, lists the seeded "01 Civil Works" account with usage + actions.
+- **Cost roll-up (3a+3b+3c)** — verified earlier on XERTEST: ₱10k assignment + ₱2.5k expense → activity ₱12,500.
+- **P6 import + keyset load** — verified on XERTEST: 42,306 rows import + load with no timeout.
+
+**Not automatable — please eyeball once (dialog/file/print flows):**
+- [ ] Cost Accounts **add/edit** (uses `prompt()` dialogs) — add a child account, rename one, delete one.
+- [ ] Assignment form: pick the rated resource → confirm cost auto-fills (units × ₱800); flip to Manual.
+- [ ] Expenses tab: add an expense; with roll-up ON, confirm the activity's Planned cost updates.
+- [ ] Grid **Download** → open the .xlsx; confirm columns + any shown Code/UDF columns are present.
+- [ ] Reports → run one to **PDF**.
+- [ ] Portfolio → **Resources** tab after running the RPC migration (real data).
+- [ ] A quick dark-mode + narrow-window glance.
+
 ## 3. Sign-off
 
 **This is not a form or a task you fill in — it's just recording that the live app was actually
