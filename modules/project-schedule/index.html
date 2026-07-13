@@ -371,9 +371,13 @@
     .ps-mile { position:absolute; width:13px; height:13px; background:var(--ps-mile,var(--pd-red)); transform:rotate(45deg); z-index:3; cursor:grab; }
     .ps-bar-lbl { position:absolute; font-size:10px; color:var(--pd-muted); white-space:nowrap; z-index:3; line-height:15px; }
     html.pd-dark .ps-row-bg.alt { background:rgba(255,255,255,.03); }
-    /* Brand-compliant Gantt colors (light defaults; dark-mode overrides for visibility) */
-    .ps-gantt-pane { --ps-bar:#2B2C2B; --ps-sum:#231F20; --ps-bl:#2F6FB0; }
-    html.pd-dark .ps-gantt-pane { --ps-bar:#c7ccd1; --ps-sum:#e0e0e0; --ps-bl:#5AA0E6; }
+    /* Brand-compliant Gantt colors (light defaults; dark-mode overrides for visibility). Defined on
+       #ps-view-schedule — the common ancestor of BOTH the Gantt bars and the legend swatches — so the
+       legend matches the bars (incl. dark mode + user recolors, which applyColors sets on this same
+       element). Previously these lived on .ps-gantt-pane, so the legend fell back to the light-mode
+       values and read black while dark-mode bars were white. */
+    #ps-view-schedule { --ps-bar:#2B2C2B; --ps-sum:#231F20; --ps-bl:#2F6FB0; }
+    html.pd-dark #ps-view-schedule { --ps-bar:#c7ccd1; --ps-sum:#e0e0e0; --ps-bl:#5AA0E6; }
     html.pd-dark .ps-bar-lbl { color:var(--pd-muted); }
     /* legend */
     .ps-legend { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:8px 2px; font-size:12px; color:var(--pd-muted); }
@@ -6903,7 +6907,7 @@
     { k: 'mile', v: '--ps-mile', label: 'Milestone', def: '#EE3124' }
   ];
   function loadColors() { try { return JSON.parse(localStorage.getItem('ps_colors') || '{}'); } catch (e) { return {}; } }
-  function applyColors() { var c = loadColors(); var pane = document.querySelector('.ps-gantt-pane'); if (!pane) return; COLORDEFS.forEach(function (d) { if (c[d.k]) pane.style.setProperty(d.v, c[d.k]); else pane.style.removeProperty(d.v); }); }
+  function applyColors() { var c = loadColors(); var host = document.getElementById('ps-view-schedule'); if (!host) return; COLORDEFS.forEach(function (d) { if (c[d.k]) host.style.setProperty(d.v, c[d.k]); else host.style.removeProperty(d.v); }); }
   // ---- Per-WBS color overrides (cascade to descendant activities), scoped per project ----
   function wbsColorMap() { try { var all = JSON.parse(localStorage.getItem('ps_wbscolors') || '{}'); return all[pid] || {}; } catch (e) { return {}; } }
   function saveWbsColor(code, color) {
