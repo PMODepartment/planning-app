@@ -1689,7 +1689,8 @@
 
   // ---- WBS-code helpers + precomputed caches (rebuilt only when rows change) ----
   function segs(c) { return String(c == null ? '' : c).split('.'); }
-  var _sorted = [], _min = null, _max = null, _spanMap = {}, _costMap = {};
+  var _sorted = [], _min = null, _max = null, _spanMap = {}, _costMap = {}, _seqByCode = {};
+  function parentCodeOf(wbs) { var s = String(wbs == null ? '' : wbs).split('.'); return s.slice(0, -1).join('.'); }
   // rebuild(structural): `structural` (default true) means the row SET or ORDER may have changed
   // (add/delete/import, WBS/Activity-ID edit, column-sort or grouping change) → re-sort. Pure field
   // edits that don't affect ordering (status/%/dates/costs via persist/bulk/reschedule) pass
@@ -1705,6 +1706,11 @@
       var a = []; for (var i = 1; i < r._segs.length; i++) a.push(r._segs.slice(0, i).join('.')); r._anc = a;
       r._segsWbs = r.wbs;
     });
+    // Manual WBS-node order: a seq_order on the row representing a WBS code sets that node's position
+    // among its siblings (drag-reorder). WBS-summary rows win; else a lone leaf activity's own
+    // seq_order stands in (P6 imports often have one activity per WBS leaf with no summary row).
+    _seqByCode = {};
+    rows.forEach(function (r) { if (r.seq_order == null || !r.wbs) return; if (isWbs(r) || _seqByCode[r.wbs] == null) _seqByCode[r.wbs] = +r.seq_order; });
     if (structural || _sorted.length !== rows.length)
     _sorted = rows.slice().sort(function (a, b) {
       // Column sort (OPC): reorder leaf siblings sharing the same WBS parent by the chosen
@@ -1716,8 +1722,16 @@
       var A = a._segs, B = b._segs, n = Math.max(A.length, B.length);
       for (var i = 0; i < n; i++) {
         var x = parseInt(A[i], 10), y = parseInt(B[i], 10);
-        if (isNaN(x) && isNaN(y)) { if ((A[i]||'') !== (B[i]||'')) return (A[i]||'') < (B[i]||'') ? -1 : 1; }
-        else { x = isNaN(x) ? -1 : x; y = isNaN(y) ? -1 : y; if (x !== y) return x - y; }
+        var diff = (isNaN(x) && isNaN(y)) ? ((A[i]||'') === (B[i]||'') ? 0 : ((A[i]||'') < (B[i]||'') ? -1 : 1))
+                                          : ((x = isNaN(x) ? -1 : x), (y = isNaN(y) ? -1 : y), (x === y ? 0 : x - y));
+        if (diff !== 0) {
+          // rows diverge into different sibling nodes at this level — if those nodes carry a manual
+          // seq_order (drag-reorder), order by it; otherwise fall back to the natural code order.
+          var na = A.slice(0, i + 1).join('.'), nb = B.slice(0, i + 1).join('.');
+          var sa = _seqByCode[na], sb = _seqByCode[nb];
+          if (sa != null && sb != null && sa !== sb) return sa - sb;
+          return diff;
+        }
       }
       if (isWbs(a) !== isWbs(b)) return isWbs(a) ? -1 : 1;
       // Leaf siblings (same WBS parent): manual drag-reorder sequence first (unset = last, so it
@@ -3906,7 +3920,9 @@
       rw.addEventListener('dragover', function (e) {
         if (!_dragRowId || _dragRowId === rw.dataset.rowid) return;
         var dg = rows.find(function (x) { return x.id === _dragRowId; }), tg = rows.find(function (x) { return x.id === rw.dataset.rowid; });
-        if (!dg || !tg || dg.wbs !== tg.wbs) return;   // only within the same WBS parent
+        // Allow a drop when both rows sit under the SAME WBS parent — whether they share a WBS
+        // (reorder activities) or are different WBS leaves (reorder the WBS nodes).
+        if (!dg || !tg || parentCodeOf(dg.wbs) !== parentCodeOf(tg.wbs)) return;
         e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (er) {}
         var rect = rw.getBoundingClientRect(), below = (e.clientY - rect.top) > rect.height / 2;
         rw.classList.toggle('ps-drop-below', below); rw.classList.toggle('ps-drop-above', !below);
@@ -3916,7 +3932,7 @@
         e.preventDefault();
         var below = rw.classList.contains('ps-drop-below');
         rw.classList.remove('ps-drop-above', 'ps-drop-below');
-        if (_dragRowId && _dragRowId !== rw.dataset.rowid) reorderWithinWbs(_dragRowId, rw.dataset.rowid, !below);
+        if (_dragRowId && _dragRowId !== rw.dataset.rowid) reorderDrop(_dragRowId, rw.dataset.rowid, !below);
       });
       rw.addEventListener('dragend', function () { rw.classList.remove('ps-rowdragging'); document.querySelectorAll('.ps-drop-above,.ps-drop-below').forEach(function (x) { x.classList.remove('ps-drop-above', 'ps-drop-below'); }); _dragRowId = null; });
     }
@@ -7014,6 +7030,45 @@
     if (bad) { UI.toast(bad.message + ' — run the activity-seq-order migration.', 'error'); await load(); return; }
     rebuild(true); renderGrid(); renderGantt();
     UI.toast('Reordered ' + sibs.length + ' activit' + (sibs.length === 1 ? 'y' : 'ies') + '.', 'success');
+  }
+
+  // Dispatch a drop: same WBS → reorder the activities within it; different WBS leaves under the
+  // same parent → reorder those WBS nodes.
+  function reorderDrop(draggedId, targetId, before) {
+    var dr = rows.find(function (x) { return x.id === draggedId; });
+    var tr = rows.find(function (x) { return x.id === targetId; });
+    if (!dr || !tr) return;
+    if (dr.wbs === tr.wbs) return reorderWithinWbs(draggedId, targetId, before);
+    if (parentCodeOf(dr.wbs) === parentCodeOf(tr.wbs)) return reorderWbsSiblings(dr.wbs, tr.wbs, before);
+  }
+  // Reorder sibling WBS nodes under a shared parent by writing seq_order onto each node's
+  // representative row (its summary row, or its lone leaf activity). No code renumbering — the dotted
+  // codes stay put; only the display order changes (the sort reads _seqByCode). Update-only.
+  async function reorderWbsSiblings(draggedWbs, targetWbs, before) {
+    if (window.__viewOnly || window.__archived) return;
+    var parent = parentCodeOf(draggedWbs);
+    // one representative row per direct-child node code (summary preferred), in current display order
+    var rep = {}, order = {}, oi = 0;
+    _sorted.forEach(function (r) {
+      if (parentCodeOf(r.wbs) !== parent) return;
+      if (!rep[r.wbs] || isWbs(r)) rep[r.wbs] = r;
+      if (order[r.wbs] == null) order[r.wbs] = oi++;
+    });
+    var codes = Object.keys(rep).sort(function (x, y) { return order[x] - order[y]; });
+    if (codes.length < 2 || codes.indexOf(draggedWbs) < 0) return;
+    codes = codes.filter(function (c) { return c !== draggedWbs; });
+    var ti = codes.indexOf(targetWbs); if (ti < 0) ti = codes.length - 1;
+    codes.splice(before ? ti : ti + 1, 0, draggedWbs);
+    var ups = [];
+    codes.forEach(function (c, i) { var r = rep[c]; if (+r.seq_order !== i) { r.seq_order = i; ups.push(sb().from(TABLE).update({ seq_order: i, updated_at: new Date().toISOString() }).eq('id', r.id)); } });
+    if (!ups.length) return;
+    showLoading('Reordering…');
+    var res = await Promise.all(ups);
+    hideLoading();
+    var bad = null; for (var k = 0; k < res.length; k++) { if (res[k] && res[k].error) { bad = res[k].error; break; } }
+    if (bad) { UI.toast(bad.message + ' — run the activity-seq-order migration.', 'error'); await load(); return; }
+    rebuild(true); renderGrid(); renderGantt();
+    UI.toast('Reordered ' + codes.length + ' WBS branches.', 'success');
   }
 
   // ---- Cell clipboard (Excel/OPC-style Cut/Copy/Paste of individual cells) ----
