@@ -8,6 +8,28 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Gantt/print/filter batch (2026-07-14) — jasantos2 / eprobles
+From a multi-item tester list; implemented the genuine gaps (several items were already built — see
+"already existed" note at the end).
+- **WBS bar progress fill (#1).** Summary bars now show a duration-weighted rolled-up %-complete fill
+  (`_costMap[code].wearn/wd`) as a `.ps-sum-fill` child clipped to the bracket shape, plus the % on
+  the bar label and title. Group headers (non-WBS grouping) don't get a fill.
+- **Succeeding months (#3).** `range()` now pads the timeline: ~2 extra trailing months after the last
+  activity (`addDays(_max, 62)`) + 14-day lead, so the Gantt shows context beyond the activity span.
+- **Critical-path-only filter (#5b).** New **Filter → Schedule → "Critical path only"** (`filters.crit`);
+  `rowMatches` excludes non-critical activities (WBS rows pass so ancestors are kept). This *excludes*
+  the others, unlike the Critical Path toolbar toggle which only dims them.
+- **Project title on print (#4).** The Print button injects a `#ps-print-head` banner (project name +
+  data date + print date) shown only in `@media print`, at the top of the printed schedule.
+- **Already existed (confirmed, no change needed):** progress override (#6 — Schedule dialog Settings:
+  Retained Logic / Progress Override); differentiated + editable WBS vs activity bar colors (#2 — the
+  Colors menu sets Task bar / Summary / Milestone separately); constraints + actual-date/data-date
+  logic (#8 — primary/secondary constraints, constraint-aware CPM, use-actual-dates); a P6-style
+  Advanced filter builder (#5a — `filters.adv`, Match All/Any rules).
+- **Deferred / needs scoping:** #5a "time-based" filter condition (the Advanced builder exists — needs
+  a date/duration operator added); #7 extra complete/activity types (Start Milestone, Finish Milestone,
+  Resource Dependent) — needs decisions on how each renders/behaves (milestone side + duration-type).
+
 ## Quick-add default dates (2026-07-14) — jasantos2 / eprobles
 - **New activities now default to start on the data date with a 5-day duration.** `quickAddActivity`
   stamps `start_date = today()` (the data date, `dataDate || wallToday()`), `end_date = today()+4`
