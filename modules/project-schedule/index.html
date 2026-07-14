@@ -929,6 +929,7 @@
             </div>
           </div>
           <span class="ps-tb-spacer"></span>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Bar colors — Task / WBS summary / Milestone / Baseline (+ per-WBS overrides)"><span data-ico="palette" data-ico-size="15"></span> Colors</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <button class="pd-btn" id="ps-tb-labeltoggle" title="Show text labels on the view buttons (Outline, Layouts, Schedule, Layout, Analyze)"><span data-ico="eye" data-ico-size="15"></span> Labels</button>
           <button class="pd-btn ps-icobtn" id="ps-help-btn" title="Keyboard shortcuts (press ?)" style="font-weight:700;">?</button>
           <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:160px;" /></div>
@@ -937,13 +938,6 @@
 
       <!-- SCHEDULE: split activities + gantt -->
       <div id="ps-view-schedule">
-        <div class="ps-legend">
-          <span class="lg"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>
-          <span class="lg"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>
-          <span class="lg"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>
-          <span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>
-          <span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>
-        </div>
         <div class="ps-split">
           <div class="ps-grid-pane">
             <!-- Column chooser as an always-visible "+" at the right end of the header row (OPC-style). -->
@@ -953,10 +947,6 @@
           </div>
           <div class="ps-divider" id="ps-divider" title="Drag to resize"></div>
           <div class="ps-gantt-pane">
-            <div class="ps-gantt-tools">
-              <button class="pd-btn" id="ps-colorsbtn" title="Bar colors — Task / WBS summary / Milestone / Baseline (+ per-WBS overrides)"><span data-ico="palette" data-ico-size="15"></span></button>
-              <div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div>
-            </div>
             <div class="ps-gantt-head" id="ps-gantt-head"></div>
             <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
           </div>
@@ -970,6 +960,15 @@
           <span>Total: <strong id="ps-total-count">0</strong> activities</span>
           <label class="ps-foot-chk" title="Hide WBS groups that contain no activities"><input type="checkbox" id="ps-hide-empty"> Hide empty groups</label>
           <button class="pd-btn" id="ps-download" title="Export the schedule to Excel"><span data-ico="download" data-ico-size="14"></span> Download</button>
+        </div>
+
+        <!-- Gantt legend — moved below the grid footer -->
+        <div class="ps-legend">
+          <span class="lg"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>
+          <span class="lg"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>
+          <span class="lg"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>
+          <span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>
+          <span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>
         </div>
 
         <!-- OPC-style Activity Details / Project Usage panel (driven by selected activity) -->
