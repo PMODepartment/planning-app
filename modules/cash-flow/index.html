@@ -34,6 +34,7 @@
     .cf-xlab { fill:var(--pd-muted); font-size:10.5px; text-anchor:middle; }
     .cf-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
     .cf-lg { display:inline-flex; align-items:center; }
+    .sw { display:inline-block; width:14px; height:10px; margin-right:6px; border-radius:2px; }
     .sw-line { width:18px; height:0; border-top:3px solid; margin-right:6px; }
     .cf-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
@@ -393,6 +394,7 @@
       return;
     }
     host.innerHTML = kpiHTML() + chartHTML() + matrixHTML();
+    drawPeriodic();
     drawChart();
   }
 
@@ -408,9 +410,46 @@
   }
 
   function chartHTML() {
-    return '<div class="cf-card"><h3>Cumulative Cash Flow</h3>' +
+    return '<div class="cf-card"><h3>Monthly (Periodic) Cash Flow</h3>' +
+      '<p class="sub">Cash received (up) vs paid (down) each month, with the net per month.</p>' +
+      '<div id="cf-chart-periodic"></div></div>' +
+      '<div class="cf-card"><h3>Cumulative Cash Flow</h3>' +
       '<p class="sub">Cash In vs Cash Out (cumulative) and the Net position — the funding curve.</p>' +
       '<div id="cf-chart"></div></div>';
+  }
+
+  // Periodic (monthly) combo chart: green bars up = cash in, red bars down = cash
+  // out, ink line = net per month. Symmetric axis about a centre zero line.
+  function drawPeriodic() {
+    var host = document.getElementById('cf-chart-periodic'); if (!host) return;
+    var m = model, n = m.n;
+    var W = 1000, H = 300, padL = 64, padR = 16, padT = 16, padB = 34;
+    var cw = W - padL - padR, ch = H - padT - padB;
+    var maxAbs = Math.max(
+      Math.max.apply(null, m.inPer),
+      Math.abs(Math.min.apply(null, m.outPer)),
+      Math.max.apply(null, m.netPer.map(Math.abs))
+    ) * 1.08 || 1;
+    function x(i) { return padL + (n <= 1 ? cw / 2 : (i / (n - 1)) * cw); }
+    function y(v) { return padT + ch * (1 - (v + maxAbs) / (2 * maxAbs)); }
+    var zeroY = y(0);
+    var grid = '';
+    [-1, -0.5, 0, 0.5, 1].forEach(function (f) { var v = maxAbs * f, yy = y(v); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="' + (f === 0 ? 'cf-zero' : 'cf-grid') + '"/><text x="' + (padL - 6) + '" y="' + (yy + 3.5) + '" class="cf-ylab">' + Fmt.moneyShort(v) + '</text>'; });
+    var xw = cw / n, bw = Math.max(1.5, Math.min(14, xw * 0.6));
+    var bars = '';
+    m.inPer.forEach(function (v, i) { if (v > 0) { var yy = y(v); bars += '<rect x="' + (x(i) - bw / 2) + '" y="' + yy + '" width="' + bw + '" height="' + (zeroY - yy) + '" fill="var(--pd-ok)"/>'; } });
+    m.outPer.forEach(function (v, i) { if (v < 0) { var yy = y(v); bars += '<rect x="' + (x(i) - bw / 2) + '" y="' + zeroY + '" width="' + bw + '" height="' + (yy - zeroY) + '" fill="var(--pd-red)"/>'; } });
+    var netPts = m.netPer.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ');
+    var xlab = '', step = Math.max(1, Math.ceil(n / 12));
+    m.months.forEach(function (mo, i) { if (i % step === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="cf-xlab">' + monthLabel(mo) + '</text>'; });
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + bars +
+      '<polyline points="' + netPts + '" fill="none" stroke="var(--pd-ink)" stroke-width="2"/>' +
+      xlab + '</svg>' +
+      '<div class="cf-legend">' +
+      '<span class="cf-lg"><span class="sw" style="background:var(--pd-ok);"></span>Cash In (period)</span>' +
+      '<span class="cf-lg"><span class="sw" style="background:var(--pd-red);"></span>Cash Out (period)</span>' +
+      '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ink);"></span>Net (period)</span>' +
+      '</div>';
   }
 
   function drawChart() {
