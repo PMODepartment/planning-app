@@ -8,6 +8,18 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Visible Schedule button + dependency-arrow routing fix (2026-07-14) — jasantos2 / eprobles
+- **Schedule button is now a visible red primary button** (`pd-btn pd-btn-primary`, calculator icon +
+  "Schedule" text) matching the "+ Add activity" button, instead of an icon-only `.ps-icobtn` whose
+  label only showed in Labels mode. Same `#ps-schedbtn` id/handler (`openSchedule`).
+- **Dependency arrows no longer run across the linked bar.** The elbow used to turn at
+  `predecessorFinish + 8`, which for adjacent FS bars sat on top of the successor bar (per the
+  tester's screenshot). Now the vertical turns just **outside the destination bar's anchor edge** —
+  `toX − 10` (left of its start for FS/SS) or `toX + 10` (right of its finish for FF/SF) — so the
+  connector leaves the source edge, runs along the source row to the turn, drops to the successor
+  row, and enters with a short 10px stub, never crossing the linked bar. Origin dot + type/lag label
+  repositioned to the new turn X.
+
 ## Wrapping column headers (2026-07-14) — jasantos2 / eprobles
 - **Grid column headers now wrap** instead of truncating with an ellipsis, so long labels stay
   readable when a column is narrow / being resized. Header cells (`.ps-grid-row.head .ps-cell`) get

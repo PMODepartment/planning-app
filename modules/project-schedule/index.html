@@ -901,7 +901,7 @@
           </div>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-collapseto" data-label="Outline" title="Outline — expand all or collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="16"></span></button><div class="ps-menu" id="ps-collapse-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" data-label="Layouts" title="Layouts — saved filter + grouping + columns"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
-          <button class="pd-btn ps-icobtn" id="ps-schedbtn" data-label="Schedule" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="16"></span></button>
+          <button class="pd-btn pd-btn-primary" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
           <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" data-label="Layout" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <span class="ps-tb-div"></span>
@@ -4449,12 +4449,16 @@
             var isDstEnd = (rel.type === 'FF' || rel.type === 'SF');
             var fromX = isSrcStart ? a.sx : a.ex;
             var toX = isDstEnd ? b.ex : b.sx;
-            var srcOut = fromX + (isSrcStart ? -8 : 8);
-            var dstOut = toX + (isDstEnd ? 8 : -8);
-            lines += '<path d="M' + fromX + ' ' + a.y + ' L' + srcOut + ' ' + a.y + ' L' + srcOut + ' ' + b.y + ' L' + dstOut + ' ' + b.y + ' L' + toX + ' ' + b.y + '" class="ps-dep" marker-end="url(#ps-arrow)"/>';
+            // Turn the connector just OUTSIDE the destination (linked) bar's anchor edge — left of its
+            // start for FS/SS, right of its finish for FF/SF — so the vertical + approach never run
+            // across the linked bar (the old routing turned at predecessorFinish+8, which for adjacent
+            // FS bars sat on top of the successor). The line leaves the source's own edge, runs along
+            // its row to the turn X, drops to the successor row, then a short 10px stub into the anchor.
+            var vX = toX + (isDstEnd ? 10 : -10);
+            lines += '<path d="M' + fromX + ' ' + a.y + ' L' + vX + ' ' + a.y + ' L' + vX + ' ' + b.y + ' L' + toX + ' ' + b.y + '" class="ps-dep" marker-end="url(#ps-arrow)"/>';
             lines += '<circle cx="' + fromX + '" cy="' + a.y + '" r="2.5" class="ps-depdot"/>';
-            if (rel.type !== 'FS') lines += '<text x="' + (srcOut + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deptype">' + rel.type + (rel.lag ? (rel.lag > 0 ? '+' : '') + rel.lag : '') + '</text>';
-            else if (rel.lag) lines += '<text x="' + (srcOut + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
+            if (rel.type !== 'FS') lines += '<text x="' + (vX + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deptype">' + rel.type + (rel.lag ? (rel.lag > 0 ? '+' : '') + rel.lag : '') + '</text>';
+            else if (rel.lag) lines += '<text x="' + (vX + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
           });
         }
         if (lines) bc.insertAdjacentHTML('beforeend', '<svg class="ps-deps" width="' + _tlW + '" height="' + (last * ROWH) + '" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5;"><defs><marker id="ps-arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--pd-red)"/></marker></defs>' + lines + '</svg>');
