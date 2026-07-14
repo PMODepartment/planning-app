@@ -252,8 +252,11 @@
     var start = settings.start_period ? pd(settings.start_period) : (dates.length ? new Date(Math.min.apply(null, dates.map(Number))) : null);
     var end = dates.length ? new Date(Math.max.apply(null, dates.map(Number))) : null;
     if (!start || !end) return [];
-    // extend for terms lags + retention release
-    var tail = Math.max(num(settings.billing_terms_months), 0) + Math.max(num(settings.retention_release_months), 0) + 1;
+    // extend for terms lags + retention release (cash-in AND the longest WP cash-out terms,
+    // so a package completing near schedule-end still has room for its retention release)
+    var maxWpTerms = wpRows.reduce(function (a, w) { return Math.max(a, Math.round(num(w.payment_terms_days) / 30)); }, 0);
+    var tail = Math.max(num(settings.billing_terms_months), 0) +
+      Math.max(num(settings.retention_release_months), 0) + maxWpTerms + 2;
     var months = [], c = new Date(start.getFullYear(), start.getMonth(), 1);
     var last = new Date(end.getFullYear(), end.getMonth() + tail, 1);
     while (c <= last) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
@@ -302,7 +305,16 @@
     }
 
     // ---- CASH OUT (payments) — from WPM work packages, each spread over its window ----
+    // Basis (per project decision): total_awarded (awarded_cost + additionals) where
+    // awarded, else approved_budget_bcb for not-yet-awarded packages.
+    // Fallback window for packages with NO usable dates: the schedule span (so their
+    // budget is still projected rather than silently dropped). Counted for the chip.
     var outDP = z(), outBill = z(), outRet = z();
+    var schedDates = scheduleRows.map(function (a) { return pd(a.start_date); }).filter(Boolean).map(Number);
+    var schedEndDates = scheduleRows.map(function (a) { return pd(a.end_date) || pd(a.start_date); }).filter(Boolean).map(Number);
+    var fbStart = schedDates.length ? new Date(Math.min.apply(null, schedDates)) : months[0];
+    var fbEnd = schedEndDates.length ? new Date(Math.max.apply(null, schedEndDates)) : months[n - 1];
+    var wpNoDates = 0, wpNoDatesAmt = 0;
     wpRows.forEach(function (w) {
       var budget = num(w.total_awarded) || num(w.awarded_cost) || num(w.approved_budget_bcb);
       if (budget <= 0) return;
@@ -311,7 +323,8 @@
       // window: award/delivery start → completion
       var ws = pd(w.actual_awarding_date) || pd(w.awarding_date) || pd(w.target_delivery) || pd(w.target_installation);
       var we = pd(w.target_completion) || pd(w.target_installation) || pd(w.target_delivery) || ws;
-      if (!ws) return; if (!we || we < ws) we = ws;
+      if (!ws) { ws = fbStart; we = fbEnd; wpNoDates++; wpNoDatesAmt += budget; }
+      if (!we || we < ws) we = ws;
       var sIdx = clampIdx(monthDiff(months[0], ws), n), eIdx = clampIdx(monthDiff(months[0], we), n);
       var span = Math.max(1, eIdx - sIdx + 1);
       // DP paid at window start (+terms)
@@ -346,7 +359,7 @@
       outDP: outDP, outBill: outBill, outRet: outRet, outPer: outPer, outCum: outCum,
       netPer: netPer, netCum: netCum,
       totalIn: ic, totalOut: oc, closing: nc, peak: peak,
-      wpCount: wpRows.length };
+      wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt };
   }
   function clampIdx(i, n) { return Math.max(0, Math.min(n - 1, i)); }
 
@@ -366,7 +379,8 @@
     host.innerHTML =
       chip(contractCls, hasContract ? 'Contract set · IBB ' + Fmt.moneyShort(settings.contract_ibb) : 'Contract not set — open Assumptions') +
       chip(schedCls, scheduleRows.length ? 'Schedule S-curve · ' + scheduleRows.length + ' activities' : 'No schedule — cash-in needs the Project Schedule') +
-      chip(wpmCls, wpmTxt);
+      chip(wpmCls, wpmTxt) +
+      (model && model.wpNoDates ? chip('warn', model.wpNoDates + ' WP(s) had no dates · ' + Fmt.moneyShort(model.wpNoDatesAmt) + ' spread over the schedule span') : '');
   }
   function chip(cls, txt) { return '<span class="cf-chip ' + cls + '"><span class="dot"></span>' + esc(txt) + '</span>'; }
 
@@ -387,7 +401,7 @@
     return '<div class="cf-kpis">' +
       k('Contract (IBB)', Fmt.moneyShort(settings.contract_ibb), 'VAT inclusive · cash-in base') +
       k('Total Cash In', Fmt.moneyShort(model.totalIn), 'over ' + model.n + ' months') +
-      k('Total Cash Out', Fmt.moneyShort(model.totalOut), model.wpCount + ' WPM work packages') +
+      k('Total Cash Out', Fmt.moneyShort(model.totalOut), model.wpCount + ' WPs · awarded + variations, budget if un-awarded') +
       k('Closing Balance', Fmt.moneyShort(model.closing), 'end of projection', model.closing >= 0 ? 'cf-ok' : 'cf-bad') +
       k('Peak Funding Need', Fmt.moneyShort(model.peak), 'most negative cumulative', model.peak < 0 ? 'cf-bad' : 'cf-ok') +
     '</div>';

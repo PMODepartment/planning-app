@@ -42,10 +42,26 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
   const PL_URL = Deno.env.get("SUPABASE_URL")!;
-  const PL_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  // Prefer an explicitly-set new-format secret key (PL_SERVICE_KEY, sb_secret_…).
+  // The auto-injected legacy SUPABASE_SERVICE_ROLE_KEY is NOT honored once a
+  // project migrates to the new API-key format — it silently degrades to `anon`
+  // (→ "permission denied for table users" / failed mirror writes).
+  const PL_SERVICE = Deno.env.get("PL_SERVICE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const WPM_URL = Deno.env.get("WPM_URL");
   const WPM_SERVICE = Deno.env.get("WPM_SERVICE_KEY");
   if (!WPM_URL || !WPM_SERVICE) return json({ error: "WPM_URL / WPM_SERVICE_KEY not configured" }, 500);
+
+  // This project runs on the NEW API-key format; the legacy service_role JWT is
+  // disabled. The admin client MUST use a new-format `sb_secret_…` key or every
+  // DB call silently degrades to `anon`. Guard + report what we actually hold.
+  const plKind = PL_SERVICE?.startsWith("sb_secret_") ? "new"
+    : PL_SERVICE?.startsWith("ey") ? "legacy-jwt" : "unknown";
+  const wpmKind = WPM_SERVICE?.startsWith("sb_secret_") ? "new"
+    : WPM_SERVICE?.startsWith("ey") ? "legacy-jwt" : "unknown";
+  if (plKind !== "new") return json({
+    error: "PL_SERVICE_KEY must be the Planners project's new sb_secret_ key",
+    pl_key_kind: plKind, has_PL_SERVICE_KEY: !!Deno.env.get("PL_SERVICE_KEY"),
+  }, 500);
 
   // ---- Authorize the caller ------------------------------------------------
   const auth = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
@@ -55,13 +71,24 @@ Deno.serve(async (req) => {
 
   let allowed = auth === PL_SERVICE; // service-role / cron invocation
   if (!allowed) {
-    // Treat the token as a user JWT: verify + check role/status in `users`.
-    const { data: u, error: uErr } = await plAdmin.auth.getUser(auth);
-    if (uErr || !u?.user) return json({ error: "Invalid session" }, 401);
-    const { data: prof } = await plAdmin.from("users").select("role,status").eq("id", u.user.id).maybeSingle();
+    // The platform (verify_jwt=true) already validated the JWT signature, so we
+    // can trust the `sub` claim — decode it directly (avoids a GoTrue getUser
+    // call that trips over disabled legacy keys), then check role/status.
+    let uid: string | null = null;
+    try {
+      const seg = auth.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      uid = JSON.parse(atob(seg))?.sub || null;
+    } catch { uid = null; }
+    if (!uid) return json({ error: "Could not read user id from token" }, 401);
+    const { data: prof, error: pErr } = await plAdmin.from("users").select("role,status").eq("id", uid).maybeSingle();
     allowed = !!prof && prof.status === "approved" &&
       ["super_admin", "admin", "planner"].includes(prof.role);
-    if (!allowed) return json({ error: "Requires an approved admin/planner" }, 403);
+    if (!allowed) return json({
+      error: "Requires an approved admin/planner",
+      uid, profile_found: !!prof, role: prof?.role || null,
+      status: prof?.status || null, lookup_error: pErr?.message || null,
+      pl_key_kind: plKind, wpm_key_kind: wpmKind,
+    }, 403);
   }
 
   // Optional body: { wpm_project_id?: string } to scope the sync to one project.
