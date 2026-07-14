@@ -120,6 +120,23 @@ developer, plug into one shared shell.
 - **User deploy steps:** run both 2026-07-14 migrations; `supabase functions deploy sync-wpm`;
   `supabase secrets set WPM_URL/WPM_SERVICE_KEY`; click Sync. See `modules/cash-flow/CLAUDE.md`.
 
+### 2026-07-14 — Prompt 68: Cash Flow — DP tranches + periodic bar chart
+- **Downpayment flexibility**: client DP can now be broken into **tranches**, each tagged
+  by trade/commercial-agreement category, timed by a **schedule milestone**, a **fixed
+  month**, or an **offset from start**, and **recouped proportionally** (rate blank →
+  the tranche's own % of contract). New `cash_flow_dp_tranches` table (migration
+  `2026-07-14-cash-flow-dp-tranches.sql` — **user must run it**), edited in the
+  Assumptions modal's new "Downpayment Tranches" section (add/remove rows, live DP total).
+  Engine `resolveTranches()` replaces the single-DP path; falls back to the simple
+  `dp_percent` when no tranches exist. Milestone timing reads named/0-duration schedule
+  activities. Conservation verified (total cash in = contract IBB).
+- **Periodic bar chart** added above the cumulative chart: green up-bars = cash received,
+  red down-bars = cash paid, ink line = net per month (matches the Excel periodic view).
+- **Net funding line** recolored to theme-aware `--pd-ink` (was `--pd-dark`, invisible on
+  dark). All charts on brand tokens (green in / red out / ink net).
+- Assumptions modal widened for the tranche editor. Verified: module parses; tranche
+  recoup math hand-checked (multi-tranche total recoup = total DP).
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

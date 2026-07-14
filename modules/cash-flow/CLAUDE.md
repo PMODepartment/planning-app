@@ -64,6 +64,18 @@ Invariant (verified): total cash in = contract IBB; total cash out = Σ WP budge
 The old `cash_flow` table (manual planned/actual entries) is **no longer used** by
 this module; kept in the schema for now.
 
+## Downpayment tranches (2026-07-14)
+Client DP is no longer a single `dp_percent`. New `cash_flow_dp_tranches` table
+(migration `2026-07-14-cash-flow-dp-tranches.sql` — **user must run it**): each
+tranche has a label, category/trade tag, basis (`% of contract` or fixed ₱),
+timing (`milestone` / fixed `month` / `offset` months from start), and a
+proportional `recoup_percent` (blank → the tranche's own % of contract). Edited in
+the Assumptions modal's **Downpayment Tranches** section. Engine: `resolveTranches()`
+→ each tranche's cash lands at its resolved due month; billings claw back each
+tranche's rate until its pool is spent. Falls back to the simple `dp_percent` when
+no tranches exist. Milestone timing reads named/0-duration activities from
+`project_schedule`. Invariant still holds: total cash in = contract IBB.
+
 ## Verified
 - JS parses (`node --check`). Engine math hand-checked on a synthetic fixture:
   DP/billing-net/retention/terms lag land in the correct months and totals

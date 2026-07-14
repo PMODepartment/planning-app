@@ -57,6 +57,13 @@
 
     .cf-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .cf-form-full { grid-column:1 / -1; }
+    .cf-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
+    .cf-btn-sm:hover { border-color:var(--pd-red); color:var(--pd-red); }
+    .cf-dp-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+    .cf-dp-row { display:grid; grid-template-columns:1.3fr 1fr 1fr 0.9fr 1.1fr 1.2fr 1fr auto; gap:6px; align-items:center; margin-bottom:6px; }
+    .cf-dp-row .pd-input, .cf-dp-row .pd-select { padding:5px 7px; font-size:12px; }
+    .cf-dp-amt { font-size:11px; font-weight:600; color:var(--pd-muted); text-align:right; white-space:nowrap; }
+    #cf-dp-sum { color:var(--pd-ink); }
     .cf-hint { font-size:11px; color:var(--pd-muted); margin-top:3px; }
     .cf-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--pd-line); }
     .cf-tab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; border-bottom:2px solid transparent; }
@@ -93,7 +100,7 @@
 
 <!-- Assumptions modal -->
 <div class="pd-modal-overlay" id="cf-modal" style="display:none;">
-  <div class="pd-modal" style="max-width:640px;width:95vw;">
+  <div class="pd-modal" style="max-width:880px;width:96vw;">
     <div class="pd-modal-header"><span>Cash Flow Assumptions</span><button class="pd-modal-close" id="cf-modal-x">&#215;</button></div>
     <div class="pd-modal-body"><form id="cf-form" class="cf-form-grid" onsubmit="return false;"></form></div>
     <div class="pd-modal-footer"><button class="pd-btn" id="cf-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="cf-save">Save</button></div>
@@ -121,6 +128,9 @@
   var pid = null, profile = null, projName = '';
   var settings = null;           // cash_flow_settings row (or defaults)
   var scheduleRows = [];         // project_schedule leaves
+  var milestones = [];           // {name, date} for DP-tranche milestone timing
+  var tranches = [];             // cash_flow_dp_tranches rows (client DP breakdown)
+  var editTranches = [];         // working copy while the Assumptions modal is open
   var wpRows = [];               // mirrored WPM work packages (cash-out)
   var wpmStatus = 'idle';        // idle | loading | ok | empty | error | no-map
   var wpmMsg = '', wpmSyncedAt = null;
@@ -170,18 +180,29 @@
     scheduleRows = [];
     var from = 0, page = 1000;
     for (;;) {
-      var res = await sb().from('project_schedule').select('activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish')
+      var res = await sb().from('project_schedule').select('activity_name,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish')
         .eq('project_id', pid).range(from, from + page - 1);
       if (res.error) { UI.toast('Schedule: ' + res.error.message, 'error'); break; }
       var d = res.data || []; scheduleRows = scheduleRows.concat(d);
       if (d.length < page) break; from += page;
     }
+    // milestones (named, 0-duration or typed) — for DP-tranche timing
+    milestones = scheduleRows.filter(function (r) {
+      var t = (r.activity_type || '').toLowerCase();
+      return (t.indexOf('milestone') !== -1 || num(r.duration_days) === 0) && r.activity_name && r.start_date;
+    }).map(function (r) { return { name: r.activity_name, date: r.start_date }; });
     // keep only leaf activities (not WBS summaries) that have a start date
     scheduleRows = scheduleRows.filter(function (r) {
       var t = (r.activity_type || '').toLowerCase();
       return t.indexOf('wbs') === -1 && t.indexOf('summary') === -1 && r.start_date;
     });
   }
+
+  async function loadTranches() {
+    var res = await sb().from('cash_flow_dp_tranches').select('*').eq('project_id', pid).order('seq');
+    tranches = (res.error ? [] : (res.data || []));
+  }
+  function milestoneDate(name) { var m = milestones.find(function (x) { return x.name === name; }); return m ? pd(m.date) : null; }
 
   async function loadWPM() {
     wpRows = []; wpmStatus = 'loading'; wpmMsg = ''; wpmSyncedAt = null;
@@ -219,7 +240,7 @@
     if (!pid) { render(); return; }
     document.getElementById('cf-body').innerHTML = '<div class="cf-empty">Loading projection…</div>';
     await loadSettings();
-    await Promise.all([loadSchedule(), loadWPM()]);
+    await Promise.all([loadSchedule(), loadWPM(), loadTranches()]);
     model = computeProjection();
     render();
   }
@@ -240,6 +261,26 @@
         pvDone += val(a) * pf;
       });
       return pvDone / TOT;   // 0..1 cumulative
+    });
+  }
+
+  // Resolve the DP tranches → {amount, dueIdx, recoupRate, pool, label, category}.
+  // Falls back to the single settings.dp_percent (received up front) when no
+  // tranches are defined, so pre-tranche projects keep working.
+  function resolveTranches(base, months, n) {
+    var start = months[0];
+    var list = tranches.length ? tranches
+      : (num(settings.dp_percent) > 0 ? [{ basis: 'percent', percent: settings.dp_percent, timing_mode: 'offset', timing_offset: 0 }] : []);
+    return list.map(function (t) {
+      var amount = t.basis === 'amount' ? num(t.amount) : base * num(t.percent);
+      var dueIdx = 0;
+      if (t.timing_mode === 'month' && t.timing_month) dueIdx = monthDiff(start, pd(t.timing_month));
+      else if (t.timing_mode === 'milestone' && t.milestone) { var md = milestoneDate(t.milestone); dueIdx = md ? monthDiff(start, md) : 0; }
+      else dueIdx = num(t.timing_offset);   // 'offset' (default)
+      // Proportional recoup rate: explicit, else the tranche's own % of contract
+      // (so a tranche worth X% of the contract is fully recouped over 100% billing).
+      var recoupRate = t.recoup_percent != null ? num(t.recoup_percent) : (base > 0 ? amount / base : 0);
+      return { amount: amount, dueIdx: dueIdx, recoupRate: recoupRate, pool: amount, label: t.label, category: t.category };
     });
   }
 
@@ -276,29 +317,34 @@
     // ---- CASH IN (revenue) — driven by the schedule S-curve ----
     var inDP = z(), inBill = z(), inRet = z();     // periodic components (received basis)
     var base = num(settings.contract_ibb);         // billable contract (VAT inc)
-    var dpPct = num(settings.dp_percent);
     var retPct = num(settings.retention_percent);
-    var recoupPct = settings.dp_recoup_percent != null ? num(settings.dp_recoup_percent) : dpPct;
     var termsIn = Math.round(num(settings.billing_terms_months));
     var relIn = Math.round(num(settings.retention_release_months));
 
+    // Resolve the DP tranches into {dueIdx, amount, recoupRate, pool}. If none are
+    // defined, fall back to the single settings.dp_percent (received up front) so
+    // existing projects keep working.
+    var dpTranches = resolveTranches(base, months, n);
+    var dpTotal = dpTranches.reduce(function (a, t) { return a + t.amount; }, 0);
+
     if (base > 0) {
       var cum = scheduleCurve(months);            // cumulative planned fraction per month
-      // Downpayment received in month 0 (+ terms lag)
-      var dpAmt = base * dpPct;
-      if (dpAmt > 0) { var di = Math.min(n - 1, termsIn); inDP[di] += dpAmt; }
-      var dpPool = dpAmt;                          // remaining DP to recoup
-      var retTotal = 0, lastBillMonth = 0;
-      var prev = 0;
+      // Each tranche's cash lands at its own resolved due month (its own schedule).
+      dpTranches.forEach(function (t) { if (t.amount > 0) inDP[clampIdx(t.dueIdx, n)] += t.amount; });
+      var retTotal = 0, lastBillMonth = 0, prev = 0;
       for (var i = 0; i < n; i++) {
         var progress = Math.max(0, cum[i] - prev); prev = cum[i];
         var gross = base * progress;              // this month's progress billing (certified)
         if (gross <= 0) continue;
         var ret = gross * retPct; retTotal += ret;
-        var recoup = Math.min(dpPool, gross * recoupPct); dpPool -= recoup;
+        // Proportional recoup: each tranche claws back its rate × this billing until spent.
+        var recoup = 0;
+        dpTranches.forEach(function (t) {
+          if (t.pool <= 0) return;
+          var r = Math.min(t.pool, gross * t.recoupRate); t.pool -= r; recoup += r;
+        });
         var net = gross - ret - recoup;           // net certified this month
-        var recv = Math.min(n - 1, i + termsIn);  // cash received after terms lag
-        inBill[recv] += net;
+        inBill[Math.min(n - 1, i + termsIn)] += net;   // cash received after terms lag
         lastBillMonth = i;
       }
       // retention released after completion + release lag
@@ -360,7 +406,8 @@
       outDP: outDP, outBill: outBill, outRet: outRet, outPer: outPer, outCum: outCum,
       netPer: netPer, netCum: netCum,
       totalIn: ic, totalOut: oc, closing: nc, peak: peak,
-      wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt };
+      wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt,
+      dpTotal: dpTotal, dpCount: dpTranches.length };
   }
   function clampIdx(i, n) { return Math.max(0, Math.min(n - 1, i)); }
 
@@ -402,7 +449,7 @@
     function k(l, v, sub, cls) { return '<div class="cf-kpi"><div class="cf-kpi-l">' + l + '</div><div class="cf-kpi-v ' + (cls || '') + '">' + v + '</div>' + (sub ? '<div class="cf-kpi-s">' + sub + '</div>' : '') + '</div>'; }
     return '<div class="cf-kpis">' +
       k('Contract (IBB)', Fmt.moneyShort(settings.contract_ibb), 'VAT inclusive · cash-in base') +
-      k('Total Cash In', Fmt.moneyShort(model.totalIn), 'over ' + model.n + ' months') +
+      k('Total Cash In', Fmt.moneyShort(model.totalIn), (model.dpCount ? 'DP ' + Fmt.moneyShort(model.dpTotal) + ' in ' + model.dpCount + ' tranche' + (model.dpCount > 1 ? 's' : '') + ' · ' : '') + 'over ' + model.n + ' months') +
       k('Total Cash Out', Fmt.moneyShort(model.totalOut), model.wpCount + ' WPs · awarded + variations, budget if un-awarded') +
       k('Closing Balance', Fmt.moneyShort(model.closing), 'end of projection', model.closing >= 0 ? 'cf-ok' : 'cf-bad') +
       k('Peak Funding Need', Fmt.moneyShort(model.peak), 'most negative cumulative', model.peak < 0 ? 'cf-bad' : 'cf-ok') +
@@ -523,15 +570,78 @@
     form.innerHTML =
       fld('Contract Amount — IBB (₱, VAT inc.)', '<input class="pd-input" id="s-ibb" type="number" step="0.01" value="' + (s.contract_ibb != null ? s.contract_ibb : '') + '">', 'Cash-in base — total billable to the client.') +
       fld('Contract Amount — BCB (₱)', '<input class="pd-input" id="s-bcb" type="number" step="0.01" value="' + (s.contract_bcb != null ? s.contract_bcb : '') + '">', 'Cost base (reference).') +
-      fld('Downpayment %', '<input class="pd-input" id="s-dp" type="number" step="0.01" value="' + pctVal(s.dp_percent) + '">', 'Client DP, e.g. 15.') +
+      fld('Downpayment % (simple)', '<input class="pd-input" id="s-dp" type="number" step="0.01" value="' + pctVal(s.dp_percent) + '">', 'Used only when NO tranches are defined below.') +
       fld('Retention %', '<input class="pd-input" id="s-ret" type="number" step="0.01" value="' + pctVal(s.retention_percent) + '">', 'Withheld from each billing, e.g. 10.') +
-      fld('DP Recoup %', '<input class="pd-input" id="s-recoup" type="number" step="0.01" value="' + pctVal(s.dp_recoup_percent) + '">', 'Recouped per billing (blank → = DP %).') +
       fld('Billing terms (months)', '<input class="pd-input" id="s-terms" type="number" step="1" value="' + (s.billing_terms_months != null ? s.billing_terms_months : 1) + '">', 'Lag from certification to cash receipt.') +
       fld('Retention release (months after completion)', '<input class="pd-input" id="s-rel" type="number" step="1" value="' + (s.retention_release_months != null ? s.retention_release_months : 1) + '">') +
       fld('Cashflow start month', '<input class="pd-input" id="s-start" type="month" value="' + (s.start_period ? String(s.start_period).slice(0, 7) : '') + '">', 'Blank → schedule start.') +
       fld('WPM project id (cash-out source)', '<input class="pd-input" id="s-wpm" value="' + esc(s.wpm_project_id || '') + '">', 'The Procurement app project id whose work packages fund cash-out. Blank → this project id.', true) +
-      fld('Remarks', '<textarea class="pd-input" id="s-rem" rows="2">' + esc(s.remarks) + '</textarea>', '', true);
+      fld('Remarks', '<textarea class="pd-input" id="s-rem" rows="2">' + esc(s.remarks) + '</textarea>', '', true) +
+      // ---- Downpayment tranches ----
+      '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Downpayment Tranches</label>' +
+        '<button type="button" class="cf-btn-sm" id="cf-dp-add">+ Add tranche</button></div>' +
+        '<div class="cf-hint">Break the DP into tranches — each tagged by trade/agreement, timed by a schedule milestone, a fixed month, or an offset from start, and recouped proportionally. When any tranche exists it overrides the simple % above. <b id="cf-dp-sum"></b></div>' +
+        '<div id="cf-dp-list"></div></div>';
+    editTranches = (tranches || []).map(function (t) { return JSON.parse(JSON.stringify(t)); });
+    renderTranches();
+    document.getElementById('cf-dp-add').onclick = function () {
+      editTranches.push({ label: 'DP Tranche ' + (editTranches.length + 1), category: '', basis: 'percent', percent: null, amount: null, timing_mode: 'milestone', timing_month: null, timing_offset: 0, milestone: '', recoup_percent: null });
+      renderTranches();
+    };
     document.getElementById('cf-modal').style.display = 'flex';
+  }
+
+  // Render the editable tranche rows from editTranches. Each control writes back to
+  // its tranche on change; changing the timing mode re-renders that row's timing input.
+  function renderTranches() {
+    var host = document.getElementById('cf-dp-list'); if (!host) return;
+    var base = numInput('s-ibb') || 0;
+    var mlOpts = milestones.map(function (m) { return '<option value="' + esc(m.name) + '">'; }).join('');
+    function timingCtrl(t, i) {
+      if (t.timing_mode === 'month') return '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="timing_month" type="month" value="' + (t.timing_month ? String(t.timing_month).slice(0, 7) : '') + '">';
+      if (t.timing_mode === 'milestone') return '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="milestone" list="cf-ml-list" placeholder="milestone name" value="' + esc(t.milestone || '') + '">';
+      return '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="timing_offset" type="number" step="1" placeholder="months from start" value="' + (t.timing_offset != null ? t.timing_offset : 0) + '">';
+    }
+    host.innerHTML = '<datalist id="cf-ml-list">' + mlOpts + '</datalist>' + (editTranches.length ? editTranches.map(function (t, i) {
+      var amt = t.basis === 'amount' ? num(t.amount) : base * num(t.percent);
+      return '<div class="cf-dp-row">' +
+        '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="label" placeholder="Label" value="' + esc(t.label || '') + '">' +
+        '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="category" placeholder="Trade / tag" value="' + esc(t.category || '') + '">' +
+        '<select class="pd-select cf-dp-i" data-i="' + i + '" data-k="basis"><option value="percent"' + (t.basis !== 'amount' ? ' selected' : '') + '>% of contract</option><option value="amount"' + (t.basis === 'amount' ? ' selected' : '') + '>fixed ₱</option></select>' +
+        '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="' + (t.basis === 'amount' ? 'amount' : 'percent_pct') + '" type="number" step="0.01" placeholder="' + (t.basis === 'amount' ? '₱ amount' : '%') + '" value="' + (t.basis === 'amount' ? (t.amount != null ? t.amount : '') : pctVal(t.percent)) + '">' +
+        '<select class="pd-select cf-dp-i" data-i="' + i + '" data-k="timing_mode"><option value="milestone"' + (t.timing_mode === 'milestone' ? ' selected' : '') + '>@ milestone</option><option value="month"' + (t.timing_mode === 'month' ? ' selected' : '') + '>fixed month</option><option value="offset"' + (t.timing_mode === 'offset' ? ' selected' : '') + '>offset (mo)</option></select>' +
+        timingCtrl(t, i) +
+        '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="recoup_pct" type="number" step="0.01" placeholder="recoup % (auto)" value="' + pctVal(t.recoup_percent) + '">' +
+        '<button type="button" class="cf-btn-sm cf-dp-del" data-i="' + i + '" title="Remove">&#215;</button>' +
+        '<div class="cf-dp-amt">' + (amt > 0 ? Fmt.moneyShort(amt) : '—') + '</div>' +
+      '</div>';
+    }).join('') : '<div class="cf-hint" style="padding:6px 0;">No tranches — the simple Downpayment % above is used.</div>');
+
+    // wire inputs
+    host.querySelectorAll('.cf-dp-i').forEach(function (el) {
+      el.onchange = function () {
+        var i = +el.dataset.i, k = el.dataset.k, v = el.value;
+        var t = editTranches[i]; if (!t) return;
+        if (k === 'percent_pct') t.percent = v === '' ? null : num(v) / 100;
+        else if (k === 'recoup_pct') t.recoup_percent = v === '' ? null : num(v) / 100;
+        else if (k === 'amount') t.amount = v === '' ? null : num(v);
+        else if (k === 'timing_offset') t.timing_offset = v === '' ? 0 : Math.round(num(v));
+        else if (k === 'timing_month') t.timing_month = v ? v + '-01' : null;
+        else t[k] = v;
+        if (k === 'basis' || k === 'timing_mode') renderTranches(); else updateDpSum();
+      };
+    });
+    host.querySelectorAll('.cf-dp-del').forEach(function (b) {
+      b.onclick = function () { editTranches.splice(+b.dataset.i, 1); renderTranches(); };
+    });
+    updateDpSum();
+  }
+  function updateDpSum() {
+    var el = document.getElementById('cf-dp-sum'); if (!el) return;
+    var base = numInput('s-ibb') || 0;
+    var tot = editTranches.reduce(function (a, t) { return a + (t.basis === 'amount' ? num(t.amount) : base * num(t.percent)); }, 0);
+    var pct = base > 0 ? (tot / base * 100) : 0;
+    el.textContent = editTranches.length ? ('Total DP: ' + Fmt.moneyShort(tot) + (base > 0 ? ' (' + (Math.round(pct * 100) / 100) + '% of contract)' : '')) : '';
   }
 
   function pctInput(id) { var e = document.getElementById(id); var v = e && e.value.trim(); return v === '' || v == null ? null : num(v) / 100; }
@@ -543,7 +653,6 @@
       project_id: pid,
       contract_ibb: numInput('s-ibb'), contract_bcb: numInput('s-bcb'),
       dp_percent: pctInput('s-dp') || 0, retention_percent: pctInput('s-ret') || 0,
-      dp_recoup_percent: pctInput('s-recoup'),
       billing_terms_months: numInput('s-terms') != null ? Math.round(numInput('s-terms')) : 1,
       retention_release_months: numInput('s-rel') != null ? Math.round(numInput('s-rel')) : 1,
       start_period: txtInput('s-start') ? txtInput('s-start') + '-01' : null,
@@ -551,9 +660,28 @@
       remarks: txtInput('s-rem'),
       updated_at: new Date().toISOString()
     };
-    // upsert by project_id (unique)
     var res = await sb().from('cash_flow_settings').upsert(payload, { onConflict: 'project_id' });
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+
+    // Persist DP tranches: replace the project's set (delete all → insert current).
+    var del = await sb().from('cash_flow_dp_tranches').delete().eq('project_id', pid);
+    if (del.error) { UI.toast('Tranches: ' + del.error.message, 'error'); return; }
+    var rows = editTranches.map(function (t, i) {
+      return { project_id: pid, seq: i, label: t.label || null, category: t.category || null,
+        basis: t.basis === 'amount' ? 'amount' : 'percent',
+        percent: t.basis === 'amount' ? null : (t.percent != null ? num(t.percent) : null),
+        amount: t.basis === 'amount' ? (t.amount != null ? num(t.amount) : null) : null,
+        timing_mode: t.timing_mode || 'offset',
+        timing_month: t.timing_mode === 'month' ? t.timing_month : null,
+        timing_offset: t.timing_mode === 'offset' ? Math.round(num(t.timing_offset)) : 0,
+        milestone: t.timing_mode === 'milestone' ? (t.milestone || null) : null,
+        recoup_percent: t.recoup_percent != null ? num(t.recoup_percent) : null,
+        created_by: profile.id, updated_at: new Date().toISOString() };
+    });
+    if (rows.length) {
+      var ins = await sb().from('cash_flow_dp_tranches').insert(rows);
+      if (ins.error) { UI.toast('Tranches: ' + ins.error.message, 'error'); return; }
+    }
     UI.toast('Assumptions saved.', 'success');
     document.getElementById('cf-modal').style.display = 'none';
     loadAll();

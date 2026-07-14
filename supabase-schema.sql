@@ -297,6 +297,29 @@ create table if not exists cash_flow_settings (
   updated_at                timestamptz default now()
 );
 
+-- Cash Flow — DP tranches (see migrations/2026-07-14-cash-flow-dp-tranches.sql).
+-- Client downpayment broken into tranches, each tagged by trade/agreement, timed
+-- by milestone / fixed month / offset, recouped proportionally. RLS in that migration.
+create table if not exists cash_flow_dp_tranches (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      text references projects(id) on delete cascade,
+  seq             integer default 0,
+  label           text,
+  category        text,
+  basis           text default 'percent',
+  percent         numeric(6,5),
+  amount          numeric(18,2),
+  timing_mode     text default 'offset',
+  timing_month    date,
+  timing_offset   integer default 0,
+  milestone       text,
+  recoup_percent  numeric(6,5),
+  remarks         text,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+
 -- S-Curve --------------------------------------------------------------------
 create table if not exists s_curve (
   id                 uuid primary key default gen_random_uuid(),
