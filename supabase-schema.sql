@@ -274,6 +274,29 @@ create table if not exists cash_flow (
   updated_at      timestamptz default now()
 );
 
+-- Cash Flow — projection settings (see migrations/2026-07-14-cash-flow-settings.sql).
+-- The Cash Flow module is a DERIVED projection (cash-in from the schedule S-curve,
+-- cash-out from the WPM procurement work packages); this row holds only the
+-- contract/terms assumptions + the WPM project-id mapping. RLS/grants are set in
+-- that migration (project-scoped, shared row — not created_by-gated).
+create table if not exists cash_flow_settings (
+  id                        uuid primary key default gen_random_uuid(),
+  project_id                text references projects(id) on delete cascade unique,
+  contract_ibb              numeric(18,2),
+  contract_bcb              numeric(18,2),
+  dp_percent                numeric(6,5) default 0,
+  retention_percent         numeric(6,5) default 0.10,
+  dp_recoup_percent         numeric(6,5),
+  billing_terms_months      integer default 1,
+  retention_release_months  integer default 1,
+  start_period              date,
+  wpm_project_id            text,
+  remarks                   text,
+  created_by                uuid references users(id),
+  created_at                timestamptz default now(),
+  updated_at                timestamptz default now()
+);
+
 -- S-Curve --------------------------------------------------------------------
 create table if not exists s_curve (
   id                 uuid primary key default gen_random_uuid(),

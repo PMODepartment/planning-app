@@ -77,6 +77,49 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-14 — Prompt 66: Cash Flow rebuilt as a schedule + WPM-driven projection
+- **Replaced the manual Cash Flow CRUD** (period/category/planned/actual entries) with a
+  **derived monthly projection** matching the Excel "Cashflow" sheet
+  (`EPC. PMO. OPW101 Cash Flow rev1`): a Cash In / Cash Out / Net Cash Flow matrix
+  (months as columns) + a cumulative funding curve + KPI cards (Contract IBB, Total In,
+  Total Out, Closing Balance, **Peak Funding Need**).
+- **Cash In** is driven by the **project schedule**: monthly progress billing = contract
+  IBB × ΔS-curve% (duration-weighted from `project_schedule` leaves — same math as the
+  S-Curve module), run through a **full terms engine** (downpayment, DP recoup, retention
+  withheld + released, billing-terms lag). **Cash Out** is read **live from the WPM
+  (procurement) Supabase** `work_packages` (budget, `dp_percent`, `retention_percent`,
+  `payment_terms_days`, target dates), each spread over its window with its own terms.
+- **New `cash_flow_settings` table** (contract IBB/BCB, DP%, retention%, recoup%, terms,
+  start month, **`wpm_project_id` mapping**) — migration
+  `migrations/2026-07-14-cash-flow-settings.sql`, folded into `supabase-schema.sql`.
+  **User must run it.** Editable via an "Assumptions" modal.
+- **Cross-Supabase integration**: a second `createClient` points at the WPM project
+  (`cayjeqeleenizbdzrums`, anon key). ⚠️ WPM RLS is behind its own Auth, so a Planners
+  user's anon read may return `[]` until a shared read path (public view / shared login) is
+  enabled on WPM — the module degrades gracefully and reports status via source chips.
+  Project ids differ across the two apps → mapped by `wpm_project_id` (defaults to this id).
+- Excel export of the full projection. Verified: JS parses; engine math hand-checked on a
+  synthetic fixture — DP/billing-net-of-retention&recoup/retention-release/terms lag land in
+  the right months and totals conserve (cash in = contract, cash out = Σ WP budgets).
+  Not yet run against live logins + live WPM read. See `modules/cash-flow/CLAUDE.md`.
+
+### 2026-07-14 — Prompt 67: Solve WPM cash-out access — server-side sync (no anon exposure)
+- Cash Flow's cash-out needed WPM procurement budgets, but WPM's RLS is `to authenticated`
+  only and its anon key is public (client JS) — reading budgets client-side would expose
+  them. **Chose a server-side mirror** over an anon view / shared login.
+- **New `wpm_work_packages` mirror table** in the Planners DB (migration
+  `2026-07-14-wpm-work-packages-mirror.sql`, read = approved users, writes only via
+  service role). **New Edge Function `supabase/functions/sync-wpm/`** pulls the needed
+  columns from the WPM project using the **WPM service_role key held as a function secret
+  (never in the browser)** and upserts the mirror (keyed by `wpm_project_id,wp_no`).
+  Caller must be an approved admin/super_admin/planner (JWT verified) or present the
+  service-role key (cron).
+- **Module** now reads the mirror (removed the browser-side WPM anon client) and gives
+  admins/planners a **"Sync from WPM"** button that invokes the function; source chips show
+  last-synced date. Verified: module + engine parse; function brackets balanced.
+- **User deploy steps:** run both 2026-07-14 migrations; `supabase functions deploy sync-wpm`;
+  `supabase secrets set WPM_URL/WPM_SERVICE_KEY`; click Sync. See `modules/cash-flow/CLAUDE.md`.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

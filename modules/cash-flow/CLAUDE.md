@@ -2,39 +2,70 @@
 
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).
-> 2. This module is **Cash Flow** (Phase 2). Your DB table is `cash_flow`
->    (defined in `../../supabase-schema.sql`; starter columns only — extend as needed).
-> 3. Best reference to copy: **risk-register (plain CRUD; money via Fmt.money, cumulative series)**.
-> 4. Work only inside this folder, on branch `module/cash-flow`, then PR to `main`.
-> 5. Update this file as you build.
+> 2. This module is **Cash Flow** (Phase 2). It is a **derived projection**, not a
+>    manual ledger — see the model below.
+> 3. Work only inside this folder, on branch `module/cash-flow`, then PR to `main`.
+> 4. Update this file as you build.
 
 ## Status
-- [x] Read MODULE_CONTRACT.md + CONTRIBUTING.md
-- [x] Built (single-file inline-script pattern, matching resource-loading/project-schedule/
-      s-curve/portfolio-overview rather than the older module.js split)
-- [x] CRUD implemented (add / edit / view / list / delete)
-- [x] Project-scoped via `pd_project`; `created_by` + `project_id` stamped
-- [x] `Fmt.esc()` on all user text injected into HTML
-- [x] `enabled: true` set in `assets/js/config.js`
-- [ ] PR opened into `main`
+- [x] Rebuilt as a work-package-driven projection (replaces the old manual CRUD)
+- [x] Cash-in sourced from `project_schedule` S-curve × contract, with full terms engine
+- [x] Cash-out sourced LIVE from the WPM (procurement) Supabase `work_packages`
+- [x] Assumptions stored in `cash_flow_settings` (migration 2026-07-14)
+- [x] `enabled: true` in `assets/js/config.js`
+- [ ] Live end-to-end run against real logins + real WPM read access
 
-## Built (2026-07-06)
-Was a bare "Module in development" placeholder until now — no CRUD existed anywhere to
-populate the `cash_flow` table, discovered while scoping a Portfolio Overview cross-project
-Cash Flow view (which needed real data to roll up). Built:
-- Project picker + category filter (free-text `category`, suggested via a `<datalist>` of
-  common values) + search, matching the resource-loading/project-schedule toolbar pattern.
-- **KPI cards**: Entries, Total Planned, Total Actual, Variance (color-coded).
-- **Monthly chart** (SVG, no libs): period bars (Planned gray / Actual red) + cumulative
-  Planned/Actual lines overlaid, mirroring the visual language of the single-project S-Curve
-  chart. Entries with the same `period` (any day within a month) are summed per calendar month.
-- **Table** (sortable-by-period) with inline Edit/Delete; **Add/Edit modal**: month picker,
-  category, description, planned/actual amounts, remarks.
-- Verified end-to-end in a stubbed harness (mutable in-memory Supabase-shaped store): added 3
-  entries across 2 months/2 categories, hand-checked KPI totals, monthly aggregation, and
-  cumulative series all matched exactly; category filter and per-row variance coloring
-  confirmed.
-- Flipped `enabled: true` in `assets/js/config.js`.
+## Model (matches the Excel "Cashflow" sheet — EPC.PMO.OPW101 rev1)
+The cashflow is a **monthly projection**, not manual inflow/outflow rows:
 
-## Notes
-(Record decisions, columns added via `alter table ... add column if not exists`, etc.)
+- **Header / assumptions** (`cash_flow_settings`, one row per project): contract
+  IBB (VAT inc, the cash-in base) + BCB, DP %, retention %, DP recoup %, billing
+  terms (months), retention-release lag, cashflow start month, and `wpm_project_id`.
+- **Cash In** (revenue, driven by the **schedule**): monthly progress billing =
+  contract IBB × ΔS-curve% (duration-weighted from `project_schedule` leaves).
+  Each billing is net of retention (withheld) and DP recoup, then shifted by the
+  billing-terms lag to when cash is actually received. Downpayment lands up front;
+  retention is released after completion + release lag. Rows: Downpayment /
+  Billing / Retention release / **Cumulative**.
+- **Cash Out** (payments, driven by **WPM**): each `work_packages` row's budget
+  (`total_awarded` → `awarded_cost` → `approved_budget_bcb`) is spread linearly
+  across its window (award/delivery → completion), with its own DP %, retention %,
+  and `payment_terms_days` (→ months). Rows: Downpayment / Billing / Retention /
+  **Cumulative**.
+- **Net Cash Flow** = Cash In − Cash Out, periodic + cumulative. **Peak funding
+  need** = most-negative cumulative net.
+
+Invariant (verified): total cash in = contract IBB; total cash out = Σ WP budgets.
+
+## Data sources & integration
+- **Schedule**: this app's `project_schedule` (paginated read, leaves only).
+- **WPM cash-out**: read from this app's `wpm_work_packages` **mirror** (NOT live
+  from WPM — its anon key is public, so browser reads of procurement budgets are
+  avoided). The `sync-wpm` Edge Function copies the needed columns from the WPM
+  project (`cayjeqeleenizbdzrums`) using the **WPM service key (server-side only)**
+  into the mirror; the module reads the mirror under normal RLS.
+  - Admins/planners get a **"Sync from WPM"** toolbar button →
+    `sb().functions.invoke('sync-wpm', { body: { wpm_project_id } })`. Source chips
+    show the last `synced_at`.
+  - Project ids differ between the two apps → the `wpm_project_id` field in
+    Assumptions maps them (defaults to this project's id).
+  - Chosen over an anon view / shared login because those would expose procurement
+    budgets to anyone holding the public anon key.
+
+## DB & deploy (user must do)
+1. Run `migrations/2026-07-14-cash-flow-settings.sql` (assumptions table).
+2. Run `migrations/2026-07-14-wpm-work-packages-mirror.sql` (`wpm_work_packages`).
+3. Deploy the Edge Function + set its secrets (see header of
+   `supabase/functions/sync-wpm/index.ts`):
+   - `supabase functions deploy sync-wpm --project-ref bgupuqnkqhixpuctyder`
+   - `supabase secrets set WPM_URL=… WPM_SERVICE_KEY=… --project-ref bgupuqnkqhixpuctyder`
+4. Click **Sync from WPM** once (or schedule a nightly run).
+
+The old `cash_flow` table (manual planned/actual entries) is **no longer used** by
+this module; kept in the schema for now.
+
+## Verified
+- JS parses (`node --check`). Engine math hand-checked on a synthetic fixture:
+  DP/billing-net/retention/terms lag land in the correct months and totals
+  conserve (cash in = contract, cash out = Σ budgets).
+- Not yet run against live logins + live WPM read (see Status).
