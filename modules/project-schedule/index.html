@@ -953,6 +953,10 @@
           </div>
           <div class="ps-divider" id="ps-divider" title="Drag to resize"></div>
           <div class="ps-gantt-pane">
+            <div class="ps-gantt-tools">
+              <button class="pd-btn" id="ps-colorsbtn" title="Bar colors — Task / WBS summary / Milestone / Baseline (+ per-WBS overrides)"><span data-ico="palette" data-ico-size="15"></span></button>
+              <div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div>
+            </div>
             <div class="ps-gantt-head" id="ps-gantt-head"></div>
             <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
           </div>
@@ -8015,8 +8019,11 @@
     var fileMenu = document.getElementById('ps-file-menu');
     var analyzeMenu = document.getElementById('ps-analyze-menu');
     var oMenu = document.getElementById('ps-open-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
+    var colorsMenu = document.getElementById('ps-colors-menu');
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
     oMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    if (colorsMenu) colorsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    (function () { var cb = document.getElementById('ps-colorsbtn'); if (cb) cb.onclick = function (e) { e.stopPropagation(); var o = colorsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colorsMenu.classList.add('open'); } }; })();
     document.getElementById('ps-openbtn').onclick = function (e) { e.stopPropagation(); var o = oMenu.classList.contains('open'); closeMenus(); if (!o) { renderOpenMenu(); oMenu.classList.add('open'); } };
     // File menu (Import / Export / Print). The item buttons keep their original ids so their
     // existing handlers work unchanged; the menu just re-homes them from the Actions menu + topbar.

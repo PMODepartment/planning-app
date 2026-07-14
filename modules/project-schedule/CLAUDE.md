@@ -8,6 +8,18 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Colors menu was inaccessible — restored (2026-07-14) — jasantos2 / eprobles
+- Tester asked "where is the Colors menu". Root cause: the `.ps-gantt-tools` CSS and
+  `renderColorsMenu()` existed, but the **palette button + `#ps-colors-menu` element were missing
+  from the Gantt-pane markup** (dropped at some point), so `renderColorsMenu` returned early and there
+  was no way to open it. This means the earlier "bar colors already exist" note (below) was wrong —
+  the feature was orphaned. **Fix:** added the `.ps-gantt-tools` palette button + `#ps-colors-menu`
+  back into `.ps-gantt-pane` (top-right floating gear), declared `colorsMenu`, added it to
+  `closeMenus()` + stop-propagation, and wired `#ps-colorsbtn` to `renderColorsMenu()` + toggle
+  (same pattern as the other menus). The menu contents (Task bar / Progress fill / Summary / Baseline
+  / Milestone pickers + per-WBS overrides + Reset) were already implemented — now reachable again.
+  So item #2 (differentiate + modify WBS vs activity bar colors) is genuinely delivered.
+
 ## Gantt/print/filter batch (2026-07-14) — jasantos2 / eprobles
 From a multi-item tester list; implemented the genuine gaps (several items were already built — see
 "already existed" note at the end).
