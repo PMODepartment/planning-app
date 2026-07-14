@@ -137,6 +137,17 @@ developer, plug into one shared shell.
 - Assumptions modal widened for the tranche editor. Verified: module parses; tranche
   recoup math hand-checked (multi-tranche total recoup = total DP).
 
+### 2026-07-14 — Prompt 69: Cash Flow — true actual cash-out from WPM award status
+- Synced WPM `award_status` (+ procurement/delivery status) into the mirror (migration
+  `2026-07-14-wpm-mirror-award-status.sql` + `sync-wpm` edge fn — **run migration, redeploy,
+  re-sync**). Engine now decomposes cash-out into **actual vs forecast**: an **awarded** WP's
+  payments due on/before the data date are actual committed cash-out; awarded remainder +
+  un-awarded packages are forecast. `isAwarded()` = award_status ~/award/i or awarded_cost>0
+  or actual_awarding_date. Conserves (actual+forecast = total).
+- Periodic chart bars now **stacked** solid (actual) + faded (forecast) per period; tooltip
+  shows the forecast portion; KPI shows "actual to date". Cash-in actual is still date-based
+  (recorded cash-in actuals not wired yet — noted in the chart sub).
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

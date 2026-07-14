@@ -35,7 +35,8 @@ const json = (body: unknown, status = 200) =>
 const WP_COLS =
   "id,project_id,wp_no,description,approved_budget_bcb,awarded_cost,total_awarded," +
   "dp_percent,retention_percent,payment_terms_days,awarding_date,actual_awarding_date," +
-  "target_delivery,target_installation,target_completion";
+  "target_delivery,target_installation,target_completion," +
+  "award_status,procurement_status,delivery_status";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -118,6 +119,9 @@ Deno.serve(async (req) => {
     target_delivery: w.target_delivery,
     target_installation: w.target_installation,
     target_completion: w.target_completion,
+    award_status: w.award_status,
+    procurement_status: w.procurement_status,
+    delivery_status: w.delivery_status,
     source_id: w.id,
     synced_at: now,
   })).filter((r: any) => r.wpm_project_id && r.wp_no);

@@ -375,6 +375,16 @@
     // Fallback window for packages with NO usable dates: the schedule span (so their
     // budget is still projected rather than silently dropped). Counted for the chip.
     var outDP = z(), outBill = z(), outRet = z();
+    // Actual vs forecast (grounded in WPM award status): an AWARDED package's
+    // payments landing on/before the data date are actual committed cash-out;
+    // the awarded remainder + all un-awarded packages are forecast.
+    var outActual = z(), outForecast = z();
+    var ddIdx = clampIdx(monthDiff(months[0], new Date(today().getFullYear(), today().getMonth(), 1)), n);
+    function isAwarded(w) {
+      if (/award/i.test(w.award_status || '')) return true;      // "Awarded" / "Partially Awarded"
+      return num(w.awarded_cost) > 0 || num(w.total_awarded) > 0 || !!w.actual_awarding_date;
+    }
+    function outAdd(arr, idx, amt, awarded) { arr[idx] += amt; if (awarded && idx <= ddIdx) outActual[idx] += amt; else outForecast[idx] += amt; }
     var schedDates = scheduleRows.map(function (a) { return pd(a.start_date); }).filter(Boolean).map(Number);
     var schedEndDates = scheduleRows.map(function (a) { return pd(a.end_date) || pd(a.start_date); }).filter(Boolean).map(Number);
     var fbStart = schedDates.length ? new Date(Math.min.apply(null, schedDates)) : months[0];
@@ -393,8 +403,9 @@
       var sIdx = clampIdx(monthDiff(months[0], ws), n), eIdx = clampIdx(monthDiff(months[0], we), n);
       var span = Math.max(1, eIdx - sIdx + 1);
       // DP paid at window start (+terms)
+      var awd = isAwarded(w);
       var dpAmtO = budget * wdp;
-      if (dpAmtO > 0) outDP[clampIdx(sIdx + wterms, n)] += dpAmtO;
+      if (dpAmtO > 0) outAdd(outDP, clampIdx(sIdx + wterms, n), dpAmtO, awd);
       var dpPoolO = dpAmtO, retTotalO = 0;
       var billable = budget;                       // gross progress payments total = budget
       for (var k = 0; k < span; k++) {
@@ -403,27 +414,37 @@
         var retO = grossO * wret; retTotalO += retO;
         var recoupO = Math.min(dpPoolO, grossO * wdp); dpPoolO -= recoupO;
         var netO = grossO - retO - recoupO;
-        outBill[clampIdx(mIdx + wterms, n)] += netO;
+        outAdd(outBill, clampIdx(mIdx + wterms, n), netO, awd);
       }
-      if (retTotalO > 0) outRet[clampIdx(eIdx + wterms + 1, n)] += retTotalO;
+      if (retTotalO > 0) outAdd(outRet, clampIdx(eIdx + wterms + 1, n), retTotalO, awd);
     });
 
     // ---- roll-ups ----
     var inPer = z(), outPer = z(), netPer = z(), inCum = z(), outCum = z(), netCum = z();
-    var ic = 0, oc = 0, nc = 0;
+    // actual/forecast split — cash-out from award status; cash-in by data date
+    // (cash-in actuals aren't recorded yet, so its "actual" = plan through data date)
+    var inActualPer = z(), inForecastPer = z(), outActualPer = z(), outForecastPer = z();
+    var ic = 0, oc = 0, nc = 0, outActualTot = 0;
     for (var m = 0; m < n; m++) {
       inPer[m] = inDP[m] + inBill[m] + inRet[m];
       outPer[m] = -(outDP[m] + outBill[m] + outRet[m]);   // negative
       netPer[m] = inPer[m] + outPer[m];
+      inActualPer[m] = m <= ddIdx ? inPer[m] : 0;
+      inForecastPer[m] = m <= ddIdx ? 0 : inPer[m];
+      outActualPer[m] = -outActual[m];              // negative
+      outForecastPer[m] = -outForecast[m];          // negative
+      outActualTot += outActual[m];
       ic += inPer[m]; oc += outPer[m]; nc += netPer[m];
       inCum[m] = ic; outCum[m] = oc; netCum[m] = nc;
     }
     var peak = Math.min.apply(null, netCum);     // most negative cumulative = peak funding need
-    return { empty: false, months: months, n: n,
+    return { empty: false, months: months, n: n, ddIdx: ddIdx,
       inDP: inDP, inBill: inBill, inRet: inRet, inPer: inPer, inCum: inCum,
       outDP: outDP, outBill: outBill, outRet: outRet, outPer: outPer, outCum: outCum,
+      inActualPer: inActualPer, inForecastPer: inForecastPer,
+      outActualPer: outActualPer, outForecastPer: outForecastPer,
       netPer: netPer, netCum: netCum,
-      totalIn: ic, totalOut: oc, closing: nc, peak: peak,
+      totalIn: ic, totalOut: oc, closing: nc, peak: peak, outActualTot: -outActualTot,
       wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt,
       dpTotal: dpTotal, dpCount: dpTranches.length };
   }
@@ -470,7 +491,7 @@
     return '<div class="cf-kpis">' +
       k('Contract (IBB)', Fmt.moneyShort(settings.contract_ibb), 'VAT inclusive · cash-in base') +
       k('Total Cash In', Fmt.moneyShort(model.totalIn), (model.dpCount ? 'DP ' + Fmt.moneyShort(model.dpTotal) + ' in ' + model.dpCount + ' tranche' + (model.dpCount > 1 ? 's' : '') + ' · ' : '') + 'over ' + model.n + ' months') +
-      k('Total Cash Out', Fmt.moneyShort(model.totalOut), model.wpCount + ' WPs · awarded + variations, budget if un-awarded') +
+      k('Total Cash Out', Fmt.moneyShort(model.totalOut), 'actual to date ' + Fmt.moneyShort(model.outActualTot) + ' · ' + model.wpCount + ' WPs (awarded status)') +
       k('Closing Balance', Fmt.moneyShort(model.closing), 'end of projection', model.closing >= 0 ? 'cf-ok' : 'cf-bad') +
       k('Peak Funding Need', Fmt.moneyShort(model.peak), 'most negative cumulative', model.peak < 0 ? 'cf-bad' : 'cf-ok') +
     '</div>';
@@ -481,23 +502,26 @@
       '<button id="cf-pm-quarter" class="' + (periodMode === 'quarter' ? 'active' : '') + '">Quarterly</button></div>';
     return '<div class="cf-card">' +
       '<div class="cf-chart-head"><div><h3>Periodic Cash Flow</h3>' +
-      '<p class="sub" style="margin-bottom:0;">Cash received (up) vs paid (down) per period; net line. Solid = actual to the data date (' + Fmt.date(iso(today())) + '), faded/dashed = forecast.</p></div>' + seg + '</div>' +
+      '<p class="sub" style="margin-bottom:0;">Cash received (up) vs paid (down) per period; net line. Solid = actual (cash-out from <b>awarded</b> WPs due by the data date ' + Fmt.date(iso(today())) + '); faded/dashed = forecast.</p></div>' + seg + '</div>' +
       '<div class="cf-chart-wrap" id="cf-chart-periodic"></div></div>';
   }
 
-  // Aggregate the monthly series into the selected period ({label,inv,out,net,date}).
+  // Aggregate the monthly series into the selected period, keeping the actual /
+  // forecast split for both cash-in and cash-out.
   function buildPeriods() {
     var m = model;
+    function mk(label, date) { return { label: label, date: date, inv: 0, out: 0, net: 0, invA: 0, invF: 0, outA: 0, outF: 0 }; }
+    function add(b, i) { b.inv += m.inPer[i]; b.out += m.outPer[i]; b.net += m.netPer[i]; b.invA += m.inActualPer[i]; b.invF += m.inForecastPer[i]; b.outA += m.outActualPer[i]; b.outF += m.outForecastPer[i]; }
     if (periodMode === 'quarter') {
       var order = [], by = {};
       m.months.forEach(function (mo, i) {
         var q = Math.floor(mo.getMonth() / 3), key = mo.getFullYear() + '-' + q;
-        var b = by[key]; if (!b) { b = by[key] = { label: 'Q' + (q + 1) + " '" + String(mo.getFullYear()).slice(2), inv: 0, out: 0, net: 0, date: new Date(mo.getFullYear(), q * 3, 1) }; order.push(key); }
-        b.inv += m.inPer[i]; b.out += m.outPer[i]; b.net += m.netPer[i];
+        var b = by[key]; if (!b) { b = by[key] = mk('Q' + (q + 1) + " '" + String(mo.getFullYear()).slice(2), new Date(mo.getFullYear(), q * 3, 1)); order.push(key); }
+        add(b, i);
       });
       return order.map(function (k) { return by[k]; });
     }
-    return m.months.map(function (mo, i) { return { label: monthLabel(mo), inv: m.inPer[i], out: m.outPer[i], net: m.netPer[i], date: new Date(mo) }; });
+    return m.months.map(function (mo, i) { var b = mk(monthLabel(mo), new Date(mo)); add(b, i); return b; });
   }
 
   // Periodic combo chart: green bars up = cash in, red bars down = cash out, ink
@@ -528,11 +552,17 @@
 
     var bw = Math.max(2, Math.min(28, band * 0.62)), showLab = periodMode === 'quarter' || band >= 44;
     var bars = '', labs = '', hovers = '';
+    function rect(x, yy, w, h, fill, op) { return h > 0.3 ? '<rect x="' + x + '" y="' + yy + '" width="' + w + '" height="' + h + '" fill="' + fill + '" ' + op + '/>' : ''; }
     P.forEach(function (p, i) {
-      var fc = i >= split, op = fc ? 'opacity="0.4"' : '';
       var x0 = cx(i) - bw / 2;
-      if (p.inv > 0) { var yi = y(p.inv); bars += '<rect x="' + x0 + '" y="' + yi + '" width="' + bw + '" height="' + (zeroY - yi) + '" fill="var(--pd-ok)" ' + op + '/>'; if (showLab) labs += '<text x="' + cx(i) + '" y="' + (yi - 3) + '" class="cf-dlab">' + Fmt.moneyShort(p.inv) + '</text>'; }
-      if (p.out < 0) { var yo = y(p.out); bars += '<rect x="' + x0 + '" y="' + zeroY + '" width="' + bw + '" height="' + (yo - zeroY) + '" fill="var(--pd-red)" ' + op + '/>'; if (showLab) labs += '<text x="' + cx(i) + '" y="' + (yo + 10) + '" class="cf-dlab">' + Fmt.moneyShort(-p.out) + '</text>'; }
+      // cash IN (up): actual solid, forecast faded, stacked
+      if (p.invA > 0) { var ya = y(p.invA); bars += rect(x0, ya, bw, zeroY - ya, 'var(--pd-ok)', ''); }
+      if (p.invF > 0) { var yt = y(p.invA + p.invF); bars += rect(x0, yt, bw, y(p.invA) - yt, 'var(--pd-ok)', 'opacity="0.4"'); }
+      // cash OUT (down): actual solid, forecast faded, stacked (values negative)
+      if (p.outA < 0) { bars += rect(x0, zeroY, bw, y(p.outA) - zeroY, 'var(--pd-red)', ''); }
+      if (p.outF < 0) { bars += rect(x0, y(p.outA), bw, y(p.outA + p.outF) - y(p.outA), 'var(--pd-red)', 'opacity="0.4"'); }
+      if (showLab && p.inv > 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.inv) - 3) + '" class="cf-dlab">' + Fmt.moneyShort(p.inv) + '</text>';
+      if (showLab && p.out < 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.out) + 10) + '" class="cf-dlab">' + Fmt.moneyShort(-p.out) + '</text>';
       hovers += '<rect class="cf-hover" data-i="' + i + '" x="' + (padL + band * i) + '" y="' + padT + '" width="' + band + '" height="' + ch + '"/>';
     });
     // net line — solid (actual) then dashed (forecast), sharing the boundary point
@@ -563,9 +593,10 @@
     host.querySelectorAll('.cf-hover').forEach(function (r) {
       r.onmouseenter = r.onmousemove = function (ev) {
         var i = +r.dataset.i, p = pvState.P[i]; if (!p) return;
+        var outFc = p.outF < 0 ? ' <span style="opacity:.7;">(incl. ' + Fmt.moneyShort(-p.outF) + ' forecast)</span>' : '';
         tip.innerHTML = '<div class="cf-tip-hd">' + esc(p.label) + (i >= pvState.split ? ' · forecast' : '') + '</div>' +
           '<div><span class="g">Cash In</span> ' + Fmt.money(p.inv) + '</div>' +
-          '<div><span class="r">Cash Out</span> ' + Fmt.money(-p.out) + '</div>' +
+          '<div><span class="r">Cash Out</span> ' + Fmt.money(-p.out) + outFc + '</div>' +
           '<div><b>Net</b> ' + Fmt.money(p.net) + '</div>' +
           '<div>Balance ' + Fmt.money(pvState.bal[i]) + '</div>';
         var hb = host.getBoundingClientRect();
