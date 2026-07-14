@@ -17,3 +17,6 @@ node_modules/
 
 # Local UI smoke-test harnesses (throwaway; never commit)
 **/_ui_test.html
+
+# Supabase CLI local state
+supabase/.temp/
