@@ -167,6 +167,37 @@ developer, plug into one shared shell.
   KPI + per-project breakdown (was the old manual `cash_flow` planned/actual view).
 - Verified both modules parse; cash-in/out conservation hand-checked with EWT + staged retention.
 
+### 2026-07-14 — Prompt 71: Cash Flow — financing cost, funding limit, scenarios, per-trade cash-in, settable data date
+- Migration `2026-07-14-cash-flow-v3.sql` (**user must run**): `finance_rate` +
+  `funding_limit` on `cash_flow_settings`; new tables `cash_flow_trade_packages`,
+  `cash_flow_scenarios`. (Medium-tier items #5–#8 from the roadmap menu.)
+- **#5 Financing cost on peak funding**: annual rate on the negative cumulative
+  (drawdown × rate/12 per month) → **Financing Cost** KPI; exported.
+- **#8 Settable data date + funding-limit alert**: data date is now a toolbar control,
+  **shared with Project Schedule** (`ps_datadate_<pid>` as default; override under
+  `cf_datadate_<pid>`). `today()` returns it. `funding_limit` (credit line) → red breach
+  banner naming the months where cumulative net < −limit; Peak KPI shows the limit.
+- **#6 Scenario snapshots**: save the projection (totals/peak/finance/netCum) to
+  `cash_flow_scenarios`; mark a **baseline** → dashboard shows current-vs-baseline Δ table
+  (Excel "rev1" parity). First snapshot auto-baseline.
+- **#7 Per-trade cash-in packages**: split the contract into trades, each billing its share
+  over the shared schedule S-curve with its own DP/retention/terms. When any exists it
+  **replaces the contract-level cash-in (DP tranches ignored)**; a banner reconciles the
+  package total vs Contract IBB. Per-trade schedules not modeled (all share the one schedule).
+- Verified: full inline script parses (`new Function`). Not yet run against live logins.
+
+### 2026-07-14 — Prompt 72: Cash Flow — cost/duration S-curve basis switcher
+- Cash-in = contract IBB × Δ schedule S-curve; the curve's weighting is now switchable.
+  New `cash_flow_settings.scurve_basis` (`'duration'`|`'cost'`, folded into the v3 migration,
+  idempotent — **re-run if v3 was already applied**). Toolbar **Duration / Cost** segmented
+  switcher persists to the settings row and recomputes live.
+- **Duration** = time-weighted (each activity by duration, the prior behavior). **Cost** =
+  value-weighted by per-activity `planned_cost` (Planned IBB), falling back to `bl_cost`.
+  **Cost auto-reverts to Duration when the schedule has no cost loaded** — a source chip
+  shows the active basis + any fallback. Same weight fn drives planned + actual accrual, so
+  the projection tracks exactly the schedule's S-curve. Schedule fetch now pulls
+  `planned_cost,bl_cost`. Parses; live run still pending.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

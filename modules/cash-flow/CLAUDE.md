@@ -54,6 +54,8 @@ Invariant (verified): total cash in = contract IBB; total cash out = Σ WP budge
 
 ## DB & deploy (user must do)
 1. Run `migrations/2026-07-14-cash-flow-settings.sql` (assumptions table).
+   Also run `2026-07-14-cash-flow-v2.sql` and `2026-07-14-cash-flow-v3.sql`
+   (tax/retention/actuals/rollup, then financing/funding/scenarios/trade-packages).
 2. Run `migrations/2026-07-14-wpm-work-packages-mirror.sql` (`wpm_work_packages`).
 3. Deploy the Edge Function + set its secrets (see header of
    `supabase/functions/sync-wpm/index.ts`):
@@ -75,6 +77,42 @@ the Assumptions modal's **Downpayment Tranches** section. Engine: `resolveTranch
 tranche's rate until its pool is spent. Falls back to the simple `dp_percent` when
 no tranches exist. Milestone timing reads named/0-duration activities from
 `project_schedule`. Invariant still holds: total cash in = contract IBB.
+
+## v3 — financing, funding limit, scenarios, per-trade cash-in, settable data date (2026-07-14)
+Migration `2026-07-14-cash-flow-v3.sql` (**user must run**): adds `finance_rate` +
+`funding_limit` to `cash_flow_settings`; new tables `cash_flow_trade_packages` and
+`cash_flow_scenarios`.
+
+- **(#5) Financing cost** — annual `finance_rate` applied to the negative cumulative
+  (monthly = drawdown × rate/12) → a **Financing Cost** KPI. Transparent carrying cost,
+  not compounded into the operational balance. Exported.
+- **(#8) Settable data date + funding-limit alert** — the data date is now a toolbar
+  control, **shared with Project Schedule** (reads its `ps_datadate_<pid>` localStorage
+  key as the default; a cash-flow override is stored under `cf_datadate_<pid>`; the ×
+  button clears the override). `today()` returns it. A `funding_limit` (credit line)
+  raises a red **breach banner** listing the months where cumulative net drops below
+  −limit; the Peak Funding KPI shows the limit.
+- **(#6) Scenario snapshots** — "Manage snapshots" (in the Scenarios card) saves the
+  current projection (totals + peak + finance + netCum) to `cash_flow_scenarios`. One is
+  the **baseline**; the dashboard shows a **current-vs-baseline Δ table** (mirrors the
+  Excel "rev1"). First snapshot auto-becomes baseline.
+- **(#7) Per-trade cash-in packages** — split the contract into trades (ST/AR/MEPF…) in
+  the Assumptions modal, each billing its share over the **shared schedule S-curve** with
+  its own DP/retention/terms. **When any package exists it replaces the contract-level
+  cash-in and the client DP tranches are ignored.** A reconciliation banner flags any
+  mismatch vs Contract IBB. (Per-trade *schedules* not modeled — all trades share the one
+  project schedule shape; can be extended later.)
+
+## Cash-in S-curve basis switcher (2026-07-14)
+`cash_flow_settings.scurve_basis` (`'duration'` | `'cost'`, added in the v3 migration).
+Toolbar segmented switcher **Duration / Cost** (persists to the settings row, recomputes
+live). The cash-in billing spread = contract IBB × Δ of the schedule S-curve, and that
+curve is now weighted either by **activity duration** (time) or **per-activity
+`planned_cost` / Planned IBB** (value, falls back to `bl_cost`). **Cost mode auto-reverts
+to duration when the schedule has no cost loaded** (a source chip shows the active basis
+and any fallback). Same weight fn drives planned + actual accrual, so Cash Flow tracks
+exactly the S-curve the schedule implies. `scheduleCurve`/`scheduleCurveBlended` take an
+optional `val` weight fn; `scurveWeight()` picks it.
 
 ## Verified
 - JS parses (`node --check`). Engine math hand-checked on a synthetic fixture:
