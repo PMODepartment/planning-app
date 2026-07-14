@@ -151,7 +151,7 @@
   var editTranches = [];         // working copy while the Assumptions modal is open
   var periodMode = 'month';      // periodic chart aggregation: 'month' | 'quarter'
   var pvState = null;            // geometry + data for the periodic-chart tooltip
-  var selMonth = null;           // month index selected in the matrix → highlight its bar
+  var selRange = null;           // {i0,i1} highlighted month-index range (matrix ↔ chart)
   var wpRows = [];               // mirrored WPM work packages (cash-out)
   var wpmStatus = 'idle';        // idle | loading | ok | empty | error | no-map
   var wpmMsg = '', wpmSyncedAt = null;
@@ -523,15 +523,23 @@
     });
   }
 
-  // Highlight the bar for a month picked in the Monthly Projection table (toggle).
-  function selectMonth(mi) {
-    selMonth = (selMonth === mi) ? null : mi;
+  // Two-way selection: a month header in the table and a bar in the chart both map
+  // to the same month-index range and highlight each other (toggle).
+  function selectMonth(mi) {   // from a table month header → its period's range
+    var per = buildPeriods().filter(function (p) { return mi >= p.i0 && mi <= p.i1; })[0];
+    setSel(per ? { i0: per.i0, i1: per.i1 } : { i0: mi, i1: mi }, false);
+  }
+  function setSel(range, scrollTable) {
+    var same = selRange && range && selRange.i0 === range.i0 && selRange.i1 === range.i1;
+    selRange = same ? null : range;
     document.querySelectorAll('.cf-matrix th.mcol').forEach(function (th) {
-      th.classList.toggle('sel', +th.dataset.mi === selMonth);
+      var i = +th.dataset.mi; th.classList.toggle('sel', !!selRange && i >= selRange.i0 && i <= selRange.i1);
     });
     drawPeriodic();
-    var wrap = document.getElementById('cf-chart-periodic');
-    if (selMonth != null && wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (selRange) {
+      var target = scrollTable ? document.querySelector('.cf-matrix th.mcol.sel') : document.getElementById('cf-chart-periodic');
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }
   }
 
   function kpiHTML() {
@@ -597,9 +605,10 @@
     var grid = '';
     [-1, -0.5, 0, 0.5, 1].forEach(function (f) { var v = maxAbs * f, yy = y(v); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="' + (f === 0 ? 'cf-zero' : 'cf-grid') + '"/><text x="' + (padL - 8) + '" y="' + (yy + 3.5) + '" class="cf-ylab">' + Fmt.moneyShort(v) + '</text>'; });
     grid += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + ch) + '" class="cf-axis"/>';
-    // selection highlight (a month picked in the matrix)
-    var selPi = selMonth == null ? -1 : (function () { for (var j = 0; j < nP; j++) if (selMonth >= P[j].i0 && selMonth <= P[j].i1) return j; return -1; })();
-    if (selPi >= 0) grid += '<rect x="' + (padL + band * selPi) + '" y="' + padT + '" width="' + band + '" height="' + ch + '" class="cf-selband"/>';
+    // selection highlight — any period overlapping the selected month range
+    if (selRange) P.forEach(function (p, j) {
+      if (p.i1 >= selRange.i0 && p.i0 <= selRange.i1) grid += '<rect x="' + (padL + band * j) + '" y="' + padT + '" width="' + band + '" height="' + ch + '" class="cf-selband"/>';
+    });
 
     var bw = Math.max(2, Math.min(28, band * 0.62)), showLab = periodMode === 'quarter' || band >= 44;
     var bars = '', labs = '', hovers = '';
@@ -658,13 +667,14 @@
         tip.style.top = Math.max(4, ypx - 10) + 'px';
       };
       r.onmouseleave = function () { tip.style.opacity = '0'; };
+      r.onclick = function () { var p = pvState.P[+r.dataset.i]; if (p) setSel({ i0: p.i0, i1: p.i1 }, true); };
     });
   }
   function setPeriodMode(mode) { periodMode = mode; drawPeriodic(); var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter'); if (mb) mb.className = mode === 'month' ? 'active' : ''; if (qb) qb.className = mode === 'quarter' ? 'active' : ''; }
 
   function matrixHTML() {
     var m = model;
-    var hdr = '<th class="lbl">₱</th>' + m.months.map(function (mo, i) { return '<th class="mcol' + (selMonth === i ? ' sel' : '') + '" data-mi="' + i + '">' + monthLabel(mo) + '</th>'; }).join('') + '<th>Total</th>';
+    var hdr = '<th class="lbl">₱</th>' + m.months.map(function (mo, i) { return '<th class="mcol' + (selRange && i >= selRange.i0 && i <= selRange.i1 ? ' sel' : '') + '" data-mi="' + i + '">' + monthLabel(mo) + '</th>'; }).join('') + '<th>Total</th>';
     function cell(v) { var s = v < 0 ? ' class="cf-neg"' : ''; return '<td' + s + '>' + (v ? Fmt.moneyShort(v) : '–') + '</td>'; }
     function total(arr) { return arr.reduce(function (a, b) { return a + b; }, 0); }
     function row(label, arr, cls, sub) {
