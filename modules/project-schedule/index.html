@@ -277,13 +277,16 @@
     .ps-grid-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); flex:none; }
     .ps-grid-row { display:flex; align-items:stretch; height:34px; border-bottom:1px solid var(--pd-line);
       width:max-content; min-width:100%; font-size:12.5px; }
-    .ps-grid-row.head { height:38px; font-weight:700; }
+    .ps-grid-row.head { min-height:38px; height:auto; font-weight:700; align-items:stretch; }
     /* Compact row density (toggled from the Layout menu; ROWH is kept in sync in JS). Header +
        filter rows keep their height so only the data rows tighten. */
     .ps-split.ps-compact .ps-grid-row:not(.head):not(.ps-filter-row) { height:27px; font-size:11.5px; }
     .ps-cell { padding:0 8px; display:flex; align-items:center; border-right:1px solid var(--pd-line);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; flex:none; }
-    .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative; }
+    .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative;
+      /* Header labels WRAP (data cells keep nowrap/ellipsis) so long names stay readable when the
+         column is narrow. Two lines of this 10.5px text fit the 38px head, keeping pane alignment. */
+      white-space:normal; overflow-wrap:break-word; word-break:break-word; text-overflow:clip; line-height:1.1; }
     .c-num { width:var(--c-num); } .c-name { width:var(--c-name); } .c-id { width:var(--c-id); } .c-status { width:var(--c-status); } .c-date { width:var(--c-date); }
     /* Per-column filter row (toggled via the column "+" chooser). Grows the grid head by 30px, so
        the Gantt head is grown to match (.ps-colf-on) to keep rows aligned with bars. The frozen
@@ -3929,6 +3932,14 @@
     });
     st.textContent = rules.length ? rules.join(',') + '{display:none !important;}' : '';
   }
+  // Keep the Gantt header the same height as the grid header (which can grow when long column
+  // labels wrap on narrow columns) so the first data row stays aligned across both panes.
+  function syncHeadHeights() {
+    var gh = document.getElementById('ps-gantt-head'), gHead = document.getElementById('ps-grid-head');
+    if (!gh || !gHead) return;
+    gh.style.boxSizing = 'border-box';
+    gh.style.height = gHead.getBoundingClientRect().height + 'px';
+  }
   function renderHeader() {
     var head = document.getElementById('ps-grid-head'); if (!head) return;
     seedExtraHidden();
@@ -3965,6 +3976,7 @@
     });
     applyColHidden();
     applyColOrder();
+    syncHeadHeights();
   }
   // OPC-style column header menu (Sort / Adjust to fit / Rename / Hide).
   function openColMenu(idx, anchor) {
@@ -4051,9 +4063,10 @@
     e.preventDefault(); e.stopPropagation();
     var pane = document.querySelector('.ps-grid-pane'), vn = '--c-' + col, sx = e.clientX;
     var cur = parseFloat(getComputedStyle(pane).getPropertyValue(vn)) || 80;
-    function mm(ev) { pane.style.setProperty(vn, Math.max(40, cur + (ev.clientX - sx)) + 'px'); }
+    function mm(ev) { pane.style.setProperty(vn, Math.max(40, cur + (ev.clientX - sx)) + 'px'); syncHeadHeights(); }
     function up() {
       document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
+      syncHeadHeights();
       try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var','x'].forEach(function (c) { w[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e2) {}
     }
     document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
@@ -4310,6 +4323,7 @@
     }
     host.style.position = 'relative'; host.style.height = H + 'px';
     renderWindow();
+    syncHeadHeights();
   }
 
   function renderWindow() {

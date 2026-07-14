@@ -8,6 +8,18 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Wrapping column headers (2026-07-14) — jasantos2 / eprobles
+- **Grid column headers now wrap** instead of truncating with an ellipsis, so long labels stay
+  readable when a column is narrow / being resized. Header cells (`.ps-grid-row.head .ps-cell`) get
+  `white-space:normal; overflow-wrap/word-break:break-word; text-overflow:clip`; data cells keep
+  `nowrap`/ellipsis (verified in-browser: header WS=`normal`, data WS=`nowrap`).
+- **Header row grows to fit the wrapped lines** (`.ps-grid-row.head` → `min-height:38px; height:auto`)
+  and a new **`syncHeadHeights()`** sets the Gantt header's height (border-box) equal to the grid
+  header's measured height, so the first data row stays aligned across the two panes. Called from
+  `renderHeader()`, the end of `doRender()`, and live during `startColResize` (mou…move + up). This
+  also makes the two heads exactly equal by measurement (previously both relied on matching fixed CSS
+  heights, incl. the `.ps-colf-on` 68px filter-row case, which the inline sync now supersedes).
+
 ## Column chooser scroll + Schedule reschedules by default (2026-07-14) — jasantos2 / eprobles
 - **Column chooser (grid-header "+" / `#ps-cols-menu`) now scrolls.** Root cause: `.ps-menu`
   (line ~550) sets `overflow:hidden` and, being *later* in source than `.ps-cols-menu` (line ~158,
