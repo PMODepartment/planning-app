@@ -50,6 +50,10 @@
     .cf-chart-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .cf-dlab { fill:var(--pd-muted); font-size:9px; text-anchor:middle; }
     .cf-axis { stroke:var(--pd-muted); stroke-width:1; }
+    .cf-selband { fill:rgba(238,49,36,0.12); stroke:var(--pd-red); stroke-width:1; stroke-dasharray:3 2; }
+    .cf-matrix th.mcol { cursor:pointer; }
+    .cf-matrix th.mcol:hover { color:var(--pd-red); }
+    .cf-matrix th.mcol.sel { background:var(--pd-red); color:#fff; }
     .cf-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
     /* projection matrix */
@@ -147,6 +151,7 @@
   var editTranches = [];         // working copy while the Assumptions modal is open
   var periodMode = 'month';      // periodic chart aggregation: 'month' | 'quarter'
   var pvState = null;            // geometry + data for the periodic-chart tooltip
+  var selMonth = null;           // month index selected in the matrix → highlight its bar
   var wpRows = [];               // mirrored WPM work packages (cash-out)
   var wpmStatus = 'idle';        // idle | loading | ok | empty | error | no-map
   var wpmMsg = '', wpmSyncedAt = null;
@@ -282,6 +287,34 @@
     });
   }
 
+  // Blended cumulative fraction: ACTUAL progress (duration-weighted % complete,
+  // using actual dates) up to the data date, then PLANNED-shaped continuation from
+  // the actual %-to-date up to 100%. So cash-in billing to date reflects real
+  // physical progress, and the forecast resumes on the plan's remaining shape.
+  function scheduleCurveBlended(months, ddIdx) {
+    function val(a) { if (a.duration_days) return num(a.duration_days); var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; }
+    var TOT = scheduleRows.reduce(function (s, a) { return s + val(a); }, 0) || 1;
+    var planned = scheduleCurve(months);
+    var overallDone = scheduleRows.reduce(function (s, a) { return s + val(a) * Math.max(0, Math.min(100, num(a.percent_complete))) / 100; }, 0);
+    var actualFracDD = overallDone / TOT;                 // true % complete at the data date
+    var plannedDD = planned[clampIdx(ddIdx, months.length)];
+    return months.map(function (m, i) {
+      if (i < ddIdx) {
+        // actual accrual to this month end, weighted by each activity's % complete
+        var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0), av = 0;
+        scheduleRows.forEach(function (a) {
+          var aS = pd(a.actual_start || a.start_date), aE = pd(a.actual_finish) || pd(a.end_date) || aS; if (!aS) return;
+          var f = mEnd >= aE ? 1 : (mEnd < aS ? 0 : (aE > aS ? (mEnd - aS) / (aE - aS) : 1));
+          av += val(a) * (Math.max(0, Math.min(100, num(a.percent_complete))) / 100) * f;
+        });
+        return Math.min(actualFracDD, av / TOT);
+      }
+      if (i === ddIdx) return actualFracDD;               // anchor to true % complete
+      var totRem = 1 - plannedDD;                          // planned-shaped continuation
+      return actualFracDD + (totRem > 0 ? (planned[i] - plannedDD) / totRem : 0) * (1 - actualFracDD);
+    });
+  }
+
   // Resolve the DP tranches → {amount, dueIdx, recoupRate, pool, label, category}.
   // Falls back to the single settings.dp_percent (received up front) when no
   // tranches are defined, so pre-tranche projects keep working.
@@ -345,8 +378,9 @@
     var dpTranches = resolveTranches(base, months, n);
     var dpTotal = dpTranches.reduce(function (a, t) { return a + t.amount; }, 0);
 
+    var ddIdxIn = clampIdx(monthDiff(months[0], new Date(today().getFullYear(), today().getMonth(), 1)), n);
     if (base > 0) {
-      var cum = scheduleCurve(months);            // cumulative planned fraction per month
+      var cum = scheduleCurveBlended(months, ddIdxIn);   // actual to data date, planned after
       // Each tranche's cash lands at its own resolved due month (its own schedule).
       dpTranches.forEach(function (t) { if (t.amount > 0) inDP[clampIdx(t.dueIdx, n)] += t.amount; });
       var retTotal = 0, lastBillMonth = 0, prev = 0;
@@ -484,6 +518,20 @@
     var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter');
     if (mb) mb.onclick = function () { setPeriodMode('month'); };
     if (qb) qb.onclick = function () { setPeriodMode('quarter'); };
+    host.querySelectorAll('.cf-matrix th.mcol').forEach(function (th) {
+      th.onclick = function () { selectMonth(+th.dataset.mi); };
+    });
+  }
+
+  // Highlight the bar for a month picked in the Monthly Projection table (toggle).
+  function selectMonth(mi) {
+    selMonth = (selMonth === mi) ? null : mi;
+    document.querySelectorAll('.cf-matrix th.mcol').forEach(function (th) {
+      th.classList.toggle('sel', +th.dataset.mi === selMonth);
+    });
+    drawPeriodic();
+    var wrap = document.getElementById('cf-chart-periodic');
+    if (selMonth != null && wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   function kpiHTML() {
@@ -502,7 +550,7 @@
       '<button id="cf-pm-quarter" class="' + (periodMode === 'quarter' ? 'active' : '') + '">Quarterly</button></div>';
     return '<div class="cf-card">' +
       '<div class="cf-chart-head"><div><h3>Periodic Cash Flow</h3>' +
-      '<p class="sub" style="margin-bottom:0;">Cash received (up) vs paid (down) per period; net line. Solid = actual (cash-out from <b>awarded</b> WPs due by the data date ' + Fmt.date(iso(today())) + '); faded/dashed = forecast.</p></div>' + seg + '</div>' +
+      '<p class="sub" style="margin-bottom:0;">Cash received (up) vs paid (down) per period; net line. Solid = actual through the data date (' + Fmt.date(iso(today())) + ') — cash-in from schedule <b>% complete</b>, cash-out from <b>awarded</b> WPs; faded/dashed = forecast. Click a month in the table below to highlight its bar.</p></div>' + seg + '</div>' +
       '<div class="cf-chart-wrap" id="cf-chart-periodic"></div></div>';
   }
 
@@ -510,8 +558,8 @@
   // forecast split for both cash-in and cash-out.
   function buildPeriods() {
     var m = model;
-    function mk(label, date) { return { label: label, date: date, inv: 0, out: 0, net: 0, invA: 0, invF: 0, outA: 0, outF: 0 }; }
-    function add(b, i) { b.inv += m.inPer[i]; b.out += m.outPer[i]; b.net += m.netPer[i]; b.invA += m.inActualPer[i]; b.invF += m.inForecastPer[i]; b.outA += m.outActualPer[i]; b.outF += m.outForecastPer[i]; }
+    function mk(label, date) { return { label: label, date: date, inv: 0, out: 0, net: 0, invA: 0, invF: 0, outA: 0, outF: 0, i0: Infinity, i1: -Infinity }; }
+    function add(b, i) { b.inv += m.inPer[i]; b.out += m.outPer[i]; b.net += m.netPer[i]; b.invA += m.inActualPer[i]; b.invF += m.inForecastPer[i]; b.outA += m.outActualPer[i]; b.outF += m.outForecastPer[i]; b.i0 = Math.min(b.i0, i); b.i1 = Math.max(b.i1, i); }
     if (periodMode === 'quarter') {
       var order = [], by = {};
       m.months.forEach(function (mo, i) {
@@ -549,6 +597,9 @@
     var grid = '';
     [-1, -0.5, 0, 0.5, 1].forEach(function (f) { var v = maxAbs * f, yy = y(v); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="' + (f === 0 ? 'cf-zero' : 'cf-grid') + '"/><text x="' + (padL - 8) + '" y="' + (yy + 3.5) + '" class="cf-ylab">' + Fmt.moneyShort(v) + '</text>'; });
     grid += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + ch) + '" class="cf-axis"/>';
+    // selection highlight (a month picked in the matrix)
+    var selPi = selMonth == null ? -1 : (function () { for (var j = 0; j < nP; j++) if (selMonth >= P[j].i0 && selMonth <= P[j].i1) return j; return -1; })();
+    if (selPi >= 0) grid += '<rect x="' + (padL + band * selPi) + '" y="' + padT + '" width="' + band + '" height="' + ch + '" class="cf-selband"/>';
 
     var bw = Math.max(2, Math.min(28, band * 0.62)), showLab = periodMode === 'quarter' || band >= 44;
     var bars = '', labs = '', hovers = '';
@@ -613,7 +664,7 @@
 
   function matrixHTML() {
     var m = model;
-    var hdr = '<th class="lbl">₱</th>' + m.months.map(function (mo) { return '<th>' + monthLabel(mo) + '</th>'; }).join('') + '<th>Total</th>';
+    var hdr = '<th class="lbl">₱</th>' + m.months.map(function (mo, i) { return '<th class="mcol' + (selMonth === i ? ' sel' : '') + '" data-mi="' + i + '">' + monthLabel(mo) + '</th>'; }).join('') + '<th>Total</th>';
     function cell(v) { var s = v < 0 ? ' class="cf-neg"' : ''; return '<td' + s + '>' + (v ? Fmt.moneyShort(v) : '–') + '</td>'; }
     function total(arr) { return arr.reduce(function (a, b) { return a + b; }, 0); }
     function row(label, arr, cls, sub) {
