@@ -2703,6 +2703,9 @@
 
   // ----- OPC-style Activity Details / Project Usage panel -----
   var detailTab = 'general';
+  // Assigned by init() (where setDetCollapsed/setDetailTab are in scope) so module-scope code
+  // (e.g. quickAddActivity) can expand the details panel and jump to a tab.
+  var _openDetail = function (tab) { detailTab = tab || 'general'; renderDetails(); };
   function selRow() { return selId ? rows.find(function (x) { return x.id === selId; }) : null; }
   function actName(id) { if (!id) return ''; var r = rows.find(function (x) { return String(x.activity_id) === String(id); }); return r ? (r.activity_name || '') : ''; }
   function dlHtml(pairs) { return '<dl class="ps-dl">' + pairs.map(function (p) { var v = (p[1] == null || p[1] === '') ? '—' : p[1]; return '<dt>' + p[0] + '</dt><dd>' + v + '</dd>'; }).join('') + '</dl>'; }
@@ -2719,6 +2722,74 @@
       (udfRows.length ? detSection('User-Defined Fields', udfRows) : '') +
       detSection('Notes', [['Remarks', esc(r.remarks || '')]]) +
     '</div>';
+  }
+  // Editable General tab — an OPC-style live editor for the selected activity's core fields.
+  // Each control persists on change via persist() (undoable + audited + rebuild/CPM), so a planner
+  // can fill in a freshly-added activity right here in the panel below instead of the modal.
+  function _genOpts(list, cur) {
+    return list.map(function (o) { var lbl = (o === '' ? '—' : o); return '<option value="' + esc(o) + '"' + (o === (cur || '') ? ' selected' : '') + '>' + esc(lbl) + '</option>'; }).join('');
+  }
+  function _gf(label, field, type, r, opts, full) {
+    var val = r[field]; if (val == null) val = '';
+    var st = 'width:100%;box-sizing:border-box;font-size:12.5px;';
+    var inp;
+    if (type === 'select') inp = '<select class="pd-select ps-gedit" data-f="' + field + '" data-t="select" style="' + st + '">' + _genOpts(opts, r[field]) + '</select>';
+    else if (type === 'textarea') inp = '<textarea class="pd-input ps-gedit" data-f="' + field + '" data-t="text" rows="2" style="' + st + 'resize:vertical;">' + esc(String(val)) + '</textarea>';
+    else if (type === 'date') inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="date" type="date" value="' + (val ? String(val).slice(0, 10) : '') + '" style="' + st + '">';
+    else if (type === 'number') inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="number" type="number" min="0" max="100" step="1" value="' + esc(String(val)) + '" style="' + st + '">';
+    else if (type === 'ro') inp = '<input class="pd-input" value="' + esc(String(val)) + '" readonly title="Set by the parent WBS" style="' + st + 'background:var(--pd-bg);color:var(--pd-muted);">';
+    else inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="text" value="' + esc(String(val)) + '" style="' + st + '">';
+    return '<div style="display:flex;flex-direction:column;gap:3px;' + (full ? 'grid-column:1/-1;' : '') + '"><label style="font-size:11px;color:var(--pd-muted);">' + esc(label) + '</label>' + inp + '</div>';
+  }
+  function _gGroup(title, fieldsHtml) {
+    return '<div style="margin-bottom:14px;"><h5 style="margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' + esc(title) + '</h5>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;">' + fieldsHtml + '</div></div>';
+  }
+  function detGeneralEdit(r) {
+    var codeRows = CODE_TYPES.map(function (ct) { var vid = r.activity_codes && r.activity_codes[ct.id]; return [esc(ct.name), esc(vid ? (codeValueLabel(vid) || '—') : '—')]; });
+    var udfRows = UDF_DEFS.map(function (d) { return [esc(d.name), esc(udfFmt(d, r.udf && r.udf[d.id]))]; });
+    return '<div class="ps-det-groups">' +
+      '<div style="font-size:11.5px;color:var(--pd-muted);margin:0 0 10px;">Editing this activity — changes save automatically.</div>' +
+      _gGroup('Identification',
+        _gf('WBS (parent)', 'wbs', 'ro', r) +
+        _gf('Activity ID', 'activity_id', 'text', r) +
+        _gf('Activity Name', 'activity_name', 'text', r, null, true) +
+        _gf('Work Package', 'work_package', 'text', r)) +
+      _gGroup('Classification',
+        _gf('Type', 'activity_type', 'select', r, ['Task', 'WBS Summary', 'Milestone']) +
+        _gf('Duration Type', 'duration_type', 'select', r, ['', 'Fixed Duration & Units/Time', 'Fixed Units/Time', 'Fixed Duration & Units', 'Fixed Work']) +
+        _gf('% Complete Type', 'percent_complete_type', 'select', r, ['', 'Duration', 'Physical', 'Units'])) +
+      _gGroup('Assignment',
+        _gf('Status', 'status', 'select', r, ['Not Started', 'In Progress', 'Completed']) +
+        _gf('% Complete', 'percent_complete', 'number', r) +
+        _gf('Responsible', 'responsible_party', 'text', r) +
+        _gf('Owner', 'owner', 'text', r)) +
+      _gGroup('Dates',
+        _gf('Planned Start', 'start_date', 'date', r) +
+        _gf('Planned Finish', 'end_date', 'date', r)) +
+      _gGroup('Predecessors', _gf('Predecessors', 'predecessors', 'text', r, null, true)) +
+      (codeRows.length ? detSection('Activity Codes', codeRows) : '') +
+      (udfRows.length ? detSection('User-Defined Fields', udfRows) : '') +
+      _gGroup('Notes', _gf('Remarks', 'remarks', 'textarea', r, null, true)) +
+    '</div>';
+  }
+  function wireGeneral(root, r) {
+    root.querySelectorAll('.ps-gedit').forEach(function (el) {
+      el.onchange = function () {
+        var f = el.dataset.f, t = el.dataset.t, v = el.value, patch = {};
+        if (t === 'number') patch[f] = (v === '' ? null : Math.max(0, Math.min(100, parseFloat(v) || 0)));
+        else if (t === 'date') patch[f] = v || null;
+        else if (t === 'select') patch[f] = v || null;
+        else patch[f] = (typeof v === 'string' ? v.trim() : v) || null;
+        if (f === 'start_date' || f === 'end_date') {
+          var s = pd(f === 'start_date' ? patch.start_date : r.start_date);
+          var e = pd(f === 'end_date' ? patch.end_date : r.end_date);
+          if (s && e) { if (e < s) UI.toast('Finish is before start.', 'warn'); patch.duration_days = dayDiff(s, e) + 1; }
+        }
+        persist(r.id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); } });
+      };
+    });
+    if (window.Icons) Icons.hydrate(root);
   }
   function detStatus(r) {
     var fv = finVar(r);
@@ -3567,7 +3638,7 @@
     if (t === 'roleusage') { usageKind = 'role'; body.innerHTML = usageResourceHtml(); wireResUsage(); wireDetailSplits(body); return; }
     var r = selRow();
     if (!r || isWbs(r)) { body.innerHTML = '<div class="ps-empty-detail">Select an activity (click a row or its bar) to see its details.</div>'; return; }
-    if (t === 'general') body.innerHTML = detGeneral(r);
+    if (t === 'general') { body.innerHTML = detGeneralEdit(r); wireGeneral(body, r); }
     else if (t === 'status') body.innerHTML = detStatus(r);
     else if (t === 'steps') { body.innerHTML = detSteps(r); wireSteps(body, r); }
     else if (t === 'assign') { body.innerHTML = detAssign(r); wireAssign(body, r); }
@@ -6389,6 +6460,49 @@
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
     closeModal(); load();
   }
+  // Quick-add: create a blank activity under the SELECTED row's WBS with no modal, select it,
+  // and open the (editable) General detail tab so the planner fills in the rest below. If a WBS
+  // summary is selected the activity is placed under that node; if an activity is selected it's
+  // placed as a sibling in the same WBS. Falls back to the full modal when nothing is selected.
+  async function quickAddActivity(sel) {
+    if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+    if (!sel) { openForm(null); return; }
+    var wbs = sel.wbs || null, nodeId = sel.wbs_node_id || null;
+    var payload = {
+      project_id: pid, wbs: wbs, activity_id: null, activity_name: 'New Activity',
+      activity_type: 'Task', status: 'Not Started', percent_complete: 0,
+      created_by: UID, updated_at: new Date().toISOString()
+    };
+    var res;
+    try { res = await sb().from(TABLE).insert(payload).select().single(); }
+    catch (e) { UI.toast('Could not add activity.', 'error'); return; }
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    var row = res.data; if (!row) { UI.toast('Add failed.', 'error'); return; }
+    // wbs_node_id written separately + tolerantly (column may not be migrated), like save().
+    if (nodeId) { try { var wr = await sb().from(TABLE).update({ wbs_node_id: nodeId }).eq('id', row.id); if (!wr.error) row.wbs_node_id = nodeId; } catch (e2) {} }
+    rows.push(row);
+    pushUndo({ type: 'insert', id: row.id, payload: payload });
+    logAudit({ id: row.id, activity_id: row.activity_id, activity_name: row.activity_name }, 'insert', null);
+    // Reveal the new row's WBS branch if it was collapsed, so it renders in the grid.
+    if (wbs) { var parts = String(wbs).split('.'), code = ''; for (var i = 0; i < parts.length; i++) { code = code ? code + '.' + parts[i] : parts[i]; delete collapsed[code]; } }
+    rebuild();
+    selId = row.id; _selSet = new Set();
+    renderGrid(); renderGantt();
+    _openDetail('general');   // expand the panel + jump to the editable General tab
+    renderDetails(); highlightRow();
+    // DL is rebuilt inside the render rAF (doRender) — scroll after it paints.
+    (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { scrollSelIntoView(); });
+    UI.toast('Activity added — edit its details in the panel below.', 'success');
+  }
+  // Scroll the grid so the currently-selected activity is visible (the grid is virtualized).
+  function scrollSelIntoView() {
+    if (!selId) return;
+    var idx = -1; for (var i = 0; i < DL.length; i++) { if (DL[i].id === selId) { idx = i; break; } }
+    if (idx < 0) return;
+    var sc = document.getElementById('ps-grid-scroll'); if (!sc) return;
+    var vh = sc.clientHeight, y = idx * ROWH;
+    if (y < sc.scrollTop || y > sc.scrollTop + vh - ROWH) sc.scrollTop = Math.max(0, y - Math.floor(vh / 2));
+  }
 
   // ----- tabs / view switch -----
   function switchTab(tab) {
@@ -7556,7 +7670,7 @@
     m.addEventListener('click', function (ev) { ev.stopPropagation(); });
     m.querySelectorAll('button[data-act]').forEach(function (b) { b.onclick = function () {
       var a = b.dataset.act; closeRowMenu();
-      if (a === 'add') { if (node) { _wbsSel = node; } if (r && r.id) selId = r.id; openForm(null); }
+      if (a === 'add') { if (r && r.id) { selId = r.id; quickAddActivity(r); } else { if (node) _wbsSel = node; openForm(null); } }
       else if (a === 'edit') { openForm(r); }
       else if (a === 'childwbs') { wbsAddChild(node); }
       else if (a === 'siblingwbs') { wbsAddChild(pnode ? pnode.parent_id : null); }
@@ -7867,6 +7981,8 @@
     }
     function setDetCollapsed(v) { _detCollapsed = v; try { localStorage.setItem('ps_details_collapsed', v ? '1' : '0'); } catch (e) {} applyDetailsCollapse(); }
     document.querySelectorAll('.ps-dtab').forEach(function (b) { b.onclick = function () { if (_detCollapsed) { setDetCollapsed(false); } setDetailTab(b.dataset.dtab); }; });
+    // Let module-scope code (quickAddActivity) expand the panel + switch tab through the real setters.
+    _openDetail = function (tab) { if (_detCollapsed) setDetCollapsed(false); setDetailTab(tab || 'general'); };
     (function () {
       var dc = document.getElementById('ps-det-collapse');
       if (dc) dc.onclick = function () { setDetCollapsed(!_detCollapsed); if (!_detCollapsed && (detailTab === 'ausage' || detailTab === 'rusage')) renderDetails(); };
@@ -8027,7 +8143,7 @@
       btn.onclick = function () { on = !on; try { localStorage.setItem('ps_tb_labels', on ? '1' : '0'); } catch (e) {} apply(); };
     })();
     (function () { var hb = document.getElementById('ps-help-btn'); if (hb) hb.onclick = function (e) { e.stopPropagation(); openShortcuts(); }; })();
-    document.getElementById('ps-add').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } openForm(null); };
+    document.getElementById('ps-add').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } var sel = selRow(); if (sel) quickAddActivity(sel); else { UI.toast('Select a WBS or activity first to place the new activity — opening the full form.', 'warn'); openForm(null); } };
     document.getElementById('ps-import').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } document.getElementById('ps-import-file').click(); };
     document.getElementById('ps-import-file').onchange = function (e) {
       var file = e.target.files[0]; if (!file) return;
