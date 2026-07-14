@@ -8,6 +8,36 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Interactive Add-activity + editable General tab (2026-07-14) — jasantos2 / eprobles
+Requested: make "Add activity" contextual — select a WBS or activity first, then Add places the new
+activity under that respective WBS and lets you edit its details in the panel below (no migration,
+no schema change).
+- **Contextual Add.** The toolbar **Add activity** button (`#ps-add`) and the right-click **"Add
+  activity below"** now call the new **`quickAddActivity(sel)`** instead of always opening the modal.
+  Placement is uniform: `wbs = sel.wbs`, `wbs_node_id = sel.wbs_node_id` — a selected **WBS summary**
+  gets a child activity under it; a selected **activity** gets a sibling in the same WBS. It inserts a
+  blank `Task` ("New Activity", Not Started, 0%) via the same insert + `pushUndo({type:'insert'})` +
+  `logAudit` path as the modal `save()`, appends to `rows` locally (no full `load()` refetch),
+  `rebuild()`s, un-collapses the new row's WBS ancestry, selects it, and scrolls it into view
+  (deferred one rAF since `DL` is rebuilt inside the render frame). `wbs_node_id` is written
+  separately + tolerantly (column-missing safe), like `save()`. **No selection → falls back to the
+  full modal** (with a hint toast), so the modal path is unchanged and still reachable.
+- **Editable General detail tab.** `renderDetails()`'s General tab now renders **`detGeneralEdit(r)`**
+  + `wireGeneral()` (the old read-only `detGeneral` is kept, now unused). Core fields are live inputs —
+  Activity ID, Name, Work Package, Type, Duration Type, % Complete Type, Status, % Complete,
+  Responsible, Owner, Planned Start/Finish, Predecessors, Remarks (WBS shown read-only, since it's set
+  by the parent). Each control persists **on `change`** through the existing `persist()` (so edits are
+  undoable + audited + trigger the rebuild/CPM), then `renderGrid()`/`renderGantt()` refresh; Start/
+  Finish recompute `duration_days` exactly like the inline grid editor. Activity Codes / UDFs stay
+  read-only here (managed via the modal / their own editors).
+- **New module-scope hook `_openDetail(tab)`** — assigned in init (where `setDetCollapsed`/
+  `setDetailTab` are in scope) so `quickAddActivity` can expand a collapsed panel and jump to General.
+- **Verification:** the full inline script parses clean (page loads at `/modules/project-schedule/`
+  with zero console errors, then redirects via `AppAuth.requireLogin`). **Live click-through against a
+  real login is still pending** (needs an approved session + a project with a WBS — same constraint as
+  prior batches). Manual test: select a WBS/activity → Add activity → confirm a "New Activity" row
+  appears under that WBS, is selected, and the General tab below is editable and persists.
+
 ## UX improvements batch 2 (2026-07-13) — shortcuts help, density, pinned data-date, dark-mode audit
 The remaining four build-improvement asks (3, 4, 6, 7); no migration, no schema change.
 - **3. Keyboard-shortcut help.** New **"?"** button in the toolbar (next to Labels) + the **?** key
