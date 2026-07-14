@@ -8,6 +8,25 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## WBS click-to-select, WBS-scoped Activity ID, scrollable menus (2026-07-14) — jasantos2 / eprobles
+Follow-ups from tester feedback. No migration, no schema change.
+- **Clicking a WBS row now SELECTS it** (instead of toggling collapse every time). Expand/collapse is
+  now **only** via the ▼/► chevron. Real WBS summary rows carry `data-wbsid` + get `ps-row-sel`, and
+  the `.ps-wbs-row` click handler selects the node (sets `selId`/`_wbsSel`, re-renders) so it becomes
+  the Add-activity target; synthetic **group** headers keep click-to-collapse. Chevron clicks are
+  guarded (`closest('[data-toggle]')`) so they never fall through to selection.
+- **Activity ID is now WBS-scoped** as **`<wbs>-A<num>`**: `nextActivityId(wbs)` uses the prefix
+  `"<wbs>-A"` and numbers in increments of 10 from **1000** (e.g. WBS 1.1 → `1.1-A1000`, then
+  `1.1-A1010`, …), continuing from the highest number already used under that exact WBS prefix and
+  skipping collisions. No WBS → plain `A<num>`. `quickAddActivity` passes the target `wbs`.
+  (Unit-checked in-browser: fresh 1.1→`1.1-A1000`; with A1000/A1010→`1.1-A1020`; per-WBS isolated;
+  no-WBS continues the `A` series.)
+- **Popup menus scroll instead of clipping.** `.ps-menu` had `overflow:hidden` + no height cap, so a
+  tall **row context menu** (Add activity / Edit / clipboard / WBS / Delete) ran off-screen with no
+  scroll. Added `.ps-rowctx, .ps-colhdr-menu { max-height:82vh; overflow-y:auto }` and, in
+  `openRowMenu`, an explicit `max-height = viewportHeight − top − 10px` so the menu always fits the
+  space below its anchor and scrolls when taller.
+
 ## Auto Activity ID + editable Status & Relationships tabs (2026-07-14) — jasantos2 / eprobles
 Follow-up to the interactive-Add work below. No migration, no schema change.
 - **Auto-generated Activity ID on quick-add.** `quickAddActivity` now stamps `activity_id =

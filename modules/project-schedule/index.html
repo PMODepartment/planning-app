@@ -550,6 +550,8 @@
     .ps-menu { position:absolute; top:calc(100% + 4px); left:0; z-index:50; display:none; min-width:180px;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow); overflow:hidden; }
     .ps-menu.open { display:block; }
+    /* Tall popup menus (row context menu, column-header menu) must scroll rather than clip/overflow. */
+    .ps-rowctx, .ps-colhdr-menu { max-height:82vh; overflow-y:auto; overflow-x:hidden; }
     .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
       cursor:pointer; color:var(--pd-ink); font-size:13px; }
     .ps-menu button:hover { background:var(--pd-red-light); }
@@ -4225,7 +4227,7 @@
     }
     if (isWbsNode(r)) {
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
-      return '<div class="ps-grid-row ps-wbs-row ps-wl' + Math.min(depth, 5) + altc + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
+      return '<div class="ps-grid-row ps-wbs-row ps-wl' + Math.min(depth, 5) + altc + (r.id === selId ? ' ps-row-sel' : '') + '" data-i="' + i + '" data-code="' + esc(code) + '" data-wbsid="' + esc(String(r.id || '')) + '">' +
         '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
         '<div class="ps-cell c-id" style="padding-left:' + idPad + 'px;">' + esc(r._realCode || r.wbs || '') + '</div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
@@ -4324,8 +4326,16 @@
     var host = document.getElementById('ps-grid-rows');
     host.innerHTML = '<div style="transform:translateY(' + (first * ROWH) + 'px);">' + gh + '</div>';
     host.querySelectorAll('[data-toggle]').forEach(function (t) { t.onclick = function (e) { e.stopPropagation(); collapsed[t.dataset.toggle] = !collapsed[t.dataset.toggle]; renderGrid(); }; });
-    // Excel-like: click anywhere on a WBS/group summary row to expand/collapse it
-    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); });
+    // Clicking a real WBS row SELECTS it (so Add activity places under it); expand/collapse is via
+    // the ▼/► chevron only. Synthetic group headers keep the click-to-collapse behavior.
+    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function (e) {
+      if (e.target && e.target.closest && e.target.closest('[data-toggle]')) return;   // chevron handles collapse
+      var nd = DL[parseInt(rw.dataset.i, 10)];
+      if (!nd || nd._dkind === 'group') { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); return; }
+      selId = nd.id || null; _selSet = new Set();
+      _wbsSel = nd.wbs_node_id || null;
+      renderGrid(); renderDetails();
+    });
       rw.addEventListener('contextmenu', function (e) {
         var nd = DL[parseInt(rw.dataset.i, 10)]; if (!nd) return;
         if (nd.id) selId = nd.id;                       // make this WBS the paste / add target
@@ -6574,7 +6584,7 @@
     if (!sel) { openForm(null); return; }
     var wbs = sel.wbs || null, nodeId = sel.wbs_node_id || null;
     var payload = {
-      project_id: pid, wbs: wbs, activity_id: nextActivityId(), activity_name: 'New Activity',
+      project_id: pid, wbs: wbs, activity_id: nextActivityId(wbs), activity_name: 'New Activity',
       activity_type: 'Task', status: 'Not Started', percent_complete: 0,
       created_by: UID, updated_at: new Date().toISOString()
     };
@@ -6608,18 +6618,19 @@
     var vh = sc.clientHeight, y = idx * ROWH;
     if (y < sc.scrollTop || y > sc.scrollTop + vh - ROWH) sc.scrollTop = Math.max(0, y - Math.floor(vh / 2));
   }
-  // Next Activity ID for a new activity — max existing numeric ID rounded up to the next multiple
-  // of 10 (P6/OPC-style, e.g. …1010 → 1020), keeping whatever prefix the highest ID uses (e.g. "A").
-  // Starts at 1010 when the project has no numeric IDs yet; guarantees uniqueness.
-  function nextActivityId() {
-    var maxNum = -1, prefix = '', found = false, taken = {};
+  // Next Activity ID for a new activity under WBS `wbs`, scoped to that WBS as "<wbs>-A<num>" with
+  // num in increments of 10 starting at 1000 (e.g. 1.1 → 1.1-A1000, then 1.1-A1010). Continues from
+  // the highest number already used under that same WBS prefix; guarantees project-wide uniqueness.
+  // No WBS → plain "A<num>".
+  function nextActivityId(wbs) {
+    var prefix = (wbs != null && wbs !== '') ? (wbs + '-A') : 'A';
+    var maxNum = -1, taken = {};
     rows.forEach(function (r) {
       var id = r.activity_id; if (id == null || id === '') return;
       taken[String(id)] = true;
-      var m = /^(\D*)(\d+)\s*$/.exec(String(id));
-      if (m) { var n = parseInt(m[2], 10); if (n >= maxNum) { maxNum = n; prefix = m[1]; } found = true; }
+      if (String(id).indexOf(prefix) === 0) { var m = /(\d+)\s*$/.exec(String(id).slice(prefix.length)); if (m) { var n = parseInt(m[1], 10); if (n > maxNum) maxNum = n; } }
     });
-    var num = found ? (Math.floor(maxNum / 10) * 10 + 10) : 1010;
+    var num = maxNum >= 0 ? (Math.floor(maxNum / 10) * 10 + 10) : 1000;
     var cand; do { cand = prefix + num; num += 10; } while (taken[cand]);
     return cand;
   }
@@ -7785,8 +7796,10 @@
     var m = document.createElement('div'); m.className = 'ps-menu ps-rowctx open'; m.id = 'ps-rowctx';
     m.innerHTML = (label ? '<div style="padding:6px 12px 4px;font-size:11px;color:var(--pd-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;">' + esc(label) + '</div>' : '') + items.join('');
     document.body.appendChild(m);
-    m.style.position = 'fixed'; m.style.top = Math.min(e.clientY, window.innerHeight - 200) + 'px';
+    var mTop = Math.max(8, Math.min(e.clientY, window.innerHeight - 60));
+    m.style.position = 'fixed'; m.style.top = mTop + 'px';
     m.style.left = Math.min(e.clientX, window.innerWidth - 240) + 'px'; m.style.zIndex = 300;
+    m.style.maxHeight = (window.innerHeight - mTop - 10) + 'px';   // fit the viewport; scroll if taller
     m.addEventListener('click', function (ev) { ev.stopPropagation(); });
     m.querySelectorAll('button[data-act]').forEach(function (b) { b.onclick = function () {
       var a = b.dataset.act; closeRowMenu();
