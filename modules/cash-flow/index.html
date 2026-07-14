@@ -35,7 +35,21 @@
     .cf-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
     .cf-lg { display:inline-flex; align-items:center; }
     .sw { display:inline-block; width:14px; height:10px; margin-right:6px; border-radius:2px; }
+    .sw.fc { opacity:.4; }
     .sw-line { width:18px; height:0; border-top:3px solid; margin-right:6px; }
+    .cf-chart-wrap { position:relative; }
+    .cf-tip { position:absolute; pointer-events:none; background:var(--pd-dark); color:#fff; padding:8px 10px; border-radius:6px; font-size:11.5px; line-height:1.5; box-shadow:0 6px 20px rgba(0,0,0,.35); opacity:0; transition:opacity .08s; white-space:nowrap; z-index:5; }
+    .cf-tip b { font-weight:700; }
+    .cf-tip .r { color:#ff9b91; } .cf-tip .g { color:#8ee0ac; }
+    .cf-tip-hd { font-weight:700; margin-bottom:3px; border-bottom:1px solid rgba(255,255,255,.18); padding-bottom:3px; }
+    .cf-hover { fill:transparent; cursor:pointer; }
+    .cf-hover:hover { fill:rgba(127,127,127,.10); }
+    .cf-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:6px; overflow:hidden; }
+    .cf-seg button { padding:4px 12px; font-size:12px; border:0; background:var(--pd-card); color:var(--pd-muted); cursor:pointer; }
+    .cf-seg button.active { background:var(--pd-red); color:#fff; }
+    .cf-chart-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .cf-dlab { fill:var(--pd-muted); font-size:9px; text-anchor:middle; }
+    .cf-axis { stroke:var(--pd-muted); stroke-width:1; }
     .cf-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
     /* projection matrix */
@@ -131,6 +145,8 @@
   var milestones = [];           // {name, date} for DP-tranche milestone timing
   var tranches = [];             // cash_flow_dp_tranches rows (client DP breakdown)
   var editTranches = [];         // working copy while the Assumptions modal is open
+  var periodMode = 'month';      // periodic chart aggregation: 'month' | 'quarter'
+  var pvState = null;            // geometry + data for the periodic-chart tooltip
   var wpRows = [];               // mirrored WPM work packages (cash-out)
   var wpmStatus = 'idle';        // idle | loading | ok | empty | error | no-map
   var wpmMsg = '', wpmSyncedAt = null;
@@ -144,6 +160,8 @@
   function pd(v) { if (!v) return null; var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return new Date(+m[1], +m[2]-1, +m[3]); var d = new Date(v); return isNaN(d) ? null : d; }
   function monthLabel(d) { return MABBR[d.getMonth()] + " '" + String(d.getFullYear()).slice(2); }
   function monthDiff(a, b) { return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()); }
+  function today() { return new Date(); }   // data date (wall clock)
+  function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
   // ---- Defaults for a project with no saved assumptions ----
   function defaults() {
@@ -442,7 +460,9 @@
     }
     host.innerHTML = kpiHTML() + chartHTML() + matrixHTML();
     drawPeriodic();
-    drawChart();
+    var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter');
+    if (mb) mb.onclick = function () { setPeriodMode('month'); };
+    if (qb) qb.onclick = function () { setPeriodMode('quarter'); };
   }
 
   function kpiHTML() {
@@ -457,77 +477,108 @@
   }
 
   function chartHTML() {
-    return '<div class="cf-card"><h3>Monthly (Periodic) Cash Flow</h3>' +
-      '<p class="sub">Cash received (up) vs paid (down) each month, with the net per month.</p>' +
-      '<div id="cf-chart-periodic"></div></div>' +
-      '<div class="cf-card"><h3>Cumulative Cash Flow</h3>' +
-      '<p class="sub">Cash In vs Cash Out (cumulative) and the Net position — the funding curve.</p>' +
-      '<div id="cf-chart"></div></div>';
+    var seg = '<div class="cf-seg"><button id="cf-pm-month" class="' + (periodMode === 'month' ? 'active' : '') + '">Monthly</button>' +
+      '<button id="cf-pm-quarter" class="' + (periodMode === 'quarter' ? 'active' : '') + '">Quarterly</button></div>';
+    return '<div class="cf-card">' +
+      '<div class="cf-chart-head"><div><h3>Periodic Cash Flow</h3>' +
+      '<p class="sub" style="margin-bottom:0;">Cash received (up) vs paid (down) per period; net line. Solid = actual to the data date (' + Fmt.date(iso(today())) + '), faded/dashed = forecast.</p></div>' + seg + '</div>' +
+      '<div class="cf-chart-wrap" id="cf-chart-periodic"></div></div>';
   }
 
-  // Periodic (monthly) combo chart: green bars up = cash in, red bars down = cash
-  // out, ink line = net per month. Symmetric axis about a centre zero line.
+  // Aggregate the monthly series into the selected period ({label,inv,out,net,date}).
+  function buildPeriods() {
+    var m = model;
+    if (periodMode === 'quarter') {
+      var order = [], by = {};
+      m.months.forEach(function (mo, i) {
+        var q = Math.floor(mo.getMonth() / 3), key = mo.getFullYear() + '-' + q;
+        var b = by[key]; if (!b) { b = by[key] = { label: 'Q' + (q + 1) + " '" + String(mo.getFullYear()).slice(2), inv: 0, out: 0, net: 0, date: new Date(mo.getFullYear(), q * 3, 1) }; order.push(key); }
+        b.inv += m.inPer[i]; b.out += m.outPer[i]; b.net += m.netPer[i];
+      });
+      return order.map(function (k) { return by[k]; });
+    }
+    return m.months.map(function (mo, i) { return { label: monthLabel(mo), inv: m.inPer[i], out: m.outPer[i], net: m.netPer[i], date: new Date(mo) }; });
+  }
+
+  // Periodic combo chart: green bars up = cash in, red bars down = cash out, ink
+  // line = net. Band-aligned bars + axes; actual/forecast split at the data date;
+  // data labels (quarterly) + hover tooltip.
   function drawPeriodic() {
     var host = document.getElementById('cf-chart-periodic'); if (!host) return;
-    var m = model, n = m.n;
-    var W = 1000, H = 300, padL = 64, padR = 16, padT = 16, padB = 34;
+    var P = buildPeriods(), nP = P.length;
+    var W = 1000, H = 320, padL = 64, padR = 18, padT = 18, padB = 40;
     var cw = W - padL - padR, ch = H - padT - padB;
     var maxAbs = Math.max(
-      Math.max.apply(null, m.inPer),
-      Math.abs(Math.min.apply(null, m.outPer)),
-      Math.max.apply(null, m.netPer.map(Math.abs))
-    ) * 1.08 || 1;
-    function x(i) { return padL + (n <= 1 ? cw / 2 : (i / (n - 1)) * cw); }
+      Math.max.apply(null, P.map(function (p) { return p.inv; })),
+      Math.abs(Math.min.apply(null, P.map(function (p) { return p.out; }))),
+      Math.max.apply(null, P.map(function (p) { return Math.abs(p.net); }))
+    ) * 1.12 || 1;
+    var band = cw / nP;
+    function cx(i) { return padL + band * (i + 0.5); }
     function y(v) { return padT + ch * (1 - (v + maxAbs) / (2 * maxAbs)); }
     var zeroY = y(0);
+    // actual/forecast boundary: last period whose start month is ≤ the data date
+    var dd = today(), ddM = new Date(dd.getFullYear(), dd.getMonth(), 1);
+    var split = 0; P.forEach(function (p, i) { if (p.date <= ddM) split = i + 1; });
+
+    // grid + Y labels + axes
     var grid = '';
-    [-1, -0.5, 0, 0.5, 1].forEach(function (f) { var v = maxAbs * f, yy = y(v); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="' + (f === 0 ? 'cf-zero' : 'cf-grid') + '"/><text x="' + (padL - 6) + '" y="' + (yy + 3.5) + '" class="cf-ylab">' + Fmt.moneyShort(v) + '</text>'; });
-    var xw = cw / n, bw = Math.max(1.5, Math.min(14, xw * 0.6));
-    var bars = '';
-    m.inPer.forEach(function (v, i) { if (v > 0) { var yy = y(v); bars += '<rect x="' + (x(i) - bw / 2) + '" y="' + yy + '" width="' + bw + '" height="' + (zeroY - yy) + '" fill="var(--pd-ok)"/>'; } });
-    m.outPer.forEach(function (v, i) { if (v < 0) { var yy = y(v); bars += '<rect x="' + (x(i) - bw / 2) + '" y="' + zeroY + '" width="' + bw + '" height="' + (yy - zeroY) + '" fill="var(--pd-red)"/>'; } });
-    var netPts = m.netPer.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ');
-    var xlab = '', step = Math.max(1, Math.ceil(n / 12));
-    m.months.forEach(function (mo, i) { if (i % step === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="cf-xlab">' + monthLabel(mo) + '</text>'; });
-    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + bars +
-      '<polyline points="' + netPts + '" fill="none" stroke="var(--pd-ink)" stroke-width="2"/>' +
-      xlab + '</svg>' +
+    [-1, -0.5, 0, 0.5, 1].forEach(function (f) { var v = maxAbs * f, yy = y(v); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="' + (f === 0 ? 'cf-zero' : 'cf-grid') + '"/><text x="' + (padL - 8) + '" y="' + (yy + 3.5) + '" class="cf-ylab">' + Fmt.moneyShort(v) + '</text>'; });
+    grid += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + ch) + '" class="cf-axis"/>';
+
+    var bw = Math.max(2, Math.min(28, band * 0.62)), showLab = periodMode === 'quarter' || band >= 44;
+    var bars = '', labs = '', hovers = '';
+    P.forEach(function (p, i) {
+      var fc = i >= split, op = fc ? 'opacity="0.4"' : '';
+      var x0 = cx(i) - bw / 2;
+      if (p.inv > 0) { var yi = y(p.inv); bars += '<rect x="' + x0 + '" y="' + yi + '" width="' + bw + '" height="' + (zeroY - yi) + '" fill="var(--pd-ok)" ' + op + '/>'; if (showLab) labs += '<text x="' + cx(i) + '" y="' + (yi - 3) + '" class="cf-dlab">' + Fmt.moneyShort(p.inv) + '</text>'; }
+      if (p.out < 0) { var yo = y(p.out); bars += '<rect x="' + x0 + '" y="' + zeroY + '" width="' + bw + '" height="' + (yo - zeroY) + '" fill="var(--pd-red)" ' + op + '/>'; if (showLab) labs += '<text x="' + cx(i) + '" y="' + (yo + 10) + '" class="cf-dlab">' + Fmt.moneyShort(-p.out) + '</text>'; }
+      hovers += '<rect class="cf-hover" data-i="' + i + '" x="' + (padL + band * i) + '" y="' + padT + '" width="' + band + '" height="' + ch + '"/>';
+    });
+    // net line — solid (actual) then dashed (forecast), sharing the boundary point
+    function seg(a, b, dash) { var pts = []; for (var i = a; i < b; i++) pts.push(cx(i) + ',' + y(P[i].net)); return pts.length > 1 ? '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--pd-ink)" stroke-width="2.25" ' + (dash ? 'stroke-dasharray="5 4"' : '') + '/>' : ''; }
+    var netLine = seg(0, split, false) + seg(Math.max(0, split - 1), nP, true);
+    // X labels (centred under bands)
+    var xlab = '', step = Math.max(1, Math.ceil(nP / 14));
+    P.forEach(function (p, i) { if (i % step === 0) xlab += '<text x="' + cx(i) + '" y="' + (H - padB + 18) + '" class="cf-xlab">' + esc(p.label) + '</text>'; });
+
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + bars + labs + netLine + xlab + hovers + '</svg>' +
+      '<div class="cf-tip" id="cf-tip"></div>' +
       '<div class="cf-legend">' +
-      '<span class="cf-lg"><span class="sw" style="background:var(--pd-ok);"></span>Cash In (period)</span>' +
-      '<span class="cf-lg"><span class="sw" style="background:var(--pd-red);"></span>Cash Out (period)</span>' +
-      '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ink);"></span>Net (period)</span>' +
+      '<span class="cf-lg"><span class="sw" style="background:var(--pd-ok);"></span>Cash In</span>' +
+      '<span class="cf-lg"><span class="sw" style="background:var(--pd-red);"></span>Cash Out</span>' +
+      '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ink);"></span>Net</span>' +
+      '<span class="cf-lg"><span class="sw fc" style="background:var(--pd-muted);"></span>Forecast (faded / dashed)</span>' +
       '</div>';
+
+    // running balance for the tooltip
+    var run = 0, bal = P.map(function (p) { run += p.net; return run; });
+    pvState = { P: P, bal: bal, split: split, W: W, host: host };
+    wirePeriodicTip();
   }
 
-  function drawChart() {
-    var host = document.getElementById('cf-chart'); if (!host) return;
-    var m = model, n = m.n;
-    var W = 1000, H = 340, padL = 64, padR = 16, padT = 16, padB = 34;
-    var cw = W - padL - padR, ch = H - padT - padB;
-    var all = m.inCum.concat(m.outCum).concat(m.netCum);
-    var maxV = Math.max.apply(null, all), minV = Math.min.apply(null, all);
-    if (maxV === minV) maxV = minV + 1;
-    var pad = (maxV - minV) * 0.08; maxV += pad; minV -= pad;
-    function x(i) { return padL + (n <= 1 ? cw / 2 : (i / (n - 1)) * cw); }
-    function y(v) { return padT + ch - ((v - minV) / (maxV - minV)) * ch; }
-    var grid = '', steps = 4;
-    for (var i = 0; i <= steps; i++) { var v = minV + (maxV - minV) * i / steps, yy = y(v); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="cf-grid"/><text x="' + (padL - 6) + '" y="' + (yy + 3.5) + '" class="cf-ylab">' + Fmt.moneyShort(v) + '</text>'; }
-    var zeroY = y(0);
-    var zero = (0 >= minV && 0 <= maxV) ? '<line x1="' + padL + '" y1="' + zeroY + '" x2="' + (W - padR) + '" y2="' + zeroY + '" class="cf-zero"/>' : '';
-    function poly(arr, color, w) { return '<polyline points="' + arr.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ') + '" fill="none" stroke="' + color + '" stroke-width="' + w + '"/>'; }
-    var xlab = ''; var step = Math.max(1, Math.ceil(n / 12));
-    m.months.forEach(function (mo, i) { if (i % step === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="cf-xlab">' + monthLabel(mo) + '</text>'; });
-    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + zero +
-      poly(m.inCum, 'var(--pd-ok)', 2) +
-      poly(m.outCum, 'var(--pd-red)', 2) +
-      poly(m.netCum, 'var(--pd-ink)', 2.75) +
-      xlab + '</svg>' +
-      '<div class="cf-legend">' +
-      '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ok);"></span>Cumulative Cash In</span>' +
-      '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-red);"></span>Cumulative Cash Out</span>' +
-      '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ink);"></span>Net (funding curve)</span>' +
-      '</div>';
+  function wirePeriodicTip() {
+    if (!pvState) return;
+    var host = pvState.host, tip = document.getElementById('cf-tip'), svg = host.querySelector('svg');
+    host.querySelectorAll('.cf-hover').forEach(function (r) {
+      r.onmouseenter = r.onmousemove = function (ev) {
+        var i = +r.dataset.i, p = pvState.P[i]; if (!p) return;
+        tip.innerHTML = '<div class="cf-tip-hd">' + esc(p.label) + (i >= pvState.split ? ' · forecast' : '') + '</div>' +
+          '<div><span class="g">Cash In</span> ' + Fmt.money(p.inv) + '</div>' +
+          '<div><span class="r">Cash Out</span> ' + Fmt.money(-p.out) + '</div>' +
+          '<div><b>Net</b> ' + Fmt.money(p.net) + '</div>' +
+          '<div>Balance ' + Fmt.money(pvState.bal[i]) + '</div>';
+        var hb = host.getBoundingClientRect();
+        var xpx = ev.clientX - hb.left, ypx = ev.clientY - hb.top;
+        tip.style.opacity = '1';
+        var tw = tip.offsetWidth;
+        tip.style.left = Math.max(4, Math.min(hb.width - tw - 4, xpx + 14)) + 'px';
+        tip.style.top = Math.max(4, ypx - 10) + 'px';
+      };
+      r.onmouseleave = function () { tip.style.opacity = '0'; };
+    });
   }
+  function setPeriodMode(mode) { periodMode = mode; drawPeriodic(); var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter'); if (mb) mb.className = mode === 'month' ? 'active' : ''; if (qb) qb.className = mode === 'quarter' ? 'active' : ''; }
 
   function matrixHTML() {
     var m = model;
