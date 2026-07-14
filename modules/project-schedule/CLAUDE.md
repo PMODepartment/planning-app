@@ -8,6 +8,32 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Auto Activity ID + editable Status & Relationships tabs (2026-07-14) — jasantos2 / eprobles
+Follow-up to the interactive-Add work below. No migration, no schema change.
+- **Auto-generated Activity ID on quick-add.** `quickAddActivity` now stamps `activity_id =
+  nextActivityId()` instead of leaving it blank. `nextActivityId()` takes the max existing numeric
+  Activity ID in the project, rounds **up to the next multiple of 10** (P6/OPC-style — `…1010`→`1020`,
+  `1013`→`1020`), and keeps whatever prefix the highest ID uses (e.g. `A1020`→`A1030`). Starts at
+  `1010` when the project has no numeric IDs; skips collisions. (Logic unit-checked in-browser:
+  empty→1010, `A1010/A1020/A1005`→`A1030`, `A1013`→`A1020`, collision→next free.)
+- **Editable Status tab.** `renderDetails` status branch now renders `detStatusEdit(r)` + the shared
+  `wireEditFields` (same live-editor pattern as General): Status, % Complete, Expected Finish, all
+  Planned/Actual/Baseline dates, Actual/Remaining Duration, Free Float, Planned/Actual/Remaining Labor
+  Units, and Primary/Secondary Constraints (+dates) are editable and persist on change. Computed
+  fields (Planned/At-Completion Duration, Total Float, Critical, Finish Variance) stay read-only via
+  the new `_gro()` helper. Added a `num` field type (non-negative, unbounded) to `_gf`/`wireEditFields`
+  for durations/labor units (the existing `number` type stays 0–100, used for % Complete).
+- **Editable Relationships tab.** `detRelsEdit(r)` + `wireRels` replace the read-only tables:
+  predecessors get a **× remove** per row and an **add row** (activity datalist + FS/SS/FF/SF type +
+  lag), mirroring the modal's predecessor picker. Edits reserialize to the predecessor token text via
+  `serializeRels()` (verified to match the CPM `predRels` format — `1010 SS+3`, `1010 FS-2`) and go
+  through `persist()` (undoable + audited + CPM rebuild). **Successors stay read-only** (derived as the
+  inverse of other activities' predecessors).
+- Resource Assignments / Steps / Expenses / Notebook / Files were already editable (CRUD) — unchanged.
+- **Verification:** full inline script parses clean (module page loads, zero console errors);
+  `nextActivityId`/`serializeRels` logic unit-checked in-browser. **Live click-through still pending a
+  real login** (needs an approved session + a project with data).
+
 ## Interactive Add-activity + editable General tab (2026-07-14) — jasantos2 / eprobles
 Requested: make "Add activity" contextual — select a WBS or activity first, then Add places the new
 activity under that respective WBS and lets you edit its details in the panel below (no migration,

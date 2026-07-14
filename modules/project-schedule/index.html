@@ -2737,13 +2737,19 @@
     else if (type === 'textarea') inp = '<textarea class="pd-input ps-gedit" data-f="' + field + '" data-t="text" rows="2" style="' + st + 'resize:vertical;">' + esc(String(val)) + '</textarea>';
     else if (type === 'date') inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="date" type="date" value="' + (val ? String(val).slice(0, 10) : '') + '" style="' + st + '">';
     else if (type === 'number') inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="number" type="number" min="0" max="100" step="1" value="' + esc(String(val)) + '" style="' + st + '">';
-    else if (type === 'ro') inp = '<input class="pd-input" value="' + esc(String(val)) + '" readonly title="Set by the parent WBS" style="' + st + 'background:var(--pd-bg);color:var(--pd-muted);">';
+    else if (type === 'num') inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="num" type="number" min="0" step="any" value="' + esc(String(val)) + '" style="' + st + '">';
+    else if (type === 'ro') inp = '<input class="pd-input" value="' + esc(String(val)) + '" readonly title="Read-only / computed" style="' + st + 'background:var(--pd-bg);color:var(--pd-muted);">';
     else inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="text" value="' + esc(String(val)) + '" style="' + st + '">';
     return '<div style="display:flex;flex-direction:column;gap:3px;' + (full ? 'grid-column:1/-1;' : '') + '"><label style="font-size:11px;color:var(--pd-muted);">' + esc(label) + '</label>' + inp + '</div>';
   }
   function _gGroup(title, fieldsHtml) {
     return '<div style="margin-bottom:14px;"><h5 style="margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' + esc(title) + '</h5>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;">' + fieldsHtml + '</div></div>';
+  }
+  // Read-only computed display field (matches _gf's look; not wired to persist).
+  function _gro(label, valStr, full) {
+    return '<div style="display:flex;flex-direction:column;gap:3px;' + (full ? 'grid-column:1/-1;' : '') + '"><label style="font-size:11px;color:var(--pd-muted);">' + esc(label) + '</label>' +
+      '<input class="pd-input" value="' + esc(String(valStr)) + '" readonly title="Computed" style="width:100%;box-sizing:border-box;font-size:12.5px;background:var(--pd-bg);color:var(--pd-muted);"></div>';
   }
   function detGeneralEdit(r) {
     var codeRows = CODE_TYPES.map(function (ct) { var vid = r.activity_codes && r.activity_codes[ct.id]; return [esc(ct.name), esc(vid ? (codeValueLabel(vid) || '—') : '—')]; });
@@ -2773,11 +2779,12 @@
       _gGroup('Notes', _gf('Remarks', 'remarks', 'textarea', r, null, true)) +
     '</div>';
   }
-  function wireGeneral(root, r) {
+  function wireEditFields(root, r) {
     root.querySelectorAll('.ps-gedit').forEach(function (el) {
       el.onchange = function () {
         var f = el.dataset.f, t = el.dataset.t, v = el.value, patch = {};
         if (t === 'number') patch[f] = (v === '' ? null : Math.max(0, Math.min(100, parseFloat(v) || 0)));
+        else if (t === 'num') patch[f] = (v === '' ? null : Math.max(0, parseFloat(v) || 0));
         else if (t === 'date') patch[f] = v || null;
         else if (t === 'select') patch[f] = v || null;
         else patch[f] = (typeof v === 'string' ? v.trim() : v) || null;
@@ -2825,6 +2832,51 @@
       ]) +
     '</div>';
   }
+  // Editable Status tab — same live-editor pattern as detGeneralEdit (persists on change via
+  // wireEditFields). Computed fields (Planned/At-Completion duration, Total Float, Critical,
+  // Finish Variance) stay read-only via _gro.
+  function detStatusEdit(r) {
+    var fv = finVar(r);
+    function dd(x) { return x != null ? x + 'd' : '—'; }
+    function nz(x) { return x != null ? (Math.round(x * 100) / 100) : '—'; }
+    var atDur = (r.actual_duration != null || r.remaining_duration != null) ? ((r.actual_duration || 0) + (r.remaining_duration || 0)) : r.duration_days;
+    var atLU  = (r.actual_labor_units != null || r.remaining_labor_units != null) ? ((r.actual_labor_units || 0) + (r.remaining_labor_units || 0)) : r.planned_labor_units;
+    var pcon = ['', 'Start On', 'Start On or After', 'Start On or Before', 'Finish On', 'Finish On or After', 'Finish On or Before', 'Mandatory Start', 'Mandatory Finish', 'As Late As Possible'];
+    var scon = ['', 'Start On', 'Start On or After', 'Start On or Before', 'Finish On', 'Finish On or After', 'Finish On or Before'];
+    return '<div class="ps-det-groups">' +
+      '<div style="font-size:11.5px;color:var(--pd-muted);margin:0 0 10px;">Editing this activity — changes save automatically. Computed fields are read-only.</div>' +
+      _gGroup('Activity Status',
+        _gf('Status', 'status', 'select', r, ['Not Started', 'In Progress', 'Completed']) +
+        _gf('% Complete', 'percent_complete', 'number', r) +
+        _gf('Expected Finish', 'expected_finish', 'date', r)) +
+      _gGroup('Dates',
+        _gf('Planned Start', 'start_date', 'date', r) +
+        _gf('Planned Finish', 'end_date', 'date', r) +
+        _gf('Actual Start', 'actual_start', 'date', r) +
+        _gf('Actual Finish', 'actual_finish', 'date', r) +
+        _gf('Baseline Start', 'bl_start', 'date', r) +
+        _gf('Baseline Finish', 'bl_finish', 'date', r)) +
+      _gGroup('Duration & Float',
+        _gro('Planned Duration', dd(r.duration_days)) +
+        _gf('Actual Duration (d)', 'actual_duration', 'num', r) +
+        _gf('Remaining Duration (d)', 'remaining_duration', 'num', r) +
+        _gro('At Completion', dd(atDur)) +
+        _gro('Total Float', dd(r._float)) +
+        _gf('Free Float (d)', 'free_float', 'num', r) +
+        _gro('Critical', r._critical ? 'Yes' : 'No') +
+        _gro('Finish Variance (BL)', fv != null ? (fv > 0 ? '+' : '') + fv + 'd' : '—')) +
+      _gGroup('Labor Units',
+        _gf('Planned', 'planned_labor_units', 'num', r) +
+        _gf('Actual', 'actual_labor_units', 'num', r) +
+        _gf('Remaining', 'remaining_labor_units', 'num', r) +
+        _gro('At Completion', nz(atLU))) +
+      _gGroup('Constraints',
+        _gf('Primary', 'primary_constraint', 'select', r, pcon) +
+        _gf('Primary Date', 'primary_constraint_date', 'date', r) +
+        _gf('Secondary', 'secondary_constraint', 'select', r, scon) +
+        _gf('Secondary Date', 'secondary_constraint_date', 'date', r)) +
+    '</div>';
+  }
   function relRowHtml(o) { return '<tr><td>' + esc(o.id || '') + '</td><td>' + esc(actName(o.id)) + '</td><td>' + esc(o.type || 'FS') + '</td><td style="text-align:right;">' + (o.lag ? (o.lag > 0 ? '+' : '') + o.lag + 'd' : '0d') + '</td></tr>'; }
   function relPreds(r) { return (r._relObjs && r._relObjs.length) ? r._relObjs.map(function (x) { return { id: x.p.activity_id, type: x.type, lag: x.lag }; }) : predRels(r.predecessors); }
   function detRels(r) {
@@ -2839,6 +2891,59 @@
       '<div class="ps-gutter" title="Drag to resize · double-click to reset"></div>' +
       '<div class="ps-vs-b">' + tbl('Successors', succs) + '</div>' +
     '</div>';
+  }
+  // Editable Relationships tab — predecessors are add/remove (successors stay derived/read-only).
+  // Serializes back to the same predecessor token text the CPM parser (predRels) reads.
+  function serializeRels(list) { return list.map(function (o) { var t = o.type || 'FS', lag = o.lag || 0; return o.id + ((t !== 'FS' || lag) ? ' ' + t : '') + (lag ? (lag > 0 ? '+' : '') + lag : ''); }).join(', '); }
+  function relRowHtmlEdit(o) { return '<tr><td>' + esc(o.id || '') + '</td><td>' + esc(actName(o.id)) + '</td><td>' + esc(o.type || 'FS') + '</td><td style="text-align:right;">' + (o.lag ? (o.lag > 0 ? '+' : '') + o.lag + 'd' : '0d') + '</td><td style="text-align:right;"><button class="ps-btn-sm" data-relrm="' + esc(String(o.id)) + '" title="Remove predecessor">&#215;</button></td></tr>'; }
+  function detRelsEdit(r) {
+    var preds = relPreds(r), succs = r._succObjs || [];
+    var cands = rows.filter(function (t) { return !isWbs(t) && t.activity_id != null && String(t.activity_id) !== '' && String(t.activity_id) !== String(r.activity_id || ''); })
+      .sort(function (a, b) { return String(a.activity_id).localeCompare(String(b.activity_id), undefined, { numeric: true }); });
+    var addRow = '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">' +
+      '<input class="pd-input" id="ps-rel-search" list="ps-rel-predlist" placeholder="Add predecessor…" style="flex:2 1 150px;min-width:120px;font-size:12.5px;" autocomplete="off">' +
+      '<datalist id="ps-rel-predlist">' + cands.map(function (t) { return '<option value="' + esc(String(t.activity_id) + ' — ' + (t.activity_name || '')) + '"></option>'; }).join('') + '</datalist>' +
+      '<select class="pd-select" id="ps-rel-type" title="Relationship type" style="flex:0 0 auto;width:58px;font-size:12.5px;"><option>FS</option><option>SS</option><option>FF</option><option>SF</option></select>' +
+      '<input class="pd-input" id="ps-rel-lag" type="number" step="1" placeholder="lag" title="Lag in days (optional; negative = lead)" style="flex:0 0 auto;width:58px;font-size:12.5px;">' +
+      '<button class="pd-btn" id="ps-rel-add" style="height:30px;font-size:12px;padding:0 12px;">Add</button></div>';
+    var predPane = '<div><h5>Predecessors (' + preds.length + ')</h5>' +
+      (preds.length ? '<table class="ps-mini"><thead><tr><th>ID</th><th>Name</th><th>Type</th><th style="text-align:right;">Lag</th><th></th></tr></thead><tbody>' + preds.map(relRowHtmlEdit).join('') + '</tbody></table>'
+                    : '<p style="color:var(--pd-muted);font-size:12px;margin:4px 0;">None yet.</p>') + addRow + '</div>';
+    var succPane = '<div><h5>Successors (' + succs.length + ')</h5>' +
+      '<p style="color:var(--pd-muted);font-size:11px;margin:2px 0 6px;">Derived from other activities\' predecessors — read-only.</p>' +
+      (succs.length ? '<table class="ps-mini"><thead><tr><th>ID</th><th>Name</th><th>Type</th><th style="text-align:right;">Lag</th></tr></thead><tbody>' + succs.map(relRowHtml).join('') + '</tbody></table>'
+                    : '<p style="color:var(--pd-muted);font-size:12px;margin:4px 0;">None.</p>') + '</div>';
+    return '<div class="ps-vsplit" data-split="rels">' +
+      '<div class="ps-vs-a">' + predPane + '</div>' +
+      '<div class="ps-gutter" title="Drag to resize · double-click to reset"></div>' +
+      '<div class="ps-vs-b">' + succPane + '</div>' +
+    '</div>';
+  }
+  function wireRels(root, r) {
+    root.querySelectorAll('[data-relrm]').forEach(function (b) {
+      b.onclick = function () {
+        var id = b.dataset.relrm, list = relPreds(r).filter(function (o) { return String(o.id) !== String(id); });
+        persist(r.id, { predecessors: serializeRels(list) || null }).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
+      };
+    });
+    var addBtn = root.querySelector('#ps-rel-add'), search = root.querySelector('#ps-rel-search');
+    function add() {
+      if (!search) return;
+      var sel = predIds(search.value)[0];
+      if (!sel) { UI.toast('Pick an activity from the list first.', 'warn'); return; }
+      var selfId = r.activity_id != null ? String(r.activity_id) : null;
+      if (selfId && sel === selfId) { UI.toast('An activity cannot be its own predecessor.', 'error'); return; }
+      if (!rows.some(function (t) { return !isWbs(t) && String(t.activity_id) === sel; })) { UI.toast('No activity with ID "' + sel + '" in this schedule.', 'error'); return; }
+      var cur = relPreds(r);
+      if (cur.some(function (o) { return String(o.id) === sel; })) { UI.toast(sel + ' is already a predecessor.', 'warn'); return; }
+      var type = (root.querySelector('#ps-rel-type') || {}).value || 'FS';
+      var lag = parseInt((root.querySelector('#ps-rel-lag') || {}).value, 10); if (isNaN(lag)) lag = 0;
+      cur.push({ id: sel, type: type, lag: lag });
+      persist(r.id, { predecessors: serializeRels(cur) || null }).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
+    }
+    if (addBtn) addBtn.onclick = add;
+    if (search) search.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+    if (window.Icons) Icons.hydrate(root);
   }
   // ----- Resource Assignments (assign resources to the selected activity) -----
   function resName(a) {
@@ -3638,12 +3743,12 @@
     if (t === 'roleusage') { usageKind = 'role'; body.innerHTML = usageResourceHtml(); wireResUsage(); wireDetailSplits(body); return; }
     var r = selRow();
     if (!r || isWbs(r)) { body.innerHTML = '<div class="ps-empty-detail">Select an activity (click a row or its bar) to see its details.</div>'; return; }
-    if (t === 'general') { body.innerHTML = detGeneralEdit(r); wireGeneral(body, r); }
-    else if (t === 'status') body.innerHTML = detStatus(r);
+    if (t === 'general') { body.innerHTML = detGeneralEdit(r); wireEditFields(body, r); }
+    else if (t === 'status') { body.innerHTML = detStatusEdit(r); wireEditFields(body, r); }
     else if (t === 'steps') { body.innerHTML = detSteps(r); wireSteps(body, r); }
     else if (t === 'assign') { body.innerHTML = detAssign(r); wireAssign(body, r); }
     else if (t === 'expenses') { body.innerHTML = detExpenses(r); wireExpenses(body, r); }
-    else if (t === 'rels') { body.innerHTML = detRels(r); wireDetailSplits(body); }
+    else if (t === 'rels') { body.innerHTML = detRelsEdit(r); wireRels(body, r); wireDetailSplits(body); }
     else if (t === 'trace') { body.innerHTML = detTrace(r); wireTrace(body, r); }
     else if (t === 'notebook') { body.innerHTML = detNotebook(r); wireNotebook(body, r); }
     else if (t === 'files') { body.innerHTML = detFiles(r); wireFiles(body, r); }
@@ -6469,7 +6574,7 @@
     if (!sel) { openForm(null); return; }
     var wbs = sel.wbs || null, nodeId = sel.wbs_node_id || null;
     var payload = {
-      project_id: pid, wbs: wbs, activity_id: null, activity_name: 'New Activity',
+      project_id: pid, wbs: wbs, activity_id: nextActivityId(), activity_name: 'New Activity',
       activity_type: 'Task', status: 'Not Started', percent_complete: 0,
       created_by: UID, updated_at: new Date().toISOString()
     };
@@ -6502,6 +6607,21 @@
     var sc = document.getElementById('ps-grid-scroll'); if (!sc) return;
     var vh = sc.clientHeight, y = idx * ROWH;
     if (y < sc.scrollTop || y > sc.scrollTop + vh - ROWH) sc.scrollTop = Math.max(0, y - Math.floor(vh / 2));
+  }
+  // Next Activity ID for a new activity — max existing numeric ID rounded up to the next multiple
+  // of 10 (P6/OPC-style, e.g. …1010 → 1020), keeping whatever prefix the highest ID uses (e.g. "A").
+  // Starts at 1010 when the project has no numeric IDs yet; guarantees uniqueness.
+  function nextActivityId() {
+    var maxNum = -1, prefix = '', found = false, taken = {};
+    rows.forEach(function (r) {
+      var id = r.activity_id; if (id == null || id === '') return;
+      taken[String(id)] = true;
+      var m = /^(\D*)(\d+)\s*$/.exec(String(id));
+      if (m) { var n = parseInt(m[2], 10); if (n >= maxNum) { maxNum = n; prefix = m[1]; } found = true; }
+    });
+    var num = found ? (Math.floor(maxNum / 10) * 10 + 10) : 1010;
+    var cand; do { cand = prefix + num; num += 10; } while (taken[cand]);
+    return cand;
   }
 
   // ----- tabs / view switch -----
