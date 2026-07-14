@@ -9,7 +9,11 @@
   <title>Cash Flow · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260714" />
   <style>
-    .cf-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:14px; }
+    .cf-controls { display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; margin-bottom:14px; }
+    .cf-viewbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:9px; padding:7px 12px; }
+    .cf-viewbar .pd-select { border:0; background:transparent; font-weight:600; padding:4px 6px; }
+    .cf-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
+    .cf-ctl-div { width:1px; align-self:stretch; min-height:22px; background:var(--pd-line); }
     .cf-src { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; font-size:12px; }
     .cf-chip { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted); }
     .cf-chip .dot { width:8px; height:8px; border-radius:50%; background:var(--pd-line); }
@@ -45,7 +49,8 @@
     .cf-hover { fill:transparent; cursor:pointer; }
     .cf-hover:hover { fill:rgba(127,127,127,.10); }
     .cf-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:6px; overflow:hidden; }
-    .cf-seg button { padding:4px 12px; font-size:12px; border:0; background:var(--pd-card); color:var(--pd-muted); cursor:pointer; }
+    .cf-seg button { padding:5px 13px; font-size:12px; font-weight:600; text-transform:none; letter-spacing:0; border:0; background:var(--pd-card); color:var(--pd-muted); cursor:pointer; }
+    .cf-seg button:hover:not(.active) { color:var(--pd-ink); background:var(--pd-bg); }
     .cf-seg button.active { background:var(--pd-red); color:#fff; }
     .cf-chart-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .cf-dlab { fill:var(--pd-muted); font-size:9px; text-anchor:middle; }
@@ -131,19 +136,26 @@
     <div class="pd-topbar"><h1>Cash Flow Projection</h1><div id="user-bar"></div></div>
     <div class="pd-main">
       <div class="cf-controls">
-        <select class="pd-select" id="cf-project" style="max-width:280px;"></select>
-        <label class="cf-dd-lbl" title="As-of date: cash-in actuals vs forecast split, and the drawdown/financing basis. Shared with Project Schedule.">Data date
-          <input class="pd-input" id="cf-datadate" type="date" style="width:150px;">
-          <button class="cf-btn-sm" id="cf-dd-clear" title="Clear override (use today / schedule data date)">&#215;</button></label>
-        <label class="cf-dd-lbl" title="How cash-in billing is spread over the schedule S-curve. Cost = per-activity Planned IBB; Duration = time-weighted. Cost falls back to Duration when the schedule has no cost loaded.">S-curve basis
-          <span class="cf-seg" id="cf-basis-seg">
-            <button id="cf-basis-duration">Duration</button><button id="cf-basis-cost">Cost</button>
-          </span></label>
-        <button class="pd-btn" id="cf-refresh"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
-        <button class="pd-btn" id="cf-sync" title="Pull the latest procurement work packages from WPM (admins/planners)" style="display:none;"><span data-ico="refresh" data-ico-size="15"></span> Sync from WPM</button>
-        <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="15"></span> Export</button>
-        <button class="pd-btn" id="cf-actuals" title="Record actual cash received / paid" style="margin-left:auto;"><span data-ico="clipboard" data-ico-size="15"></span> Actuals</button>
-        <button class="pd-btn pd-btn-primary" id="cf-settings"><span data-ico="settings" data-ico-size="15"></span> Assumptions</button>
+        <div class="cf-viewbar">
+          <select class="pd-select" id="cf-project" style="max-width:260px;"></select>
+          <span class="cf-ctl-div"></span>
+          <label class="cf-dd-lbl" title="As-of date: cash-in actuals vs forecast split, and the drawdown/financing basis. Shared with Project Schedule.">Data date
+            <input class="pd-input" id="cf-datadate" type="date" style="width:148px;">
+            <button class="cf-btn-sm" id="cf-dd-clear" title="Clear override (use today / schedule data date)">&#215;</button></label>
+          <span class="cf-ctl-div"></span>
+          <label class="cf-dd-lbl" title="How cash-in billing is spread over the schedule S-curve. Cost = per-activity Planned IBB; Duration = time-weighted. Cost falls back to Duration when the schedule has no cost loaded.">S-curve basis
+            <span class="cf-seg" id="cf-basis-seg">
+              <button id="cf-basis-duration">Duration</button><button id="cf-basis-cost">Cost</button>
+            </span></label>
+        </div>
+        <div class="cf-actions">
+          <button class="pd-btn" id="cf-refresh" title="Reload the projection"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
+          <button class="pd-btn" id="cf-sync" title="Pull the latest procurement work packages from WPM (admins/planners)" style="display:none;"><span data-ico="refresh" data-ico-size="15"></span> Sync from WPM</button>
+          <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="15"></span> Export</button>
+          <span class="cf-ctl-div"></span>
+          <button class="pd-btn" id="cf-actuals" title="Record actual cash received / paid"><span data-ico="clipboard" data-ico-size="15"></span> Actuals</button>
+          <button class="pd-btn pd-btn-primary" id="cf-settings"><span data-ico="settings" data-ico-size="15"></span> Assumptions</button>
+        </div>
       </div>
 
       <!-- data-source status -->
@@ -263,9 +275,12 @@
     basis = basis === 'cost' ? 'cost' : 'duration';
     if (settings.scurve_basis === basis) return;
     settings.scurve_basis = basis;
+    try { localStorage.setItem('cf_scurvebasis_' + pid, basis); } catch (e) {}   // always cache locally
     model = computeProjection(); render(); persistRollup();
+    // Best-effort DB persist (shared across users) — silently ignore if the v3 migration
+    // (scurve_basis column) hasn't been applied yet; the localStorage cache keeps it working.
     var res = await sb().from('cash_flow_settings').upsert({ project_id: pid, scurve_basis: basis, updated_at: new Date().toISOString() }, { onConflict: 'project_id' });
-    if (res.error) UI.toast('Could not save basis: ' + res.error.message, 'error');
+    if (res.error && !/scurve_basis|schema cache|column/i.test(res.error.message)) UI.toast('Could not save basis: ' + res.error.message, 'error');
   }
 
   // ---- Defaults for a project with no saved assumptions ----
@@ -298,6 +313,11 @@
     settings = res.data || defaults();
     if (settings.dp_recoup_percent == null) settings.dp_recoup_percent = settings.dp_percent;
     if (!settings.wpm_project_id) settings.wpm_project_id = pid;
+    // Basis: DB column wins when present (v3 migration applied); else the local cache.
+    if (settings.scurve_basis == null) {
+      var lb = null; try { lb = localStorage.getItem('cf_scurvebasis_' + pid); } catch (e) {}
+      settings.scurve_basis = lb === 'cost' ? 'cost' : 'duration';
+    }
   }
 
   async function loadSchedule() {
@@ -413,12 +433,14 @@
   function durWeight(a) { if (a.duration_days) return num(a.duration_days); var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; }
   function scurveWeight() {
     var basis = settings && settings.scurve_basis === 'cost' ? 'cost' : 'duration';
+    var withCost = scheduleRows.reduce(function (c, a) { return c + ((num(a.planned_cost) || num(a.bl_cost)) > 0 ? 1 : 0); }, 0);
+    var nAct = scheduleRows.length;
     if (basis === 'cost') {
       var totalCost = scheduleRows.reduce(function (s, a) { return s + (num(a.planned_cost) || num(a.bl_cost)); }, 0);
-      if (totalCost > 0) return { fn: function (a) { return num(a.planned_cost) || num(a.bl_cost) || 0; }, basis: 'cost', fellBack: false };
-      return { fn: durWeight, basis: 'duration', fellBack: true };   // requested cost, but none loaded
+      if (totalCost > 0) return { fn: function (a) { return num(a.planned_cost) || num(a.bl_cost) || 0; }, basis: 'cost', fellBack: false, withCost: withCost, nAct: nAct };
+      return { fn: durWeight, basis: 'duration', fellBack: true, withCost: withCost, nAct: nAct };   // requested cost, but none loaded
     }
-    return { fn: durWeight, basis: 'duration', fellBack: false };
+    return { fn: durWeight, basis: 'duration', fellBack: false, withCost: withCost, nAct: nAct };
   }
 
   function scheduleCurve(months, val) {
@@ -712,7 +734,7 @@
       financeRate: financeRate, financePer: financePer, financeTot: financeTot,
       fundingLimit: fundingLimit, breachMonths: breachMonths,
       usingTrades: usingTrades, tradeTotal: tradeTotal, tradeCount: tradePkgs.length,
-      scurveBasis: W.basis, scurveFellBack: W.fellBack,
+      scurveBasis: W.basis, scurveFellBack: W.fellBack, scurveWithCost: W.withCost, scurveActs: W.nAct,
       wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt,
       dpTotal: dpTotal, dpCount: dpTranches.length,
       hasActuals: actuals.length > 0, recInPer: recInPer, recOutPer: recOutPer,
@@ -737,9 +759,14 @@
       chip(contractCls, hasContract ? 'Contract set · IBB ' + Fmt.moneyShort(settings.contract_ibb) : 'Contract not set — open Assumptions') +
       chip(schedCls, scheduleRows.length ? 'Schedule S-curve · ' + scheduleRows.length + ' activities' : 'No schedule — cash-in needs the Project Schedule') +
       chip(wpmCls, wpmTxt) +
-      (model && !model.empty ? chip(model.scurveFellBack ? 'warn' : 'ok',
-        'Cash-in basis · ' + (model.scurveBasis === 'cost' ? 'Cost-weighted (Planned IBB)' : 'Duration-weighted') +
-        (model.scurveFellBack ? ' — Cost requested but schedule has no cost loaded' : '')) : '') +
+      (model && !model.empty ? (function () {
+        var partial = model.scurveBasis === 'cost' && model.scurveWithCost < model.scurveActs;
+        var cls = (model.scurveFellBack || partial) ? 'warn' : 'ok';
+        var txt = 'Cash-in basis · ' + (model.scurveBasis === 'cost' ? 'Cost-weighted (Planned IBB)' : 'Duration-weighted');
+        if (model.scurveFellBack) txt += ' — Cost requested but schedule has no cost loaded';
+        else if (model.scurveBasis === 'cost') txt += ' — ' + model.scurveWithCost + ' of ' + model.scurveActs + ' activities have cost' + (partial ? ' (uncosted ones don’t bill)' : '');
+        return chip(cls, txt);
+      })() : '') +
       (model && model.wpNoDates ? chip('warn', model.wpNoDates + ' WP(s) had no dates · ' + Fmt.moneyShort(model.wpNoDatesAmt) + ' spread over the schedule span') : '');
   }
   function chip(cls, txt) { return '<span class="cf-chip ' + cls + '"><span class="dot"></span>' + esc(txt) + '</span>'; }
