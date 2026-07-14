@@ -8,6 +8,21 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Column chooser scroll + Schedule reschedules by default (2026-07-14) — jasantos2 / eprobles
+- **Column chooser (grid-header "+" / `#ps-cols-menu`) now scrolls.** Root cause: `.ps-menu`
+  (line ~550) sets `overflow:hidden` and, being *later* in source than `.ps-cols-menu` (line ~158,
+  `overflow:auto`) at equal specificity, won the cascade — so the menu clipped at its `max-height:340px`
+  with no scrollbar (visible in the tester's screenshot, cut off at "Planned Value"). Added
+  `.ps-cols-menu { overflow-y:auto }` *after* `.ps-menu` so the chooser scrolls again.
+- **Schedule now reschedules dependent activities by default.** The CPM (`cpmLogic`) already honors
+  **multiple predecessors** per activity (each successor's early start = **max** candidate across all
+  its `_relObjs`, topological pass), and `applyScheduleDates()` writes those dates back — but it only
+  ran when the Schedule dialog's "Reschedule dependent activities" box was ticked, which defaulted
+  **off**. Changed `reschedOn` to default **on** (respects an explicit user off-setting), so hitting
+  **Schedule → Schedule Now** moves successors' Start/Finish along their FS/SS/FF/SF + lag links
+  (completed activities keep actuals; started ones keep their Start). Still confirms before the bulk
+  write. No relationships → it warns instead of moving.
+
 ## WBS click-to-select, WBS-scoped Activity ID, scrollable menus (2026-07-14) — jasantos2 / eprobles
 Follow-ups from tester feedback. No migration, no schema change.
 - **Clicking a WBS row now SELECTS it** (instead of toggling collapse every time). Expand/collapse is

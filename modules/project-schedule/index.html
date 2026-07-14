@@ -550,8 +550,10 @@
     .ps-menu { position:absolute; top:calc(100% + 4px); left:0; z-index:50; display:none; min-width:180px;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow); overflow:hidden; }
     .ps-menu.open { display:block; }
-    /* Tall popup menus (row context menu, column-header menu) must scroll rather than clip/overflow. */
+    /* Tall popup menus must scroll rather than clip (.ps-menu sets overflow:hidden, which otherwise
+       wins over the earlier .ps-cols-menu overflow:auto and clips the column chooser at its cap). */
     .ps-rowctx, .ps-colhdr-menu { max-height:82vh; overflow-y:auto; overflow-x:hidden; }
+    .ps-cols-menu { overflow-y:auto; overflow-x:hidden; }
     .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
       cursor:pointer; color:var(--pd-ink); font-size:13px; }
     .ps-menu button:hover { background:var(--pd-red-light); }
@@ -6833,7 +6835,9 @@
   var _cpmDirty = true;
   function ensureCPM() { if (_cpmDirty) computeCPM(); }
   // Whether "Schedule" should also WRITE the computed dates back (move successors). Persisted.
-  var reschedOn = (function () { try { return localStorage.getItem('ps_resched') === '1'; } catch (e) { return false; } })();
+  // Default ON: hitting Schedule should move successors' dates along their relationships (honors
+  // multiple predecessors per activity via the CPM). Respects an explicit user off-setting.
+  var reschedOn = (function () { try { var v = localStorage.getItem('ps_resched'); return v == null ? true : v === '1'; } catch (e) { return true; } })();
   var NEARDAYS = (function () { try { return parseInt(localStorage.getItem('ps_neardays'), 10) || 5; } catch (e) { return 5; } })();
   var mfpOn = (function () { try { return localStorage.getItem('ps_mfp') !== '0'; } catch (e) { return true; } })();
   // scheduling options (see Schedule ▾ menu). schedMode: 'retained' | 'override'.
