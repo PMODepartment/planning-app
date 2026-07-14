@@ -6603,9 +6603,12 @@
     if (!pid) { UI.toast('Select a project first.', 'error'); return; }
     if (!sel) { openForm(null); return; }
     var wbs = sel.wbs || null, nodeId = sel.wbs_node_id || null;
+    // Default the new activity to start on the data date with a 5-day duration (start + 4 inclusive).
+    var s0 = today(), e0 = addDays(s0, 4);
     var payload = {
       project_id: pid, wbs: wbs, activity_id: nextActivityId(wbs), activity_name: 'New Activity',
       activity_type: 'Task', status: 'Not Started', percent_complete: 0,
+      start_date: dstr(s0), end_date: dstr(e0), duration_days: 5,
       created_by: UID, updated_at: new Date().toISOString()
     };
     var res;

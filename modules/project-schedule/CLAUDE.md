@@ -8,6 +8,12 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Quick-add default dates (2026-07-14) — jasantos2 / eprobles
+- **New activities now default to start on the data date with a 5-day duration.** `quickAddActivity`
+  stamps `start_date = today()` (the data date, `dataDate || wallToday()`), `end_date = today()+4`
+  (5 inclusive days), and `duration_days = 5` on the insert payload (was blank/no dates). So a
+  freshly-added activity shows a real bar on the Gantt immediately and can be nudged from there.
+
 ## Visible Schedule button + dependency-arrow routing fix (2026-07-14) — jasantos2 / eprobles
 - **Schedule button is now a visible red primary button** (`pd-btn pd-btn-primary`, calculator icon +
   "Schedule" text) matching the "+ Add activity" button, instead of an icon-only `.ps-icobtn` whose
