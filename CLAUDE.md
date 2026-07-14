@@ -148,6 +148,25 @@ developer, plug into one shared shell.
   shows the forecast portion; KPI shows "actual to date". Cash-in actual is still date-based
   (recorded cash-in actuals not wired yet — noted in the chart sub).
 
+### 2026-07-14 — Prompt 70: Cash Flow v2 — tax, staged retention, actuals ledger, portfolio consolidation
+- Migration `2026-07-14-cash-flow-v2.sql` (**user must run**): adds `ewt_percent/vat_percent/
+  ret_rel1_pct/ret_rel2_months` to `cash_flow_settings`, new tables `cash_flow_actuals` +
+  `cash_flow_rollup`.
+- **#1 Tax withholdings**: EWT (default 2%) withheld from each billing on the VAT-exclusive
+  base (VAT default 12%); shown as a "Less: EWT withheld" matrix row. Total cash in = contract
+  − EWT (EWT is creditable, not returned in project cash).
+- **#4 Staged retention release**: stage-1 % at completion+lag, remainder at a stage-2 lag
+  (defects-liability). rel1_pct=100 → single release (backward compatible). Applied to cash-in
+  and cash-out.
+- **#2 Recorded actuals ledger**: `cash_flow_actuals` (period/direction/category/amount) with an
+  "Actuals" editor modal; an "Actual vs Plan — to data date" variance card appears when actuals
+  exist (recorded in/out/net vs the projection through the data date).
+- **#3 Portfolio consolidated cash flow**: the Cash Flow module writes a monthly
+  `cash_flow_rollup` (cash_in/out/net) per project on load; Portfolio Overview's Cash Flow tab
+  now reads that roll-up → consolidated Cash In/Out bars + **Net funding curve** + peak-funding
+  KPI + per-project breakdown (was the old manual `cash_flow` planned/actual view).
+- Verified both modules parse; cash-in/out conservation hand-checked with EWT + staged retention.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

@@ -82,6 +82,13 @@
     .cf-dp-row .pd-input, .cf-dp-row .pd-select { padding:5px 7px; font-size:12px; }
     .cf-dp-amt { font-size:11px; font-weight:600; color:var(--pd-muted); text-align:right; white-space:nowrap; }
     #cf-dp-sum { color:var(--pd-ink); }
+    .cf-act-row { display:grid; grid-template-columns:1fr 1fr 1.1fr 1.1fr 1.6fr auto; gap:6px; align-items:center; margin-bottom:6px; }
+    .cf-act-row .pd-input, .cf-act-row .pd-select { padding:5px 7px; font-size:12px; }
+    .cf-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .cf-table th { padding:7px 12px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
+    .cf-table td { padding:7px 12px; border-bottom:1px solid var(--pd-line); }
+    .cf-table .num { text-align:right; }
+    .cf-table tr.cf-cum td { font-weight:700; }
     .cf-hint { font-size:11px; color:var(--pd-muted); margin-top:3px; }
     .cf-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--pd-line); }
     .cf-tab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; border-bottom:2px solid transparent; }
@@ -105,7 +112,8 @@
         <button class="pd-btn" id="cf-refresh"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
         <button class="pd-btn" id="cf-sync" title="Pull the latest procurement work packages from WPM (admins/planners)" style="display:none;"><span data-ico="refresh" data-ico-size="15"></span> Sync from WPM</button>
         <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="15"></span> Export</button>
-        <button class="pd-btn pd-btn-primary" id="cf-settings" style="margin-left:auto;"><span data-ico="settings" data-ico-size="15"></span> Assumptions</button>
+        <button class="pd-btn" id="cf-actuals" title="Record actual cash received / paid" style="margin-left:auto;"><span data-ico="clipboard" data-ico-size="15"></span> Actuals</button>
+        <button class="pd-btn pd-btn-primary" id="cf-settings"><span data-ico="settings" data-ico-size="15"></span> Assumptions</button>
       </div>
 
       <!-- data-source status -->
@@ -122,6 +130,19 @@
     <div class="pd-modal-header"><span>Cash Flow Assumptions</span><button class="pd-modal-close" id="cf-modal-x">&#215;</button></div>
     <div class="pd-modal-body"><form id="cf-form" class="cf-form-grid" onsubmit="return false;"></form></div>
     <div class="pd-modal-footer"><button class="pd-btn" id="cf-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="cf-save">Save</button></div>
+  </div>
+</div>
+
+<!-- Actuals modal -->
+<div class="pd-modal-overlay" id="cf-act-modal" style="display:none;">
+  <div class="pd-modal" style="max-width:820px;width:96vw;">
+    <div class="pd-modal-header"><span>Recorded Actuals</span><button class="pd-modal-close" id="cf-act-x">&#215;</button></div>
+    <div class="pd-modal-body">
+      <div class="cf-dp-head"><div class="cf-hint" style="margin:0;">Book real cash received / paid per month. Used for actual-vs-plan variance to the data date.</div>
+        <button type="button" class="cf-btn-sm" id="cf-act-add">+ Add entry</button></div>
+      <div id="cf-act-list"></div>
+    </div>
+    <div class="pd-modal-footer"><button class="pd-btn" id="cf-act-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="cf-act-save">Save</button></div>
   </div>
 </div>
 
@@ -149,6 +170,8 @@
   var milestones = [];           // {name, date} for DP-tranche milestone timing
   var tranches = [];             // cash_flow_dp_tranches rows (client DP breakdown)
   var editTranches = [];         // working copy while the Assumptions modal is open
+  var actuals = [];              // cash_flow_actuals rows (recorded real cash movements)
+  var editActuals = [];          // working copy while the Actuals modal is open
   var periodMode = 'month';      // periodic chart aggregation: 'month' | 'quarter'
   var pvState = null;            // geometry + data for the periodic-chart tooltip
   var selRange = null;           // {i0,i1} highlighted month-index range (matrix ↔ chart)
@@ -172,7 +195,8 @@
   function defaults() {
     return { project_id: pid, contract_ibb: null, contract_bcb: null, dp_percent: 0,
       retention_percent: 0.10, dp_recoup_percent: null, billing_terms_months: 1,
-      retention_release_months: 1, start_period: null, wpm_project_id: pid, remarks: null };
+      retention_release_months: 1, start_period: null, wpm_project_id: pid, remarks: null,
+      ewt_percent: 0.02, vat_percent: 0.12, ret_rel1_pct: 1, ret_rel2_months: 12 };
   }
 
   // ==========================================================================
@@ -227,6 +251,24 @@
   }
   function milestoneDate(name) { var m = milestones.find(function (x) { return x.name === name; }); return m ? pd(m.date) : null; }
 
+  async function loadActuals() {
+    var res = await sb().from('cash_flow_actuals').select('*').eq('project_id', pid).order('period');
+    actuals = (res.error ? [] : (res.data || []));
+  }
+
+  // Persist a monthly roll-up for the Portfolio consolidated view (delete + insert).
+  async function persistRollup() {
+    if (!pid || !model || model.empty) return;
+    try {
+      await sb().from('cash_flow_rollup').delete().eq('project_id', pid);
+      var rows = model.months.map(function (mo, i) {
+        return { project_id: pid, period: iso(new Date(mo.getFullYear(), mo.getMonth(), 1)),
+          cash_in: model.inPer[i], cash_out: model.outPer[i], net: model.netPer[i], updated_at: new Date().toISOString() };
+      }).filter(function (r) { return r.cash_in || r.cash_out; });
+      for (var i = 0; i < rows.length; i += 500) { await sb().from('cash_flow_rollup').insert(rows.slice(i, i + 500)); }
+    } catch (e) { /* roll-up is best-effort; never block the view */ }
+  }
+
   async function loadWPM() {
     wpRows = []; wpmStatus = 'loading'; wpmMsg = ''; wpmSyncedAt = null;
     var wpmPid = settings.wpm_project_id;
@@ -263,9 +305,10 @@
     if (!pid) { render(); return; }
     document.getElementById('cf-body').innerHTML = '<div class="cf-empty">Loading projection…</div>';
     await loadSettings();
-    await Promise.all([loadSchedule(), loadWPM(), loadTranches()]);
+    await Promise.all([loadSchedule(), loadWPM(), loadTranches(), loadActuals()]);
     model = computeProjection();
     render();
+    persistRollup();
   }
 
   // ==========================================================================
@@ -366,11 +409,22 @@
 
     var z = function () { return new Array(n).fill(0); };
     // ---- CASH IN (revenue) — driven by the schedule S-curve ----
-    var inDP = z(), inBill = z(), inRet = z();     // periodic components (received basis)
+    var inDP = z(), inBill = z(), inRet = z(), inEwt = z();   // periodic components (received basis)
     var base = num(settings.contract_ibb);         // billable contract (VAT inc)
     var retPct = num(settings.retention_percent);
+    var ewtPct = num(settings.ewt_percent);        // creditable withholding tax on billings
+    var vatPct = num(settings.vat_percent);        // to derive the VAT-exclusive EWT base
     var termsIn = Math.round(num(settings.billing_terms_months));
     var relIn = Math.round(num(settings.retention_release_months));
+    var rel1Pct = settings.ret_rel1_pct != null ? num(settings.ret_rel1_pct) : 1;   // staged retention release
+    var rel2 = Math.round(num(settings.ret_rel2_months));
+    // Retention release helper: stage-1 fraction at (completion + relIn), remainder
+    // at (completion + rel2). rel1Pct = 1 → single release (backward compatible).
+    function releaseRetention(arr, retTotal, lastIdx) {
+      if (retTotal <= 0) return;
+      arr[clampIdx(lastIdx + relIn, n)] += retTotal * rel1Pct;
+      if (rel1Pct < 1) arr[clampIdx(lastIdx + rel2, n)] += retTotal * (1 - rel1Pct);
+    }
 
     // Resolve the DP tranches into {dueIdx, amount, recoupRate, pool}. If none are
     // defined, fall back to the single settings.dp_percent (received up front) so
@@ -389,18 +443,19 @@
         var gross = base * progress;              // this month's progress billing (certified)
         if (gross <= 0) continue;
         var ret = gross * retPct; retTotal += ret;
+        var ewt = (gross / (1 + vatPct)) * ewtPct;   // EWT on the VAT-exclusive base (creditable, withheld now)
         // Proportional recoup: each tranche claws back its rate × this billing until spent.
         var recoup = 0;
         dpTranches.forEach(function (t) {
           if (t.pool <= 0) return;
           var r = Math.min(t.pool, gross * t.recoupRate); t.pool -= r; recoup += r;
         });
-        var net = gross - ret - recoup;           // net certified this month
-        inBill[Math.min(n - 1, i + termsIn)] += net;   // cash received after terms lag
+        var recv = Math.min(n - 1, i + termsIn);   // cash received after terms lag
+        inBill[recv] += (gross - ret - recoup);    // billing net of retention & recoup (before EWT)
+        inEwt[recv] += ewt;                        // EWT withheld (shown as its own deduction)
         lastBillMonth = i;
       }
-      // retention released after completion + release lag
-      if (retTotal > 0) { var ri = Math.min(n - 1, lastBillMonth + relIn); inRet[ri] += retTotal; }
+      releaseRetention(inRet, retTotal, lastBillMonth);   // staged release
     }
 
     // ---- CASH OUT (payments) — from WPM work packages, each spread over its window ----
@@ -450,7 +505,10 @@
         var netO = grossO - retO - recoupO;
         outAdd(outBill, clampIdx(mIdx + wterms, n), netO, awd);
       }
-      if (retTotalO > 0) outAdd(outRet, clampIdx(eIdx + wterms + 1, n), retTotalO, awd);
+      if (retTotalO > 0) {   // staged release, mirroring cash-in
+        outAdd(outRet, clampIdx(eIdx + wterms + relIn, n), retTotalO * rel1Pct, awd);
+        if (rel1Pct < 1) outAdd(outRet, clampIdx(eIdx + wterms + rel2, n), retTotalO * (1 - rel1Pct), awd);
+      }
     });
 
     // ---- roll-ups ----
@@ -458,9 +516,10 @@
     // actual/forecast split — cash-out from award status; cash-in by data date
     // (cash-in actuals aren't recorded yet, so its "actual" = plan through data date)
     var inActualPer = z(), inForecastPer = z(), outActualPer = z(), outForecastPer = z();
-    var ic = 0, oc = 0, nc = 0, outActualTot = 0;
+    var ic = 0, oc = 0, nc = 0, outActualTot = 0, ewtTot = 0;
     for (var m = 0; m < n; m++) {
-      inPer[m] = inDP[m] + inBill[m] + inRet[m];
+      inPer[m] = inDP[m] + inBill[m] - inEwt[m] + inRet[m];   // EWT withheld reduces cash in
+      ewtTot += inEwt[m];
       outPer[m] = -(outDP[m] + outBill[m] + outRet[m]);   // negative
       netPer[m] = inPer[m] + outPer[m];
       inActualPer[m] = m <= ddIdx ? inPer[m] : 0;
@@ -472,15 +531,28 @@
       inCum[m] = ic; outCum[m] = oc; netCum[m] = nc;
     }
     var peak = Math.min.apply(null, netCum);     // most negative cumulative = peak funding need
+
+    // ---- recorded actuals overlay (variance vs plan-to-date) ----
+    var recInPer = z(), recOutPer = z(), recInTot = 0, recOutTot = 0;
+    actuals.forEach(function (a) {
+      var mi = clampIdx(monthDiff(months[0], pd(a.period)), n), amt = num(a.amount);
+      if (a.direction === 'out') { recOutPer[mi] -= amt; recOutTot -= amt; }
+      else { recInPer[mi] += amt; recInTot += amt; }
+    });
+    var planInToDate = 0, planOutToDate = 0;
+    for (var q = 0; q <= ddIdx && q < n; q++) { planInToDate += inPer[q]; planOutToDate += outPer[q]; }
+
     return { empty: false, months: months, n: n, ddIdx: ddIdx,
-      inDP: inDP, inBill: inBill, inRet: inRet, inPer: inPer, inCum: inCum,
+      inDP: inDP, inBill: inBill, inRet: inRet, inEwt: inEwt, inPer: inPer, inCum: inCum,
       outDP: outDP, outBill: outBill, outRet: outRet, outPer: outPer, outCum: outCum,
       inActualPer: inActualPer, inForecastPer: inForecastPer,
       outActualPer: outActualPer, outForecastPer: outForecastPer,
       netPer: netPer, netCum: netCum,
-      totalIn: ic, totalOut: oc, closing: nc, peak: peak, outActualTot: -outActualTot,
+      totalIn: ic, totalOut: oc, closing: nc, peak: peak, outActualTot: -outActualTot, ewtTot: ewtTot,
       wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt,
-      dpTotal: dpTotal, dpCount: dpTranches.length };
+      dpTotal: dpTotal, dpCount: dpTranches.length,
+      hasActuals: actuals.length > 0, recInPer: recInPer, recOutPer: recOutPer,
+      recInTot: recInTot, recOutTot: recOutTot, planInToDate: planInToDate, planOutToDate: planOutToDate };
   }
   function clampIdx(i, n) { return Math.max(0, Math.min(n - 1, i)); }
 
@@ -513,7 +585,7 @@
       host.innerHTML = '<div class="cf-empty">Nothing to project yet. This module derives cash-in from the <b>Project Schedule</b> and cash-out from <b>WPM</b> work packages. Add a schedule and set the contract value under <b>Assumptions</b>.</div>';
       return;
     }
-    host.innerHTML = kpiHTML() + chartHTML() + matrixHTML();
+    host.innerHTML = kpiHTML() + chartHTML() + varianceHTML() + matrixHTML();
     drawPeriodic();
     var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter');
     if (mb) mb.onclick = function () { setPeriodMode('month'); };
@@ -672,6 +744,64 @@
   }
   function setPeriodMode(mode) { periodMode = mode; drawPeriodic(); var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter'); if (mb) mb.className = mode === 'month' ? 'active' : ''; if (qb) qb.className = mode === 'quarter' ? 'active' : ''; }
 
+  // Recorded actual vs plan-to-date variance (shown only when actuals exist).
+  function varianceHTML() {
+    var m = model; if (!m.hasActuals) return '';
+    function vcell(actual, plan) {
+      var vary = actual - plan, cls = vary >= 0 ? 'cf-ok' : 'cf-bad';
+      return '<td class="num">' + Fmt.moneyShort(actual) + '</td><td class="num">' + Fmt.moneyShort(plan) +
+        '</td><td class="num ' + cls + '">' + (vary > 0 ? '+' : '') + Fmt.moneyShort(vary) + '</td>';
+    }
+    return '<div class="cf-card"><h3>Actual vs Plan — to data date</h3>' +
+      '<p class="sub">Recorded actuals (' + actuals.length + ' entries) vs the projection through ' + Fmt.date(iso(today())) + '.</p>' +
+      '<div style="overflow-x:auto;"><table class="cf-table"><thead><tr><th></th><th class="num">Actual</th><th class="num">Plan</th><th class="num">Variance</th></tr></thead><tbody>' +
+      '<tr><td>Cash In</td>' + vcell(m.recInTot, m.planInToDate) + '</tr>' +
+      '<tr><td>Cash Out</td>' + vcell(m.recOutTot, m.planOutToDate) + '</tr>' +
+      '<tr class="cf-cum"><td>Net</td>' + vcell(m.recInTot + m.recOutTot, m.planInToDate + m.planOutToDate) + '</tr>' +
+      '</tbody></table></div></div>';
+  }
+
+  // ---- Actuals editor ----
+  function openActuals() {
+    if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+    editActuals = (actuals || []).map(function (a) { return JSON.parse(JSON.stringify(a)); });
+    renderActualRows();
+    document.getElementById('cf-act-add').onclick = function () {
+      editActuals.push({ period: iso(new Date(today().getFullYear(), today().getMonth(), 1)), direction: 'in', category: '', amount: null, description: '' });
+      renderActualRows();
+    };
+    document.getElementById('cf-act-modal').style.display = 'flex';
+  }
+  function renderActualRows() {
+    var host = document.getElementById('cf-act-list');
+    host.innerHTML = editActuals.length ? editActuals.map(function (a, i) {
+      return '<div class="cf-act-row">' +
+        '<input class="pd-input cf-act-i" data-i="' + i + '" data-k="period" type="month" value="' + (a.period ? String(a.period).slice(0, 7) : '') + '">' +
+        '<select class="pd-select cf-act-i" data-i="' + i + '" data-k="direction"><option value="in"' + (a.direction !== 'out' ? ' selected' : '') + '>Cash In</option><option value="out"' + (a.direction === 'out' ? ' selected' : '') + '>Cash Out</option></select>' +
+        '<input class="pd-input cf-act-i" data-i="' + i + '" data-k="category" placeholder="Category" value="' + esc(a.category || '') + '">' +
+        '<input class="pd-input cf-act-i" data-i="' + i + '" data-k="amount" type="number" step="0.01" placeholder="₱ amount" value="' + (a.amount != null ? a.amount : '') + '">' +
+        '<input class="pd-input cf-act-i" data-i="' + i + '" data-k="description" placeholder="Description" value="' + esc(a.description || '') + '">' +
+        '<button type="button" class="cf-btn-sm cf-act-del" data-i="' + i + '" title="Remove">&#215;</button></div>';
+    }).join('') : '<div class="cf-hint" style="padding:6px 0;">No actuals recorded yet.</div>';
+    host.querySelectorAll('.cf-act-i').forEach(function (el) {
+      el.onchange = function () { var a = editActuals[+el.dataset.i], k = el.dataset.k; a[k] = k === 'amount' ? (el.value === '' ? null : num(el.value)) : (k === 'period' ? (el.value ? el.value + '-01' : null) : el.value); };
+    });
+    host.querySelectorAll('.cf-act-del').forEach(function (b) { b.onclick = function () { editActuals.splice(+b.dataset.i, 1); renderActualRows(); }; });
+  }
+  async function saveActuals() {
+    var del = await sb().from('cash_flow_actuals').delete().eq('project_id', pid);
+    if (del.error) { UI.toast(del.error.message, 'error'); return; }
+    var rows = editActuals.filter(function (a) { return a.period && a.amount; }).map(function (a) {
+      return { project_id: pid, period: a.period, direction: a.direction === 'out' ? 'out' : 'in',
+        category: a.category || null, amount: Math.abs(num(a.amount)), description: a.description || null,
+        created_by: profile.id, updated_at: new Date().toISOString() };
+    });
+    if (rows.length) { var ins = await sb().from('cash_flow_actuals').insert(rows); if (ins.error) { UI.toast(ins.error.message, 'error'); return; } }
+    UI.toast('Actuals saved.', 'success');
+    document.getElementById('cf-act-modal').style.display = 'none';
+    loadAll();
+  }
+
   function matrixHTML() {
     var m = model;
     var hdr = '<th class="lbl">₱</th>' + m.months.map(function (mo, i) { return '<th class="mcol' + (selRange && i >= selRange.i0 && i <= selRange.i1 ? ' sel' : '') + '" data-mi="' + i + '">' + monthLabel(mo) + '</th>'; }).join('') + '<th>Total</th>';
@@ -689,6 +819,7 @@
       secHead('CASH IN') +
       row('Downpayment', m.inDP, '', true) +
       row('Billing (net of retention &amp; recoup)', m.inBill, '', true) +
+      row('Less: EWT withheld', m.inEwt.map(function (v) { return -v; }), '', true) +
       row('Retention release', m.inRet, '', true) +
       row('Cash In — cumulative', m.inCum, 'cf-cum') +
       secHead('CASH OUT') +
@@ -715,8 +846,12 @@
       fld('Contract Amount — BCB (₱)', '<input class="pd-input" id="s-bcb" type="number" step="0.01" value="' + (s.contract_bcb != null ? s.contract_bcb : '') + '">', 'Cost base (reference).') +
       fld('Downpayment % (simple)', '<input class="pd-input" id="s-dp" type="number" step="0.01" value="' + pctVal(s.dp_percent) + '">', 'Used only when NO tranches are defined below.') +
       fld('Retention %', '<input class="pd-input" id="s-ret" type="number" step="0.01" value="' + pctVal(s.retention_percent) + '">', 'Withheld from each billing, e.g. 10.') +
+      fld('EWT % (creditable withholding)', '<input class="pd-input" id="s-ewt" type="number" step="0.01" value="' + pctVal(s.ewt_percent) + '">', 'Withheld from each billing, e.g. 2. On the VAT-exclusive base.') +
+      fld('VAT % (for EWT base)', '<input class="pd-input" id="s-vat" type="number" step="0.01" value="' + pctVal(s.vat_percent) + '">', 'Contract is VAT-inc; EWT is computed net of this, e.g. 12.') +
       fld('Billing terms (months)', '<input class="pd-input" id="s-terms" type="number" step="1" value="' + (s.billing_terms_months != null ? s.billing_terms_months : 1) + '">', 'Lag from certification to cash receipt.') +
-      fld('Retention release (months after completion)', '<input class="pd-input" id="s-rel" type="number" step="1" value="' + (s.retention_release_months != null ? s.retention_release_months : 1) + '">') +
+      fld('Retention release — stage 1 (months after completion)', '<input class="pd-input" id="s-rel" type="number" step="1" value="' + (s.retention_release_months != null ? s.retention_release_months : 1) + '">') +
+      fld('Retention released at stage 1 (%)', '<input class="pd-input" id="s-rel1pct" type="number" step="1" value="' + pctVal(s.ret_rel1_pct != null ? s.ret_rel1_pct : 1) + '">', '100 = single release. E.g. 50 → half now, half at stage 2.') +
+      fld('Retention release — stage 2 (months after completion)', '<input class="pd-input" id="s-rel2" type="number" step="1" value="' + (s.ret_rel2_months != null ? s.ret_rel2_months : 12) + '">', 'Remainder (defects-liability period). Ignored if stage 1 = 100%.') +
       fld('Cashflow start month', '<input class="pd-input" id="s-start" type="month" value="' + (s.start_period ? String(s.start_period).slice(0, 7) : '') + '">', 'Blank → schedule start.') +
       fld('WPM project id (cash-out source)', '<input class="pd-input" id="s-wpm" value="' + esc(s.wpm_project_id || '') + '">', 'The Procurement app project id whose work packages fund cash-out. Blank → this project id.', true) +
       fld('Remarks', '<textarea class="pd-input" id="s-rem" rows="2">' + esc(s.remarks) + '</textarea>', '', true) +
@@ -796,8 +931,11 @@
       project_id: pid,
       contract_ibb: numInput('s-ibb'), contract_bcb: numInput('s-bcb'),
       dp_percent: pctInput('s-dp') || 0, retention_percent: pctInput('s-ret') || 0,
+      ewt_percent: pctInput('s-ewt') || 0, vat_percent: pctInput('s-vat') || 0,
       billing_terms_months: numInput('s-terms') != null ? Math.round(numInput('s-terms')) : 1,
       retention_release_months: numInput('s-rel') != null ? Math.round(numInput('s-rel')) : 1,
+      ret_rel1_pct: pctInput('s-rel1pct') != null ? pctInput('s-rel1pct') : 1,
+      ret_rel2_months: numInput('s-rel2') != null ? Math.round(numInput('s-rel2')) : 12,
       start_period: txtInput('s-start') ? txtInput('s-start') + '-01' : null,
       wpm_project_id: txtInput('s-wpm') || pid,
       remarks: txtInput('s-rem'),
@@ -877,6 +1015,10 @@
     document.getElementById('cf-modal-x').onclick = document.getElementById('cf-cancel').onclick = function () { document.getElementById('cf-modal').style.display = 'none'; };
     document.getElementById('cf-save').onclick = saveSettings;
     document.getElementById('cf-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
+    document.getElementById('cf-actuals').onclick = openActuals;
+    document.getElementById('cf-act-x').onclick = document.getElementById('cf-act-cancel').onclick = function () { document.getElementById('cf-act-modal').style.display = 'none'; };
+    document.getElementById('cf-act-save').onclick = saveActuals;
+    document.getElementById('cf-act-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
     loadProjects();
   });
 })();
