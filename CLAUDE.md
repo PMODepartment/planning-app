@@ -198,6 +198,19 @@ developer, plug into one shared shell.
   the projection tracks exactly the schedule's S-curve. Schedule fetch now pulls
   `planned_cost,bl_cost`. Parses; live run still pending.
 
+### 2026-07-14 — Prompt 73: Cash Flow — basis switcher resilience + toolbar UI polish
+- **Fixed the "Could not find scurve_basis column" error** on live (v3 migration not yet
+  applied): the basis now **always caches to `localStorage['cf_scurvebasis_<pid>']`** and the
+  DB write is best-effort (schema-cache/column errors swallowed). `loadSettings` uses the DB
+  value when present, else the local cache — so the switcher works before *and* after the
+  migration; running v3 upgrades it to cross-user persistence.
+- **Cost button auto-disables** (greyed, tooltip) when the schedule has no cost loaded
+  (`model.scurveWithCost === 0`), so it's obvious why Cost has no effect.
+- **Toolbar redesigned into one unified bar** (was two rows with a large empty gap): a single
+  bordered control strip with the view controls (project · data date · S-curve basis) left and
+  actions (Refresh/Sync/Export · Actuals/Assumptions) right, dividers between groups, denser
+  buttons; stacks cleanly under 1100px.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New
