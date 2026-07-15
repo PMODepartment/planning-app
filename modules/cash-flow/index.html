@@ -144,6 +144,8 @@
     .cf-tr-sub { margin:0 0 12px 14px; padding:9px 11px; border-left:3px solid var(--pd-red); background:var(--pd-bg); border-radius:0 6px 6px 0; }
     .cf-trt-row { display:grid; grid-template-columns:1.1fr 0.9fr 0.7fr 1fr 1fr 0.8fr auto auto; gap:6px; align-items:center; margin-bottom:6px; }
     .cf-trt-row .pd-input, .cf-trt-row .pd-select { padding:5px 7px; font-size:12px; }
+    .cf-bm-row { display:grid; grid-template-columns:1.6fr 0.9fr 0.8fr 1fr 1.1fr auto auto; gap:6px; align-items:center; margin-bottom:6px; }
+    .cf-bm-row .pd-input, .cf-bm-row .pd-select { padding:5px 7px; font-size:12px; }
 
     /* sidebar-less shell (matches Project Schedule) */
     .cf-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-right:6px; }
@@ -263,6 +265,8 @@
   var editActuals = [];          // working copy while the Actuals modal is open
   var trades = [];               // cash_flow_trade_packages rows (per-trade cash-in split)
   var editTrades = [];           // working copy while the Assumptions modal is open
+  var billingMs = [];            // cash_flow_billing_milestones rows (milestone billing)
+  var editBillingMs = [];        // working copy while the Assumptions modal is open
   var scenarios = [];            // cash_flow_scenarios rows (saved projection snapshots)
   var dataDate = null;           // settable data date (as-of); null → wall clock
   var periodMode = 'month';      // periodic chart aggregation: 'month' | 'quarter'
@@ -326,7 +330,7 @@
       retention_release_months: 1, start_period: null, wpm_project_id: pid, remarks: null,
       ewt_percent: 0.02, vat_percent: 0.12, ret_rel1_pct: 1, ret_rel2_months: 12,
       co_ret_rel1_pct: null, co_ret_rel1_months: null, co_ret_rel2_months: null,
-      finance_rate: 0, funding_limit: null, scurve_basis: 'duration' };
+      finance_rate: 0, funding_limit: null, scurve_basis: 'duration', billing_basis: 'poc' };
   }
 
   // ==========================================================================
@@ -436,6 +440,10 @@
     var res = await sb().from('cash_flow_trade_packages').select('*').eq('project_id', pid).order('seq');
     trades = (res.error ? [] : (res.data || []));
   }
+  async function loadBillingMs() {
+    var res = await sb().from('cash_flow_billing_milestones').select('*').eq('project_id', pid).order('seq');
+    billingMs = (res.error ? [] : (res.data || []));
+  }
 
   async function loadScenarios() {
     var res = await sb().from('cash_flow_scenarios').select('*').eq('project_id', pid).order('created_at', { ascending: false });
@@ -493,7 +501,7 @@
     document.getElementById('cf-body').innerHTML = '<div class="cf-empty">Loading projection…</div>';
     loadDataDate();
     await loadSettings();
-    await Promise.all([loadSchedule(), loadWPM(), loadTranches(), loadActuals(), loadTrades(), loadScenarios()]);
+    await Promise.all([loadSchedule(), loadWPM(), loadTranches(), loadActuals(), loadTrades(), loadBillingMs(), loadScenarios()]);
     model = computeProjection();
     render();
     // Roll-up (Portfolio cache) is only rewritten on explicit user actions — Refresh,
@@ -648,7 +656,18 @@
         tranches: trTr };
     }).filter(function (t) { return t.amount > 0; });
     var tradeTotal = tradePkgs.reduce(function (a, t) { return a + t.amount; }, 0);
-    var usingTrades = tradePkgs.length > 0;
+    // Milestone billing takes precedence over trades/POC when selected + defined.
+    var usingMilestones = settings.billing_basis === 'milestone' && billingMs.length > 0;
+    var usingTrades = !usingMilestones && tradePkgs.length > 0;
+    var msResolved = usingMilestones ? billingMs.map(function (bm) {
+      var amt = bm.basis === 'amount' ? num(bm.amount) : base * num(bm.percent);
+      var mi;
+      if (bm.trigger_mode === 'month' && bm.trigger_month) mi = monthDiff(months[0], pd(bm.trigger_month));
+      else if (bm.trigger_mode === 'offset') mi = Math.round(num(bm.trigger_offset));
+      else { var md = bm.milestone ? milestoneDate(bm.milestone) : null; mi = md ? monthDiff(months[0], md) : 0; }
+      return { desc: bm.description, amount: amt, mi: clampIdx(mi, n) };
+    }).filter(function (x) { return x.amount > 0; }) : [];
+    var msTotal = msResolved.reduce(function (a, x) { return a + x.amount; }, 0);
 
     var ddIdxIn = clampIdx(monthDiff(months[0], new Date(today().getFullYear(), today().getMonth(), 1)), n);
     var W = scurveWeight();   // switchable duration/cost weighting (with cost→duration fallback)
@@ -680,7 +699,21 @@
       releaseRetention(inRet, retTotal, lastBillMonth);
     }
 
-    if (usingTrades) {
+    if (usingMilestones) {
+      // Lump-sum billing: each milestone's amount is certified at its trigger month,
+      // then run through retention / EWT / DP-recoup / terms lag (like POC, but discrete).
+      dpTranches.forEach(function (t) { if (t.amount > 0) inDP[clampIdx(t.dueIdx, n)] += t.amount; });
+      var mret = 0, mlast = 0;
+      msResolved.slice().sort(function (a, b) { return a.mi - b.mi; }).forEach(function (x) {
+        var gross = x.amount, ret = gross * retPct, ewt = (gross / (1 + vatPct)) * ewtPct, recoup = 0;
+        mret += ret;
+        dpTranches.forEach(function (t) { if (t.pool <= 0) return; var r = Math.min(t.pool, gross * t.recoupRate); t.pool -= r; recoup += r; });
+        var recv = Math.min(n - 1, x.mi + termsIn);
+        inBill[recv] += (gross - ret - recoup); inEwt[recv] += ewt;
+        mlast = Math.max(mlast, x.mi);
+      });
+      releaseRetention(inRet, mret, mlast);
+    } else if (usingTrades) {
       tradePkgs.forEach(function (t) { accrueCashIn(t.amount, t.dp, t.ret, t.terms, t.tranches); });
     } else if (base > 0) {
       // Each tranche's cash lands at its own resolved due month (its own schedule).
@@ -843,6 +876,7 @@
       financeRate: financeRate, financePer: financePer, financeTot: financeTot,
       fundingLimit: fundingLimit, breachMonths: breachMonths,
       usingTrades: usingTrades, tradeTotal: tradeTotal, tradeCount: tradePkgs.length,
+      usingMilestones: usingMilestones, msTotal: msTotal, msCount: msResolved.length,
       scurveBasis: W.basis, scurveFellBack: W.fellBack, scurveWithCost: W.withCost, scurveActs: W.nAct,
       wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt,
       dpTotal: dpTotal, dpCount: dpTranches.length,
@@ -974,6 +1008,13 @@
       out += '<div class="cf-alert ' + (off ? 'warn' : 'info') + '"><span class="cf-alert-dot"></span><div>' +
         'Cash-in built from <b>' + m.tradeCount + ' trade package' + (m.tradeCount > 1 ? 's' : '') + '</b> totaling <b>' + Fmt.moneyShort(m.tradeTotal) + '</b>' +
         (off ? ' — this differs from Contract IBB ' + Fmt.moneyShort(num(settings.contract_ibb)) + ' by ' + (diff > 0 ? '+' : '') + Fmt.moneyShort(diff) + '. Adjust the package shares to reconcile.' : ' (reconciles with Contract IBB). Client DP tranches are ignored in per-trade mode.') +
+        '</div></div>';
+    }
+    if (m.usingMilestones) {
+      var mdiff = m.msTotal - num(settings.contract_ibb), moff = Math.abs(mdiff) > 1;
+      out += '<div class="cf-alert ' + (moff ? 'warn' : 'info') + '"><span class="cf-alert-dot"></span><div>' +
+        'Progress billing by <b>' + m.msCount + ' milestone' + (m.msCount > 1 ? 's' : '') + '</b> totaling <b>' + Fmt.moneyShort(m.msTotal) + '</b>' +
+        (moff ? ' — differs from Contract IBB ' + Fmt.moneyShort(num(settings.contract_ibb)) + ' by ' + (mdiff > 0 ? '+' : '') + Fmt.moneyShort(mdiff) + '. Adjust milestone amounts to reconcile.' : ' (reconciles with Contract IBB). Billed as lump sums at each milestone, not by % POC.') +
         '</div></div>';
     }
     return out;
@@ -1318,11 +1359,24 @@
       '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Cash-In Trade Packages</label>' +
         '<button type="button" class="cf-btn-sm" id="cf-tr-add">+ Add package</button></div>' +
         '<div class="cf-hint">Split the contract into trades (ST / AR / MEPF …), each billing its own share over the schedule S-curve with its own DP / retention / terms. <b>When any package exists it replaces the contract-level cash-in and the DP tranches above are ignored.</b> Shares should sum to Contract IBB. <b id="cf-tr-sum"></b></div>' +
-        '<div id="cf-tr-list"></div></div>';
+        '<div id="cf-tr-list"></div></div>' +
+      // ---- Progress billing basis + milestones ----
+      '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Progress Billing Basis</label>' +
+        '<select class="pd-select" id="s-billing-basis" style="max-width:220px;"><option value="poc"' + (s.billing_basis !== 'milestone' ? ' selected' : '') + '>% POC (schedule S-curve)</option><option value="milestone"' + (s.billing_basis === 'milestone' ? ' selected' : '') + '>Milestone (lump sums)</option></select></div>' +
+        '<div class="cf-hint">Milestone billing certifies a fixed amount when a schedule milestone is reached — e.g. "Structural Foundation ₱33M". <b>When selected, it replaces both the S-curve and trade packages above.</b> Amounts should sum to Contract IBB. <b id="cf-bm-sum"></b></div>' +
+        '<div class="cf-dp-head" style="justify-content:flex-end;"><button type="button" class="cf-btn-sm" id="cf-bm-add">+ Add milestone</button></div>' +
+        '<div id="cf-bm-list"></div></div>';
     editTranches = (tranches || []).map(function (t) { return JSON.parse(JSON.stringify(t)); });
     editTrades = (trades || []).map(function (t) { return JSON.parse(JSON.stringify(t)); });
+    editBillingMs = (billingMs || []).map(function (t) { return JSON.parse(JSON.stringify(t)); });
     renderTranches();
     renderTrades();
+    renderBillingMs();
+    document.getElementById('s-billing-basis').onchange = function () { renderBillingMs(); };
+    document.getElementById('cf-bm-add').onclick = function () {
+      editBillingMs.push({ description: 'Milestone ' + (editBillingMs.length + 1), basis: 'amount', amount: null, percent: null, trigger_mode: 'milestone', milestone: '', trigger_month: null, trigger_offset: 0 });
+      renderBillingMs();
+    };
     document.getElementById('cf-tr-add').onclick = function () {
       editTrades.push({ name: 'Trade ' + (editTrades.length + 1), basis: 'percent', percent: null, amount: null, dp_percent: num(settings.dp_percent), retention_percent: num(settings.retention_percent), billing_terms_months: null });
       renderTrades();
@@ -1472,6 +1526,52 @@
     el.textContent = 'Total packages: ' + Fmt.moneyShort(tot) + (base > 0 ? (Math.abs(diff) > 1 ? ' — off IBB by ' + (diff > 0 ? '+' : '') + Fmt.moneyShort(diff) : ' — reconciles with IBB') : '');
   }
 
+  // Billing-milestones editor (milestone progress-billing mode).
+  function renderBillingMs() {
+    var host = document.getElementById('cf-bm-list'); if (!host) return;
+    var base = numInput('s-ibb') || 0;
+    var active = (document.getElementById('s-billing-basis') || {}).value === 'milestone';
+    var mlOpts = milestones.map(function (m) { return '<option value="' + esc(m.name) + '">'; }).join('');
+    host.style.opacity = active ? '1' : '0.5';
+    function timingCtrl(t, i) {
+      if (t.trigger_mode === 'month') return '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="trigger_month" type="month" value="' + (t.trigger_month ? String(t.trigger_month).slice(0, 7) : '') + '">';
+      if (t.trigger_mode === 'offset') return '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="trigger_offset" type="number" step="1" placeholder="mo from start" value="' + (t.trigger_offset != null ? t.trigger_offset : 0) + '">';
+      return '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="milestone" list="cf-bm-ml" placeholder="schedule milestone" value="' + esc(t.milestone || '') + '">';
+    }
+    host.innerHTML = '<datalist id="cf-bm-ml">' + mlOpts + '</datalist>' + (editBillingMs.length ? editBillingMs.map(function (t, i) {
+      var amt = t.basis === 'amount' ? num(t.amount) : base * num(t.percent);
+      return '<div class="cf-bm-row">' +
+        '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="description" placeholder="Milestone description" value="' + esc(t.description || '') + '">' +
+        '<select class="pd-select cf-bm-i" data-i="' + i + '" data-k="basis"><option value="amount"' + (t.basis !== 'percent' ? ' selected' : '') + '>fixed ₱</option><option value="percent"' + (t.basis === 'percent' ? ' selected' : '') + '>% of IBB</option></select>' +
+        '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="' + (t.basis === 'percent' ? 'percent_pct' : 'amount') + '" type="number" step="0.01" placeholder="' + (t.basis === 'percent' ? '%' : '₱') + '" value="' + (t.basis === 'percent' ? pctVal(t.percent) : (t.amount != null ? t.amount : '')) + '">' +
+        '<select class="pd-select cf-bm-i" data-i="' + i + '" data-k="trigger_mode"><option value="milestone"' + (t.trigger_mode === 'milestone' ? ' selected' : '') + '>@ milestone</option><option value="month"' + (t.trigger_mode === 'month' ? ' selected' : '') + '>fixed month</option><option value="offset"' + (t.trigger_mode === 'offset' ? ' selected' : '') + '>offset</option></select>' +
+        timingCtrl(t, i) +
+        '<button type="button" class="cf-btn-sm cf-bm-del" data-i="' + i + '" title="Remove">&#215;</button>' +
+        '<div class="cf-dp-amt">' + (amt > 0 ? Fmt.moneyShort(amt) : '—') + '</div></div>';
+    }).join('') : '<div class="cf-hint" style="padding:6px 0;">No milestones — add the billing milestones (Structural Foundation, 3rd Floor, …).</div>');
+    host.querySelectorAll('.cf-bm-i').forEach(function (el) {
+      el.onchange = function () {
+        var i = +el.dataset.i, k = el.dataset.k, v = el.value, t = editBillingMs[i]; if (!t) return;
+        if (k === 'percent_pct') t.percent = v === '' ? null : num(v) / 100;
+        else if (k === 'amount') t.amount = v === '' ? null : num(v);
+        else if (k === 'trigger_offset') t.trigger_offset = v === '' ? 0 : Math.round(num(v));
+        else if (k === 'trigger_month') t.trigger_month = v ? v + '-01' : null;
+        else t[k] = v;
+        if (k === 'basis' || k === 'trigger_mode') renderBillingMs(); else updateBmSum();
+      };
+    });
+    host.querySelectorAll('.cf-bm-del').forEach(function (b) { b.onclick = function () { editBillingMs.splice(+b.dataset.i, 1); renderBillingMs(); }; });
+    updateBmSum();
+  }
+  function updateBmSum() {
+    var el = document.getElementById('cf-bm-sum'); if (!el) return;
+    var base = numInput('s-ibb') || 0;
+    var tot = editBillingMs.reduce(function (a, t) { return a + (t.basis === 'percent' ? base * num(t.percent) : num(t.amount)); }, 0);
+    if (!editBillingMs.length) { el.textContent = ''; return; }
+    var diff = tot - base;
+    el.textContent = 'Total milestones: ' + Fmt.moneyShort(tot) + (base > 0 ? (Math.abs(diff) > 1 ? ' — off IBB by ' + (diff > 0 ? '+' : '') + Fmt.moneyShort(diff) : ' — reconciles with IBB') : '');
+  }
+
   function pctInput(id) { var e = document.getElementById(id); var v = e && e.value.trim(); return v === '' || v == null ? null : num(v) / 100; }
   function numInput(id) { var e = document.getElementById(id); var v = e && e.value.trim(); return v === '' || v == null ? null : num(v); }
   function txtInput(id) { var e = document.getElementById(id); return e && e.value.trim() ? e.value.trim() : null; }
@@ -1509,6 +1609,7 @@
       co_ret_rel1_months: numInput('s-corel1') != null ? Math.round(numInput('s-corel1')) : null,
       co_ret_rel2_months: numInput('s-corel2') != null ? Math.round(numInput('s-corel2')) : null,
       finance_rate: pctInput('s-fin') || 0, funding_limit: numInput('s-limit'),
+      billing_basis: ((document.getElementById('s-billing-basis') || {}).value === 'milestone') ? 'milestone' : 'poc',
       start_period: txtInput('s-start') ? txtInput('s-start') + '-01' : null,
       wpm_project_id: txtInput('s-wpm') || pid,
       remarks: txtInput('s-rem'),
@@ -1555,6 +1656,28 @@
       var insT = await tolerantWrite(function (r) { return sb().from('cash_flow_trade_packages').insert(r); }, trows, dropped);
       if (insT.error) { UI.toast('Packages: ' + insT.error.message, 'error'); return; }
     }
+
+    // Persist billing milestones: replace the project's set (delete all → insert current).
+    var delB = await sb().from('cash_flow_billing_milestones').delete().eq('project_id', pid);
+    if (delB.error && !/does not exist|schema cache|relation/i.test(delB.error.message)) { UI.toast('Milestones: ' + delB.error.message, 'error'); return; }
+    if (!delB.error) {
+      var brows = editBillingMs.map(function (t, i) {
+        return { project_id: pid, seq: i, description: t.description || null,
+          basis: t.basis === 'percent' ? 'percent' : 'amount',
+          amount: t.basis === 'percent' ? null : (t.amount != null ? num(t.amount) : null),
+          percent: t.basis === 'percent' ? (t.percent != null ? num(t.percent) : null) : null,
+          trigger_mode: t.trigger_mode || 'milestone',
+          milestone: t.trigger_mode === 'milestone' ? (t.milestone || null) : null,
+          trigger_month: t.trigger_mode === 'month' ? t.trigger_month : null,
+          trigger_offset: t.trigger_mode === 'offset' ? Math.round(num(t.trigger_offset)) : 0,
+          created_by: profile.id, updated_at: new Date().toISOString() };
+      });
+      if (brows.length) {
+        var insB = await sb().from('cash_flow_billing_milestones').insert(brows);
+        if (insB.error) { UI.toast('Milestones: ' + insB.error.message, 'error'); return; }
+      }
+    } else if (dropped.indexOf('cash_flow_billing_milestones') === -1) { dropped.push('cash_flow_billing_milestones'); }
+
     if (dropped.length) {
       UI.toast('Saved, but ' + dropped.length + ' field(s) not stored — run the pending migration(s): ' + dropped.join(', '), 'error');
     } else {
