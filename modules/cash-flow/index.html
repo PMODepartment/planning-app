@@ -72,11 +72,11 @@
     .cf-drill-hd span { font-weight:400; color:var(--pd-muted); font-size:12px; }
     .cf-drill-hd button { margin-left:auto; }
     .cf-drill-card .cf-table { font-size:12px; }
-    .cf-stack-wrap { padding:14px 14px 4px; }
-    .cf-stack { display:flex; height:28px; border-radius:6px; overflow:hidden; border:1px solid var(--pd-line); }
-    .cf-stack-seg { min-width:2px; transition:opacity .1s; }
-    .cf-stack-seg:hover { opacity:.82; }
-    .cf-stack-lg { display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:11px; font-size:11.5px; color:var(--pd-ink); }
+    .cf-donut-wrap { display:flex; gap:24px; align-items:center; padding:16px 14px 6px; flex-wrap:wrap; }
+    .cf-donut { width:180px; height:180px; flex:none; }
+    .cf-donut-c1 { text-anchor:middle; font-weight:800; font-size:15px; fill:var(--pd-ink); }
+    .cf-donut-c2 { text-anchor:middle; font-size:9px; fill:var(--pd-muted); }
+    .cf-donut-lg { display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--pd-ink); }
     .cf-sw2 { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:7px; vertical-align:middle; }
     .cf-trade-hd .cf-tri { display:inline-block; width:12px; color:var(--pd-muted); }
     .cf-trade-hd { cursor:pointer; } .cf-trade-hd td { font-weight:700; background:var(--pd-bg); }
@@ -1534,11 +1534,17 @@
         ? order.map(function (t) { return { name: t, amt: groups[t].reduce(function (s, x) { return s + x.amt; }, 0) }; })
         : sorted.map(function (x) { return { name: (x.desc || x.no || '—'), amt: x.amt }; });
       var colorOf = {}; segs.forEach(function (sg, i) { colorOf[sg.name] = PAL[i % PAL.length]; });
-      var stack = '<div class="cf-stack">' + segs.map(function (sg) {
-        var w = tot > 0 ? sg.amt / tot * 100 : 0;
-        return '<div class="cf-stack-seg" style="width:' + w.toFixed(3) + '%;background:' + colorOf[sg.name] + ';" title="' + esc(sg.name) + ' · ' + Fmt.moneyShort(sgn * sg.amt) + ' · ' + w.toFixed(1) + '%"></div>';
-      }).join('') + '</div>';
-      var legend = '<div class="cf-stack-lg">' + segs.map(function (sg) {
+      // Donut by trade/source (matches the WPM portfolio "by trade" donuts).
+      var R = 64, CIRC = 2 * Math.PI * R, off = 0;
+      var arcs = segs.map(function (sg) {
+        var frac = tot > 0 ? sg.amt / tot : 0, len = frac * CIRC;
+        var a = '<circle cx="90" cy="90" r="' + R + '" fill="none" stroke="' + colorOf[sg.name] + '" stroke-width="26" stroke-dasharray="' + len.toFixed(2) + ' ' + (CIRC - len).toFixed(2) + '" stroke-dashoffset="' + (-off).toFixed(2) + '" transform="rotate(-90 90 90)"><title>' + esc(sg.name) + ' · ' + Fmt.moneyShort(sgn * sg.amt) + ' · ' + (frac * 100).toFixed(1) + '%</title></circle>';
+        off += len; return a;
+      }).join('');
+      var donut = '<svg viewBox="0 0 180 180" class="cf-donut">' + arcs +
+        '<text x="90" y="86" class="cf-donut-c1">' + Fmt.moneyShort(sgn * tot) + '</text>' +
+        '<text x="90" y="104" class="cf-donut-c2">' + segs.length + (isOut ? ' trades' : ' sources') + '</text></svg>';
+      var legend = '<div class="cf-donut-lg">' + segs.map(function (sg) {
         return '<span class="cf-lg"><span class="sw" style="background:' + colorOf[sg.name] + ';"></span>' + esc(sg.name) + ' · ' + Fmt.moneyShort(sgn * sg.amt) + ' · ' + (tot > 0 ? (sg.amt / tot * 100).toFixed(0) : 0) + '%</span>';
       }).join('') + '</div>';
       // grouped detail table with % share
@@ -1557,7 +1563,7 @@
           sorted.map(function (x) { return '<tr><td><span class="cf-sw2" style="background:' + colorOf[x.desc || x.no || '—'] + ';"></span>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td class="num">' + Fmt.moneyShort(x.amt) + '</td><td class="num">' + shr(x.amt) + '</td></tr>'; }).join('') +
           '</tbody></table></div>';
       }
-      body = '<div class="cf-stack-wrap">' + stack + legend + '</div>' + tbl;
+      body = '<div class="cf-donut-wrap">' + donut + legend + '</div>' + tbl;
     }
 
     host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">' + side + ' · ' + label + ' · ' + mo +
