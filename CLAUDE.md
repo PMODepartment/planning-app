@@ -228,6 +228,17 @@ developer, plug into one shared shell.
   stays on hover.
 - Verified: full inline script parses; live run pending.
 
+### 2026-07-14 — Prompt 75: Cash Flow — remove sidebar (match Project Schedule), revert data labels
+- **Sidebar removed:** the left `.pd-sidebar` is gone, matching the Project Schedule module —
+  a `.cf-modback` back-to-modules button (→ `dashboard.html`) sits in the topbar, content is
+  full-width. `UI.initShell()` no-ops without a sidebar (returns early), so the call is harmless
+  and no stray hamburger is injected.
+- **Data labels reverted** to the previous cleaner per-bar style (`showLab` = quarterly or
+  band ≥ 44px shows each bar's cash-in above / cash-out below) — removed the significant-only
+  labels + peak-funding marker added in Prompt 74. The **nice round y-axis ticks (niceStep)**
+  from Prompt 74 are kept.
+- Verified: full inline script parses; shell structure balanced; live run pending.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

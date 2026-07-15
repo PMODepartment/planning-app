@@ -121,8 +121,11 @@ optional `val` weight fn; `scurveWeight()` picks it.
   the periodic chart draws. Equals the plan when no actuals exist. The monthly matrix stays
   the plan projection; the variance card still shows actual-vs-plan.
 - **What-if sliders removed** (low value).
-- **Chart:** y-axis uses `niceStep()` round ticks; only significant labels drawn (peak
-  cash-in, peak cash-out, peak-funding marker); everything else on hover.
+- **Chart:** y-axis uses `niceStep()` round ticks. Data labels: per-bar (quarterly / when bars
+  are wide enough), the previous cleaner style — the significant-only labels + peak-funding
+  marker were tried then reverted per feedback.
+- **Sidebar removed** (matches Project Schedule): `.cf-modback` back button in the topbar,
+  full-width content; `UI.initShell()` no-ops with no sidebar.
 
 ## Verified
 - JS parses (`node --check`). Engine math hand-checked on a synthetic fixture:

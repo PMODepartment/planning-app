@@ -62,9 +62,6 @@
     .cf-seg button.active { background:var(--pd-red); color:#fff; }
     .cf-chart-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .cf-dlab { fill:var(--pd-muted); font-size:9px; text-anchor:middle; }
-    .cf-dlab.hi { fill:var(--pd-ink); font-size:10.5px; font-weight:700; }
-    .cf-peakline { stroke:var(--pd-red); stroke-width:1; stroke-dasharray:4 3; opacity:.55; }
-    .cf-peaklab { fill:var(--pd-red); font-size:10px; font-weight:700; }
     .cf-axis { stroke:var(--pd-muted); stroke-width:1; }
     .cf-selband { fill:rgba(238,49,36,0.12); stroke:var(--pd-red); stroke-width:1; stroke-dasharray:3 2; }
     .cf-matrix th.mcol { cursor:pointer; }
@@ -146,6 +143,10 @@
     .cf-trt-row { display:grid; grid-template-columns:1.1fr 0.9fr 0.7fr 1fr 1fr 0.8fr auto auto; gap:6px; align-items:center; margin-bottom:6px; }
     .cf-trt-row .pd-input, .cf-trt-row .pd-select { padding:5px 7px; font-size:12px; }
 
+    /* sidebar-less shell (matches Project Schedule) */
+    .cf-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-right:6px; }
+    .pd-topbar #user-bar { margin-left:auto; }
+
     .cf-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--pd-line); }
     .cf-tab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; border-bottom:2px solid transparent; }
     .cf-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
@@ -153,15 +154,13 @@
 </head>
 <body>
 <div class="pd-app">
-  <aside class="pd-sidebar">
-    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Cash Flow</small></div>
-    <nav>
-      <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
-      <a href="#" class="active"><span class="pd-navico" data-ico="cash"></span>Cash Flow</a>
-    </nav>
-  </aside>
+  <!-- Sidebar removed (matches Project Schedule): the back button returns to the module selector. -->
   <div class="pd-content">
-    <div class="pd-topbar"><h1>Cash Flow Projection</h1><div id="user-bar"></div></div>
+    <div class="pd-topbar">
+      <a class="pd-btn cf-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
+      <h1 style="margin:0;">Cash Flow Projection</h1>
+      <div id="user-bar"></div>
+    </div>
     <div class="pd-main">
       <div class="cf-controls">
         <div class="cf-viewbar">
@@ -1056,7 +1055,7 @@
       if (p.i1 >= selRange.i0 && p.i0 <= selRange.i1) grid += '<rect x="' + (padL + band * j) + '" y="' + padT + '" width="' + band + '" height="' + ch + '" class="cf-selband"/>';
     });
 
-    var bw = Math.max(2, Math.min(28, band * 0.62));
+    var bw = Math.max(2, Math.min(28, band * 0.62)), showLab = periodMode === 'quarter' || band >= 44;
     var bars = '', labs = '', hovers = '';
     function rect(x, yy, w, h, fill, op) { return h > 0.3 ? '<rect x="' + x + '" y="' + yy + '" width="' + w + '" height="' + h + '" fill="' + fill + '" ' + op + '/>' : ''; }
     P.forEach(function (p, i) {
@@ -1067,28 +1066,12 @@
       // cash OUT (down): actual solid, forecast faded, stacked (values negative)
       if (p.outA < 0) { bars += rect(x0, zeroY, bw, y(p.outA) - zeroY, 'var(--pd-red)', ''); }
       if (p.outF < 0) { bars += rect(x0, y(p.outA), bw, y(p.outA + p.outF) - y(p.outA), 'var(--pd-red)', 'opacity="0.4"'); }
+      if (showLab && p.inv > 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.inv) - 3) + '" class="cf-dlab">' + Fmt.moneyShort(p.inv) + '</text>';
+      if (showLab && p.out < 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.out) + 10) + '" class="cf-dlab">' + Fmt.moneyShort(-p.out) + '</text>';
       hovers += '<rect class="cf-hover" data-i="' + i + '" x="' + (padL + band * i) + '" y="' + padT + '" width="' + band + '" height="' + ch + '"/>';
     });
-
-    // Significant labels only: peak cash-in month, peak cash-out month, and the
-    // peak-funding trough (the number management cares about). Everything else is
-    // available on hover, so the chart stays legible at any project length.
+    // running balance (used by the tooltip)
     var run = 0, bal = P.map(function (p) { run += p.net; return run; });
-    var iIn = -1, vIn = 0, iOut = -1, vOut = 0, iTr = -1, vTr = 0;
-    P.forEach(function (p, i) {
-      if (p.inv > vIn) { vIn = p.inv; iIn = i; }
-      if (-p.out > vOut) { vOut = -p.out; iOut = i; }
-      if (bal[i] < vTr) { vTr = bal[i]; iTr = i; }
-    });
-    if (iIn >= 0 && vIn > 0) labs += '<text x="' + cx(iIn) + '" y="' + (y(P[iIn].inv) - 6) + '" class="cf-dlab hi">' + Fmt.moneyShort(vIn) + '</text>';
-    if (iOut >= 0 && vOut > 0) labs += '<text x="' + cx(iOut) + '" y="' + (y(P[iOut].out) + 14) + '" class="cf-dlab hi">' + Fmt.moneyShort(vOut) + '</text>';
-    // peak-funding marker: vertical guide at the trough month + labelled value
-    var peakMark = '';
-    if (iTr >= 0 && vTr < 0) {
-      var px = cx(iTr), leftSide = iTr > nP * 0.68;
-      peakMark = '<line x1="' + px + '" y1="' + padT + '" x2="' + px + '" y2="' + (padT + ch) + '" class="cf-peakline"/>' +
-        '<text x="' + px + '" y="' + (padT + 11) + '" class="cf-peaklab" text-anchor="' + (leftSide ? 'end' : 'start') + '" dx="' + (leftSide ? -5 : 5) + '">Peak funding ' + Fmt.moneyShort(vTr) + ' · ' + esc(P[iTr].label) + '</text>';
-    }
     // net line — solid (actual) then dashed (forecast), sharing the boundary point
     function seg(a, b, dash) { var pts = []; for (var i = a; i < b; i++) pts.push(cx(i) + ',' + y(P[i].net)); return pts.length > 1 ? '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--pd-ink)" stroke-width="2.25" ' + (dash ? 'stroke-dasharray="5 4"' : '') + '/>' : ''; }
     var netLine = seg(0, split, false) + seg(Math.max(0, split - 1), nP, true);
@@ -1096,7 +1079,7 @@
     var xlab = '', step = Math.max(1, Math.ceil(nP / 14));
     P.forEach(function (p, i) { if (i % step === 0) xlab += '<text x="' + cx(i) + '" y="' + (H - padB + 18) + '" class="cf-xlab">' + esc(p.label) + '</text>'; });
 
-    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + bars + peakMark + netLine + labs + xlab + hovers + '</svg>' +
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + bars + netLine + labs + xlab + hovers + '</svg>' +
       '<div class="cf-tip" id="cf-tip"></div>' +
       '<div class="cf-legend">' +
       '<span class="cf-lg"><span class="sw" style="background:var(--pd-ok);"></span>Cash In</span>' +
