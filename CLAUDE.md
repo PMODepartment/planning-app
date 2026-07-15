@@ -308,6 +308,18 @@ developer, plug into one shared shell.
   visible overhead WPs (Admin Workers, Fuel and Oil, Security Services, Garbage Disposal) now group
   under General Requirements. Real WPM trade still wins once synced.
 
+### 2026-07-14 — Prompt 82: Cash Flow — incomplete-terms tracker + drill-down Chart/Table views
+- **Incomplete-terms tracker:** WPs whose WPM DP% / Retention% / Terms are blank (so their
+  cash-out is un-shaped) are flagged. Engine collects `model.wpIncomplete`; a collapsible card
+  ("N work packages with incomplete WPM terms") lists WP / description / trade / missing fields /
+  budget, and each such WP gets an amber ⚠ badge in the drill-downs. Behavior unchanged (still
+  0-when-blank), just made visible.
+- **Better drill-down presentation:** the cash-in / cash-out drill-down now has a **Chart** view
+  (ranked horizontal bars sized by share, grouped by trade with subtotals, actual/forecast tags)
+  and keeps **Table** as a toggle option (persisted `cf_drillview`; Chart default). `renderDrill`
+  remembers `lastDrill` so the toggle re-renders in place.
+- Verified: script parses.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

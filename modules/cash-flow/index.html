@@ -78,6 +78,26 @@
     .cf-trade-hd .cf-tri { display:inline-block; width:12px; color:var(--pd-red); }
     .cf-trade-n { font-weight:400; color:var(--pd-muted); font-size:11px; margin-left:6px; }
     .cf-trade-row td:first-child { padding-left:22px; }
+    .cf-drill-seg { margin-left:auto; }
+    .cf-drill-seg button { padding:4px 12px; }
+    .cf-drill-hd button.cf-btn-sm { margin-left:8px; }
+    .cf-miss { display:inline-block; margin-left:8px; font-size:10.5px; font-weight:700; color:#d99100; white-space:nowrap; }
+    /* incomplete-terms tracker */
+    .cf-terms .cf-terms-hd { display:flex; align-items:center; gap:8px; cursor:pointer; }
+    .cf-terms .cf-terms-chev { margin-left:auto; font-size:12px; font-weight:700; color:var(--pd-red); white-space:nowrap; }
+    /* drill chart (ranked horizontal bars) */
+    .cf-bk { padding:4px 2px 2px; }
+    .cf-bk-gh { font-size:12px; margin:12px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--pd-line); }
+    .cf-bk-gh b { font-weight:700; } .cf-bk-gh span { color:var(--pd-muted); margin-left:6px; }
+    .cf-bk-row { display:grid; grid-template-columns:minmax(140px,1.4fr) 2fr auto auto; gap:10px; align-items:center; padding:4px 0; font-size:12px; }
+    .cf-bk-lab { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cf-bk-track { background:var(--pd-bg); border-radius:4px; height:14px; overflow:hidden; }
+    .cf-bk-fill { height:100%; border-radius:4px; min-width:2px; }
+    .cf-bk-amt { text-align:right; font-weight:600; white-space:nowrap; }
+    .cf-bk-st { font-size:10px; padding:1px 6px; border-radius:999px; white-space:nowrap; }
+    .cf-bk-st.a { background:rgba(238,49,36,0.12); color:var(--pd-red); }
+    .cf-bk-st.f { background:var(--pd-bg); color:var(--pd-muted); }
+    @media (max-width:640px) { .cf-bk-row { grid-template-columns:1fr auto; } .cf-bk-track { display:none; } }
     .cf-matrix th.mcol { cursor:pointer; }
     .cf-matrix th.mcol:hover { color:var(--pd-red); }
     .cf-matrix th.mcol.sel { background:var(--pd-red); color:#fff; }
@@ -302,6 +322,8 @@
   var scenarios = [];            // cash_flow_scenarios rows (saved projection snapshots)
   var dataDate = null;           // settable data date (as-of); null → wall clock
   var periodMode = 'month';      // periodic chart aggregation: 'month' | 'quarter'
+  var lastDrill = null;          // {dir,comp,mi} — remembered so the Chart/Table toggle re-renders
+  var drillView = (function () { try { return localStorage.getItem('cf_drillview') === 'table' ? 'table' : 'chart'; } catch (e) { return 'chart'; } })();
   var pvState = null;            // geometry + data for the periodic-chart tooltip
   var selRange = null;           // {i0,i1} highlighted month-index range (matrix ↔ chart)
   var wpRows = [];               // mirrored WPM work packages (cash-out)
@@ -807,16 +829,23 @@
     function outAdd(arr, idx, amt, awarded, bucket, wp) {
       arr[idx] += amt;
       if (awarded && idx <= ddIdx) outActual[idx] += amt; else outForecast[idx] += amt;
-      if (bucket && amt > 0.005) (bucket[idx] || (bucket[idx] = [])).push({ no: wp.no, desc: wp.desc, trade: wp.trade, amt: amt, awd: awarded && idx <= ddIdx });
+      if (bucket && amt > 0.005) (bucket[idx] || (bucket[idx] = [])).push({ no: wp.no, desc: wp.desc, trade: wp.trade, miss: wp.miss, amt: amt, awd: awarded && idx <= ddIdx });
     }
     var fbStart = (sched && sched.min) ? sched.min : months[0];
     var fbEnd = (sched && sched.max) ? sched.max : months[n - 1];
-    var wpNoDates = 0, wpNoDatesAmt = 0;
+    var wpNoDates = 0, wpNoDatesAmt = 0, wpIncomplete = [];
+    function blankF(v) { return v == null || v === ''; }
     wpRows.forEach(function (w) {
       var budget = num(w.total_awarded) || num(w.awarded_cost) || num(w.approved_budget_bcb);
       if (budget <= 0) return;
       var wdp = num(w.dp_percent), wret = num(w.retention_percent);
       var wterms = Math.round(num(w.payment_terms_days) / 30);   // days → months
+      // Which financial terms are blank in WPM → this WP's cash-out is un-shaped
+      // (no DP / no retention / no lag for the blank ones). Tracked for the planner.
+      var miss = [];
+      if (blankF(w.dp_percent)) miss.push('DP %');
+      if (blankF(w.retention_percent)) miss.push('Retention %');
+      if (blankF(w.payment_terms_days)) miss.push('Terms');
       // window: award/delivery start → completion
       var ws = pd(w.actual_awarding_date) || pd(w.awarding_date) || pd(w.target_delivery) || pd(w.target_installation);
       var we = pd(w.target_completion) || pd(w.target_installation) || pd(w.target_delivery) || ws;
@@ -826,7 +855,8 @@
       var span = Math.max(1, eIdx - sIdx + 1);
       // DP paid at window start (+terms)
       var awd = isAwarded(w);
-      var wpLbl = { no: w.wp_no, desc: w.description, trade: tradeOf(w) };
+      var wpLbl = { no: w.wp_no, desc: w.description, trade: tradeOf(w), miss: miss };
+      if (miss.length) wpIncomplete.push({ no: w.wp_no, desc: w.description, trade: wpLbl.trade, miss: miss, budget: budget });
       var dpAmtO = budget * wdp;
       if (dpAmtO > 0) outAdd(outDP, clampIdx(sIdx + wterms, n), dpAmtO, awd, brkDP, wpLbl);
       var dpPoolO = dpAmtO, retTotalO = 0;
@@ -934,6 +964,7 @@
       usingMilestones: usingMilestones, msTotal: msTotal, msCount: msResolved.length,
       outBreak: { dp: brkDP, bill: brkBill, ret: brkRet },
       inBreak: { dp: brkInDP, bill: brkInBill, ret: brkInRet },
+      wpIncomplete: wpIncomplete,
       scurveBasis: W.basis, scurveFellBack: W.fellBack, scurveWithCost: W.withCost, scurveActs: W.nAct,
       wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt,
       dpTotal: dpTotal, dpCount: dpTranches.length,
@@ -1000,8 +1031,10 @@
       host.innerHTML = '<div class="cf-empty">Nothing to project yet. This module derives cash-in from the <b>Project Schedule</b> and cash-out from <b>WPM</b> work packages. Add a schedule and set the contract value under <b>Assumptions</b>.</div>';
       return;
     }
-    host.innerHTML = kpiHTML() + nudgeHTML() + alertsHTML() + chartHTML() + matrixHTML() + varianceHTML() + scenarioHTML();
+    host.innerHTML = kpiHTML() + nudgeHTML() + alertsHTML() + wpTermsHTML() + chartHTML() + matrixHTML() + varianceHTML() + scenarioHTML();
     var no = document.getElementById('cf-nudge-open'); if (no) no.onclick = openSettings;
+    var tt = document.getElementById('cf-terms-tgl');
+    if (tt) tt.onclick = function () { var b = document.getElementById('cf-terms-body'), cv = document.getElementById('cf-terms-chev'), open = b.style.display === 'none'; b.style.display = open ? '' : 'none'; if (cv) cv.textContent = open ? 'Hide ▴' : 'Show ▾'; };
     wireScenarioBtns();
     drawPeriodic();
     var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter');
@@ -1077,6 +1110,21 @@
     return '<div class="cf-nudge"><div class="cf-nudge-t"><span class="cf-alert-dot"></span><b>Assumptions look incomplete</b> — for a fuller projection you may want to:</div><ul>' +
       items.map(function (t) { return '<li>' + t + '</li>'; }).join('') +
       '</ul><button class="cf-btn-sm" id="cf-nudge-open">Open Assumptions</button></div>';
+  }
+
+  // Tracker: work packages whose WPM terms (DP% / Retention% / Terms) are blank, so
+  // their cash-out is modeled un-shaped (no DP / no retention / no lag for those fields).
+  function wpTermsHTML() {
+    var list = (model && model.wpIncomplete) || [];
+    if (!list.length) return '';
+    var rows = list.slice().sort(function (a, b) { return b.budget - a.budget; }).map(function (x) {
+      return '<tr><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td>' + esc(x.trade || '') + '</td><td>' + esc(x.miss.join(' / ')) + '</td><td class="num">' + Fmt.moneyShort(x.budget) + '</td></tr>';
+    }).join('');
+    return '<div class="cf-card cf-terms"><div class="cf-terms-hd" id="cf-terms-tgl"><span class="cf-alert-dot" style="background:#d99100;margin-top:0;"></span>' +
+      '<b>' + list.length + ' work package' + (list.length > 1 ? 's' : '') + ' with incomplete WPM terms</b>' +
+      '<span class="cf-hint" style="margin:0 0 0 8px;">— cash-out has no DP / retention / lag for the blank fields.</span>' +
+      '<span class="cf-terms-chev" id="cf-terms-chev">Show ▾</span></div>' +
+      '<div id="cf-terms-body" style="display:none;overflow-x:auto;margin-top:12px;"><table class="cf-table"><thead><tr><th>WP No.</th><th>Description</th><th>Trade</th><th>Missing fields</th><th class="num">Budget</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
   }
 
   // Funding-limit breach (#8) + per-trade reconciliation (#7) banners.
@@ -1428,55 +1476,74 @@
   // Drill-down: what makes up a cash cell (direction × component × month).
   // Cash-out lists the contributing work packages (with status); cash-in lists the
   // contributing sources (DP tranches / trades / milestones / progress billing).
+  // Amber "incomplete terms" badge for a cash-out WP whose DP/retention/terms are blank
+  // in WPM (its cash-out is un-shaped for those). Tooltip lists the fields.
+  function missBadge(x) {
+    return (x.miss && x.miss.length) ? ' <span class="cf-miss" title="Blank in WPM (no ' + esc(x.miss.join(' / ')) + ') — cash-out is un-shaped for these">&#9888; ' + esc(x.miss.join(' / ')) + '</span>' : '';
+  }
   function renderDrill(dir, comp, mi) {
+    lastDrill = { dir: dir, comp: comp, mi: mi };
     var host = document.getElementById('cf-drill'); if (!host || !model) return;
     var isOut = dir === 'out';
     var list = (((isOut ? model.outBreak : model.inBreak)[comp] || [])[mi]) || [];
     var label = { dp: 'Downpayment', bill: 'Billing', ret: 'Retention' }[comp] || comp;
     var side = isOut ? 'Cash Out' : 'Cash In';
     var mo = monthLabel(model.months[mi]);
-    var emptyTxt = isOut ? 'no work packages' : 'no sources';
-    if (!list.length) { host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">' + side + ' · ' + label + ' · ' + mo + ' <span>' + emptyTxt + '</span><button class="cf-btn-sm" id="cf-drill-x">Close</button></div></div>'; document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; }; return; }
+    var closeBtn = '<button class="cf-btn-sm" id="cf-drill-x">Close</button>';
+    var toggle = '<span class="cf-seg cf-drill-seg"><button data-dv="chart"' + (drillView === 'chart' ? ' class="active"' : '') + '>Chart</button><button data-dv="table"' + (drillView === 'table' ? ' class="active"' : '') + '>Table</button></span>';
+    if (!list.length) { host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">' + side + ' · ' + label + ' · ' + mo + ' <span>' + (isOut ? 'no work packages' : 'no sources') + '</span>' + closeBtn + '</div></div>'; document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; }; return; }
     var sorted = list.slice().sort(function (a, b) { return b.amt - a.amt; });
     var tot = sorted.reduce(function (a, x) { return a + x.amt; }, 0);
-    var sgn = isOut ? -1 : 1, cls = isOut ? ' cf-neg' : '';
-    var head = isOut ? '<th>WP No.</th><th>Description</th><th class="num">Amount</th><th>Status</th>'
-                     : '<th>Source</th><th>Detail</th><th class="num">Amount</th>';
-    var unit = isOut ? ('work package' + (sorted.length > 1 ? 's' : '')) : ('source' + (sorted.length > 1 ? 's' : ''));
+    var maxAmt = sorted.reduce(function (m, x) { return Math.max(m, x.amt); }, 0) || 1;
+    var sgn = isOut ? -1 : 1, unit = isOut ? ('work package' + (sorted.length > 1 ? 's' : '')) : ('source' + (sorted.length > 1 ? 's' : ''));
+
+    // Group by trade (cash-out) or a single flat group (cash-in).
+    var groups = {}, order = [];
+    sorted.forEach(function (x) { var t = isOut ? (x.trade || 'Uncategorized') : '_'; if (!groups[t]) { groups[t] = []; order.push(t); } groups[t].push(x); });
+    order.sort(function (a, b) { return groups[b].reduce(function (s, x) { return s + x.amt; }, 0) - groups[a].reduce(function (s, x) { return s + x.amt; }, 0); });
 
     var body;
-    if (isOut) {
-      // Group work packages by trade (WPM-style collapsible headers).
-      var groups = {}, order = [];
-      sorted.forEach(function (x) { var t = x.trade || 'Uncategorized'; if (!groups[t]) { groups[t] = []; order.push(t); } groups[t].push(x); });
-      order.sort(function (a, b) { return groups[b].reduce(function (s, x) { return s + x.amt; }, 0) - groups[a].reduce(function (s, x) { return s + x.amt; }, 0); });
-      body = order.map(function (t, gi) {
-        var rows = groups[t], gsub = rows.reduce(function (s, x) { return s + x.amt; }, 0);
-        var hd = '<tr class="cf-trade-hd" data-g="' + gi + '"><td colspan="2"><span class="cf-tri">&#9662;</span> ' + esc(t) + ' <span class="cf-trade-n">' + rows.length + ' WP' + (rows.length > 1 ? 's' : '') + '</span></td><td class="num cf-neg">' + Fmt.moneyShort(-gsub) + '</td><td></td></tr>';
-        var mem = rows.map(function (x) {
-          return '<tr class="cf-trade-row cf-g' + gi + '"><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td class="num cf-neg">' + Fmt.moneyShort(-x.amt) + '</td><td>' + (x.awd ? 'actual' : 'forecast') + '</td></tr>';
+    if (drillView === 'table') {
+      var head = isOut ? '<th>WP No.</th><th>Description</th><th class="num">Amount</th><th>Status</th>' : '<th>Source</th><th>Detail</th><th class="num">Amount</th>';
+      var rowsHtml;
+      if (isOut) {
+        rowsHtml = order.map(function (t, gi) {
+          var rows = groups[t], gsub = rows.reduce(function (s, x) { return s + x.amt; }, 0);
+          var hd = '<tr class="cf-trade-hd" data-g="' + gi + '"><td colspan="2"><span class="cf-tri">&#9662;</span> ' + esc(t) + ' <span class="cf-trade-n">' + rows.length + ' WP' + (rows.length > 1 ? 's' : '') + '</span></td><td class="num cf-neg">' + Fmt.moneyShort(-gsub) + '</td><td></td></tr>';
+          var mem = rows.map(function (x) { return '<tr class="cf-trade-row cf-g' + gi + '"><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + missBadge(x) + '</td><td class="num cf-neg">' + Fmt.moneyShort(-x.amt) + '</td><td>' + (x.awd ? 'actual' : 'forecast') + '</td></tr>'; }).join('');
+          return hd + mem;
         }).join('');
-        return hd + mem;
-      }).join('');
+      } else {
+        rowsHtml = sorted.map(function (x) { return '<tr><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td class="num">' + Fmt.moneyShort(x.amt) + '</td></tr>'; }).join('');
+      }
+      body = '<div style="overflow-x:auto;"><table class="cf-table"><thead><tr>' + head + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>';
     } else {
-      body = sorted.map(function (x) {
-        return '<tr><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td class="num">' + Fmt.moneyShort(x.amt) + '</td></tr>';
-      }).join('');
+      // Chart view: ranked horizontal bars sized by share of the largest item, so
+      // relative magnitudes read at a glance; grouped by trade (cash-out) with subtotals.
+      var barColor = isOut ? 'var(--pd-red)' : 'var(--pd-ok)';
+      function barRow(x) {
+        var w = Math.max(1.5, x.amt / maxAmt * 100);
+        var tag = isOut ? '<span class="cf-bk-st ' + (x.awd ? 'a' : 'f') + '">' + (x.awd ? 'actual' : 'forecast') + '</span>' : '';
+        return '<div class="cf-bk-row"><div class="cf-bk-lab">' + esc((x.no ? x.no + ' · ' : '') + (x.desc || '')) + missBadge(x) + '</div>' +
+          '<div class="cf-bk-track"><div class="cf-bk-fill" style="width:' + w.toFixed(1) + '%;background:' + barColor + ';"></div></div>' +
+          '<div class="cf-bk-amt' + (isOut ? ' cf-neg' : '') + '">' + Fmt.moneyShort(sgn * x.amt) + '</div>' + tag + '</div>';
+      }
+      body = '<div class="cf-bk">' + order.map(function (t) {
+        var rows = groups[t], gsub = rows.reduce(function (s, x) { return s + x.amt; }, 0);
+        var gh = isOut ? '<div class="cf-bk-gh"><b>' + esc(t) + '</b> <span>' + rows.length + ' WP' + (rows.length > 1 ? 's' : '') + ' · ' + Fmt.moneyShort(-gsub) + '</span></div>' : '';
+        return gh + rows.map(barRow).join('');
+      }).join('') + '</div>';
     }
 
     host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">' + side + ' · ' + label + ' · ' + mo +
-      ' <span>' + sorted.length + ' ' + unit + ' · ' + Fmt.moneyShort(sgn * tot) + (isOut ? ' · grouped by trade' : '') + '</span>' +
-      '<button class="cf-btn-sm" id="cf-drill-x">Close</button></div>' +
-      '<div style="overflow-x:auto;"><table class="cf-table"><thead><tr>' + head + '</tr></thead><tbody>' + body +
-      '</tbody></table></div></div>';
-    document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; };
-    // Collapsible trade groups (cash-out).
+      ' <span>' + sorted.length + ' ' + unit + ' · ' + Fmt.moneyShort(sgn * tot) + (isOut ? ' · by trade' : '') + '</span>' +
+      toggle + closeBtn + '</div>' + body + '</div>';
+    document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; lastDrill = null; };
+    host.querySelectorAll('.cf-drill-seg button').forEach(function (b) {
+      b.onclick = function () { drillView = b.dataset.dv; try { localStorage.setItem('cf_drillview', drillView); } catch (e) {} renderDrill(dir, comp, mi); };
+    });
     host.querySelectorAll('.cf-trade-hd').forEach(function (h) {
-      h.onclick = function () {
-        var gi = h.dataset.g, tri = h.querySelector('.cf-tri'), collapsed = h.classList.toggle('collapsed');
-        if (tri) tri.innerHTML = collapsed ? '&#9656;' : '&#9662;';
-        host.querySelectorAll('.cf-g' + gi).forEach(function (r) { r.style.display = collapsed ? 'none' : ''; });
-      };
+      h.onclick = function () { var gi = h.dataset.g, tri = h.querySelector('.cf-tri'), c = h.classList.toggle('collapsed'); if (tri) tri.innerHTML = c ? '&#9656;' : '&#9662;'; host.querySelectorAll('.cf-g' + gi).forEach(function (r) { r.style.display = c ? 'none' : ''; }); };
     });
     host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
