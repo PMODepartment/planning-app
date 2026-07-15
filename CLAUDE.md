@@ -299,6 +299,15 @@ developer, plug into one shared shell.
   column like `trade` and retries, reporting `dropped`) so a partial deploy can't fail the whole sync.
 - Verified: script parses; all 19 assumption field ids intact.
 
+### 2026-07-14 — Prompt 80: Cash Flow — trade fallback classifier (no more "Uncategorized")
+- Cash-out WPs still showed **Uncategorized** because the mirror's `trade` is empty until the
+  `sync-wpm` redeploy + re-sync (WPM's `trade` is set from import group headers, authoritative).
+  Added a client `tradeOf(w)` / `classifyTrade(desc)` fallback: uses the synced `w.trade` when
+  present, else classifies from the description (mirrors WPM's trade keywords + a **General
+  Requirements** bucket for overhead — admin/fuel/security/garbage/permits/…). Verified the four
+  visible overhead WPs (Admin Workers, Fuel and Oil, Security Services, Garbage Disposal) now group
+  under General Requirements. Real WPM trade still wins once synced.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

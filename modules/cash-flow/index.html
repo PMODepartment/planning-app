@@ -647,6 +647,25 @@
   // ==========================================================================
   // PROJECTION ENGINE (matches the Excel Cashflow sheet structure)
   // ==========================================================================
+  // Trade for a work package. The synced WPM `trade` is authoritative; when it's
+  // empty (e.g. sync/redeploy pending, or a WP with no trade set in WPM) fall back to
+  // a description classifier that mirrors WPM's own trade keywords + a General
+  // Requirements bucket for overhead (admin / fuel / security / permits / …), so the
+  // cash-out drill-down groups sensibly instead of dumping everything in "Uncategorized".
+  function classifyTrade(desc) {
+    var s = (desc || '').toLowerCase(); if (!s) return 'Uncategorized';
+    if (/admin|fuel|\boil\b|security|guard|garbage|disposal|permit|mobiliz|demobiliz|insurance|\bbond\b|survey|temporary|dewater|hauling|safety|honorarium|utilit|\boffice\b|general requirement|preliminar/.test(s)) return 'General Requirements';
+    if (/excavat|backfill|compact|gravel|\bsoil\b|earthwork|grading|clearing|site works|site development|roadwork|drainage|embankment/.test(s)) return 'Site Works';
+    if (/concret|rebar|reinforc|formwork|structural|foundation|\bpile\b|superstructure|topping|\bcolumn|\bbeam\b|\bslab\b|steel structure/.test(s)) return 'Structural Works';
+    if (/masonry|plaster|paint|\btile|\bdoor|\bwindow|finishes|ceiling|partition|waterproof|roofing|architectural|glazing|cladding/.test(s)) return 'Architectural Works';
+    if (/plumb|sanitary|sewer|water\s*supply|\bstp\b|septic/.test(s)) return 'Plumbing Works';
+    if (/fire|sprinkler|fdas|fads|suppress|standpipe|hydrant/.test(s)) return 'Fire Protection Works';
+    if (/mechan|hvac|acmv|elevator|\blift\b|escalator|\bpump|ventilation|chiller|genset/.test(s)) return 'Mechanical Works';
+    if (/electr|power|lighting|transformer|\belv\b|auxiliar|cctv|telecom|\bdata\b|pabx|\bbms\b|fire\s*alarm|low\s*current|wiring|panelboard|busway|conduit/.test(s)) return 'Electrical and Auxiliary Works';
+    return 'Uncategorized';
+  }
+  function tradeOf(w) { var t = w.trade && String(w.trade).trim(); return t || classifyTrade(w.description); }
+
   function computeProjection() {
     var months = buildTimeline();
     var n = months.length;
@@ -819,7 +838,7 @@
       var span = Math.max(1, eIdx - sIdx + 1);
       // DP paid at window start (+terms)
       var awd = isAwarded(w);
-      var wpLbl = { no: w.wp_no, desc: w.description, trade: (w.trade && String(w.trade).trim()) || 'Uncategorized' };
+      var wpLbl = { no: w.wp_no, desc: w.description, trade: tradeOf(w) };
       var dpAmtO = budget * wdp;
       if (dpAmtO > 0) outAdd(outDP, clampIdx(sIdx + wterms, n), dpAmtO, awd, brkDP, wpLbl);
       var dpPoolO = dpAmtO, retTotalO = 0;
