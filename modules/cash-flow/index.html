@@ -123,6 +123,29 @@
     .cf-scn-meta { flex:1; display:flex; flex-direction:column; }
     .cf-scn-meta span { font-size:11px; color:var(--pd-muted); }
 
+    /* what-if */
+    .cf-wi-row { display:grid; grid-template-columns:150px 1fr 62px; gap:12px; align-items:center; margin-bottom:12px; }
+    .cf-wi-row label { font-size:12px; color:var(--pd-muted); }
+    .cf-wi-row input[type=range] { width:100%; accent-color:var(--pd-red); }
+    .cf-wi-row b { font-size:13px; text-align:right; }
+    .cf-wi-out { border-top:1px solid var(--pd-line); padding-top:14px; margin-top:6px; }
+    .cf-wi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+    .cf-wi-stat { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; }
+    .cf-wi-stat span { display:block; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); }
+    .cf-wi-stat b { font-size:18px; font-weight:800; } .cf-wi-stat em { font-style:normal; font-size:11px; font-weight:600; margin-left:6px; }
+
+    /* mobile */
+    @media (max-width:640px) {
+      .pd-main { padding:12px !important; }
+      .cf-card { padding:14px 12px; }
+      .cf-kpi { min-width:132px; padding:12px 14px; }
+      .cf-kpi-v { font-size:19px; }
+      .cf-chart-head { flex-direction:column; align-items:flex-start; }
+      .cf-wi-grid { grid-template-columns:1fr; }
+      .cf-wi-row { grid-template-columns:110px 1fr 52px; gap:8px; }
+      .cf-dp-row, .cf-tr-row, .cf-act-row { grid-template-columns:1fr 1fr; }
+    }
+
     /* trade-package rows */
     .cf-tr-row { display:grid; grid-template-columns:1.4fr 1fr 0.9fr 0.8fr 0.8fr 0.8fr auto; gap:6px; align-items:center; margin-bottom:6px; }
     .cf-tr-row .pd-input, .cf-tr-row .pd-select { padding:5px 7px; font-size:12px; }
@@ -162,7 +185,9 @@
           <button class="pd-btn" id="cf-refresh" title="Reload the projection"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
           <button class="pd-btn" id="cf-sync" title="Pull the latest procurement work packages from WPM (admins/planners)" style="display:none;"><span data-ico="refresh" data-ico-size="15"></span> Sync from WPM</button>
           <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="15"></span> Export</button>
+          <button class="pd-btn" id="cf-print" title="Print / save the cashflow sheet as PDF"><span data-ico="printer" data-ico-size="15"></span> Print</button>
           <span class="cf-ctl-div"></span>
+          <button class="pd-btn" id="cf-whatif" title="What-if: preview peak funding under different terms"><span data-ico="trendingUp" data-ico-size="15"></span> What-if</button>
           <button class="pd-btn" id="cf-actuals" title="Record actual cash received / paid"><span data-ico="clipboard" data-ico-size="15"></span> Actuals</button>
           <button class="pd-btn pd-btn-primary" id="cf-settings"><span data-ico="settings" data-ico-size="15"></span> Assumptions</button>
         </div>
@@ -211,6 +236,19 @@
       <div id="cf-scn-list"></div>
     </div>
     <div class="pd-modal-footer"><button class="pd-btn" id="cf-scn-cancel">Close</button></div>
+  </div>
+</div>
+
+<!-- What-if modal -->
+<div class="pd-modal-overlay" id="cf-wi-modal" style="display:none;">
+  <div class="pd-modal" style="max-width:560px;width:96vw;">
+    <div class="pd-modal-header"><span>What-if — funding sensitivity</span><button class="pd-modal-close" id="cf-wi-x">&#215;</button></div>
+    <div class="pd-modal-body">
+      <div class="cf-hint" style="margin-bottom:12px;">Drag to preview how terms change the <b>peak funding need</b> and closing balance. Nothing is saved — open <b>Assumptions</b> to commit.</div>
+      <div id="cf-wi-sliders"></div>
+      <div id="cf-wi-out" class="cf-wi-out"></div>
+    </div>
+    <div class="pd-modal-footer"><button class="pd-btn" id="cf-wi-reset">Reset</button> <button class="pd-btn" id="cf-wi-cancel">Close</button></div>
   </div>
 </div>
 
@@ -1409,6 +1447,96 @@
     XLSX.writeFile(wb, 'Cashflow - ' + (projName || pid) + '.xlsx');
   }
 
+  // ---- Print / PDF: a branded, signature-ready cashflow sheet (landscape) ----
+  function printSheet() {
+    if (!model || model.empty) { UI.toast('Nothing to print.', 'error'); return; }
+    var m = model, esc2 = Fmt.esc, ms = Fmt.moneyShort;
+    var cols = m.months.map(monthLabel);
+    function row(label, arr, cls) {
+      var cells = arr.map(function (v) { return '<td class="' + (v < 0 ? 'neg' : '') + '">' + (v ? ms(v) : '–') + '</td>'; }).join('');
+      var tot = arr.reduce(function (a, b) { return a + b; }, 0);
+      return '<tr class="' + (cls || '') + '"><th>' + label + '</th>' + cells + '<td class="tot">' + ms(tot) + '</td></tr>';
+    }
+    var head = '<tr><th>₱</th>' + cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '<th class="tot">Total</th></tr>';
+    var body =
+      '<tr class="sec"><th colspan="' + (cols.length + 2) + '">CASH IN</th></tr>' +
+      row('Downpayment', m.inDP) + row('Billing (net)', m.inBill) +
+      row('Less: EWT', m.inEwt.map(function (v) { return -v; })) + row('Retention release', m.inRet) +
+      row('Cumulative', m.inCum, 'cum') +
+      '<tr class="sec"><th colspan="' + (cols.length + 2) + '">CASH OUT</th></tr>' +
+      row('Downpayment', m.outDP.map(function (v) { return -v; })) + row('Billing', m.outBill.map(function (v) { return -v; })) +
+      row('Retention', m.outRet.map(function (v) { return -v; })) + row('Cumulative', m.outCum, 'cum') +
+      row('NET — periodic', m.netPer, 'net') +
+      '<tr class="net"><th>NET — cumulative</th>' + m.netCum.map(function (v) { return '<td>' + ms(v) + '</td>'; }).join('') + '<td></td></tr>';
+    var kpis = [['Contract IBB (VAT inc)', ms(settings.contract_ibb)], ['Contract BCB (VAT inc)', ms(settings.contract_bcb)],
+      ['Total Cash In', ms(m.totalIn)], ['Total Cash Out', ms(m.totalOut)], ['Closing Balance', ms(m.closing)], ['Peak Funding Need', ms(m.peak)]]
+      .map(function (k) { return '<div><span>' + k[0] + '</span><b>' + k[1] + '</b></div>'; }).join('');
+    var sigs = ['PLANNING SUPERVISOR', 'PROJECT MANAGER', 'AREA MANAGER', 'COO — EPC GROUP']
+      .map(function (t) { return '<div class="sig"><div class="line"></div>' + t + '</div>'; }).join('');
+    var doc = '<!doctype html><html><head><meta charset="utf-8"><title>Cashflow — ' + esc2(projName || pid) + '</title><style>' +
+      '@page{size:A4 landscape;margin:12mm;} *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;}' +
+      'body{margin:0;color:#231F20;} h1{font-size:16px;margin:0 0 2px;} .hd{border-bottom:3px solid #EE3124;padding-bottom:8px;margin-bottom:12px;}' +
+      '.meta{font-size:11px;color:#555;} .kpis{display:flex;flex-wrap:wrap;gap:14px;margin:12px 0;} .kpis div{font-size:11px;} .kpis span{color:#666;display:block;} .kpis b{font-size:13px;}' +
+      'table{border-collapse:collapse;width:100%;font-size:8.5px;} th,td{border:1px solid #ddd;padding:3px 5px;text-align:right;white-space:nowrap;} th:first-child,tr>th:first-child{text-align:left;}' +
+      'thead th{background:#231F20;color:#fff;} .sec th{background:#FDECEA;color:#231F20;text-align:left;font-weight:700;} .cum td,.cum th{font-weight:700;border-top:1px solid #999;} .net td,.net th{background:#2B2C2B;color:#fff;font-weight:700;} td.neg{color:#C42127;} td.tot{font-weight:700;}' +
+      '.sigs{display:flex;gap:30px;margin-top:34px;} .sig{flex:1;text-align:center;font-size:10px;font-weight:700;} .sig .line{border-top:1px solid #231F20;margin-bottom:4px;height:26px;}' +
+      '</style></head><body>' +
+      '<div class="hd"><h1>CASHFLOW PROJECTION — ' + esc2(projName || pid) + '</h1>' +
+      '<div class="meta">Data date: ' + Fmt.date(iso(today())) + ' · Cash-in basis: ' + (m.scurveBasis === 'cost' ? 'Cost-weighted' : 'Duration-weighted') + ' · Cash-out: ' + m.wpCount + ' WPs · Generated ' + Fmt.date(iso(today())) + '</div></div>' +
+      '<div class="kpis">' + kpis + '</div>' +
+      '<div style="overflow-x:auto;"><table><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' +
+      '<div class="sigs">' + sigs + '</div>' +
+      '</body></html>';
+    var w = window.open('', '_blank'); if (!w) { UI.toast('Allow pop-ups to print.', 'error'); return; }
+    w.document.write(doc); w.document.close(); w.focus();
+    setTimeout(function () { w.print(); }, 350);
+  }
+
+  // ---- What-if: recompute peak funding under overridden terms (not saved) ----
+  function computeWith(ov) {
+    var s0 = settings, t0 = tranches;
+    settings = Object.assign({}, s0, ov); tranches = [];   // preview uses the simple DP % (no tranches)
+    var mm = computeProjection();
+    settings = s0; tranches = t0;
+    return mm;
+  }
+  var wiParams = [
+    { k: 'dp_percent', label: 'Downpayment %', min: 0, max: 50, step: 1, pct: true },
+    { k: 'retention_percent', label: 'Retention %', min: 0, max: 15, step: 0.5, pct: true },
+    { k: 'ewt_percent', label: 'EWT %', min: 0, max: 10, step: 0.5, pct: true },
+    { k: 'billing_terms_months', label: 'Billing terms (months)', min: 0, max: 4, step: 1, pct: false }
+  ];
+  var wiState = null;
+  function openWhatIf() {
+    if (!model || model.empty) { UI.toast('Nothing to preview yet.', 'error'); return; }
+    wiState = {}; wiParams.forEach(function (p) { wiState[p.k] = p.pct ? num(settings[p.k]) * 100 : num(settings[p.k]); });
+    document.getElementById('cf-wi-sliders').innerHTML = wiParams.map(function (p) {
+      return '<div class="cf-wi-row"><label>' + p.label + '</label>' +
+        '<input type="range" class="cf-wi-s" data-k="' + p.k + '" min="' + p.min + '" max="' + p.max + '" step="' + p.step + '" value="' + wiState[p.k] + '">' +
+        '<b id="cf-wi-v-' + p.k + '">' + wiState[p.k] + (p.pct ? '%' : '') + '</b></div>';
+    }).join('');
+    document.getElementById('cf-wi-sliders').querySelectorAll('.cf-wi-s').forEach(function (el) {
+      el.oninput = function () { var p = wiParams.filter(function (x) { return x.k === el.dataset.k; })[0]; wiState[el.dataset.k] = num(el.value); document.getElementById('cf-wi-v-' + el.dataset.k).textContent = el.value + (p.pct ? '%' : ''); renderWhatIf(); };
+    });
+    renderWhatIf();
+    document.getElementById('cf-wi-modal').style.display = 'flex';
+  }
+  function renderWhatIf() {
+    var ov = {}; wiParams.forEach(function (p) { ov[p.k] = p.pct ? wiState[p.k] / 100 : Math.round(wiState[p.k]); });
+    var mm = computeWith(ov), base = model;
+    function stat(label, v, bv, goodHigh) {
+      var d = v - bv, cls = d === 0 ? '' : ((d > 0) === !!goodHigh ? 'cf-ok' : 'cf-bad');
+      return '<div class="cf-wi-stat"><span>' + label + '</span><b>' + Fmt.moneyShort(v) + '</b><em class="' + cls + '">' + (d > 0 ? '+' : '') + Fmt.moneyShort(d) + '</em></div>';
+    }
+    document.getElementById('cf-wi-out').innerHTML =
+      '<div class="cf-wi-grid">' +
+      stat('Peak Funding Need', mm.peak, base.peak, true) +
+      stat('Closing Balance', mm.closing, base.closing, true) +
+      stat('Total Cash In', mm.totalIn, base.totalIn, true) +
+      stat('Total Cash Out', mm.totalOut, base.totalOut, false) +
+      '</div><div class="cf-hint" style="margin-top:8px;">Δ vs current saved assumptions. Peak funding = most-negative cumulative net (less negative is better).</div>';
+  }
+
   // ==========================================================================
   // WIRE-UP
   // ==========================================================================
@@ -1423,6 +1551,11 @@
     if (canSync()) document.getElementById('cf-sync').style.display = '';
     document.getElementById('cf-sync').onclick = syncWPM;
     document.getElementById('cf-export').onclick = exportExcel;
+    document.getElementById('cf-print').onclick = printSheet;
+    document.getElementById('cf-whatif').onclick = openWhatIf;
+    document.getElementById('cf-wi-x').onclick = document.getElementById('cf-wi-cancel').onclick = function () { document.getElementById('cf-wi-modal').style.display = 'none'; };
+    document.getElementById('cf-wi-reset').onclick = function () { openWhatIf(); };
+    document.getElementById('cf-wi-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
     document.getElementById('cf-settings').onclick = openSettings;
     document.getElementById('cf-modal-x').onclick = document.getElementById('cf-cancel').onclick = function () { document.getElementById('cf-modal').style.display = 'none'; };
     document.getElementById('cf-save').onclick = saveSettings;
