@@ -239,6 +239,19 @@ developer, plug into one shared shell.
   from Prompt 74 are kept.
 - Verified: full inline script parses; shell structure balanced; live run pending.
 
+### 2026-07-14 — Prompt 76: Cash Flow — resilient settings save + VAT checkbox
+- **Audit fix (schema resilience):** the Assumptions save was all-or-nothing — a single column
+  missing from the live `cash_flow_settings` (e.g. `ewt_percent`, when v2 wasn't applied) rejected
+  the whole upsert and lost all input. New `tolerantWrite()` self-heals: on a "column not found"
+  error it drops that column and retries (settings upsert + tranche/trade inserts), then warns
+  *"Saved, but N field(s) not stored — run the pending migration(s): …"*. Real fix is still to run
+  the pending migrations (`cash-flow-v2`, `cashout-retention-stages`, `trade-dp-tranches`).
+- **VAT input → checkbox:** the `VAT %` numeric field is replaced by **"Contract is VAT-inclusive
+  (12%)"** (checked → `vat_percent = 0.12`, unchecked = zero-rated/VAT-exempt → `0`). VAT is never
+  *added* (IBB is VAT-inc); the value only derives the VAT-exclusive base for EWT. No migration
+  (same `vat_percent` column, just a binary control).
+- Verified: full inline script parses; live run pending.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

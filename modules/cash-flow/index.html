@@ -88,6 +88,8 @@
     .cf-net td.lbl, .cf-net th.lbl { background:var(--pd-dark); color:#fff; }
     .cf-sub td:first-child { padding-left:22px; }
 
+    .cf-check { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--pd-ink); cursor:pointer; padding:7px 0; }
+    .cf-check input { width:16px; height:16px; accent-color:var(--pd-red); cursor:pointer; }
     .cf-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .cf-form-full { grid-column:1 / -1; }
     .cf-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
@@ -1272,7 +1274,7 @@
       fld('Downpayment % (simple)', '<input class="pd-input" id="s-dp" type="number" step="0.01" value="' + pctVal(s.dp_percent) + '">', 'Used only when NO tranches are defined below.') +
       fld('Retention %', '<input class="pd-input" id="s-ret" type="number" step="0.01" value="' + pctVal(s.retention_percent) + '">', 'Withheld from each billing, e.g. 10.') +
       fld('EWT % (creditable withholding)', '<input class="pd-input" id="s-ewt" type="number" step="0.01" value="' + pctVal(s.ewt_percent) + '">', 'Withheld from each billing, e.g. 2. On the VAT-exclusive base.') +
-      fld('VAT % (for EWT base)', '<input class="pd-input" id="s-vat" type="number" step="0.01" value="' + pctVal(s.vat_percent) + '">', 'Contract is VAT-inc; EWT is computed net of this, e.g. 12.') +
+      fld('VAT', '<label class="cf-check"><input type="checkbox" id="s-vat"' + ((s.vat_percent == null || num(s.vat_percent) > 0) ? ' checked' : '') + '> Contract is VAT-inclusive (12%)</label>', 'Untick only for zero-rated / VAT-exempt contracts. Used to derive the VAT-exclusive base for EWT.') +
       fld('Billing terms (months)', '<input class="pd-input" id="s-terms" type="number" step="1" value="' + (s.billing_terms_months != null ? s.billing_terms_months : 1) + '">', 'Lag from certification to cash receipt.') +
       fld('Retention release — stage 1 (months after completion)', '<input class="pd-input" id="s-rel" type="number" step="1" value="' + (s.retention_release_months != null ? s.retention_release_months : 1) + '">') +
       fld('Retention released at stage 1 (%)', '<input class="pd-input" id="s-rel1pct" type="number" step="1" value="' + pctVal(s.ret_rel1_pct != null ? s.ret_rel1_pct : 1) + '">', '100 = single release. E.g. 50 → half now, half at stage 2.') +
@@ -1452,12 +1454,31 @@
   function numInput(id) { var e = document.getElementById(id); var v = e && e.value.trim(); return v === '' || v == null ? null : num(v); }
   function txtInput(id) { var e = document.getElementById(id); return e && e.value.trim() ? e.value.trim() : null; }
 
+  // Self-healing write against a partially-migrated schema: if PostgREST rejects an
+  // unknown column ("Could not find the 'X' column … in the schema cache"), drop that
+  // column from every row and retry, collecting the dropped names so we can warn the
+  // user to run the pending migration instead of losing the whole save.
+  function missingCol(err) { var m = /Could not find the '([^']+)' column/i.exec((err && err.message) || ''); return m ? m[1] : null; }
+  async function tolerantWrite(build, rows, dropped) {
+    rows = Array.isArray(rows) ? rows : [rows];
+    for (var i = 0; i < 20; i++) {
+      var res = await build(rows);
+      if (!res.error) return res;
+      var col = missingCol(res.error);
+      if (!col) return res;                       // a real error → surface it
+      if (dropped.indexOf(col) === -1) dropped.push(col);
+      rows.forEach(function (r) { delete r[col]; });
+    }
+    return { error: { message: 'schema mismatch (too many missing columns)' } };
+  }
+
   async function saveSettings() {
     var payload = {
       project_id: pid,
       contract_ibb: numInput('s-ibb'), contract_bcb: numInput('s-bcb'),
       dp_percent: pctInput('s-dp') || 0, retention_percent: pctInput('s-ret') || 0,
-      ewt_percent: pctInput('s-ewt') || 0, vat_percent: pctInput('s-vat') || 0,
+      ewt_percent: pctInput('s-ewt') || 0,
+      vat_percent: (document.getElementById('s-vat') && document.getElementById('s-vat').checked) ? 0.12 : 0,
       billing_terms_months: numInput('s-terms') != null ? Math.round(numInput('s-terms')) : 1,
       retention_release_months: numInput('s-rel') != null ? Math.round(numInput('s-rel')) : 1,
       ret_rel1_pct: pctInput('s-rel1pct') != null ? pctInput('s-rel1pct') : 1,
@@ -1471,7 +1492,8 @@
       remarks: txtInput('s-rem'),
       updated_at: new Date().toISOString()
     };
-    var res = await sb().from('cash_flow_settings').upsert(payload, { onConflict: 'project_id' });
+    var dropped = [];
+    var res = await tolerantWrite(function (r) { return sb().from('cash_flow_settings').upsert(r[0], { onConflict: 'project_id' }); }, [payload], dropped);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
 
     // Persist DP tranches: replace the project's set (delete all → insert current).
@@ -1490,7 +1512,7 @@
         created_by: profile.id, updated_at: new Date().toISOString() };
     });
     if (rows.length) {
-      var ins = await sb().from('cash_flow_dp_tranches').insert(rows);
+      var ins = await tolerantWrite(function (r) { return sb().from('cash_flow_dp_tranches').insert(r); }, rows, dropped);
       if (ins.error) { UI.toast('Tranches: ' + ins.error.message, 'error'); return; }
     }
 
@@ -1508,10 +1530,14 @@
         created_by: profile.id, updated_at: new Date().toISOString() };
     });
     if (trows.length) {
-      var insT = await sb().from('cash_flow_trade_packages').insert(trows);
+      var insT = await tolerantWrite(function (r) { return sb().from('cash_flow_trade_packages').insert(r); }, trows, dropped);
       if (insT.error) { UI.toast('Packages: ' + insT.error.message, 'error'); return; }
     }
-    UI.toast('Assumptions saved.', 'success');
+    if (dropped.length) {
+      UI.toast('Saved, but ' + dropped.length + ' field(s) not stored — run the pending migration(s): ' + dropped.join(', '), 'error');
+    } else {
+      UI.toast('Assumptions saved.', 'success');
+    }
     document.getElementById('cf-modal').style.display = 'none';
     loadAll(true);
   }
