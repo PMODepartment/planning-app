@@ -64,6 +64,13 @@
     .cf-dlab { fill:var(--pd-muted); font-size:9px; text-anchor:middle; }
     .cf-axis { stroke:var(--pd-muted); stroke-width:1; }
     .cf-selband { fill:rgba(238,49,36,0.12); stroke:var(--pd-red); stroke-width:1; stroke-dasharray:3 2; }
+    .cf-matrix td.cf-oc { cursor:pointer; }
+    .cf-matrix td.cf-oc:hover { background:var(--pd-red-light); outline:1px solid var(--pd-red); }
+    .cf-drill-card { margin-top:14px; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .cf-drill-hd { display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--pd-bg); font-weight:700; font-size:13px; border-bottom:1px solid var(--pd-line); }
+    .cf-drill-hd span { font-weight:400; color:var(--pd-muted); font-size:12px; }
+    .cf-drill-hd button { margin-left:auto; }
+    .cf-drill-card .cf-table { font-size:12px; }
     .cf-matrix th.mcol { cursor:pointer; }
     .cf-matrix th.mcol:hover { color:var(--pd-red); }
     .cf-matrix th.mcol.sel { background:var(--pd-red); color:#fff; }
@@ -749,12 +756,18 @@
     // payments landing on/before the data date are actual committed cash-out;
     // the awarded remainder + all un-awarded packages are forecast.
     var outActual = z(), outForecast = z();
+    // Per-work-package attribution per month, so the matrix cells drill down to WPs.
+    var brkDP = [], brkBill = [], brkRet = [];
     var ddIdx = clampIdx(monthDiff(months[0], new Date(today().getFullYear(), today().getMonth(), 1)), n);
     function isAwarded(w) {
       if (/award/i.test(w.award_status || '')) return true;      // "Awarded" / "Partially Awarded"
       return num(w.awarded_cost) > 0 || num(w.total_awarded) > 0 || !!w.actual_awarding_date;
     }
-    function outAdd(arr, idx, amt, awarded) { arr[idx] += amt; if (awarded && idx <= ddIdx) outActual[idx] += amt; else outForecast[idx] += amt; }
+    function outAdd(arr, idx, amt, awarded, bucket, wp) {
+      arr[idx] += amt;
+      if (awarded && idx <= ddIdx) outActual[idx] += amt; else outForecast[idx] += amt;
+      if (bucket && amt > 0.005) (bucket[idx] || (bucket[idx] = [])).push({ no: wp.no, desc: wp.desc, amt: amt, awd: awarded && idx <= ddIdx });
+    }
     var fbStart = (sched && sched.min) ? sched.min : months[0];
     var fbEnd = (sched && sched.max) ? sched.max : months[n - 1];
     var wpNoDates = 0, wpNoDatesAmt = 0;
@@ -772,8 +785,9 @@
       var span = Math.max(1, eIdx - sIdx + 1);
       // DP paid at window start (+terms)
       var awd = isAwarded(w);
+      var wpLbl = { no: w.wp_no, desc: w.description };
       var dpAmtO = budget * wdp;
-      if (dpAmtO > 0) outAdd(outDP, clampIdx(sIdx + wterms, n), dpAmtO, awd);
+      if (dpAmtO > 0) outAdd(outDP, clampIdx(sIdx + wterms, n), dpAmtO, awd, brkDP, wpLbl);
       var dpPoolO = dpAmtO, retTotalO = 0;
       var billable = budget;                       // gross progress payments total = budget
       for (var k = 0; k < span; k++) {
@@ -782,11 +796,11 @@
         var retO = grossO * wret; retTotalO += retO;
         var recoupO = Math.min(dpPoolO, grossO * wdp); dpPoolO -= recoupO;
         var netO = grossO - retO - recoupO;
-        outAdd(outBill, clampIdx(mIdx + wterms, n), netO, awd);
+        outAdd(outBill, clampIdx(mIdx + wterms, n), netO, awd, brkBill, wpLbl);
       }
       if (retTotalO > 0) {   // staged release on the cash-out schedule (own, or cash-in fallback)
-        outAdd(outRet, clampIdx(eIdx + wterms + coRelIn, n), retTotalO * coRel1Pct, awd);
-        if (coRel1Pct < 1) outAdd(outRet, clampIdx(eIdx + wterms + coRel2, n), retTotalO * (1 - coRel1Pct), awd);
+        outAdd(outRet, clampIdx(eIdx + wterms + coRelIn, n), retTotalO * coRel1Pct, awd, brkRet, wpLbl);
+        if (coRel1Pct < 1) outAdd(outRet, clampIdx(eIdx + wterms + coRel2, n), retTotalO * (1 - coRel1Pct), awd, brkRet, wpLbl);
       }
     });
 
@@ -877,6 +891,7 @@
       fundingLimit: fundingLimit, breachMonths: breachMonths,
       usingTrades: usingTrades, tradeTotal: tradeTotal, tradeCount: tradePkgs.length,
       usingMilestones: usingMilestones, msTotal: msTotal, msCount: msResolved.length,
+      outBreak: { dp: brkDP, bill: brkBill, ret: brkRet },
       scurveBasis: W.basis, scurveFellBack: W.fellBack, scurveWithCost: W.withCost, scurveActs: W.nAct,
       wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt,
       dpTotal: dpTotal, dpCount: dpTranches.length,
@@ -942,6 +957,9 @@
     if (qb) qb.onclick = function () { setPeriodMode('quarter'); };
     host.querySelectorAll('.cf-matrix th.mcol').forEach(function (th) {
       th.onclick = function () { selectMonth(+th.dataset.mi); };
+    });
+    host.querySelectorAll('.cf-matrix td.cf-oc').forEach(function (td) {
+      td.onclick = function () { renderDrill(td.dataset.comp, +td.dataset.mi); };
     });
   }
 
@@ -1302,9 +1320,17 @@
         arr.map(cell).join('') + cell(total(arr)) + '</tr>';
     }
     function secHead(label) { return '<tr class="cf-sec"><th class="lbl">' + label + '</th>' + m.months.map(function () { return '<th></th>'; }).join('') + '<th></th></tr>'; }
+    // Cash-out rows: cells are clickable to drill into the contributing work packages.
+    function rowOut(label, arr, comp) {
+      var cells = arr.map(function (v, i) {
+        return '<td class="cf-oc' + (v ? ' cf-neg' : '') + '" data-comp="' + comp + '" data-mi="' + i + '" title="Click for work-package breakdown">' + (v ? Fmt.moneyShort(-v) : '–') + '</td>';
+      }).join('');
+      var tot = total(arr);
+      return '<tr class="cf-sub"><td class="lbl">' + label + '</td>' + cells + '<td' + (tot ? ' class="cf-neg"' : '') + '>' + (tot ? Fmt.moneyShort(-tot) : '–') + '</td></tr>';
+    }
 
     return '<div class="cf-card"><h3>Monthly Projection</h3>' +
-      '<p class="sub">Cash In (from schedule S-curve × contract) · Cash Out (from WPM work packages) · Net. Cumulative rows in bold.</p>' +
+      '<p class="sub">Cash In (from schedule S-curve × contract) · Cash Out (from WPM work packages) · Net. Cumulative rows in bold. <b>Click a Cash Out cell</b> to see the work packages behind it.</p>' +
       '<div class="cf-matrix-wrap"><table class="cf-matrix"><thead><tr>' + hdr + '</tr></thead><tbody>' +
       secHead('CASH IN') +
       row('Downpayment', m.inDP, '', true) +
@@ -1313,13 +1339,32 @@
       row('Retention release', m.inRet, '', true) +
       row('Cash In — cumulative', m.inCum, 'cf-cum') +
       secHead('CASH OUT') +
-      row('Downpayment', m.outDP.map(function (v) { return -v; }), '', true) +
-      row('Billing', m.outBill.map(function (v) { return -v; }), '', true) +
-      row('Retention', m.outRet.map(function (v) { return -v; }), '', true) +
+      rowOut('Downpayment', m.outDP, 'dp') +
+      rowOut('Billing', m.outBill, 'bill') +
+      rowOut('Retention', m.outRet, 'ret') +
       row('Cash Out — cumulative', m.outCum, 'cf-cum') +
       '<tr class="cf-net"><td class="lbl">NET CASH FLOW — periodic</td>' + m.netPer.map(cell).join('') + cell(total(m.netPer)) + '</tr>' +
       '<tr class="cf-net"><td class="lbl">NET CASH FLOW — cumulative</td>' + m.netCum.map(function (v) { return '<td>' + (v ? Fmt.moneyShort(v) : '–') + '</td>'; }).join('') + '<td></td></tr>' +
+      '</tbody></table></div><div id="cf-drill"></div></div>';
+  }
+
+  // Drill-down: which work packages make up a cash-out cell (component × month).
+  function renderDrill(comp, mi) {
+    var host = document.getElementById('cf-drill'); if (!host || !model) return;
+    var list = ((model.outBreak[comp] || [])[mi]) || [];
+    var label = { dp: 'Downpayment', bill: 'Billing', ret: 'Retention' }[comp] || comp;
+    var mo = monthLabel(model.months[mi]);
+    if (!list.length) { host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">Cash Out · ' + label + ' · ' + mo + ' <span>no work packages</span><button class="cf-btn-sm" id="cf-drill-x">Close</button></div></div>'; document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; }; return; }
+    var sorted = list.slice().sort(function (a, b) { return b.amt - a.amt; });
+    var tot = sorted.reduce(function (a, x) { return a + x.amt; }, 0);
+    host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">Cash Out · ' + label + ' · ' + mo +
+      ' <span>' + sorted.length + ' work package' + (sorted.length > 1 ? 's' : '') + ' · ' + Fmt.moneyShort(-tot) + '</span>' +
+      '<button class="cf-btn-sm" id="cf-drill-x">Close</button></div>' +
+      '<div style="overflow-x:auto;"><table class="cf-table"><thead><tr><th>WP No.</th><th>Description</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>' +
+      sorted.map(function (x) { return '<tr><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td class="num cf-neg">' + Fmt.moneyShort(-x.amt) + '</td><td>' + (x.awd ? 'actual' : 'forecast') + '</td></tr>'; }).join('') +
       '</tbody></table></div></div>';
+    document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; };
+    host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   // ==========================================================================
