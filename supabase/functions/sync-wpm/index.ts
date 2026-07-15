@@ -31,12 +31,16 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-// Columns pulled from WPM → mirror. Keep in sync with the mirror table + module.
-const WP_COLS =
-  "id,project_id,wp_no,description,approved_budget_bcb,awarded_cost,total_awarded," +
-  "dp_percent,retention_percent,payment_terms_days,awarding_date,actual_awarding_date," +
-  "target_delivery,target_installation,target_completion," +
-  "award_status,procurement_status,delivery_status";
+// Pull the FULL WPM work-package row (*) so we can auto-detect the trade / cost-code
+// group column without knowing its exact name (WPM schema isn't fixed here). We only
+// copy the known columns + the detected trade into the mirror below.
+const WP_COLS = "*";
+
+// First non-empty value (trade auto-detection across likely WPM column names).
+const pick = (...v: any[]) => {
+  for (const x of v) if (x != null && String(x).trim() !== "") return String(x).trim();
+  return null;
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -108,6 +112,8 @@ Deno.serve(async (req) => {
     wpm_project_id: w.project_id,
     wp_no: w.wp_no,
     description: w.description,
+    trade: pick(w.trade, w.cost_code_category, w.cost_code_group, w.category,
+                w.discipline, w.division, w.work_category, w.cost_code),
     approved_budget_bcb: w.approved_budget_bcb,
     awarded_cost: w.awarded_cost,
     total_awarded: w.total_awarded,

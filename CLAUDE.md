@@ -266,6 +266,26 @@ developer, plug into one shared shell.
   monthly buckets instead of every activity.
 - Verified: both modules parse; live run pending.
 
+### 2026-07-14 — Prompt 78: Cash Flow — drill-down symmetry, per-trade cash-out, assumptions nudge, chart polish
+- **Server-side S-curve aggregate** was already built (`cashflow_schedule_agg` RPC +
+  `2026-07-14-cashflow-schedule-agg-rpc.sql` + client fast-path/fallback); user just runs that
+  migration to activate it (else the keyset client aggregate runs). Deleted a duplicate migration.
+- **Cash-in drill-down symmetry:** cash-IN matrix cells are now clickable too (was cash-out only).
+  `rowDrill(label,arr,comp,dir)` replaces `rowOut`; `renderDrill(dir,comp,mi)` reads `model.inBreak`
+  (DP tranches / trades / milestones / progress billing) or `model.outBreak` (work packages).
+- **Per-trade cash-out (auto-detect):** the cash-out drill-down groups work packages by **trade**
+  with WPM-style collapsible headers (trade · WP count · subtotal). New `trade` column on the
+  `wpm_work_packages` mirror (`2026-07-14-wpm-mirror-trade.sql`); `sync-wpm` now selects `*` and
+  auto-detects the trade (first present of trade / cost_code_category / category / discipline / …).
+  Client `loadWPM` requests `trade` tolerantly (retries without it pre-migration). **Deploy: run the
+  migration, redeploy `sync-wpm`, re-Sync.**
+- **Assumptions completeness nudge:** a gentle amber card lists unset/zero assumptions (BCB,
+  retention, downpayment, EWT, WPM cash-out source) with an "Open Assumptions" button.
+- **Narrowed WPM fetch** (explicit columns, not `select('*')`) kept. **Chart polish:** uniform
+  9.5px axis/data labels, wider left pad so negative ₱ y-labels don't clip, light vertical
+  gridlines at each labelled period to line bars up with the x-axis.
+- Verified: full inline script parses; live run pending.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

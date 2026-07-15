@@ -41,8 +41,9 @@
     .cf-svg { width:100%; height:auto; display:block; }
     .cf-grid { stroke:var(--pd-line); stroke-width:1; }
     .cf-zero { stroke:var(--pd-muted); stroke-width:1; stroke-dasharray:3 3; }
-    .cf-ylab { fill:var(--pd-muted); font-size:10.5px; text-anchor:end; }
-    .cf-xlab { fill:var(--pd-muted); font-size:10.5px; text-anchor:middle; }
+    .cf-ylab { fill:var(--pd-muted); font-size:9.5px; text-anchor:end; }
+    .cf-xlab { fill:var(--pd-muted); font-size:9.5px; text-anchor:middle; }
+    .cf-vgrid { stroke:var(--pd-line); stroke-width:1; opacity:.45; }
     .cf-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
     .cf-lg { display:inline-flex; align-items:center; }
     .sw { display:inline-block; width:14px; height:10px; margin-right:6px; border-radius:2px; }
@@ -61,7 +62,7 @@
     .cf-seg button.disabled { opacity:.4; cursor:not-allowed; }
     .cf-seg button.active { background:var(--pd-red); color:#fff; }
     .cf-chart-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-    .cf-dlab { fill:var(--pd-muted); font-size:9px; text-anchor:middle; }
+    .cf-dlab { fill:var(--pd-muted); font-size:9.5px; text-anchor:middle; }
     .cf-axis { stroke:var(--pd-muted); stroke-width:1; }
     .cf-selband { fill:rgba(238,49,36,0.12); stroke:var(--pd-red); stroke-width:1; stroke-dasharray:3 2; }
     .cf-matrix td.cf-oc { cursor:pointer; }
@@ -71,6 +72,12 @@
     .cf-drill-hd span { font-weight:400; color:var(--pd-muted); font-size:12px; }
     .cf-drill-hd button { margin-left:auto; }
     .cf-drill-card .cf-table { font-size:12px; }
+    .cf-trade-hd { cursor:pointer; background:var(--pd-bg); }
+    .cf-trade-hd:hover { background:var(--pd-red-light); }
+    .cf-trade-hd td { font-weight:700; border-top:1px solid var(--pd-line); }
+    .cf-trade-hd .cf-tri { display:inline-block; width:12px; color:var(--pd-red); }
+    .cf-trade-n { font-weight:400; color:var(--pd-muted); font-size:11px; margin-left:6px; }
+    .cf-trade-row td:first-child { padding-left:22px; }
     .cf-matrix th.mcol { cursor:pointer; }
     .cf-matrix th.mcol:hover { color:var(--pd-red); }
     .cf-matrix th.mcol.sel { background:var(--pd-red); color:#fff; }
@@ -124,6 +131,11 @@
     .cf-alert.bad { border-color:var(--pd-bad); background:rgba(238,49,36,0.07); } .cf-alert.bad .cf-alert-dot { background:var(--pd-bad); }
     .cf-alert.warn { border-color:#d99100; background:rgba(217,145,0,0.08); } .cf-alert.warn .cf-alert-dot { background:#d99100; }
     .cf-alert.info .cf-alert-dot { background:var(--pd-ok); }
+    .cf-nudge { border:1px solid #d99100; background:rgba(217,145,0,0.07); border-radius:8px; padding:11px 14px 12px; margin-bottom:14px; font-size:13px; }
+    .cf-nudge .cf-nudge-t { display:flex; align-items:center; gap:8px; }
+    .cf-nudge .cf-alert-dot { background:#d99100; margin-top:0; }
+    .cf-nudge ul { margin:8px 0 10px 26px; padding:0; color:var(--pd-muted); font-size:12.5px; line-height:1.6; }
+    .cf-nudge b { color:var(--pd-ink); }
 
     /* scenarios */
     .cf-scn-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
@@ -475,7 +487,12 @@
     wpRows = []; wpmStatus = 'loading'; wpmMsg = ''; wpmSyncedAt = null;
     var wpmPid = settings.wpm_project_id;
     if (!wpmPid) { wpmStatus = 'no-map'; wpmMsg = 'No WPM project id mapped'; return; }
-    var res = await sb().from('wpm_work_packages').select('*').eq('wpm_project_id', wpmPid);
+    var cols = 'wp_no,description,trade,approved_budget_bcb,awarded_cost,total_awarded,dp_percent,retention_percent,payment_terms_days,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at';
+    var res = await sb().from('wpm_work_packages').select(cols).eq('wpm_project_id', wpmPid);
+    // `trade` column may not exist yet (migration/sync not run) — retry without it.
+    if (res.error && /trade|column|schema cache/i.test(res.error.message || '')) {
+      res = await sb().from('wpm_work_packages').select(cols.replace(',trade', '')).eq('wpm_project_id', wpmPid);
+    }
     if (res.error) { wpmStatus = 'error'; wpmMsg = res.error.message; return; }
     wpRows = res.data || [];
     wpmStatus = wpRows.length ? 'ok' : 'empty';
@@ -625,6 +642,10 @@
     var z = function () { return new Array(n).fill(0); };
     // ---- CASH IN (revenue) — driven by the schedule S-curve ----
     var inDP = z(), inBill = z(), inRet = z(), inEwt = z();   // periodic components (received basis)
+    // Per-source attribution per month for the cash-in drill-down (DP tranches /
+    // trades / milestones / contract progress billing).
+    var brkInDP = [], brkInBill = [], brkInRet = [];
+    function inAdd(bucket, idx, label, amt, sub) { if (amt > 0.005) (bucket[idx] || (bucket[idx] = [])).push({ no: label, desc: sub || '', amt: amt }); }
     var base = num(settings.contract_ibb);         // billable contract (VAT inc)
     var retPct = num(settings.retention_percent);
     var ewtPct = num(settings.ewt_percent);        // creditable withholding tax on billings
@@ -639,10 +660,10 @@
     var coRel2 = settings.co_ret_rel2_months != null ? Math.round(num(settings.co_ret_rel2_months)) : rel2;
     // Retention release helper: stage-1 fraction at (completion + relIn), remainder
     // at (completion + rel2). rel1Pct = 1 → single release (backward compatible).
-    function releaseRetention(arr, retTotal, lastIdx) {
+    function releaseRetention(arr, retTotal, lastIdx, bucket, label) {
       if (retTotal <= 0) return;
-      arr[clampIdx(lastIdx + relIn, n)] += retTotal * rel1Pct;
-      if (rel1Pct < 1) arr[clampIdx(lastIdx + rel2, n)] += retTotal * (1 - rel1Pct);
+      var i1 = clampIdx(lastIdx + relIn, n); arr[i1] += retTotal * rel1Pct; if (bucket) inAdd(bucket, i1, label, retTotal * rel1Pct);
+      if (rel1Pct < 1) { var i2 = clampIdx(lastIdx + rel2, n); arr[i2] += retTotal * (1 - rel1Pct); if (bucket) inAdd(bucket, i2, label, retTotal * (1 - rel1Pct)); }
     }
 
     // Resolve the DP tranches into {dueIdx, amount, recoupRate, pool}. If none are
@@ -682,13 +703,13 @@
 
     // Accrue one package's cash-in (DP up front, proportional recoup, retention, EWT,
     // terms lag) into the shared inDP/inBill/inRet/inEwt arrays. Returns nothing.
-    function accrueCashIn(amount, dpPct, retPctL, termsL, dpTr) {
+    function accrueCashIn(amount, dpPct, retPctL, termsL, dpTr, label) {
       if (amount <= 0) return;
       // DP tranches (if any) replace the single up-front DP: each lands at its own
       // due month and is recouped at its own rate. Else a single DP up front.
       var dpList = (dpTr && dpTr.length) ? resolveTrancheList(dpTr, amount, months)
         : (dpPct > 0 ? [{ amount: amount * dpPct, dueIdx: 0, recoupRate: dpPct, pool: amount * dpPct }] : []);
-      dpList.forEach(function (d) { if (d.amount > 0) inDP[clampIdx(d.dueIdx, n)] += d.amount; });
+      dpList.forEach(function (d) { if (d.amount > 0) { var di = clampIdx(d.dueIdx, n); inDP[di] += d.amount; inAdd(brkInDP, di, label + (d.label ? ' · ' + d.label : ' DP'), d.amount); } });
       var retTotal = 0, lastBillMonth = 0, prev = 0;
       for (var i = 0; i < n; i++) {
         var progress = Math.max(0, cum[i] - prev); prev = cum[i];
@@ -699,32 +720,32 @@
         var recoup = 0;
         dpList.forEach(function (d) { if (d.pool <= 0) return; var r = Math.min(d.pool, gross * d.recoupRate); d.pool -= r; recoup += r; });
         var recv = Math.min(n - 1, i + termsL);
-        inBill[recv] += (gross - ret - recoup);
+        inBill[recv] += (gross - ret - recoup); inAdd(brkInBill, recv, label, gross - ret - recoup);
         inEwt[recv] += ewt;
         lastBillMonth = i;
       }
-      releaseRetention(inRet, retTotal, lastBillMonth);
+      releaseRetention(inRet, retTotal, lastBillMonth, brkInRet, label);
     }
 
     if (usingMilestones) {
       // Lump-sum billing: each milestone's amount is certified at its trigger month,
       // then run through retention / EWT / DP-recoup / terms lag (like POC, but discrete).
-      dpTranches.forEach(function (t) { if (t.amount > 0) inDP[clampIdx(t.dueIdx, n)] += t.amount; });
+      dpTranches.forEach(function (t) { if (t.amount > 0) { var di = clampIdx(t.dueIdx, n); inDP[di] += t.amount; inAdd(brkInDP, di, t.label || 'Downpayment', t.amount); } });
       var mret = 0, mlast = 0;
       msResolved.slice().sort(function (a, b) { return a.mi - b.mi; }).forEach(function (x) {
         var gross = x.amount, ret = gross * retPct, ewt = (gross / (1 + vatPct)) * ewtPct, recoup = 0;
         mret += ret;
         dpTranches.forEach(function (t) { if (t.pool <= 0) return; var r = Math.min(t.pool, gross * t.recoupRate); t.pool -= r; recoup += r; });
         var recv = Math.min(n - 1, x.mi + termsIn);
-        inBill[recv] += (gross - ret - recoup); inEwt[recv] += ewt;
+        inBill[recv] += (gross - ret - recoup); inAdd(brkInBill, recv, x.desc || 'Milestone', gross - ret - recoup); inEwt[recv] += ewt;
         mlast = Math.max(mlast, x.mi);
       });
-      releaseRetention(inRet, mret, mlast);
+      releaseRetention(inRet, mret, mlast, brkInRet, 'Milestone billings');
     } else if (usingTrades) {
-      tradePkgs.forEach(function (t) { accrueCashIn(t.amount, t.dp, t.ret, t.terms, t.tranches); });
+      tradePkgs.forEach(function (t) { accrueCashIn(t.amount, t.dp, t.ret, t.terms, t.tranches, t.name || 'Trade'); });
     } else if (base > 0) {
       // Each tranche's cash lands at its own resolved due month (its own schedule).
-      dpTranches.forEach(function (t) { if (t.amount > 0) inDP[clampIdx(t.dueIdx, n)] += t.amount; });
+      dpTranches.forEach(function (t) { if (t.amount > 0) { var di = clampIdx(t.dueIdx, n); inDP[di] += t.amount; inAdd(brkInDP, di, t.label || 'Downpayment', t.amount); } });
       var retTotal = 0, lastBillMonth = 0, prev = 0;
       for (var i = 0; i < n; i++) {
         var progress = Math.max(0, cum[i] - prev); prev = cum[i];
@@ -739,7 +760,7 @@
           var r = Math.min(t.pool, gross * t.recoupRate); t.pool -= r; recoup += r;
         });
         var recv = Math.min(n - 1, i + termsIn);   // cash received after terms lag
-        inBill[recv] += (gross - ret - recoup);    // billing net of retention & recoup (before EWT)
+        inBill[recv] += (gross - ret - recoup); inAdd(brkInBill, recv, 'Progress billing', gross - ret - recoup);    // billing net of retention & recoup (before EWT)
         inEwt[recv] += ewt;                        // EWT withheld (shown as its own deduction)
         lastBillMonth = i;
       }
@@ -766,7 +787,7 @@
     function outAdd(arr, idx, amt, awarded, bucket, wp) {
       arr[idx] += amt;
       if (awarded && idx <= ddIdx) outActual[idx] += amt; else outForecast[idx] += amt;
-      if (bucket && amt > 0.005) (bucket[idx] || (bucket[idx] = [])).push({ no: wp.no, desc: wp.desc, amt: amt, awd: awarded && idx <= ddIdx });
+      if (bucket && amt > 0.005) (bucket[idx] || (bucket[idx] = [])).push({ no: wp.no, desc: wp.desc, trade: wp.trade, amt: amt, awd: awarded && idx <= ddIdx });
     }
     var fbStart = (sched && sched.min) ? sched.min : months[0];
     var fbEnd = (sched && sched.max) ? sched.max : months[n - 1];
@@ -785,7 +806,7 @@
       var span = Math.max(1, eIdx - sIdx + 1);
       // DP paid at window start (+terms)
       var awd = isAwarded(w);
-      var wpLbl = { no: w.wp_no, desc: w.description };
+      var wpLbl = { no: w.wp_no, desc: w.description, trade: (w.trade && String(w.trade).trim()) || 'Uncategorized' };
       var dpAmtO = budget * wdp;
       if (dpAmtO > 0) outAdd(outDP, clampIdx(sIdx + wterms, n), dpAmtO, awd, brkDP, wpLbl);
       var dpPoolO = dpAmtO, retTotalO = 0;
@@ -892,6 +913,7 @@
       usingTrades: usingTrades, tradeTotal: tradeTotal, tradeCount: tradePkgs.length,
       usingMilestones: usingMilestones, msTotal: msTotal, msCount: msResolved.length,
       outBreak: { dp: brkDP, bill: brkBill, ret: brkRet },
+      inBreak: { dp: brkInDP, bill: brkInBill, ret: brkInRet },
       scurveBasis: W.basis, scurveFellBack: W.fellBack, scurveWithCost: W.withCost, scurveActs: W.nAct,
       wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt,
       dpTotal: dpTotal, dpCount: dpTranches.length,
@@ -949,7 +971,8 @@
       host.innerHTML = '<div class="cf-empty">Nothing to project yet. This module derives cash-in from the <b>Project Schedule</b> and cash-out from <b>WPM</b> work packages. Add a schedule and set the contract value under <b>Assumptions</b>.</div>';
       return;
     }
-    host.innerHTML = kpiHTML() + alertsHTML() + chartHTML() + matrixHTML() + varianceHTML() + scenarioHTML();
+    host.innerHTML = kpiHTML() + nudgeHTML() + alertsHTML() + chartHTML() + matrixHTML() + varianceHTML() + scenarioHTML();
+    var no = document.getElementById('cf-nudge-open'); if (no) no.onclick = openSettings;
     wireScenarioBtns();
     drawPeriodic();
     var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter');
@@ -959,7 +982,7 @@
       th.onclick = function () { selectMonth(+th.dataset.mi); };
     });
     host.querySelectorAll('.cf-matrix td.cf-oc').forEach(function (td) {
-      td.onclick = function () { renderDrill(td.dataset.comp, +td.dataset.mi); };
+      td.onclick = function () { renderDrill(td.dataset.dir, td.dataset.comp, +td.dataset.mi); };
     });
   }
 
@@ -1009,6 +1032,22 @@
       (model.financeRate > 0 ? k('Financing Cost', Fmt.moneyShort(model.financeTot),
         (model.financeRate * 100).toFixed(2) + '% p.a. on drawdowns', 'cf-bad') : '') +
     '</div>';
+  }
+
+  // Assumptions completeness nudge — gentle prompts for values that are unset/zero
+  // and would otherwise silently make the projection understate. Not errors, just cues.
+  function nudgeHTML() {
+    var s = settings || {}, items = [];
+    if (!(num(s.contract_bcb) > 0)) items.push('Set the contract <b>BCB</b> to see gross margin');
+    if (!(num(s.retention_percent) > 0)) items.push('<b>Retention</b> is 0% — set it if the client withholds retention');
+    var hasDP = num(s.dp_percent) > 0 || (tranches && tranches.length) || (model && (model.usingTrades || model.usingMilestones));
+    if (!hasDP) items.push('No <b>downpayment</b> configured (DP % or tranches)');
+    if (!(num(s.ewt_percent) > 0)) items.push('<b>EWT</b> is 0% — set the creditable withholding (usually 2%)');
+    if (wpmStatus !== 'ok') items.push('<b>Cash-out source</b> (WPM) not connected — map the WPM project id, then Sync');
+    if (!items.length) return '';
+    return '<div class="cf-nudge"><div class="cf-nudge-t"><span class="cf-alert-dot"></span><b>Assumptions look incomplete</b> — for a fuller projection you may want to:</div><ul>' +
+      items.map(function (t) { return '<li>' + t + '</li>'; }).join('') +
+      '</ul><button class="cf-btn-sm" id="cf-nudge-open">Open Assumptions</button></div>';
   }
 
   // Funding-limit breach (#8) + per-trade reconciliation (#7) banners.
@@ -1104,7 +1143,7 @@
   function drawPeriodic() {
     var host = document.getElementById('cf-chart-periodic'); if (!host) return;
     var P = buildPeriods(), nP = P.length;
-    var W = 1000, H = 320, padL = 64, padR = 18, padT = 18, padB = 40;
+    var W = 1000, H = 320, padL = 82, padR = 18, padT = 18, padB = 40;
     var cw = W - padL - padR, ch = H - padT - padB;
     var maxAbs = Math.max(
       Math.max.apply(null, P.map(function (p) { return p.inv; })),
@@ -1158,11 +1197,16 @@
     // net line — solid (actual) then dashed (forecast), sharing the boundary point
     function seg(a, b, dash) { var pts = []; for (var i = a; i < b; i++) pts.push(cx(i) + ',' + y(P[i].net)); return pts.length > 1 ? '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--pd-ink)" stroke-width="2.25" ' + (dash ? 'stroke-dasharray="5 4"' : '') + '/>' : ''; }
     var netLine = seg(0, split, false) + seg(Math.max(0, split - 1), nP, true);
-    // X labels (centred under bands)
-    var xlab = '', step = Math.max(1, Math.ceil(nP / 14));
-    P.forEach(function (p, i) { if (i % step === 0) xlab += '<text x="' + cx(i) + '" y="' + (H - padB + 18) + '" class="cf-xlab">' + esc(p.label) + '</text>'; });
+    // X labels (centred under bands) + a light vertical gridline at each labelled
+    // period (drawn behind the bars) so bars line up with the axis.
+    var xlab = '', vg = '', step = Math.max(1, Math.ceil(nP / 14));
+    P.forEach(function (p, i) {
+      if (i % step !== 0) return;
+      vg += '<line x1="' + cx(i) + '" y1="' + padT + '" x2="' + cx(i) + '" y2="' + (padT + ch) + '" class="cf-vgrid"/>';
+      xlab += '<text x="' + cx(i) + '" y="' + (H - padB + 18) + '" class="cf-xlab">' + esc(p.label) + '</text>';
+    });
 
-    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + bars + netLine + labs + xlab + hovers + '</svg>' +
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + vg + bars + netLine + labs + xlab + hovers + '</svg>' +
       '<div class="cf-tip" id="cf-tip"></div>' +
       '<div class="cf-legend">' +
       '<span class="cf-lg"><span class="sw" style="background:var(--pd-ok);"></span>Cash In</span>' +
@@ -1320,50 +1364,91 @@
         arr.map(cell).join('') + cell(total(arr)) + '</tr>';
     }
     function secHead(label) { return '<tr class="cf-sec"><th class="lbl">' + label + '</th>' + m.months.map(function () { return '<th></th>'; }).join('') + '<th></th></tr>'; }
-    // Cash-out rows: cells are clickable to drill into the contributing work packages.
-    function rowOut(label, arr, comp) {
+    // Drill-able rows: cells are clickable to break the amount down by source
+    // (cash-in: DP tranches / trades / milestones / progress; cash-out: work packages).
+    // dir 'out' displays magnitudes as negative; 'in' displays them as positive.
+    function rowDrill(label, arr, comp, dir) {
+      var neg = dir === 'out';
       var cells = arr.map(function (v, i) {
-        return '<td class="cf-oc' + (v ? ' cf-neg' : '') + '" data-comp="' + comp + '" data-mi="' + i + '" title="Click for work-package breakdown">' + (v ? Fmt.moneyShort(-v) : '–') + '</td>';
+        var disp = neg ? -v : v;
+        return '<td class="cf-oc' + (disp < 0 ? ' cf-neg' : '') + '" data-comp="' + comp + '" data-dir="' + dir + '" data-mi="' + i + '" title="Click for the breakdown">' + (v ? Fmt.moneyShort(disp) : '–') + '</td>';
       }).join('');
-      var tot = total(arr);
-      return '<tr class="cf-sub"><td class="lbl">' + label + '</td>' + cells + '<td' + (tot ? ' class="cf-neg"' : '') + '>' + (tot ? Fmt.moneyShort(-tot) : '–') + '</td></tr>';
+      var tot = total(arr), dt = neg ? -tot : tot;
+      return '<tr class="cf-sub"><td class="lbl">' + label + '</td>' + cells + '<td' + (dt < 0 ? ' class="cf-neg"' : '') + '>' + (tot ? Fmt.moneyShort(dt) : '–') + '</td></tr>';
     }
 
     return '<div class="cf-card"><h3>Monthly Projection</h3>' +
-      '<p class="sub">Cash In (from schedule S-curve × contract) · Cash Out (from WPM work packages) · Net. Cumulative rows in bold. <b>Click a Cash Out cell</b> to see the work packages behind it.</p>' +
+      '<p class="sub">Cash In (from schedule S-curve × contract) · Cash Out (from WPM work packages) · Net. Cumulative rows in bold. <b>Click any Cash In or Cash Out cell</b> to see what makes it up.</p>' +
       '<div class="cf-matrix-wrap"><table class="cf-matrix"><thead><tr>' + hdr + '</tr></thead><tbody>' +
       secHead('CASH IN') +
-      row('Downpayment', m.inDP, '', true) +
-      row('Billing (net of retention &amp; recoup)', m.inBill, '', true) +
+      rowDrill('Downpayment', m.inDP, 'dp', 'in') +
+      rowDrill('Billing (net of retention &amp; recoup)', m.inBill, 'bill', 'in') +
       row('Less: EWT withheld', m.inEwt.map(function (v) { return -v; }), '', true) +
-      row('Retention release', m.inRet, '', true) +
+      rowDrill('Retention release', m.inRet, 'ret', 'in') +
       row('Cash In — cumulative', m.inCum, 'cf-cum') +
       secHead('CASH OUT') +
-      rowOut('Downpayment', m.outDP, 'dp') +
-      rowOut('Billing', m.outBill, 'bill') +
-      rowOut('Retention', m.outRet, 'ret') +
+      rowDrill('Downpayment', m.outDP, 'dp', 'out') +
+      rowDrill('Billing', m.outBill, 'bill', 'out') +
+      rowDrill('Retention', m.outRet, 'ret', 'out') +
       row('Cash Out — cumulative', m.outCum, 'cf-cum') +
       '<tr class="cf-net"><td class="lbl">NET CASH FLOW — periodic</td>' + m.netPer.map(cell).join('') + cell(total(m.netPer)) + '</tr>' +
       '<tr class="cf-net"><td class="lbl">NET CASH FLOW — cumulative</td>' + m.netCum.map(function (v) { return '<td>' + (v ? Fmt.moneyShort(v) : '–') + '</td>'; }).join('') + '<td></td></tr>' +
       '</tbody></table></div><div id="cf-drill"></div></div>';
   }
 
-  // Drill-down: which work packages make up a cash-out cell (component × month).
-  function renderDrill(comp, mi) {
+  // Drill-down: what makes up a cash cell (direction × component × month).
+  // Cash-out lists the contributing work packages (with status); cash-in lists the
+  // contributing sources (DP tranches / trades / milestones / progress billing).
+  function renderDrill(dir, comp, mi) {
     var host = document.getElementById('cf-drill'); if (!host || !model) return;
-    var list = ((model.outBreak[comp] || [])[mi]) || [];
+    var isOut = dir === 'out';
+    var list = (((isOut ? model.outBreak : model.inBreak)[comp] || [])[mi]) || [];
     var label = { dp: 'Downpayment', bill: 'Billing', ret: 'Retention' }[comp] || comp;
+    var side = isOut ? 'Cash Out' : 'Cash In';
     var mo = monthLabel(model.months[mi]);
-    if (!list.length) { host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">Cash Out · ' + label + ' · ' + mo + ' <span>no work packages</span><button class="cf-btn-sm" id="cf-drill-x">Close</button></div></div>'; document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; }; return; }
+    var emptyTxt = isOut ? 'no work packages' : 'no sources';
+    if (!list.length) { host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">' + side + ' · ' + label + ' · ' + mo + ' <span>' + emptyTxt + '</span><button class="cf-btn-sm" id="cf-drill-x">Close</button></div></div>'; document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; }; return; }
     var sorted = list.slice().sort(function (a, b) { return b.amt - a.amt; });
     var tot = sorted.reduce(function (a, x) { return a + x.amt; }, 0);
-    host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">Cash Out · ' + label + ' · ' + mo +
-      ' <span>' + sorted.length + ' work package' + (sorted.length > 1 ? 's' : '') + ' · ' + Fmt.moneyShort(-tot) + '</span>' +
+    var sgn = isOut ? -1 : 1, cls = isOut ? ' cf-neg' : '';
+    var head = isOut ? '<th>WP No.</th><th>Description</th><th class="num">Amount</th><th>Status</th>'
+                     : '<th>Source</th><th>Detail</th><th class="num">Amount</th>';
+    var unit = isOut ? ('work package' + (sorted.length > 1 ? 's' : '')) : ('source' + (sorted.length > 1 ? 's' : ''));
+
+    var body;
+    if (isOut) {
+      // Group work packages by trade (WPM-style collapsible headers).
+      var groups = {}, order = [];
+      sorted.forEach(function (x) { var t = x.trade || 'Uncategorized'; if (!groups[t]) { groups[t] = []; order.push(t); } groups[t].push(x); });
+      order.sort(function (a, b) { return groups[b].reduce(function (s, x) { return s + x.amt; }, 0) - groups[a].reduce(function (s, x) { return s + x.amt; }, 0); });
+      body = order.map(function (t, gi) {
+        var rows = groups[t], gsub = rows.reduce(function (s, x) { return s + x.amt; }, 0);
+        var hd = '<tr class="cf-trade-hd" data-g="' + gi + '"><td colspan="2"><span class="cf-tri">&#9662;</span> ' + esc(t) + ' <span class="cf-trade-n">' + rows.length + ' WP' + (rows.length > 1 ? 's' : '') + '</span></td><td class="num cf-neg">' + Fmt.moneyShort(-gsub) + '</td><td></td></tr>';
+        var mem = rows.map(function (x) {
+          return '<tr class="cf-trade-row cf-g' + gi + '"><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td class="num cf-neg">' + Fmt.moneyShort(-x.amt) + '</td><td>' + (x.awd ? 'actual' : 'forecast') + '</td></tr>';
+        }).join('');
+        return hd + mem;
+      }).join('');
+    } else {
+      body = sorted.map(function (x) {
+        return '<tr><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td class="num">' + Fmt.moneyShort(x.amt) + '</td></tr>';
+      }).join('');
+    }
+
+    host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">' + side + ' · ' + label + ' · ' + mo +
+      ' <span>' + sorted.length + ' ' + unit + ' · ' + Fmt.moneyShort(sgn * tot) + (isOut ? ' · grouped by trade' : '') + '</span>' +
       '<button class="cf-btn-sm" id="cf-drill-x">Close</button></div>' +
-      '<div style="overflow-x:auto;"><table class="cf-table"><thead><tr><th>WP No.</th><th>Description</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>' +
-      sorted.map(function (x) { return '<tr><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td class="num cf-neg">' + Fmt.moneyShort(-x.amt) + '</td><td>' + (x.awd ? 'actual' : 'forecast') + '</td></tr>'; }).join('') +
+      '<div style="overflow-x:auto;"><table class="cf-table"><thead><tr>' + head + '</tr></thead><tbody>' + body +
       '</tbody></table></div></div>';
     document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; };
+    // Collapsible trade groups (cash-out).
+    host.querySelectorAll('.cf-trade-hd').forEach(function (h) {
+      h.onclick = function () {
+        var gi = h.dataset.g, tri = h.querySelector('.cf-tri'), collapsed = h.classList.toggle('collapsed');
+        if (tri) tri.innerHTML = collapsed ? '&#9656;' : '&#9662;';
+        host.querySelectorAll('.cf-g' + gi).forEach(function (r) { r.style.display = collapsed ? 'none' : ''; });
+      };
+    });
     host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
