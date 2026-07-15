@@ -8,6 +8,23 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Theme-aware line colors, dark-mode WBS/activity contrast, full-row selection (2026-07-14) — jasantos2 / eprobles
+- **Relationship lines + data-date line are now theme-aware** and editable. New CSS vars
+  `--ps-dep` (relationship lines/dots/label/arrowhead) and `--ps-dd` (data-date line + label +
+  legend swatch) on `#ps-view-schedule`: default **black in light mode, white in dark**. Both were
+  hard-red before. Added **Relationship lines** + **Data date line** color pickers to the Colors
+  menu (COLORDEFS `dep`/`dd`); a user override applies in both themes (inline var beats the
+  theme default), Reset reverts to the black/white default.
+- **Dark-mode WBS/sub-WBS shading brightened + stepped** (`--wl` per level was #3a…#21, nearly
+  invisible on the #1C bg) → #56…#2a, clearly distinct per depth; added a left-accent bar to WBS
+  levels 3–5 in dark (was only 0–2) so sub-WBS depth reads. Activity zebra stripe strengthened in
+  dark (`.ps-alt` .03→.06) so activity rows separate.
+- **Full-row selection highlight across both panes.** Clicking a WBS or activity now tints the
+  **entire grid row** (`.ps-row-sel` full-width bg + red left inset) and draws a matching
+  **`.ps-gantt-selband`** spanning that row across the Gantt (behind the bars). Emitted in
+  `ganttRowHTML` for full renders and managed imperatively in `highlightRow` so a plain click (no
+  Gantt re-render) still shows it; `highlightRow` also now matches WBS rows via `data-wbsid`.
+
 ## Arrow routing v2 (gap-routed) + Month default zoom (2026-07-14) — jasantos2 / eprobles
 - **Dependency connector no longer runs its horizontal over a bar.** Previous routing kept a single
   vertical just outside the destination and ran the horizontal along the *source row* (a.y) — for

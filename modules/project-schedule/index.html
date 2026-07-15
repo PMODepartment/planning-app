@@ -272,6 +272,9 @@
     .ps-grid-row.ps-fmt { background:var(--fmt-bg, transparent); color:var(--fmt-fg, inherit); }
     .ps-grid-row.ps-fmt > .ps-cell.c-num, .ps-grid-row.ps-fmt > .ps-cell.c-id, .ps-grid-row.ps-fmt > .ps-cell.c-name { background:var(--fmt-bg, transparent); }
     .ps-row-sel > .ps-cell.c-num, .ps-row-sel > .ps-cell.c-id, .ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
+    /* Full-width selection highlight: the whole grid row tints, and a matching band spans the Gantt. */
+    .ps-grid-pane .ps-grid-row.ps-row-sel { background:var(--pd-red-light); box-shadow:inset 2px 0 0 var(--pd-red); }
+    .ps-gantt-selband { position:absolute; left:0; background:var(--pd-red-light); z-index:1; pointer-events:none; }
     /* Header sticky needs extra specificity to beat the later `.ps-grid-row.head .ps-cell
        {position:relative}` rule — otherwise the header wouldn't freeze while the body did,
        re-introducing the very misalignment we're fixing. */
@@ -347,12 +350,17 @@
     .ps-grid-pane .ps-wbs-row.ps-wl0 > .c-name { box-shadow:inset 3px 0 0 var(--pd-red); }
     .ps-grid-pane .ps-wbs-row.ps-wl1 > .c-name { box-shadow:inset 3px 0 0 var(--pd-red-mid); }
     .ps-grid-pane .ps-wbs-row.ps-wl2 > .c-name { box-shadow:inset 2px 0 0 var(--pd-muted); }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl0 { --wl:#3a3b3d; }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl1 { --wl:#333436; }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl2 { --wl:#2d2e30; }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl3 { --wl:#292a2c; }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl4 { --wl:#252627; }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl5 { --wl:#212223; }
+    /* Dark-mode WBS shading — clearly stepped + brighter than the dark bg so the hierarchy reads. */
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl0 { --wl:#565b63; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl1 { --wl:#4a4f57; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl2 { --wl:#40444b; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl3 { --wl:#373a41; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl4 { --wl:#303338; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl5 { --wl:#2a2c31; }
+    /* Left accent on every level in dark (was only 0–2) so sub-WBS depth is visible. */
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl3 > .c-name { box-shadow:inset 2px 0 0 var(--pd-muted); }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl4 > .c-name,
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl5 > .c-name { box-shadow:inset 2px 0 0 var(--pd-line); }
     .ps-toggle { cursor:pointer; width:16px; display:inline-flex; align-items:center; justify-content:center;
       color:var(--pd-muted); flex:none; }
     .ps-editable { cursor:text; } .ps-editable:hover { background:var(--pd-red-light); }
@@ -390,11 +398,11 @@
     .ps-grid-v { position:absolute; top:0; bottom:0; width:1px; background:var(--pd-line); opacity:.5; }
     .ps-row-bg { position:absolute; left:0; right:0; height:34px; border-bottom:1px solid var(--pd-line); }
     .ps-row-bg.alt { background:rgba(0,0,0,.015); }
-    .ps-datedate { position:absolute; top:0; bottom:0; width:2px; background:var(--pd-red); z-index:6; }
+    .ps-datedate { position:absolute; top:0; bottom:0; width:2px; background:var(--ps-dd,var(--pd-red)); z-index:6; }
     /* Pinned to the top of the Gantt viewport (JS keeps `top` = scrollTop) so the data-date stays
        labelled while scrolling vertically. Pill background keeps it readable over bars/gridlines. */
-    .ps-datedate-lbl { position:absolute; top:2px; transform:translateX(4px); font-size:9px; color:var(--pd-red);
-      font-weight:700; z-index:7; background:var(--pd-card); border:1px solid var(--pd-red); border-radius:3px;
+    .ps-datedate-lbl { position:absolute; top:2px; transform:translateX(4px); font-size:9px; color:var(--ps-dd,var(--pd-red));
+      font-weight:700; z-index:7; background:var(--pd-card); border:1px solid var(--ps-dd,var(--pd-red)); border-radius:3px;
       padding:1px 4px; line-height:1.2; white-space:nowrap; pointer-events:none; }
     .ps-bar { position:absolute; height:15px; border-radius:3px; background:var(--ps-bar); cursor:grab; z-index:3;
       box-shadow:0 1px 2px rgba(0,0,0,.15); }
@@ -416,8 +424,8 @@
        legend matches the bars (incl. dark mode + user recolors, which applyColors sets on this same
        element). Previously these lived on .ps-gantt-pane, so the legend fell back to the light-mode
        values and read black while dark-mode bars were white. */
-    #ps-view-schedule { --ps-bar:#2B2C2B; --ps-sum:#231F20; --ps-bl:#2F6FB0; }
-    html.pd-dark #ps-view-schedule { --ps-bar:#c7ccd1; --ps-sum:#e0e0e0; --ps-bl:#5AA0E6; }
+    #ps-view-schedule { --ps-bar:#2B2C2B; --ps-sum:#231F20; --ps-bl:#2F6FB0; --ps-dep:#231F20; --ps-dd:#231F20; }
+    html.pd-dark #ps-view-schedule { --ps-bar:#c7ccd1; --ps-sum:#e0e0e0; --ps-bl:#5AA0E6; --ps-dep:#f4f4f4; --ps-dd:#f4f4f4; }
     html.pd-dark .ps-bar-lbl { color:var(--pd-muted); }
     /* legend */
     .ps-legend { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:8px 2px; font-size:12px; color:var(--pd-muted); }
@@ -428,7 +436,7 @@
     .lg-sum { background:var(--ps-sum,#231F20); height:7px; }
     .lg-bl { background:var(--ps-bl,#2F6FB0); border:1px solid rgba(0,0,0,.18); height:8px; }
     .lg-mile { width:12px; height:12px; background:var(--pd-red); transform:rotate(45deg); border-radius:2px; }
-    .lg-dd { width:3px; height:14px; background:var(--pd-red); border-radius:1px; }
+    .lg-dd { width:3px; height:14px; background:var(--ps-dd,var(--pd-red)); border-radius:1px; }
     /* critical path + dependency lines */
     .ps-bar.ps-crit { outline:2px solid #f59e0b; outline-offset:1px; box-shadow:0 0 0 1px #f59e0b; }
     .ps-mile.ps-crit { outline:2px solid #f59e0b; }
@@ -452,15 +460,15 @@
     #ps-crit.active .pd-ico { color:#fff; }
     #ps-deps.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-deps.active .pd-ico { color:#fff; }
-    .ps-deps .ps-dep { fill:none; stroke:var(--pd-red); stroke-width:1.5; opacity:.75; }
-    .ps-deps .ps-depdot { fill:var(--pd-red); }
-    .ps-deps .ps-deptype { fill:var(--pd-red); font-size:8px; font-weight:700; }
+    .ps-deps .ps-dep { fill:none; stroke:var(--ps-dep,var(--pd-red)); stroke-width:1.5; opacity:.85; }
+    .ps-deps .ps-depdot { fill:var(--ps-dep,var(--pd-red)); }
+    .ps-deps .ps-deptype { fill:var(--ps-dep,var(--pd-red)); font-size:8px; font-weight:700; }
     .ps-deps .ps-deplag { fill:var(--pd-muted); font-size:8px; }
     /* virtualization layers + row striping */
     .ps-tl-static { position:absolute; inset:0; z-index:1; }
     #ps-tl-bars { position:absolute; inset:0; z-index:3; }
     .ps-alt { background:rgba(0,0,0,.02); }
-    html.pd-dark .ps-alt { background:rgba(255,255,255,.03); }
+    html.pd-dark .ps-alt { background:rgba(255,255,255,.06); }
     .ps-group-row { background:var(--pd-red-light) !important; }
     .ps-group-row .c-name { color:var(--pd-red); }
     .ps-sum-group { background:var(--pd-red) !important; opacity:.85; }
@@ -4483,15 +4491,27 @@
             else if (rel.lag) lines += '<text x="' + (vX + 2) + '" y="' + (midY - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
           });
         }
-        if (lines) bc.insertAdjacentHTML('beforeend', '<svg class="ps-deps" width="' + _tlW + '" height="' + (last * ROWH) + '" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5;"><defs><marker id="ps-arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--pd-red)"/></marker></defs>' + lines + '</svg>');
+        if (lines) bc.insertAdjacentHTML('beforeend', '<svg class="ps-deps" width="' + _tlW + '" height="' + (last * ROWH) + '" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5;"><defs><marker id="ps-arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--ps-dep,var(--pd-red))"/></marker></defs>' + lines + '</svg>');
       }
     }
     highlightRow();
   }
 
   function highlightRow() {
-    document.querySelectorAll('#ps-grid-rows .ps-grid-row').forEach(function (rw) { var id = rw.dataset.rowid; rw.classList.toggle('ps-row-sel', !!id && (id === selId || _selSet.has(id))); });
+    document.querySelectorAll('#ps-grid-rows .ps-grid-row').forEach(function (rw) { var id = rw.dataset.rowid || rw.dataset.wbsid; rw.classList.toggle('ps-row-sel', !!id && (id === selId || _selSet.has(id))); });
     document.querySelectorAll('#ps-tl .ps-bar, #ps-tl .ps-mile').forEach(function (b) { b.style.outline = (b.dataset.id === selId) ? '2px solid var(--pd-red)' : ''; });
+    // Selection band across the Gantt row (imperative so a plain click, which doesn't re-render the
+    // Gantt, still shows it; renderWindow also emits it via ganttRowHTML and calls this to reconcile).
+    (function () {
+      var bars = document.getElementById('ps-tl-bars'); if (!bars) return;
+      var old = bars.querySelector('.ps-gantt-selband'); if (old) old.remove();
+      if (!selId) return;
+      var si = -1; for (var i = 0; i < DL.length; i++) { if (DL[i].id === selId) { si = i; break; } }
+      if (si < 0) return;
+      var band = document.createElement('div'); band.className = 'ps-gantt-selband';
+      band.style.top = (si * ROWH) + 'px'; band.style.height = ROWH + 'px'; band.style.width = (_tlW || 3000) + 'px';
+      bars.insertBefore(band, bars.firstChild);
+    })();
     highlightCells();
   }
   // Paint the cell-range selection (and any pending cut-source block) onto the current grid DOM.
@@ -4550,6 +4570,8 @@
     // Bar vertical offsets scale with row height so compact rows stay aligned (oY=1 at comfortable).
     var oY = ROWH / 34, o8 = Math.round(8 * oY), o9 = Math.round(9 * oY), o12 = Math.round(12 * oY), o24 = Math.round(24 * oY);
     var showLbl = _gset.labels !== 'none';
+    // Selection band spanning the whole Gantt row (matches the grid-row highlight).
+    if (r.id && r.id === selId) out += '<div class="ps-gantt-selband" style="top:' + top + 'px;height:' + ROWH + 'px;width:' + (_tlW || 3000) + 'px;"></div>';
     if (isWbsNode(r)) {
       var sp = wbsSpan(r); if (!sp) return '';
       var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw;
@@ -7443,7 +7465,9 @@
     { k: 'prog', v: '--ps-prog', label: 'Progress fill', def: '#EE3124' },
     { k: 'sum', v: '--ps-sum', label: 'Summary bar', def: '#231F20' },
     { k: 'bl', v: '--ps-bl', label: 'Baseline', def: '#2F6FB0' },
-    { k: 'mile', v: '--ps-mile', label: 'Milestone', def: '#EE3124' }
+    { k: 'mile', v: '--ps-mile', label: 'Milestone', def: '#EE3124' },
+    { k: 'dep', v: '--ps-dep', label: 'Relationship lines', def: '#231F20' },
+    { k: 'dd', v: '--ps-dd', label: 'Data date line', def: '#231F20' }
   ];
   function loadColors() { try { return JSON.parse(localStorage.getItem('ps_colors') || '{}'); } catch (e) { return {}; } }
   function applyColors() { var c = loadColors(); var host = document.getElementById('ps-view-schedule'); if (!host) return; COLORDEFS.forEach(function (d) { if (c[d.k]) host.style.setProperty(d.v, c[d.k]); else host.style.removeProperty(d.v); }); }
