@@ -357,15 +357,20 @@
   }
 
   async function loadSchedule() {
-    // paginated fetch of the project's activities (leaves drive the S-curve)
+    // Keyset pagination (order by id, id > last) — each page is an indexed PK range
+    // scan, unlike OFFSET/.range() which re-scans more rows the deeper it goes and
+    // times out on large schedules (16k+ activities). Matches the Project Schedule fix.
     scheduleRows = [];
-    var from = 0, page = 1000;
+    var page = 1000, last = null;
     for (;;) {
-      var res = await sb().from('project_schedule').select('activity_name,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish,planned_cost,bl_cost')
-        .eq('project_id', pid).range(from, from + page - 1);
+      var q = sb().from('project_schedule').select('id,activity_name,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish,planned_cost,bl_cost')
+        .eq('project_id', pid).order('id', { ascending: true }).limit(page);
+      if (last != null) q = q.gt('id', last);
+      var res = await q;
       if (res.error) { UI.toast('Schedule: ' + res.error.message, 'error'); break; }
       var d = res.data || []; scheduleRows = scheduleRows.concat(d);
-      if (d.length < page) break; from += page;
+      if (d.length < page) break;
+      last = d[d.length - 1].id;
     }
     // milestones (named, 0-duration or typed) — for DP-tranche timing
     milestones = scheduleRows.filter(function (r) {

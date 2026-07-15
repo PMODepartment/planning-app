@@ -6,9 +6,12 @@
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260712"></script>
-  <title>S-Curve · Planners Dashboard</title>
+  <title>Project S-Curve · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260712" />
   <style>
+    /* sidebar-less shell (matches Cash Flow / Project Schedule) */
+    .sc-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-right:6px; }
+    .pd-topbar #user-bar { margin-left:auto; }
     .sc-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
     .sc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
     .sc-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
@@ -49,15 +52,13 @@
 </head>
 <body>
 <div class="pd-app">
-  <aside class="pd-sidebar">
-    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>S-Curve</small></div>
-    <nav>
-      <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
-      <a href="#" class="active"><span class="pd-navico" data-ico="trendingUp"></span>S-Curve</a>
-    </nav>
-  </aside>
+  <!-- Sidebar removed (matches Cash Flow / Project Schedule): the back button returns to the module selector. -->
   <div class="pd-content">
-    <div class="pd-topbar"><h1>Progress S-Curve</h1><div id="user-bar"></div></div>
+    <div class="pd-topbar">
+      <a class="pd-btn sc-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
+      <h1 style="margin:0;">Project S-Curve</h1>
+      <div id="user-bar"></div>
+    </div>
     <div class="pd-main">
       <div class="sc-controls">
         <select class="pd-select" id="sc-project" style="max-width:340px;"></select>
@@ -67,7 +68,7 @@
       </div>
       <div class="sc-kpis" id="sc-kpis"></div>
       <div class="sc-card">
-        <h3>Progress S-Curve — Planned vs Actual (cumulative %)</h3>
+        <h3>Project S-Curve — Planned vs Actual (cumulative %)</h3>
         <div id="sc-chart"></div>
         <p class="sc-note" id="sc-basis"></p>
       </div>

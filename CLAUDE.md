@@ -252,6 +252,20 @@ developer, plug into one shared shell.
   (same `vat_percent` column, just a binary control).
 - Verified: full inline script parses; live run pending.
 
+### 2026-07-14 — Prompt 77: S-Curve rename + sidebar removal; Cash Flow schedule load sped up
+- **S-Curve module:** renamed "Progress S-Curve" → **"Project S-Curve"** (topbar title, chart
+  heading, tab title). Removed the left `.pd-sidebar` (matches Cash Flow / Project Schedule) —
+  a `.sc-modback` back-to-modules button in the topbar, full-width content; `UI.initShell()`
+  no-ops without a sidebar. ("pp" in the Schedule Variance KPI = **percentage points**, the
+  absolute Actual−Planned gap at the data date.)
+- **Cash Flow schedule load faster:** `loadSchedule` switched from OFFSET (`.range()`) to
+  **keyset pagination** (`order id.asc & id > last, limit 1000`) — each page is an indexed PK
+  range scan instead of a re-scan that grows with offset, so large schedules (16k+ activities)
+  load without the OFFSET slowdown/timeout (same fix Project Schedule already adopted). Bigger
+  win still available later: a server-side monthly S-curve RPC so the browser fetches ~dozens of
+  monthly buckets instead of every activity.
+- Verified: both modules parse; live run pending.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New
