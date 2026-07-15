@@ -8,6 +8,130 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Colors menu was inaccessible — restored (2026-07-14) — jasantos2 / eprobles
+- Tester asked "where is the Colors menu". Root cause: the `.ps-gantt-tools` CSS and
+  `renderColorsMenu()` existed, but the **palette button + `#ps-colors-menu` element were missing
+  from the Gantt-pane markup** (dropped at some point), so `renderColorsMenu` returned early and there
+  was no way to open it. This means the earlier "bar colors already exist" note (below) was wrong —
+  the feature was orphaned. **Fix:** added the `.ps-gantt-tools` palette button + `#ps-colors-menu`
+  back into `.ps-gantt-pane` (top-right floating gear), declared `colorsMenu`, added it to
+  `closeMenus()` + stop-propagation, and wired `#ps-colorsbtn` to `renderColorsMenu()` + toggle
+  (same pattern as the other menus). The menu contents (Task bar / Progress fill / Summary / Baseline
+  / Milestone pickers + per-WBS overrides + Reset) were already implemented — now reachable again.
+  So item #2 (differentiate + modify WBS vs activity bar colors) is genuinely delivered.
+
+## Gantt/print/filter batch (2026-07-14) — jasantos2 / eprobles
+From a multi-item tester list; implemented the genuine gaps (several items were already built — see
+"already existed" note at the end).
+- **WBS bar progress fill (#1).** Summary bars now show a duration-weighted rolled-up %-complete fill
+  (`_costMap[code].wearn/wd`) as a `.ps-sum-fill` child clipped to the bracket shape, plus the % on
+  the bar label and title. Group headers (non-WBS grouping) don't get a fill.
+- **Succeeding months (#3).** `range()` now pads the timeline: ~2 extra trailing months after the last
+  activity (`addDays(_max, 62)`) + 14-day lead, so the Gantt shows context beyond the activity span.
+- **Critical-path-only filter (#5b).** New **Filter → Schedule → "Critical path only"** (`filters.crit`);
+  `rowMatches` excludes non-critical activities (WBS rows pass so ancestors are kept). This *excludes*
+  the others, unlike the Critical Path toolbar toggle which only dims them.
+- **Project title on print (#4).** The Print button injects a `#ps-print-head` banner (project name +
+  data date + print date) shown only in `@media print`, at the top of the printed schedule.
+- **Already existed (confirmed, no change needed):** progress override (#6 — Schedule dialog Settings:
+  Retained Logic / Progress Override); differentiated + editable WBS vs activity bar colors (#2 — the
+  Colors menu sets Task bar / Summary / Milestone separately); constraints + actual-date/data-date
+  logic (#8 — primary/secondary constraints, constraint-aware CPM, use-actual-dates); a P6-style
+  Advanced filter builder (#5a — `filters.adv`, Match All/Any rules).
+- **Deferred / needs scoping:** #5a "time-based" filter condition (the Advanced builder exists — needs
+  a date/duration operator added); #7 extra complete/activity types (Start Milestone, Finish Milestone,
+  Resource Dependent) — needs decisions on how each renders/behaves (milestone side + duration-type).
+
+## Quick-add default dates (2026-07-14) — jasantos2 / eprobles
+- **New activities now default to start on the data date with a 5-day duration.** `quickAddActivity`
+  stamps `start_date = today()` (the data date, `dataDate || wallToday()`), `end_date = today()+4`
+  (5 inclusive days), and `duration_days = 5` on the insert payload (was blank/no dates). So a
+  freshly-added activity shows a real bar on the Gantt immediately and can be nudged from there.
+
+## Visible Schedule button + dependency-arrow routing fix (2026-07-14) — jasantos2 / eprobles
+- **Schedule button is now a visible red primary button** (`pd-btn pd-btn-primary`, calculator icon +
+  "Schedule" text) matching the "+ Add activity" button, instead of an icon-only `.ps-icobtn` whose
+  label only showed in Labels mode. Same `#ps-schedbtn` id/handler (`openSchedule`).
+- **Dependency arrows no longer run across the linked bar.** The elbow used to turn at
+  `predecessorFinish + 8`, which for adjacent FS bars sat on top of the successor bar (per the
+  tester's screenshot). Now the vertical turns just **outside the destination bar's anchor edge** —
+  `toX − 10` (left of its start for FS/SS) or `toX + 10` (right of its finish for FF/SF) — so the
+  connector leaves the source edge, runs along the source row to the turn, drops to the successor
+  row, and enters with a short 10px stub, never crossing the linked bar. Origin dot + type/lag label
+  repositioned to the new turn X.
+
+## Wrapping column headers (2026-07-14) — jasantos2 / eprobles
+- **Grid column headers now wrap** instead of truncating with an ellipsis, so long labels stay
+  readable when a column is narrow / being resized. Header cells (`.ps-grid-row.head .ps-cell`) get
+  `white-space:normal; overflow-wrap/word-break:break-word; text-overflow:clip`; data cells keep
+  `nowrap`/ellipsis (verified in-browser: header WS=`normal`, data WS=`nowrap`).
+- **Header row grows to fit the wrapped lines** (`.ps-grid-row.head` → `min-height:38px; height:auto`)
+  and a new **`syncHeadHeights()`** sets the Gantt header's height (border-box) equal to the grid
+  header's measured height, so the first data row stays aligned across the two panes. Called from
+  `renderHeader()`, the end of `doRender()`, and live during `startColResize` (mou…move + up). This
+  also makes the two heads exactly equal by measurement (previously both relied on matching fixed CSS
+  heights, incl. the `.ps-colf-on` 68px filter-row case, which the inline sync now supersedes).
+
+## Column chooser scroll + Schedule reschedules by default (2026-07-14) — jasantos2 / eprobles
+- **Column chooser (grid-header "+" / `#ps-cols-menu`) now scrolls.** Root cause: `.ps-menu`
+  (line ~550) sets `overflow:hidden` and, being *later* in source than `.ps-cols-menu` (line ~158,
+  `overflow:auto`) at equal specificity, won the cascade — so the menu clipped at its `max-height:340px`
+  with no scrollbar (visible in the tester's screenshot, cut off at "Planned Value"). Added
+  `.ps-cols-menu { overflow-y:auto }` *after* `.ps-menu` so the chooser scrolls again.
+- **Schedule now reschedules dependent activities by default.** The CPM (`cpmLogic`) already honors
+  **multiple predecessors** per activity (each successor's early start = **max** candidate across all
+  its `_relObjs`, topological pass), and `applyScheduleDates()` writes those dates back — but it only
+  ran when the Schedule dialog's "Reschedule dependent activities" box was ticked, which defaulted
+  **off**. Changed `reschedOn` to default **on** (respects an explicit user off-setting), so hitting
+  **Schedule → Schedule Now** moves successors' Start/Finish along their FS/SS/FF/SF + lag links
+  (completed activities keep actuals; started ones keep their Start). Still confirms before the bulk
+  write. No relationships → it warns instead of moving.
+
+## WBS click-to-select, WBS-scoped Activity ID, scrollable menus (2026-07-14) — jasantos2 / eprobles
+Follow-ups from tester feedback. No migration, no schema change.
+- **Clicking a WBS row now SELECTS it** (instead of toggling collapse every time). Expand/collapse is
+  now **only** via the ▼/► chevron. Real WBS summary rows carry `data-wbsid` + get `ps-row-sel`, and
+  the `.ps-wbs-row` click handler selects the node (sets `selId`/`_wbsSel`, re-renders) so it becomes
+  the Add-activity target; synthetic **group** headers keep click-to-collapse. Chevron clicks are
+  guarded (`closest('[data-toggle]')`) so they never fall through to selection.
+- **Activity ID is now WBS-scoped** as **`<wbs>-A<num>`**: `nextActivityId(wbs)` uses the prefix
+  `"<wbs>-A"` and numbers in increments of 10 from **1000** (e.g. WBS 1.1 → `1.1-A1000`, then
+  `1.1-A1010`, …), continuing from the highest number already used under that exact WBS prefix and
+  skipping collisions. No WBS → plain `A<num>`. `quickAddActivity` passes the target `wbs`.
+  (Unit-checked in-browser: fresh 1.1→`1.1-A1000`; with A1000/A1010→`1.1-A1020`; per-WBS isolated;
+  no-WBS continues the `A` series.)
+- **Popup menus scroll instead of clipping.** `.ps-menu` had `overflow:hidden` + no height cap, so a
+  tall **row context menu** (Add activity / Edit / clipboard / WBS / Delete) ran off-screen with no
+  scroll. Added `.ps-rowctx, .ps-colhdr-menu { max-height:82vh; overflow-y:auto }` and, in
+  `openRowMenu`, an explicit `max-height = viewportHeight − top − 10px` so the menu always fits the
+  space below its anchor and scrolls when taller.
+
+## Auto Activity ID + editable Status & Relationships tabs (2026-07-14) — jasantos2 / eprobles
+Follow-up to the interactive-Add work below. No migration, no schema change.
+- **Auto-generated Activity ID on quick-add.** `quickAddActivity` now stamps `activity_id =
+  nextActivityId()` instead of leaving it blank. `nextActivityId()` takes the max existing numeric
+  Activity ID in the project, rounds **up to the next multiple of 10** (P6/OPC-style — `…1010`→`1020`,
+  `1013`→`1020`), and keeps whatever prefix the highest ID uses (e.g. `A1020`→`A1030`). Starts at
+  `1010` when the project has no numeric IDs; skips collisions. (Logic unit-checked in-browser:
+  empty→1010, `A1010/A1020/A1005`→`A1030`, `A1013`→`A1020`, collision→next free.)
+- **Editable Status tab.** `renderDetails` status branch now renders `detStatusEdit(r)` + the shared
+  `wireEditFields` (same live-editor pattern as General): Status, % Complete, Expected Finish, all
+  Planned/Actual/Baseline dates, Actual/Remaining Duration, Free Float, Planned/Actual/Remaining Labor
+  Units, and Primary/Secondary Constraints (+dates) are editable and persist on change. Computed
+  fields (Planned/At-Completion Duration, Total Float, Critical, Finish Variance) stay read-only via
+  the new `_gro()` helper. Added a `num` field type (non-negative, unbounded) to `_gf`/`wireEditFields`
+  for durations/labor units (the existing `number` type stays 0–100, used for % Complete).
+- **Editable Relationships tab.** `detRelsEdit(r)` + `wireRels` replace the read-only tables:
+  predecessors get a **× remove** per row and an **add row** (activity datalist + FS/SS/FF/SF type +
+  lag), mirroring the modal's predecessor picker. Edits reserialize to the predecessor token text via
+  `serializeRels()` (verified to match the CPM `predRels` format — `1010 SS+3`, `1010 FS-2`) and go
+  through `persist()` (undoable + audited + CPM rebuild). **Successors stay read-only** (derived as the
+  inverse of other activities' predecessors).
+- Resource Assignments / Steps / Expenses / Notebook / Files were already editable (CRUD) — unchanged.
+- **Verification:** full inline script parses clean (module page loads, zero console errors);
+  `nextActivityId`/`serializeRels` logic unit-checked in-browser. **Live click-through still pending a
+  real login** (needs an approved session + a project with data).
+
 ## Interactive Add-activity + editable General tab (2026-07-14) — jasantos2 / eprobles
 Requested: make "Add activity" contextual — select a WBS or activity first, then Add places the new
 activity under that respective WBS and lets you edit its details in the panel below (no migration,

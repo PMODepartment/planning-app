@@ -208,12 +208,17 @@
     .ps-sched-body .fld > span { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-bottom:4px; }
     .ps-sched-foot { display:flex; align-items:center; gap:8px; padding:12px 18px; border-top:1px solid var(--pd-line); }
     /* Print / PDF: show only the schedule content */
+    #ps-print-head { display:none; }
     @media print {
       .pd-sidebar, .pd-topbar, .ps-toolbar, .ps-tabs, #ps-details, .ps-legend { display:none !important; }
       .pd-app, .pd-content, .pd-main { display:block !important; height:auto !important; }
       #ps-view-schedule { display:block !important; }
       .ps-split { height:auto !important; min-height:0 !important; border:none; }
       .ps-grid-scroll, .ps-gantt-scroll { overflow:visible !important; }
+      /* Print header banner: project title + data date + print date. */
+      #ps-print-head { display:block !important; margin:0 0 10px; padding:0 0 8px; border-bottom:2px solid #231F20; }
+      #ps-print-head .pph-title { font-size:18px; font-weight:800; color:#231F20; }
+      #ps-print-head .pph-sub { font-size:11px; color:#555; margin-top:2px; }
     }
     .ps-topbar-tools .pd-btn { background:transparent; border-color:transparent; font-size:13px; }
     .ps-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
@@ -277,13 +282,16 @@
     .ps-grid-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); flex:none; }
     .ps-grid-row { display:flex; align-items:stretch; height:34px; border-bottom:1px solid var(--pd-line);
       width:max-content; min-width:100%; font-size:12.5px; }
-    .ps-grid-row.head { height:38px; font-weight:700; }
+    .ps-grid-row.head { min-height:38px; height:auto; font-weight:700; align-items:stretch; }
     /* Compact row density (toggled from the Layout menu; ROWH is kept in sync in JS). Header +
        filter rows keep their height so only the data rows tighten. */
     .ps-split.ps-compact .ps-grid-row:not(.head):not(.ps-filter-row) { height:27px; font-size:11.5px; }
     .ps-cell { padding:0 8px; display:flex; align-items:center; border-right:1px solid var(--pd-line);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; flex:none; }
-    .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative; }
+    .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative;
+      /* Header labels WRAP (data cells keep nowrap/ellipsis) so long names stay readable when the
+         column is narrow. Two lines of this 10.5px text fit the 38px head, keeping pane alignment. */
+      white-space:normal; overflow-wrap:break-word; word-break:break-word; text-overflow:clip; line-height:1.1; }
     .c-num { width:var(--c-num); } .c-name { width:var(--c-name); } .c-id { width:var(--c-id); } .c-status { width:var(--c-status); } .c-date { width:var(--c-date); }
     /* Per-column filter row (toggled via the column "+" chooser). Grows the grid head by 30px, so
        the Gantt head is grown to match (.ps-colf-on) to keep rows aligned with bars. The frozen
@@ -397,6 +405,8 @@
     .ps-handle.l { left:0; } .ps-handle.r { right:0; }
     .ps-sum { position:absolute; height:9px; background:var(--ps-sum); z-index:3;
       clip-path:polygon(0 0,100% 0,100% 60%,calc(100% - 6px) 100%,6px 100%,0 60%); }
+    /* Rolled-up %-complete (POC) fill on a WBS summary bar; clipped to the bracket shape by parent. */
+    .ps-sum-fill { position:absolute; left:0; top:0; height:100%; background:var(--ps-prog,var(--pd-red)); }
     .ps-bl { position:absolute; height:8px; background:var(--ps-bl); border:1px solid rgba(0,0,0,.18); border-radius:2px; z-index:2; box-shadow:0 1px 1px rgba(0,0,0,.12); }
     .ps-mile { position:absolute; width:13px; height:13px; background:var(--ps-mile,var(--pd-red)); transform:rotate(45deg); z-index:3; cursor:grab; }
     .ps-bar-lbl { position:absolute; font-size:10px; color:var(--pd-muted); white-space:nowrap; z-index:3; line-height:15px; }
@@ -550,6 +560,10 @@
     .ps-menu { position:absolute; top:calc(100% + 4px); left:0; z-index:50; display:none; min-width:180px;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow); overflow:hidden; }
     .ps-menu.open { display:block; }
+    /* Tall popup menus must scroll rather than clip (.ps-menu sets overflow:hidden, which otherwise
+       wins over the earlier .ps-cols-menu overflow:auto and clips the column chooser at its cap). */
+    .ps-rowctx, .ps-colhdr-menu { max-height:82vh; overflow-y:auto; overflow-x:hidden; }
+    .ps-cols-menu { overflow-y:auto; overflow-x:hidden; }
     .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
       cursor:pointer; color:var(--pd-ink); font-size:13px; }
     .ps-menu button:hover { background:var(--pd-red-light); }
@@ -894,7 +908,7 @@
           </div>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-collapseto" data-label="Outline" title="Outline — expand all or collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="16"></span></button><div class="ps-menu" id="ps-collapse-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" data-label="Layouts" title="Layouts — saved filter + grouping + columns"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
-          <button class="pd-btn ps-icobtn" id="ps-schedbtn" data-label="Schedule" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="16"></span></button>
+          <button class="pd-btn pd-btn-primary" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
           <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" data-label="Layout" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <span class="ps-tb-div"></span>
@@ -915,6 +929,7 @@
             </div>
           </div>
           <span class="ps-tb-spacer"></span>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Bar colors — Task / WBS summary / Milestone / Baseline (+ per-WBS overrides)"><span data-ico="palette" data-ico-size="15"></span> Colors</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
           <button class="pd-btn" id="ps-tb-labeltoggle" title="Show text labels on the view buttons (Outline, Layouts, Schedule, Layout, Analyze)"><span data-ico="eye" data-ico-size="15"></span> Labels</button>
           <button class="pd-btn ps-icobtn" id="ps-help-btn" title="Keyboard shortcuts (press ?)" style="font-weight:700;">?</button>
           <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:160px;" /></div>
@@ -923,13 +938,6 @@
 
       <!-- SCHEDULE: split activities + gantt -->
       <div id="ps-view-schedule">
-        <div class="ps-legend">
-          <span class="lg"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>
-          <span class="lg"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>
-          <span class="lg"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>
-          <span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>
-          <span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>
-        </div>
         <div class="ps-split">
           <div class="ps-grid-pane">
             <!-- Column chooser as an always-visible "+" at the right end of the header row (OPC-style). -->
@@ -952,6 +960,15 @@
           <span>Total: <strong id="ps-total-count">0</strong> activities</span>
           <label class="ps-foot-chk" title="Hide WBS groups that contain no activities"><input type="checkbox" id="ps-hide-empty"> Hide empty groups</label>
           <button class="pd-btn" id="ps-download" title="Export the schedule to Excel"><span data-ico="download" data-ico-size="14"></span> Download</button>
+        </div>
+
+        <!-- Gantt legend — moved below the grid footer -->
+        <div class="ps-legend">
+          <span class="lg"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>
+          <span class="lg"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>
+          <span class="lg"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>
+          <span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>
+          <span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>
         </div>
 
         <!-- OPC-style Activity Details / Project Usage panel (driven by selected activity) -->
@@ -1455,7 +1472,7 @@
   // Drag-reorder is only meaningful in WBS grouping with no active column sort (otherwise order is
   // derived from the grouping / column sort, so a manual sequence wouldn't stick).
   function _reorderEnabled() { return groupBy === 'wbs' && !colSort && !window.__viewOnly && !window.__archived; }
-  var filters = { status: {}, type: {}, behind: false, look: 0, codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
+  var filters = { status: {}, type: {}, behind: false, crit: false, look: 0, codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; crit = critical-path only; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
   var _colFilterOn = false; try { _colFilterOn = localStorage.getItem('ps_colfilter') === '1'; } catch (e) {}
   var _colfT = null;   // debounce timer for column-filter typing
   var _hideEmptyGroups = false; try { _hideEmptyGroups = localStorage.getItem('ps_hideempty') === '1'; } catch (e) {}
@@ -2452,7 +2469,13 @@
   }
 
   // ---- timeline range (cached in rebuild) ----
-  function range() { return { min: _min || addDays(today(),-30), max: _max || addDays(today(),90) }; }
+  // Pad the timeline so there are trailing (succeeding) months after the last activity and a little
+  // lead before the first — the Gantt shows context beyond the exact activity span.
+  function range() {
+    var mn = _min ? addDays(_min, -14) : addDays(today(), -30);
+    var mx = _max ? addDays(_max, 62) : addDays(today(), 90);
+    return { min: mn, max: mx };
+  }
 
   // ---- loading overlay ----
   function showLoading(msg) { var m=document.getElementById('ps-loading-msg'); if(m)m.textContent=msg||'Working…'; var el=document.getElementById('ps-loading'); if(el)el.style.display='flex'; setProgress(null); }
@@ -2551,6 +2574,8 @@
       var e = pd(r.end_date); if (e && e < today() && (r.percent_complete || 0) < 100) late = true;
       if (!late) return false;
     }
+    // Critical-path only: exclude non-critical activities (WBS rows pass so ancestors are kept).
+    if (filters.crit && !isWbs(r) && !r._critical) return false;
     if (filters.look) {
       var win = addDays(today(), filters.look * 7), t0 = today();
       var s = pd(r.start_date), ee = pd(r.actual_finish || r.end_date) || s;
@@ -2581,6 +2606,7 @@
     menu.innerHTML = '<h4>Status</h4>' + ['Not Started','In Progress','Completed'].map(function(s){return cb('status',s);}).join('') +
       '<h4>Type</h4>' + ['WBS Summary','Task','Milestone'].map(function(t){return cb('type',t);}).join('') +
       '<h4>Schedule</h4><label><input type="checkbox" id="ps-f-behind"' + (filters.behind?' checked':'') + '> Behind schedule (overdue / late vs baseline)</label>' +
+      '<label><input type="checkbox" id="ps-f-crit"' + (filters.crit?' checked':'') + '> Critical path only</label>' +
       '<label style="margin-top:4px;">Look-ahead: <select id="ps-f-look" class="pd-select pd-input-sm" style="max-width:150px;">' +
         [[0,'All'],[2,'Next 2 weeks'],[4,'Next 4 weeks'],[8,'Next 8 weeks'],[12,'Next 12 weeks']].map(function(o){return '<option value="'+o[0]+'"'+(filters.look===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('') + '</select></label>' +
       codesHTML +
@@ -2593,9 +2619,10 @@
       c.onchange = function () { var ct = c.dataset.fct; filters.codes[ct] = filters.codes[ct] || {}; filters.codes[ct][c.dataset.fcv] = c.checked; renderGrid(); renderGantt(); };
     });
     menu.querySelector('#ps-f-behind').onchange = function (e) { filters.behind = e.target.checked; renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-f-crit').onchange = function (e) { filters.crit = e.target.checked; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-look').onchange = function (e) { filters.look = parseInt(e.target.value, 10) || 0; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-adv').onclick = function (e) { e.stopPropagation(); menu.classList.remove('open'); openAdvFilter(); };
-    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, look:0, codes:{}, col:{}, adv:{ match:'all', rules:[] } }; buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, crit:false, look:0, codes:{}, col:{}, adv:{ match:'all', rules:[] } }; buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
     menu.querySelector('#ps-filter-done').onclick = function () { menu.classList.remove('open'); };
   }
   // Advanced multi-condition filter builder (OPC-style): field / operator / value rows combined
@@ -2737,13 +2764,19 @@
     else if (type === 'textarea') inp = '<textarea class="pd-input ps-gedit" data-f="' + field + '" data-t="text" rows="2" style="' + st + 'resize:vertical;">' + esc(String(val)) + '</textarea>';
     else if (type === 'date') inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="date" type="date" value="' + (val ? String(val).slice(0, 10) : '') + '" style="' + st + '">';
     else if (type === 'number') inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="number" type="number" min="0" max="100" step="1" value="' + esc(String(val)) + '" style="' + st + '">';
-    else if (type === 'ro') inp = '<input class="pd-input" value="' + esc(String(val)) + '" readonly title="Set by the parent WBS" style="' + st + 'background:var(--pd-bg);color:var(--pd-muted);">';
+    else if (type === 'num') inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="num" type="number" min="0" step="any" value="' + esc(String(val)) + '" style="' + st + '">';
+    else if (type === 'ro') inp = '<input class="pd-input" value="' + esc(String(val)) + '" readonly title="Read-only / computed" style="' + st + 'background:var(--pd-bg);color:var(--pd-muted);">';
     else inp = '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="text" value="' + esc(String(val)) + '" style="' + st + '">';
     return '<div style="display:flex;flex-direction:column;gap:3px;' + (full ? 'grid-column:1/-1;' : '') + '"><label style="font-size:11px;color:var(--pd-muted);">' + esc(label) + '</label>' + inp + '</div>';
   }
   function _gGroup(title, fieldsHtml) {
     return '<div style="margin-bottom:14px;"><h5 style="margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' + esc(title) + '</h5>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;">' + fieldsHtml + '</div></div>';
+  }
+  // Read-only computed display field (matches _gf's look; not wired to persist).
+  function _gro(label, valStr, full) {
+    return '<div style="display:flex;flex-direction:column;gap:3px;' + (full ? 'grid-column:1/-1;' : '') + '"><label style="font-size:11px;color:var(--pd-muted);">' + esc(label) + '</label>' +
+      '<input class="pd-input" value="' + esc(String(valStr)) + '" readonly title="Computed" style="width:100%;box-sizing:border-box;font-size:12.5px;background:var(--pd-bg);color:var(--pd-muted);"></div>';
   }
   function detGeneralEdit(r) {
     var codeRows = CODE_TYPES.map(function (ct) { var vid = r.activity_codes && r.activity_codes[ct.id]; return [esc(ct.name), esc(vid ? (codeValueLabel(vid) || '—') : '—')]; });
@@ -2773,11 +2806,12 @@
       _gGroup('Notes', _gf('Remarks', 'remarks', 'textarea', r, null, true)) +
     '</div>';
   }
-  function wireGeneral(root, r) {
+  function wireEditFields(root, r) {
     root.querySelectorAll('.ps-gedit').forEach(function (el) {
       el.onchange = function () {
         var f = el.dataset.f, t = el.dataset.t, v = el.value, patch = {};
         if (t === 'number') patch[f] = (v === '' ? null : Math.max(0, Math.min(100, parseFloat(v) || 0)));
+        else if (t === 'num') patch[f] = (v === '' ? null : Math.max(0, parseFloat(v) || 0));
         else if (t === 'date') patch[f] = v || null;
         else if (t === 'select') patch[f] = v || null;
         else patch[f] = (typeof v === 'string' ? v.trim() : v) || null;
@@ -2825,6 +2859,51 @@
       ]) +
     '</div>';
   }
+  // Editable Status tab — same live-editor pattern as detGeneralEdit (persists on change via
+  // wireEditFields). Computed fields (Planned/At-Completion duration, Total Float, Critical,
+  // Finish Variance) stay read-only via _gro.
+  function detStatusEdit(r) {
+    var fv = finVar(r);
+    function dd(x) { return x != null ? x + 'd' : '—'; }
+    function nz(x) { return x != null ? (Math.round(x * 100) / 100) : '—'; }
+    var atDur = (r.actual_duration != null || r.remaining_duration != null) ? ((r.actual_duration || 0) + (r.remaining_duration || 0)) : r.duration_days;
+    var atLU  = (r.actual_labor_units != null || r.remaining_labor_units != null) ? ((r.actual_labor_units || 0) + (r.remaining_labor_units || 0)) : r.planned_labor_units;
+    var pcon = ['', 'Start On', 'Start On or After', 'Start On or Before', 'Finish On', 'Finish On or After', 'Finish On or Before', 'Mandatory Start', 'Mandatory Finish', 'As Late As Possible'];
+    var scon = ['', 'Start On', 'Start On or After', 'Start On or Before', 'Finish On', 'Finish On or After', 'Finish On or Before'];
+    return '<div class="ps-det-groups">' +
+      '<div style="font-size:11.5px;color:var(--pd-muted);margin:0 0 10px;">Editing this activity — changes save automatically. Computed fields are read-only.</div>' +
+      _gGroup('Activity Status',
+        _gf('Status', 'status', 'select', r, ['Not Started', 'In Progress', 'Completed']) +
+        _gf('% Complete', 'percent_complete', 'number', r) +
+        _gf('Expected Finish', 'expected_finish', 'date', r)) +
+      _gGroup('Dates',
+        _gf('Planned Start', 'start_date', 'date', r) +
+        _gf('Planned Finish', 'end_date', 'date', r) +
+        _gf('Actual Start', 'actual_start', 'date', r) +
+        _gf('Actual Finish', 'actual_finish', 'date', r) +
+        _gf('Baseline Start', 'bl_start', 'date', r) +
+        _gf('Baseline Finish', 'bl_finish', 'date', r)) +
+      _gGroup('Duration & Float',
+        _gro('Planned Duration', dd(r.duration_days)) +
+        _gf('Actual Duration (d)', 'actual_duration', 'num', r) +
+        _gf('Remaining Duration (d)', 'remaining_duration', 'num', r) +
+        _gro('At Completion', dd(atDur)) +
+        _gro('Total Float', dd(r._float)) +
+        _gf('Free Float (d)', 'free_float', 'num', r) +
+        _gro('Critical', r._critical ? 'Yes' : 'No') +
+        _gro('Finish Variance (BL)', fv != null ? (fv > 0 ? '+' : '') + fv + 'd' : '—')) +
+      _gGroup('Labor Units',
+        _gf('Planned', 'planned_labor_units', 'num', r) +
+        _gf('Actual', 'actual_labor_units', 'num', r) +
+        _gf('Remaining', 'remaining_labor_units', 'num', r) +
+        _gro('At Completion', nz(atLU))) +
+      _gGroup('Constraints',
+        _gf('Primary', 'primary_constraint', 'select', r, pcon) +
+        _gf('Primary Date', 'primary_constraint_date', 'date', r) +
+        _gf('Secondary', 'secondary_constraint', 'select', r, scon) +
+        _gf('Secondary Date', 'secondary_constraint_date', 'date', r)) +
+    '</div>';
+  }
   function relRowHtml(o) { return '<tr><td>' + esc(o.id || '') + '</td><td>' + esc(actName(o.id)) + '</td><td>' + esc(o.type || 'FS') + '</td><td style="text-align:right;">' + (o.lag ? (o.lag > 0 ? '+' : '') + o.lag + 'd' : '0d') + '</td></tr>'; }
   function relPreds(r) { return (r._relObjs && r._relObjs.length) ? r._relObjs.map(function (x) { return { id: x.p.activity_id, type: x.type, lag: x.lag }; }) : predRels(r.predecessors); }
   function detRels(r) {
@@ -2839,6 +2918,59 @@
       '<div class="ps-gutter" title="Drag to resize · double-click to reset"></div>' +
       '<div class="ps-vs-b">' + tbl('Successors', succs) + '</div>' +
     '</div>';
+  }
+  // Editable Relationships tab — predecessors are add/remove (successors stay derived/read-only).
+  // Serializes back to the same predecessor token text the CPM parser (predRels) reads.
+  function serializeRels(list) { return list.map(function (o) { var t = o.type || 'FS', lag = o.lag || 0; return o.id + ((t !== 'FS' || lag) ? ' ' + t : '') + (lag ? (lag > 0 ? '+' : '') + lag : ''); }).join(', '); }
+  function relRowHtmlEdit(o) { return '<tr><td>' + esc(o.id || '') + '</td><td>' + esc(actName(o.id)) + '</td><td>' + esc(o.type || 'FS') + '</td><td style="text-align:right;">' + (o.lag ? (o.lag > 0 ? '+' : '') + o.lag + 'd' : '0d') + '</td><td style="text-align:right;"><button class="ps-btn-sm" data-relrm="' + esc(String(o.id)) + '" title="Remove predecessor">&#215;</button></td></tr>'; }
+  function detRelsEdit(r) {
+    var preds = relPreds(r), succs = r._succObjs || [];
+    var cands = rows.filter(function (t) { return !isWbs(t) && t.activity_id != null && String(t.activity_id) !== '' && String(t.activity_id) !== String(r.activity_id || ''); })
+      .sort(function (a, b) { return String(a.activity_id).localeCompare(String(b.activity_id), undefined, { numeric: true }); });
+    var addRow = '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">' +
+      '<input class="pd-input" id="ps-rel-search" list="ps-rel-predlist" placeholder="Add predecessor…" style="flex:2 1 150px;min-width:120px;font-size:12.5px;" autocomplete="off">' +
+      '<datalist id="ps-rel-predlist">' + cands.map(function (t) { return '<option value="' + esc(String(t.activity_id) + ' — ' + (t.activity_name || '')) + '"></option>'; }).join('') + '</datalist>' +
+      '<select class="pd-select" id="ps-rel-type" title="Relationship type" style="flex:0 0 auto;width:58px;font-size:12.5px;"><option>FS</option><option>SS</option><option>FF</option><option>SF</option></select>' +
+      '<input class="pd-input" id="ps-rel-lag" type="number" step="1" placeholder="lag" title="Lag in days (optional; negative = lead)" style="flex:0 0 auto;width:58px;font-size:12.5px;">' +
+      '<button class="pd-btn" id="ps-rel-add" style="height:30px;font-size:12px;padding:0 12px;">Add</button></div>';
+    var predPane = '<div><h5>Predecessors (' + preds.length + ')</h5>' +
+      (preds.length ? '<table class="ps-mini"><thead><tr><th>ID</th><th>Name</th><th>Type</th><th style="text-align:right;">Lag</th><th></th></tr></thead><tbody>' + preds.map(relRowHtmlEdit).join('') + '</tbody></table>'
+                    : '<p style="color:var(--pd-muted);font-size:12px;margin:4px 0;">None yet.</p>') + addRow + '</div>';
+    var succPane = '<div><h5>Successors (' + succs.length + ')</h5>' +
+      '<p style="color:var(--pd-muted);font-size:11px;margin:2px 0 6px;">Derived from other activities\' predecessors — read-only.</p>' +
+      (succs.length ? '<table class="ps-mini"><thead><tr><th>ID</th><th>Name</th><th>Type</th><th style="text-align:right;">Lag</th></tr></thead><tbody>' + succs.map(relRowHtml).join('') + '</tbody></table>'
+                    : '<p style="color:var(--pd-muted);font-size:12px;margin:4px 0;">None.</p>') + '</div>';
+    return '<div class="ps-vsplit" data-split="rels">' +
+      '<div class="ps-vs-a">' + predPane + '</div>' +
+      '<div class="ps-gutter" title="Drag to resize · double-click to reset"></div>' +
+      '<div class="ps-vs-b">' + succPane + '</div>' +
+    '</div>';
+  }
+  function wireRels(root, r) {
+    root.querySelectorAll('[data-relrm]').forEach(function (b) {
+      b.onclick = function () {
+        var id = b.dataset.relrm, list = relPreds(r).filter(function (o) { return String(o.id) !== String(id); });
+        persist(r.id, { predecessors: serializeRels(list) || null }).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
+      };
+    });
+    var addBtn = root.querySelector('#ps-rel-add'), search = root.querySelector('#ps-rel-search');
+    function add() {
+      if (!search) return;
+      var sel = predIds(search.value)[0];
+      if (!sel) { UI.toast('Pick an activity from the list first.', 'warn'); return; }
+      var selfId = r.activity_id != null ? String(r.activity_id) : null;
+      if (selfId && sel === selfId) { UI.toast('An activity cannot be its own predecessor.', 'error'); return; }
+      if (!rows.some(function (t) { return !isWbs(t) && String(t.activity_id) === sel; })) { UI.toast('No activity with ID "' + sel + '" in this schedule.', 'error'); return; }
+      var cur = relPreds(r);
+      if (cur.some(function (o) { return String(o.id) === sel; })) { UI.toast(sel + ' is already a predecessor.', 'warn'); return; }
+      var type = (root.querySelector('#ps-rel-type') || {}).value || 'FS';
+      var lag = parseInt((root.querySelector('#ps-rel-lag') || {}).value, 10); if (isNaN(lag)) lag = 0;
+      cur.push({ id: sel, type: type, lag: lag });
+      persist(r.id, { predecessors: serializeRels(cur) || null }).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
+    }
+    if (addBtn) addBtn.onclick = add;
+    if (search) search.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+    if (window.Icons) Icons.hydrate(root);
   }
   // ----- Resource Assignments (assign resources to the selected activity) -----
   function resName(a) {
@@ -3638,12 +3770,12 @@
     if (t === 'roleusage') { usageKind = 'role'; body.innerHTML = usageResourceHtml(); wireResUsage(); wireDetailSplits(body); return; }
     var r = selRow();
     if (!r || isWbs(r)) { body.innerHTML = '<div class="ps-empty-detail">Select an activity (click a row or its bar) to see its details.</div>'; return; }
-    if (t === 'general') { body.innerHTML = detGeneralEdit(r); wireGeneral(body, r); }
-    else if (t === 'status') body.innerHTML = detStatus(r);
+    if (t === 'general') { body.innerHTML = detGeneralEdit(r); wireEditFields(body, r); }
+    else if (t === 'status') { body.innerHTML = detStatusEdit(r); wireEditFields(body, r); }
     else if (t === 'steps') { body.innerHTML = detSteps(r); wireSteps(body, r); }
     else if (t === 'assign') { body.innerHTML = detAssign(r); wireAssign(body, r); }
     else if (t === 'expenses') { body.innerHTML = detExpenses(r); wireExpenses(body, r); }
-    else if (t === 'rels') { body.innerHTML = detRels(r); wireDetailSplits(body); }
+    else if (t === 'rels') { body.innerHTML = detRelsEdit(r); wireRels(body, r); wireDetailSplits(body); }
     else if (t === 'trace') { body.innerHTML = detTrace(r); wireTrace(body, r); }
     else if (t === 'notebook') { body.innerHTML = detNotebook(r); wireNotebook(body, r); }
     else if (t === 'files') { body.innerHTML = detFiles(r); wireFiles(body, r); }
@@ -3820,6 +3952,14 @@
     });
     st.textContent = rules.length ? rules.join(',') + '{display:none !important;}' : '';
   }
+  // Keep the Gantt header the same height as the grid header (which can grow when long column
+  // labels wrap on narrow columns) so the first data row stays aligned across both panes.
+  function syncHeadHeights() {
+    var gh = document.getElementById('ps-gantt-head'), gHead = document.getElementById('ps-grid-head');
+    if (!gh || !gHead) return;
+    gh.style.boxSizing = 'border-box';
+    gh.style.height = gHead.getBoundingClientRect().height + 'px';
+  }
   function renderHeader() {
     var head = document.getElementById('ps-grid-head'); if (!head) return;
     seedExtraHidden();
@@ -3856,6 +3996,7 @@
     });
     applyColHidden();
     applyColOrder();
+    syncHeadHeights();
   }
   // OPC-style column header menu (Sort / Adjust to fit / Rename / Hide).
   function openColMenu(idx, anchor) {
@@ -3942,9 +4083,10 @@
     e.preventDefault(); e.stopPropagation();
     var pane = document.querySelector('.ps-grid-pane'), vn = '--c-' + col, sx = e.clientX;
     var cur = parseFloat(getComputedStyle(pane).getPropertyValue(vn)) || 80;
-    function mm(ev) { pane.style.setProperty(vn, Math.max(40, cur + (ev.clientX - sx)) + 'px'); }
+    function mm(ev) { pane.style.setProperty(vn, Math.max(40, cur + (ev.clientX - sx)) + 'px'); syncHeadHeights(); }
     function up() {
       document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
+      syncHeadHeights();
       try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var','x'].forEach(function (c) { w[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e2) {}
     }
     document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
@@ -4120,7 +4262,7 @@
     }
     if (isWbsNode(r)) {
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
-      return '<div class="ps-grid-row ps-wbs-row ps-wl' + Math.min(depth, 5) + altc + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
+      return '<div class="ps-grid-row ps-wbs-row ps-wl' + Math.min(depth, 5) + altc + (r.id === selId ? ' ps-row-sel' : '') + '" data-i="' + i + '" data-code="' + esc(code) + '" data-wbsid="' + esc(String(r.id || '')) + '">' +
         '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
         '<div class="ps-cell c-id" style="padding-left:' + idPad + 'px;">' + esc(r._realCode || r.wbs || '') + '</div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
@@ -4201,6 +4343,7 @@
     }
     host.style.position = 'relative'; host.style.height = H + 'px';
     renderWindow();
+    syncHeadHeights();
   }
 
   function renderWindow() {
@@ -4219,8 +4362,16 @@
     var host = document.getElementById('ps-grid-rows');
     host.innerHTML = '<div style="transform:translateY(' + (first * ROWH) + 'px);">' + gh + '</div>';
     host.querySelectorAll('[data-toggle]').forEach(function (t) { t.onclick = function (e) { e.stopPropagation(); collapsed[t.dataset.toggle] = !collapsed[t.dataset.toggle]; renderGrid(); }; });
-    // Excel-like: click anywhere on a WBS/group summary row to expand/collapse it
-    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function () { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); });
+    // Clicking a real WBS row SELECTS it (so Add activity places under it); expand/collapse is via
+    // the ▼/► chevron only. Synthetic group headers keep the click-to-collapse behavior.
+    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function (e) {
+      if (e.target && e.target.closest && e.target.closest('[data-toggle]')) return;   // chevron handles collapse
+      var nd = DL[parseInt(rw.dataset.i, 10)];
+      if (!nd || nd._dkind === 'group') { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); return; }
+      selId = nd.id || null; _selSet = new Set();
+      _wbsSel = nd.wbs_node_id || null;
+      renderGrid(); renderDetails();
+    });
       rw.addEventListener('contextmenu', function (e) {
         var nd = DL[parseInt(rw.dataset.i, 10)]; if (!nd) return;
         if (nd.id) selId = nd.id;                       // make this WBS the paste / add target
@@ -4318,12 +4469,16 @@
             var isDstEnd = (rel.type === 'FF' || rel.type === 'SF');
             var fromX = isSrcStart ? a.sx : a.ex;
             var toX = isDstEnd ? b.ex : b.sx;
-            var srcOut = fromX + (isSrcStart ? -8 : 8);
-            var dstOut = toX + (isDstEnd ? 8 : -8);
-            lines += '<path d="M' + fromX + ' ' + a.y + ' L' + srcOut + ' ' + a.y + ' L' + srcOut + ' ' + b.y + ' L' + dstOut + ' ' + b.y + ' L' + toX + ' ' + b.y + '" class="ps-dep" marker-end="url(#ps-arrow)"/>';
+            // Turn the connector just OUTSIDE the destination (linked) bar's anchor edge — left of its
+            // start for FS/SS, right of its finish for FF/SF — so the vertical + approach never run
+            // across the linked bar (the old routing turned at predecessorFinish+8, which for adjacent
+            // FS bars sat on top of the successor). The line leaves the source's own edge, runs along
+            // its row to the turn X, drops to the successor row, then a short 10px stub into the anchor.
+            var vX = toX + (isDstEnd ? 10 : -10);
+            lines += '<path d="M' + fromX + ' ' + a.y + ' L' + vX + ' ' + a.y + ' L' + vX + ' ' + b.y + ' L' + toX + ' ' + b.y + '" class="ps-dep" marker-end="url(#ps-arrow)"/>';
             lines += '<circle cx="' + fromX + '" cy="' + a.y + '" r="2.5" class="ps-depdot"/>';
-            if (rel.type !== 'FS') lines += '<text x="' + (srcOut + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deptype">' + rel.type + (rel.lag ? (rel.lag > 0 ? '+' : '') + rel.lag : '') + '</text>';
-            else if (rel.lag) lines += '<text x="' + (srcOut + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
+            if (rel.type !== 'FS') lines += '<text x="' + (vX + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deptype">' + rel.type + (rel.lag ? (rel.lag > 0 ? '+' : '') + rel.lag : '') + '</text>';
+            else if (rel.lag) lines += '<text x="' + (vX + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
           });
         }
         if (lines) bc.insertAdjacentHTML('beforeend', '<svg class="ps-deps" width="' + _tlW + '" height="' + (last * ROWH) + '" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5;"><defs><marker id="ps-arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--pd-red)"/></marker></defs>' + lines + '</svg>');
@@ -4397,8 +4552,11 @@
       var sp = wbsSpan(r); if (!sp) return '';
       var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw;
       var wcS = (r._dkind === 'group') ? null : effWbsColor(r);
-      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + o12) + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '"></div>';
-      if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + '</div>';
+      // Rolled-up %-complete (duration-weighted) on the summary bar, from _costMap.
+      var _cm = (r._dkind === 'group') ? null : _costMap[r.wbs];
+      var sumPct = (_cm && _cm.wd > 0) ? Math.max(0, Math.min(100, Math.round(_cm.wearn / _cm.wd))) : 0;
+      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + o12) + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' + (sumPct > 0 ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + '</div>';
+      if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
     }
     var bs = pd(r.bl_start), be = pd(r.bl_finish);
@@ -6468,9 +6626,12 @@
     if (!pid) { UI.toast('Select a project first.', 'error'); return; }
     if (!sel) { openForm(null); return; }
     var wbs = sel.wbs || null, nodeId = sel.wbs_node_id || null;
+    // Default the new activity to start on the data date with a 5-day duration (start + 4 inclusive).
+    var s0 = today(), e0 = addDays(s0, 4);
     var payload = {
-      project_id: pid, wbs: wbs, activity_id: null, activity_name: 'New Activity',
+      project_id: pid, wbs: wbs, activity_id: nextActivityId(wbs), activity_name: 'New Activity',
       activity_type: 'Task', status: 'Not Started', percent_complete: 0,
+      start_date: dstr(s0), end_date: dstr(e0), duration_days: 5,
       created_by: UID, updated_at: new Date().toISOString()
     };
     var res;
@@ -6502,6 +6663,22 @@
     var sc = document.getElementById('ps-grid-scroll'); if (!sc) return;
     var vh = sc.clientHeight, y = idx * ROWH;
     if (y < sc.scrollTop || y > sc.scrollTop + vh - ROWH) sc.scrollTop = Math.max(0, y - Math.floor(vh / 2));
+  }
+  // Next Activity ID for a new activity under WBS `wbs`, scoped to that WBS as "<wbs>-A<num>" with
+  // num in increments of 10 starting at 1000 (e.g. 1.1 → 1.1-A1000, then 1.1-A1010). Continues from
+  // the highest number already used under that same WBS prefix; guarantees project-wide uniqueness.
+  // No WBS → plain "A<num>".
+  function nextActivityId(wbs) {
+    var prefix = (wbs != null && wbs !== '') ? (wbs + '-A') : 'A';
+    var maxNum = -1, taken = {};
+    rows.forEach(function (r) {
+      var id = r.activity_id; if (id == null || id === '') return;
+      taken[String(id)] = true;
+      if (String(id).indexOf(prefix) === 0) { var m = /(\d+)\s*$/.exec(String(id).slice(prefix.length)); if (m) { var n = parseInt(m[1], 10); if (n > maxNum) maxNum = n; } }
+    });
+    var num = maxNum >= 0 ? (Math.floor(maxNum / 10) * 10 + 10) : 1000;
+    var cand; do { cand = prefix + num; num += 10; } while (taken[cand]);
+    return cand;
   }
 
   // ----- tabs / view switch -----
@@ -6702,7 +6879,9 @@
   var _cpmDirty = true;
   function ensureCPM() { if (_cpmDirty) computeCPM(); }
   // Whether "Schedule" should also WRITE the computed dates back (move successors). Persisted.
-  var reschedOn = (function () { try { return localStorage.getItem('ps_resched') === '1'; } catch (e) { return false; } })();
+  // Default ON: hitting Schedule should move successors' dates along their relationships (honors
+  // multiple predecessors per activity via the CPM). Respects an explicit user off-setting.
+  var reschedOn = (function () { try { var v = localStorage.getItem('ps_resched'); return v == null ? true : v === '1'; } catch (e) { return true; } })();
   var NEARDAYS = (function () { try { return parseInt(localStorage.getItem('ps_neardays'), 10) || 5; } catch (e) { return 5; } })();
   var mfpOn = (function () { try { return localStorage.getItem('ps_mfp') !== '0'; } catch (e) { return true; } })();
   // scheduling options (see Schedule ▾ menu). schedMode: 'retained' | 'override'.
@@ -7665,8 +7844,10 @@
     var m = document.createElement('div'); m.className = 'ps-menu ps-rowctx open'; m.id = 'ps-rowctx';
     m.innerHTML = (label ? '<div style="padding:6px 12px 4px;font-size:11px;color:var(--pd-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;">' + esc(label) + '</div>' : '') + items.join('');
     document.body.appendChild(m);
-    m.style.position = 'fixed'; m.style.top = Math.min(e.clientY, window.innerHeight - 200) + 'px';
+    var mTop = Math.max(8, Math.min(e.clientY, window.innerHeight - 60));
+    m.style.position = 'fixed'; m.style.top = mTop + 'px';
     m.style.left = Math.min(e.clientX, window.innerWidth - 240) + 'px'; m.style.zIndex = 300;
+    m.style.maxHeight = (window.innerHeight - mTop - 10) + 'px';   // fit the viewport; scroll if taller
     m.addEventListener('click', function (ev) { ev.stopPropagation(); });
     m.querySelectorAll('button[data-act]').forEach(function (b) { b.onclick = function () {
       var a = b.dataset.act; closeRowMenu();
@@ -7837,8 +8018,11 @@
     var fileMenu = document.getElementById('ps-file-menu');
     var analyzeMenu = document.getElementById('ps-analyze-menu');
     var oMenu = document.getElementById('ps-open-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
+    var colorsMenu = document.getElementById('ps-colors-menu');
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
     oMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    if (colorsMenu) colorsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    (function () { var cb = document.getElementById('ps-colorsbtn'); if (cb) cb.onclick = function (e) { e.stopPropagation(); var o = colorsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colorsMenu.classList.add('open'); } }; })();
     document.getElementById('ps-openbtn').onclick = function (e) { e.stopPropagation(); var o = oMenu.classList.contains('open'); closeMenus(); if (!o) { renderOpenMenu(); oMenu.classList.add('open'); } };
     // File menu (Import / Export / Print). The item buttons keep their original ids so their
     // existing handlers work unchanged; the menu just re-homes them from the Actions menu + topbar.
@@ -7926,7 +8110,17 @@
     document.getElementById('ps-rep-view').onchange = function (e) { repViewFilter = e.target.value; renderReportList(); };
     document.getElementById('ps-rep-new').onclick = function () { repMode = 'new'; repSel = null; renderReportList(); renderReportSide(); };
     applyColHidden();
-    document.getElementById('ps-print').onclick = function () { window.print(); };
+    document.getElementById('ps-print').onclick = function () {
+      // Inject a print-only header (project title + data date + print date) then print.
+      var old = document.getElementById('ps-print-head'); if (old) old.remove();
+      var h = document.createElement('div'); h.id = 'ps-print-head';
+      h.innerHTML = '<div class="pph-title">' + esc(projName()) + '</div>' +
+        '<div class="pph-sub">Project Schedule &nbsp;·&nbsp; Data date ' + esc(Fmt.date(dstr(today()))) +
+        ' &nbsp;·&nbsp; Printed ' + esc(Fmt.date(dstr(wallToday()))) + '</div>';
+      var view = document.getElementById('ps-view-schedule');
+      if (view) view.insertBefore(h, view.firstChild); else document.body.appendChild(h);
+      window.print();
+    };
     document.addEventListener('keydown', function (e) {
       if (!(e.ctrlKey || e.metaKey)) return;
       var tag = document.activeElement && document.activeElement.tagName;
