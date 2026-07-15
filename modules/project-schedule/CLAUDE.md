@@ -8,6 +8,20 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Arrow routing v2 (gap-routed) + Month default zoom (2026-07-14) — jasantos2 / eprobles
+- **Dependency connector no longer runs its horizontal over a bar.** Previous routing kept a single
+  vertical just outside the destination and ran the horizontal along the *source row* (a.y) — for
+  adjacent FS bars that meant a visible back-track over the predecessor's tail. New **Z-route**: leave
+  the source edge with a short stub (`S=9` outside the anchor), drop to the **midpoint Y between the
+  two rows**, run the horizontal there (in the inter-row gap, no bars), drop to the destination row,
+  then a short stub into its anchor edge. Only the two short end-stubs touch bar rows; the long run is
+  always in the gap. Source stub direction follows the anchor (start-anchored SS/SF step left,
+  finish-anchored FS/FF step right); destination vertical sits just outside its start (FS/SS) or finish
+  (FF/SF). Label/dot repositioned to the new geometry.
+- **Default timeline zoom is now Month** (was Quarter): `var zoom='month'` + the `.active` class moved
+  to the Month segment button. Users can still switch to Quarter/Year (and saved layouts restore their
+  own zoom).
+
 ## Colors menu was inaccessible — restored (2026-07-14) — jasantos2 / eprobles
 - Tester asked "where is the Colors menu". Root cause: the `.ps-gantt-tools` CSS and
   `renderColorsMenu()` existed, but the **palette button + `#ps-colors-menu` element were missing

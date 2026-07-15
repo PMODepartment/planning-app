@@ -902,8 +902,8 @@
           </select>
           <span class="ps-tb-div"></span>
           <div class="ps-seg" id="ps-zoom" title="Timeline scale — drag a column edge in the date header, or Ctrl + scroll over the chart, to fine-tune column width">
-            <button data-zoom="month">Month</button>
-            <button data-zoom="quarter" class="active">Quarter</button>
+            <button data-zoom="month" class="active">Month</button>
+            <button data-zoom="quarter">Quarter</button>
             <button data-zoom="year">Year</button>
           </div>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-collapseto" data-label="Outline" title="Outline — expand all or collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="16"></span></button><div class="ps-menu" id="ps-collapse-menu"></div></div>
@@ -1459,7 +1459,7 @@
   }
   function wbsDepthOf(id) { var d = 0, n = wbsById(id); while (n && n.parent_id) { d++; n = wbsById(n.parent_id); } return d; }
   function wbsActivityCount(nodeId) { return rows.filter(function (r) { return !isWbs(r) && r.wbs_node_id === nodeId; }).length; }
-  var zoom = 'quarter', collapsed = {}, selId = null, search = '';
+  var zoom = 'month', collapsed = {}, selId = null, search = '';
   // Multi-row selection + row clipboard (Excel/OPC-style). selId stays the "active"/anchor row;
   // _selSet holds every selected task-row id; _clip holds copied/cut row payloads.
   var _selSet = new Set(), _selAnchor = null, _clip = null;
@@ -4469,16 +4469,18 @@
             var isDstEnd = (rel.type === 'FF' || rel.type === 'SF');
             var fromX = isSrcStart ? a.sx : a.ex;
             var toX = isDstEnd ? b.ex : b.sx;
-            // Turn the connector just OUTSIDE the destination (linked) bar's anchor edge — left of its
-            // start for FS/SS, right of its finish for FF/SF — so the vertical + approach never run
-            // across the linked bar (the old routing turned at predecessorFinish+8, which for adjacent
-            // FS bars sat on top of the successor). The line leaves the source's own edge, runs along
-            // its row to the turn X, drops to the successor row, then a short 10px stub into the anchor.
-            var vX = toX + (isDstEnd ? 10 : -10);
-            lines += '<path d="M' + fromX + ' ' + a.y + ' L' + vX + ' ' + a.y + ' L' + vX + ' ' + b.y + ' L' + toX + ' ' + b.y + '" class="ps-dep" marker-end="url(#ps-arrow)"/>';
+            // Route the connector so its horizontal run sits in the GAP BETWEEN the two rows (at the
+            // midpoint Y), never along a bar. Only short stubs touch the bar rows: one just outside the
+            // source's anchor edge, one just outside the destination's anchor edge. No back-tracking
+            // over a bar body. (S = the small outward step; midY = the inter-row gap.)
+            var S = 9;
+            var sOut = fromX + (isSrcStart ? -S : S);       // step out of the source's own edge
+            var vX = toX + (isDstEnd ? S : -S);             // vertical just outside the destination edge
+            var midY = (a.y + b.y) / 2;                     // horizontal runs here, between the rows
+            lines += '<path d="M' + fromX + ' ' + a.y + ' L' + sOut + ' ' + a.y + ' L' + sOut + ' ' + midY + ' L' + vX + ' ' + midY + ' L' + vX + ' ' + b.y + ' L' + toX + ' ' + b.y + '" class="ps-dep" marker-end="url(#ps-arrow)"/>';
             lines += '<circle cx="' + fromX + '" cy="' + a.y + '" r="2.5" class="ps-depdot"/>';
-            if (rel.type !== 'FS') lines += '<text x="' + (vX + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deptype">' + rel.type + (rel.lag ? (rel.lag > 0 ? '+' : '') + rel.lag : '') + '</text>';
-            else if (rel.lag) lines += '<text x="' + (vX + 2) + '" y="' + ((a.y + b.y) / 2 - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
+            if (rel.type !== 'FS') lines += '<text x="' + (vX + 2) + '" y="' + (midY - 2) + '" class="ps-deptype">' + rel.type + (rel.lag ? (rel.lag > 0 ? '+' : '') + rel.lag : '') + '</text>';
+            else if (rel.lag) lines += '<text x="' + (vX + 2) + '" y="' + (midY - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
           });
         }
         if (lines) bc.insertAdjacentHTML('beforeend', '<svg class="ps-deps" width="' + _tlW + '" height="' + (last * ROWH) + '" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5;"><defs><marker id="ps-arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--pd-red)"/></marker></defs>' + lines + '</svg>');
