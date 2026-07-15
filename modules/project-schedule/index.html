@@ -6982,8 +6982,11 @@
     if (pct >= 100) {
       patch.status = 'Completed';
       patch.actual_start = r.actual_start || r.start_date || null;
-      patch.actual_finish = r.actual_finish || dstr(dd);
-      patch.end_date = patch.actual_finish;
+      // Keep a user-entered Actual Finish; only default to the data date when it's blank.
+      var af = r.actual_finish || dstr(dd);
+      var as0 = pd(patch.actual_start), afd = pd(af);
+      if (as0 && afd && afd < as0) af = dstr(as0);   // finish can't precede the actual start
+      patch.actual_finish = af; patch.end_date = af;
       patch.remaining_duration = 0; if (origDur != null) patch.actual_duration = origDur;
     } else if (pct > 0) {
       patch.status = 'In Progress';
