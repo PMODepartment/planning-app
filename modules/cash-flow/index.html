@@ -331,6 +331,7 @@
   var scenarios = [];            // cash_flow_scenarios rows (saved projection snapshots)
   var dataDate = null;           // settable data date (as-of); null → wall clock
   var periodMode = 'month';      // periodic chart aggregation: 'month' | 'quarter'
+  var chartMode = 'net';         // periodic chart view: 'net' | 'trade' (cash-out stacked by trade)
   var lastDrill = null;          // {dir,comp,mi} — remembered so the Chart/Table toggle re-renders
   var drillView = (function () { try { return localStorage.getItem('cf_drillview') === 'table' ? 'table' : 'chart'; } catch (e) { return 'chart'; } })();
   var pvState = null;            // geometry + data for the periodic-chart tooltip
@@ -959,7 +960,22 @@
       for (var bm = 0; bm < n; bm++) { if (liveNetCum[bm] < -fundingLimit) breachMonths.push(bm); }
     }
 
+    // Per-month cash-out totals by trade (for the "By trade" chart view), + an
+    // ordered trade list with stable colors.
+    var CFPAL = ['#EE3124', '#d99100', '#1f8f4e', '#2f6fb0', '#8e5bd0', '#C42127', '#5A5858', '#00a6a6', '#F4A9A2', '#9a9a9a'];
+    var outTradePer = [], tradeTot = {};
+    for (var tt = 0; tt < n; tt++) outTradePer[tt] = {};
+    [brkDP, brkBill, brkRet].forEach(function (bucket) {
+      bucket.forEach(function (arr, mi) {
+        if (!arr) return;
+        arr.forEach(function (x) { var t = x.trade || 'Uncategorized'; outTradePer[mi][t] = (outTradePer[mi][t] || 0) + x.amt; tradeTot[t] = (tradeTot[t] || 0) + x.amt; });
+      });
+    });
+    var tradeList = Object.keys(tradeTot).sort(function (a, b) { return tradeTot[b] - tradeTot[a]; })
+      .map(function (t, i) { return { name: t, total: tradeTot[t], color: CFPAL[i % CFPAL.length] }; });
+
     return { empty: false, months: months, n: n, ddIdx: ddIdx,
+      outTradePer: outTradePer, tradeList: tradeList,
       inDP: inDP, inBill: inBill, inRet: inRet, inEwt: inEwt, inPer: inPer, inCum: inCum,
       outDP: outDP, outBill: outBill, outRet: outRet, outPer: outPer, outCum: outCum,
       inActualPer: inActualPer, inForecastPer: inForecastPer,
@@ -1049,6 +1065,9 @@
     var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter');
     if (mb) mb.onclick = function () { setPeriodMode('month'); };
     if (qb) qb.onclick = function () { setPeriodMode('quarter'); };
+    var cn = document.getElementById('cf-cm-net'), ct = document.getElementById('cf-cm-trade');
+    if (cn) cn.onclick = function () { setChartMode('net'); };
+    if (ct) ct.onclick = function () { setChartMode('trade'); };
     host.querySelectorAll('.cf-matrix th.mcol').forEach(function (th) {
       th.onclick = function () { selectMonth(+th.dataset.mi); };
     });
@@ -1196,9 +1215,14 @@
   function chartHTML() {
     var seg = '<div class="cf-seg"><button id="cf-pm-month" class="' + (periodMode === 'month' ? 'active' : '') + '">Monthly</button>' +
       '<button id="cf-pm-quarter" class="' + (periodMode === 'quarter' ? 'active' : '') + '">Quarterly</button></div>';
+    var seg2 = '<div class="cf-seg"><button id="cf-cm-net" class="' + (chartMode === 'net' ? 'active' : '') + '">Net</button>' +
+      '<button id="cf-cm-trade" class="' + (chartMode === 'trade' ? 'active' : '') + '">Cash-out by trade</button></div>';
+    var subTxt = chartMode === 'trade'
+      ? 'Cash paid per period, <b>stacked by trade</b> (from WPM work packages). Cash-in shown as a line for context.'
+      : 'Cash received (up) vs paid (down) per period; net line. Solid = actual through the data date (' + Fmt.date(iso(today())) + ') — ' + (model && model.hasActuals ? '<b>recorded actuals</b>' : 'cash-in from schedule <b>% complete</b>, cash-out from <b>awarded</b> WPs') + '; faded/dashed = forecast. Click a month in the table below to highlight its bar.';
     return '<div class="cf-card">' +
       '<div class="cf-chart-head"><div><h3>Periodic Cash Flow</h3>' +
-      '<p class="sub" style="margin-bottom:0;">Cash received (up) vs paid (down) per period; net line. Solid = actual through the data date (' + Fmt.date(iso(today())) + ') — ' + (model && model.hasActuals ? '<b>recorded actuals</b>' : 'cash-in from schedule <b>% complete</b>, cash-out from <b>awarded</b> WPs') + '; faded/dashed = forecast. Click a month in the table below to highlight its bar.</p></div>' + seg + '</div>' +
+      '<p class="sub" style="margin-bottom:0;">' + subTxt + '</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;">' + seg2 + seg + '</div></div>' +
       '<div class="cf-chart-wrap" id="cf-chart-periodic"></div></div>';
   }
 
@@ -1206,10 +1230,10 @@
   // forecast split for both cash-in and cash-out.
   function buildPeriods() {
     var m = model;
-    function mk(label, date) { return { label: label, date: date, inv: 0, out: 0, net: 0, invA: 0, invF: 0, outA: 0, outF: 0, i0: Infinity, i1: -Infinity }; }
+    function mk(label, date) { return { label: label, date: date, inv: 0, out: 0, net: 0, invA: 0, invF: 0, outA: 0, outF: 0, otr: {}, i0: Infinity, i1: -Infinity }; }
     // Accumulate the actual/forecast split; derive inv/out/net from it so the bars,
     // net line and tooltip stay consistent when recorded actuals override the past.
-    function add(b, i) { b.invA += m.inActualPer[i]; b.invF += m.inForecastPer[i]; b.outA += m.outActualPer[i]; b.outF += m.outForecastPer[i]; b.i0 = Math.min(b.i0, i); b.i1 = Math.max(b.i1, i); }
+    function add(b, i) { b.invA += m.inActualPer[i]; b.invF += m.inForecastPer[i]; b.outA += m.outActualPer[i]; b.outF += m.outForecastPer[i]; var tr = m.outTradePer[i] || {}; for (var t in tr) b.otr[t] = (b.otr[t] || 0) + tr[t]; b.i0 = Math.min(b.i0, i); b.i1 = Math.max(b.i1, i); }
     function fin(b) { b.inv = b.invA + b.invF; b.out = b.outA + b.outF; b.net = b.inv + b.out; return b; }
     if (periodMode === 'quarter') {
       var order = [], by = {};
@@ -1263,18 +1287,30 @@
       if (p.i1 >= selRange.i0 && p.i0 <= selRange.i1) grid += '<rect x="' + (padL + band * j) + '" y="' + padT + '" width="' + band + '" height="' + ch + '" class="cf-selband"/>';
     });
 
+    var byTrade = chartMode === 'trade' && model.tradeList && model.tradeList.length;
     var bw = Math.max(2, Math.min(28, band * 0.62)), showLab = periodMode === 'quarter' || band >= 44;
     var bars = '', labs = '', hovers = '';
     function rect(x, yy, w, h, fill, op) { return h > 0.3 ? '<rect x="' + x + '" y="' + yy + '" width="' + w + '" height="' + h + '" fill="' + fill + '" ' + op + '/>' : ''; }
     P.forEach(function (p, i) {
       var x0 = cx(i) - bw / 2;
-      // cash IN (up): actual solid, forecast faded, stacked
-      if (p.invA > 0) { var ya = y(p.invA); bars += rect(x0, ya, bw, zeroY - ya, 'var(--pd-ok)', ''); }
-      if (p.invF > 0) { var yt = y(p.invA + p.invF); bars += rect(x0, yt, bw, y(p.invA) - yt, 'var(--pd-ok)', 'opacity="0.4"'); }
-      // cash OUT (down): actual solid, forecast faded, stacked (values negative)
-      if (p.outA < 0) { bars += rect(x0, zeroY, bw, y(p.outA) - zeroY, 'var(--pd-red)', ''); }
-      if (p.outF < 0) { bars += rect(x0, y(p.outA), bw, y(p.outA + p.outF) - y(p.outA), 'var(--pd-red)', 'opacity="0.4"'); }
-      if (showLab && p.inv > 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.inv) - 3) + '" class="cf-dlab">' + Fmt.moneyShort(p.inv) + '</text>';
+      if (byTrade) {
+        // cash OUT (down): stacked segments by trade (WPM cost mix over time)
+        var acc = 0;
+        model.tradeList.forEach(function (tr) {
+          var amt = p.otr[tr.name] || 0; if (amt <= 0) return;
+          var yTop = y(-acc), h = y(-(acc + amt)) - yTop;
+          bars += rect(x0, yTop, bw, h, tr.color, '');
+          acc += amt;
+        });
+      } else {
+        // cash IN (up): actual solid, forecast faded, stacked
+        if (p.invA > 0) { var ya = y(p.invA); bars += rect(x0, ya, bw, zeroY - ya, 'var(--pd-ok)', ''); }
+        if (p.invF > 0) { var yt = y(p.invA + p.invF); bars += rect(x0, yt, bw, y(p.invA) - yt, 'var(--pd-ok)', 'opacity="0.4"'); }
+        // cash OUT (down): actual solid, forecast faded, stacked (values negative)
+        if (p.outA < 0) { bars += rect(x0, zeroY, bw, y(p.outA) - zeroY, 'var(--pd-red)', ''); }
+        if (p.outF < 0) { bars += rect(x0, y(p.outA), bw, y(p.outA + p.outF) - y(p.outA), 'var(--pd-red)', 'opacity="0.4"'); }
+        if (showLab && p.inv > 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.inv) - 3) + '" class="cf-dlab">' + Fmt.moneyShort(p.inv) + '</text>';
+      }
       if (showLab && p.out < 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.out) + 10) + '" class="cf-dlab">' + Fmt.moneyShort(-p.out) + '</text>';
       hovers += '<rect class="cf-hover" data-i="' + i + '" x="' + (padL + band * i) + '" y="' + padT + '" width="' + band + '" height="' + ch + '"/>';
     });
@@ -1283,6 +1319,8 @@
     // net line — solid (actual) then dashed (forecast), sharing the boundary point
     function seg(a, b, dash) { var pts = []; for (var i = a; i < b; i++) pts.push(cx(i) + ',' + y(P[i].net)); return pts.length > 1 ? '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--pd-ink)" stroke-width="2.25" ' + (dash ? 'stroke-dasharray="5 4"' : '') + '/>' : ''; }
     var netLine = seg(0, split, false) + seg(Math.max(0, split - 1), nP, true);
+    // in trade mode, show cash-in as a context line instead of green up-bars
+    var inLine = byTrade ? '<polyline points="' + P.map(function (p, i) { return cx(i) + ',' + y(p.inv); }).join(' ') + '" fill="none" stroke="var(--pd-ok)" stroke-width="2" stroke-dasharray="2 3"/>' : '';
     // X labels (centred under bands) + a light vertical gridline at each labelled
     // period (drawn behind the bars) so bars line up with the axis.
     var xlab = '', vg = '', step = Math.max(1, Math.ceil(nP / 14));
@@ -1292,14 +1330,17 @@
       xlab += '<text x="' + cx(i) + '" y="' + (H - padB + 18) + '" class="cf-xlab">' + esc(p.label) + '</text>';
     });
 
-    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + vg + bars + netLine + labs + xlab + hovers + '</svg>' +
+    var legendHtml = byTrade
+      ? model.tradeList.map(function (tr) { return '<span class="cf-lg"><span class="sw" style="background:' + tr.color + ';"></span>' + esc(tr.name) + '</span>'; }).join('') +
+        '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ok);border-style:dashed;"></span>Cash In</span>' +
+        '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ink);"></span>Net</span>'
+      : '<span class="cf-lg"><span class="sw" style="background:var(--pd-ok);"></span>Cash In</span>' +
+        '<span class="cf-lg"><span class="sw" style="background:var(--pd-red);"></span>Cash Out</span>' +
+        '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ink);"></span>Net</span>' +
+        '<span class="cf-lg"><span class="sw fc" style="background:var(--pd-muted);"></span>Forecast (faded / dashed)</span>';
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + vg + bars + inLine + netLine + labs + xlab + hovers + '</svg>' +
       '<div class="cf-tip" id="cf-tip"></div>' +
-      '<div class="cf-legend">' +
-      '<span class="cf-lg"><span class="sw" style="background:var(--pd-ok);"></span>Cash In</span>' +
-      '<span class="cf-lg"><span class="sw" style="background:var(--pd-red);"></span>Cash Out</span>' +
-      '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ink);"></span>Net</span>' +
-      '<span class="cf-lg"><span class="sw fc" style="background:var(--pd-muted);"></span>Forecast (faded / dashed)</span>' +
-      '</div>';
+      '<div class="cf-legend">' + legendHtml + '</div>';
 
     // running balance for the tooltip (reuses bal computed above)
     pvState = { P: P, bal: bal, split: split, W: W, host: host };
@@ -1330,6 +1371,7 @@
     });
   }
   function setPeriodMode(mode) { periodMode = mode; drawPeriodic(); var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter'); if (mb) mb.className = mode === 'month' ? 'active' : ''; if (qb) qb.className = mode === 'quarter' ? 'active' : ''; }
+  function setChartMode(mode) { chartMode = mode; render(); }   // re-render: header text + toggle + chart change
 
   // Recorded actual vs plan-to-date variance (shown only when actuals exist).
   function varianceHTML() {
