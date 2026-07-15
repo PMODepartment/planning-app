@@ -523,6 +523,8 @@
     var overallDone = scheduleRows.reduce(function (s, a) { return s + val(a) * Math.max(0, Math.min(100, num(a.percent_complete))) / 100; }, 0);
     var actualFracDD = overallDone / TOT;                 // true % complete at the data date
     var plannedDD = planned[clampIdx(ddIdx, months.length)];
+    var totRem = 1 - plannedDD;                            // planned work remaining after the data date
+    var nAfter = months.length - 1 - ddIdx;               // forecast months available
     return months.map(function (m, i) {
       if (i < ddIdx) {
         // actual accrual to this month end, weighted by each activity's % complete
@@ -535,8 +537,12 @@
         return Math.min(actualFracDD, av / TOT);
       }
       if (i === ddIdx) return actualFracDD;               // anchor to true % complete
-      var totRem = 1 - plannedDD;                          // planned-shaped continuation
-      return actualFracDD + (totRem > 0 ? (planned[i] - plannedDD) / totRem : 0) * (1 - actualFracDD);
+      // Planned-shaped continuation from actual%→100%. If no planned shape remains
+      // (data date at/after the planned finish but work is still incomplete), ramp
+      // linearly to 100% across the remaining months so all work still bills.
+      var frac = totRem > 0 ? (planned[i] - plannedDD) / totRem
+        : (nAfter > 0 ? (i - ddIdx) / nAfter : 1);
+      return actualFracDD + Math.max(0, Math.min(1, frac)) * (1 - actualFracDD);
     });
   }
 
@@ -1600,10 +1606,13 @@
 
   // ---- What-if: recompute peak funding under overridden terms (not saved) ----
   function computeWith(ov) {
-    var s0 = settings, t0 = tranches;
-    settings = Object.assign({}, s0, ov); tranches = [];   // preview uses the simple DP % (no tranches)
+    var s0 = settings, t0 = tranches, tr0 = trades;
+    // Preview at the contract level so the sliders actually drive the result:
+    // clear DP tranches AND trade packages (both would otherwise bypass the
+    // settings.dp_percent / retention / terms the sliders control).
+    settings = Object.assign({}, s0, ov); tranches = []; trades = [];
     var mm = computeProjection();
-    settings = s0; tranches = t0;
+    settings = s0; tranches = t0; trades = tr0;
     return mm;
   }
   var wiParams = [
