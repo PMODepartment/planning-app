@@ -9,14 +9,14 @@
   <title>Cash Flow · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260714" />
   <style>
-    .cf-controls { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-bottom:16px;
+    .cf-controls { display:flex; flex-wrap:nowrap; gap:10px 16px; align-items:center; margin-bottom:16px; overflow-x:auto;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:9px 14px; }
-    .cf-viewbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-    .cf-viewbar .pd-select { border:0; background:transparent; font-weight:600; padding:4px 4px; max-width:230px; }
-    .cf-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
-    .cf-actions .pd-btn { padding:7px 12px; }
-    .cf-ctl-div { width:1px; align-self:stretch; min-height:24px; background:var(--pd-line); }
-    @media (max-width:1100px) { .cf-actions { margin-left:0; } }
+    .cf-viewbar { display:flex; align-items:center; gap:14px; flex-wrap:nowrap; flex:none; }
+    .cf-viewbar .pd-select { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); font-weight:600; padding:6px 8px; max-width:230px; border-radius:6px; }
+    .cf-viewbar .pd-select option { background:var(--pd-card); color:var(--pd-ink); }
+    .cf-actions { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; margin-left:auto; flex:none; }
+    .cf-actions .pd-btn { padding:7px 12px; white-space:nowrap; }
+    .cf-ctl-div { width:1px; align-self:stretch; min-height:24px; background:var(--pd-line); flex:none; }
     .cf-src { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; font-size:12px; }
     .cf-chip { display:inline-flex; align-items:center; gap:7px; padding:6px 12px; border-radius:999px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted); box-shadow:0 1px 2px rgba(0,0,0,.03); }
     .cf-chip .dot { width:8px; height:8px; border-radius:50%; background:var(--pd-line); flex:none; }
@@ -24,8 +24,8 @@
     .cf-chip.warn .dot { background:#d99100; } .cf-chip.warn { color:var(--pd-ink); }
     .cf-chip.bad .dot { background:var(--pd-bad); }
 
-    .cf-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(196px,1fr)); gap:14px; margin-bottom:20px; }
-    .cf-kpi { position:relative; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:16px 18px; min-height:96px;
+    .cf-kpis { display:flex; flex-wrap:nowrap; gap:14px; margin-bottom:20px; overflow-x:auto; }
+    .cf-kpi { flex:1 1 0; min-width:150px; position:relative; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:16px 18px; min-height:96px;
       box-shadow:0 1px 2px rgba(0,0,0,.04); transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease; overflow:hidden; }
     .cf-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pd-line); transition:background .12s ease; }
     .cf-kpi:hover { transform:translateY(-2px); box-shadow:0 6px 18px rgba(0,0,0,.10); border-color:var(--pd-red-mid,var(--pd-line)); }
@@ -800,7 +800,7 @@
       host.innerHTML = '<div class="cf-empty">Nothing to project yet. This module derives cash-in from the <b>Project Schedule</b> and cash-out from <b>WPM</b> work packages. Add a schedule and set the contract value under <b>Assumptions</b>.</div>';
       return;
     }
-    host.innerHTML = kpiHTML() + alertsHTML() + chartHTML() + scenarioHTML() + varianceHTML() + matrixHTML();
+    host.innerHTML = kpiHTML() + alertsHTML() + chartHTML() + matrixHTML() + varianceHTML() + scenarioHTML();
     wireScenarioBtns();
     drawPeriodic();
     var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter');
