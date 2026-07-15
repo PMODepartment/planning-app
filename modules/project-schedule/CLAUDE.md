@@ -8,6 +8,20 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Detail-form layout fix + import baseline (2026-07-14) — jasantos2 / eprobles
+- **Fixed the cramped/overlapping Status (and General) editable detail form.** The forms wrapped
+  their groups in `.ps-det-groups` (auto-fit `minmax(250px,1fr)`) while *each group* also had an
+  inner 2-col field grid — at 250px the date inputs overlapped. New **`.ps-edit-groups`** wrapper
+  (auto-fit `minmax(360px,1fr)`) gives each group room for its 2-col fields; the "Editing…" hint
+  spans full width (`grid-column:1/-1`). detGeneralEdit + detStatusEdit now use it.
+- **Import baseline (Excel).** The "set baseline from current schedule" flow already exists
+  (Actions ▸ Baselines… ▸ **Capture current as baseline**). Added the requested **alternative**:
+  a **Import baseline (Excel)…** button + file input in the Baselines modal → reuses the schedule
+  importer's `parseWorkbook`, then `importBaselineFile()` stores the parsed start/finish/dur/
+  planned-cost as a `schedule_baselines` snapshot **keyed by Activity ID, without touching the live
+  schedule**. Set it primary to apply it to BL0/variance. (XLSX only for now; `.xer` baseline import
+  can follow — the main importer's XER path is a different shape.)
+
 ## Theme-aware line colors, dark-mode WBS/activity contrast, full-row selection (2026-07-14) — jasantos2 / eprobles
 - **Relationship lines + data-date line are now theme-aware** and editable. New CSS vars
   `--ps-dep` (relationship lines/dots/label/arrowhead) and `--ps-dd` (data-date line + label +

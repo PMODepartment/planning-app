@@ -523,6 +523,9 @@
     .ps-dl dd { margin:0; }
     /* OPC-style grouped Activity Details (General / Status) */
     .ps-det-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px 26px; align-items:start; }
+    /* Editable detail forms: wider group columns so each group's inner 2-col field grid (date inputs
+       etc.) has room and doesn't overlap. */
+    .ps-edit-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:14px 24px; align-items:start; }
     .ps-det-group h5 { margin:0 0 8px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-red); border-bottom:1px solid var(--pd-line); padding-bottom:4px; }
     .ps-det-group .ps-dl { grid-template-columns:118px 1fr; gap:5px 10px; }
     .ps-form-sec { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-red); border-bottom:1px solid var(--pd-line); padding-bottom:4px; margin-top:8px; }
@@ -1128,6 +1131,8 @@
   <div class="ps-bulk-panel" style="width:960px;">
     <div class="ps-bulk-head"><strong>Baselines</strong>
       <button class="pd-btn pd-btn-primary" id="ps-bl-capture" style="margin-left:14px;"><span data-ico="plus" data-ico-size="14"></span> Capture current as baseline</button>
+      <button class="pd-btn" id="ps-bl-import" style="margin-left:8px;" title="Import a baseline from an Excel (OPC) export, matched to activities by Activity ID"><span data-ico="download" data-ico-size="14"></span> Import baseline (Excel)…</button>
+      <input type="file" id="ps-bl-import-file" accept=".xlsx,.xls,.csv" style="display:none;" />
       <span class="ps-bulk-count" id="ps-bl-count"></span>
       <button class="ps-bulk-x" id="ps-bl-x">&#215;</button>
     </div>
@@ -2789,8 +2794,8 @@
   function detGeneralEdit(r) {
     var codeRows = CODE_TYPES.map(function (ct) { var vid = r.activity_codes && r.activity_codes[ct.id]; return [esc(ct.name), esc(vid ? (codeValueLabel(vid) || '—') : '—')]; });
     var udfRows = UDF_DEFS.map(function (d) { return [esc(d.name), esc(udfFmt(d, r.udf && r.udf[d.id]))]; });
-    return '<div class="ps-det-groups">' +
-      '<div style="font-size:11.5px;color:var(--pd-muted);margin:0 0 10px;">Editing this activity — changes save automatically.</div>' +
+    return '<div class="ps-edit-groups">' +
+      '<div style="font-size:11.5px;color:var(--pd-muted);margin:0 0 10px;grid-column:1/-1;">Editing this activity — changes save automatically.</div>' +
       _gGroup('Identification',
         _gf('WBS (parent)', 'wbs', 'ro', r) +
         _gf('Activity ID', 'activity_id', 'text', r) +
@@ -2878,8 +2883,8 @@
     var atLU  = (r.actual_labor_units != null || r.remaining_labor_units != null) ? ((r.actual_labor_units || 0) + (r.remaining_labor_units || 0)) : r.planned_labor_units;
     var pcon = ['', 'Start On', 'Start On or After', 'Start On or Before', 'Finish On', 'Finish On or After', 'Finish On or Before', 'Mandatory Start', 'Mandatory Finish', 'As Late As Possible'];
     var scon = ['', 'Start On', 'Start On or After', 'Start On or Before', 'Finish On', 'Finish On or After', 'Finish On or Before'];
-    return '<div class="ps-det-groups">' +
-      '<div style="font-size:11.5px;color:var(--pd-muted);margin:0 0 10px;">Editing this activity — changes save automatically. Computed fields are read-only.</div>' +
+    return '<div class="ps-edit-groups">' +
+      '<div style="font-size:11.5px;color:var(--pd-muted);margin:0 0 10px;grid-column:1/-1;">Editing this activity — changes save automatically. Computed fields are read-only.</div>' +
       _gGroup('Activity Status',
         _gf('Status', 'status', 'select', r, ['Not Started', 'In Progress', 'Completed']) +
         _gf('% Complete', 'percent_complete', 'number', r) +
@@ -5179,6 +5184,27 @@
     hideLoading();
     if (res.error) { UI.toast('Baseline failed: ' + res.error.message + ' — run the schedule-baselines migration.', 'error'); return; }
     UI.toast('Baseline captured (' + n + ' activities).', 'success'); loadBaselines();
+  }
+  // Import a baseline from an Excel (OPC) export — reuses the schedule importer's parser, but stores
+  // the parsed dates/dur/cost as a baseline snapshot (keyed by Activity ID) WITHOUT touching the live
+  // schedule. Lets a planner bring in an externally-agreed baseline instead of only capturing current.
+  async function importBaselineFile(recs, fname) {
+    if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
+    var acts = {}, n = 0;
+    recs.forEach(function (r) {
+      if (!r.isLeaf || r.id == null || r.id === '') return;
+      var s = r.start || null, f = r.finish || null;
+      var dur = r.dur != null ? r.dur : ((s && f) ? dayDiff(pd(s), pd(f)) + 1 : null);
+      acts[String(r.id)] = [s, f, dur, r.pcost != null ? r.pcost : null]; n++;
+    });
+    if (!n) { UI.toast('No activities with an Activity ID found in the file.', 'error'); return; }
+    var name = prompt('Imported baseline name:', 'Imported ' + (fname ? fname.replace(/\.[^.]+$/, '') : fmtOPCDate(dstr(today()))));
+    if (name === null) return;
+    showLoading('Saving imported baseline…');
+    var res = await sb().from('schedule_baselines').insert({ project_id: pid, name: name || ('Imported ' + fmtOPCDate(dstr(today()))), created_by: UID, activity_count: n, activities: acts });
+    hideLoading();
+    if (res.error) { UI.toast('Import failed: ' + res.error.message + ' — run the schedule-baselines migration.', 'error'); return; }
+    UI.toast('Baseline imported (' + n + ' activities matched by ID). Set it primary to apply.', 'success'); loadBaselines();
   }
   async function setPrimaryBaseline(id) {
     var b = _bls.find(function (x) { return x.id === id; }); if (!b) return;
@@ -8268,6 +8294,19 @@
     document.getElementById('ps-audit-back').onclick = function (e) { if (e.target === this) closeAudit(); };
     document.getElementById('ps-baselines').onclick = function () { aMenu.classList.remove('open'); openBaselines(); };
     document.getElementById('ps-bl-capture').onclick = captureBaseline;
+    (function () {
+      var ib = document.getElementById('ps-bl-import'), ibf = document.getElementById('ps-bl-import-file');
+      if (ib && ibf) {
+        ib.onclick = function () { ibf.value = ''; ibf.click(); };
+        ibf.onchange = function (e) {
+          var file = e.target.files[0]; if (!file) return;
+          if (typeof XLSX === 'undefined') { UI.toast('Excel parser still loading — try again in a moment.', 'error'); e.target.value = ''; return; }
+          var rd = new FileReader();
+          rd.onload = function () { try { var recs = parseWorkbook(rd.result); hideLoading(); importBaselineFile(recs, file.name); } catch (err) { hideLoading(); UI.toast('Parse failed: ' + err.message, 'error'); } };
+          showLoading('Reading ' + file.name + '…'); rd.readAsArrayBuffer(file); e.target.value = '';
+        };
+      }
+    })();
     document.getElementById('ps-bl-x').onclick = closeBaselines;
     document.getElementById('ps-bl-back').onclick = function (e) { if (e.target === this) closeBaselines(); };
     document.getElementById('ps-scenarios').onclick = function () { aMenu.classList.remove('open'); openScenarios(); };
