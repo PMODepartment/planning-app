@@ -8,6 +8,28 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Progress intelligence — POC-driven remaining/finish + retained-logic data-date shift (2026-07-14) — jasantos2 / eprobles
+Two scheduling-logic features, both toggle-gated in the **Schedule dialog → Settings** (default ON).
+- **Progress-driven dates (`progressDriven`).** Editing **% Complete (Earned Value POC)** — in the
+  grid cell or the Status/General detail tab — now runs `_progressFields(r,pct)`: keeps
+  `duration_days` as the original/planned duration and derives **remaining_duration =
+  round(origDur × (1 − POC))**, actual_duration, status, actual_start, and an auto **finish =
+  data date + remaining − 1** (remaining work scheduled from the data date). 100% → Completed,
+  finish = data date, remaining 0; 0% → Not Started, remaining = full duration (dates untouched).
+  All fields persist together through `persist()` (undoable + audited; `end_date`/`percent_complete`
+  are in `_RECOMPUTE_FIELDS` so CPM/rollups refresh). Unit-checked: 40%→6d rem & finish +5;
+  100%→finish at data date; shift keeps span.
+- **Retain un-started work at the data date (`ddRetainOn`).** New `shiftUnstartedToDataDate()`:
+  on **Schedule → Schedule Now**, any activity with 0% POC / no actual start whose planned start is
+  **before** the data date is moved forward to start on the data date, **keeping its duration**
+  (finish moves by the same delta). Runs for all tasks regardless of relationships (chunked bulk
+  write, audited), *before* the CPM recompute + the existing relationship reschedule, so linked and
+  unlinked schedules both self-adjust when the data date advances. (This complements the CPM's
+  existing data-date flooring for linked activities.)
+- **Verified:** full inline script parses; `_progressFields` + shift math hand-checked in-browser.
+  Live click-through pending a session. (Note: with progress-driven ON, % edits move finish dates —
+  a real scheduling action; the toggle lets teams that hand-manage dates turn it off.)
+
 ## Baseline bars above current + baseline roll-up + equal/full bar heights (2026-07-14) — jasantos2 / eprobles
 - **Baseline (BL0) bar now drawn ABOVE the current schedule bar** (was below at +24). Activity bar
   geometry reworked: **with a baseline present**, planned + current are two **equal-height** bars

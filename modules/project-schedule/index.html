@@ -2838,12 +2838,13 @@
         else if (t === 'date') patch[f] = v || null;
         else if (t === 'select') patch[f] = v || null;
         else patch[f] = (typeof v === 'string' ? v.trim() : v) || null;
+        if (progressDriven && f === 'percent_complete') { patch = _progressFields(r, patch[f]); }
         if (f === 'start_date' || f === 'end_date') {
           var s = pd(f === 'start_date' ? patch.start_date : r.start_date);
           var e = pd(f === 'end_date' ? patch.end_date : r.end_date);
           if (s && e) { if (e < s) UI.toast('Finish is before start.', 'warn'); patch.duration_days = dayDiff(s, e) + 1; }
         }
-        persist(r.id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); } });
+        persist(r.id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
       };
     });
     if (window.Icons) Icons.hydrate(root);
@@ -4567,6 +4568,8 @@
       else if (type === 'money') { patch[field] = val === '' ? null : Math.max(0, parseFloat(val) || 0); }
       else if (type === 'date') { patch[field] = val || null; }
       else { patch[field] = val.trim() || null; }
+      // Progress-driven: % Complete (POC) recomputes remaining duration + finish from the data date.
+      if (progressDriven && field === 'percent_complete') { patch = _progressFields(r, patch.percent_complete); }
       // recompute duration if start/finish changed
       if (field === 'start_date' || field === 'end_date') {
         var s = pd(field === 'start_date' ? patch.start_date : r.start_date);
@@ -6963,6 +6966,41 @@
   // scheduling options (see Schedule ▾ menu). schedMode: 'retained' | 'override'.
   var schedMode = (function () { try { return localStorage.getItem('ps_schedmode') || 'retained'; } catch (e) { return 'retained'; } })();
   var useActuals = (function () { try { return localStorage.getItem('ps_useactuals') !== '0'; } catch (e) { return true; } })();
+  // Progress-driven dates: editing % Complete (Earned Value POC) recomputes remaining duration &
+  // finish from the data date. Retain-on-move: Schedule shifts un-started activities to the data date.
+  var progressDriven = (function () { try { return localStorage.getItem('ps_progressdriven') !== '0'; } catch (e) { return true; } })();
+  var ddRetainOn = (function () { try { return localStorage.getItem('ps_ddretain') !== '0'; } catch (e) { return true; } })();
+  // Recompute remaining duration + finish (and status/actual dates) from a % Complete (POC) input.
+  // planned/original duration is kept as duration_days; remaining = origDur × (1 − POC), scheduled
+  // from the data date. 100% → finished at the data date; 0% → not started (dates untouched here).
+  function _progressFields(r, pct) {
+    pct = Math.max(0, Math.min(100, pct == null ? 0 : pct));
+    var patch = { percent_complete: pct };
+    var origDur = (r.duration_days != null && r.duration_days > 0) ? r.duration_days
+      : ((pd(r.start_date) && pd(r.end_date)) ? dayDiff(pd(r.start_date), pd(r.end_date)) + 1 : null);
+    var dd = today();
+    if (pct >= 100) {
+      patch.status = 'Completed';
+      patch.actual_start = r.actual_start || r.start_date || null;
+      patch.actual_finish = r.actual_finish || dstr(dd);
+      patch.end_date = patch.actual_finish;
+      patch.remaining_duration = 0; if (origDur != null) patch.actual_duration = origDur;
+    } else if (pct > 0) {
+      patch.status = 'In Progress';
+      patch.actual_start = r.actual_start || r.start_date || dstr(dd);
+      patch.actual_finish = null;
+      if (origDur != null) {
+        var rem = Math.max(1, Math.round(origDur * (1 - pct / 100)));
+        patch.remaining_duration = rem; patch.actual_duration = Math.max(0, origDur - rem);
+        var nf = addDays(dd, rem - 1), s0 = pd(patch.actual_start); if (s0 && nf < s0) nf = s0;
+        patch.end_date = dstr(nf);
+      }
+    } else {
+      patch.status = 'Not Started'; patch.actual_start = null; patch.actual_finish = null;
+      if (origDur != null) { patch.remaining_duration = origDur; patch.actual_duration = 0; }
+    }
+    return patch;
+  }
   // Extract predecessor Activity IDs from an OPC cell — tolerates "A1010 (FS)",
   // "A1010: FS+2d", "A1010; A1020", "1010, 1020", etc. (takes the leading token).
   function predIds(str) {
@@ -7125,6 +7163,35 @@
   // Retained-Logic vs Progress-Override. Completed activities (with an actual finish) keep
   // their historical dates; started-but-unfinished activities keep their Start (pinned by the
   // actual start) and only their Finish moves. Bulk + not per-row undoable, so it confirms first.
+  // Retained logic on a data-date move: any un-started activity (0% / no actual start) whose planned
+  // start is before the data date is shifted forward so it starts on the data date, KEEPING its
+  // duration (finish moves by the same delta). Runs for every task regardless of relationships, so it
+  // covers schedules that don't use links (the CPM path handles linked ones). Bulk write, confirms.
+  async function shiftUnstartedToDataDate(silent) {
+    var dd = today(); var patches = [];
+    rows.forEach(function (t) {
+      if (isWbs(t) || !t.activity_id) return;
+      if (t.actual_start || t.actual_finish || (t.percent_complete || 0) > 0) return;   // started/done — leave
+      var s = pd(t.start_date); if (!s || s >= dd) return;                               // already at/after DD
+      var delta = dayDiff(s, dd);
+      var e = pd(t.end_date);
+      patches.push({ id: t.id, patch: { start_date: dstr(dd), end_date: e ? dstr(addDays(e, delta)) : dstr(dd), updated_at: new Date().toISOString() }, row: t });
+    });
+    if (!patches.length) { if (!silent) UI.toast('No un-started activities to shift — all start on/after the data date.', 'info'); return 0; }
+    if (!silent && !confirm('Shift ' + patches.length + ' un-started activit' + (patches.length === 1 ? 'y' : 'ies') + ' to the data date (' + Fmt.date(dstr(dd)) + '), keeping their durations?')) return 0;
+    showLoading('Shifting ' + patches.length + ' activities…');
+    var ok = 0, err = null, CH = 40;
+    for (var i = 0; i < patches.length && !err; i += CH) {
+      var slice = patches.slice(i, i + CH);
+      var results = await Promise.all(slice.map(function (p) { return sb().from(TABLE).update(p.patch).eq('id', p.id).then(function (res) { return res.error ? res.error.message : null; }); }));
+      for (var k = 0; k < results.length; k++) { if (results[k]) { err = results[k]; break; } var p = slice[k]; Object.keys(p.patch).forEach(function (key) { p.row[key] = p.patch[key]; }); ok++; }
+    }
+    hideLoading();
+    if (ok) { logAudit(null, 'reschedule', { count: ok, kind: 'data-date-retained' }); resetUndo(); rebuild(false); ensureCPM(); renderAll(); }
+    if (err) UI.toast('Shift error after ' + ok + ': ' + err, 'error');
+    else if (!silent) UI.toast('Shifted ' + ok + ' un-started activit' + (ok === 1 ? 'y' : 'ies') + ' to the data date.', 'success');
+    return ok;
+  }
   async function applyScheduleDates() {
     if (!_cpmBase) { UI.toast('Add relationships (Predecessors / Link) so activities can be rescheduled.', 'warn'); return; }
     var base = _cpmBase, off = function (n) { return dstr(addDays(base, Math.round(n))); };
@@ -7464,7 +7531,10 @@
       b.innerHTML = '<div class="fld"><span>Schedule calculation</span>' +
         '<label><input type="radio" name="ps-sm" value="retained"' + (schedMode === 'retained' ? ' checked' : '') + '><span>Retained Logic<small>In-progress work keeps its predecessor logic (OPC default).</small></span></label>' +
         '<label><input type="radio" name="ps-sm" value="override"' + (schedMode === 'override' ? ' checked' : '') + '><span>Progress Override<small>Started activities ignore predecessor logic for their remaining work.</small></span></label></div>' +
-        '<div class="fld"><span>Dates</span><label><input type="checkbox" id="ps-useact"' + (useActuals ? ' checked' : '') + '><span>Use actual dates &amp; data date<small>Actual start/finish pin the schedule; future work can’t precede the data date.</small></span></label></div>';
+        '<div class="fld"><span>Dates</span><label><input type="checkbox" id="ps-useact"' + (useActuals ? ' checked' : '') + '><span>Use actual dates &amp; data date<small>Actual start/finish pin the schedule; future work can’t precede the data date.</small></span></label></div>' +
+        '<div class="fld"><span>Progress intelligence</span>' +
+        '<label><input type="checkbox" id="ps-progdriven"' + (progressDriven ? ' checked' : '') + '><span>Progress-driven dates<small>Editing % Complete (Earned Value POC) recomputes remaining duration &amp; finish from the data date.</small></span></label>' +
+        '<label><input type="checkbox" id="ps-ddretain"' + (ddRetainOn ? ' checked' : '') + '><span>Retain un-started work at the data date<small>On Schedule, shift activities with 0% POC (that should have started) forward to the data date, keeping their duration.</small></span></label></div>';
     } else {
       b.innerHTML = '<div class="fld"><span>Multiple Float Paths</span>' +
         '<label><input type="checkbox" id="ps-mfp"' + (mfpOn ? ' checked' : '') + '><span>Highlight near-critical paths<small>When Critical Path is on, activities with total float at or below the threshold are flagged (amber) alongside the critical path.</small></span></label></div>' +
@@ -7480,7 +7550,7 @@
     document.getElementById('ps-sched-back').classList.add('open');
   }
   function closeSchedule() { document.getElementById('ps-sched-back').classList.remove('open'); }
-  function scheduleNow() {
+  async function scheduleNow() {
     var b = document.getElementById('ps-sched-body');
     // commit whichever tab's controls are present
     var ddRadio = b.querySelector('input[name=ps-dd]:checked');
@@ -7488,8 +7558,13 @@
     var rc = document.getElementById('ps-dd-resched'); if (rc) { reschedOn = rc.checked; try { localStorage.setItem('ps_resched', reschedOn ? '1' : '0'); } catch (e) {} }
     var sm = b.querySelector('input[name=ps-sm]:checked'); if (sm) { schedMode = sm.value; try { localStorage.setItem('ps_schedmode', schedMode); } catch (e) {} }
     var ua = document.getElementById('ps-useact'); if (ua) { useActuals = ua.checked; try { localStorage.setItem('ps_useactuals', useActuals ? '1' : '0'); } catch (e) {} }
+    var pgd = document.getElementById('ps-progdriven'); if (pgd) { progressDriven = pgd.checked; try { localStorage.setItem('ps_progressdriven', progressDriven ? '1' : '0'); } catch (e) {} }
+    var ddr = document.getElementById('ps-ddretain'); if (ddr) { ddRetainOn = ddr.checked; try { localStorage.setItem('ps_ddretain', ddRetainOn ? '1' : '0'); } catch (e) {} }
     var mfp = document.getElementById('ps-mfp'); if (mfp) { mfpOn = mfp.checked; try { localStorage.setItem('ps_mfp', mfpOn ? '1' : '0'); } catch (e) {} }
     var md = document.getElementById('ps-mfp-days'); if (md) { NEARDAYS = Math.max(1, parseInt(md.value, 10) || 5); try { localStorage.setItem('ps_neardays', NEARDAYS); } catch (e) {} }
+    // Retained logic: shift un-started (0% POC) activities forward to the data date first, so the CPM
+    // recompute + any relationship reschedule below build on the corrected planned dates.
+    if (ddRetainOn && useActuals) { await shiftUnstartedToDataDate(true); }
     var res = computeCPM();
     var tasks = rows.filter(function (r) { return !isWbs(r); });
     var nCrit = tasks.filter(function (r) { return r._critical; }).length;
