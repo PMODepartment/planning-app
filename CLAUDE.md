@@ -286,6 +286,19 @@ developer, plug into one shared shell.
   gridlines at each labelled period to line bars up with the x-axis.
 - Verified: full inline script parses; live run pending.
 
+### 2026-07-14 — Prompt 79: Cash Flow — tabbed Assumptions, loading skeleton, confirmed WPM trade
+- **Tabbed Assumptions modal:** the long form is split into 5 tabs — Contract · Tax & Retention ·
+  Terms & Funding · Downpayment · Billing (all field ids unchanged, so `saveSettings` is untouched).
+- **Loading skeleton:** the bare "Loading projection…" line is replaced with shimmering KPI-tile +
+  chart placeholders (`skeletonHTML()`).
+- **WPM trade auto-detect confirmed:** checked the WPM app schema on disk — `work_packages.trade`
+  is the real column (Site Works / Mechanical Works / Electrical and Auxiliary Works …), and the
+  WPM app itself groups "by Trade". `sync-wpm` already leads with `w.trade`, so **"Uncategorized"
+  only appears until the deploy is done**: run `2026-07-14-wpm-mirror-trade.sql`, redeploy
+  `sync-wpm`, re-Sync. Also made the `sync-wpm` upsert **self-healing** (drops a missing mirror
+  column like `trade` and retries, reporting `dropped`) so a partial deploy can't fail the whole sync.
+- Verified: script parses; all 19 assumption field ids intact.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New

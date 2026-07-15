@@ -82,6 +82,15 @@
     .cf-matrix th.mcol:hover { color:var(--pd-red); }
     .cf-matrix th.mcol.sel { background:var(--pd-red); color:#fff; }
     .cf-empty { text-align:center; padding:40px; color:var(--pd-muted); }
+    /* loading skeleton */
+    .cf-sk-bar { background:linear-gradient(90deg, var(--pd-line) 25%, var(--pd-bg) 37%, var(--pd-line) 63%); background-size:400% 100%; animation:cf-sh 1.3s ease infinite; border-radius:5px; }
+    @keyframes cf-sh { 0% { background-position:100% 0; } 100% { background-position:0 0; } }
+    .cf-kpi.cf-sk { pointer-events:none; }
+    .cf-sk .cf-sk-l { height:9px; width:55%; margin-bottom:10px; }
+    .cf-sk .cf-sk-v { height:20px; width:75%; margin-bottom:9px; }
+    .cf-sk .cf-sk-s { height:8px; width:65%; }
+    .cf-sk-h { height:14px; width:220px; margin-bottom:16px; }
+    .cf-sk-chart { height:260px; width:100%; }
 
     /* projection matrix */
     .cf-matrix-wrap { overflow-x:auto; }
@@ -104,6 +113,10 @@
 
     .cf-check { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--pd-ink); cursor:pointer; padding:7px 0; }
     .cf-check input { width:16px; height:16px; accent-color:var(--pd-red); cursor:pointer; }
+    .cf-tabstrip { display:flex; gap:2px; flex-wrap:wrap; border-bottom:1px solid var(--pd-line); margin-bottom:14px; }
+    .cf-ftab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); background:transparent; border:0; border-bottom:2px solid transparent; cursor:pointer; }
+    .cf-ftab:hover { color:var(--pd-ink); }
+    .cf-ftab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
     .cf-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .cf-form-full { grid-column:1 / -1; }
     .cf-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
@@ -522,7 +535,7 @@
 
   async function loadAll(persist) {
     if (!pid) { render(); return; }
-    document.getElementById('cf-body').innerHTML = '<div class="cf-empty">Loading projection…</div>';
+    document.getElementById('cf-body').innerHTML = skeletonHTML();
     loadDataDate();
     await loadSettings();
     await Promise.all([loadSchedule(), loadWPM(), loadTranches(), loadActuals(), loadTrades(), loadBillingMs(), loadScenarios()]);
@@ -925,6 +938,15 @@
   // ==========================================================================
   // RENDER
   // ==========================================================================
+  // Loading skeleton — KPI tiles + chart placeholder with a shimmer, so the wait on
+  // the schedule/WPM fetch reads as "loading" rather than a bare line of text.
+  function skeletonHTML() {
+    var kpi = '';
+    for (var i = 0; i < 6; i++) kpi += '<div class="cf-kpi cf-sk"><div class="cf-sk-l cf-sk-bar"></div><div class="cf-sk-v cf-sk-bar"></div><div class="cf-sk-s cf-sk-bar"></div></div>';
+    return '<div class="cf-kpis">' + kpi + '</div>' +
+      '<div class="cf-card"><div class="cf-sk-h cf-sk-bar"></div><div class="cf-sk-chart cf-sk-bar"></div></div>';
+  }
+
   function srcChips() {
     var host = document.getElementById('cf-src');
     var hasContract = settings && num(settings.contract_ibb) > 0;
@@ -1460,42 +1482,69 @@
     if (!pid) { UI.toast('Select a project first.', 'error'); return; }
     var s = settings || defaults();
     var form = document.getElementById('cf-form');
+    form.className = 'cf-form-tabs';
     function fld(label, ctrl, hint, full) { return '<div class="' + (full ? 'cf-form-full' : '') + '"><label class="pd-label">' + label + '</label>' + ctrl + (hint ? '<div class="cf-hint">' + hint + '</div>' : '') + '</div>'; }
-    form.innerHTML =
+    function pane(key, active, inner) { return '<div class="cf-form-grid cf-fpane" data-pane="' + key + '"' + (active ? '' : ' style="display:none;"') + '>' + inner + '</div>'; }
+
+    var contractPane =
       fld('Contract Amount — IBB (₱, VAT inc.)', '<input class="pd-input" id="s-ibb" type="number" step="0.01" value="' + (s.contract_ibb != null ? s.contract_ibb : '') + '">', 'Cash-in base — total billable to the client.') +
       fld('Contract Amount — BCB (₱, VAT inc.)', '<input class="pd-input" id="s-bcb" type="number" step="0.01" value="' + (s.contract_bcb != null ? s.contract_bcb : '') + '">', 'Cost baseline, VAT-inclusive (same basis as IBB) — compared to IBB for gross margin.') +
-      fld('Downpayment % (simple)', '<input class="pd-input" id="s-dp" type="number" step="0.01" value="' + pctVal(s.dp_percent) + '">', 'Used only when NO tranches are defined below.') +
-      fld('Retention %', '<input class="pd-input" id="s-ret" type="number" step="0.01" value="' + pctVal(s.retention_percent) + '">', 'Withheld from each billing, e.g. 10.') +
-      fld('EWT % (creditable withholding)', '<input class="pd-input" id="s-ewt" type="number" step="0.01" value="' + pctVal(s.ewt_percent) + '">', 'Withheld from each billing, e.g. 2. On the VAT-exclusive base.') +
+      fld('Cashflow start month', '<input class="pd-input" id="s-start" type="month" value="' + (s.start_period ? String(s.start_period).slice(0, 7) : '') + '">', 'Blank → schedule start.') +
       fld('VAT', '<label class="cf-check"><input type="checkbox" id="s-vat"' + ((s.vat_percent == null || num(s.vat_percent) > 0) ? ' checked' : '') + '> Contract is VAT-inclusive (12%)</label>', 'Untick only for zero-rated / VAT-exempt contracts. Used to derive the VAT-exclusive base for EWT.') +
-      fld('Billing terms (months)', '<input class="pd-input" id="s-terms" type="number" step="1" value="' + (s.billing_terms_months != null ? s.billing_terms_months : 1) + '">', 'Lag from certification to cash receipt.') +
+      fld('WPM project id (cash-out source)', '<input class="pd-input" id="s-wpm" value="' + esc(s.wpm_project_id || '') + '">', 'The Procurement app project id whose work packages fund cash-out. Blank → this project id.', true) +
+      fld('Remarks', '<textarea class="pd-input" id="s-rem" rows="2">' + esc(s.remarks) + '</textarea>', '', true);
+
+    var taxPane =
+      fld('EWT % (creditable withholding)', '<input class="pd-input" id="s-ewt" type="number" step="0.01" value="' + pctVal(s.ewt_percent) + '">', 'Withheld from each billing, e.g. 2. On the VAT-exclusive base.') +
+      fld('Retention %', '<input class="pd-input" id="s-ret" type="number" step="0.01" value="' + pctVal(s.retention_percent) + '">', 'Withheld from each billing, e.g. 10.') +
       fld('Retention release — stage 1 (months after completion)', '<input class="pd-input" id="s-rel" type="number" step="1" value="' + (s.retention_release_months != null ? s.retention_release_months : 1) + '">') +
       fld('Retention released at stage 1 (%)', '<input class="pd-input" id="s-rel1pct" type="number" step="1" value="' + pctVal(s.ret_rel1_pct != null ? s.ret_rel1_pct : 1) + '">', '100 = single release. E.g. 50 → half now, half at stage 2.') +
       fld('Retention release — stage 2 (months after completion)', '<input class="pd-input" id="s-rel2" type="number" step="1" value="' + (s.ret_rel2_months != null ? s.ret_rel2_months : 12) + '">', 'Remainder (defects-liability period). Ignored if stage 1 = 100%.') +
       fld('Cash-out retention — stage 1 released (%)', '<input class="pd-input" id="s-corel1pct" type="number" step="1" value="' + (s.co_ret_rel1_pct != null ? pctVal(s.co_ret_rel1_pct) : '') + '" placeholder="= cash-in">', 'Subcontract retention release. Blank → follows the cash-in staging above.') +
       fld('Cash-out retention — stage 1 lag (months)', '<input class="pd-input" id="s-corel1" type="number" step="1" value="' + (s.co_ret_rel1_months != null ? s.co_ret_rel1_months : '') + '" placeholder="= cash-in">', 'Months after each WP completion. Blank → = cash-in.') +
-      fld('Cash-out retention — stage 2 lag (months)', '<input class="pd-input" id="s-corel2" type="number" step="1" value="' + (s.co_ret_rel2_months != null ? s.co_ret_rel2_months : '') + '" placeholder="= cash-in">', 'Remainder. Blank → = cash-in.') +
+      fld('Cash-out retention — stage 2 lag (months)', '<input class="pd-input" id="s-corel2" type="number" step="1" value="' + (s.co_ret_rel2_months != null ? s.co_ret_rel2_months : '') + '" placeholder="= cash-in">', 'Remainder. Blank → = cash-in.');
+
+    var termsPane =
+      fld('Billing terms (months)', '<input class="pd-input" id="s-terms" type="number" step="1" value="' + (s.billing_terms_months != null ? s.billing_terms_months : 1) + '">', 'Lag from certification to cash receipt.') +
       fld('Financing rate (% p.a. on drawdowns)', '<input class="pd-input" id="s-fin" type="number" step="0.01" value="' + pctVal(s.finance_rate) + '">', 'Annual interest applied to the negative cumulative (peak funding). 0 = off.') +
-      fld('Funding / credit-line limit (₱)', '<input class="pd-input" id="s-limit" type="number" step="0.01" value="' + (s.funding_limit != null ? s.funding_limit : '') + '">', 'Flag months where cumulative net drops below −this. Blank = no limit.') +
-      fld('Cashflow start month', '<input class="pd-input" id="s-start" type="month" value="' + (s.start_period ? String(s.start_period).slice(0, 7) : '') + '">', 'Blank → schedule start.') +
-      fld('WPM project id (cash-out source)', '<input class="pd-input" id="s-wpm" value="' + esc(s.wpm_project_id || '') + '">', 'The Procurement app project id whose work packages fund cash-out. Blank → this project id.', true) +
-      fld('Remarks', '<textarea class="pd-input" id="s-rem" rows="2">' + esc(s.remarks) + '</textarea>', '', true) +
-      // ---- Downpayment tranches ----
+      fld('Funding / credit-line limit (₱)', '<input class="pd-input" id="s-limit" type="number" step="0.01" value="' + (s.funding_limit != null ? s.funding_limit : '') + '">', 'Flag months where cumulative net drops below −this. Blank = no limit.');
+
+    var dpPane =
+      fld('Downpayment % (simple)', '<input class="pd-input" id="s-dp" type="number" step="0.01" value="' + pctVal(s.dp_percent) + '">', 'Used only when NO tranches are defined below.') +
       '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Downpayment Tranches</label>' +
         '<button type="button" class="cf-btn-sm" id="cf-dp-add">+ Add tranche</button></div>' +
         '<div class="cf-hint">Break the DP into tranches — each tagged by trade/agreement, timed by a schedule milestone, a fixed month, or an offset from start, and recouped proportionally. When any tranche exists it overrides the simple % above. <b id="cf-dp-sum"></b></div>' +
-        '<div id="cf-dp-list"></div></div>' +
-      // ---- Per-trade cash-in packages (#7) ----
-      '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Cash-In Trade Packages</label>' +
-        '<button type="button" class="cf-btn-sm" id="cf-tr-add">+ Add package</button></div>' +
-        '<div class="cf-hint">Split the contract into trades (ST / AR / MEPF …), each billing its own share over the schedule S-curve with its own DP / retention / terms. <b>When any package exists it replaces the contract-level cash-in and the DP tranches above are ignored.</b> Shares should sum to Contract IBB. <b id="cf-tr-sum"></b></div>' +
-        '<div id="cf-tr-list"></div></div>' +
-      // ---- Progress billing basis + milestones ----
+        '<div id="cf-dp-list"></div></div>';
+
+    var billingPane =
       '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Progress Billing Basis</label>' +
         '<select class="pd-select" id="s-billing-basis" style="max-width:220px;"><option value="poc"' + (s.billing_basis !== 'milestone' ? ' selected' : '') + '>% POC (schedule S-curve)</option><option value="milestone"' + (s.billing_basis === 'milestone' ? ' selected' : '') + '>Milestone (lump sums)</option></select></div>' +
         '<div class="cf-hint">Milestone billing certifies a fixed amount when a schedule milestone is reached — e.g. "Structural Foundation ₱33M". <b>When selected, it replaces both the S-curve and trade packages above.</b> Amounts should sum to Contract IBB. <b id="cf-bm-sum"></b></div>' +
         '<div class="cf-dp-head" style="justify-content:flex-end;"><button type="button" class="cf-btn-sm" id="cf-bm-add">+ Add milestone</button></div>' +
-        '<div id="cf-bm-list"></div></div>';
+        '<div id="cf-bm-list"></div></div>' +
+      '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Cash-In Trade Packages</label>' +
+        '<button type="button" class="cf-btn-sm" id="cf-tr-add">+ Add package</button></div>' +
+        '<div class="cf-hint">Split the contract into trades (ST / AR / MEPF …), each billing its own share over the schedule S-curve with its own DP / retention / terms. <b>When any package exists it replaces the contract-level cash-in and the DP tranches above are ignored.</b> Shares should sum to Contract IBB. <b id="cf-tr-sum"></b></div>' +
+        '<div id="cf-tr-list"></div></div>';
+
+    form.innerHTML =
+      '<div class="cf-tabstrip">' +
+        '<button type="button" class="cf-ftab active" data-pane="contract">Contract</button>' +
+        '<button type="button" class="cf-ftab" data-pane="tax">Tax &amp; Retention</button>' +
+        '<button type="button" class="cf-ftab" data-pane="terms">Terms &amp; Funding</button>' +
+        '<button type="button" class="cf-ftab" data-pane="downpayment">Downpayment</button>' +
+        '<button type="button" class="cf-ftab" data-pane="billing">Billing</button>' +
+      '</div>' +
+      pane('contract', true, contractPane) + pane('tax', false, taxPane) + pane('terms', false, termsPane) +
+      pane('downpayment', false, dpPane) + pane('billing', false, billingPane);
+
+    form.querySelectorAll('.cf-ftab').forEach(function (b) {
+      b.onclick = function () {
+        var p = b.dataset.pane;
+        form.querySelectorAll('.cf-ftab').forEach(function (x) { x.classList.toggle('active', x === b); });
+        form.querySelectorAll('.cf-fpane').forEach(function (x) { x.style.display = x.dataset.pane === p ? '' : 'none'; });
+      };
+    });
     editTranches = (tranches || []).map(function (t) { return JSON.parse(JSON.stringify(t)); });
     editTrades = (trades || []).map(function (t) { return JSON.parse(JSON.stringify(t)); });
     editBillingMs = (billingMs || []).map(function (t) { return JSON.parse(JSON.stringify(t)); });

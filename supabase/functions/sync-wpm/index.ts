@@ -133,15 +133,30 @@ Deno.serve(async (req) => {
   })).filter((r: any) => r.wpm_project_id && r.wp_no);
 
   // ---- Upsert into the mirror (chunked) ------------------------------------
+  // Self-heal against a partially-migrated mirror: if a column (e.g. `trade` before
+  // its migration is run) is missing, strip it from every row and retry so the sync
+  // still lands; report which columns were dropped so the caller can run the migration.
+  const dropped: string[] = [];
+  async function upsertChunk(chunk: any[]): Promise<string | null> {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const { error } = await plAdmin.from("wpm_work_packages").upsert(chunk, { onConflict: "wpm_project_id,wp_no" });
+      if (!error) return null;
+      const m = /Could not find the '([^']+)' column/i.exec(error.message || "");
+      if (!m) return error.message;
+      const col = m[1];
+      if (!dropped.includes(col)) dropped.push(col);
+      chunk.forEach((r) => { delete r[col]; });
+    }
+    return "too many missing columns";
+  }
+
   let written = 0;
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
-    const { error: iErr } = await plAdmin
-      .from("wpm_work_packages")
-      .upsert(chunk, { onConflict: "wpm_project_id,wp_no" });
-    if (iErr) return json({ error: "Mirror write failed: " + iErr.message, written }, 500);
+    const err = await upsertChunk(chunk);
+    if (err) return json({ error: "Mirror write failed: " + err, written }, 500);
     written += chunk.length;
   }
 
-  return json({ ok: true, read: wps?.length || 0, written, scope: scope || "all", synced_at: now });
+  return json({ ok: true, read: wps?.length || 0, written, dropped, scope: scope || "all", synced_at: now });
 });
