@@ -147,9 +147,14 @@
     }
 
     /* trade-package rows */
-    .cf-tr-row { display:grid; grid-template-columns:1.4fr 1fr 0.9fr 0.8fr 0.8fr 0.8fr auto; gap:6px; align-items:center; margin-bottom:6px; }
+    .cf-tr-row { display:grid; grid-template-columns:1.4fr 1fr 0.9fr 0.9fr 0.8fr 0.8fr auto; gap:6px; align-items:center; margin-bottom:6px; }
     .cf-tr-row .pd-input, .cf-tr-row .pd-select { padding:5px 7px; font-size:12px; }
+    .cf-tr-row .cf-tr-tt { white-space:nowrap; }
     #cf-tr-sum { color:var(--pd-ink); }
+    /* per-trade DP tranche sub-panel */
+    .cf-tr-sub { margin:0 0 12px 14px; padding:9px 11px; border-left:3px solid var(--pd-red); background:var(--pd-bg); border-radius:0 6px 6px 0; }
+    .cf-trt-row { display:grid; grid-template-columns:1.1fr 0.9fr 0.7fr 1fr 1fr 0.8fr auto auto; gap:6px; align-items:center; margin-bottom:6px; }
+    .cf-trt-row .pd-input, .cf-trt-row .pd-select { padding:5px 7px; font-size:12px; }
 
     .cf-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--pd-line); }
     .cf-tab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; border-bottom:2px solid transparent; }
@@ -535,24 +540,28 @@
     });
   }
 
-  // Resolve the DP tranches → {amount, dueIdx, recoupRate, pool, label, category}.
-  // Falls back to the single settings.dp_percent (received up front) when no
-  // tranches are defined, so pre-tranche projects keep working.
-  function resolveTranches(base, months, n) {
+  // Resolve a DP-tranche list against a base amount → {amount, dueIdx, recoupRate,
+  // pool, label, category}. `baseAmt` is the value the tranche %s apply to (contract
+  // IBB for client DP, or a trade package's value for per-trade DP).
+  function resolveTrancheList(list, baseAmt, months) {
     var start = months[0];
-    var list = tranches.length ? tranches
-      : (num(settings.dp_percent) > 0 ? [{ basis: 'percent', percent: settings.dp_percent, timing_mode: 'offset', timing_offset: 0 }] : []);
-    return list.map(function (t) {
-      var amount = t.basis === 'amount' ? num(t.amount) : base * num(t.percent);
+    return (list || []).map(function (t) {
+      var amount = t.basis === 'amount' ? num(t.amount) : baseAmt * num(t.percent);
       var dueIdx = 0;
       if (t.timing_mode === 'month' && t.timing_month) dueIdx = monthDiff(start, pd(t.timing_month));
       else if (t.timing_mode === 'milestone' && t.milestone) { var md = milestoneDate(t.milestone); dueIdx = md ? monthDiff(start, md) : 0; }
       else dueIdx = num(t.timing_offset);   // 'offset' (default)
-      // Proportional recoup rate: explicit, else the tranche's own % of contract
-      // (so a tranche worth X% of the contract is fully recouped over 100% billing).
-      var recoupRate = t.recoup_percent != null ? num(t.recoup_percent) : (base > 0 ? amount / base : 0);
+      // Proportional recoup rate: explicit, else the tranche's own % of the base
+      // (so a tranche worth X% is fully recouped over 100% billing of its package).
+      var recoupRate = t.recoup_percent != null ? num(t.recoup_percent) : (baseAmt > 0 ? amount / baseAmt : 0);
       return { amount: amount, dueIdx: dueIdx, recoupRate: recoupRate, pool: amount, label: t.label, category: t.category };
     });
+  }
+  // Contract-level client DP tranches (falls back to the simple settings.dp_percent).
+  function resolveTranches(base, months, n) {
+    var list = tranches.length ? tranches
+      : (num(settings.dp_percent) > 0 ? [{ basis: 'percent', percent: settings.dp_percent, timing_mode: 'offset', timing_offset: 0 }] : []);
+    return resolveTrancheList(list, base, months);
   }
 
   // Build the month timeline covering schedule + all WP windows (+ retention tail)
@@ -615,8 +624,10 @@
     // in this mode (each trade carries its own DP). Reconciled against contract IBB.
     var tradePkgs = trades.map(function (t) {
       var amt = t.basis === 'amount' ? num(t.amount) : base * num(t.percent);
+      var trTr = Array.isArray(t.dp_tranches) ? t.dp_tranches : [];   // per-trade DP tranches (JSON)
       return { name: t.name, amount: amt, dp: num(t.dp_percent), ret: num(t.retention_percent),
-        terms: num(t.billing_terms_months) > 0 ? Math.round(num(t.billing_terms_months)) : termsIn };
+        terms: num(t.billing_terms_months) > 0 ? Math.round(num(t.billing_terms_months)) : termsIn,
+        tranches: trTr };
     }).filter(function (t) { return t.amount > 0; });
     var tradeTotal = tradePkgs.reduce(function (a, t) { return a + t.amount; }, 0);
     var usingTrades = tradePkgs.length > 0;
@@ -627,18 +638,22 @@
 
     // Accrue one package's cash-in (DP up front, proportional recoup, retention, EWT,
     // terms lag) into the shared inDP/inBill/inRet/inEwt arrays. Returns nothing.
-    function accrueCashIn(amount, dpPct, retPctL, termsL) {
+    function accrueCashIn(amount, dpPct, retPctL, termsL, dpTr) {
       if (amount <= 0) return;
-      var dpAmt = amount * dpPct;
-      if (dpAmt > 0) inDP[0] += dpAmt;             // DP received at the projection start
-      var pool = dpAmt, retTotal = 0, lastBillMonth = 0, prev = 0;
+      // DP tranches (if any) replace the single up-front DP: each lands at its own
+      // due month and is recouped at its own rate. Else a single DP up front.
+      var dpList = (dpTr && dpTr.length) ? resolveTrancheList(dpTr, amount, months)
+        : (dpPct > 0 ? [{ amount: amount * dpPct, dueIdx: 0, recoupRate: dpPct, pool: amount * dpPct }] : []);
+      dpList.forEach(function (d) { if (d.amount > 0) inDP[clampIdx(d.dueIdx, n)] += d.amount; });
+      var retTotal = 0, lastBillMonth = 0, prev = 0;
       for (var i = 0; i < n; i++) {
         var progress = Math.max(0, cum[i] - prev); prev = cum[i];
         var gross = amount * progress;
         if (gross <= 0) continue;
         var ret = gross * retPctL; retTotal += ret;
         var ewt = (gross / (1 + vatPct)) * ewtPct;
-        var recoup = Math.min(pool, gross * dpPct); pool -= recoup;
+        var recoup = 0;
+        dpList.forEach(function (d) { if (d.pool <= 0) return; var r = Math.min(d.pool, gross * d.recoupRate); d.pool -= r; recoup += r; });
         var recv = Math.min(n - 1, i + termsL);
         inBill[recv] += (gross - ret - recoup);
         inEwt[recv] += ewt;
@@ -648,7 +663,7 @@
     }
 
     if (usingTrades) {
-      tradePkgs.forEach(function (t) { accrueCashIn(t.amount, t.dp, t.ret, t.terms); });
+      tradePkgs.forEach(function (t) { accrueCashIn(t.amount, t.dp, t.ret, t.terms, t.tranches); });
     } else if (base > 0) {
       // Each tranche's cash lands at its own resolved due month (its own schedule).
       dpTranches.forEach(function (t) { if (t.amount > 0) inDP[clampIdx(t.dueIdx, n)] += t.amount; });
@@ -1305,23 +1320,52 @@
     el.textContent = editTranches.length ? ('Total DP: ' + Fmt.moneyShort(tot) + (base > 0 ? ' (' + (Math.round(pct * 100) / 100) + '% of contract)' : '')) : '';
   }
 
-  // Per-trade cash-in package editor (#7).
+  // Per-trade cash-in package editor (#7), each optionally with its own DP tranches.
   function renderTrades() {
     var host = document.getElementById('cf-tr-list'); if (!host) return;
     var base = numInput('s-ibb') || 0;
-    host.innerHTML = editTrades.length ? editTrades.map(function (t, i) {
+    var mlOpts = milestones.map(function (m) { return '<option value="' + esc(m.name) + '">'; }).join('');
+    function subRows(t, i) {
+      var tr = Array.isArray(t.dp_tranches) ? t.dp_tranches : [];
       var amt = t.basis === 'amount' ? num(t.amount) : base * num(t.percent);
+      function timingCtrl(x, j) {
+        if (x.timing_mode === 'month') return '<input class="pd-input cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="timing_month" type="month" value="' + (x.timing_month ? String(x.timing_month).slice(0, 7) : '') + '">';
+        if (x.timing_mode === 'milestone') return '<input class="pd-input cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="milestone" list="cf-ml-list" placeholder="milestone" value="' + esc(x.milestone || '') + '">';
+        return '<input class="pd-input cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="timing_offset" type="number" step="1" placeholder="mo from start" value="' + (x.timing_offset != null ? x.timing_offset : 0) + '">';
+      }
+      var rows = tr.map(function (x, j) {
+        var xa = x.basis === 'amount' ? num(x.amount) : amt * num(x.percent);
+        return '<div class="cf-trt-row">' +
+          '<input class="pd-input cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="label" placeholder="Label" value="' + esc(x.label || '') + '">' +
+          '<select class="pd-select cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="basis"><option value="percent"' + (x.basis !== 'amount' ? ' selected' : '') + '>% of trade</option><option value="amount"' + (x.basis === 'amount' ? ' selected' : '') + '>fixed ₱</option></select>' +
+          '<input class="pd-input cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="' + (x.basis === 'amount' ? 'amount' : 'percent_pct') + '" type="number" step="0.01" placeholder="' + (x.basis === 'amount' ? '₱' : '%') + '" value="' + (x.basis === 'amount' ? (x.amount != null ? x.amount : '') : pctVal(x.percent)) + '">' +
+          '<select class="pd-select cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="timing_mode"><option value="milestone"' + (x.timing_mode === 'milestone' ? ' selected' : '') + '>@ milestone</option><option value="month"' + (x.timing_mode === 'month' ? ' selected' : '') + '>fixed month</option><option value="offset"' + (x.timing_mode === 'offset' ? ' selected' : '') + '>offset</option></select>' +
+          timingCtrl(x, j) +
+          '<input class="pd-input cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="recoup_pct" type="number" step="0.01" placeholder="recoup %" value="' + pctVal(x.recoup_percent) + '">' +
+          '<button type="button" class="cf-btn-sm cf-trt-del" data-ti="' + i + '" data-ji="' + j + '" title="Remove">&#215;</button>' +
+          '<div class="cf-dp-amt">' + (xa > 0 ? Fmt.moneyShort(xa) : '—') + '</div></div>';
+      }).join('');
+      var sum = tr.reduce(function (a, x) { return a + (x.basis === 'amount' ? num(x.amount) : amt * num(x.percent)); }, 0);
+      return '<div class="cf-tr-sub"><div class="cf-hint" style="margin:2px 0 6px;">DP tranches for <b>' + esc(t.name || 'this trade') + '</b> — % of the trade value. When any exist they replace the trade\'s single DP %. ' + (tr.length ? '<b>Total DP: ' + Fmt.moneyShort(sum) + '</b>' : '') + '</div>' +
+        rows + '<button type="button" class="cf-btn-sm cf-trt-add" data-ti="' + i + '">+ Add DP tranche</button></div>';
+    }
+    host.innerHTML = editTrades.length ? ('<datalist id="cf-ml-list">' + mlOpts + '</datalist>' + editTrades.map(function (t, i) {
+      var amt = t.basis === 'amount' ? num(t.amount) : base * num(t.percent);
+      var nTr = Array.isArray(t.dp_tranches) ? t.dp_tranches.length : 0;
+      var dpCell = nTr ? '<button type="button" class="cf-btn-sm cf-tr-tt" data-i="' + i + '" title="Edit DP tranches">' + nTr + ' DP tranche' + (nTr > 1 ? 's' : '') + ' ▾</button>'
+        : '<span style="display:inline-flex;gap:4px;"><input class="pd-input cf-tr-i" data-i="' + i + '" data-k="dp_pct" type="number" step="0.01" placeholder="DP %" title="Downpayment %" value="' + pctVal(t.dp_percent) + '" style="min-width:0;"><button type="button" class="cf-btn-sm cf-tr-tt" data-i="' + i + '" title="Break DP into tranches">⋮</button></span>';
       return '<div class="cf-tr-row">' +
         '<input class="pd-input cf-tr-i" data-i="' + i + '" data-k="name" placeholder="Trade / package" value="' + esc(t.name || '') + '">' +
         '<select class="pd-select cf-tr-i" data-i="' + i + '" data-k="basis"><option value="percent"' + (t.basis !== 'amount' ? ' selected' : '') + '>% of contract</option><option value="amount"' + (t.basis === 'amount' ? ' selected' : '') + '>fixed ₱</option></select>' +
         '<input class="pd-input cf-tr-i" data-i="' + i + '" data-k="' + (t.basis === 'amount' ? 'amount' : 'percent_pct') + '" type="number" step="0.01" placeholder="' + (t.basis === 'amount' ? '₱' : '%') + '" value="' + (t.basis === 'amount' ? (t.amount != null ? t.amount : '') : pctVal(t.percent)) + '">' +
-        '<input class="pd-input cf-tr-i" data-i="' + i + '" data-k="dp_pct" type="number" step="0.01" placeholder="DP %" title="Downpayment %" value="' + pctVal(t.dp_percent) + '">' +
+        dpCell +
         '<input class="pd-input cf-tr-i" data-i="' + i + '" data-k="ret_pct" type="number" step="0.01" placeholder="Ret %" title="Retention %" value="' + pctVal(t.retention_percent) + '">' +
         '<input class="pd-input cf-tr-i" data-i="' + i + '" data-k="terms" type="number" step="1" placeholder="terms" title="Billing terms (months) — blank = default" value="' + (t.billing_terms_months != null ? t.billing_terms_months : '') + '">' +
         '<button type="button" class="cf-btn-sm cf-tr-del" data-i="' + i + '" title="Remove">&#215;</button>' +
         '<div class="cf-dp-amt">' + (amt > 0 ? Fmt.moneyShort(amt) : '—') + '</div>' +
-      '</div>';
-    }).join('') : '<div class="cf-hint" style="padding:6px 0;">No packages — cash-in is built at the contract level.</div>';
+      '</div>' + (t._open ? subRows(t, i) : '');
+    }).join('')) : '<div class="cf-hint" style="padding:6px 0;">No packages — cash-in is built at the contract level.</div>';
+
     host.querySelectorAll('.cf-tr-i').forEach(function (el) {
       el.onchange = function () {
         var i = +el.dataset.i, k = el.dataset.k, v = el.value, t = editTrades[i]; if (!t) return;
@@ -1335,6 +1379,21 @@
       };
     });
     host.querySelectorAll('.cf-tr-del').forEach(function (b) { b.onclick = function () { editTrades.splice(+b.dataset.i, 1); renderTrades(); }; });
+    host.querySelectorAll('.cf-tr-tt').forEach(function (b) { b.onclick = function () { var t = editTrades[+b.dataset.i]; t._open = !t._open; if (t._open && !Array.isArray(t.dp_tranches)) t.dp_tranches = []; renderTrades(); }; });
+    host.querySelectorAll('.cf-trt-add').forEach(function (b) { b.onclick = function () { var t = editTrades[+b.dataset.ti]; (t.dp_tranches = t.dp_tranches || []).push({ label: 'Tranche ' + (t.dp_tranches.length + 1), basis: 'percent', percent: null, amount: null, timing_mode: 'milestone', milestone: '', timing_month: null, timing_offset: 0, recoup_percent: null }); renderTrades(); }; });
+    host.querySelectorAll('.cf-trt-del').forEach(function (b) { b.onclick = function () { editTrades[+b.dataset.ti].dp_tranches.splice(+b.dataset.ji, 1); renderTrades(); }; });
+    host.querySelectorAll('.cf-trt-i').forEach(function (el) {
+      el.onchange = function () {
+        var t = editTrades[+el.dataset.ti], x = t.dp_tranches[+el.dataset.ji], k = el.dataset.k, v = el.value; if (!x) return;
+        if (k === 'percent_pct') x.percent = v === '' ? null : num(v) / 100;
+        else if (k === 'recoup_pct') x.recoup_percent = v === '' ? null : num(v) / 100;
+        else if (k === 'amount') x.amount = v === '' ? null : num(v);
+        else if (k === 'timing_offset') x.timing_offset = v === '' ? 0 : Math.round(num(v));
+        else if (k === 'timing_month') x.timing_month = v ? v + '-01' : null;
+        else x[k] = v;
+        if (k === 'basis' || k === 'timing_mode') renderTrades(); else updateTrSum();
+      };
+    });
     updateTrSum();
   }
   function updateTrSum() {
@@ -1399,6 +1458,7 @@
         amount: t.basis === 'amount' ? (t.amount != null ? num(t.amount) : null) : null,
         dp_percent: num(t.dp_percent), retention_percent: num(t.retention_percent),
         billing_terms_months: t.billing_terms_months != null ? Math.round(num(t.billing_terms_months)) : 0,
+        dp_tranches: Array.isArray(t.dp_tranches) ? t.dp_tranches : [],
         created_by: profile.id, updated_at: new Date().toISOString() };
     });
     if (trows.length) {
