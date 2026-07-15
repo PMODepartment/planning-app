@@ -1785,7 +1785,7 @@
 
   // ---- WBS-code helpers + precomputed caches (rebuilt only when rows change) ----
   function segs(c) { return String(c == null ? '' : c).split('.'); }
-  var _sorted = [], _min = null, _max = null, _spanMap = {}, _costMap = {}, _seqByCode = {};
+  var _sorted = [], _min = null, _max = null, _spanMap = {}, _blSpanMap = {}, _costMap = {}, _seqByCode = {};
   function parentCodeOf(wbs) { var s = String(wbs == null ? '' : wbs).split('.'); return s.slice(0, -1).join('.'); }
   // rebuild(structural): `structural` (default true) means the row SET or ORDER may have changed
   // (add/delete/import, WBS/Activity-ID edit, column-sort or grouping change) → re-sort. Pure field
@@ -1843,11 +1843,16 @@
       _min = new Date(mn.getFullYear(), mn.getMonth(), 1); _max = new Date(mx.getFullYear(), mx.getMonth() + 2, 0); }
     else { var n = today(); _min = addDays(n, -30); _max = addDays(n, 90); }
     // precompute rolled-up spans per WBS code (self + all descendants) in one pass
-    _spanMap = {};
+    _spanMap = {}; _blSpanMap = {};
     rows.forEach(function (r) {
-      var s = pd(r.start_date), e = pd(r.end_date); if (!s && !e) return; if (!s) s = e; if (!e) e = s;
-      var codes = [r.wbs].concat(r._anc || []);
-      for (var i = 0; i < codes.length; i++) { var m = _spanMap[codes[i]]; if (!m) _spanMap[codes[i]] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
+      var s = pd(r.start_date), e = pd(r.end_date); if (s || e) { if (!s) s = e; if (!e) e = s;
+        var codes = [r.wbs].concat(r._anc || []);
+        for (var i = 0; i < codes.length; i++) { var m = _spanMap[codes[i]]; if (!m) _spanMap[codes[i]] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } } }
+      // Baseline roll-up (BL0) — same tree walk, from bl_start/bl_finish, so WBS summaries get a
+      // planned-baseline span too (keyed by real dotted code; used in the default WBS grouping).
+      var bs = pd(r.bl_start), be = pd(r.bl_finish); if (bs || be) { if (!bs) bs = be; if (!be) be = bs;
+        var codes2 = [r.wbs].concat(r._anc || []);
+        for (var k = 0; k < codes2.length; k++) { var mb = _blSpanMap[codes2[k]]; if (!mb) _blSpanMap[codes2[k]] = { s: +bs, e: +be }; else { if (+bs < mb.s) mb.s = +bs; if (+be > mb.e) mb.e = +be; } } }
     });
     // precompute cost/POC roll-ups per WBS code (OPC shows IBB sums + weighted POC on summary
     // rows). Costs sum; POC %s are duration-weighted (planned POC only over rows that have a
@@ -2478,6 +2483,11 @@
   // rolled-up span for a WBS row (over descendants)
   function wbsSpan(w) {
     var m = _dspan[dcode(w)]; if (!m) return null;
+    return { s: new Date(m.s), e: new Date(m.e) };
+  }
+  // Rolled-up BASELINE span for a WBS summary (keyed by real dotted code; WBS grouping).
+  function wbsBlSpan(w) {
+    var m = _blSpanMap[w.wbs]; if (!m) return null;
     return { s: new Date(m.s), e: new Date(m.e) };
   }
 
@@ -4581,15 +4591,20 @@
       var sp = wbsSpan(r); if (!sp) return '';
       var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw;
       var wcS = (r._dkind === 'group') ? null : effWbsColor(r);
+      // Rolled-up BASELINE (BL0) summary bar, drawn ABOVE the current summary bar.
+      var blsp = (r._dkind === 'group') ? null : (_gset.baseline ? wbsBlSpan(r) : null);
+      if (blsp) { var bx0 = dayDiff(min, blsp.s) * dayw, bw0 = Math.max((dayDiff(blsp.s, blsp.e) + 1) * dayw, 3);
+        out += '<div class="ps-bl" title="Baseline (roll-up)" style="left:' + bx0 + 'px;width:' + bw0 + 'px;top:' + (top + Math.round(3 * oY)) + 'px;"></div>'; }
       // Rolled-up %-complete (duration-weighted) on the summary bar, from _costMap.
       var _cm = (r._dkind === 'group') ? null : _costMap[r.wbs];
       var sumPct = (_cm && _cm.wd > 0) ? Math.max(0, Math.min(100, Math.round(_cm.wearn / _cm.wd))) : 0;
-      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + (top + o12) + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' + (sumPct > 0 ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + '</div>';
+      var sumTop = top + (blsp ? o12 : o8);   // sit below the baseline roll-up when present
+      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' + (sumPct > 0 ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + '</div>';
       if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
     }
     var bs = pd(r.bl_start), be = pd(r.bl_finish);
-    if (_gset.baseline && bs && be) { var bx = dayDiff(min, bs) * dayw, bw = (dayDiff(bs, be) + 1) * dayw; out += '<div class="ps-bl" style="left:' + bx + 'px;width:' + Math.max(bw,3) + 'px;top:' + (top + o24) + 'px;"></div>'; }
+    var hasBL = !!(_gset.baseline && bs && be);
     var s = pd(r.start_date), e = pd(r.end_date);
     var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && mfpOn && r._near) ? ' ps-near' : '');
     if (spotlightRow(r)) crit += ' ps-spot';
@@ -4604,8 +4619,19 @@
     if (!s || !e) return out;
     var x2 = dayDiff(min, s) * dayw, w2 = Math.max((dayDiff(s, e) + 1) * dayw, 4);
     var pct = Math.max(0, Math.min(100, r.percent_complete || 0));
-    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + (top + o9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"><div class="ps-bar-fill" style="width:' + pct + '%;"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
-    if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (top + o9) + 'px;">' + esc(lbl) + '</div>';
+    // With a baseline: two EQUAL-height bars — planned baseline ABOVE, current schedule below.
+    // Without a baseline: the current bar fills (nearly) the whole row height.
+    var barTop, barH;
+    if (hasBL) {
+      var eqH = Math.max(6, Math.round(11 * oY)), blTop = top + Math.round(4 * oY);
+      var bx = dayDiff(min, bs) * dayw, bw = Math.max((dayDiff(bs, be) + 1) * dayw, 3);
+      out += '<div class="ps-bl" title="Baseline (BL0)" style="left:' + bx + 'px;width:' + bw + 'px;top:' + blTop + 'px;height:' + eqH + 'px;"></div>';
+      barH = eqH; barTop = blTop + eqH + Math.max(1, Math.round(2 * oY));
+    } else {
+      barH = ROWH - Math.round(8 * oY); barTop = top + Math.round(4 * oY);
+    }
+    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"><div class="ps-bar-fill" style="width:' + pct + '%;"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
+    if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (barTop + Math.round(barH / 2) - 7) + 'px;">' + esc(lbl) + '</div>';
     return out;
   }
 

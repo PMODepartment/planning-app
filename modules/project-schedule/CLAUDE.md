@@ -8,6 +8,19 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Baseline bars above current + baseline roll-up + equal/full bar heights (2026-07-14) — jasantos2 / eprobles
+- **Baseline (BL0) bar now drawn ABOVE the current schedule bar** (was below at +24). Activity bar
+  geometry reworked: **with a baseline present**, planned + current are two **equal-height** bars
+  (~11px each, density-scaled) stacked baseline-over-current; **without a baseline**, the current bar
+  fills nearly the whole row height (`ROWH − 8`). Heights set inline (overriding the fixed
+  `.ps-bl`/`.ps-bar` CSS heights). Bar label vertically centered on the current bar.
+- **WBS summaries now roll up baseline dates.** New `_blSpanMap` (built in `rebuild()` from
+  bl_start/bl_finish up the WBS tree, same walk as `_spanMap`) + `wbsBlSpan()`; the summary branch
+  draws a rolled-up baseline bar above the summary bar (WBS grouping; keyed by dotted code). Summary
+  bar shifts down to sit below it when a baseline roll-up is present.
+- Milestones unchanged (point marker). Note: dep-line anchor Y left as-is (approximate elbow) — bars
+  moving down a few px in baseline mode is cosmetically fine.
+
 ## Detail-form layout fix + import baseline (2026-07-14) — jasantos2 / eprobles
 - **Fixed the cramped/overlapping Status (and General) editable detail form.** The forms wrapped
   their groups in `.ps-det-groups` (auto-fit `minmax(250px,1fr)`) while *each group* also had an
