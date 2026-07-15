@@ -1499,6 +1499,10 @@
   var ganttScale = 1; try { var _gs = parseFloat(localStorage.getItem('ps_ganttscale')); if (_gs && _gs > 0) ganttScale = Math.min(6, Math.max(0.35, _gs)); } catch (e) {}
   function _saveGanttScale() { try { localStorage.setItem('ps_ganttscale', String(ganttScale)); } catch (e) {} }
   function applyGanttScale(v) { ganttScale = Math.min(6, Math.max(0.35, v)); _saveGanttScale(); renderGantt(); }
+  // The grid Start/Finish columns + Gantt bar show the ACTUAL date when set, else the planned date.
+  // (Editing those columns writes the actual date; planned start_date/end_date remain the basis.)
+  function dispStart(r) { return r.actual_start || r.start_date || null; }
+  function dispFin(r) { return r.actual_finish || r.end_date || null; }
   // Excel-style timescale resize: drag a period-column edge to rescale the whole timeline.
   // `days` is that column's day span, so new px/day = startDayw + dragDx/days (uniform rescale).
   function startTsResize(e, days) {
@@ -2551,7 +2555,7 @@
       case 'pct': return r.percent_complete;
       case 'flt': return r._float;
       case 'var': return finVar(r);
-      case 'date': return lbl === 'BL Start' ? r.bl_start : lbl === 'BL Finish' ? r.bl_finish : lbl === 'Start' ? r.start_date : r.end_date;
+      case 'date': return lbl === 'BL Start' ? r.bl_start : lbl === 'BL Finish' ? r.bl_finish : lbl === 'Start' ? dispStart(r) : dispFin(r);
       case 'cost': return lbl === 'Planned IBB' ? r.planned_cost : lbl === 'Actual IBB to date' ? r.actual_cost : lbl === 'Earned Value IBB' ? r.earned_value : lbl === 'At Completion IBB' ? eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null) : r.bl_cost;
     }
     return null;
@@ -2581,7 +2585,7 @@
       case 'pct': return r.percent_complete != null ? r.percent_complete + '%' : '';
       case 'flt': return r._critical ? 'CP' : (r._float != null ? r._float + 'd' : '');
       case 'var': { var v = finVar(r); return v == null ? '' : ((v > 0 ? '+' : '') + v + 'd'); }
-      case 'date': { var f = lbl === 'BL Start' ? r.bl_start : lbl === 'BL Finish' ? r.bl_finish : lbl === 'Start' ? r.start_date : r.end_date; return f ? Fmt.date(f) : ''; }
+      case 'date': { var f = lbl === 'BL Start' ? r.bl_start : lbl === 'BL Finish' ? r.bl_finish : lbl === 'Start' ? dispStart(r) : dispFin(r); return f ? Fmt.date(f) : ''; }
       case 'cost': { var cv = lbl === 'Planned IBB' ? r.planned_cost : lbl === 'Actual IBB to date' ? r.actual_cost : lbl === 'Earned Value IBB' ? r.earned_value : lbl === 'At Completion IBB' ? eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null) : r.bl_cost; return cv != null ? Fmt.money(cv) : ''; }
     }
     return '';
@@ -2865,7 +2869,7 @@
       ]) +
       detSection('Dates', [
         ['Planned Start', r.start_date ? Fmt.date(r.start_date) : '—'], ['Planned Finish', r.end_date ? Fmt.date(r.end_date) : '—'],
-        ['Actual Start', r.actual_start ? Fmt.date(r.actual_start) : '—'], ['Actual Finish', r.actual_finish ? Fmt.date(r.actual_finish) : '—'],
+        ['Start', r.actual_start ? Fmt.date(r.actual_start) : '—'], ['Finish', r.actual_finish ? Fmt.date(r.actual_finish) : '—'],
         ['Baseline Start', r.bl_start ? Fmt.date(r.bl_start) : '—'], ['Baseline Finish', r.bl_finish ? Fmt.date(r.bl_finish) : '—']
       ]) +
       detSection('Duration & Float', [
@@ -2903,8 +2907,8 @@
       _gGroup('Dates',
         _gf('Planned Start', 'start_date', 'date', r) +
         _gf('Planned Finish', 'end_date', 'date', r) +
-        _gf('Actual Start', 'actual_start', 'date', r) +
-        _gf('Actual Finish', 'actual_finish', 'date', r) +
+        _gf('Start', 'actual_start', 'date', r) +
+        _gf('Finish', 'actual_finish', 'date', r) +
         _gf('Baseline Start', 'bl_start', 'date', r) +
         _gf('Baseline Finish', 'bl_finish', 'date', r)) +
       _gGroup('Duration & Float',
@@ -4262,7 +4266,7 @@
     render();
   }
   // OPC-style in-cell adornments: A = actual date, C = constrained date; a thin bar under % Complete.
-  function _dateBadge(kind) { return kind ? '<span class="ps-dbadge" title="' + (kind === 'A' ? 'Actual date' : 'Constrained date') + '">' + kind + '</span>' : ''; }
+  function _dateBadge(kind) { if (!kind) return ''; var tt = kind === 'A' ? 'Actual date' : (kind === 'P' ? 'Planned (no actual entered yet)' : 'Constrained date'); return '<span class="ps-dbadge" title="' + tt + '">' + kind + '</span>'; }
   function _pctBar(p) { if (p == null) return ''; var w = Math.max(0, Math.min(100, p)); return '<span class="ps-pctbar" style="width:' + w + '%"></span>'; }
   function gridRowHTML(r, i) {
     // Zebra-stripe task rows only. WBS/group summary rows have their own solid background;
@@ -4307,8 +4311,8 @@
       statusCellHtml(r) +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_start" data-type="date">' + (r.bl_start ? Fmt.date(r.bl_start) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_finish" data-type="date">' + (r.bl_finish ? Fmt.date(r.bl_finish) : '—') + '</div>' +
-      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="start_date" data-type="date">' + (r.start_date ? Fmt.date(r.start_date) : '—') + _dateBadge(r.actual_start ? 'A' : (r.primary_constraint ? 'C' : '')) + '</div>' +
-      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="end_date" data-type="date">' + (r.end_date ? Fmt.date(r.end_date) : '—') + _dateBadge(r.actual_finish ? 'A' : '') + '</div>' +
+      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="actual_start" data-type="date">' + (dispStart(r) ? Fmt.date(dispStart(r)) : '—') + _dateBadge(r.actual_start ? 'A' : (r.primary_constraint ? 'C' : 'P')) + '</div>' +
+      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="actual_finish" data-type="date">' + (dispFin(r) ? Fmt.date(dispFin(r)) : '—') + _dateBadge(r.actual_finish ? 'A' : 'P') + '</div>' +
       '<div class="ps-cell c-dur">' + (dur ? dur + 'd' : '') + '</div>' +
       costCellsHtml(r) +
       '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + gridExtraHtml(r) + '</div>';
@@ -4553,7 +4557,7 @@
     var r = rows.find(function (x) { return x.id === id; });
     if (!r) return;
     var cur = r[field]; var raw = cur == null ? '' : cur;
-    if (type === 'date') raw = r[field] ? String(r[field]).slice(0,10) : '';
+    if (type === 'date') { var dv = field === 'actual_start' ? dispStart(r) : (field === 'actual_finish' ? dispFin(r) : r[field]); raw = dv ? String(dv).slice(0, 10) : ''; }
     var inp = document.createElement('input');
     inp.type = type === 'date' ? 'date' : (type === 'number' || type === 'money' ? 'number' : 'text');
     inp.value = raw;
@@ -4608,7 +4612,7 @@
     }
     var bs = pd(r.bl_start), be = pd(r.bl_finish);
     var hasBL = !!(_gset.baseline && bs && be);
-    var s = pd(r.start_date), e = pd(r.end_date);
+    var s = pd(dispStart(r)), e = pd(dispFin(r));   // actual when set, else planned
     var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && mfpOn && r._near) ? ' ps-near' : '');
     if (spotlightRow(r)) crit += ' ps-spot';
     var wc = actColor(r) || effWbsColor(r);
@@ -4657,7 +4661,7 @@
     e.preventDefault(); e.stopPropagation();
     selId = r.id; highlightRow(); renderDetails();
     var startX = e.clientX;
-    var os = pd(r.start_date), oe = pd(r.end_date) || os;
+    var os = pd(dispStart(r)), oe = pd(dispFin(r)) || os;   // drag the displayed (actual||planned) bar
     var ox = parseFloat(el.style.left), ow = parseFloat(el.style.width) || 13;
     el.classList.add('dragging');
     function mm(ev) {
@@ -4675,7 +4679,10 @@
       if (mode === 'move' || mode === 'mile') { ns = addDays(os, dd); ne = addDays(oe, dd); }
       else if (mode === 'l') { ns = addDays(os, dd); if (ns > ne) ns = ne; }
       else if (mode === 'r') { ne = addDays(oe, dd); if (ne < ns) ne = ns; }
-      patch.start_date = dstr(ns); patch.end_date = dstr(ne); patch.duration_days = dayDiff(ns, ne) + 1;
+      // Write to the field the bar is showing: actual when the activity has one, else planned.
+      var sf = r.actual_start ? 'actual_start' : 'start_date', ff = r.actual_finish ? 'actual_finish' : 'end_date';
+      patch[sf] = dstr(ns); patch[ff] = dstr(ne);
+      if (sf === 'start_date' && ff === 'end_date') patch.duration_days = dayDiff(ns, ne) + 1;   // planned drag adjusts duration
       persist(r.id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); } else { renderGantt(); } });
     }
     document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
@@ -7846,7 +7853,7 @@
   // edit/coerce type. Computed columns (POC, At-Completion, Dur, Float, Var) are copy-only.
   var _CELL_META = [
     { f: 'activity_id', edit: 1, t: 'text' }, { f: 'activity_name', edit: 1, t: 'text' }, { f: 'status', edit: 0, t: 'text' },
-    { f: 'bl_start', edit: 1, t: 'date' }, { f: 'bl_finish', edit: 1, t: 'date' }, { f: 'start_date', edit: 1, t: 'date' }, { f: 'end_date', edit: 1, t: 'date' },
+    { f: 'bl_start', edit: 1, t: 'date' }, { f: 'bl_finish', edit: 1, t: 'date' }, { f: 'actual_start', edit: 1, t: 'date' }, { f: 'actual_finish', edit: 1, t: 'date' },
     { f: 'duration_days', edit: 0, t: 'text' }, { f: null, edit: 0 }, { f: 'percent_complete', edit: 1, t: 'number' },
     { f: 'planned_cost', edit: 1, t: 'money' }, { f: 'actual_cost', edit: 1, t: 'money' }, { f: 'earned_value', edit: 1, t: 'money' },
     { f: null, edit: 0 }, { f: 'bl_cost', edit: 1, t: 'money' }, { f: 'percent_complete_type', edit: 0, t: 'text' }, { f: null, edit: 0 }, { f: null, edit: 0 }

@@ -8,6 +8,24 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Start/Finish columns show actual (fall back to planned) + detail relabel (2026-07-14) — jasantos2 / eprobles
+Tester's model: the grid **Start/Finish** should reflect ACTUAL dates, with planned as the basis.
+Chosen behavior (confirmed): *actual when set, else planned; editing writes the actual*.
+- New accessors **`dispStart(r)=actual_start||start_date`**, **`dispFin(r)=actual_finish||end_date`**
+  used for: grid Start/Finish cell display, the Gantt bar (`s/e`), column sort (`colSortVal`) and
+  per-column filter (`_colText`). Grid Start/Finish cells now `data-field="actual_start"/"actual_finish"`
+  (editing writes the actual); `beginEdit` prefills those cells with the displayed (fallback) date; a
+  cell badge shows **A** (actual entered) or **P** (planned, no actual yet).
+- **Gantt drag** operates on the displayed bar and writes to the shown field — actual when the
+  activity has one, else planned (planned drag still recomputes duration; actual drag doesn't touch
+  planned duration). Cell clipboard `_CELL_META` for those two columns now targets the actual fields.
+- **Detail panel relabeled**: Status tab "Actual Start/Finish" → **"Start"/"Finish"** (editable +
+  read-only). "Planned Start/Finish" stay as the plan/basis. (The Add/Edit modal still says "Actual
+  Start/Finish" + "Planned Start/Finish" — left as the full editor.)
+- Export already emitted actual-||-planned for Start/Finish (unchanged). DUR column still reflects
+  planned duration. Note: editing an *un-started* activity's Start now creates an actual_start (marks
+  it started) — that's the chosen "editing writes actual" behavior; adjust the plan via "Planned Start".
+
 ## Progress intelligence — POC-driven remaining/finish + retained-logic data-date shift (2026-07-14) — jasantos2 / eprobles
 Two scheduling-logic features, both toggle-gated in the **Schedule dialog → Settings** (default ON).
 - **Progress-driven dates (`progressDriven`).** Editing **% Complete (Earned Value POC)** — in the
