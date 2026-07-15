@@ -1473,6 +1473,32 @@
   // ==========================================================================
   // EXPORT
   // ==========================================================================
+  // Per-trade cash-in breakdown (incl. DP tranches) for export / print.
+  function tradeBreakdown() {
+    var base = num(settings.contract_ibb);
+    function timingText(x) {
+      if (x.timing_mode === 'month' && x.timing_month) return Fmt.date(x.timing_month);
+      if (x.timing_mode === 'milestone' && x.milestone) return '@ ' + x.milestone;
+      return '+' + num(x.timing_offset) + ' mo';
+    }
+    return trades.map(function (t) {
+      var value = t.basis === 'amount' ? num(t.amount) : base * num(t.percent);
+      var tr = Array.isArray(t.dp_tranches) ? t.dp_tranches : [];
+      var tranches = tr.map(function (x) {
+        var amt = x.basis === 'amount' ? num(x.amount) : value * num(x.percent);
+        var share = x.basis === 'amount' ? (value > 0 ? amt / value * 100 : 0) : num(x.percent) * 100;
+        return { label: x.label || 'Tranche', amount: amt,
+          shareText: (Math.round(share * 100) / 100) + '%', timing: timingText(x),
+          recoup: (x.recoup_percent != null ? (num(x.recoup_percent) * 100) : Math.round(share * 100) / 100) + '%' };
+      });
+      var dpText = tranches.length ? (tranches.length + ' tranches: ' + tranches.map(function (z) { return z.shareText + ' ' + z.timing; }).join(', '))
+        : (Math.round(num(t.dp_percent) * 10000) / 100) + '% up front';
+      return { name: t.name || 'Trade', value: value, dp: dpText, tranches: tranches,
+        ret: (Math.round(num(t.retention_percent) * 10000) / 100) + '%',
+        terms: num(t.billing_terms_months) > 0 ? Math.round(num(t.billing_terms_months)) : '(default)' };
+    });
+  }
+
   function exportExcel() {
     if (!model || model.empty) { UI.toast('Nothing to export.', 'error'); return; }
     var m = model;
@@ -1500,7 +1526,13 @@
     ];
     if (m.financeRate > 0) aoa.push(['FINANCING'], line('  Cost (' + (m.financeRate * 100).toFixed(2) + '% p.a.)', m.financePer));
     if (m.fundingLimit != null) aoa.push([], ['Funding limit', -m.fundingLimit, 'Breaches', (m.breachMonths || []).length]);
-    if (m.usingTrades) aoa.push([], ['Cash-in mode', 'Per-trade (' + m.tradeCount + ' packages)', 'Total', m.tradeTotal]);
+    if (m.usingTrades) {
+      aoa.push([], ['CASH-IN TRADE PACKAGES', 'Total', m.tradeTotal], ['Trade', 'Value', 'Downpayment', 'Retention', 'Terms (mo)']);
+      tradeBreakdown().forEach(function (t) {
+        aoa.push([t.name, t.value, t.dp, t.ret, t.terms]);
+        t.tranches.forEach(function (z) { aoa.push(['   • ' + z.label, z.amount, z.shareText + ' ' + z.timing, 'recoup ' + z.recoup]); });
+      });
+    }
     var ws = XLSX.utils.aoa_to_sheet(aoa);
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Cashflow');
@@ -1533,6 +1565,18 @@
       .map(function (k) { return '<div><span>' + k[0] + '</span><b>' + k[1] + '</b></div>'; }).join('');
     var sigs = ['PLANNING SUPERVISOR', 'PROJECT MANAGER', 'AREA MANAGER', 'COO — EPC GROUP']
       .map(function (t) { return '<div class="sig"><div class="line"></div>' + t + '</div>'; }).join('');
+    var tradeTbl = '';
+    if (m.usingTrades) {
+      var trows = tradeBreakdown().map(function (t) {
+        var main = '<tr class="tp-main"><th>' + esc2(t.name) + '</th><td>' + ms(t.value) + '</td><td>' + esc2(t.dp) + '</td><td>' + t.ret + '</td><td>' + t.terms + '</td></tr>';
+        var subs = t.tranches.map(function (z) {
+          return '<tr class="tp-sub"><th>• ' + esc2(z.label) + '</th><td>' + ms(z.amount) + '</td><td>' + z.shareText + ' ' + esc2(z.timing) + '</td><td>recoup ' + z.recoup + '</td><td></td></tr>';
+        }).join('');
+        return main + subs;
+      }).join('');
+      tradeTbl = '<h2 class="tp-h">Cash-In Trade Packages</h2>' +
+        '<table class="tp"><thead><tr><th>Trade / DP tranche</th><th>Value</th><th>Downpayment</th><th>Retention</th><th>Terms (mo)</th></tr></thead><tbody>' + trows + '</tbody></table>';
+    }
     var doc = '<!doctype html><html><head><meta charset="utf-8"><title>Cashflow — ' + esc2(projName || pid) + '</title><style>' +
       '@page{size:A4 landscape;margin:12mm;} *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;}' +
       'body{margin:0;color:#231F20;} h1{font-size:16px;margin:0 0 2px;} .hd{border-bottom:3px solid #EE3124;padding-bottom:8px;margin-bottom:12px;}' +
@@ -1540,11 +1584,13 @@
       'table{border-collapse:collapse;width:100%;font-size:8.5px;} th,td{border:1px solid #ddd;padding:3px 5px;text-align:right;white-space:nowrap;} th:first-child,tr>th:first-child{text-align:left;}' +
       'thead th{background:#231F20;color:#fff;} .sec th{background:#FDECEA;color:#231F20;text-align:left;font-weight:700;} .cum td,.cum th{font-weight:700;border-top:1px solid #999;} .net td,.net th{background:#2B2C2B;color:#fff;font-weight:700;} td.neg{color:#C42127;} td.tot{font-weight:700;}' +
       '.sigs{display:flex;gap:30px;margin-top:34px;} .sig{flex:1;text-align:center;font-size:10px;font-weight:700;} .sig .line{border-top:1px solid #231F20;margin-bottom:4px;height:26px;}' +
+      '.tp-h{font-size:12px;margin:18px 0 6px;} table.tp{font-size:9.5px;width:auto;min-width:60%;} table.tp td,table.tp th{text-align:left;} table.tp thead th{background:#231F20;color:#fff;} .tp-main th,.tp-main td{font-weight:700;background:#FDECEA;} .tp-sub th,.tp-sub td{color:#555;padding-left:14px;font-weight:400;}' +
       '</style></head><body>' +
       '<div class="hd"><h1>CASHFLOW PROJECTION — ' + esc2(projName || pid) + '</h1>' +
       '<div class="meta">Data date: ' + Fmt.date(iso(today())) + ' · Cash-in basis: ' + (m.scurveBasis === 'cost' ? 'Cost-weighted' : 'Duration-weighted') + ' · Cash-out: ' + m.wpCount + ' WPs · Generated ' + Fmt.date(iso(today())) + '</div></div>' +
       '<div class="kpis">' + kpis + '</div>' +
       '<div style="overflow-x:auto;"><table><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' +
+      tradeTbl +
       '<div class="sigs">' + sigs + '</div>' +
       '</body></html>';
     var w = window.open('', '_blank'); if (!w) { UI.toast('Allow pop-ups to print.', 'error'); return; }
