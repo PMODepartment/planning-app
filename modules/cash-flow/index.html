@@ -342,6 +342,7 @@
       retention_percent: 0.10, dp_recoup_percent: null, billing_terms_months: 1,
       retention_release_months: 1, start_period: null, wpm_project_id: pid, remarks: null,
       ewt_percent: 0.02, vat_percent: 0.12, ret_rel1_pct: 1, ret_rel2_months: 12,
+      co_ret_rel1_pct: null, co_ret_rel1_months: null, co_ret_rel2_months: null,
       finance_rate: 0, funding_limit: null, scurve_basis: 'duration' };
   }
 
@@ -454,7 +455,7 @@
       if (res.error) throw res.error;
       var d = res.data || {};
       UI.toast('Synced ' + (d.written != null ? d.written : '') + ' work packages from WPM.', 'success');
-      await loadWPM(); model = computeProjection(); render();
+      await loadWPM(); model = computeProjection(); render(); persistRollup();
     } catch (e) {
       var msg = (e && (e.message || (e.context && e.context.error))) || 'Sync failed';
       UI.toast('WPM sync failed: ' + msg, 'error');
@@ -463,7 +464,7 @@
     }
   }
 
-  async function loadAll() {
+  async function loadAll(persist) {
     if (!pid) { render(); return; }
     document.getElementById('cf-body').innerHTML = '<div class="cf-empty">Loading projection…</div>';
     loadDataDate();
@@ -471,7 +472,9 @@
     await Promise.all([loadSchedule(), loadWPM(), loadTranches(), loadActuals(), loadTrades(), loadScenarios()]);
     model = computeProjection();
     render();
-    persistRollup();
+    // Roll-up (Portfolio cache) is only rewritten on explicit user actions — Refresh,
+    // saving assumptions/actuals, or a WPM sync — not on passive project opens.
+    if (persist) persistRollup();
   }
 
   // ==========================================================================
@@ -610,6 +613,10 @@
     var relIn = Math.round(num(settings.retention_release_months));
     var rel1Pct = settings.ret_rel1_pct != null ? num(settings.ret_rel1_pct) : 1;   // staged retention release
     var rel2 = Math.round(num(settings.ret_rel2_months));
+    // Cash-OUT retention staging — its own schedule if set, else falls back to cash-in.
+    var coRel1Pct = settings.co_ret_rel1_pct != null ? num(settings.co_ret_rel1_pct) : rel1Pct;
+    var coRelIn = settings.co_ret_rel1_months != null ? Math.round(num(settings.co_ret_rel1_months)) : relIn;
+    var coRel2 = settings.co_ret_rel2_months != null ? Math.round(num(settings.co_ret_rel2_months)) : rel2;
     // Retention release helper: stage-1 fraction at (completion + relIn), remainder
     // at (completion + rel2). rel1Pct = 1 → single release (backward compatible).
     function releaseRetention(arr, retTotal, lastIdx) {
@@ -741,9 +748,9 @@
         var netO = grossO - retO - recoupO;
         outAdd(outBill, clampIdx(mIdx + wterms, n), netO, awd);
       }
-      if (retTotalO > 0) {   // staged release, mirroring cash-in
-        outAdd(outRet, clampIdx(eIdx + wterms + relIn, n), retTotalO * rel1Pct, awd);
-        if (rel1Pct < 1) outAdd(outRet, clampIdx(eIdx + wterms + rel2, n), retTotalO * (1 - rel1Pct), awd);
+      if (retTotalO > 0) {   // staged release on the cash-out schedule (own, or cash-in fallback)
+        outAdd(outRet, clampIdx(eIdx + wterms + coRelIn, n), retTotalO * coRel1Pct, awd);
+        if (coRel1Pct < 1) outAdd(outRet, clampIdx(eIdx + wterms + coRel2, n), retTotalO * (1 - coRel1Pct), awd);
       }
     });
 
@@ -792,6 +799,17 @@
     });
     var planInToDate = 0, planOutToDate = 0;
     for (var q = 0; q <= ddIdx && q < n; q++) { planInToDate += inPer[q]; planOutToDate += outPer[q]; }
+
+    // When recorded actuals exist, the chart's ACTUAL portion (months ≤ data date)
+    // shows the booked figures instead of the derived projection; forecast months
+    // (> data date) stay on the projection. KPIs/matrix remain the plan; the variance
+    // card compares the two.
+    if (actuals.length) {
+      for (var ra = 0; ra <= ddIdx && ra < n; ra++) {
+        inActualPer[ra] = recInPer[ra]; inForecastPer[ra] = 0;
+        outActualPer[ra] = recOutPer[ra]; outForecastPer[ra] = 0;
+      }
+    }
 
     return { empty: false, months: months, n: n, ddIdx: ddIdx,
       inDP: inDP, inBill: inBill, inRet: inRet, inEwt: inEwt, inPer: inPer, inCum: inCum,
@@ -970,7 +988,7 @@
       '<button id="cf-pm-quarter" class="' + (periodMode === 'quarter' ? 'active' : '') + '">Quarterly</button></div>';
     return '<div class="cf-card">' +
       '<div class="cf-chart-head"><div><h3>Periodic Cash Flow</h3>' +
-      '<p class="sub" style="margin-bottom:0;">Cash received (up) vs paid (down) per period; net line. Solid = actual through the data date (' + Fmt.date(iso(today())) + ') — cash-in from schedule <b>% complete</b>, cash-out from <b>awarded</b> WPs; faded/dashed = forecast. Click a month in the table below to highlight its bar.</p></div>' + seg + '</div>' +
+      '<p class="sub" style="margin-bottom:0;">Cash received (up) vs paid (down) per period; net line. Solid = actual through the data date (' + Fmt.date(iso(today())) + ') — ' + (model && model.hasActuals ? '<b>recorded actuals</b>' : 'cash-in from schedule <b>% complete</b>, cash-out from <b>awarded</b> WPs') + '; faded/dashed = forecast. Click a month in the table below to highlight its bar.</p></div>' + seg + '</div>' +
       '<div class="cf-chart-wrap" id="cf-chart-periodic"></div></div>';
   }
 
@@ -979,7 +997,10 @@
   function buildPeriods() {
     var m = model;
     function mk(label, date) { return { label: label, date: date, inv: 0, out: 0, net: 0, invA: 0, invF: 0, outA: 0, outF: 0, i0: Infinity, i1: -Infinity }; }
-    function add(b, i) { b.inv += m.inPer[i]; b.out += m.outPer[i]; b.net += m.netPer[i]; b.invA += m.inActualPer[i]; b.invF += m.inForecastPer[i]; b.outA += m.outActualPer[i]; b.outF += m.outForecastPer[i]; b.i0 = Math.min(b.i0, i); b.i1 = Math.max(b.i1, i); }
+    // Accumulate the actual/forecast split; derive inv/out/net from it so the bars,
+    // net line and tooltip stay consistent when recorded actuals override the past.
+    function add(b, i) { b.invA += m.inActualPer[i]; b.invF += m.inForecastPer[i]; b.outA += m.outActualPer[i]; b.outF += m.outForecastPer[i]; b.i0 = Math.min(b.i0, i); b.i1 = Math.max(b.i1, i); }
+    function fin(b) { b.inv = b.invA + b.invF; b.out = b.outA + b.outF; b.net = b.inv + b.out; return b; }
     if (periodMode === 'quarter') {
       var order = [], by = {};
       m.months.forEach(function (mo, i) {
@@ -987,9 +1008,9 @@
         var b = by[key]; if (!b) { b = by[key] = mk('Q' + (q + 1) + " '" + String(mo.getFullYear()).slice(2), new Date(mo.getFullYear(), q * 3, 1)); order.push(key); }
         add(b, i);
       });
-      return order.map(function (k) { return by[k]; });
+      return order.map(function (k) { return fin(by[k]); });
     }
-    return m.months.map(function (mo, i) { var b = mk(monthLabel(mo), new Date(mo)); add(b, i); return b; });
+    return m.months.map(function (mo, i) { var b = mk(monthLabel(mo), new Date(mo)); add(b, i); return fin(b); });
   }
 
   // Periodic combo chart: green bars up = cash in, red bars down = cash out, ink
@@ -1139,7 +1160,7 @@
     if (rows.length) { var ins = await sb().from('cash_flow_actuals').insert(rows); if (ins.error) { UI.toast(ins.error.message, 'error'); return; } }
     UI.toast('Actuals saved.', 'success');
     document.getElementById('cf-act-modal').style.display = 'none';
-    loadAll();
+    loadAll(true);
   }
 
   // ---- Scenario snapshots (#6) ----
@@ -1243,6 +1264,9 @@
       fld('Retention release — stage 1 (months after completion)', '<input class="pd-input" id="s-rel" type="number" step="1" value="' + (s.retention_release_months != null ? s.retention_release_months : 1) + '">') +
       fld('Retention released at stage 1 (%)', '<input class="pd-input" id="s-rel1pct" type="number" step="1" value="' + pctVal(s.ret_rel1_pct != null ? s.ret_rel1_pct : 1) + '">', '100 = single release. E.g. 50 → half now, half at stage 2.') +
       fld('Retention release — stage 2 (months after completion)', '<input class="pd-input" id="s-rel2" type="number" step="1" value="' + (s.ret_rel2_months != null ? s.ret_rel2_months : 12) + '">', 'Remainder (defects-liability period). Ignored if stage 1 = 100%.') +
+      fld('Cash-out retention — stage 1 released (%)', '<input class="pd-input" id="s-corel1pct" type="number" step="1" value="' + (s.co_ret_rel1_pct != null ? pctVal(s.co_ret_rel1_pct) : '') + '" placeholder="= cash-in">', 'Subcontract retention release. Blank → follows the cash-in staging above.') +
+      fld('Cash-out retention — stage 1 lag (months)', '<input class="pd-input" id="s-corel1" type="number" step="1" value="' + (s.co_ret_rel1_months != null ? s.co_ret_rel1_months : '') + '" placeholder="= cash-in">', 'Months after each WP completion. Blank → = cash-in.') +
+      fld('Cash-out retention — stage 2 lag (months)', '<input class="pd-input" id="s-corel2" type="number" step="1" value="' + (s.co_ret_rel2_months != null ? s.co_ret_rel2_months : '') + '" placeholder="= cash-in">', 'Remainder. Blank → = cash-in.') +
       fld('Financing rate (% p.a. on drawdowns)', '<input class="pd-input" id="s-fin" type="number" step="0.01" value="' + pctVal(s.finance_rate) + '">', 'Annual interest applied to the negative cumulative (peak funding). 0 = off.') +
       fld('Funding / credit-line limit (₱)', '<input class="pd-input" id="s-limit" type="number" step="0.01" value="' + (s.funding_limit != null ? s.funding_limit : '') + '">', 'Flag months where cumulative net drops below −this. Blank = no limit.') +
       fld('Cashflow start month', '<input class="pd-input" id="s-start" type="month" value="' + (s.start_period ? String(s.start_period).slice(0, 7) : '') + '">', 'Blank → schedule start.') +
@@ -1425,6 +1449,9 @@
       retention_release_months: numInput('s-rel') != null ? Math.round(numInput('s-rel')) : 1,
       ret_rel1_pct: pctInput('s-rel1pct') != null ? pctInput('s-rel1pct') : 1,
       ret_rel2_months: numInput('s-rel2') != null ? Math.round(numInput('s-rel2')) : 12,
+      co_ret_rel1_pct: pctInput('s-corel1pct'),
+      co_ret_rel1_months: numInput('s-corel1') != null ? Math.round(numInput('s-corel1')) : null,
+      co_ret_rel2_months: numInput('s-corel2') != null ? Math.round(numInput('s-corel2')) : null,
       finance_rate: pctInput('s-fin') || 0, funding_limit: numInput('s-limit'),
       start_period: txtInput('s-start') ? txtInput('s-start') + '-01' : null,
       wpm_project_id: txtInput('s-wpm') || pid,
@@ -1473,7 +1500,7 @@
     }
     UI.toast('Assumptions saved.', 'success');
     document.getElementById('cf-modal').style.display = 'none';
-    loadAll();
+    loadAll(true);
   }
 
   // ==========================================================================
@@ -1658,9 +1685,9 @@
   AppAuth.requireLogin(function (user, prof) {
     profile = prof; UI.renderUserBar(prof); UI.initShell();
     document.getElementById('cf-project').onchange = function (e) { pid = e.target.value || null; if (pid) { sessionStorage.setItem('pd_project', pid); var o = e.target.selectedOptions[0]; projName = o ? o.textContent : ''; } loadAll(); };
-    document.getElementById('cf-refresh').onclick = function () { loadAll(); };
-    document.getElementById('cf-datadate').onchange = function (e) { setDataDate(e.target.value); loadAll(); };
-    document.getElementById('cf-dd-clear').onclick = function () { setDataDate(null); loadAll(); };
+    document.getElementById('cf-refresh').onclick = function () { loadAll(true); };
+    document.getElementById('cf-datadate').onchange = function (e) { setDataDate(e.target.value); loadAll(true); };
+    document.getElementById('cf-dd-clear').onclick = function () { setDataDate(null); loadAll(true); };
     document.getElementById('cf-basis-duration').onclick = function () { setScurveBasis('duration'); };
     document.getElementById('cf-basis-cost').onclick = function () { setScurveBasis('cost'); };
     if (canSync()) document.getElementById('cf-sync').style.display = '';
