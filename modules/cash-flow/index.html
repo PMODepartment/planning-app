@@ -254,7 +254,8 @@
 
   var pid = null, profile = null, projName = '';
   var settings = null;           // cash_flow_settings row (or defaults)
-  var scheduleRows = [];         // project_schedule leaves
+  var scheduleRows = [];         // project_schedule leaves (client fallback only)
+  var sched = null;              // pre-aggregated monthly S-curve (server RPC or client fallback)
   var milestones = [];           // {name, date} for DP-tranche milestone timing
   var tranches = [];             // cash_flow_dp_tranches rows (client DP breakdown)
   var editTranches = [];         // working copy while the Assumptions modal is open
@@ -356,32 +357,68 @@
     }
   }
 
+  // Load the monthly S-curve aggregate. Prefer the server RPC (returns ~1 row/month
+  // instead of 16k+ activities); fall back to the old client-side pull + JS aggregate
+  // if the RPC isn't installed yet.
   async function loadSchedule() {
-    // Keyset pagination (order by id, id > last) — each page is an indexed PK range
-    // scan, unlike OFFSET/.range() which re-scans more rows the deeper it goes and
-    // times out on large schedules (16k+ activities). Matches the Project Schedule fix.
-    scheduleRows = [];
-    var page = 1000, last = null;
+    sched = null; milestones = []; scheduleRows = [];
+    var res = await sb().rpc('cashflow_schedule_agg', { p_id: pid });
+    if (!res.error && res.data) {
+      var d = res.data;
+      sched = { months: d.months || [], map: {}, totDur: num(d.totDur), totCost: num(d.totCost),
+        doneDur: num(d.doneDur), doneCost: num(d.doneCost), nAct: d.nAct || 0, nCost: d.nCost || 0,
+        min: pd(d.minDate), max: pd(d.maxDate) };
+      sched.months.forEach(function (x) { sched.map[x.key] = x; });
+      milestones = (d.milestones || []).map(function (m) { return { name: m.name, date: m.date }; });
+      return;
+    }
+    // Fallback: RPC missing/unavailable → keyset-page the activities and aggregate here.
+    var page = 1000, last = null, rows = [];
     for (;;) {
       var q = sb().from('project_schedule').select('id,activity_name,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish,planned_cost,bl_cost')
         .eq('project_id', pid).order('id', { ascending: true }).limit(page);
       if (last != null) q = q.gt('id', last);
-      var res = await q;
-      if (res.error) { UI.toast('Schedule: ' + res.error.message, 'error'); break; }
-      var d = res.data || []; scheduleRows = scheduleRows.concat(d);
-      if (d.length < page) break;
-      last = d[d.length - 1].id;
+      var r2 = await q;
+      if (r2.error) { UI.toast('Schedule: ' + r2.error.message, 'error'); break; }
+      var dd = r2.data || []; rows = rows.concat(dd);
+      if (dd.length < page) break;
+      last = dd[dd.length - 1].id;
     }
-    // milestones (named, 0-duration or typed) — for DP-tranche timing
-    milestones = scheduleRows.filter(function (r) {
-      var t = (r.activity_type || '').toLowerCase();
-      return (t.indexOf('milestone') !== -1 || num(r.duration_days) === 0) && r.activity_name && r.start_date;
-    }).map(function (r) { return { name: r.activity_name, date: r.start_date }; });
-    // keep only leaf activities (not WBS summaries) that have a start date
-    scheduleRows = scheduleRows.filter(function (r) {
-      var t = (r.activity_type || '').toLowerCase();
-      return t.indexOf('wbs') === -1 && t.indexOf('summary') === -1 && r.start_date;
+    sched = schedFromRows(rows);
+    milestones = sched.milestones;
+  }
+
+  // Client-side S-curve aggregate (mirrors the cashflow_schedule_agg RPC exactly) —
+  // used only as a fallback when the RPC isn't installed.
+  function schedFromRows(rows) {
+    var dW = function (a) { if (num(a.duration_days)) return num(a.duration_days); var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; };
+    var ms = rows.filter(function (r) { var t = (r.activity_type || '').toLowerCase(); return (t.indexOf('milestone') !== -1 || num(r.duration_days) === 0) && r.activity_name && r.start_date; })
+      .map(function (r) { return { name: r.activity_name, date: r.start_date }; });
+    var leaves = rows.filter(function (r) { var t = (r.activity_type || '').toLowerCase(); return t.indexOf('wbs') === -1 && t.indexOf('summary') === -1 && r.start_date; });
+    var out = { months: [], map: {}, totDur: 0, totCost: 0, doneDur: 0, doneCost: 0, nAct: leaves.length, nCost: 0, min: null, max: null, milestones: ms };
+    if (!leaves.length) return out;
+    var starts = [], ends = [];
+    leaves.forEach(function (a) {
+      var s = pd(a.start_date), e = pd(a.end_date) || s; if (s) starts.push(+s); if (e) ends.push(+e);
+      var wd = dW(a), wc = num(a.planned_cost) || num(a.bl_cost) || 0, pcv = Math.max(0, Math.min(100, num(a.percent_complete))) / 100;
+      out.totDur += wd; out.totCost += wc; if (wc > 0) out.nCost++; out.doneDur += wd * pcv; out.doneCost += wc * pcv;
     });
+    out.min = new Date(Math.min.apply(null, starts)); out.max = new Date(Math.max.apply(null, ends));
+    var c = new Date(out.min.getFullYear(), out.min.getMonth(), 1), lastM = new Date(out.max.getFullYear(), out.max.getMonth(), 1);
+    while (c <= lastM) {
+      var mo = new Date(c), me = new Date(mo.getFullYear(), mo.getMonth() + 1, 0), row = { key: monthKeyOf(mo), pd: 0, pc: 0, ad: 0, ac: 0 };
+      leaves.forEach(function (a) {
+        var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return;
+        var wd = dW(a), wc = num(a.planned_cost) || num(a.bl_cost) || 0, pcv = Math.max(0, Math.min(100, num(a.percent_complete))) / 100;
+        var pf = me >= e ? 1 : (me < s ? 0 : (e > s ? (me - s) / (e - s) : 1));
+        row.pd += wd * pf; row.pc += wc * pf;
+        var aS = pd(a.actual_start || a.start_date), aE = pd(a.actual_finish) || pd(a.end_date) || aS;
+        if (aS) { var af = me >= aE ? 1 : (me < aS ? 0 : (aE > aS ? (me - aS) / (aE - aS) : 1)); row.ad += wd * pcv * af; row.ac += wc * pcv * af; }
+      });
+      out.months.push(row); out.map[row.key] = row;
+      c = new Date(c.getFullYear(), c.getMonth() + 1, 1);
+    }
+    return out;
   }
 
   async function loadTranches() {
@@ -473,65 +510,46 @@
   // The same weight function is used for planned and actual accrual so the S-curve the
   // Cash Flow projects is exactly the S-curve the schedule implies.
   // ==========================================================================
-  function durWeight(a) { if (a.duration_days) return num(a.duration_days); var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; }
+  // Everything below reads the pre-aggregated monthly S-curve (`sched`, from the
+  // server RPC or the client fallback) — NOT the raw activities — so large schedules
+  // (16k+ activities) don't have to be pulled into the browser.
+  function monthKeyOf(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+  // Cumulative weighted value at a timeline month: exact match in the aggregate, else
+  // 0 before the schedule's first month or `after` (total / done) past its last month.
+  function cumAt(mkey, field, after) {
+    if (!sched || !sched.months.length) return 0;
+    var x = sched.map[mkey]; if (x) return num(x[field]);
+    return mkey < sched.months[0].key ? 0 : after;
+  }
   function scurveWeight() {
     var basis = settings && settings.scurve_basis === 'cost' ? 'cost' : 'duration';
-    var withCost = scheduleRows.reduce(function (c, a) { return c + ((num(a.planned_cost) || num(a.bl_cost)) > 0 ? 1 : 0); }, 0);
-    var nAct = scheduleRows.length;
-    if (basis === 'cost') {
-      var totalCost = scheduleRows.reduce(function (s, a) { return s + (num(a.planned_cost) || num(a.bl_cost)); }, 0);
-      if (totalCost > 0) return { fn: function (a) { return num(a.planned_cost) || num(a.bl_cost) || 0; }, basis: 'cost', fellBack: false, withCost: withCost, nAct: nAct };
-      return { fn: durWeight, basis: 'duration', fellBack: true, withCost: withCost, nAct: nAct };   // requested cost, but none loaded
-    }
-    return { fn: durWeight, basis: 'duration', fellBack: false, withCost: withCost, nAct: nAct };
+    var withCost = sched ? sched.nCost : 0, nAct = sched ? sched.nAct : 0;
+    if (basis === 'cost' && sched && sched.totCost > 0)
+      return { basis: 'cost', fellBack: false, withCost: withCost, nAct: nAct, planField: 'pc', actField: 'ac', tot: sched.totCost, done: sched.doneCost };
+    return { basis: 'duration', fellBack: basis === 'cost', withCost: withCost, nAct: nAct, planField: 'pd', actField: 'ad', tot: sched ? sched.totDur : 1, done: sched ? sched.doneDur : 0 };
   }
 
-  function scheduleCurve(months, val) {
-    val = val || durWeight;
-    var TOT = scheduleRows.reduce(function (s, a) { return s + val(a); }, 0) || 1;
-    // cumulative planned fraction at each month end
-    return months.map(function (m) {
-      var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0);
-      var pvDone = 0;
-      scheduleRows.forEach(function (a) {
-        var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return;
-        var pf = mEnd >= e ? 1 : (mEnd < s ? 0 : (e > s ? (mEnd - s) / (e - s) : 1));
-        pvDone += val(a) * pf;
-      });
-      return pvDone / TOT;   // 0..1 cumulative
-    });
+  // Cumulative planned fraction (0..1) per timeline month.
+  function scheduleCurve(months, W) {
+    W = W || scurveWeight(); var tot = W.tot || 1;
+    return months.map(function (m) { return cumAt(monthKeyOf(m), W.planField, tot) / tot; });
   }
 
-  // Blended cumulative fraction: ACTUAL progress (duration-weighted % complete,
-  // using actual dates) up to the data date, then PLANNED-shaped continuation from
-  // the actual %-to-date up to 100%. So cash-in billing to date reflects real
-  // physical progress, and the forecast resumes on the plan's remaining shape.
-  function scheduleCurveBlended(months, ddIdx, val) {
-    val = val || durWeight;
-    var TOT = scheduleRows.reduce(function (s, a) { return s + val(a); }, 0) || 1;
-    var planned = scheduleCurve(months, val);
-    var overallDone = scheduleRows.reduce(function (s, a) { return s + val(a) * Math.max(0, Math.min(100, num(a.percent_complete))) / 100; }, 0);
-    var actualFracDD = overallDone / TOT;                 // true % complete at the data date
+  // Blended cumulative fraction: ACTUAL progress (weighted % complete, using actual
+  // dates) up to the data date, then PLANNED-shaped continuation from the actual
+  // %-to-date up to 100%.
+  function scheduleCurveBlended(months, ddIdx, W) {
+    W = W || scurveWeight(); var tot = W.tot || 1, done = W.done || 0;
+    var planned = months.map(function (m) { return cumAt(monthKeyOf(m), W.planField, tot) / tot; });
+    var actualFracDD = tot ? done / tot : 0;              // true % complete
     var plannedDD = planned[clampIdx(ddIdx, months.length)];
-    var totRem = 1 - plannedDD;                            // planned work remaining after the data date
-    var nAfter = months.length - 1 - ddIdx;               // forecast months available
+    var totRem = 1 - plannedDD, nAfter = months.length - 1 - ddIdx;
     return months.map(function (m, i) {
-      if (i < ddIdx) {
-        // actual accrual to this month end, weighted by each activity's % complete
-        var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0), av = 0;
-        scheduleRows.forEach(function (a) {
-          var aS = pd(a.actual_start || a.start_date), aE = pd(a.actual_finish) || pd(a.end_date) || aS; if (!aS) return;
-          var f = mEnd >= aE ? 1 : (mEnd < aS ? 0 : (aE > aS ? (mEnd - aS) / (aE - aS) : 1));
-          av += val(a) * (Math.max(0, Math.min(100, num(a.percent_complete))) / 100) * f;
-        });
-        return Math.min(actualFracDD, av / TOT);
-      }
+      if (i < ddIdx) return Math.min(actualFracDD, cumAt(monthKeyOf(m), W.actField, done) / tot);
       if (i === ddIdx) return actualFracDD;               // anchor to true % complete
-      // Planned-shaped continuation from actual%→100%. If no planned shape remains
-      // (data date at/after the planned finish but work is still incomplete), ramp
-      // linearly to 100% across the remaining months so all work still bills.
-      var frac = totRem > 0 ? (planned[i] - plannedDD) / totRem
-        : (nAfter > 0 ? (i - ddIdx) / nAfter : 1);
+      // Planned-shaped continuation; if no planned shape remains (data date at/after
+      // the planned finish, work incomplete), ramp linearly to 100% so all work bills.
+      var frac = totRem > 0 ? (planned[i] - plannedDD) / totRem : (nAfter > 0 ? (i - ddIdx) / nAfter : 1);
       return actualFracDD + Math.max(0, Math.min(1, frac)) * (1 - actualFracDD);
     });
   }
@@ -563,7 +581,7 @@
   // Build the month timeline covering schedule + all WP windows (+ retention tail)
   function buildTimeline() {
     var dates = [];
-    scheduleRows.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date); if (s) dates.push(s); if (e) dates.push(e); });
+    if (sched && sched.min) dates.push(sched.min); if (sched && sched.max) dates.push(sched.max);
     wpRows.forEach(function (w) {
       [w.awarding_date, w.actual_awarding_date, w.target_delivery, w.target_installation, w.target_completion].forEach(function (d) { var x = pd(d); if (x) dates.push(x); });
     });
@@ -634,7 +652,7 @@
 
     var ddIdxIn = clampIdx(monthDiff(months[0], new Date(today().getFullYear(), today().getMonth(), 1)), n);
     var W = scurveWeight();   // switchable duration/cost weighting (with cost→duration fallback)
-    var cum = (base > 0 || usingTrades) ? scheduleCurveBlended(months, ddIdxIn, W.fn) : null;
+    var cum = (base > 0 || usingTrades) ? scheduleCurveBlended(months, ddIdxIn, W) : null;
 
     // Accrue one package's cash-in (DP up front, proportional recoup, retention, EWT,
     // terms lag) into the shared inDP/inBill/inRet/inEwt arrays. Returns nothing.
@@ -704,10 +722,8 @@
       return num(w.awarded_cost) > 0 || num(w.total_awarded) > 0 || !!w.actual_awarding_date;
     }
     function outAdd(arr, idx, amt, awarded) { arr[idx] += amt; if (awarded && idx <= ddIdx) outActual[idx] += amt; else outForecast[idx] += amt; }
-    var schedDates = scheduleRows.map(function (a) { return pd(a.start_date); }).filter(Boolean).map(Number);
-    var schedEndDates = scheduleRows.map(function (a) { return pd(a.end_date) || pd(a.start_date); }).filter(Boolean).map(Number);
-    var fbStart = schedDates.length ? new Date(Math.min.apply(null, schedDates)) : months[0];
-    var fbEnd = schedEndDates.length ? new Date(Math.max.apply(null, schedEndDates)) : months[n - 1];
+    var fbStart = (sched && sched.min) ? sched.min : months[0];
+    var fbEnd = (sched && sched.max) ? sched.max : months[n - 1];
     var wpNoDates = 0, wpNoDatesAmt = 0;
     wpRows.forEach(function (w) {
       var budget = num(w.total_awarded) || num(w.awarded_cost) || num(w.approved_budget_bcb);
@@ -841,7 +857,8 @@
   function srcChips() {
     var host = document.getElementById('cf-src');
     var hasContract = settings && num(settings.contract_ibb) > 0;
-    var schedCls = scheduleRows.length ? 'ok' : 'warn';
+    var nAct = sched ? sched.nAct : 0;
+    var schedCls = nAct ? 'ok' : 'warn';
     var contractCls = hasContract ? 'ok' : 'warn';
     var wpmCls = wpmStatus === 'ok' ? 'ok' : (wpmStatus === 'loading' ? '' : (wpmStatus === 'empty' || wpmStatus === 'no-map' ? 'warn' : 'bad'));
     var syncedTxt = wpmSyncedAt ? ' · synced ' + Fmt.date(wpmSyncedAt) : '';
@@ -850,7 +867,7 @@
       : 'WPM cash-out · ' + (wpmMsg || wpmStatus);
     host.innerHTML =
       chip(contractCls, hasContract ? 'Contract set · IBB ' + Fmt.moneyShort(settings.contract_ibb) : 'Contract not set — open Assumptions') +
-      chip(schedCls, scheduleRows.length ? 'Schedule S-curve · ' + scheduleRows.length + ' activities' : 'No schedule — cash-in needs the Project Schedule') +
+      chip(schedCls, nAct ? 'Schedule S-curve · ' + nAct + ' activities' : 'No schedule — cash-in needs the Project Schedule') +
       chip(wpmCls, wpmTxt) +
       (model && !model.empty ? (function () {
         var partial = model.scurveBasis === 'cost' && model.scurveWithCost < model.scurveActs;
