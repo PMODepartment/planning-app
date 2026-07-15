@@ -114,6 +114,16 @@ and any fallback). Same weight fn drives planned + actual accrual, so Cash Flow 
 exactly the S-curve the schedule implies. `scheduleCurve`/`scheduleCurveBlended` take an
 optional `val` weight fn; `scurveWeight()` picks it.
 
+## Live funding position + chart readability (2026-07-14)
+- **Peak Funding Need / Closing Balance** (and the funding-limit breach banner, scenario
+  snapshots, print report) use a **live cumulative** (`model.liveNetCum/livePeak/liveClosing`)
+  = booked recorded actuals through the data date + projection after — the same trajectory
+  the periodic chart draws. Equals the plan when no actuals exist. The monthly matrix stays
+  the plan projection; the variance card still shows actual-vs-plan.
+- **What-if sliders removed** (low value).
+- **Chart:** y-axis uses `niceStep()` round ticks; only significant labels drawn (peak
+  cash-in, peak cash-out, peak-funding marker); everything else on hover.
+
 ## Verified
 - JS parses (`node --check`). Engine math hand-checked on a synthetic fixture:
   DP/billing-net/retention/terms lag land in the correct months and totals

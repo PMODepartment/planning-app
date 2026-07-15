@@ -62,6 +62,9 @@
     .cf-seg button.active { background:var(--pd-red); color:#fff; }
     .cf-chart-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .cf-dlab { fill:var(--pd-muted); font-size:9px; text-anchor:middle; }
+    .cf-dlab.hi { fill:var(--pd-ink); font-size:10.5px; font-weight:700; }
+    .cf-peakline { stroke:var(--pd-red); stroke-width:1; stroke-dasharray:4 3; opacity:.55; }
+    .cf-peaklab { fill:var(--pd-red); font-size:10px; font-weight:700; }
     .cf-axis { stroke:var(--pd-muted); stroke-width:1; }
     .cf-selband { fill:rgba(238,49,36,0.12); stroke:var(--pd-red); stroke-width:1; stroke-dasharray:3 2; }
     .cf-matrix th.mcol { cursor:pointer; }
@@ -123,17 +126,6 @@
     .cf-scn-meta { flex:1; display:flex; flex-direction:column; }
     .cf-scn-meta span { font-size:11px; color:var(--pd-muted); }
 
-    /* what-if */
-    .cf-wi-row { display:grid; grid-template-columns:150px 1fr 62px; gap:12px; align-items:center; margin-bottom:12px; }
-    .cf-wi-row label { font-size:12px; color:var(--pd-muted); }
-    .cf-wi-row input[type=range] { width:100%; accent-color:var(--pd-red); }
-    .cf-wi-row b { font-size:13px; text-align:right; }
-    .cf-wi-out { border-top:1px solid var(--pd-line); padding-top:14px; margin-top:6px; }
-    .cf-wi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
-    .cf-wi-stat { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; }
-    .cf-wi-stat span { display:block; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); }
-    .cf-wi-stat b { font-size:18px; font-weight:800; } .cf-wi-stat em { font-style:normal; font-size:11px; font-weight:600; margin-left:6px; }
-
     /* mobile */
     @media (max-width:640px) {
       .pd-main { padding:12px !important; }
@@ -141,8 +133,6 @@
       .cf-kpi { min-width:132px; padding:12px 14px; }
       .cf-kpi-v { font-size:19px; }
       .cf-chart-head { flex-direction:column; align-items:flex-start; }
-      .cf-wi-grid { grid-template-columns:1fr; }
-      .cf-wi-row { grid-template-columns:110px 1fr 52px; gap:8px; }
       .cf-dp-row, .cf-tr-row, .cf-act-row { grid-template-columns:1fr 1fr; }
     }
 
@@ -192,7 +182,6 @@
           <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="15"></span> Export</button>
           <button class="pd-btn" id="cf-print" title="Print / save the cashflow sheet as PDF"><span data-ico="printer" data-ico-size="15"></span> Print</button>
           <span class="cf-ctl-div"></span>
-          <button class="pd-btn" id="cf-whatif" title="What-if: preview peak funding under different terms"><span data-ico="trendingUp" data-ico-size="15"></span> What-if</button>
           <button class="pd-btn" id="cf-actuals" title="Record actual cash received / paid"><span data-ico="clipboard" data-ico-size="15"></span> Actuals</button>
           <button class="pd-btn pd-btn-primary" id="cf-settings"><span data-ico="settings" data-ico-size="15"></span> Assumptions</button>
         </div>
@@ -244,19 +233,6 @@
   </div>
 </div>
 
-<!-- What-if modal -->
-<div class="pd-modal-overlay" id="cf-wi-modal" style="display:none;">
-  <div class="pd-modal" style="max-width:560px;width:96vw;">
-    <div class="pd-modal-header"><span>What-if — funding sensitivity</span><button class="pd-modal-close" id="cf-wi-x">&#215;</button></div>
-    <div class="pd-modal-body">
-      <div class="cf-hint" style="margin-bottom:12px;">Drag to preview how terms change the <b>peak funding need</b> and closing balance. Nothing is saved — open <b>Assumptions</b> to commit.</div>
-      <div id="cf-wi-sliders"></div>
-      <div id="cf-wi-out" class="cf-wi-out"></div>
-    </div>
-    <div class="pd-modal-footer"><button class="pd-btn" id="cf-wi-reset">Reset</button> <button class="pd-btn" id="cf-wi-cancel">Close</button></div>
-  </div>
-</div>
-
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260714"></script>
@@ -303,6 +279,11 @@
   function pd(v) { if (!v) return null; var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return new Date(+m[1], +m[2]-1, +m[3]); var d = new Date(v); return isNaN(d) ? null : d; }
   function monthLabel(d) { return MABBR[d.getMonth()] + " '" + String(d.getFullYear()).slice(2); }
   function monthDiff(a, b) { return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()); }
+  // "Nice" round axis step for ~4 gridlines over a range (1 / 2 / 5 × 10^n).
+  function niceStep(max) {
+    var raw = (max || 1) / 4, mag = Math.pow(10, Math.floor(Math.log10(raw))), nn = raw / mag;
+    return (nn < 1.5 ? 1 : nn < 3 ? 2 : nn < 7 ? 5 : 10) * mag;
+  }
   function wallToday() { return new Date(); }
   function today() { return dataDate || wallToday(); }   // data date (settable; falls back to wall clock)
   // Data date is shared with the Project Schedule module (same ps_datadate_<pid> key);
@@ -811,12 +792,31 @@
       }
     }
 
+    // ---- LIVE funding position ----
+    // The same trajectory the chart draws: booked actuals through the data date +
+    // projection after. Peak funding + closing use this so the KPIs reflect the real
+    // funding required to finish (not the untouched plan). With no actuals recorded it
+    // is identical to the plan, so it is always safe to use.
+    var liveNetPer = z(), liveNetCum = z(), lc = 0;
+    for (var lv = 0; lv < n; lv++) {
+      liveNetPer[lv] = inActualPer[lv] + inForecastPer[lv] + outActualPer[lv] + outForecastPer[lv];
+      lc += liveNetPer[lv]; liveNetCum[lv] = lc;
+    }
+    var livePeak = Math.min.apply(null, liveNetCum), liveClosing = lc;
+    var livePeakIdx = liveNetCum.indexOf(livePeak);
+    // Funding-limit breaches follow the live position too.
+    if (fundingLimit != null && fundingLimit > 0) {
+      breachMonths = [];
+      for (var bm = 0; bm < n; bm++) { if (liveNetCum[bm] < -fundingLimit) breachMonths.push(bm); }
+    }
+
     return { empty: false, months: months, n: n, ddIdx: ddIdx,
       inDP: inDP, inBill: inBill, inRet: inRet, inEwt: inEwt, inPer: inPer, inCum: inCum,
       outDP: outDP, outBill: outBill, outRet: outRet, outPer: outPer, outCum: outCum,
       inActualPer: inActualPer, inForecastPer: inForecastPer,
       outActualPer: outActualPer, outForecastPer: outForecastPer,
       netPer: netPer, netCum: netCum,
+      liveNetPer: liveNetPer, liveNetCum: liveNetCum, livePeak: livePeak, liveClosing: liveClosing, livePeakIdx: livePeakIdx,
       totalIn: ic, totalOut: oc, closing: nc, peak: peak, outActualTot: -outActualTot, ewtTot: ewtTot,
       financeRate: financeRate, financePer: financePer, financeTot: financeTot,
       fundingLimit: fundingLimit, breachMonths: breachMonths,
@@ -924,10 +924,13 @@
       marginKpi +
       k('Total Cash In', Fmt.moneyShort(model.totalIn), (model.dpCount ? 'DP ' + Fmt.moneyShort(model.dpTotal) + ' in ' + model.dpCount + ' tranche' + (model.dpCount > 1 ? 's' : '') + ' · ' : '') + 'over ' + model.n + ' months' + (model.ewtTot > 0 ? ' · IBB − EWT withheld ' + Fmt.moneyShort(model.ewtTot) : '')) +
       k('Total Cash Out', Fmt.moneyShort(model.totalOut), 'actual to date ' + Fmt.moneyShort(model.outActualTot) + ' · ' + model.wpCount + ' WPs (awarded status)') +
-      k('Closing Balance', Fmt.moneyShort(model.closing), 'end of projection', model.closing >= 0 ? 'cf-ok' : 'cf-bad') +
-      k('Peak Funding Need', Fmt.moneyShort(model.peak),
-        'most negative cumulative' + (model.fundingLimit != null ? ' · limit ' + Fmt.moneyShort(-model.fundingLimit) : ''),
-        model.peak < 0 ? 'cf-bad' : 'cf-ok') +
+      k('Closing Balance', Fmt.moneyShort(model.liveClosing),
+        (model.hasActuals ? 'live · booked to date + forecast' : 'end of projection'),
+        model.liveClosing >= 0 ? 'cf-ok' : 'cf-bad') +
+      k('Peak Funding Need', Fmt.moneyShort(model.livePeak),
+        (model.hasActuals ? 'live · actual + forecast' : 'most negative cumulative') +
+        (model.fundingLimit != null ? ' · limit ' + Fmt.moneyShort(-model.fundingLimit) : ''),
+        model.livePeak < 0 ? 'cf-bad' : 'cf-ok') +
       (model.financeRate > 0 ? k('Financing Cost', Fmt.moneyShort(model.financeTot),
         (model.financeRate * 100).toFixed(2) + '% p.a. on drawdowns', 'cf-bad') : '') +
     '</div>';
@@ -940,7 +943,7 @@
       var first = m.months[m.breachMonths[0]];
       out += '<div class="cf-alert bad"><span class="cf-alert-dot"></span><div>' +
         '<b>Funding limit breached</b> in ' + m.breachMonths.length + ' month' + (m.breachMonths.length > 1 ? 's' : '') +
-        ' — first at <b>' + monthLabel(first) + '</b>. Peak drawdown ' + Fmt.moneyShort(m.peak) +
+        ' — first at <b>' + monthLabel(first) + '</b>. Peak drawdown ' + Fmt.moneyShort(m.livePeak) +
         ' vs credit line ' + Fmt.moneyShort(-m.fundingLimit) + '.</div></div>';
     }
     if (m.usingTrades) {
@@ -972,8 +975,8 @@
       '<div style="overflow-x:auto;"><table class="cf-table"><thead><tr><th></th><th class="num">Current</th><th class="num">Baseline</th><th class="num">Δ</th></tr></thead><tbody>' +
       drow('Total Cash In', m.totalIn, s.totalIn) +
       drow('Total Cash Out', m.totalOut, s.totalOut) +
-      drow('Closing Balance', m.closing, s.closing) +
-      drow('Peak Funding Need', m.peak, s.peak) +
+      drow('Closing Balance', m.liveClosing, s.closing) +
+      drow('Peak Funding Need', m.livePeak, s.peak) +
       (m.financeRate > 0 || s.financeTot ? drow('Financing Cost', m.financeTot, s.financeTot, true) : '') +
       '</tbody></table></div></div>';
   }
@@ -1034,16 +1037,26 @@
     var dd = today(), ddM = new Date(dd.getFullYear(), dd.getMonth(), 1);
     var split = 0; P.forEach(function (p, i) { if (p.date <= ddM) split = i + 1; });
 
-    // grid + Y labels + axes
+    // grid + Y labels + axes — "nice" round ticks so bar magnitudes are readable
     var grid = '';
-    [-1, -0.5, 0, 0.5, 1].forEach(function (f) { var v = maxAbs * f, yy = y(v); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="' + (f === 0 ? 'cf-zero' : 'cf-grid') + '"/><text x="' + (padL - 8) + '" y="' + (yy + 3.5) + '" class="cf-ylab">' + Fmt.moneyShort(v) + '</text>'; });
+    var gstep = niceStep(maxAbs);
+    for (var gv = gstep; gv <= maxAbs + gstep * 0.5; gv += gstep) {
+      [gv, -gv].forEach(function (v) {
+        if (Math.abs(v) > maxAbs) return;
+        var yy = y(v);
+        grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="cf-grid"/>' +
+          '<text x="' + (padL - 8) + '" y="' + (yy + 3.5) + '" class="cf-ylab">' + Fmt.moneyShort(v) + '</text>';
+      });
+    }
+    grid += '<line x1="' + padL + '" y1="' + zeroY + '" x2="' + (W - padR) + '" y2="' + zeroY + '" class="cf-zero"/>' +
+      '<text x="' + (padL - 8) + '" y="' + (zeroY + 3.5) + '" class="cf-ylab">0</text>';
     grid += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + ch) + '" class="cf-axis"/>';
     // selection highlight — any period overlapping the selected month range
     if (selRange) P.forEach(function (p, j) {
       if (p.i1 >= selRange.i0 && p.i0 <= selRange.i1) grid += '<rect x="' + (padL + band * j) + '" y="' + padT + '" width="' + band + '" height="' + ch + '" class="cf-selband"/>';
     });
 
-    var bw = Math.max(2, Math.min(28, band * 0.62)), showLab = periodMode === 'quarter' || band >= 44;
+    var bw = Math.max(2, Math.min(28, band * 0.62));
     var bars = '', labs = '', hovers = '';
     function rect(x, yy, w, h, fill, op) { return h > 0.3 ? '<rect x="' + x + '" y="' + yy + '" width="' + w + '" height="' + h + '" fill="' + fill + '" ' + op + '/>' : ''; }
     P.forEach(function (p, i) {
@@ -1054,10 +1067,28 @@
       // cash OUT (down): actual solid, forecast faded, stacked (values negative)
       if (p.outA < 0) { bars += rect(x0, zeroY, bw, y(p.outA) - zeroY, 'var(--pd-red)', ''); }
       if (p.outF < 0) { bars += rect(x0, y(p.outA), bw, y(p.outA + p.outF) - y(p.outA), 'var(--pd-red)', 'opacity="0.4"'); }
-      if (showLab && p.inv > 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.inv) - 3) + '" class="cf-dlab">' + Fmt.moneyShort(p.inv) + '</text>';
-      if (showLab && p.out < 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.out) + 10) + '" class="cf-dlab">' + Fmt.moneyShort(-p.out) + '</text>';
       hovers += '<rect class="cf-hover" data-i="' + i + '" x="' + (padL + band * i) + '" y="' + padT + '" width="' + band + '" height="' + ch + '"/>';
     });
+
+    // Significant labels only: peak cash-in month, peak cash-out month, and the
+    // peak-funding trough (the number management cares about). Everything else is
+    // available on hover, so the chart stays legible at any project length.
+    var run = 0, bal = P.map(function (p) { run += p.net; return run; });
+    var iIn = -1, vIn = 0, iOut = -1, vOut = 0, iTr = -1, vTr = 0;
+    P.forEach(function (p, i) {
+      if (p.inv > vIn) { vIn = p.inv; iIn = i; }
+      if (-p.out > vOut) { vOut = -p.out; iOut = i; }
+      if (bal[i] < vTr) { vTr = bal[i]; iTr = i; }
+    });
+    if (iIn >= 0 && vIn > 0) labs += '<text x="' + cx(iIn) + '" y="' + (y(P[iIn].inv) - 6) + '" class="cf-dlab hi">' + Fmt.moneyShort(vIn) + '</text>';
+    if (iOut >= 0 && vOut > 0) labs += '<text x="' + cx(iOut) + '" y="' + (y(P[iOut].out) + 14) + '" class="cf-dlab hi">' + Fmt.moneyShort(vOut) + '</text>';
+    // peak-funding marker: vertical guide at the trough month + labelled value
+    var peakMark = '';
+    if (iTr >= 0 && vTr < 0) {
+      var px = cx(iTr), leftSide = iTr > nP * 0.68;
+      peakMark = '<line x1="' + px + '" y1="' + padT + '" x2="' + px + '" y2="' + (padT + ch) + '" class="cf-peakline"/>' +
+        '<text x="' + px + '" y="' + (padT + 11) + '" class="cf-peaklab" text-anchor="' + (leftSide ? 'end' : 'start') + '" dx="' + (leftSide ? -5 : 5) + '">Peak funding ' + Fmt.moneyShort(vTr) + ' · ' + esc(P[iTr].label) + '</text>';
+    }
     // net line — solid (actual) then dashed (forecast), sharing the boundary point
     function seg(a, b, dash) { var pts = []; for (var i = a; i < b; i++) pts.push(cx(i) + ',' + y(P[i].net)); return pts.length > 1 ? '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--pd-ink)" stroke-width="2.25" ' + (dash ? 'stroke-dasharray="5 4"' : '') + '/>' : ''; }
     var netLine = seg(0, split, false) + seg(Math.max(0, split - 1), nP, true);
@@ -1065,7 +1096,7 @@
     var xlab = '', step = Math.max(1, Math.ceil(nP / 14));
     P.forEach(function (p, i) { if (i % step === 0) xlab += '<text x="' + cx(i) + '" y="' + (H - padB + 18) + '" class="cf-xlab">' + esc(p.label) + '</text>'; });
 
-    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + bars + labs + netLine + xlab + hovers + '</svg>' +
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + bars + peakMark + netLine + labs + xlab + hovers + '</svg>' +
       '<div class="cf-tip" id="cf-tip"></div>' +
       '<div class="cf-legend">' +
       '<span class="cf-lg"><span class="sw" style="background:var(--pd-ok);"></span>Cash In</span>' +
@@ -1074,8 +1105,7 @@
       '<span class="cf-lg"><span class="sw fc" style="background:var(--pd-muted);"></span>Forecast (faded / dashed)</span>' +
       '</div>';
 
-    // running balance for the tooltip
-    var run = 0, bal = P.map(function (p) { run += p.net; return run; });
+    // running balance for the tooltip (reuses bal computed above)
     pvState = { P: P, bal: bal, split: split, W: W, host: host };
     wirePeriodicTip();
   }
@@ -1166,8 +1196,8 @@
   // ---- Scenario snapshots (#6) ----
   function currentSnapshot() {
     var m = model;
-    return { totalIn: m.totalIn, totalOut: m.totalOut, closing: m.closing, peak: m.peak,
-      financeTot: m.financeTot, financeRate: m.financeRate, netCum: m.netCum,
+    return { totalIn: m.totalIn, totalOut: m.totalOut, closing: m.liveClosing, peak: m.livePeak,
+      financeTot: m.financeTot, financeRate: m.financeRate, netCum: m.liveNetCum,
       months: m.months.map(monthLabel), dataDate: iso(today()) };
   }
   function openScenarios() {
@@ -1594,7 +1624,7 @@
       row('NET — periodic', m.netPer, 'net') +
       '<tr class="net"><th>NET — cumulative</th>' + m.netCum.map(function (v) { return '<td>' + ms(v) + '</td>'; }).join('') + '<td></td></tr>';
     var kpis = [['Contract IBB (VAT inc)', ms(settings.contract_ibb)], ['Contract BCB (VAT inc)', ms(settings.contract_bcb)],
-      ['Total Cash In', ms(m.totalIn)], ['Total Cash Out', ms(m.totalOut)], ['Closing Balance', ms(m.closing)], ['Peak Funding Need', ms(m.peak)]]
+      ['Total Cash In', ms(m.totalIn)], ['Total Cash Out', ms(m.totalOut)], ['Closing Balance', ms(m.liveClosing)], ['Peak Funding Need', ms(m.livePeak)]]
       .map(function (k) { return '<div><span>' + k[0] + '</span><b>' + k[1] + '</b></div>'; }).join('');
     var sigs = ['PLANNING SUPERVISOR', 'PROJECT MANAGER', 'AREA MANAGER', 'COO — EPC GROUP']
       .map(function (t) { return '<div class="sig"><div class="line"></div>' + t + '</div>'; }).join('');
@@ -1631,54 +1661,6 @@
     setTimeout(function () { w.print(); }, 350);
   }
 
-  // ---- What-if: recompute peak funding under overridden terms (not saved) ----
-  function computeWith(ov) {
-    var s0 = settings, t0 = tranches, tr0 = trades;
-    // Preview at the contract level so the sliders actually drive the result:
-    // clear DP tranches AND trade packages (both would otherwise bypass the
-    // settings.dp_percent / retention / terms the sliders control).
-    settings = Object.assign({}, s0, ov); tranches = []; trades = [];
-    var mm = computeProjection();
-    settings = s0; tranches = t0; trades = tr0;
-    return mm;
-  }
-  var wiParams = [
-    { k: 'dp_percent', label: 'Downpayment %', min: 0, max: 50, step: 1, pct: true },
-    { k: 'retention_percent', label: 'Retention %', min: 0, max: 15, step: 0.5, pct: true },
-    { k: 'ewt_percent', label: 'EWT %', min: 0, max: 10, step: 0.5, pct: true },
-    { k: 'billing_terms_months', label: 'Billing terms (months)', min: 0, max: 4, step: 1, pct: false }
-  ];
-  var wiState = null;
-  function openWhatIf() {
-    if (!model || model.empty) { UI.toast('Nothing to preview yet.', 'error'); return; }
-    wiState = {}; wiParams.forEach(function (p) { wiState[p.k] = p.pct ? num(settings[p.k]) * 100 : num(settings[p.k]); });
-    document.getElementById('cf-wi-sliders').innerHTML = wiParams.map(function (p) {
-      return '<div class="cf-wi-row"><label>' + p.label + '</label>' +
-        '<input type="range" class="cf-wi-s" data-k="' + p.k + '" min="' + p.min + '" max="' + p.max + '" step="' + p.step + '" value="' + wiState[p.k] + '">' +
-        '<b id="cf-wi-v-' + p.k + '">' + wiState[p.k] + (p.pct ? '%' : '') + '</b></div>';
-    }).join('');
-    document.getElementById('cf-wi-sliders').querySelectorAll('.cf-wi-s').forEach(function (el) {
-      el.oninput = function () { var p = wiParams.filter(function (x) { return x.k === el.dataset.k; })[0]; wiState[el.dataset.k] = num(el.value); document.getElementById('cf-wi-v-' + el.dataset.k).textContent = el.value + (p.pct ? '%' : ''); renderWhatIf(); };
-    });
-    renderWhatIf();
-    document.getElementById('cf-wi-modal').style.display = 'flex';
-  }
-  function renderWhatIf() {
-    var ov = {}; wiParams.forEach(function (p) { ov[p.k] = p.pct ? wiState[p.k] / 100 : Math.round(wiState[p.k]); });
-    var mm = computeWith(ov), base = model;
-    function stat(label, v, bv, goodHigh) {
-      var d = v - bv, cls = d === 0 ? '' : ((d > 0) === !!goodHigh ? 'cf-ok' : 'cf-bad');
-      return '<div class="cf-wi-stat"><span>' + label + '</span><b>' + Fmt.moneyShort(v) + '</b><em class="' + cls + '">' + (d > 0 ? '+' : '') + Fmt.moneyShort(d) + '</em></div>';
-    }
-    document.getElementById('cf-wi-out').innerHTML =
-      '<div class="cf-wi-grid">' +
-      stat('Peak Funding Need', mm.peak, base.peak, true) +
-      stat('Closing Balance', mm.closing, base.closing, true) +
-      stat('Total Cash In', mm.totalIn, base.totalIn, true) +
-      stat('Total Cash Out', mm.totalOut, base.totalOut, false) +
-      '</div><div class="cf-hint" style="margin-top:8px;">Δ vs current saved assumptions. Peak funding = most-negative cumulative net (less negative is better).</div>';
-  }
-
   // ==========================================================================
   // WIRE-UP
   // ==========================================================================
@@ -1694,10 +1676,6 @@
     document.getElementById('cf-sync').onclick = syncWPM;
     document.getElementById('cf-export').onclick = exportExcel;
     document.getElementById('cf-print').onclick = printSheet;
-    document.getElementById('cf-whatif').onclick = openWhatIf;
-    document.getElementById('cf-wi-x').onclick = document.getElementById('cf-wi-cancel').onclick = function () { document.getElementById('cf-wi-modal').style.display = 'none'; };
-    document.getElementById('cf-wi-reset').onclick = function () { openWhatIf(); };
-    document.getElementById('cf-wi-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
     document.getElementById('cf-settings').onclick = openSettings;
     document.getElementById('cf-modal-x').onclick = document.getElementById('cf-cancel').onclick = function () { document.getElementById('cf-modal').style.display = 'none'; };
     document.getElementById('cf-save').onclick = saveSettings;

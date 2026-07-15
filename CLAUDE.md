@@ -211,6 +211,23 @@ developer, plug into one shared shell.
   actions (Refresh/Sync/Export · Actuals/Assumptions) right, dividers between groups, denser
   buttons; stacks cleanly under 1100px.
 
+### 2026-07-14 — Prompt 74: Cash Flow — live funding position, remove what-if, chart readability
+- **Live funding position:** Peak Funding Need + Closing Balance KPIs (and the breach
+  banner, scenario snapshots, print report) now use a **live cumulative** = booked recorded
+  actuals through the data date + projection after (the same series the chart draws), so
+  management sees the funding actually required to finish, not the untouched plan. Identical
+  to the plan when no actuals are recorded, so always safe. The plan matrix + variance card
+  are unchanged.
+- **Removed the what-if slider feature** entirely (modal, CSS, `openWhatIf`/`renderWhatIf`/
+  `computeWith`, dangling `cf-whatif` wiring) — low value, and its wiring referenced a
+  non-existent button.
+- **Chart readability:** y-axis now uses **nice round ticks** (1/2/5×10ⁿ via `niceStep`)
+  instead of fractions of the max, so bar magnitudes are readable at any project length.
+  Per-bar data labels replaced with **significant-only** labels: peak cash-in month, peak
+  cash-out month, and a **peak-funding marker** (vertical guide + value + month) — the rest
+  stays on hover.
+- Verified: full inline script parses; live run pending.
+
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
   against what the code expects — most feature batches to date were only harness-verified. New
