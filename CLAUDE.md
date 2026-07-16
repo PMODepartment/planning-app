@@ -77,6 +77,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-16 — Drawing Register: editable tree grid + faithful-phase import fix
+- **Planner workflow (like Project Schedule's WBS):** new **"+ Level"** menu builds the
+  phase/discipline/category skeleton as real rows (`node_kind` column, migration
+  `2026-07-16-drawing-register-nodes.sql` — **user must run it**; text-keyed so existing
+  imports still group and it's backward compatible). **+ Add drawing / Enter** inserts a
+  drawing under the selected row, auto-numbers its code, and opens inline title editing.
+- **Excel-like inline editing** (double-click cells; **Status = always-on dropdown**, saves
+  immediately); full modal kept per-row (✎). **Selection + keyboard:** click / Shift-click
+  range / Ctrl-click toggle / ↑↓ (Shift extends) / Ctrl+A / Delete / Esc / Enter. Compact
+  one-screen grid.
+- **Removed redundant status** "Approved w/o comments" (merged into "Approved").
+- **Import fix — false duplicates + missing A-100/A-200 codes:** the workbook has design
+  iterations (Schematic Design 1/2/3/4 Schemes, FCD) that the old `mapPhase` collapsed into
+  one "Schematic Design 1", so the same A-101/A-102/A-103 from different iterations piled
+  into one group and looked duplicated. Phases are now kept **verbatim** (anchored
+  `PHASE_RE` + `cleanPhase`, ordered by workbook appearance), and header rows import as
+  **structural nodes carrying their codes** (A-100 Floor Plan, AR-000 Architectural), shown
+  as code chips. Verified on the real file (SD1 Floor Plan = A-101, A-102 only; phases
+  SD1(S1)=96 / SD2(S1)=178 / SD2(S2)=131 / FCD=646). ⚠️ **Re-import (Clear all → Import) to
+  apply.** Assets bumped `?v=20260716h`. Harness-verified (build levels, add-under-select +
+  auto-number, inline edit, status dropdown, shift-select, delete, node codes, phase split).
+
 ### 2026-07-16 — Drawing Register: category as level-3 group + per-level indent/colour
 - **Register is now a 4-level tree** — phase → discipline → **category** → drawing. Category was
   previously only a column, so the workbook's level-3 rows (A-100 Floor Plan, A-200 Elevation,

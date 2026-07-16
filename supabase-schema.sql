@@ -166,6 +166,7 @@ create table if not exists drawing_register (
   planned_approval date,
   actual_approval  date,
   sort_order      integer default 0,
+  node_kind       text default 'drawing',   -- phase | discipline | category | drawing (tree skeleton)
   created_by     uuid references users(id),
   created_at     timestamptz default now(),
   updated_at     timestamptz default now()

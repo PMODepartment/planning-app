@@ -9,6 +9,43 @@ module for file uploads** (private bucket + signed-URL viewing). Update every PR
 - [x] CRUD + Excel import + export + progress dashboard
 - [x] `enabled: true` in `assets/js/config.js`
 
+## Editable tree grid + structural nodes (2026-07-16)
+- **Build the level skeleton first:** a **"+ Level"** menu (planner+) inserts phase /
+  discipline / category rows (`node_kind` on `drawing_register`, migration
+  `2026-07-16-drawing-register-nodes.sql` — **user must run it**). Keyed by the
+  phase/discipline/category text, so it stays backward compatible: existing imported
+  drawings still group via their text; structural nodes just add explicit, code-bearing
+  headers. Double-click a group name to rename (cascades to descendant drawings' text).
+- **Add drawings under a selected row** (project-schedule style): select any group/row →
+  **+ Add drawing** (or **Enter**) inserts a drawing in that phase/discipline/category,
+  **auto-numbers** the code (increments the group's numeric suffix), and drops straight
+  into inline title editing.
+- **Excel-like inline editing:** double-click a cell (code / title / rev / sheets /
+  approved / responsible) to edit in place; **Status is an always-on dropdown** that saves
+  immediately. Full-editor modal still available per row (✎) for the code builder,
+  submissions and file upload.
+- **Selection + shortcuts:** click to select, **Shift-click** range, **Ctrl/Cmd-click**
+  toggle, **↑/↓** move (Shift extends), **Ctrl+A** select-all-visible, **Delete** delete
+  selected, **Esc** clear, **Enter** add drawing. Bulk "Delete selected" bar.
+- **Status list:** dropped **"Approved w/o comments"** (redundant with "Approved");
+  `normalizeStatus` maps the workbook's "without comments" → "Approved".
+- **Compact one-screen grid:** sticky header, condensed columns, internal scroll.
+
+## Importer: faithful phases + level codes (2026-07-16)
+- **Phase blocks kept verbatim** (`cleanPhase`, anchored `PHASE_RE`): the workbook has
+  design iterations — *Schematic Design 1/2/3/4 (Scheme 1/2…)* and *For Construction
+  (FCD)* — that were previously **collapsed into one "Schematic Design 1"** (old `mapPhase`
+  only knew 1 & 2), producing false "duplicate" A-101/A-102/A-103 across iterations. Now
+  each block is its own phase, ordered by workbook appearance (`phaseOrderKey` = min
+  sort_order). Verified on the real file: SD1(S1)=96, SD2(S1)=178, SD2(S2)=131, FCD=646;
+  SD1 Floor Plan correctly = A-101, A-102 only.
+- **Header rows import as structural nodes carrying their code** — A-100 Floor Plan,
+  A-200 Elevation, AR-000 Architectural — shown as a red code chip on the group row (the
+  codes were previously discarded). ⚠️ **Existing imports predate this — re-import
+  (Clear all → Import) to get faithful phases + level codes.**
+- Anchored `PHASE_RE` stops category/sheet titles ("Schematic Diagrams", "Construction
+  Notes", "Neighbor's As-Built…") from being misread as phases.
+
 ## What it does
 Project-scoped drawing register that mirrors the workbook:
 - **Structured drawing code** from the "Coding Reference" sheet:
