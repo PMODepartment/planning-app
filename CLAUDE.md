@@ -77,6 +77,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-16 — ONE migration to run + schema-drift audit (collapse NOT yet safe)
+- **`migrations/2026-07-16-consolidated.sql`** replaces the two separate 2026-07-16 files
+  (planner-project-visibility + admin-archive-delete, both deleted — recoverable via git). Fully
+  idempotent; **this is the only migration outstanding**. Also re-asserts the wbs-nodes table +
+  `project_schedule.wbs_node_id` as a safety net.
+- **AUDIT FINDING — neither "canonical" schema file is complete.** `supabase-setup.sql` and
+  `supabase-schema.sql` have **drifted in opposite directions**, and several tables exist ONLY in
+  `migrations/`:
+  | object | in setup.sql | in schema.sql |
+  |---|---|---|
+  | `cash_flow_settings` | ✗ | ✓ |
+  | `wbs_nodes` | ✓ | ✗ |
+  | `schedule_baselines`, `wpm_work_packages`, `cost_accounts`, `schedule_audit` | ✗ | ✗ |
+  Measured against `supabase-setup.sql`: **13 tables, 40 columns, 5 functions missing.** So the
+  documented "every migration is folded into setup + schema" convention has NOT been holding, and
+  **`migrations/` cannot be deleted yet** — it is currently the only definition of several tables.
+- **Replay-safety verified:** all 48 migrations are idempotent/replayable in filename order (checked
+  for `create table`/`create index`/`add column` without IF NOT EXISTS, `create policy` without a
+  preceding drop, and `create function` without OR REPLACE). The only hazards found were in the
+  now-superseded planner file and are fixed. So a true single-file consolidation **is** achievable.
+- **ORDERING TRAP for whoever does the collapse:** `supabase-setup.sql` already contains the *fixed*
+  per-command `projects` policies, while `2026-06-30-workspaces-project-selector.sql` recreates
+  `projects_write` **`for all`**. Naive concatenation (setup + migrations) would silently **reopen
+  the planner visibility hole**. The 2026-07-16 fix must be applied LAST.
+- **Recommended next step:** build one canonical file as `base schema → migrations in date order →
+  2026-07-16 fixes last`, verify with the audit (0 missing objects), diff against the live DB, and
+  only then delete `migrations/` and reduce `supabase-schema.sql` to a pointer.
+
 ### 2026-07-16 — Workspace edit/delete affordance + view-toggle clipping fix
 - **`workspaceModal` was unreachable for EXISTING nodes.** It was only ever called as
   `workspaceModal(null)` (Add menu + `#add-ws`), so once a workspace/program was created there was
@@ -95,11 +123,13 @@ developer, plug into one shared shell.
   `.pd-toolbar-right .pd-input-sm{flex:0 1 220px;min-width:0}` (input absorbs the shrink) +
   `min-width:0`/`flex-wrap:wrap` on both toolbar halves.
 - `dashboard.css` changed → **`dashboard.css?v=` bumped to `20260716` across all 21 HTML files.**
-- **Correction to the WBS entry below:** the `wbs_node_id`-missing theory was **disproven** — the user
-  ran the migration and `information_schema` confirms the column exists. The tolerant retry is
-  therefore a no-op; what matters is that the error is no longer swallowed. Root cause still open.
-  Note **Naga City Integrated Terminal is a `program` (a `workspaces` node), not a project** — the WBS
-  Manager only operates on a selected project, which is the likely real explanation.
+- **WBS root cause CONFIRMED (see the module's own CLAUDE.md).** The `wbs_node_id`-missing theory was
+  right: the wbs-nodes migration hadn't been run when those nodes were created, so their projected
+  WBS-Summary rows failed. Checking `information_schema` *after* running the migration shows the
+  column present — that is post-migration state, not a disproof. The damage (orphan nodes with no
+  schedule row) is now self-healed by `_wbsEnsureSummaries()` in the project-schedule module.
+  (Naga exists as **both** a `workspaces` program node **and** a project of the same name — the WBS
+  work was on the project; the program is the empty node being deleted.)
 
 ### 2026-07-16 — Admin: archive / delete for projects & workspaces
 - **Why it isn't a plain DELETE:** ~20 module tables carry `project_id text references

@@ -1,5 +1,26 @@
 # Module: project-schedule
 
+## Column chooser clipped by the details panel (2026-07-16) — fmlozano
+The `+` column chooser (`#ps-cols-menu`) was cut off mid-list — worse the further up the details
+panel was dragged.
+- **Root cause:** `.ps-split` sets **`overflow:hidden`** (line ~243, for its border-radius + pane
+  clipping), and `.ps-cols-corner`/`.ps-cols-menu` are absolutely positioned **inside**
+  `.ps-grid-pane` within it. So the menu was clipped at the split's bottom edge — i.e. wherever the
+  details panel happened to push it. The chooser's own `max-height:340px; overflow-y:auto` was
+  useless here: the **ancestor** did the clipping, so the scrollable remainder was unreachable (this
+  is a *different* bug from the 2026-07-14 cascade fix below, which made it scroll at its own cap).
+- **Fix:** `positionColsMenu()` pins the menu to the **viewport** (`position:fixed`, re-anchored to
+  the button's rect on every open) — which escapes every ancestor's overflow — and caps
+  `max-height` to the real space below the button (`innerHeight − r.bottom − 16`, floor 180). Same
+  approach `openRowMenu` already uses. Re-anchored on `resize` + `scroll` (capture phase, so it also
+  catches ancestor scrolls) while open, since fixed positioning is viewport-relative.
+- **Verified in a browser harness** against the module's real CSS, using `elementFromPoint` (CSS
+  overflow clipping doesn't shrink `getBoundingClientRect`, so a rect check would have missed it):
+  with a 280px split — before: content 726px, capped to 340px, **103px of that clipped away**, bottom
+  not hittable (`bottomOfMenuActuallyVisible:false`); after: fully visible. At a 600px-tall viewport:
+  menu bottom 588 ≤ 600 (fits), scrolls internally (517px box / 707px content), scrolls to the end,
+  right edge still aligned to the button.
+
 ## WBS added in the Manager didn't appear in the Schedule (2026-07-16) — fmlozano
 Reported on **Naga City Integrated Terminal**: adding a WBS Level 1 in the WBS Manager showed the node
 in the tree but **nothing in the Project Schedule**; an activity added under it *did* appear.
@@ -15,13 +36,29 @@ in the tree but **nothing in the Project Schedule**; an activity added under it 
   that column (warn toast: "Saved without the WBS link — run the wbs-nodes migration"), and **surfaces
   any other error** instead of swallowing it. Used by `wbsAddChild` and the copy-from-another-project
   path (which had the identical swallow).
-- **NOTE — the fix makes the failure visible; it does not prove the cause.** If the toast now names
-  `wbs_node_id`, the DB is missing it → run `migrations/2026-07-07-wbs-nodes.sql`. If it names anything
-  else, that message is the real root cause. Confirm directly with:
-  `select column_name from information_schema.columns where table_name='project_schedule' and column_name='wbs_node_id';`
+- **CONFIRMED (2026-07-16):** the column really was missing — the user ran
+  `migrations/2026-07-07-wbs-nodes.sql` only after hitting this, so every node created before that ran
+  lost its projection. (An `information_schema` check *after* the migration shows the column present,
+  which briefly looked like a disproof — it isn't; it's just post-migration state.)
+- **Orphan nodes + `_wbsEnsureSummaries()` (the actual repair).** The failure left Naga with 3 nodes in
+  `wbs_nodes` and **zero** WBS-Summary rows: visible in the WBS Manager, absent from the Schedule, and
+  **unrepairable** — "Adopt existing WBS" only runs the other direction (summary rows → nodes), and its
+  button is hidden precisely when there are no summary rows to adopt. New `_wbsEnsureSummaries()`
+  re-projects any node lacking a summary row; it is **additive + idempotent** (keyed on
+  `wbs_node_id`, so a reload can't duplicate) and gated on the new module-scope **`canWrite`**
+  (super_admin/admin/planner — mirrors `is_planner()`) so a read-only user never triggers a write on
+  load. Called from `load()` (after `loadResourcesAssignments`, which populates `WBS_NODES`) and at the
+  top of `_wbsCommit()`. No-op on healthy projects. Verified in a node harness against Naga's exact
+  state: 3 nodes → codes 1/2/3, second pass finds 0 missing, activities at `wbs "1"` nest under the
+  restored Pre-Development row.
 - **Related inconsistency (not fixed):** `2026-07-07-wbs-nodes.sql` was folded into `supabase-setup.sql`
   but **NOT into `supabase-schema.sql`** (0 mentions of `wbs_nodes`/`wbs_node_id` there), so any DB
-  built from `supabase-schema.sql` lacks both the table and the column. Worth reconciling.
+  built from `supabase-schema.sql` lacks both the table and the column — i.e. this bug is still
+  reproducible from a fresh schema build. Worth reconciling.
+- **Dead read-only guards (pre-existing, NOT fixed):** neither `window.__viewOnly` nor
+  `window.__archived` is **ever assigned** anywhere in the repo — both are read in ~8 guards each and
+  are permanently `undefined`, so the intended "read-only / archived project" protections do nothing.
+  This is why `canWrite` above had to be introduced rather than reusing `__viewOnly`.
 
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).

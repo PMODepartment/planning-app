@@ -1480,6 +1480,9 @@
   var groupBy = 'wbs';   // 'wbs' | 'status' | 'responsible' | 'type'
   var _dspan = {};       // span map keyed by display code (real WBS codes in WBS mode)
   var isAdmin = false;
+  // Roles that may write the schedule (matches is_planner() in the DB). Used to gate the
+  // WBS-summary self-repair so a read-only user never triggers a write on load.
+  var canWrite = false;
   var DAYW = { month: 4.2, quarter: 1.55, year: 0.62 };
   // User-adjustable timeline column width — multiplies DAYW[zoom] so the Month/Quarter/Year
   // columns can be made wider or narrower. Persisted; clamped to a sane range.
@@ -1637,7 +1640,10 @@
     } catch (err) { hideLoading(); UI.toast('Load failed: ' + (err.message || err), 'error'); return; }
     hideLoading();
     rows = all; rebuild();
-    await loadResourcesAssignments();
+    await loadResourcesAssignments();   // loads WBS_NODES
+    // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
+    var healed = await _wbsEnsureSummaries();
+    if (healed) { rebuild(); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
     populateGroupSelect();
     // Large schedule: default to a collapsed outline so we don't render thousands of DOM rows.
     if (rows.length > 400 && Object.keys(collapsed).length === 0) {
@@ -6186,7 +6192,31 @@
   }
   // Persist code / name / activity-code changes across nodes + their projected WBS-Summary rows +
   // child activities, then refresh. Recomputes codes each call so any structural change re-numbers.
+  // Every wbs_nodes row MUST have a projected WBS-Summary row — that projection is the ONLY thing
+  // the Schedule grid renders (it keys off activity_type='WBS Summary' + the dotted wbs code; it
+  // never reads wbs_nodes). Nodes created while `project_schedule.wbs_node_id` was un-migrated lost
+  // their projection (the insert carried that column and failed wholesale), leaving ORPHAN nodes:
+  // present in the WBS Manager, invisible in the Project Schedule, with no repair path — "Adopt
+  // existing WBS" only runs the other way (summary rows -> nodes). Re-project anything missing.
+  // Additive + idempotent: only inserts where no summary row references the node.
+  async function _wbsEnsureSummaries() {
+    if (!pid || !canWrite || !WBS_NODES.length) return 0;
+    var have = {};
+    rows.forEach(function (r) { if (isWbs(r) && r.wbs_node_id) have[r.wbs_node_id] = true; });
+    var missing = WBS_NODES.filter(function (n) { return !have[n.id]; });
+    if (!missing.length) return 0;
+    var codeOf = computeWbsCodes(), made = 0;
+    for (var i = 0; i < missing.length; i++) {
+      var n = missing[i];
+      var res = await _insertWbsSummary({ project_id: pid, wbs_node_id: n.id, activity_type: 'WBS Summary',
+        wbs: codeOf[n.id], activity_name: n.name, created_by: UID });
+      if (res.error) { UI.toast('Could not restore the schedule row for WBS “' + esc(n.name || '') + '”: ' + res.error.message, 'error'); break; }
+      if (res.data) { rows.push(res.data); made++; }
+    }
+    return made;
+  }
   async function _wbsCommit() {
+    await _wbsEnsureSummaries();   // heal orphans before syncing codes/names onto their rows
     var codeOf = computeWbsCodes();
     var nodeUp = [], schedUp = [];   // schedUp: {id, patch} for project_schedule rows (summary + activities)
     WBS_NODES.forEach(function (n) {
@@ -8015,6 +8045,7 @@
   AppAuth.requireLogin(function (user, profile) {
     UID = (user && user.id) || (profile && profile.id) || null;
     isAdmin = !!(profile && (profile.role === 'admin' || profile.role === 'super_admin'));
+    canWrite = !!(profile && ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1);
     var clrBtn = document.getElementById('ps-clear'); if (clrBtn && !isAdmin) clrBtn.style.display = 'none';
     UI.renderUserBar(profile);
     UI.initShell();
@@ -8121,8 +8152,30 @@
     document.getElementById('ps-redo').onclick = function (e) { e.stopPropagation(); redo(); };
     document.getElementById('ps-layoutbtn').onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { renderLayoutMenu(); lMenu.classList.add('open'); } };
     lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.getElementById('ps-colsbtn').onclick = function (e) { e.stopPropagation(); var o = colsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColsMenu(); colsMenu.classList.add('open'); } };
+    // `.ps-split` sets overflow:hidden, and the chooser is absolutely positioned inside
+    // `.ps-grid-pane` within it — so the menu was CLIPPED at the split's bottom edge, which is
+    // wherever the details panel happens to push it. Its own overflow-y:auto couldn't help: the
+    // ancestor did the clipping, so the scrollable remainder was unreachable. Pin it to the
+    // VIEWPORT on open (escapes every ancestor's overflow) and cap its height to the real space
+    // below the button — same approach openRowMenu already uses for the row context menu.
+    function positionColsMenu() {
+      var btn = document.getElementById('ps-colsbtn'); if (!btn) return;
+      var r = btn.getBoundingClientRect();
+      colsMenu.style.position = 'fixed';
+      colsMenu.style.left = 'auto';
+      colsMenu.style.top = Math.round(r.bottom + 4) + 'px';
+      colsMenu.style.right = Math.round(window.innerWidth - r.right) + 'px';
+      colsMenu.style.maxHeight = Math.max(180, Math.round(window.innerHeight - r.bottom - 16)) + 'px';
+    }
+    document.getElementById('ps-colsbtn').onclick = function (e) { e.stopPropagation(); var o = colsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColsMenu(); colsMenu.classList.add('open'); positionColsMenu(); } };
     colsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    // Fixed positioning is viewport-relative, so it must re-anchor if anything moves under it.
+    // Capture phase catches scrolls in any ancestor (the page, the grid pane), not just window.
+    (function () {
+      var sync = function () { if (colsMenu.classList.contains('open')) positionColsMenu(); };
+      window.addEventListener('resize', sync);
+      window.addEventListener('scroll', sync, true);
+    })();
     // Reports modal (OPC "Select Report to Run")
     document.getElementById('ps-report').onclick = function (e) { e.stopPropagation(); openReports(); };
     document.getElementById('ps-rep-x').onclick = closeReports;
