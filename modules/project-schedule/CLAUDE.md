@@ -1,5 +1,28 @@
 # Module: project-schedule
 
+## WBS added in the Manager didn't appear in the Schedule (2026-07-16) — fmlozano
+Reported on **Naga City Integrated Terminal**: adding a WBS Level 1 in the WBS Manager showed the node
+in the tree but **nothing in the Project Schedule**; an activity added under it *did* appear.
+- **Mechanism (explains both halves).** The tree lives in `wbs_nodes`; the grid only ever renders
+  **projected `project_schedule` WBS-Summary rows**. Two writers, inconsistent treatment of
+  `wbs_node_id`: the activity `save()` deliberately keeps it **out** of the main payload and writes it
+  after in its own try/catch ("so a not-yet-migrated DB never breaks the main save"), but
+  `wbsAddChild`'s projection insert put `wbs_node_id` **in** the payload — so on a DB missing that
+  column the activity insert survives and the summary insert fails. And the failure was **silent**:
+  `if (!sres.error && sres.data) rows.push(...)` dropped the error on the floor. Node in the tree, no
+  schedule row, no message.
+- **Fix:** new **`_insertWbsSummary(payload)`** — retries without `wbs_node_id` when the error names
+  that column (warn toast: "Saved without the WBS link — run the wbs-nodes migration"), and **surfaces
+  any other error** instead of swallowing it. Used by `wbsAddChild` and the copy-from-another-project
+  path (which had the identical swallow).
+- **NOTE — the fix makes the failure visible; it does not prove the cause.** If the toast now names
+  `wbs_node_id`, the DB is missing it → run `migrations/2026-07-07-wbs-nodes.sql`. If it names anything
+  else, that message is the real root cause. Confirm directly with:
+  `select column_name from information_schema.columns where table_name='project_schedule' and column_name='wbs_node_id';`
+- **Related inconsistency (not fixed):** `2026-07-07-wbs-nodes.sql` was folded into `supabase-setup.sql`
+  but **NOT into `supabase-schema.sql`** (0 mentions of `wbs_nodes`/`wbs_node_id` there), so any DB
+  built from `supabase-schema.sql` lacks both the table and the column. Worth reconciling.
+
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).
 > 2. This module is **Project Schedule & Cost Loading** (Phase 2). Your DB table is `project_schedule`

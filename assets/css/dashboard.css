@@ -355,14 +355,29 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-tree-count { font-size: 11px; color: var(--pd-muted); background: var(--pd-bg);
   border: 1px solid var(--pd-line); border-radius: 999px; padding: 0 7px; min-width: 18px; text-align: center; }
 .pd-tree-node.active .pd-tree-count { background: #fff; }
+/* Gear to edit/delete a workspace or program. Hidden until hover/selection so the tree stays
+   calm; opacity (not display) keeps it keyboard-reachable — focus-visible reveals it. */
+.pd-tree-edit { flex: 0 0 auto; border: none; background: transparent; cursor: pointer;
+  color: var(--pd-muted); padding: 2px; border-radius: 5px; line-height: 1;
+  display: inline-flex; align-items: center; opacity: 0; transition: opacity .12s; }
+.pd-tree-node:hover .pd-tree-edit, .pd-tree-node.active .pd-tree-edit { opacity: 1; }
+.pd-tree-edit:hover { color: var(--pd-red); background: var(--pd-card); }
+.pd-tree-edit:focus-visible { opacity: 1; outline: 2px solid var(--pd-red); outline-offset: 1px; }
 .pd-icon-btn { border: none; background: transparent; cursor: pointer; font-size: 18px; color: var(--pd-red); line-height: 1; }
 
 /* toolbar */
 .pd-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   margin-bottom: 12px; flex-wrap: wrap; }
 .pd-toolbar-left, .pd-toolbar-right { display: flex; align-items: center; gap: 10px; }
-.pd-proj-count { color: var(--pd-muted); font-size: 13px; }
-.pd-viewtoggle { display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
+/* A flex item defaults to min-width:auto, and a text input's min-content width is its `size`
+   (~170px+) — so .pd-toolbar-right could not shrink below search+toggle and overflowed the pane
+   to the right, clipping the card/list toggle at the window edge. min-width:0 lets the row shrink,
+   the input absorbs it, and the toggle stays fixed and always visible. */
+.pd-toolbar-left { min-width: 0; flex-wrap: wrap; }
+.pd-toolbar-right { flex: 1 1 auto; min-width: 0; justify-content: flex-end; flex-wrap: wrap; }
+.pd-toolbar-right .pd-input-sm { flex: 0 1 220px; min-width: 0; }
+.pd-proj-count { color: var(--pd-muted); font-size: 13px; white-space: nowrap; }
+.pd-viewtoggle { flex: 0 0 auto; display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
 .pd-vt { border: none; background: var(--pd-card); padding: 6px 12px; cursor: pointer; color: var(--pd-muted); font-size: 14px; }
 .pd-vt.active { background: var(--pd-red); color: #fff; }
 

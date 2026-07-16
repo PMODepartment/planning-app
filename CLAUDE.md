@@ -67,7 +67,7 @@ developer, plug into one shared shell.
 |---|---|
 | `super_admin` | full control, only role that can set super_admin |
 | `admin` | manage users/projects, all modules |
-| `planner` | auto-approve writer, all projects |
+| `planner` | auto-approve writer, assigned projects only (may create new projects) |
 | `user` | assigned projects only |
 | `viewer` | read-only |
 
@@ -76,6 +76,79 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-07-16 — Workspace edit/delete affordance + view-toggle clipping fix
+- **`workspaceModal` was unreachable for EXISTING nodes.** It was only ever called as
+  `workspaceModal(null)` (Add menu + `#add-ws`), so once a workspace/program was created there was
+  **no way to rename, move, or delete it** — and the `Delete…` button added earlier the same day was
+  dead code. Tree nodes now carry a **gear** (`.pd-tree-edit`, `canWrite` only) that opens
+  `workspaceModal(w)`. It `stopPropagation()`s — the gear sits inside the `[data-ws]` row whose click
+  selects the node. Hidden until hover/selection via **opacity** (not `display`) so it stays
+  keyboard-reachable; `:focus-visible` reveals it.
+- **Card/list view toggle was clipping its second button.** Root cause (reproduced + measured in a
+  throwaway `_ui_test.html` harness against the real CSS): `.pd-toolbar-right` gets 272px, but
+  search (202) + gap (10) + toggle (80) needs 292. A text input's flex `min-width` defaults to
+  `auto` = its intrinsic width, so **the input refused to shrink and the toggle absorbed the whole
+  22px squeeze** — and since `.pd-viewtoggle` sets `overflow:hidden`, it silently **clipped its own
+  button** instead of overflowing visibly. Measured: original `clientW 58 / scrollW 80` (clipped);
+  fixed `80 / 80` (intact). **Fix:** `.pd-viewtoggle{flex:0 0 auto}` (never shrinks) +
+  `.pd-toolbar-right .pd-input-sm{flex:0 1 220px;min-width:0}` (input absorbs the shrink) +
+  `min-width:0`/`flex-wrap:wrap` on both toolbar halves.
+- `dashboard.css` changed → **`dashboard.css?v=` bumped to `20260716` across all 21 HTML files.**
+- **Correction to the WBS entry below:** the `wbs_node_id`-missing theory was **disproven** — the user
+  ran the migration and `information_schema` confirms the column exists. The tolerant retry is
+  therefore a no-op; what matters is that the error is no longer swallowed. Root cause still open.
+  Note **Naga City Integrated Terminal is a `program` (a `workspaces` node), not a project** — the WBS
+  Manager only operates on a selected project, which is the likely real explanation.
+
+### 2026-07-16 — Admin: archive / delete for projects & workspaces
+- **Why it isn't a plain DELETE:** ~20 module tables carry `project_id text references
+  projects(id)` and most predate `on delete cascade`, so deleting a project that has ever
+  been used dies on an FK violation. Cascade-wiping construction records was rejected;
+  **archive is the primary action, hard delete is the empty-only escape hatch.**
+- **No new archive column.** `projects.status` (`active | archived`) already meant this and
+  was already wired — portfolio-overview filters on it, dashboard/projects render a muted
+  pill, both Edit Project modals expose it. `admin_archive_project(id, bool)` just flips it
+  behind an admin guard. `getProjects()` still returns archived projects (they're meant to
+  be visible-but-muted, not hidden).
+- **New RPCs** (admin-only, `security definer`, mirroring `admin_delete_user`):
+  `admin_archive_project(text, boolean)`, `admin_delete_project(text)`,
+  `admin_delete_workspace(text)`. `admin_delete_project` discovers referencing tables from
+  the **pg catalog** (any `public` table with a `project_id` column) rather than a hardcoded
+  list, so modules added later are covered automatically; it refuses with a message naming
+  each blocking table + row count, and strips the id from `users.projects` (text[], no FK)
+  before deleting. `admin_delete_workspace` refuses while child workspaces/projects exist.
+- **UI:** Archive/Restore + `Delete…` in the Edit Project modal (`projects.html` +
+  `admin.html`) and `Delete…` in the Edit Workspace modal. Delete opens a **type-the-id-to-
+  confirm** dialog; the DB's refusal message is surfaced verbatim via `UI.toast`.
+- `db.js`: `PDb.archiveProject/deleteProject/deleteWorkspace`. **`db.js?v=` bumped to
+  `20260716` across all 18 HTML files.**
+- Migration `migrations/2026-07-16-admin-archive-delete.sql`. **User must run this migration**
+  — the UI calls RPCs that don't exist until then.
+- **Known pre-existing bug (not fixed here):** `window.__archived` is read in 8 guards in
+  `modules/project-schedule/index.html` but **never assigned anywhere**, so the intended
+  "archived projects are read-only" behaviour does not currently work. Archiving therefore
+  mutes/filters a project but does not yet make the schedule read-only.
+
+### 2026-07-16 — Fix: planners could see unassigned projects (RLS leak)
+- **Bug:** `projects_write` was created `for all`, which covers **SELECT**. Postgres ORs
+  permissive policies, so `using (is_planner())` handed every approved planner read access
+  to every project row — silently defeating the assignment filter in `projects_read`. The
+  name said "write"; the grant was all four commands. Introduced by the 2026-06-30 change
+  that widened project writes to planners (see below).
+- **Fix:** split into per-command `projects_ins` / `projects_upd` / `projects_del`, leaving
+  `projects_read` as the only SELECT gate. Update/delete are now also assignment-scoped
+  (`is_admin() or can_access_project(id)`) — a planner could previously edit a project they
+  couldn't see. **Insert stays `is_planner()`-only**: a new project isn't in anyone's
+  `users.projects` array yet, so planners keep **Add Project**.
+- Roles table corrected: `planner` is **assigned projects only**, matching
+  `canAccessProject()` in `auth.js` (which always filtered planners — the JS and the DB had
+  disagreed since 2026-06-30, which is why the leak went unnoticed in the UI).
+- Migration `migrations/2026-07-16-planner-project-visibility.sql` (folded into
+  `supabase-setup.sql` + `supabase-schema.sql`). **User must run this migration.**
+- Not changed: `workspaces_write` and the activity-codes/steps/last-planner policies use the
+  same `for all` + `is_planner()` shape, but leak nothing — their reads are `is_approved()`,
+  so every approved user sees those rows regardless.
 
 ### 2026-07-14 — Prompt 66: Cash Flow rebuilt as a schedule + WPM-driven projection
 - **Replaced the manual Cash Flow CRUD** (period/category/planned/actual entries) with a

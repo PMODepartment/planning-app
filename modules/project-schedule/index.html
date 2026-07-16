@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260712"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260712" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260716" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -1376,7 +1376,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260712"></script>
 <script src="../../assets/js/auth.js?v=20260712"></script>
-<script src="../../assets/js/db.js?v=20260712"></script>
+<script src="../../assets/js/db.js?v=20260716"></script>
 <script src="../../assets/js/ui.js?v=20260712"></script>
 <script src="../../assets/js/icons.js?v=20260712"></script>
 <script src="../../assets/js/calendar.js?v=20260712"></script>
@@ -6200,6 +6200,20 @@
     await _batchUpdate(TABLE, schedUp);
     rebuild(); renderWbsManager(); renderGrid(); renderGantt();
   }
+  // Insert a projected WBS-Summary row. `wbs_node_id` is treated as optional here for the same
+  // reason save() writes it separately (see the note above the contract_date/wbs_node_id writes):
+  // on a DB where that column was never migrated, including it in the payload fails the WHOLE
+  // insert — which used to leave the node in the tree with no Project Schedule row. Retry without
+  // it so the row (and the grid) still works; the link is then re-established by Adopt existing WBS.
+  async function _insertWbsSummary(payload) {
+    var res = await sb().from(TABLE).insert(payload).select().single();
+    if (res.error && payload.wbs_node_id && /wbs_node_id/.test(res.error.message || '')) {
+      var fallback = Object.assign({}, payload); delete fallback.wbs_node_id;
+      res = await sb().from(TABLE).insert(fallback).select().single();
+      if (!res.error) UI.toast('Saved without the WBS link — run the wbs-nodes migration.', 'warn');
+    }
+    return res;
+  }
   async function _batchUpdate(table, ups) {
     for (var i = 0; i < ups.length; i += 40) {
       var slice = ups.slice(i, i + 40);
@@ -6239,8 +6253,14 @@
       WBS_NODES.push(res.data);
       var codeOf2 = computeWbsCodes();
       // project a WBS-Summary row so the grid shows the node with its name + rolled-up dates
-      var sres = await sb().from(TABLE).insert({ project_id: pid, wbs_node_id: res.data.id, activity_type: 'WBS Summary', wbs: codeOf2[res.data.id], activity_name: name, created_by: UID }).select().single();
-      if (!sres.error && sres.data) rows.push(sres.data);
+      var sres = await _insertWbsSummary({ project_id: pid, wbs_node_id: res.data.id, activity_type: 'WBS Summary', wbs: codeOf2[res.data.id], activity_name: name, created_by: UID });
+      if (sres.error) {
+        // Never silent: without this row the node exists in the tree but the Project Schedule
+        // shows nothing — the exact symptom this used to fail with.
+        UI.toast('WBS “' + name + '” was created, but its Project Schedule row failed: ' + sres.error.message, 'error');
+        renderWbsManager(); return;
+      }
+      if (sres.data) rows.push(sres.data);
       _wbsSel = res.data.id;   // select the new node so the next Add-activity targets it
       await _wbsCommit();
       UI.toast('WBS “' + name + '” added.', 'success');
@@ -6349,8 +6369,9 @@
         var ins = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: newParent, name: n.name || 'WBS', code: null, code_custom: false, sort_order: n.sort_order != null ? n.sort_order : i, created_by: UID }).select().single();
         if (ins.error) { hideLoading(); UI.toast('Copy failed after ' + made + ': ' + ins.error.message, 'error'); await _wbsCommit(); return; }
         map[n.id] = ins.data.id; WBS_NODES.push(ins.data); made++;
-        var sres = await sb().from(TABLE).insert({ project_id: pid, wbs_node_id: ins.data.id, activity_type: 'WBS Summary', wbs: '', activity_name: n.name || 'WBS', created_by: UID }).select().single();
-        if (!sres.error && sres.data) rows.push(sres.data);
+        var sres = await _insertWbsSummary({ project_id: pid, wbs_node_id: ins.data.id, activity_type: 'WBS Summary', wbs: '', activity_name: n.name || 'WBS', created_by: UID });
+        if (sres.error) { hideLoading(); UI.toast('Copied ' + made + ' node(s), then the Project Schedule row failed: ' + sres.error.message, 'error'); await _wbsCommit(); return; }
+        if (sres.data) rows.push(sres.data);
       }
       await _wbsCommit();
       hideLoading(); UI.toast('Copied ' + made + ' WBS node' + (made === 1 ? '' : 's') + ' from ' + (others.find(function (p) { return p.id === srcPid; }) || {}).name + '.', 'success');

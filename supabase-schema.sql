@@ -483,8 +483,20 @@ drop policy if exists workspaces_write on workspaces;
 create policy workspaces_write on workspaces for all using (is_planner()) with check (is_planner());
 grant select, insert, update, delete on workspaces to authenticated;
 drop policy if exists projects_admin_write on projects;
+-- Per-command, never `for all`: `for all` covers SELECT too, which would OR with
+-- projects_read and let planners see unassigned projects. Insert stays unfiltered
+-- because a new project isn't in anyone's users.projects array yet.
 drop policy if exists projects_write on projects;
-create policy projects_write on projects for all using (is_planner()) with check (is_planner());
+drop policy if exists projects_ins on projects;
+drop policy if exists projects_upd on projects;
+drop policy if exists projects_del on projects;
+create policy projects_ins on projects for insert
+  with check (is_planner());
+create policy projects_upd on projects for update
+  using (is_planner() and (is_admin() or can_access_project(id)))
+  with check (is_planner() and (is_admin() or can_access_project(id)));
+create policy projects_del on projects for delete
+  using (is_planner() and (is_admin() or can_access_project(id)));
 insert into workspaces (id, name, code, parent_id, node_type, group_head, sort_order) values
   ('CORP','Corporate Root','Corp',null,'workspace',null,0),
   ('NONPROD','Non Production','NonP','CORP','workspace',null,1),
