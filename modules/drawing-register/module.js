@@ -107,6 +107,9 @@ window.DrawingRegister = (function () {
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     rows = res.data || [];
     selected = {};
+    // default to a clean level-1 view: collapse every phase group on load
+    collapsed = {};
+    rows.forEach(function (r){ collapsed['P:' + (r.phase || 'Ungrouped')] = true; });
     render();
   }
 
@@ -200,7 +203,9 @@ window.DrawingRegister = (function () {
     phaseOrder.sort(function (a, b) { return phaseRank(a) - phaseRank(b) || a.localeCompare(b); });
 
     var CB = canWrite;
+    var anyOpen = phaseOrder.some(function (ph){ return !collapsed['P:'+ph]; });
     var toolbar = '<div class="dr-listbar">' +
+      '<button class="dr-rowbtn dr-xall" id="dr-xall">' + (anyOpen ? 'Collapse all' : 'Expand all') + '</button>' +
       '<div class="dr-listcount">Showing <strong>'+data.length+'</strong> of '+rows.length+' drawings</div>' +
       '<div class="dr-selbar" id="dr-selbar" hidden>' +
         '<span id="dr-selcount"></span>' +
@@ -240,6 +245,15 @@ window.DrawingRegister = (function () {
   }
 
   function wireRegister(host, data) {
+    // Expand all / Collapse all (level-1 phases)
+    var xall = host.querySelector('#dr-xall');
+    if (xall) xall.onclick = function(){
+      var phases = {}; data.forEach(function (r){ phases['P:'+(r.phase||'Ungrouped')] = true; });
+      var anyOpen = Object.keys(phases).some(function (k){ return !collapsed[k]; });
+      if (anyOpen) { Object.keys(phases).forEach(function (k){ collapsed[k] = true; }); }
+      else { collapsed = {}; }   // expand everything (phases + disciplines)
+      render();
+    };
     // collapse/expand groups — click the label (not the checkbox)
     host.querySelectorAll('tr.dr-grp .dr-grplabel').forEach(function (lab){
       lab.onclick = function(){

@@ -77,6 +77,14 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-16 — Drawing Register: level-1 accordion (phases collapsed by default + Expand/Collapse all)
+- Level-1 **phase** roll-up rows now start **collapsed on load**, so the register opens as a tidy
+  list of phase headers you expand into. Added an **Expand all / Collapse all** toggle in the list
+  bar (Collapse all folds every phase; Expand all clears all collapse state incl. disciplines).
+  Per-row phase/discipline collapse still works. Assets bumped to `?v=20260716e`. Harness-verified
+  (default collapsed → 2 phase rows/0 drawings; expand one phase → its disciplines+drawings; toggle
+  round-trips). See `modules/drawing-register/CLAUDE.md`.
+
 ### 2026-07-16 — Drawing Register: fix import hang + toolbar/table refinement
 - **Import hang fixed (root cause):** `gridOf` ran `sheet_to_json(defval:'')` over the workbook's
   bloated dimension — its "Dwg Registry" sheet declares **16,383 columns**, so it allocated ~100M

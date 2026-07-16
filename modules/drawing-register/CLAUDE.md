@@ -79,7 +79,9 @@ Project-scoped drawing register that mirrors the workbook:
   Progress tabs · action cluster (**+ Add drawing** primary, divider, Import/Export, subtle
   **Clear all**); row 2 = search (grows) + phase/discipline/status filters.
 - **Collapsible groups**: click a phase or discipline roll-up row to collapse/expand (caret
-  indicator, `collapsed` state).
+  indicator, `collapsed` state). **Level-1 (phase) groups start collapsed on load** so the
+  register opens as a clean list of phase rows; an **Expand all / Collapse all** toggle in the
+  list bar flips every phase at once (Expand all clears all collapse state incl. disciplines).
 - Toolbar in a bordered card; segmented Register/Progress tabs.
 - Table: sticky header, zebra hover, monospace drawing codes, tinted phase
   roll-up rows, gradient progress bars, compact row buttons, a "Showing N of M"

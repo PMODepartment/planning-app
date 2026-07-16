@@ -28,7 +28,8 @@
 .dr-tab.active { background:var(--pd-red); color:#fff; }
 
 /* ---- List bar (count + selection) --------------------------------------- */
-.dr-listbar { display:flex; align-items:center; gap:14px; margin-bottom:10px; min-height:30px; }
+.dr-listbar { display:flex; align-items:center; gap:12px; margin-bottom:10px; min-height:30px; }
+.dr-xall { flex:0 0 auto; }
 .dr-listcount { color:var(--pd-muted); font-size:13px; }
 .dr-selbar { display:flex; align-items:center; gap:10px; margin-left:auto;
   background:rgba(238,49,36,.08); border:1px solid var(--pd-red); border-radius:999px; padding:4px 6px 4px 14px; }
