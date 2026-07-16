@@ -1,10 +1,23 @@
 /* Drawing Register & Tracker — module styles (all classes prefixed .dr-) */
 
 /* ---- Toolbar ------------------------------------------------------------- */
-.dr-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px;
-  background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
-  padding:12px 14px; }
-.dr-actions { display:flex; gap:8px; margin-left:auto; }
+.dr-toolbar { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  padding:12px 14px; margin-bottom:16px; display:flex; flex-direction:column; gap:10px; }
+.dr-toolbar-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.dr-toolbar-row + .dr-toolbar-row { border-top:1px solid var(--pd-line); padding-top:10px; }
+.dr-project { max-width:280px; font-weight:600; }
+.dr-actions { display:flex; gap:8px; align-items:center; margin-left:auto; }
+.dr-actsep { width:1px; align-self:stretch; background:var(--pd-line); margin:2px 4px; }
+.dr-clearbtn { color:var(--pd-bad,#dc2626); border-color:transparent; }
+.dr-clearbtn:hover { background:var(--pd-bad,#dc2626); border-color:var(--pd-bad,#dc2626); color:#fff; }
+.dr-filters .dr-search { flex:1 1 260px; min-width:180px; }
+.dr-filters .pd-select { flex:0 0 auto; max-width:190px; }
+
+/* Loading spinner (import) */
+.dr-spin { display:inline-block; width:13px; height:13px; vertical-align:-2px; margin-right:6px;
+  border:2px solid var(--pd-line); border-top-color:var(--pd-red); border-radius:50%;
+  animation:dr-spin .7s linear infinite; }
+@keyframes dr-spin { to { transform:rotate(360deg); } }
 
 /* View tabs (segmented) */
 .dr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; }
@@ -52,6 +65,9 @@
 
 /* Group roll-up rows */
 .dr-grp td { border-bottom:1px solid var(--pd-line); }
+.dr-grplabel { display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+.dr-caret { display:inline-block; font-size:11px; color:var(--pd-muted); transition:transform .12s; }
+.dr-caret-col { transform:rotate(-90deg); }
 .dr-grp-phase td { background:rgba(238,49,36,.10); border-top:2px solid var(--pd-red); padding-top:11px; padding-bottom:11px; }
 .dr-grp-phase td strong { text-transform:uppercase; letter-spacing:.03em; font-size:13px; }
 .dr-grp-disc td { background:var(--pd-bg); }

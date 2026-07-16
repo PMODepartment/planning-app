@@ -20,6 +20,7 @@ window.DrawingRegister = (function () {
   var view = 'register';                       // register | progress
   var filters = { phase: '', discipline: '', status: '', search: '' };
   var selected = {};                           // id -> true (bulk select)
+  var collapsed = {};                          // group key -> true (collapsed)
   var canWrite = false;                        // planner+ / admin / super_admin
 
   // ---- Coding Reference (from the workbook "Coding Reference" sheet) --------
@@ -221,11 +222,15 @@ window.DrawingRegister = (function () {
 
     phaseOrder.forEach(function (ph) {
       var pr = flat(groups[ph]);
-      html += rollupRow(ph, pr, 'phase', CB);
+      var pkey = 'P:' + ph;
+      html += rollupRow(ph, pr, 'phase', CB, pkey);
+      if (collapsed[pkey]) return;
       Object.keys(groups[ph]).sort().forEach(function (d) {
         var dr = groups[ph][d];
+        var dkey = 'D:' + ph + '|' + d;
         var dlabel = DISCIPLINES[d] ? DISCIPLINES[d] : disciplineName(d);
-        html += rollupRow(dlabel + (DISCIPLINES[d]?' ('+d+')':''), dr, 'disc', CB);
+        html += rollupRow(dlabel + (DISCIPLINES[d]?' ('+d+')':''), dr, 'disc', CB, dkey);
+        if (collapsed[dkey]) return;
         dr.forEach(function (r) { html += drawingRow(r, CB); });
       });
     });
@@ -235,6 +240,14 @@ window.DrawingRegister = (function () {
   }
 
   function wireRegister(host, data) {
+    // collapse/expand groups — click the label (not the checkbox)
+    host.querySelectorAll('tr.dr-grp .dr-grplabel').forEach(function (lab){
+      lab.onclick = function(){
+        var key = lab.closest('tr.dr-grp').dataset.grp;
+        if (collapsed[key]) delete collapsed[key]; else collapsed[key] = true;
+        render();
+      };
+    });
     host.querySelectorAll('[data-view]').forEach(function (b){ b.onclick=function(){ viewFile(b.dataset.view); }; });
     host.querySelectorAll('[data-edit]').forEach(function (b){ b.onclick=function(){ openForm(rows.find(function(x){return x.id===b.dataset.edit;})); }; });
     host.querySelectorAll('[data-del]').forEach(function (b){ b.onclick=function(){ del(rows.find(function(x){return x.id===b.dataset.del;})); }; });
@@ -265,14 +278,17 @@ window.DrawingRegister = (function () {
 
   function flat(byDisc){ var a=[]; Object.keys(byDisc).forEach(function(k){ a=a.concat(byDisc[k]); }); return a; }
 
-  function rollupRow(label, list, kind, CB) {
+  function rollupRow(label, list, kind, CB, key) {
     var tot=0, ap=0;
     list.forEach(function (r){ tot += num(r.no_of_sheets)||0; ap += num(r.approved_sheets)||0; });
     var pct = tot ? Math.round(ap/tot*100) : 0;
     var ids = list.map(function(r){return r.id;}).join(',');
     var grpCb = CB ? '<td class="dr-cb"><input type="checkbox" data-selgrp="'+ids+'" title="Select group"></td>' : '';
-    return '<tr class="dr-grp dr-grp-'+kind+'">' + grpCb +
-      '<td colspan="6"><strong>'+Fmt.esc(label)+'</strong> <span class="dr-count">'+list.length+' dwg</span></td>' +
+    var isCol = !!collapsed[key];
+    var caret = '<span class="dr-caret'+(isCol?' dr-caret-col':'')+'">▾</span>';
+    return '<tr class="dr-grp dr-grp-'+kind+(isCol?' dr-collapsed':'')+'" data-grp="'+Fmt.esc(key)+'">' + grpCb +
+      '<td colspan="6"><span class="dr-grplabel">'+caret+'<strong>'+Fmt.esc(label)+'</strong> ' +
+        '<span class="dr-count">'+list.length+' dwg</span></span></td>' +
       '<td class="dr-r">'+tot+'</td>' +
       '<td class="dr-r">'+ap+'</td>' +
       '<td colspan="4">'+progressBar(pct)+'</td><td></td></tr>';
@@ -638,19 +654,25 @@ window.DrawingRegister = (function () {
     m.el.querySelector('#dr-imp-cancel').onclick = m.close;
     m.el.querySelector('#dr-imp-file').onchange = function (e) {
       var f = e.target.files[0]; if (!f) return;
-      var prev = m.el.querySelector('#dr-imp-preview'); prev.textContent = 'Reading…';
+      var prev = m.el.querySelector('#dr-imp-preview');
+      prev.innerHTML = '<span class="dr-spin"></span> Reading workbook…';
       var reader = new FileReader();
       reader.onload = function (ev) {
-        try {
-          var wb = XLSX.read(new Uint8Array(ev.target.result), { type:'array', cellDates:true });
-          parsed = parseWorkbook(wb);
-          if (!parsed.length) { prev.textContent = 'No drawing rows found in the workbook.'; return; }
-          prev.innerHTML = '<strong>'+parsed.length+'</strong> drawings found. Sample:<br>' +
-            parsed.slice(0,6).map(function (d){
-              return '• '+Fmt.esc((d.phase||'')+' / '+(d.discipline||'')+' — '+(d.drawing_no||d.title));
-            }).join('<br>');
-          m.el.querySelector('#dr-imp-go').disabled = false;
-        } catch (err) { prev.textContent = 'Parse error: ' + err.message; }
+        // defer the (synchronous) parse one tick so the "Reading…" state paints
+        setTimeout(function () {
+          try {
+            // sheetRows caps how many rows SheetJS materialises per sheet — a
+            // second guard against oversized sheets.
+            var wb = XLSX.read(new Uint8Array(ev.target.result), { type:'array', cellDates:true, sheetRows:8000 });
+            parsed = parseWorkbook(wb);
+            if (!parsed.length) { prev.textContent = 'No drawing rows found in the workbook.'; return; }
+            prev.innerHTML = '<strong>'+parsed.length+'</strong> drawings found. Sample:<br>' +
+              parsed.slice(0,6).map(function (d){
+                return '• '+Fmt.esc((d.phase||'')+' / '+(d.discipline||'')+' — '+(d.drawing_no||d.title));
+              }).join('<br>');
+            m.el.querySelector('#dr-imp-go').disabled = false;
+          } catch (err) { prev.textContent = 'Parse error: ' + err.message; }
+        }, 30);
       };
       reader.readAsArrayBuffer(f);
     };
@@ -679,11 +701,13 @@ window.DrawingRegister = (function () {
             remarks:p.remarks
           };
         });
-        // chunked insert
+        // chunked insert; yield to the event loop between chunks so the
+        // progress text repaints and the tab never looks frozen
         for (var i=0; i<recs.length; i+=200) {
           var chunk = recs.slice(i, i+200);
           var ins = await sb().from(TABLE).insert(chunk); if (ins.error) throw ins.error;
           go.textContent = 'Importing '+Math.min(i+200,recs.length)+' / '+recs.length+'…';
+          await new Promise(function (r){ setTimeout(r, 0); });
         }
         UI.toast('Imported '+recs.length+' drawings', 'ok'); m.close(); load();
       } catch (e) { UI.toast(e.message, 'error'); go.disabled=false; go.textContent='Import'; }
@@ -707,8 +731,26 @@ window.DrawingRegister = (function () {
     return best ? best.recs : [];
   }
 
+  // Read a BOUNDED window of the sheet via direct cell refs. These workbooks
+  // carry a bloated `!ref` (one sheet claims 16,383 columns) — sheet_to_json
+  // over that allocates ~100M empty cells and hangs the browser. We cap columns
+  // to MAXC (real registers use ~32) and only walk the real row range.
   function gridOf(ws) {
-    return XLSX.utils.sheet_to_json(ws, { header:1, raw:false, defval:'' });
+    if (!ws || !ws['!ref']) return [];
+    var MAXC = 60;
+    var rng = XLSX.utils.decode_range(ws['!ref']);
+    var c0 = rng.s.c, c1 = Math.min(rng.e.c, c0 + MAXC);
+    var r0 = rng.s.r, r1 = rng.e.r;
+    var g = [];
+    for (var R = r0; R <= r1; R++) {
+      var row = [];
+      for (var C = c0; C <= c1; C++) {
+        var cell = ws[XLSX.utils.encode_cell({ r:R, c:C })];
+        row.push(cell ? (cell.w != null ? cell.w : cell.v) : '');
+      }
+      g.push(row);
+    }
+    return g;
   }
 
   function norm(s){ return String(s==null?'':s).replace(/\s+/g,' ').trim().toLowerCase(); }

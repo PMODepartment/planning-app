@@ -77,6 +77,19 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-16 — Drawing Register: fix import hang + toolbar/table refinement
+- **Import hang fixed (root cause):** `gridOf` ran `sheet_to_json(defval:'')` over the workbook's
+  bloated dimension — its "Dwg Registry" sheet declares **16,383 columns**, so it allocated ~100M
+  empty cells and froze the tab. Rewrote `gridOf` to read a **bounded window via direct cell refs**
+  (cols capped at 60, real row range) + `sheetRows:8000` on `XLSX.read`; parse deferred a tick so
+  the "Reading…" spinner paints; insert chunks yield (0-ms `await`) so progress repaints. Verified
+  on the real file: ~1s read + ~0.4s parse (was hanging), same 1032 drawings.
+- **Toolbar** rebuilt into two rows in one card: project · tabs · action cluster (+ Add drawing
+  primary, divider, Import/Export, subtle Clear all) / search (grows) + filters.
+- **Collapsible phase & discipline groups** (click the roll-up row; caret indicator).
+- Module assets bumped to `?v=20260716d`. Harness-verified (toolbar layout, collapse/expand,
+  parse perf). See `modules/drawing-register/CLAUDE.md`.
+
 ### 2026-07-16 — Drawing Register: planner delete tools + professional UI pass
 - **Clear all** (planner/admin/super_admin only): a type-the-project-id confirm modal that
   deletes every drawing for the current project (storage files first) — for fixing a

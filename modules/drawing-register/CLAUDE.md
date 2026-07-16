@@ -65,7 +65,21 @@ Project-scoped drawing register that mirrors the workbook:
 - Per-row Edit/Del unchanged. RLS still governs who can delete which rows
   (creator or admin), so a planner clears what they imported.
 
-## UI (2026-07-16 professional pass)
+## Import performance (2026-07-16)
+- **Root cause of the hang:** `gridOf` used `sheet_to_json(..., {defval:''})` over the
+  sheet's bloated `!ref` (the workbook's "Dwg Registry" sheet claims **16,383 columns**),
+  allocating ~100M empty cells. Rewrote `gridOf` to read a **bounded window via direct cell
+  refs** (columns capped at 60, real row range only). Added `sheetRows:8000` to `XLSX.read`.
+  Parse now deferred one tick (so "Reading…" paints) and insert chunks `await` a 0-ms timeout
+  (so progress repaints). Verified against the real workbook: read ~1s + parse ~0.4s (was
+  hanging), same 1032 drawings.
+
+## UI (2026-07-16 professional pass + toolbar/table refinement)
+- **Toolbar** reorganised into two rows inside one card: row 1 = project selector · Register/
+  Progress tabs · action cluster (**+ Add drawing** primary, divider, Import/Export, subtle
+  **Clear all**); row 2 = search (grows) + phase/discipline/status filters.
+- **Collapsible groups**: click a phase or discipline roll-up row to collapse/expand (caret
+  indicator, `collapsed` state).
 - Toolbar in a bordered card; segmented Register/Progress tabs.
 - Table: sticky header, zebra hover, monospace drawing codes, tinted phase
   roll-up rows, gradient progress bars, compact row buttons, a "Showing N of M"

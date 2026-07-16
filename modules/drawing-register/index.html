@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260716"></script>
   <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260716" />
-  <link rel="stylesheet" href="module.css?v=20260716c" />
+  <link rel="stylesheet" href="module.css?v=20260716d" />
 </head>
 <body>
   <div class="pd-app">
@@ -26,26 +26,31 @@
         <div id="user-bar"></div>
       </div>
       <div class="pd-main">
-        <div class="dr-controls">
-          <select class="pd-select" id="dr-project" style="max-width:240px;"></select>
-          <div class="dr-tabs">
-            <button class="dr-tab active" data-view="register">Register</button>
-            <button class="dr-tab" data-view="progress">Progress</button>
+        <div class="dr-toolbar">
+          <div class="dr-toolbar-row">
+            <select class="pd-select dr-project" id="dr-project"></select>
+            <div class="dr-tabs">
+              <button class="dr-tab active" data-view="register">Register</button>
+              <button class="dr-tab" data-view="progress">Progress</button>
+            </div>
+            <div class="dr-actions">
+              <button class="pd-btn pd-btn-primary" id="dr-add">+ Add drawing</button>
+              <span class="dr-actsep"></span>
+              <button class="pd-btn" id="dr-import">Import Excel</button>
+              <button class="pd-btn" id="dr-export">Export</button>
+              <button class="pd-btn dr-clearbtn" id="dr-clear" style="display:none;">Clear all</button>
+            </div>
           </div>
-          <select class="pd-select" id="dr-f-phase" style="max-width:170px;"><option value="">All phases</option></select>
-          <select class="pd-select" id="dr-f-discipline" style="max-width:160px;"><option value="">All disciplines</option></select>
-          <select class="pd-select" id="dr-f-status" style="max-width:170px;">
-            <option value="">All statuses</option>
-            <option>For Review</option><option>Revise &amp; Resubmit</option>
-            <option>Approved w/ comments</option><option>Approved w/o comments</option>
-            <option>Approved</option><option>Superseded</option>
-          </select>
-          <input class="pd-input" id="dr-f-search" placeholder="Search…" style="max-width:180px;" />
-          <div class="dr-actions">
-            <button class="pd-btn" id="dr-import">Import Excel</button>
-            <button class="pd-btn" id="dr-export">Export</button>
-            <button class="pd-btn pd-btn-danger" id="dr-clear" style="display:none;">Clear all</button>
-            <button class="pd-btn pd-btn-primary" id="dr-add">+ Add drawing</button>
+          <div class="dr-toolbar-row dr-filters">
+            <input class="pd-input dr-search" id="dr-f-search" placeholder="Search code, title, description…" />
+            <select class="pd-select" id="dr-f-phase"><option value="">All phases</option></select>
+            <select class="pd-select" id="dr-f-discipline"><option value="">All disciplines</option></select>
+            <select class="pd-select" id="dr-f-status">
+              <option value="">All statuses</option>
+              <option>For Review</option><option>Revise &amp; Resubmit</option>
+              <option>Approved w/ comments</option><option>Approved w/o comments</option>
+              <option>Approved</option><option>Superseded</option>
+            </select>
           </div>
         </div>
 
@@ -61,7 +66,7 @@
   <script src="../../assets/js/db.js?v=20260716"></script>
   <script src="../../assets/js/ui.js?v=20260716"></script>
   <script src="../../assets/js/icons.js?v=20260716"></script>
-  <script src="module.js?v=20260716c"></script>
+  <script src="module.js?v=20260716d"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
