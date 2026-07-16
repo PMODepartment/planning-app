@@ -216,7 +216,6 @@
 
     /* sidebar-less shell (matches Project Schedule) */
     .cf-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-right:6px; }
-    .pd-topbar #user-bar { margin-left:auto; }
 
     .cf-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--pd-line); }
     .cf-tab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; border-bottom:2px solid transparent; }
@@ -234,6 +233,7 @@
         <button class="pd-btn" id="cf-refresh" title="Reload the projection"><span data-ico="refresh" data-ico-size="17"></span></button>
         <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="17"></span></button>
         <button class="pd-btn" id="cf-print" title="Print / save the cashflow sheet as PDF"><span data-ico="printer" data-ico-size="17"></span></button>
+        <button class="pd-btn" id="cf-check" title="Setup check — verify DB tables / columns / RPC are in place"><span data-ico="check" data-ico-size="17"></span></button>
       </div>
       <div id="user-bar"></div>
     </div>
@@ -253,7 +253,6 @@
         </div>
         <div class="cf-actions">
           <button class="pd-btn" id="cf-sync" title="Pull the latest procurement work packages from WPM (admins/planners)" style="display:none;"><span data-ico="refresh" data-ico-size="15"></span> Sync from WPM</button>
-          <button class="pd-btn" id="cf-check" title="Check that all DB tables / columns / RPC are set up"><span data-ico="check" data-ico-size="15"></span> Setup check</button>
           <button class="pd-btn" id="cf-actuals" title="Record actual cash received / paid"><span data-ico="clipboard" data-ico-size="15"></span> Actuals</button>
           <button class="pd-btn pd-btn-primary" id="cf-settings"><span data-ico="settings" data-ico-size="15"></span> Assumptions</button>
         </div>
