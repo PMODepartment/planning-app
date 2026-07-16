@@ -65,6 +65,18 @@ Project-scoped drawing register that mirrors the workbook:
 - Per-row Edit/Del unchanged. RLS still governs who can delete which rows
   (creator or admin), so a planner clears what they imported.
 
+## Hierarchy & level styling (2026-07-16)
+- Register is now a **4-level tree**: phase (L1) → discipline (L2) → **category (L3)** →
+  drawing sheet (L4). Category was previously only a column, so the workbook's level-3
+  rows (A-100 Floor Plan, A-200 Elevation, A-300 Section, …) never appeared as groups —
+  now derived from each drawing's `category` field and shown as collapsible L3 roll-ups.
+  A drawing with no category renders directly under its discipline (at L3).
+- **Indentation + colour by level**: the first cell gets left padding per depth
+  (10/30/50/70px) and a coloured inset rail (phase=red, discipline=dark gray, category=gray,
+  drawing=line) plus graded row backgrounds. Each level is independently collapsible.
+- Verified against the real workbook: 688/1032 drawings carry a category (78 distinct:
+  Floor Plan, Elevation, Section, …), so the L3 groups populate.
+
 ## Import performance (2026-07-16)
 - **Root cause of the hang:** `gridOf` used `sheet_to_json(..., {defval:''})` over the
   sheet's bloated `!ref` (the workbook's "Dwg Registry" sheet claims **16,383 columns**),

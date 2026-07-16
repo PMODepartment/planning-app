@@ -69,10 +69,27 @@
 .dr-grplabel { display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
 .dr-caret { display:inline-block; font-size:11px; color:var(--pd-muted); transition:transform .12s; }
 .dr-caret-col { transform:rotate(-90deg); }
-.dr-grp-phase td { background:rgba(238,49,36,.10); border-top:2px solid var(--pd-red); padding-top:11px; padding-bottom:11px; }
+
+/* ---- Level indentation + colour coding ---------------------------------- */
+/* Indent grows with hierarchy depth; applied to the first content cell.      */
+.dr-lvl-1 .dr-indent { padding-left:10px; }
+.dr-lvl-2 .dr-indent { padding-left:30px; }
+.dr-lvl-3 .dr-indent { padding-left:50px; }
+.dr-lvl-4 .dr-indent { padding-left:70px; }
+/* A coloured rail on the first cell marks the level at a glance. */
+.dr-lvl-1 .dr-indent { box-shadow:inset 4px 0 0 var(--pd-red); }
+.dr-lvl-2 .dr-indent { box-shadow:inset 4px 0 0 #2b2c2b; }
+.dr-lvl-3 .dr-indent { box-shadow:inset 4px 0 0 #9aa0a6; }
+.dr-lvl-4 .dr-indent { box-shadow:inset 4px 0 0 var(--pd-line); }
+
+/* Level backgrounds (phase darkest → drawing plain) */
+.dr-grp-phase td { background:rgba(238,49,36,.12); border-top:2px solid var(--pd-red); padding-top:11px; padding-bottom:11px; }
 .dr-grp-phase td strong { text-transform:uppercase; letter-spacing:.03em; font-size:13px; }
-.dr-grp-disc td { background:var(--pd-bg); }
+.dr-grp-disc td { background:rgba(43,44,43,.07); }
 .dr-grp-disc td strong { font-size:12.5px; }
+.dr-grp-cat td { background:var(--pd-bg); }
+.dr-grp-cat td strong { font-weight:600; font-size:12px; color:var(--pd-muted); text-transform:none; }
+html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 
 /* Status pills */
 .dr-pill { display:inline-block; padding:3px 10px; border-radius:999px; font-weight:700; font-size:11px; color:#fff; white-space:nowrap; }

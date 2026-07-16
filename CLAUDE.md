@@ -77,6 +77,17 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-16 — Drawing Register: category as level-3 group + per-level indent/colour
+- **Register is now a 4-level tree** — phase → discipline → **category** → drawing. Category was
+  previously only a column, so the workbook's level-3 rows (A-100 Floor Plan, A-200 Elevation,
+  A-300 Section, …) were "ignored" (never shown as groups); they're now derived from each
+  drawing's `category` field and rendered as collapsible L3 roll-ups (category-less drawings sit
+  directly under the discipline).
+- **Rows indented + colour-coded by level**: left padding grows with depth (10/30/50/70px) and a
+  coloured inset rail marks each level (phase=red, discipline=dark gray, category=gray, drawing=
+  line) with graded backgrounds. Assets bumped to `?v=20260716f`. Harness-verified (4-level tree,
+  indentation, rails); confirmed 688/1032 drawings in the real file carry a category.
+
 ### 2026-07-16 — Drawing Register: level-1 accordion (phases collapsed by default + Expand/Collapse all)
 - Level-1 **phase** roll-up rows now start **collapsed on load**, so the register opens as a tidy
   list of phase headers you expand into. Added an **Expand all / Collapse all** toggle in the list

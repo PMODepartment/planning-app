@@ -228,15 +228,29 @@ window.DrawingRegister = (function () {
     phaseOrder.forEach(function (ph) {
       var pr = flat(groups[ph]);
       var pkey = 'P:' + ph;
-      html += rollupRow(ph, pr, 'phase', CB, pkey);
+      html += rollupRow(ph, pr, 'phase', CB, pkey, 1);
       if (collapsed[pkey]) return;
       Object.keys(groups[ph]).sort().forEach(function (d) {
         var dr = groups[ph][d];
         var dkey = 'D:' + ph + '|' + d;
         var dlabel = DISCIPLINES[d] ? DISCIPLINES[d] : disciplineName(d);
-        html += rollupRow(dlabel + (DISCIPLINES[d]?' ('+d+')':''), dr, 'disc', CB, dkey);
+        html += rollupRow(dlabel + (DISCIPLINES[d]?' ('+d+')':''), dr, 'disc', CB, dkey, 2);
         if (collapsed[dkey]) return;
-        dr.forEach(function (r) { html += drawingRow(r, CB); });
+        // level-3: group the discipline's drawings by category (in first-seen order).
+        // Drawings with no category render directly under the discipline.
+        var catOrder = [], catMap = {};
+        dr.forEach(function (r) {
+          var c = (r.category || '').trim();
+          if (!(c in catMap)) { catMap[c] = []; catOrder.push(c); }
+          catMap[c].push(r);
+        });
+        catOrder.forEach(function (c) {
+          if (!c) { catMap[c].forEach(function (r){ html += drawingRow(r, CB, 3); }); return; }
+          var ckey = 'C:' + ph + '|' + d + '|' + c;
+          html += rollupRow(c, catMap[c], 'cat', CB, ckey, 3);
+          if (collapsed[ckey]) return;
+          catMap[c].forEach(function (r){ html += drawingRow(r, CB, 4); });
+        });
       });
     });
     html += '</tbody></table></div>';
@@ -292,7 +306,7 @@ window.DrawingRegister = (function () {
 
   function flat(byDisc){ var a=[]; Object.keys(byDisc).forEach(function(k){ a=a.concat(byDisc[k]); }); return a; }
 
-  function rollupRow(label, list, kind, CB, key) {
+  function rollupRow(label, list, kind, CB, key, level) {
     var tot=0, ap=0;
     list.forEach(function (r){ tot += num(r.no_of_sheets)||0; ap += num(r.approved_sheets)||0; });
     var pct = tot ? Math.round(ap/tot*100) : 0;
@@ -300,8 +314,8 @@ window.DrawingRegister = (function () {
     var grpCb = CB ? '<td class="dr-cb"><input type="checkbox" data-selgrp="'+ids+'" title="Select group"></td>' : '';
     var isCol = !!collapsed[key];
     var caret = '<span class="dr-caret'+(isCol?' dr-caret-col':'')+'">▾</span>';
-    return '<tr class="dr-grp dr-grp-'+kind+(isCol?' dr-collapsed':'')+'" data-grp="'+Fmt.esc(key)+'">' + grpCb +
-      '<td colspan="6"><span class="dr-grplabel">'+caret+'<strong>'+Fmt.esc(label)+'</strong> ' +
+    return '<tr class="dr-grp dr-grp-'+kind+' dr-lvl-'+level+(isCol?' dr-collapsed':'')+'" data-grp="'+Fmt.esc(key)+'">' + grpCb +
+      '<td colspan="6" class="dr-indent"><span class="dr-grplabel">'+caret+'<strong>'+Fmt.esc(label)+'</strong> ' +
         '<span class="dr-count">'+list.length+' dwg</span></span></td>' +
       '<td class="dr-r">'+tot+'</td>' +
       '<td class="dr-r">'+ap+'</td>' +
@@ -313,15 +327,15 @@ window.DrawingRegister = (function () {
            '<span class="dr-prog-txt">'+pct+'%</span></div>';
   }
 
-  function drawingRow(r, CB) {
+  function drawingRow(r, CB, level) {
     var code = r.drawing_code || r.drawing_no || '';
     var tot = num(r.no_of_sheets)||0, ap = num(r.approved_sheets)||0;
     var pct = Math.round(pctApproved(r)*100);
     var sub = latestSub(r,'actual') || latestSub(r,'planned');
     var appr = r.actual_approval || r.planned_approval;
     var cb = CB ? '<td class="dr-cb"><input type="checkbox" data-sel="'+r.id+'"'+(selected[r.id]?' checked':'')+'></td>' : '';
-    return '<tr'+(selected[r.id]?' class="dr-selrow"':'')+'>' + cb +
-      '<td><span class="dr-code">'+Fmt.esc(code)+'</span></td>' +
+    return '<tr class="dr-lvl-'+(level||4)+(selected[r.id]?' dr-selrow':'')+'">' + cb +
+      '<td class="dr-indent"><span class="dr-code">'+Fmt.esc(code)+'</span></td>' +
       '<td>'+Fmt.esc(r.title)+(r.description?'<div class="dr-sub">'+Fmt.esc(r.description)+'</div>':'')+'</td>' +
       '<td>'+Fmt.esc(r.discipline)+'</td>' +
       '<td>'+Fmt.esc(r.category)+'</td>' +
