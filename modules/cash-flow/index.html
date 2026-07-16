@@ -246,6 +246,7 @@
           <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="15"></span> Export</button>
           <button class="pd-btn" id="cf-print" title="Print / save the cashflow sheet as PDF"><span data-ico="printer" data-ico-size="15"></span> Print</button>
           <span class="cf-ctl-div"></span>
+          <button class="pd-btn" id="cf-check" title="Check that all DB tables / columns / RPC are set up"><span data-ico="check" data-ico-size="15"></span> Setup check</button>
           <button class="pd-btn" id="cf-actuals" title="Record actual cash received / paid"><span data-ico="clipboard" data-ico-size="15"></span> Actuals</button>
           <button class="pd-btn pd-btn-primary" id="cf-settings"><span data-ico="settings" data-ico-size="15"></span> Assumptions</button>
         </div>
@@ -294,6 +295,18 @@
       <div id="cf-scn-list"></div>
     </div>
     <div class="pd-modal-footer"><button class="pd-btn" id="cf-scn-cancel">Close</button></div>
+  </div>
+</div>
+
+<!-- Setup check modal -->
+<div class="pd-modal-overlay" id="cf-chk-modal" style="display:none;">
+  <div class="pd-modal" style="max-width:640px;width:96vw;">
+    <div class="pd-modal-header"><span>Cash Flow — Setup Check</span><button class="pd-modal-close" id="cf-chk-x">&#215;</button></div>
+    <div class="pd-modal-body">
+      <div class="cf-hint" style="margin-bottom:10px;">Pings each database object this module needs and reports what's present, so you can confirm the migrations / RPC / mirror are all applied.</div>
+      <div id="cf-chk-list"><div class="cf-empty">Running checks…</div></div>
+    </div>
+    <div class="pd-modal-footer"><button class="pd-btn" id="cf-chk-re">Re-run</button> <button class="pd-btn" id="cf-chk-cancel">Close</button></div>
   </div>
 </div>
 
@@ -390,7 +403,7 @@
   // ---- Defaults for a project with no saved assumptions ----
   function defaults() {
     return { project_id: pid, contract_ibb: null, contract_bcb: null, dp_percent: 0,
-      retention_percent: 0.10, dp_recoup_percent: null, billing_terms_months: 1,
+      retention_percent: 0.10, billing_terms_months: 1,
       retention_release_months: 1, start_period: null, wpm_project_id: pid, remarks: null,
       ewt_percent: 0.02, vat_percent: 0.12, ret_rel1_pct: 1, ret_rel2_months: 12,
       co_ret_rel1_pct: null, co_ret_rel1_months: null, co_ret_rel2_months: null,
@@ -416,7 +429,6 @@
     var res = await sb().from('cash_flow_settings').select('*').eq('project_id', pid).maybeSingle();
     if (res.error && res.error.code !== 'PGRST116') { UI.toast(res.error.message, 'error'); }
     settings = res.data || defaults();
-    if (settings.dp_recoup_percent == null) settings.dp_recoup_percent = settings.dp_percent;
     if (!settings.wpm_project_id) settings.wpm_project_id = pid;
     // Basis: DB column wins when present (v3 migration applied); else the local cache.
     if (settings.scurve_basis == null) {
@@ -700,7 +712,7 @@
     // Per-source attribution per month for the cash-in drill-down (DP tranches /
     // trades / milestones / contract progress billing).
     var brkInDP = [], brkInBill = [], brkInRet = [];
-    function inAdd(bucket, idx, label, amt, sub) { if (amt > 0.005) (bucket[idx] || (bucket[idx] = [])).push({ no: label, desc: sub || '', amt: amt }); }
+    function inAdd(bucket, idx, label, amt, sub) { if (amt > 0) (bucket[idx] || (bucket[idx] = [])).push({ no: label, desc: sub || '', amt: amt }); }
     var base = num(settings.contract_ibb);         // billable contract (VAT inc)
     var retPct = num(settings.retention_percent);
     var ewtPct = num(settings.ewt_percent);        // creditable withholding tax on billings
@@ -842,7 +854,7 @@
     function outAdd(arr, idx, amt, awarded, bucket, wp) {
       arr[idx] += amt;
       if (awarded && idx <= ddIdx) outActual[idx] += amt; else outForecast[idx] += amt;
-      if (bucket && amt > 0.005) (bucket[idx] || (bucket[idx] = [])).push({ no: wp.no, desc: wp.desc, trade: wp.trade, miss: wp.miss, amt: amt, awd: awarded && idx <= ddIdx });
+      if (bucket && amt > 0) (bucket[idx] || (bucket[idx] = [])).push({ no: wp.no, desc: wp.desc, trade: wp.trade, miss: wp.miss, amt: amt, awd: awarded && idx <= ddIdx });
     }
     var fbStart = (sched && sched.min) ? sched.min : months[0];
     var fbEnd = (sched && sched.max) ? sched.max : months[n - 1];
@@ -2145,6 +2157,46 @@
   }
 
   // ==========================================================================
+  // SETUP CHECK — one-shot probe of every DB object the module needs.
+  // ==========================================================================
+  function classifyErr(err) {
+    if (!err) return { ok: true };
+    var m = err.message || '', code = err.code || '';
+    if (/could not find the table|relation .* does not exist|PGRST205/i.test(m) && !/column/i.test(m)) return { ok: false, reason: 'table/RPC missing — run its migration' };
+    if (/could not find the function|function .* does not exist/i.test(m)) return { ok: false, reason: 'RPC missing — run cashflow-schedule-agg migration' };
+    if (/column .* does not exist|PGRST204/i.test(m)) return { ok: false, reason: m.replace(/^.*?(column[^,.]*).*/i, '$1') + ' — run the pending migration' };
+    if (code === '42501' || /permission denied/i.test(m)) return { ok: 'warn', reason: 'present, but no grant — re-run grants' };
+    return { ok: 'warn', reason: m };
+  }
+  async function probeTable(t, cols) { return classifyErr((await sb().from(t).select(cols || 'id').limit(1)).error); }
+  async function runSetupCheck() {
+    var host = document.getElementById('cf-chk-list');
+    document.getElementById('cf-chk-modal').style.display = 'flex';
+    host.innerHTML = '<div class="cf-empty">Running checks…</div>';
+    var items = [];
+    var tables = ['cash_flow_settings', 'cash_flow_dp_tranches', 'cash_flow_trade_packages', 'cash_flow_billing_milestones',
+      'cash_flow_actuals', 'cash_flow_scenarios', 'cash_flow_rollup', 'wpm_work_packages'];
+    for (var i = 0; i < tables.length; i++) items.push({ label: 'Table · ' + tables[i], res: await probeTable(tables[i]) });
+    // settings columns (one probe listing the newer columns — fails naming the first missing)
+    items.push({ label: 'Columns · cash_flow_settings (v2/v3/basis)', res: await probeTable('cash_flow_settings', 'ewt_percent,vat_percent,ret_rel1_pct,ret_rel2_months,co_ret_rel1_pct,finance_rate,funding_limit,scurve_basis,billing_basis') });
+    items.push({ label: 'Columns · wpm_work_packages (trade, award_status)', res: await probeTable('wpm_work_packages', 'trade,award_status,procurement_status') });
+    items.push({ label: 'Columns · cash_flow_trade_packages (dp_tranches)', res: await probeTable('cash_flow_trade_packages', 'dp_tranches') });
+    // RPC
+    var rpc = await sb().rpc('cashflow_schedule_agg', { p_id: pid || '__probe__' });
+    items.push({ label: 'RPC · cashflow_schedule_agg', res: classifyErr(rpc.error) });
+    // WPM mirror populated?
+    var wc = 0; try { var r = await sb().from('wpm_work_packages').select('wp_no', { count: 'exact', head: true }); wc = r.count || 0; } catch (e) {}
+    items.push({ label: 'WPM mirror rows (all projects)', res: wc > 0 ? { ok: true, reason: wc + ' rows' } : { ok: 'warn', reason: 'empty — deploy sync-wpm + Sync from WPM' } });
+
+    function icon(r) { return r.ok === true ? '<span style="color:var(--pd-ok)">&#10003;</span>' : r.ok === 'warn' ? '<span style="color:#d99100">&#9888;</span>' : '<span style="color:var(--pd-bad)">&#10007;</span>'; }
+    var okN = items.filter(function (x) { return x.res.ok === true; }).length;
+    host.innerHTML = '<div class="cf-hint" style="margin-bottom:8px;"><b>' + okN + ' / ' + items.length + '</b> checks passed.</div>' +
+      '<table class="cf-table"><tbody>' + items.map(function (x) {
+        return '<tr><td style="width:22px;">' + icon(x.res) + '</td><td>' + esc(x.label) + '</td><td style="color:var(--pd-muted);font-size:11px;">' + esc(x.res.ok === true ? (x.res.reason || 'ok') : x.res.reason) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  // ==========================================================================
   // WIRE-UP
   // ==========================================================================
   AppAuth.requireLogin(function (user, prof) {
@@ -2163,6 +2215,10 @@
     document.getElementById('cf-modal-x').onclick = document.getElementById('cf-cancel').onclick = function () { document.getElementById('cf-modal').style.display = 'none'; };
     document.getElementById('cf-save').onclick = saveSettings;
     document.getElementById('cf-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
+    document.getElementById('cf-check').onclick = runSetupCheck;
+    document.getElementById('cf-chk-re').onclick = runSetupCheck;
+    document.getElementById('cf-chk-x').onclick = document.getElementById('cf-chk-cancel').onclick = function () { document.getElementById('cf-chk-modal').style.display = 'none'; };
+    document.getElementById('cf-chk-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
     document.getElementById('cf-actuals').onclick = openActuals;
     document.getElementById('cf-act-x').onclick = document.getElementById('cf-act-cancel').onclick = function () { document.getElementById('cf-act-modal').style.display = 'none'; };
     document.getElementById('cf-act-save').onclick = saveActuals;
