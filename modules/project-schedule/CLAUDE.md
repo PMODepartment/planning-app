@@ -8,6 +8,17 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Fix: progress re-adjust only worked once (pin original duration) (2026-07-14) — jasantos2 / eprobles
+Tester: editing Earned Value POC re-adjusted the finish the first time but not on subsequent edits.
+Root cause: when an activity has no stored `duration_days` (common for imported rows — the grid just
+computes the "5d" from the dates), `_progressFields` derived the original duration from the current
+`start…finish` span. The first edit moves the finish, so the *second* edit re-derived "original" off
+the already-shortened bar → remaining barely changed → looked frozen. Fix: `_progressFields` now
+resolves the original duration as duration_days → baseline span → planned span, and **pins it to
+`duration_days`** on the first progress edit, so every later % edit recomputes remaining/finish from
+the same base. Verified in-browser: a 10-day (no duration_days) activity edited 40%→60% now pins
+duration 10 and recomputes remaining 6→4, finish Jul 19→Jul 17.
+
 ## Start/Finish columns show actual (fall back to planned) + detail relabel (2026-07-14) — jasantos2 / eprobles
 Tester's model: the grid **Start/Finish** should reflect ACTUAL dates, with planned as the basis.
 Chosen behavior (confirmed): *actual when set, else planned; editing writes the actual*.

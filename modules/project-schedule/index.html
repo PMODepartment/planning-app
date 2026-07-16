@@ -6983,8 +6983,14 @@
   function _progressFields(r, pct) {
     pct = Math.max(0, Math.min(100, pct == null ? 0 : pct));
     var patch = { percent_complete: pct };
+    // Original/planned duration. Prefer duration_days; else the baseline span; else the current
+    // planned span. PIN it to duration_days so later % edits recompute from the SAME base — otherwise,
+    // once we move the finish, a null duration_days would re-derive "original" off the shortened bar
+    // and progress would appear to stop re-adjusting.
     var origDur = (r.duration_days != null && r.duration_days > 0) ? r.duration_days
-      : ((pd(r.start_date) && pd(r.end_date)) ? dayDiff(pd(r.start_date), pd(r.end_date)) + 1 : null);
+      : ((pd(r.bl_start) && pd(r.bl_finish)) ? dayDiff(pd(r.bl_start), pd(r.bl_finish)) + 1
+      : ((pd(r.start_date) && pd(r.end_date)) ? dayDiff(pd(r.start_date), pd(r.end_date)) + 1 : null));
+    if (origDur != null) patch.duration_days = origDur;
     var dd = today();
     if (pct >= 100) {
       patch.status = 'Completed';
