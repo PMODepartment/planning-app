@@ -77,6 +77,18 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-16 — Drawing Register: sidebar-less shell + level delete + audit
+- **Sidebar removed** to match Project Schedule / Cash Flow — `.dr-modback` back button + title
+  in the topbar, full-width content (verified: content spans the full window, user-bar right).
+- **Delete a level:** group rows get a hover ✕ (planner+) that deletes the phase/discipline/
+  category and everything under it (`deleteLevel`, confirm shows the affected drawing count),
+  completing level CRUD.
+- **Audit** (harness-verified with a mutable in-memory store, no console errors): code chips
+  (A-100/A-200/AR-000) render; level delete cascades (group row + node + child drawings);
+  discipline rename cascades to drawings + node; add-level / add-drawing / auto-number / inline
+  edit / status dropdown / shift-select / delete / keyboard shortcuts all intact.
+- Assets bumped `?v=20260716i`. No migration.
+
 ### 2026-07-16 — Drawing Register: editable tree grid + faithful-phase import fix
 - **Planner workflow (like Project Schedule's WBS):** new **"+ Level"** menu builds the
   phase/discipline/category skeleton as real rows (`node_kind` column, migration

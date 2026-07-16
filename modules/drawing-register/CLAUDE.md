@@ -9,6 +9,19 @@ module for file uploads** (private bucket + signed-URL viewing). Update every PR
 - [x] CRUD + Excel import + export + progress dashboard
 - [x] `enabled: true` in `assets/js/config.js`
 
+## Sidebar-less shell + level delete + audit (2026-07-16)
+- **Sidebar removed** (matches Project Schedule / Cash Flow): a `.dr-modback` back-to-modules
+  button + title in the topbar, full-width content (`.pd-content{width:100%}`; user-bar
+  pushed right). More horizontal room for the grid.
+- **Delete a level:** group rows now show a ✕ (planner+, hover) that deletes that phase/
+  discipline/category **and everything under it** (`deleteLevel`, confirm with drawing count)
+  — completes level CRUD (build / rename / add-under / delete).
+- **Audit (harness-verified against a mutable store):** sidebar gone + back button; category/
+  discipline **code chips** (A-100, A-200, AR-000) render; level delete cascades (row + node +
+  child drawings gone); discipline rename cascades to drawings + node; add-level/add-drawing/
+  auto-number/inline-edit/status-dropdown/shift-select/delete/keyboard all intact; no console
+  errors. Import phase-split confirmed on the real file (see below).
+
 ## Editable tree grid + structural nodes (2026-07-16)
 - **Build the level skeleton first:** a **"+ Level"** menu (planner+) inserts phase /
   discipline / category rows (`node_kind` on `drawing_register`, migration

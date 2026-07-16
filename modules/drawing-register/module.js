@@ -349,7 +349,8 @@ window.DrawingRegister = (function () {
       '<td class="dr-r">'+tot+'</td>' +
       '<td class="dr-r">'+ap+'</td>' +
       '<td colspan="2">'+progressBar(pct)+'</td>' +
-      '<td></td><td></td></tr>';
+      '<td></td>' +
+      '<td class="dr-nowrap dr-actcol">'+(canWrite?'<button class="dr-lvldel" title="Delete this level and everything under it">✕</button>':'')+'</td></tr>';
   }
 
   function progressBar(pct) {
@@ -415,6 +416,8 @@ window.DrawingRegister = (function () {
         render();
       };
       if (glabel && canWrite) glabel.ondblclick = function(e){ e.stopPropagation(); beginRenameGroup(tr, glabel); };
+      var dl = tr.querySelector('.dr-lvldel');
+      if (dl) dl.onclick = function(e){ e.stopPropagation(); deleteLevel(tr.dataset); };
       tr.addEventListener('click', function(){ setContextFromRow(tr); });
     });
 
@@ -604,6 +607,24 @@ window.DrawingRegister = (function () {
     var res=await q; if (res.error) UI.toast(res.error.message,'error');
     // keep collapse state under the renamed key
     if (kind==='phase'){ if(collapsed['P:'+oldVal]){ collapsed['P:'+newVal]=true; delete collapsed['P:'+oldVal]; } }
+  }
+
+  // Delete a whole level (phase / discipline / category) and everything under it.
+  async function deleteLevel(ds){
+    var kind=ds.kind, label = kind==='phase'?ds.phase : kind==='disc'?ds.disc : ds.cat;
+    // count affected drawings for the confirm message
+    var n = drawingRows().filter(function(r){
+      if (kind==='phase') return (r.phase||'')===ds.phase;
+      if (kind==='disc')  return (r.phase||'')===ds.phase && (r.discipline||'')===ds.disc;
+      return (r.phase||'')===ds.phase && (r.discipline||'')===ds.disc && ((r.category||'').trim())===ds.cat;
+    }).length;
+    if (!confirm('Delete "'+label+'" and everything under it'+(n?' ('+n+' drawing'+(n>1?'s':'')+')':'')+'? This cannot be undone.')) return;
+    var q = sb().from(TABLE).delete().eq('project_id', pid);
+    if (kind==='phase') q=q.eq('phase', ds.phase);
+    else if (kind==='disc') q=q.eq('phase', ds.phase).eq('discipline', ds.disc);
+    else q=q.eq('phase', ds.phase).eq('discipline', ds.disc).eq('category', ds.cat);
+    var res=await q; if (res.error){ UI.toast(res.error.message,'error'); return; }
+    UI.toast('Deleted', 'ok'); load();
   }
 
   // ------------------------------------------------ add levels / drawings -----

@@ -214,3 +214,16 @@ td.dr-editing { padding:2px 4px; }
 .dr-gcode { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:11px;
   color:var(--pd-red); background:rgba(238,49,36,.10); border-radius:4px; padding:1px 6px; margin-right:2px; }
 .dr-grp-disc .dr-gcode, .dr-grp-cat .dr-gcode { color:var(--pd-muted); background:var(--pd-bg); }
+
+/* ============ Sidebar-less shell (matches Project Schedule / Cash Flow) === */
+.pd-topbar { display:flex; align-items:center; gap:12px; }
+.pd-topbar #user-bar { margin-left:auto; padding-left:12px; border-left:1px solid var(--pd-line); }
+.dr-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+.dr-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:2px; }
+.pd-content { width:100%; }
+
+/* group-row delete affordance */
+.dr-grp .dr-lvldel { border:0; background:transparent; color:var(--pd-muted); cursor:pointer;
+  font-size:12px; padding:2px 6px; border-radius:4px; opacity:0; transition:opacity .12s; }
+.dr-grp:hover .dr-lvldel { opacity:1; }
+.dr-grp .dr-lvldel:hover { background:var(--pd-bad,#dc2626); color:#fff; }

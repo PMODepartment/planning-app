@@ -8,21 +8,15 @@
   <script src="../../assets/js/theme.js?v=20260716"></script>
   <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260716" />
-  <link rel="stylesheet" href="module.css?v=20260716h" />
+  <link rel="stylesheet" href="module.css?v=20260716i" />
 </head>
 <body>
   <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Drawing Register</small></div>
-      <nav>
-        <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
-        <a href="#" class="active"><span class="pd-navico" data-ico="ruler"></span>Drawings</a>
-      </nav>
-    </aside>
-
+    <!-- Sidebar removed (matches Project Schedule / Cash Flow): the back button returns to the module selector. -->
     <div class="pd-content">
       <div class="pd-topbar">
-        <h1>Drawing Register &amp; Tracker</h1>
+        <a class="pd-btn dr-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
+        <h1 style="margin:0;"><span class="dr-title-ico" data-ico="ruler" data-ico-size="20"></span> Drawing Register &amp; Tracker</h1>
         <div id="user-bar"></div>
       </div>
       <div class="pd-main">
@@ -74,7 +68,7 @@
   <script src="../../assets/js/db.js?v=20260716"></script>
   <script src="../../assets/js/ui.js?v=20260716"></script>
   <script src="../../assets/js/icons.js?v=20260716"></script>
-  <script src="module.js?v=20260716h"></script>
+  <script src="module.js?v=20260716i"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
