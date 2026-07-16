@@ -8,6 +8,25 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Forecast-on-actual-start, POC gate, Duration/EV POC split, dep lines behind bars (2026-07-14) — jasantos2 / eprobles
+- **Forecast flow when Actual Start is entered.** Entering an Actual Start on a started (not
+  finished) activity now computes **actual duration = data date − actual start**, **remaining =
+  origDur × (1−POC)** (or origDur − elapsed when no POC), and a **forecast Finish = data date +
+  remaining − 1** written to `end_date` (shown in the Finish field). At-Completion = actual +
+  remaining. Shared helper `_fcFields` also drives `_progressFields` so % edits stay consistent.
+  Verified: actual-start Jul 10 (10-day, no POC) → remaining 6, forecast finish Jul 19, at-comp 10;
+  then Duration POC 60% → remaining 4, forecast finish Jul 17, at-comp 8.
+- **POC screening.** Recording a % (Duration POC) now **requires an Actual Start first** (grid + detail)
+  — you can't have progress with no start. Blocked with an error toast; `_progressFields` no longer
+  auto-fills the actual start.
+- **Duration POC vs Earned Value POC.** Renamed the schedule `%` column/field label **"Earned Value
+  POC" → "Duration POC"** (drives the schedule). Added a **separate "Earned Value POC (%)"** detail
+  field (physical/EV progress, informational — does NOT drive dates), stored in a new tolerant column
+  `ev_poc` (migration `migrations/2026-07-14-ev-poc.sql` — **user must run**; safe before it's run via
+  `_saveActField`). Export headers keep OPC's "Earned Value POC" name.
+- **Relationship lines behind the bars.** The dep-line SVG z-index dropped from 5 → 2 (below the
+  bars' z-index 3), so connectors render behind the activity/summary/milestone elements.
+
 ## Date-edit intelligence: actual duration, actual-start≤data-date guard, OPC planned duration (2026-07-14) — jasantos2 / eprobles
 Central `_dateEditPatch(r,field,val)` now handles every date-cell edit (grid + detail), returning
 `{error}` (reject, toast, no save) or `{patch}`:

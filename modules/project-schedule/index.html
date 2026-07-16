@@ -1510,25 +1510,47 @@
     if (af) { var e = pd(af); return e ? Math.max(0, dayDiff(a, e) + 1) : null; }
     return Math.max(0, dayDiff(a, today()));
   }
+  // Original/planned (at-completion) duration: stored duration_days → baseline span → planned span.
+  function _origDurOf(r) {
+    return (r.duration_days != null && r.duration_days > 0) ? r.duration_days
+      : ((pd(r.bl_start) && pd(r.bl_finish)) ? dayDiff(pd(r.bl_start), pd(r.bl_finish)) + 1
+      : ((pd(r.start_date) && pd(r.end_date)) ? dayDiff(pd(r.start_date), pd(r.end_date)) + 1 : null));
+  }
+  // Forecast fields for a STARTED (not finished) activity: actual duration = data date − actual start;
+  // remaining = origDur × (1 − POC) (or origDur − elapsed when no POC); FORECAST FINISH = data date +
+  // remaining − 1 (written to end_date → shown in the Finish field). At-Completion = actual + remaining.
+  function _fcFields(as, pct, origDur, dd) {
+    var a = pd(as); if (!a) return {};
+    var out = { actual_duration: Math.max(0, dayDiff(a, dd)) };
+    if (origDur != null) {
+      var rem = (pct > 0 && pct < 100) ? Math.max(1, Math.round(origDur * (1 - pct / 100))) : Math.max(0, origDur - out.actual_duration);
+      out.remaining_duration = rem;
+      var nf = addDays(dd, rem - 1); if (nf < a) nf = a; out.end_date = dstr(nf);
+    }
+    return out;
+  }
   // Central validation + derivation for a date-cell edit. Returns {error} (reject) or {patch}.
-  //  • Actual Start can't be later than the Data Date; sets Actual Duration = data date − actual start.
-  //  • Actual Finish can't precede Actual Start; refreshes Actual Duration.
-  //  • Editing Planned Start keeps the ORIGINAL duration and moves Planned Finish (OPC) — never
-  //    recomputes a (possibly negative) duration from the dates.
-  //  • Editing Planned Finish sets duration = finish − start (rejected if before start).
   function _dateEditPatch(r, field, val) {
     val = val || null; var patch = {}; patch[field] = val; var dd = today();
     if (field === 'actual_start') {
       if (val && pd(val) > dd) return { error: 'Actual Start (' + Fmt.date(val) + ') can’t be later than the Data Date (' + Fmt.date(dstr(dd)) + ').' };
-      patch.actual_duration = val ? actualDurOf(val, r.actual_finish) : null;
+      if (val) {
+        if (r.actual_finish) { patch.actual_duration = actualDurOf(val, r.actual_finish); }
+        else {   // started, not finished → compute the forecast finish
+          var od = _origDurOf(r); if (od != null) patch.duration_days = od;   // pin original duration
+          var fc = _fcFields(val, r.percent_complete || 0, od, dd); Object.keys(fc).forEach(function (k) { patch[k] = fc[k]; });
+          if ((r.status || 'Not Started') === 'Not Started') patch.status = 'In Progress';
+        }
+      } else { patch.actual_duration = null; patch.remaining_duration = _origDurOf(r); patch.status = 'Not Started'; }
     } else if (field === 'actual_finish') {
       var asx = r.actual_start;
       if (val && asx && pd(val) < pd(asx)) return { error: 'Actual Finish can’t be before Actual Start (' + Fmt.date(asx) + ').' };
-      if (val) patch.actual_duration = actualDurOf(asx, val);
+      if (val && pd(val) > dd) return { error: 'Actual Finish can’t be later than the Data Date (' + Fmt.date(dstr(dd)) + ').' };
+      if (val) { patch.actual_duration = actualDurOf(asx, val); patch.remaining_duration = 0; patch.end_date = val; patch.status = 'Completed'; patch.percent_complete = 100; }
+      else if (asx) { var od2 = _origDurOf(r); var fc2 = _fcFields(asx, r.percent_complete || 0, od2, dd); Object.keys(fc2).forEach(function (k) { patch[k] = fc2[k]; }); patch.status = 'In Progress'; }
     } else if (field === 'start_date') {
-      var od = (r.duration_days != null && r.duration_days > 0) ? r.duration_days
-        : ((pd(r.start_date) && pd(r.end_date)) ? dayDiff(pd(r.start_date), pd(r.end_date)) + 1 : null);
-      if (val && od != null) patch.end_date = dstr(addDays(pd(val), od - 1));   // keep original duration, move finish
+      var od3 = _origDurOf(r);
+      if (val && od3 != null) patch.end_date = dstr(addDays(pd(val), od3 - 1));   // keep original duration, move finish
     } else if (field === 'end_date') {
       var s = pd(r.start_date);
       if (val && s && pd(val) < s) return { error: 'Planned Finish can’t be before Planned Start (' + Fmt.date(r.start_date) + ').' };
@@ -2870,11 +2892,15 @@
     root.querySelectorAll('.ps-gedit').forEach(function (el) {
       el.onchange = function () {
         var f = el.dataset.f, t = el.dataset.t, v = el.value, patch = {};
+        // Earned Value POC is an independent physical/EV progress figure (does NOT drive dates);
+        // written tolerantly so it's safe before the ev_poc migration is run.
+        if (f === 'ev_poc') { var ev = v === '' ? null : Math.max(0, Math.min(100, parseFloat(v) || 0)); _saveActField(r, 'ev_poc', ev); return; }
         if (t === 'number') patch[f] = (v === '' ? null : Math.max(0, Math.min(100, parseFloat(v) || 0)));
         else if (t === 'num') patch[f] = (v === '' ? null : Math.max(0, parseFloat(v) || 0));
         else if (t === 'date') patch[f] = v || null;
         else if (t === 'select') patch[f] = v || null;
         else patch[f] = (typeof v === 'string' ? v.trim() : v) || null;
+        if (f === 'percent_complete' && (patch[f] || 0) > 0 && !r.actual_start) { UI.toast('Enter an Actual Start (Start) before recording % complete.', 'error'); renderDetails(); return; }
         if (progressDriven && f === 'percent_complete') { patch = _progressFields(r, patch[f]); }
         if (t === 'date') { var dres = _dateEditPatch(r, f, patch[f]); if (dres.error) { UI.toast(dres.error, 'error'); renderDetails(); return; } patch = dres.patch; }
         persist(r.id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
@@ -2931,7 +2957,8 @@
       '<div style="font-size:11.5px;color:var(--pd-muted);margin:0 0 10px;grid-column:1/-1;">Editing this activity — changes save automatically. Computed fields are read-only.</div>' +
       _gGroup('Activity Status',
         _gf('Status', 'status', 'select', r, ['Not Started', 'In Progress', 'Completed']) +
-        _gf('% Complete', 'percent_complete', 'number', r) +
+        _gf('Duration POC (%)', 'percent_complete', 'number', r) +
+        _gf('Earned Value POC (%)', 'ev_poc', 'number', r) +
         _gf('Expected Finish', 'expected_finish', 'date', r)) +
       _gGroup('Dates',
         _gf('Planned Start', 'start_date', 'date', r) +
@@ -3905,7 +3932,7 @@
     ['id','Activity ID','c-id'], ['name','Activity Name','c-name'], ['status','Status','c-status'],
     ['date','BL Start','c-date'], ['date','BL Finish','c-date'], ['date','Start','c-date'], ['date','Finish','c-date'],
     ['dur','Dur','c-dur'],
-    ['poc','Planned Value POC','c-poc'], ['pct','Earned Value POC','c-pct'],
+    ['poc','Planned Value POC','c-poc'], ['pct','Duration POC','c-pct'],
     ['cost','Planned IBB','c-cost'], ['cost','Actual IBB to date','c-cost'], ['cost','Earned Value IBB','c-cost'],
     ['cost','At Completion IBB','c-cost'], ['cost','BL Planned IBB','c-cost'],
     ['ctype','Percent Complete Type','c-ctype'],
@@ -4542,7 +4569,7 @@
             else if (rel.lag) lines += '<text x="' + (vX + 2) + '" y="' + (midY - 2) + '" class="ps-deplag">' + (rel.lag > 0 ? '+' : '') + rel.lag + 'd</text>';
           });
         }
-        if (lines) bc.insertAdjacentHTML('beforeend', '<svg class="ps-deps" width="' + _tlW + '" height="' + (last * ROWH) + '" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5;"><defs><marker id="ps-arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--ps-dep,var(--pd-red))"/></marker></defs>' + lines + '</svg>');
+        if (lines) bc.insertAdjacentHTML('beforeend', '<svg class="ps-deps" width="' + _tlW + '" height="' + (last * ROWH) + '" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:2;"><defs><marker id="ps-arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--ps-dep,var(--pd-red))"/></marker></defs>' + lines + '</svg>');
       }
     }
     highlightRow();
@@ -4603,7 +4630,9 @@
       else if (type === 'money') { patch[field] = val === '' ? null : Math.max(0, parseFloat(val) || 0); }
       else if (type === 'date') { patch[field] = val || null; }
       else { patch[field] = val.trim() || null; }
-      // Progress-driven: % Complete (POC) recomputes remaining duration + finish from the data date.
+      // Screening: a % (Duration POC) needs an Actual Start first — you can't have progress with no start.
+      if (field === 'percent_complete' && (patch.percent_complete || 0) > 0 && !r.actual_start) { UI.toast('Enter an Actual Start (the Start column) before recording % complete.', 'error'); renderGrid(); return; }
+      // Progress-driven: % Complete (Duration POC) recomputes remaining duration + finish from the data date.
       if (progressDriven && field === 'percent_complete') { patch = _progressFields(r, patch.percent_complete); }
       // Date edits (actual/planned start/finish) go through the OPC-style validator/deriver.
       if (type === 'date') { var dres = _dateEditPatch(r, field, patch[field]); if (dres.error) { UI.toast(dres.error, 'error'); renderGrid(); return; } patch = dres.patch; }
@@ -7014,9 +7043,7 @@
     // planned span. PIN it to duration_days so later % edits recompute from the SAME base — otherwise,
     // once we move the finish, a null duration_days would re-derive "original" off the shortened bar
     // and progress would appear to stop re-adjusting.
-    var origDur = (r.duration_days != null && r.duration_days > 0) ? r.duration_days
-      : ((pd(r.bl_start) && pd(r.bl_finish)) ? dayDiff(pd(r.bl_start), pd(r.bl_finish)) + 1
-      : ((pd(r.start_date) && pd(r.end_date)) ? dayDiff(pd(r.start_date), pd(r.end_date)) + 1 : null));
+    var origDur = _origDurOf(r);
     if (origDur != null) patch.duration_days = origDur;
     var dd = today();
     if (pct >= 100) {
@@ -7029,16 +7056,9 @@
       patch.actual_finish = af; patch.end_date = af;
       patch.remaining_duration = 0; patch.actual_duration = actualDurOf(patch.actual_start, patch.actual_finish);
     } else if (pct > 0) {
-      patch.status = 'In Progress';
-      patch.actual_start = r.actual_start || r.start_date || dstr(dd);
-      patch.actual_finish = null;
-      patch.actual_duration = actualDurOf(patch.actual_start, null);   // = data date − actual start
-      if (origDur != null) {
-        var rem = Math.max(1, Math.round(origDur * (1 - pct / 100)));
-        patch.remaining_duration = rem;
-        var nf = addDays(dd, rem - 1), s0 = pd(patch.actual_start); if (s0 && nf < s0) nf = s0;
-        patch.end_date = dstr(nf);
-      }
+      // Actual Start is required to record % (enforced by the % gate); forecast from it.
+      patch.status = 'In Progress'; patch.actual_finish = null;
+      var fc = _fcFields(r.actual_start, pct, origDur, dd); Object.keys(fc).forEach(function (k) { patch[k] = fc[k]; });
     } else {
       patch.status = 'Not Started'; patch.actual_start = null; patch.actual_finish = null;
       patch.actual_duration = null; if (origDur != null) patch.remaining_duration = origDur;
@@ -7577,7 +7597,7 @@
         '<label><input type="radio" name="ps-sm" value="override"' + (schedMode === 'override' ? ' checked' : '') + '><span>Progress Override<small>Started activities ignore predecessor logic for their remaining work.</small></span></label></div>' +
         '<div class="fld"><span>Dates</span><label><input type="checkbox" id="ps-useact"' + (useActuals ? ' checked' : '') + '><span>Use actual dates &amp; data date<small>Actual start/finish pin the schedule; future work can’t precede the data date.</small></span></label></div>' +
         '<div class="fld"><span>Progress intelligence</span>' +
-        '<label><input type="checkbox" id="ps-progdriven"' + (progressDriven ? ' checked' : '') + '><span>Progress-driven dates<small>Editing % Complete (Earned Value POC) recomputes remaining duration &amp; finish from the data date.</small></span></label>' +
+        '<label><input type="checkbox" id="ps-progdriven"' + (progressDriven ? ' checked' : '') + '><span>Progress-driven dates<small>Editing Duration POC recomputes remaining duration &amp; finish from the data date.</small></span></label>' +
         '<label><input type="checkbox" id="ps-ddretain"' + (ddRetainOn ? ' checked' : '') + '><span>Retain un-started work at the data date<small>On Schedule, shift activities with 0% POC (that should have started) forward to the data date, keeping their duration.</small></span></label></div>';
     } else {
       b.innerHTML = '<div class="fld"><span>Multiple Float Paths</span>' +
