@@ -1503,6 +1503,39 @@
   // (Editing those columns writes the actual date; planned start_date/end_date remain the basis.)
   function dispStart(r) { return r.actual_start || r.start_date || null; }
   function dispFin(r) { return r.actual_finish || r.end_date || null; }
+  // Actual duration = variance between the data date and the actual start (elapsed), or, once finished,
+  // actual finish − actual start (inclusive). Null when there's no actual start.
+  function actualDurOf(as, af) {
+    var a = pd(as); if (!a) return null;
+    if (af) { var e = pd(af); return e ? Math.max(0, dayDiff(a, e) + 1) : null; }
+    return Math.max(0, dayDiff(a, today()));
+  }
+  // Central validation + derivation for a date-cell edit. Returns {error} (reject) or {patch}.
+  //  • Actual Start can't be later than the Data Date; sets Actual Duration = data date − actual start.
+  //  • Actual Finish can't precede Actual Start; refreshes Actual Duration.
+  //  • Editing Planned Start keeps the ORIGINAL duration and moves Planned Finish (OPC) — never
+  //    recomputes a (possibly negative) duration from the dates.
+  //  • Editing Planned Finish sets duration = finish − start (rejected if before start).
+  function _dateEditPatch(r, field, val) {
+    val = val || null; var patch = {}; patch[field] = val; var dd = today();
+    if (field === 'actual_start') {
+      if (val && pd(val) > dd) return { error: 'Actual Start (' + Fmt.date(val) + ') can’t be later than the Data Date (' + Fmt.date(dstr(dd)) + ').' };
+      patch.actual_duration = val ? actualDurOf(val, r.actual_finish) : null;
+    } else if (field === 'actual_finish') {
+      var asx = r.actual_start;
+      if (val && asx && pd(val) < pd(asx)) return { error: 'Actual Finish can’t be before Actual Start (' + Fmt.date(asx) + ').' };
+      if (val) patch.actual_duration = actualDurOf(asx, val);
+    } else if (field === 'start_date') {
+      var od = (r.duration_days != null && r.duration_days > 0) ? r.duration_days
+        : ((pd(r.start_date) && pd(r.end_date)) ? dayDiff(pd(r.start_date), pd(r.end_date)) + 1 : null);
+      if (val && od != null) patch.end_date = dstr(addDays(pd(val), od - 1));   // keep original duration, move finish
+    } else if (field === 'end_date') {
+      var s = pd(r.start_date);
+      if (val && s && pd(val) < s) return { error: 'Planned Finish can’t be before Planned Start (' + Fmt.date(r.start_date) + ').' };
+      if (val && s) patch.duration_days = dayDiff(s, pd(val)) + 1;
+    }
+    return { patch: patch };
+  }
   // Excel-style timescale resize: drag a period-column edge to rescale the whole timeline.
   // `days` is that column's day span, so new px/day = startDayw + dragDx/days (uniform rescale).
   function startTsResize(e, days) {
@@ -2843,11 +2876,7 @@
         else if (t === 'select') patch[f] = v || null;
         else patch[f] = (typeof v === 'string' ? v.trim() : v) || null;
         if (progressDriven && f === 'percent_complete') { patch = _progressFields(r, patch[f]); }
-        if (f === 'start_date' || f === 'end_date') {
-          var s = pd(f === 'start_date' ? patch.start_date : r.start_date);
-          var e = pd(f === 'end_date' ? patch.end_date : r.end_date);
-          if (s && e) { if (e < s) UI.toast('Finish is before start.', 'warn'); patch.duration_days = dayDiff(s, e) + 1; }
-        }
+        if (t === 'date') { var dres = _dateEditPatch(r, f, patch[f]); if (dres.error) { UI.toast(dres.error, 'error'); renderDetails(); return; } patch = dres.patch; }
         persist(r.id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
       };
     });
@@ -4301,7 +4330,9 @@
         '<div class="ps-cell c-dur"></div>' + costCellsHtml(r) +
         '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + varCellHtml(r) + gridExtraHtml(r) + '</div>';
     }
-    var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : (r.duration_days || '');
+    // Original/planned duration (OPC): prefer the stored duration_days; else the planned span (never negative).
+    var dur = (r.duration_days != null) ? Math.max(0, r.duration_days)
+      : ((pd(r.start_date) && pd(r.end_date)) ? Math.max(0, dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : '');
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
     var fmt = _fmtRules.length ? _rowFmt(r) : null;
     return '<div class="ps-grid-row' + altc + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
@@ -4574,12 +4605,8 @@
       else { patch[field] = val.trim() || null; }
       // Progress-driven: % Complete (POC) recomputes remaining duration + finish from the data date.
       if (progressDriven && field === 'percent_complete') { patch = _progressFields(r, patch.percent_complete); }
-      // recompute duration if start/finish changed
-      if (field === 'start_date' || field === 'end_date') {
-        var s = pd(field === 'start_date' ? patch.start_date : r.start_date);
-        var e = pd(field === 'end_date' ? patch.end_date : r.end_date);
-        if (s && e) { if (e < s) { UI.toast('Finish is before start.', 'warn'); } patch.duration_days = dayDiff(s, e) + 1; }
-      }
+      // Date edits (actual/planned start/finish) go through the OPC-style validator/deriver.
+      if (type === 'date') { var dres = _dateEditPatch(r, field, patch[field]); if (dres.error) { UI.toast(dres.error, 'error'); renderGrid(); return; } patch = dres.patch; }
       persist(id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); } });
     }
     inp.onblur = function () { commit(true); };
@@ -7000,20 +7027,21 @@
       var as0 = pd(patch.actual_start), afd = pd(af);
       if (as0 && afd && afd < as0) af = dstr(as0);   // finish can't precede the actual start
       patch.actual_finish = af; patch.end_date = af;
-      patch.remaining_duration = 0; if (origDur != null) patch.actual_duration = origDur;
+      patch.remaining_duration = 0; patch.actual_duration = actualDurOf(patch.actual_start, patch.actual_finish);
     } else if (pct > 0) {
       patch.status = 'In Progress';
       patch.actual_start = r.actual_start || r.start_date || dstr(dd);
       patch.actual_finish = null;
+      patch.actual_duration = actualDurOf(patch.actual_start, null);   // = data date − actual start
       if (origDur != null) {
         var rem = Math.max(1, Math.round(origDur * (1 - pct / 100)));
-        patch.remaining_duration = rem; patch.actual_duration = Math.max(0, origDur - rem);
+        patch.remaining_duration = rem;
         var nf = addDays(dd, rem - 1), s0 = pd(patch.actual_start); if (s0 && nf < s0) nf = s0;
         patch.end_date = dstr(nf);
       }
     } else {
       patch.status = 'Not Started'; patch.actual_start = null; patch.actual_finish = null;
-      if (origDur != null) { patch.remaining_duration = origDur; patch.actual_duration = 0; }
+      patch.actual_duration = null; if (origDur != null) patch.remaining_duration = origDur;
     }
     return patch;
   }

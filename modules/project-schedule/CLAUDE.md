@@ -8,6 +8,20 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Date-edit intelligence: actual duration, actual-start≤data-date guard, OPC planned duration (2026-07-14) — jasantos2 / eprobles
+Central `_dateEditPatch(r,field,val)` now handles every date-cell edit (grid + detail), returning
+`{error}` (reject, toast, no save) or `{patch}`:
+- **Actual Start can't be later than the Data Date** → error toast, edit reverts.
+- **Actual Duration = data date − actual start** (elapsed), or actual finish − actual start once
+  finished (`actualDurOf`). Set whenever Actual Start/Finish is edited *and* by `_progressFields`.
+- **Actual Finish can't precede Actual Start** → error.
+- **Planned duration is now independent (OPC):** editing **Planned Start** keeps the original
+  duration and **moves Planned Finish** (no longer recomputes a duration that could go negative when
+  start < old start). Editing **Planned Finish** sets duration = finish − start (rejected if before
+  start). The **DUR column** shows the stored `duration_days` (clamped ≥0), not a raw span.
+- Verified in-browser: future actual-start rejected; actual-start Jul 10 → actual duration 4;
+  planned-start Jul 1→Jun 25 keeps 10-day duration (finish → Jul 4); planned-finish before start rejected.
+
 ## Fix: progress re-adjust only worked once (pin original duration) (2026-07-14) — jasantos2 / eprobles
 Tester: editing Earned Value POC re-adjusted the finish the first time but not on subsequent edits.
 Root cause: when an activity has no stored `duration_days` (common for imported rows — the grid just
