@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260716"></script>
   <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260716" />
-  <link rel="stylesheet" href="module.css?v=20260716i" />
+  <link rel="stylesheet" href="module.css?v=20260716j" />
 </head>
 <body>
   <div class="pd-app">
@@ -16,44 +16,44 @@
     <div class="pd-content">
       <div class="pd-topbar">
         <a class="pd-btn dr-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
-        <h1 style="margin:0;"><span class="dr-title-ico" data-ico="ruler" data-ico-size="20"></span> Drawing Register &amp; Tracker</h1>
+        <h1 class="dr-title" style="margin:0;"><span class="dr-title-ico" data-ico="ruler" data-ico-size="20"></span> <span class="dr-title-txt">Drawing Register</span></h1>
+        <div class="dr-projctx">
+          <select class="pd-select dr-project" id="dr-project" title="Project"></select>
+        </div>
+        <div class="dr-tabs" role="tablist">
+          <button class="dr-tab active" data-view="register">Register</button>
+          <button class="dr-tab" data-view="progress">Progress</button>
+        </div>
+        <!-- Global tools sit beside the profile (theme.js injects the dark-mode toggle before #user-bar) -->
+        <div class="dr-topbar-tools" id="dr-topbar-tools">
+          <button class="pd-btn dr-tb-labeled pd-btn-primary" id="dr-add" title="Add a drawing under the selected level (Enter)">+ Add</button>
+          <div class="dr-menuwrap">
+            <button class="pd-btn dr-tb-labeled" id="dr-addlevel" style="display:none;">+ Level <span data-ico="chevronDown" data-ico-size="13"></span></button>
+            <div class="dr-menu" id="dr-addlevel-menu" hidden>
+              <button data-add="phase">Phase</button>
+              <button data-add="discipline">Discipline</button>
+              <button data-add="category">Category</button>
+            </div>
+          </div>
+          <span class="dr-tb-sep"></span>
+          <button class="pd-btn" id="dr-import" title="Import from Excel"><span data-ico="box" data-ico-size="16"></span></button>
+          <button class="pd-btn" id="dr-export" title="Export to Excel"><span data-ico="download" data-ico-size="16"></span></button>
+          <button class="pd-btn dr-clearbtn" id="dr-clear" title="Clear all drawings for this project" style="display:none;"><span data-ico="triangleDown" data-ico-size="14"></span> Clear</button>
+        </div>
         <div id="user-bar"></div>
       </div>
       <div class="pd-main">
-        <div class="dr-toolbar">
-          <div class="dr-toolbar-row">
-            <select class="pd-select dr-project" id="dr-project"></select>
-            <div class="dr-tabs">
-              <button class="dr-tab active" data-view="register">Register</button>
-              <button class="dr-tab" data-view="progress">Progress</button>
-            </div>
-            <div class="dr-actions">
-              <div class="dr-menuwrap">
-                <button class="pd-btn" id="dr-addlevel" style="display:none;">+ Level ▾</button>
-                <div class="dr-menu" id="dr-addlevel-menu" hidden>
-                  <button data-add="phase">Phase</button>
-                  <button data-add="discipline">Discipline</button>
-                  <button data-add="category">Category</button>
-                </div>
-              </div>
-              <button class="pd-btn pd-btn-primary" id="dr-add">+ Add drawing</button>
-              <span class="dr-actsep"></span>
-              <button class="pd-btn" id="dr-import">Import Excel</button>
-              <button class="pd-btn" id="dr-export">Export</button>
-              <button class="pd-btn dr-clearbtn" id="dr-clear" style="display:none;">Clear all</button>
-            </div>
-          </div>
-          <div class="dr-toolbar-row dr-filters">
-            <input class="pd-input dr-search" id="dr-f-search" placeholder="Search code, title, description…" />
-            <select class="pd-select" id="dr-f-phase"><option value="">All phases</option></select>
-            <select class="pd-select" id="dr-f-discipline"><option value="">All disciplines</option></select>
-            <select class="pd-select" id="dr-f-status">
-              <option value="">All statuses</option>
-              <option>For Review</option><option>Revise &amp; Resubmit</option>
-              <option>Approved w/ comments</option><option>Approved w/o comments</option>
-              <option>Approved</option><option>Superseded</option>
-            </select>
-          </div>
+        <div class="dr-filters">
+          <span class="dr-filt-ico" data-ico="filter" data-ico-size="15"></span>
+          <input class="pd-input dr-search" id="dr-f-search" placeholder="Search code, title, description…" />
+          <select class="pd-select" id="dr-f-phase"><option value="">All phases</option></select>
+          <select class="pd-select" id="dr-f-discipline"><option value="">All disciplines</option></select>
+          <select class="pd-select" id="dr-f-status">
+            <option value="">All statuses</option>
+            <option>For Review</option><option>Revise &amp; Resubmit</option>
+            <option>Approved w/ comments</option>
+            <option>Approved</option><option>Superseded</option>
+          </select>
         </div>
 
         <div id="dr-view"></div>
@@ -68,7 +68,7 @@
   <script src="../../assets/js/db.js?v=20260716"></script>
   <script src="../../assets/js/ui.js?v=20260716"></script>
   <script src="../../assets/js/icons.js?v=20260716"></script>
-  <script src="module.js?v=20260716i"></script>
+  <script src="module.js?v=20260716j"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

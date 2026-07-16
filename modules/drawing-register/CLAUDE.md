@@ -9,6 +9,17 @@ module for file uploads** (private bucket + signed-URL viewing). Update every PR
 - [x] CRUD + Excel import + export + progress dashboard
 - [x] `enabled: true` in `assets/js/config.js`
 
+## Topbar consolidation + bulk status (2026-07-16)
+- **Toolbar moved into the topbar** (matches Project Schedule): project selector + Register/Progress
+  tabs sit left; the action cluster (**+ Add**, **+ Level ▾**, then icon buttons Import / Export /
+  Clear) sits **beside the profile** in `.dr-topbar-tools` (flat, hover-fill; theme toggle + user-bar
+  after it). Body keeps only a **slim filter bar** (search + phase/discipline/status). Title collapses
+  to icon-only under 1150px. Removed the stray "Approved w/o comments" option from the status filter.
+- **Bulk status change:** the selection bar gains a "Set status…" dropdown that applies a status to all
+  selected drawings (`setStatusSelected`) — for approving/rejecting a batch at once.
+- Harness-verified: project/tabs/tools all in the topbar, tools pushed right, no overflow at desktop
+  width, tab switch + Add-from-topbar + Level menu + bulk-status all work; no console errors.
+
 ## Sidebar-less shell + level delete + audit (2026-07-16)
 - **Sidebar removed** (matches Project Schedule / Cash Flow): a `.dr-modback` back-to-modules
   button + title in the topbar, full-width content (`.pd-content{width:100%}`; user-bar

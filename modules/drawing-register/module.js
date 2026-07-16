@@ -300,6 +300,10 @@ window.DrawingRegister = (function () {
       '<div class="dr-listcount">Showing <strong>'+shown+'</strong> of '+draws.length+' drawings</div>' +
       '<div class="dr-selbar" id="dr-selbar" hidden>' +
         '<span id="dr-selcount"></span>' +
+        '<select class="pd-select pd-btn-sm dr-selstatus" id="dr-selstatus" title="Set status for selected">' +
+          '<option value="">Set status…</option>' +
+          STATUSES.map(function(s){ return '<option>'+s+'</option>'; }).join('') +
+        '</select>' +
         '<button class="pd-btn pd-btn-sm" id="dr-selclear">Clear</button>' +
         '<button class="pd-btn pd-btn-sm pd-btn-danger" id="dr-seldel">Delete selected</button>' +
       '</div>' +
@@ -466,6 +470,7 @@ window.DrawingRegister = (function () {
     if (all) all.onclick=function(e){e.stopPropagation();}, all.onchange = function(){ visibleIds.forEach(function (id){ if(all.checked) selected[id]=true; else delete selected[id]; }); render(); };
     var clr = host.querySelector('#dr-selclear'); if (clr) clr.onclick = function(){ selected={}; render(); };
     var sd  = host.querySelector('#dr-seldel');   if (sd)  sd.onclick  = deleteSelected;
+    var ss  = host.querySelector('#dr-selstatus'); if (ss) ss.onchange = function(){ if (ss.value) setStatusSelected(ss.value); };
 
     // keyboard shortcuts (grid focused)
     var grid = host.querySelector('.dr-grid');
@@ -962,6 +967,18 @@ window.DrawingRegister = (function () {
       if (res.error) { UI.toast(res.error.message, 'error'); return; }
     }
     UI.toast('Deleted ' + ids.length + ' drawing(s)', 'ok'); selected = {}; load();
+  }
+
+  // ---- Set status on all selected drawings ---------------------------------
+  async function setStatusSelected(status) {
+    var ids = Object.keys(selected).filter(function (id){ return visibleIds.indexOf(id)!==-1; });
+    if (!ids.length) return;
+    var n = 0;
+    for (var i=0; i<ids.length; i++) {
+      var r = rows.find(function (x){ return x.id===ids[i]; });
+      if (r && !isNode(r)) { var ok = await persistCell(r, { status: status }); if (ok) n++; }
+    }
+    UI.toast('Set status on ' + n + ' drawing(s)', 'ok'); render();
   }
 
   // ---- Clear ALL drawings for this project (type-to-confirm) ---------------

@@ -1,17 +1,34 @@
 /* Drawing Register & Tracker — module styles (all classes prefixed .dr-) */
 
-/* ---- Toolbar ------------------------------------------------------------- */
-.dr-toolbar { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
-  padding:12px 14px; margin-bottom:16px; display:flex; flex-direction:column; gap:10px; }
-.dr-toolbar-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-.dr-toolbar-row + .dr-toolbar-row { border-top:1px solid var(--pd-line); padding-top:10px; }
-.dr-project { max-width:280px; font-weight:600; }
-.dr-actions { display:flex; gap:8px; align-items:center; margin-left:auto; }
-.dr-actsep { width:1px; align-self:stretch; background:var(--pd-line); margin:2px 4px; }
-.dr-clearbtn { color:var(--pd-bad,#dc2626); border-color:transparent; }
-.dr-clearbtn:hover { background:var(--pd-bad,#dc2626); border-color:var(--pd-bad,#dc2626); color:#fff; }
-.dr-filters .dr-search { flex:1 1 260px; min-width:180px; }
-.dr-filters .pd-select { flex:0 0 auto; max-width:190px; }
+/* ---- Topbar: project selector + tabs + tools (matches Project Schedule) -- */
+.dr-title-txt { white-space:nowrap; }
+@media (max-width:1150px){ .dr-title-txt { display:none; } }   /* icon-only title on tighter widths */
+
+.dr-projctx { display:flex; align-items:center; min-width:0; }
+.dr-project { max-width:240px; height:34px; font-weight:600; font-size:13px;
+  background:transparent; border-color:transparent; }
+.dr-project:hover, .dr-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+
+/* View tabs (segmented) */
+.dr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
+.dr-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600;
+  cursor:pointer; font-size:13px; transition:background .12s; }
+.dr-tab + .dr-tab { border-left:1px solid var(--pd-line); }
+.dr-tab:hover:not(.active) { background:var(--pd-bg); }
+.dr-tab.active { background:var(--pd-red); color:#fff; }
+
+/* Tool cluster beside the profile */
+.dr-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+.dr-topbar-tools .pd-btn { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
+  background:transparent; border-color:transparent; font-size:13px; }
+.dr-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+.dr-topbar-tools .pd-btn.dr-tb-labeled { width:auto; padding:0 12px; gap:6px; }
+.dr-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+.dr-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
+.dr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
+.dr-clearbtn { color:var(--pd-bad,#dc2626); }
+.dr-clearbtn:hover { background:var(--pd-bad,#dc2626) !important; border-color:var(--pd-bad,#dc2626) !important; color:#fff; }
+.dr-topbar-tools .dr-menu { left:auto; right:0; }
 
 /* Loading spinner (import) */
 .dr-spin { display:inline-block; width:13px; height:13px; vertical-align:-2px; margin-right:6px;
@@ -19,13 +36,12 @@
   animation:dr-spin .7s linear infinite; }
 @keyframes dr-spin { to { transform:rotate(360deg); } }
 
-/* View tabs (segmented) */
-.dr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; }
-.dr-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:7px 18px; font-weight:600;
-  cursor:pointer; font-size:13px; transition:background .12s; }
-.dr-tab + .dr-tab { border-left:1px solid var(--pd-line); }
-.dr-tab:hover:not(.active) { background:var(--pd-bg); }
-.dr-tab.active { background:var(--pd-red); color:#fff; }
+/* ---- Slim filter bar (in the body) -------------------------------------- */
+.dr-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px;
+  background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
+.dr-filt-ico { color:var(--pd-muted); flex:none; }
+.dr-filters .dr-search { flex:1 1 300px; min-width:180px; }
+.dr-filters .pd-select { flex:0 0 auto; max-width:180px; }
 
 /* ---- List bar (count + selection) --------------------------------------- */
 .dr-listbar { display:flex; align-items:center; gap:12px; margin-bottom:10px; min-height:30px; }
@@ -216,9 +232,10 @@ td.dr-editing { padding:2px 4px; }
 .dr-grp-disc .dr-gcode, .dr-grp-cat .dr-gcode { color:var(--pd-muted); background:var(--pd-bg); }
 
 /* ============ Sidebar-less shell (matches Project Schedule / Cash Flow) === */
-.pd-topbar { display:flex; align-items:center; gap:12px; }
-.pd-topbar #user-bar { margin-left:auto; padding-left:12px; border-left:1px solid var(--pd-line); }
-.dr-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+.pd-topbar { display:flex; align-items:center; gap:10px; }
+.pd-topbar #user-bar { padding-left:10px; border-left:1px solid var(--pd-line); }
+.pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+.dr-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; flex:none; }
 .dr-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:2px; }
 .pd-content { width:100%; }
 
@@ -227,3 +244,6 @@ td.dr-editing { padding:2px 4px; }
   font-size:12px; padding:2px 6px; border-radius:4px; opacity:0; transition:opacity .12s; }
 .dr-grp:hover .dr-lvldel { opacity:1; }
 .dr-grp .dr-lvldel:hover { background:var(--pd-bad,#dc2626); color:#fff; }
+
+/* bulk set-status dropdown in the selection bar */
+.dr-selstatus { height:26px; padding:2px 8px; font-size:12px; font-weight:600; max-width:170px; }

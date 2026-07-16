@@ -77,6 +77,15 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-16 — Drawing Register: topbar consolidation + bulk status
+- **Toolbar moved into the topbar** (Project Schedule pattern): project selector + Register/Progress
+  tabs on the left; **+ Add / + Level / Import / Export / Clear** as a flat tool cluster beside the
+  profile picture. Body keeps only a slim filter bar. Title goes icon-only under 1150px. Dropped the
+  leftover "Approved w/o comments" status-filter option.
+- **Bulk status change** on the selection bar ("Set status…" → applies to all selected drawings).
+- Harness-verified (topbar layout + no overflow at desktop width, tab switch, Add-from-topbar, Level
+  menu, bulk-status all work; no console errors). Assets bumped `?v=20260716j`. No migration.
+
 ### 2026-07-16 — Drawing Register: sidebar-less shell + level delete + audit
 - **Sidebar removed** to match Project Schedule / Cash Flow — `.dr-modback` back button + title
   in the topbar, full-width content (verified: content spans the full window, user-bar right).
