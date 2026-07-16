@@ -9,6 +9,12 @@
   <title>Cash Flow · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260714" />
   <style>
+    /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
+    .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+    .cf-topbar-tools .pd-btn { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
+    .cf-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+    .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
+    .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); }
     .cf-controls { display:flex; flex-wrap:nowrap; gap:10px 16px; align-items:center; margin-bottom:16px; overflow-x:auto;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:9px 14px; }
     .cf-viewbar { display:flex; align-items:center; gap:14px; flex-wrap:nowrap; flex:none; }
@@ -224,6 +230,11 @@
     <div class="pd-topbar">
       <a class="pd-btn cf-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
       <h1 style="margin:0;">Cash Flow Projection</h1>
+      <div class="cf-topbar-tools">
+        <button class="pd-btn" id="cf-refresh" title="Reload the projection"><span data-ico="refresh" data-ico-size="17"></span></button>
+        <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="17"></span></button>
+        <button class="pd-btn" id="cf-print" title="Print / save the cashflow sheet as PDF"><span data-ico="printer" data-ico-size="17"></span></button>
+      </div>
       <div id="user-bar"></div>
     </div>
     <div class="pd-main">
@@ -241,11 +252,7 @@
             </span></label>
         </div>
         <div class="cf-actions">
-          <button class="pd-btn" id="cf-refresh" title="Reload the projection"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
           <button class="pd-btn" id="cf-sync" title="Pull the latest procurement work packages from WPM (admins/planners)" style="display:none;"><span data-ico="refresh" data-ico-size="15"></span> Sync from WPM</button>
-          <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="15"></span> Export</button>
-          <button class="pd-btn" id="cf-print" title="Print / save the cashflow sheet as PDF"><span data-ico="printer" data-ico-size="15"></span> Print</button>
-          <span class="cf-ctl-div"></span>
           <button class="pd-btn" id="cf-check" title="Check that all DB tables / columns / RPC are set up"><span data-ico="check" data-ico-size="15"></span> Setup check</button>
           <button class="pd-btn" id="cf-actuals" title="Record actual cash received / paid"><span data-ico="clipboard" data-ico-size="15"></span> Actuals</button>
           <button class="pd-btn pd-btn-primary" id="cf-settings"><span data-ico="settings" data-ico-size="15"></span> Assumptions</button>
