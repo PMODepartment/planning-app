@@ -56,6 +56,24 @@ Project-scoped drawing register that mirrors the workbook:
 - Requires the earlier project-access RLS + storage-buckets migrations (for the
   private `drawing-register` bucket used by file upload).
 
+## Delete / bulk actions (planner+)
+- **Clear all** button (shown only to super_admin/admin/planner) — deletes every
+  drawing for the current project via a **type-the-project-id** confirm modal;
+  removes attached storage files first. For fixing a wrong-project import.
+- **Bulk select** — a checkbox column (planner+), per-group and select-all
+  checkboxes, and a "N selected · Delete selected" bar. Chunked delete (100/req).
+- Per-row Edit/Del unchanged. RLS still governs who can delete which rows
+  (creator or admin), so a planner clears what they imported.
+
+## UI (2026-07-16 professional pass)
+- Toolbar in a bordered card; segmented Register/Progress tabs.
+- Table: sticky header, zebra hover, monospace drawing codes, tinted phase
+  roll-up rows, gradient progress bars, compact row buttons, a "Showing N of M"
+  count bar, selection bar.
+- KPI tiles get an accent bar; dashboard tables restyled.
+- Import guard: `canonDiscipline()` rejects a non-canonical discipline value
+  (e.g. a stray "A-013" from a mis-detected column) so it can't become a group.
+
 ## Pending
-- Live click-through against a real login + this project's data (module was
-  harness-verified; the parser tested against the actual workbook).
+- Live click-through against a real login + this project's data (module +
+  UI harness-verified; importer tested against the actual workbook).

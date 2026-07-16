@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260716"></script>
   <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260716" />
-  <link rel="stylesheet" href="module.css?v=20260716b" />
+  <link rel="stylesheet" href="module.css?v=20260716c" />
 </head>
 <body>
   <div class="pd-app">
@@ -44,6 +44,7 @@
           <div class="dr-actions">
             <button class="pd-btn" id="dr-import">Import Excel</button>
             <button class="pd-btn" id="dr-export">Export</button>
+            <button class="pd-btn pd-btn-danger" id="dr-clear" style="display:none;">Clear all</button>
             <button class="pd-btn pd-btn-primary" id="dr-add">+ Add drawing</button>
           </div>
         </div>
@@ -60,7 +61,7 @@
   <script src="../../assets/js/db.js?v=20260716"></script>
   <script src="../../assets/js/ui.js?v=20260716"></script>
   <script src="../../assets/js/icons.js?v=20260716"></script>
-  <script src="module.js?v=20260716b"></script>
+  <script src="module.js?v=20260716c"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

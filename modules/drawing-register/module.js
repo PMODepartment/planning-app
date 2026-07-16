@@ -19,6 +19,8 @@ window.DrawingRegister = (function () {
   var rows = [];
   var view = 'register';                       // register | progress
   var filters = { phase: '', discipline: '', status: '', search: '' };
+  var selected = {};                           // id -> true (bulk select)
+  var canWrite = false;                        // planner+ / admin / super_admin
 
   // ---- Coding Reference (from the workbook "Coding Reference" sheet) --------
   var BUILDINGS = ['GEN','TW1','TW2','TW3','TW4','TW5','TW6','TW7','TW8','TW9'];
@@ -49,11 +51,15 @@ window.DrawingRegister = (function () {
   // ---------------------------------------------------------------- init -----
   async function init(user, prof) {
     profile = prof; uid = (user && user.id) || (prof && prof.id);
+    var role = (prof && prof.role) || window.__role || '';
+    canWrite = ['super_admin','admin','planner'].indexOf(role) !== -1;
     await loadProjects();
 
     document.getElementById('dr-add').onclick = function () { openForm(null); };
     document.getElementById('dr-import').onclick = function () { openImport(); };
     document.getElementById('dr-export').onclick = function () { exportExcel(); };
+    var clearBtn = document.getElementById('dr-clear');
+    if (clearBtn) { clearBtn.style.display = canWrite ? '' : 'none'; clearBtn.onclick = clearAll; }
     document.getElementById('dr-project').onchange = function (e) {
       pid = e.target.value; sessionStorage.setItem('pd_project', pid);
       var p = e.target.selectedOptions[0]; projName = p ? p.textContent : '';
@@ -99,9 +105,7 @@ window.DrawingRegister = (function () {
       .order('drawing_no', { ascending: true });
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     rows = res.data || [];
-    // discipline filter options from data + known list
-    var ds = {}; rows.forEach(function (r){ if (r.discipline) ds[r.discipline]=1; });
-    Object.keys(DISCIPLINES).forEach(function (c){ ds[disciplineName(c)]=1; ds[c]=1; });
+    selected = {};
     render();
   }
 
@@ -175,6 +179,8 @@ window.DrawingRegister = (function () {
       return '<option'+(filters.discipline===d?' selected':'')+'>'+Fmt.esc(d)+'</option>'; }).join('');
   }
 
+  function phaseRank(p){ var i = PHASES.indexOf(p); return i === -1 ? 99 : i; }
+
   function renderRegister() {
     var host = document.getElementById('dr-view');
     if (!rows.length) {
@@ -182,54 +188,90 @@ window.DrawingRegister = (function () {
       return;
     }
     var data = filtered();
-    if (!data.length) { host.innerHTML = emptyMsg('No drawings match the filters.'); return; }
 
     // group by phase → discipline
-    var groups = {};                 // phase -> discipline -> [rows]
-    var phaseOrder = [];
+    var groups = {}, phaseOrder = [];
     data.forEach(function (r) {
       var ph = r.phase || 'Ungrouped', d = r.discipline || '—';
       if (!groups[ph]) { groups[ph] = {}; phaseOrder.push(ph); }
       (groups[ph][d] = groups[ph][d] || []).push(r);
     });
-    phaseOrder.sort(function (a, b) {
-      var ia = PHASES.indexOf(a), ib = PHASES.indexOf(b);
-      if (ia === -1) ia = 99; if (ib === -1) ib = 99;
-      return ia - b === b ? 0 : ia - ib || a.localeCompare(b);
-    });
+    phaseOrder.sort(function (a, b) { return phaseRank(a) - phaseRank(b) || a.localeCompare(b); });
 
-    var html = '<div class="pd-card" style="padding:0;overflow:auto;">' +
-      '<table class="pd-table dr-table"><thead><tr>' +
+    var CB = canWrite;
+    var toolbar = '<div class="dr-listbar">' +
+      '<div class="dr-listcount">Showing <strong>'+data.length+'</strong> of '+rows.length+' drawings</div>' +
+      '<div class="dr-selbar" id="dr-selbar" hidden>' +
+        '<span id="dr-selcount"></span>' +
+        '<button class="pd-btn pd-btn-sm" id="dr-selclear">Clear</button>' +
+        '<button class="pd-btn pd-btn-sm pd-btn-danger" id="dr-seldel">Delete selected</button>' +
+      '</div></div>';
+
+    if (!data.length) { host.innerHTML = toolbar + emptyMsg('No drawings match the filters.'); return; }
+
+    var head = '<tr>' +
+      (CB ? '<th class="dr-cb"><input type="checkbox" id="dr-selall" title="Select all shown"></th>' : '') +
       '<th>Drawing Code</th><th>Sheet Title / Description</th><th>Disc.</th>' +
       '<th>Cat.</th><th>Rev</th><th>Status</th><th class="dr-r">Sheets</th>' +
       '<th class="dr-r">Appr.</th><th>Latest Sub.</th><th>Approval</th>' +
-      '<th>Resp.</th><th>File</th><th></th></tr></thead><tbody>';
+      '<th>Resp.</th><th>File</th><th class="dr-actcol"></th></tr>';
+
+    var html = toolbar + '<div class="pd-card dr-tablecard">' +
+      '<table class="pd-table dr-table"><thead>'+head+'</thead><tbody>';
 
     phaseOrder.forEach(function (ph) {
       var pr = flat(groups[ph]);
-      html += rollupRow(ph, pr, 'phase', 13);
-      var discs = Object.keys(groups[ph]).sort();
-      discs.forEach(function (d) {
+      html += rollupRow(ph, pr, 'phase', CB);
+      Object.keys(groups[ph]).sort().forEach(function (d) {
         var dr = groups[ph][d];
-        html += rollupRow(disciplineName(d) + ' (' + d + ')', dr, 'disc', 13);
-        dr.forEach(function (r) { html += drawingRow(r); });
+        var dlabel = DISCIPLINES[d] ? DISCIPLINES[d] : disciplineName(d);
+        html += rollupRow(dlabel + (DISCIPLINES[d]?' ('+d+')':''), dr, 'disc', CB);
+        dr.forEach(function (r) { html += drawingRow(r, CB); });
       });
     });
     html += '</tbody></table></div>';
     host.innerHTML = html;
+    wireRegister(host, data);
+  }
 
+  function wireRegister(host, data) {
     host.querySelectorAll('[data-view]').forEach(function (b){ b.onclick=function(){ viewFile(b.dataset.view); }; });
     host.querySelectorAll('[data-edit]').forEach(function (b){ b.onclick=function(){ openForm(rows.find(function(x){return x.id===b.dataset.edit;})); }; });
     host.querySelectorAll('[data-del]').forEach(function (b){ b.onclick=function(){ del(rows.find(function(x){return x.id===b.dataset.del;})); }; });
+    if (!canWrite) return;
+
+    host.querySelectorAll('input[data-sel]').forEach(function (cb){
+      cb.onchange = function(){ if (cb.checked) selected[cb.dataset.sel]=true; else delete selected[cb.dataset.sel]; refreshSel(host, data); };
+    });
+    host.querySelectorAll('input[data-selgrp]').forEach(function (cb){
+      cb.onchange = function(){
+        cb.dataset.selgrp.split(',').forEach(function (id){ if(!id) return; if (cb.checked) selected[id]=true; else delete selected[id]; });
+        refreshSel(host, data);
+      };
+    });
+    var all = host.querySelector('#dr-selall');
+    if (all) all.onchange = function(){ data.forEach(function (r){ if(all.checked) selected[r.id]=true; else delete selected[r.id]; }); render(); };
+    var clr = host.querySelector('#dr-selclear'); if (clr) clr.onclick = function(){ selected={}; render(); };
+    var sd  = host.querySelector('#dr-seldel');   if (sd)  sd.onclick  = deleteSelected;
+    refreshSel(host, data);
+  }
+
+  function refreshSel(host, data) {
+    var ids = Object.keys(selected).filter(function (id){ return data.some(function(r){return r.id===id;}); });
+    var bar = host.querySelector('#dr-selbar');
+    if (bar) { bar.hidden = ids.length===0; host.querySelector('#dr-selcount').textContent = ids.length + ' selected'; }
+    var all = host.querySelector('#dr-selall'); if (all) all.checked = data.length>0 && ids.length===data.length;
   }
 
   function flat(byDisc){ var a=[]; Object.keys(byDisc).forEach(function(k){ a=a.concat(byDisc[k]); }); return a; }
 
-  function rollupRow(label, list, kind, cols) {
+  function rollupRow(label, list, kind, CB) {
     var tot=0, ap=0;
     list.forEach(function (r){ tot += num(r.no_of_sheets)||0; ap += num(r.approved_sheets)||0; });
     var pct = tot ? Math.round(ap/tot*100) : 0;
-    return '<tr class="dr-grp dr-grp-'+kind+'">' +
+    var ids = list.map(function(r){return r.id;}).join(',');
+    var grpCb = CB ? '<td class="dr-cb"><input type="checkbox" data-selgrp="'+ids+'" title="Select group"></td>' : '';
+    return '<tr class="dr-grp dr-grp-'+kind+'">' + grpCb +
       '<td colspan="6"><strong>'+Fmt.esc(label)+'</strong> <span class="dr-count">'+list.length+' dwg</span></td>' +
       '<td class="dr-r">'+tot+'</td>' +
       '<td class="dr-r">'+ap+'</td>' +
@@ -241,14 +283,15 @@ window.DrawingRegister = (function () {
            '<span class="dr-prog-txt">'+pct+'%</span></div>';
   }
 
-  function drawingRow(r) {
+  function drawingRow(r, CB) {
     var code = r.drawing_code || r.drawing_no || '';
     var tot = num(r.no_of_sheets)||0, ap = num(r.approved_sheets)||0;
     var pct = Math.round(pctApproved(r)*100);
     var sub = latestSub(r,'actual') || latestSub(r,'planned');
     var appr = r.actual_approval || r.planned_approval;
-    return '<tr>' +
-      '<td><strong>'+Fmt.esc(code)+'</strong></td>' +
+    var cb = CB ? '<td class="dr-cb"><input type="checkbox" data-sel="'+r.id+'"'+(selected[r.id]?' checked':'')+'></td>' : '';
+    return '<tr'+(selected[r.id]?' class="dr-selrow"':'')+'>' + cb +
+      '<td><span class="dr-code">'+Fmt.esc(code)+'</span></td>' +
       '<td>'+Fmt.esc(r.title)+(r.description?'<div class="dr-sub">'+Fmt.esc(r.description)+'</div>':'')+'</td>' +
       '<td>'+Fmt.esc(r.discipline)+'</td>' +
       '<td>'+Fmt.esc(r.category)+'</td>' +
@@ -256,17 +299,17 @@ window.DrawingRegister = (function () {
       '<td><span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status||'—')+'</span></td>' +
       '<td class="dr-r">'+tot+'</td>' +
       '<td class="dr-r">'+ap+' <span class="dr-mini">'+pct+'%</span></td>' +
-      '<td>'+(sub?Fmt.date(sub):'—')+'</td>' +
-      '<td>'+(appr?Fmt.date(appr):'—')+'</td>' +
+      '<td class="dr-nowrap">'+(sub?Fmt.date(sub):'—')+'</td>' +
+      '<td class="dr-nowrap">'+(appr?Fmt.date(appr):'—')+'</td>' +
       '<td>'+Fmt.esc(r.responsible)+'</td>' +
       '<td>'+(r.file_url?'<button class="pd-btn pd-btn-sm" data-view="'+Fmt.esc(r.file_url)+'">View</button>':'<span class="dr-mut">—</span>')+'</td>' +
-      '<td style="white-space:nowrap;"><button class="pd-btn pd-btn-sm" data-edit="'+r.id+'">Edit</button> ' +
-        '<button class="pd-btn pd-btn-sm" data-del="'+r.id+'">Del</button></td>' +
+      '<td class="dr-nowrap"><button class="dr-rowbtn" data-edit="'+r.id+'" title="Edit">Edit</button> ' +
+        '<button class="dr-rowbtn dr-rowbtn-del" data-del="'+r.id+'" title="Delete">Del</button></td>' +
     '</tr>';
   }
 
   function emptyMsg(msg) {
-    return '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">'+Fmt.esc(msg)+'</div>';
+    return '<div class="pd-card dr-empty">'+Fmt.esc(msg)+'</div>';
   }
 
   // ----------------------------------------------------- progress dashboard --
@@ -534,6 +577,49 @@ window.DrawingRegister = (function () {
     UI.toast('Deleted', 'ok'); load();
   }
 
+  // ---- Bulk delete the currently selected drawings -------------------------
+  async function deleteSelected() {
+    var ids = Object.keys(selected);
+    if (!ids.length) return;
+    if (!confirm('Delete ' + ids.length + ' selected drawing(s)? This cannot be undone.')) return;
+    var files = rows.filter(function (r){ return selected[r.id] && r.file_url; }).map(function (r){ return r.file_url; });
+    if (files.length) { try { await sb().storage.from(BUCKET).remove(files); } catch (e) {} }
+    // delete in chunks to keep the URL length sane
+    for (var i=0; i<ids.length; i+=100) {
+      var res = await sb().from(TABLE).delete().in('id', ids.slice(i, i+100));
+      if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    }
+    UI.toast('Deleted ' + ids.length + ' drawing(s)', 'ok'); selected = {}; load();
+  }
+
+  // ---- Clear ALL drawings for this project (type-to-confirm) ---------------
+  function clearAll() {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (!rows.length) { UI.toast('Nothing to clear', 'warn'); return; }
+    var m = UI.modal(
+      '<h2 style="margin-top:0;">Clear all drawings</h2>' +
+      '<p>This permanently deletes <strong>all ' + rows.length + ' drawings</strong> for ' +
+      '<strong>' + Fmt.esc(projName || pid) + '</strong>. Useful when a register was imported to the ' +
+      'wrong project. This cannot be undone.</p>' +
+      '<p class="dr-mut">Type the project id <code>' + Fmt.esc(pid) + '</code> to confirm:</p>' +
+      '<input class="pd-input" id="dr-clr-confirm" placeholder="' + Fmt.esc(pid) + '">' +
+      '<div style="text-align:right;margin-top:12px;">' +
+        '<button class="pd-btn" id="dr-clr-cancel" type="button">Cancel</button> ' +
+        '<button class="pd-btn pd-btn-danger" id="dr-clr-go" type="button" disabled>Delete all</button></div>'
+    );
+    var inp = m.el.querySelector('#dr-clr-confirm'), go = m.el.querySelector('#dr-clr-go');
+    inp.oninput = function(){ go.disabled = inp.value.trim() !== pid; };
+    m.el.querySelector('#dr-clr-cancel').onclick = m.close;
+    go.onclick = async function(){
+      go.disabled = true; go.textContent = 'Deleting…';
+      var files = rows.filter(function (r){ return r.file_url; }).map(function (r){ return r.file_url; });
+      if (files.length) { try { await sb().storage.from(BUCKET).remove(files); } catch (e) {} }
+      var res = await sb().from(TABLE).delete().eq('project_id', pid);
+      if (res.error) { UI.toast(res.error.message, 'error'); go.disabled=false; go.textContent='Delete all'; return; }
+      UI.toast('All drawings cleared', 'ok'); m.close(); selected = {}; load();
+    };
+  }
+
   // =============================================================== IMPORT =====
   function openImport() {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
@@ -740,7 +826,7 @@ window.DrawingRegister = (function () {
         building_ref: String(cell(row, ci.building)).trim() || cur.building,
         company: String(cell(row, ci.company)).trim() || undefined,
         drawing_type: String(cell(row, ci.type)).trim() || undefined,
-        discipline: mapDiscipline(String(cell(row, ci.disc)).trim()) || cur.discipline || disciplineFromCode(dwgno||noCode),
+        discipline: canonDiscipline(mapDiscipline(String(cell(row, ci.disc)).trim())) || cur.discipline || disciplineFromCode(dwgno||noCode),
         floor_level: String(cell(row, ci.floor)).trim() || undefined,
         dwg_number: dwgno || noCode,
         drawing_no: dwgno || noCode || title.slice(0,40),
@@ -763,6 +849,14 @@ window.DrawingRegister = (function () {
     function push(arr, rev, kind, val){
       var e = arr.find(function(x){return x.rev===rev;}); if (!e){ e={rev:rev, planned:null, actual:null}; arr.push(e); } e[kind]=val;
     }
+  }
+
+  // Accept a discipline value only if it's one of the canonical names, else ''
+  // (guards against a stray code like "A-013" leaking in from a mis-detected column).
+  function canonDiscipline(v) {
+    if (!v) return '';
+    for (var k in DISCIPLINES) { if (DISCIPLINES[k] === v) return v; }
+    return '';
   }
 
   // Infer discipline from the sheet-code prefix (A-101 → Architectural) when

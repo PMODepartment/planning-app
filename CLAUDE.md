@@ -77,6 +77,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-16 — Drawing Register: planner delete tools + professional UI pass
+- **Clear all** (planner/admin/super_admin only): a type-the-project-id confirm modal that
+  deletes every drawing for the current project (storage files first) — for fixing a
+  wrong-project import (user hit this). **Bulk select**: checkbox column + per-group/select-all
+  + "N selected · Delete selected" bar (chunked 100/req). Per-row delete + RLS unchanged.
+- **UI pass:** toolbar in a card; sticky table header with zebra hover; monospace drawing codes;
+  tinted phase roll-up rows + gradient progress bars; "Showing N of M" count bar; KPI accent bars.
+- **Importer hardened:** `canonDiscipline()` drops a non-canonical discipline value (e.g. a stray
+  "A-013" from a mis-detected column on a different workbook) so it can't form a bogus group;
+  fixed a latent phase-sort comparator bug.
+- Module-local assets bumped to `?v=20260716c`. Verified render + selection + Progress KPIs in a
+  stubbed harness (screenshot compositor stalls in this env — checked via DOM/read_page + JS).
+  See `modules/drawing-register/CLAUDE.md`.
+
 ### 2026-07-16 — Drawing Register rebuilt to full fidelity (matches the GPR101 workbook)
 - **Replaced the flat 8-field Drawing Register** with a full rebuild mirroring the Megawide
   "Drawing Register & Tracker" workbook (`GPR101. TEC. Drawing Register`). Now:
