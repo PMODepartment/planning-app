@@ -520,9 +520,12 @@
     if (!pid || !model || model.empty) return;
     try {
       await sb().from('cash_flow_rollup').delete().eq('project_id', pid);
+      // Persist the LIVE series (actual-to-date + forecast, incl. recorded actuals) so
+      // the Portfolio consolidated view matches this module's KPIs/peak-funding.
       var rows = model.months.map(function (mo, i) {
+        var ci = model.inActualPer[i] + model.inForecastPer[i], co = model.outActualPer[i] + model.outForecastPer[i];
         return { project_id: pid, period: iso(new Date(mo.getFullYear(), mo.getMonth(), 1)),
-          cash_in: model.inPer[i], cash_out: model.outPer[i], net: model.netPer[i], updated_at: new Date().toISOString() };
+          cash_in: ci, cash_out: co, net: model.liveNetPer[i], updated_at: new Date().toISOString() };
       }).filter(function (r) { return r.cash_in || r.cash_out; });
       for (var i = 0; i < rows.length; i += 500) { await sb().from('cash_flow_rollup').insert(rows.slice(i, i + 500)); }
     } catch (e) { /* roll-up is best-effort; never block the view */ }
