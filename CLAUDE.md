@@ -77,6 +77,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-16 — Drawing Register rebuilt to full fidelity (matches the GPR101 workbook)
+- **Replaced the flat 8-field Drawing Register** with a full rebuild mirroring the Megawide
+  "Drawing Register & Tracker" workbook (`GPR101. TEC. Drawing Register`). Now:
+  - **Structured drawing code** built from the workbook "Coding Reference" tables
+    (`<proj>-<building>-<company>-<type>-<discipline>-<floor>-<number>-<rev>`) via dropdowns +
+    a live preview in the Add/Edit modal.
+  - **Register view** grouped **phase → discipline** with per-group roll-ups (sheets / approved /
+    % bar); filters for phase, discipline, status, search.
+  - **Multi-revision submission tracking** (`submissions` jsonb `[{rev,planned,actual}]`), planned/
+    actual approval dates, and workbook approval statuses (For Review · Revise & Resubmit ·
+    Approved w/ comments · Approved w/o comments · Approved · Superseded). Sheet counts + approved %.
+  - **Progress dashboard** tab (KPI tiles + Progress-by-Phase and Progress-by-Discipline tables).
+  - **Excel importer** (SheetJS) that reads the workbook's flat "Dwg Registry" layout — infers
+    phase/discipline/category from sheet-title indentation + code prefix, pulls every revision's
+    planned/actual dates, normalises status. Plus filtered **Export** to `.xlsx`. File upload kept.
+- **DB migration `migrations/2026-07-16-drawing-register-full.sql`** (idempotent; folded into
+  `supabase-schema.sql`) extends `drawing_register` with code parts, phase/category/description/
+  responsible, sheet counts + approved %, `submissions` jsonb, planned/actual approval, `sort_order`.
+  **User must run this migration.**
+- **Verified** the importer offline with Node+SheetJS against the real workbook: 1032 drawings,
+  correct phase/discipline split, per-revision planned/actual dates, sheet counts, normalised
+  status (~26/1032 edge codes unclassified). Page loads with no console errors; live click-through
+  against a real login still pending. See `modules/drawing-register/CLAUDE.md`.
+
 ### 2026-07-16 — ONE migration to run + schema-drift audit (collapse NOT yet safe)
 - **`migrations/2026-07-16-consolidated.sql`** replaces the two separate 2026-07-16 files
   (planner-project-visibility + admin-archive-delete, both deleted — recoverable via git). Fully

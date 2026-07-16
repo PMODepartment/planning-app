@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260712"></script>
+  <script src="../../assets/js/theme.js?v=20260716"></script>
   <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260716" />
-  <link rel="stylesheet" href="module.css" />
+  <link rel="stylesheet" href="module.css?v=20260716b" />
 </head>
 <body>
   <div class="pd-app">
@@ -22,35 +22,45 @@
 
     <div class="pd-content">
       <div class="pd-topbar">
-        <h1>Drawing Register</h1>
+        <h1>Drawing Register &amp; Tracker</h1>
         <div id="user-bar"></div>
       </div>
       <div class="pd-main">
         <div class="dr-controls">
-          <select class="pd-select" id="dr-project" style="max-width:260px;"></select>
-          <select class="pd-select" id="dr-f-status" style="max-width:160px;">
+          <select class="pd-select" id="dr-project" style="max-width:240px;"></select>
+          <div class="dr-tabs">
+            <button class="dr-tab active" data-view="register">Register</button>
+            <button class="dr-tab" data-view="progress">Progress</button>
+          </div>
+          <select class="pd-select" id="dr-f-phase" style="max-width:170px;"><option value="">All phases</option></select>
+          <select class="pd-select" id="dr-f-discipline" style="max-width:160px;"><option value="">All disciplines</option></select>
+          <select class="pd-select" id="dr-f-status" style="max-width:170px;">
             <option value="">All statuses</option>
-            <option>For Review</option><option>Approved</option><option>Superseded</option>
+            <option>For Review</option><option>Revise &amp; Resubmit</option>
+            <option>Approved w/ comments</option><option>Approved w/o comments</option>
+            <option>Approved</option><option>Superseded</option>
           </select>
-          <select class="pd-select" id="dr-f-discipline" style="max-width:170px;"><option value="">All disciplines</option></select>
-          <input class="pd-input" id="dr-f-search" placeholder="Search…" style="max-width:200px;" />
-          <button class="pd-btn pd-btn-primary" id="dr-add" style="margin-left:auto;">+ Add drawing</button>
+          <input class="pd-input" id="dr-f-search" placeholder="Search…" style="max-width:180px;" />
+          <div class="dr-actions">
+            <button class="pd-btn" id="dr-import">Import Excel</button>
+            <button class="pd-btn" id="dr-export">Export</button>
+            <button class="pd-btn pd-btn-primary" id="dr-add">+ Add drawing</button>
+          </div>
         </div>
 
-        <div class="pd-card" style="padding:0;overflow:auto;">
-          <table class="pd-table dr-table" id="dr-table"></table>
-        </div>
+        <div id="dr-view"></div>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js?v=20260712"></script>
-  <script src="../../assets/js/auth.js?v=20260712"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="../../assets/js/config.js?v=20260716"></script>
+  <script src="../../assets/js/auth.js?v=20260716"></script>
   <script src="../../assets/js/db.js?v=20260716"></script>
-  <script src="../../assets/js/ui.js?v=20260712"></script>
-  <script src="../../assets/js/icons.js?v=20260712"></script>
-  <script src="module.js"></script>
+  <script src="../../assets/js/ui.js?v=20260716"></script>
+  <script src="../../assets/js/icons.js?v=20260716"></script>
+  <script src="module.js?v=20260716b"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

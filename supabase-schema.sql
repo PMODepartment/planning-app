@@ -142,11 +142,30 @@ create table if not exists drawing_register (
   title          text,
   discipline     text,
   revision       text,
-  status         text,               -- For Review | Approved | Superseded
+  status         text,               -- For Review | Revise & Resubmit | Approved w/ comments | Approved w/o comments | Approved | Superseded
   issue_date     date,
   due_date       date,
   file_url       text,
   remarks        text,
+  -- Full-fidelity fields (2026-07-16-drawing-register-full.sql) --------------
+  proj_code      text,               -- structured drawing-code parts (Coding Reference sheet)
+  building_ref   text,               -- TW1..TW9 / GEN
+  company        text,               -- MCC (Megawide) / subcontractor acronym
+  drawing_type   text,               -- ECD/SD1/SD2/FCD/CSD/ISD/DRC
+  floor_level    text,               -- GEN/FD/GF/2F.. / RDF / RORD
+  dwg_number     text,               -- numeric sheet no (4750, A-101)
+  drawing_code   text,               -- full composed code
+  phase          text,               -- Concept Design / Schematic Design 1 / 2 / For Construction
+  category       text,               -- Floor Plan / Elevation / Section
+  description    text,
+  responsible    text,               -- consultant / party (ECTA, RBS, In-House)
+  no_of_sheets    integer default 1,
+  approved_sheets integer default 0,
+  approved_pct    numeric,           -- 0..1
+  submissions    jsonb default '[]'::jsonb,  -- [{rev,planned,actual}]
+  planned_approval date,
+  actual_approval  date,
+  sort_order      integer default 0,
   created_by     uuid references users(id),
   created_at     timestamptz default now(),
   updated_at     timestamptz default now()
