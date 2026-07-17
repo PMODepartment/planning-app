@@ -25,6 +25,7 @@ window.ProgressPhotos = (function () {
   var urlCache = {};                 // storage path -> signed URL
   var canWrite = false;              // planner+ / admin / super_admin
   var lightboxIds = [], lightboxAt = 0;
+  var projectListeners = [];         // PPR screen subscribes; both share one selector
 
   // Trades mirror the WPM (procurement) trade vocabulary so photos, work
   // packages and cash-out all speak the same language.
@@ -93,13 +94,24 @@ window.ProgressPhotos = (function () {
     var cur = projects.filter(function (p) { return p.id === pid; })[0];
     projName = cur ? (cur.name || cur.id) : pid;
     sessionStorage.setItem('pd_project', pid);
+    sessionStorage.setItem('pd_project_name', projName);
+    notifyProject();
+  }
+
+  function notifyProject() {
+    projectListeners.forEach(function (fn) {
+      try { fn(pid, projName); } catch (e) { console.error(e); }
+    });
   }
 
   function wire() {
     $('pp-project').onchange = async function () {
       pid = this.value;
+      var opt = this.options[this.selectedIndex];
+      projName = opt ? opt.textContent : pid;
       sessionStorage.setItem('pd_project', pid);
-      restoreUI(); syncChrome();
+      sessionStorage.setItem('pd_project_name', projName);
+      restoreUI(); syncChrome(); notifyProject();
       await load();
     };
     Array.prototype.forEach.call(document.querySelectorAll('.pp-tab'), function (b) {
@@ -521,5 +533,13 @@ window.ProgressPhotos = (function () {
     };
   }
 
-  return { init: init, _closeLightbox: closeLightbox, _stepLightbox: stepLightbox };
+  return {
+    init: init,
+    // The PPR screen shares this module's project selector + trade vocabulary.
+    onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid, projName); },
+    trades: function () { return TRADES.slice(); },
+    _syncChrome: syncChrome,
+    _closeLightbox: closeLightbox,
+    _stepLightbox: stepLightbox
+  };
 })();

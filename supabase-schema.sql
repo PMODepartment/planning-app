@@ -61,6 +61,43 @@ create table if not exists progress_photos (
   updated_at  timestamptz default now()
 );
 
+-- 1b) PPR Presentations (progress-photos module) -----------------------------
+-- A PPR = one monthly Project Performance Review presentation; each slide is a
+-- before/after pair referencing two `progress_photos` rows (the photo library
+-- stays the single source of truth). See migrations/2026-07-17-ppr-presentations.sql
+create table if not exists ppr_presentations (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  text references projects(id),
+  ppr_date    date,                  -- PPR meeting date
+  description text,                  -- e.g. "PPR ftm of June 2026"
+  created_by  uuid references users(id),
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
+);
+
+create table if not exists ppr_slides (
+  id              uuid primary key default gen_random_uuid(),
+  ppr_id          uuid references ppr_presentations(id) on delete cascade,
+  project_id      text references projects(id),
+  slide_no        integer default 1,
+  trade           text,
+  works           text,
+  location        text,
+  key_plan_url    text,              -- Storage path (progress-photos bucket)
+  before_photo_id uuid references progress_photos(id) on delete set null,
+  after_photo_id  uuid references progress_photos(id) on delete set null,
+  before_caption  text,
+  after_caption   text,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+
+create index if not exists ppr_presentations_proj_date_idx
+  on ppr_presentations (project_id, ppr_date desc);
+create index if not exists ppr_slides_ppr_idx
+  on ppr_slides (ppr_id, slide_no);
+
 -- 2) Issues, Concerns & Lessons Learned --------------------------------------
 create table if not exists issues_lessons (
   id          uuid primary key default gen_random_uuid(),
@@ -453,7 +490,8 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'progress_photos','issues_lessons','contracts_claims','risk_register',
+    'progress_photos','ppr_presentations','ppr_slides',
+    'issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
     'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve'
   ] loop

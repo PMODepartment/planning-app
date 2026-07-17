@@ -11,7 +11,75 @@ Developer change log for the **progress-photos** module. Update every PR.
 - [x] `Fmt.esc()` on all user text injected into HTML
 - [x] `enabled: true` set in `assets/js/config.js`
 - [ ] PR opened into `main`
-- [ ] **View PPRs** screen (the app's second half — still to come)
+- [x] **View PPRs** — PPR Presentations Database + slides viewer/editor + offline export
+
+## PPR Presentations built (2026-07-17)
+
+Replaces the Power Apps **PPR PRESENTATIONS DATABASE** and **EDIT PROGRESS PHOTO
+SLIDES** screens. A PPR is one monthly Project Performance Review presentation; each
+slide is a **before/after pair** at one location — last month's photo beside this
+month's — tagged Trade / Works / Location with an optional Key Plan overlay.
+
+- **Two top-level screens** (the app's home: *View Photos* / *View PPRs*) as a
+  `Photos | PPRs` switch in the topbar, persisted in `localStorage['pp_screen']`. Both
+  share one project selector: `ProgressPhotos.onProject(fn)` publishes the current
+  project and `ProgressPhotos.trades()` shares the trade vocabulary, so the two screens
+  never disagree.
+- **Database screen:** PPR Date · Description · No. of Slides, with **PPR date start/end
+  filters** and a **Preview pane** showing numbered slide thumbnails (the app's exact
+  "No slides to show." wording when a PPR is empty). Clicking a thumbnail jumps straight
+  to that slide.
+- **Slides screen:** PPR Project / PPR Meeting Date / PPR Description / `‹ n › of N`
+  header, Trade / Works / Location / Key Plan meta, and the two photos side by side with
+  each one's capture date and italic caption. **Key Plan toggles an overlay on both
+  photos**, matching the app's expand/collapse control.
+- **Slide photos are picked from the Photos Database, never re-uploaded** (owner's call).
+  `before_photo_id` / `after_photo_id` reference `progress_photos`; picking a photo
+  **pre-fills the slide's trade/works/location/caption** from that photo, since the
+  library already carries them. Key plans are the one exception — they're not progress
+  photos, so they upload to `<project>/keyplans/` in the same bucket.
+- **`on delete set null`, deliberately:** deleting a photo must not silently delete the
+  PPR slide citing it. The slide survives with an empty frame so a planner sees what went
+  missing and re-picks.
+
+### Download = a self-contained offline copy (owner's requirement)
+The app owner's brief: *"an offline view of that PPR Date in case the photos database
+loads slowly due to connectivity or the sheer amount of photos."* So Download does **not**
+produce a deck — it writes a **standalone `.html`** with every image inlined as a
+downscaled data URI (max 1600px, JPEG q0.82), inline CSS, **no scripts and no external
+references at all**. It opens instantly with no network and no dependency on Supabase
+being reachable, and prints one slide per page.
+- Photos are fetched to a **blob first**, then drawn via an object URL — a signed
+  Supabase URL drawn straight into a canvas would be **cross-origin and taint it**, making
+  `toDataURL()` throw. The blob round-trip keeps the canvas same-origin. Don't "simplify"
+  this to `img.src = signedUrl`.
+- Downscaling is not cosmetic: full-resolution site photos would make the file enormous
+  and slow to open — the opposite of the point.
+
+## Verified (2026-07-17)
+Harness-verified against a mutable in-memory store (stubbed `AppAuth`/`PDb`/Supabase +
+storage; deleted after use). Confirmed: PPR list newest-first (and a newly created PPR
+sorts to the top); date-range filter; preview thumbnails + "No slides to show."; slides
+header/meta reproducing the app's fields exactly; capture dates ("June 8, 2026" /
+"June 25, 2026") and italic captions; key plan overlaying **both** photos and absent when
+a slide has none; slide nav with end-disabled arrows; PPR + slide CRUD incl. blank-date
+refusal, tag pre-fill on photo pick, and cascade delete; topbar tools following the inner
+screen; Photos screen unaffected by the two-screen restructure; dark mode on all PPR
+surfaces (`#2B2C2B`, light text); two-column split at 1440px with no horizontal overflow.
+
+**The offline export was verified as a real artifact, not just by structure:** the
+generated file was captured, written into a sandboxed iframe with no network, and
+rendered — **5/5 images decoded, 0 broken, key plan present, brand-red header, two-column
+pairs, 0 external references**.
+
+⚠️ **Testing note for whoever tests this next:** two false alarms came from the *harness*,
+not the module. (1) Stubbing `URL.createObjectURL` globally breaks `blobToImage`, so every
+image "fails to embed" — scope the stub to the `text/html` blob only. (2) A no-op
+`order()` stub makes ordering assertions meaningless; the stub now really sorts.
+
+## Pending
+- Live click-through against a real login, the real bucket, and real photo sizes — the
+  export's file size and embed time have only been measured against small fixtures.
 
 ## Photos Database built (2026-07-17)
 

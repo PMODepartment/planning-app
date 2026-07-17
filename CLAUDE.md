@@ -77,6 +77,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-17 — Progress Photos: PPR Presentations + offline export
+- **Built the "View PPRs" half** (`modules/progress-photos/ppr.js` + `ppr_presentations` /
+  `ppr_slides`): the PPR Presentations Database (PPR Date · Description · No. of Slides, PPR
+  date-range filters, numbered **Preview** pane) and the slides viewer/editor (PPR Project /
+  Meeting Date / Description / `‹ n › of N`, Trade / Works / Location, before-and-after photos
+  with capture dates + italic captions, **Key Plan overlay** toggling on both photos). The module
+  now has two top-level screens — **Photos | PPRs** — mirroring the app's home; they share one
+  project selector via `ProgressPhotos.onProject()`.
+- **Slides reference the Photos Database rather than re-uploading** (owner's decision): a slide's
+  before/after are FKs into `progress_photos`, so the library is the single source of truth and
+  picking a photo pre-fills the slide's trade/works/location/caption. FKs are `on delete set null`
+  **on purpose** — deleting a photo must not silently delete the slide citing it.
+- **Download = a self-contained offline copy, not a deck** (owner's requirement: PPRs are opened
+  in meetings where the photo library may load slowly or connectivity is poor). It writes a
+  **standalone `.html`** — every image inlined as a downscaled data URI, inline CSS, no scripts,
+  **zero external references** — that opens with no network and prints one slide per page.
+  ⚠️ Photos are fetched to a **blob first**, then drawn via an object URL: drawing a signed
+  Supabase URL straight into a canvas taints it cross-origin and makes `toDataURL()` throw. Don't
+  "simplify" that round-trip away.
+- **Migration `migrations/2026-07-17-ppr-presentations.sql`** (idempotent, standalone-runnable,
+  folded into `supabase-schema.sql` incl. its RLS loop). **User must run it** — the PPRs screen is
+  empty until then. No new bucket (key plans go to `<project>/keyplans/` in `progress-photos`).
+- Harness-verified (list ordering, filters, preview, slides fields, key-plan toggle, PPR + slide
+  CRUD, cascade delete, dark mode, 2-col split at 1440px, no console errors). **The export was
+  verified as a real artifact**: captured, rendered in a sandboxed no-network iframe — 5/5 images
+  decoded, 0 broken, 0 external refs. Screenshots still impossible (stalled compositor).
+- **Note:** both false alarms during testing came from the harness, not the module — a global
+  `URL.createObjectURL` stub silently breaks image embedding, and a no-op `order()` stub makes
+  ordering assertions meaningless. Recorded in the module's CLAUDE.md.
+
 ### 2026-07-17 — Progress Photos: Photos Database built (from the Power Apps app)
 - **Built `modules/progress-photos/`** against the original Power Apps "Progress Photos |
   Photos Database" screen; flipped `enabled: true`. The Power Apps row is reproduced exactly
