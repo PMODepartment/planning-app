@@ -68,6 +68,148 @@ in the tree but **nothing in the Project Schedule**; an activity added under it 
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Forecast-on-actual-start, POC gate, Duration/EV POC split, dep lines behind bars (2026-07-14) — jasantos2 / eprobles
+- **Forecast flow when Actual Start is entered.** Entering an Actual Start on a started (not
+  finished) activity now computes **actual duration = data date − actual start**, **remaining =
+  origDur × (1−POC)** (or origDur − elapsed when no POC), and a **forecast Finish = data date +
+  remaining − 1** written to `end_date` (shown in the Finish field). At-Completion = actual +
+  remaining. Shared helper `_fcFields` also drives `_progressFields` so % edits stay consistent.
+  Verified: actual-start Jul 10 (10-day, no POC) → remaining 6, forecast finish Jul 19, at-comp 10;
+  then Duration POC 60% → remaining 4, forecast finish Jul 17, at-comp 8.
+- **POC screening.** Recording a % (Duration POC) now **requires an Actual Start first** (grid + detail)
+  — you can't have progress with no start. Blocked with an error toast; `_progressFields` no longer
+  auto-fills the actual start.
+- **Duration POC vs Earned Value POC.** Renamed the schedule `%` column/field label **"Earned Value
+  POC" → "Duration POC"** (drives the schedule). Added a **separate "Earned Value POC (%)"** detail
+  field (physical/EV progress, informational — does NOT drive dates), stored in a new tolerant column
+  `ev_poc` (migration `migrations/2026-07-14-ev-poc.sql` — **user must run**; safe before it's run via
+  `_saveActField`). Export headers keep OPC's "Earned Value POC" name.
+- **Relationship lines behind the bars.** The dep-line SVG z-index dropped from 5 → 2 (below the
+  bars' z-index 3), so connectors render behind the activity/summary/milestone elements.
+
+## Date-edit intelligence: actual duration, actual-start≤data-date guard, OPC planned duration (2026-07-14) — jasantos2 / eprobles
+Central `_dateEditPatch(r,field,val)` now handles every date-cell edit (grid + detail), returning
+`{error}` (reject, toast, no save) or `{patch}`:
+- **Actual Start can't be later than the Data Date** → error toast, edit reverts.
+- **Actual Duration = data date − actual start** (elapsed), or actual finish − actual start once
+  finished (`actualDurOf`). Set whenever Actual Start/Finish is edited *and* by `_progressFields`.
+- **Actual Finish can't precede Actual Start** → error.
+- **Planned duration is now independent (OPC):** editing **Planned Start** keeps the original
+  duration and **moves Planned Finish** (no longer recomputes a duration that could go negative when
+  start < old start). Editing **Planned Finish** sets duration = finish − start (rejected if before
+  start). The **DUR column** shows the stored `duration_days` (clamped ≥0), not a raw span.
+- Verified in-browser: future actual-start rejected; actual-start Jul 10 → actual duration 4;
+  planned-start Jul 1→Jun 25 keeps 10-day duration (finish → Jul 4); planned-finish before start rejected.
+
+## Fix: progress re-adjust only worked once (pin original duration) (2026-07-14) — jasantos2 / eprobles
+Tester: editing Earned Value POC re-adjusted the finish the first time but not on subsequent edits.
+Root cause: when an activity has no stored `duration_days` (common for imported rows — the grid just
+computes the "5d" from the dates), `_progressFields` derived the original duration from the current
+`start…finish` span. The first edit moves the finish, so the *second* edit re-derived "original" off
+the already-shortened bar → remaining barely changed → looked frozen. Fix: `_progressFields` now
+resolves the original duration as duration_days → baseline span → planned span, and **pins it to
+`duration_days`** on the first progress edit, so every later % edit recomputes remaining/finish from
+the same base. Verified in-browser: a 10-day (no duration_days) activity edited 40%→60% now pins
+duration 10 and recomputes remaining 6→4, finish Jul 19→Jul 17.
+
+## Start/Finish columns show actual (fall back to planned) + detail relabel (2026-07-14) — jasantos2 / eprobles
+Tester's model: the grid **Start/Finish** should reflect ACTUAL dates, with planned as the basis.
+Chosen behavior (confirmed): *actual when set, else planned; editing writes the actual*.
+- New accessors **`dispStart(r)=actual_start||start_date`**, **`dispFin(r)=actual_finish||end_date`**
+  used for: grid Start/Finish cell display, the Gantt bar (`s/e`), column sort (`colSortVal`) and
+  per-column filter (`_colText`). Grid Start/Finish cells now `data-field="actual_start"/"actual_finish"`
+  (editing writes the actual); `beginEdit` prefills those cells with the displayed (fallback) date; a
+  cell badge shows **A** (actual entered) or **P** (planned, no actual yet).
+- **Gantt drag** operates on the displayed bar and writes to the shown field — actual when the
+  activity has one, else planned (planned drag still recomputes duration; actual drag doesn't touch
+  planned duration). Cell clipboard `_CELL_META` for those two columns now targets the actual fields.
+- **Detail panel relabeled**: Status tab "Actual Start/Finish" → **"Start"/"Finish"** (editable +
+  read-only). "Planned Start/Finish" stay as the plan/basis. (The Add/Edit modal still says "Actual
+  Start/Finish" + "Planned Start/Finish" — left as the full editor.)
+- Export already emitted actual-||-planned for Start/Finish (unchanged). DUR column still reflects
+  planned duration. Note: editing an *un-started* activity's Start now creates an actual_start (marks
+  it started) — that's the chosen "editing writes actual" behavior; adjust the plan via "Planned Start".
+
+## Progress intelligence — POC-driven remaining/finish + retained-logic data-date shift (2026-07-14) — jasantos2 / eprobles
+Two scheduling-logic features, both toggle-gated in the **Schedule dialog → Settings** (default ON).
+- **Progress-driven dates (`progressDriven`).** Editing **% Complete (Earned Value POC)** — in the
+  grid cell or the Status/General detail tab — now runs `_progressFields(r,pct)`: keeps
+  `duration_days` as the original/planned duration and derives **remaining_duration =
+  round(origDur × (1 − POC))**, actual_duration, status, actual_start, and an auto **finish =
+  data date + remaining − 1** (remaining work scheduled from the data date). 100% → Completed,
+  finish = data date, remaining 0; 0% → Not Started, remaining = full duration (dates untouched).
+  All fields persist together through `persist()` (undoable + audited; `end_date`/`percent_complete`
+  are in `_RECOMPUTE_FIELDS` so CPM/rollups refresh). Unit-checked: 40%→6d rem & finish +5;
+  100%→finish at data date; shift keeps span.
+- **Retain un-started work at the data date (`ddRetainOn`).** New `shiftUnstartedToDataDate()`:
+  on **Schedule → Schedule Now**, any activity with 0% POC / no actual start whose planned start is
+  **before** the data date is moved forward to start on the data date, **keeping its duration**
+  (finish moves by the same delta). Runs for all tasks regardless of relationships (chunked bulk
+  write, audited), *before* the CPM recompute + the existing relationship reschedule, so linked and
+  unlinked schedules both self-adjust when the data date advances. (This complements the CPM's
+  existing data-date flooring for linked activities.)
+- **Verified:** full inline script parses; `_progressFields` + shift math hand-checked in-browser.
+  Live click-through pending a session. (Note: with progress-driven ON, % edits move finish dates —
+  a real scheduling action; the toggle lets teams that hand-manage dates turn it off.)
+
+## Baseline bars above current + baseline roll-up + equal/full bar heights (2026-07-14) — jasantos2 / eprobles
+- **Baseline (BL0) bar now drawn ABOVE the current schedule bar** (was below at +24). Activity bar
+  geometry reworked: **with a baseline present**, planned + current are two **equal-height** bars
+  (~11px each, density-scaled) stacked baseline-over-current; **without a baseline**, the current bar
+  fills nearly the whole row height (`ROWH − 8`). Heights set inline (overriding the fixed
+  `.ps-bl`/`.ps-bar` CSS heights). Bar label vertically centered on the current bar.
+- **WBS summaries now roll up baseline dates.** New `_blSpanMap` (built in `rebuild()` from
+  bl_start/bl_finish up the WBS tree, same walk as `_spanMap`) + `wbsBlSpan()`; the summary branch
+  draws a rolled-up baseline bar above the summary bar (WBS grouping; keyed by dotted code). Summary
+  bar shifts down to sit below it when a baseline roll-up is present.
+- Milestones unchanged (point marker). Note: dep-line anchor Y left as-is (approximate elbow) — bars
+  moving down a few px in baseline mode is cosmetically fine.
+
+## Detail-form layout fix + import baseline (2026-07-14) — jasantos2 / eprobles
+- **Fixed the cramped/overlapping Status (and General) editable detail form.** The forms wrapped
+  their groups in `.ps-det-groups` (auto-fit `minmax(250px,1fr)`) while *each group* also had an
+  inner 2-col field grid — at 250px the date inputs overlapped. New **`.ps-edit-groups`** wrapper
+  (auto-fit `minmax(360px,1fr)`) gives each group room for its 2-col fields; the "Editing…" hint
+  spans full width (`grid-column:1/-1`). detGeneralEdit + detStatusEdit now use it.
+- **Import baseline (Excel).** The "set baseline from current schedule" flow already exists
+  (Actions ▸ Baselines… ▸ **Capture current as baseline**). Added the requested **alternative**:
+  a **Import baseline (Excel)…** button + file input in the Baselines modal → reuses the schedule
+  importer's `parseWorkbook`, then `importBaselineFile()` stores the parsed start/finish/dur/
+  planned-cost as a `schedule_baselines` snapshot **keyed by Activity ID, without touching the live
+  schedule**. Set it primary to apply it to BL0/variance. (XLSX only for now; `.xer` baseline import
+  can follow — the main importer's XER path is a different shape.)
+
+## Theme-aware line colors, dark-mode WBS/activity contrast, full-row selection (2026-07-14) — jasantos2 / eprobles
+- **Relationship lines + data-date line are now theme-aware** and editable. New CSS vars
+  `--ps-dep` (relationship lines/dots/label/arrowhead) and `--ps-dd` (data-date line + label +
+  legend swatch) on `#ps-view-schedule`: default **black in light mode, white in dark**. Both were
+  hard-red before. Added **Relationship lines** + **Data date line** color pickers to the Colors
+  menu (COLORDEFS `dep`/`dd`); a user override applies in both themes (inline var beats the
+  theme default), Reset reverts to the black/white default.
+- **Dark-mode WBS/sub-WBS shading brightened + stepped** (`--wl` per level was #3a…#21, nearly
+  invisible on the #1C bg) → #56…#2a, clearly distinct per depth; added a left-accent bar to WBS
+  levels 3–5 in dark (was only 0–2) so sub-WBS depth reads. Activity zebra stripe strengthened in
+  dark (`.ps-alt` .03→.06) so activity rows separate.
+- **Full-row selection highlight across both panes.** Clicking a WBS or activity now tints the
+  **entire grid row** (`.ps-row-sel` full-width bg + red left inset) and draws a matching
+  **`.ps-gantt-selband`** spanning that row across the Gantt (behind the bars). Emitted in
+  `ganttRowHTML` for full renders and managed imperatively in `highlightRow` so a plain click (no
+  Gantt re-render) still shows it; `highlightRow` also now matches WBS rows via `data-wbsid`.
+
+## Arrow routing v2 (gap-routed) + Month default zoom (2026-07-14) — jasantos2 / eprobles
+- **Dependency connector no longer runs its horizontal over a bar.** Previous routing kept a single
+  vertical just outside the destination and ran the horizontal along the *source row* (a.y) — for
+  adjacent FS bars that meant a visible back-track over the predecessor's tail. New **Z-route**: leave
+  the source edge with a short stub (`S=9` outside the anchor), drop to the **midpoint Y between the
+  two rows**, run the horizontal there (in the inter-row gap, no bars), drop to the destination row,
+  then a short stub into its anchor edge. Only the two short end-stubs touch bar rows; the long run is
+  always in the gap. Source stub direction follows the anchor (start-anchored SS/SF step left,
+  finish-anchored FS/FF step right); destination vertical sits just outside its start (FS/SS) or finish
+  (FF/SF). Label/dot repositioned to the new geometry.
+- **Default timeline zoom is now Month** (was Quarter): `var zoom='month'` + the `.active` class moved
+  to the Month segment button. Users can still switch to Quarter/Year (and saved layouts restore their
+  own zoom).
+
 ## Colors menu was inaccessible — restored (2026-07-14) — jasantos2 / eprobles
 - Tester asked "where is the Colors menu". Root cause: the `.ps-gantt-tools` CSS and
   `renderColorsMenu()` existed, but the **palette button + `#ps-colors-menu` element were missing
