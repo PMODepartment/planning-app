@@ -77,6 +77,68 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-17 — Progress Photos: PPR Presentations + offline export
+- **Built the "View PPRs" half** (`modules/progress-photos/ppr.js` + `ppr_presentations` /
+  `ppr_slides`): the PPR Presentations Database (PPR Date · Description · No. of Slides, PPR
+  date-range filters, numbered **Preview** pane) and the slides viewer/editor (PPR Project /
+  Meeting Date / Description / `‹ n › of N`, Trade / Works / Location, before-and-after photos
+  with capture dates + italic captions, **Key Plan overlay** toggling on both photos). The module
+  now has two top-level screens — **Photos | PPRs** — mirroring the app's home; they share one
+  project selector via `ProgressPhotos.onProject()`.
+- **Slides reference the Photos Database rather than re-uploading** (owner's decision): a slide's
+  before/after are FKs into `progress_photos`, so the library is the single source of truth and
+  picking a photo pre-fills the slide's trade/works/location/caption. FKs are `on delete set null`
+  **on purpose** — deleting a photo must not silently delete the slide citing it.
+- **Download = a self-contained offline copy, not a deck** (owner's requirement: PPRs are opened
+  in meetings where the photo library may load slowly or connectivity is poor). It writes a
+  **standalone `.html`** — every image inlined as a downscaled data URI, inline CSS, no scripts,
+  **zero external references** — that opens with no network and prints one slide per page.
+  ⚠️ Photos are fetched to a **blob first**, then drawn via an object URL: drawing a signed
+  Supabase URL straight into a canvas taints it cross-origin and makes `toDataURL()` throw. Don't
+  "simplify" that round-trip away.
+- **Migration `migrations/2026-07-17-ppr-presentations.sql`** (idempotent, standalone-runnable,
+  folded into `supabase-schema.sql` incl. its RLS loop). **User must run it** — the PPRs screen is
+  empty until then. No new bucket (key plans go to `<project>/keyplans/` in `progress-photos`).
+- Harness-verified (list ordering, filters, preview, slides fields, key-plan toggle, PPR + slide
+  CRUD, cascade delete, dark mode, 2-col split at 1440px, no console errors). **The export was
+  verified as a real artifact**: captured, rendered in a sandboxed no-network iframe — 5/5 images
+  decoded, 0 broken, 0 external refs. Screenshots still impossible (stalled compositor).
+- **Note:** both false alarms during testing came from the harness, not the module — a global
+  `URL.createObjectURL` stub silently breaks image embedding, and a no-op `order()` stub makes
+  ordering assertions meaningless. Recorded in the module's CLAUDE.md.
+
+### 2026-07-17 — Progress Photos: Photos Database built (from the Power Apps app)
+- **Built `modules/progress-photos/`** against the original Power Apps "Progress Photos |
+  Photos Database" screen; flipped `enabled: true`. The Power Apps row is reproduced exactly
+  (PHOTO · DESCRIPTION · TRADE · WORKS · LOCATION · CAPTURE DATE + download / view-full-size),
+  along with its **List View / Gallery View toggle**, its **filter set** (capture start, capture
+  end, Trade, Works, Location — plus a search the original lacked), and its **fullscreen expand**
+  as a keyboard-navigable lightbox (←/→/Esc).
+- **Two deliberate departures from the app.** (1) The app's "My Projects" selector grouped rows
+  by *project*; this module is project-scoped by contract (§6), so the project is the topbar
+  selector and **List View groups by Trade** instead (collapsible, counts, persisted). (2) Upload
+  is **batched** — one modal takes many files against one set of shared fields and writes a row
+  per file (the app uploads one at a time), with per-file progress and per-file failure isolation.
+- **Trade vocabulary mirrors WPM's** (Site Works / Structural / Mechanical / Electrical and
+  Auxiliary / …) so photos, procurement work packages and Cash Flow's cash-out group by the same
+  names. **Works** is free text + a datalist of values already used on the project (the app's
+  Works values are project-specific, e.g. "Temporary Facilities", so a fixed enum would fight
+  real usage).
+- **Migration `migrations/2026-07-17-progress-photos.sql`** — adds `trade`, `works`, `sort_order`
+  to `progress_photos` + a `(project_id, taken_at desc)` index (idempotent; folded into
+  `supabase-schema.sql`). **User must run it** — Trade/Works render blank until then.
+  `description`/`location`/`photo_url`/`taken_at` already existed. Uses the private
+  `progress-photos` bucket from the 2026-06-18 storage migration; previews come from **one batched
+  `createSignedUrls` per load**, not one signing call per row.
+- **Note for the app owner:** `UI.modal()` takes no width and doesn't wire close buttons, so this
+  module carries a local `openModal()` helper rather than editing the shared `ui.js` (§1). Worth
+  promoting into `ui.js` if other modules want it.
+- Harness-verified against a mutable in-memory store (filters, grouping, gallery, lightbox, edit,
+  delete, batch upload, dark-mode tokens; no console errors). **Screenshots impossible** — the
+  compositor is stalled in this env (`visibilityState` hidden, `screenshot` times out), so
+  verification used DOM/computed values; image decode confirmed via `naturalWidth`.
+- **Next: the View PPRs screen** (the app's other half).
+
 ### 2026-07-17 — Drawing Register: import filename fix, Add fix, frozen columns, dup flag, +features
 - **Import fix:** the workbook's "DWG No" column sometimes holds a submitted *filename* (e.g.
   `…SDP v 2.0 02-27-26.pdf`), which was being used as the drawing code. Now the code comes from the
