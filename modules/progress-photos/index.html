@@ -5,33 +5,83 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260712"></script>
-  <title>progress-photos · Planners Dashboard</title>
+  <script src="../../assets/js/theme.js?v=20260717c"></script>
+  <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260716" />
+  <link rel="stylesheet" href="module.css?v=20260717c" />
 </head>
 <body>
   <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Module</small></div>
-      <nav><a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a></nav>
-    </aside>
+    <!-- Sidebar-less shell (matches Project Schedule / Cash Flow / Drawing Register) -->
     <div class="pd-content">
-      <div class="pd-topbar"><h1>progress-photos</h1><div id="user-bar"></div></div>
-      <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>progress-photos</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code>.</p>
+      <div class="pd-topbar">
+        <a class="pd-btn pp-modback" href="../../dashboard.html" title="Back to modules">
+          <span data-ico="arrowLeft" data-ico-size="18"></span></a>
+        <h1 class="pp-title" style="margin:0;">
+          <span class="pp-title-ico" data-ico="camera" data-ico-size="20"></span>
+          <span class="pp-title-txt">Photos Database</span>
+        </h1>
+        <div class="pp-projctx">
+          <select class="pd-select pp-project" id="pp-project" title="Project"></select>
         </div>
+        <div class="pp-tabs" role="tablist">
+          <button class="pp-tab active" data-view="list">List View</button>
+          <button class="pp-tab" data-view="gallery">Gallery View</button>
+        </div>
+        <div class="pp-topbar-tools" id="pp-topbar-tools">
+          <button class="pd-btn pd-btn-primary" id="pp-add" title="Upload photos">+ Add photos</button>
+          <button class="pd-btn" id="pp-refresh" title="Reload photos">
+            <span data-ico="refresh" data-ico-size="16"></span></button>
+        </div>
+        <div id="user-bar"></div>
+      </div>
+
+      <div class="pd-main">
+        <div class="pp-filters">
+          <span class="pp-filt-ico" data-ico="filter" data-ico-size="15"></span>
+          <input class="pd-input pp-search" id="pp-f-search" placeholder="Search description, trade, works, location…" />
+          <label class="pp-datefield">Captured from
+            <input class="pd-input" type="date" id="pp-f-from" title="Filter by capture start" /></label>
+          <label class="pp-datefield">to
+            <input class="pd-input" type="date" id="pp-f-to" title="Filter by capture end" /></label>
+          <select class="pd-select" id="pp-f-trade"><option value="">Filter by Trade</option></select>
+          <select class="pd-select" id="pp-f-works"><option value="">Filter by Works</option></select>
+          <select class="pd-select" id="pp-f-location"><option value="">Filter by Location</option></select>
+          <button class="pd-btn pp-clearfilters" id="pp-clearfilters">Clear filters</button>
+        </div>
+
+        <div id="pp-view"></div>
       </div>
     </div>
   </div>
+
+  <!-- Fullscreen photo viewer (the Power Apps expand button) -->
+  <div class="pp-lightbox" id="pp-lightbox" hidden>
+    <button class="pp-lb-close" id="pp-lb-close" title="Close (Esc)">×</button>
+    <button class="pp-lb-btn pp-lb-prev" id="pp-lb-prev" title="Previous (←)">‹</button>
+    <img class="pp-lb-img" id="pp-lb-img" alt="" />
+    <button class="pp-lb-btn pp-lb-next" id="pp-lb-next" title="Next (→)">›</button>
+    <div class="pp-lb-cap" id="pp-lb-cap"></div>
+  </div>
+
+  <!-- Existing "Works" values, offered as suggestions in the add/edit modals -->
+  <datalist id="pp-works-list"></datalist>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js?v=20260712"></script>
-  <script src="../../assets/js/auth.js?v=20260712"></script>
-  <script src="../../assets/js/db.js?v=20260716"></script>
-  <script src="../../assets/js/ui.js?v=20260712"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+  <script src="../../assets/js/config.js?v=20260717c"></script>
+  <script src="../../assets/js/auth.js?v=20260717c"></script>
+  <script src="../../assets/js/db.js?v=20260717c"></script>
+  <script src="../../assets/js/ui.js?v=20260717c"></script>
+  <script src="../../assets/js/icons.js?v=20260717c"></script>
+  <script src="module.js?v=20260717c"></script>
+  <script>
+    AppAuth.requireLogin(function (user, profile) {
+      UI.renderUserBar(profile);
+      ProgressPhotos.init(user, profile);
+      document.getElementById('pp-lb-close').onclick = ProgressPhotos._closeLightbox;
+      document.getElementById('pp-lb-prev').onclick  = function () { ProgressPhotos._stepLightbox(-1); };
+      document.getElementById('pp-lb-next').onclick  = function () { ProgressPhotos._stepLightbox(1); };
+    });
+  </script>
 </body>
 </html>

@@ -50,8 +50,11 @@ create table if not exists progress_photos (
   title       text,
   description text,
   photo_url   text,                  -- Supabase Storage path
-  taken_at    date,
+  taken_at    date,                  -- capture date
   location    text,
+  trade       text,                  -- e.g. Site Works, Mechanical Works
+  works       text,                  -- work item within the trade
+  sort_order  integer,
   tags        text[],
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
