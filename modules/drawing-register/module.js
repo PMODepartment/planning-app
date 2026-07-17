@@ -907,6 +907,10 @@ window.DrawingRegister = (function () {
   async function addDrawing(){
     if (!pid){ UI.toast('Select a project first','warn'); return; }
     var ctx=selCtx||{phase:'',discipline:'',category:''};
+    // No target selected → open the full Add form so the planner sets the
+    // phase/discipline/category explicitly (matches Project Schedule) instead of
+    // silently creating a confusing ungrouped orphan row.
+    if (!ctx.phase){ UI.toast('Pick where it goes — or select a phase/discipline first to quick-add', 'warn'); openForm(null); return; }
     var sameGroup=function(r){
       return (r.phase||'')===(ctx.phase||'') && (r.discipline||'')===(ctx.discipline||'') && ((r.category||'').trim())===((ctx.category||''));
     };
@@ -924,7 +928,6 @@ window.DrawingRegister = (function () {
     delete collapsed['D:'+ph+'|'+d];
     if (ctx.category) delete collapsed['C:'+ph+'|'+d+'|'+ctx.category];
     await load();
-    if (!ctx.phase) UI.toast('Added (ungrouped) — select a phase/discipline first to file it under a level', 'warn');
     // focus the newly-added row's title for immediate typing
     var added=drawingRows().filter(function(r){ return sameGroup(r) && r.dwg_number===code && !r.title; }).pop();
     if (added){ lastClickedId=added.id; var tr=document.querySelector('tr.dr-drow[data-id="'+added.id+'"]'); if(tr) tr.scrollIntoView({block:'center'}); editRowField(added.id, 'title'); }

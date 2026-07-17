@@ -61,6 +61,16 @@ drags refused; phase order preserved; filters disarm and re-arm the drag; group-
 collapses (6→2 rows) and re-expands; active group survives re-render; no regressions in
 inline edit, status dropdown, single/shift select, or checkboxes.
 
+## "+ Add" no-selection fix (2026-07-17)
+- **Root cause of "Add not working":** with nothing selected (the default all-collapsed view),
+  `addDrawing` inserted an **ungrouped orphan** row (`D-001`, empty phase) at the bottom under a new
+  "Ungrouped" phase — off-screen among the collapsed phases, so it read as "nothing happened."
+- **Fix (matches Project Schedule):** when no phase/discipline/category/drawing is selected, "+ Add"
+  now **opens the full Add form** (`openForm(null)`) so the planner sets the location explicitly.
+  When a row/group IS selected it still inline quick-adds a sibling in that context (auto-numbered,
+  editor opens). Verified in a harness: no-selection → form opens, 0 orphan rows; drawing selected →
+  inline A-103 into Floor Plan with the title editor open; no console errors. `module.js?v=20260717h`.
+
 ## Topbar icons match Cash Flow (2026-07-17)
 - The text **"Clear"** button abutted the dark-mode toggle (clash). Reworked the topbar tool
   cluster to match Cash Flow: **all secondary tools are icon-only** — Import (`upload`), Export
