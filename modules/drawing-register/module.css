@@ -82,9 +82,10 @@
 tr.dr-drow.dr-rowdragging { opacity:.45; }
 tr.dr-drow.dr-drop-above td { box-shadow:inset 0 2px 0 0 var(--pd-red); }
 tr.dr-drow.dr-drop-below td { box-shadow:inset 0 -2px 0 0 var(--pd-red); }
-/* A dragged row must not have its text selected mid-drag */
-.dr-grid.dr-reorder tr.dr-drow td { user-select:none; -webkit-user-select:none; }
-.dr-grid.dr-reorder tr.dr-drow td input { user-select:text; -webkit-user-select:text; }
+/* Shift-click range selection (and drag) must NOT drag a native text selection
+   — keep cells unselectable, but re-enable text in the inline editors/inputs. */
+.dr-grid td, .dr-grid th { user-select:none; -webkit-user-select:none; }
+.dr-grid input, .dr-grid select, .dr-grid textarea, .dr-grid .dr-editin { user-select:text; -webkit-user-select:text; }
 
 /* ---- Active group (the "+ Add drawing" target) --------------------------
    Project Schedule marks the selected WBS row; without this the add target was
@@ -221,10 +222,19 @@ html.pd-dark .dr-grid .dr-grp-cat   td.dr-freeze { background:var(--pd-bg); }
 html.pd-dark .dr-grid .dr-selrow td.dr-freeze { background:#4a2b28 !important; }
 
 /* ---- Duplicate-code flag [feature 2] ------------------------------------ */
-/* opaque amber tint (keeps the level-rail box-shadow intact; no bleed when frozen) */
-.dr-grid td.dr-dupcell { background:#fdf1e1; }
-html.pd-dark .dr-grid td.dr-dupcell { background:#3a3020; }
-.dr-dupmark { color:#d97706; font-size:11px; cursor:help; margin-left:3px; }
+/* No cell background tint (looked off / two-tone). The ⚠ badge on the code +
+   the list-bar legend carry the signal. */
+.dr-dupmark { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+  border-radius:50%; background:#d97706; color:#fff; font-size:10px; line-height:1; margin-left:5px; cursor:help; }
+/* legend chip in the list bar (click to filter to duplicates) */
+.dr-duplegend { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; cursor:pointer;
+  border:1px solid #d97706; color:#b45309; background:rgba(217,119,6,.10);
+  border-radius:999px; padding:3px 10px; font-size:12px; font-weight:600; }
+.dr-duplegend:hover { background:rgba(217,119,6,.18); }
+.dr-duplegend.dr-on { background:#d97706; color:#fff; }
+.dr-duplegend .dr-dupmark { margin-left:0; width:14px; height:14px; }
+.dr-duplegend.dr-on .dr-dupmark { background:#fff; color:#d97706; }
+html.pd-dark .dr-duplegend { color:#f0b45e; }
 
 /* editable cell affordance */
 .dr-ed { cursor:text; }

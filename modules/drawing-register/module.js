@@ -18,7 +18,7 @@ window.DrawingRegister = (function () {
   var profile = null, uid = null, pid = null, projName = '';
   var rows = [];
   var view = 'register';                       // register | progress
-  var filters = { phase: '', discipline: '', status: '', search: '' };
+  var filters = { phase: '', discipline: '', status: '', search: '', dupsOnly: false };
   var selected = {};                           // id -> true (bulk select)
   var collapsed = {};                          // group key -> true (collapsed)
   var dupSet = {};                             // phasecode -> count (>1) for duplicate-code flagging
@@ -245,10 +245,11 @@ window.DrawingRegister = (function () {
   function isNode(r){ return r.node_kind && r.node_kind !== 'drawing'; }
   function drawingRows(){ return rows.filter(function (r){ return !isNode(r); }); }
   function structuralNodes(){ return rows.filter(isNode); }
-  function anyFilter(){ return !!(filters.phase || filters.discipline || filters.status || filters.search); }
+  function anyFilter(){ return !!(filters.phase || filters.discipline || filters.status || filters.search || filters.dupsOnly); }
 
   function filtered() {
     return drawingRows().filter(function (r) {
+      if (filters.dupsOnly && !dupSet[dupKey(r)]) return false;
       if (filters.phase && r.phase !== filters.phase) return false;
       if (filters.discipline &&
           r.discipline !== filters.discipline &&
@@ -404,9 +405,15 @@ window.DrawingRegister = (function () {
         '<option value="">Jump to phase…</option>' +
         phaseItems.map(function(p){ return '<option value="'+Fmt.esc(p.key)+'">'+Fmt.esc(p.label)+'</option>'; }).join('') +
       '</select>' : '';
+    var nDup = Object.keys(dupSet).length;
+    var dupLegend = nDup ?
+      '<button class="dr-duplegend'+(filters.dupsOnly?' dr-on':'')+'" id="dr-duplegend" ' +
+        'title="A drawing code that appears more than once within the same phase. Click to '+(filters.dupsOnly?'show all':'show only duplicates')+'.">' +
+        '<span class="dr-dupmark">⚠</span> '+nDup+' duplicate code'+(nDup>1?'s':'')+'</button>' : '';
     var toolbar = '<div class="dr-listbar">' +
       '<button class="dr-rowbtn dr-xall" id="dr-xall">' + (anyOpen ? 'Collapse all' : 'Expand all') + '</button>' +
       jump +
+      dupLegend +
       '<div class="dr-listcount">Showing <strong>'+shown+'</strong> of '+draws.length+' drawings</div>' +
       '<div class="dr-selbar" id="dr-selbar" hidden>' +
         '<span id="dr-selcount"></span>' +
@@ -493,7 +500,7 @@ window.DrawingRegister = (function () {
     var isDup = !!dupSet[dupKey(r)];
     var dupMark = isDup ? ' <span class="dr-dupmark" title="Duplicate code within this phase — reconcile">⚠</span>' : '';
     return '<tr class="dr-drow dr-lvl-'+(item.level||4)+(selected[r.id]?' dr-selrow':'')+(isDup?' dr-dup':'')+'" data-id="'+r.id+'"'+(reorderEnabled()?' draggable="true"':'')+'>' + cb +
-      '<td class="dr-indent dr-freeze dr-freeze-code'+ed+(isDup?' dr-dupcell':'')+'" data-f="code" data-t="text"><span class="dr-code">'+Fmt.esc(code)+'</span>'+dupMark+'</td>' +
+      '<td class="dr-indent dr-freeze dr-freeze-code'+ed+'" data-f="code" data-t="text"><span class="dr-code">'+Fmt.esc(code)+'</span>'+dupMark+'</td>' +
       '<td class="dr-c-title dr-freeze dr-freeze-title'+ed+'" data-f="title" data-t="text">'+Fmt.esc(r.title)+(r.description?'<div class="dr-sub">'+Fmt.esc(r.description)+'</div>':'')+'</td>' +
       '<td class="dr-c-rev'+ed+'" data-f="revision" data-t="text">'+Fmt.esc(r.revision)+'</td>' +
       '<td class="dr-c-status">'+(CB?statusSelect(r):'<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status||'—')+'</span>')+'</td>' +
@@ -522,6 +529,9 @@ window.DrawingRegister = (function () {
       else collapsed = {};
       saveUI(); render();
     };
+    // duplicate-code legend: click to toggle "show only duplicates"
+    var dupleg = host.querySelector('#dr-duplegend');
+    if (dupleg) dupleg.onclick = function(){ filters.dupsOnly = !filters.dupsOnly; render(); };
     // jump to a phase [feature 6]
     var jump = host.querySelector('#dr-jump');
     if (jump) jump.onchange = function(){

@@ -61,6 +61,18 @@ drags refused; phase order preserved; filters disarm and re-arm the drag; group-
 collapses (6→2 rows) and re-expands; active group survives re-render; no regressions in
 inline edit, status dropdown, single/shift select, or checkboxes.
 
+## Shift-click text-selection + duplicate legend (2026-07-17)
+- **Shift-click no longer drags a native text selection.** The `user-select:none` rule was gated on
+  `.dr-grid.dr-reorder` (only during reorder), so range-selecting still highlighted text + popped the
+  browser selection menu. Now `user-select:none` applies to all `.dr-grid td/th` unconditionally, with
+  `user-select:text` restored on inputs/selects/textarea/`.dr-editin`. Verified: shift-click selects a
+  4-row range with **0 characters natively selected**.
+- **Duplicate-code flag redesigned.** Dropped the two-tone amber cell background (looked off). Kept a
+  clearer round ⚠ badge on each duplicate code, and added a **legend chip** in the list bar —
+  "⚠ N duplicate code(s)" — that is always visible when duplicates exist and **clicking it filters to
+  duplicates only** (`filters.dupsOnly`; toggles back). Verified: legend counts distinct duplicated
+  codes, badge on both offending rows, filter shows only the dupes and restores. `?v=20260717i`.
+
 ## "+ Add" no-selection fix (2026-07-17)
 - **Root cause of "Add not working":** with nothing selected (the default all-collapsed view),
   `addDrawing` inserted an **ungrouped orphan** row (`D-001`, empty phase) at the bottom under a new
