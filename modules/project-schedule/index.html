@@ -2136,7 +2136,10 @@
   }
   async function doImport(recs, replace, fname) {
     showLoading('Preparing import…');
-    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } }
+    // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
+    // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
+    // _wbsEnsureSummaries. The tree is rebuilt from this import by autoAdoptAfterImport() below.
+    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } }
     var uid = UID;
     var payloads = recs.map(recToPayload); if (uid) payloads.forEach(function(p){ p.created_by=uid; });
     var ok=0, err=null, CH=500;
@@ -2399,7 +2402,9 @@
   }
   async function doImportXER(parsed, replace, fname) {
     showLoading('Preparing import…');
-    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } }
+    // Same as the Excel path: replacing the activities must drop the tree, or the P6 WBS is adopted
+    // on top of the previous import's nodes and every level duplicates.
+    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } }
     var uid = UID, CH = 500;
     // 1) Calendars first — activities/resources reference their real (DB-generated) ids.
     var calIdMap = {};
@@ -6549,6 +6554,20 @@
       hideLoading(); UI.toast('Copied ' + made + ' WBS node' + (made === 1 ? '' : 's') + ' from ' + (others.find(function (p) { return p.id === srcPid; }) || {}).name + '.', 'success');
     };
   }
+  // Clearing / replacing the schedule must ALSO drop the WBS tree. `wbs_nodes` is a separate table and
+  // the grid's WBS rows are only a PROJECTION of it, so deleting project_schedule alone leaves every
+  // node behind — and load()'s _wbsEnsureSummaries() then faithfully re-projects them, which is why a
+  // Clear looked like it "did nothing". The same leftovers are what a re-import adopts a SECOND time
+  // into new nodes, duplicating every WBS level. Tolerant: a DB without the wbs-nodes migration has no
+  // table to clear, which is not an error.
+  async function _clearWbsTree() {
+    try {
+      var res = await sb().from('wbs_nodes').delete().eq('project_id', pid);
+      if (res.error && !/wbs_nodes|does not exist|schema cache|PGRST/i.test(res.error.message || '')) return res.error;
+    } catch (e) {}
+    WBS_NODES = [];
+    return null;
+  }
   // One-time bridge: build the tree from existing project_schedule WBS-Summary rows (import / legacy),
   // preserving their exact codes (as custom) + names, then link summary rows + matching activities.
   // Build the wbs_nodes tree from imported/legacy WBS-summary rows. Inserts a whole DEPTH LEVEL at a
@@ -6568,7 +6587,12 @@
     var depths = Object.keys(byDepth).map(Number).sort(function (a, b) { return a - b; });
     for (var di = 0; di < depths.length; di++) {
       var group = byDepth[depths[di]];
-      var payloads = group.map(function (r) {
+      // A code that ALREADY has a node must be linked, not re-inserted. Without this filter, adopting
+      // over a surviving tree (e.g. a re-import, which replaces project_schedule but historically left
+      // wbs_nodes untouched) inserts a second node for every code — the duplicated WBS levels. The
+      // link loop below resolves each code through nodeByCode, so an existing node is picked up and
+      // the fresh summary row is attached to it instead.
+      var payloads = group.filter(function (r) { return !nodeByCode[String(r.wbs)]; }).map(function (r) {
         var code = String(r.wbs), parentCode = code.split('.').slice(0, -1).join('.');
         var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;
         var k = parentId || '', so = (sibCount[k] || 0); sibCount[k] = so + 1;
@@ -8615,9 +8639,9 @@
       if (!isAdmin) { UI.toast('Clearing the schedule is restricted to admins.', 'error'); return; }
       if (!pid) { UI.toast('Select a project first.', 'error'); return; }
       var m = UI.modal('<h2 style="margin-top:0;">Clear schedule</h2>' +
-        '<p style="color:var(--pd-muted);font-size:13px;">This permanently deletes <strong>all activities</strong> for project <strong>' + esc(pid) + '</strong> and cannot be undone. To confirm, type the project code below.</p>' +
+        '<p style="color:var(--pd-muted);font-size:13px;">This permanently deletes <strong>all activities and the entire WBS tree</strong> for project <strong>' + esc(pid) + '</strong> and cannot be undone. To confirm, type the project code below.</p>' +
         '<input class="pd-input" id="ps-clr-in" placeholder="Type ' + esc(pid) + ' to confirm" autocomplete="off" />' +
-        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-clr-x">Cancel</button> <button class="pd-btn pd-btn-danger" id="ps-clr-go" disabled>Delete all activities</button></div>');
+        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-clr-x">Cancel</button> <button class="pd-btn pd-btn-danger" id="ps-clr-go" disabled>Delete all activities + WBS</button></div>');
       var inp = m.el.querySelector('#ps-clr-in'), go = m.el.querySelector('#ps-clr-go');
       inp.oninput = function () { go.disabled = inp.value.trim() !== String(pid); };
       inp.focus();
@@ -8626,9 +8650,14 @@
         if (inp.value.trim() !== String(pid)) return;
         m.close(); showLoading('Clearing schedule…');
         var del = await sb().from(TABLE).delete().eq('project_id', pid);
+        if (del.error) { hideLoading(); UI.toast(del.error.message, 'error'); return; }
+        // Must drop the tree too, or load()'s _wbsEnsureSummaries() re-projects every surviving node
+        // and the WBS rows come straight back — the "Clear did nothing" report.
+        var werr = await _clearWbsTree();
         hideLoading();
-        if (del.error) { UI.toast(del.error.message, 'error'); return; }
-        UI.toast('Schedule cleared.', 'success'); collapsed = {}; resetUndo(); load();
+        if (werr) { UI.toast('Activities cleared, but the WBS tree could not be: ' + werr.message, 'error'); }
+        else { UI.toast('Schedule and WBS cleared.', 'success'); }
+        collapsed = {}; _wbsSel = null; resetUndo(); load();
       };
     };
     // Labeled-mode toggle: reveals text labels on the view icon buttons (persisted).

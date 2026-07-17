@@ -1,5 +1,42 @@
 # Module: project-schedule
 
+## Clear didn't clear, and re-import duplicated every WBS level (2026-07-17) — fmlozano
+Two reports, **one root cause**: `wbs_nodes` was never deleted by any destructive path. Clear schedule
+and both importers' "Replace existing" only ever ran `delete().eq('project_id', pid)` on `TABLE`
+(`project_schedule`). The tree is a **separate table**, and the grid's WBS rows are only a *projection*
+of it — so the nodes always survived, and the two symptoms fall straight out of that:
+- **"Clear did nothing."** Clear deleted the summary rows, then `load()` → **`_wbsEnsureSummaries()`**
+  (the orphan self-heal added 2026-07-16) faithfully re-projected a summary row for every surviving
+  node. The rows were genuinely deleted and then immediately recreated — working as designed, on a
+  tree that should no longer have existed. ⚠️ **These two features are only correct together**: the
+  self-heal makes any path that drops schedule rows *without* dropping nodes look like a no-op.
+- **Re-import duplicated the WBS levels.** "Replace" wiped `project_schedule`, so the importer's fresh
+  summary rows all arrived with `wbs_node_id = null` → `autoAdoptAfterImport()` → `wbsAdopt()` mapped
+  **every** legacy row to a new node payload with no check against the codes already in `WBS_NODES`
+  (`nodeByCode` was seeded from them, but only ever *read* for parent lookup). One extra node per code
+  per import, each then re-projected by the self-heal into another summary row.
+- **Fixes.** (1) New **`_clearWbsTree()`** — deletes the project's `wbs_nodes` and resets the in-memory
+  `WBS_NODES`; tolerant of a DB without the wbs-nodes migration (nothing to clear is not an error).
+  Called by the Clear handler (which now also resets `_wbsSel`, and says "activities **and the entire
+  WBS tree**" — it always destroyed more than the old copy admitted) and by the `replace` branch of
+  **both** `doImport` and `doImportXER`; the tree is rebuilt from the incoming file by the existing
+  `autoAdoptAfterImport()`. (2) `wbsAdopt` now builds node payloads only for codes **not already in
+  `nodeByCode`** — the link loop below it already resolves each code through `nodeByCode`, so an
+  existing node is **adopted and linked** rather than re-inserted. Belt-and-braces: it makes adopt
+  idempotent on its own, so a re-run can't duplicate even if a tree survives some other way.
+  ⚠️ Do **not** "simplify" this by filtering the `legacy` list instead — skipping those rows leaves
+  them with `wbs_node_id = null`, and the self-heal then duplicates the *summary rows* instead.
+- **Verified in a node simulation** of the real cycle (import → re-import ×3 → load) against a mutable
+  store, mirroring `wbsAdopt` + `_wbsEnsureSummaries`. Reproduced the bug from the **shipped** code
+  exactly — 4 codes → `1 x4, 1.1 x4, 1.2 x4, 1.1.1 x4`, self-heal adding 12 rows (matching the
+  reported screenshot's repeated "1.1 Project Milestones") — and confirmed the fix holds at 4 nodes /
+  4 summary rows / 0 duplicates / 0 unlinked across 3 re-imports; Clear+load now leaves **0** rows
+  (was 4 resurrected). Not yet clicked through on a live login (needs a session + a project).
+- **Existing duplicated data is not migrated** — the fix stops new duplicates, it doesn't clean up the
+  ones already in the DB. Remediation is now possible for the first time: **Clear schedule → re-import**.
+- **No migration.** `project_schedule.wbs_node_id` is a plain uuid with **no FK** to `wbs_nodes`, so
+  deleting nodes first can't raise a constraint error and the delete order doesn't matter.
+
 ## Column chooser clipped by the details panel (2026-07-16) — fmlozano
 The `+` column chooser (`#ps-cols-menu`) was cut off mid-list — worse the further up the details
 panel was dragged.
