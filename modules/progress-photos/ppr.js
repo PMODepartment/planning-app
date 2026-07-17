@@ -183,6 +183,9 @@ window.PPR = (function () {
     }
     $('ppr-countbar').style.visibility = pprs.length ? '' : 'hidden';
 
+    var clr = $('ppr-clearfilters');
+    if (clr) clr.hidden = !(filters.from || filters.to);
+
     if (!pprs.length) {
       host.innerHTML = '<div class="pp-empty">' +
         '<span data-ico="clipboard" data-ico-size="34"></span>' +

@@ -77,6 +77,42 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-17 — Issues, Concerns & Lessons Learned built + Photos filter polish
+- **Built `modules/issues-lessons/`** (flipped `enabled: true`) from the Power Apps
+  "Issues & Concerns" app, adding a **Lessons Learned** capability the app lacks. Two
+  segmented topbar screens:
+  - **Issues & Concerns** — the app's log row-for-row: No. · Department · Issue · Caused
+    By · Corrective Action · Champion · Status · Date Presented · **Days Aging (derived)**
+    · Date Resolved. Filters (search / Status / Department / Champion / aging bucket),
+    KPIs, and an Add/Edit modal grouped Details · Issue · Lessons Learned. Statuses are
+    **Open | On Hold | Closed** (the app's, not the starter table's "In Progress").
+  - **Lessons Learned** — a card library collecting every lesson captured on an issue so
+    management/ops can reference them later. It's a filtered view of `issues_lessons`
+    (rows with a non-empty `lesson_learned`), **not a separate table** — a lesson is never
+    divorced from the issue that produced it. Filters by search / department / category.
+- **Days Aging is derived, never stored:** 0 when Closed (matches the app), else
+  today − date_presented; > 90 days open renders red.
+- **Migration `migrations/2026-07-17-issues-lessons.sql`** — adds `department`,
+  `champion`, `caused_by`, `corrective_action`, `date_presented`, `date_resolved`,
+  `lesson_learned`, `lesson_category`, `recommendation` + a `(project_id, date_presented
+  desc)` index. Idempotent; folded into `supabase-schema.sql`. **User must run it** — the
+  new fields render blank until then. (`ISSUE`→`description`, `STATUS`→`status` reuse
+  existing columns.)
+- **Progress Photos filter polish (user report — "Clear filters seems out of place"):**
+  the button used `margin-left:auto`, so on a wrapped filter row it orphaned alone on a
+  second line at the far right (visible even on the empty state). Replaced with a subtle
+  borderless **`.pp-clear`** ghost (× icon) that sits inline and **only appears when a
+  filter is actually set**; applied to both the Photos and PPR screens. Removed the now-
+  unused `.pp-filt-right`.
+- **Shared assets touched** (`icons.js` gained `x` + `bulb`; `config.js` enabled flag), so
+  **`?v=` bumped `20260717g` → `20260717h` across all 20 HTML files.**
+- Harness-verified both modules against a mutable in-memory store (real `Fmt`/`UI`/`Icons`,
+  gitignored `_ui_test.html`, deleted after use; screenshots still impossible — compositor
+  stalled): issues table/KPIs/derived aging (0 on closed, red > 90d), lesson tag, every
+  filter + clear-toggle, screen switch hiding the primary tool, add/save round-trip
+  (`type='Issue'` + `created_by` stamped + lesson persisted), lessons library counts +
+  category filter, dark-mode card surfaces on tokens. No console errors.
+
 ### 2026-07-17 — Drawing Register: Project-Schedule-style row interaction (drag reorder + fixes)
 - Asked to bring Project Schedule's grid feel to the Drawing Register. **Most of it was already
   there** (inline cell editing, click-to-select + Shift/Ctrl range, keyboard shortcuts, group

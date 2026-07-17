@@ -104,18 +104,31 @@ create table if not exists issues_lessons (
   project_id  text references projects(id),
   type        text,                  -- Issue | Concern | Lesson Learned
   title       text,
-  description text,
+  description text,                  -- the ISSUE text (Power Apps "Issue:")
   category    text,
   severity    text,                  -- Low | Medium | High | Critical
-  status      text default 'Open',   -- Open | In Progress | Closed
+  status      text default 'Open',   -- Open | On Hold | Closed
   raised_by   text,
   date_raised date,
   resolution  text,
   date_closed date,
+  -- Power Apps "Issues & Concerns" fields (2026-07-17-issues-lessons.sql):
+  department        text,
+  champion          text,
+  caused_by         text,
+  corrective_action text,
+  date_presented    date,
+  date_resolved     date,
+  -- Lessons Learned (this module's addition) — captured on the issue itself:
+  lesson_learned    text,
+  lesson_category   text,
+  recommendation    text,
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
+create index if not exists issues_lessons_proj_date_idx
+  on issues_lessons (project_id, date_presented desc);
 
 -- 3) Contracts & Claims Register ---------------------------------------------
 create table if not exists contracts_claims (

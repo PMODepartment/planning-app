@@ -13,6 +13,15 @@ Developer change log for the **progress-photos** module. Update every PR.
 - [ ] PR opened into `main`
 - [x] **View PPRs** — PPR Presentations Database + slides viewer/editor + offline export
 
+## Clear-filters polish (2026-07-17)
+The app owner reported "Clear filters seems out of place." Root cause: the button lived in
+a `.pp-filt-right` wrapper with `margin-left:auto`, so when the filter row wrapped it was
+pushed onto a second line, orphaned at the far right — and it showed even on the empty
+state. Replaced with a subtle borderless **`.pp-clear`** ghost (× icon, muted, fills on
+hover) that sits **inline** after the filters and is **`hidden` unless a filter is
+actually set** (toggled in `render()` for Photos and `renderList()` for PPRs). Removed
+`.pp-filt-right`. Uses the new shared `x` icon in `icons.js`. Assets bumped `?v=20260717h`.
+
 ## UI uniformity pass (2026-07-17)
 
 The module had been built with its own invented chrome. Realigned it to the suite's

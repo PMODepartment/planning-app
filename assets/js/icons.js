@@ -53,6 +53,8 @@
     triangleDown:'<path d="M12 18 4 6h16z"/>',
     layers:      '<path d="M12 3 3 8l9 5 9-5z"/><path d="M3 13l9 5 9-5"/>',
     check:       '<polyline points="4 12.5 9 17.5 20 6.5"/>',
+    x:           '<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>',
+    bulb:        '<path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.3 1 2.5h6c0-1.2.3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',
     dot:         '<circle cx="12" cy="12" r="5"/>',
     mapPin:      '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="2.8"/>',
     refresh:     '<path d="M4 12a8 8 0 0 1 13.7-5.7L20 8"/><polyline points="20 3 20 8 15 8"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 16"/><polyline points="4 21 4 16 9 16"/>',

@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260717g"></script>
+  <script src="../../assets/js/theme.js?v=20260717h"></script>
   <title>Progress Photos · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260717g" />
-  <link rel="stylesheet" href="module.css?v=20260717g" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260717h" />
+  <link rel="stylesheet" href="module.css?v=20260717h" />
 </head>
 <body>
   <div class="pd-app">
@@ -60,9 +60,8 @@
             <select class="pd-select" id="pp-f-trade"><option value="">Filter by Trade</option></select>
             <select class="pd-select" id="pp-f-works"><option value="">Filter by Works</option></select>
             <select class="pd-select" id="pp-f-location"><option value="">Filter by Location</option></select>
-            <div class="pp-filt-right">
-              <button class="pd-btn" id="pp-clearfilters">Clear filters</button>
-            </div>
+            <button class="pp-clear" id="pp-clearfilters" title="Clear all filters" hidden>
+              <span data-ico="x" data-ico-size="14"></span>Clear filters</button>
           </div>
           <!-- Count + display mode, using the shared .pd-viewtoggle component -->
           <div class="pp-listbar">
@@ -85,9 +84,8 @@
               <input class="pd-input" type="date" id="ppr-f-from" title="Filter by PPR date start" /></label>
             <label class="pp-datefield">to
               <input class="pd-input" type="date" id="ppr-f-to" title="Filter by PPR date end" /></label>
-            <div class="pp-filt-right">
-              <button class="pd-btn" id="ppr-clearfilters">Clear filters</button>
-            </div>
+            <button class="pp-clear" id="ppr-clearfilters" title="Clear all filters" hidden>
+              <span data-ico="x" data-ico-size="14"></span>Clear filters</button>
           </div>
           <div class="pp-listbar" id="ppr-countbar">
             <span class="pp-countbar" id="ppr-count"></span>
@@ -111,13 +109,13 @@
   <datalist id="pp-works-list"></datalist>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js?v=20260717g"></script>
-  <script src="../../assets/js/auth.js?v=20260717g"></script>
-  <script src="../../assets/js/db.js?v=20260717g"></script>
-  <script src="../../assets/js/ui.js?v=20260717g"></script>
-  <script src="../../assets/js/icons.js?v=20260717g"></script>
-  <script src="module.js?v=20260717g"></script>
-  <script src="ppr.js?v=20260717g"></script>
+  <script src="../../assets/js/config.js?v=20260717h"></script>
+  <script src="../../assets/js/auth.js?v=20260717h"></script>
+  <script src="../../assets/js/db.js?v=20260717h"></script>
+  <script src="../../assets/js/ui.js?v=20260717h"></script>
+  <script src="../../assets/js/icons.js?v=20260717h"></script>
+  <script src="module.js?v=20260717h"></script>
+  <script src="ppr.js?v=20260717h"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

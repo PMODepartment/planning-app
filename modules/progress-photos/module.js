@@ -244,6 +244,12 @@ window.ProgressPhotos = (function () {
     var listbar = document.querySelector('.pp-listbar');
     if (listbar) listbar.style.visibility = rows.length ? '' : 'hidden';
 
+    // Clear-filters only shows when a filter is actually set (no orphan button).
+    var anyFilter = ['from', 'to', 'trade', 'works', 'location', 'search']
+      .some(function (k) { return filters[k]; });
+    var clr = $('pp-clearfilters');
+    if (clr) clr.hidden = !anyFilter;
+
     if (!rows.length) {
       host.innerHTML = '<div class="pp-empty">' +
         '<span data-ico="camera" data-ico-size="34"></span>' +
