@@ -50,6 +50,33 @@ window.DrawingRegister = (function () {
   // selection ordering (display order of drawing ids) for shift-click + arrows
   var visibleIds = [];
   var lastClickedId = null;
+  var _dragId = null;    // drawing row being drag-reordered (within its own group)
+
+  // Drag-reorder mirrors Project Schedule's: only meaningful when the visible
+  // order IS the stored order, so it's off while a filter/search narrows the list
+  // (you'd be reordering against rows you can't see).
+  function reorderEnabled(){ return canWrite && !anyFilter(); }
+
+  // A drawing's group = the phase → discipline → category bucket it renders in
+  // (same keys buildModel() groups by). Reordering never crosses a group.
+  function groupKeyOf(r){
+    return (r.phase||'Ungrouped') + '|' + (r.discipline||'—') + '|' + ((r.category||'').trim());
+  }
+
+  // buildModel() walks `rows` in ARRAY order, which is only the sort_order order
+  // because load() fetches with .order('sort_order'). After changing sort_order
+  // in memory we must re-sort the array too, or the new order won't show until a
+  // reload. Mirrors Postgres ASC: NULLs last.
+  function sortRows(){
+    rows.sort(function (a, b){
+      var x = a.sort_order == null ? null : +a.sort_order;
+      var y = b.sort_order == null ? null : +b.sort_order;
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return x - y;
+    });
+  }
 
   function sb() { return AppAuth.getSB(); }
   function num(v){ v = parseFloat(v); return isFinite(v) ? v : 0; }
@@ -426,7 +453,8 @@ window.DrawingRegister = (function () {
     var grpCb = CB ? '<td class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" data-selgrp="'+ids+'" title="Select group"></td>' : '';
     var isCol = !!collapsed[item.key];
     var caret = '<span class="dr-caret'+(isCol?' dr-caret-col':'')+'">▾</span>';
-    return '<tr class="dr-grp dr-grp-'+item.type+' dr-lvl-'+item.level+(isCol?' dr-collapsed':'')+'"'+
+    return '<tr class="dr-grp dr-grp-'+item.type+' dr-lvl-'+item.level+(isCol?' dr-collapsed':'')+
+        (item.key===activeGrpKey?' dr-grpactive':'')+'"'+
         ' data-grp="'+Fmt.esc(item.key)+'" data-kind="'+item.type+'" data-nodeid="'+(item.nodeId||'')+'"'+
         ' data-phase="'+Fmt.esc(item.ctx.phase||'')+'" data-disc="'+Fmt.esc(item.ctx.discipline||'')+'" data-cat="'+Fmt.esc(item.ctx.category||'')+'">' + grpCb +
       '<td colspan="'+COLSPAN_LABEL+'" class="dr-indent dr-freeze dr-freeze-grp"><span class="dr-grplabel">'+caret+
@@ -464,7 +492,7 @@ window.DrawingRegister = (function () {
     var ed = CB ? ' dr-ed' : '';
     var isDup = !!dupSet[dupKey(r)];
     var dupMark = isDup ? ' <span class="dr-dupmark" title="Duplicate code within this phase — reconcile">⚠</span>' : '';
-    return '<tr class="dr-drow dr-lvl-'+(item.level||4)+(selected[r.id]?' dr-selrow':'')+(isDup?' dr-dup':'')+'" data-id="'+r.id+'">' + cb +
+    return '<tr class="dr-drow dr-lvl-'+(item.level||4)+(selected[r.id]?' dr-selrow':'')+(isDup?' dr-dup':'')+'" data-id="'+r.id+'"'+(reorderEnabled()?' draggable="true"':'')+'>' + cb +
       '<td class="dr-indent dr-freeze dr-freeze-code'+ed+(isDup?' dr-dupcell':'')+'" data-f="code" data-t="text"><span class="dr-code">'+Fmt.esc(code)+'</span>'+dupMark+'</td>' +
       '<td class="dr-c-title dr-freeze dr-freeze-title'+ed+'" data-f="title" data-t="text">'+Fmt.esc(r.title)+(r.description?'<div class="dr-sub">'+Fmt.esc(r.description)+'</div>':'')+'</td>' +
       '<td class="dr-c-rev'+ed+'" data-f="revision" data-t="text">'+Fmt.esc(r.revision)+'</td>' +
@@ -502,21 +530,24 @@ window.DrawingRegister = (function () {
       var tr = document.querySelector('tr.dr-grp[data-grp="'+key.replace(/"/g,'\\"')+'"]');
       if (tr) tr.scrollIntoView({ block:'start', behavior:'smooth' });
     };
-    // group collapse + rename-on-dblclick + context select
+    // Group rows: click ANYWHERE on the row to collapse/expand (Project Schedule's
+    // Excel-style behaviour). Previously only the small label span toggled, so
+    // clicking the rest of the row appeared to do nothing.
     host.querySelectorAll('tr.dr-grp').forEach(function (tr){
-      var lab = tr.querySelector('.dr-grplabel');
       var glabel = tr.querySelector('.dr-glabel');
-      if (lab) lab.onclick = function(e){
-        if (e.target === glabel) return;   // let dblclick handle rename
+      tr.addEventListener('click', function (e){
         setContextFromRow(tr);
+        markActiveGroup(host, tr);
+        // The label is the rename target (dblclick) and buttons/checkboxes own
+        // their own clicks — everything else on the row toggles.
+        if (e.target === glabel || e.target.closest('button,input,select,.dr-editin')) return;
         var key = tr.dataset.grp;
         if (collapsed[key]) delete collapsed[key]; else collapsed[key] = true;
         saveUI(); render();
-      };
+      });
       if (glabel && canWrite) glabel.ondblclick = function(e){ e.stopPropagation(); beginRenameGroup(tr, glabel); };
       var dl = tr.querySelector('.dr-lvldel');
       if (dl) dl.onclick = function(e){ e.stopPropagation(); deleteLevel(tr.dataset); };
-      tr.addEventListener('click', function(){ setContextFromRow(tr); });
     });
 
     host.querySelectorAll('[data-view]').forEach(function (b){ b.onclick=function(e){ e.stopPropagation(); viewFile(b.dataset.view); }; });
@@ -544,7 +575,52 @@ window.DrawingRegister = (function () {
       tr.addEventListener('click', function(e){
         if (e.target.closest('.dr-ed') && e.detail>1) return;  // ignore the dblclick-to-edit
         if (e.target.closest('button,select,input,.dr-editing')) return;
+        // Selecting a drawing also makes ITS group the add target, so "+ Add
+        // drawing" / Enter inserts a sibling next to what you just clicked
+        // (Project Schedule's behaviour). Previously selCtx only followed group
+        // rows, so adding after clicking a drawing filed it under whatever group
+        // was last touched — or ungrouped.
+        setContextFromRow(tr);
+        markActiveGroup(host, null);
         clickSelect(tr.dataset.id, e);
+      });
+    });
+
+    // drag-to-reorder within a group (Project Schedule's row drag)
+    var pane = host.querySelector('.dr-grid');
+    if (pane) pane.classList.toggle('dr-reorder', reorderEnabled());
+    if (reorderEnabled()) host.querySelectorAll('tr.dr-drow[draggable]').forEach(function (tr){
+      tr.addEventListener('dragstart', function (e){
+        // Don't start a drag out of a cell that's being edited.
+        if (e.target.closest && e.target.closest('.dr-editing')) { e.preventDefault(); return; }
+        _dragId = tr.dataset.id;
+        try { e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain', _dragId); } catch(err){}
+        tr.classList.add('dr-rowdragging');
+      });
+      tr.addEventListener('dragover', function (e){
+        if (!_dragId || _dragId===tr.dataset.id) return;
+        var d = rows.find(function(x){return x.id===_dragId;});
+        var t = rows.find(function(x){return x.id===tr.dataset.id;});
+        if (!d || !t || groupKeyOf(d)!==groupKeyOf(t)) return;   // only within the same group
+        e.preventDefault(); e.dataTransfer.dropEffect='move';
+        var b = tr.getBoundingClientRect();
+        var below = (e.clientY - b.top) > b.height/2;
+        tr.classList.toggle('dr-drop-below', below);
+        tr.classList.toggle('dr-drop-above', !below);
+      });
+      tr.addEventListener('dragleave', function(){ tr.classList.remove('dr-drop-above','dr-drop-below'); });
+      tr.addEventListener('drop', function (e){
+        e.preventDefault();
+        var below = tr.classList.contains('dr-drop-below');
+        tr.classList.remove('dr-drop-above','dr-drop-below');
+        if (_dragId && _dragId!==tr.dataset.id) reorderDrop(_dragId, tr.dataset.id, !below);
+        _dragId = null;
+      });
+      tr.addEventListener('dragend', function (){
+        tr.classList.remove('dr-rowdragging');
+        document.querySelectorAll('.dr-drop-above,.dr-drop-below').forEach(function(x){
+          x.classList.remove('dr-drop-above','dr-drop-below'); });
+        _dragId = null;
       });
     });
 
@@ -586,8 +662,69 @@ window.DrawingRegister = (function () {
     });
   }
 
+  // --------------------------------------------------------- drag reorder ----
+  // Reorder a drawing within its own group (Project Schedule's row drag).
+  //
+  // Phase order is derived from each phase's MINIMUM sort_order (phaseOrderKey),
+  // so renumbering rows freely would silently reshuffle the phases. Instead we
+  // take the group's OWN existing sort_order values as a pool and re-deal them in
+  // the new order: the multiset of values per phase is unchanged, so the phase
+  // min — and therefore the phase order — cannot move. `rows` arrives ordered by
+  // sort_order (NULLs last), so the pool is already in display order and a NULL
+  // simply re-deals to whichever row should sort last.
+  async function reorderDrop(draggedId, targetId, before){
+    if (!reorderEnabled()) return;
+    var dr = rows.find(function(x){ return x.id===draggedId; });
+    var tg = rows.find(function(x){ return x.id===targetId; });
+    if (!dr || !tg || dr.id===tg.id) return;
+    if (groupKeyOf(dr) !== groupKeyOf(tg)) {
+      UI.toast('Drawings can only be reordered within their own phase / discipline / category.', 'warn');
+      return;
+    }
+    var key = groupKeyOf(dr);
+    var members = rows.filter(function(x){ return !isNode(x) && groupKeyOf(x)===key; });
+    if (members.length < 2) return;
+
+    var pool = members.map(function(x){ return x.sort_order == null ? null : +x.sort_order; });
+    var ids  = members.map(function(x){ return x.id; });
+    var from = ids.indexOf(draggedId); if (from < 0) return;
+    ids.splice(from, 1);
+    var ti = ids.indexOf(targetId); if (ti < 0) ti = ids.length - 1;
+    ids.splice(before ? ti : ti + 1, 0, draggedId);
+
+    var changes = [];
+    ids.forEach(function (id, i) {
+      var r = rows.find(function(x){ return x.id===id; });
+      var v = pool[i];
+      var old = r.sort_order == null ? null : +r.sort_order;
+      if (old !== v) { r.sort_order = v; changes.push({ id:id, val:v }); }
+    });
+    if (!changes.length) return;
+
+    sortRows();
+    render();   // optimistic: the local rows already carry the new order
+    var res = await Promise.all(changes.map(function (c) {
+      return sb().from(TABLE).update({ sort_order:c.val, updated_at:new Date().toISOString() }).eq('id', c.id);
+    }));
+    var bad = null;
+    for (var i=0;i<res.length;i++){ if (res[i] && res[i].error) { bad = res[i].error; break; } }
+    if (bad) { UI.toast(bad.message, 'error'); await load(); return; }
+    UI.toast('Reordered.', 'ok');
+  }
+
   // ------------------------------------------------- context / selection ----
   var selCtx = { phase:'', discipline:'', category:'', level:0 };
+  // The group row that "+ Add drawing" will insert into. It had no visual state
+  // at all before, so the add target was invisible (Project Schedule highlights
+  // the selected WBS row); this keeps it marked across re-renders.
+  var activeGrpKey = null;
+
+  function markActiveGroup(host, tr){
+    activeGrpKey = tr ? tr.dataset.grp : null;
+    (host || document).querySelectorAll('tr.dr-grp').forEach(function (x){
+      x.classList.toggle('dr-grpactive', !!activeGrpKey && x.dataset.grp === activeGrpKey);
+    });
+  }
 
   function setContextFromRow(tr){
     if (tr.classList.contains('dr-drow')) {

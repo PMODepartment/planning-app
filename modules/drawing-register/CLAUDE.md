@@ -9,6 +9,58 @@ module for file uploads** (private bucket + signed-URL viewing). Update every PR
 - [x] CRUD + Excel import + export + progress dashboard
 - [x] `enabled: true` in `assets/js/config.js`
 
+## Project-Schedule-style row interaction (2026-07-17)
+
+Asked to bring Project Schedule's grid feel here. **Most of it was already present** —
+inline cell editing, click-to-select + Shift/Ctrl range, keyboard shortcuts, and group
+collapse all existed. The genuine gaps were these four, each fixed:
+
+1. **Drag-to-reorder rows — was entirely missing.** Drawings are now `draggable` and
+   reorder within their own group, with Project Schedule's affordances: dimmed drag row
+   (`.dr-rowdragging`), a red insertion line on the hovered target's top/bottom edge
+   (`.dr-drop-above/-below`), and a grab cursor only while reorder is armed.
+   - ⚠️ **`sort_order` is re-dealt from the group's OWN pool of values, never renumbered.**
+     Phase order comes from each phase's *minimum* `sort_order` (`phaseOrderKey`), so free
+     renumbering would silently reshuffle the phases. Re-dealing the same multiset keeps
+     every phase's min fixed. Verified: after a reorder the SD1 pool is still `[10,11,12]`
+     and phase order is unchanged. A NULL in the pool simply re-deals to whichever row
+     should sort last (matching Postgres ASC NULLS LAST).
+   - **Armed only when no filter/search is active** (`reorderEnabled()`), mirroring PS's
+     `_reorderEnabled()`: with a filter on you'd be reordering against rows you can't see.
+   - Reorder is refused across groups **and** across phases (dragover won't even accept the
+     drop; an explicit toast explains why).
+   - No migration — `sort_order` already exists on `drawing_register`.
+2. **Collapse only fired on the small label span**, so clicking anywhere else on a group
+   row did nothing — this is what made collapsing "feel unnatural" vs PS. The **whole group
+   row now toggles** (PS's Excel-style behaviour); the label still owns dblclick-to-rename
+   and buttons/checkboxes own their clicks.
+3. **The add target was invisible.** Selecting a group set `selCtx` but showed no state, so
+   "+ Add drawing" inserted into a level the user couldn't see was chosen. Group rows now
+   carry `.dr-grpactive` (a red left rail, so the level tints still read) and it survives
+   re-renders via `activeGrpKey`.
+4. **Real bug — Add filed rows under the wrong level.** `selCtx` was only ever set from
+   *group* row clicks, so selecting a **drawing** and hitting "+ Add" filed the new row
+   under whatever group was last touched (or ungrouped). Clicking a drawing now sets the
+   context from that drawing, so Add/Enter inserts a **sibling** next to it — PS's
+   behaviour. Verified: click A-201 → Add → new row is `A-202` under AR/Elevation with the
+   title editor open.
+
+**Bug found in my own work during verification:** `buildModel()` walks `rows` in array
+order (only sorted because `load()` fetches `.order('sort_order')`), so mutating
+`sort_order` in memory persisted correctly but the row **didn't move on screen until a
+reload**. Added `sortRows()` (NULLs last) before the optimistic `render()`.
+
+**Not ported** (deliberate — large, and not what was asked): PS's row virtualization, cell
+clipboard (TSV copy/paste), column chooser/column menu, and undo/redo. **Reorder is
+therefore not undoable** — PS pushes a `reorder` undo entry, but this module has no undo
+stack at all.
+
+Harness-verified with a mutable store + real `DragEvent`s: move-to-top and move-back both
+update display *and* store (`A-103@10, A-101@11, A-102@12`); cross-group and cross-phase
+drags refused; phase order preserved; filters disarm and re-arm the drag; group-body click
+collapses (6→2 rows) and re-expands; active group survives re-render; no regressions in
+inline edit, status dropdown, single/shift select, or checkboxes.
+
 ## Topbar icons match Cash Flow (2026-07-17)
 - The text **"Clear"** button abutted the dark-mode toggle (clash). Reworked the topbar tool
   cluster to match Cash Flow: **all secondary tools are icon-only** — Import (`upload`), Export

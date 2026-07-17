@@ -77,6 +77,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-17 — Drawing Register: Project-Schedule-style row interaction (drag reorder + fixes)
+- Asked to bring Project Schedule's grid feel to the Drawing Register. **Most of it was already
+  there** (inline cell editing, click-to-select + Shift/Ctrl range, keyboard shortcuts, group
+  collapse). Four genuine gaps, now fixed:
+- **Drag-to-reorder — was missing entirely.** Rows now reorder within their group with PS's
+  affordances (dimmed drag row, red insertion line top/bottom, grab cursor). ⚠️ **`sort_order` is
+  re-dealt from the group's own pool of values, never renumbered** — phase order is derived from
+  each phase's *minimum* sort_order (`phaseOrderKey`), so free renumbering would silently reshuffle
+  the phases; re-dealing the same multiset pins every phase's min. Armed only when no filter/search
+  is active (mirrors PS's `_reorderEnabled()`), and refused across groups/phases. **No migration** —
+  `sort_order` already exists.
+- **Collapse only fired on the small label span** — clicking the rest of a group row did nothing,
+  which is exactly why collapsing "felt unnatural" next to PS. The **whole group row now toggles**;
+  the label keeps dblclick-to-rename.
+- **The add target was invisible** — selecting a group set `selCtx` with no visual state. Group rows
+  now carry a red left rail (`.dr-grpactive`) that survives re-render.
+- **Real bug: Add filed rows under the wrong level.** `selCtx` was only set by *group* clicks, so
+  selecting a **drawing** and hitting "+ Add" filed the new row under the last-touched group (or
+  ungrouped). Clicking a drawing now sets the context from it, so Add/Enter inserts a sibling —
+  verified: click A-201 → Add → `A-202` under AR/Elevation, title editor open.
+- **Bug found in my own work while verifying:** `buildModel()` walks `rows` in array order (only
+  sorted because `load()` fetches `.order('sort_order')`), so an in-memory `sort_order` change
+  persisted but **didn't move the row on screen until reload**. Added `sortRows()` (NULLs last)
+  before the optimistic render.
+- **Not ported** (deliberate): PS's row virtualization, cell clipboard (TSV copy/paste), column
+  chooser/menu, undo/redo — so **reorder is not undoable**; this module has no undo stack.
+- Harness-verified with real `DragEvent`s against a mutable store (reorder display+store, cross-
+  group/phase refusal, phase order preserved, filter disarms the drag, group-body collapse 6→2,
+  active group survives re-render, no regressions in edit/status/select). Assets `?v=20260717g`.
+
 ### 2026-07-17 — Progress Photos: UI uniformity pass (chrome now matches the suite)
 - The module had shipped with **invented chrome**. Realigned it to Drawing Register / Cash Flow /
   Project Schedule. The real defects, found by comparing against the reference stylesheet rather
