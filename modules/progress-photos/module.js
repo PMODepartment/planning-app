@@ -114,7 +114,9 @@ window.ProgressPhotos = (function () {
       restoreUI(); syncChrome(); notifyProject();
       await load();
     };
-    Array.prototype.forEach.call(document.querySelectorAll('.pp-tab'), function (b) {
+    // List/Gallery is the shared .pd-viewtoggle. NB: `.pp-tab` now means the
+    // topbar's Photos|PPRs screen tabs — don't select on it here.
+    Array.prototype.forEach.call(document.querySelectorAll('.pd-vt[data-view]'), function (b) {
       b.onclick = function () { view = b.dataset.view; saveUI(); syncChrome(); render(); };
     });
     ['from', 'to', 'trade', 'works', 'location', 'search'].forEach(function (k) {
@@ -141,10 +143,13 @@ window.ProgressPhotos = (function () {
   }
 
   function syncChrome() {
-    Array.prototype.forEach.call(document.querySelectorAll('.pp-tab'), function (b) {
+    Array.prototype.forEach.call(document.querySelectorAll('.pd-vt[data-view]'), function (b) {
       b.classList.toggle('active', b.dataset.view === view);
     });
-    $('pp-add').style.display = canWrite ? '' : 'none';
+    // The upload action + its divider are planner+ only.
+    ['pp-add', 'pp-sep-photos'].forEach(function (id) {
+      var el = $(id); if (el) el.style.display = canWrite ? '' : 'none';
+    });
   }
 
   // ------------------------------------------------------------------ load ---
@@ -228,9 +233,16 @@ window.ProgressPhotos = (function () {
     var list = visible();
     lightboxIds = list.map(function (r) { return r.id; });
 
-    var bar = '<div class="pp-countbar">Showing <strong>' + list.length + '</strong> of ' +
-              rows.length + ' photo' + (rows.length === 1 ? '' : 's') +
-              (projName ? ' · ' + Fmt.esc(projName) : '') + '</div>';
+    // The count + view toggle live in the static list bar (Drawing Register's
+    // .dr-listbar pattern), so they don't get rebuilt on every render.
+    var count = $('pp-count');
+    if (count) {
+      count.textContent = rows.length
+        ? 'Showing ' + list.length + ' of ' + rows.length + ' photo' + (rows.length === 1 ? '' : 's')
+        : '';
+    }
+    var listbar = document.querySelector('.pp-listbar');
+    if (listbar) listbar.style.visibility = rows.length ? '' : 'hidden';
 
     if (!rows.length) {
       host.innerHTML = '<div class="pp-empty">' +
@@ -241,11 +253,11 @@ window.ProgressPhotos = (function () {
       hydrate(host); return;
     }
     if (!list.length) {
-      host.innerHTML = bar + '<div class="pp-empty"><p>No photos match these filters.</p></div>';
+      host.innerHTML = '<div class="pp-empty"><p>No photos match these filters.</p></div>';
       return;
     }
 
-    host.innerHTML = bar + (view === 'gallery' ? galleryHTML(list) : listHTML(list));
+    host.innerHTML = (view === 'gallery' ? galleryHTML(list) : listHTML(list));
     hydrate(host);
     wireRows(host);
   }

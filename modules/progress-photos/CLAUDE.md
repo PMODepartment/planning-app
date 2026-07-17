@@ -13,6 +13,43 @@ Developer change log for the **progress-photos** module. Update every PR.
 - [ ] PR opened into `main`
 - [x] **View PPRs** — PPR Presentations Database + slides viewer/editor + offline export
 
+## UI uniformity pass (2026-07-17)
+
+The module had been built with its own invented chrome. Realigned it to the suite's
+existing patterns (Drawing Register / Cash Flow / Project Schedule). **These rules are a
+copy of Drawing Register's — keep them in sync; don't re-invent.**
+
+What was actually wrong (each verified against the reference stylesheet, not eyeballed):
+- **The shared topbar rules were missing entirely.** `.pd-topbar`, `#user-bar`
+  (`margin-left:10px; padding-left:10px; border-left`) and `#pd-theme-toggle` (34×34) are
+  declared by all three reference modules; this one declared none of them, so the avatar
+  had no divider and the theme toggle was unsized.
+- **The filter bar wasn't a card** — the others are `--pd-card` + border + radius +
+  `8px 12px`. Ours was a bare flex row, which is what made it look unfinished.
+- **Tools were ad-hoc** (`padding:6px 9px`) instead of the uniform 34×34 transparent icon
+  buttons that fill on hover, with `.pp-tb-sep` dividers and one labelled primary action.
+- **Back button** was padding-based, not the 36×36 square.
+- **Project select** was a plain bordered select; the convention is borderless until
+  hover/focus (`.dr-project`), so the title area reads as one unit.
+- **Two invented tab styles.** Replaced: the Photos|PPRs switch is now a **segmented
+  `.pp-tabs`** (identical to Register/Progress), and List/Gallery now uses the **shared
+  `.pd-viewtoggle`/`.pd-vt`** component from `dashboard.css` (as `projects.html` does)
+  rather than a third bespoke style. `.pp-tab` therefore now means the *screen* tabs —
+  the view wiring selects `.pd-vt[data-view]`, not `.pp-tab`.
+- Count + view toggle moved into a static `.pp-listbar` (Drawing Register's `.dr-listbar`)
+  so they aren't rebuilt on every render; destructive actions use `--pd-bad`.
+- Added a **Clear filters** + **count** to the PPR screen for parity with Photos.
+
+**Verified by diffing computed styles against the real `drawing-register/module.css`**
+(both stylesheets inlined into an iframe at the same viewport/theme): all 10 chrome
+elements — back button, icon tool, primary button, active tab, project select, filter bar,
+user-bar divider, theme toggle, separator, count text — report **zero differences**.
+Behaviour re-verified after the restructure (view toggle, screen tabs not hijacked, live
+counts, per-screen tools, slides view hiding filters+count); light/dark surfaces flip on
+tokens while brand red stays fixed; title collapses to icon-only at ≤1150px; no page
+h-scroll at 375px (the photo table scrolls inside its own container: 341 visible / 998
+content).
+
 ## PPR Presentations built (2026-07-17)
 
 Replaces the Power Apps **PPR PRESENTATIONS DATABASE** and **EDIT PROGRESS PHOTO

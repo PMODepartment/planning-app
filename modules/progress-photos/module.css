@@ -4,49 +4,92 @@
    automatically (module contract §4). Only semantic accents are fixed colours.
    ============================================================================ */
 
-/* Sidebar-less shell (matches Project Schedule / Cash Flow / Drawing Register) */
+/* ============================================================================
+   SHELL — sidebar-less topbar.
+   These rules are deliberately identical to Drawing Register / Cash Flow /
+   Project Schedule so the module chrome is uniform across the suite. Keep them
+   in sync: 34px tool buttons, 36px back button, divider before the avatar.
+   ============================================================================ */
 .pd-content { width: 100%; }
 
-.pp-modback { padding: 6px 9px; }
-.pp-title { display: flex; align-items: center; gap: 8px; }
-.pp-title-ico { color: var(--pd-red); display: inline-flex; }
+.pd-topbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 8px; }
+.pd-topbar #user-bar {
+  margin-left: 10px; padding-left: 10px;
+  border-left: 1px solid var(--pd-line); flex: none;
+}
+.pd-topbar #pd-theme-toggle {
+  width: 34px; height: 34px; padding: 0; margin-left: 4px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pp-modback {
+  width: 36px; height: 36px; padding: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pp-title { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; overflow: hidden; }
+.pp-title .pp-title-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-title-ico { color: var(--pd-red); vertical-align: -3px; margin-right: 2px; }
 
-.pp-projctx { margin-left: 6px; }
-.pp-project { min-width: 190px; }
+/* Project context — borderless until hover (Drawing Register's .dr-project) */
+.pp-projctx { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
+.pp-project {
+  max-width: 230px; min-width: 120px; height: 34px; font-weight: 600; font-size: 13px;
+  background: transparent; border-color: transparent;
+}
+.pp-project:hover, .pp-project:focus { background: var(--pd-card); border-color: var(--pd-line); }
 
-/* ---- View toggle (List / Gallery) ---------------------------------------- */
+/* Screen tabs (Photos | PPRs) — segmented, same as Register/Progress */
 .pp-tabs {
-  display: flex; gap: 0; margin-left: 10px;
-  border: 1px solid var(--pd-line); border-radius: var(--pd-radius); overflow: hidden;
+  display: inline-flex; border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); overflow: hidden; flex: none;
 }
 .pp-tab {
-  padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
-  background: transparent; border: 0; color: var(--pd-muted);
-  font-family: var(--pd-font);
+  border: 0; background: var(--pd-card); color: var(--pd-ink);
+  padding: 6px 14px; font-weight: 600; font-size: 13px; cursor: pointer;
+  font-family: var(--pd-font); transition: background .12s;
 }
 .pp-tab + .pp-tab { border-left: 1px solid var(--pd-line); }
-.pp-tab:hover { background: var(--pd-bg); }
+.pp-tab:hover:not(.active) { background: var(--pd-bg); }
 .pp-tab.active { background: var(--pd-red); color: #fff; }
 
-/* ---- Topbar tools (mirror Drawing Register / Cash Flow spacing) ----------- */
-.pp-topbar-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.pp-topbar-tools .pd-btn { padding: 6px 9px; }
+/* Tool cluster beside the profile */
+.pp-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.pp-topbar-tools .pd-btn {
+  height: 34px; width: 34px; padding: 0; font-size: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border-color: transparent;
+}
+.pp-topbar-tools .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
+.pp-topbar-tools .pd-btn.pp-tb-labeled { width: auto; padding: 0 12px; gap: 6px; }
+.pp-topbar-tools .pd-btn.pd-btn-primary {
+  background: var(--pd-red); border-color: var(--pd-red); color: #fff;
+}
+.pp-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
+.pp-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
 
-/* ---- Filter bar ---------------------------------------------------------- */
+/* ---- Slim filter bar (Drawing Register's .dr-filters) --------------------- */
 .pp-filters {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin-bottom: 12px;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;
+  background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); padding: 8px 12px;
 }
-.pp-filt-ico { color: var(--pd-muted); display: inline-flex; }
+.pp-filt-ico { color: var(--pd-muted); flex: none; }
 .pp-filters .pd-input, .pp-filters .pd-select { height: 34px; font-size: 13px; }
-.pp-search { flex: 0 1 260px; min-width: 0; }
-.pp-datefield { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--pd-muted); }
-.pp-datefield input { width: 148px; }
-.pp-clearfilters { margin-left: auto; }
-
-.pp-countbar {
-  font-size: 12.5px; color: var(--pd-muted); margin-bottom: 8px;
+.pp-filters .pp-search { flex: 1 1 300px; min-width: 180px; }
+.pp-filters .pd-select { flex: 0 0 auto; max-width: 180px; }
+/* Date range: a muted caption + input reading as one control */
+.pp-datefield {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font-size: 12px; color: var(--pd-muted); white-space: nowrap;
 }
+.pp-datefield .pd-input { width: 145px; }
+.pp-filt-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+/* ---- List bar (count + display toggle) ----------------------------------- */
+.pp-listbar {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 10px; min-height: 30px;
+}
+.pp-countbar { color: var(--pd-muted); font-size: 13px; }
+.pp-listbar .pd-viewtoggle { margin-left: auto; }
 
 /* ---- List view ----------------------------------------------------------- */
 .pp-grid {
@@ -110,7 +153,9 @@
   border-radius: 3px; color: var(--pd-muted);
 }
 .pp-iconbtn:hover { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-ink); }
-.pp-iconbtn.pp-del:hover { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
+/* Destructive actions use --pd-bad, matching Drawing Register's .dr-clearbtn */
+.pp-iconbtn.pp-del { color: var(--pd-bad); }
+.pp-iconbtn.pp-del:hover { background: var(--pd-bad); border-color: var(--pd-bad); color: #fff; }
 
 /* ---- Gallery view -------------------------------------------------------- */
 .pp-gallery {
@@ -204,16 +249,6 @@
 /* ============================================================================
    PPR Presentations (the "View PPRs" screens)
    ============================================================================ */
-
-/* Top-level screen switch (Photos / PPRs) */
-.pp-nav { display: flex; gap: 2px; margin-left: 12px; }
-.pp-navtab {
-  padding: 7px 15px; font-size: 13px; font-weight: 700; cursor: pointer;
-  background: transparent; border: 0; border-bottom: 2px solid transparent;
-  color: var(--pd-muted); font-family: var(--pd-font);
-}
-.pp-navtab:hover { color: var(--pd-ink); }
-.pp-navtab.active { color: var(--pd-red); border-bottom-color: var(--pd-red); }
 
 /* ---- List + preview split (mirrors the app: table left, preview right) ---- */
 .ppr-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
@@ -316,6 +351,7 @@
 .ppr-slideacts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 
 /* ---- Responsive ---------------------------------------------------------- */
+/* Title collapses to icon-only, same breakpoint as Drawing Register */
 @media (max-width: 1150px) {
   .pp-title-txt { display: none; }
 }
@@ -325,7 +361,6 @@
 }
 @media (max-width: 820px) {
   .pp-filters .pp-search { flex: 1 1 100%; }
+  .pp-filt-right { margin-left: 0; }
   .pp-form2 { grid-template-columns: 1fr; }
-  .pp-clearfilters { margin-left: 0; }
-  .pp-nav { margin-left: 0; }
 }

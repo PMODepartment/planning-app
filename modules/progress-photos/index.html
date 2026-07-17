@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260717e"></script>
+  <script src="../../assets/js/theme.js?v=20260717f"></script>
   <title>Progress Photos · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260717e" />
-  <link rel="stylesheet" href="module.css?v=20260717e" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260717f" />
+  <link rel="stylesheet" href="module.css?v=20260717f" />
 </head>
 <body>
   <div class="pd-app">
@@ -26,24 +26,23 @@
         </div>
 
         <!-- Top-level screens (the Power Apps home: View Photos / View PPRs) -->
-        <div class="pp-nav" role="tablist">
-          <button class="pp-navtab active" data-screen="photos">Photos</button>
-          <button class="pp-navtab" data-screen="ppr">PPRs</button>
+        <div class="pp-tabs" role="tablist">
+          <button class="pp-tab active" data-screen="photos">Photos</button>
+          <button class="pp-tab" data-screen="ppr">PPRs</button>
         </div>
 
+        <!-- Tool cluster beside the profile: one labelled primary action per
+             screen, everything else icon-only (Drawing Register / Cash Flow). -->
         <div class="pp-topbar-tools" id="pp-topbar-tools">
           <!-- Photos-screen tools -->
-          <div class="pp-tabs" id="pp-viewtabs" role="tablist">
-            <button class="pp-tab active" data-view="list">List View</button>
-            <button class="pp-tab" data-view="gallery">Gallery View</button>
-          </div>
-          <button class="pd-btn pd-btn-primary" id="pp-add" title="Upload photos">+ Add photos</button>
+          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pp-add" title="Upload photos">+ Add photos</button>
+          <span class="pp-tb-sep" id="pp-sep-photos"></span>
           <button class="pd-btn" id="pp-refresh" title="Reload photos">
             <span data-ico="refresh" data-ico-size="16"></span></button>
           <!-- PPR-screen tools -->
-          <button class="pd-btn" id="ppr-back" title="Back to the PPR list" style="display:none;">
+          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="ppr-new" title="Create a PPR" style="display:none;">+ New PPR</button>
+          <button class="pd-btn pp-tb-labeled" id="ppr-back" title="Back to the PPR list" style="display:none;">
             <span data-ico="arrowLeft" data-ico-size="16"></span> PPR list</button>
-          <button class="pd-btn pd-btn-primary" id="ppr-new" title="Create a PPR" style="display:none;">+ New PPR</button>
         </div>
         <div id="user-bar"></div>
       </div>
@@ -54,14 +53,26 @@
           <div class="pp-filters">
             <span class="pp-filt-ico" data-ico="filter" data-ico-size="15"></span>
             <input class="pd-input pp-search" id="pp-f-search" placeholder="Search description, trade, works, location…" />
-            <label class="pp-datefield">Captured from
+            <label class="pp-datefield">Captured
               <input class="pd-input" type="date" id="pp-f-from" title="Filter by capture start" /></label>
             <label class="pp-datefield">to
               <input class="pd-input" type="date" id="pp-f-to" title="Filter by capture end" /></label>
             <select class="pd-select" id="pp-f-trade"><option value="">Filter by Trade</option></select>
             <select class="pd-select" id="pp-f-works"><option value="">Filter by Works</option></select>
             <select class="pd-select" id="pp-f-location"><option value="">Filter by Location</option></select>
-            <button class="pd-btn pp-clearfilters" id="pp-clearfilters">Clear filters</button>
+            <div class="pp-filt-right">
+              <button class="pd-btn" id="pp-clearfilters">Clear filters</button>
+            </div>
+          </div>
+          <!-- Count + display mode, using the shared .pd-viewtoggle component -->
+          <div class="pp-listbar">
+            <span class="pp-countbar" id="pp-count"></span>
+            <div class="pd-viewtoggle" role="tablist">
+              <button class="pd-vt active" data-view="list" title="List view">
+                <span data-ico="listView" data-ico-size="15"></span></button>
+              <button class="pd-vt" data-view="gallery" title="Gallery view">
+                <span data-ico="gridView" data-ico-size="15"></span></button>
+            </div>
           </div>
           <div id="pp-view"></div>
         </div>
@@ -70,10 +81,16 @@
         <div id="pp-screen-ppr" hidden>
           <div class="pp-filters" id="ppr-listbar">
             <span class="pp-filt-ico" data-ico="filter" data-ico-size="15"></span>
-            <label class="pp-datefield">PPR date from
+            <label class="pp-datefield">PPR date
               <input class="pd-input" type="date" id="ppr-f-from" title="Filter by PPR date start" /></label>
             <label class="pp-datefield">to
               <input class="pd-input" type="date" id="ppr-f-to" title="Filter by PPR date end" /></label>
+            <div class="pp-filt-right">
+              <button class="pd-btn" id="ppr-clearfilters">Clear filters</button>
+            </div>
+          </div>
+          <div class="pp-listbar" id="ppr-countbar">
+            <span class="pp-countbar" id="ppr-count"></span>
           </div>
           <div id="ppr-view"></div>
         </div>
@@ -94,13 +111,13 @@
   <datalist id="pp-works-list"></datalist>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js?v=20260717e"></script>
-  <script src="../../assets/js/auth.js?v=20260717e"></script>
-  <script src="../../assets/js/db.js?v=20260717e"></script>
-  <script src="../../assets/js/ui.js?v=20260717e"></script>
-  <script src="../../assets/js/icons.js?v=20260717e"></script>
-  <script src="module.js?v=20260717e"></script>
-  <script src="ppr.js?v=20260717e"></script>
+  <script src="../../assets/js/config.js?v=20260717f"></script>
+  <script src="../../assets/js/auth.js?v=20260717f"></script>
+  <script src="../../assets/js/db.js?v=20260717f"></script>
+  <script src="../../assets/js/ui.js?v=20260717f"></script>
+  <script src="../../assets/js/icons.js?v=20260717f"></script>
+  <script src="module.js?v=20260717f"></script>
+  <script src="ppr.js?v=20260717f"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
@@ -112,7 +129,7 @@
       document.getElementById('pp-lb-next').onclick  = function () { ProgressPhotos._stepLightbox(1); };
 
       // Top-level screen switch (Photos / PPRs) — each screen owns its own tools.
-      var PHOTO_TOOLS = ['pp-viewtabs', 'pp-add', 'pp-refresh'];
+      var PHOTO_TOOLS = ['pp-add', 'pp-sep-photos', 'pp-refresh'];
       function show(ids, on) {
         ids.forEach(function (id) {
           var el = document.getElementById(id);
@@ -129,12 +146,12 @@
         // Each module re-asserts its own tools' visibility (role + inner screen).
         PPR._syncTools(isPpr);
         if (!isPpr) ProgressPhotos._syncChrome();
-        Array.prototype.forEach.call(document.querySelectorAll('.pp-navtab'), function (b) {
+        Array.prototype.forEach.call(document.querySelectorAll('.pp-tab[data-screen]'), function (b) {
           b.classList.toggle('active', b.dataset.screen === s);
         });
         try { localStorage.setItem('pp_screen', s); } catch (e) {}
       }
-      Array.prototype.forEach.call(document.querySelectorAll('.pp-navtab'), function (b) {
+      Array.prototype.forEach.call(document.querySelectorAll('.pp-tab[data-screen]'), function (b) {
         b.onclick = function () { setScreen(b.dataset.screen); };
       });
       var saved = 'photos';

@@ -77,6 +77,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-17 — Progress Photos: UI uniformity pass (chrome now matches the suite)
+- The module had shipped with **invented chrome**. Realigned it to Drawing Register / Cash Flow /
+  Project Schedule. The real defects, found by comparing against the reference stylesheet rather
+  than by eye: the **shared topbar rules were missing entirely** (`.pd-topbar`, `#user-bar`'s
+  `margin-left/padding-left/border-left`, the 34×34 `#pd-theme-toggle`) so the avatar had no
+  divider; the **filter bar wasn't a card** (the others are `--pd-card` + border + radius +
+  `8px 12px`) which is what made it look unfinished; tools were ad-hoc padding instead of the
+  uniform **34×34 transparent icon buttons** + `.pp-tb-sep` dividers + one labelled primary; the
+  back button wasn't the 36×36 square; the project select was plainly bordered instead of
+  borderless-until-hover.
+- **Stopped inventing components.** The Photos|PPRs switch is now a **segmented tab strip**
+  identical to Register/Progress, and List/Gallery uses the **shared `.pd-viewtoggle`** from
+  `dashboard.css` (as `projects.html` does) instead of a third bespoke style. Count + toggle moved
+  into a static list bar (`.dr-listbar` pattern). Added Clear-filters + a count to the PPR screen
+  for parity. ⚠️ `.pp-tab` now means the *screen* tabs — the view wiring selects `.pd-vt[data-view]`.
+- **Verified by computed-style diff against the real `drawing-register/module.css`** (both
+  stylesheets inlined into an iframe at matching viewport/theme): all 10 chrome elements report
+  **zero differences**. Behaviour re-verified after the restructure; light/dark flip on tokens with
+  brand red fixed; icon-only title ≤1150px; no page h-scroll at 375px. Assets bumped `?v=20260717f`.
+- Note: a first comparison attempt was **invalid** — the reference stylesheet hadn't loaded in the
+  iframe, so it reported unstyled browser defaults (16px text, auto widths) as "differences".
+  Inline the CSS and assert a sanity value before trusting such a diff.
+
 ### 2026-07-17 — Progress Photos: PPR Presentations + offline export
 - **Built the "View PPRs" half** (`modules/progress-photos/ppr.js` + `ppr_presentations` /
   `ppr_slides`): the PPR Presentations Database (PPR Date · Description · No. of Slides, PPR

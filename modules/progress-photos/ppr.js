@@ -83,6 +83,11 @@ window.PPR = (function () {
       var el = $('ppr-f-' + k);
       if (el) el.onchange = el.oninput = function () { filters[k] = this.value; renderList(); };
     });
+    $('ppr-clearfilters').onclick = function () {
+      filters = { from: '', to: '' };
+      ['from', 'to'].forEach(function (k) { var el = $('ppr-f-' + k); if (el) el.value = ''; });
+      renderList();
+    };
     $('ppr-new').onclick = function () { openPprForm(null); };
     $('ppr-back').onclick = function () { screen = 'list'; render(); };
   }
@@ -139,7 +144,9 @@ window.PPR = (function () {
 
   // ---------------------------------------------------------------- render ---
   function render() {
+    // Filters + count belong to the list only — the slides view is its own screen.
     $('ppr-listbar').style.display = screen === 'list' ? '' : 'none';
+    $('ppr-countbar').style.display = screen === 'list' ? '' : 'none';
     syncTools(true);
     if (screen === 'slides') renderSlides(); else renderList();
     if (window.Icons && Icons.hydrate) Icons.hydrate($('ppr-view'));
@@ -148,6 +155,8 @@ window.PPR = (function () {
   // The topbar tools follow the PPR screen's own state: "+ New PPR" belongs to
   // the list, "PPR list" (back) belongs to the slides view. `visible` is false
   // while the Photos screen is showing, which hides both.
+  // "+ New PPR" belongs to the list; "back" belongs to the slides view — they're
+  // never both on screen, so no divider is needed between them.
   function syncTools(visible) {
     var back = $('ppr-back'), neu = $('ppr-new');
     if (back) back.style.display = (visible && screen === 'slides') ? '' : 'none';
@@ -165,6 +174,14 @@ window.PPR = (function () {
   function renderList() {
     var host = $('ppr-view');
     var list = visiblePprs();
+
+    var count = $('ppr-count');
+    if (count) {
+      count.textContent = pprs.length
+        ? 'Showing ' + list.length + ' of ' + pprs.length + ' PPR' + (pprs.length === 1 ? '' : 's')
+        : '';
+    }
+    $('ppr-countbar').style.visibility = pprs.length ? '' : 'hidden';
 
     if (!pprs.length) {
       host.innerHTML = '<div class="pp-empty">' +
