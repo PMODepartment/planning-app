@@ -259,8 +259,8 @@ td.dr-editing { padding:2px 4px; }
 
 /* ============ Sidebar-less shell (matches Project Schedule / Cash Flow) === */
 .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
-.pd-topbar #user-bar { padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
-.pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; flex:none; }
+.pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+.pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; flex:none; }
 .dr-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; flex:none; }
 .dr-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; }
 .dr-title .dr-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

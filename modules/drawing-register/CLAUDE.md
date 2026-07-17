@@ -9,6 +9,15 @@ module for file uploads** (private bucket + signed-URL viewing). Update every PR
 - [x] CRUD + Excel import + export + progress dashboard
 - [x] `enabled: true` in `assets/js/config.js`
 
+## Topbar icons match Cash Flow (2026-07-17)
+- The text **"Clear"** button abutted the dark-mode toggle (clash). Reworked the topbar tool
+  cluster to match Cash Flow: **all secondary tools are icon-only** — Import (`upload`), Export
+  (`download`), Clear (`trash`, red-tinted, hover→solid red). Kept `+ Add` (primary) and `+ Level`
+  as the two labeled actions. Theme toggle `margin-left:4px` + user-bar `margin-left:10px`/border-left
+  now exactly match Cash Flow spacing (14px gap Clear→toggle, no overlap; verified numerically).
+- Added shared icons **`trash`** + **`upload`** to `assets/js/icons.js` (additive; drawing-register's
+  `icons.js?v=` bumped to `20260717b`). Assets bumped `?v=20260717b`.
+
 ## Import fix, Add fix, + feature batch 1–6 (2026-07-17)
 - **Import bug fixed — filename-as-code.** The workbook's "DWG No" column sometimes holds a
   submitted *file reference* (e.g. `2.3 4PH JAB RES SDP v 2.0 02-27-26.pdf`) instead of a code;
