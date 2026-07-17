@@ -4,8 +4,8 @@
 .dr-title-txt { white-space:nowrap; }
 @media (max-width:1150px){ .dr-title-txt { display:none; } }   /* icon-only title on tighter widths */
 
-.dr-projctx { display:flex; align-items:center; min-width:0; }
-.dr-project { max-width:240px; height:34px; font-weight:600; font-size:13px;
+.dr-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+.dr-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px;
   background:transparent; border-color:transparent; }
 .dr-project:hover, .dr-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
 
@@ -167,18 +167,44 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 
 /* ============ Editable tree grid (compact, one-screen) ================== */
 .dr-tablecard { max-height:calc(100vh - 205px); }
-.dr-grid { font-size:12px; }
+.dr-grid { font-size:12px; min-width:1080px; }   /* so narrow viewports scroll (and the frozen Code+Title stay put) */
 .dr-grid thead th { padding:7px 8px; font-size:10px; }
 .dr-grid td { padding:4px 8px; }
 .dr-grid:focus { outline:none; }
 .dr-grid:focus-within { box-shadow:none; }
 
-/* fixed-ish column widths so the flexible Title column absorbs the rest */
-.dr-c-code { width:120px; } .dr-c-rev { width:46px; text-align:center; }
+/* fixed column widths (needed so the frozen columns have deterministic offsets) */
+.dr-c-code { width:130px; } .dr-c-title { width:300px; } .dr-c-rev { width:46px; text-align:center; }
 .dr-c-status { width:158px; } .dr-c-sh { width:44px; } .dr-c-ap { width:66px; }
 .dr-c-date { width:82px; } .dr-c-resp { width:90px; }
 .dr-grid .dr-actcol { width:78px; text-align:right; white-space:nowrap; }
 .dr-grid td.dr-c-rev { text-align:center; }
+
+/* ---- Frozen Code + Title columns (Excel-style) [feature 1] -------------- */
+/* Sticky left so the drawing identity stays visible when scrolling right.    */
+.dr-grid td.dr-freeze, .dr-grid th.dr-freeze { position:sticky; z-index:1; background:var(--pd-card); }
+.dr-grid th.dr-freeze { z-index:3; }                    /* header corner above all */
+.dr-freeze-cb    { left:0; }
+.dr-freeze-code, .dr-freeze-grp { left:var(--cbw,0px); }
+.dr-freeze-title { left:calc(var(--cbw,0px) + 130px); }
+.dr-freeze-title, .dr-freeze-grp { border-right:1px solid var(--pd-line); }
+/* opaque state backgrounds so nothing bleeds through while scrolling */
+.dr-grid .dr-grp-phase td.dr-freeze { background:#fbe4e1; }
+.dr-grid .dr-grp-disc  td.dr-freeze { background:#ececec; }
+.dr-grid .dr-grp-cat   td.dr-freeze { background:var(--pd-bg); }
+.dr-grid tbody tr.dr-drow:hover td.dr-freeze { background:var(--pd-bg); }
+.dr-grid .dr-selrow td.dr-freeze { background:#f7d7d3 !important; }
+html.pd-dark .dr-grid td.dr-freeze, html.pd-dark .dr-grid th.dr-freeze { background:var(--pd-card); }
+html.pd-dark .dr-grid .dr-grp-phase td.dr-freeze { background:#3a2a29; }
+html.pd-dark .dr-grid .dr-grp-disc  td.dr-freeze { background:#343434; }
+html.pd-dark .dr-grid .dr-grp-cat   td.dr-freeze { background:var(--pd-bg); }
+html.pd-dark .dr-grid .dr-selrow td.dr-freeze { background:#4a2b28 !important; }
+
+/* ---- Duplicate-code flag [feature 2] ------------------------------------ */
+/* opaque amber tint (keeps the level-rail box-shadow intact; no bleed when frozen) */
+.dr-grid td.dr-dupcell { background:#fdf1e1; }
+html.pd-dark .dr-grid td.dr-dupcell { background:#3a3020; }
+.dr-dupmark { color:#d97706; font-size:11px; cursor:help; margin-left:3px; }
 
 /* editable cell affordance */
 .dr-ed { cursor:text; }
@@ -232,10 +258,12 @@ td.dr-editing { padding:2px 4px; }
 .dr-grp-disc .dr-gcode, .dr-grp-cat .dr-gcode { color:var(--pd-muted); background:var(--pd-bg); }
 
 /* ============ Sidebar-less shell (matches Project Schedule / Cash Flow) === */
-.pd-topbar { display:flex; align-items:center; gap:10px; }
-.pd-topbar #user-bar { padding-left:10px; border-left:1px solid var(--pd-line); }
-.pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+.pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
+.pd-topbar #user-bar { padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+.pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; flex:none; }
 .dr-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; flex:none; }
+.dr-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; }
+.dr-title .dr-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dr-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:2px; }
 .pd-content { width:100%; }
 
@@ -247,3 +275,22 @@ td.dr-editing { padding:2px 4px; }
 
 /* bulk set-status dropdown in the selection bar */
 .dr-selstatus { height:26px; padding:2px 8px; font-size:12px; font-weight:600; max-width:170px; }
+
+/* jump-to-phase select in the list bar [feature 6] */
+.dr-jump { height:26px; padding:2px 8px; font-size:12px; max-width:230px; flex:0 0 auto; }
+
+/* saved filter views [feature 5] */
+.dr-views-wrap { position:relative; flex:0 0 auto; }
+.dr-views-btn { display:inline-flex; align-items:center; gap:5px; }
+.dr-views-menu { min-width:210px; }
+.dr-view-item { display:flex; align-items:center; }
+.dr-view-apply { flex:1; text-align:left; border:0; background:transparent; color:var(--pd-ink);
+  padding:7px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
+.dr-view-apply:hover { background:var(--pd-bg); }
+.dr-view-del { border:0; background:transparent; color:var(--pd-muted); cursor:pointer; padding:4px 8px; border-radius:6px; }
+.dr-view-del:hover { background:var(--pd-bad,#dc2626); color:#fff; }
+.dr-view-empty { padding:8px 10px; color:var(--pd-muted); font-size:12px; }
+.dr-view-sep { height:1px; background:var(--pd-line); margin:4px 0; }
+.dr-view-save { display:block; width:100%; text-align:left; border:0; background:transparent; color:var(--pd-red);
+  padding:7px 10px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; }
+.dr-view-save:hover { background:var(--pd-bg); }

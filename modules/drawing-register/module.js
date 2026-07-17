@@ -21,6 +21,7 @@ window.DrawingRegister = (function () {
   var filters = { phase: '', discipline: '', status: '', search: '' };
   var selected = {};                           // id -> true (bulk select)
   var collapsed = {};                          // group key -> true (collapsed)
+  var dupSet = {};                             // phasecode -> count (>1) for duplicate-code flagging
   var canWrite = false;                        // planner+ / admin / super_admin
 
   // ---- Coding Reference (from the workbook "Coding Reference" sheet) --------
@@ -52,6 +53,27 @@ window.DrawingRegister = (function () {
 
   function sb() { return AppAuth.getSB(); }
   function num(v){ v = parseFloat(v); return isFinite(v) ? v : 0; }
+
+  // ---- per-project UI persistence (view + collapse state) [feature 3] ------
+  function uiKey(k){ return 'dr_' + k + '_' + pid; }
+  function saveUI(){
+    try {
+      localStorage.setItem(uiKey('view'), view);
+      localStorage.setItem(uiKey('collapsed'), JSON.stringify(collapsed));
+    } catch (e) {}
+  }
+  function restoreUI(){
+    var ok=false;
+    try {
+      var v = localStorage.getItem(uiKey('view')); if (v==='register'||v==='progress') view=v;
+      var c = localStorage.getItem(uiKey('collapsed'));
+      if (c){ var o=JSON.parse(c); if (o && typeof o==='object'){ collapsed=o; ok=true; } }
+    } catch (e) {}
+    return ok;
+  }
+  function syncTabs(){
+    document.querySelectorAll('.dr-tab').forEach(function (b){ b.classList.toggle('active', b.dataset.view===view); });
+  }
   function disciplineName(code){ return DISCIPLINES[code] || code || ''; }
 
   // ---------------------------------------------------------------- init -----
@@ -85,8 +107,7 @@ window.DrawingRegister = (function () {
     document.querySelectorAll('.dr-tab').forEach(function (b) {
       b.onclick = function () {
         view = b.dataset.view;
-        document.querySelectorAll('.dr-tab').forEach(function (x){ x.classList.toggle('active', x===b); });
-        render();
+        syncTabs(); saveUI(); render();
       };
     });
     ['dr-f-phase','dr-f-discipline','dr-f-status','dr-f-search'].forEach(function (id) {
@@ -99,7 +120,44 @@ window.DrawingRegister = (function () {
         render();
       };
     });
+    // Saved filter views [feature 5]
+    var vBtn = document.getElementById('dr-viewsbtn'), vMenu = document.getElementById('dr-views-menu');
+    if (vBtn) {
+      vBtn.onclick = function (e){ e.stopPropagation(); if (vMenu.hidden) renderViewsMenu(); vMenu.hidden = !vMenu.hidden; };
+      document.addEventListener('click', function(){ if (vMenu) vMenu.hidden = true; });
+    }
     if (pid) load({ reset:true });
+  }
+
+  // ---- saved filter views [feature 5] --------------------------------------
+  function viewsKey(){ return 'dr_views_' + pid; }
+  function getViews(){ try { return JSON.parse(localStorage.getItem(viewsKey())||'[]') || []; } catch(e){ return []; } }
+  function setViews(v){ try { localStorage.setItem(viewsKey(), JSON.stringify(v)); } catch(e){} }
+  function applyFilterValues(f){
+    document.getElementById('dr-f-phase').value = f.phase||'';
+    document.getElementById('dr-f-discipline').value = f.discipline||'';
+    document.getElementById('dr-f-status').value = f.status||'';
+    document.getElementById('dr-f-search').value = f.search||'';
+    filters.phase=f.phase||''; filters.discipline=f.discipline||''; filters.status=f.status||''; filters.search=(f.search||'').toLowerCase().trim();
+    render();
+  }
+  function renderViewsMenu(){
+    var menu = document.getElementById('dr-views-menu'); if (!menu) return;
+    var views = getViews();
+    var html = views.map(function (v, i){
+      return '<div class="dr-view-item"><button class="dr-view-apply" data-vi="'+i+'">'+Fmt.esc(v.name)+'</button>' +
+             '<button class="dr-view-del" data-vd="'+i+'" title="Delete view">✕</button></div>';
+    }).join('') || '<div class="dr-view-empty">No saved views yet.</div>';
+    html += '<div class="dr-view-sep"></div><button class="dr-view-save" id="dr-view-save">＋ Save current filters…</button>';
+    menu.innerHTML = html;
+    menu.querySelectorAll('[data-vi]').forEach(function (b){ b.onclick=function(){ applyFilterValues(getViews()[+b.dataset.vi].f||{}); menu.hidden=true; }; });
+    menu.querySelectorAll('[data-vd]').forEach(function (b){ b.onclick=function(e){ e.stopPropagation(); var v=getViews(); v.splice(+b.dataset.vd,1); setViews(v); renderViewsMenu(); }; });
+    var save = menu.querySelector('#dr-view-save');
+    if (save) save.onclick = function(){
+      var name = (prompt('Name this view:', '')||'').trim(); if (!name) return;
+      var v = getViews(); v.push({ name:name, f:{ phase:filters.phase, discipline:filters.discipline, status:filters.status, search:document.getElementById('dr-f-search').value } });
+      setViews(v); renderViewsMenu();
+    };
   }
 
   async function loadProjects() {
@@ -124,10 +182,11 @@ window.DrawingRegister = (function () {
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     rows = res.data || [];
     if (opts.reset) {
-      // fresh view (project switch / import / clear): reset selection + collapse
+      // fresh view (project switch / import / clear): reset selection; restore
+      // the saved per-project view + collapse state, else default to phases collapsed
       selected = {}; lastClickedId = null; selCtx = { phase:'', discipline:'', category:'', level:0 };
       collapsed = {};
-      rows.forEach(function (r){ collapsed['P:' + (r.phase || 'Ungrouped')] = true; });
+      if (!restoreUI()) rows.forEach(function (r){ collapsed['P:' + (r.phase || 'Ungrouped')] = true; });
     }
     render();
   }
@@ -187,6 +246,10 @@ window.DrawingRegister = (function () {
   }
 
   function render() {
+    syncTabs();
+    // the filter bar only applies to the Register table, not the Progress dashboard
+    var fb = document.querySelector('.dr-filters');
+    if (fb) fb.style.display = (view === 'progress') ? 'none' : '';
     populateFilterSelects();
     if (view === 'progress') return renderProgress();
     renderRegister();
@@ -205,6 +268,18 @@ window.DrawingRegister = (function () {
     var dList = Object.keys(dSet).sort();
     dc.innerHTML = '<option value="">All disciplines</option>' + dList.map(function (d){
       return '<option'+(filters.discipline===d?' selected':'')+'>'+Fmt.esc(d)+'</option>'; }).join('');
+  }
+
+  // ---- duplicate-code detection [feature 2] --------------------------------
+  // A drawing code should be unique within its phase; the workbook has genuine
+  // repeats (e.g. two M-100 in one phase) worth surfacing so planners reconcile.
+  function drawCode(r){ return String(r.drawing_code||r.drawing_no||r.dwg_number||'').trim(); }
+  function dupKey(r){ return (r.phase||'') + SEP + drawCode(r).toLowerCase(); }
+  function computeDups(){
+    var count={}, out={};
+    drawingRows().forEach(function (r){ var c=drawCode(r); if (!c) return; var k=dupKey(r); count[k]=(count[k]||0)+1; });
+    Object.keys(count).forEach(function (k){ if (count[k]>1) out[k]=count[k]; });
+    return out;
   }
 
   function phaseRank(p){ var i = PHASES.indexOf(p); return i === -1 ? 99 : i; }
@@ -290,13 +365,21 @@ window.DrawingRegister = (function () {
   function renderRegister() {
     var host = document.getElementById('dr-view');
     var draws = drawingRows();
+    dupSet = computeDups();
     var disp = buildModel();
     var shown = disp.filter(function(x){return x.type==='drawing';}).length;
 
     var CB = canWrite;
     var anyOpen = disp.some(function (x){ return x.type==='phase' && !collapsed[x.key]; });
+    var phaseItems = disp.filter(function(x){ return x.type==='phase'; });
+    var jump = phaseItems.length > 1 ?
+      '<select class="pd-select pd-btn-sm dr-jump" id="dr-jump" title="Jump to a phase">' +
+        '<option value="">Jump to phase…</option>' +
+        phaseItems.map(function(p){ return '<option value="'+Fmt.esc(p.key)+'">'+Fmt.esc(p.label)+'</option>'; }).join('') +
+      '</select>' : '';
     var toolbar = '<div class="dr-listbar">' +
       '<button class="dr-rowbtn dr-xall" id="dr-xall">' + (anyOpen ? 'Collapse all' : 'Expand all') + '</button>' +
+      jump +
       '<div class="dr-listcount">Showing <strong>'+shown+'</strong> of '+draws.length+' drawings</div>' +
       '<div class="dr-selbar" id="dr-selbar" hidden>' +
         '<span id="dr-selcount"></span>' +
@@ -317,14 +400,15 @@ window.DrawingRegister = (function () {
     if (!disp.length) { host.innerHTML = toolbar + emptyMsg('Nothing matches the filters.'); return; }
 
     var head = '<tr>' +
-      (CB ? '<th class="dr-cb"><input type="checkbox" id="dr-selall" title="Select all shown"></th>' : '') +
-      '<th class="dr-c-code">Code</th><th>Sheet Title / Description</th>' +
+      (CB ? '<th class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" id="dr-selall" title="Select all shown"></th>' : '') +
+      '<th class="dr-c-code dr-freeze dr-freeze-code">Code</th>' +
+      '<th class="dr-c-title dr-freeze dr-freeze-title">Sheet Title / Description</th>' +
       '<th class="dr-c-rev">Rev</th><th class="dr-c-status">Status</th>' +
       '<th class="dr-r dr-c-sh">Sh</th><th class="dr-r dr-c-ap">Appr</th>' +
       '<th class="dr-c-date">Latest Sub.</th><th class="dr-c-date">Approval</th>' +
       '<th class="dr-c-resp">Resp.</th><th class="dr-actcol"></th></tr>';
 
-    var html = toolbar + '<div class="pd-card dr-tablecard"><table class="pd-table dr-table dr-grid" tabindex="0"><thead>'+head+'</thead><tbody>';
+    var html = toolbar + '<div class="pd-card dr-tablecard"><table class="pd-table dr-table dr-grid'+(CB?' dr-has-cb':'')+'" style="--cbw:'+(CB?'34px':'0px')+'" tabindex="0"><thead>'+head+'</thead><tbody>';
     disp.forEach(function (item) {
       html += item.type==='drawing' ? drawRowHTML(item, CB) : groupRowHTML(item, CB);
     });
@@ -333,23 +417,23 @@ window.DrawingRegister = (function () {
     wireRegister(host, disp);
   }
 
-  var COLSPAN_LABEL = 3;   // Code + Title + Rev under a group label
+  var COLSPAN_LABEL = 2;   // Code + Title under a group label (frozen block)
   function groupRowHTML(item, CB) {
     var tot=0, ap=0;
     item.list.forEach(function (r){ tot += num(r.no_of_sheets)||0; ap += num(r.approved_sheets)||0; });
     var pct = tot ? Math.round(ap/tot*100) : 0;
     var ids = item.list.map(function(r){return r.id;}).join(',');
-    var grpCb = CB ? '<td class="dr-cb"><input type="checkbox" data-selgrp="'+ids+'" title="Select group"></td>' : '';
+    var grpCb = CB ? '<td class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" data-selgrp="'+ids+'" title="Select group"></td>' : '';
     var isCol = !!collapsed[item.key];
     var caret = '<span class="dr-caret'+(isCol?' dr-caret-col':'')+'">▾</span>';
-    var kindTag = item.type==='cat' ? '' : '';
     return '<tr class="dr-grp dr-grp-'+item.type+' dr-lvl-'+item.level+(isCol?' dr-collapsed':'')+'"'+
         ' data-grp="'+Fmt.esc(item.key)+'" data-kind="'+item.type+'" data-nodeid="'+(item.nodeId||'')+'"'+
         ' data-phase="'+Fmt.esc(item.ctx.phase||'')+'" data-disc="'+Fmt.esc(item.ctx.discipline||'')+'" data-cat="'+Fmt.esc(item.ctx.category||'')+'">' + grpCb +
-      '<td colspan="'+COLSPAN_LABEL+'" class="dr-indent"><span class="dr-grplabel">'+caret+
+      '<td colspan="'+COLSPAN_LABEL+'" class="dr-indent dr-freeze dr-freeze-grp"><span class="dr-grplabel">'+caret+
         (item.code?'<span class="dr-gcode">'+Fmt.esc(item.code)+'</span> ':'')+
         '<strong class="dr-glabel">'+Fmt.esc(item.label)+'</strong> <span class="dr-count">'+item.list.length+' dwg</span></span></td>' +
-      '<td></td>' +   // Status col
+      '<td class="dr-c-rev"></td>' +  // Rev
+      '<td></td>' +                   // Status col
       '<td class="dr-r">'+tot+'</td>' +
       '<td class="dr-r">'+ap+'</td>' +
       '<td colspan="2">'+progressBar(pct)+'</td>' +
@@ -376,17 +460,19 @@ window.DrawingRegister = (function () {
     var pct = Math.round(pctApproved(r)*100);
     var sub = latestSub(r,'actual') || latestSub(r,'planned');
     var appr = r.actual_approval || r.planned_approval;
-    var cb = CB ? '<td class="dr-cb"><input type="checkbox" data-sel="'+r.id+'"'+(selected[r.id]?' checked':'')+'></td>' : '';
+    var cb = CB ? '<td class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" data-sel="'+r.id+'"'+(selected[r.id]?' checked':'')+'></td>' : '';
     var ed = CB ? ' dr-ed' : '';
-    return '<tr class="dr-drow dr-lvl-'+(item.level||4)+(selected[r.id]?' dr-selrow':'')+'" data-id="'+r.id+'">' + cb +
-      '<td class="dr-indent'+ed+'" data-f="code" data-t="text"><span class="dr-code">'+Fmt.esc(code)+'</span></td>' +
-      '<td class="'+ed+'" data-f="title" data-t="text">'+Fmt.esc(r.title)+(r.description?'<div class="dr-sub">'+Fmt.esc(r.description)+'</div>':'')+'</td>' +
+    var isDup = !!dupSet[dupKey(r)];
+    var dupMark = isDup ? ' <span class="dr-dupmark" title="Duplicate code within this phase — reconcile">⚠</span>' : '';
+    return '<tr class="dr-drow dr-lvl-'+(item.level||4)+(selected[r.id]?' dr-selrow':'')+(isDup?' dr-dup':'')+'" data-id="'+r.id+'">' + cb +
+      '<td class="dr-indent dr-freeze dr-freeze-code'+ed+(isDup?' dr-dupcell':'')+'" data-f="code" data-t="text"><span class="dr-code">'+Fmt.esc(code)+'</span>'+dupMark+'</td>' +
+      '<td class="dr-c-title dr-freeze dr-freeze-title'+ed+'" data-f="title" data-t="text">'+Fmt.esc(r.title)+(r.description?'<div class="dr-sub">'+Fmt.esc(r.description)+'</div>':'')+'</td>' +
       '<td class="dr-c-rev'+ed+'" data-f="revision" data-t="text">'+Fmt.esc(r.revision)+'</td>' +
       '<td class="dr-c-status">'+(CB?statusSelect(r):'<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status||'—')+'</span>')+'</td>' +
       '<td class="dr-r dr-c-sh'+ed+'" data-f="no_of_sheets" data-t="num">'+tot+'</td>' +
       '<td class="dr-r dr-c-ap'+ed+'" data-f="approved_sheets" data-t="num">'+ap+' <span class="dr-mini">'+pct+'%</span></td>' +
-      '<td class="dr-nowrap dr-c-date">'+(sub?Fmt.date(sub):'—')+'</td>' +
-      '<td class="dr-nowrap dr-c-date">'+(appr?Fmt.date(appr):'—')+'</td>' +
+      '<td class="dr-nowrap dr-c-date'+ed+'" data-f="latest_sub" data-t="date">'+(sub?Fmt.date(sub):'—')+'</td>' +
+      '<td class="dr-nowrap dr-c-date'+ed+'" data-f="actual_approval" data-t="date">'+(appr?Fmt.date(appr):'—')+'</td>' +
       '<td class="dr-c-resp'+ed+'" data-f="responsible" data-t="text">'+Fmt.esc(r.responsible)+'</td>' +
       '<td class="dr-nowrap dr-actcol">'+(r.file_url?'<button class="dr-iconbtn" data-view="'+Fmt.esc(r.file_url)+'" title="View file">▤</button>':'')+
         '<button class="dr-iconbtn" data-edit="'+r.id+'" title="Full editor">✎</button>' +
@@ -406,7 +492,15 @@ window.DrawingRegister = (function () {
       var anyOpen = pkeys.some(function (k){ return !collapsed[k]; });
       if (anyOpen) pkeys.forEach(function (k){ collapsed[k] = true; });
       else collapsed = {};
-      render();
+      saveUI(); render();
+    };
+    // jump to a phase [feature 6]
+    var jump = host.querySelector('#dr-jump');
+    if (jump) jump.onchange = function(){
+      var key = jump.value; if (!key) return;
+      delete collapsed[key]; saveUI(); render();
+      var tr = document.querySelector('tr.dr-grp[data-grp="'+key.replace(/"/g,'\\"')+'"]');
+      if (tr) tr.scrollIntoView({ block:'start', behavior:'smooth' });
     };
     // group collapse + rename-on-dblclick + context select
     host.querySelectorAll('tr.dr-grp').forEach(function (tr){
@@ -417,7 +511,7 @@ window.DrawingRegister = (function () {
         setContextFromRow(tr);
         var key = tr.dataset.grp;
         if (collapsed[key]) delete collapsed[key]; else collapsed[key] = true;
-        render();
+        saveUI(); render();
       };
       if (glabel && canWrite) glabel.ondblclick = function(e){ e.stopPropagation(); beginRenameGroup(tr, glabel); };
       var dl = tr.querySelector('.dr-lvldel');
@@ -561,11 +655,13 @@ window.DrawingRegister = (function () {
     var tr=td.closest('tr.dr-drow'); if(!tr) return;
     var r=rows.find(function(x){return x.id===tr.dataset.id;}); if(!r) return;
     var f=td.dataset.f, t=td.dataset.t;
-    var cur = f==='code' ? (r.drawing_code||r.drawing_no||'') : (r[f]!=null?r[f]:'');
+    var cur = f==='code' ? (r.drawing_code||r.drawing_no||'')
+            : f==='latest_sub' ? (latestSub(r,'actual')||'')
+            : (r[f]!=null?r[f]:'');
     td.classList.add('dr-editing');
     var input=document.createElement('input');
-    input.className='dr-editin'; input.type = (t==='num'?'number':'text'); input.value=cur;
-    td.innerHTML=''; td.appendChild(input); input.focus(); input.select();
+    input.className='dr-editin'; input.type = (t==='num'?'number':t==='date'?'date':'text'); input.value=cur;
+    td.innerHTML=''; td.appendChild(input); input.focus(); if (t!=='date') input.select();
     var done=false;
     function commit(save){
       if (done) return; done=true;
@@ -573,7 +669,15 @@ window.DrawingRegister = (function () {
       if (!save) { render(); return; }
       var val=input.value.trim(), patch={};
       if (f==='code'){ patch.dwg_number=val; patch.drawing_no=val; patch.drawing_code=val; }
+      else if (f==='latest_sub'){
+        // update the latest revision's actual submission date (create one if none)
+        var subs = Array.isArray(r.submissions) ? r.submissions.slice() : [];
+        if (subs.length){ subs[subs.length-1] = Object.assign({}, subs[subs.length-1], { actual: val||null }); }
+        else subs = [{ rev:0, planned:null, actual: val||null }];
+        patch.submissions = subs; patch.issue_date = val||null;
+      }
       else if (t==='num'){ patch[f]=num(val); }
+      else if (t==='date'){ patch[f]=val||null; }
       else patch[f]=val;
       persistCell(r, patch).then(function(){ render(); });
     }
@@ -666,25 +770,27 @@ window.DrawingRegister = (function () {
   async function addDrawing(){
     if (!pid){ UI.toast('Select a project first','warn'); return; }
     var ctx=selCtx||{phase:'',discipline:'',category:''};
-    var group=drawingRows().filter(function(r){
+    var sameGroup=function(r){
       return (r.phase||'')===(ctx.phase||'') && (r.discipline||'')===(ctx.discipline||'') && ((r.category||'').trim())===((ctx.category||''));
-    });
+    };
+    var group=drawingRows().filter(sameGroup);
     var code=autoNumber(group, ctx);
     var data={ project_id:pid, created_by:uid, node_kind:'drawing',
       phase:ctx.phase||'', discipline:ctx.discipline||'', category:ctx.category||'',
       title:'', status:'For Review', no_of_sheets:1, approved_sheets:0, approved_pct:0,
       submissions:[], dwg_number:code, drawing_no:code, drawing_code:code, sort_order:nextOrder() };
     var res=await sb().from(TABLE).insert(data); if(res.error){ UI.toast(res.error.message,'error'); return; }
-    if (ctx.phase) delete collapsed['P:'+ctx.phase];
-    if (ctx.phase&&ctx.discipline) delete collapsed['D:'+ctx.phase+'|'+ctx.discipline];
-    if (ctx.category) delete collapsed['C:'+ctx.phase+'|'+ctx.discipline+'|'+ctx.category];
+    // expand the target group so the new row is visible (buildModel keys the
+    // phase by phase-text OR 'Ungrouped' — mirror that, else the row is hidden)
+    var ph=ctx.phase||'Ungrouped', d=ctx.discipline||'—';
+    delete collapsed['P:'+ph];
+    delete collapsed['D:'+ph+'|'+d];
+    if (ctx.category) delete collapsed['C:'+ph+'|'+d+'|'+ctx.category];
     await load();
+    if (!ctx.phase) UI.toast('Added (ungrouped) — select a phase/discipline first to file it under a level', 'warn');
     // focus the newly-added row's title for immediate typing
-    var added=drawingRows().filter(function(r){
-      return (r.phase||'')===(ctx.phase||'') && (r.discipline||'')===(ctx.discipline||'') &&
-             ((r.category||'').trim())===((ctx.category||'')) && r.dwg_number===code && !r.title;
-    }).pop();
-    if (added){ lastClickedId=added.id; editRowField(added.id, 'title'); }
+    var added=drawingRows().filter(function(r){ return sameGroup(r) && r.dwg_number===code && !r.title; }).pop();
+    if (added){ lastClickedId=added.id; var tr=document.querySelector('tr.dr-drow[data-id="'+added.id+'"]'); if(tr) tr.scrollIntoView({block:'center'}); editRowField(added.id, 'title'); }
   }
 
   // ----------------------------------------------------- progress dashboard --
@@ -1214,6 +1320,12 @@ window.DrawingRegister = (function () {
       var hasDates = subCols.some(function (s){ return dateOf(cell(row,s.c)); });
       var desc = String(cell(row, ci.desc)).trim();
       var dwgno = String(cell(row, ci.dwgno)).trim();
+      // The "DWG No" column sometimes holds a submitted FILE reference (e.g.
+      // "2.3 4PH JAB RES SDP v 2.0 02-27-26.pdf") rather than a code — never use
+      // that as the drawing code; keep it as a file note instead. The real code
+      // is the outline "No" column (A).
+      var fileRef = /\.(pdf|dwg|dxf|docx?|xlsx?|pptx?|png|jpe?g|zip|rar)\b/i.test(dwgno) ? dwgno : '';
+      var cleanDwgno = fileRef ? '' : dwgno;
 
       // ---- classify the row by its title/code, NOT by whether it has dates
       // (discipline group rows carry roll-up dates yet are still headers).
@@ -1257,10 +1369,10 @@ window.DrawingRegister = (function () {
         building_ref: String(cell(row, ci.building)).trim() || cur.building,
         company: String(cell(row, ci.company)).trim() || undefined,
         drawing_type: String(cell(row, ci.type)).trim() || undefined,
-        discipline: canonDiscipline(mapDiscipline(String(cell(row, ci.disc)).trim())) || cur.discipline || disciplineFromCode(dwgno||noCode),
+        discipline: canonDiscipline(mapDiscipline(String(cell(row, ci.disc)).trim())) || cur.discipline || disciplineFromCode(noCode||cleanDwgno),
         floor_level: String(cell(row, ci.floor)).trim() || undefined,
-        dwg_number: dwgno || noCode,
-        drawing_no: dwgno || noCode || title.slice(0,40),
+        dwg_number: noCode || cleanDwgno,
+        drawing_no: noCode || cleanDwgno || title.slice(0,40),
         phase: cur.phase, category: cur.category,
         title: title,
         description: desc && desc!==title ? desc : '',
@@ -1272,7 +1384,7 @@ window.DrawingRegister = (function () {
         status: normalizeStatus(String(cell(row, ci.status)).trim()),
         planned_approval: dateOf(cell(row, ci.papp)),
         actual_approval: dateOf(cell(row, ci.aapp)),
-        remarks: String(cell(row, ci.rem)).trim()
+        remarks: [String(cell(row, ci.rem)).trim(), fileRef ? ('File: '+fileRef) : ''].filter(Boolean).join(' · ')
       });
     }
     return recs;

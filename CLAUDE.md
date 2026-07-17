@@ -77,6 +77,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-17 — Drawing Register: import filename fix, Add fix, frozen columns, dup flag, +features
+- **Import fix:** the workbook's "DWG No" column sometimes holds a submitted *filename* (e.g.
+  `…SDP v 2.0 02-27-26.pdf`), which was being used as the drawing code. Now the code comes from the
+  outline "No" column and the filename is kept as a `File:` note in remarks. Verified on the real
+  file (0 codes contain a filename; SDP rows read `A-001`). **Re-import to apply.**
+- **"+ Add drawing" fix:** with no row selected it added an ungrouped row under a collapsed group
+  (looked like nothing happened); now it expands the target, scrolls to the new row, and starts
+  inline editing.
+- **Frozen Code + Title columns** (sticky-left, opaque per-state backgrounds; grid `min-width:1080`
+  so narrow screens scroll) and **duplicate-code flag** (amber ⚠ when a code repeats within a phase).
+- **Progress tab** no longer shows the (irrelevant) filter bar.
+- **Persist per-project view + collapse**, **inline date editing** (Latest Sub. / Approval),
+  **saved filter views**, and **jump-to-phase**.
+- Assets bumped `?v=20260717a`. Harness-verified (dup flag, inline dates, saved views, jump,
+  progress-filter hide, opaque frozen backgrounds); frozen-column sticky couldn't be observed under
+  the headless stalled compositor but uses the same proven pattern as Project Schedule.
+
 ### 2026-07-16 — Drawing Register: topbar consolidation + bulk status
 - **Toolbar moved into the topbar** (Project Schedule pattern): project selector + Register/Progress
   tabs on the left; **+ Add / + Level / Import / Export / Clear** as a flat tool cluster beside the

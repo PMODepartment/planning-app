@@ -9,6 +9,39 @@ module for file uploads** (private bucket + signed-URL viewing). Update every PR
 - [x] CRUD + Excel import + export + progress dashboard
 - [x] `enabled: true` in `assets/js/config.js`
 
+## Import fix, Add fix, + feature batch 1–6 (2026-07-17)
+- **Import bug fixed — filename-as-code.** The workbook's "DWG No" column sometimes holds a
+  submitted *file reference* (e.g. `2.3 4PH JAB RES SDP v 2.0 02-27-26.pdf`) instead of a code;
+  the parser was using it as the drawing code. Now the code comes from the outline **"No" column
+  (A)** and any filename in "DWG No" is kept as a `File: …` note in remarks (`fileRef`/`cleanDwgno`).
+  Verified on the real file: 0 codes contain a filename; the two SDP rows now read `A-001` with the
+  file note. **Re-import to apply.**
+- **"+ Add drawing" fixed.** With nothing selected it inserted an *ungrouped* drawing under a
+  collapsed "Ungrouped" phase → looked like it did nothing. Now it expands the target group
+  (using `ph||'Ungrouped'`), scrolls to the new row, opens inline title editing, and warns when
+  added ungrouped.
+- **Feature 3 — persist per-project UI:** last view (Register/Progress) + collapse state saved to
+  `localStorage` (`dr_view_<pid>`, `dr_collapsed_<pid>`) and restored on load (`saveUI`/`restoreUI`/
+  `syncTabs`).
+- **Feature 4 — inline date editing:** Latest Sub. + Approval columns are now double-click editable
+  (`data-t="date"`); Latest Sub. writes the latest revision's `actual` (+`issue_date`), Approval
+  writes `actual_approval`.
+- **Feature 5 — saved filter views:** a **Views** menu in the filter bar saves/applies/deletes named
+  filter presets per project (`dr_views_<pid>`).
+- **Feature 6 — jump-to-phase:** a "Jump to phase…" select in the list bar (shown when >1 phase)
+  expands + smooth-scrolls to that phase.
+- **Feature 1 — frozen Code + Title columns:** sticky-left on the checkbox/Code/Title cells with
+  opaque backgrounds per row-state (drawing/hover/selected + phase/disc/cat group tints, light+dark)
+  so the drawing identity stays visible when scrolling right. Group label spans Code+Title
+  (COLSPAN_LABEL 3→2 + explicit Rev cell). `.dr-grid` gets `min-width:1080px` so narrow viewports
+  actually scroll. (Sticky repositioning is compositor-driven; couldn't observe it under the headless
+  stalled compositor, but it's the same pattern Project Schedule uses and the sticky header works.)
+- **Feature 2 — duplicate-code flag:** a code repeated within the same **phase** gets an amber ⚠ on
+  the code cell (`computeDups`/`dupSet`/`dupKey`) so planners reconcile genuine source repeats.
+- **Progress tab:** the filter bar is hidden on the Progress view (it only applies to the Register).
+- Assets bumped `?v=20260717a`. Verified in a mutable-store harness: dup flag, inline date persist,
+  saved views, jump, progress-filter hide, opaque frozen backgrounds, no console errors.
+
 ## Topbar consolidation + bulk status (2026-07-16)
 - **Toolbar moved into the topbar** (matches Project Schedule): project selector + Register/Progress
   tabs sit left; the action cluster (**+ Add**, **+ Level ▾**, then icon buttons Import / Export /
