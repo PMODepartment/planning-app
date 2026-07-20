@@ -77,6 +77,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-17 — Global: project picker is now Project Schedule's OPC folder browser
+User: "the project selector dropdown in the project schedule is good — globally apply it."
+- **Rewrote the shared `UI.enhanceProjectSelect` (`ui.js`)** to render Project Schedule's
+  **OPC folder browser** instead of the flat searchable list: drill Workspace → Program →
+  Group one level at a time (folder rows with node-type badge + descendant project count),
+  a breadcrumb (`All › … `) to jump back up, and a search box that flattens to matching
+  projects across the whole tree. Ported faithfully from `renderProjectSelector`
+  (`.ps-pss-*` → shared `.pd-pss-*` in `dashboard.css`).
+- **Builds the tree from `PDb.getProjects` + `PDb.getWorkspaces`** (cached per page), but
+  **filters projects to the ids present in the module's `<select>` options** — so any
+  access filtering a module already applied (e.g. Progress Photos' `canAccessProject`) is
+  respected. The `<select>` stays the source of truth (value + `change` still fire), so no
+  module code changed — all seven that call `enhanceProjectSelect` upgrade automatically.
+  Project Schedule keeps its own (identical) in-module browser.
+- Shared assets changed (`ui.js`, `dashboard.css`) → **`?v=` bumped `20260720a` → `20260720b`
+  across all 21 HTML files.**
+- Harness-verified (gitignored, deleted) against a Workspace→Program→Group fixture: opens
+  into the current project's folder with the right breadcrumb; root shows "Production ·3"
+  with a workspace badge; drilling shows the program folder (·2) + a directly-parented
+  project; search "portwood" flattens to 1 match with the breadcrumb hidden; selecting fires
+  exactly one `change` and updates the button label; dark-mode popup on tokens.
+
 ### 2026-07-17 — Global: deeper top-bar structural uniformity (all modules)
 Completed the follow-up deferred last prompt — every enabled per-project module now shares
 the same sidebar-less top bar: **back button · brand-red module icon + title · searchable

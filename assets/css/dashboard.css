@@ -224,11 +224,12 @@ a:hover { text-decoration: underline; }
 }
 .pd-input:focus, .pd-select:focus, .pd-textarea:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
 
-/* ---- Searchable project selector (UI.enhanceProjectSelect) ----
-   Shared across every module so the project picker looks and behaves the same
-   and scales to 100+ projects. The trigger button copies the native <select>'s
-   classes/inline style, so a module's per-topbar look (borderless, max-width)
-   carries over unchanged. */
+/* ---- Project selector (UI.enhanceProjectSelect) ----
+   Shared across every module: the Project-Schedule-style OPC folder browser —
+   drill Workspace → Program → Group one level at a time (scales to 100s of
+   projects), with a breadcrumb and a search box that flattens across the tree.
+   The trigger button copies the native <select>'s classes/inline style, so a
+   module's per-topbar look (borderless, max-width) carries over unchanged. */
 .pd-psel { position: relative; display: inline-flex; vertical-align: middle; }
 .pd-psel-native { display: none !important; }
 .pd-psel-btn { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; text-align: left; }
@@ -237,23 +238,35 @@ a:hover { text-decoration: underline; }
 .pd-psel-caret { flex: none; color: var(--pd-muted); }
 .pd-psel-pop {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 1000;
-  min-width: 250px; max-width: 360px;
+  min-width: 320px; max-width: 460px; max-height: 72vh; overflow: auto;
   background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  box-shadow: 0 10px 28px rgba(0,0,0,.16); padding: 6px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.16); padding: 0;
 }
-.pd-psel-searchwrap { position: relative; margin-bottom: 6px; }
-.pd-psel-sico { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--pd-muted); pointer-events: none; display: inline-flex; }
-.pd-psel-search {
-  width: 100%; height: 32px; padding: 0 10px 0 28px; box-sizing: border-box;
-  border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  background: var(--pd-bg); color: var(--pd-ink); font: inherit; font-size: 13px;
-}
-.pd-psel-search:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
-.pd-psel-list { max-height: 300px; overflow: auto; }
-.pd-psel-opt { padding: 7px 10px; font-size: 13px; border-radius: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--pd-ink); }
-.pd-psel-opt:hover { background: var(--pd-bg); }
-.pd-psel-opt.is-sel { background: var(--pd-red); color: #fff; }
-.pd-psel-empty { padding: 12px; color: var(--pd-muted); font-size: 13px; text-align: center; }
+/* Folder-browser internals (ported from Project Schedule's .ps-pss-*) */
+.pd-pss-search { position: sticky; top: 0; background: var(--pd-card); padding: 8px; border-bottom: 1px solid var(--pd-line); z-index: 1; }
+.pd-pss-search input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--pd-line); border-radius: 6px; font: inherit; background: var(--pd-bg); color: var(--pd-ink); }
+.pd-pss-search input:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
+.pd-pss-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 8px; font-size: 11.5px; }
+.pd-pss-crumb { cursor: pointer; color: var(--pd-muted); padding: 2px 5px; border-radius: 5px; white-space: nowrap; }
+.pd-pss-crumb:hover { background: var(--pd-bg); color: var(--pd-ink); }
+.pd-pss-crumb:last-child { color: var(--pd-ink); font-weight: 700; }
+.pd-pss-sep { color: var(--pd-muted); opacity: .6; }
+.pd-pss-tree { padding: 4px 0; }
+.pd-pss-folder { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--pd-ink); border-bottom: 1px solid var(--pd-line); }
+.pd-pss-folder:hover { background: var(--pd-bg); }
+.pd-pss-folder [data-ico], .pd-pss-folder svg { color: var(--pd-red); flex: none; }
+.pd-pss-count { font-size: 11px; font-weight: 700; color: var(--pd-muted); background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 999px; padding: 1px 8px; flex: none; }
+.pd-pss-chev { color: var(--pd-muted); font-size: 16px; flex: none; }
+.pd-pss-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pd-pss-badge { font-size: 9px; text-transform: uppercase; letter-spacing: .03em; font-weight: 700; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--pd-line); color: var(--pd-muted); }
+.pd-pss-badge.pd-pss-program { color: #2563EB; border-color: rgba(37,99,235,.35); }
+.pd-pss-badge.pd-pss-group { color: var(--pd-red); border-color: rgba(238,49,36,.35); }
+.pd-pss-proj { display: flex; align-items: center; gap: 7px; padding: 7px 10px; cursor: pointer; font-size: 13px; color: var(--pd-ink); }
+.pd-pss-proj svg { color: var(--pd-muted); flex: none; }
+.pd-pss-proj:hover { background: var(--pd-red-light); }
+.pd-pss-proj.sel { background: var(--pd-red); color: #fff; }
+.pd-pss-proj.sel svg { color: #fff; }
+.pd-pss-empty { padding: 20px 12px; text-align: center; color: var(--pd-muted); font-size: 12.5px; }
 
 /* ---- Tables ---- */
 .pd-table { width: 100%; border-collapse: collapse; background: var(--pd-card); }

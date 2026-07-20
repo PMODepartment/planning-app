@@ -67,13 +67,18 @@
     return { el: overlay, close: close };
   }
 
-  // ---- Searchable project selector -----------------------------------------
-  // Upgrades a native <select> into a searchable combobox WITHOUT changing a
-  // module's logic: the <select> stays the source of truth (its value + change
-  // events still fire), so existing `sel.onchange` handlers keep working. Built
-  // for large project lists (100+). Safe to call again to refresh after options
-  // are repopulated. The trigger button copies the select's classes/inline style
-  // so each module's per-topbar look (borderless-until-hover, max-width) carries.
+  // ---- Project selector (shared OPC folder browser) ------------------------
+  // Upgrades a native project <select> into the Project-Schedule-style browser:
+  // a FOLDER navigator that drills Workspace → Program → Group one level at a
+  // time (scales to 100s of projects), with a breadcrumb and a search box that
+  // flattens to matching projects across the whole tree. The <select> stays the
+  // source of truth (its value + change events still fire), so existing
+  // `sel.onchange` handlers keep working. The tree is built from PDb.getProjects
+  // + PDb.getWorkspaces, but FILTERED to the ids present in the select's options
+  // — so any module-level access filtering already applied to the options is
+  // respected. Safe to call again to refresh. The trigger button copies the
+  // select's classes/inline style so each module's per-topbar look carries.
+  var _pdProjCache = null, _pdWsCache = null;   // per-page (one load), shared across instances
   function enhanceProjectSelect(sel) {
     if (!sel) return null;
     if (sel.__pdEnhanced) { sel.__pdEnhanced.refresh(); return sel.__pdEnhanced; }
@@ -94,57 +99,92 @@
     var pop = document.createElement('div');
     pop.className = 'pd-psel-pop';
     pop.hidden = true;
-    pop.innerHTML =
-      '<div class="pd-psel-searchwrap">' +
-        '<span class="pd-psel-sico" data-ico="search" data-ico-size="14"></span>' +
-        '<input type="text" class="pd-psel-search" placeholder="Search projects…" aria-label="Search projects" />' +
-      '</div><div class="pd-psel-list" role="listbox"></div>';
     wrap.appendChild(pop);
-    var search = pop.querySelector('.pd-psel-search');
-    var list = pop.querySelector('.pd-psel-list');
-    if (window.Icons) Icons.hydrate(pop);
+
+    var path = '', search = '', ws = [], projs = [];
 
     function labelFor(v) {
       var o = Array.prototype.filter.call(sel.options, function (o) { return o.value === v; })[0];
       return o ? o.textContent : '';
     }
     function syncBtn() {
-      var t = labelFor(sel.value);
-      var ph = !t;
+      var t = labelFor(sel.value), ph = !t;
       var txt = t || (sel.options[0] ? sel.options[0].textContent : 'Select…');
       btn.innerHTML = '<span class="pd-psel-txt' + (ph ? ' pd-psel-ph' : '') + '">' + esc(txt) + '</span>' +
         '<span class="pd-psel-caret" data-ico="chevronDown" data-ico-size="14"></span>';
       if (window.Icons) Icons.hydrate(btn);
     }
-    function buildList(q) {
-      q = (q || '').toLowerCase().trim();
-      var html = '';
-      Array.prototype.forEach.call(sel.options, function (o) {
-        var txt = o.textContent;
-        if (q && txt.toLowerCase().indexOf(q) === -1) return;
-        html += '<div class="pd-psel-opt' + (o.value === sel.value ? ' is-sel' : '') +
-          '" role="option" data-val="' + esc(o.value) + '">' + esc(txt) + '</div>';
-      });
-      list.innerHTML = html || '<div class="pd-psel-empty">No matching projects</div>';
+    function ico(name, size) { return window.Icons ? Icons.svg(name, size) : ''; }
+    function byName(a, b) { return String(a.name || a.id).localeCompare(String(b.name || b.id)); }
+    function node(id) { return ws.filter(function (w) { return w.id === id; })[0]; }
+    function crumbs(id) { var a = [], c = node(id); while (c) { a.unshift(c); c = c.parent_id ? node(c.parent_id) : null; } return a; }
+
+    function head(pathId, q) {
+      var bc = q ? '' : '<div class="pd-pss-crumbs"><span class="pd-pss-crumb" data-crumb="">All</span>' +
+        crumbs(pathId).map(function (w) { return '<span class="pd-pss-sep">›</span><span class="pd-pss-crumb" data-crumb="' + esc(w.id) + '">' + esc(w.name) + '</span>'; }).join('') + '</div>';
+      return '<div class="pd-pss-search"><input type="text" class="pd-pss-q" placeholder="Search all projects…" value="' + esc(q || search) + '">' + bc + '</div>';
     }
-    function open() { pop.hidden = false; wrap.classList.add('open'); search.value = ''; buildList(''); setTimeout(function () { search.focus(); }, 0); }
-    function close() { pop.hidden = true; wrap.classList.remove('open'); }
+    function render() {
+      var ids = {};
+      Array.prototype.forEach.call(sel.options, function (o) { if (o.value) ids[o.value] = 1; });
+      var P = projs.filter(function (p) { return ids[p.id]; });
+      var cm = {}; ws.forEach(function (w) { var k = w.parent_id || ''; (cm[k] = cm[k] || []).push(w); });
+      var pm = {}; P.forEach(function (p) { var k = p.workspace_id || ''; (pm[k] = pm[k] || []).push(p); });
+      var memo = {};
+      function descCount(id) { if (memo[id] != null) return memo[id]; var c = (pm[id] || []).length; (cm[id] || []).forEach(function (w) { c += descCount(w.id); }); return (memo[id] = c); }
+      function projRow(p) { return '<div class="pd-pss-proj' + (p.id === sel.value ? ' sel' : '') + '" data-proj="' + esc(p.id) + '">' + ico('project', 14) + '<span>' + esc(p.name || p.id) + '</span></div>'; }
+      var q = search.trim().toLowerCase(), body = '';
+      if (q) {
+        var matches = P.filter(function (p) { return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1; }).sort(byName);
+        body = matches.length ? matches.map(projRow).join('') : '<div class="pd-pss-empty">No projects match “' + esc(search) + '”.</div>';
+        pop.innerHTML = head('', q) + '<div class="pd-pss-tree">' + body + '</div>';
+      } else {
+        var folders = (cm[path] || []).slice().sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)); });
+        var pr = (pm[path] || []).slice().sort(byName);
+        body += folders.map(function (w) {
+          var nt = w.node_type || 'workspace', n = descCount(w.id);
+          return '<div class="pd-pss-folder" data-open="' + esc(w.id) + '">' + ico('folder', 15) +
+            '<span class="pd-pss-name">' + esc(w.name) + '</span>' +
+            '<span class="pd-pss-badge pd-pss-' + nt + '">' + nt + '</span>' +
+            '<span class="pd-pss-count" title="' + n + ' project' + (n === 1 ? '' : 's') + '">' + n + '</span>' +
+            '<span class="pd-pss-chev">›</span></div>';
+        }).join('');
+        body += pr.map(projRow).join('');
+        if (!body) body = '<div class="pd-pss-empty">This folder is empty.</div>';
+        pop.innerHTML = head(path, '') + '<div class="pd-pss-tree">' + body + '</div>';
+      }
+      var qi = pop.querySelector('.pd-pss-q');
+      if (qi) qi.oninput = function () { var pos = qi.selectionStart; search = qi.value; render(); var q2 = pop.querySelector('.pd-pss-q'); if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} } };
+      pop.querySelectorAll('.pd-pss-crumb').forEach(function (c) { c.onclick = function (e) { e.stopPropagation(); path = c.dataset.crumb || ''; render(); }; });
+      pop.querySelectorAll('.pd-pss-folder').forEach(function (f) { f.onclick = function (e) { e.stopPropagation(); path = f.dataset.open; render(); }; });
+      pop.querySelectorAll('.pd-pss-proj').forEach(function (r) { r.onclick = function (e) { e.stopPropagation(); choose(r.dataset.proj); }; });
+      if (window.Icons) Icons.hydrate(pop);
+    }
     function choose(v) {
       if (v !== sel.value) { sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); }
       syncBtn(); close();
     }
+    async function ensureData() {
+      if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
+      if (!_pdWsCache) { try { _pdWsCache = await PDb.getWorkspaces(); } catch (e) { _pdWsCache = []; } }
+    }
+    async function open() {
+      pop.hidden = false; wrap.classList.add('open');
+      if (!projs.length) pop.innerHTML = '<div class="pd-pss-empty">Loading…</div>';
+      await ensureData(); projs = _pdProjCache || []; ws = _pdWsCache || [];
+      search = ''; var cur = projs.filter(function (p) { return p.id === sel.value; })[0];
+      path = cur ? (cur.workspace_id || '') : '';
+      render();
+      var qi = pop.querySelector('.pd-pss-q'); if (qi) setTimeout(function () { qi.focus(); }, 0);
+    }
+    function close() { pop.hidden = true; wrap.classList.remove('open'); }
 
     btn.onclick = function (e) { e.stopPropagation(); if (pop.hidden) open(); else close(); };
-    search.oninput = function () { buildList(this.value); };
-    search.onkeydown = function (e) {
-      if (e.key === 'Escape') { close(); btn.focus(); }
-      else if (e.key === 'Enter') { var f = list.querySelector('.pd-psel-opt'); if (f) choose(f.dataset.val); e.preventDefault(); }
-    };
-    list.onclick = function (e) { var o = e.target.closest('.pd-psel-opt'); if (o) choose(o.dataset.val); };
     document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !pop.hidden) { close(); btn.focus(); } });
     sel.addEventListener('change', syncBtn);   // stay in sync on programmatic value changes
 
-    var api = { refresh: function () { syncBtn(); if (!pop.hidden) buildList(search.value); }, close: close };
+    var api = { refresh: function () { syncBtn(); if (!pop.hidden) render(); }, close: close };
     sel.__pdEnhanced = api;
     syncBtn();
     return api;
