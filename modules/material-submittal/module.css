@@ -1,0 +1,193 @@
+/* Material Submittal Log — module styles (all classes prefixed .ms-)
+   Chrome (topbar / tabs / tools / filter bar) is copied from drawing-register's
+   module.css, which was verified by computed-style diff against the suite. Do not
+   re-invent it here: see the 2026-07-17 "UI uniformity pass" note in the main
+   CLAUDE.md for why divergence keeps getting reworked. */
+
+/* ---- Topbar: project selector + tabs + tools ----------------------------- */
+.ms-title-txt { white-space:nowrap; }
+@media (max-width:1150px){ .ms-title-txt { display:none; } }   /* icon-only title when tight */
+.ms-title-ico { color:var(--pd-red); vertical-align:-3px; }
+.ms-modback { height:36px; width:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+
+.ms-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+.ms-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px;
+  background:transparent; border-color:transparent; }
+.ms-project:hover, .ms-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+
+.ms-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
+.ms-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600;
+  cursor:pointer; font-size:13px; transition:background .12s; white-space:nowrap; }
+.ms-tab + .ms-tab { border-left:1px solid var(--pd-line); }
+.ms-tab:hover:not(.active) { background:var(--pd-bg); }
+.ms-tab.active { background:var(--pd-red); color:#fff; }
+
+.ms-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+.ms-topbar-tools .pd-btn { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
+  background:transparent; border-color:transparent; font-size:13px; }
+.ms-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+.ms-topbar-tools .pd-btn.ms-tb-labeled { width:auto; padding:0 12px; gap:6px; }
+.ms-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+.ms-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
+.ms-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
+.ms-clearbtn { color:var(--pd-bad,#dc2626); }
+.ms-clearbtn:hover { background:var(--pd-bad,#dc2626) !important; border-color:var(--pd-bad,#dc2626) !important; color:#fff; }
+
+/* ---- Filter bar --------------------------------------------------------- */
+.ms-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px;
+  background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
+.ms-filt-ico { color:var(--pd-muted); flex:none; }
+.ms-filters .ms-search { flex:1 1 280px; min-width:170px; }
+.ms-filters .pd-select { flex:0 0 auto; max-width:190px; }
+.ms-chk { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--pd-ink); cursor:pointer; white-space:nowrap; }
+.ms-chk input { width:15px; height:15px; accent-color:var(--pd-red); cursor:pointer; }
+/* Ghost clear — only rendered when a filter is actually set (Progress Photos lesson:
+   a margin-left:auto button orphans itself onto a second line when the row wraps). */
+.ms-clearfilt { display:inline-flex; align-items:center; gap:5px; border:0; background:none; cursor:pointer;
+  color:var(--pd-muted); font-size:12.5px; font-weight:600; padding:4px 6px; border-radius:var(--pd-radius); }
+.ms-clearfilt:hover { background:var(--pd-bg); color:var(--pd-red); }
+.ms-clearfilt[hidden] { display:none; }
+.ms-count { color:var(--pd-muted); font-size:13px; margin-left:auto; white-space:nowrap; }
+
+/* ---- Log table ---------------------------------------------------------- */
+.ms-tablecard { padding:0; overflow:auto; max-height:calc(100vh - 250px); }
+.ms-table { border-collapse:separate; border-spacing:0; width:100%; min-width:1500px; }
+.ms-table thead th { position:sticky; top:0; z-index:2; background:var(--pd-card);
+  border-bottom:2px solid var(--pd-line); font-size:11px; letter-spacing:.03em; text-transform:uppercase;
+  color:var(--pd-muted); padding:9px 10px; white-space:nowrap; text-align:left; }
+.ms-table td { padding:8px 10px; vertical-align:middle; border-bottom:1px solid var(--pd-line); font-size:13px; }
+.ms-table tbody tr:not(.ms-grp):hover td { background:var(--pd-bg); }
+.ms-nowrap { white-space:nowrap; }
+.ms-mut { color:var(--pd-muted); }
+.ms-mini { color:var(--pd-muted); font-size:11px; }
+.ms-r { text-align:right; white-space:nowrap; }
+.ms-code { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:12px; white-space:nowrap; }
+.ms-item { font-weight:600; }
+.ms-sub { color:var(--pd-muted); font-size:11.5px; margin-top:2px; max-width:340px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ms-actcol { width:76px; }
+.ms-cb { width:34px; text-align:center; }
+.ms-cb input { width:15px; height:15px; cursor:pointer; accent-color:var(--pd-red); }
+.ms-selrow td { background:rgba(238,49,36,.06) !important; }
+/* Frozen first columns so the code + item stay readable while scrolling right. */
+.ms-table th.ms-fz1, .ms-table td.ms-fz1 { position:sticky; left:0;  z-index:1; background:var(--pd-card); min-width:190px; }
+.ms-table th.ms-fz2, .ms-table td.ms-fz2 { position:sticky; left:190px; z-index:1; background:var(--pd-card); min-width:230px; }
+.ms-table thead th.ms-fz1, .ms-table thead th.ms-fz2 { z-index:3; }
+.ms-table tbody tr:hover td.ms-fz1, .ms-table tbody tr:hover td.ms-fz2 { background:var(--pd-bg); }
+.ms-table tr.ms-selrow td.ms-fz1, .ms-table tr.ms-selrow td.ms-fz2 { background:#fbe9e7 !important; }
+html.pd-dark .ms-table tr.ms-selrow td.ms-fz1, html.pd-dark .ms-table tr.ms-selrow td.ms-fz2 { background:#3a2a28 !important; }
+
+/* Trade-section group rows (the workbook's 23 section headers) */
+tr.ms-grp td { background:var(--pd-red-light,rgba(238,49,36,.07)); font-weight:700; font-size:12.5px;
+  letter-spacing:.02em; cursor:pointer; box-shadow:inset 3px 0 0 0 var(--pd-red); }
+tr.ms-grp td.ms-fz1, tr.ms-grp td.ms-fz2 { background:var(--pd-red-light,rgba(238,49,36,.07)); }
+html.pd-dark tr.ms-grp td, html.pd-dark tr.ms-grp td.ms-fz1, html.pd-dark tr.ms-grp td.ms-fz2 { background:rgba(238,49,36,.16); }
+.ms-grp-caret { display:inline-block; width:12px; color:var(--pd-muted); }
+.ms-grp-count { color:var(--pd-muted); font-weight:500; font-size:11.5px; margin-left:6px; }
+
+/* ---- Status pills ------------------------------------------------------- */
+.ms-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700;
+  white-space:nowrap; border:1px solid transparent; }
+.ms-pill.s-approved   { background:#e7f6ec; color:#12693a; border-color:#bfe4cd; }
+.ms-pill.s-approvedc  { background:#eef7e8; color:#3f6b21; border-color:#cfe6bd; }
+.ms-pill.s-pending    { background:#fff6e5; color:#8a5a00; border-color:#f3ddb0; }
+.ms-pill.s-forsub     { background:#eef1f5; color:#4a5568; border-color:#d7dde5; }
+.ms-pill.s-resubmit   { background:#fdeee7; color:#9a4a15; border-color:#f5d3bf; }
+.ms-pill.s-rejected   { background:#fdeaea; color:#9b1c1c; border-color:#f5c6c6; }
+.ms-pill.s-info       { background:#eaf2fb; color:#1e4e8c; border-color:#c6dbf2; }
+html.pd-dark .ms-pill.s-approved  { background:rgba(18,105,58,.24);  color:#7fd6a2; border-color:rgba(18,105,58,.5); }
+html.pd-dark .ms-pill.s-approvedc { background:rgba(63,107,33,.24);  color:#b3dd8c; border-color:rgba(63,107,33,.5); }
+html.pd-dark .ms-pill.s-pending   { background:rgba(138,90,0,.26);   color:#f0c469; border-color:rgba(138,90,0,.55); }
+html.pd-dark .ms-pill.s-forsub    { background:rgba(120,130,145,.24);color:#c2ccd8; border-color:rgba(120,130,145,.5); }
+html.pd-dark .ms-pill.s-resubmit  { background:rgba(154,74,21,.26);  color:#f0a877; border-color:rgba(154,74,21,.55); }
+html.pd-dark .ms-pill.s-rejected  { background:rgba(155,28,28,.26);  color:#f19a9a; border-color:rgba(155,28,28,.55); }
+html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbdf0; border-color:rgba(30,78,140,.55); }
+.ms-od { color:var(--pd-bad,#dc2626); font-weight:700; }
+.ms-warn { color:#b45309; font-weight:700; }
+
+/* ---- Dashboard ---------------------------------------------------------- */
+.ms-dash { display:flex; flex-direction:column; gap:14px; }
+.ms-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+.ms-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  padding:12px 14px; position:relative; overflow:hidden; }
+.ms-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pd-red); }
+.ms-kpi-l { color:var(--pd-muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
+.ms-kpi-v { font-size:24px; font-weight:800; margin-top:4px; line-height:1.1; }
+.ms-kpi-s { color:var(--pd-muted); font-size:11.5px; margin-top:3px; }
+.ms-kpi.good .ms-kpi-v { color:#12693a; } html.pd-dark .ms-kpi.good .ms-kpi-v { color:#7fd6a2; }
+.ms-kpi.bad  .ms-kpi-v { color:var(--pd-bad,#dc2626); }
+.ms-kpi.warn .ms-kpi-v { color:#b45309; } html.pd-dark .ms-kpi.warn .ms-kpi-v { color:#f0c469; }
+
+.ms-grid2 { display:grid; grid-template-columns:minmax(320px,1fr) minmax(340px,1.25fr); gap:14px; align-items:start; }
+@media (max-width:1100px){ .ms-grid2 { grid-template-columns:1fr; } }
+.ms-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; }
+.ms-card h3 { margin:0 0 2px; font-size:14px; }
+.ms-card .ms-cardsub { color:var(--pd-muted); font-size:12px; margin:0 0 12px; }
+
+/* Status summary table (mirrors the workbook's Status / No. / Wt % block) */
+.ms-stat { width:100%; border-collapse:collapse; }
+.ms-stat th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em;
+  color:var(--pd-muted); padding:6px 8px; border-bottom:1px solid var(--pd-line); }
+.ms-stat th:not(:first-child), .ms-stat td:not(:first-child) { text-align:right; }
+.ms-stat td { padding:7px 8px; border-bottom:1px solid var(--pd-line); font-size:13px; }
+.ms-stat tr:last-child td { border-bottom:0; border-top:2px solid var(--pd-line); font-weight:800; }
+.ms-stat .ms-bar { height:5px; border-radius:3px; background:var(--pd-line); overflow:hidden; margin-top:5px; }
+.ms-stat .ms-bar > i { display:block; height:100%; background:var(--pd-red); }
+.ms-stat tbody tr.ms-zero td { opacity:.5; }
+
+/* Donut + legend */
+.ms-donutwrap { display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+.ms-legend { display:flex; flex-direction:column; gap:6px; font-size:12.5px; min-width:170px; }
+.ms-legend div { display:flex; align-items:center; gap:8px; }
+.ms-sw { width:11px; height:11px; border-radius:3px; flex:none; }
+
+/* S-curve */
+.ms-chart { width:100%; overflow-x:auto; }
+.ms-chart svg { display:block; }
+.ms-chart text { font-size:9.5px; fill:var(--pd-muted); }
+.ms-chart .ms-axis { stroke:var(--pd-line); stroke-width:1; }
+.ms-chart .ms-grid { stroke:var(--pd-line); stroke-width:1; opacity:.5; }
+
+/* Reconciliation note — explains why our totals differ from the Excel */
+.ms-note { display:flex; gap:10px; align-items:flex-start; background:rgba(180,83,9,.08);
+  border:1px solid rgba(180,83,9,.3); border-radius:var(--pd-radius); padding:10px 12px; font-size:12.5px; }
+.ms-note b { color:#b45309; } html.pd-dark .ms-note b { color:#f0c469; }
+.ms-note-ico { color:#b45309; flex:none; margin-top:1px; }
+.ms-note-x { margin-left:auto; border:0; background:none; cursor:pointer; color:var(--pd-muted); padding:0 2px; }
+
+/* ---- Modal / form ------------------------------------------------------- */
+.ms-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+.ms-form label { display:flex; flex-direction:column; gap:4px; font-size:12px; font-weight:600; color:var(--pd-muted); }
+.ms-form label.ms-wide { grid-column:1/-1; }
+.ms-form input, .ms-form select, .ms-form textarea { font:inherit; font-size:13px; font-weight:400; color:var(--pd-ink);
+  background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:7px 9px; }
+.ms-form textarea { resize:vertical; min-height:58px; }
+.ms-sec { grid-column:1/-1; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--pd-red); border-bottom:1px solid var(--pd-line); padding-bottom:5px; margin-top:4px; }
+.ms-sec:first-child { margin-top:0; }
+/* Live preview of the composed 7-part submittal number */
+.ms-codeprev { grid-column:1/-1; background:var(--pd-bg); border:1px dashed var(--pd-line); border-radius:var(--pd-radius);
+  padding:8px 10px; font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:13px; font-weight:700; }
+.ms-codeprev span { color:var(--pd-muted); font-weight:400; font-family:var(--pd-font); font-size:11.5px; }
+.ms-codeparts { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; grid-column:1/-1; }
+
+/* ---- Import summary ----------------------------------------------------- */
+.ms-imp { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin:12px 0; }
+.ms-imp div { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:10px; text-align:center; }
+.ms-imp b { display:block; font-size:20px; font-weight:800; }
+.ms-imp span { color:var(--pd-muted); font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+
+/* ---- Empty / loading ---------------------------------------------------- */
+.ms-empty { text-align:center; padding:48px 20px; color:var(--pd-muted); }
+.ms-empty h3 { margin:0 0 6px; color:var(--pd-ink); font-size:15px; }
+.ms-spin { display:inline-block; width:13px; height:13px; vertical-align:-2px; margin-right:6px;
+  border:2px solid var(--pd-line); border-top-color:var(--pd-red); border-radius:50%; animation:ms-spin .7s linear infinite; }
+@keyframes ms-spin { to { transform:rotate(360deg); } }
+
+/* ---- Print -------------------------------------------------------------- */
+@media print {
+  .pd-topbar, .ms-filters, .ms-actcol, .ms-cb { display:none !important; }
+  .ms-tablecard { max-height:none; overflow:visible; }
+  .ms-table { min-width:0; font-size:10px; }
+  .ms-table th.ms-fz1, .ms-table td.ms-fz1, .ms-table th.ms-fz2, .ms-table td.ms-fz2 { position:static; }
+}

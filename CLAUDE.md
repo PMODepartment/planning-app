@@ -77,6 +77,46 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-20 — Material Submittal Log built (Dashboard + Log) from the PMO workbook
+- **Built `modules/material-submittal/`** (index.html + module.css + module.js), flipped
+  `enabled: true`. Two screens as specified: **Dashboard** and **Material Submittal Log**, built
+  against `EPC. PMO. Material Submittal List Dashboard. 2025 01 25.xlsx` (all 14 sheets surveyed;
+  `Material submittal log` / `Dashboard` / `Library` / `Coding Reference` define behaviour).
+- **The workbook's own formulas were treated as the spec** (read off its cells, not guessed): the
+  status block is a `COUNTIF` over the Status column (**blank status isn't counted** — which is why
+  its total is 107, not 146), and the S-curve is `COUNTIFS` over the **APPROVAL** date pair, *not*
+  submission, despite the sheet labelling its own summary rows "Planned/Actual Submission".
+- **Found and fixed two defects in that dashboard** (owner chose "fix it, show both"):
+  its S-curve grouped by a redundant **"Trades"** column left blank on **40** submittals (silently
+  dropped from the chart), and its OVERALL row summed eight discipline rows but listed **"ST"
+  twice**, double-counting Structural. At the workbook's own Jan-2025 cutoff the legacy
+  reproduction lands **exactly** on its printed **97 / 29**, while the corrected maths gives
+  **128 / 27** — so the old chart *under*-reported planned by 31 despite the double count. The
+  module groups by `discipline` (always populated), counts each discipline once, and shows an
+  amber reconciliation note explaining the difference. `legacyScurve()` exists **only** to render
+  that note.
+- **Excel importer** for the real layout: 3-tier merged header (read by column index — several
+  headers repeat), 23 trade-section rows, an explicit **stop at the sign-off block** (otherwise
+  "Project Manager" imports as a submittal), and a row counts as a submittal when it has
+  *substance*, not merely an Item (sheet row 33 has a code/dates/status but no Item; requiring one
+  put the status total under the workbook's own COUNTIF). ⚠️ **Dates are timezone-hardened** —
+  SheetJS returns the cell displaying `18-Mar-24` as `2024-03-17T15:59:17Z`, so local getters give
+  the wrong day in some zones; cells are read as **formatted text** and parsed with integer maths.
+- **Migration `migrations/2026-07-20-material-submittal-full.sql`** (idempotent). **User must run
+  it** — load/import fail with an explicit "run the migration" message until then. Existing starter
+  columns are reused for their natural match, so there are no dead duplicate columns.
+- **Verified 54/54 automated checks against the real workbook**, loading the shipped `module.js`
+  itself (no reimplementation) — including the status table matching its COUNTIF block exactly
+  (9/11/2/3/0/14/68, total 107) and the legacy curve reproducing its printed 97/29. Then
+  **browser-verified** with that data imported: dashboard weights match the sheet's printed
+  percentages to the decimal, 143 rows across 21 populated sections, sticky frozen columns, dark
+  mode on tokens, every filter/collapse/selection/modal interaction, no console errors.
+- ⚠️ **Verification caveat recorded for this environment:** the compositor is stalled (screenshots
+  time out) and **computed styles are stale after a dynamic class change** — flipping `.active`
+  reads back the pre-change value even after forcing layout, which looks like inverted tab colours.
+  Confirmed the CSS is correct by measuring a **freshly created** element. Measure fresh nodes only.
+- No shared asset changed (module-local files + `config.js` enabled flag), so **no `?v` bump**.
+
 ### 2026-07-20 — Schedule load speed: server-side S-curve aggregate (A1–A3 + B1)
 Consumers of `project_schedule` were pulling every leaf activity (16k–40k rows) to the browser
 just to draw ~dozens of monthly points. Fixed by generalizing the existing
