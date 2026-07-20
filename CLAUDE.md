@@ -77,6 +77,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-17 — Global: deeper top-bar structural uniformity (all modules)
+Completed the follow-up deferred last prompt — every enabled per-project module now shares
+the same sidebar-less top bar: **back button · brand-red module icon + title · searchable
+project selector (in the topbar) · tool cluster · user-bar divider · theme toggle.**
+- **risk-register** — removed the sidebar; the Register/Risk-Matrix view switch moved from
+  sidebar nav links to a **segmented tab strip in the topbar** (`.rr-tabs`, module.js view-switch
+  selectors repointed `.pd-sidebar [data-view]` → `.rr-tabs [data-view]`, incl. the matrix-cell→
+  list jump); project selector + "+ Add risk" moved into the topbar; status/category/search became
+  a filter-bar card. Uniform chrome added to `module.css`; `module.css`/`module.js` links now
+  cache-busted (`?v=20260720a`).
+- **resource-loading** — removed the sidebar; project selector + search + "+ Add" moved into the
+  topbar tool cluster; content tabs (Resources/Roles/Calendars) stay in the body. Uniform chrome
+  added to the inline `<style>`.
+- **cash-flow** — already sidebar-less; moved the project selector out of the body control strip
+  into the topbar (`.cf-projctx`); the data-date + S-curve-basis controls stay in the body strip.
+- Progress Photos / Issues / Drawing Register / S-Curve were already uniform; **Project Schedule**
+  keeps its bespoke Workspace→Program→Group searchable browser (equivalent). No shared-asset change
+  this prompt, so **no global `?v` bump** (only risk-register's own module files were re-stamped).
+- Harness-verified each (real markup+styles+script, stubbed auth/DB; gitignored `_ui_test.html`,
+  deleted): risk-register topbar order back·title·projctx·tabs·tools·user-bar, tab switch +
+  matrix-cell→list works, searchable psel built; resource-loading psel shows "Hotel 101", tab
+  switch + Add-label update work; cash-flow psel in topbar, removed from viewbar, data-date kept,
+  no eval errors. (One "null onclick" scare was a harness bug — the modals live outside `.pd-app`
+  and the first harness only injected `.pd-app`; fixed to inject the whole body. Screenshots still
+  impossible — compositor stalled.)
+
 ### 2026-07-17 — Global: searchable project selector + uniform top-bar icons
 Standing workflow set this prompt: **every prompt now logs to CLAUDE.md + commits + pushes**
 (saved to memory `commit-log-workflow`).

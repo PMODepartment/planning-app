@@ -56,7 +56,7 @@ window.RiskRegister = (function () {
       };
     });
     // sidebar view switch
-    document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) {
+    document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a) {
       a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); };
     });
 
@@ -206,8 +206,8 @@ window.RiskRegister = (function () {
         if (filters.cell && filters.cell.l === l && filters.cell.i === i) filters.cell = null;
         else filters.cell = { l: l, i: i };
         switchView('list');
-        document.querySelector('.pd-sidebar [data-view="list"]').classList.add('active');
-        document.querySelector('.pd-sidebar [data-view="matrix"]').classList.remove('active');
+        document.querySelector('.rr-tabs [data-view="list"]').classList.add('active');
+        document.querySelector('.rr-tabs [data-view="matrix"]').classList.remove('active');
         render();
       };
     });
@@ -217,7 +217,7 @@ window.RiskRegister = (function () {
     document.getElementById('rr-view-list').style.display   = view === 'list'   ? '' : 'none';
     document.getElementById('rr-view-matrix').style.display = view === 'matrix' ? '' : 'none';
     if (link) {
-      document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a){ a.classList.remove('active'); });
+      document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a){ a.classList.remove('active'); });
       link.classList.add('active');
     }
   }

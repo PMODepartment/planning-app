@@ -9,6 +9,24 @@
   <title>Resource &amp; Role Master · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260720a" />
   <style>
+    /* Uniform sidebar-less chrome (matches Progress Photos / Drawing Register / Cash Flow / S-Curve) */
+    .pd-content { width:100%; }
+    .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
+    .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+    .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+    .rl-modback { width:36px; height:36px; padding:0; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+    .rl-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; }
+    .rl-title .rl-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .rl-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
+    .rl-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+    .rl-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .rl-project:hover, .rl-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+    .rl-topbar-tools { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
+    .rl-search-input { height:34px; width:200px; font-size:13px; }
+    .rl-topbar-tools .pd-btn.rl-tb-labeled { height:34px; padding:0 12px; gap:6px; background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    .rl-topbar-tools .pd-btn.rl-tb-labeled:hover { filter:brightness(.94); }
+    .rl-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
+    @media (max-width:820px) { .rl-title-txt { display:none; } .rl-search-input { width:140px; } }
     .rl-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:14px; }
     .rl-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .rl-tab { padding:8px 18px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -35,21 +53,25 @@
 </head>
 <body>
 <div class="pd-app">
-  <aside class="pd-sidebar">
-    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Resource &amp; Role Master</small></div>
-    <nav>
-      <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
-      <a href="#" class="active"><span class="pd-navico" data-ico="users"></span>Resources</a>
-    </nav>
-  </aside>
+  <!-- Sidebar-less shell (uniform across the suite) -->
   <div class="pd-content">
-    <div class="pd-topbar"><h1><span data-ico="users" data-ico-size="20" style="color:var(--pd-red);vertical-align:-3px;margin-right:6px;"></span>Resource &amp; Role Master</h1><div id="user-bar"></div></div>
-    <div class="pd-main">
-      <div class="rl-controls">
-        <select class="pd-select" id="rl-project" style="max-width:320px;"></select>
-        <input class="pd-input" id="rl-search" placeholder="Search…" style="max-width:220px;" />
-        <button class="pd-btn pd-btn-primary" id="rl-add" style="margin-left:auto;"><span data-ico="plus" data-ico-size="15"></span> <span id="rl-add-lbl">Add resource</span></button>
+    <div class="pd-topbar">
+      <a class="pd-btn rl-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
+      <h1 class="rl-title" style="margin:0;">
+        <span class="rl-title-ico" data-ico="users" data-ico-size="20"></span>
+        <span class="rl-title-txt">Resource &amp; Role Master</span>
+      </h1>
+      <div class="rl-projctx">
+        <select class="pd-select rl-project" id="rl-project" title="Project"></select>
       </div>
+      <div class="rl-topbar-tools">
+        <input class="pd-input rl-search-input" id="rl-search" placeholder="Search…" />
+        <span class="rl-tb-sep"></span>
+        <button class="pd-btn pd-btn-primary rl-tb-labeled" id="rl-add"><span data-ico="plus" data-ico-size="15"></span> <span id="rl-add-lbl">Add resource</span></button>
+      </div>
+      <div id="user-bar"></div>
+    </div>
+    <div class="pd-main">
 
       <div class="rl-tabs">
         <button class="rl-tab active" data-tab="resources"><span data-ico="users" data-ico-size="15"></span> Resources</button>

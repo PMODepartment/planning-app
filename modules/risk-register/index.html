@@ -8,35 +8,41 @@
   <script src="../../assets/js/theme.js?v=20260720a"></script>
   <title>Risk Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260720a" />
-  <link rel="stylesheet" href="module.css" />
+  <link rel="stylesheet" href="module.css?v=20260720a" />
 </head>
 <body>
   <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Risk Register</small></div>
-      <nav>
-        <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
-        <a href="#" class="active" data-view="list"><span class="pd-navico" data-ico="risk"></span>Register</a>
-        <a href="#" data-view="matrix"><span class="pd-navico" data-ico="grid"></span>Risk Matrix</a>
-      </nav>
-    </aside>
-
+    <!-- Sidebar-less shell (uniform across the suite) -->
     <div class="pd-content">
       <div class="pd-topbar">
-        <h1><span data-ico="risk" data-ico-size="20" style="color:var(--pd-red);vertical-align:-3px;margin-right:6px;"></span>Risk Register</h1>
+        <a class="pd-btn rr-modback" href="../../dashboard.html" title="Back to modules">
+          <span data-ico="arrowLeft" data-ico-size="18"></span></a>
+        <h1 class="rr-title" style="margin:0;">
+          <span class="rr-title-ico" data-ico="risk" data-ico-size="20"></span>
+          <span class="rr-title-txt">Risk Register</span>
+        </h1>
+        <div class="rr-projctx">
+          <select class="pd-select rr-project" id="rr-project" title="Project"></select>
+        </div>
+        <div class="rr-tabs" role="tablist">
+          <button class="rr-tab active" data-view="list">Register</button>
+          <button class="rr-tab" data-view="matrix">Risk Matrix</button>
+        </div>
+        <div class="rr-topbar-tools">
+          <button class="pd-btn pd-btn-primary rr-tb-labeled" id="rr-add" title="Add a risk">+ Add risk</button>
+        </div>
         <div id="user-bar"></div>
       </div>
       <div class="pd-main">
-        <!-- Controls -->
-        <div class="rr-controls">
-          <select class="pd-select" id="rr-project" style="max-width:260px;"></select>
+        <!-- Filters -->
+        <div class="rr-filters">
+          <span class="rr-filt-ico" data-ico="filter" data-ico-size="15"></span>
           <select class="pd-select" id="rr-f-status" style="max-width:150px;">
             <option value="">All statuses</option>
             <option>Open</option><option>In Progress</option><option>Closed</option>
           </select>
           <select class="pd-select" id="rr-f-category" style="max-width:170px;"><option value="">All categories</option></select>
-          <input class="pd-input" id="rr-f-search" placeholder="Search…" style="max-width:200px;" />
-          <button class="pd-btn pd-btn-primary" id="rr-add" style="margin-left:auto;">+ Add risk</button>
+          <input class="pd-input rr-search" id="rr-f-search" placeholder="Search…" />
         </div>
 
         <!-- KPIs -->
@@ -67,7 +73,7 @@
   <script src="../../assets/js/db.js?v=20260720a"></script>
   <script src="../../assets/js/ui.js?v=20260720a"></script>
   <script src="../../assets/js/icons.js?v=20260720a"></script>
-  <script src="module.js"></script>
+  <script src="module.js?v=20260720a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

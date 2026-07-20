@@ -15,6 +15,9 @@
     .cf-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
     .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); }
+    .cf-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+    .cf-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .cf-project:hover, .cf-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .cf-controls { display:flex; flex-wrap:nowrap; gap:10px 16px; align-items:center; margin-bottom:16px; overflow-x:auto;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:9px 14px; }
     .cf-viewbar { display:flex; align-items:center; gap:14px; flex-wrap:nowrap; flex:none; }
@@ -229,6 +232,9 @@
     <div class="pd-topbar">
       <a class="pd-btn cf-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
       <h1 style="margin:0;"><span data-ico="cash" data-ico-size="20" style="color:var(--pd-red);vertical-align:-3px;margin-right:6px;"></span>Cash Flow Projection</h1>
+      <div class="cf-projctx">
+        <select class="pd-select cf-project" id="cf-project" title="Project"></select>
+      </div>
       <div class="cf-topbar-tools">
         <button class="pd-btn" id="cf-refresh" title="Reload the projection"><span data-ico="refresh" data-ico-size="17"></span></button>
         <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="17"></span></button>
@@ -240,8 +246,6 @@
     <div class="pd-main">
       <div class="cf-controls">
         <div class="cf-viewbar">
-          <select class="pd-select" id="cf-project" style="max-width:260px;"></select>
-          <span class="cf-ctl-div"></span>
           <label class="cf-dd-lbl" title="As-of date: cash-in actuals vs forecast split, and the drawdown/financing basis. Shared with Project Schedule.">Data date
             <input class="pd-input" id="cf-datadate" type="date" style="width:148px;">
             <button class="cf-btn-sm" id="cf-dd-clear" title="Clear override (use today / schedule data date)">&#215;</button></label>
