@@ -530,6 +530,26 @@
     var overallPct = TOT ? overallDone / TOT * 100 : 0;
     return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length };
   }
+  // Same shape as scCompute(), but from the server-side combined aggregate (one JSON of
+  // ~monthly buckets) instead of every raw activity row across the scoped projects.
+  function scComputeFromAgg(a) {
+    if (!a || !a.months || !a.months.length || !(+a.totDur > 0)) return { empty: true };
+    var start = pd(a.minDate), maxEnd = pd(a.maxDate); if (!start) return { empty: true };
+    var pts = [{ t: +start, pd: 0, ad: 0 }];
+    a.months.forEach(function (mm) { var y = +String(mm.key).slice(0, 4), mo = +String(mm.key).slice(5, 7); pts.push({ t: +new Date(y, mo, 0), pd: +mm.pd || 0, ad: +mm.ad || 0 }); });
+    function interp(f, t) { if (t <= pts[0].t) return 0; var last = pts[pts.length - 1]; if (t >= last.t) return last[f]; for (var i = 1; i < pts.length; i++) { if (t <= pts[i].t) { var A = pts[i - 1], B = pts[i]; var r = (B.t - A.t) ? (t - A.t) / (B.t - A.t) : 0; return A[f] + (B[f] - A[f]) * r; } } return last[f]; }
+    var TOT = +a.totDur, overallDone = +a.doneDur || 0, tnow = today();
+    var domainMax = new Date(Math.max(+maxEnd, +tnow));
+    var months = [], c = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    function me(m) { return new Date(m.getFullYear(), m.getMonth() + 1, 0); }
+    var plannedC = months.map(function (m) { return interp('pd', +me(m)); });
+    var ti = -1; for (var i = 0; i < months.length; i++) { if (me(months[i]) >= tnow) { ti = i; break; } } if (ti < 0) ti = months.length - 1;
+    var actualC = months.map(function (m, idx) { return idx < ti ? interp('ad', +me(m)) : 0; });
+    actualC[ti] = overallDone;
+    var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0, overallPct = TOT ? overallDone / TOT * 100 : 0;
+    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: a.nAct || 0 };
+  }
   function kpi2(l, v, cls) { return '<div class="po-kpi2"><div class="po-kpi2-l">' + l + '</div><div class="po-kpi2-v"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + v + '</div></div>'; }
   function scRenderKpis(d) {
     var host = document.getElementById('po-sc-kpis');
@@ -568,9 +588,16 @@
     document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">Loading schedules across ' + ids.length + ' project(s)…</div>';
     document.getElementById('po-sc-kpis').innerHTML = '';
     try {
-      var list = await fetchScheduleForIds(ids);
+      // FAST PATH: one combined server-side aggregate across the scoped projects (dozens of
+      // monthly buckets) instead of every raw activity row. Falls back to the row fetch when
+      // the RPC isn't deployed yet.
+      var d = null;
+      try {
+        var r = await sb().rpc('schedule_scurve_agg_multi', { p_ids: ids });
+        if (!r.error && r.data && r.data.months) d = scComputeFromAgg(r.data);
+      } catch (e) { d = null; }
+      if (!d) { var list = await fetchScheduleForIds(ids); d = scCompute(list); }
       scLoadedIds = ids;
-      var d = scCompute(list);
       scRenderKpis(d); scRenderChart(d);
     } catch (e) { UI.toast('Could not load schedules: ' + (e.message || e), 'error'); document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">Load failed.</div>'; }
   }

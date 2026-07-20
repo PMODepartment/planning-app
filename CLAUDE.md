@@ -77,6 +77,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-20 — Schedule load speed: server-side S-curve aggregate (A1–A3 + B1)
+Consumers of `project_schedule` were pulling every leaf activity (16k–40k rows) to the browser
+just to draw ~dozens of monthly points. Fixed by generalizing the existing
+`cashflow_schedule_agg` RPC into a shared aggregate and pointing the S-curve consumers at it.
+- **A1 — migration `2026-07-20-schedule-scurve-agg.sql` (USER MUST RUN):** adds
+  `schedule_scurve_agg_multi(text[])` (core; aggregates the given projects into ONE combined
+  monthly curve) + `schedule_scurve_agg(text)` (single project) + rewrites `cashflow_schedule_agg`
+  as a thin wrapper (so Cash Flow keeps working before/after). All `security invoker` → caller's
+  RLS applies. **B1:** also adds index `project_schedule(project_id, id)` for the editor's keyset
+  pages (previously only `wbs_node_id` was indexed).
+- **A2 — S-Curve** now calls `schedule_scurve_agg` and derives the curve from the returned
+  monthly buckets + totals; refactored `compute()` onto a source-agnostic `baseSeries()` that is
+  fed by the RPC when present, else by a **lean, keyset-paginated** full-row fetch (only the 8
+  columns the curve needs — replaces the old `select('*')` parallel-OFFSET fetch that risked the
+  statement timeout on big projects).
+- **A3 — Portfolio S-Curve tab** now calls `schedule_scurve_agg_multi(ids)` (one combined
+  aggregate across the scoped projects) via a new `scComputeFromAgg`, falling back to the old
+  row fetch + `scCompute` when the RPC is absent.
+- **Result:** the heavy modules transfer dozens of rows instead of tens of thousands. Cash Flow
+  already used this pattern (unchanged; now backed by the shared function).
+- No shared JS/CSS changed (only inline module scripts + a new migration), so **no `?v` bump**.
+- Harness-verified S-Curve through BOTH paths on one fixture: RPC path and row-fallback produce
+  **identical** KPIs (53.2 / 55.4 / 53.2 / −2.2pp), forecast-row cells, SPI, and forecast finish
+  — confirming the refactor is behavior-preserving and the aggregate matches the per-activity
+  math. (The real Postgres RPC couldn't be run here; its body is the deployed
+  `cashflow_schedule_agg` formula with `= any(p_ids)`.) **Deferred: B2** (lean columns + lazy
+  jsonb in the Project Schedule editor's own load) — separate pass.
+
 ### 2026-07-17 — Global: project picker is now Project Schedule's OPC folder browser
 User: "the project selector dropdown in the project schedule is good — globally apply it."
 - **Rewrote the shared `UI.enhanceProjectSelect` (`ui.js`)** to render Project Schedule's
