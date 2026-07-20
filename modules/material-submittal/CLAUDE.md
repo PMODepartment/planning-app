@@ -134,9 +134,20 @@ existing `file_url` column — **no new migration**. Follows drawing-register’
 - Not built: multi-file per submittal (needs a `files jsonb` column), revision history per submittal
   (only a `revision_no` field), and per-project coding vocabularies (the code dropdowns use the
   workbook’s Coding Reference as a fixed list).
-- Storage RLS (2026-06-18): approved users read/insert; **delete is owner-or-admin** — so a planner
-  deleting someone else's submittal removes the row but its object delete silently no-ops. Harmless
-  (orphan, not data loss), but worth widening the bucket's delete policy to `is_planner()` if it matters.
+- **Storage delete widened to planners (2026-07-20) — migration
+  `../../migrations/2026-07-20-material-submittal-storage-delete.sql`, USER MUST RUN.** The
+  2026-06-18 rule was `owner = auth.uid() or is_admin()`, so a planner deleting a submittal they
+  didn't upload removed the row but orphaned its file. Now `owner = auth.uid() or is_planner()`.
+  ⚠️ The **`owner` branch is kept deliberately**: the bucket's INSERT policy is `is_approved()`, so
+  any approved user can upload — replacing it with `is_planner()` alone would remove a `user`-role
+  uploader's ability to delete their own file, i.e. a narrowing. `is_planner()` already includes
+  admin/super_admin, so the old `is_admin()` branch is subsumed. Purely additive: nobody loses access.
+  ⚠️ In `supabase-setup.sql` this override **must sit after `is_planner()` is defined** (line ~342),
+  not in the storage section (~line 278) — a policy's USING expression is parsed at creation, so
+  referencing the function earlier fails on a fresh run.
+- **`drawing-register` and `progress-photos` still carry the original owner-or-admin rule** and have
+  the same orphaning behaviour. Deliberately left alone (only material-submittal was asked for); the
+  migration widens them by adding them to its one array.
 
 ## Status
 - [x] Read MODULE_CONTRACT.md + CONTRIBUTING.md

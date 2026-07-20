@@ -77,6 +77,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-20 — Storage: widen the material-submittal bucket's DELETE policy to planners
+- Migration `migrations/2026-07-20-material-submittal-storage-delete.sql` (**user must run**).
+  The 2026-06-18 storage migration gave all three buckets
+  `delete using (owner = auth.uid() or is_admin())`, so a **planner** deleting a submittal they
+  didn't upload removed the row but its object delete silently no-opped, orphaning the file.
+  Now `owner = auth.uid() or is_planner()`.
+- ⚠️ **The `owner` branch is kept deliberately** — this is a widening, not a swap. The bucket's
+  INSERT policy is `is_approved()`, so **any** approved user can upload, including the `user`/
+  `viewer` roles; replacing the owner check with `is_planner()` alone would take away those users'
+  ability to delete their *own* uploads. `is_planner()` is
+  `approved AND role in (super_admin, admin, planner)`, so it already subsumes the old `is_admin()`
+  branch. Net effect: nobody loses access, planners gain it.
+- ⚠️ **Ordering trap when folding into `supabase-setup.sql`:** the override CANNOT live in the
+  storage section (~line 278) because `is_planner()` isn't defined until ~line 342, and a policy's
+  USING expression is parsed at creation — it would fail on a fresh run. It sits after the function
+  definition, with a forward-pointing note left at the storage loop. The migration also guards with
+  `to_regprocedure('public.is_planner()')` so a missing dependency raises a readable error instead of
+  a bare "function does not exist".
+- `supabase-schema.sql` has **no storage section at all** (pre-existing drift, documented 2026-07-16),
+  so there was nothing to fold there.
+- **Scope: material-submittal only, as asked.** `drawing-register` and `progress-photos` still carry
+  the original owner-or-admin rule and have the same orphaning behaviour — the migration widens them
+  by adding them to its one array.
+
 ### 2026-07-20 — Material Submittal Log: document attachments wired up
 - Uses the existing **private** `material-submittal` bucket + `file_url` column — **no migration**.
   Follows drawing-register's pattern: `file_url` stores the object **path**, and the URL is signed
