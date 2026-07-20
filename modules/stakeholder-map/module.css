@@ -1,0 +1,100 @@
+/* Stakeholder Map module styles — all classes prefixed .sm- to avoid collisions.
+   Structure mirrors risk-register (the reference CRUD + matrix module). */
+
+/* ---- Shared topbar chrome (VERBATIM from drawing-register/module.css) -----
+   Every uniform module carries this block. Without it the topbar inherits
+   dashboard.css's `gap:14px` with no wrapping, the avatar loses its left
+   divider, and theme.js's injected toggle keeps its default size instead of
+   matching the 34x34 tool buttons — which reads as "the buttons beside the
+   profile icon are misplaced". Do not drop it when copying this module. */
+.pd-content { width:100%; }
+.pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
+.pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+.pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+
+/* ---- Topbar: back / title / project / tabs / tools ---------------------- */
+.sm-modback { width:36px; height:36px; padding:0; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+.sm-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; }
+.sm-title .sm-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
+.sm-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+.sm-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+.sm-project:hover, .sm-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+.sm-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
+.sm-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600; font-size:13px; cursor:pointer; font-family:var(--pd-font); transition:background .12s; white-space:nowrap; }
+.sm-tab + .sm-tab { border-left:1px solid var(--pd-line); }
+.sm-tab:hover:not(.active) { background:var(--pd-bg); }
+.sm-tab.active { background:var(--pd-red); color:#fff; }
+.sm-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+.sm-topbar-tools .pd-btn { height:34px; display:inline-flex; align-items:center; justify-content:center; }
+.sm-topbar-tools .pd-btn.sm-tb-labeled { padding:0 12px; gap:6px; }
+.sm-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+.sm-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
+@media (max-width:820px) { .sm-title-txt { display:none; } }
+
+/* ---- Filter bar (card, matches the suite) ------------------------------ */
+.sm-filters {
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px;
+  background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px;
+}
+.sm-filt-ico { color:var(--pd-muted); flex:none; }
+.sm-filters .pd-input, .sm-filters .pd-select { height:34px; font-size:13px; }
+.sm-filters .sm-search { flex:1 1 220px; min-width:160px; }
+.sm-clear { border:0; background:transparent; color:var(--pd-muted); cursor:pointer; height:34px;
+  display:none; align-items:center; gap:4px; padding:0 8px; border-radius:var(--pd-radius); font-family:var(--pd-font); }
+.sm-clear:hover { background:var(--pd-bg); color:var(--pd-ink); }
+.sm-clear.show { display:inline-flex; }
+
+/* ---- KPIs -------------------------------------------------------------- */
+.sm-kpis { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:18px; }
+.sm-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  box-shadow:var(--pd-shadow); padding:14px 16px; }
+.sm-kpi-val { font-size:26px; font-weight:800; line-height:1; }
+.sm-kpi-label { color:var(--pd-muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin-top:6px; }
+.sm-kpi.sm-manage .sm-kpi-val { color:var(--pd-red); }
+.sm-kpi.sm-satisfy .sm-kpi-val { color:#d97706; }
+
+/* ---- Table ------------------------------------------------------------- */
+.sm-table td .sm-sub { color:var(--pd-muted); font-size:12px; margin-top:2px;
+  max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:700; font-size:12px; color:#fff; white-space:nowrap; }
+.sm-lvl { display:inline-block; padding:1px 8px; border-radius:999px; font-weight:600; font-size:12px;
+  border:1px solid var(--pd-line); color:var(--pd-ink); }
+.sm-lvl.sm-l-High { background:rgba(220,38,38,.12); border-color:rgba(220,38,38,.4); }
+.sm-lvl.sm-l-Medium { background:rgba(217,119,6,.12); border-color:rgba(217,119,6,.4); }
+.sm-lvl.sm-l-Low { background:rgba(107,114,128,.12); }
+.sm-cat { display:inline-block; padding:1px 8px; border-radius:6px; font-size:12px; font-weight:600;
+  background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
+
+/* Strategy band colours — ONLY on pills and grid cells, never the KPI cards. */
+.sm-pill.sm-manage,  .sm-gcell.sm-manage  { background:#dc2626; }
+.sm-pill.sm-satisfy, .sm-gcell.sm-satisfy { background:#d97706; }
+.sm-pill.sm-inform,  .sm-gcell.sm-inform  { background:#2563eb; }
+.sm-pill.sm-monitor, .sm-gcell.sm-monitor { background:#6b7280; }
+
+/* ---- Influence / Interest grid (3×3 Power–Interest map) ---------------- */
+.sm-grid-wrap { overflow-x:auto; }
+.sm-grid { border-collapse:separate; border-spacing:6px; margin:6px auto; }
+.sm-grid th.sm-axis { color:var(--pd-muted); font-size:12px; font-weight:700; padding:4px; }
+.sm-grid th.sm-axis-y { writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; }
+.sm-gcell {
+  width:180px; height:120px; vertical-align:top; text-align:left; color:#fff;
+  border-radius:8px; padding:8px; cursor:pointer; transition:transform .06s ease, filter .12s;
+  border:2px solid transparent;
+}
+.sm-gcell:hover { filter:brightness(1.06); }
+.sm-gcell.sm-cell-active { outline:3px solid var(--pd-ink); outline-offset:-3px; }
+.sm-gcell-strat { font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:.03em; opacity:.95; }
+.sm-gcell-count { float:right; font-weight:800; font-size:12px; background:rgba(0,0,0,.18); border-radius:999px; padding:0 7px; }
+.sm-gchips { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+.sm-gchip { background:rgba(255,255,255,.22); border-radius:5px; padding:2px 6px; font-size:12px; font-weight:600;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-gchip.sm-more { background:transparent; font-weight:700; opacity:.9; }
+.sm-grid-empty { color:rgba(255,255,255,.7); font-size:12px; font-style:italic; margin-top:4px; }
+
+/* Legend */
+.sm-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:14px; }
+.sm-leg { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); }
+.sm-leg-sw { width:14px; height:14px; border-radius:4px; flex:none; }
+
+@media (max-width:700px) { .sm-kpis { grid-template-columns:repeat(2,1fr); } .sm-gcell { width:120px; height:104px; } }

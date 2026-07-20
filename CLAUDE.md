@@ -77,6 +77,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-20 — Stakeholder Map built (Register + Power–Interest grid)
+- **Built `modules/stakeholder-map/`** (index.html + module.css + module.js), flipped
+  `enabled: true`. No external app to mirror ("base it on the suite") — built from the suite
+  conventions with **risk-register as the reference**, since a stakeholder Power–Interest grid is
+  the direct analog of risk-register's 5×5 matrix.
+- Two topbar views: **Register** (filterable table + KPIs + engagement-strategy pill) and
+  **Influence / Interest** (a 3×3 Power–Interest grid, rows = Influence High→Low, cols = Interest
+  Low→High, each cell colored by its engagement quadrant and holding the stakeholders that fall in
+  it; click a cell to jump to the filtered register). Add/Edit modal derives the **Strategy** live.
+- **Strategy is DERIVED, never stored** (pure function of influence × interest) — same pattern as
+  risk-register's rating / issues-lessons' aging, minus the storage. The `engagement` column stays
+  free-text notes. **Documented threshold:** "high side" = the **High** band only (Medium is
+  not-high), so only genuinely high-power/high-interest stakeholders land in the demanding
+  quadrants. Manage Closely (High·High) · Keep Satisfied (High infl.) · Keep Informed (High int.) ·
+  Monitor.
+- **No migration** — uses the `stakeholder_map` starter columns as-is (name, organization,
+  role_title, category, influence, interest, contact, engagement). No storage bucket. No shared
+  asset changed (module-local files + the `config.js` enabled flag), so **no `?v` bump**.
+- **Browser-verified** with a stubbed harness (real module.js + module.css, mutable in-memory
+  store, DOM inspection — screenshots still stall in this env): KPIs (7 / Manage 2 / Satisfy 1 /
+  High-infl 3), strategy derivation, all 7 seed stakeholders placed in the correct grid cells
+  (sum = 7), cell-click→filter (High·High → 2 rows), search, Clear-toggle, add/save round-trip
+  (`created_by` stamped, strategy NOT persisted as a column), no page h-scroll in either view, and
+  dark-mode card surfaces on tokens with semantic strategy colors held fixed. No console errors.
+
 ### 2026-07-20 — Fix: the two new modules' top bars weren't uniform (missing shared chrome)
 - User reported the Material Submittal and Contracts & Claims top bars didn't match the rest of the
   suite, specifically the buttons beside the profile icon. **Same defect as the 2026-07-17 Progress
