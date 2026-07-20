@@ -287,10 +287,11 @@ begin
     execute format('create policy %I on storage.objects for delete using (bucket_id = %L and (owner = auth.uid() or is_admin()))', b||'_del', b);
   end loop;
 end $$;
--- NOTE: material-submittal's DELETE policy is widened to is_planner() further down
--- (see "Storage: planner deletes"). It CANNOT be done here — is_planner() is not
--- defined until later in this file, and a policy's USING expression is parsed at
--- creation time, so referencing it here would fail on a fresh run.
+-- NOTE: the DELETE policy above is superseded for ALL THREE buckets further down
+-- (see "Storage: planner deletes"), widening it to is_planner(). It CANNOT be done
+-- here — is_planner() is not defined until later in this file, and a policy's
+-- USING expression is parsed at creation time, so referencing it here would fail
+-- on a fresh run.
 
 -- ───────────────────────── Demo project + sample data ─────────────────────────
 -- A sandbox so developers have a project to select and data to see immediately.
@@ -354,17 +355,23 @@ drop policy if exists workspaces_write on workspaces;
 create policy workspaces_write on workspaces for all using (is_planner()) with check (is_planner());
 grant select, insert, update, delete on workspaces to authenticated;
 
--- ───────────────────── Storage: planner deletes (material-submittal) ─────────
+-- ───────────────────── Storage: planner deletes (all module buckets) ─────────
 -- Must sit AFTER is_planner() is defined above (a policy's USING expression is
--- parsed at creation). Supersedes the owner-or-admin rule set in the storage
--- section earlier in this file, for this bucket only.
--- The `owner = auth.uid()` branch is kept on purpose: the bucket's INSERT policy
+-- parsed at creation). Supersedes the owner-or-admin delete rule set in the
+-- storage section earlier in this file.
+-- The `owner = auth.uid()` branch is kept on purpose: the buckets' INSERT policy
 -- is is_approved(), so any approved user can upload — dropping it would remove
 -- their ability to delete their OWN file. is_planner() already includes admins.
--- See migrations/2026-07-20-material-submittal-storage-delete.sql.
-drop policy if exists "material-submittal_del" on storage.objects;
-create policy "material-submittal_del" on storage.objects for delete
-  using (bucket_id = 'material-submittal' and (owner = auth.uid() or is_planner()));
+-- See migrations/2026-07-20-material-submittal-storage-delete.sql and
+--     migrations/2026-07-20-storage-planner-delete-all-buckets.sql.
+do $$
+declare b text;
+begin
+  foreach b in array array['drawing-register','progress-photos','material-submittal'] loop
+    execute format('drop policy if exists %I on storage.objects', b||'_del');
+    execute format('create policy %I on storage.objects for delete using (bucket_id = %L and (owner = auth.uid() or is_planner()))', b||'_del', b);
+  end loop;
+end $$;
 drop policy if exists projects_admin_write on projects;
 -- Per-command, never `for all`: `for all` covers SELECT too, which would OR with
 -- projects_read and let planners see unassigned projects. Insert stays unfiltered

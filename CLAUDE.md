@@ -77,6 +77,48 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-20 — Contracts & Claims Register built (Contract · Claims/CO · Extension of Time)
+- **Built `modules/contracts-claims/`** (index.html + module.css + module.js), flipped
+  `enabled: true`, from the Power Apps "Contracts & Claims Register" screenshots. Three tabs as
+  specified.
+- **Key insight: two of the three screens are the same screen.** Claims/CO and EOT are both a
+  four-stage pipeline (*Estimated → Submitted → Evaluated → Client Approved*) with a status, a
+  derived aging figure and a project roll-up banner — differing only in **unit** (money vs calendar
+  days). Both run off one `VIEWS` config and one renderer. Contract is the odd one out: a flat
+  description + amount list, no pipeline, no status.
+- **Migration `migrations/2026-07-20-contracts-claims-full.sql` (user must run).** ⚠️ Money and days
+  are **separate column sets**, not one generic value + unit discriminator — they're never mixed in a
+  view, and separate columns make it impossible to sum pesos and calendar days into one total. Saving
+  nulls the pipeline that doesn't belong to the chosen type, so re-typing a record can't leave stale
+  pesos on an EOT.
+- **Aging and recovery are derived, never stored.** Aging = today − date_submitted, shown only while
+  Pending (a stored aging is wrong the next day); UTC maths so DST can't shift it. ⚠️ **Recovery rate
+  is measured over DECIDED records only** (Approved + Disapproved) — dividing by everything submitted
+  counts still-pending claims as failures, which on the real fixture read as a catastrophic **0.2%**
+  where the honest figure is **85.0% of 1 decided record**. Caught during browser verification.
+- **Verified 43/43 against the screenshots' own printed roll-ups**, loading the shipped module:
+  Hotel 101's EOT banner matches **exactly** (1,048 / 1,095 / 882 / 314) and three of Avesta's four
+  claim totals match exactly. Avesta's *estimated* is 387,716,248 vs their printed 387,716,249 — a
+  1-peso **display-rounding artefact in their sheet** (cents stored, rounded per cell, then summed),
+  asserted explicitly in the test so nobody later "fixes" our arithmetic to match it.
+- Browser-verified: app-matching headers, roll-up banner, aging showing **17** on the one Pending EOT
+  exactly as the screenshot, type-adaptive Add form (money↔days↔contract), a saved record following
+  its type to the right tab instead of vanishing, filters/bulk, dark mode on tokens, and the wide
+  table scrolling inside its card with no page h-scroll. No console errors.
+- Scoped to the topbar project per contract §6 — the app's cross-project "Overview" screen belongs in
+  `portfolio-overview`, not here. No shared asset changed, so **no `?v` bump**.
+
+### 2026-07-20 — Storage: widen DELETE to planners on the remaining two buckets
+- `migrations/2026-07-20-storage-planner-delete-all-buckets.sql` (**user must run**) applies the same
+  widening already done for material-submittal to **`drawing-register`** and **`progress-photos`**.
+  All three module buckets now share one delete rule: `owner = auth.uid() or is_planner()`.
+- A **new file** rather than editing the earlier migration — that one has already been run, and
+  applied migrations should stay immutable so "what ran" is unambiguous.
+- Same reasoning as before: the `owner` branch is kept because both buckets' INSERT policy is
+  `is_approved()`, so any approved user can upload; dropping it would remove their ability to delete
+  their own file. `supabase-setup.sql`'s override now covers all three buckets in one loop (still
+  placed **after** `is_planner()` is defined — a policy's USING expression is parsed at creation).
+
 ### 2026-07-20 — Storage: widen the material-submittal bucket's DELETE policy to planners
 - Migration `migrations/2026-07-20-material-submittal-storage-delete.sql` (**user must run**).
   The 2026-06-18 storage migration gave all three buckets

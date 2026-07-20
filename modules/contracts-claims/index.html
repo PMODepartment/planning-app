@@ -6,32 +6,74 @@
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260720b"></script>
-  <title>contracts-claims · Planners Dashboard</title>
+  <title>Contracts &amp; Claims Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260720b" />
+  <link rel="stylesheet" href="module.css?v=20260720b" />
 </head>
 <body>
   <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Module</small></div>
-      <nav><a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a></nav>
-    </aside>
+    <!-- Sidebar-less shell (matches Drawing Register / Material Submittal / Cash Flow). -->
     <div class="pd-content">
-      <div class="pd-topbar"><h1>contracts-claims</h1><div id="user-bar"></div></div>
-      <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>contracts-claims</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code>.</p>
+      <div class="pd-topbar">
+        <a class="pd-btn cc-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
+        <h1 class="cc-title" style="margin:0;"><span class="cc-title-ico" data-ico="contract" data-ico-size="20"></span> <span class="cc-title-txt">Contracts &amp; Claims</span></h1>
+        <div class="cc-projctx">
+          <select class="pd-select cc-project" id="cc-project" title="Project"></select>
         </div>
+        <div class="cc-tabs" role="tablist">
+          <button class="cc-tab active" data-view="contract">Contract</button>
+          <button class="cc-tab" data-view="claims">Claims / Change Order</button>
+          <button class="cc-tab" data-view="eot">Extension of Time</button>
+        </div>
+        <div class="cc-topbar-tools" id="cc-topbar-tools">
+          <button class="pd-btn cc-tb-labeled pd-btn-primary" id="cc-add" title="Add a record">+ Add</button>
+          <span class="cc-tb-sep"></span>
+          <button class="pd-btn" id="cc-export" title="Export to Excel"><span data-ico="download" data-ico-size="16"></span></button>
+          <button class="pd-btn" id="cc-print" title="Print / PDF"><span data-ico="printer" data-ico-size="16"></span></button>
+          <button class="pd-btn cc-clearbtn" id="cc-clear" title="Clear all records for this project" style="display:none;"><span data-ico="trash" data-ico-size="16"></span></button>
+        </div>
+        <div id="user-bar"></div>
+      </div>
+
+      <div class="pd-main">
+        <!-- Filter bar. The date-window controls mirror the Power Apps screens: you
+             pick WHICH status date to filter on, then a start/end window. -->
+        <div class="cc-filters" id="cc-filters">
+          <span class="cc-filt-ico" data-ico="filter" data-ico-size="15"></span>
+          <input class="pd-input cc-search" id="cc-f-search" placeholder="Search description, reference, counterparty…" />
+          <select class="pd-select" id="cc-f-type"><option value="">All Claim/CO</option></select>
+          <select class="pd-select" id="cc-f-status"><option value="">All statuses</option></select>
+          <select class="pd-select" id="cc-f-datefield" title="Which date the window below filters on">
+            <option value="">Date filter: none</option>
+            <option value="date_submitted">Submitted date</option>
+            <option value="date_evaluated">Evaluated date</option>
+            <option value="date_approved">Approved date</option>
+            <option value="date_filed">Filed date</option>
+          </select>
+          <input class="pd-input cc-date" id="cc-f-from" type="date" title="From" />
+          <input class="pd-input cc-date" id="cc-f-to" type="date" title="To" />
+          <button class="cc-clearfilt" id="cc-f-clear" title="Clear all filters" hidden><span data-ico="x" data-ico-size="13"></span> Clear</button>
+          <span class="cc-count" id="cc-count"></span>
+        </div>
+
+        <div id="cc-view"></div>
       </div>
     </div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="../../assets/js/config.js?v=20260720b"></script>
   <script src="../../assets/js/auth.js?v=20260720b"></script>
   <script src="../../assets/js/db.js?v=20260720b"></script>
   <script src="../../assets/js/ui.js?v=20260720b"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+  <script src="../../assets/js/icons.js?v=20260720b"></script>
+  <script src="module.js?v=20260720b"></script>
+  <script>
+    AppAuth.requireLogin(function (user, profile) {
+      UI.renderUserBar(profile);
+      ContractsClaims.init(user, profile);
+    });
+  </script>
 </body>
 </html>
