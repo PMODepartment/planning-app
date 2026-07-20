@@ -8,6 +8,348 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Duration model: baseline-locked planned, live actual, independent remaining, at-completion (2026-07-17b) — jasantos2 / eprobles
+- **Planned (original) duration = BASELINE span** (`_origDurOf` prefers BL finish − BL start + 1), else the
+  current span, else duration_days. **Locked/read-only when a baseline exists** — grid DUR cell drops
+  `ps-editable`, detail shows `_gro` "baseline (locked)" instead of the editable `_gfPdur`. New `_durLocked`.
+- **Actual Duration is computed LIVE** = data date − actual start (or actual finish − start once done) via
+  `actualDurLive`; the detail field is now read-only (was an editable stored number), so it tracks the
+  data date. Actualize today → actual 0; data date next week → actual = 7.
+- **Remaining Duration is independent**: on start (`_fcFields` / actualize) it seeds to the **full planned
+  (baseline) duration** (so "actualized today → remaining = planned"), then only changes on explicit edit
+  (no auto-reduction as the data date advances).
+- **At Completion = actual duration + remaining duration** (`_atCompletion`; = planned duration when not
+  started). Verified: baseline 10 → actualized today {actual 0, rem 10, AC 10}; data date +7 {actual 7,
+  rem 10, AC 17}; planned = baseline 10 (not current-span 20). Parses clean.
+
+## Fix: CPM successors now follow the in-progress forecast finish (2026-07-17) — jasantos2 / eprobles
+- **Bug:** an FS successor (e.g. Milestone 2) didn't move to follow its in-progress predecessor's
+  forecast finish on Schedule. Cause: `cpmLogic` set a started activity's `_ef = es + scheduled span`,
+  ignoring Remaining Duration — so the predecessor's early finish used its original span (later than the
+  displayed forecast) and the successor clung to that.
+- **Fix (retained logic):** for a started, not-finished activity with a Remaining Duration, `_ef` is now
+  `max(es, dataDate) + remaining` (exclusive) — the forecast finish that the grid/Gantt already show —
+  so successors reschedule off the forecast. Milestones stay 0-duration. Verified: Activity 2 forecast
+  Sep-3 → Milestone 2 schedules to Sep-4 (was stuck at Sep-7). Parses clean.
+
+## Progress-view No. col + centering + per-cell formatting; grid renames + cell format; Gantt header fix (2026-07-16z) — jasantos2 / eprobles
+- **Activity Progress view:** added a **No.** column (running activity number; default first). **All
+  headers centered**; **Planned Value % / Activity % Complete cells centered** (`.ps-prog-ctr`).
+  Renamed columns to **Planned Value %** / **Activity % Complete**.
+- **Per-cell manual formatting** (both views): new store `ps_cellfmt` = {pid:{rowId:{col:{b,i,sz,fg,bg}}}}
+  + `openCellFmt` popover (Bold / Italic / Size / Text colour / Fill / Clear). Progress cells:
+  right-click. Grid cells: right-click → **Format cell…** in the row menu. Applied on render
+  (`_cellFmtStyleAttr` inline for Progress; `applyCellFmtGrid` post-paint for the virtualized grid,
+  keyed by data-id + data-field).
+- **Grid column renames:** `Planned Value POC` → **Planned Value %**, `Physical % Complete` →
+  **Activity % Complete** (GRID_COLS).
+- **Fix — Gantt date header vanished when the details panel was unchecked:** `syncHeadHeights` set the
+  Gantt header to the grid header's measured height, which could read 0 mid-relayout after the toggle.
+  Now floored to the natural header height (68px with the column-filter row, else 38px) and re-synced on
+  the next frame after `applyLayout`.
+- Parses clean; served-file check passed.
+
+## Specific Description → remarks (always saves) + remove Notebook/Files tabs (2026-07-16y) — jasantos2 / eprobles
+- **Specific Description now persists reliably** — stored in the existing `remarks` column (a real
+  project_schedule column) instead of the un-migrated `specific_description`, so it always saves with no
+  "run the pending migration" toast. The Progress-view desc cell + wiring now use `remarks`; the General
+  detail "Notes/Remarks" field is relabeled **Specific Description** (same `remarks` field), so the two
+  views stay in sync. Deleted the unused `2026-07-16-activity-specific-description.sql` migration.
+- **Removed the Notebook and Files detail tabs** (buttons + render cases) — they wrote to un-migrated
+  `notebook`/`files` columns and surfaced the tolerant-write migration warning. (`detNotebook`/`detFiles`
+  left in as dead code, no longer reachable.)
+- Parses clean; no console errors.
+
+## Activity Progress view — resizable rows + columns (bars scale) (2026-07-16x) — jasantos2 / eprobles
+- **Column width resize** (Progress view only): drag a header's right edge (`.ps-prog-colres`) → per-column
+  width persisted to `ps_progcolw`; table is `table-layout:fixed`. The resizer suppresses the header's
+  drag-reorder (`th.draggable=false` during the drag).
+- **Row height resize**: drag any row's bottom edge (`.ps-prog-rowres`) → **uniform** row height (`--prog-rh`,
+  persisted `ps_progrh`, clamped 22–200). The dual bar tracks are sized `calc((--prog-rh − 16)/2)`, so bars
+  **scale with row height**. Default 38px.
+- **Scoped to the Progress view** — the Gantt/grid `ROWH` is unchanged (Gantt rows not resizable).
+- Parses clean; served-file check confirms colres/rowres/bar-scale present and Gantt ROWH untouched.
+
+## Progress view revisions + Megawide WBS colors (2026-07-16w) — jasantos2 / eprobles
+- **Dual progress bars:** the Progress column now shows two bars — **P** (grey = Planned POC) over **A**
+  (red = Actual/Physical %), each with its %.
+- **Configurable column order:** default **ID · Activity Name · Specific Description · Progress · Planned
+  POC · Physical %**; headers are **drag-to-reorder**, persisted to `ps_progcols` (`progColOrder` +
+  `PROG_DEF`/`_progCell` render columns from the order array).
+- **WBS rows match the grid scheme** in the Progress table (same `--wl` level palette, red left accent).
+- **WBS colors → Megawide black/grey/red:** `.ps-wl0…5` re-tinted to a greyscale gradient (main WBS
+  darkest → deepest lightest) with **red / dark-red / black** left accents (light + dark), replacing the
+  blue tint. Same palette mirrored onto `.ps-prog-table .ps-wl*`.
+- Parses clean; served-file feature check passed.
+
+## Physical % gate, WBS Duration roll-up + shades, Activity Progress view (2026-07-16v) — jasantos2 / eprobles
+- **Physical % Complete edit gate:** editing `percent_complete` now requires an **Actual Start** (toast
+  otherwise) and is forced to **100%** when the activity is complete — enforced in the grid `beginEdit`,
+  the Status-tab `wireEditFields`, and the new Progress view.
+- **WBS Duration % Complete roll-up:** `_costMap` now accumulates `wdur` (Σ original duration) and
+  `wdurE` (Σ origDur × durPct/100); WBS `c-durpct` cell shows `wdurE/wdur` (duration-weighted). Verified
+  33% for od 10@50% + od 20@25%.
+- **WBS level shading:** `.ps-wl0…5` re-tinted to clearly distinct stepped blue-grays (main WBS darkest
+  → deepest sub-WBS lightest) with a per-level left accent bar; matching stepped dark-mode palette.
+- **Activity Progress view** (new): toolbar **Progress** toggle (`ps-progressbtn` → `.ps-progress-mode`
+  hides the split/network/legend, shows `#ps-progress`). Dateless table — **ID · Activity Name ·
+  Progress bar (fill = Physical %, line marker = Planned Value POC) · Physical % (editable, gated) ·
+  Planned POC · Specific Description (editable)**. WBS rows show the duration-weighted roll-ups and level
+  shade. New `specific_description` text column — migration
+  `migrations/2026-07-16-activity-specific-description.sql` (**user must run**); saved tolerantly via
+  `_saveActField` so it works pre-migration. `renderProgressView` hooked into `renderAll` when active.
+- Parses clean; served-file feature check + roll-up math verified.
+
+## Duration % Complete edit gate: started-only, complete=100% (2026-07-16u) — jasantos2 / eprobles
+- **Duration % Complete is only editable once the activity is started** (has an Actual Start) — both the
+  grid `dpct` commit and the Status-tab `dpct` handler reject the edit with a toast when `actual_start`
+  is missing, and block editing when the activity is complete (it's fixed at 100%). `_durPct` already
+  returns 100 for a completed activity (Actual Finish / status Completed). Parses clean.
+
+## Duration % Complete grid column — editable (2026-07-16t) — jasantos2 / eprobles
+- Added a **Duration % Complete** column to the activities grid (after Physical % Complete). New
+  `['durpct','Duration % Complete','c-durpct']` in GRID_COLS, `--c-durpct` width + `.c-durpct` CSS, cell
+  in all three `costCellsHtml` branches (value on tasks; blank on WBS/group, no duration-% roll-up).
+- **Editable** (double-click) via a new `dpct` type in the grid `beginEdit` — sets **Remaining Duration**
+  = original × (1 − %), leaving Physical % Complete untouched (same behavior as the Status-tab field).
+  Verified: 40% on a 20-day original → remaining 12 → reads back 40%. Parses clean.
+
+## Fix: negative lag merged into hyphenated activity ID on drag-to-link (2026-07-16s) — jasantos2 / eprobles
+- **Bug:** linking with a negative lag via drag-to-link stored e.g. `2-A1010-15` (id merged, lag 0)
+  instead of `2-A1010 FS-15`. Cause: `commitLink` appended the lag with **no separator** when the type
+  was FS, and since activity IDs contain hyphens the parser's ID group swallowed the `-15`.
+- **Fix:** `commitLink` now emits the type token (`FS`) as a separator whenever there's a type **or** a
+  lag — matching `serializeRels`/`addPred` which were already correct. Verified: `2-A1010 FS-15` →
+  id `2-A1010`, lag −15. (Existing bad predecessors must be removed + re-added.) Parses clean.
+
+## Negative lag (lead) — confirmed supported + link-chooser hint (2026-07-16r) — jasantos2 / eprobles
+- **Negative lag was already honored end-to-end**: all lag inputs (Add modal `#ps-pred-lag`,
+  Relationships `#ps-rel-lag`, drag-to-link chooser) are unbounded number fields; `predRels` parses the
+  sign; `relCandidateES` FS = `p._ef + lag` (SS/FF/SF likewise), so a negative lag pulls the successor's
+  early start before the predecessor's finish (verified: A ef=10, B `FS-3` → es=7, overlap).
+- Added the **"negative = lead/overlap"** hint + `title` to the drag-to-link chooser lag input (the
+  other two lag inputs already had it). Applied on **Schedule** (CPM reschedule); the data-date floor
+  still prevents scheduling an unstarted start before the data date. Parses clean.
+
+## Baseline (planned) milestone marker in the Gantt (2026-07-16q) — jasantos2 / eprobles
+- Milestones now show a **baseline/planned diamond** like activity bars show a baseline bar. New
+  `.ps-mile-bl` (hollow diamond in the baseline colour) drawn at the milestone's baseline date —
+  `bl_finish` for a Finish Milestone, `bl_start` otherwise — when `_gset.baseline` is on. It sits above
+  the current (solid) diamond, which drops to `top+15·oY` when a baseline is present (baseline-above/
+  current-below, matching the bars). No baseline → current diamond stays centered. Parses clean.
+
+## Milestone types reduced to Start/Finish + point-event logic (2026-07-16p) — jasantos2 / eprobles
+- **Removed the generic "Milestone" type** from all dropdowns (Add/Edit modal, General detail, Filter)
+  — only **Start Milestone** / **Finish Milestone** remain. Legacy `Milestone` rows still read as
+  milestones (isMile keeps it) so old data isn't broken.
+- **Point-event logic:** milestones are zero-duration single-date events. `_origDurOf` returns 0 for
+  any milestone. New `_dateEditPatch` milestone branch: editing the planned date sets **start_date =
+  end_date** (single point); setting an actual date **achieves** the milestone (both actuals = the
+  point, Completed/100%/0 remaining); clearing reopens it. Gantt anchors a **Finish Milestone on the
+  finish**, a Start Milestone on the start.
+- **Imports classify correctly:** XER uses `task_type` (`TT_FinMile` → Finish Milestone, else Start
+  Milestone); the Excel importer maps finish-only 0-day rows → Finish Milestone, else Start Milestone.
+- Verified: start/finish date edits sync both dates, actualizing completes the milestone, legacy
+  Milestone still recognized. Parses clean.
+
+## Start/Finish milestone types + no-predecessor milestone rides the data date (2026-07-16o) — jasantos2 / eprobles
+- **Two milestone classifications:** added **Start Milestone** and **Finish Milestone** to the type
+  dropdowns (Add/Edit modal `#ps-f-type-sel` + General detail). `isMile` recognizes both; new
+  `isFinishMile`. In the Gantt a **Finish Milestone anchors on the finish date** (`e`), a Start
+  Milestone / generic Milestone on the start (`s`).
+- **No-predecessor milestone follows the data date:** in `shiftUnstartedToDataDate`, an unstarted
+  milestone with **no predecessor** (nothing drives its date) now snaps **exactly to the data date**
+  in either direction (a "you are here" start/finish anchor). Milestones that DO have a predecessor are
+  left alone (they follow the predecessor via CPM). This runs on **Schedule** (with Retained Logic +
+  Use-actual-dates on, the defaults), so hitting the data date + Schedule moves the milestone.
+- Verified: no-pred milestone at Aug-12 or Sep-05 → snaps to data date Aug-18; with-predecessor
+  milestone → not snapped; both new types read as milestones. Parses clean.
+
+## Fix: actualizing a future start collapsed the finish to the start (2026-07-16n) — jasantos2 / eprobles
+- **Bug:** actualizing a start that falls AFTER the data date made the finish equal the start. Cause:
+  `forecastFin` scheduled remaining work from `today()` (data date), so `data date + remaining − 1`
+  landed before the (future) actual start and the `if (f<as) f=as` guard clamped it to the start.
+- **Fix:** remaining work is now scheduled from **max(data date, actual start)**, so a future actual
+  start forecasts (actual start + remaining − 1) and retains its duration. Verified: actual start
+  Sep-3 + remaining 8 (data date Aug-18) → finish Sep-10 (was Sep-3). Parses clean.
+
+## Bar-border color + fix Actualize Start missing from context menu (2026-07-16m) — jasantos2 / eprobles
+- **Bar border editing:** added a **Bar border** color to the Colors menu (`--ps-bar-bd`, default
+  transparent). `.ps-bar` now has `border: var(--ps-bar-bw,1.5px) solid var(--ps-bar-bd,transparent)`
+  with `box-sizing:border-box` (no size change); persists per project, clears on Reset to brand.
+- **Fix: Actualize Start was missing** from the right-click menu. When the Start cell was rebound to
+  `start_date` (scheduled) until actualized (prompt 16k), the menu's `showStart` still only matched
+  `actual_start`, so right-clicking a not-started Start cell hid the Start actions (Finish still showed).
+  `showStart` now also matches `start_date`. Parses clean.
+
+## Fix: negative CPM duration corrupted successor scheduling (2026-07-16l) — jasantos2 / eprobles
+- **Bug:** a successor (e.g. "Signing of Contract", FS pred = "Contract Final review") scheduled far
+  too early. Root cause: `cpmLogic` set `t._dur = (end_date − start_date)/day + 1`, so an activity with
+  an inconsistent **end_date before its start_date** got a **negative** `_dur` (−66 in the repro) →
+  its early finish landed before its start → the FS successor's early start (= predecessor finish) was
+  pulled way back.
+- **Fix:** `_dur` is now clamped — milestones = 0, everything else `Math.max(1, span)` (falls back to
+  `duration_days`, then 1) — so inconsistent dates can never make it negative. After this, running
+  **Schedule** pushes the successor to follow its predecessor correctly.
+- Note: successor dates apply on **Schedule** (CPM reschedule, like P6's F9), not automatically on each
+  edit. Also fix the source row whose finish precedes its start (edit its Finish/Duration). Parses clean.
+
+## Interactive Start/Finish/Duration + WBS baseline roll-up dates (2026-07-16k) — jasantos2 / eprobles
+- **Planned Duration is now the interactive span** = (scheduled finish − effective start + 1);
+  `_origDurOf` derives it from `dispStart`/`end_date` (not the forecast, so no loop with Remaining/%).
+  Editing the **scheduled Start** keeps the Finish and adjusts the duration; editing the **Finish**
+  (not-started) keeps the Start and adjusts the duration; editing the **Duration** keeps the start and
+  moves the Finish (`_pdurPatch`). Verified: 10 → edit finish 15 → edit start 13 → edit dur 8 (finish
+  moves).
+- **Start cell binds to `start_date` (scheduled) until actualized**, then to `actual_start`. So a
+  not-yet-actual start is a plain scheduling edit; the right-click **Actualize** converts it to actual
+  and **retains the planned duration** (the span is preserved because the finish is unchanged and the
+  actual start equals the scheduled start). Verified retained (8 stays 8 after actualize).
+- **In-progress Finish edit drives the forecast:** once started, the Finish cell shows the forecast, so
+  editing it sets **Remaining Duration** (forecast = data date + remaining − 1) and leaves the planned
+  finish intact — Remaining Duration ↔ Duration % Complete remain the linked schedule pair.
+- **WBS baseline roll-up dates now display:** the BL Start / BL Finish cells on WBS summary rows were
+  blank; they now show the rolled-up baseline span via `wbsBlSpan` (`_blSpanMap`).
+- Parses clean; no console errors.
+
+## Fix: relationship lines render backwards on finish-before-start rows (2026-07-16j) — jasantos2 / eprobles
+- **Bug:** an activity with a stored `end_date` earlier than its `start_date` (inconsistent/legacy data)
+  drew its bar and its dependency arrows **backwards** (finish anchored left of the start). Reported as
+  a "relationship lines bug" (e.g. row with Start Sep-14 / Finish Jul-9).
+- **Fix:** `dispFin` now clamps the DISPLAYED finish to be ≥ `dispStart` (stored values untouched), so
+  bars and relationship arrows can never render backwards regardless of inconsistent stored dates.
+  Verified: start Sep-14 / end_date Jul-9 → displayed finish Sep-14 (not backwards). Parses clean.
+  (Underlying data still has the reversed pair; editing that activity's Finish/Duration corrects it.)
+
+## Fix: Actualize records the cell's date, not the data date (2026-07-16i) — jasantos2 / eprobles
+- **Bug:** Actualize Start/Finish always reverted to the data date. Cause: `actualizeDates` capped the
+  date to the data date and routed through `_dateEditPatch`, which rejects dates after the data date.
+- **Fix:** it now builds the patch directly from the displayed cell date (`dispStart`/`dispFin`) with no
+  capping — records exactly what's in the Start/Finish cell (future dates included). Only guard kept:
+  a finish can't precede its start. Verified: future Sep-10 start / Sep-20 finish record as-is (were
+  reverting to Aug-14). Parses clean.
+
+## Actualize via right-click context menu (multi-row) (2026-07-16h) — jasantos2 / eprobles
+- **Replaced the Actualize Start/Finish buttons with right-click context-menu actions.** Right-clicking
+  a grid cell now offers **Actualize Start / Un-actualize Start / Actualize Finish / Un-actualize
+  Finish**, and they operate on **all selected activity rows** (Ctrl/Shift-select then right-click).
+  Context-aware: right-clicking a Start cell shows only Start actions, a Finish cell only Finish
+  actions, any other cell shows both. New `actualizeDates(ids, which, on)` loops the target rows and
+  reuses `_dateEditPatch` / `_statusPatch` (Actualize Start → In Progress; Actualize Finish → Completed
+  w/ Physical %100 & Remaining 0; Un-actualize clears the actual date). Buttons + `.ps-actualize`
+  wiring removed from the detail panel; a one-line hint points to the right-click. Parses clean.
+
+## Editable Duration % Complete + wider Gantt range (2026-07-16g) — jasantos2 / eprobles
+- **Duration % Complete is now an editable input** (Status detail), not just a derived readout. Editing
+  it back-computes **Remaining Duration = original × (1 − p/100)** — a schedule-side input — and never
+  touches Physical % Complete (`_gfDpct` + a `dpct` handler in `wireEditFields`). Verified: 25% on a
+  20-day original → remaining 15.
+- **Gantt timeline extended + scrollable:** `range()` padding widened from −14/+62 days to **2 years
+  before the earliest** activity and **3 years after the latest** (−730 / +1095 days), so the planner
+  can scroll into the deep past/future. Verified the bounds (earliest Aug-2026 → Aug-2024; latest
+  Jan-2027 → Jan-2030). Parses clean.
+
+## Actualize Start / Finish buttons (2026-07-16f) — jasantos2 / eprobles
+- Added **Actualize Start** and **Actualize Finish** buttons in the Status detail's Dates group. They
+  convert the scheduled date into a recorded actual: **Actualize Start** sets `actual_start` to the
+  scheduled start (capped at the data date) and marks In Progress; **Actualize Finish** sets
+  `actual_finish` to the scheduled finish (capped at the data date), defaulting an Actual Start if
+  missing, and completes the activity (Physical % = 100, Remaining = 0) via `_statusPatch`. Each button
+  disables once that date is already actual. Wired in `wireEditFields`; verified (future scheduled
+  dates cap to the data date; finish path completes correctly). Parses clean.
+
+## Physical % Complete vs schedule separation — project-controls policy (2026-07-16e) — jasantos2 / eprobles
+- Adopted the professional project-controls rule: **Physical % Complete is the primary, official
+  accomplishment measure** (reporting / EVM / dashboards / S-curve / completion) and the **scheduling
+  engine is independent of it** — forecast dates come from Actual Start + Remaining Duration (+
+  calendars / constraints / relationships).
+- **Mapping:** Physical % Complete = `percent_complete` (the field already wired into every consumer)
+  — relabeled "Duration POC" → **"Physical % Complete"** in the grid column and the Status detail.
+  `ev_poc` stays as the secondary "Earned Value POC". Added a read-only **Duration % Complete**
+  (derived = (original − remaining) / original) as a pure schedule metric.
+- **Decoupled both directions:**
+  - Editing **Physical % Complete no longer modifies Remaining Duration or forecast dates** — removed
+    the `_progressFields` call and the "enter Actual Start before %" gate from both the grid `beginEdit`
+    and the detail `wireEditFields`; `_progressFields` deleted. Editing the % now just stores the value.
+  - Editing **Remaining Duration drives the forecast** (via `forecastFin`) and does **not** change
+    Physical %. `_fcFields` no longer uses the % (remaining = original − elapsed, a schedule estimate).
+- **Completion is now driven by Status / Actual Finish, not by typing a %.** New `_statusPatch`:
+  Completed → records Actual Finish (default data date) + sets **Physical % = 100 and Remaining = 0**;
+  In Progress → clears Actual Finish, reseeds Remaining; Not Started → clears actuals + %, restores
+  Remaining to the original duration. Recording an **Actual Finish** likewise sets Physical % = 100 /
+  Remaining = 0 (in `_dateEditPatch`). The Finish field edits the **actual** finish when the activity
+  is complete (past date allowed) and the **scheduled** finish otherwise.
+- Verified end-to-end (standalone replica): Physical-%-edit leaves forecast+remaining untouched;
+  Remaining-edit moves the forecast with Physical % unchanged (Duration % derives to 80%); complete →
+  100 % / 0 remaining / actual finish set; un-complete → In Progress with finish cleared + remaining
+  restored. Script parses clean.
+- **Note (cross-module):** the S-Curve / Cash-Flow / Portfolio modules read `percent_complete`, which
+  is now the Physical % — so they automatically use the official accomplishment measure. No change
+  needed there; flagged for awareness.
+
+## Finish edit = scheduled finish (≥ data date); grid/detail Start-Finish now match (2026-07-16d) — jasantos2 / eprobles
+- **Finish date validation flipped.** The "Finish" is the scheduled/forecast finish, so it may be
+  **later** than the data date (a future finish) but **not earlier** than it (remaining work can't be
+  scheduled into the past). The grid Finish cell + detail Finish now edit `end_date` (was
+  `actual_finish`, which forced status=Completed and rejected any date after the data date). The
+  `end_date` branch of `_dateEditPatch` rejects finish-before-start and finish-before-data-date, sets
+  `duration_days` (keep start, move finish), and for an in-progress activity sets `remaining_duration`
+  so the forecast finish equals the entered date.
+- **Grid ⇄ detail Start/Finish now match.** The detail panel showed the raw (often blank) actual
+  fields while the grid showed `dispStart`/`dispFin`. New `_gfDate(label, field, showVal)` renders the
+  detail Start/Finish with the same `dispStart`/`dispFin` values and edits the same fields
+  (`actual_start` / `end_date`); the read-only General "Dates" Start now uses `dispStart` too.
+- Verified: future finish (Nov 30 vs Aug 14 data date) allowed (duration/remaining set, forecast =
+  entry); finish before data date and finish before start both rejected; script parses clean.
+
+## Editable Planned Duration + removed "P" date badge (2026-07-16c) — jasantos2 / eprobles
+- **Removed the "P" (planned, no-actual) badge** from the Start/Finish grid cells — noise. Now: **A**
+  when an actual is entered, **C** for a primary constraint on Start, nothing otherwise.
+- **Planned Duration is now editable** in both the activities grid (DUR column, double-click) and the
+  Status detail form. New pseudo-field `planned_duration` (type `pdur`) → `_pdurPatch` stores
+  `duration_days` and re-spans the current schedule from the start anchor (keeps start, moves finish);
+  the baseline is a snapshot and left untouched. `_origDurOf` reverted to prefer an explicit
+  `duration_days` (so the edited value is the display source), then BL span, then current span,
+  clamped ≥ 0. Wired in `beginEdit` (grid) and `wireEditFields` (detail).
+- Verified: the previously −21d activity now reads its BL span (8d); editing Planned Duration to 12
+  stores 12 and re-spans Aug 11 → Aug 22 (12d inclusive); script parses clean.
+
+## Removed Planned Start/Finish fields; BL-based planned duration; arrows on current bar (2026-07-16b) — jasantos2 / eprobles
+- **Removed the Planned Start / Planned Finish fields** (both the read-only General detail and the
+  editable Status form) — redundant with **BL Start / BL Finish**, which is now the plan basis. The
+  root cause of the residual negative Planned Duration was an inconsistent start_date/end_date pair
+  (planned start later than planned finish) left by an earlier edit; dropping those fields removes
+  the source. `start_date`/`end_date` still exist internally (current-schedule bar + CPM) and are set
+  via drag/import/actuals, just no longer hand-edited as "planned" dates.
+- **Planned Duration is now baseline-based** everywhere (DUR grid column + both detail views) via
+  `_origDurOf`, which now prefers the **BL span** (→ duration_days → current span) and is clamped
+  **≥ 0** — so it can never show negative again.
+- **Relationship arrows now connect to the current-schedule bar.** The connector endpoints were
+  anchored to a fixed row-offset (row-top + 16px) using the planned start/end x-span, so they ran
+  through the gap between the baseline bar and the current bar. They now use `dispStart`/`dispFin`
+  for the x-span and the actual current-bar vertical centre (recomputed with the same
+  baseline/no-baseline geometry as `ganttRowHTML`), so each arrow lands on the current bar itself.
+
+## Planned duration decoupled from actuals + retained-logic forecast (2026-07-16) — jasantos2 / eprobles
+- **Bug fixed: planned duration went negative** when an Actual Start earlier than the Planned
+  Start was entered. Root cause: the forecast finish was being written into `end_date` (which is
+  ALSO the planned finish), so an early actual start could push the planned finish before the
+  planned start → negative planned duration.
+- **Fix — planned start/finish/duration are now fully independent of actuals.** Entering an Actual
+  Start or a Duration POC no longer writes `end_date` or `duration_days`; it only stores
+  `actual_duration` + `remaining_duration`. `_fcFields`/`_progressFields`/`_dateEditPatch` no longer
+  touch the planned dates. Planned Duration everywhere (DUR grid column + detail) = planned finish −
+  planned start (inclusive), always ≥ 0.
+- **Forecast finish is now DISPLAY-ONLY (retained logic).** New `forecastFin(r)` = data date +
+  remaining_duration − 1 (not before the actual start), computed live; `dispFin(r)` = actual finish
+  → forecast (if started) → planned finish. Because it reads the data date live, the forecast finish
+  **slides forward as the data date moves while the remaining duration (from the Duration POC) is
+  retained** — planning-software retained logic on the Duration POC. Shown in the grid/Gantt Finish
+  and as a read-only "Forecast Finish" line in the Status detail. (EV POC still excluded from dates.)
+- Verified arithmetically: planned Jul10–Jul20 (dur 11) + actual start Jul5 + 40% POC → planned
+  duration stays **11** (was going negative), planned finish stays Jul20, forecast finish = **Jul22**
+  (data date Jul16 + remaining 7 − 1); module script parses clean.
+
 ## Forecast-on-actual-start, POC gate, Duration/EV POC split, dep lines behind bars (2026-07-14) — jasantos2 / eprobles
 - **Forecast flow when Actual Start is entered.** Entering an Actual Start on a started (not
   finished) activity now computes **actual duration = data date − actual start**, **remaining =

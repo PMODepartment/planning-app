@@ -255,7 +255,7 @@
     .ps-cols-corner .ps-cols-menu { right:0; left:auto; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-x:130px; }
+    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-x:130px; }
     /* Leading row-number (#) gutter + frozen Activity ID/Name columns: they stay put (and header/
        body stay aligned) while the rest of the grid scrolls. The "#" cell is DOM child 1 but not a
        data column, so column reorder (CSS `order`) must never move it — pin it with order:-1. Sticky
@@ -310,6 +310,7 @@
     .ps-status-inprogress { background:rgba(199,119,0,.14); color:var(--pd-warn); }
     .ps-status-completed { background:rgba(31,143,78,.14); color:var(--pd-ok); }
     .c-dur { width:var(--c-dur); justify-content:flex-end; } .c-pct { width:var(--c-pct); justify-content:flex-end; position:relative; }
+    .c-durpct { width:var(--c-durpct); justify-content:flex-end; }
     /* In-cell A/C date badges + % Complete progress bar (OPC-style readability) */
     .ps-dbadge { display:inline-block; font-size:8.5px; font-weight:700; line-height:1; padding:1px 3px; border-radius:3px; margin-left:4px; vertical-align:middle; background:var(--pd-line); color:var(--pd-muted); flex:none; }
     .ps-pctbar { position:absolute; left:0; bottom:0; height:3px; background:var(--pd-red); opacity:.5; pointer-events:none; }
@@ -341,26 +342,37 @@
     /* WBS depth shading (OPC-style): shallower summary levels are darker/heavier so the tree
        structure reads at a glance. --wl tints the row + its frozen cells; a left accent on the
        name cell reinforces depth without shifting layout (inset shadow, no border reflow). */
-    .ps-grid-pane .ps-wbs-row.ps-wl0 { --wl:#dfe1e5; }
-    .ps-grid-pane .ps-wbs-row.ps-wl1 { --wl:#e6e8ec; }
-    .ps-grid-pane .ps-wbs-row.ps-wl2 { --wl:#edeff2; }
-    .ps-grid-pane .ps-wbs-row.ps-wl3 { --wl:#f2f4f6; }
-    .ps-grid-pane .ps-wbs-row.ps-wl4 { --wl:#f6f7f9; }
-    .ps-grid-pane .ps-wbs-row.ps-wl5 { --wl:#fafbfc; }
-    .ps-grid-pane .ps-wbs-row.ps-wl0 > .c-name { box-shadow:inset 3px 0 0 var(--pd-red); }
-    .ps-grid-pane .ps-wbs-row.ps-wl1 > .c-name { box-shadow:inset 3px 0 0 var(--pd-red-mid); }
-    .ps-grid-pane .ps-wbs-row.ps-wl2 > .c-name { box-shadow:inset 2px 0 0 var(--pd-muted); }
+    /* WBS shading by level — Megawide greyscale (main WBS darkest grey → deepest sub-WBS lightest),
+       with red / dark-red / black left accents. */
+    .ps-grid-pane .ps-wbs-row.ps-wl0 { --wl:#c6c8ca; }
+    .ps-grid-pane .ps-wbs-row.ps-wl1 { --wl:#d2d4d6; }
+    .ps-grid-pane .ps-wbs-row.ps-wl2 { --wl:#dedfe1; }
+    .ps-grid-pane .ps-wbs-row.ps-wl3 { --wl:#e7e8ea; }
+    .ps-grid-pane .ps-wbs-row.ps-wl4 { --wl:#eff0f1; }
+    .ps-grid-pane .ps-wbs-row.ps-wl5 { --wl:#f5f6f7; }
+    .ps-grid-pane .ps-wbs-row.ps-wl0 > .c-name { box-shadow:inset 4px 0 0 #EE3124; }
+    .ps-grid-pane .ps-wbs-row.ps-wl1 > .c-name { box-shadow:inset 4px 0 0 #C42127; }
+    .ps-grid-pane .ps-wbs-row.ps-wl2 > .c-name { box-shadow:inset 3px 0 0 #231F20; }
+    .ps-grid-pane .ps-wbs-row.ps-wl3 > .c-name { box-shadow:inset 3px 0 0 #6f7276; }
+    .ps-grid-pane .ps-wbs-row.ps-wl4 > .c-name { box-shadow:inset 2px 0 0 #a7abae; }
+    .ps-grid-pane .ps-wbs-row.ps-wl5 > .c-name { box-shadow:inset 2px 0 0 #c9cdd0; }
     /* Dark-mode WBS shading — clearly stepped + brighter than the dark bg so the hierarchy reads. */
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl0 { --wl:#565b63; }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl1 { --wl:#4a4f57; }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl2 { --wl:#40444b; }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl3 { --wl:#373a41; }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl4 { --wl:#303338; }
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl5 { --wl:#2a2c31; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl0 { --wl:#4c4d4f; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl1 { --wl:#444547; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl2 { --wl:#3c3d3f; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl3 { --wl:#353638; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl4 { --wl:#2f3032; }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl5 { --wl:#2a2b2d; }
     /* Left accent on every level in dark (was only 0–2) so sub-WBS depth is visible. */
     html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl3 > .c-name { box-shadow:inset 2px 0 0 var(--pd-muted); }
     html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl4 > .c-name,
     html.pd-dark .ps-grid-pane .ps-wbs-row.ps-wl5 > .c-name { box-shadow:inset 2px 0 0 var(--pd-line); }
+    /* Same WBS-level shade palette for the Activity Progress table rows (match the grid/Gantt scheme). */
+    .ps-prog-table .ps-wl0 { --wl:#c6c8ca; } .ps-prog-table .ps-wl1 { --wl:#d2d4d6; } .ps-prog-table .ps-wl2 { --wl:#dedfe1; }
+    .ps-prog-table .ps-wl3 { --wl:#e7e8ea; } .ps-prog-table .ps-wl4 { --wl:#eff0f1; } .ps-prog-table .ps-wl5 { --wl:#f5f6f7; }
+    html.pd-dark .ps-prog-table .ps-wl0 { --wl:#4c4d4f; } html.pd-dark .ps-prog-table .ps-wl1 { --wl:#444547; } html.pd-dark .ps-prog-table .ps-wl2 { --wl:#3c3d3f; }
+    html.pd-dark .ps-prog-table .ps-wl3 { --wl:#353638; } html.pd-dark .ps-prog-table .ps-wl4 { --wl:#2f3032; } html.pd-dark .ps-prog-table .ps-wl5 { --wl:#2a2b2d; }
+    .ps-prog-table tr.ps-prog-wbs td:first-child { box-shadow:inset 4px 0 0 var(--pd-red); }
     .ps-toggle { cursor:pointer; width:16px; display:inline-flex; align-items:center; justify-content:center;
       color:var(--pd-muted); flex:none; }
     .ps-editable { cursor:text; } .ps-editable:hover { background:var(--pd-red-light); }
@@ -405,7 +417,7 @@
       font-weight:700; z-index:7; background:var(--pd-card); border:1px solid var(--ps-dd,var(--pd-red)); border-radius:3px;
       padding:1px 4px; line-height:1.2; white-space:nowrap; pointer-events:none; }
     .ps-bar { position:absolute; height:15px; border-radius:3px; background:var(--ps-bar); cursor:grab; z-index:3;
-      box-shadow:0 1px 2px rgba(0,0,0,.15); }
+      box-shadow:0 1px 2px rgba(0,0,0,.15); border:var(--ps-bar-bw,1.5px) solid var(--ps-bar-bd,transparent); box-sizing:border-box; }
     .ps-bar.task { background:var(--ps-bar); }
     .ps-bar-fill { position:absolute; left:0; top:0; bottom:0; background:var(--ps-prog,var(--pd-red)); border-radius:3px 0 0 3px; }
     .ps-bar.dragging { cursor:grabbing; opacity:.85; z-index:8; }
@@ -417,6 +429,8 @@
     .ps-sum-fill { position:absolute; left:0; top:0; height:100%; background:var(--ps-prog,var(--pd-red)); }
     .ps-bl { position:absolute; height:8px; background:var(--ps-bl); border:1px solid rgba(0,0,0,.18); border-radius:2px; z-index:2; box-shadow:0 1px 1px rgba(0,0,0,.12); }
     .ps-mile { position:absolute; width:13px; height:13px; background:var(--ps-mile,var(--pd-red)); transform:rotate(45deg); z-index:3; cursor:grab; }
+    /* Baseline (planned) milestone marker — hollow diamond in the baseline colour, drawn above the current one. */
+    .ps-mile-bl { position:absolute; width:11px; height:11px; background:var(--ps-bl); border:1px solid rgba(0,0,0,.28); transform:rotate(45deg); z-index:2; box-shadow:0 1px 1px rgba(0,0,0,.12); }
     .ps-bar-lbl { position:absolute; font-size:10px; color:var(--pd-muted); white-space:nowrap; z-index:3; line-height:15px; }
     html.pd-dark .ps-row-bg.alt { background:rgba(255,255,255,.03); }
     /* Brand-compliant Gantt colors (light defaults; dark-mode overrides for visibility). Defined on
@@ -456,6 +470,49 @@
     .ps-grid-scroll.ps-spotmode .ps-grid-row:not(.ps-spotrow):not(.ps-wbs-row):not(.ps-group-row) { opacity:.5; }
     #ps-analyzebtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-analyzebtn.active .pd-ico { color:#fff; }
+    /* ---- Activity Progress View ---- */
+    #ps-progressbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    #ps-progressbtn.active .pd-ico { color:#fff; }
+    #ps-view-schedule.ps-progress-mode .ps-split,
+    #ps-view-schedule.ps-progress-mode .ps-network,
+    #ps-view-schedule.ps-progress-mode .ps-legend,
+    #ps-view-schedule.ps-progress-mode .ps-grid-foot { display:none !important; }
+    .ps-progress { flex:1 1 auto; overflow:auto; min-height:0; padding:4px 8px 12px; }
+    .ps-prog-table { border-collapse:collapse; font-size:12.5px; table-layout:fixed; }
+    .ps-prog-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); padding:6px 10px; border-bottom:1px solid var(--pd-line); position:sticky; top:0; background:var(--pd-card); z-index:3; overflow:hidden; text-overflow:ellipsis; }
+    .ps-prog-table td { padding:4px 10px; border-bottom:1px solid var(--pd-line); vertical-align:middle; position:relative; height:var(--prog-rh,38px); overflow:hidden; }
+    .ps-prog-table tr.ps-prog-wbs td { background:var(--wl,var(--pd-bg)); font-weight:700; }
+    /* Resizers (Activity Progress view only) — drag a header edge to resize a column, a row's bottom to resize all rows. */
+    .ps-prog-colres { position:absolute; top:0; right:-4px; width:9px; height:100%; cursor:col-resize; z-index:5; }
+    .ps-prog-rowres { position:absolute; left:0; right:0; bottom:-3px; height:7px; cursor:row-resize; z-index:4; }
+    .ps-prog-rowres:hover, .ps-prog-colres:hover { background:var(--pd-red-light); }
+    .ps-prog-bar { position:relative; height:16px; border-radius:4px; background:var(--pd-bg); border:1px solid var(--pd-line); overflow:visible; min-width:150px; }
+    .ps-prog-fill { position:absolute; left:0; top:0; bottom:0; background:var(--pd-red); border-radius:3px 0 0 3px; }
+    .ps-prog-plan { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--pd-ink); border-radius:1px; }
+    /* Dual bars — Planned (grey) over Actual (red), like the target/actual chart */
+    .ps-prog-dual { display:flex; flex-direction:column; gap:3px; min-width:160px; }
+    .ps-prog-row2 { display:flex; align-items:center; gap:6px; }
+    .ps-prog-lbl2 { font-size:9px; font-weight:700; color:var(--pd-muted); width:12px; text-align:center; flex:0 0 auto; }
+    .ps-prog-track { position:relative; flex:1; height:calc(max(7px, (var(--prog-rh,38px) - 16px) / 2)); border-radius:3px; background:var(--pd-bg); border:1px solid var(--pd-line); overflow:hidden; }
+    .ps-prog-planbar { position:absolute; left:0; top:0; bottom:0; background:#6f7276; }        /* Planned = grey */
+    .ps-prog-actbar  { position:absolute; left:0; top:0; bottom:0; background:var(--pd-red); }   /* Actual = red */
+    .ps-prog-num2 { font-size:9.5px; color:var(--pd-muted); flex:0 0 auto; width:34px; text-align:right; font-variant-numeric:tabular-nums; }
+    .ps-prog-table th[draggable] { cursor:grab; }
+    .ps-prog-table th.ps-prog-dragover { box-shadow:inset 3px 0 0 var(--pd-red); }
+    .ps-prog-pct { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .ps-prog-desc { width:100%; box-sizing:border-box; border:1px solid transparent; background:transparent; font:inherit; padding:3px 5px; border-radius:4px; color:var(--pd-ink); resize:vertical; min-height:26px; }
+    .ps-prog-desc:hover { border-color:var(--pd-line); }
+    .ps-prog-desc:focus { border-color:var(--pd-red); background:var(--pd-card); outline:none; }
+    .ps-prog-id { color:var(--pd-muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .ps-prog-ctr { display:block; text-align:center; font-variant-numeric:tabular-nums; }
+    .ps-prog-no { display:block; text-align:center; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+    /* Per-cell format popover */
+    .ps-cellfmt { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.18); padding:8px; min-width:210px; }
+    .ps-cf-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+    .ps-cf-row:last-child { margin-bottom:0; }
+    .ps-cf-row label { font-size:11.5px; color:var(--pd-muted); display:flex; align-items:center; gap:5px; }
+    .ps-cf-btn { width:30px; height:28px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); cursor:pointer; color:var(--pd-ink); }
+    .ps-cf-btn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-crit.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-crit.active .pd-ico { color:#fff; }
     #ps-deps.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
@@ -922,6 +979,7 @@
           <button class="pd-btn pd-btn-primary" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
           <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" data-label="Layout" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
+          <button class="pd-btn ps-icobtn" id="ps-progressbtn" data-label="Progress" title="Activity Progress — per-activity Physical vs Planned progress bars (no dates)"><span data-ico="trendingUp" data-ico-size="16"></span></button>
           <span class="ps-tb-div"></span>
           <!-- Analyze: critical path, dependencies, link mode, progress spotlight -->
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-analyzebtn" data-label="Analyze" title="Analyze — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="16"></span></button>
@@ -966,6 +1024,9 @@
         <!-- Activity Network View (PERT diagram) — shown via the Layout menu -->
         <div class="ps-network" id="ps-network" style="display:none;"></div>
 
+        <!-- Activity Progress View — per-activity Physical vs Planned progress (no dates) -->
+        <div class="ps-progress" id="ps-progress" style="display:none;"></div>
+
         <!-- OPC-style grid footer: activity count + Download (mirrors OPC's strip under its grid) -->
         <div class="ps-grid-foot">
           <span>Total: <strong id="ps-total-count">0</strong> activities</span>
@@ -994,8 +1055,6 @@
             <button class="ps-dtab" data-dtab="expenses">Expenses</button>
             <button class="ps-dtab" data-dtab="rels">Relationships</button>
             <button class="ps-dtab" data-dtab="trace">Trace Logic</button>
-            <button class="ps-dtab" data-dtab="notebook">Notebook</button>
-            <button class="ps-dtab" data-dtab="files">Files</button>
             <span class="ps-dt-sep"></span>
             <button class="ps-dtab" data-dtab="ausage">Activity Usage</button>
             <button class="ps-dtab" data-dtab="rusage">Resource Usage</button>
@@ -1267,7 +1326,7 @@
         <div><label class="pd-label">WBS Code *</label><input class="pd-input" id="ps-f-wbs" placeholder="e.g. 1.2.3" required /></div>
         <div><label class="pd-label">Activity ID</label><input class="pd-input" id="ps-f-actid" placeholder="e.g. A1010" /></div>
         <div class="ps-form-full"><label class="pd-label">Activity Name *</label><input class="pd-input" id="ps-f-name" required /></div>
-        <div><label class="pd-label">Activity Type</label><select class="pd-select" id="ps-f-type-sel"><option>Task</option><option>WBS Summary</option><option>Milestone</option></select></div>
+        <div><label class="pd-label">Activity Type</label><select class="pd-select" id="ps-f-type-sel"><option>Task</option><option>WBS Summary</option><option>Start Milestone</option><option>Finish Milestone</option></select></div>
         <div><label class="pd-label">Status</label><select class="pd-select" id="ps-f-status-sel"><option>Not Started</option><option>In Progress</option><option>Completed</option></select></div>
         <div><label class="pd-label">Baseline Start</label><input class="pd-input" id="ps-f-bls" type="date" /></div>
         <div><label class="pd-label">Baseline Finish</label><input class="pd-input" id="ps-f-blf" type="date" /></div>
@@ -1502,7 +1561,29 @@
   // The grid Start/Finish columns + Gantt bar show the ACTUAL date when set, else the planned date.
   // (Editing those columns writes the actual date; planned start_date/end_date remain the basis.)
   function dispStart(r) { return r.actual_start || r.start_date || null; }
-  function dispFin(r) { return r.actual_finish || r.end_date || null; }
+  // Finish shown in the grid/Gantt: actual finish once done; else, for a STARTED activity, the
+  // FORECAST finish (retained logic — remaining work scheduled from the data date: data date +
+  // remaining − 1); else the planned finish. Computed live so it slides as the data date moves.
+  // NOTE: this never writes back to end_date, so the PLANNED finish/duration stay intact.
+  function forecastFin(r) {
+    if (r.remaining_duration == null) return null;
+    var as = pd(r.actual_start); if (!as) return null;
+    // Remaining work is scheduled from the later of the data date and the actual start — so an
+    // activity that actually starts AFTER the data date forecasts (actual start + remaining − 1),
+    // not (data date + remaining − 1) which would fall before its own start and collapse to it.
+    var base = (as > today()) ? as : today();
+    var f = addDays(base, Math.max(0, r.remaining_duration) - 1);
+    if (f < as) f = as;
+    return dstr(f);
+  }
+  function dispFin(r) {
+    var f = r.actual_finish || forecastFin(r) || r.end_date || null;
+    // Never render a finish earlier than the start (guards against inconsistent stored dates, e.g. an
+    // end_date left before a later start_date) — otherwise the bar and its relationship arrows draw
+    // backwards. Clamp the DISPLAY to the start; the stored values are untouched.
+    if (f) { var s = dispStart(r); if (s && pd(f) < pd(s)) f = s; }
+    return f;
+  }
   // Actual duration = variance between the data date and the actual start (elapsed), or, once finished,
   // actual finish − actual start (inclusive). Null when there's no actual start.
   function actualDurOf(as, af) {
@@ -1510,35 +1591,96 @@
     if (af) { var e = pd(af); return e ? Math.max(0, dayDiff(a, e) + 1) : null; }
     return Math.max(0, dayDiff(a, today()));
   }
-  // Original/planned (at-completion) duration: stored duration_days → baseline span → planned span.
+  // Planned (original) duration — the BASELINE span (BL finish − BL start + 1) when a baseline exists
+  // (and it is then LOCKED / read-only); otherwise the current span (finish − effective start + 1),
+  // then a stored duration_days. Never the forecast, so there's no loop with Remaining/%.
+  function _durLocked(r) { return !!(pd(r.bl_start) && pd(r.bl_finish)); }   // baseline present → planned duration is fixed
   function _origDurOf(r) {
-    return (r.duration_days != null && r.duration_days > 0) ? r.duration_days
-      : ((pd(r.bl_start) && pd(r.bl_finish)) ? dayDiff(pd(r.bl_start), pd(r.bl_finish)) + 1
-      : ((pd(r.start_date) && pd(r.end_date)) ? dayDiff(pd(r.start_date), pd(r.end_date)) + 1 : null));
+    if (isMile(r)) return 0;   // milestones are zero-duration point events
+    var d;
+    if (pd(r.bl_start) && pd(r.bl_finish)) d = dayDiff(pd(r.bl_start), pd(r.bl_finish)) + 1;   // baseline duration (locked)
+    else if (pd(dispStart(r)) && pd(r.end_date)) d = dayDiff(pd(dispStart(r)), pd(r.end_date)) + 1;   // current span
+    else if (r.duration_days != null && r.duration_days >= 0) d = r.duration_days;
+    else d = null;
+    return d == null ? null : Math.max(0, d);
   }
-  // Forecast fields for a STARTED (not finished) activity: actual duration = data date − actual start;
-  // remaining = origDur × (1 − POC) (or origDur − elapsed when no POC); FORECAST FINISH = data date +
-  // remaining − 1 (written to end_date → shown in the Finish field). At-Completion = actual + remaining.
-  function _fcFields(as, pct, origDur, dd) {
+  // Actual duration = data date − actual start (elapsed), or actual finish − actual start once finished.
+  // Computed LIVE so it tracks the data date. Null when there's no actual start.
+  function actualDurLive(r) { return actualDurOf(r.actual_start, r.actual_finish); }
+  // At Completion = actual duration + remaining duration (or the planned duration when not started).
+  function _atCompletion(r) {
+    if (!r.actual_start) return _origDurOf(r);
+    return Math.max(0, (actualDurLive(r) || 0)) + Math.max(0, (r.remaining_duration || 0));
+  }
+  // Planned-Duration edit: keep the (effective) start, move the scheduled finish so the span = n.
+  function _pdurPatch(r, n) {
+    n = Math.max(0, Math.round(n || 0));
+    var s = pd(dispStart(r)) || pd(r.bl_start) || today();
+    return { end_date: dstr(addDays(s, Math.max(0, n - 1))) };
+  }
+  // Initial schedule fields when an activity STARTS (actual start entered, not finished): actual
+  // duration = data date − actual start; remaining = the full PLANNED (baseline) duration — so an
+  // activity actualized on the data date has remaining = planned. Remaining is then an INDEPENDENT
+  // field the planner adjusts as work progresses (it does not auto-reduce as the data date advances).
+  function _fcFields(as, origDur, dd) {
     var a = pd(as); if (!a) return {};
     var out = { actual_duration: Math.max(0, dayDiff(a, dd)) };
-    if (origDur != null) {
-      var rem = (pct > 0 && pct < 100) ? Math.max(1, Math.round(origDur * (1 - pct / 100))) : Math.max(0, origDur - out.actual_duration);
-      out.remaining_duration = rem;
-      var nf = addDays(dd, rem - 1); if (nf < a) nf = a; out.end_date = dstr(nf);
-    }
+    if (origDur != null) out.remaining_duration = Math.max(0, origDur);
     return out;
+  }
+  // An activity is complete when it has an Actual Finish or its status says so.
+  function isComplete(r) { return !!r.actual_finish || (r.status || '') === 'Completed'; }
+  // Derived DURATION % Complete = (original − remaining) / original. A schedule metric only — it does
+  // NOT drive, and is NOT driven by, Physical % Complete. Distinct from Physical % (percent_complete).
+  function _durPct(r) {
+    if (isComplete(r)) return 100;
+    if (!r.actual_start) return 0;
+    var od = _origDurOf(r); if (!od) return 0;
+    var rd = r.remaining_duration != null ? r.remaining_duration : od;
+    return Math.max(0, Math.min(100, Math.round((od - rd) / od * 100)));
+  }
+  // Status transition patch. Completed → record Actual Finish + set Physical % = 100 and Remaining = 0
+  // (policy). In Progress → clear Actual Finish, (re)seed Remaining from the schedule. Not Started →
+  // clear actuals + Physical %, restore Remaining to the original duration. Physical % (percent_complete)
+  // is the official accomplishment measure, so completing/uncompleting sets it explicitly here.
+  function _statusPatch(r, st) {
+    var dd = today(), od = _origDurOf(r);
+    if (st === 'Completed') {
+      var as = r.actual_start || r.start_date || dstr(dd);
+      var af = r.actual_finish || dstr(dd);
+      if (pd(af) < pd(as)) af = as;
+      if (pd(af) > dd) af = dstr(dd);
+      return { status: 'Completed', actual_start: as, actual_finish: af, remaining_duration: 0, percent_complete: 100, actual_duration: actualDurOf(as, af) };
+    }
+    if (st === 'In Progress') {
+      var p = { status: 'In Progress', actual_finish: null };
+      if (r.actual_start) { p.actual_duration = Math.max(0, dayDiff(pd(r.actual_start), dd)); if (r.remaining_duration == null || r.remaining_duration <= 0) p.remaining_duration = od != null ? Math.max(0, od - p.actual_duration) : null; }
+      if ((r.percent_complete || 0) >= 100) p.percent_complete = 0;   // no longer finished
+      return p;
+    }
+    return { status: 'Not Started', actual_start: null, actual_finish: null, actual_duration: null, remaining_duration: od, percent_complete: 0 };
   }
   // Central validation + derivation for a date-cell edit. Returns {error} (reject) or {patch}.
   function _dateEditPatch(r, field, val) {
     val = val || null; var patch = {}; patch[field] = val; var dd = today();
+    // Milestones are single-date point events (Start Milestone carries a start, Finish Milestone a
+    // finish) — start and finish are always the same date. Editing the planned date sets both; setting
+    // an actual date achieves the milestone (both actuals = the point, Completed); clearing reopens it.
+    if (isMile(r)) {
+      if (field === 'start_date' || field === 'end_date') { patch = { start_date: val, end_date: val }; return { patch: patch }; }
+      if (field === 'actual_start' || field === 'actual_finish') {
+        if (val) patch = { actual_start: val, actual_finish: val, status: 'Completed', percent_complete: 100, remaining_duration: 0, actual_duration: 0 };
+        else patch = { actual_start: null, actual_finish: null, status: 'Not Started', remaining_duration: 0, actual_duration: null };
+        return { patch: patch };
+      }
+    }
     if (field === 'actual_start') {
       if (val && pd(val) > dd) return { error: 'Actual Start (' + Fmt.date(val) + ') can’t be later than the Data Date (' + Fmt.date(dstr(dd)) + ').' };
       if (val) {
         if (r.actual_finish) { patch.actual_duration = actualDurOf(val, r.actual_finish); }
-        else {   // started, not finished → compute the forecast finish
-          var od = _origDurOf(r); if (od != null) patch.duration_days = od;   // pin original duration
-          var fc = _fcFields(val, r.percent_complete || 0, od, dd); Object.keys(fc).forEach(function (k) { patch[k] = fc[k]; });
+        else {   // started, not finished → derive remaining/actual duration (planned dates untouched)
+          var od = _origDurOf(r);
+          var fc = _fcFields(val, od, dd); Object.keys(fc).forEach(function (k) { patch[k] = fc[k]; });
           if ((r.status || 'Not Started') === 'Not Started') patch.status = 'In Progress';
         }
       } else { patch.actual_duration = null; patch.remaining_duration = _origDurOf(r); patch.status = 'Not Started'; }
@@ -1546,15 +1688,27 @@
       var asx = r.actual_start;
       if (val && asx && pd(val) < pd(asx)) return { error: 'Actual Finish can’t be before Actual Start (' + Fmt.date(asx) + ').' };
       if (val && pd(val) > dd) return { error: 'Actual Finish can’t be later than the Data Date (' + Fmt.date(dstr(dd)) + ').' };
-      if (val) { patch.actual_duration = actualDurOf(asx, val); patch.remaining_duration = 0; patch.end_date = val; patch.status = 'Completed'; patch.percent_complete = 100; }
-      else if (asx) { var od2 = _origDurOf(r); var fc2 = _fcFields(asx, r.percent_complete || 0, od2, dd); Object.keys(fc2).forEach(function (k) { patch[k] = fc2[k]; }); patch.status = 'In Progress'; }
+      // Actual Finish recorded → Physical % Complete = 100 and Remaining Duration = 0 (policy).
+      if (val) { patch.actual_duration = actualDurOf(asx, val); patch.remaining_duration = 0; patch.status = 'Completed'; patch.percent_complete = 100; }
+      else if (asx) { var od2 = _origDurOf(r); var fc2 = _fcFields(asx, od2, dd); Object.keys(fc2).forEach(function (k) { patch[k] = fc2[k]; }); patch.status = 'In Progress'; }
     } else if (field === 'start_date') {
-      var od3 = _origDurOf(r);
-      if (val && od3 != null) patch.end_date = dstr(addDays(pd(val), od3 - 1));   // keep original duration, move finish
+      // Adjusting the (not-yet-actual) scheduled Start keeps the Finish and lets the Planned Duration
+      // adjust (duration is the derived span end − start + 1).
+      if (val && pd(r.end_date) && pd(val) > pd(r.end_date)) return { error: 'Start (' + Fmt.date(val) + ') can’t be after the Finish (' + Fmt.date(r.end_date) + ').' };
     } else if (field === 'end_date') {
-      var s = pd(r.start_date);
-      if (val && s && pd(val) < s) return { error: 'Planned Finish can’t be before Planned Start (' + Fmt.date(r.start_date) + ').' };
-      if (val && s) patch.duration_days = dayDiff(s, pd(val)) + 1;
+      if (val) {
+        var startA = pd(dispStart(r)) || pd(r.bl_start);
+        if (startA && pd(val) < startA) return { error: 'Finish (' + Fmt.date(val) + ') can’t be before the Start (' + Fmt.date(dstr(startA)) + ').' };
+        if (r.actual_start && !r.actual_finish) {
+          // In progress: the Finish cell shows the FORECAST → adjusting it sets Remaining Duration so
+          // the forecast lands on the entry (data date + remaining − 1). The scheduled finish/plan is
+          // left intact. Can't forecast a finish before the data date.
+          if (pd(val) < dd) return { error: 'Forecast Finish (' + Fmt.date(val) + ') can’t be before the Data Date (' + Fmt.date(dstr(dd)) + ').' };
+          patch.remaining_duration = Math.max(0, dayDiff(dd, pd(val)) + 1);
+          delete patch.end_date;   // keep the planned finish; only the forecast (remaining) moves
+        }
+        // Not started: end_date IS the scheduled finish → set it; Planned Duration adjusts (derived).
+      }
     }
     return { patch: patch };
   }
@@ -1840,7 +1994,9 @@
   }
 
   function isWbs(r) { return r.activity_type === 'WBS Summary'; }
-  function isMile(r) { return r.activity_type === 'Milestone'; }
+  function isMile(r) { return r.activity_type === 'Milestone' || r.activity_type === 'Start Milestone' || r.activity_type === 'Finish Milestone'; }
+  // A Finish Milestone marks a finish (anchored on the finish date); everything else marks a start.
+  function isFinishMile(r) { return r.activity_type === 'Finish Milestone'; }
 
   // ---- WBS-code helpers + precomputed caches (rebuilt only when rows change) ----
   function segs(c) { return String(c == null ? '' : c).split('.'); }
@@ -1922,15 +2078,18 @@
       var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : 0;
       var poc = plannedPOC(r);
       var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
+      var od = _origDurOf(r) || 0;                  // for the Duration % Complete roll-up (duration-weighted)
+      var dpEarned = od * (_durPct(r) / 100);
       var codes2 = [r.wbs].concat(r._anc || []);
       for (var j = 0; j < codes2.length; j++) {
-        var cm = _costMap[codes2[j]] || (_costMap[codes2[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0 });
+        var cm = _costMap[codes2[j]] || (_costMap[codes2[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0 });
         cm.pc += r.planned_cost || 0; cm.ac += r.actual_cost || 0; cm.ev += r.earned_value || 0; cm.bl += r.bl_cost || 0;
         cm.eac += eac(r, cpi);
         if (dur > 0) {
           cm.wd += dur; cm.wearn += dur * (r.percent_complete || 0);
           if (poc != null) { cm.wdPoc += dur; cm.wpoc += dur * poc; }
         }
+        if (od > 0) { cm.wdur += od; cm.wdurE += dpEarned; }
       }
     });
     _cpmDirty = true;
@@ -2115,7 +2274,7 @@
     var start = r.start, finish = r.finish;
     if (r.isLeaf) {
       var mile = (r.dur === 0) || (!!finish && !start) || (!!start && !finish) || (start && finish && start === finish);
-      if (mile) { type = 'Milestone'; var dt = start || finish; start = dt; finish = dt; }
+      if (mile) { type = (!!finish && !start) ? 'Finish Milestone' : 'Start Milestone'; var dt = start || finish; start = dt; finish = dt; }
     }
     return { project_id: pid, wbs: r.code, activity_id: r.id, activity_name: r.name,
       activity_type: type,
@@ -2321,7 +2480,7 @@
         cstr: XER_CSTR[t.cstr_type] || null, cstrDate: xerDateOnly(t.cstr_date),
         udf: udfByTask[t.task_id] || null,
         status: status, pct: parseFloat(t.phys_complete_pct) || 0,
-        type: mile ? 'Milestone' : 'Task', calTmpId: calByClndrId[t.clndr_id] || null,
+        type: mile ? (t.task_type === 'TT_FinMile' ? 'Finish Milestone' : 'Start Milestone') : 'Task', calTmpId: calByClndrId[t.clndr_id] || null,
         predText: xerPredText(t.task_id) });
     }
     function wbsRec(w, code) {
@@ -2554,8 +2713,11 @@
   // Pad the timeline so there are trailing (succeeding) months after the last activity and a little
   // lead before the first — the Gantt shows context beyond the exact activity span.
   function range() {
-    var mn = _min ? addDays(_min, -14) : addDays(today(), -30);
-    var mx = _max ? addDays(_max, 62) : addDays(today(), 90);
+    // Extend the scrollable timeline well past the schedule: 2 years before the earliest activity and
+    // 3 years after the latest, so the planner can scroll into the deep past/future (the Gantt pane
+    // already scrolls horizontally; this just widens the content).
+    var mn = _min ? addDays(_min, -730) : addDays(today(), -365);
+    var mx = _max ? addDays(_max, 1095) : addDays(today(), 365);
     return { min: mn, max: mx };
   }
 
@@ -2686,7 +2848,7 @@
       return '<h4>' + esc(ct.name) + '</h4>' + (vals.length ? vals.map(function (v) { return cbCode(ct.id, v); }).join('') : '<span style="color:var(--pd-muted);font-size:12px;">No values defined yet.</span>');
     }).join('');
     menu.innerHTML = '<h4>Status</h4>' + ['Not Started','In Progress','Completed'].map(function(s){return cb('status',s);}).join('') +
-      '<h4>Type</h4>' + ['WBS Summary','Task','Milestone'].map(function(t){return cb('type',t);}).join('') +
+      '<h4>Type</h4>' + ['WBS Summary','Task','Start Milestone','Finish Milestone'].map(function(t){return cb('type',t);}).join('') +
       '<h4>Schedule</h4><label><input type="checkbox" id="ps-f-behind"' + (filters.behind?' checked':'') + '> Behind schedule (overdue / late vs baseline)</label>' +
       '<label><input type="checkbox" id="ps-f-crit"' + (filters.crit?' checked':'') + '> Critical path only</label>' +
       '<label style="margin-top:4px;">Look-ahead: <select id="ps-f-look" class="pd-select pd-input-sm" style="max-width:150px;">' +
@@ -2758,10 +2920,173 @@
   }
 
   // ---- render everything ----
-  function renderAll() { renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') renderPlanner(); else if (activeTab === 'lastplanner') openLastPlanner(); else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); }
+  function renderAll() { renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') renderPlanner(); else if (activeTab === 'lastplanner') openLastPlanner(); else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
+  // ---- Activity Progress View — per-activity Physical vs Planned progress, no dates ----
+  var progressMode = false;
+  var PROG_DEFAULT = ['no', 'id', 'name', 'desc', 'progress', 'planpoc', 'phys'];
+  var PROG_DEF = {
+    no:       { label: 'No.', w: 52 },
+    id:       { label: 'ID', w: 92 },
+    name:     { label: 'Activity Name', w: 260 },
+    desc:     { label: 'Specific Description', w: 240 },
+    progress: { label: 'Progress (P = Planned · A = Actual)', w: 260 },
+    planpoc:  { label: 'Planned Value %', w: 110 },
+    phys:     { label: 'Activity % Complete', w: 120 }
+  };
+  function progColOrder() {
+    var d = PROG_DEFAULT.slice();
+    try { var s = JSON.parse(localStorage.getItem('ps_progcols') || 'null');
+      if (Array.isArray(s)) { var f = s.filter(function (k) { return PROG_DEF[k]; }); d.forEach(function (k) { if (f.indexOf(k) < 0) f.push(k); }); return f; } } catch (e) {}
+    return d;
+  }
+  function progColW() { try { return JSON.parse(localStorage.getItem('ps_progcolw') || '{}') || {}; } catch (e) { return {}; } }
+  function progRh() { var n = parseInt(localStorage.getItem('ps_progrh'), 10); return (n && n >= 22 && n <= 200) ? n : 38; }
+  // ---- Per-cell manual formatting (bold / italic / size / text colour / fill), persisted per project.
+  // Store: localStorage ps_cellfmt = { <pid>: { <rowId>: { <col>: {b,i,sz,fg,bg} } } }. Used by the
+  // Activity Progress table and the Activities grid (right-click a cell → Format cell…).
+  function _cellFmtAll() { try { return JSON.parse(localStorage.getItem('ps_cellfmt') || '{}') || {}; } catch (e) { return {}; } }
+  function _cellFmt(rowId, col) { var a = _cellFmtAll(); return (a[pid] && a[pid][rowId] && a[pid][rowId][col]) || null; }
+  function _setCellFmt(rowId, col, patch) {
+    var a = _cellFmtAll(); a[pid] = a[pid] || {}; a[pid][rowId] = a[pid][rowId] || {};
+    if (patch === null) { delete a[pid][rowId][col]; }
+    else { var f = a[pid][rowId][col] || {}; Object.keys(patch).forEach(function (k) { if (patch[k] == null || patch[k] === '') delete f[k]; else f[k] = patch[k]; }); if (Object.keys(f).length) a[pid][rowId][col] = f; else delete a[pid][rowId][col]; }
+    if (a[pid][rowId] && !Object.keys(a[pid][rowId]).length) delete a[pid][rowId];
+    try { localStorage.setItem('ps_cellfmt', JSON.stringify(a)); } catch (e) {}
+  }
+  function _cellFmtStyle(f) { if (!f) return ''; var s = ''; if (f.b) s += 'font-weight:700;'; if (f.i) s += 'font-style:italic;'; if (f.sz) s += 'font-size:' + f.sz + 'px;'; if (f.fg) s += 'color:' + f.fg + ';'; if (f.bg) s += 'background:' + f.bg + ' !important;'; return s; }
+  function _cellFmtStyleAttr(rowId, col) { var st = _cellFmtStyle(_cellFmt(rowId, col)); return st ? (' style="' + st + '"') : ''; }
+  function closeCellFmt() { var m = document.getElementById('ps-cellfmt'); if (m) m.remove(); document.removeEventListener('click', closeCellFmt); }
+  function openCellFmt(anchor, rowId, col, onDone) {
+    closeCellFmt(); var f = _cellFmt(rowId, col) || {};
+    var m = document.createElement('div'); m.className = 'ps-cellfmt'; m.id = 'ps-cellfmt';
+    m.innerHTML =
+      '<div class="ps-cf-row"><button data-cf="b" class="ps-cf-btn' + (f.b ? ' on' : '') + '" title="Bold"><b>B</b></button>' +
+      '<button data-cf="i" class="ps-cf-btn' + (f.i ? ' on' : '') + '" title="Italic"><i>I</i></button>' +
+      '<select data-cf="sz" class="pd-select" title="Text size"><option value="">Size</option>' + [10, 11, 12, 13, 14, 16, 18, 20, 24].map(function (n) { return '<option value="' + n + '"' + (f.sz == n ? ' selected' : '') + '>' + n + 'px</option>'; }).join('') + '</select></div>' +
+      '<div class="ps-cf-row"><label>Text <input type="color" data-cf="fg" value="' + (f.fg || '#231F20') + '"></label>' +
+      '<label>Fill <input type="color" data-cf="bg" value="' + (f.bg || '#ffffff') + '"></label></div>' +
+      '<div class="ps-cf-row" style="justify-content:space-between;"><button data-cf="clear" class="pd-btn">Clear</button><button data-cf="close" class="pd-btn pd-btn-primary">Done</button></div>';
+    document.body.appendChild(m);
+    var rct = anchor.getBoundingClientRect();
+    m.style.position = 'fixed'; m.style.top = Math.min(rct.bottom + 4, window.innerHeight - 150) + 'px'; m.style.left = Math.min(rct.left, window.innerWidth - 230) + 'px'; m.style.zIndex = 400;
+    m.addEventListener('click', function (e) { e.stopPropagation(); });
+    m.querySelectorAll('[data-cf]').forEach(function (el) {
+      var k = el.dataset.cf;
+      if (k === 'b' || k === 'i') el.onclick = function () { var cur = _cellFmt(rowId, col) || {}; var p = {}; p[k] = cur[k] ? '' : 1; _setCellFmt(rowId, col, p); el.classList.toggle('on'); onDone && onDone(); };
+      else if (k === 'sz') el.onchange = function () { _setCellFmt(rowId, col, { sz: el.value ? parseInt(el.value, 10) : '' }); onDone && onDone(); };
+      else if (k === 'fg' || k === 'bg') el.oninput = function () { var p = {}; p[k] = el.value; _setCellFmt(rowId, col, p); onDone && onDone(); };
+      else if (k === 'clear') el.onclick = function () { _setCellFmt(rowId, col, null); closeCellFmt(); onDone && onDone(); };
+      else if (k === 'close') el.onclick = closeCellFmt;
+    });
+    setTimeout(function () { document.addEventListener('click', closeCellFmt); }, 0);
+  }
+  // Apply stored per-cell formatting to the visible grid cells (called after each windowed grid paint).
+  function applyCellFmtGrid(host) {
+    var a = _cellFmtAll(); var pm = a[pid]; if (!pm) return;
+    host.querySelectorAll('.ps-cell[data-id][data-field]').forEach(function (c) {
+      var rm = pm[c.dataset.id]; if (!rm) return; var f = rm[c.dataset.field]; if (!f) return;
+      c.style.cssText += ';' + _cellFmtStyle(f);
+    });
+  }
+  // Two bars — Planned (grey) over Actual (red), each 0–100%, with the % beside it.
+  function _progBar(phys, plan) {
+    var p = Math.max(0, Math.min(100, phys || 0)), pl = (plan != null) ? Math.max(0, Math.min(100, plan)) : 0;
+    return '<div class="ps-prog-dual" title="Planned ' + Math.round(pl) + '% · Actual ' + Math.round(p) + '%">' +
+      '<div class="ps-prog-row2"><span class="ps-prog-lbl2">P</span><div class="ps-prog-track"><div class="ps-prog-planbar" style="width:' + pl + '%;"></div></div><span class="ps-prog-num2">' + (plan != null ? Math.round(pl) + '%' : '—') + '</span></div>' +
+      '<div class="ps-prog-row2"><span class="ps-prog-lbl2">A</span><div class="ps-prog-track"><div class="ps-prog-actbar" style="width:' + p + '%;"></div></div><span class="ps-prog-num2">' + Math.round(p) + '%</span></div>' +
+    '</div>';
+  }
+  function _progCell(key, row, ctx) {
+    if (key === 'no') return '<span class="ps-prog-no">' + (ctx.isW ? '' : (ctx.no || '')) + '</span>';
+    if (key === 'id') return '<span class="ps-prog-id">' + esc(ctx.isW ? (row._realCode || row.wbs || '') : (row.activity_id || '')) + '</span>';
+    if (key === 'name') return '<span style="padding-left:' + ctx.pad + 'px;display:inline-block;">' + (!ctx.isW && isMile(row) ? '<span class="ps-mile-badge">◆ </span>' : '') + esc(row.activity_name || '') + '</span>';
+    if (key === 'progress') return _progBar(ctx.phys, ctx.planv);
+    if (key === 'planpoc') return '<span class="ps-prog-ctr">' + (ctx.planv != null ? Math.round(ctx.planv) + '%' : '—') + '</span>';
+    if (key === 'phys') return ctx.isW ? '<span class="ps-prog-ctr">' + ctx.phys + '%</span>' : '<input type="number" min="0" max="100" step="1" class="ps-prog-phys" data-id="' + row.id + '" value="' + ctx.phys + '" style="width:56px;text-align:center;font:inherit;padding:2px 4px;border:1px solid transparent;border-radius:4px;background:transparent;color:var(--pd-ink);">';
+    if (key === 'desc') return ctx.isW ? '' : '<textarea class="ps-prog-desc" data-id="' + row.id + '" rows="1" placeholder="Add description…">' + esc(row.remarks || '') + '</textarea>';
+    return '';
+  }
+  function renderProgressView() {
+    var host = document.getElementById('ps-progress'); if (!host) return;
+    var order = progColOrder(), cw = progColW(), rh = progRh();
+    var colW = function (k) { return (cw[k] && cw[k] >= 40) ? cw[k] : PROG_DEF[k].w; };
+    var tblW = order.reduce(function (s, k) { return s + colW(k); }, 0);
+    var thead = '<tr>' + order.map(function (k) { return '<th draggable="true" data-key="' + k + '" title="Drag to reorder · drag the right edge to resize" style="width:' + colW(k) + 'px;text-align:center;">' + esc(PROG_DEF[k].label) + '<span class="ps-prog-colres" data-key="' + k + '"></span></th>'; }).join('') + '</tr>';
+    var _no = 0;
+    var body = DL.map(function (nd) {
+      if (hiddenRow(nd)) return '';
+      var isW = isWbsNode(nd), depth = ddepth(nd), pad = 4 + depth * 14, ctx;
+      if (isW) { var cm = _costMap[nd._realCode || nd.wbs]; ctx = { isW: true, pad: pad, phys: (cm && cm.wd > 0) ? Math.round(cm.wearn / cm.wd) : 0, planv: (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) : null }; }
+      else { ctx = { isW: false, pad: pad, no: ++_no, phys: Math.max(0, Math.min(100, nd.percent_complete || 0)), planv: plannedPOC(nd) }; }
+      var tds = order.map(function (k, ci) { return '<td data-id="' + esc(String(nd.id || '')) + '" data-col="' + k + '"' + _cellFmtStyleAttr(nd.id, k) + '>' + _progCell(k, nd, ctx) + (ci === 0 ? '<span class="ps-prog-rowres"></span>' : '') + '</td>'; }).join('');
+      return '<tr' + (isW ? ' class="ps-prog-wbs ps-wl' + Math.min(depth, 5) + '"' : '') + '>' + tds + '</tr>';
+    }).join('');
+    host.innerHTML = '<table class="ps-prog-table" style="width:' + tblW + 'px;--prog-rh:' + rh + 'px;"><thead>' + thead + '</thead><tbody>' + body + '</tbody></table>';
+    host.querySelectorAll('.ps-prog-desc').forEach(function (ta) {
+      var r = rows.find(function (x) { return x.id === ta.dataset.id; }); if (!r) return; var t;
+      ta.oninput = function () { clearTimeout(t); t = setTimeout(function () { _saveActField(r, 'remarks', ta.value); }, 500); };
+      ta.onblur = function () { clearTimeout(t); if ((r.remarks || '') !== ta.value) _saveActField(r, 'remarks', ta.value); };
+    });
+    host.querySelectorAll('.ps-prog-phys').forEach(function (inp) {
+      var r = rows.find(function (x) { return x.id === inp.dataset.id; }); if (!r) return;
+      inp.onchange = function () {
+        if (!r.actual_start) { UI.toast('Start the activity first — enter an Actual Start before setting Physical % Complete.', 'error'); inp.value = Math.max(0, Math.min(100, r.percent_complete || 0)); return; }
+        var v = isComplete(r) ? 100 : Math.max(0, Math.min(100, parseFloat(inp.value) || 0));
+        persist(r.id, { percent_complete: v }).then(function (ok) { if (ok) { renderGrid(); renderProgressView(); } });
+      };
+    });
+    // Drag-to-reorder columns (persisted)
+    var dragKey = null;
+    host.querySelectorAll('th[draggable]').forEach(function (th) {
+      th.addEventListener('dragstart', function () { dragKey = th.dataset.key; });
+      th.addEventListener('dragover', function (e) { e.preventDefault(); th.classList.add('ps-prog-dragover'); });
+      th.addEventListener('dragleave', function () { th.classList.remove('ps-prog-dragover'); });
+      th.addEventListener('drop', function (e) {
+        e.preventDefault(); th.classList.remove('ps-prog-dragover');
+        var tgt = th.dataset.key; if (!dragKey || dragKey === tgt) return;
+        var ord = progColOrder(); ord.splice(ord.indexOf(dragKey), 1); ord.splice(ord.indexOf(tgt), 0, dragKey);
+        try { localStorage.setItem('ps_progcols', JSON.stringify(ord)); } catch (e2) {}
+        renderProgressView();
+      });
+    });
+    // Column width resize (drag a header's right edge). Suppress the header's drag-reorder while resizing.
+    host.querySelectorAll('.ps-prog-colres').forEach(function (h) {
+      h.addEventListener('mousedown', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var th = h.parentNode, key = h.dataset.key, startX = e.clientX, startW = th.offsetWidth;
+        th.setAttribute('draggable', 'false');
+        function mm(ev) { var w = Math.max(40, startW + (ev.clientX - startX)); th.style.width = w + 'px';
+          var cwm = progColW(); cwm[key] = Math.round(w); try { localStorage.setItem('ps_progcolw', JSON.stringify(cwm)); } catch (x) {} }
+        function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); th.setAttribute('draggable', 'true'); renderProgressView(); }
+        document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+      });
+    });
+    // Row height resize (drag any row's bottom edge) — uniform for all rows; bars scale via --prog-rh.
+    host.querySelectorAll('.ps-prog-rowres').forEach(function (h) {
+      h.addEventListener('mousedown', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var tbl = host.querySelector('.ps-prog-table'), startY = e.clientY, startH = progRh();
+        function mm(ev) { var nh = Math.max(22, Math.min(200, startH + (ev.clientY - startY))); tbl.style.setProperty('--prog-rh', nh + 'px'); try { localStorage.setItem('ps_progrh', String(Math.round(nh))); } catch (x) {} }
+        function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); }
+        document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+      });
+    });
+    // Right-click any cell → format it (bold / italic / size / text colour / fill).
+    host.querySelectorAll('td[data-id][data-col]').forEach(function (td) {
+      td.addEventListener('contextmenu', function (e) { e.preventDefault(); openCellFmt(td, td.dataset.id, td.dataset.col, renderProgressView); });
+    });
+    if (window.Icons) Icons.hydrate(host);
+  }
+  function setProgressMode(on) {
+    progressMode = on;
+    var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-progress-mode', on);
+    var btn = document.getElementById('ps-progressbtn'); if (btn) btn.classList.toggle('active', on);
+    var host = document.getElementById('ps-progress'); if (host) host.style.display = on ? 'block' : 'none';
+    if (on) renderProgressView();
+  }
   function renderNetwork() {
     var host = document.getElementById('ps-network'); if (!host) return;
     computeCPM();   // populates _relObjs / _succObjs so we can detect linked activities
@@ -2860,6 +3185,25 @@
     return '<div style="display:flex;flex-direction:column;gap:3px;' + (full ? 'grid-column:1/-1;' : '') + '"><label style="font-size:11px;color:var(--pd-muted);">' + esc(label) + '</label>' +
       '<input class="pd-input" value="' + esc(String(valStr)) + '" readonly title="Computed" style="width:100%;box-sizing:border-box;font-size:12.5px;background:var(--pd-bg);color:var(--pd-muted);"></div>';
   }
+  // Editable date field with an EXPLICIT display value (so Start/Finish in the detail show the same
+  // dispStart/dispFin the grid shows — actual → forecast → scheduled — and edit the same field).
+  function _gfDate(label, field, showVal) {
+    return '<div style="display:flex;flex-direction:column;gap:3px;"><label style="font-size:11px;color:var(--pd-muted);">' + esc(label) + '</label>' +
+      '<input class="pd-input ps-gedit" data-f="' + field + '" data-t="date" type="date" value="' + (showVal ? String(showVal).slice(0, 10) : '') + '" style="width:100%;box-sizing:border-box;font-size:12.5px;"></div>';
+  }
+  // Editable DURATION % Complete — a schedule input. Writing it back-computes Remaining Duration
+  // (= original × (1 − p/100)); it never touches Physical % Complete (kept independent per policy).
+  function _gfDpct(r) {
+    var v = _durPct(r);
+    return '<div style="display:flex;flex-direction:column;gap:3px;"><label style="font-size:11px;color:var(--pd-muted);">Duration % Complete</label>' +
+      '<input class="pd-input ps-gedit" data-f="dur_pct" data-t="dpct" type="number" min="0" max="100" step="1" value="' + esc(String(v)) + '" style="width:100%;box-sizing:border-box;font-size:12.5px;"></div>';
+  }
+  // Editable Planned (original) Duration field — shows _origDurOf, writes duration_days + re-spans.
+  function _gfPdur(r) {
+    var v = _origDurOf(r); if (v == null) v = '';
+    return '<div style="display:flex;flex-direction:column;gap:3px;"><label style="font-size:11px;color:var(--pd-muted);">Planned Duration (d)</label>' +
+      '<input class="pd-input ps-gedit" data-f="planned_duration" data-t="pdur" type="number" min="0" step="1" value="' + esc(String(v)) + '" style="width:100%;box-sizing:border-box;font-size:12.5px;"></div>';
+  }
   function detGeneralEdit(r) {
     var codeRows = CODE_TYPES.map(function (ct) { var vid = r.activity_codes && r.activity_codes[ct.id]; return [esc(ct.name), esc(vid ? (codeValueLabel(vid) || '—') : '—')]; });
     var udfRows = UDF_DEFS.map(function (d) { return [esc(d.name), esc(udfFmt(d, r.udf && r.udf[d.id]))]; });
@@ -2871,7 +3215,7 @@
         _gf('Activity Name', 'activity_name', 'text', r, null, true) +
         _gf('Work Package', 'work_package', 'text', r)) +
       _gGroup('Classification',
-        _gf('Type', 'activity_type', 'select', r, ['Task', 'WBS Summary', 'Milestone']) +
+        _gf('Type', 'activity_type', 'select', r, ['Task', 'WBS Summary', 'Start Milestone', 'Finish Milestone']) +
         _gf('Duration Type', 'duration_type', 'select', r, ['', 'Fixed Duration & Units/Time', 'Fixed Units/Time', 'Fixed Duration & Units', 'Fixed Work']) +
         _gf('% Complete Type', 'percent_complete_type', 'select', r, ['', 'Duration', 'Physical', 'Units'])) +
       _gGroup('Assignment',
@@ -2885,7 +3229,7 @@
       _gGroup('Predecessors', _gf('Predecessors', 'predecessors', 'text', r, null, true)) +
       (codeRows.length ? detSection('Activity Codes', codeRows) : '') +
       (udfRows.length ? detSection('User-Defined Fields', udfRows) : '') +
-      _gGroup('Notes', _gf('Remarks', 'remarks', 'textarea', r, null, true)) +
+      _gGroup('Specific Description', _gf('Specific Description', 'remarks', 'textarea', r, null, true)) +
     '</div>';
   }
   function wireEditFields(root, r) {
@@ -2895,13 +3239,27 @@
         // Earned Value POC is an independent physical/EV progress figure (does NOT drive dates);
         // written tolerantly so it's safe before the ev_poc migration is run.
         if (f === 'ev_poc') { var ev = v === '' ? null : Math.max(0, Math.min(100, parseFloat(v) || 0)); _saveActField(r, 'ev_poc', ev); return; }
+        if (t === 'pdur') { persist(r.id, _pdurPatch(r, v === '' ? 0 : Math.max(0, parseFloat(v) || 0))).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } }); return; }
+        // Duration % Complete → set Remaining Duration only (schedule side); Physical % untouched.
+        if (t === 'dpct') {
+          if (!r.actual_start) { UI.toast('Start the activity first — enter an Actual Start before setting Duration % Complete.', 'error'); renderDetails(); return; }
+          if (isComplete(r)) { UI.toast('Activity is complete — Duration % Complete is 100%.', 'info'); renderDetails(); return; }
+          var dp = v === '' ? 0 : Math.max(0, Math.min(100, parseFloat(v) || 0)); var od = _origDurOf(r) || 0; persist(r.id, { remaining_duration: Math.max(0, Math.round(od * (1 - dp / 100))) }).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } }); return;
+        }
         if (t === 'number') patch[f] = (v === '' ? null : Math.max(0, Math.min(100, parseFloat(v) || 0)));
         else if (t === 'num') patch[f] = (v === '' ? null : Math.max(0, parseFloat(v) || 0));
         else if (t === 'date') patch[f] = v || null;
         else if (t === 'select') patch[f] = v || null;
         else patch[f] = (typeof v === 'string' ? v.trim() : v) || null;
-        if (f === 'percent_complete' && (patch[f] || 0) > 0 && !r.actual_start) { UI.toast('Enter an Actual Start (Start) before recording % complete.', 'error'); renderDetails(); return; }
-        if (progressDriven && f === 'percent_complete') { patch = _progressFields(r, patch[f]); }
+        // Physical % Complete (percent_complete) is the official accomplishment measure and is
+        // INDEPENDENT of the schedule — editing it never touches Remaining Duration or forecast dates.
+        // Status transitions handle completion (→ Physical % 100, Remaining 0) and un-completion.
+        if (f === 'status') { patch = _statusPatch(r, patch[f] || 'Not Started'); }
+        // Physical % Complete requires an Actual Start; a completed activity is fixed at 100%.
+        if (f === 'percent_complete') {
+          if (!r.actual_start) { UI.toast('Start the activity first — enter an Actual Start before setting Physical % Complete.', 'error'); renderDetails(); return; }
+          if (isComplete(r)) { patch.percent_complete = 100; }
+        }
         if (t === 'date') { var dres = _dateEditPatch(r, f, patch[f]); if (dres.error) { UI.toast(dres.error, 'error'); renderDetails(); return; } patch = dres.patch; }
         persist(r.id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
       };
@@ -2923,13 +3281,12 @@
         ['Start', started], ['Finish', finished], ['Expected Finish', r.expected_finish ? Fmt.date(r.expected_finish) : '—']
       ]) +
       detSection('Dates', [
-        ['Planned Start', r.start_date ? Fmt.date(r.start_date) : '—'], ['Planned Finish', r.end_date ? Fmt.date(r.end_date) : '—'],
-        ['Start', r.actual_start ? Fmt.date(r.actual_start) : '—'], ['Finish', r.actual_finish ? Fmt.date(r.actual_finish) : '—'],
-        ['Baseline Start', r.bl_start ? Fmt.date(r.bl_start) : '—'], ['Baseline Finish', r.bl_finish ? Fmt.date(r.bl_finish) : '—']
+        ['Baseline Start', r.bl_start ? Fmt.date(r.bl_start) : '—'], ['Baseline Finish', r.bl_finish ? Fmt.date(r.bl_finish) : '—'],
+        ['Start', dispStart(r) ? Fmt.date(dispStart(r)) : '—'], ['Finish', (function () { var f = dispFin(r); return f ? (Fmt.date(f) + (!r.actual_finish && forecastFin(r) ? ' (forecast)' : '')) : '—'; })()]
       ]) +
       detSection('Duration & Float', [
-        ['Planned Duration', dd(r.duration_days)], ['Actual Duration', dd(r.actual_duration)], ['Remaining Duration', dd(r.remaining_duration)],
-        ['At Completion', dd(atDur)], ['Total Float', dd(r._float)], ['Free Float', dd(r.free_float)],
+        ['Planned Duration', dd(_origDurOf(r)) + (_durLocked(r) ? ' (baseline)' : '')], ['Actual Duration', dd(actualDurLive(r))], ['Remaining Duration', dd(r.remaining_duration)],
+        ['At Completion', dd(_atCompletion(r))], ['Total Float', dd(r._float)], ['Free Float', dd(r.free_float)],
         ['Critical', r._critical ? 'Yes' : 'No'], ['Finish Variance (BL)', fv != null ? (fv > 0 ? '+' : '') + fv + 'd' : '—']
       ]) +
       detSection('Labor Units', [
@@ -2957,21 +3314,22 @@
       '<div style="font-size:11.5px;color:var(--pd-muted);margin:0 0 10px;grid-column:1/-1;">Editing this activity — changes save automatically. Computed fields are read-only.</div>' +
       _gGroup('Activity Status',
         _gf('Status', 'status', 'select', r, ['Not Started', 'In Progress', 'Completed']) +
-        _gf('Duration POC (%)', 'percent_complete', 'number', r) +
+        _gf('Physical % Complete', 'percent_complete', 'number', r) +
+        _gfDpct(r) +
         _gf('Earned Value POC (%)', 'ev_poc', 'number', r) +
         _gf('Expected Finish', 'expected_finish', 'date', r)) +
       _gGroup('Dates',
-        _gf('Planned Start', 'start_date', 'date', r) +
-        _gf('Planned Finish', 'end_date', 'date', r) +
-        _gf('Start', 'actual_start', 'date', r) +
-        _gf('Finish', 'actual_finish', 'date', r) +
         _gf('Baseline Start', 'bl_start', 'date', r) +
-        _gf('Baseline Finish', 'bl_finish', 'date', r)) +
+        _gf('Baseline Finish', 'bl_finish', 'date', r) +
+        _gfDate('Start', r.actual_start ? 'actual_start' : 'start_date', dispStart(r)) +
+        _gfDate('Finish', isComplete(r) ? 'actual_finish' : 'end_date', dispFin(r)) +
+        (forecastFin(r) && !r.actual_finish ? _gro('Forecast Finish', Fmt.date(forecastFin(r))) : '') +
+        '<div style="grid-column:1/-1;font-size:10.5px;color:var(--pd-muted);margin-top:2px;">Tip: right-click a Start/Finish cell to actualize / un-actualize (works on multiple selected rows).</div>') +
       _gGroup('Duration & Float',
-        _gro('Planned Duration', dd(r.duration_days)) +
-        _gf('Actual Duration (d)', 'actual_duration', 'num', r) +
+        (_durLocked(r) ? _gro('Planned Duration (d)', _origDurOf(r) + ' — baseline (locked)') : _gfPdur(r)) +
+        _gro('Actual Duration (d)', dd(actualDurLive(r))) +
         _gf('Remaining Duration (d)', 'remaining_duration', 'num', r) +
-        _gro('At Completion', dd(atDur)) +
+        _gro('At Completion', dd(_atCompletion(r))) +
         _gro('Total Float', dd(r._float)) +
         _gf('Free Float (d)', 'free_float', 'num', r) +
         _gro('Critical', r._critical ? 'Yes' : 'No') +
@@ -3861,8 +4219,6 @@
     else if (t === 'expenses') { body.innerHTML = detExpenses(r); wireExpenses(body, r); }
     else if (t === 'rels') { body.innerHTML = detRelsEdit(r); wireRels(body, r); wireDetailSplits(body); }
     else if (t === 'trace') { body.innerHTML = detTrace(r); wireTrace(body, r); }
-    else if (t === 'notebook') { body.innerHTML = detNotebook(r); wireNotebook(body, r); }
-    else if (t === 'files') { body.innerHTML = detFiles(r); wireFiles(body, r); }
   }
   // Tolerant per-activity field write (used by Notebook/Files). If the column isn't migrated yet
   // the update just no-ops with a hint, so it's safe to ship before the migration runs.
@@ -3932,7 +4288,7 @@
     ['id','Activity ID','c-id'], ['name','Activity Name','c-name'], ['status','Status','c-status'],
     ['date','BL Start','c-date'], ['date','BL Finish','c-date'], ['date','Start','c-date'], ['date','Finish','c-date'],
     ['dur','Dur','c-dur'],
-    ['poc','Planned Value POC','c-poc'], ['pct','Duration POC','c-pct'],
+    ['poc','Planned Value %','c-poc'], ['pct','Activity % Complete','c-pct'], ['durpct','Duration % Complete','c-durpct'],
     ['cost','Planned IBB','c-cost'], ['cost','Actual IBB to date','c-cost'], ['cost','Earned Value IBB','c-cost'],
     ['cost','At Completion IBB','c-cost'], ['cost','BL Planned IBB','c-cost'],
     ['ctype','Percent Complete Type','c-ctype'],
@@ -4042,7 +4398,11 @@
     var gh = document.getElementById('ps-gantt-head'), gHead = document.getElementById('ps-grid-head');
     if (!gh || !gHead) return;
     gh.style.boxSizing = 'border-box';
-    gh.style.height = gHead.getBoundingClientRect().height + 'px';
+    // Never let the measured grid-head height collapse the Gantt date header (e.g. when the grid head
+    // measures 0 mid-relayout after toggling the details panel). Floor to the header's natural height
+    // (68px when the column-filter row is shown, else 38px) so the two-tier date header never vanishes.
+    var floorH = document.querySelector('.ps-grid-pane.ps-colf-on') ? 68 : 38;
+    gh.style.height = Math.max(floorH, gHead.getBoundingClientRect().height) + 'px';
   }
   function renderHeader() {
     var head = document.getElementById('ps-grid-head'); if (!head) return;
@@ -4233,7 +4593,7 @@
   // are scattered across the WBS tree, so the per-WBS-code roll-up map doesn't apply.
   function costCellsHtml(r) {
     if (r._dkind === 'group') {
-      return '<div class="ps-cell c-poc"></div><div class="ps-cell c-pct"></div>' +
+      return '<div class="ps-cell c-poc"></div><div class="ps-cell c-pct"></div><div class="ps-cell c-durpct"></div>' +
         '<div class="ps-cell c-cost"></div><div class="ps-cell c-cost"></div><div class="ps-cell c-cost"></div>' +
         '<div class="ps-cell c-cost"></div><div class="ps-cell c-cost"></div><div class="ps-cell c-ctype"></div>';
     }
@@ -4242,7 +4602,8 @@
       var wPoc = (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) + '%' : '';
       var wEarn = (cm && cm.wd > 0) ? Math.round(cm.wearn / cm.wd) + '%' : '';
       function s(v) { return (cm && v) ? Fmt.money(v) : ''; }
-      return '<div class="ps-cell c-poc">' + wPoc + '</div><div class="ps-cell c-pct">' + wEarn + '</div>' +
+      var wDur = (cm && cm.wdur > 0) ? Math.round(cm.wdurE / cm.wdur * 100) + '%' : '';
+      return '<div class="ps-cell c-poc">' + wPoc + '</div><div class="ps-cell c-pct">' + wEarn + '</div><div class="ps-cell c-durpct">' + wDur + '</div>' +
         '<div class="ps-cell c-cost">' + s(cm && cm.pc) + '</div>' +
         '<div class="ps-cell c-cost">' + s(cm && cm.ac) + '</div>' +
         '<div class="ps-cell c-cost">' + s(cm && cm.ev) + '</div>' +
@@ -4259,6 +4620,7 @@
     }
     return '<div class="ps-cell c-poc">' + (poc != null ? poc + '%' : '') + '</div>' +
       '<div class="ps-cell c-pct ps-editable" data-id="' + r.id + '" data-field="percent_complete" data-type="number">' + (r.percent_complete != null ? r.percent_complete + '%' : '') + _pctBar(r.percent_complete) + '</div>' +
+      '<div class="ps-cell c-durpct ps-editable" data-id="' + r.id + '" data-field="dur_pct" data-type="dpct" title="Duration % Complete — sets Remaining Duration; independent of Physical % Complete">' + _durPct(r) + '%</div>' +
       money('planned_cost') + money('actual_cost') + money('earned_value') +
       '<div class="ps-cell c-cost">' + (hasCost ? Fmt.money(eac(r, cpi)) : '') + '</div>' +
       money('bl_cost') +
@@ -4351,15 +4713,15 @@
         '<div class="ps-cell c-id" style="padding-left:' + idPad + 'px;">' + esc(r._realCode || r.wbs || '') + '</div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
         '<div class="ps-cell c-status"></div>' +
-        '<div class="ps-cell c-date"></div><div class="ps-cell c-date"></div>' +
+        (function () { var blsp = (r._dkind === 'group') ? null : wbsBlSpan(r);
+          return '<div class="ps-cell c-date">' + (blsp ? Fmt.date(dstr(blsp.s)) : '') + '</div><div class="ps-cell c-date">' + (blsp ? Fmt.date(dstr(blsp.e)) : '') + '</div>'; })() +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.e)) : '—') + '</div>' +
         '<div class="ps-cell c-dur"></div>' + costCellsHtml(r) +
         '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + varCellHtml(r) + gridExtraHtml(r) + '</div>';
     }
-    // Original/planned duration (OPC): prefer the stored duration_days; else the planned span (never negative).
-    var dur = (r.duration_days != null) ? Math.max(0, r.duration_days)
-      : ((pd(r.start_date) && pd(r.end_date)) ? Math.max(0, dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : '');
+    // Planned (original) duration — baseline-based, always ≥0 and never disturbed by actuals/forecast.
+    var dur = _origDurOf(r); if (dur == null) dur = '';
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
     var fmt = _fmtRules.length ? _rowFmt(r) : null;
     return '<div class="ps-grid-row' + altc + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
@@ -4369,9 +4731,11 @@
       statusCellHtml(r) +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_start" data-type="date">' + (r.bl_start ? Fmt.date(r.bl_start) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_finish" data-type="date">' + (r.bl_finish ? Fmt.date(r.bl_finish) : '—') + '</div>' +
-      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="actual_start" data-type="date">' + (dispStart(r) ? Fmt.date(dispStart(r)) : '—') + _dateBadge(r.actual_start ? 'A' : (r.primary_constraint ? 'C' : 'P')) + '</div>' +
-      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="actual_finish" data-type="date">' + (dispFin(r) ? Fmt.date(dispFin(r)) : '—') + _dateBadge(r.actual_finish ? 'A' : 'P') + '</div>' +
-      '<div class="ps-cell c-dur">' + (dur ? dur + 'd' : '') + '</div>' +
+      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="' + (r.actual_start ? 'actual_start' : 'start_date') + '" data-type="date">' + (dispStart(r) ? Fmt.date(dispStart(r)) : '—') + _dateBadge(r.actual_start ? 'A' : (r.primary_constraint ? 'C' : '')) + '</div>' +
+      '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="' + (isComplete(r) ? 'actual_finish' : 'end_date') + '" data-type="date">' + (dispFin(r) ? Fmt.date(dispFin(r)) : '—') + _dateBadge(r.actual_finish ? 'A' : '') + '</div>' +
+      (_durLocked(r)
+        ? '<div class="ps-cell c-dur" title="Planned Duration = baseline span (locked)">' + (dur !== '' ? dur + 'd' : '') + '</div>'
+        : '<div class="ps-cell c-dur ps-editable" data-id="' + r.id + '" data-field="planned_duration" data-type="pdur">' + (dur !== '' ? dur + 'd' : '') + '</div>') +
       costCellsHtml(r) +
       '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + gridExtraHtml(r) + '</div>';
   }
@@ -4447,6 +4811,7 @@
     for (var i = first; i < last; i++) gh += gridRowHTML(DL[i], i);
     var host = document.getElementById('ps-grid-rows');
     host.innerHTML = '<div style="transform:translateY(' + (first * ROWH) + 'px);">' + gh + '</div>';
+    applyCellFmtGrid(host);
     host.querySelectorAll('[data-toggle]').forEach(function (t) { t.onclick = function (e) { e.stopPropagation(); collapsed[t.dataset.toggle] = !collapsed[t.dataset.toggle]; renderGrid(); }; });
     // Clicking a real WBS row SELECTS it (so Add activity places under it); expand/collapse is via
     // the ▼/► chevron only. Synthetic group headers keep the click-to-collapse behavior.
@@ -4534,8 +4899,18 @@
       }); }
       if (critMode || depsOn) {
         var vis = {};
-        var _depCY = Math.round(9 * ROWH / 34) + 7;   // bar vertical centre, density-aware (16 at comfortable)
-        for (var vi = first; vi < last; vi++) { var vr = DL[vi]; if (vr._dkind === 'task' && vr.activity_id) { var vs = pd(vr.start_date), ve = pd(vr.end_date); if (vs && ve) vis[String(vr.activity_id)] = { y: vi * ROWH + _depCY, sx: dayDiff(_rMin, vs) * _rDayw, ex: (dayDiff(_rMin, ve) + 1) * _rDayw }; } }
+        // Anchor connectors to the CURRENT-SCHEDULE bar: same x-span (dispStart/dispFin — actual/
+        // forecast when set) and same vertical centre as ganttRowHTML draws it, so arrows land on
+        // the current bar itself (not in the gap between the baseline bar and the current bar).
+        var _oY = ROWH / 34;
+        for (var vi = first; vi < last; vi++) {
+          var vr = DL[vi]; if (vr._dkind !== 'task' || !vr.activity_id) continue;
+          var vs = pd(dispStart(vr)), ve = pd(dispFin(vr)); if (!vs || !ve) continue;
+          var _hasBL = !!(_gset.baseline && pd(vr.bl_start) && pd(vr.bl_finish)), _cy;
+          if (_hasBL) { var _eqH = Math.max(6, Math.round(11 * _oY)); var _bt = Math.round(4 * _oY) + _eqH + Math.max(1, Math.round(2 * _oY)); _cy = _bt + Math.round(_eqH / 2); }
+          else { var _bh = ROWH - Math.round(8 * _oY); _cy = Math.round(4 * _oY) + Math.round(_bh / 2); }
+          vis[String(vr.activity_id)] = { y: vi * ROWH + _cy, sx: dayDiff(_rMin, vs) * _rDayw, ex: (dayDiff(_rMin, ve) + 1) * _rDayw };
+        }
         var lines = '';
         for (var vk = first; vk < last; vk++) {
           var t = DL[vk]; if (t._dkind !== 'task' || !t._relObjs) continue; var b = vis[String(t.activity_id)]; if (!b) continue;
@@ -4615,9 +4990,11 @@
     var r = rows.find(function (x) { return x.id === id; });
     if (!r) return;
     var cur = r[field]; var raw = cur == null ? '' : cur;
-    if (type === 'date') { var dv = field === 'actual_start' ? dispStart(r) : (field === 'actual_finish' ? dispFin(r) : r[field]); raw = dv ? String(dv).slice(0, 10) : ''; }
+    if (type === 'date') { var dv = (field === 'actual_start' || field === 'start_date') ? dispStart(r) : (field === 'actual_finish' || field === 'end_date' ? dispFin(r) : r[field]); raw = dv ? String(dv).slice(0, 10) : ''; }
+    if (type === 'pdur') { var pd0 = _origDurOf(r); raw = (pd0 == null ? '' : pd0); }
+    if (type === 'dpct') { raw = _durPct(r); }
     var inp = document.createElement('input');
-    inp.type = type === 'date' ? 'date' : (type === 'number' || type === 'money' ? 'number' : 'text');
+    inp.type = type === 'date' ? 'date' : (type === 'number' || type === 'money' || type === 'pdur' || type === 'dpct' ? 'number' : 'text');
     inp.value = raw;
     cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); if (inp.select) inp.select();
     var done = false;
@@ -4626,15 +5003,28 @@
       if (!save) { renderGrid(); return; }
       var val = inp.value;
       var patch = {};
+      if (type === 'pdur') { persist(id, _pdurPatch(r, val === '' ? 0 : Math.max(0, parseFloat(val) || 0))).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } }); return; }
+      // Duration % Complete → set Remaining Duration only (schedule side); Physical % untouched.
+      // Requires the activity to be STARTED (actual start); a completed activity is fixed at 100%.
+      if (type === 'dpct') {
+        if (!r.actual_start) { UI.toast('Start the activity first — enter an Actual Start before setting Duration % Complete.', 'error'); renderGrid(); return; }
+        if (isComplete(r)) { UI.toast('Activity is complete — Duration % Complete is 100%.', 'info'); renderGrid(); return; }
+        var _dp = val === '' ? 0 : Math.max(0, Math.min(100, parseFloat(val) || 0)); var _od = _origDurOf(r) || 0; persist(id, { remaining_duration: Math.max(0, Math.round(_od * (1 - _dp / 100))) }).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } }); return;
+      }
       if (type === 'number') { patch[field] = val === '' ? null : Math.max(0, Math.min(100, parseFloat(val)||0)); }
       else if (type === 'money') { patch[field] = val === '' ? null : Math.max(0, parseFloat(val) || 0); }
       else if (type === 'date') { patch[field] = val || null; }
       else { patch[field] = val.trim() || null; }
-      // Screening: a % (Duration POC) needs an Actual Start first — you can't have progress with no start.
-      if (field === 'percent_complete' && (patch.percent_complete || 0) > 0 && !r.actual_start) { UI.toast('Enter an Actual Start (the Start column) before recording % complete.', 'error'); renderGrid(); return; }
-      // Progress-driven: % Complete (Duration POC) recomputes remaining duration + finish from the data date.
-      if (progressDriven && field === 'percent_complete') { patch = _progressFields(r, patch.percent_complete); }
-      // Date edits (actual/planned start/finish) go through the OPC-style validator/deriver.
+      // Physical % Complete requires the activity to be STARTED (Actual Start) before it can be set;
+      // a completed activity is fixed at 100% (kept by _statusPatch / the Actual-Finish edit).
+      if (field === 'percent_complete') {
+        if (!r.actual_start) { UI.toast('Start the activity first — enter an Actual Start before setting Physical % Complete.', 'error'); renderGrid(); return; }
+        if (isComplete(r)) { patch.percent_complete = 100; }
+      }
+      // Physical % Complete (percent_complete) is the official accomplishment measure, INDEPENDENT of
+      // the schedule — editing it never modifies Remaining Duration or forecast dates (policy). Marking
+      // completion is done via the Status field / an Actual Finish, not by typing a %.
+      // Date edits (actual/scheduled start/finish) go through the OPC-style validator/deriver.
       if (type === 'date') { var dres = _dateEditPatch(r, field, patch[field]); if (dres.error) { UI.toast(dres.error, 'error'); renderGrid(); return; } patch = dres.patch; }
       persist(id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); } });
     }
@@ -4673,10 +5063,15 @@
     if (spotlightRow(r)) crit += ' ps-spot';
     var wc = actColor(r) || effWbsColor(r);
     var lbl = _barLabel(r);
-    if (isMile(r) && s) {
-      var mx = dayDiff(min, s) * dayw;
-      out += '<div class="ps-mile' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + (top + o9) + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
-      if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (mx + 9) + 'px;top:' + (top + o9) + 'px;">' + esc(lbl) + '</div>';
+    if (isMile(r)) {
+      var md = isFinishMile(r) ? (e || s) : s; if (!md) return out;   // Finish Milestone anchors on the finish
+      // Baseline (planned) milestone marker — Finish Milestone uses BL Finish, else BL Start.
+      var blMd = _gset.baseline ? (isFinishMile(r) ? pd(r.bl_finish) : pd(r.bl_start)) : null;
+      var curTop = top + (blMd ? Math.round(15 * oY) : o9);   // when a baseline is shown, the current diamond sits below it
+      if (blMd) { var bmx = dayDiff(min, blMd) * dayw; out += '<div class="ps-mile-bl" title="Baseline (BL0) milestone" style="left:' + (bmx - 5) + 'px;top:' + (top + Math.round(3 * oY)) + 'px;"></div>'; }
+      var mx = dayDiff(min, md) * dayw;
+      out += '<div class="ps-mile' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + curTop + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
+      if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (mx + 9) + 'px;top:' + curTop + 'px;">' + esc(lbl) + '</div>';
       return out;
     }
     if (!s || !e) return out;
@@ -7033,38 +7428,9 @@
   // finish from the data date. Retain-on-move: Schedule shifts un-started activities to the data date.
   var progressDriven = (function () { try { return localStorage.getItem('ps_progressdriven') !== '0'; } catch (e) { return true; } })();
   var ddRetainOn = (function () { try { return localStorage.getItem('ps_ddretain') !== '0'; } catch (e) { return true; } })();
-  // Recompute remaining duration + finish (and status/actual dates) from a % Complete (POC) input.
-  // planned/original duration is kept as duration_days; remaining = origDur × (1 − POC), scheduled
-  // from the data date. 100% → finished at the data date; 0% → not started (dates untouched here).
-  function _progressFields(r, pct) {
-    pct = Math.max(0, Math.min(100, pct == null ? 0 : pct));
-    var patch = { percent_complete: pct };
-    // Original/planned duration. Prefer duration_days; else the baseline span; else the current
-    // planned span. PIN it to duration_days so later % edits recompute from the SAME base — otherwise,
-    // once we move the finish, a null duration_days would re-derive "original" off the shortened bar
-    // and progress would appear to stop re-adjusting.
-    var origDur = _origDurOf(r);
-    if (origDur != null) patch.duration_days = origDur;
-    var dd = today();
-    if (pct >= 100) {
-      patch.status = 'Completed';
-      patch.actual_start = r.actual_start || r.start_date || null;
-      // Keep a user-entered Actual Finish; only default to the data date when it's blank.
-      var af = r.actual_finish || dstr(dd);
-      var as0 = pd(patch.actual_start), afd = pd(af);
-      if (as0 && afd && afd < as0) af = dstr(as0);   // finish can't precede the actual start
-      patch.actual_finish = af; patch.end_date = af;
-      patch.remaining_duration = 0; patch.actual_duration = actualDurOf(patch.actual_start, patch.actual_finish);
-    } else if (pct > 0) {
-      // Actual Start is required to record % (enforced by the % gate); forecast from it.
-      patch.status = 'In Progress'; patch.actual_finish = null;
-      var fc = _fcFields(r.actual_start, pct, origDur, dd); Object.keys(fc).forEach(function (k) { patch[k] = fc[k]; });
-    } else {
-      patch.status = 'Not Started'; patch.actual_start = null; patch.actual_finish = null;
-      patch.actual_duration = null; if (origDur != null) patch.remaining_duration = origDur;
-    }
-    return patch;
-  }
+  // (Removed _progressFields — Physical % Complete no longer drives Remaining Duration / dates. The
+  // schedule is driven by Actual Start + Remaining Duration; completion is handled by _statusPatch /
+  // the Actual Finish edit. See project-controls separation policy.)
   // Extract predecessor Activity IDs from an OPC cell — tolerates "A1010 (FS)",
   // "A1010: FS+2d", "A1010; A1020", "1010, 1020", etc. (takes the leading token).
   function predIds(str) {
@@ -7153,7 +7519,12 @@
     var A = function (d) { var x = pd(d); return x ? dayDiff(base, x) : null; };
     var DD = useActuals ? dayDiff(base, today()) : null;   // data date offset
     tasks.forEach(function (t) {
-      t._dur = (pd(t.end_date) - pd(t.start_date)) / 86400000 + 1;
+      // Duration for CPM. Milestones = 0; everything else ≥ 1, CLAMPED so an inconsistent
+      // end_date-before-start_date can't make _dur negative and corrupt the forward pass (which would
+      // schedule successors before their predecessors finish). Falls back to duration_days, then 1.
+      var _s = pd(t.start_date), _e = pd(t.end_date);
+      var _raw = (_s && _e) ? dayDiff(_s, _e) + 1 : (t.duration_days != null ? t.duration_days : 1);
+      t._dur = isMile(t) ? 0 : Math.max(1, _raw);
       t._done = useActuals && !!t.actual_finish;
       t._started = useActuals && (!!t.actual_start || (t.percent_complete > 0));
       t._es = null; t._ef = null; t._out = [];
@@ -7189,7 +7560,13 @@
         if (t._cons.length) es = fwdConstrain(es, t._dur, t._cons);
       }
       t._es = es;
-      t._ef = (useActuals && t.actual_finish) ? A(t.actual_finish) : es + t._dur;
+      if (useActuals && t.actual_finish) { t._ef = A(t.actual_finish); }
+      else if (useActuals && t._started && !t._done && t.remaining_duration != null && DD != null) {
+        // Retained logic: a started activity's remaining work is scheduled from the later of the data
+        // date and its actual start, so its FORECAST finish (data date + remaining) — not the original
+        // scheduled span — drives successors. _ef is exclusive (finish + 1). Milestones stay 0-duration.
+        t._ef = isMile(t) ? es : (Math.max(es, DD) + Math.max(0, t.remaining_duration));
+      } else { t._ef = es + t._dur; }
     });
     var projEnd = 0; tasks.forEach(function (t) { if (t._ef != null && t._ef > projEnd) projEnd = t._ef; });
     // backward pass — reverse topo order (every successor precedes its predecessor), single pass.
@@ -7236,7 +7613,14 @@
     rows.forEach(function (t) {
       if (isWbs(t) || !t.activity_id) return;
       if (t.actual_start || t.actual_finish || (t.percent_complete || 0) > 0) return;   // started/done — leave
-      var s = pd(t.start_date); if (!s || s >= dd) return;                               // already at/after DD
+      var s = pd(t.start_date);
+      // A no-predecessor, unstarted MILESTONE has nothing driving its date, so it rides the data date
+      // (a start/finish anchor "you are here"). Snap it exactly to the data date (either direction).
+      if (isMile(t) && relPreds(t).length === 0) {
+        if (!s || dstr(s) !== dstr(dd)) patches.push({ id: t.id, patch: { start_date: dstr(dd), end_date: dstr(dd), updated_at: new Date().toISOString() }, row: t });
+        return;
+      }
+      if (!s || s >= dd) return;                               // already at/after DD
       var delta = dayDiff(s, dd);
       var e = pd(t.end_date);
       patches.push({ id: t.id, patch: { start_date: dstr(dd), end_date: e ? dstr(addDays(e, delta)) : dstr(dd), updated_at: new Date().toISOString() }, row: t });
@@ -7653,6 +8037,7 @@
   // ---- Global Gantt colors ----
   var COLORDEFS = [
     { k: 'bar', v: '--ps-bar', label: 'Task bar', def: '#2B2C2B' },
+    { k: 'barbd', v: '--ps-bar-bd', label: 'Bar border', def: '#00000000' },
     { k: 'prog', v: '--ps-prog', label: 'Progress fill', def: '#EE3124' },
     { k: 'sum', v: '--ps-sum', label: 'Summary bar', def: '#231F20' },
     { k: 'bl', v: '--ps-bl', label: 'Baseline', def: '#2F6FB0' },
@@ -8022,6 +8407,47 @@
     hideLoading(); renderGrid(); renderGantt(); renderDetails();
     UI.toast('Pasted ' + cnt + ' cell' + (cnt === 1 ? '' : 's') + (skipped ? ' (' + skipped + ' read-only cell' + (skipped === 1 ? '' : 's') + ' skipped)' : '') + '.', 'success');
   }
+  // Actualize / un-actualize the Start or Finish date across a set of activity rows (from the row
+  // context menu). Actualize Start → record the scheduled start (capped at the data date), In Progress.
+  // Actualize Finish → record the scheduled finish (capped at data date), Completed (Physical %100/rem 0).
+  // Un-actualize clears the actual date (Start → Not Started; Finish → back to In Progress).
+  async function actualizeDates(ids, which, on) {
+    var dd = today(), n = 0;
+    for (var i = 0; i < ids.length; i++) {
+      var r = rows.find(function (x) { return x.id === ids[i]; });
+      if (!r || isWbsNode(r) || r._dkind === 'group') continue;
+      var patch = null, od = _origDurOf(r);
+      if (which === 'start') {
+        if (on) {
+          // Record EXACTLY the date shown in the Start cell (dispStart) — no capping to the data date.
+          var s = dispStart(r); if (!s) continue; var asd = String(s).slice(0, 10);
+          patch = { actual_start: asd, actual_duration: actualDurOf(asd, r.actual_finish) };
+          if ((r.status || 'Not Started') === 'Not Started') patch.status = 'In Progress';
+          if (!r.actual_finish && r.remaining_duration == null && od != null) patch.remaining_duration = Math.max(0, od);   // remaining starts at the full planned (baseline) duration
+        } else {
+          if (!r.actual_start) continue;
+          patch = { actual_start: null, actual_duration: null, remaining_duration: od, status: 'Not Started' };
+        }
+      } else {
+        if (on) {
+          // Record EXACTLY the date shown in the Finish cell (dispFin) — no capping to the data date.
+          var f = dispFin(r); if (!f) continue; var afd = String(f).slice(0, 10);
+          var as2 = r.actual_start || r.start_date || null;
+          if (as2 && pd(afd) < pd(as2)) afd = String(as2).slice(0, 10);   // finish can't precede the start
+          patch = { actual_finish: afd, actual_start: as2, remaining_duration: 0, percent_complete: 100, status: 'Completed', actual_duration: actualDurOf(as2, afd) };
+        } else {
+          if (!r.actual_finish) continue;
+          var elapsed = r.actual_start ? Math.max(0, dayDiff(pd(r.actual_start), dd)) : null;
+          patch = { actual_finish: null, status: 'In Progress', actual_duration: elapsed,
+            remaining_duration: r.actual_start ? (od != null ? Math.max(0, od - elapsed) : null) : od,
+            percent_complete: (r.percent_complete || 0) >= 100 ? 0 : (r.percent_complete || 0) };
+        }
+      }
+      if (patch) { await persist(r.id, patch); n++; }
+    }
+    renderGrid(); renderGantt(); renderDetails();
+    UI.toast((on ? 'Actualized ' : 'Un-actualized ') + which + ' on ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '.', n ? 'success' : 'warn');
+  }
   function openRowMenu(e, r, cellField) {
     e.preventDefault(); e.stopPropagation(); closeRowMenu(); closeBarColorMenu(); closeColMenu();
     if (window.__viewOnly || window.__archived) return;   // read-only projects: no insert menu
@@ -8052,6 +8478,16 @@
     if (_clip && _clip.data.length) items.push('<button data-act="paste">Paste ' + _clip.data.length + ' row' + (_clip.data.length === 1 ? '' : 's') + ' here</button>');
     // Fill down: only when a data cell was right-clicked AND there are other selected rows to fill.
     if (cellField && !isW && r && r._dkind !== 'group' && _selSet.size > 1) items.push('<button data-act="filldown">Fill ' + esc(_FIELD_LABELS[cellField] || cellField) + ' down (' + (_selSet.size - 1) + ')</button>');
+    if (cellField && r && r.id) items.push('<button data-act="fmtcell"><span data-ico="palette" data-ico-size="14"></span> Format cell… <span style="color:var(--pd-muted);font-size:10px;">bold / colour / size</span></button>');
+    // Actualize / un-actualize dates — context-aware: a Start cell shows Start actions, a Finish cell
+    // shows Finish actions, any other cell shows both. Acts on all selected activity rows.
+    if (r && !isW && r._dkind !== 'group') {
+      var showStart = !cellField || cellField === 'actual_start' || cellField === 'start_date';
+      var showFin = !cellField || cellField === 'actual_finish' || cellField === 'end_date';
+      items.push(sep);
+      if (showStart) { items.push('<button data-act="actstart">Actualize Start' + selSfx + '</button>'); items.push('<button data-act="unactstart">Un-actualize Start' + selSfx + '</button>'); }
+      if (showFin) { items.push('<button data-act="actfinish">Actualize Finish' + selSfx + '</button>'); items.push('<button data-act="unactfinish">Un-actualize Finish' + selSfx + '</button>'); }
+    }
     items.push(sep);
     if (node) items.push('<button data-act="childwbs"><span data-ico="layers" data-ico-size="14"></span> Add child WBS…</button>');
     if (pnode && pnode.parent_id) items.push('<button data-act="siblingwbs"><span data-ico="layers" data-ico-size="14"></span> Add sibling WBS…</button>');
@@ -8081,6 +8517,11 @@
       else if (a === 'cutcells') { copyCells('cut'); }
       else if (a === 'pastecells') { pasteCells(); }
       else if (a === 'filldown') { fillDown(cellField, r); }
+      else if (a === 'fmtcell') { var _c = document.querySelector('#ps-grid-rows .ps-cell[data-id="' + r.id + '"][data-field="' + cellField + '"]') || document.body; openCellFmt(_c, r.id, cellField, function () { renderGrid(); }); }
+      else if (a === 'actstart' || a === 'actfinish' || a === 'unactstart' || a === 'unactfinish') {
+        var _ids = _selSet.size ? Array.from(_selSet) : (r && r.id ? [r.id] : []);
+        actualizeDates(_ids, (a === 'actstart' || a === 'unactstart') ? 'start' : 'finish', a === 'actstart' || a === 'actfinish');
+      }
       else if (a === 'del') { if (!isW && _selSet.size > 1) deleteSelected(); else deleteRow(r); }
     }; });
     setTimeout(function () { document.addEventListener('click', closeRowMenu); }, 0);
@@ -8162,8 +8603,9 @@
         '<div style="flex:1;min-width:180px;"><label class="pd-label">Relationship</label><select class="pd-input" id="ps-rel-type">' +
           '<option value="FS">Finish → Start (FS)</option><option value="SS">Start → Start (SS)</option>' +
           '<option value="FF">Finish → Finish (FF)</option><option value="SF">Start → Finish (SF)</option></select></div>' +
-        '<div><label class="pd-label">Lag (days)</label><input class="pd-input" id="ps-rel-lag" type="number" value="0" style="width:110px;"></div>' +
+        '<div><label class="pd-label">Lag (days)</label><input class="pd-input" id="ps-rel-lag" type="number" step="1" value="0" title="Lag in days — negative = lead/overlap (successor starts earlier)" style="width:110px;"></div>' +
       '</div>' +
+      '<p style="color:var(--pd-muted);font-size:11.5px;margin:8px 0 0;">Negative lag = lead: the successor starts earlier (e.g. FS −3 overlaps the predecessor by 3 days).</p>' +
       '<div style="text-align:right;margin-top:14px;"><button class="pd-btn" id="ps-rel-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-rel-go">Create link</button></div>');
     m.el.querySelector('#ps-rel-x').onclick = m.close;
     m.el.querySelector('#ps-rel-go').onclick = function () {
@@ -8174,7 +8616,9 @@
   }
   function commitLink(src, tgt, type, lag) {
     var tok = String(src.activity_id);
-    if (type && type !== 'FS') tok += ' ' + type;
+    // Emit the type token whenever there's a type OR a lag — activity IDs can contain hyphens
+    // (e.g. "2-A1010"), so a bare "-15" lag with no separator would merge into the ID.
+    if ((type && type !== 'FS') || lag) tok += ' ' + (type || 'FS');
     if (lag) tok += (lag > 0 ? '+' : '') + lag;
     var pstr = tgt.predecessors ? (tgt.predecessors + ', ' + tok) : tok;
     persist(tgt.id, { predecessors: pstr }).then(function (ok) {
@@ -8267,6 +8711,7 @@
       if (sp) { sp.classList.toggle('ps-grid-only', layoutMode === 'grid'); sp.classList.toggle('ps-gantt-only', layoutMode === 'gantt'); sp.classList.toggle('ps-compact', _density === 'compact'); }
       var det = document.getElementById('ps-details'); if (det) det.style.display = detailsHidden ? 'none' : '';
       if (net) renderNetwork(); else renderGantt();
+      requestAnimationFrame(syncHeadHeights);   // re-measure after the toggle reflow so the Gantt date header stays
     }
     function applyDensity(d) {
       _density = (d === 'compact') ? 'compact' : 'comfortable';
@@ -8316,6 +8761,7 @@
     document.getElementById('ps-undo').onclick = function (e) { e.stopPropagation(); undo(); };
     document.getElementById('ps-redo').onclick = function (e) { e.stopPropagation(); redo(); };
     document.getElementById('ps-layoutbtn').onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { renderLayoutMenu(); lMenu.classList.add('open'); } };
+    var pgBtn = document.getElementById('ps-progressbtn'); if (pgBtn) pgBtn.onclick = function (e) { e.stopPropagation(); closeMenus(); setProgressMode(!progressMode); };
     lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.getElementById('ps-colsbtn').onclick = function (e) { e.stopPropagation(); var o = colsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColsMenu(); colsMenu.classList.add('open'); } };
     colsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
