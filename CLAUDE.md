@@ -77,6 +77,46 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-20 — Productivity Rates module built (Productivity Monitoring from the QHL706 workbook)
+- **Built `modules/productivity-rates/`** (single-file `index.html`, s-curve/cash-flow inline
+  pattern), flipped `enabled: true`. Reverse-engineered the OPS workbook *"QHL706. OPS. Productivity
+  Monitoring … (BL02)"* — one sheet per trade, each a monthly **Planned / Actual / Baseline (BL0)**
+  monitoring graph tracking manpower loading, output quantity and the **productivity rate**
+  (output per man-day), plus a cumulative-output curve with variance.
+- **Model = two tables** (`migrations/2026-07-20-productivity-rates-full.sql`, **USER MUST RUN**;
+  idempotent, folded into `supabase-schema.sql` + `supabase-setup.sql` + the RLS loop):
+  `productivity_activities` (one row per trade) + `productivity_entries` (one row per activity·month:
+  `work_days`, `mp_bl0/planned/actual`, `qty_bl0/planned/actual`; unique on (activity_id,period),
+  FK `on delete cascade`). The flat Phase-1 `productivity_rates` starter is **superseded** (left
+  untouched). **Rate / cumulative / variance are DERIVED in the app** (`rate = output ÷ (resource ×
+  work_days)`), never stored — same rule as risk-register's rating.
+- **Two views** (uniform sidebar-less topbar, project selector, tabs): **Monitoring** (activity +
+  metric picker → SVG BL0/Planned/Actual chart with a "this month" line, 5 KPIs, toggleable
+  transposed data table with a Variance row) and **Data** (activities register + a **monthly editor**
+  grid with live-derived rate cells and "+ Add month" defaulting `work_days` to the Philippine 6-day
+  working calendar via `PDCal`).
+- **Excel importer** for the workbook family: detects the four labelled blocks (Manpower/Equipment
+  loading · Output · Average Productivity Rate · Cumulative) + the month/year header + the
+  subcontractor sub-block. ⚠️ **Block detection invariant:** a *main* block has an empty col-C in the
+  row above; a *subcontractor* sub-block (AFCSC/JM2/CEC/GeoExpert) does not — this stopped Excavation
+  grabbing its "No. of Backhoe" sub-row as the output block. On import `work_days` is set to
+  **reproduce the workbook's own rate** (`qty÷(mp×rate)`), falling back to PDCal for rate-less months.
+- **Data sourcing = manual entry + import, not derived from other modules** (deliberate): the
+  actuals (crew deployed, quantity installed) are site-reported and have no upstream in the suite —
+  so this is a data-entry/monitoring tool like material-submittal, unlike cash-flow (schedule+WPM).
+- **Verified across all layers.** Parser in Node+SheetJS against the real file (13 trade sheets,
+  correct units/resource types/subcontractors, 307 entries; scratch/Assumptions tabs excluded) and
+  re-verified in-browser. Import reconciliation (Node): 187/192 rate-bearing months reproduce the
+  workbook's stored rate within 0.5% (≤9% on a few integer-rounded tiny values), 115 rate-less months
+  fall back to PDCal. UI/behaviour in a browser harness (real module code, in-memory Supabase stub):
+  Monitoring KPIs (cum 870.78, latest 0.717, avg mp 25.7 — hand-checked), chart lines+dots, metric
+  switch, transposed table+variance, empty states; Data register; monthly editor live-derive
+  (95→190 doubles the rate) + add-month (Sep-2024, PDCal work_days 25) + save/persist (cum 1370.78);
+  add-activity modal. **No console errors.** Screenshots still impossible in this env (stalled
+  compositor) — checks are DOM/JS-based.
+- Only module-local files + the `config.js` enabled flag changed, so **no global `?v=` bump**
+  (suite convention).
+
 ### 2026-07-20 — Stakeholder Map rebuilt to the real corporate-BD methodology
 - The owner supplied the actual **"CORP. BD TCD. Stakeholder Map 2026.xlsx"** (BD Map · TCD Map ·
   Analysis Guide). Reverse-engineered it and **rebuilt `modules/stakeholder-map/`** from the generic

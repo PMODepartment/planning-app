@@ -8,30 +8,788 @@
   <script src="../../assets/js/theme.js?v=20260720b"></script>
   <title>Productivity Rates · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260720b" />
+  <style>
+    /* ---- Uniform sidebar-less chrome (matches S-Curve / Cash Flow / Drawing
+       Register / Project Schedule). Keep the topbar rules in sync with those. ---- */
+    .pd-content { width:100%; }
+    .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
+    .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+    .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+    .pr-modback { width:36px; height:36px; padding:0; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+    .pr-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; margin:0; }
+    .pr-title .pr-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pr-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
+    .pr-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+    .pr-project { max-width:260px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .pr-project:hover, .pr-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+    /* segmented view tabs */
+    .pr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; flex:none; }
+    .pr-tab { border:0; background:transparent; padding:7px 14px; font:inherit; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; }
+    .pr-tab + .pr-tab { border-left:1px solid var(--pd-line); }
+    .pr-tab.active { background:var(--pd-red); color:#fff; }
+    /* tool cluster beside the profile */
+    .pr-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; flex-wrap:wrap; }
+    .pr-topbar-tools .pd-btn { height:34px; width:34px; padding:0; font-size:13px; display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
+    .pr-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+    .pr-topbar-tools .pd-btn.pr-tb-labeled { width:auto; padding:0 12px; gap:6px; }
+    .pr-topbar-tools .pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    .pr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
+
+    /* control bar (Monitoring: activity + metric pickers) */
+    .pr-controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:10px 12px; margin-bottom:16px; }
+    .pr-controls label { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .pr-controls .pd-select { height:34px; }
+    .pr-ck { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--pd-ink); cursor:pointer; }
+
+    /* KPIs */
+    .pr-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:18px; }
+    .pr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
+    .pr-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
+    .pr-kpi-v { font-size:22px; font-weight:700; } .pr-kpi-s { font-size:12px; color:var(--pd-muted); margin-top:2px; }
+    .pr-ok { color:var(--pd-ok); } .pr-bad { color:var(--pd-bad); }
+
+    /* cards + chart */
+    .pr-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:16px; margin-bottom:18px; }
+    .pr-card h3 { margin:0 0 12px; font-size:15px; }
+    .pr-svg { width:100%; height:auto; display:block; }
+    .pr-grid { stroke:var(--pd-line); stroke-width:1; }
+    .pr-ylab, .pr-xlab { fill:var(--pd-muted); font-size:11px; }
+    .pr-ylab { text-anchor:end; } .pr-xlab { text-anchor:middle; }
+    .pr-l-planned { fill:none; stroke:var(--pd-dark); stroke-width:2; }
+    html.pd-dark .pr-l-planned { stroke:#c7ccd1; }
+    .pr-l-actual { fill:none; stroke:var(--pd-red); stroke-width:2.5; }
+    .pr-l-bl0 { fill:none; stroke:#9aa0a6; stroke-width:1.6; stroke-dasharray:6 4; }
+    .pr-dot-actual { fill:var(--pd-red); }
+    .pr-today { stroke:var(--pd-red); stroke-width:1.4; stroke-dasharray:4 3; }
+    .pr-today-lab { fill:var(--pd-red); font-size:10px; font-weight:700; }
+    .pr-legend { display:flex; flex-wrap:wrap; gap:18px; margin-top:12px; font-size:12px; color:var(--pd-muted); }
+    .pr-lg { display:inline-flex; align-items:center; }
+    .pr-sw { display:inline-block; width:18px; height:3px; margin-right:6px; }
+    .pr-sw-planned { background:var(--pd-dark); } html.pd-dark .pr-sw-planned { background:#c7ccd1; }
+    .pr-sw-actual { background:var(--pd-red); }
+    .pr-sw-bl0 { border-top:2px dashed #9aa0a6; height:0; }
+    .pr-empty { text-align:center; padding:40px; color:var(--pd-muted); }
+
+    /* tables */
+    .pr-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .pr-table th { background:var(--pd-bg); padding:8px 12px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    .pr-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
+    .pr-table tbody tr:hover { background:var(--pd-bg); }
+    .pr-num { text-align:right; font-variant-numeric:tabular-nums; }
+    .pr-mono { font-variant-numeric:tabular-nums; }
+    .pr-sub { font-size:12px; color:var(--pd-muted); }
+    .pr-chip { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; background:var(--pd-bg); border:1px solid var(--pd-line); }
+    /* transposed monitoring table (months across) */
+    .pr-ttable { width:100%; border-collapse:collapse; font-size:13px; }
+    .pr-ttable th, .pr-ttable td { white-space:nowrap; padding:7px 12px; text-align:right; border-bottom:1px solid var(--pd-line); }
+    .pr-ttable th { background:var(--pd-bg); font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
+    .pr-ttable th:first-child, .pr-ttable td:first-child { text-align:left; position:sticky; left:0; font-weight:700; }
+    .pr-ttable td:first-child { background:var(--pd-card); } .pr-ttable th:first-child { background:var(--pd-bg); }
+    .pr-row-actual td { color:var(--pd-red); }
+    .pr-row-bl0 td { color:#9aa0a6; }
+
+    /* monthly editor (wide modal) */
+    .pd-modal:has(> .pr-editor) { max-width:min(1120px,96vw); width:1120px; }
+    .pr-editor h2 { margin:0 0 4px; }
+    .pr-ed-scroll { overflow:auto; max-height:60vh; border:1px solid var(--pd-line); border-radius:8px; }
+    .pr-ed { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .pr-ed th { position:sticky; top:0; z-index:2; background:var(--pd-bg); padding:6px 8px; text-align:center; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    .pr-ed td { padding:3px 6px; border-bottom:1px solid var(--pd-line); text-align:center; }
+    .pr-ed td:first-child, .pr-ed th:first-child { position:sticky; left:0; background:var(--pd-card); text-align:left; font-weight:700; white-space:nowrap; z-index:1; }
+    .pr-ed th.pr-grp { border-left:1px solid var(--pd-line); }
+    .pr-ed td.pr-grp { border-left:1px solid var(--pd-line); }
+    .pr-ed input { width:74px; height:28px; padding:2px 6px; text-align:right; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:12px; font-variant-numeric:tabular-nums; }
+    .pr-ed input:focus { outline:none; border-color:var(--pd-red); }
+    .pr-ed .pr-derived { color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+    .pr-ed-del { cursor:pointer; color:var(--pd-muted); border:0; background:none; padding:2px 6px; }
+    .pr-ed-del:hover { color:var(--pd-bad); }
+    .pr-ed-foot { display:flex; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap; }
+    .pr-ed-foot .pr-spacer { margin-left:auto; }
+    .pr-hint { font-size:12px; color:var(--pd-muted); }
+
+    .pr-loading { position:fixed; inset:0; background:rgba(20,20,20,.4); display:flex; align-items:center; justify-content:center; gap:12px; z-index:999; color:#fff; font-weight:600; }
+    .pr-spin { width:36px; height:36px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:pr-spin .8s linear infinite; }
+    @keyframes pr-spin { to { transform:rotate(360deg); } }
+    @media (max-width:860px) { .pr-title-txt { display:none; } }
+  </style>
 </head>
 <body>
-  <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Productivity Rates</small></div>
-      <nav><a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a></nav>
-    </aside>
-    <div class="pd-content">
-      <div class="pd-topbar"><h1>Productivity Rates</h1><div id="user-bar"></div></div>
-      <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>Productivity Rates</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code> or a reference module.</p>
+<div class="pd-app">
+  <div class="pd-content">
+    <div class="pd-topbar">
+      <a class="pd-btn pr-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
+      <h1 class="pr-title">
+        <span class="pr-title-ico" data-ico="barChart" data-ico-size="20"></span>
+        <span class="pr-title-txt">Productivity Rates</span>
+      </h1>
+      <div class="pr-projctx">
+        <select class="pd-select pr-project" id="pr-project" title="Project"></select>
+      </div>
+      <div class="pr-tabs" role="tablist">
+        <button class="pr-tab active" data-view="monitor">Monitoring</button>
+        <button class="pr-tab" data-view="data">Data</button>
+      </div>
+      <div class="pr-topbar-tools">
+        <button class="pd-btn pd-btn-primary pr-tb-labeled" id="pr-add" title="Add an activity">+ Add activity</button>
+        <span class="pr-tb-sep"></span>
+        <button class="pd-btn" id="pr-import" title="Import productivity workbook (Excel)"><span data-ico="upload" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="pr-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
+      </div>
+      <div id="user-bar"></div>
+    </div>
+    <div class="pd-main">
+      <!-- MONITORING -->
+      <div id="pr-view-monitor">
+        <div class="pr-controls">
+          <label for="pr-act">Activity</label>
+          <select class="pd-select" id="pr-act" style="max-width:280px;"></select>
+          <label for="pr-metric" style="margin-left:8px;">Metric</label>
+          <select class="pd-select" id="pr-metric" style="max-width:220px;">
+            <option value="rate">Productivity Rate</option>
+            <option value="qty">Output Quantity</option>
+            <option value="manpower">Manpower / Equipment</option>
+            <option value="cum">Cumulative Output</option>
+          </select>
+          <label class="pr-ck" style="margin-left:8px;"><input type="checkbox" id="pr-showbl0" checked> Show baseline (BL0)</label>
+          <button class="pd-btn" id="pr-tabletoggle" style="margin-left:auto;" title="Show data table"><span data-ico="listView" data-ico-size="16"></span></button>
+        </div>
+        <div class="pr-kpis" id="pr-kpis"></div>
+        <div class="pr-card">
+          <h3 id="pr-chart-title">Productivity Monitoring</h3>
+          <div id="pr-chart"></div>
+          <p class="pr-hint" id="pr-basis" style="margin-bottom:0;"></p>
+        </div>
+        <div class="pr-card" id="pr-tablecard" style="padding:0;overflow:hidden;display:none;">
+          <div style="overflow-x:auto;" id="pr-tablewrap"></div>
+        </div>
+      </div>
+      <!-- DATA -->
+      <div id="pr-view-data" style="display:none;">
+        <div class="pr-card" style="padding:0;overflow:auto;">
+          <table class="pr-table" id="pr-datatable"></table>
         </div>
       </div>
     </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js?v=20260720b"></script>
-  <script src="../../assets/js/auth.js?v=20260720b"></script>
-  <script src="../../assets/js/db.js?v=20260720b"></script>
-  <script src="../../assets/js/ui.js?v=20260720b"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+</div>
+<div class="pr-loading" id="pr-loading" style="display:none;"><div class="pr-spin"></div><span id="pr-loading-msg">Loading…</span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../../assets/js/config.js?v=20260720b"></script>
+<script src="../../assets/js/auth.js?v=20260720b"></script>
+<script src="../../assets/js/db.js?v=20260720b"></script>
+<script src="../../assets/js/ui.js?v=20260720b"></script>
+<script src="../../assets/js/icons.js?v=20260720b"></script>
+<script src="../../assets/js/calendar.js?v=20260720b"></script>
+<script>
+// ============================================================================
+// Productivity Rates — Productivity Monitoring (per project).
+// Each ACTIVITY (trade) carries monthly Planned / Actual / Baseline (BL0)
+// manpower & output; the productivity RATE, cumulative and variance are DERIVED
+// here (rate = output ÷ (resource × working days)) and never stored — the same
+// "derive, don't persist" rule risk-register uses for its rating.
+// Built from the QHL706 OPS "Productivity Monitoring" workbook family.
+// ============================================================================
+
+// ---- Embedded workbook parser (verified against the QHL706 workbook) --------
+(function (root) {
+  'use strict';
+  var MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  var SERIES = { 'BL0':'bl0', 'PLANNED':'planned', 'ACTUAL':'actual' };
+  function cell(ws, addr) { var c = ws[addr]; return c && c.v != null ? c.v : null; }
+  function txt(v) { return v == null ? '' : String(v).replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function num(v) { if (v == null || v === '') return null; var n = +v; return isFinite(n) ? n : null; }
+  function colLetters(n) { var s = ''; n = n + 1; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+  function paren(label) { var m = /\(([^)]+)\)/.exec(label); return m ? m[1].trim() : ''; }
+  function findTimeline(ws, XLSX) {
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    var maxC = Math.min(range.e.c, 40);
+    var itemRow = null;
+    for (var r = 28; r <= 45; r++) { if (txt(cell(ws, 'B' + r)).toUpperCase() === 'ITEM') { itemRow = r; break; } }
+    if (itemRow == null) return null;
+    var yearRow = itemRow, monRow = itemRow + 1, timeline = [], curYear = null;
+    for (var c = 3; c <= maxC; c++) {
+      var L = colLetters(c);
+      var yv = num(cell(ws, L + yearRow));
+      if (yv && yv > 1990 && yv < 2100) curYear = yv;
+      var mv = txt(cell(ws, L + monRow)).toUpperCase().slice(0, 3);
+      var mi = MONTHS.indexOf(mv);
+      if (mi >= 0 && curYear) timeline.push({ col: L, year: curYear, month: mi });
+    }
+    return timeline.length ? { itemRow: itemRow, monRow: monRow, timeline: timeline } : null;
+  }
+  function readBlock(ws, labelRow, timeline) {
+    var out = { bl0: {}, planned: {}, actual: {} };
+    for (var r = labelRow; r < labelRow + 8; r++) {
+      if (r > labelRow && txt(cell(ws, 'B' + r))) break;
+      var key = SERIES[txt(cell(ws, 'C' + r)).toUpperCase()];
+      if (!key) continue;
+      timeline.forEach(function (t, i) { var v = num(cell(ws, t.col + r)); if (v != null) out[key][i] = v; });
+    }
+    return out;
+  }
+  function isMainBlock(ws, r) { return !SERIES[txt(cell(ws, 'C' + (r - 1))).toUpperCase()]; }
+  function classify(ws) {
+    var labels = {}, subc = null;
+    for (var r = 30; r <= 62; r++) {
+      var b = txt(cell(ws, 'B' + r)); if (!b) continue;
+      var u = b.toUpperCase();
+      if (/AVERAGE PRODUCTIVITY RATE/.test(u)) { if (!labels.rate) labels.rate = { row: r, label: b }; }
+      else if (/LOADING/.test(u)) { if (!labels.loading) labels.loading = { row: r, label: b }; }
+      else if (/CUMULATIVE/.test(u)) { if (!labels.cum) labels.cum = { row: r, label: b }; }
+      else if (labels.loading && !labels.rate) {
+        if (isMainBlock(ws, r)) { if (!labels.output) labels.output = { row: r, label: b }; }
+        else if (!subc) subc = b;
+      }
+    }
+    if (!(labels.rate && labels.loading)) return null;
+    labels.subcontractor = subc ? subc.replace(/\s*\(.*\)\s*$/, '').trim() : '';
+    return labels;
+  }
+  function parseSheet(ws, name, XLSX) {
+    if (!ws || !ws['!ref']) return null;
+    var lab = classify(ws); if (!lab) return null;
+    var tl = findTimeline(ws, XLSX); if (!tl) return null;
+    var loading = readBlock(ws, lab.loading.row, tl.timeline);
+    var output = lab.output ? readBlock(ws, lab.output.row, tl.timeline) : { bl0: {}, planned: {}, actual: {} };
+    var rate = readBlock(ws, lab.rate.row, tl.timeline);
+    var resUnit = paren(lab.loading.label) || 'pax';
+    var resType = /EQUIP/i.test(lab.loading.label) ? 'Equipment' : 'Manpower';
+    var unit = (lab.output && paren(lab.output.label)) || (paren(lab.rate.label).split('/')[0]) || 'unit';
+    var entries = [];
+    tl.timeline.forEach(function (t, i) {
+      var e = { year: t.year, month: t.month,
+        mp_bl0: loading.bl0[i], mp_planned: loading.planned[i], mp_actual: loading.actual[i],
+        qty_bl0: output.bl0[i], qty_planned: output.planned[i], qty_actual: output.actual[i],
+        rate_bl0: rate.bl0[i], rate_planned: rate.planned[i], rate_actual: rate.actual[i] };
+      if (['mp_bl0','mp_planned','mp_actual','qty_bl0','qty_planned','qty_actual'].some(function (k) { return e[k] != null; })) entries.push(e);
+    });
+    if (!entries.length) return null;
+    return { activity: { name: name, unit: unit, resource_type: resType, resource_unit: resUnit, subcontractor: lab.subcontractor || '' }, entries: entries };
+  }
+  function parseWorkbook(wb, XLSX) {
+    var res = [];
+    wb.SheetNames.forEach(function (nm) { try { var p = parseSheet(wb.Sheets[nm], nm, XLSX); if (p) res.push(p); } catch (e) {} });
+    return res;
+  }
+  root.ProdParse = { parseWorkbook: parseWorkbook, parseSheet: parseSheet };
+})(window);
+
+// ---- Module ----------------------------------------------------------------
+(function () {
+  'use strict';
+  var UID = null, profile = null, pid = null;
+  var acts = [];               // productivity_activities for the project
+  var entriesByAct = {};       // activity_id -> [entries]
+  var view = 'monitor', selAct = null, metric = 'rate', showBL0 = true, showTable = false;
+
+  function sb() { return AppAuth.getSB(); }
+  function esc(s) { return Fmt.esc(s); }
+  var MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), 1); }
+  function periodISO(y, m) { return y + '-' + String(m + 1).padStart(2, '0') + '-01'; }
+  function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+  function fnum(n, dp) { if (n == null || !isFinite(n)) return '—'; var v = Math.round(n * Math.pow(10, dp)) / Math.pow(10, dp); return v.toLocaleString(undefined, { maximumFractionDigits: dp }); }
+  function showLoading(msg) { var e = document.getElementById('pr-loading'); document.getElementById('pr-loading-msg').textContent = msg || 'Loading…'; if (e) e.style.display = 'flex'; }
+  function hideLoading() { var e = document.getElementById('pr-loading'); if (e) e.style.display = 'none'; }
+
+  // derived: productivity rate = output ÷ (resource × working days)
+  function rateOf(qty, res, wd) { return (qty != null && res > 0 && wd > 0) ? qty / (res * wd) : null; }
+  function rateUnit(a) { return (a.unit || 'unit') + '/' + (a.resource_type === 'Equipment' ? (a.resource_unit || 'unit') + '-day' : 'man-day'); }
+
+  // ======================================================================
+  async function init(user, prof) {
+    UID = user.id; profile = prof;
+    await loadProjects();
+    document.querySelectorAll('.pr-tabs [data-view]').forEach(function (b) {
+      b.onclick = function () { switchView(b.dataset.view, b); };
+    });
+    document.getElementById('pr-project').onchange = function (e) {
+      pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid);
+      selAct = null; load();
+    };
+    document.getElementById('pr-add').onclick = function () { openActForm(null); };
+    document.getElementById('pr-refresh').onclick = function () { load(); };
+    document.getElementById('pr-import').onclick = openImport;
+    document.getElementById('pr-act').onchange = function (e) { selAct = e.target.value || null; renderMonitor(); };
+    document.getElementById('pr-metric').onchange = function (e) { metric = e.target.value; renderMonitor(); };
+    document.getElementById('pr-showbl0').onchange = function (e) { showBL0 = e.target.checked; renderMonitor(); };
+    document.getElementById('pr-tabletoggle').onclick = function () {
+      showTable = !showTable;
+      document.getElementById('pr-tablecard').style.display = showTable ? '' : 'none';
+      this.title = showTable ? 'Hide data table' : 'Show data table';
+      this.classList.toggle('is-active', showTable);
+      if (showTable) renderMonitorTable();
+    };
+    if (pid) load();
+  }
+
+  async function loadProjects() {
+    var projects = await PDb.getProjects();
+    var sel = document.getElementById('pr-project');
+    pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
+    sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
+    }).join('');
+    UI.enhanceProjectSelect(sel);
+  }
+
+  async function load() {
+    if (!pid) { acts = []; entriesByAct = {}; render(); return; }
+    showLoading('Loading productivity data…');
+    try {
+      var a = await sb().from('productivity_activities').select('*').eq('project_id', pid)
+        .order('sort_order', { ascending: true, nullsFirst: false }).order('name', { ascending: true });
+      if (a.error) throw a.error;
+      acts = a.data || [];
+      entriesByAct = {};
+      var e = await sb().from('productivity_entries').select('*').eq('project_id', pid).order('period', { ascending: true });
+      if (e.error) throw e.error;
+      (e.data || []).forEach(function (row) { (entriesByAct[row.activity_id] = entriesByAct[row.activity_id] || []).push(row); });
+    } catch (err) {
+      hideLoading();
+      var msg = (err && err.message) || String(err);
+      if (/productivity_activities|productivity_entries|schema cache|does not exist/i.test(msg))
+        msg = 'Run migration 2026-07-20-productivity-rates-full.sql in Supabase first. (' + msg + ')';
+      UI.toast(msg, 'error'); acts = []; entriesByAct = {}; render(); return;
+    }
+    hideLoading();
+    if (selAct && !acts.some(function (x) { return x.id === selAct; })) selAct = null;
+    if (!selAct && acts.length) selAct = acts[0].id;
+    render();
+  }
+
+  function switchView(v, btn) {
+    view = v;
+    document.getElementById('pr-view-monitor').style.display = v === 'monitor' ? '' : 'none';
+    document.getElementById('pr-view-data').style.display = v === 'data' ? '' : 'none';
+    document.querySelectorAll('.pr-tabs [data-view]').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
+    render();
+  }
+
+  function render() { if (view === 'monitor') renderMonitor(); else renderData(); }
+
+  // ---- build aligned monthly series for an activity ----------------------
+  function seriesFor(act) {
+    var es = (entriesByAct[act.id] || []).slice().sort(function (a, b) { return (a.period < b.period) ? -1 : (a.period > b.period ? 1 : 0); });
+    var months = es.map(function (e) { return pd(e.period); });
+    function metricVal(e, s) {
+      if (metric === 'rate') return rateOf(e['qty_' + s], e['mp_' + s], e.work_days);
+      if (metric === 'qty') return e['qty_' + s];
+      if (metric === 'manpower') return e['mp_' + s];
+      return null; // cum handled below
+    }
+    var out = { bl0: [], planned: [], actual: [] };
+    ['bl0', 'planned', 'actual'].forEach(function (s) {
+      if (metric === 'cum') {
+        var run = 0, started = false;
+        out[s] = es.map(function (e) {
+          var q = e['qty_' + s];
+          if (q != null) { run += q; started = true; }
+          return started ? run : null;
+        });
+      } else {
+        out[s] = es.map(function (e) { return metricVal(e, s); });
+      }
+    });
+    return { es: es, months: months, s: out };
+  }
+
+  // ---- Monitoring --------------------------------------------------------
+  function renderMonitor() {
+    // populate the activity + metric selects
+    var asel = document.getElementById('pr-act');
+    asel.innerHTML = acts.length
+      ? acts.map(function (a) { return '<option value="' + a.id + '"' + (a.id === selAct ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('')
+      : '<option value="">— no activities —</option>';
+    document.getElementById('pr-metric').value = metric;
+    document.getElementById('pr-showbl0').checked = showBL0;
+    var act = acts.find(function (a) { return a.id === selAct; });
+    renderKpis(act);
+    renderChart(act);
+    if (showTable) renderMonitorTable();
+  }
+
+  function unitFor(act) {
+    if (!act) return '';
+    if (metric === 'rate') return rateUnit(act);
+    if (metric === 'manpower') return act.resource_unit || 'pax';
+    return act.unit || 'unit'; // qty, cum
+  }
+  function metricLabel() {
+    return metric === 'rate' ? 'Productivity Rate' : metric === 'qty' ? 'Output Quantity' :
+      metric === 'manpower' ? 'Manpower / Equipment' : 'Cumulative Output';
+  }
+
+  function renderKpis(act) {
+    var host = document.getElementById('pr-kpis');
+    if (!act) { host.innerHTML = ''; return; }
+    var es = (entriesByAct[act.id] || []);
+    // latest & avg actual rate
+    var rates = es.map(function (e) { return rateOf(e.qty_actual, e.mp_actual, e.work_days); }).filter(function (v) { return v != null; });
+    var latest = null;
+    for (var i = es.length - 1; i >= 0; i--) { var r = rateOf(es[i].qty_actual, es[i].mp_actual, es[i].work_days); if (r != null) { latest = r; break; } }
+    var avg = rates.length ? rates.reduce(function (s, v) { return s + v; }, 0) / rates.length : null;
+    // cumulative output actual vs planned
+    var cumA = es.reduce(function (s, e) { return s + (e.qty_actual || 0); }, 0);
+    var cumP = es.reduce(function (s, e) { return s + (e.qty_planned || 0); }, 0);
+    var vpct = cumP > 0 ? (cumA - cumP) / cumP * 100 : null;
+    // avg actual manpower
+    var mps = es.map(function (e) { return e.mp_actual; }).filter(function (v) { return v != null; });
+    var mpAvg = mps.length ? mps.reduce(function (s, v) { return s + v; }, 0) / mps.length : null;
+    function k(l, v, sub, cls) { return '<div class="pr-kpi"><div class="pr-kpi-l">' + l + '</div><div class="pr-kpi-v ' + (cls || '') + '">' + v + '</div>' + (sub ? '<div class="pr-kpi-s">' + sub + '</div>' : '') + '</div>'; }
+    host.innerHTML =
+      k('Latest actual rate', fnum(latest, 3), rateUnit(act)) +
+      k('Average actual rate', fnum(avg, 3), rateUnit(act) + ' · ' + rates.length + ' mo') +
+      k('Cumulative output', fnum(cumA, 2), 'actual ' + (act.unit || '') + ' · plan ' + fnum(cumP, 2)) +
+      k('Output variance', (vpct == null ? '—' : (vpct > 0 ? '+' : '') + fnum(vpct, 1) + '%'), 'actual vs planned', vpct == null ? '' : (vpct >= 0 ? 'pr-ok' : 'pr-bad')) +
+      k('Avg ' + (act.resource_type === 'Equipment' ? 'equipment' : 'manpower'), fnum(mpAvg, 1), act.resource_unit || 'pax');
+  }
+
+  function renderChart(act) {
+    var host = document.getElementById('pr-chart');
+    var basis = document.getElementById('pr-basis');
+    var titleEl = document.getElementById('pr-chart-title');
+    if (!act) {
+      titleEl.textContent = 'Productivity Monitoring';
+      host.innerHTML = '<div class="pr-empty">' + (pid ? (acts.length ? 'Select an activity above.' : 'No activities yet. Add one or import a productivity workbook.') : 'Select a project.') + '</div>';
+      basis.textContent = ''; return;
+    }
+    titleEl.textContent = esc(act.name) + ' — ' + metricLabel() + ' (' + unitFor(act) + ')';
+    var ser = seriesFor(act);
+    if (!ser.months.length) { host.innerHTML = '<div class="pr-empty">No monthly data for this activity yet. Open it in the Data tab to add months.</div>'; basis.textContent = ''; return; }
+    var W = 1000, H = 340, padL = 56, padR = 16, padT = 16, padB = 40, n = ser.months.length;
+    var all = [];
+    ['planned', 'actual'].concat(showBL0 ? ['bl0'] : []).forEach(function (s) { ser.s[s].forEach(function (v) { if (v != null) all.push(v); }); });
+    var maxV = all.length ? Math.max.apply(null, all) : 1; if (maxV <= 0) maxV = 1;
+    // nice y max
+    var step = Math.pow(10, Math.floor(Math.log10(maxV))); var mult = maxV / step;
+    var niceMult = mult <= 1 ? 1 : mult <= 2 ? 2 : mult <= 5 ? 5 : 10; var top = niceMult * step;
+    while (top < maxV) top += step;
+    function x(i) { return padL + (n <= 1 ? (W - padL - padR) / 2 : (i / (n - 1)) * (W - padL - padR)); }
+    function y(v) { return padT + (1 - (v / top)) * (H - padT - padB); }
+    var grid = '';
+    [0, .25, .5, .75, 1].forEach(function (p) { var yy = y(top * p); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="pr-grid"/><text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="pr-ylab">' + fnum(top * p, 2) + '</text>'; });
+    var xlab = '';
+    ser.months.forEach(function (mo, i) {
+      var showIt = n <= 14 || mo.getMonth() % 3 === 0 || i === 0 || i === n - 1;
+      if (showIt) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="pr-xlab">' + MABBR[mo.getMonth()] + " '" + String(mo.getFullYear()).slice(2) + '</text>';
+    });
+    function poly(arr, cls) {
+      var pts = [];
+      arr.forEach(function (v, i) { if (v != null) pts.push(x(i) + ',' + y(v)); });
+      return pts.length ? '<polyline class="' + cls + '" points="' + pts.join(' ') + '"/>' : '';
+    }
+    var dots = '';
+    ser.s.actual.forEach(function (v, i) { if (v != null) dots += '<circle class="pr-dot-actual" cx="' + x(i) + '" cy="' + y(v) + '" r="2.6"/>'; });
+    // data-date line (this month), only if within range
+    var dd = today(), ddLine = '';
+    var ddIdx = -1; for (var j = 0; j < ser.months.length; j++) { if (ser.months[j].getFullYear() === dd.getFullYear() && ser.months[j].getMonth() === dd.getMonth()) { ddIdx = j; break; } }
+    if (ddIdx >= 0) { var tx = x(ddIdx); ddLine = '<line x1="' + tx + '" y1="' + padT + '" x2="' + tx + '" y2="' + (H - padB) + '" class="pr-today"/><text x="' + (tx + 4) + '" y="' + (padT + 10) + '" class="pr-today-lab">This month</text>'; }
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="pr-svg">' + grid + ddLine +
+      (showBL0 ? poly(ser.s.bl0, 'pr-l-bl0') : '') + poly(ser.s.planned, 'pr-l-planned') + poly(ser.s.actual, 'pr-l-actual') + dots + xlab + '</svg>' +
+      '<div class="pr-legend">' +
+        '<span class="pr-lg"><span class="pr-sw pr-sw-planned"></span> Planned</span>' +
+        '<span class="pr-lg"><span class="pr-sw pr-sw-actual"></span> Actual</span>' +
+        (showBL0 ? '<span class="pr-lg"><span class="pr-sw pr-sw-bl0"></span> Baseline (BL0)</span>' : '') +
+      '</div>';
+    basis.textContent = metric === 'rate'
+      ? 'Rate = output ÷ (' + (act.resource_type === 'Equipment' ? 'equipment' : 'manpower') + ' × working days). ' + ser.months.length + ' months' + (act.subcontractor ? ' · ' + act.subcontractor : '') + '.'
+      : ser.months.length + ' months' + (act.subcontractor ? ' · ' + act.subcontractor : '') + '.';
+  }
+
+  function renderMonitorTable() {
+    var wrap = document.getElementById('pr-tablewrap');
+    var act = acts.find(function (a) { return a.id === selAct; });
+    if (!act) { wrap.innerHTML = '<div class="pr-empty">No activity selected.</div>'; return; }
+    var ser = seriesFor(act);
+    if (!ser.months.length) { wrap.innerHTML = '<div class="pr-empty">No data.</div>'; return; }
+    var dp = metric === 'rate' ? 3 : 2;
+    var head = '<th>' + metricLabel() + '</th>' + ser.months.map(function (mo) { return '<th>' + MABBR[mo.getMonth()] + " '" + String(mo.getFullYear()).slice(2) + '</th>'; }).join('');
+    function rowHTML(label, arr, cls) { return '<tr class="' + (cls || '') + '"><td>' + label + '</td>' + arr.map(function (v) { return '<td>' + fnum(v, dp) + '</td>'; }).join('') + '</tr>'; }
+    var body = (showBL0 ? rowHTML('BL0', ser.s.bl0, 'pr-row-bl0') : '') + rowHTML('Planned', ser.s.planned) + rowHTML('Actual', ser.s.actual, 'pr-row-actual');
+    // variance row (actual − planned)
+    var varr = ser.s.actual.map(function (v, i) { var p = ser.s.planned[i]; return (v != null && p != null) ? v - p : null; });
+    body += rowHTML('Variance', varr);
+    wrap.innerHTML = '<table class="pr-ttable"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
+  }
+
+  // ---- Data (activities register) ----------------------------------------
+  function renderData() {
+    var t = document.getElementById('pr-datatable');
+    if (!pid) { t.innerHTML = '<tr><td style="padding:24px;color:var(--pd-muted);">Select a project.</td></tr>'; return; }
+    if (!acts.length) {
+      t.innerHTML = '<tr><td style="padding:24px;color:var(--pd-muted);">No activities yet. Click “+ Add activity”, or “Import” a productivity workbook.</td></tr>';
+      return;
+    }
+    var head = '<thead><tr><th>Activity</th><th>Category</th><th>Output unit</th><th>Resource</th><th>Subcontractor</th><th class="pr-num">Months</th><th class="pr-num">Latest rate (act)</th><th class="pr-num">Cum output (act)</th><th></th></tr></thead>';
+    var body = acts.map(function (a) {
+      var es = entriesByAct[a.id] || [];
+      var latest = null; for (var i = es.length - 1; i >= 0; i--) { var r = rateOf(es[i].qty_actual, es[i].mp_actual, es[i].work_days); if (r != null) { latest = r; break; } }
+      var cumA = es.reduce(function (s, e) { return s + (e.qty_actual || 0); }, 0);
+      return '<tr>' +
+        '<td><strong>' + esc(a.name) + '</strong></td>' +
+        '<td>' + esc(a.category || '—') + '</td>' +
+        '<td><span class="pr-chip">' + esc(a.unit || '—') + '</span></td>' +
+        '<td>' + esc(a.resource_type || 'Manpower') + ' <span class="pr-sub">' + esc(a.resource_unit || '') + '</span></td>' +
+        '<td>' + esc(a.subcontractor || '—') + '</td>' +
+        '<td class="pr-num pr-mono">' + es.length + '</td>' +
+        '<td class="pr-num pr-mono">' + fnum(latest, 3) + '</td>' +
+        '<td class="pr-num pr-mono">' + fnum(cumA, 2) + '</td>' +
+        '<td style="white-space:nowrap;text-align:right;">' +
+          '<button class="pd-btn" data-months="' + a.id + '">Monthly data</button> ' +
+          '<button class="pd-btn" data-edit="' + a.id + '">Edit</button> ' +
+          '<button class="pd-btn" data-del="' + a.id + '">Delete</button></td>' +
+      '</tr>';
+    }).join('');
+    t.innerHTML = head + '<tbody>' + body + '</tbody>';
+    t.querySelectorAll('[data-months]').forEach(function (b) { b.onclick = function () { openEditor(acts.find(function (x) { return x.id === b.dataset.months; })); }; });
+    t.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { openActForm(acts.find(function (x) { return x.id === b.dataset.edit; })); }; });
+    t.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { delAct(b.dataset.del); }; });
+  }
+
+  // ---- Activity add / edit modal -----------------------------------------
+  var UNITS = ['kg', 'm3', 'm2', 'lm', 'pcs', 'unit'];
+  var RESUNITS = ['pax', 'man-day', 'unit'];
+  function openActForm(a) {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    var isNew = !a; a = a || {};
+    function opts(list, val) { return list.map(function (o) { return '<option' + (val === o ? ' selected' : '') + '>' + o + '</option>'; }).join(''); }
+    var m = UI.modal(
+      '<h2 style="margin-top:0;">' + (isNew ? 'Add activity' : 'Edit activity') + '</h2>' +
+      '<div class="pd-field"><label>Activity name</label><input class="pd-input" id="f-name" value="' + esc(a.name) + '" placeholder="e.g. Rebar Works"></div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+        '<div class="pd-field" style="flex:1;min-width:140px;"><label>Category</label><input class="pd-input" id="f-cat" value="' + esc(a.category) + '" placeholder="e.g. Superstructure"></div>' +
+        '<div class="pd-field" style="flex:0 0 120px;"><label>Output unit</label><select class="pd-select" id="f-unit"><option value="">—</option>' + opts(UNITS, a.unit) + '</select></div>' +
+      '</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+        '<div class="pd-field" style="flex:0 0 150px;"><label>Resource type</label><select class="pd-select" id="f-restype">' + opts(['Manpower', 'Equipment'], a.resource_type || 'Manpower') + '</select></div>' +
+        '<div class="pd-field" style="flex:0 0 130px;"><label>Resource unit</label><select class="pd-select" id="f-resunit">' + opts(RESUNITS, a.resource_unit || 'pax') + '</select></div>' +
+        '<div class="pd-field" style="flex:1;min-width:140px;"><label>Subcontractor</label><input class="pd-input" id="f-sub" value="' + esc(a.subcontractor) + '"></div>' +
+      '</div>' +
+      '<div class="pd-field"><label>Remarks</label><textarea class="pd-textarea" id="f-rem" rows="2">' + esc(a.remarks) + '</textarea></div>' +
+      '<div style="text-align:right;margin-top:6px;"><button class="pd-btn" id="f-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="f-save">Save</button></div>'
+    );
+    m.el.querySelector('#f-cancel').onclick = m.close;
+    m.el.querySelector('#f-save').onclick = async function () {
+      var data = {
+        project_id: pid,
+        name: m.el.querySelector('#f-name').value.trim(),
+        category: m.el.querySelector('#f-cat').value.trim() || null,
+        unit: m.el.querySelector('#f-unit').value || null,
+        resource_type: m.el.querySelector('#f-restype').value,
+        resource_unit: m.el.querySelector('#f-resunit').value,
+        subcontractor: m.el.querySelector('#f-sub').value.trim() || null,
+        remarks: m.el.querySelector('#f-rem').value.trim() || null,
+        updated_at: new Date().toISOString()
+      };
+      if (!data.name) { UI.toast('Activity name is required', 'warn'); return; }
+      try {
+        if (isNew) {
+          data.created_by = UID;
+          data.sort_order = acts.length;
+          var ins = await sb().from('productivity_activities').insert(data).select();
+          if (ins.error) throw ins.error;
+          if (ins.data && ins.data[0]) selAct = ins.data[0].id;
+        } else {
+          var upd = await sb().from('productivity_activities').update(data).eq('id', a.id);
+          if (upd.error) throw upd.error;
+        }
+        UI.toast('Saved', 'ok'); m.close(); load();
+      } catch (e) { UI.toast(e.message || String(e), 'error'); }
+    };
+  }
+
+  async function delAct(id) {
+    var a = acts.find(function (x) { return x.id === id; });
+    var nEntries = (entriesByAct[id] || []).length;
+    if (!confirm('Delete activity “' + (a ? a.name : '') + '”' + (nEntries ? ' and its ' + nEntries + ' monthly record(s)' : '') + '? This cannot be undone.')) return;
+    var res = await sb().from('productivity_activities').delete().eq('id', id);   // entries cascade
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UI.toast('Deleted', 'ok'); if (selAct === id) selAct = null; load();
+  }
+
+  // ---- Monthly data editor ----------------------------------------------
+  function defaultWorkDays(y, mo) { try { return PDCal.workingDaysInMonth(null, y, mo); } catch (e) { return 26; } }
+  function openEditor(act) {
+    if (!act) return;
+    // working copy of the entries
+    var rows = (entriesByAct[act.id] || []).map(function (e) {
+      var d = pd(e.period);
+      return { id: e.id, y: d.getFullYear(), mo: d.getMonth(), work_days: e.work_days,
+        mp_bl0: e.mp_bl0, mp_planned: e.mp_planned, mp_actual: e.mp_actual,
+        qty_bl0: e.qty_bl0, qty_planned: e.qty_planned, qty_actual: e.qty_actual };
+    });
+    var removed = [];
+    var m = UI.modal('<div class="pr-editor"></div>', { noBackdropClose: true });
+    var box = m.el.querySelector('.pr-editor');
+
+    function draw() {
+      var ru = act.resource_unit || 'pax', ou = act.unit || 'unit';
+      var head = '<tr>' +
+        '<th>Month</th><th>Work days</th>' +
+        '<th class="pr-grp">MP BL0</th><th>MP Plan</th><th>MP Act</th>' +
+        '<th class="pr-grp">Qty BL0</th><th>Qty Plan</th><th>Qty Act</th>' +
+        '<th class="pr-grp">Rate BL0</th><th>Rate Plan</th><th>Rate Act</th>' +
+        '<th></th></tr>';
+      var body = rows.map(function (r, i) {
+        function inp(field, extra) { return '<input type="number" step="any" data-i="' + i + '" data-f="' + field + '" value="' + (r[field] == null ? '' : r[field]) + '"' + (extra || '') + '>'; }
+        function rc(s) { return '<span class="pr-derived" data-rate="' + i + '-' + s + '">' + fnum(rateOf(r['qty_' + s], r['mp_' + s], r.work_days), 3) + '</span>'; }
+        return '<tr>' +
+          '<td>' + MABBR[r.mo] + ' ' + r.y + '</td>' +
+          '<td>' + inp('work_days') + '</td>' +
+          '<td class="pr-grp">' + inp('mp_bl0') + '</td><td>' + inp('mp_planned') + '</td><td>' + inp('mp_actual') + '</td>' +
+          '<td class="pr-grp">' + inp('qty_bl0') + '</td><td>' + inp('qty_planned') + '</td><td>' + inp('qty_actual') + '</td>' +
+          '<td class="pr-grp">' + rc('bl0') + '</td><td>' + rc('planned') + '</td><td>' + rc('actual') + '</td>' +
+          '<td><button class="pr-ed-del" data-del="' + i + '" title="Remove month">&times;</button></td>' +
+        '</tr>';
+      }).join('');
+      box.innerHTML =
+        '<h2>' + esc(act.name) + ' — monthly data</h2>' +
+        '<p class="pr-hint">Resource in <strong>' + esc(ru) + '</strong>, output in <strong>' + esc(ou) + '</strong>. Productivity rate is derived: output ÷ (resource × work days), in ' + esc(rateUnit(act)) + '. Blank = no value.</p>' +
+        '<div class="pr-ed-scroll"><table class="pr-ed"><thead>' + head + '</thead><tbody>' +
+        (rows.length ? body : '<tr><td colspan="12" style="padding:20px;color:var(--pd-muted);text-align:center;">No months yet — add one below.</td></tr>') +
+        '</tbody></table></div>' +
+        '<div class="pr-ed-foot">' +
+          '<button class="pd-btn" id="ed-add">+ Add month</button>' +
+          '<button class="pd-btn" id="ed-addyear">+ Add 12 months</button>' +
+          '<span class="pr-hint pr-spacer" id="ed-count">' + rows.length + ' month(s)</span>' +
+          '<button class="pd-btn" id="ed-cancel">Cancel</button>' +
+          '<button class="pd-btn pd-btn-primary" id="ed-save">Save</button>' +
+        '</div>';
+      wire();
+    }
+    function nextMonth() {
+      if (rows.length) { var last = rows[rows.length - 1]; var d = new Date(last.y, last.mo + 1, 1); return { y: d.getFullYear(), mo: d.getMonth() }; }
+      var t = new Date(); return { y: t.getFullYear(), mo: t.getMonth() };
+    }
+    function addMonth() { var nm = nextMonth(); rows.push({ id: null, y: nm.y, mo: nm.mo, work_days: defaultWorkDays(nm.y, nm.mo), mp_bl0: null, mp_planned: null, mp_actual: null, qty_bl0: null, qty_planned: null, qty_actual: null }); }
+    function wire() {
+      box.querySelectorAll('.pr-ed input').forEach(function (el) {
+        el.oninput = function () {
+          var i = +el.dataset.i, f = el.dataset.f;
+          rows[i][f] = el.value === '' ? null : +el.value;
+          // live-update the three rate cells on this row
+          ['bl0', 'planned', 'actual'].forEach(function (s) {
+            var span = box.querySelector('[data-rate="' + i + '-' + s + '"]');
+            if (span) span.textContent = fnum(rateOf(rows[i]['qty_' + s], rows[i]['mp_' + s], rows[i].work_days), 3);
+          });
+        };
+      });
+      box.querySelectorAll('[data-del]').forEach(function (b) {
+        b.onclick = function () { var i = +b.dataset.del; if (rows[i].id) removed.push(rows[i].id); rows.splice(i, 1); draw(); };
+      });
+      box.querySelector('#ed-add').onclick = function () { addMonth(); draw(); };
+      box.querySelector('#ed-addyear').onclick = function () { for (var k = 0; k < 12; k++) addMonth(); draw(); };
+      box.querySelector('#ed-cancel').onclick = m.close;
+      box.querySelector('#ed-save').onclick = save;
+    }
+    async function save() {
+      showLoading('Saving…');
+      try {
+        // deletes
+        for (var d = 0; d < removed.length; d++) { var dr = await sb().from('productivity_entries').delete().eq('id', removed[d]); if (dr.error) throw dr.error; }
+        // upserts
+        for (var i = 0; i < rows.length; i++) {
+          var r = rows[i];
+          var rec = { project_id: pid, activity_id: act.id, period: periodISO(r.y, r.mo), work_days: r.work_days,
+            mp_bl0: r.mp_bl0, mp_planned: r.mp_planned, mp_actual: r.mp_actual,
+            qty_bl0: r.qty_bl0, qty_planned: r.qty_planned, qty_actual: r.qty_actual, updated_at: new Date().toISOString() };
+          if (r.id) { var u = await sb().from('productivity_entries').update(rec).eq('id', r.id); if (u.error) throw u.error; }
+          else { rec.created_by = UID; var ins = await sb().from('productivity_entries').insert(rec); if (ins.error) throw ins.error; }
+        }
+        hideLoading(); UI.toast('Saved', 'ok'); m.close(); load();
+      } catch (e) { hideLoading(); UI.toast(e.message || String(e), 'error'); }
+    }
+    draw();
+  }
+
+  // ---- Excel import ------------------------------------------------------
+  function openImport() {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (typeof XLSX === 'undefined') { UI.toast('Spreadsheet library not loaded — check your connection.', 'error'); return; }
+    var inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.xlsx,.xls';
+    inp.onchange = function () { var f = inp.files && inp.files[0]; if (f) readWorkbook(f); };
+    inp.click();
+  }
+  function readWorkbook(file) {
+    showLoading('Reading workbook…');
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        var parsed = ProdParse.parseWorkbook(wb, XLSX);
+        hideLoading();
+        if (!parsed.length) { UI.toast('No productivity trade sheets recognised in this workbook.', 'warn'); return; }
+        previewImport(parsed);
+      } catch (err) { hideLoading(); UI.toast('Could not read file: ' + (err.message || err), 'error'); }
+    };
+    reader.onerror = function () { hideLoading(); UI.toast('Could not read file.', 'error'); };
+    reader.readAsArrayBuffer(file);
+  }
+  function previewImport(parsed) {
+    var totalEntries = parsed.reduce(function (s, p) { return s + p.entries.length; }, 0);
+    var rows = parsed.map(function (p) {
+      var a = p.activity;
+      return '<tr><td><strong>' + esc(a.name) + '</strong></td><td>' + esc(a.resource_type) + ' <span class="pr-sub">' + esc(a.resource_unit) + '</span></td><td><span class="pr-chip">' + esc(a.unit) + '</span></td><td>' + esc(a.subcontractor || '—') + '</td><td class="pr-num pr-mono">' + p.entries.length + '</td></tr>';
+    }).join('');
+    var existing = acts.length;
+    var m = UI.modal(
+      '<h2 style="margin-top:0;">Import productivity workbook</h2>' +
+      '<p class="pr-hint">Found <strong>' + parsed.length + '</strong> activities · <strong>' + totalEntries + '</strong> monthly records. Review, then import into this project.' +
+        (existing ? ' <strong>Note:</strong> this project already has ' + existing + ' activit' + (existing === 1 ? 'y' : 'ies') + ' — import <em>adds</em> new ones (it does not merge or replace).' : '') + '</p>' +
+      '<div style="max-height:46vh;overflow:auto;border:1px solid var(--pd-line);border-radius:8px;">' +
+        '<table class="pr-table"><thead><tr><th>Activity</th><th>Resource</th><th>Unit</th><th>Subcontractor</th><th class="pr-num">Months</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '</div>' +
+      '<p class="pr-hint">Working days per month are set to reproduce the workbook’s own productivity rate where possible, otherwise the Philippine 6-day working calendar.</p>' +
+      '<div style="text-align:right;margin-top:10px;"><button class="pd-btn" id="im-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="im-go">Import ' + parsed.length + ' activities</button></div>'
+    );
+    m.el.querySelector('#im-cancel').onclick = m.close;
+    m.el.querySelector('#im-go').onclick = function () { m.close(); doImport(parsed); };
+  }
+  // choose the working-days divisor that reproduces the workbook's stored rate
+  function reconcileWorkDays(e) {
+    function fromSeries(s) { var q = e['qty_' + s], mp = e['mp_' + s], rt = e['rate_' + s]; return (q != null && mp > 0 && rt > 0) ? q / (mp * rt) : null; }
+    var wd = fromSeries('actual'); if (wd == null) wd = fromSeries('planned'); if (wd == null) wd = fromSeries('bl0');
+    if (wd != null && isFinite(wd) && wd > 0 && wd < 60) return Math.round(wd * 100) / 100;
+    return defaultWorkDays(e.year, e.month);
+  }
+  async function doImport(parsed) {
+    showLoading('Importing…');
+    try {
+      var nAct = 0, nEnt = 0;
+      for (var p = 0; p < parsed.length; p++) {
+        var a = parsed[p].activity;
+        var arec = { project_id: pid, name: a.name, unit: a.unit, resource_type: a.resource_type,
+          resource_unit: a.resource_unit, subcontractor: a.subcontractor || null, sort_order: acts.length + nAct, created_by: UID };
+        var ai = await sb().from('productivity_activities').insert(arec).select();
+        if (ai.error) throw ai.error;
+        var actId = ai.data[0].id; nAct++;
+        var recs = parsed[p].entries.map(function (e) {
+          return { project_id: pid, activity_id: actId, period: periodISO(e.year, e.month), work_days: reconcileWorkDays(e),
+            mp_bl0: e.mp_bl0 == null ? null : e.mp_bl0, mp_planned: e.mp_planned == null ? null : e.mp_planned, mp_actual: e.mp_actual == null ? null : e.mp_actual,
+            qty_bl0: e.qty_bl0 == null ? null : e.qty_bl0, qty_planned: e.qty_planned == null ? null : e.qty_planned, qty_actual: e.qty_actual == null ? null : e.qty_actual,
+            created_by: UID };
+        });
+        // chunked insert
+        for (var c = 0; c < recs.length; c += 200) {
+          var ins = await sb().from('productivity_entries').insert(recs.slice(c, c + 200));
+          if (ins.error) throw ins.error;
+        }
+        nEnt += recs.length;
+      }
+      hideLoading(); UI.toast('Imported ' + nAct + ' activities · ' + nEnt + ' records', 'ok'); load();
+    } catch (e) { hideLoading(); UI.toast('Import failed: ' + (e.message || e), 'error'); load(); }
+  }
+
+  AppAuth.requireLogin(function (user, profile) {
+    UI.renderUserBar(profile);
+    UI.initShell();
+    init(user, profile);
+  });
+})();
+</script>
 </body>
 </html>

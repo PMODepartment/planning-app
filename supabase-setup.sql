@@ -113,6 +113,25 @@ create table if not exists productivity_rates (
   crew text, period date, remarks text,
   created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
 
+-- Productivity Monitoring (full module — supersedes the flat productivity_rates above).
+create table if not exists productivity_activities (
+  id uuid primary key default gen_random_uuid(), project_id text references projects(id),
+  name text not null, category text, unit text,
+  resource_type text default 'Manpower', resource_unit text default 'pax',
+  subcontractor text, sort_order numeric, remarks text,
+  created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
+create table if not exists productivity_entries (
+  id uuid primary key default gen_random_uuid(), project_id text references projects(id),
+  activity_id uuid references productivity_activities(id) on delete cascade,
+  period date not null, work_days numeric,
+  mp_bl0 numeric, mp_planned numeric, mp_actual numeric,
+  qty_bl0 numeric, qty_planned numeric, qty_actual numeric,
+  remarks text, created_by uuid references users(id),
+  created_at timestamptz default now(), updated_at timestamptz default now());
+create unique index if not exists productivity_entries_uq  on productivity_entries(activity_id, period);
+create index        if not exists productivity_entries_prj on productivity_entries(project_id, period);
+create index        if not exists productivity_act_prj     on productivity_activities(project_id, sort_order);
+
 create table if not exists cash_flow (
   id uuid primary key default gen_random_uuid(), project_id text references projects(id),
   period date, category text, description text, planned_amount numeric(18,2), actual_amount numeric(18,2), remarks text,
@@ -260,7 +279,8 @@ begin
     'progress_photos','issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
     'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve',
-    'resource_roles','resources','resource_assignments'
+    'resource_roles','resources','resource_assignments',
+    'productivity_activities','productivity_entries'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
