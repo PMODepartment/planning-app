@@ -63,6 +63,21 @@ banners, which makes them an exact fixture:
   change (see material-submittal's CLAUDE.md). Dark mode was therefore measured by setting the theme
   **before first paint**, not by toggling it live.
 
+### 2026-07-20 (b) — Top bar wasn't uniform (missing shared chrome)
+Owner reported the top bar didn't match the suite, specifically the buttons beside the profile icon.
+**Same defect as the 2026-07-17 Progress Photos pass:** this module was missing the three shared
+topbar rules every uniform module carries, so it inherited `dashboard.css`'s `.pd-topbar { gap:14px }`
+with **no `flex-wrap`**, the avatar had **no left divider**, and theme.js's injected toggle kept its
+default size instead of matching the 34×34 tool buttons.
+- Fixed by copying the block **verbatim** from `drawing-register/module.css` (see the top of
+  `module.css`). ⚠️ **Do not drop it when copying this module** — the comment there says what breaks.
+- **Verified by computed-style diff against the real drawing-register**, with a **sanity assertion
+  that the reference CSS actually loaded first** (that omission invalidated the first Progress Photos
+  attempt). Zero differences on every chrome element; **geometry pixel-identical** — tool cluster
+  right edge **1179px**, theme toggle left **1193px**, profile divider left **1247px**.
+- No horizontal overflow at 1280/1100/900/700/420px. This module wraps to a second row earlier than
+  the others below 900px because it carries **three** tabs — graceful wrapping, not breakage.
+
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
   module scopes to the topbar project, so the roll-up banner is that project's total — which is

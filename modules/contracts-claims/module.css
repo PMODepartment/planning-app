@@ -4,6 +4,16 @@
    suite. Do not re-invent it — see the 2026-07-17 "UI uniformity pass" note in
    the main CLAUDE.md for why divergence keeps getting reworked. */
 
+/* ---- Shared topbar chrome (VERBATIM from drawing-register/module.css) -----
+   Every uniform module carries this block. Without it the topbar inherits
+   dashboard.css's `gap:14px` with no wrapping, the avatar loses its left
+   divider, and theme.js's injected toggle keeps its default size instead of
+   matching the 34x34 tool buttons — which reads as "the buttons beside the
+   profile icon are misplaced". Do not drop it when copying this module. */
+.pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
+.pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+.pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; flex:none; }
+
 /* ---- Topbar ------------------------------------------------------------- */
 .cc-title-txt { white-space:nowrap; }
 @media (max-width:1250px){ .cc-title-txt { display:none; } }   /* 3 tabs need more room */

@@ -90,6 +90,25 @@ Postgres error.
   “inverted tab colours”. Verified the CSS is correct by measuring a **freshly created** element
   (`.active` = brand red on white text). Measure fresh nodes, or initial paint, only.
 
+## 2026-07-20 (c) — Top bar wasn't uniform (missing shared chrome)
+Owner reported the top bar didn't match the suite, specifically the buttons beside the profile icon.
+**Same defect as the 2026-07-17 Progress Photos pass:** this module was missing the three shared
+topbar rules every uniform module carries, so it inherited `dashboard.css`'s `.pd-topbar { gap:14px }`
+with **no `flex-wrap`**, the avatar had **no left divider**, and theme.js's injected toggle kept its
+default size instead of matching the 34×34 tool buttons.
+- Fixed by copying the block **verbatim** from `drawing-register/module.css` (see the top of
+  `module.css`). ⚠️ **Do not drop it when copying this module** — the comment there says what breaks.
+- **Verified by computed-style diff against the real drawing-register** (its stylesheet + real topbar
+  markup inlined into an iframe, theme toggle injected to match runtime), with a **sanity assertion
+  that the reference CSS actually loaded first** — that omission is what invalidated the first
+  Progress Photos attempt. Zero differences on every chrome element.
+- **Geometry is pixel-identical** to drawing-register: tool cluster right edge **1179px**, theme
+  toggle left **1193px**, profile divider left **1247px**. The only residual property diffs were
+  selector artifacts (drawing-register has a *labeled* "+ Level" button this module doesn't) and
+  `margin-left:auto` resolving differently because left-hand content widths differ — the right edge,
+  which is what "beside the profile icon" means, matches exactly.
+- No horizontal overflow at 1280/1100/900/700/420px; profile + theme controls visible at every width.
+
 ## 2026-07-20 (b) — Document attachments wired up
 Uses the existing **private** `material-submittal` bucket (2026-06-18 storage migration) and the
 existing `file_url` column — **no new migration**. Follows drawing-register’s pattern.

@@ -77,6 +77,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-20 — Fix: the two new modules' top bars weren't uniform (missing shared chrome)
+- User reported the Material Submittal and Contracts & Claims top bars didn't match the rest of the
+  suite, specifically the buttons beside the profile icon. **Same defect as the 2026-07-17 Progress
+  Photos pass**: both modules were missing the three shared topbar rules that every uniform module
+  carries, so they inherited `dashboard.css`'s `.pd-topbar { gap:14px }` with **no `flex-wrap`**, the
+  avatar had **no left divider**, and theme.js's injected toggle kept its default size instead of
+  matching the 34×34 tool buttons.
+- Copied the block **verbatim** from `drawing-register/module.css` into both, with a comment naming
+  what breaks without it so it isn't dropped again when this module gets copied:
+  `.pd-topbar{gap:10px;flex-wrap:wrap;row-gap:8px}` · `#user-bar{margin-left/padding-left/border-left}`
+  · `#pd-theme-toggle{34×34}`.
+- **Verified by computed-style diff against the real drawing-register** (its stylesheet + its actual
+  topbar markup inlined into an iframe, theme toggle injected to match runtime) — with a **sanity
+  assertion first** that the reference CSS actually loaded, the trap that invalidated the first
+  Progress Photos attempt. Every chrome element (topbar, user-bar, theme toggle, back button,
+  separator, tabs, project select, primary button) reports **zero differences**.
+- **Stronger evidence than the property diff: the geometry is pixel-identical.** Tool cluster right
+  edge **1179px**, theme toggle left **1193px**, profile divider left **1247px** — the same in all
+  three modules. The only residual property diffs were selector artifacts (drawing-register has a
+  *labeled* "+ Level" button the new modules don't) and `margin-left:auto` resolving differently
+  because the left-hand content widths differ — the right edge, which is what "beside the profile
+  icon" means, matches exactly.
+- Re-checked at 1280/1100/900/700/420px: **no horizontal overflow at any width** and the profile +
+  theme controls stay visible throughout. Below 900px the new modules wrap to more rows than
+  drawing-register simply because they carry more tabs — graceful wrapping, not breakage.
+- CSS-only, module-local; no shared asset touched, so **no `?v` bump**. Both test suites still green
+  (43/43 contracts-claims, 54/54 material-submittal).
+
 ### 2026-07-20 — Contracts & Claims Register built (Contract · Claims/CO · Extension of Time)
 - **Built `modules/contracts-claims/`** (index.html + module.css + module.js), flipped
   `enabled: true`, from the Power Apps "Contracts & Claims Register" screenshots. Three tabs as
