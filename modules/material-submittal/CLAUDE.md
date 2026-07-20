@@ -90,16 +90,53 @@ Postgres error.
   “inverted tab colours”. Verified the CSS is correct by measuring a **freshly created** element
   (`.active` = brand red on white text). Measure fresh nodes, or initial paint, only.
 
+## 2026-07-20 (b) — Document attachments wired up
+Uses the existing **private** `material-submittal` bucket (2026-06-18 storage migration) and the
+existing `file_url` column — **no new migration**. Follows drawing-register’s pattern.
+- **One document per submittal, deliberately.** The log’s own model already carries a single
+  *Type of Presentation* per row (brochure / test results / sample board …), and a submittal needing
+  two document types is two rows in the workbook. Multi-file would need a new `files jsonb` column.
+- `file_url` stores the object **PATH, not a URL**. The bucket is private, so the URL is signed on
+  demand (`createSignedUrl`, 60 s) and opened in a new tab — a stored URL would expire and be useless.
+  Uploads are namespaced `<project>/<timestamp>_<sanitised name>`; the display strips the timestamp.
+- **Order of operations matters** (all verified against failure injection):
+  - Upload happens **before** the row write, so a failed upload never leaves a row pointing at a
+    missing object — nothing is written and the dialog stays open for a retry.
+  - If the row write then fails, the just-uploaded object is **rolled back**, so a DB error can’t
+    orphan a file in the bucket.
+  - On replace, the superseded object is deleted **only after** the row successfully points at the
+    new one.
+  - Clicking **×** on an attachment is **deferred to Save** — cancelling the dialog must never
+    delete a document.
+  - Row delete, bulk delete, Clear all, and import-with-Replace all remove their objects. Bulk paths
+    are captured **before** the rows leave `rows`, or they'd be unrecoverable. Object deletion is
+    best-effort: a storage hiccup must never block the row delete.
+- **Grid gained a “Doc” column** (eye button → signed URL). `icons.js` has no `paperclip` and is a
+  shared asset the contract forbids editing, so it reuses `eye` — no global `?v=` bump needed.
+- ⚠️ The header array is now the **single source of truth for the column count** (`SPAN`); the group
+  rows and empty state span it. The previous hardcoded `COLS + 3` would have silently skewed the
+  table the moment a column was added — which is exactly what adding “Doc” did.
+- Export gained a **Document** column (filename only — a link would be dead once the signed URL
+  expires). Print hides the Doc column.
+- **Verified in a browser harness with a storage stub** (real module files, failure injection):
+  new-with-file, replace (old object removed), remove-then-save, **cancel-after-× keeps the file**,
+  upload failure writes no row, row-write failure rolls the object back, single + bulk delete remove
+  their objects, signed URL requested at 60 s and opened, header/body/colspan all 19, no console
+  errors. **Note:** a first run reported the rollback failing — that was the *stub* returning a bare
+  Promise from `insert()` so `.select()` threw; with a faithful stub it passes. Model the client's
+  chaining accurately or you'll chase phantom bugs.
+
 ### Notes / follow-ups
 - **Overdue reads high (117/143) on this file** — correct, not a bug: the workbook is an 18-month-old
   snapshot, so nearly every unapproved item is past its planned approval date. Live data won’t do this.
 - Search deliberately includes `trade_section`/`discipline`: no item text contains “rebar”, so
   without it the most natural query returns nothing.
-- **No file upload yet.** The `material-submittal` storage bucket exists (2026-06-18 storage
-  migration) and `file_url` is on the table; wiring the drawing-register upload pattern is the
-  obvious next step.
-- Not built: revision history per submittal (only a `revision_no` field), and per-project coding
-  vocabularies (the code dropdowns use the workbook’s Coding Reference as a fixed list).
+- Not built: multi-file per submittal (needs a `files jsonb` column), revision history per submittal
+  (only a `revision_no` field), and per-project coding vocabularies (the code dropdowns use the
+  workbook’s Coding Reference as a fixed list).
+- Storage RLS (2026-06-18): approved users read/insert; **delete is owner-or-admin** — so a planner
+  deleting someone else's submittal removes the row but its object delete silently no-ops. Harmless
+  (orphan, not data loss), but worth widening the bucket's delete policy to `is_planner()` if it matters.
 
 ## Status
 - [x] Read MODULE_CONTRACT.md + CONTRIBUTING.md
@@ -108,5 +145,6 @@ Postgres error.
 - [x] Project-scoped via `pd_project`; `created_by` + `project_id` stamped
 - [x] `Fmt.esc()` on all user text injected into HTML
 - [x] `enabled: true` set in `assets/js/config.js`
-- [ ] **Run the migration on the live DB**
+- [x] Document upload / view / replace / remove (private bucket + signed URLs)
+- [x] Migration run on the live DB (owner confirmed 2026-07-20)
 - [ ] Live click-through against a real login

@@ -77,6 +77,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-20 — Material Submittal Log: document attachments wired up
+- Uses the existing **private** `material-submittal` bucket + `file_url` column — **no migration**.
+  Follows drawing-register's pattern: `file_url` stores the object **path**, and the URL is signed
+  on demand (60 s) rather than stored (a stored URL would expire and be useless).
+- **One document per submittal, deliberately** — the log already carries a single *Type of
+  Presentation* per row, and a submittal needing two document types is two rows in the workbook.
+- **Ordering is the whole game here, and each case was verified against injected failures:** upload
+  runs **before** the row write (a failed upload never leaves a row pointing at a missing object);
+  if the row write then fails the uploaded object is **rolled back** (no orphans); on replace the old
+  object is deleted only **after** the row points at the new one; and clicking × is **deferred to
+  Save**, so cancelling can never delete a document. Row delete / bulk delete / Clear all /
+  import-with-Replace all clean up, capturing paths **before** the rows leave memory.
+- Grid gained a **Doc** column. `icons.js` has no `paperclip` and is a shared asset the contract
+  forbids editing, so it reuses `eye` — **no global `?v=` bump**. ⚠️ The header array is now the
+  single source of truth for the column count; the previous hardcoded `COLS + 3` would have silently
+  skewed the table the moment a column was added, which is exactly what adding "Doc" did.
+- **Browser-verified with a storage stub + failure injection** (all pass, no console errors); the
+  54-check workbook suite still passes. **Note:** a first run reported the rollback failing — that was
+  the *stub* returning a bare Promise from `insert()` so `.select()` threw. Model supabase-js's
+  chaining accurately in harnesses or you'll chase phantom bugs.
+- **Known limitation:** the bucket's delete policy is `owner or is_admin()`, so a planner deleting
+  someone else's submittal removes the row but its object delete silently no-ops (orphan, not data
+  loss). Widen to `is_planner()` if that matters.
+
 ### 2026-07-20 — Material Submittal Log built (Dashboard + Log) from the PMO workbook
 - **Built `modules/material-submittal/`** (index.html + module.css + module.js), flipped
   `enabled: true`. Two screens as specified: **Dashboard** and **Material Submittal Log**, built

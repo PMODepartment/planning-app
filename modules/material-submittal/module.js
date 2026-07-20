@@ -23,8 +23,41 @@ window.MaterialSubmittal = (function () {
   'use strict';
 
   var TABLE = 'material_submittal';
+  // PRIVATE storage bucket (2026-06-18 storage migration): objects are only
+  // reachable through a short-lived signed URL, never a public link.
+  var BUCKET = 'material-submittal';
   var sb = function () { return window.__sb || (window.__sb = supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY)); };
   var esc = function (s) { return Fmt.esc(s == null ? '' : String(s)); };
+
+  // ---- attachments ---------------------------------------------------------
+  // One document per submittal, matching the log's own model: each row carries a
+  // single "Type of Presentation" (brochure / test results / sample board …), and
+  // a submittal needing two document types is already two rows in the workbook.
+  // `file_url` stores the object PATH, not a URL — the URL is signed on demand.
+  async function uploadFile(file) {
+    var safe = String(file.name).replace(/[^\w.\-]+/g, '_').slice(-120);
+    var path = pid + '/' + Date.now() + '_' + safe;
+    var res = await sb().storage.from(BUCKET).upload(path, file, { upsert: false });
+    if (res.error) throw res.error;
+    return path;
+  }
+  async function viewFile(path) {
+    var res = await sb().storage.from(BUCKET).createSignedUrl(path, 60);
+    if (res.error) { UI.toast('Could not open the file: ' + res.error.message, 'error'); return; }
+    window.open(res.data.signedUrl, '_blank', 'noopener');
+  }
+  // Best-effort: a failed object delete must never block the row delete, or the
+  // user is left unable to remove a record because of a storage hiccup.
+  async function removeFiles(paths) {
+    var list = (paths || []).filter(Boolean);
+    if (!list.length) return;
+    try { await sb().storage.from(BUCKET).remove(list); } catch (e) {}
+  }
+  function fileLabel(path) {
+    if (!path) return '';
+    var base = String(path).split('/').pop();
+    return base.replace(/^\d{10,}_/, '');          // strip the timestamp prefix
+  }
 
   // ---- vocabularies (workbook "Library" sheet — letter codes are its own) ----
   var STATUSES = [
@@ -435,22 +468,28 @@ window.MaterialSubmittal = (function () {
       return ia - ib;
     });
 
-    var COLS = 15;
+    // Header is the single source of truth for the column count — the group rows and
+    // the empty state both span it, and a hardcoded number silently breaks the
+    // moment a column is added.
+    var HEAD = ['<th class="ms-cb"><input type="checkbox" id="ms-xall" title="Select all shown" /></th>',
+      '<th class="ms-fz1">Submittal No.</th>', '<th class="ms-fz2">Item</th>',
+      '<th>Disc.</th>', '<th>Location</th>', '<th>Brand</th>', '<th>Vendor</th>', '<th>Presentation</th>',
+      '<th class="ms-doccol">Doc</th>',
+      '<th>Req. baseline</th>', '<th>Plan sub.</th>', '<th>Actual sub.</th>', '<th>Plan appr.</th>', '<th>Actual appr.</th>',
+      '<th>Approver</th>', '<th>Rev</th>', '<th>Status</th>', '<th>MAS ID</th>'];
+    if (canWrite) HEAD.push('<th class="ms-actcol"></th>');
+    var SPAN = HEAD.length;
+
     var h = '<div class="pd-card ms-tablecard"><table class="ms-table"><thead><tr>' +
-      '<th class="ms-cb"><input type="checkbox" id="ms-xall" title="Select all shown" /></th>' +
-      '<th class="ms-fz1">Submittal No.</th><th class="ms-fz2">Item</th>' +
-      '<th>Disc.</th><th>Location</th><th>Brand</th><th>Vendor</th><th>Presentation</th>' +
-      '<th>Req. baseline</th><th>Plan sub.</th><th>Actual sub.</th><th>Plan appr.</th><th>Actual appr.</th>' +
-      '<th>Approver</th><th>Rev</th><th>Status</th><th>MAS ID</th>' +
-      (canWrite ? '<th class="ms-actcol"></th>' : '') + '</tr></thead><tbody>';
+      HEAD.join('') + '</tr></thead><tbody>';
 
     if (!list.length) {
-      h += '<tr><td colspan="' + (COLS + 3) + '" style="text-align:center;padding:34px;" class="ms-mut">No submittals match these filters.</td></tr>';
+      h += '<tr><td colspan="' + SPAN + '" style="text-align:center;padding:34px;" class="ms-mut">No submittals match these filters.</td></tr>';
     }
     order.forEach(function (secName) {
       var g = groups[secName], isColl = !!collapsed[secName];
       var appr = g.filter(isApproved).length;
-      h += '<tr class="ms-grp" data-sec="' + esc(secName) + '"><td colspan="' + (COLS + 3) + '">' +
+      h += '<tr class="ms-grp" data-sec="' + esc(secName) + '"><td colspan="' + SPAN + '">' +
         '<span class="ms-grp-caret">' + (isColl ? '&#9656;' : '&#9662;') + '</span>' + esc(secName) +
         '<span class="ms-grp-count">' + g.length + ' item' + (g.length === 1 ? '' : 's') + ' · ' + appr + ' approved</span></td></tr>';
       if (isColl) return;
@@ -466,6 +505,9 @@ window.MaterialSubmittal = (function () {
           '<td>' + esc(r.brand || '') + '</td>' +
           '<td>' + esc(r.supplier || '') + '</td>' +
           '<td>' + esc(r.type_presentation || '') + '</td>' +
+          '<td class="ms-doccol">' + (r.file_url
+            ? '<button class="ms-filebtn" data-file="' + esc(r.file_url) + '" title="Open ' + esc(fileLabel(r.file_url)) + '"><span data-ico="eye" data-ico-size="14"></span></button>'
+            : '<span class="ms-mut ms-mini">—</span>') + '</td>' +
           '<td class="ms-nowrap ms-mut">' + fmtDate(r.date_required) + '</td>' +
           '<td class="ms-nowrap ms-mut">' + fmtDate(r.plan_submission_date) + '</td>' +
           '<td class="ms-nowrap">' + fmtDate(r.date_submitted) + '</td>' +
@@ -497,6 +539,10 @@ window.MaterialSubmittal = (function () {
 
   function wireLog() {
     var host = document.getElementById('ms-view');
+    if (window.Icons && Icons.hydrate) Icons.hydrate(host);   // the Doc column uses data-ico
+    host.querySelectorAll('[data-file]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); viewFile(b.dataset.file); };
+    });
     host.querySelectorAll('.ms-grp').forEach(function (tr) {
       tr.onclick = function () { var s = tr.dataset.sec; collapsed[s] = !collapsed[s]; renderLog(); };
     });
@@ -593,7 +639,19 @@ window.MaterialSubmittal = (function () {
         STATUS_ORDER.map(function (s) { return '<option' + (statusOf(e) === s ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') +
       '</select></label>' +
       f('MAS ID', 'ms-f-mas', e.mas_id) +
-      '<label class="ms-wide">Remarks<textarea id="ms-f-rem">' + esc(e.remarks || '') + '</textarea></label>';
+      '<label class="ms-wide">Remarks<textarea id="ms-f-rem">' + esc(e.remarks || '') + '</textarea></label>' +
+
+      '<div class="ms-sec">Document</div>' +
+      '<div class="ms-filefield">' +
+        (e.file_url
+          ? '<div class="ms-filenow" id="ms-file-now"><span data-ico="eye" data-ico-size="14"></span>' +
+            '<button type="button" class="ms-filelink" id="ms-file-open">' + esc(fileLabel(e.file_url)) + '</button>' +
+            '<button type="button" class="ms-filerm" id="ms-file-rm" title="Remove this attachment">&times;</button></div>'
+          : '') +
+        '<label class="ms-wide" style="margin:0;">' + (e.file_url ? 'Replace document' : 'Attach document') +
+          ' <span class="ms-mut" style="font-weight:400;">(PDF, image, or any submittal document)</span>' +
+          '<input id="ms-f-file" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.dwg,.zip" /></label>' +
+      '</div>';
 
     var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">' + (r ? 'Edit' : 'Add') + ' material submittal</h2>' +
       '<button class="pd-modal-close" id="ms-m-x">&times;</button></div>' +
@@ -616,6 +674,19 @@ window.MaterialSubmittal = (function () {
       if (!el('ms-f-disc2').value) el('ms-f-disc2').value = el('ms-c-disc').value;
     });
     syncPrev();
+    if (window.Icons && Icons.hydrate) Icons.hydrate(m.el);
+
+    // Attachment controls. `fileCleared` is only committed on Save, so cancelling
+    // the dialog can never orphan or delete a document.
+    var fileCleared = false;
+    var openBtn = el('ms-file-open'), rmBtn = el('ms-file-rm');
+    if (openBtn) openBtn.onclick = function () { viewFile(e.file_url); };
+    if (rmBtn) rmBtn.onclick = function () {
+      fileCleared = true;
+      var now = el('ms-file-now'); if (now) now.remove();
+      UI.toast('Attachment will be removed when you save.', 'info');
+    };
+
     el('ms-m-x').onclick = m.close;
     el('ms-m-cancel').onclick = m.close;
     el('ms-m-save').onclick = async function () {
@@ -638,10 +709,37 @@ window.MaterialSubmittal = (function () {
         payload.code_discipline, payload.code_floor, payload.code_number].filter(Boolean).join('-') || null;
       if (!payload.material) { UI.toast('Item is required.', 'error'); return; }
 
+      // ---- attachment: upload BEFORE the row write, so a failed upload can't
+      // leave the row pointing at an object that doesn't exist. -----------------
+      var saveBtn = el('ms-m-save'), fileEl = el('ms-f-file');
+      var picked = fileEl && fileEl.files && fileEl.files[0];
+      var oldPath = r ? r.file_url : null, uploaded = null;
+      if (picked) {
+        saveBtn.disabled = true; saveBtn.textContent = 'Uploading…';
+        try { uploaded = await uploadFile(picked); }
+        catch (err) {
+          saveBtn.disabled = false; saveBtn.textContent = 'Save';
+          UI.toast('Upload failed: ' + (err.message || err), 'error');
+          return;                                    // nothing written — safe to retry
+        }
+        payload.file_url = uploaded;
+      } else if (fileCleared) {
+        payload.file_url = null;
+      }
+      saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+
       var res;
       if (r) res = await sb().from(TABLE).update(payload).eq('id', r.id).select().single();
       else { payload.created_by = UID; res = await sb().from(TABLE).insert(payload).select().single(); }
-      if (res.error) { UI.toast(res.error.message, 'error'); return; }
+      if (res.error) {
+        // Roll the orphan back rather than leaving it in the bucket forever.
+        if (uploaded) await removeFiles([uploaded]);
+        saveBtn.disabled = false; saveBtn.textContent = 'Save';
+        UI.toast(res.error.message, 'error'); return;
+      }
+      // Row now points at the new object (or none) — drop the superseded one.
+      if (oldPath && (uploaded || fileCleared) && oldPath !== payload.file_url) await removeFiles([oldPath]);
+
       if (r) Object.assign(r, res.data); else rows.push(res.data);
       m.close(); UI.toast(r ? 'Submittal updated.' : 'Submittal added.', 'success');
       render();
@@ -653,6 +751,7 @@ window.MaterialSubmittal = (function () {
     if (!r || !confirm('Delete "' + (r.material || 'this submittal') + '"? This cannot be undone.')) return;
     var res = await sb().from(TABLE).delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    await removeFiles([r.file_url]);            // row is gone; drop its document too
     rows = rows.filter(function (x) { return String(x.id) !== String(id); });
     delete sel[id];
     UI.toast('Submittal deleted.', 'success'); render();
@@ -671,10 +770,13 @@ window.MaterialSubmittal = (function () {
   async function bulkDelete() {
     var ids = Object.keys(sel).filter(function (k) { return sel[k]; });
     if (!ids.length || !confirm('Delete ' + ids.length + ' submittal' + (ids.length === 1 ? '' : 's') + '? This cannot be undone.')) return;
+    // Capture the paths BEFORE the rows leave `rows`, or they're unrecoverable.
+    var paths = rows.filter(function (r) { return sel[r.id] && r.file_url; }).map(function (r) { return r.file_url; });
     for (var i = 0; i < ids.length; i += 100) {
       var res = await sb().from(TABLE).delete().in('id', ids.slice(i, i + 100));
       if (res.error) { UI.toast(res.error.message, 'error'); return; }
     }
+    await removeFiles(paths);
     rows = rows.filter(function (r) { return !sel[r.id]; });
     sel = {}; UI.toast('Deleted ' + ids.length + ' submittal' + (ids.length === 1 ? '' : 's') + '.', 'success'); render();
   }
@@ -693,8 +795,10 @@ window.MaterialSubmittal = (function () {
     go.onclick = async function () {
       if (inp.value.trim() !== String(pid)) return;
       m.close();
+      var paths = rows.filter(function (r) { return r.file_url; }).map(function (r) { return r.file_url; });
       var res = await sb().from(TABLE).delete().eq('project_id', pid);
       if (res.error) { UI.toast(res.error.message, 'error'); return; }
+      await removeFiles(paths);
       rows = []; sel = {}; UI.toast('Log cleared.', 'success'); render();
     };
   }
@@ -881,8 +985,12 @@ window.MaterialSubmittal = (function () {
     var p = document.getElementById('ms-imp-p');
     if (replace) {
       p.textContent = 'Clearing existing submittals…';
+      // Their documents go too — otherwise every re-import leaves the previous
+      // set orphaned in the bucket with no row referencing them.
+      var paths = rows.filter(function (x) { return x.file_url; }).map(function (x) { return x.file_url; });
       var del = await sb().from(TABLE).delete().eq('project_id', pid);
       if (del.error) { UI.toast('Could not clear existing: ' + del.error.message, 'error'); load(); return; }
+      await removeFiles(paths);
     }
     recs.forEach(function (r) { r.created_by = UID; });
     var ok = 0, CH = 200;
@@ -934,7 +1042,10 @@ window.MaterialSubmittal = (function () {
         'Revision No.': r.revision_no || '',
         'Status': statusOf(r),
         'Remarks': r.remarks || '',
-        'MAS ID': r.mas_id || ''
+        'MAS ID': r.mas_id || '',
+        // Filename only — the object is private, so a link would be useless once
+        // its signed URL expires (60s).
+        'Document': fileLabel(r.file_url)
       };
     });
     var ws = XLSX.utils.json_to_sheet(aoa);

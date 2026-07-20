@@ -155,6 +155,24 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-note-ico { color:#b45309; flex:none; margin-top:1px; }
 .ms-note-x { margin-left:auto; border:0; background:none; cursor:pointer; color:var(--pd-muted); padding:0 2px; }
 
+/* ---- Attachments -------------------------------------------------------- */
+.ms-doccol { width:46px; text-align:center; }
+.ms-filebtn { border:0; background:none; cursor:pointer; color:var(--pd-red); padding:3px 5px;
+  border-radius:var(--pd-radius); display:inline-flex; align-items:center; }
+.ms-filebtn:hover { background:var(--pd-bg); }
+/* Attachment block in the Add/Edit modal */
+.ms-filefield { grid-column:1/-1; display:flex; flex-direction:column; gap:8px; }
+.ms-filenow { display:flex; align-items:center; gap:8px; background:var(--pd-bg);
+  border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:7px 10px; font-size:12.5px; }
+.ms-filenow > [data-ico], .ms-filenow > svg { color:var(--pd-red); flex:none; }
+.ms-filelink { border:0; background:none; cursor:pointer; color:var(--pd-red); font-weight:600;
+  font-size:12.5px; text-align:left; padding:0; flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ms-filelink:hover { text-decoration:underline; }
+.ms-filerm { border:0; background:none; cursor:pointer; color:var(--pd-muted); font-size:17px;
+  line-height:1; padding:0 4px; flex:none; }
+.ms-filerm:hover { color:var(--pd-bad,#dc2626); }
+.ms-filefield input[type=file] { font-size:12.5px; }
+
 /* ---- Modal / form ------------------------------------------------------- */
 .ms-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
 .ms-form label { display:flex; flex-direction:column; gap:4px; font-size:12px; font-weight:600; color:var(--pd-muted); }
@@ -186,7 +204,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 
 /* ---- Print -------------------------------------------------------------- */
 @media print {
-  .pd-topbar, .ms-filters, .ms-actcol, .ms-cb { display:none !important; }
+  .pd-topbar, .ms-filters, .ms-actcol, .ms-cb, .ms-doccol { display:none !important; }
   .ms-tablecard { max-height:none; overflow:visible; }
   .ms-table { min-width:0; font-size:10px; }
   .ms-table th.ms-fz1, .ms-table td.ms-fz1, .ms-table th.ms-fz2, .ms-table td.ms-fz2 { position:static; }
