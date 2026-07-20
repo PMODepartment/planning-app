@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260717h"></script>
+  <script src="../../assets/js/theme.js?v=20260720a"></script>
   <title>Resource &amp; Role Master · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260717h" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260720a" />
   <style>
     .rl-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:14px; }
     .rl-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
@@ -43,7 +43,7 @@
     </nav>
   </aside>
   <div class="pd-content">
-    <div class="pd-topbar"><h1>Resource &amp; Role Master</h1><div id="user-bar"></div></div>
+    <div class="pd-topbar"><h1><span data-ico="users" data-ico-size="20" style="color:var(--pd-red);vertical-align:-3px;margin-right:6px;"></span>Resource &amp; Role Master</h1><div id="user-bar"></div></div>
     <div class="pd-main">
       <div class="rl-controls">
         <select class="pd-select" id="rl-project" style="max-width:320px;"></select>
@@ -78,12 +78,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260717h"></script>
-<script src="../../assets/js/auth.js?v=20260717h"></script>
-<script src="../../assets/js/db.js?v=20260717h"></script>
-<script src="../../assets/js/ui.js?v=20260717h"></script>
-<script src="../../assets/js/icons.js?v=20260717h"></script>
-<script src="../../assets/js/calendar.js?v=20260717h"></script>
+<script src="../../assets/js/config.js?v=20260720a"></script>
+<script src="../../assets/js/auth.js?v=20260720a"></script>
+<script src="../../assets/js/db.js?v=20260720a"></script>
+<script src="../../assets/js/ui.js?v=20260720a"></script>
+<script src="../../assets/js/icons.js?v=20260720a"></script>
+<script src="../../assets/js/calendar.js?v=20260720a"></script>
 <script>
 (function () {
   'use strict';
@@ -101,6 +101,7 @@
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker
     if (pid) load();
   }
 

@@ -110,6 +110,18 @@ users to login automatically — you never roll your own auth.
 - `UI.toast(msg, 'ok'|'error'|'warn')`
 - `UI.renderUserBar(profile)`
 - `UI.modal(html, opts)`
+- `UI.enhanceProjectSelect(selectEl)` — **use this for the project picker.** Populate a
+  native `<option>` list as usual, set the current value, then call it once: it upgrades
+  the `<select>` into a searchable combobox (scales to 100+ projects) while keeping the
+  `<select>` as the source of truth, so your existing `onchange` still fires. Safe to call
+  again to refresh after repopulating.
+
+**Uniform top bar (required).** Every module uses the sidebar-less shell with the same
+top-bar order: a 36×36 back button (`data-ico="arrowLeft"` → `dashboard.html`), then an
+`<h1>` whose title is **preceded by the module's brand-red icon** (the `icon` from
+`config.js`, e.g. `<span data-ico="camera" style="color:var(--pd-red)"></span>`), then the
+project selector (enhanced per above), then a tool cluster beside the profile, then
+`#user-bar`. Copy Progress Photos / Drawing Register for the exact markup.
 
 **Styles** — use the shared classes/tokens in `dashboard.css`: `.pd-card`,
 `.pd-btn`, `.pd-btn-primary`, `.pd-input`, `.pd-select`, `.pd-table`,

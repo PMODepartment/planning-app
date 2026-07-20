@@ -77,6 +77,63 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-17 — Global: searchable project selector + uniform top-bar icons
+Standing workflow set this prompt: **every prompt now logs to CLAUDE.md + commits + pushes**
+(saved to memory `commit-log-workflow`).
+- **Searchable project selector (shared).** New **`UI.enhanceProjectSelect(sel)`** in `ui.js`
+  (+ `.pd-psel*` styles in `dashboard.css`): upgrades a native project `<select>` into a
+  searchable combobox that scales to 100+ projects, **without changing module logic** — the
+  `<select>` stays the source of truth (value + `change` events still fire), and the trigger
+  button copies the select's classes/inline style so each module's per-topbar look carries.
+  Wired into **progress-photos, issues-lessons, drawing-register, risk-register, s-curve,
+  resource-loading, cash-flow** (one call after each populates its options). **Project Schedule
+  already had its own searchable Workspace→Program→Group browser — left as-is.**
+- **Uniform top bar — module icon beside the title.** Added the brand-red module icon before
+  the `<h1>` title in the three enabled modules that lacked it (**risk-register** = risk,
+  **cash-flow** = cash, **resource-loading** = users); Progress Photos / Issues / Drawing
+  Register / S-Curve already had theirs. `MODULE_CONTRACT.md` boilerplate updated so new modules
+  inherit both the icon-title rule and `enhanceProjectSelect`.
+- **Deferred (noted, not done):** deeper structural convergence — moving risk-register/cash-flow/
+  resource-loading's project selector out of their body rows into the topbar, and converting
+  risk-register's sidebar shell to sidebar-less — was left for a focused pass to avoid regressions
+  in those working modules. Disabled placeholder modules (contracts-claims, stakeholder-map,
+  material-submittal, productivity-rates) will adopt the pattern when built (contract updated).
+- **Shared assets changed** (`ui.js`, `dashboard.css`, `icons.js` earlier), so **`?v=` bumped to
+  `20260720a` across all 21 HTML files.**
+- Harness-verified the shared selector (gitignored `_ui_test.html`, deleted): native hidden,
+  100-project list, live search ("project 7" → 11), selection fires exactly one `change` event,
+  per-module button class + max-width carried, dark-mode popup on tokens, Esc closes. Screenshots
+  still impossible (compositor stalled).
+
+### 2026-07-17 — S-Curve: Forecast % row in the data table
+- The data table (Planned % / Actual %) now also shows a **Forecast %** row — the same
+  forecast the chart's red dashed line draws, sampled per month. Computed once in `compute()`
+  as `forecastC` (shared by chart + table): follows the remaining plan's shape, time-stretched
+  to the forecast finish (SPI-based or pinned), from the actual point up to 100%. Rendered as a
+  brand-red italic `<tr>` **only when a forecast exists** (guarded); months before the data date
+  show "—". Last cell may read ~99.9% (month-end sampling vs the finish date a few days later).
+- Harness-verified (real markup/styles/inline script from index.html, stubbed auth/DB with a
+  data-date-straddling schedule): rows Planned/Actual/Forecast %, dashes then monotonic
+  53.2%→99.9% one-per-month, red italic, row absent when no forecast. Pure render change — no
+  shared assets, no `?v=` bump.
+
+### 2026-07-17 — S-Curve: uniform toolbar / top bar
+- Brought the **S-Curve** module's chrome in line with the suite (Progress Photos / Drawing
+  Register / Cash Flow / Project Schedule). The separate body `.sc-controls` row is gone —
+  everything now lives in the topbar: 36×36 back button · title with the `trendingUp` brand-red
+  icon · **project selector in the topbar** (borderless-until-hover) · a tool cluster beside the
+  profile (Forecast-finish control + divider + **34×34 icon-only** Show-table & Refresh) ·
+  `#user-bar` left-divider · 34×34 theme toggle.
+- Show-table is now **icon-only** (toggles `.is-active` red fill + `title` instead of a text
+  relabel). Title collapses < 820px; no page h-scroll. **Pure chrome — compute/render untouched;
+  no shared-asset change, so no `?v=` bump.**
+- Harness-verified (real markup+styles+inline script pulled from `index.html`, stubbed
+  auth/DB/schedule; gitignored `_ui_test.html`, deleted): topbar order back·title·project·tools·
+  user-bar, 36/34px sizing, brand-red title icon, borderless→hover project select, user-bar
+  divider, table toggle reveals the 2-row table with active fill and stays icon-only, KPIs+chart
+  render, dark mode, no h-scroll. Also updated the memory guardrail on the exposed service-role
+  key (rotation is a user-only dashboard action; new key system decouples secret from publishable).
+
 ### 2026-07-17 — Issues, Concerns & Lessons Learned built + Photos filter polish
 - **Built `modules/issues-lessons/`** (flipped `enabled: true`) from the Power Apps
   "Issues & Concerns" app, adding a **Lessons Learned** capability the app lacks. Two

@@ -195,6 +195,7 @@ window.DrawingRegister = (function () {
       projects.map(function (p) {
         return '<option value="' + p.id + '"' + (p.id === pid ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>';
       }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker
     var cur = projects.find(function (p){ return p.id === pid; });
     projName = cur ? cur.name : '';
   }

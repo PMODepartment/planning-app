@@ -72,6 +72,7 @@ window.RiskRegister = (function () {
         return '<option value="' + p.id + '"' + (p.id === pid ? ' selected' : '') + '>' +
           Fmt.esc(p.name) + '</option>';
       }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker
     if (!projects.length) {
       document.getElementById('rr-table').innerHTML =
         '<tr><td style="padding:24px;color:var(--pd-muted);">No projects yet. Ask an admin to create one.</td></tr>';

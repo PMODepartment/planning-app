@@ -91,6 +91,7 @@ window.ProgressPhotos = (function () {
       return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' +
              Fmt.esc(p.name || p.id) + '</option>';
     }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker
     var cur = projects.filter(function (p) { return p.id === pid; })[0];
     projName = cur ? (cur.name || cur.id) : pid;
     sessionStorage.setItem('pd_project', pid);

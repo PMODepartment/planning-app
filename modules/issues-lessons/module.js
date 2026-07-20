@@ -73,6 +73,7 @@ window.IssuesLessons = (function () {
         return '<option value="' + p.id + '"' + (p.id === pid ? ' selected' : '') + '>' +
           Fmt.esc(p.name) + '</option>';
       }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker
     if (pid) sessionStorage.setItem('pd_project', pid);
   }
 
