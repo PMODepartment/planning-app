@@ -175,13 +175,26 @@ create table if not exists stakeholder_map (
   id            uuid primary key default gen_random_uuid(),
   project_id    text references projects(id),
   name          text,
-  organization  text,
-  role_title    text,
-  category       text,               -- Internal | Client | Regulator | Vendor | Community
-  influence     text,                -- Low | Medium | High
-  interest      text,                -- Low | Medium | High
+  organization  text,                -- Institution (agency / company)
+  role_title    text,                -- Position (e.g. City Mayor)
+  category      text,                -- Sector: Government | Private
+  influence     text,                -- Impact rating 1-4 (capability to disrupt business)
+  interest      text,                -- Interest rating 1-4
   contact       text,
-  engagement    text,                -- engagement strategy / notes
+  engagement    text,                -- free-text engagement notes (optional)
+  -- corporate-BD methodology (2026-07-20-stakeholder-map-full.sql).
+  -- DERIVED, never stored: Importance(1st-4th)+Approach from Impact×Interest;
+  -- Engagement Strategy+Frequency from (target_rel - current_rel) gap.
+  stakeholder_group   text,          -- LGU | NGA | GOCC | Partners | Consultants | ...
+  title               text,          -- honorific / formal title
+  nickname            text,
+  birthday            date,
+  email               text,
+  current_rel         smallint,      -- Current Relationship 1-4
+  target_rel          smallint,      -- Target Relationship 1-4
+  primary_responsible text,
+  alternate           text,
+  gift_tier           text,
   created_by    uuid references users(id),
   created_at    timestamptz default now(),
   updated_at    timestamptz default now()

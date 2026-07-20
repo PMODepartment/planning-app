@@ -26,7 +26,7 @@
         </div>
         <div class="sm-tabs" role="tablist">
           <button class="sm-tab active" data-view="list">Register</button>
-          <button class="sm-tab" data-view="grid">Influence / Interest</button>
+          <button class="sm-tab" data-view="grid">Impact / Interest</button>
         </div>
         <div class="sm-topbar-tools">
           <button class="pd-btn pd-btn-primary sm-tb-labeled" id="sm-add" title="Add a stakeholder">+ Add stakeholder</button>
@@ -37,15 +37,12 @@
         <!-- Filters -->
         <div class="sm-filters">
           <span class="sm-filt-ico" data-ico="filter" data-ico-size="15"></span>
-          <select class="pd-select" id="sm-f-category" style="max-width:160px;"><option value="">All categories</option>
-            <option>Internal</option><option>Client</option><option>Regulator</option>
-            <option>Vendor</option><option>Community</option><option>Partner</option><option>Other</option>
+          <select class="pd-select" id="sm-f-sector" style="max-width:150px;"><option value="">All sectors</option>
+            <option>Government</option><option>Private</option>
           </select>
-          <select class="pd-select" id="sm-f-influence" style="max-width:150px;"><option value="">All influence</option>
-            <option>High</option><option>Medium</option><option>Low</option>
-          </select>
-          <select class="pd-select" id="sm-f-interest" style="max-width:150px;"><option value="">All interest</option>
-            <option>High</option><option>Medium</option><option>Low</option>
+          <select class="pd-select" id="sm-f-group" style="max-width:160px;"><option value="">All groups</option></select>
+          <select class="pd-select" id="sm-f-importance" style="max-width:150px;"><option value="">All importance</option>
+            <option>1st</option><option>2nd</option><option>3rd</option><option>4th</option>
           </select>
           <input class="pd-input sm-search" id="sm-f-search" placeholder="Search…" />
           <button class="sm-clear" id="sm-clear"><span data-ico="x" data-ico-size="14"></span>Clear</button>
@@ -61,17 +58,17 @@
           </div>
         </div>
 
-        <!-- Influence / Interest grid view -->
+        <!-- Impact / Interest grid view -->
         <div id="sm-view-grid" style="display:none;">
           <div class="pd-card">
-            <h2 style="margin-top:0;">Power – Interest Grid</h2>
-            <p style="color:var(--pd-muted);margin-top:0;">Stakeholders placed by Influence × Interest. Each quadrant prescribes an engagement strategy. Click a cell to filter the register.</p>
+            <h2 style="margin-top:0;">Impact – Interest Grid</h2>
+            <p style="color:var(--pd-muted);margin-top:0;">Stakeholders placed by Impact (1–4) × Interest (1–4). Each cell's Importance rank sets the engagement approach. Click a cell to filter the register.</p>
             <div class="sm-grid-wrap"><div id="sm-grid"></div></div>
             <div class="sm-legend">
-              <span class="sm-leg"><span class="sm-leg-sw" style="background:#dc2626;"></span>Manage Closely (High influence · High interest)</span>
-              <span class="sm-leg"><span class="sm-leg-sw" style="background:#d97706;"></span>Keep Satisfied (High influence)</span>
-              <span class="sm-leg"><span class="sm-leg-sw" style="background:#2563eb;"></span>Keep Informed (High interest)</span>
-              <span class="sm-leg"><span class="sm-leg-sw" style="background:#6b7280;"></span>Monitor (minimum effort)</span>
+              <span class="sm-leg"><span class="sm-leg-sw" style="background:#dc2626;"></span>1st · Manage Closely</span>
+              <span class="sm-leg"><span class="sm-leg-sw" style="background:#d97706;"></span>2nd · Keep Satisfied</span>
+              <span class="sm-leg"><span class="sm-leg-sw" style="background:#2563eb;"></span>3rd · Keep Informed</span>
+              <span class="sm-leg"><span class="sm-leg-sw" style="background:#6b7280;"></span>4th · Monitor (minimum effort)</span>
             </div>
           </div>
         </div>

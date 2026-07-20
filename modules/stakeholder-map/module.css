@@ -53,32 +53,43 @@
 .sm-kpi-label { color:var(--pd-muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin-top:6px; }
 .sm-kpi.sm-manage .sm-kpi-val { color:var(--pd-red); }
 .sm-kpi.sm-satisfy .sm-kpi-val { color:#d97706; }
+.sm-kpi.sm-catchup .sm-kpi-val { color:#2563eb; }
 
 /* ---- Table ------------------------------------------------------------- */
+.sm-table { min-width:1180px; }   /* many columns — scrolls inside its card */
 .sm-table td .sm-sub { color:var(--pd-muted); font-size:12px; margin-top:2px;
-  max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-table td.sm-num { text-align:center; white-space:nowrap; }
+.sm-nick { color:var(--pd-muted); font-weight:600; font-size:12px; }
 .sm-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:700; font-size:12px; color:#fff; white-space:nowrap; }
-.sm-lvl { display:inline-block; padding:1px 8px; border-radius:999px; font-weight:600; font-size:12px;
-  border:1px solid var(--pd-line); color:var(--pd-ink); }
-.sm-lvl.sm-l-High { background:rgba(220,38,38,.12); border-color:rgba(220,38,38,.4); }
-.sm-lvl.sm-l-Medium { background:rgba(217,119,6,.12); border-color:rgba(217,119,6,.4); }
-.sm-lvl.sm-l-Low { background:rgba(107,114,128,.12); }
 .sm-cat { display:inline-block; padding:1px 8px; border-radius:6px; font-size:12px; font-weight:600;
   background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
+.sm-strat { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:700; color:#fff; white-space:nowrap; }
+.sm-strat.sm-sCatchup { background:#dc2626; }
+.sm-strat.sm-sEnhance { background:#d97706; }
+.sm-strat.sm-sMaintain { background:#16a34a; }
 
-/* Strategy band colours — ONLY on pills and grid cells, never the KPI cards. */
-.sm-pill.sm-manage,  .sm-gcell.sm-manage  { background:#dc2626; }
-.sm-pill.sm-satisfy, .sm-gcell.sm-satisfy { background:#d97706; }
-.sm-pill.sm-inform,  .sm-gcell.sm-inform  { background:#2563eb; }
-.sm-pill.sm-monitor, .sm-gcell.sm-monitor { background:#6b7280; }
+/* Importance rank colours — ONLY on pills and grid cells, never the KPI cards. */
+.sm-pill.sm-imp-1, .sm-gcell.sm-imp-1 { background:#dc2626; }   /* 1st Manage Closely */
+.sm-pill.sm-imp-2, .sm-gcell.sm-imp-2 { background:#d97706; }   /* 2nd Keep Satisfied */
+.sm-pill.sm-imp-3, .sm-gcell.sm-imp-3 { background:#2563eb; }   /* 3rd Keep Informed  */
+.sm-pill.sm-imp-4, .sm-gcell.sm-imp-4 { background:#6b7280; }   /* 4th Monitor        */
 
-/* ---- Influence / Interest grid (3×3 Power–Interest map) ---------------- */
+/* ---- Add/Edit form sections ------------------------------------------- */
+.sm-form-sec { font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--pd-muted); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--pd-line); }
+.sm-form-sec:first-of-type { margin-top:8px; }
+.sm-derived { text-transform:none; letter-spacing:0; font-weight:700; color:var(--pd-red); margin-left:8px; }
+.sm-frow { display:flex; gap:10px; flex-wrap:wrap; }
+.sm-frow .pd-field { min-width:120px; }
+
+/* ---- Impact / Interest grid (4×4) ------------------------------------- */
 .sm-grid-wrap { overflow-x:auto; }
 .sm-grid { border-collapse:separate; border-spacing:6px; margin:6px auto; }
 .sm-grid th.sm-axis { color:var(--pd-muted); font-size:12px; font-weight:700; padding:4px; }
 .sm-grid th.sm-axis-y { writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; }
 .sm-gcell {
-  width:180px; height:120px; vertical-align:top; text-align:left; color:#fff;
+  width:160px; height:118px; vertical-align:top; text-align:left; color:#fff;
   border-radius:8px; padding:8px; cursor:pointer; transition:transform .06s ease, filter .12s;
   border:2px solid transparent;
 }
@@ -97,4 +108,5 @@
 .sm-leg { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); }
 .sm-leg-sw { width:14px; height:14px; border-radius:4px; flex:none; }
 
-@media (max-width:700px) { .sm-kpis { grid-template-columns:repeat(2,1fr); } .sm-gcell { width:120px; height:104px; } }
+.sm-gcell-strat { line-height:1.2; }
+@media (max-width:700px) { .sm-kpis { grid-template-columns:repeat(2,1fr); } .sm-gcell { width:118px; height:110px; } }

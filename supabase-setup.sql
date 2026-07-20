@@ -55,6 +55,11 @@ create table if not exists stakeholder_map (
   id uuid primary key default gen_random_uuid(), project_id text references projects(id),
   name text, organization text, role_title text, category text, influence text, interest text,
   contact text, engagement text,
+  -- corporate-BD methodology (2026-07-20-stakeholder-map-full.sql):
+  -- category=Sector, organization=Institution, role_title=Position,
+  -- influence=Impact 1-4, interest=Interest 1-4 (both text); derived fields not stored.
+  stakeholder_group text, title text, nickname text, birthday date, email text,
+  current_rel smallint, target_rel smallint, primary_responsible text, alternate text, gift_tier text,
   created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
 
 create table if not exists drawing_register (

@@ -77,6 +77,39 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-20 — Stakeholder Map rebuilt to the real corporate-BD methodology
+- The owner supplied the actual **"CORP. BD TCD. Stakeholder Map 2026.xlsx"** (BD Map · TCD Map ·
+  Analysis Guide). Reverse-engineered it and **rebuilt `modules/stakeholder-map/`** from the generic
+  Power–Interest version to match the workbook. **Kept project-scoped** (owner's call) — the file's
+  corporate/SBU grouping (BD/TCD) is out of scope; this is one map per project.
+- **Two derivation chains, both DERIVED never stored** (pure functions of the stored 1–4 ratings,
+  same principle as risk-register's rating / issues-lessons' aging):
+  1. **Impact (1–4) × Interest (1–4) → Importance (1st–4th) → Engagement Approach**
+     (Manage Closely / Keep Satisfied / Keep Informed / Monitor). `IMP_GRID` transcribed verbatim
+     from the Guide's Table 3.
+  2. **Gap = Target − Current relationship → Engagement Strategy → Min Frequency**
+     (gap 2–3=Catch up, 1=Enhance, 0=Maintain).
+- ⚠️ **Workbook self-discrepancy** (same class as material-submittal's): the *Guide* sheet says
+  `Maintain=Semi-annually / Enhance=Quarterly`, but the *live cell formula* the data actually
+  reflects says `Catch up=Monthly, Enhance=Every two months, Maintain=Quarterly`. Followed the
+  **live formula** (source of truth); documented in the module CLAUDE.md.
+- Register view (identity + contact + both analyses + Primary Responsible), a **4×4 Impact×Interest
+  grid** colored by Importance rank (click a cell to filter), filters (Sector/Group/Importance/
+  search), and a sectioned Add/Edit modal whose Importance+Approach and Strategy+Frequency update
+  **live** as the ratings change.
+- **Migration `2026-07-20-stakeholder-map-full.sql` (USER MUST RUN)** — add-only/idempotent, folded
+  into `supabase-schema.sql` + `supabase-setup.sql`. Reuses starter columns for natural matches
+  (`category`=Sector, `organization`=Institution, `role_title`=Position, `influence`=Impact,
+  `interest`=Interest, `engagement`=notes) and adds `stakeholder_group, title, nickname, birthday,
+  email, current_rel, target_rel, primary_responsible, alternate, gift_tier` + a `(project_id,name)`
+  index. Load/save toast a "run the migration" message until applied. **Starts empty** (no importer,
+  owner's choice). No shared asset changed → **no `?v` bump**.
+- **Browser-verified** (stubbed harness, real module.js/css, DOM inspection): both chains exact for
+  all rating combos (incl. unrated→blank), KPIs, 4×4 grid placement, importance + cell-click filters,
+  live in-form derivation, add/save (`created_by` stamped, derived fields NOT persisted), wide table
+  scrolls inside its card (no page h-scroll), dark-mode tokens with fixed semantic rank colors. No
+  console errors.
+
 ### 2026-07-20 — Stakeholder Map built (Register + Power–Interest grid)
 - **Built `modules/stakeholder-map/`** (index.html + module.css + module.js), flipped
   `enabled: true`. No external app to mirror ("base it on the suite") — built from the suite
