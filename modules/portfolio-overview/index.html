@@ -483,10 +483,19 @@
     var total = cnt.count || 0;
     if (!total) return [];
     if (total > 20000) UI.toast('Loading ' + total + ' activities across ' + ids.length + ' project(s) — this may take a moment. Narrow the project filter for a faster view.', 'warn');
-    var pages = Math.ceil(total / 1000), reqs = [];
-    for (var p = 0; p < pages; p++) reqs.push(sb().from('project_schedule').select('*').in('project_id', ids).range(p * 1000, p * 1000 + 999));
-    var res = await Promise.all(reqs);
-    for (var i = 0; i < res.length; i++) { if (res[i].error) throw res[i].error; all = all.concat(res[i].data || []); }
+    // Keyset pagination with an explicit order (indexed PK range scan) instead of parallel
+    // OFFSET .range(): OFFSET re-scans every preceding row (deep pages timed out on 42k-row
+    // projects) and, with NO .order(), OFFSET pages can duplicate/skip rows → wrong totals.
+    // Lean columns only (the fields scCompute reads) — not select('*') across tens of thousands.
+    var LEAN = 'id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish';
+    var last = null;
+    while (true) {
+      var q = sb().from('project_schedule').select(LEAN).in('project_id', ids).order('id', { ascending: true }).limit(1000);
+      if (last) q = q.gt('id', last);
+      var r = await q; if (r.error) throw r.error;
+      var b = r.data || []; all = all.concat(b);
+      if (b.length < 1000) break; last = b[b.length - 1].id;
+    }
     return all;
   }
   function scCompute(list) {

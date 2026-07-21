@@ -77,6 +77,40 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Audit Medium/Low fixes (#6 read-only guards, #7 viewer read-only, #8 portfolio fallback, #10 colors)
+- **#6 (Med) — dead read-only guards wired up** (`modules/project-schedule/index.html`).
+  `window.__archived` / `window.__viewOnly` were read in ~8 edit guards each but never assigned, so
+  archived / view-only projects were fully editable. Now: `__viewOnly = (role === 'viewer')` set at
+  login; `__archived = (project.status === 'archived')` set per-project in `load()`. Archived projects
+  and viewers are now read-only in the schedule editor. (Defaults to editable if PROJECTS hasn't
+  loaded yet, then corrects — safe.)
+- **#7 (Med) — 'viewer' is now truly read-only at the DB.** Module-table writes used `is_approved()`
+  (true for viewers). Added **`is_writer()`** (approved AND `role <> 'viewer'`) and switched the
+  module-table + calendars insert/update/delete policies to it (read unchanged). Migration
+  **`migrations/2026-07-21-viewer-readonly.sql` (USER MUST RUN)**; folded into both schema files'
+  RLS loops. Also **project-scoped the older 2026-07-07 support-table loop** in setup.sql
+  (wbs_nodes/activity_code_*/activity_udf_defs/activity_steps/weekly_commitments/schedule_scenarios/
+  _thresholds) so a *fresh* build matches the live #2 RLS fix (it was still `is_approved()` un-scoped
+  there). ⚠️ Residual: `cash_flow_*` assumption tables keep `is_approved()` writes (planner-domain;
+  a project-assigned viewer could still edit them) — flagged in the migration, tighten later if needed.
+- **#8 (Med) — portfolio schedule fallback hardened** (`modules/portfolio-overview/index.html`).
+  The non-RPC fallback fetched with parallel OFFSET `.range()` and **no `.order()`** + `select('*')`
+  across many large projects → statement-timeout risk *and* unstable paging (duplicate/skipped rows →
+  wrong totals). Now keyset-paginated (`order id.asc`, `gt(id,last)`) with the lean 8-column set
+  `scCompute` actually reads. (Only runs when `schedule_scurve_agg_multi` RPC is absent.)
+- **#10 (Low) — hardcoded `#fff` reviewed, no change.** All instances are deliberate accents, not
+  dark-mode surface bugs: the photo-lightbox white mat + caption (a dark theater), the active
+  duplicate-legend badge's inverted contrast, and the schedule drag-handle hover / loading-bar-on-dark.
+  Left as-is (changing them would regress intentional design).
+- **#9 (Low) NOT done — deliberate.** The project-schedule main `load()` `select('*')` (jsonb waste on
+  40k-row projects) is the documented "B2" deferral: the only real win is lazy-loading `activity_codes`/
+  `udf`, which the module owner already declined as poor risk/reward on the hot path (the columns are
+  used for grouping/columns/editor). No safe column-trim exists; left deferred.
+- **Verified:** both edited modules' inline scripts parse clean; all three SQL files structurally sound
+  (setup.sql 687/687 parens, `$$` paired; schema.sql balanced with comments stripped — its raw
+  imbalance is pre-existing comment text; migration balanced); `is_writer()` defined before every loop
+  that uses it; 0 module/master/calendars insert policies still on `is_approved()`. JS + SQL only, no `?v=` bump.
+
 ### 2026-07-21 — Audit #5 completed: supabase-setup.sql folded to a complete one-paste build
 Finished the deferred half of audit finding #5. `supabase-setup.sql` now builds the **entire** DB on
 its own — no more "run /migrations too."

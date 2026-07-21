@@ -1850,6 +1850,8 @@
   async function load() {
     loadDataDate();   // per-project data date (persisted); drives CPM / gantt line / usage
     _fmtRules = loadFmtRules();   // per-project conditional-formatting rules
+    // Archived projects are read-only (feeds the ~8 edit guards that read window.__archived).
+    window.__archived = ((PROJECTS.find(function (x) { return x.id === pid; }) || {}).status === 'archived');
     if (!pid) { rows = []; rebuild(); renderAll(); return; }
     showLoading('Loading schedule…');
     var all = [];
@@ -8741,6 +8743,9 @@
     UID = (user && user.id) || (profile && profile.id) || null;
     isAdmin = !!(profile && (profile.role === 'admin' || profile.role === 'super_admin'));
     canWrite = !!(profile && ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1);
+    // Read-only guards (were read in ~8 edit paths but never assigned): a 'viewer' is
+    // read-only per the roles model; __archived is set per-project in load().
+    window.__viewOnly = !!(profile && profile.role === 'viewer');
     var clrBtn = document.getElementById('ps-clear'); if (clrBtn && !isAdmin) clrBtn.style.display = 'none';
     UI.renderUserBar(profile);
     UI.initShell();

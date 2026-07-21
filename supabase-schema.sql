@@ -501,6 +501,14 @@ create or replace function is_approved() returns boolean
   select exists (select 1 from users u where u.id = auth.uid() and u.status = 'approved');
 $$;
 
+-- Helper: may the current user WRITE? Approved and NOT a 'viewer' (viewer is
+-- read-only per the roles model). Gates module-table insert/update/delete so a
+-- viewer can read every accessible project but change nothing.
+create or replace function is_writer() returns boolean
+  language sql stable security definer set search_path = public as $$
+  select exists (select 1 from users u where u.id = auth.uid() and u.status = 'approved' and u.role <> 'viewer');
+$$;
+
 -- Helper: may the current user access this project? Admins: all. Others: only
 -- projects listed in their users.projects array. This enforces the admin
 -- "Assign projects" feature at the database level.
@@ -567,11 +575,11 @@ begin
     execute format('drop policy if exists %I on %I', t||'_read', t);
     execute format('create policy %I on %I for select using (can_access_project(project_id))', t||'_read', t);
     execute format('drop policy if exists %I on %I', t||'_ins', t);
-    execute format('create policy %I on %I for insert with check (is_approved() and created_by = auth.uid() and can_access_project(project_id))', t||'_ins', t);
+    execute format('create policy %I on %I for insert with check (is_writer() and created_by = auth.uid() and can_access_project(project_id))', t||'_ins', t);
     execute format('drop policy if exists %I on %I', t||'_upd', t);
-    execute format('create policy %I on %I for update using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_upd', t);
+    execute format('create policy %I on %I for update using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin())) with check (is_writer() and can_access_project(project_id))', t||'_upd', t);
     execute format('drop policy if exists %I on %I', t||'_del', t);
-    execute format('create policy %I on %I for delete using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_del', t);
+    execute format('create policy %I on %I for delete using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_del', t);
   end loop;
 end $$;
 

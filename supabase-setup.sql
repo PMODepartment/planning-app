@@ -238,6 +238,11 @@ create or replace function is_approved() returns boolean
   language sql stable security definer set search_path = public as $$
   select exists (select 1 from users u where u.id = auth.uid() and u.status='approved');
 $$;
+-- Approved and NOT a 'viewer' — gates module-table writes so viewers are read-only.
+create or replace function is_writer() returns boolean
+  language sql stable security definer set search_path = public as $$
+  select exists (select 1 from users u where u.id = auth.uid() and u.status='approved' and u.role <> 'viewer');
+$$;
 create or replace function can_access_project(pid text) returns boolean
   language sql stable security definer set search_path = public as $$
   select exists (select 1 from users u where u.id = auth.uid() and u.status='approved'
@@ -294,11 +299,11 @@ begin
     execute format('drop policy if exists %I on %I', t||'_read', t);
     execute format('create policy %I on %I for select using (can_access_project(project_id))', t||'_read', t);
     execute format('drop policy if exists %I on %I', t||'_ins', t);
-    execute format('create policy %I on %I for insert with check (is_approved() and created_by = auth.uid() and can_access_project(project_id))', t||'_ins', t);
+    execute format('create policy %I on %I for insert with check (is_writer() and created_by = auth.uid() and can_access_project(project_id))', t||'_ins', t);
     execute format('drop policy if exists %I on %I', t||'_upd', t);
-    execute format('create policy %I on %I for update using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_upd', t);
+    execute format('create policy %I on %I for update using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin())) with check (is_writer() and can_access_project(project_id))', t||'_upd', t);
     execute format('drop policy if exists %I on %I', t||'_del', t);
-    execute format('create policy %I on %I for delete using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_del', t);
+    execute format('create policy %I on %I for delete using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_del', t);
   end loop;
 end $$;
 
@@ -422,19 +427,19 @@ create policy projects_del on projects for delete
   using (is_planner() and (is_admin() or can_access_project(id)));
 
 -- ───────────────────────── RLS: Activity Codes / Steps / Last Planner ─────────────────────────
--- These three (added 2026-07-07) use the simpler is_approved()/is_planner() read/write split
--- (matches schedule_baselines/schedule_audit/schedule_snapshots) rather than the per-project
--- can_access_project() loop above — kept as standalone blocks so this file matches each
--- table's own migration exactly. Must come after is_planner() is defined (just above).
+-- These schedule-support tables (added 2026-07-07) are project-scoped: read =
+-- can_access_project(project_id), write = is_planner() AND can_access_project — matching
+-- migrations/2026-07-21-rls-project-scope-fix.sql (audit #2, which stopped any approved user
+-- from reading every project's schedule/WBS/cost data). Must come after is_planner() (above).
 do $$
 declare t text;
 begin
   foreach t in array array['wbs_nodes','activity_code_types','activity_code_values','activity_udf_defs','activity_steps','weekly_commitments','schedule_scenarios','schedule_thresholds'] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
-    execute format('create policy %I on %I for select using (is_approved())', t||'_read', t);
+    execute format('create policy %I on %I for select using (can_access_project(project_id))', t||'_read', t);
     execute format('drop policy if exists %I on %I', t||'_write', t);
-    execute format('create policy %I on %I for all using (is_planner()) with check (is_planner())', t||'_write', t);
+    execute format('create policy %I on %I for all using (is_planner() and can_access_project(project_id)) with check (is_planner() and can_access_project(project_id))', t||'_write', t);
   end loop;
 end $$;
 
@@ -485,11 +490,11 @@ begin
   drop policy if exists calendars_read on calendars;
   create policy calendars_read on calendars for select using (can_access_project(project_id));
   drop policy if exists calendars_ins on calendars;
-  create policy calendars_ins on calendars for insert with check (is_approved() and created_by = auth.uid() and can_access_project(project_id));
+  create policy calendars_ins on calendars for insert with check (is_writer() and created_by = auth.uid() and can_access_project(project_id));
   drop policy if exists calendars_upd on calendars;
-  create policy calendars_upd on calendars for update using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()));
+  create policy calendars_upd on calendars for update using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin())) with check (is_writer() and can_access_project(project_id));
   drop policy if exists calendars_del on calendars;
-  create policy calendars_del on calendars for delete using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()));
+  create policy calendars_del on calendars for delete using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()));
 end $$;
 
 
@@ -991,9 +996,9 @@ begin
     execute format('drop policy if exists %I on %I', t || '_read', t);
     execute format('create policy %I on %I for select using (can_access_project(project_id))', t || '_read', t);
     execute format('drop policy if exists %I on %I', t || '_ins', t);
-    execute format('create policy %I on %I for insert with check (is_approved() and created_by = auth.uid() and can_access_project(project_id))', t || '_ins', t);
+    execute format('create policy %I on %I for insert with check (is_writer() and created_by = auth.uid() and can_access_project(project_id))', t || '_ins', t);
     execute format('drop policy if exists %I on %I', t || '_upd', t);
-    execute format('create policy %I on %I for update using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t || '_upd', t);
+    execute format('create policy %I on %I for update using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin())) with check (is_writer() and can_access_project(project_id))', t || '_upd', t);
     execute format('drop policy if exists %I on %I', t || '_del', t);
     execute format('create policy %I on %I for delete using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t || '_del', t);
   end loop;
