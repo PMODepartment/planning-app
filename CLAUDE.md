@@ -77,6 +77,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Resource & Role Master: Loading view + usability polish + cost roll-up
+- User asked to improve the module; chose **Loading view + usability polish + cost roll-up**
+  (declined Excel import). All in `modules/resource-loading/index.html`; **no DB change, no `?v=`
+  bump** (module-local only).
+- **Resource Loading view (new 4th tab — the module's namesake).** Reads `resource_assignments`
+  (lazy) + the assigned activities' `project_schedule` dates → a **resources × months utilization
+  matrix**. Budgeted units/cost are **time-phased** across each activity's dates weighted by the
+  resource's working calendar (`PDCal`); **utilization = allocated ÷ (Max Units/Time% × working
+  capacity)**, cells colored green ≤85 / amber ≤100 / **red >100** with an OVER tag per
+  over-allocated resource. Modes **Utilization % / Units / Cost** + totals row, over-allocated-only
+  filter, empty state → Project Schedule's Resource Assignments. This finally makes the
+  "resource-loading" module show actual loading.
+- **Usability polish.** Per-tab **KPI cards**; **filter bar** (funnel pattern) Type+Role on
+  Resources / Discipline on Roles; **"# Resources"** count on Roles & Calendars; **delete guards**
+  (FKs have no ON DELETE) — calendar-in-use and resource-with-assignments are **blocked** (the
+  latter via a server-side `count` head query), role-in-use warns; **duplicate resource-code**
+  blocked on save.
+- **Cost roll-up.** Role Price/Unit **cascades** to a resource's rate when empty; total budgeted
+  cost KPI + Cost matrix mode (`budgeted_cost` → units × rate fallback).
+- **Verified in a stubbed harness** (real module + real ui.js/PDCal, in-memory Supabase seeded
+  with resources/roles/calendar/assignments/schedule): matrix spread hand-checked exact (Carpenter
+  Mar 2,449/Apr 2,845.1/May 305.9 = 5,600; totals 6,000 units / ₱2.98M; OVER flags + utilization %
+  correct), all 3 modes + totals + over-only, KPIs (avg availability 75%), Type filter, role→rate
+  cascade (→550), dup-code blocked (no insert), calendar delete blocked before confirm. No console
+  errors. (Screenshots impossible in this env — DOM/JS checks.)
+
 ### 2026-07-21 — Productivity Rates: filter/control bar consistency (user: "filters in the top bar are clashing")
 - Diagnosed against the live site in the user's browser (logged in) + a stubbed harness measuring
   element geometry: **no pixel overlap** at 1280/1568/1920 — the "clash" was a **consistency**
