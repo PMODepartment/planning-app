@@ -3,17 +3,16 @@
 -- ----------------------------------------------------------------------------
 -- Run this ENTIRE file once in the Supabase SQL editor of a fresh project.
 -- It is idempotent (safe to re-run). Order: tables → grants → helpers → RLS →
--- storage → demo seed → bootstrap admin.
+-- storage → demo seed → bootstrap admin → Phase-2 consolidation.
 --
--- ⚠️ NOT YET COMPLETE ON ITS OWN (audit 2026-07-21). Several Phase-2 tables live
--- only in /migrations and are NOT in this file yet — e.g. cash_flow_settings/
--- _actuals/_rollup/_scenarios/_trade_packages/_dp_tranches/_billing_milestones,
--- schedule_baselines/_snapshots/_audit, activity_expenses, cost_accounts,
--- wpm_work_packages, ppr_presentations/_slides. For a FRESH project, after this
--- file also run every file in /migrations in date order (all are idempotent).
--- (Folding these in — so this file alone builds a complete DB — is a tracked
--- follow-up.) The live production DB is already complete; this note only affects
--- rebuilding from scratch.
+-- ✅ COMPLETE (audit 2026-07-21). This file alone builds the full DB: the Phase-2
+-- tables/columns that used to live only in /migrations are folded into the
+-- "CONSOLIDATION" section at the bottom (cash_flow_*, schedule_baselines/
+-- _snapshots/_audit, activity_expenses, cost_accounts, wpm_work_packages,
+-- ppr_presentations/_slides, + the module-full column sets), with RLS applied
+-- project-scoped. Running the individual /migrations afterward is optional and
+-- harmless (all idempotent). Verified: 0 tables / 0 columns missing vs the union
+-- of all sources; every policy re-runnable.
 --
 -- After running: see SETUP.md for the Supabase dashboard settings (disable
 -- email confirmation, password-reset redirect URL) and the GitHub steps.
@@ -491,4 +490,511 @@ begin
   create policy calendars_upd on calendars for update using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()));
   drop policy if exists calendars_del on calendars;
   create policy calendars_del on calendars for delete using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()));
+end $$;
+
+
+-- ============================================================================
+-- CONSOLIDATION (audit 2026-07-21): tables + columns that previously lived ONLY
+-- in /migrations, folded here so this file alone builds a complete DB. Every
+-- statement is idempotent. Support-table RLS is applied PROJECT-SCOPED (mirrors
+-- migrations/2026-07-21-rls-project-scope-fix.sql); cash-flow / ppr / wpm keep
+-- their own policies (already project-scoped / service-role-guarded).
+-- ============================================================================
+
+-- ---- Phase-2 tables (dependency-ordered) + indexes + grants + own policies ----
+-- (tables first: a missing column below — resource_assignments.cost_account_id —
+--  FKs cost_accounts, so that table must exist before the ALTER runs.)
+-- cost_accounts
+create table if not exists cost_accounts (
+  id uuid primary key default gen_random_uuid(),
+  project_id text not null,
+  parent_id uuid references cost_accounts(id) on delete set null,  
+  code text,                       
+  name text not null,
+  sort_order int default 0,
+  created_by uuid,
+  created_at timestamptz default now(), updated_at timestamptz default now()
+);
+create index if not exists cost_accounts_project_idx on cost_accounts(project_id);
+alter table cost_accounts enable row level security;
+grant select, insert, update, delete on cost_accounts to authenticated;
+
+-- activity_expenses
+create table if not exists activity_expenses (
+  id uuid primary key default gen_random_uuid(),
+  project_id text not null,
+  activity_id text,                
+  name text not null,
+  cost_account_id uuid references cost_accounts(id) on delete set null,
+  planned_cost numeric(16,2),
+  actual_cost  numeric(16,2),
+  remarks text,
+  created_by uuid,
+  created_at timestamptz default now(), updated_at timestamptz default now()
+);
+create index if not exists activity_expenses_project_activity_idx on activity_expenses(project_id, activity_id);
+alter table activity_expenses enable row level security;
+grant select, insert, update, delete on activity_expenses to authenticated;
+
+-- schedule_baselines
+create table if not exists schedule_baselines (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     text not null,
+  name           text,
+  taken_at       timestamptz default now(),
+  created_by     uuid,
+  is_primary     boolean default false,
+  activity_count int,
+  activities     jsonb default '{}'::jsonb
+);
+create index if not exists schedule_baselines_project_idx on schedule_baselines (project_id, taken_at desc);
+alter table schedule_baselines enable row level security;
+grant select, insert, update, delete on schedule_baselines to authenticated;
+
+-- schedule_snapshots
+create table if not exists schedule_snapshots (
+  id                 uuid primary key default gen_random_uuid(),
+  project_id         text not null,
+  label              text,
+  data_date          date,
+  taken_at           timestamptz default now(),
+  created_by         uuid,
+  
+  pct_complete       numeric,
+  activities_total   int,
+  activities_behind  int,
+  milestones_total   int,
+  milestones_at_risk int,
+  project_finish     date,
+  
+  milestones         jsonb default '[]'::jsonb
+);
+create index if not exists schedule_snapshots_project_idx on schedule_snapshots (project_id, taken_at desc);
+alter table schedule_snapshots enable row level security;
+grant select, insert, update, delete on schedule_snapshots to authenticated;
+
+-- schedule_audit
+create table if not exists schedule_audit (
+  id            uuid primary key default gen_random_uuid(),
+  project_id    text,
+  activity_pk   uuid,          
+  activity_id   text,          
+  activity_name text,
+  action        text,          
+  changes       jsonb,         
+  changed_by    uuid,
+  changed_at    timestamptz default now()
+);
+create index if not exists schedule_audit_project_idx on schedule_audit (project_id, changed_at desc);
+alter table schedule_audit enable row level security;
+grant select, insert on schedule_audit to authenticated;
+
+-- cash_flow_settings
+create table if not exists cash_flow_settings (
+  id                        uuid primary key default gen_random_uuid(),
+  project_id                text references projects(id) on delete cascade unique,
+  contract_ibb              numeric(18,2),          
+  contract_bcb              numeric(18,2),          
+  dp_percent                numeric(6,5) default 0, 
+  retention_percent         numeric(6,5) default 0.10, 
+  dp_recoup_percent         numeric(6,5),           
+  billing_terms_months      integer default 1,      
+  retention_release_months  integer default 1,      
+  start_period              date,                   
+  wpm_project_id            text,                   
+  remarks                   text,
+  created_by                uuid references users(id),
+  created_at                timestamptz default now(),
+  updated_at                timestamptz default now()
+);
+alter table cash_flow_settings
+  add column if not exists billing_basis text default 'poc';
+alter table cash_flow_settings add column if not exists ewt_percent      numeric(6,5) default 0.02;
+alter table cash_flow_settings add column if not exists vat_percent      numeric(6,5) default 0.12;
+alter table cash_flow_settings add column if not exists ret_rel1_pct     numeric(6,5) default 1;
+alter table cash_flow_settings add column if not exists ret_rel2_months  integer      default 12;
+alter table cash_flow_settings add column if not exists finance_rate  numeric(7,5) default 0;
+alter table cash_flow_settings add column if not exists funding_limit numeric(18,2);
+alter table cash_flow_settings add column if not exists scurve_basis text default 'duration';
+alter table cash_flow_settings add column if not exists co_ret_rel1_pct    numeric(6,5);
+alter table cash_flow_settings add column if not exists co_ret_rel1_months integer;
+alter table cash_flow_settings add column if not exists co_ret_rel2_months integer;
+alter table cash_flow_settings enable row level security;
+grant select, insert, update, delete on cash_flow_settings to authenticated;
+drop policy if exists cash_flow_settings_read on cash_flow_settings;
+create policy cash_flow_settings_read on cash_flow_settings
+  for select using (is_approved() and can_access_project(project_id));
+drop policy if exists cash_flow_settings_write on cash_flow_settings;
+create policy cash_flow_settings_write on cash_flow_settings
+  for all using (is_approved() and can_access_project(project_id))
+  with check (is_approved() and can_access_project(project_id));
+
+-- cash_flow_billing_milestones
+create table if not exists cash_flow_billing_milestones (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     text references projects(id) on delete cascade,
+  seq            integer default 0,
+  description    text,                                 
+  basis          text default 'amount' check (basis in ('amount','percent')),
+  amount         numeric(18,2),                        
+  percent        numeric(6,5),                         
+  trigger_mode   text default 'milestone'
+                   check (trigger_mode in ('milestone','month','offset')),
+  milestone      text,                                 
+  trigger_month  date,                                 
+  trigger_offset integer default 0,                    
+  remarks        text,
+  created_by     uuid references users(id),
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now()
+);
+create index if not exists idx_cf_bill_ms_proj on cash_flow_billing_milestones(project_id);
+alter table cash_flow_billing_milestones enable row level security;
+grant select, insert, update, delete on cash_flow_billing_milestones to authenticated, service_role;
+drop policy if exists cash_flow_billing_milestones_read on cash_flow_billing_milestones;
+create policy cash_flow_billing_milestones_read on cash_flow_billing_milestones for select using (is_approved() and can_access_project(project_id));
+drop policy if exists cash_flow_billing_milestones_write on cash_flow_billing_milestones;
+create policy cash_flow_billing_milestones_write on cash_flow_billing_milestones for all
+  using (is_approved() and can_access_project(project_id))
+  with check (is_approved() and can_access_project(project_id));
+
+-- cash_flow_dp_tranches
+create table if not exists cash_flow_dp_tranches (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      text references projects(id) on delete cascade,
+  seq             integer default 0,            
+  label           text,                         
+  category        text,                          
+  basis           text default 'percent'
+                    check (basis in ('percent','amount')),
+  percent         numeric(6,5),                 
+  amount          numeric(18,2),                
+  timing_mode     text default 'offset'
+                    check (timing_mode in ('month','offset','milestone')),
+  timing_month    date,                          
+  timing_offset   integer default 0,             
+  milestone       text,                          
+  recoup_percent  numeric(6,5),                 
+  remarks         text,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+create index if not exists idx_cf_dp_tranches_proj on cash_flow_dp_tranches(project_id);
+alter table cash_flow_dp_tranches enable row level security;
+grant select, insert, update, delete on cash_flow_dp_tranches to authenticated, service_role;
+drop policy if exists cash_flow_dp_tranches_read on cash_flow_dp_tranches;
+create policy cash_flow_dp_tranches_read on cash_flow_dp_tranches
+  for select using (is_approved() and can_access_project(project_id));
+drop policy if exists cash_flow_dp_tranches_write on cash_flow_dp_tranches;
+create policy cash_flow_dp_tranches_write on cash_flow_dp_tranches
+  for all using (is_approved() and can_access_project(project_id))
+  with check (is_approved() and can_access_project(project_id));
+
+-- cash_flow_actuals
+create table if not exists cash_flow_actuals (
+  id           uuid primary key default gen_random_uuid(),
+  project_id   text references projects(id) on delete cascade,
+  period       date not null,                       
+  direction    text not null check (direction in ('in','out')),
+  category     text,                                
+  amount       numeric(18,2) not null,              
+  description  text,
+  remarks      text,
+  created_by   uuid references users(id),
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+create index if not exists idx_cf_actuals_proj on cash_flow_actuals(project_id);
+alter table cash_flow_actuals enable row level security;
+grant select, insert, update, delete on cash_flow_actuals to authenticated, service_role;
+drop policy if exists cash_flow_actuals_read on cash_flow_actuals;
+create policy cash_flow_actuals_read on cash_flow_actuals for select using (is_approved() and can_access_project(project_id));
+drop policy if exists cash_flow_actuals_write on cash_flow_actuals;
+create policy cash_flow_actuals_write on cash_flow_actuals for all
+  using (is_approved() and can_access_project(project_id))
+  with check (is_approved() and can_access_project(project_id));
+
+-- cash_flow_rollup
+create table if not exists cash_flow_rollup (
+  id           uuid primary key default gen_random_uuid(),
+  project_id   text references projects(id) on delete cascade,
+  period       date not null,
+  cash_in      numeric(18,2) default 0,
+  cash_out     numeric(18,2) default 0,   
+  net          numeric(18,2) default 0,
+  updated_at   timestamptz default now(),
+  unique (project_id, period)
+);
+create index if not exists idx_cf_rollup_proj on cash_flow_rollup(project_id);
+alter table cash_flow_rollup enable row level security;
+grant select, insert, update, delete on cash_flow_rollup to authenticated, service_role;
+drop policy if exists cash_flow_rollup_read on cash_flow_rollup;
+create policy cash_flow_rollup_read on cash_flow_rollup for select using (is_approved() and can_access_project(project_id));
+drop policy if exists cash_flow_rollup_write on cash_flow_rollup;
+create policy cash_flow_rollup_write on cash_flow_rollup for all
+  using (is_approved() and can_access_project(project_id))
+  with check (is_approved() and can_access_project(project_id));
+
+-- cash_flow_trade_packages
+create table if not exists cash_flow_trade_packages (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     text references projects(id) on delete cascade,
+  seq            integer default 0,
+  name           text,                                 
+  basis          text not null default 'percent' check (basis in ('percent','amount')),
+  percent        numeric(9,6),                         
+  amount         numeric(18,2),                         
+  dp_percent        numeric(9,6) default 0,             
+  retention_percent numeric(9,6) default 0,             
+  billing_terms_months integer default 0,               
+  created_by     uuid references users(id),
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now()
+);
+alter table cash_flow_trade_packages
+  add column if not exists dp_tranches jsonb default '[]'::jsonb;
+create index if not exists idx_cf_trade_proj on cash_flow_trade_packages(project_id);
+alter table cash_flow_trade_packages enable row level security;
+grant select, insert, update, delete on cash_flow_trade_packages to authenticated, service_role;
+drop policy if exists cash_flow_trade_read on cash_flow_trade_packages;
+create policy cash_flow_trade_read on cash_flow_trade_packages for select using (is_approved() and can_access_project(project_id));
+drop policy if exists cash_flow_trade_write on cash_flow_trade_packages;
+create policy cash_flow_trade_write on cash_flow_trade_packages for all
+  using (is_approved() and can_access_project(project_id))
+  with check (is_approved() and can_access_project(project_id));
+
+-- cash_flow_scenarios
+create table if not exists cash_flow_scenarios (
+  id           uuid primary key default gen_random_uuid(),
+  project_id   text references projects(id) on delete cascade,
+  name         text not null,                          
+  is_baseline  boolean default false,                  
+  snapshot     jsonb not null,                         
+  created_by   uuid references users(id),
+  created_at   timestamptz default now()
+);
+create index if not exists idx_cf_scen_proj on cash_flow_scenarios(project_id);
+alter table cash_flow_scenarios enable row level security;
+grant select, insert, update, delete on cash_flow_scenarios to authenticated, service_role;
+drop policy if exists cash_flow_scen_read on cash_flow_scenarios;
+create policy cash_flow_scen_read on cash_flow_scenarios for select using (is_approved() and can_access_project(project_id));
+drop policy if exists cash_flow_scen_write on cash_flow_scenarios;
+create policy cash_flow_scen_write on cash_flow_scenarios for all
+  using (is_approved() and can_access_project(project_id))
+  with check (is_approved() and can_access_project(project_id));
+
+-- wpm_work_packages
+create table if not exists wpm_work_packages (
+  id                    uuid primary key default gen_random_uuid(),
+  wpm_project_id        text not null,          
+  wp_no                 text not null,
+  description           text,
+  approved_budget_bcb   numeric(18,2),
+  awarded_cost          numeric(18,2),
+  total_awarded         numeric(18,2),
+  dp_percent            numeric(6,5),
+  retention_percent     numeric(6,5),
+  payment_terms_days    integer,
+  awarding_date         date,
+  actual_awarding_date  date,
+  target_delivery       date,
+  target_installation   date,
+  target_completion     date,
+  source_id             uuid,                   
+  synced_at             timestamptz default now(),
+  unique (wpm_project_id, wp_no)
+);
+alter table wpm_work_packages add column if not exists award_status       text;
+alter table wpm_work_packages add column if not exists procurement_status text;
+alter table wpm_work_packages add column if not exists delivery_status     text;
+alter table wpm_work_packages add column if not exists trade text;
+create index if not exists idx_wpm_mirror_proj on wpm_work_packages(wpm_project_id);
+alter table wpm_work_packages enable row level security;
+grant select on wpm_work_packages to authenticated;
+drop policy if exists wpm_work_packages_read on wpm_work_packages;
+create policy wpm_work_packages_read on wpm_work_packages
+  for select using (is_approved());
+
+-- ppr_presentations
+create table if not exists ppr_presentations (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  text references projects(id),
+  ppr_date    date,                  
+  description text,                  
+  created_by  uuid references users(id),
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
+);
+create index if not exists ppr_presentations_proj_date_idx
+  on ppr_presentations (project_id, ppr_date desc);
+alter table ppr_presentations enable row level security;
+grant select, insert, update, delete on ppr_presentations to authenticated;
+
+-- ppr_slides
+create table if not exists ppr_slides (
+  id              uuid primary key default gen_random_uuid(),
+  ppr_id          uuid references ppr_presentations(id) on delete cascade,
+  project_id      text references projects(id),
+  slide_no        integer default 1,
+  trade           text,
+  works           text,
+  location        text,
+  key_plan_url    text,              
+  before_photo_id uuid references progress_photos(id) on delete set null,
+  after_photo_id  uuid references progress_photos(id) on delete set null,
+  before_caption  text,              
+  after_caption   text,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+create index if not exists ppr_slides_ppr_idx
+  on ppr_slides (ppr_id, slide_no);
+alter table ppr_slides enable row level security;
+grant select, insert, update, delete on ppr_slides        to authenticated;
+
+-- ---- Missing columns on existing tables --------------------------------------
+-- contracts_claims
+alter table contracts_claims add column if not exists est_amount numeric(18,2);
+alter table contracts_claims add column if not exists sub_amount numeric(18,2);
+alter table contracts_claims add column if not exists eval_amount numeric(18,2);
+alter table contracts_claims add column if not exists approved_amount numeric(18,2);
+alter table contracts_claims add column if not exists est_days integer;
+alter table contracts_claims add column if not exists sub_days integer;
+alter table contracts_claims add column if not exists eval_days integer;
+alter table contracts_claims add column if not exists approved_days integer;
+alter table contracts_claims add column if not exists date_submitted date;
+alter table contracts_claims add column if not exists date_evaluated date;
+alter table contracts_claims add column if not exists date_approved date;
+alter table contracts_claims add column if not exists sort_order integer default 0;
+
+-- drawing_register
+alter table drawing_register add column if not exists proj_code text;
+alter table drawing_register add column if not exists building_ref text;
+alter table drawing_register add column if not exists company text;
+alter table drawing_register add column if not exists drawing_type text;
+alter table drawing_register add column if not exists floor_level text;
+alter table drawing_register add column if not exists dwg_number text;
+alter table drawing_register add column if not exists drawing_code text;
+alter table drawing_register add column if not exists phase text;
+alter table drawing_register add column if not exists category text;
+alter table drawing_register add column if not exists description text;
+alter table drawing_register add column if not exists responsible text;
+alter table drawing_register add column if not exists no_of_sheets integer default 1;
+alter table drawing_register add column if not exists approved_sheets integer default 0;
+alter table drawing_register add column if not exists approved_pct numeric;
+alter table drawing_register add column if not exists submissions jsonb default '[]'::jsonb;
+alter table drawing_register add column if not exists planned_approval date;
+alter table drawing_register add column if not exists actual_approval date;
+alter table drawing_register add column if not exists sort_order integer default 0;
+alter table drawing_register add column if not exists node_kind text default 'drawing';
+
+-- issues_lessons
+alter table issues_lessons add column if not exists department text;
+alter table issues_lessons add column if not exists champion text;
+alter table issues_lessons add column if not exists caused_by text;
+alter table issues_lessons add column if not exists corrective_action text;
+alter table issues_lessons add column if not exists date_presented date;
+alter table issues_lessons add column if not exists date_resolved date;
+alter table issues_lessons add column if not exists lesson_learned text;
+alter table issues_lessons add column if not exists lesson_category text;
+alter table issues_lessons add column if not exists recommendation text;
+
+-- material_submittal
+alter table material_submittal add column if not exists code_project text;
+alter table material_submittal add column if not exists code_building text;
+alter table material_submittal add column if not exists code_company text;
+alter table material_submittal add column if not exists code_doctype text;
+alter table material_submittal add column if not exists code_discipline text;
+alter table material_submittal add column if not exists code_floor text;
+alter table material_submittal add column if not exists code_number text;
+alter table material_submittal add column if not exists trade_section text;
+alter table material_submittal add column if not exists discipline text;
+alter table material_submittal add column if not exists trade_code text;
+alter table material_submittal add column if not exists floor_levels text;
+alter table material_submittal add column if not exists location text;
+alter table material_submittal add column if not exists reference_document text;
+alter table material_submittal add column if not exists brand text;
+alter table material_submittal add column if not exists type_presentation text;
+alter table material_submittal add column if not exists plan_submission_date date;
+alter table material_submittal add column if not exists plan_approval_date date;
+alter table material_submittal add column if not exists approver_consultant text;
+alter table material_submittal add column if not exists approver_client text;
+alter table material_submittal add column if not exists revision_no text;
+alter table material_submittal add column if not exists mas_id text;
+alter table material_submittal add column if not exists seq_no int;
+alter table material_submittal add column if not exists sort_order int default 0;
+
+-- progress_photos
+alter table progress_photos add column if not exists trade text;
+alter table progress_photos add column if not exists works text;
+alter table progress_photos add column if not exists sort_order integer;
+
+-- project_schedule
+alter table project_schedule add column if not exists contract_date date;
+alter table project_schedule add column if not exists seq_order numeric;
+alter table project_schedule add column if not exists cost_rollup boolean default false;
+alter table public.project_schedule
+ add column if not exists ev_poc numeric(6,2);
+ALTER TABLE public.project_schedule ADD COLUMN IF NOT EXISTS notebook jsonb;
+ALTER TABLE public.project_schedule ADD COLUMN IF NOT EXISTS files jsonb;
+
+-- projects
+alter table projects add column if not exists schedule_progress numeric;
+alter table projects add column if not exists schedule_start date;
+alter table projects add column if not exists schedule_finish date;
+alter table projects add column if not exists schedule_activities integer;
+alter table projects add column if not exists schedule_updated_at timestamptz;
+
+-- resource_assignments
+alter table resource_assignments add column if not exists budgeted_cost numeric(16,2);
+alter table resource_assignments add column if not exists actual_cost numeric(16,2);
+alter table resource_assignments add column if not exists remaining_cost numeric(16,2);
+alter table resource_assignments add column if not exists cost_account_id uuid references cost_accounts(id) on delete set null;
+alter table resource_assignments add column if not exists rate_source text default 'derived';
+
+-- resource_roles
+alter table resource_roles add column if not exists price_per_unit numeric(14,2);
+
+-- resources
+alter table resources add column if not exists price_per_unit numeric(14,2);
+
+-- ---- Project-scoped RLS for the support tables (2026-07-21 fix) ---------------
+do $$
+declare t text;
+begin
+  foreach t in array array['cost_accounts','activity_expenses','schedule_baselines','schedule_snapshots'] loop
+    if to_regclass('public.' || t) is null then continue; end if;
+    execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists %I on %I', t || '_read', t);
+    execute format('create policy %I on %I for select using (can_access_project(project_id))', t || '_read', t);
+    execute format('drop policy if exists %I on %I', t || '_write', t);
+    execute format('create policy %I on %I for all using (is_planner() and can_access_project(project_id)) with check (is_planner() and can_access_project(project_id))', t || '_write', t);
+  end loop;
+  if to_regclass('public.schedule_audit') is not null then
+    execute 'alter table schedule_audit enable row level security';
+    execute 'drop policy if exists schedule_audit_read on schedule_audit';
+    execute 'create policy schedule_audit_read on schedule_audit for select using (can_access_project(project_id))';
+    execute 'drop policy if exists schedule_audit_write on schedule_audit';
+    execute 'create policy schedule_audit_write on schedule_audit for insert with check (is_planner() and can_access_project(project_id))';
+  end if;
+end $$;
+
+-- ---- Standard module RLS for the PPR tables (read + created_by-owned write) ----
+do $$
+declare t text;
+begin
+  foreach t in array array['ppr_presentations','ppr_slides'] loop
+    if to_regclass('public.' || t) is null then continue; end if;
+    execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists %I on %I', t || '_read', t);
+    execute format('create policy %I on %I for select using (can_access_project(project_id))', t || '_read', t);
+    execute format('drop policy if exists %I on %I', t || '_ins', t);
+    execute format('create policy %I on %I for insert with check (is_approved() and created_by = auth.uid() and can_access_project(project_id))', t || '_ins', t);
+    execute format('drop policy if exists %I on %I', t || '_upd', t);
+    execute format('create policy %I on %I for update using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t || '_upd', t);
+    execute format('drop policy if exists %I on %I', t || '_del', t);
+    execute format('create policy %I on %I for delete using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t || '_del', t);
+  end loop;
 end $$;

@@ -5,10 +5,9 @@
 --
 -- ⚠️ NOT the complete DB (audit 2026-07-21). This file is the Phase-1 base; many
 -- Phase-2 tables live only in /migrations (schedule/cash-flow/resource/PPR/WPM
--- support tables). For a full build, run /migrations in date order after this,
--- OR use supabase-setup.sql (which is closer to complete — see its header note).
--- The RLS project-scope fix (migrations/2026-07-21-rls-project-scope-fix.sql)
--- must also be applied for those support tables.
+-- support tables). **For a complete one-paste build, use `supabase-setup.sql`** —
+-- it now folds in every Phase-2 table/column with project-scoped RLS. Otherwise
+-- run /migrations in date order after this file.
 --
 -- Conventions for module developers (see MODULE_CONTRACT.md):
 --   * Every module owns its own table(s), prefixed with the module key,

@@ -77,6 +77,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Audit #5 completed: supabase-setup.sql folded to a complete one-paste build
+Finished the deferred half of audit finding #5. `supabase-setup.sql` now builds the **entire** DB on
+its own — no more "run /migrations too."
+- **Method (safe, not blind concat).** Blind date-order concatenation of all 62 migrations is unsafe:
+  same-date files sort alphabetically, which **scrambles dependencies** (`wpm-mirror-award-status`
+  before `wpm-work-packages-mirror` → ALTER-before-CREATE; `fix-rls-recursion` before
+  `project-access-rls` → the RLS-recursion fix gets clobbered by the old `can_access_project`). So I
+  wrote an **assembler** (verified) that extracts only what setup.sql was missing and emits it in
+  explicit dependency order.
+- **Folded in:** the **15 tables** that lived only in /migrations (cash_flow_* ×7, schedule_baselines/
+  _snapshots/_audit, activity_expenses, cost_accounts, wpm_work_packages, ppr_presentations/_slides)
+  + their indexes/grants/policies, and the **missing columns** on 10 existing tables (contracts_claims,
+  drawing_register, issues_lessons, material_submittal, progress_photos, project_schedule, projects,
+  resource_assignments, resources, resource_roles) — the module-full migrations had been folded into
+  schema.sql but never setup.sql. Ordering fix: tables emitted before the missing-column ALTERs
+  because `resource_assignments.cost_account_id` FKs `cost_accounts`.
+- **RLS is correct-by-construction:** support tables (cost_accounts/activity_expenses/schedule_baselines/
+  _snapshots + schedule_audit) get the **project-scoped** policies from the 2026-07-21 RLS fix; ppr via
+  the standard module loop; cash_flow/wpm keep their own (already-scoped / service-role) policies —
+  and every captured `create policy` got a preceding `drop policy if exists` so the file stays
+  **re-runnable** (`create policy` isn't idempotent on its own).
+- **Verified programmatically against the union of all sources:** 0 tables missing, 0 columns missing,
+  no duplicate `create table`, every literal policy has a matching drop, parens balanced, `$$` paired.
+- Headers updated: `supabase-setup.sql` = ✅ complete one-paste; `supabase-schema.sql` points to it as
+  the complete build. (The live DB was already complete; this is the fresh-deploy path.)
+
 ### 2026-07-21 — Audit remediation: Critical + High fixes (pagination × 3, RLS scope, schema-drift notes)
 Acting on the 2026-07-21 dashboard audit; the Critical + High findings:
 - **#1 (Critical) — `resource_assignments` silent truncation in Project Schedule.**
