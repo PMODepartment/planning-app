@@ -203,12 +203,24 @@ window.DrawingRegister = (function () {
   async function load(opts) {
     opts = opts || {};
     if (!pid) { rows = []; render(); return; }
-    var res = await sb().from(TABLE).select('*')
-      .eq('project_id', pid)
-      .order('sort_order', { ascending: true })
-      .order('drawing_no', { ascending: true });
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
-    rows = res.data || [];
+    // Keyset-paginate (a single select caps at 1000; a large register already exceeds it —
+    // the GPR101 workbook alone is 1032 drawings), then restore the sort_order / drawing_no
+    // ordering the grid + roll-ups rely on.
+    var all = [], last = null;
+    while (true) {
+      var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+      if (last) q = q.gt('id', last);
+      var res = await q;
+      if (res.error) { UI.toast(res.error.message, 'error'); return; }
+      var batch = res.data || []; all = all.concat(batch);
+      if (batch.length < 1000) break; last = batch[batch.length - 1].id;
+    }
+    all.sort(function (a, b) {
+      var sa = a.sort_order, sb2 = b.sort_order;      // sort_order ASC, NULLS LAST
+      if (sa == null && sb2 == null) {} else if (sa == null) return 1; else if (sb2 == null) return -1; else if (sa !== sb2) return sa - sb2;
+      return String(a.drawing_no || '').localeCompare(String(b.drawing_no || ''));
+    });
+    rows = all;
     if (opts.reset) {
       // fresh view (project switch / import / clear): reset selection; restore
       // the saved per-project view + collapse state, else default to phases collapsed

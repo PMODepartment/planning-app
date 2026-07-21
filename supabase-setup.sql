@@ -2,9 +2,18 @@
 -- Planners Dashboard — ONE-PASTE SUPABASE SETUP
 -- ----------------------------------------------------------------------------
 -- Run this ENTIRE file once in the Supabase SQL editor of a fresh project.
--- It is idempotent (safe to re-run) and supersedes running the individual
--- files in /migrations. Order: tables → grants → helpers → RLS → storage →
--- demo seed → bootstrap admin.
+-- It is idempotent (safe to re-run). Order: tables → grants → helpers → RLS →
+-- storage → demo seed → bootstrap admin.
+--
+-- ⚠️ NOT YET COMPLETE ON ITS OWN (audit 2026-07-21). Several Phase-2 tables live
+-- only in /migrations and are NOT in this file yet — e.g. cash_flow_settings/
+-- _actuals/_rollup/_scenarios/_trade_packages/_dp_tranches/_billing_milestones,
+-- schedule_baselines/_snapshots/_audit, activity_expenses, cost_accounts,
+-- wpm_work_packages, ppr_presentations/_slides. For a FRESH project, after this
+-- file also run every file in /migrations in date order (all are idempotent).
+-- (Folding these in — so this file alone builds a complete DB — is a tracked
+-- follow-up.) The live production DB is already complete; this note only affects
+-- rebuilding from scratch.
 --
 -- After running: see SETUP.md for the Supabase dashboard settings (disable
 -- email confirmation, password-reset redirect URL) and the GitHub steps.

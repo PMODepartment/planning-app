@@ -77,6 +77,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Audit remediation: Critical + High fixes (pagination × 3, RLS scope, schema-drift notes)
+Acting on the 2026-07-21 dashboard audit; the Critical + High findings:
+- **#1 (Critical) — `resource_assignments` silent truncation in Project Schedule.**
+  `loadResourcesAssignments()` fetched assignments with a single `select('*')` (Supabase caps at
+  1000; P6/XER imports reach ~51k–55k), silently corrupting Resource/Role Usage, leveling & cost
+  roll-ups. Now **keyset-paginated** (`order id.asc, gt(id,last), limit 1000`) —
+  [modules/project-schedule/index.html](modules/project-schedule/index.html).
+- **#3 (High) — Drawing Register** and **#4 (High) — Progress Photos** loads had the same
+  unpaginated `select('*')` (Drawing Register *already* truncated — GPR101 = 1,032 drawings). Both now
+  keyset-paginate then restore their display order in memory (drawing: sort_order↑ NULLS-LAST →
+  drawing_no; photos: taken_at↓ blank-last → sort_order↑). [modules/drawing-register/module.js](modules/drawing-register/module.js),
+  [modules/progress-photos/module.js](modules/progress-photos/module.js).
+- **#2 (High) — cross-project RLS exposure.** 12 project-scoped support tables + `schedule_audit`
+  (2026-07-07 schedule batch + 2026-07-11 resource-cost-parity) had `read using (is_approved())` and
+  `write for all using (is_planner())` — no `can_access_project`, so any approved user could read
+  every project's schedule/WBS and **cost** data (activity_expenses, schedule_baselines,
+  cost_accounts), and any planner could write across projects. New migration
+  **`migrations/2026-07-21-rls-project-scope-fix.sql` (USER MUST RUN)**: read = `can_access_project(project_id)`
+  (helper already allows admins + requires approved), write = `is_planner() and can_access_project(project_id)`;
+  `schedule_audit` keeps INSERT-ONLY. Idempotent + existence-guarded.
+- **#5 (High) — schema drift.** Neither canonical file is standalone-complete (23 tables missing from
+  `supabase-schema.sql`, 15 from `supabase-setup.sql`; only `/migrations` is complete), and
+  setup.sql falsely claimed to "supersede" the migrations. **Corrected both files' headers** to state
+  they're not complete and that a fresh build must run `/migrations` in date order (all idempotent).
+  The **full fold** (make setup.sql alone build a complete DB) is deliberately deferred to its own
+  verified pass rather than hand-transcribing 15 deploy-critical tables inside this multi-fix change —
+  the **live DB is already complete**, so this is fresh-deploy/documentation risk only, now mitigated.
+- **Verified:** all three edited modules parse clean (inline + module.js); Node unit tests confirm the
+  keyset loop loads all 2,500/2,500 rows (no truncation) and terminates, and both custom re-sorts
+  reproduce the prior DB ordering exactly. RLS migration reviewed against `can_access_project`
+  (admin-safe). Only module-local JS + SQL changed → **no `?v=` bump**.
+- **Deferred to follow-up passes (Medium/Low from the audit):** #6 dead `window.__archived`/`__viewOnly`
+  read-only guards, #7 viewer-write role gap, #8 portfolio OFFSET fallback, #9 jsonb `select('*')`
+  waste, #10 minor hardcoded `#fff` accents, and the #5 full canonical fold.
+
 ### 2026-07-21 — Resource Loading view: live end-to-end verification + assignments pagination fix
 - **Verified the Loading view live** (in the owner's logged-in browser) end-to-end: assigned QA
   Engineer → Excavation through the **real Project Schedule → Resource Assignments** form (cost

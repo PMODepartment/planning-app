@@ -159,12 +159,27 @@ window.ProgressPhotos = (function () {
     host.innerHTML = '<div class="pp-empty">Loading photos…</div>';
     if (!pid) { host.innerHTML = '<div class="pp-empty">Select a project to see its photos.</div>'; return; }
 
-    var res = await sb().from(TABLE).select('*')
-      .eq('project_id', pid)
-      .order('taken_at', { ascending: false })
-      .order('sort_order', { ascending: true, nullsFirst: false });
-    if (res.error) { host.innerHTML = ''; UI.toast(res.error.message, 'error'); return; }
-    rows = res.data || [];
+    // Keyset-paginate (a single select caps at 1000; a project's photo library can exceed
+    // that, silently hiding photos from the grid, PPR picker and bulk actions), then restore
+    // the taken_at-desc / sort_order ordering.
+    var all = [], last = null;
+    while (true) {
+      var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+      if (last) q = q.gt('id', last);
+      var res = await q;
+      if (res.error) { host.innerHTML = ''; UI.toast(res.error.message, 'error'); return; }
+      var batch = res.data || []; all = all.concat(batch);
+      if (batch.length < 1000) break; last = batch[batch.length - 1].id;
+    }
+    all.sort(function (a, b) {
+      var ta = a.taken_at || '', tb = b.taken_at || '';   // taken_at DESC (blank last)
+      if (ta !== tb) return ta < tb ? 1 : -1;
+      var sa = a.sort_order, sb2 = b.sort_order;           // then sort_order ASC, NULLS LAST
+      if (sa == null && sb2 == null) return 0;
+      if (sa == null) return 1; if (sb2 == null) return -1;
+      return sa - sb2;
+    });
+    rows = all;
 
     await signAll();
     fillFilterOptions();

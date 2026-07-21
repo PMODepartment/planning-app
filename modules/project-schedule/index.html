@@ -1480,9 +1480,19 @@
     if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; return; }
     try {
       var r1 = await sb().from('resources').select('*').eq('project_id', pid).order('name');
-      var r2 = await sb().from('resource_assignments').select('*').eq('project_id', pid);
       var r3 = await sb().from('calendars').select('*').eq('project_id', pid).order('name');
-      RESRC = (r1 && r1.data) || []; ASSIGN = (r2 && r2.data) || []; CALS = (r3 && r3.data) || [];
+      // resource_assignments reaches tens of thousands of rows on a P6/XER import, so a single
+      // select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost roll-ups.
+      // Keyset-paginate (indexed PK range scan) — same pattern as the main activity load().
+      var asg = [], alast = null;
+      while (true) {
+        var aq = sb().from('resource_assignments').select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+        if (alast) aq = aq.gt('id', alast);
+        var ar = await aq; if (ar.error) throw ar.error;
+        var ab = ar.data || []; asg = asg.concat(ab);
+        if (ab.length < 1000) break; alast = ab[ab.length - 1].id;
+      }
+      RESRC = (r1 && r1.data) || []; ASSIGN = asg; CALS = (r3 && r3.data) || [];
     } catch (e) { RESRC = []; ASSIGN = []; CALS = []; }
     try {
       var r4 = await sb().from('activity_code_types').select('*').eq('project_id', pid).order('sort_order');

@@ -1,5 +1,15 @@
 # Module: project-schedule
 
+## Audit fix: paginate resource_assignments (2026-07-21)
+`loadResourcesAssignments()` fetched `resource_assignments` with a single `select('*')` — Supabase
+caps at 1000 rows, so P6/XER projects (~51k–55k assignments) silently loaded only the first 1000,
+corrupting Resource/Role Usage, resource leveling and cost roll-ups. Now **keyset-paginated**
+(`order id.asc`, `gt(id,last)`, `limit 1000`), matching the main activity `load()`. Assignment order
+is irrelevant (aggregated by activity). Verified: parses clean; Node test confirms the loop loads all
+rows (2500/2500) and terminates. No migration, no `?v=` bump. (Also see the RLS project-scope fix
+migration `2026-07-21-rls-project-scope-fix.sql` — the schedule support tables' reads/writes are now
+project-scoped.)
+
 ## Clear didn't clear, and re-import duplicated every WBS level (2026-07-17) — fmlozano
 Two reports, **one root cause**: `wbs_nodes` was never deleted by any destructive path. Clear schedule
 and both importers' "Replace existing" only ever ran `delete().eq('project_id', pid)` on `TABLE`

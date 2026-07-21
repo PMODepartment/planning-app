@@ -2,6 +2,13 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Audit fix: paginate the photo load (2026-07-21)
+`load()` used a single `select('*')` (Supabase caps at 1000), so once a project's library exceeds
+1000 photos the excess were invisible in List/Gallery, unavailable to the PPR slide picker, and
+missed by bulk/Clear actions. Now **keyset-paginated** by `id`, then re-sorted in memory to the
+previous order (`taken_at` DESC blank-last → `sort_order` ASC NULLS-LAST). `signAll()` still batch-signs
+in one call. Verified: parses clean; Node test confirms the re-sort + full load. No migration, no `?v=` bump.
+
 ## Status
 - [x] Read MODULE_CONTRACT.md + CONTRIBUTING.md
 - [x] Built from the Power Apps "Progress Photos" app (drawing-register used as the

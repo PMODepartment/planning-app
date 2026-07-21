@@ -3,6 +3,14 @@
 Developer change log for the **drawing-register** module. Also the **reference
 module for file uploads** (private bucket + signed-URL viewing). Update every PR.
 
+## Audit fix: paginate the register load (2026-07-21)
+`load()` used a single `select('*')` (Supabase caps at 1000) — the register **already truncated**
+(the GPR101 workbook is 1,032 drawings), so the grid, Progress KPIs, phase/discipline roll-ups,
+export and Clear-all silently operated on only the first 1000. Now **keyset-paginated** by `id`, then
+re-sorted in memory to the previous DB order (`sort_order` ASC NULLS-LAST → `drawing_no`). Verified:
+parses clean; Node test confirms the re-sort reproduces the DB order and the loop loads all rows. No
+migration, no `?v=` bump.
+
 ## Status
 - [x] Full-fidelity rebuild matching the Megawide "Drawing Register & Tracker"
       workbook (`GPR101. TEC. Drawing Register`).
