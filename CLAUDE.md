@@ -77,6 +77,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Project Schedule Cost Loading: fix WBS/name overlap + duplicate ID
+- **WBS code overlapped the Activity Name** ("1.4.2.5.2.3.1Cabinetry", ghosted). Root cause: the Cost
+  Loading table is `table-layout:fixed` but `.ps-table td` had no overflow clipping, so a WBS `<code>`
+  wider than its column bled into the next cell. Fixed by clipping cells (`overflow:hidden` +
+  ellipsis + a `title` tooltip for the full value), widening WBS 90→120px, and monospacing the code.
+  Headers now **wrap** instead of clipping mid-word — via `table.ps-cost-table th` to outspecify the
+  later `.ps-table th { white-space:nowrap }`.
+- **Latent duplicate `id="ps-cost-body"`** (the Cost Loading tbody and the "Cost Accounts (CBS)" modal
+  panel) — `renderCostAccounts()` was writing into the wrong element, leaving the CBS manager blank.
+  Renamed the panel to `ps-cost-acct-body`.
+- The all-₱0 / "—" cells are **not** a bug: that schedule was imported from P6 with no cost loaded.
+- Verified in a browser harness with the module's real CSS + the screenshot's long WBS codes at the
+  actual 12-column widths: no overlap, headers all wrap without clipping. Module-only change, no `?v`
+  bump. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-21 — Viewer read-only: close the cash_flow_* residual
 Extended #7 to the last write surface: the 7 `cash_flow_*` assumption/derived tables
 (settings, billing_milestones, dp_tranches, actuals, rollup, trade_packages, scenarios) wrote via

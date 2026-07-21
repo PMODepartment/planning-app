@@ -1,5 +1,30 @@
 # Module: project-schedule
 
+## Cost Loading tab: WBS/name overlap + duplicate-ID fixes (2026-07-21)
+Reported: the Cost Loading table's WBS code visually overlapped the Activity Name (e.g.
+"1.4.2.5.2.3.1Cabinetry" with ghosted text). Two real bugs found:
+- **Overlap (visible).** `.ps-cost-table` is `table-layout:fixed`, but `.ps-table td` had **no
+  overflow clipping** — so a WBS `<code>` wider than its 90px column bled straight into the next
+  cell. Fixed with `table.ps-cost-table td { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }`
+  (full value now on hover via a `title` attr set in `renderCost`), widened the WBS column 90→120,
+  and monospaced the code. ⚠️ **Specificity gotcha:** headers wrap via `table.ps-cost-table th` (0,1,2)
+  because plain `.ps-cost-th`/`.ps-cost-table th` (0,1,1) is *outspecified* by `.ps-table th`'s
+  `white-space:nowrap` which appears later in the sheet — so headers now WRAP ("Planned % (POC)"
+  instead of clipping to "(PC") instead of being cut mid-word.
+- **Duplicate `id="ps-cost-body"` (latent).** The Cost Loading `<tbody>` AND the "Cost Accounts (CBS)"
+  modal panel both used it. `renderCostAccounts()` grabbed the first match (the hidden cost tbody),
+  so the CBS manager wrote into the wrong element and appeared empty. Renamed the panel to
+  `ps-cost-acct-body` + its one reader.
+- Scope is safe: the new rules match `table.ps-cost-table` only — the two import-preview `.ps-table`
+  tables lack that class and the Schedule grid uses `.ps-grid-*`, so neither is touched.
+- **NOT a bug: the ₱0 / "—" cells.** That project's schedule was imported from P6/OPC with no cost
+  loaded, so planned/actual/EV are genuinely 0 and baseline/CPI are null (—). Nothing to "fix" there.
+- Verified in a browser harness using the module's real `<style>` + long screenshot WBS codes at the
+  actual 12-column widths (sanity-asserting the CSS loaded first): WBS cell clips with no overlap into
+  Activity Name, title tooltip present, and all 12 headers wrap to 2 lines with **none clipped**.
+  Screenshot still impossible (compositor stall) — measured via `getBoundingClientRect` /
+  `getComputedStyle`. Module-only change (project-schedule/index.html), no shared asset, no `?v` bump.
+
 ## Audit fix: paginate resource_assignments (2026-07-21)
 `loadResourcesAssignments()` fetched `resource_assignments` with a single `select('*')` — Supabase
 caps at 1000 rows, so P6/XER projects (~51k–55k assignments) silently loaded only the first 1000,

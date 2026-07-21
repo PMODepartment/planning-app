@@ -122,8 +122,18 @@
        eye menu or drag the divider to shrink it toward a bars-only view. */
     .ps-split.ps-grid-only .ps-gantt-pane, .ps-split.ps-grid-only .ps-divider { display:none; }
     .ps-split.ps-gantt-only .ps-grid-pane { flex:0 0 300px; }
+    /* Cost table is table-layout:fixed, so any cell whose content is wider than its
+       column would BLEED into the next column (the WBS code overlapping the activity
+       name). Clip every cell; a title attr (set in renderCost) gives the full value on
+       hover. Headers WRAP instead of clipping so labels like "Planned % (POC)" aren't
+       cut to "(PC". */
     .ps-cost-th { position:relative; }
-    .ps-cost-table th { overflow:hidden; }
+    /* `table.ps-cost-table th` outspecifies `.ps-table th` (which sets white-space:nowrap
+       later in the sheet), so these actually take effect: headers WRAP instead of clipping
+       mid-word ("Planned % (POC)" not "(PC"). */
+    table.ps-cost-table th { overflow:hidden; white-space:normal; overflow-wrap:break-word; line-height:1.25; vertical-align:bottom; }
+    table.ps-cost-table td { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-cost-table td code { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:12px; }
     /* Single row, never wraps. Items are flex:none (see .ps-tb-row rule above) so they don't
        squish; the search is the only flexible item and shrinks first. If the row still can't fit
        an extremely narrow viewport it scrolls horizontally inside itself (only then does overflow
@@ -1222,7 +1232,7 @@
       <span class="ps-bulk-count" id="ps-cost-count"></span>
       <button class="ps-bulk-x" id="ps-cost-x">&#215;</button>
     </div>
-    <div class="ps-snap-detail" id="ps-cost-body" style="padding:14px;"></div>
+    <div class="ps-snap-detail" id="ps-cost-acct-body" style="padding:14px;"></div>
   </div>
 </div>
 
@@ -5185,8 +5195,8 @@
   // hidden (via the eye chooser — hidden ones are simply skipped) and drag-resized (colgroup).
   function _vc(n) { return n > 0 ? 'ps-green' : n < 0 ? 'ps-red' : ''; }
   var COST_COLS = [
-    { label: 'WBS', w: 90, cell: function (r) { return '<code>' + esc(r.wbs || '') + '</code>'; }, tot: function (T) { return 'TOTAL (' + T.n + ')'; } },
-    { label: 'Activity Name', locked: true, w: 240, cell: function (r) { return esc(r.activity_name || ''); }, tot: function () { return ''; } },
+    { label: 'WBS', w: 120, title: function (r) { return r.wbs || ''; }, cell: function (r) { return '<code>' + esc(r.wbs || '') + '</code>'; }, tot: function (T) { return 'TOTAL (' + T.n + ')'; } },
+    { label: 'Activity Name', locked: true, w: 240, title: function (r) { return r.activity_name || ''; }, cell: function (r) { return esc(r.activity_name || ''); }, tot: function () { return ''; } },
     { label: 'Baseline Cost (₱)', num: true, w: 130, cell: function (r) { return r.bl_cost != null ? Fmt.money(r.bl_cost) : '—'; }, tot: function (T) { return Fmt.money(T.bl); } },
     { label: 'Planned Cost (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.planned_cost || 0); }, tot: function (T) { return Fmt.money(T.tp); } },
     { label: 'Actual Cost (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.actual_cost || 0); }, tot: function (T) { return Fmt.money(T.ta); } },
@@ -5216,7 +5226,10 @@
     var T = { n: f.length, bl: 0, tp: 0, ta: 0, tv: 0, tac: 0 };
     f.forEach(function (r) { T.bl += r.bl_cost || 0; T.tp += r.planned_cost || 0; T.ta += r.actual_cost || 0; T.tv += r.earned_value || 0; T.tac += eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null); });
     body.innerHTML = f.map(function (r) {
-      return '<tr>' + cols.map(function (c) { return '<td class="' + (c.num ? 'ps-num' : '') + '">' + c.cell(r) + '</td>'; }).join('') + '</tr>';
+      return '<tr>' + cols.map(function (c) {
+        var t = c.title ? c.title(r) : '';
+        return '<td class="' + (c.num ? 'ps-num' : '') + '"' + (t ? ' title="' + esc(t) + '"' : '') + '>' + c.cell(r) + '</td>';
+      }).join('') + '</tr>';
     }).join('') + '<tr class="ps-totals-row">' + cols.map(function (c) { return '<td class="' + (c.num ? 'ps-num' : '') + '">' + c.tot(T) + '</td>'; }).join('') + '</tr>';
   }
   function startCostColResize(e, label) {
@@ -6429,7 +6442,7 @@
   function openCostAccounts() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-cost-back').classList.add('open'); renderCostAccounts(); }
   function closeCostAccounts() { document.getElementById('ps-cost-back').classList.remove('open'); }
   function renderCostAccounts() {
-    var body = document.getElementById('ps-cost-body'); if (!body) return;
+    var body = document.getElementById('ps-cost-acct-body'); if (!body) return;
     var cnt = document.getElementById('ps-cost-count'); if (cnt) cnt.textContent = COST_ACCTS.length + ' account' + (COST_ACCTS.length === 1 ? '' : 's');
     var tree = costAcctTree();
     if (!tree.length) { body.innerHTML = '<div class="ps-ck-empty">No cost accounts yet. Use “New top-level account”. Build a breakdown (e.g. 01 Preliminaries → 01-100 Site Office) by adding child accounts. Assign accounts to resource assignments and expenses to report cost by account.</div>'; return; }
