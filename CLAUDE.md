@@ -77,6 +77,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Viewer read-only: close the cash_flow_* residual
+Extended #7 to the last write surface: the 7 `cash_flow_*` assumption/derived tables
+(settings, billing_milestones, dp_tranches, actuals, rollup, trade_packages, scenarios) wrote via
+`is_approved()`, so a project-assigned viewer could edit cash-flow assumptions. Their WRITE policies
+are now **`is_writer()`** (reads stay `is_approved()` so viewers can still view cash flow). Applied in
+`supabase-setup.sql` (statement-level: only `create policy` that is `for all` AND references
+`is_approved()` — uniquely the cash_flow writes — swapped; reads and is_planner/is_admin for-all
+policies untouched) and appended to `migrations/2026-07-21-viewer-readonly.sql` (explicit name↔table
+map since the policy names are non-uniform, e.g. `cash_flow_trade_write`/`cash_flow_scen_write`).
+`persistRollup()` is already `try/catch` best-effort, so a viewer's blocked rollup write can't error
+their view. **Viewers now write nothing anywhere.** Verified: 0 for-all+is_approved policies remain,
+7 cash_flow reads intact, setup.sql still complete (0 tables missing) + balanced. Re-run the migration
+(already run once — the added block is idempotent).
+
 ### 2026-07-21 — Audit Medium/Low fixes (#6 read-only guards, #7 viewer read-only, #8 portfolio fallback, #10 colors)
 - **#6 (Med) — dead read-only guards wired up** (`modules/project-schedule/index.html`).
   `window.__archived` / `window.__viewOnly` were read in ~8 edit guards each but never assigned, so

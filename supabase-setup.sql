@@ -631,8 +631,8 @@ create policy cash_flow_settings_read on cash_flow_settings
   for select using (is_approved() and can_access_project(project_id));
 drop policy if exists cash_flow_settings_write on cash_flow_settings;
 create policy cash_flow_settings_write on cash_flow_settings
-  for all using (is_approved() and can_access_project(project_id))
-  with check (is_approved() and can_access_project(project_id));
+  for all using (is_writer() and can_access_project(project_id))
+  with check (is_writer() and can_access_project(project_id));
 
 -- cash_flow_billing_milestones
 create table if not exists cash_flow_billing_milestones (
@@ -660,8 +660,8 @@ drop policy if exists cash_flow_billing_milestones_read on cash_flow_billing_mil
 create policy cash_flow_billing_milestones_read on cash_flow_billing_milestones for select using (is_approved() and can_access_project(project_id));
 drop policy if exists cash_flow_billing_milestones_write on cash_flow_billing_milestones;
 create policy cash_flow_billing_milestones_write on cash_flow_billing_milestones for all
-  using (is_approved() and can_access_project(project_id))
-  with check (is_approved() and can_access_project(project_id));
+  using (is_writer() and can_access_project(project_id))
+  with check (is_writer() and can_access_project(project_id));
 
 -- cash_flow_dp_tranches
 create table if not exists cash_flow_dp_tranches (
@@ -693,8 +693,8 @@ create policy cash_flow_dp_tranches_read on cash_flow_dp_tranches
   for select using (is_approved() and can_access_project(project_id));
 drop policy if exists cash_flow_dp_tranches_write on cash_flow_dp_tranches;
 create policy cash_flow_dp_tranches_write on cash_flow_dp_tranches
-  for all using (is_approved() and can_access_project(project_id))
-  with check (is_approved() and can_access_project(project_id));
+  for all using (is_writer() and can_access_project(project_id))
+  with check (is_writer() and can_access_project(project_id));
 
 -- cash_flow_actuals
 create table if not exists cash_flow_actuals (
@@ -717,8 +717,8 @@ drop policy if exists cash_flow_actuals_read on cash_flow_actuals;
 create policy cash_flow_actuals_read on cash_flow_actuals for select using (is_approved() and can_access_project(project_id));
 drop policy if exists cash_flow_actuals_write on cash_flow_actuals;
 create policy cash_flow_actuals_write on cash_flow_actuals for all
-  using (is_approved() and can_access_project(project_id))
-  with check (is_approved() and can_access_project(project_id));
+  using (is_writer() and can_access_project(project_id))
+  with check (is_writer() and can_access_project(project_id));
 
 -- cash_flow_rollup
 create table if not exists cash_flow_rollup (
@@ -738,8 +738,8 @@ drop policy if exists cash_flow_rollup_read on cash_flow_rollup;
 create policy cash_flow_rollup_read on cash_flow_rollup for select using (is_approved() and can_access_project(project_id));
 drop policy if exists cash_flow_rollup_write on cash_flow_rollup;
 create policy cash_flow_rollup_write on cash_flow_rollup for all
-  using (is_approved() and can_access_project(project_id))
-  with check (is_approved() and can_access_project(project_id));
+  using (is_writer() and can_access_project(project_id))
+  with check (is_writer() and can_access_project(project_id));
 
 -- cash_flow_trade_packages
 create table if not exists cash_flow_trade_packages (
@@ -766,8 +766,8 @@ drop policy if exists cash_flow_trade_read on cash_flow_trade_packages;
 create policy cash_flow_trade_read on cash_flow_trade_packages for select using (is_approved() and can_access_project(project_id));
 drop policy if exists cash_flow_trade_write on cash_flow_trade_packages;
 create policy cash_flow_trade_write on cash_flow_trade_packages for all
-  using (is_approved() and can_access_project(project_id))
-  with check (is_approved() and can_access_project(project_id));
+  using (is_writer() and can_access_project(project_id))
+  with check (is_writer() and can_access_project(project_id));
 
 -- cash_flow_scenarios
 create table if not exists cash_flow_scenarios (
@@ -786,8 +786,8 @@ drop policy if exists cash_flow_scen_read on cash_flow_scenarios;
 create policy cash_flow_scen_read on cash_flow_scenarios for select using (is_approved() and can_access_project(project_id));
 drop policy if exists cash_flow_scen_write on cash_flow_scenarios;
 create policy cash_flow_scen_write on cash_flow_scenarios for all
-  using (is_approved() and can_access_project(project_id))
-  with check (is_approved() and can_access_project(project_id));
+  using (is_writer() and can_access_project(project_id))
+  with check (is_writer() and can_access_project(project_id));
 
 -- wpm_work_packages
 create table if not exists wpm_work_packages (
