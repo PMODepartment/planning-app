@@ -77,6 +77,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Resource Loading view: live end-to-end verification + assignments pagination fix
+- **Verified the Loading view live** (in the owner's logged-in browser) end-to-end: assigned QA
+  Engineer → Excavation through the **real Project Schedule → Resource Assignments** form (cost
+  auto-derived ₱6,400 = 8 × ₱800), added 3 more assignments via the app's data layer, then opened
+  the Resource & Role Master **Loading** tab in the **QADEMO sandbox** — the time-phased utilization
+  matrix rendered correctly: Carpentry Crew **120% (OVER, red)** in Aug, Rebar Crew 77%/92%, QA
+  Engineer 32%/17%/20%, KPIs 3 resources / 103 units / **₱129,900** / 1 over-allocated. The
+  ₱129,900 total confirms the **cost fallback** (Project Schedule's derived-cost assignments store
+  `budgeted_cost = null`, so the view falls back to units × resource rate). Demo data left in the
+  QADEMO sandbox (2 resources CARP/REBAR + 4 assignments).
+- **Fix (assignments pagination):** `loadLoading()` fetched assignments with a single `select`,
+  which Supabase caps at 1000 rows — so projects with many assignments (**GPR101 ~51k, XERTEST
+  ~55k** from P6/XER imports) would have **silently shown partial data**. Now **keyset-paginated**
+  (`order id.asc`, `gt(id, last)`, 1000/page) — the same pattern the S-Curve/schedule loaders use.
+  (Heads-up for later: transferring ~50k assignment rows to the browser to aggregate is heavy; a
+  server-side monthly aggregate RPC — like `cashflow_schedule_agg` — would be the scalable follow-up
+  if the big projects' Loading view feels slow.)
+- Harness-regression-checked (matrix still renders, no console errors); module-local only, **no
+  `?v=` bump**.
+
 ### 2026-07-21 — Resource & Role Master: Loading view + usability polish + cost roll-up
 - User asked to improve the module; chose **Loading view + usability polish + cost roll-up**
   (declined Excel import). All in `modules/resource-loading/index.html`; **no DB change, no `?v=`

@@ -212,9 +212,20 @@
   // Lazy-load the assignments + their activities' schedule dates for the Loading matrix.
   async function loadLoading() {
     if (loadingLoaded || !pid) return;
-    var a = await sb().from('resource_assignments').select('*').eq('project_id', pid);
-    if (a.error) { UI.toast(a.error.message, 'error'); return; }
-    assignments = a.data || [];
+    // Keyset-paginate (Supabase caps a single select at 1000 rows) so projects with
+    // many assignments — e.g. a P6/XER import — aren't silently truncated.
+    assignments = [];
+    var last = null;
+    while (true) {
+      var q = sb().from('resource_assignments').select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+      if (last) q = q.gt('id', last);
+      var a = await q;
+      if (a.error) { UI.toast(a.error.message, 'error'); return; }
+      var batch = a.data || [];
+      assignments = assignments.concat(batch);
+      if (batch.length < 1000) break;
+      last = batch[batch.length - 1].id;
+    }
     schedById = {};
     var codes = Array.from(new Set(assignments.map(function (x) { return x.activity_id; }).filter(Boolean)));
     if (codes.length) {
