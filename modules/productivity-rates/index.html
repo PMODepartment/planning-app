@@ -33,13 +33,16 @@
     .pr-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .pr-topbar-tools .pd-btn.pr-tb-labeled { width:auto; padding:0 12px; gap:6px; }
     .pr-topbar-tools .pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    .pr-topbar-tools .pd-btn.is-active { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .pr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 
-    /* control bar (Monitoring: activity + metric pickers) */
-    .pr-controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:10px 12px; margin-bottom:16px; }
+    /* Monitoring filter/control bar — same card + funnel pattern as the suite's
+       filter bars (risk-register / stakeholder-map). Left-aligned, no stray icon. */
+    .pr-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:8px; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; margin-bottom:16px; }
+    .pr-filt-ico { color:var(--pd-muted); flex:none; }
     .pr-controls label { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
-    .pr-controls .pd-select { height:34px; }
-    .pr-ck { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--pd-ink); cursor:pointer; }
+    .pr-controls .pd-select { height:34px; font-size:13px; }
+    .pr-ck { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--pd-ink); cursor:pointer; white-space:nowrap; }
 
     /* KPIs */
     .pr-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:18px; }
@@ -132,6 +135,7 @@
       <div class="pr-topbar-tools">
         <button class="pd-btn pd-btn-primary pr-tb-labeled" id="pr-add" title="Add an activity">+ Add activity</button>
         <span class="pr-tb-sep"></span>
+        <button class="pd-btn" id="pr-tabletoggle" title="Show data table"><span data-ico="listView" data-ico-size="16"></span></button>
         <button class="pd-btn" id="pr-import" title="Import productivity workbook (Excel)"><span data-ico="upload" data-ico-size="16"></span></button>
         <button class="pd-btn" id="pr-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
       </div>
@@ -141,6 +145,7 @@
       <!-- MONITORING -->
       <div id="pr-view-monitor">
         <div class="pr-controls">
+          <span class="pr-filt-ico" data-ico="filter" data-ico-size="15"></span>
           <label for="pr-act">Activity</label>
           <select class="pd-select" id="pr-act" style="max-width:280px;"></select>
           <label for="pr-metric" style="margin-left:8px;">Metric</label>
@@ -151,7 +156,6 @@
             <option value="cum">Cumulative Output</option>
           </select>
           <label class="pr-ck" style="margin-left:8px;"><input type="checkbox" id="pr-showbl0" checked> Show baseline (BL0)</label>
-          <button class="pd-btn" id="pr-tabletoggle" style="margin-left:auto;" title="Show data table"><span data-ico="listView" data-ico-size="16"></span></button>
         </div>
         <div class="pr-kpis" id="pr-kpis"></div>
         <div class="pr-card">
@@ -364,6 +368,7 @@
     view = v;
     document.getElementById('pr-view-monitor').style.display = v === 'monitor' ? '' : 'none';
     document.getElementById('pr-view-data').style.display = v === 'data' ? '' : 'none';
+    document.getElementById('pr-tabletoggle').style.display = v === 'monitor' ? '' : 'none';  // table toggle is Monitoring-only
     document.querySelectorAll('.pr-tabs [data-view]').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
     render();
   }

@@ -77,6 +77,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Productivity Rates: filter/control bar consistency (user: "filters in the top bar are clashing")
+- Diagnosed against the live site in the user's browser (logged in) + a stubbed harness measuring
+  element geometry: **no pixel overlap** at 1280/1568/1920 — the "clash" was a **consistency**
+  defect. The Monitoring control row had bare inline labels plus the **data-table toggle floating
+  far-right in empty space** (`margin-left:auto`), which read as unbalanced next to the suite's clean
+  funnel-icon filter bars (risk-register / stakeholder-map, both confirmed clean live).
+- **Fix:** moved the table toggle out of the control row into the **topbar tool cluster** (beside
+  Import/Refresh, matching S-Curve; hidden on the Data tab), and restyled `.pr-controls` to the
+  suite filter-bar pattern — leading **funnel icon** + contiguous left-aligned controls, same card /
+  padding / 34px control height as `.rr-filters`. No stray floating element.
+- Verified in the harness (real module code, in-memory backend): funnel icon present, control row
+  contiguous (no gap), toggle now in topbar tools and still works (shows table + active fill +
+  renders the transposed table), hidden on Data / visible on Monitoring. No console errors.
+  Module-local only → **no `?v=` bump**.
+
 ### 2026-07-20 — Productivity Rates module built (Productivity Monitoring from the QHL706 workbook)
 - **Built `modules/productivity-rates/`** (single-file `index.html`, s-curve/cash-flow inline
   pattern), flipped `enabled: true`. Reverse-engineered the OPS workbook *"QHL706. OPS. Productivity
