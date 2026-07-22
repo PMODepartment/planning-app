@@ -1950,3 +1950,18 @@ the type/category selects + series checkboxes (keeps ≥1 series). Back-compat: 
   re-renders the whole workspace (panels reopen from `_openData`/`_openSet`).
 - `_barsSVG` rewritten around margins (mL/mR/mT/mB) so axis titles/fonts/gridline toggles all
   compose; `_pieSVG(buckets,cfg)` now reads legend + dlFont from cfg.
+
+## Merge to main + verification (2026-07-22)
+
+Merged branch `module/project-schedule` (commit a1292e1, "Excel-like configurable
+chart builder in Activity Progress") into `main` via a no-ff merge commit (7b9fc4e).
+Branch was 74 commits behind main and both `index.html` and this `CLAUDE.md` had also
+been heavily edited on main since the merge base, but git auto-merged with **no
+conflicts**.
+
+**Verification:** served locally (python http.server) and loaded the module in-browser —
+scripts executed cleanly and performed the Supabase auth redirect with **zero console
+errors**. Static checks: no conflict markers; inline JS (~668K chars) passes
+`node --check`; both the new chart-builder code and main-branch code present. Logged-in
+visual render not verified (auth wall / no credentials) — recommend a manual eyeball of
+Activity Progress once signed in.

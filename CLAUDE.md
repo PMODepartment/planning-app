@@ -2647,3 +2647,11 @@ Project") work that has since landed on `main`.
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,
   material-submittal, progress-photos) — or hand to developers.
+
+### 2026-07-22 — Merge module/project-schedule PR into main
+
+Merged branch `module/project-schedule` (chart builder in Activity Progress) into
+`main` (merge commit 7b9fc4e; clean auto-merge, no conflicts despite the branch being
+74 commits behind). Verified locally: module loads and runs with no console errors,
+inline JS passes `node --check`, no conflict markers. See
+`modules/project-schedule/CLAUDE.md` for detail.
