@@ -2021,3 +2021,27 @@ Excel-style commit navigation from within an active inline cell edit (`beginEdit
   rows. Advance lands in ready (not editing) mode, matching Excel.
 - Shortcuts modal updated (Editing section). Verified: inline JS passes `node --check`, module loads
   with no console errors. Live keyboard test needs a login. Module-only, no migration, no `?v=` bump.
+
+## Excel type-down-a-column entry anchor + type-to-edit (2026-07-22d) — fmlozano
+
+Completes the Excel data-entry flow on the Schedule grid with an **entry-column anchor** (`_entryCol`):
+- Editing a cell anchors the column the current row-entry began in. **Tab** walks across columns
+  keeping the anchor; **Enter** commits, drops to the next row, and **returns to the anchor column**
+  (classic Excel type-a-row-then-Enter-back-to-start). Enter with no Tab just goes straight down the
+  same column. Shift+Enter goes up.
+- **Type-to-edit:** pressing a printable key on a ready (selected, not-editing) editable cell now
+  **begins editing seeded with that character** (text cells and numeric-compatible chars on number
+  cells; date cells just open) — so you can keep typing down/across without F2 each time.
+- **Ready-mode Enter** now moves down (at the entry column) instead of opening the editor; **F2**
+  (or double-click, or typing) opens the editor — matching Excel.
+- The anchor is **reset** by any non-entry navigation (arrows, PageUp/Down, Home/End, mouse click via
+  `_setCellFromClick`, Escape) so the next fresh edit re-anchors; Tab/Enter preserve it.
+- Implementation: `_entryCol`/`_resetEntry()`; `beginEdit` sets `_entryCol` when null; the in-edit
+  Enter and ready-mode Enter set `_cellAnchor.c = _entryCol` before `moveRowSel`; type-to-edit lives
+  in the grid keydown handler after the `?` branch (so `?` still opens shortcuts).
+- ⚠️ **Known minor race:** type-to-edit opens the editor on the current DOM; a still-in-flight prior
+  `persist().then → renderGrid` could repaint and drop that just-opened input if the next keystroke
+  lands before the async write returns. Pre-existing for any fast edit-then-edit; acceptable for
+  normal-paced entry. A render guard (skip re-render while an input is open) is the follow-up if it bites.
+- Shortcuts modal updated. Verified: inline JS passes `node --check`, module loads with no console
+  errors. Live keyboard test needs a login. Module-only, no migration, no `?v=` bump.

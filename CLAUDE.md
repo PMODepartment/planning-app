@@ -2682,3 +2682,12 @@ and Tab commits and moves to the next cell (Shift+Tab previous, wrapping rows) â
 the column and landing in ready mode. Escape still cancels. Wired in `beginEdit` via the existing
 `moveRowSel`/`moveCell` cursor. Verified: inline JS passes `node --check`, no console errors on load.
 Module-only, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 â€” Project Schedule: Excel type-down-a-column entry anchor + type-to-edit
+
+Added the classic Excel data-entry flow to the Schedule grid: an entry-column anchor (`_entryCol`) so
+Tab walks across columns and Enter drops a row and returns to the column the entry began in; plus
+type-to-edit (typing on a selected cell begins editing seeded with the character). Ready-mode Enter now
+moves down at the entry column; F2/double-click/typing edit. The anchor resets on plain navigation
+(arrows/click/Escape) and persists across Tab/Enter. Verified: inline JS passes `node --check`, no
+console errors on load. Module-only, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.

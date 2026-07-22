@@ -1689,6 +1689,11 @@
   // values. Independent of the row selection/clipboard above (a click sets both, but Ctrl+C/X/V and
   // the context menu treat cells and whole rows as distinct operations).
   var _cellSel = null, _cellAnchor = null, _cellClip = null;
+  // Excel-style data-entry anchor: the column where the current row's entry began. Tab walks across
+  // columns keeping this; Enter drops a row and returns to it. Reset (null) by any navigation that
+  // isn't Tab/Enter (arrows, clicks, Escape), so the next fresh edit re-anchors.
+  var _entryCol = null;
+  function _resetEntry() { _entryCol = null; }
   var _dragRowId = null;   // activity row being drag-reordered (within its WBS)
   // Drag-reorder is only meaningful in WBS grouping with no active column sort (otherwise order is
   // derived from the grouping / column sort, so a manual sequence wouldn't stick).
@@ -2845,7 +2850,8 @@
         [K('Insert'), 'Add a new activity'],
         [K('Delete') + ' / ' + K('Backspace'), 'Delete the selected activit(ies)'],
         ['Double-click a cell', 'Edit that cell inline'],
-        [K('Enter') + ' (while editing)', 'Commit and move down a row (' + K('Shift') + '+' + K('Enter') + ' up)'],
+        ['Type on a selected cell', 'Start editing, seeded with that character'],
+        [K('Enter') + ' (while editing)', 'Commit and drop a row, back to the column you started in'],
         [K('Tab') + ' (while editing)', 'Commit and move to the next cell (' + K('Shift') + '+' + K('Tab') + ' previous)'],
         [K('Ctrl') + '+' + K('D'), 'Fill the active cell’s value down to the selected rows'],
         [K('Ctrl') + '+' + K('Z'), 'Undo'],
@@ -5510,6 +5516,9 @@
     var id = cell.dataset.id, field = cell.dataset.field, type = cell.dataset.type;
     var r = rows.find(function (x) { return x.id === id; });
     if (!r) return;
+    // Anchor the entry column on the first edit of a Tab/Enter chain (kept while chaining).
+    if (_entryCol === null) { var _rw0 = cell.closest && cell.closest('.ps-grid-row');
+      if (_rw0) { var _ci0 = Array.prototype.indexOf.call(_rw0.children, cell) - 1; if (_ci0 >= 0) _entryCol = _ci0; } }
     var cur = r[field]; var raw = cur == null ? '' : cur;
     if (type === 'date') { var dv = (field === 'actual_start' || field === 'start_date') ? dispStart(r) : (field === 'actual_finish' || field === 'end_date' ? dispFin(r) : r[field]); raw = dv ? String(dv).slice(0, 10) : ''; }
     if (type === 'pdur') { var pd0 = _origDurOf(r); raw = (pd0 == null ? '' : pd0); }
@@ -5555,7 +5564,10 @@
     // The move runs after blur→commit; commit's DB write is async, so selId/_cellAnchor move now and
     // the later re-render re-highlights by id. Escape cancels without advancing.
     inp.onkeydown = function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); var up = e.shiftKey; inp.blur(); moveRowSel(up ? -1 : 1, false); }
+      if (e.key === 'Enter') { e.preventDefault(); var up = e.shiftKey; inp.blur();
+        // Excel: drop a row and RETURN to the entry column (where this row's typing began).
+        if (_entryCol !== null && _cellAnchor) _cellAnchor.c = _entryCol;
+        moveRowSel(up ? -1 : 1, false); }
       else if (e.key === 'Tab') { e.preventDefault(); var back = e.shiftKey; inp.blur(); moveCell(back ? -1 : 1, true, false); }
       else if (e.key === 'Escape') { commit(false); }
     };
@@ -9136,6 +9148,7 @@
     var ri = parseInt(rw.dataset.i, 10); if (isNaN(ri)) return;
     var cellEl = e.target && e.target.closest ? e.target.closest('.ps-cell') : null; if (!cellEl) return;
     var ci = Array.prototype.indexOf.call(rw.children, cellEl) - 1; if (ci < 0 || ci >= gridCols().length) return;
+    _resetEntry();   // a mouse click starts a fresh entry context
     if (e.shiftKey && _cellAnchor) { _cellSel = { r0: _cellAnchor.r, c0: _cellAnchor.c, r1: ri, c1: ci }; }
     else { _cellAnchor = { r: ri, c: ci }; _cellSel = { r0: ri, c0: ci, r1: ri, c1: ci }; }
   }
@@ -9689,20 +9702,36 @@
         if (_cellSel) { var _ci = _cellSel.c0, _meta = _CELL_META[_ci]; var _src = DL[_cellSel.r0];
           if (_meta && _meta.f && _meta.edit && _src && _src._dkind === 'task') { e.preventDefault(); fillDown(_meta.f, _src); } }
       }
-      else if (!ctrl && k === 'ArrowDown') { e.preventDefault(); moveRowSel(1, e.shiftKey); }
-      else if (!ctrl && k === 'ArrowUp') { e.preventDefault(); moveRowSel(-1, e.shiftKey); }
-      else if (!ctrl && k === 'ArrowRight') { e.preventDefault(); moveCell(1, false, e.shiftKey); }
-      else if (!ctrl && k === 'ArrowLeft') { e.preventDefault(); moveCell(-1, false, e.shiftKey); }
-      else if (!ctrl && k === 'Tab') { e.preventDefault(); moveCell(e.shiftKey ? -1 : 1, true, false); }
-      else if (!ctrl && (k === 'Enter' || k === 'F2')) { e.preventDefault(); editActiveCell(); }
-      else if (!ctrl && k === 'PageDown') { e.preventDefault(); moveRowSel(_gridPageRows(), e.shiftKey); }
-      else if (!ctrl && k === 'PageUp') { e.preventDefault(); moveRowSel(-_gridPageRows(), e.shiftKey); }
-      else if (!ctrl && k === 'Home') { e.preventDefault(); moveRowSel(0, e.shiftKey, 0); }
-      else if (!ctrl && k === 'End') { e.preventDefault(); moveRowSel(0, e.shiftKey, DL.length - 1); }
+      // Plain navigation breaks the Tab/Enter entry chain (re-anchors on the next fresh edit).
+      else if (!ctrl && k === 'ArrowDown') { e.preventDefault(); _resetEntry(); moveRowSel(1, e.shiftKey); }
+      else if (!ctrl && k === 'ArrowUp') { e.preventDefault(); _resetEntry(); moveRowSel(-1, e.shiftKey); }
+      else if (!ctrl && k === 'ArrowRight') { e.preventDefault(); _resetEntry(); moveCell(1, false, e.shiftKey); }
+      else if (!ctrl && k === 'ArrowLeft') { e.preventDefault(); _resetEntry(); moveCell(-1, false, e.shiftKey); }
+      else if (!ctrl && k === 'Tab') { e.preventDefault(); moveCell(e.shiftKey ? -1 : 1, true, false); }   // keeps the entry chain
+      // Ready-mode Enter drops a row and returns to the entry column (Excel); F2 edits in place.
+      else if (!ctrl && k === 'Enter') { e.preventDefault(); if (_cellAnchor && _entryCol !== null) _cellAnchor.c = _entryCol; moveRowSel(e.shiftKey ? -1 : 1, false); }
+      else if (!ctrl && k === 'F2') { e.preventDefault(); editActiveCell(); }
+      else if (!ctrl && k === 'PageDown') { e.preventDefault(); _resetEntry(); moveRowSel(_gridPageRows(), e.shiftKey); }
+      else if (!ctrl && k === 'PageUp') { e.preventDefault(); _resetEntry(); moveRowSel(-_gridPageRows(), e.shiftKey); }
+      else if (!ctrl && k === 'Home') { e.preventDefault(); _resetEntry(); moveRowSel(0, e.shiftKey, 0); }
+      else if (!ctrl && k === 'End') { e.preventDefault(); _resetEntry(); moveRowSel(0, e.shiftKey, DL.length - 1); }
       else if (!ctrl && k === 'Insert') { e.preventDefault(); if (pid) openForm(null); }
       else if (!ctrl && (k === 'Delete' || k === 'Backspace')) { if (_selectedTaskRows().length) { e.preventDefault(); deleteSelected(); } }
-      else if (!ctrl && k === 'Escape') { if (_selSet.size || _cellSel) { _selSet = new Set(); _cellSel = null; _cellAnchor = null; highlightRow(); } }
+      else if (!ctrl && k === 'Escape') { _resetEntry(); if (_selSet.size || _cellSel) { _selSet = new Set(); _cellSel = null; _cellAnchor = null; highlightRow(); } }
       else if (!ctrl && (k === '?' || (k === '/' && e.shiftKey))) { e.preventDefault(); openShortcuts(); }
+      // Excel type-to-edit: a printable key over a ready editable active cell starts editing seeded
+      // with that character, so you can keep typing down/across a column without F2 each time.
+      else if (!ctrl && !e.altKey && e.key && e.key.length === 1 && _cellAnchor) {
+        var _host = document.getElementById('ps-grid-rows');
+        var _rw = _host && _host.querySelector('.ps-grid-row[data-i="' + _cellAnchor.r + '"]');
+        var _cel = _rw && _rw.children[_cellAnchor.c + 1];
+        if (_cel && _cel.classList.contains('ps-editable')) {
+          e.preventDefault(); beginEdit(_cel);
+          var _in = _cel.querySelector('input');
+          if (_in) { if (_in.type === 'text' || (_in.type === 'number' && /[0-9.\-]/.test(e.key))) { _in.value = e.key; }
+            try { _in.setSelectionRange(_in.value.length, _in.value.length); } catch (_e) {} }
+        }
+      }
     });
     document.getElementById('ps-health-close').onclick = closeHealthPanel;
     document.getElementById('ps-health-backdrop').onclick = closeHealthPanel;
