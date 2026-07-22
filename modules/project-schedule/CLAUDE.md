@@ -1,5 +1,27 @@
 # Module: project-schedule
 
+## Cost Loading rebuilt → Cost / EVM dashboard (2026-07-21)
+The old "Cost Loading" tab was a flat per-activity cost table — redundant (the Schedule grid already
+shows per-activity Planned/Actual/EV/At-Completion IBB columns; the **Activity Usage** detail tab
+already draws the time-phased per-activity cost curves) and low-value. Rebuilt into a **project-level
+EVM dashboard** (tab relabelled **Cost / EVM**):
+- **EVM KPI cards** at the data date: BAC, PV, EV, AC, SV, CV, SPI, CPI, EAC, VAC, TCPI + an over/under-
+  budget · on/behind-schedule status chip. Math: PV = Σ budget × plannedPOC (planned % by data date);
+  EV = Σ earned_value (fallback planned_cost × %); AC = Σ actual_cost; EAC = AC + (BAC−EV)/CPI;
+  TCPI = (BAC−EV)/(BAC−AC).
+- **Cost S-curve**: cumulative PV spread linearly across each activity's planned dates, with EV/AC
+  plotted as points at the data date (no cost history is stored) + a BAC reference line.
+- **Cost variance by WBS**: `_costMap` roll-up (Budget/Actual/Earned/CV/CPI/%Spent per branch),
+  over-budget rows flagged red, + a project TOTAL row.
+- `renderCost()` early-returns unless `activeTab==='cost'` (the EVM compute is heavier than the old
+  table and `renderAll()` calls it every render). New DOM ids: `#ps-cost-status/-kpis/-curve/-note/-wbs`.
+- The old flat-table helpers (`COST_COLS`, `startCostColResize`, `costColW/costVisibleCols`) are now
+  dead code — left in place (inert; the cost-tab toolbar/column-chooser is hidden anyway). Minor cleanup TODO.
+- Verified: inline script parses; EVM aggregation unit-tested (SV −10k/CV −15k/SPI 0.9/CPI 0.857/EAC
+  350k/VAC −50k/TCPI 1.077 on a fixture); browser harness with a cost-loaded fixture rendered the KPIs
+  (BAC 300k/EV 90k/AC 105k…), PV S-curve (13 months), status chip, and WBS table with no console errors.
+  No migration, no `?v=` bump.
+
 ## THE ACTUAL "count populated, grid empty" bug: deferred render (2026-07-21)
 **Verified on the deployed page** with a real 17,122-activity project (GPR101), driving the user's
 logged-in Chrome. The screenshot bug reproduces on initial load: for ~8 seconds the footer reads

@@ -77,6 +77,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Project Schedule: Cost Loading tab rebuilt into a Cost / EVM dashboard
+User flagged the Cost Loading tab as a low-value flat table that doesn't reflect how P6/OPC do cost
+loading (time-phased). It was also redundant — the Schedule grid already shows per-activity cost
+columns and the **Activity Usage** detail tab already draws the time-phased per-activity cost curves.
+Rebuilt it as a project-level **EVM dashboard** (tab relabelled **Cost / EVM**):
+- **EVM KPIs** at the data date: BAC, PV, EV, AC, SV, CV, SPI, CPI, EAC, VAC, TCPI + an over/under-budget ·
+  on/behind-schedule status chip.
+- **Cost S-curve**: cumulative Planned Value (linear spread over each activity's dates) + EV/AC points
+  at the data date + a BAC reference line.
+- **Cost variance by WBS**: `_costMap` roll-up (Budget/Actual/Earned/CV/CPI/%Spent), over-budget rows
+  flagged, + TOTAL — the "where's the money bleeding" view, distinct from Activity Usage (per-activity
+  curves) and Cash Flow (funding timing).
+- `renderCost()` guards on `activeTab==='cost'` (heavier than the old table; `renderAll` calls it every
+  render). Old flat-table helpers left as inert dead code (the cost-tab toolbar/chooser is hidden).
+- Verified: parses clean; EVM aggregation unit-tested (SV −10k/CV −15k/SPI 0.9/CPI 0.857/EAC 350k/VAC
+  −50k/TCPI 1.077); browser harness with a cost-loaded fixture rendered KPIs, the PV S-curve, status
+  chip, and the WBS variance table with no console errors. No migration, no `?v=` bump.
+
 ### 2026-07-21 — Project Schedule: fix the ACTUAL "count populated, grid empty" bug (deferred render)
 - **Verified the load-race fix (below) on the deployed page with a real 17,122-activity project and
   found the screenshot bug still reproduced** — so the race fix, though correct, addressed a different
