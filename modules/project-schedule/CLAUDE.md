@@ -1,5 +1,23 @@
 # Module: project-schedule
 
+## Inline Status dropdown in the grid — one-click change (2026-07-22) — fmlozano
+Changing an activity's status meant right-click → Edit activity → change the Status field — tedious on
+10,000+ activity projects. The grid Status cell is now a **`<select>` styled as the coloured pill**
+(`statusCellHtml`), so a writer changes status in one click directly in the grid. Read-only users
+(`!canWrite` / `window.__viewOnly` / `__archived`) still get the static `<span>` pill.
+- `change` is wired via re-attachment in `renderWindow` (rows are virtualized/windowed, like the
+  `.ps-editable` dblclick wiring) and routed through **`_statusPatch`** (Completed → Actual Finish +
+  100% + 0 remaining; In Progress → clear finish, reseed remaining; Not Started → clear actuals) and the
+  undoable **`persist()`** — identical write path to the other inline cell edits, so it's undoable and
+  has the same side-effect semantics as the detail-panel Status field. `mousedown`/`click`
+  `stopPropagation` so opening the dropdown doesn't trigger row-select / cell-nav.
+- WBS-summary / group rows keep an empty status cell (unchanged). Only ~visible rows render a select
+  (grid virtualization), so no cost on huge schedules. Module-local, no migration, no `?v=` bump.
+- **Verified live** (deployed, logged-in Chrome): on Avesta (real) the cells render as enabled selects
+  with correct values; on the DEMO01 sandbox, changing M2003 Not Started → In Progress via the dropdown
+  **persisted through a full DB reload** (searched it back, read "In Progress"), then restored to
+  "Not Started". Screenshot shows every task row's Status as a "· ⌄" dropdown pill; WBS rows blank.
+
 ## Grid keyboard shortcuts never fired — hidden overlay tripped the guard (2026-07-22) — fmlozano
 User: Arrow keys scrolled the panel instead of moving the selection; Tab traversed page buttons
 instead of grid cells (not Excel-like). Root cause: the grid-shortcut `keydown` handler bailed on

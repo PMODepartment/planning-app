@@ -77,6 +77,16 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: inline Status dropdown in the grid (one-click change)
+- Changing an activity's status required right-click → Edit activity (tedious on 10,000+ activities).
+  The grid Status cell is now a dropdown (the coloured pill IS a `<select>`) for writers, so status
+  changes in one click in the grid; read-only users keep the static pill. Routed through `_statusPatch`
+  (same completion side-effects as the detail Status field) and the undoable `persist()`. Only ~visible
+  rows render a select (grid is virtualized), so no cost on huge schedules.
+- **Live-verified** (deployed, logged-in Chrome): renders as enabled selects on real projects; on the
+  DEMO01 sandbox a dropdown change persisted through a full DB reload, then was restored. Module-local,
+  no migration, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-22 — Project Schedule: fix grid keyboard shortcuts (Arrow/Tab/etc.) never firing
 - User: Arrow keys scrolled the panel instead of moving the selection; Tab traversed page buttons, not
   grid cells. Root cause: the grid keydown handler bailed on a bare `querySelector('.pd-modal-overlay,
