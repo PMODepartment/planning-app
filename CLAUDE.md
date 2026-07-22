@@ -77,6 +77,17 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Project Schedule: remove dead old cost-table code (cleanup after the EVM rebuild)
+- Follow-up to the Cost/EVM rebuild below: it orphaned the old per-activity cost table, leaving
+  `COST_COLS`, `_vc`, `costW`, `costColW`, `costVisibleCols`, `startCostColResize` and the
+  `table.ps-cost-table`/`.ps-cost-th` CSS as dead code. Removed them after verifying **zero live
+  references**, and simplified `renderColsMenu` to drop its unreachable `onCost`/`COST_COLS` branch
+  (the Columns chooser is Schedule-tab-only — the toolbar is hidden on other tabs).
+- **Behavior-preserving** (removed branch was already unreachable; `startCostColResize` had no
+  callers; `applyColHidden` used only `gridCols()`). Verified: no dangling references, script parses,
+  and on the deployed page the Cost/EVM dashboard + Schedule column chooser both still work.
+  Module-only, no `?v` bump. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-21 — Project Schedule: Cost Loading tab rebuilt into a Cost / EVM dashboard
 User flagged the Cost Loading tab as a low-value flat table that doesn't reflect how P6/OPC do cost
 loading (time-phased). It was also redundant — the Schedule grid already shows per-activity cost

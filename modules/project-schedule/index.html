@@ -125,18 +125,6 @@
        eye menu or drag the divider to shrink it toward a bars-only view. */
     .ps-split.ps-grid-only .ps-gantt-pane, .ps-split.ps-grid-only .ps-divider { display:none; }
     .ps-split.ps-gantt-only .ps-grid-pane { flex:0 0 300px; }
-    /* Cost table is table-layout:fixed, so any cell whose content is wider than its
-       column would BLEED into the next column (the WBS code overlapping the activity
-       name). Clip every cell; a title attr (set in renderCost) gives the full value on
-       hover. Headers WRAP instead of clipping so labels like "Planned % (POC)" aren't
-       cut to "(PC". */
-    .ps-cost-th { position:relative; }
-    /* `table.ps-cost-table th` outspecifies `.ps-table th` (which sets white-space:nowrap
-       later in the sheet), so these actually take effect: headers WRAP instead of clipping
-       mid-word ("Planned % (POC)" not "(PC"). */
-    table.ps-cost-table th { overflow:hidden; white-space:normal; overflow-wrap:break-word; line-height:1.25; vertical-align:bottom; }
-    table.ps-cost-table td { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ps-cost-table td code { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:12px; }
     /* Single row, never wraps. Items are flex:none (see .ps-tb-row rule above) so they don't
        squish; the search is the only flexible item and shrinks first. If the row still can't fit
        an extremely narrow viewport it scrolls horizontally inside itself (only then does overflow
@@ -4568,14 +4556,13 @@
   // Column chooser (the OPC grid-settings wrench). Activity Name can't be hidden (anchor column).
   function saveColHidden() { try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} }
   // Multi-select show/hide chooser opened from the eye button. Each row is a checkbox
-  // (ticked = visible); footer has Show all / Hide all / Reset. Covers the active view's
-  // columns — the Schedule grid (GRID_COLS) or the Cost Loading table (COST_COLS).
+  // (ticked = visible); footer has Show all / Hide all / Reset. Covers the Schedule grid
+  // columns (GRID_COLS). Only reachable on the Schedule tab — the toolbar (and this button)
+  // is hidden on the others, and the rebuilt Cost tab is a dashboard with no hideable columns.
   function renderColsMenu() {
     var m = document.getElementById('ps-cols-menu'); if (!m) return;
-    var onCost = activeTab === 'cost';
-    if (!onCost) seedExtraHidden();
-    var defs = onCost ? COST_COLS.map(function (c) { return { key: c.label, label: c.label, locked: c.locked }; })
-      : gridCols().map(function (c) { return { key: colKey(c), label: colLabel(c), extra: !!c[3], locked: c[1] === 'Activity Name' }; });
+    seedExtraHidden();
+    var defs = gridCols().map(function (c) { return { key: colKey(c), label: colLabel(c), extra: !!c[3], locked: c[1] === 'Activity Name' }; });
     var builtin = defs.filter(function (d) { return !d.extra; }), extra = defs.filter(function (d) { return d.extra; });
     function rowHTML(d) {
       return '<label' + (d.locked ? ' style="opacity:.5;cursor:default;"' : '') + '>' +
@@ -4584,8 +4571,8 @@
         esc(d.label) + '</label>';
     }
     function hdr(t) { return '<div style="padding:6px 12px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' + t + '</div>'; }
-    m.innerHTML = (onCost ? '' : '<label style="border-bottom:1px solid var(--pd-line);"><input type="checkbox" id="ps-colf-toggle"' + (_colFilterOn ? ' checked' : '') + '> <span style="font-weight:600;">Show column filter row</span></label>') +
-      hdr(onCost ? 'Cost Loading columns' : 'Schedule columns') + builtin.map(rowHTML).join('') +
+    m.innerHTML = '<label style="border-bottom:1px solid var(--pd-line);"><input type="checkbox" id="ps-colf-toggle"' + (_colFilterOn ? ' checked' : '') + '> <span style="font-weight:600;">Show column filter row</span></label>' +
+      hdr('Schedule columns') + builtin.map(rowHTML).join('') +
       (extra.length ? hdr('Activity Codes &amp; User-Defined Fields') + extra.map(rowHTML).join('') : '') +
       '<div class="ps-cols-foot"><button data-colact="show">Show all</button><button data-colact="hide">Hide all</button><button data-colact="reset">Reset</button></div>';
     var ft = m.querySelector('#ps-colf-toggle');
@@ -5241,25 +5228,10 @@
   // Cost Loading columns — each: label, num (right-align), locked (can't hide), default width,
   // a per-row cell renderer and a totals-row renderer. Rendered dynamically so columns can be
   // hidden (via the eye chooser — hidden ones are simply skipped) and drag-resized (colgroup).
-  function _vc(n) { return n > 0 ? 'ps-green' : n < 0 ? 'ps-red' : ''; }
-  var COST_COLS = [
-    { label: 'WBS', w: 120, title: function (r) { return r.wbs || ''; }, cell: function (r) { return '<code>' + esc(r.wbs || '') + '</code>'; }, tot: function (T) { return 'TOTAL (' + T.n + ')'; } },
-    { label: 'Activity Name', locked: true, w: 240, title: function (r) { return r.activity_name || ''; }, cell: function (r) { return esc(r.activity_name || ''); }, tot: function () { return ''; } },
-    { label: 'Baseline Cost (₱)', num: true, w: 130, cell: function (r) { return r.bl_cost != null ? Fmt.money(r.bl_cost) : '—'; }, tot: function (T) { return Fmt.money(T.bl); } },
-    { label: 'Planned Cost (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.planned_cost || 0); }, tot: function (T) { return Fmt.money(T.tp); } },
-    { label: 'Actual Cost (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.actual_cost || 0); }, tot: function (T) { return Fmt.money(T.ta); } },
-    { label: 'Earned Value (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.earned_value || 0); }, tot: function (T) { return Fmt.money(T.tv); } },
-    { label: 'At Completion (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null)); }, tot: function (T) { return Fmt.money(T.tac); } },
-    { label: 'Cost Variance (₱)', num: true, w: 130, cell: function (r) { var cv = (r.earned_value || 0) - (r.actual_cost || 0); return '<span class="' + _vc(cv) + '">' + (cv >= 0 ? '+' : '') + Fmt.money(cv) + '</span>'; }, tot: function (T) { var d = T.tv - T.ta; return '<span class="' + _vc(d) + '">' + (d >= 0 ? '+' : '') + Fmt.money(d) + '</span>'; } },
-    { label: 'CPI', num: true, w: 70, cell: function (r) { var c = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; return c !== null ? c.toFixed(2) : '—'; }, tot: function (T) { return T.ta > 0 ? (T.tv / T.ta).toFixed(2) : '—'; } },
-    { label: 'Planned % (POC)', num: true, w: 110, cell: function (r) { var p = plannedPOC(r); return p != null ? p + '%' : '—'; }, tot: function () { return ''; } },
-    { label: '% Complete', num: true, w: 110, cell: function (r) { return (r.percent_complete || 0) + '%'; }, tot: function () { return ''; } },
-    { label: '% Complete Type', w: 150, cell: function (r) { return esc(r.percent_complete_type || '—'); }, tot: function () { return ''; } }
-  ];
-  var costW = {}; try { costW = JSON.parse(localStorage.getItem('ps_costcols') || '{}') || {}; } catch (e) { costW = {}; }
-  function costColW(c) { return costW[c.label] || c.w; }
-  function costVisibleCols() { return COST_COLS.filter(function (c) { return c.locked || !colHidden[c.label]; }); }
   // ── Cost / EVM dashboard (rebuilt Cost Loading tab) ─────────────────────────
+  // (The old per-activity cost TABLE — COST_COLS / costVisibleCols / costColW /
+  //  startCostColResize / _vc — was removed when this tab was rebuilt into the
+  //  EVM dashboard below. Its columns already live in the Schedule grid.)
   // Project-level cost performance at the data date. The per-activity cost columns
   // already live in the Schedule grid, and the time-phased per-activity cost curves
   // in the Activity Usage detail tab — so this tab is the EVM roll-up, not a table.
@@ -5338,14 +5310,6 @@
     }).join('');
     var totRow = '<tr class="ps-totals-row"><td colspan="2">TOTAL (' + leaves.length + ' activities)</td><td class="ps-num">' + money(BAC) + '</td><td class="ps-num">' + money(AC) + '</td><td class="ps-num">' + money(EV) + '</td><td class="ps-num ' + vcls(CV) + '">' + sgn(CV) + '</td><td class="ps-num ' + icls(CPI) + '">' + ix(CPI) + '</td><td class="ps-num">' + (BAC > 0 ? Math.round(AC / BAC * 100) + '%' : '—') + '</td></tr>';
     wTbl.innerHTML = head + '<tbody>' + brows + totRow + '</tbody>';
-  }
-  function startCostColResize(e, label) {
-    e.preventDefault(); e.stopPropagation();
-    var col = COST_COLS.filter(function (c) { return c.label === label; })[0]; if (!col) return;
-    var sx = e.clientX, start = costColW(col);
-    function mm(ev) { costW[label] = Math.max(48, start + (ev.clientX - sx)); var cg = document.getElementById('ps-cost-colgroup'); var vis = costVisibleCols(); var idx = vis.indexOf(col); if (cg && cg.children[idx]) cg.children[idx].style.width = costW[label] + 'px'; }
-    function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); document.body.style.cursor = ''; try { localStorage.setItem('ps_costcols', JSON.stringify(costW)); } catch (e2) {} }
-    document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu); document.body.style.cursor = 'col-resize';
   }
 
   // ----- PLANNER COCKPIT: the weekly "Monday morning" view (all from existing data) -----
@@ -7442,7 +7406,7 @@
     var name = tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'lastplanner' ? 'Last Planner' : (tab === 'wbs' ? 'WBS Manager' : 'Project Schedule')));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
-    applyColHidden();   // hidden-column rules differ per view (Schedule grid vs Cost table)
+    applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
     if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'lastplanner') openLastPlanner(); else if (tab === 'wbs') renderWbsManager(); else renderPlanner();
   }
 

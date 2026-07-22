@@ -1,5 +1,17 @@
 # Module: project-schedule
 
+## Cleanup: remove the dead old cost-TABLE code (2026-07-21)
+Follows the Cost/EVM rebuild below, which orphaned the old per-activity cost table. Removed the
+now-inert cluster (verified zero live refs first): `COST_COLS`, `_vc`, `costW`, `costColW`,
+`costVisibleCols`, `startCostColResize`, and the now-dead `table.ps-cost-table` / `.ps-cost-th` CSS
+(my WBS-overlap fix from `a109ae3` — that table no longer exists). Also simplified `renderColsMenu` to
+drop its `onCost`/`COST_COLS` branch: the Columns chooser is only reachable on the Schedule tab (the
+whole toolbar is `display:none` on other tabs, per `switchTab`), and the rebuilt Cost tab has no
+hideable columns. **Behavior-preserving** — the removed branch was already unreachable,
+`startCostColResize` had no callers, `applyColHidden` only ever used `gridCols()`. Verified: zero
+remaining references to any removed symbol, script parses, and on the deployed page the Cost/EVM
+dashboard renders and the Schedule column chooser still works.
+
 ## Cost Loading rebuilt → Cost / EVM dashboard (2026-07-21)
 The old "Cost Loading" tab was a flat per-activity cost table — redundant (the Schedule grid already
 shows per-activity Planned/Actual/EV/At-Completion IBB columns; the **Activity Usage** detail tab
