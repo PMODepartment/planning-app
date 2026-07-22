@@ -9697,7 +9697,11 @@
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       var mod = document.getElementById('ps-modal');
       if (mod && getComputedStyle(mod).display !== 'none') return;
-      if (document.querySelector('.pd-modal-overlay, .ps-back.open, .ps-rep-back.open')) return;
+      // Bail only for overlays that are actually VISIBLE. `#ps-modal` itself carries .pd-modal-overlay
+      // and is always in the DOM (just display:none), so a bare presence check here matched it and
+      // disabled EVERY grid shortcut. Check offsetParent so a hidden overlay never blocks navigation.
+      var _ovs = document.querySelectorAll('.pd-modal-overlay, .ps-back.open, .ps-rep-back.open');
+      for (var _oi = 0; _oi < _ovs.length; _oi++) { if (_ovs[_oi].offsetParent !== null) return; }
       var sv = document.getElementById('ps-view-schedule');
       if (!sv || sv.offsetParent === null) return;           // Schedule view not visible
       if (window.__viewOnly || window.__archived) return;
