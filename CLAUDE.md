@@ -77,6 +77,17 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: fix grid keyboard shortcuts (Arrow/Tab/etc.) never firing
+- User: Arrow keys scrolled the panel instead of moving the selection; Tab traversed page buttons, not
+  grid cells. Root cause: the grid keydown handler bailed on a bare `querySelector('.pd-modal-overlay,
+  …')` presence check, but `#ps-modal` **is** `.pd-modal-overlay` and is always in the DOM
+  (`display:none`) — so it matched every keystroke and returned before any branch, killing all
+  Excel-style navigation.
+- **Fix:** bail only for overlays that are actually visible (`offsetParent !== null`); the hidden
+  `#ps-modal` no longer blocks (its open state is still covered by the display check above). Live-verified
+  on the deployed app (ArrowDown moves selection + prevents scroll; Tab sets the active cell + prevents
+  button traversal). Module-local, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-22 — Project Schedule: virtualize the WBS Manager tree (+ live verification)
 - Broad searches / Expand-all painted every visible row into the DOM (up to ~7,700 rows → ~1s+). The
   tree render now flattens the visible nodes into a list and only paints the scroll-viewport window

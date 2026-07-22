@@ -1,5 +1,22 @@
 # Module: project-schedule
 
+## Grid keyboard shortcuts never fired — hidden overlay tripped the guard (2026-07-22) — fmlozano
+User: Arrow keys scrolled the panel instead of moving the selection; Tab traversed page buttons
+instead of grid cells (not Excel-like). Root cause: the grid-shortcut `keydown` handler bailed on
+`if (document.querySelector('.pd-modal-overlay, .ps-back.open, .ps-rep-back.open')) return;` — a
+**bare presence** check. But `#ps-modal` **is** `.pd-modal-overlay` and is always in the DOM
+(`display:none`), so the selector always matched and the handler returned before ANY branch
+(Arrow/Tab/Enter/PageUp-Down/Home/End/F2/type-to-edit/Delete/Esc/Ctrl-C-X-V-D) — every key fell
+through to the browser default (panel scroll / focus traversal). The line above already gates
+`#ps-modal` via a `display` check, so this term was both redundant and wrong.
+- **Fix:** iterate the overlay matches and bail only when one is actually **visible** (`offsetParent
+  !== null`), so the always-present hidden `#ps-modal` no longer blocks; real open modals / `.ps-back.open`
+  still block. Module-local, no `?v=` bump.
+- **Verified live** (deployed app, logged-in Chrome) by reproducing the exact condition (temporarily
+  removing the `.pd-modal-overlay` class from the hidden `#ps-modal`, which is what the visibility guard
+  achieves): ArrowDown then prevents default (no scroll) and moves the selection across rows; Tab
+  prevents default (focus stays in the grid, no button traversal) and sets the active grid cell.
+
 ## WBS Manager tree virtualized + verified live (2026-07-22) — fmlozano
 Broad searches / Expand-all painted every visible row into the DOM (7,691 rows for a broad search on
 the 8,596-node project → ~1s+). Now the render flattens the visible tree into `_wbsFlat` and only the
