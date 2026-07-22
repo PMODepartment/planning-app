@@ -2691,3 +2691,12 @@ type-to-edit (typing on a selected cell begins editing seeded with the character
 moves down at the entry column; F2/double-click/typing edit. The anchor resets on plain navigation
 (arrows/click/Escape) and persists across Tab/Enter. Verified: inline JS passes `node --check`, no
 console errors on load. Module-only, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: render guard fixes the type-to-edit keystroke race
+
+Fixed the documented race where an in-flight async save re-render could wipe a just-opened inline
+editor during fast type-down entry. New `_editing` flag (set in `beginEdit`, cleared at the top of
+`commit`) makes `doRender`/`renderWindow` defer repaints while an editor is open and flush the
+deferred paint when it closes. The edited value is read synchronously before any repaint, so no data
+is lost. Verified: inline JS passes `node --check`, no console errors on load. Module-only, no `?v=`
+bump. See `modules/project-schedule/CLAUDE.md`.

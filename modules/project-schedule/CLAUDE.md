@@ -2045,3 +2045,23 @@ Completes the Excel data-entry flow on the Schedule grid with an **entry-column 
   normal-paced entry. A render guard (skip re-render while an input is open) is the follow-up if it bites.
 - Shortcuts modal updated. Verified: inline JS passes `node --check`, module loads with no console
   errors. Live keyboard test needs a login. Module-only, no migration, no `?v=` bump.
+
+## Render guard: defer repaints while an inline editor is open (2026-07-22e) — fmlozano
+
+Fixes the documented type-to-edit keystroke race from 22d. A still-in-flight `persist().then →
+renderGrid` (or any scheduled repaint) could replace `#ps-grid-rows` innerHTML and destroy a
+freshly opened inline `<input>`, dropping a keystroke during fast type-down entry.
+- New **`_editing`** flag: set true in `beginEdit` right after the input is appended, cleared at the
+  **top of `commit()`** (so it is false the instant the editor starts closing).
+- **`doRender()` and `renderWindow()`** both early-return while `_editing`, setting **`_pendingWin`**
+  instead of repainting — so neither the grid rows nor the Gantt bars layer (`#ps-tl-bars`, cleared in
+  doRender) get wiped under an open editor.
+- The closing editor **flushes** the deferred paint: `commit()` clears `_editing` then, if
+  `_pendingWin`, calls `scheduleRender()`. Guaranteed even on a failed save (whose branch skips its
+  own `renderGrid`). `_rafP` dedups the flush against the branchs own render within a frame.
+- Correct because the edited value is read synchronously in `commit` before any repaint; the flush
+  repaint (and the branchs own `.then` render) run after, on fresh `rows`. Arrow/click nav cant
+  reach here — the global keydown returns early while focus is in the input, so the editor only closes
+  via blur/Enter/Tab/Escape, all of which run `commit`. No stuck-`_editing` path.
+- Verified: inline JS passes `node --check`, module loads with no console errors. Live keyboard test
+  needs a login. Module-only, no migration, no `?v=` bump.

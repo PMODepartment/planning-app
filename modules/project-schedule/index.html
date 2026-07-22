@@ -5069,6 +5069,11 @@
   // geometry read live, so reassigning it and re-rendering keeps both panes aligned.
   var _density = 'comfortable'; try { if (localStorage.getItem('ps_density') === 'compact') _density = 'compact'; } catch (e) {}
   var ROWH = _density === 'compact' ? 27 : 34, DL = [], _rMin = null, _rDayw = 0, _rafP = false, _tlW = 0;
+  // `_editing` is true only while an inline cell editor is genuinely open (not mid-commit). While set,
+  // the windowed repaint is deferred (it replaces #ps-grid-rows innerHTML, which would destroy a
+  // freshly opened input) — so an in-flight save's async re-render can't drop a keystroke during
+  // rapid type-down entry. `_pendingWin` remembers a repaint was skipped so the closing editor flushes it.
+  var _editing = false, _pendingWin = false;
   // Gantt display settings (OPC "Gantt Settings"). labels: none|name|dates; toggles for baseline
   // bar, data-date line, relationship lines. Persisted per browser.
   var _gset = { labels: 'name', baseline: true, ddline: true, relLines: false };
@@ -5268,6 +5273,7 @@
   }
 
   function doRender() {
+    if (_editing) { _pendingWin = true; return; }   // defer full repaint while an inline editor is open
     DL = displayList();
     var rg = range(), min = rg.min, max = rg.max, dayw = DAYW[zoom] * ganttScale;
     _rMin = min; _rDayw = dayw;
@@ -5325,6 +5331,7 @@
 
   function renderWindow() {
     if (!DL.length) return;
+    if (_editing) { _pendingWin = true; return; }   // don't wipe an open inline editor; flush on close
     var scr = document.getElementById('ps-gantt-scroll');
     var top = scr ? scr.scrollTop : 0, vh = scr ? scr.clientHeight : 600;
     var maxTop = Math.max(0, DL.length * ROWH - vh);
@@ -5527,9 +5534,12 @@
     inp.type = type === 'date' ? 'date' : (type === 'number' || type === 'money' || type === 'pdur' || type === 'dpct' ? 'number' : 'text');
     inp.value = raw;
     cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); if (inp.select) inp.select();
+    _editing = true;
     var done = false;
     function commit(save) {
       if (done) return; done = true;
+      // Editor is closing: re-enable repaints and flush any repaint deferred while it was open.
+      _editing = false; if (_pendingWin) { _pendingWin = false; scheduleRender(); }
       if (!save) { renderGrid(); return; }
       var val = inp.value;
       var patch = {};
