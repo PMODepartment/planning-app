@@ -1562,8 +1562,19 @@
       UDF_DEFS = (r7 && r7.data) || [];
     } catch (e) { UDF_DEFS = []; }
     try {
-      var r8 = await sb().from('wbs_nodes').select('*').eq('project_id', pid).order('sort_order');
-      WBS_NODES = (r8 && r8.data) || [];
+      // Keyset-paginate: a plain select caps at Supabase's 1000-row limit, which silently TRUNCATED
+      // the tree on big P6 imports (>1000 WBS nodes) — children whose parent fell past row 1000
+      // dropped out of the walk and vanished from the Manager. Paginate by id; the render/index
+      // re-sorts by sort_order, so load order is irrelevant.
+      var wnodes = [], wlast = null;
+      while (true) {
+        var wq = sb().from('wbs_nodes').select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+        if (wlast) wq = wq.gt('id', wlast);
+        var wr = await wq; if (wr.error) throw wr.error;
+        var wb = wr.data || []; wnodes = wnodes.concat(wb);
+        if (wb.length < 1000) break; wlast = wb[wb.length - 1].id;
+      }
+      WBS_NODES = wnodes;
     } catch (e) { WBS_NODES = []; }
     try {
       var r9 = await sb().from('cost_accounts').select('*').eq('project_id', pid).order('sort_order');
@@ -7118,9 +7129,17 @@
     m.el.querySelector('#wbsfp-go').onclick = async function () {
       var srcPid = m.el.querySelector('#wbsfp-proj').value; if (!srcPid) return; m.close();
       showLoading('Reading source WBS…');
-      var res = await sb().from('wbs_nodes').select('*').eq('project_id', srcPid).order('sort_order');
-      if (res.error) { hideLoading(); UI.toast('Could not read source WBS: ' + res.error.message, 'error'); return; }
-      var src = res.data || []; if (!src.length) { hideLoading(); UI.toast('That project has no WBS nodes to copy.', 'warn'); return; }
+      // Keyset-paginate (see load()): a plain select caps at 1000 and would copy a truncated tree.
+      var src = [], slast = null, serr = null;
+      while (true) {
+        var sq = sb().from('wbs_nodes').select('*').eq('project_id', srcPid).order('id', { ascending: true }).limit(1000);
+        if (slast) sq = sq.gt('id', slast);
+        var sres = await sq; if (sres.error) { serr = sres.error; break; }
+        var sb2 = sres.data || []; src = src.concat(sb2);
+        if (sb2.length < 1000) break; slast = sb2[sb2.length - 1].id;
+      }
+      if (serr) { hideLoading(); UI.toast('Could not read source WBS: ' + serr.message, 'error'); return; }
+      if (!src.length) { hideLoading(); UI.toast('That project has no WBS nodes to copy.', 'warn'); return; }
       var byId = {}; src.forEach(function (n) { byId[n.id] = n; });
       function depth(n) { var d = 0, c = n, g = 0; while (c && c.parent_id && byId[c.parent_id] && g++ < 50) { d++; c = byId[c.parent_id]; } return d; }
       src.sort(function (a, b) { return depth(a) - depth(b) || (a.sort_order || 0) - (b.sort_order || 0); });
