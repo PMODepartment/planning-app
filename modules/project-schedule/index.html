@@ -18,6 +18,9 @@
       font-family:inherit; font-size:18px; font-weight:800; letter-spacing:-.01em; color:var(--pd-ink); padding:3px 6px; border-radius:7px; }
     .ps-title-btn:hover { background:var(--pd-bg); }
     .ps-title-btn [data-ico] { color:var(--pd-muted); }
+    /* Brand-red module icon before the title, matching every other module's -title-ico.
+       `span.ps-title-ico` (0,2,1) outspecifies `.ps-title-btn [data-ico]` (0,2,0) above. */
+    .ps-title-btn span.ps-title-ico { color:var(--pd-red); }
     #ps-title-menu button { font-size:14px; font-weight:600; }
     .ps-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .ps-seg button { border:none; background:var(--pd-card); padding:6px 12px; cursor:pointer; color:var(--pd-muted); font-size:12px; font-weight:600; }
@@ -906,7 +909,7 @@
     <div class="pd-topbar">
       <a class="pd-btn ps-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
       <div class="ps-title-switch ps-menu-wrap">
-        <button class="ps-title-btn" id="ps-title-btn" title="Switch view"><span id="ps-title-txt">Project Schedule</span><span data-ico="chevronDown" data-ico-size="16"></span></button>
+        <button class="ps-title-btn" id="ps-title-btn" title="Switch view"><span class="ps-title-ico" data-ico="calendar" data-ico-size="20"></span><span id="ps-title-txt">Project Schedule</span><span data-ico="chevronDown" data-ico-size="16"></span></button>
         <div class="ps-menu" id="ps-title-menu">
           <button data-tab="planner"><span data-ico="pulse" data-ico-size="14"></span> Planner Cockpit</button>
           <button data-tab="wbs"><span data-ico="layers" data-ico-size="14"></span> WBS Manager</button>

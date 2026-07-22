@@ -1,5 +1,20 @@
 # Module: project-schedule
 
+## Brand icon beside the title (2026-07-21)
+The title is a **view-switcher button** (`.ps-title-btn`), so unlike every other module it never had
+the brand-red module icon before its text — the `calendar` icon (the module's `config.js` icon) only
+appeared inside the dropdown menu items. Added `<span class="ps-title-ico" data-ico="calendar">` before
+`#ps-title-txt` inside the button, so it's `[calendar] Project Schedule ▾` matching the suite.
+- ⚠️ Existing `.ps-title-btn [data-ico] { color:var(--pd-muted) }` (for the chevron) also matches the
+  new icon. Override with **`.ps-title-btn span.ps-title-ico`** (0,2,1) which outspecifies it (0,2,0)
+  regardless of source order. Verified the icon is brand-red (`#EE3124`) while the **chevron stays
+  muted** — the override is scoped, not bleeding to the chevron.
+- Kept it inside the switcher button on purpose: clicking the icon still opens the view switcher.
+- Verified in a harness (real title markup + module CSS + icons.js): icon hydrates to SVG, brand-red
+  via `currentColor`, 20×20, left of the text, chevron muted, order ICON→TEXT→chevron, and stays
+  brand-red in dark mode. Screenshot still impossible (compositor stall) — measured via
+  getComputedStyle. Module-only, no shared asset, no `?v` bump.
+
 ## Cost Loading tab: WBS/name overlap + duplicate-ID fixes (2026-07-21)
 Reported: the Cost Loading table's WBS code visually overlapped the Activity Name (e.g.
 "1.4.2.5.2.3.1Cabinetry" with ghosted text). Two real bugs found:

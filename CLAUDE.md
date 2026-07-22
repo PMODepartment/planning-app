@@ -77,6 +77,15 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Project Schedule: brand icon beside the title (uniform topbar)
+- The Project Schedule title is a **view-switcher button**, so it never carried the brand-red module
+  icon every other module shows — the `calendar` icon only lived inside the switcher's dropdown items.
+  Added it before the title text (`[calendar] Project Schedule ▾`).
+- ⚠️ The existing muted-icon rule for the chevron also matched the new icon; overrode it with
+  `.ps-title-btn span.ps-title-ico` (higher specificity) so the module icon is brand-red while the
+  chevron stays muted. Verified in a harness (real markup + CSS + icons.js): SVG hydrates, brand-red
+  in light and dark, chevron unaffected. Module-only, no `?v` bump. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-21 — Project Schedule Cost Loading: fix WBS/name overlap + duplicate ID
 - **WBS code overlapped the Activity Name** ("1.4.2.5.2.3.1Cabinetry", ghosted). Root cause: the Cost
   Loading table is `table-layout:fixed` but `.ps-table td` had no overflow clipping, so a WBS `<code>`
