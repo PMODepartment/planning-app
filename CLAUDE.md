@@ -2655,3 +2655,13 @@ Merged branch `module/project-schedule` (chart builder in Activity Progress) int
 74 commits behind). Verified locally: module loads and runs with no console errors,
 inline JS passes `node --check`, no conflict markers. See
 `modules/project-schedule/CLAUDE.md` for detail.
+
+### 2026-07-22 — Project Schedule: arrow-key row selection + Excel-like autoscroll
+
+Added keyboard row navigation to the Schedule grid: ↑/↓ move the row selection, PageUp/PageDown
+jump a screen, Home/End go to first/last, Shift extends the multi-row selection. The grid
+autoscrolls minimally to keep the active row visible (pins to the top/bottom edge, Excel-style),
+working with the virtualized renderer. New `moveRowSel`/`scrollRowVisible`/`_gridPageRows` helpers
+wired into the existing grid keydown handler; documented in the shortcuts modal. Verified: inline JS
+passes `node --check`, module loads with no console errors. Module-only, no `?v=` bump. See
+`modules/project-schedule/CLAUDE.md`.

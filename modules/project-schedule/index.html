@@ -2854,6 +2854,10 @@
         [K('Ctrl') + '+' + K('V'), 'Paste — cells fill/paste, or whole rows'] ] },
       { h: 'Selection', rows: [
         ['Click', 'Select a row / active cell'],
+        [K('↑') + ' / ' + K('↓'), 'Move the row selection up / down (autoscrolls)'],
+        [K('Shift') + '+' + K('↑') + '/' + K('↓'), 'Extend the row selection'],
+        [K('PageUp') + ' / ' + K('PageDown'), 'Move the selection one screen'],
+        [K('Home') + ' / ' + K('End'), 'Jump to the first / last row'],
         [K('Shift') + '+click', 'Extend a rectangular cell range'],
         [K('Ctrl') + '/' + K('Cmd') + '+click', 'Add/remove a row from the selection'],
         ['Right-click', 'Context menu (Fill down, copy/paste, add WBS…)'],
@@ -7927,6 +7931,40 @@
     var vh = sc.clientHeight, y = idx * ROWH;
     if (y < sc.scrollTop || y > sc.scrollTop + vh - ROWH) sc.scrollTop = Math.max(0, y - Math.floor(vh / 2));
   }
+  // Excel-style minimal autoscroll: reveal DL row `idx` by scrolling just enough (row sticks to the
+  // top edge when moving up past the viewport, to the bottom edge when moving down past it), rather
+  // than re-centering like scrollSelIntoView. Used by the arrow-key navigation below.
+  // How many whole rows fit in the grid viewport — the PageUp/PageDown jump distance.
+  function _gridPageRows() { var sc = document.getElementById('ps-grid-scroll'); var vh = sc ? sc.clientHeight : 600; return Math.max(1, Math.floor(vh / ROWH) - 1); }
+  function scrollRowVisible(idx) {
+    var sc = document.getElementById('ps-grid-scroll'); if (!sc) return;
+    var vh = sc.clientHeight, y = idx * ROWH;
+    if (y < sc.scrollTop) sc.scrollTop = y;                         // row is above the viewport → pin to top
+    else if (y + ROWH > sc.scrollTop + vh) sc.scrollTop = y + ROWH - vh; // below the viewport → pin to bottom
+  }
+  // Arrow-key row selection (Excel-like). `delta` moves the active row by N visible DL rows (±1 for
+  // Up/Down, ±page for PageUp/Down); `absolute` (0 = Home / DL.length-1 = End) jumps to a row. Skips
+  // group-header rows that have no id. With `extend` (Shift held), grows the multi-row selection from
+  // the anchor; otherwise it's a single-row move. Autoscrolls the grid to keep the row visible.
+  function moveRowSel(delta, extend, absolute) {
+    if (!DL.length) return;
+    // current index of the active row within the visible display list
+    var cur = -1; for (var i = 0; i < DL.length; i++) { if (DL[i].id && DL[i].id === selId) { cur = i; break; } }
+    if (cur < 0) cur = (delta > 0 || absolute != null) ? -1 : 0;    // no selection yet → Down starts at row 0
+    var target = (absolute != null) ? absolute : cur + delta;
+    target = Math.max(0, Math.min(DL.length - 1, target));
+    // skip over id-less rows (group headers) in the direction of travel so navigation never dead-ends
+    var step = (absolute != null) ? (absolute === 0 ? 1 : -1) : (delta >= 0 ? 1 : -1);
+    while (target >= 0 && target < DL.length && !DL[target].id) target += step;
+    if (target < 0 || target >= DL.length || !DL[target].id) return;
+    var nd = DL[target];
+    selId = nd.id;
+    if (extend) { if (!_selAnchor) _selAnchor = (cur >= 0 && DL[cur] ? DL[cur].id : nd.id); _selRange(_selAnchor, nd.id); _selSet.add(nd.id); }
+    else { _selSet = new Set([nd.id]); _selAnchor = nd.id; }
+    scrollRowVisible(target);
+    highlightRow();
+    renderDetails();
+  }
   // Next Activity ID for a new activity under WBS `wbs`, scoped to that WBS as "<wbs>-A<num>" with
   // num in increments of 10 starting at 1000 (e.g. 1.1 → 1.1-A1000, then 1.1-A1010). Continues from
   // the highest number already used under that same WBS prefix; guarantees project-wide uniqueness.
@@ -9583,6 +9621,12 @@
         if (_cellSel) { var _ci = _cellSel.c0, _meta = _CELL_META[_ci]; var _src = DL[_cellSel.r0];
           if (_meta && _meta.f && _meta.edit && _src && _src._dkind === 'task') { e.preventDefault(); fillDown(_meta.f, _src); } }
       }
+      else if (!ctrl && k === 'ArrowDown') { e.preventDefault(); moveRowSel(1, e.shiftKey); }
+      else if (!ctrl && k === 'ArrowUp') { e.preventDefault(); moveRowSel(-1, e.shiftKey); }
+      else if (!ctrl && k === 'PageDown') { e.preventDefault(); moveRowSel(_gridPageRows(), e.shiftKey); }
+      else if (!ctrl && k === 'PageUp') { e.preventDefault(); moveRowSel(-_gridPageRows(), e.shiftKey); }
+      else if (!ctrl && k === 'Home') { e.preventDefault(); moveRowSel(0, e.shiftKey, 0); }
+      else if (!ctrl && k === 'End') { e.preventDefault(); moveRowSel(0, e.shiftKey, DL.length - 1); }
       else if (!ctrl && k === 'Insert') { e.preventDefault(); if (pid) openForm(null); }
       else if (!ctrl && (k === 'Delete' || k === 'Backspace')) { if (_selectedTaskRows().length) { e.preventDefault(); deleteSelected(); } }
       else if (!ctrl && k === 'Escape') { if (_selSet.size || _cellSel) { _selSet = new Set(); _cellSel = null; _cellAnchor = null; highlightRow(); } }

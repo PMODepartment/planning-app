@@ -1965,3 +1965,23 @@ errors**. Static checks: no conflict markers; inline JS (~668K chars) passes
 `node --check`; both the new chart-builder code and main-branch code present. Logged-in
 visual render not verified (auth wall / no credentials) — recommend a manual eyeball of
 Activity Progress once signed in.
+
+## Arrow-key row selection with Excel-like autoscroll (2026-07-22) — fmlozano
+
+The grid had click / shift-click / ctrl-click row selection but no keyboard navigation. Added
+Excel-style arrow-key row selection to the Schedule grid:
+- **↑ / ↓** move the active row selection to the previous / next visible display-list (`DL`) row;
+  **PageUp / PageDown** jump one viewport of rows (`_gridPageRows()` = floor(viewport/ROWH)−1);
+  **Home / End** jump to the first / last row. **Shift** + any of these extends the multi-row
+  selection from the anchor (reuses `_selRange`/`_selSet`/`_selAnchor`).
+- `moveRowSel(delta, extend, absolute)` computes the target index in `DL`, **skips id-less group
+  headers** in the direction of travel, sets `selId` + `_selSet`, then autoscrolls and re-highlights
+  + `renderDetails()`.
+- **`scrollRowVisible(idx)`** is the Excel-like minimal autoscroll: pins the row to the **top** edge
+  when it moved above the viewport, to the **bottom** edge when below — unlike `scrollSelIntoView`
+  which re-centers. Works with the virtualized grid (setting `scrollTop` fires the scroll listener →
+  rAF → `renderWindow`, which repaints the window and re-runs `highlightRow`).
+- Wired into the existing grid keydown handler (same guards: suppressed while editing a field, over a
+  modal, when the Schedule view is hidden, or view-only/archived). Documented in the ？ shortcuts modal.
+- Verified: inline JS passes `node --check`; module loads in-browser with no console errors. Live
+  keyboard interaction needs a login (auth wall). Module-only, no migration, no `?v=` bump.
