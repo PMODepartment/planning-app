@@ -871,14 +871,17 @@
     .ps-ck-tl-svg { width:100%; height:auto; display:block; }
     .ps-ck-tl-legend { display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--pd-muted); margin-top:6px; }
     .ps-ck-tl-legend i { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:5px; vertical-align:middle; }
-    /* WBS Manager tree */
-    .ps-wbs-tree { padding:6px 4px 12px; }
+    /* WBS Manager tree (virtualized: fixed row height, spacer reserves scroll height,
+       only the viewport window of rows is in the DOM at once) */
+    .ps-wbs-tree { padding:6px 4px 12px; overflow:auto; position:relative; max-height:calc(100vh - 250px); }
+    .ps-wbs-spacer { position:relative; }
+    .ps-wbs-win { position:absolute; left:0; right:0; top:0; }
     .ps-wbs-caret { flex:none; width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center;
       border:none; background:none; cursor:pointer; color:var(--pd-muted); border-radius:4px; padding:0; font-size:11px; line-height:1; }
     .ps-wbs-caret:hover { background:var(--pd-card); color:var(--pd-ink); }
     .ps-wbs-caret.leaf { cursor:default; visibility:hidden; }
     .ps-wbs-matchcount { font-size:12px; color:var(--pd-muted); margin-left:12px; }
-    .ps-wbs-row { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; cursor:pointer; border-left:3px solid transparent; }
+    .ps-wbs-row { display:flex; align-items:center; gap:8px; padding:4px 8px; height:34px; box-sizing:border-box; border-radius:6px; cursor:pointer; border-left:3px solid transparent; }
     .ps-wbs-row:hover { background:var(--pd-bg); }
     .ps-wbs-row:hover .ps-wbs-acts, .ps-wbs-row.selected .ps-wbs-acts { visibility:visible; }
     .ps-wbs-row.selected { background:var(--pd-red-light); border-left-color:var(--pd-red); }
@@ -1517,6 +1520,10 @@
   var _wbsCollapsed = {};   // WBS Manager: node id -> true means its children are hidden
   var _wbsSearch = '';      // WBS Manager: current search filter (code / name)
   var _wbsCollapseInit = false;   // have we applied the large-tree default-collapse once?
+  var WBS_ROWH = 34;        // fixed WBS-row height (must match .ps-wbs-row height) for virtualization
+  var _wbsFlat = [];        // flattened visible-row descriptors (source for the virtual window)
+  var _wbsWired = false;    // delegated listeners attached to #ps-wbs-tree once
+  var _wbsScrollRaf = false;
   var _wbsSel = null;   // selected WBS node id (drives the Add-activity parent preselect)
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
   function calById(id) { return id && CALS.find(function (c) { return c.id === id; }); }
@@ -6847,13 +6854,90 @@
     })(null, '');
     return { byId: byId, childrenOf: childrenOf, actCount: actCount, codeOf: codeOf };
   }
+  // Build one row's HTML from a flat descriptor. Shared by the full render + the virtual window.
+  function _wbsRowHTML(e) {
+    var caret = e.nKids
+      ? '<button class="ps-wbs-caret' + (e.open ? '' : ' collapsed') + '" data-wbs-toggle="' + esc(e.id) + '" title="' + (e.open ? 'Collapse' : 'Expand') + '">' + (e.open ? '▾' : '▸') + '</button>'
+      : '<span class="ps-wbs-caret leaf">▾</span>';
+    return '<div class="ps-wbs-row' + (_wbsSel === e.id ? ' selected' : '') + '" data-wid="' + esc(e.id) + '" style="padding-left:' + (8 + e.depth * 22) + 'px;">' +
+      caret +
+      '<span class="ps-wbs-code" title="' + (e.custom ? 'Custom code (click ✎ to change)' : 'Auto-numbered') + '">' + esc(e.code) + (e.custom ? ' *' : '') + '</span>' +
+      '<span class="ps-wbs-name"><input data-wbs-name="' + esc(e.id) + '" value="' + esc(e.name || '') + '" placeholder="WBS name…"></span>' +
+      '<span class="ps-wbs-badge">' + (e.nKids ? e.nKids + ' sub' + (e.nKids === 1 ? '' : 's') + ' · ' : '') + e.nAct + ' activit' + (e.nAct === 1 ? 'y' : 'ies') + '</span>' +
+      '<span class="ps-wbs-acts">' +
+        '<button class="wbs-act" data-wbs-act="' + esc(e.id) + '" title="Add an activity under this WBS">＋Act</button>' +
+        '<button data-wbs-add="' + esc(e.id) + '" title="Add child WBS">＋</button>' +
+        '<button data-wbs-up="' + esc(e.id) + '" title="Move up">▲</button>' +
+        '<button data-wbs-down="' + esc(e.id) + '" title="Move down">▼</button>' +
+        '<button data-wbs-indent="' + esc(e.id) + '" title="Indent (make child of the node above)">→</button>' +
+        '<button data-wbs-outdent="' + esc(e.id) + '" title="Outdent (promote a level)">←</button>' +
+        '<button data-wbs-code="' + esc(e.id) + '" title="Edit code">✎</button>' +
+        '<button class="danger" data-wbs-del="' + esc(e.id) + '" title="Delete">✕</button>' +
+      '</span></div>';
+  }
+  // Paint only the rows in the current scroll viewport (+buffer) from _wbsFlat, offset by translateY.
+  // This keeps the DOM small no matter how many rows are visible — broad searches / Expand-all included.
+  function _wbsRenderWindow() {
+    var host = document.getElementById('ps-wbs-tree'); if (!host) return;
+    var win = host.querySelector('.ps-wbs-win'); if (!win) return;
+    var total = _wbsFlat.length, vh = host.clientHeight || 500, top = host.scrollTop;
+    var first = Math.max(0, Math.floor(top / WBS_ROWH) - 8);
+    var last = Math.min(total, Math.ceil((top + vh) / WBS_ROWH) + 8);
+    var h = '';
+    for (var i = first; i < last; i++) h += _wbsRowHTML(_wbsFlat[i]);
+    win.style.transform = 'translateY(' + (first * WBS_ROWH) + 'px)';
+    win.innerHTML = h;
+  }
+  // Delegated listeners on the (persistent) tree container — attached once, so they survive every
+  // window re-paint (per-row onclick handlers can't, since the window's rows are recreated on scroll).
+  function _wbsWire() {
+    if (_wbsWired) return;
+    var host = document.getElementById('ps-wbs-tree'); if (!host) return;
+    _wbsWired = true;
+    host.addEventListener('scroll', function () {
+      if (_wbsScrollRaf) return; _wbsScrollRaf = true;
+      (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { _wbsScrollRaf = false; _wbsRenderWindow(); });
+    });
+    host.addEventListener('click', function (e) {
+      var row = e.target.closest('.ps-wbs-row'); if (!row) return;
+      var id = row.dataset.wid, btn = e.target.closest('button');
+      if (btn) {
+        var d = btn.dataset;
+        if (d.wbsToggle != null) { if (_wbsCollapsed[id]) delete _wbsCollapsed[id]; else _wbsCollapsed[id] = true; renderWbsManager(); }
+        else if (d.wbsAct != null) wbsAddActivity(id);
+        else if (d.wbsAdd != null) wbsAddChild(id);
+        else if (d.wbsUp != null) wbsMove(id, 'up');
+        else if (d.wbsDown != null) wbsMove(id, 'down');
+        else if (d.wbsIndent != null) wbsMove(id, 'indent');
+        else if (d.wbsOutdent != null) wbsMove(id, 'outdent');
+        else if (d.wbsCode != null) wbsEditCode(id);
+        else if (d.wbsDel != null) wbsDelete(id);
+        return;
+      }
+      if (e.target.closest('.ps-wbs-name')) return;   // clicking the name input just edits (focusin selects)
+      wbsSelect(id);
+    });
+    // Focusing a name input selects its row without a full re-render (which would blur mid-edit).
+    host.addEventListener('focusin', function (e) {
+      if (!e.target.matches || !e.target.matches('[data-wbs-name]')) return;
+      var row = e.target.closest('.ps-wbs-row'); if (!row) return;
+      _wbsSel = row.dataset.wid;
+      host.querySelectorAll('.ps-wbs-row.selected').forEach(function (r) { if (r !== row) r.classList.remove('selected'); });
+      row.classList.add('selected');
+    });
+    host.addEventListener('change', function (e) { if (e.target.matches && e.target.matches('[data-wbs-name]')) wbsRename(e.target.dataset.wbsName, e.target.value); });
+    host.addEventListener('keydown', function (e) { if (e.target.matches && e.target.matches('[data-wbs-name]') && e.key === 'Enter') e.target.blur(); });
+  }
   function renderWbsManager() {
     var host = document.getElementById('ps-wbs-tree'), cnt = document.getElementById('ps-wbs-count');
     if (!host) return;
-    if (!pid) { host.innerHTML = '<div class="ps-wbs-empty">Select a project.</div>'; if (cnt) cnt.textContent = ''; return; }
+    _wbsWire();
+    var savedTop = host.scrollTop;   // keep the scroll position across a full re-render (caret/rename/move)
+    if (!pid) { _wbsFlat = []; host.innerHTML = '<div class="ps-wbs-empty">Select a project.</div>'; if (cnt) cnt.textContent = ''; return; }
     var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id; }).length;
     var adoptBtn = document.getElementById('ps-wbs-adopt'); if (adoptBtn) adoptBtn.style.display = legacy ? '' : 'none';
     if (!WBS_NODES.length) {
+      _wbsFlat = [];
       if (cnt) cnt.textContent = '';
       host.innerHTML = '<div class="ps-wbs-empty">' + (legacy ?
         'This project has ' + legacy + ' WBS summary rows from an import / the old model. Click <strong>Adopt existing WBS</strong> above to load them into the tree editor.' :
@@ -6882,55 +6966,23 @@
     }
     if (cnt) cnt.innerHTML = WBS_NODES.length + ' node' + (WBS_NODES.length === 1 ? '' : 's') +
       (q ? '<span class="ps-wbs-matchcount">' + nMatch + ' match' + (nMatch === 1 ? '' : 'es') + '</span>' : '');
-    var html = '', shown = 0;
+    // Flatten the visible tree into an ordered row list (the virtual window renders slices of it).
+    var flat = [];
     (function walk(parentId, depth) {
       (childrenOf.get(parentId) || []).forEach(function (n) {
         if (visible && !visible.has(n.id)) return;
-        var kids = childrenOf.get(n.id), nKids = kids ? kids.length : 0, nAct = actCount.get(n.id) || 0;
+        var kids = childrenOf.get(n.id), nKids = kids ? kids.length : 0;
         var open = q ? forceOpen.has(n.id) : !_wbsCollapsed[n.id];
-        var caret = nKids ? ('<button class="ps-wbs-caret' + (open ? '' : ' collapsed') + '" data-wbs-toggle="' + esc(n.id) + '" title="' + (open ? 'Collapse' : 'Expand') + '">' + (open ? '▾' : '▸') + '</button>')
-                          : '<span class="ps-wbs-caret leaf">▾</span>';
-        html += '<div class="ps-wbs-row' + (_wbsSel === n.id ? ' selected' : '') + '" data-wid="' + esc(n.id) + '" style="padding-left:' + (8 + depth * 22) + 'px;">' +
-          caret +
-          '<span class="ps-wbs-code" title="' + (n.code_custom ? 'Custom code (click ✎ to change)' : 'Auto-numbered') + '">' + esc(codeOf[n.id]) + (n.code_custom ? ' *' : '') + '</span>' +
-          '<span class="ps-wbs-name"><input data-wbs-name="' + esc(n.id) + '" value="' + esc(n.name || '') + '" placeholder="WBS name…"></span>' +
-          '<span class="ps-wbs-badge">' + (nKids ? nKids + ' sub' + (nKids === 1 ? '' : 's') + ' · ' : '') + nAct + ' activit' + (nAct === 1 ? 'y' : 'ies') + '</span>' +
-          '<span class="ps-wbs-acts">' +
-            '<button class="wbs-act" data-wbs-act="' + esc(n.id) + '" title="Add an activity under this WBS">＋Act</button>' +
-            '<button data-wbs-add="' + esc(n.id) + '" title="Add child WBS">＋</button>' +
-            '<button data-wbs-up="' + esc(n.id) + '" title="Move up">▲</button>' +
-            '<button data-wbs-down="' + esc(n.id) + '" title="Move down">▼</button>' +
-            '<button data-wbs-indent="' + esc(n.id) + '" title="Indent (make child of the node above)">→</button>' +
-            '<button data-wbs-outdent="' + esc(n.id) + '" title="Outdent (promote a level)">←</button>' +
-            '<button data-wbs-code="' + esc(n.id) + '" title="Edit code">✎</button>' +
-            '<button class="danger" data-wbs-del="' + esc(n.id) + '" title="Delete">✕</button>' +
-          '</span></div>';
-        shown++;
+        flat.push({ id: n.id, depth: depth, code: codeOf[n.id], name: n.name, nKids: nKids, nAct: actCount.get(n.id) || 0, open: open, custom: !!n.code_custom });
         if (nKids && open) walk(n.id, depth + 1);
       });
     })(null, 0);
-    host.innerHTML = html;
-    // Caret: expand/collapse this node's children (no full data reload — just re-render).
-    host.querySelectorAll('[data-wbs-toggle]').forEach(function (b) {
-      b.onclick = function (e) { e.stopPropagation(); var id = b.dataset.wbsToggle; if (_wbsCollapsed[id]) delete _wbsCollapsed[id]; else _wbsCollapsed[id] = true; renderWbsManager(); };
-    });
-    // Click a row (anywhere but a button) to select it — the selected WBS preselects the parent
-    // when you add an activity. The name input still selects the row (so typing a name selects it).
-    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) {
-      rw.onclick = function (e) { if (e.target.closest('button')) return; wbsSelect(rw.dataset.wid); };
-    });
-    host.querySelectorAll('[data-wbs-name]').forEach(function (inp) {
-      inp.onchange = function () { wbsRename(inp.dataset.wbsName, inp.value); };
-      inp.onkeydown = function (e) { if (e.key === 'Enter') inp.blur(); };
-    });
-    host.querySelectorAll('[data-wbs-act]').forEach(function (b) { b.onclick = function () { wbsAddActivity(b.dataset.wbsAct); }; });
-    host.querySelectorAll('[data-wbs-add]').forEach(function (b) { b.onclick = function () { wbsAddChild(b.dataset.wbsAdd); }; });
-    host.querySelectorAll('[data-wbs-up]').forEach(function (b) { b.onclick = function () { wbsMove(b.dataset.wbsUp, 'up'); }; });
-    host.querySelectorAll('[data-wbs-down]').forEach(function (b) { b.onclick = function () { wbsMove(b.dataset.wbsDown, 'down'); }; });
-    host.querySelectorAll('[data-wbs-indent]').forEach(function (b) { b.onclick = function () { wbsMove(b.dataset.wbsIndent, 'indent'); }; });
-    host.querySelectorAll('[data-wbs-outdent]').forEach(function (b) { b.onclick = function () { wbsMove(b.dataset.wbsOutdent, 'outdent'); }; });
-    host.querySelectorAll('[data-wbs-code]').forEach(function (b) { b.onclick = function () { wbsEditCode(b.dataset.wbsCode); }; });
-    host.querySelectorAll('[data-wbs-del]').forEach(function (b) { b.onclick = function () { wbsDelete(b.dataset.wbsDel); }; });
+    _wbsFlat = flat;
+    if (!flat.length) { host.innerHTML = '<div class="ps-wbs-empty">No WBS matches “' + esc(_wbsSearch) + '”.</div>'; return; }
+    // Skeleton: spacer reserves the full scroll height; the window holds only the visible slice.
+    host.innerHTML = '<div class="ps-wbs-spacer" style="height:' + (flat.length * WBS_ROWH) + 'px;"><div class="ps-wbs-win"></div></div>';
+    host.scrollTop = _wbsSearch ? 0 : savedTop;   // searches jump to top; edits keep position (browser clamps)
+    _wbsRenderWindow();
   }
   // Persist code / name / activity-code changes across nodes + their projected WBS-Summary rows +
   // child activities, then refresh. Recomputes codes each call so any structural change re-numbers.
