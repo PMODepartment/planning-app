@@ -743,8 +743,12 @@
     /* Planner cockpit */
     .ps-ck-bar { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
     /* Section divider between the cockpit KPIs/forecast and the merged Last Planner weekly section */
-    .ps-ck-secdiv { display:flex; align-items:center; gap:8px; margin:26px 0 14px; padding-top:18px; border-top:2px solid var(--pd-line); font-size:15px; font-weight:800; color:var(--pd-ink); letter-spacing:.01em; }
+    .ps-ck-secdiv { display:flex; align-items:center; gap:8px; width:100%; margin:26px 0 14px; padding:18px 0 0; border:none; border-top:2px solid var(--pd-line); background:none; font:inherit; font-size:15px; font-weight:800; color:var(--pd-ink); letter-spacing:.01em; text-align:left; cursor:pointer; }
     .ps-ck-secdiv [data-ico] { color:var(--pd-red); }
+    .ps-ck-secdiv:hover { color:var(--pd-red); }
+    .ps-ck-secdiv-chev { display:inline-flex; align-items:center; color:var(--pd-muted) !important; transition:transform .18s ease; }
+    .ps-ck-secdiv.collapsed .ps-ck-secdiv-chev { transform:rotate(-90deg); }
+    #ps-lp-section.collapsed { display:none; }
     .ps-ck-look-lbl { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); }
     /* Bulk update grid */
     .ps-bulk-back { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:250; display:none; align-items:center; justify-content:center; }
@@ -1155,23 +1159,25 @@
         <!-- LAST PLANNER: weekly work plan + Percent Plan Complete (PPC) — merged into the
              cockpit so the planner has one management surface (KPIs/forecast above, the
              weekly commitment loop below) instead of two separate tabs. -->
-        <div class="ps-ck-secdiv"><span data-ico="check" data-ico-size="16"></span> Weekly Work Plan · Last Planner</div>
-        <div class="ps-ck-bar">
-          <button class="pd-btn ps-icobtn" id="ps-lp-prev" title="Previous week"><span data-ico="arrowLeft" data-ico-size="15"></span></button>
-          <strong id="ps-lp-weeklbl" style="min-width:180px;text-align:center;"></strong>
-          <button class="pd-btn ps-icobtn" id="ps-lp-next" title="Next week"><span data-ico="arrowRight" data-ico-size="15"></span></button>
-          <button class="pd-btn" id="ps-lp-thisweek">This week</button>
-          <span class="ps-tb-div"></span>
-          <button class="pd-btn pd-btn-primary" id="ps-lp-add"><span data-ico="plus" data-ico-size="15"></span> Add commitment</button>
-        </div>
-        <div class="ps-ck-kpis" id="ps-lp-kpis"></div>
-        <div class="pd-card ps-ck-card ps-ck-trend-card">
-          <div class="ps-ck-h"><span data-ico="check" data-ico-size="15"></span> Weekly commitments</div>
-          <div id="ps-lp-table"></div>
-        </div>
-        <div class="ps-ck-grid">
-          <div class="pd-card ps-ck-card ps-ck-trend-card"><div class="ps-ck-h"><span data-ico="trendingUp" data-ico-size="15"></span> PPC trend</div><div id="ps-lp-ppc-trend" class="ps-ck-trend-body"></div></div>
-          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Reasons for variance</div><div id="ps-lp-reasons" class="ps-ck-body"></div></div>
+        <button type="button" class="ps-ck-secdiv" id="ps-lp-toggle" aria-expanded="true" aria-controls="ps-lp-section"><span class="ps-ck-secdiv-chev" data-ico="chevronDown" data-ico-size="16"></span><span data-ico="check" data-ico-size="16"></span> Weekly Work Plan · Last Planner</button>
+        <div id="ps-lp-section">
+          <div class="ps-ck-bar">
+            <button class="pd-btn ps-icobtn" id="ps-lp-prev" title="Previous week"><span data-ico="arrowLeft" data-ico-size="15"></span></button>
+            <strong id="ps-lp-weeklbl" style="min-width:180px;text-align:center;"></strong>
+            <button class="pd-btn ps-icobtn" id="ps-lp-next" title="Next week"><span data-ico="arrowRight" data-ico-size="15"></span></button>
+            <button class="pd-btn" id="ps-lp-thisweek">This week</button>
+            <span class="ps-tb-div"></span>
+            <button class="pd-btn pd-btn-primary" id="ps-lp-add"><span data-ico="plus" data-ico-size="15"></span> Add commitment</button>
+          </div>
+          <div class="ps-ck-kpis" id="ps-lp-kpis"></div>
+          <div class="pd-card ps-ck-card ps-ck-trend-card">
+            <div class="ps-ck-h"><span data-ico="check" data-ico-size="15"></span> Weekly commitments</div>
+            <div id="ps-lp-table"></div>
+          </div>
+          <div class="ps-ck-grid">
+            <div class="pd-card ps-ck-card ps-ck-trend-card"><div class="ps-ck-h"><span data-ico="trendingUp" data-ico-size="15"></span> PPC trend</div><div id="ps-lp-ppc-trend" class="ps-ck-trend-body"></div></div>
+            <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Reasons for variance</div><div id="ps-lp-reasons" class="ps-ck-body"></div></div>
+          </div>
         </div>
       </div>
     </div>
@@ -8879,6 +8885,23 @@
     document.getElementById('ps-title-btn').onclick = function (e) { e.stopPropagation(); var o = tMenu.classList.contains('open'); closeMenus(); if (!o) tMenu.classList.add('open'); };
     tMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     tMenu.querySelectorAll('[data-tab]').forEach(function (b) { b.onclick = function () { tMenu.classList.remove('open'); switchTab(b.dataset.tab); }; });
+    // ---- Collapsible Last Planner section (persisted) ----
+    (function () {
+      var tgl = document.getElementById('ps-lp-toggle'), sec = document.getElementById('ps-lp-section');
+      if (!tgl || !sec) return;
+      var collapsed = false; try { collapsed = localStorage.getItem('ps_lp_collapsed') === '1'; } catch (e) {}
+      function apply() {
+        tgl.classList.toggle('collapsed', collapsed);
+        sec.classList.toggle('collapsed', collapsed);
+        tgl.setAttribute('aria-expanded', String(!collapsed));
+      }
+      apply();
+      tgl.onclick = function () {
+        collapsed = !collapsed;
+        try { localStorage.setItem('ps_lp_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+        apply();
+      };
+    })();
     // ---- Layout menu (view arrangement, like OPC's Layout / grid settings) ----
     try { layoutMode = localStorage.getItem('ps_layout') || 'split'; } catch (e) {}
     var detailsHidden = false; try { detailsHidden = localStorage.getItem('ps_details_hidden') === '1'; } catch (e) {}

@@ -77,6 +77,12 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: make the merged Last Planner section collapsible
+- Follow-up to the merge below. The Last Planner block made the Planner Cockpit a long scroll on load,
+  so its section divider is now a toggle (rotating chevron) that collapses/expands the whole weekly
+  section; state persists per browser (`localStorage['ps_lp_collapsed']`, default expanded). Module-local
+  HTML/CSS/JS only → **no `?v=` bump**. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-22 — Project Schedule: merge Last Planner into the Planner Cockpit tab
 - User flagged the **Planner Cockpit** and **Last Planner** tabs as redundant / low-value as two
   separate top-level views. Chose to **merge (keep all functionality), not remove**: the Last Planner

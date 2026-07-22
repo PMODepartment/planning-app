@@ -1,5 +1,18 @@
 # Module: project-schedule
 
+## Last Planner section made collapsible (2026-07-22) — fmlozano
+Follow-up to the merge below: the merged Last Planner block made the cockpit a long scroll on load,
+so the `.ps-ck-secdiv` divider is now a **toggle button** (`#ps-lp-toggle`, a `<button>` styled as the
+divider) with a rotating chevron; it collapses `#ps-lp-section` (all LP content wrapped in it) via a
+`.collapsed` class → `display:none`. State persists in `localStorage['ps_lp_collapsed']`, applied on
+init (default expanded). Wired next to the title-menu handler (same proven pattern). ⚠️ The chevron
+`.ps-ck-secdiv-chev` needs `display:inline-flex` for the `rotate(-90deg)` to apply (an un-hydrated
+inline icon span isn't transformable). Verified in a browser snapshot: only the `.collapsed` rule sets
+the chevron transform, section toggles block↔none, no console errors. (Computed-transform readout is
+unreliable in the static-snapshot renderer after a dynamic class change — the known quirk — so the
+rotation was confirmed via the selector engine + the collapsed-state matrix, not the stale post-toggle
+read.) Module-local, no `?v=` bump.
+
 ## Merged Last Planner into the Planner Cockpit tab (2026-07-22) — fmlozano
 User felt the separate **Planner Cockpit** and **Last Planner** tabs were redundant / low-value as
 two top-level views. Chose to **merge, not remove** (kept all functionality). The Last Planner
