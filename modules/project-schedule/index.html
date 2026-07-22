@@ -479,6 +479,8 @@
     #ps-view-schedule.ps-progress-mode .ps-legend,
     #ps-view-schedule.ps-progress-mode .ps-grid-foot { display:none !important; }
     .ps-progress { flex:1 1 auto; overflow:auto; min-height:0; padding:4px 8px 12px; }
+    @keyframes ps-viewin { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+    .ps-progress.ps-anim, .ps-split.ps-anim, .ps-network.ps-anim { animation: ps-viewin .28s cubic-bezier(.22,.61,.36,1); }
     .ps-prog-table { border-collapse:collapse; font-size:12.5px; table-layout:fixed; }
     .ps-prog-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); padding:6px 10px; border-bottom:1px solid var(--pd-line); position:sticky; top:0; background:var(--pd-card); z-index:3; overflow:hidden; text-overflow:ellipsis; }
     .ps-prog-table td { padding:4px 10px; border-bottom:1px solid var(--pd-line); vertical-align:middle; position:relative; height:var(--prog-rh,38px); overflow:hidden; }
@@ -506,6 +508,60 @@
     .ps-prog-desc:focus { border-color:var(--pd-red); background:var(--pd-card); outline:none; }
     .ps-prog-id { color:var(--pd-muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
     .ps-prog-ctr { display:block; text-align:center; font-variant-numeric:tabular-nums; }
+    /* Presentation controls + pie chart */
+    .ps-prog-ctrls { display:flex; align-items:center; gap:12px; padding:4px 2px 10px; }
+    .ps-seg2 { display:inline-flex; border:1px solid var(--pd-line); border-radius:6px; overflow:hidden; }
+    .ps-seg2 button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:5px 14px; cursor:pointer; font:inherit; }
+    .ps-seg2 button.on { background:var(--pd-red); color:#fff; }
+    .ps-prog-metric-l { font-size:12px; color:var(--pd-muted); display:flex; align-items:center; gap:6px; }
+    .ps-pie-wrap { display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; padding:6px 2px; }
+    .ps-pie-chart { flex:0 0 auto; }
+    .ps-pie-sel { flex:1 1 240px; min-width:220px; max-height:460px; overflow:auto; border:1px solid var(--pd-line); border-radius:8px; padding:8px 10px; }
+    .ps-pie-sel-h { display:flex; align-items:center; justify-content:space-between; gap:8px; font-weight:700; font-size:12px; margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid var(--pd-line); }
+    .ps-pie-sel-h button { font-size:11px; padding:2px 8px; }
+    .ps-pie-item { display:flex; align-items:center; gap:8px; padding:3px 2px; font-size:12.5px; cursor:pointer; }
+    .ps-pie-sw { width:12px; height:12px; border-radius:3px; flex:0 0 auto; }
+    .ps-pie-nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-pie-empty { color:var(--pd-muted); font-size:13px; padding:20px; }
+    .ps-chart-series { display:inline-flex; align-items:center; gap:6px; }
+    .ps-chart-serchk { display:inline-flex; align-items:center; gap:3px; cursor:pointer; }
+    .ps-chart-note { font-size:11px; color:var(--pd-muted); margin:0 8px 6px; }
+    .ps-chart-hint { font-size:11.5px; color:var(--pd-muted); }
+    /* Charts workspace — large, wrapping grid of independent, resizable chart cards */
+    .ps-chart-ws { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; padding:4px 2px 40px; }
+    .ps-chart-card { position:relative; border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.06); display:flex; flex-direction:column; overflow:hidden; }
+    .ps-chart-tb { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px 10px; border-bottom:1px solid var(--pd-line); background:var(--pd-bg,transparent); }
+    .ps-chart-tb .pd-select { font-size:12px; padding:3px 6px; }
+    .ps-chart-datatog { font-size:11px; padding:3px 8px; }
+    .ps-chart-del { margin-left:auto; font-size:12px; padding:3px 8px; color:var(--pd-red); }
+    .ps-chart-body { padding:8px 10px; min-height:0; overflow:hidden; cursor:grab; }
+    .ps-chart-body.ps-panning { cursor:grabbing; }
+    .ps-chart-pan { width:100%; height:100%; }
+    .ps-chart-svg { width:100%; height:100%; display:block; }
+    /* Pie data labels — white glyph with dark outline so they read on any slice colour, light or dark theme */
+    .ps-pie-dl { font-size:11px; font-weight:700; fill:#fff; stroke:rgba(0,0,0,.6); stroke-width:2.6px; paint-order:stroke; pointer-events:none; }
+    .ps-chart-grip { cursor:grab; color:var(--pd-muted); font-size:14px; line-height:1; user-select:none; padding:0 2px; }
+    .ps-chart-grip:active { cursor:grabbing; }
+    .ps-chart-card.ps-card-drag { opacity:.5; }
+    .ps-chart-card.ps-card-over { outline:2px dashed var(--pd-red); outline-offset:2px; }
+    .ps-chart-res { position:absolute; right:2px; bottom:2px; width:16px; height:16px; cursor:nwse-resize; background:linear-gradient(135deg,transparent 45%,var(--pd-muted) 45%,var(--pd-muted) 55%,transparent 55%,transparent 70%,var(--pd-muted) 70%,var(--pd-muted) 80%,transparent 80%); opacity:.6; }
+    .ps-chart-res:hover { opacity:1; }
+    .ps-cdata-wrap, .ps-cset-wrap { border-bottom:1px solid var(--pd-line); }
+    .ps-cdata { max-height:200px; overflow:auto; padding:8px 10px; }
+    .ps-chart-title { text-align:center; font-weight:700; color:var(--pd-ink); padding:6px 10px 2px; }
+    .ps-chart-blegend { display:flex; flex-wrap:wrap; gap:2px 14px; padding:2px 10px 4px; justify-content:center; }
+    .ps-chart-settog { font-size:13px; padding:3px 8px; }
+    .ps-cset { max-height:320px; overflow:auto; padding:8px 10px; }
+    .ps-cset-grid { display:grid; grid-template-columns:1fr 1fr; gap:2px 12px; }
+    .ps-cset-row { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12px; color:var(--pd-muted); padding:2px 0; }
+    .ps-cset-row input[type=text], .ps-cset-row .pd-input { flex:1 1 auto; min-width:0; font:inherit; font-size:12px; padding:3px 6px; border:1px solid var(--pd-line); border-radius:4px; background:var(--pd-bg); color:var(--pd-ink); }
+    .ps-cset-chk { justify-content:flex-start; cursor:pointer; }
+    .ps-cset-col { width:38px; height:22px; padding:0; border:1px solid var(--pd-line); border-radius:4px; background:none; cursor:pointer; }
+    .ps-chart-pierow { display:flex; flex-direction:column; gap:6px; height:100%; }
+    .ps-chart-pierow svg { flex:1 1 auto; min-height:0; }
+    .ps-chart-pieleg { display:flex; flex-direction:row; flex-wrap:wrap; gap:2px 12px; max-height:34%; overflow:auto; flex:0 0 auto; }
+    .ps-prog-table td.ps-prog-cc { text-align:center; }
+    .ps-prog-table td.ps-prog-cc .ps-prog-phys { display:inline-block; }
     .ps-prog-no { display:block; text-align:center; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
     /* Per-cell format popover */
     .ps-cellfmt { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.18); padding:8px; min-width:210px; }
@@ -3050,13 +3106,13 @@
   var progressMode = false;
   var PROG_DEFAULT = ['no', 'id', 'name', 'desc', 'progress', 'planpoc', 'phys'];
   var PROG_DEF = {
-    no:       { label: 'No.', w: 52 },
+    no:       { label: 'No.', w: 52, center: true },
     id:       { label: 'ID', w: 92 },
     name:     { label: 'Activity Name', w: 260 },
     desc:     { label: 'Specific Description', w: 240 },
     progress: { label: 'Progress (P = Planned · A = Actual)', w: 260 },
-    planpoc:  { label: 'Planned Value %', w: 110 },
-    phys:     { label: 'Activity % Complete', w: 120 }
+    planpoc:  { label: 'Planned Value %', w: 110, center: true },
+    phys:     { label: 'Activity % Complete', w: 120, center: true }
   };
   function progColOrder() {
     var d = PROG_DEFAULT.slice();
@@ -3066,6 +3122,329 @@
   }
   function progColW() { try { return JSON.parse(localStorage.getItem('ps_progcolw') || '{}') || {}; } catch (e) { return {}; } }
   function progRh() { var n = parseInt(localStorage.getItem('ps_progrh'), 10); return (n && n >= 22 && n <= 200) ? n : 38; }
+  // Presentation controls for the Activity Progress view: Table vs Pie, the pie metric, and which
+  // activities are included (data selection — null = all leaf activities). All persisted per project.
+  function progPres() { try { var v = localStorage.getItem('ps_progpres'); return (v === 'chart' || v === 'pie') ? 'chart' : 'table'; } catch (e) { return 'table'; } }
+  function progMetric() { try { return localStorage.getItem('ps_progmetric') === 'plan' ? 'plan' : 'phys'; } catch (e) { return 'phys'; } }
+  // Chart builder config, persisted per project: chart type, X-axis category, and the Y-axis metric
+  // series to plot (multiple = planned vs actual vs duration). type ∈ pie|donut|column|bar|scolumn|sbar.
+  var CHART_TYPES = [
+    { k: 'pie', label: 'Pie' }, { k: 'donut', label: 'Pie (hollow core)' },
+    { k: 'column', label: 'Column' }, { k: 'bar', label: 'Horizontal bar' },
+    { k: 'scolumn', label: 'Stacked column' }, { k: 'sbar', label: 'Stacked bar' }
+  ];
+  var CHART_CATS = [{ k: 'activity', label: 'Activity' }, { k: 'wbs', label: 'WBS' }, { k: 'status', label: 'Status' }];
+  var CHART_METRICS = {
+    phys: { label: 'Activity % Complete', color: '#EE3124', val: function (r) { return Math.max(0, Math.min(100, r.percent_complete || 0)); } },
+    plan: { label: 'Planned Value %', color: '#2B2C2B', val: function (r) { return Math.max(0, Math.min(100, plannedPOC(r) || 0)); } },
+    durpct: { label: 'Duration % Complete', color: '#3a6098', val: function (r) { return _durPct(r); } }
+  };
+  // A workspace of independent charts, persisted per project in localStorage ps_charts = { <pid>: [cfg,…] }.
+  // Each chart cfg = { id, type, cat, series[], sel (array of activity ids or null=all), w, h }.
+  function _chartsRaw() { try { var a = JSON.parse(localStorage.getItem('ps_charts') || '{}'); var arr = a && a[pid]; if (Array.isArray(arr)) return arr; } catch (e) {} return null; }
+  function chartsList() {
+    var arr = _chartsRaw();
+    if (!arr) {
+      var legacy = null; try { var l = JSON.parse(localStorage.getItem('ps_chartcfg') || '{}'); if (l && l[pid]) legacy = l[pid]; } catch (e) {}
+      arr = [{ id: 'c1', type: (legacy && legacy.type) || 'pie', cat: (legacy && legacy.cat) || 'activity', series: (legacy && legacy.series) || ['phys'], sel: null, w: 480, h: 380 }];
+      setCharts(arr);
+    }
+    return arr.map(function (c, i) {
+      var series = Array.isArray(c.series) ? c.series.filter(function (k) { return CHART_METRICS[k]; }) : [];
+      if (!series.length) series = ['phys'];
+      return {
+        id: c.id || ('c' + (i + 1)),
+        type: CHART_TYPES.some(function (t) { return t.k === c.type; }) ? c.type : 'pie',
+        cat: CHART_CATS.some(function (x) { return x.k === c.cat; }) ? c.cat : 'activity',
+        series: series,
+        sel: Array.isArray(c.sel) ? c.sel : null,
+        labels: ['none', 'pct', 'val', 'name', 'namepct'].indexOf(c.labels) >= 0 ? c.labels : 'pct',
+        title: typeof c.title === 'string' ? c.title : '',
+        xTitle: typeof c.xTitle === 'string' ? c.xTitle : '',
+        yTitle: typeof c.yTitle === 'string' ? c.yTitle : '',
+        legend: c.legend !== false,
+        grid: c.grid !== false,
+        tickFont: (c.tickFont >= 6 && c.tickFont <= 28) ? c.tickFont : 9,
+        titleFont: (c.titleFont >= 6 && c.titleFont <= 36) ? c.titleFont : 12,
+        titleSize: (c.titleSize >= 8 && c.titleSize <= 48) ? c.titleSize : 15,
+        dlFont: (c.dlFont >= 6 && c.dlFont <= 28) ? c.dlFont : 11,
+        colors: (c.colors && typeof c.colors === 'object') ? c.colors : {},
+        ox: +c.ox || 0,
+        oy: +c.oy || 0,
+        w: (c.w && c.w >= 280) ? c.w : 480,
+        h: (c.h && c.h >= 220) ? c.h : 380
+      };
+    });
+  }
+  // Series colours for Actual / Planned / Duration — project-scoped and shared by BOTH the charts and
+  // the Activity Progress table bars (per the request: recolouring is limited to those two features).
+  function seriesColor(m) { try { var a = JSON.parse(localStorage.getItem('ps_seriescolor') || '{}'); if (a && a[pid] && a[pid][m]) return a[pid][m]; } catch (e) {} return (CHART_METRICS[m] && CHART_METRICS[m].color) || '#888888'; }
+  function setSeriesColor(m, hex) { var a = {}; try { a = JSON.parse(localStorage.getItem('ps_seriescolor') || '{}') || {}; } catch (e) {} a[pid] = a[pid] || {}; a[pid][m] = hex; try { localStorage.setItem('ps_seriescolor', JSON.stringify(a)); } catch (e) {} }
+  // Effective colour for a series in a specific chart: per-chart override wins, else the project colour.
+  function chartColor(cfg, m) { return (cfg.colors && cfg.colors[m]) || seriesColor(m); }
+  // Reorder a card to a new index (drag-to-move the whole box).
+  function moveChart(id, toIdx) {
+    var arr = chartsList(), from = -1; arr.forEach(function (c, i) { if (c.id === id) from = i; });
+    if (from < 0) return; var it = arr.splice(from, 1)[0]; toIdx = Math.max(0, Math.min(arr.length, toIdx)); arr.splice(toIdx, 0, it); setCharts(arr);
+  }
+  function setCharts(arr) { var a = {}; try { a = JSON.parse(localStorage.getItem('ps_charts') || '{}') || {}; } catch (e) {} a[pid] = arr; try { localStorage.setItem('ps_charts', JSON.stringify(a)); } catch (e) {} }
+  function chartById(id) { var l = chartsList(); for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; }
+  function updateChart(id, patch) { setCharts(chartsList().map(function (c) { if (c.id === id) Object.keys(patch).forEach(function (k) { c[k] = patch[k]; }); return c; })); }
+  function addChart() { var arr = chartsList(); arr.push({ id: 'c' + Date.now().toString(36), type: 'column', cat: 'activity', series: ['plan', 'phys'], sel: null, labels: 'pct', ox: 0, oy: 0, w: 480, h: 380 }); setCharts(arr); }
+  function removeChart(id) { setCharts(chartsList().filter(function (c) { return c.id !== id; })); }
+  function progSelSet() { try { var a = JSON.parse(localStorage.getItem('ps_progsel') || 'null'); if (a && a[pid]) return new Set(a[pid]); } catch (e) {} return null; }
+  function setProgSel(set) { var a = {}; try { a = JSON.parse(localStorage.getItem('ps_progsel') || '{}') || {}; } catch (e) {} if (set === null) delete a[pid]; else a[pid] = Array.from(set); try { localStorage.setItem('ps_progsel', JSON.stringify(a)); } catch (e) {} }
+  var PROG_PAL = ['#EE3124', '#2B2C2B', '#6f7276', '#C42127', '#3a6098', '#8aa9d6', '#a7abae', '#5b86c4', '#231F20', '#c9cdd0'];
+  function _pieArc(cx, cy, r, a0, a1) { var x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0), x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1); var large = (a1 - a0) > Math.PI ? 1 : 0; return 'M' + cx + ' ' + cy + ' L' + x0.toFixed(2) + ' ' + y0.toFixed(2) + ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + x1.toFixed(2) + ' ' + y1.toFixed(2) + ' Z'; }
+  // Build category buckets for the chart from the selected leaf activities. Each bucket has a label and,
+  // per requested metric, the mean value across the activities in that bucket. Category = activity | wbs | status.
+  function _chartBuckets(cfg) {
+    var acts = DL.filter(function (nd) { return !hiddenRow(nd) && !isWbsNode(nd) && nd.activity_id; });
+    var sel = cfg.sel ? new Set(cfg.sel.map(String)) : null;
+    acts = acts.filter(function (r) { return !sel || sel.has(String(r.id)); });
+    var keyOf, labelOf;
+    if (cfg.cat === 'wbs') { keyOf = function (r) { return r.wbs || '—'; }; labelOf = function (r) { return r.wbs || '(no WBS)'; }; }
+    else if (cfg.cat === 'status') { keyOf = function (r) { return isComplete(r) ? 'Completed' : (r.actual_start ? 'In Progress' : 'Not Started'); }; labelOf = keyOf; }
+    else { keyOf = function (r) { return String(r.id); }; labelOf = function (r) { return (r.activity_id || '') + '  ' + (r.activity_name || ''); }; }
+    var order = [], map = {};
+    acts.forEach(function (r) {
+      var k = keyOf(r); if (!map[k]) { map[k] = { label: labelOf(r), rows: [] }; order.push(k); }
+      map[k].rows.push(r);
+    });
+    return order.map(function (k) {
+      var b = map[k], vals = {};
+      cfg.series.forEach(function (m) {
+        var fn = CHART_METRICS[m].val, sum = b.rows.reduce(function (s, r) { return s + (fn(r) || 0); }, 0);
+        vals[m] = b.rows.length ? (sum / b.rows.length) : 0;
+      });
+      return { label: b.label, vals: vals, n: b.rows.length };
+    });
+  }
+  // Per-chart activity-selection checklist (shown when the card's Data panel is toggled open).
+  function _chartDataPanel(cfg) {
+    var acts = DL.filter(function (nd) { return !hiddenRow(nd) && !isWbsNode(nd) && nd.activity_id; });
+    var sel = cfg.sel ? new Set(cfg.sel.map(String)) : null;
+    var list = acts.map(function (r) { var on = !sel || sel.has(String(r.id)); return '<label class="ps-pie-item"><input type="checkbox" class="ps-cchk" data-cid="' + esc(cfg.id) + '" data-id="' + esc(String(r.id)) + '"' + (on ? ' checked' : '') + '><span class="ps-pie-nm">' + esc((r.activity_id || '') + '  ' + (r.activity_name || '')) + '</span></label>'; }).join('');
+    return '<div class="ps-cdata"><div class="ps-pie-sel-h">Select activities <span><button class="pd-btn" data-call="1" data-cid="' + esc(cfg.id) + '">All</button> <button class="pd-btn" data-call="0" data-cid="' + esc(cfg.id) + '">Clear</button></span></div>' +
+      (list || '<div class="ps-pie-empty">No activities.</div>') + '</div>';
+  }
+  function _pieLabel(mode, d, frac) {
+    if (mode === 'none') return '';
+    var nm = d.label.length > 14 ? d.label.slice(0, 13) + '…' : d.label;
+    if (mode === 'val') return Math.round(d.v) + '%';
+    if (mode === 'name') return nm;
+    if (mode === 'namepct') return nm + ' ' + Math.round(frac * 100) + '%';
+    return Math.round(frac * 100) + '%'; // pct (share of total)
+  }
+  function _pieSVG(buckets, cfg) {
+    var metric = cfg.series[0], hollow = cfg.type === 'donut', labelMode = cfg.labels || 'pct', dlf = cfg.dlFont || 11;
+    var data = buckets.map(function (b) { return { label: b.label, v: Math.max(0, b.vals[metric] || 0) }; });
+    var total = data.reduce(function (s, d) { return s + d.v; }, 0), equal = total <= 0;
+    var cx = 160, cy = 160, rad = 130, a = -Math.PI / 2, slices = '', labels = '';
+    var lr = hollow ? rad * 0.78 : rad * 0.62;
+    data.forEach(function (d, i) {
+      var frac = equal ? (1 / Math.max(1, data.length)) : (d.v / total); if (frac <= 0) return;
+      var col = PROG_PAL[i % PROG_PAL.length], ttl = esc(d.label) + ' — ' + Math.round(d.v) + '% (' + Math.round(frac * 100) + '% of total)';
+      var full = frac >= 0.999, mid = full ? -Math.PI / 2 : a + frac * Math.PI;
+      if (full) slices += '<circle cx="' + cx + '" cy="' + cy + '" r="' + rad + '" fill="' + col + '"><title>' + ttl + '</title></circle>';
+      else { var a1 = a + frac * 2 * Math.PI; slices += '<path d="' + _pieArc(cx, cy, rad, a, a1) + '" fill="' + col + '" stroke="var(--pd-card)" stroke-width="1.5"><title>' + ttl + '</title></path>'; a = a1; }
+      var txt = _pieLabel(labelMode, d, frac);
+      if (txt && frac > 0.04) {
+        var lx = full ? cx : cx + lr * Math.cos(mid), ly = full ? cy : cy + lr * Math.sin(mid);
+        labels += '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" class="ps-pie-dl" style="font-size:' + dlf + 'px;" text-anchor="middle" dominant-baseline="central">' + esc(txt) + '</text>';
+      }
+    });
+    var hole = hollow ? '<circle cx="' + cx + '" cy="' + cy + '" r="' + (rad * 0.5) + '" fill="var(--pd-card)"></circle>' : '';
+    var leg = cfg.legend ? '<div class="ps-chart-pieleg">' + data.map(function (d, i) { return '<span class="ps-pie-item"><span class="ps-pie-sw" style="background:' + PROG_PAL[i % PROG_PAL.length] + ';"></span><span class="ps-pie-nm">' + esc(d.label) + ' · ' + Math.round(d.v) + '%</span></span>'; }).join('') + '</div>' : '';
+    return data.length ? '<div class="ps-chart-pierow"><svg viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet" class="ps-chart-svg">' + slices + hole + labels + '</svg>' + leg + '</div>'
+      : '<div class="ps-pie-empty">No data — select activities.</div>';
+  }
+  function _barsSVG(buckets, cfg, horizontal, stacked) {
+    if (!buckets.length) return '<div class="ps-pie-empty">No data — select activities.</div>';
+    var series = cfg.series, maxV = 100;
+    if (stacked) { buckets.forEach(function (b) { var s = series.reduce(function (t, m) { return t + (b.vals[m] || 0); }, 0); if (s > maxV) maxV = s; }); }
+    var n = buckets.length, tf = cfg.tickFont || 9, tif = cfg.titleFont || 12;
+    var mT = 10, mR = 12;
+    var mL = (horizontal ? 92 : 38) + (cfg.yTitle ? tif + 8 : 0);
+    var mB = (horizontal ? 24 : 40) + (cfg.xTitle ? tif + 8 : 0);
+    var band = horizontal ? 24 : 40, gap = 14, groupW = band + gap;
+    var catLen = n * groupW + gap, valLen = 240;
+    var W = horizontal ? (mL + valLen + mR) : (mL + catLen + mR);
+    var H = horizontal ? (mT + catLen + mB) : (mT + valLen + mB);
+    var vAxis0 = horizontal ? mL : mT;           // pixel where value axis starts (min value)
+    var cAxis0 = horizontal ? mT : mL;           // pixel where category axis starts
+    var svg = '', gridN = 5;
+    for (var g = 0; g <= gridN; g++) {
+      var f = g / gridN, val = Math.round(f * maxV);
+      if (horizontal) { var x = vAxis0 + f * valLen; if (cfg.grid) svg += '<line x1="' + x + '" y1="' + cAxis0 + '" x2="' + x + '" y2="' + (cAxis0 + catLen) + '" stroke="var(--pd-line)" stroke-width="1"/>'; svg += '<text x="' + x + '" y="' + (cAxis0 + catLen + 12) + '" font-size="' + tf + '" fill="var(--pd-muted)" text-anchor="middle">' + val + '</text>'; }
+      else { var y = mT + (1 - f) * valLen; if (cfg.grid) svg += '<line x1="' + mL + '" y1="' + y + '" x2="' + (mL + catLen) + '" y2="' + y + '" stroke="var(--pd-line)" stroke-width="1"/>'; svg += '<text x="' + (mL - 5) + '" y="' + (y + 3) + '" font-size="' + tf + '" fill="var(--pd-muted)" text-anchor="end">' + val + '</text>'; }
+    }
+    buckets.forEach(function (b, i) {
+      var base = cAxis0 + gap + i * groupW, sw = stacked ? band : (band / Math.max(1, series.length)), acc = 0;
+      series.forEach(function (m, si) {
+        var v = Math.max(0, b.vals[m] || 0), col = chartColor(cfg, m);
+        var len = (v / maxV) * valLen, ttl = esc(b.label) + ' · ' + esc(CHART_METRICS[m].label) + ' ' + Math.round(v) + '%';
+        if (horizontal) { var yb = stacked ? base : base + si * sw, x0 = vAxis0 + (stacked ? acc / maxV * valLen : 0); svg += '<rect x="' + x0 + '" y="' + yb + '" width="' + len + '" height="' + (sw - 3) + '" fill="' + col + '" rx="2"><title>' + ttl + '</title></rect>'; }
+        else { var xb = stacked ? base : base + si * sw, y0 = mT + valLen - len - (stacked ? acc / maxV * valLen : 0); svg += '<rect x="' + xb + '" y="' + y0 + '" width="' + (sw - 3) + '" height="' + len + '" fill="' + col + '" rx="2"><title>' + ttl + '</title></rect>'; }
+        if (stacked) acc += v;
+      });
+      var lbl = b.label.length > 16 ? b.label.slice(0, 15) + '…' : b.label;
+      if (horizontal) svg += '<text x="' + (mL - 6) + '" y="' + (base + band / 2 + 3) + '" font-size="' + tf + '" fill="var(--pd-muted)" text-anchor="end">' + esc(lbl) + '</text>';
+      else svg += '<text x="' + (base + band / 2) + '" y="' + (mT + valLen + 14) + '" font-size="' + tf + '" fill="var(--pd-muted)" text-anchor="middle" transform="rotate(20 ' + (base + band / 2) + ' ' + (mT + valLen + 14) + ')">' + esc(lbl) + '</text>';
+    });
+    if (cfg.xTitle) { var xc = (horizontal ? vAxis0 + valLen / 2 : mL + catLen / 2); svg += '<text x="' + xc + '" y="' + (H - 5) + '" font-size="' + tif + '" font-weight="600" fill="var(--pd-ink)" text-anchor="middle">' + esc(cfg.xTitle) + '</text>'; }
+    if (cfg.yTitle) { var yc = (horizontal ? cAxis0 + catLen / 2 : mT + valLen / 2); svg += '<text x="12" y="' + yc + '" font-size="' + tif + '" font-weight="600" fill="var(--pd-ink)" text-anchor="middle" transform="rotate(-90 12 ' + yc + ')">' + esc(cfg.yTitle) + '</text>'; }
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" class="ps-chart-svg">' + svg + '</svg>';
+  }
+  // Series legend for bar/column charts (pie has its own inline legend).
+  function _seriesLegend(cfg) {
+    if (!cfg.legend) return '';
+    return '<div class="ps-chart-blegend">' + cfg.series.map(function (m) { return '<span class="ps-pie-item"><span class="ps-pie-sw" style="background:' + chartColor(cfg, m) + ';"></span><span class="ps-pie-nm">' + esc(CHART_METRICS[m].label) + '</span></span>'; }).join('') + '</div>';
+  }
+  function _chartSVG(cfg) {
+    var buckets = _chartBuckets(cfg), isPie = cfg.type === 'pie' || cfg.type === 'donut';
+    if (isPie) return _pieSVG(buckets, cfg);
+    var svg = cfg.type === 'bar' ? _barsSVG(buckets, cfg, true, false)
+      : cfg.type === 'sbar' ? _barsSVG(buckets, cfg, true, true)
+      : cfg.type === 'scolumn' ? _barsSVG(buckets, cfg, false, true)
+      : _barsSVG(buckets, cfg, false, false);
+    return _seriesLegend(cfg) + svg;
+  }
+  // Excel-like settings panel: title, axis titles, font sizes, series colours, element toggles.
+  function _chartSettingsPanel(cfg) {
+    var num = function (k, label, v, mn, mx) { return '<label class="ps-cset-row"><span>' + label + '</span><input type="number" class="pd-select ps-cset-f" data-cid="' + esc(cfg.id) + '" data-k="' + k + '" min="' + mn + '" max="' + mx + '" value="' + v + '" style="width:64px;"></label>'; };
+    var txt = function (k, label, v) { return '<label class="ps-cset-row"><span>' + label + '</span><input type="text" class="pd-input ps-cset-f" data-cid="' + esc(cfg.id) + '" data-k="' + k + '" value="' + esc(v || '') + '" placeholder="—"></label>'; };
+    var chk = function (k, label, on) { return '<label class="ps-cset-row ps-cset-chk"><input type="checkbox" class="ps-cset-f" data-cid="' + esc(cfg.id) + '" data-k="' + k + '"' + (on ? ' checked' : '') + '><span>' + label + '</span></label>'; };
+    var colors = Object.keys(CHART_METRICS).map(function (m) { return '<label class="ps-cset-row"><span>' + esc(CHART_METRICS[m].label) + '</span><input type="color" class="ps-cset-col" data-cid="' + esc(cfg.id) + '" data-series="' + m + '" value="' + seriesColor(m) + '"></label>'; }).join('');
+    return '<div class="ps-cset">' +
+      '<div class="ps-pie-sel-h">Chart</div>' + txt('title', 'Title', cfg.title) +
+      '<div class="ps-cset-grid">' + chk('legend', 'Legend', cfg.legend) + chk('grid', 'Gridlines', cfg.grid) + '</div>' +
+      '<div class="ps-pie-sel-h">Axis titles</div>' + txt('xTitle', 'X-axis', cfg.xTitle) + txt('yTitle', 'Y-axis', cfg.yTitle) +
+      '<div class="ps-pie-sel-h">Font sizes (px)</div>' +
+      '<div class="ps-cset-grid">' + num('titleSize', 'Title', cfg.titleSize, 8, 48) + num('tickFont', 'Axis labels', cfg.tickFont, 6, 28) + num('titleFont', 'Axis titles', cfg.titleFont, 6, 36) + num('dlFont', 'Data labels', cfg.dlFont, 6, 28) + '</div>' +
+      '<div class="ps-pie-sel-h">Series colours <span style="font-weight:400;color:var(--pd-muted);">(charts + table)</span></div>' + colors +
+      '</div>';
+  }
+  // One independent chart card: its own type / X-axis / Y-series / data-selection + settings + resize + delete.
+  function _chartCard(cfg) {
+    var selCount = cfg.sel ? cfg.sel.length : null;
+    var isPie = cfg.type === 'pie' || cfg.type === 'donut';
+    var LBL = [['none', 'No labels'], ['pct', '% of total'], ['val', 'Value %'], ['name', 'Category'], ['namepct', 'Category + %']];
+    var lblSel = isPie ? '<select class="pd-select ps-chart-f" data-cid="' + esc(cfg.id) + '" data-k="labels" title="Data labels">' + LBL.map(function (o) { return '<option value="' + o[0] + '"' + (cfg.labels === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' : '';
+    var toolbar = '<div class="ps-chart-tb">' +
+      '<span class="ps-chart-grip" title="Drag to move this chart">⠿</span>' +
+      '<select class="pd-select ps-chart-f" data-cid="' + esc(cfg.id) + '" data-k="type">' + CHART_TYPES.map(function (t) { return '<option value="' + t.k + '"' + (cfg.type === t.k ? ' selected' : '') + '>' + t.label + '</option>'; }).join('') + '</select>' +
+      '<select class="pd-select ps-chart-f" data-cid="' + esc(cfg.id) + '" data-k="cat" title="X-axis">' + CHART_CATS.map(function (c) { return '<option value="' + c.k + '"' + (cfg.cat === c.k ? ' selected' : '') + '>By ' + c.label + '</option>'; }).join('') + '</select>' +
+      lblSel +
+      '<span class="ps-chart-series">' + Object.keys(CHART_METRICS).map(function (m) { return '<label class="ps-chart-serchk" title="' + esc(CHART_METRICS[m].label) + '"><input type="checkbox" class="ps-chart-ser" data-cid="' + esc(cfg.id) + '" data-series="' + m + '"' + (cfg.series.indexOf(m) >= 0 ? ' checked' : '') + '><span class="ps-pie-sw" style="background:' + chartColor(cfg, m) + ';"></span></label>'; }).join('') + '</span>' +
+      '<button class="pd-btn ps-chart-datatog" data-cid="' + esc(cfg.id) + '">Data' + (selCount != null ? ' (' + selCount + ')' : '') + ' ▾</button>' +
+      '<button class="pd-btn ps-chart-settog" data-cid="' + esc(cfg.id) + '" title="Chart options">⚙</button>' +
+      '<button class="pd-btn ps-chart-del" data-cdel="' + esc(cfg.id) + '" title="Remove chart">✕</button>' +
+      '</div>';
+    var note = isPie && cfg.series.length > 1 ? '<div class="ps-chart-note">Pie uses the first series (' + esc(CHART_METRICS[cfg.series[0]].label) + '). Choose a bar/column type to compare multiple series.</div>' : '';
+    var title = cfg.title ? '<div class="ps-chart-title" style="font-size:' + cfg.titleSize + 'px;">' + esc(cfg.title) + '</div>' : '';
+    var pan = (cfg.ox || cfg.oy) ? ' style="transform:translate(' + cfg.ox + 'px,' + cfg.oy + 'px);"' : '';
+    return '<div class="ps-chart-card" data-cid="' + esc(cfg.id) + '" style="width:' + cfg.w + 'px;">' + toolbar +
+      '<div class="ps-cdata-wrap" style="display:none;">' + _chartDataPanel(cfg) + '</div>' +
+      '<div class="ps-cset-wrap" style="display:none;">' + _chartSettingsPanel(cfg) + '</div>' +
+      note + title + '<div class="ps-chart-body" style="height:' + cfg.h + 'px;" title="Drag the chart to reposition it · double-click to recenter"><div class="ps-chart-pan"' + pan + '>' + _chartSVG(cfg) + '</div></div>' +
+      '<span class="ps-chart-res" data-cid="' + esc(cfg.id) + '" title="Drag to resize"></span></div>';
+  }
+  function renderProgressChart() {
+    return '<div class="ps-chart-ws">' + chartsList().map(_chartCard).join('') + '</div>';
+  }
+  var _openData = {}, _openSet = {};  // per-card Data / Settings panel open state, preserved across in-place redraws
+  function _redrawCard(host, cid) {
+    var cfg = chartById(cid); if (!cfg) { renderProgressView(); return; }
+    var old = host.querySelector('.ps-chart-card[data-cid="' + cid + '"]'); if (!old) { renderProgressView(); return; }
+    var tmp = document.createElement('div'); tmp.innerHTML = _chartCard(cfg);
+    var neu = tmp.firstChild; old.parentNode.replaceChild(neu, old);
+    if (_openData[cid]) { var w = neu.querySelector('.ps-cdata-wrap'); if (w) w.style.display = 'block'; }
+    if (_openSet[cid]) { var s = neu.querySelector('.ps-cset-wrap'); if (s) s.style.display = 'block'; }
+    _wireChartCard(host, neu);
+    if (window.Icons) Icons.hydrate(neu);
+  }
+  function _wireChartCard(host, card) {
+    var cid = card.dataset.cid;
+    card.querySelectorAll('.ps-chart-f').forEach(function (sel) { sel.onchange = function () { var p = {}; p[sel.dataset.k] = sel.value; updateChart(cid, p); _redrawCard(host, cid); }; });
+    card.querySelectorAll('.ps-chart-ser').forEach(function (chk) { chk.onchange = function () {
+      var cur = (chartById(cid).series || []).slice(), m = chk.dataset.series, idx = cur.indexOf(m);
+      if (chk.checked) { if (idx < 0) cur.push(m); } else { if (idx >= 0 && cur.length > 1) cur.splice(idx, 1); else if (cur.length <= 1) { chk.checked = true; return; } }
+      updateChart(cid, { series: cur }); _redrawCard(host, cid);
+    }; });
+    var dt = card.querySelector('.ps-chart-datatog'); if (dt) dt.onclick = function () { var w = card.querySelector('.ps-cdata-wrap'); if (!w) return; var open = w.style.display === 'none'; w.style.display = open ? 'block' : 'none'; _openData[cid] = open; };
+    var st = card.querySelector('.ps-chart-settog'); if (st) st.onclick = function () { var w = card.querySelector('.ps-cset-wrap'); if (!w) return; var open = w.style.display === 'none'; w.style.display = open ? 'block' : 'none'; _openSet[cid] = open; };
+    // Settings fields — text/number commit on change; checkboxes toggle elements; colours are project-wide.
+    card.querySelectorAll('.ps-cset-f').forEach(function (f) { f.onchange = function () {
+      var k = f.dataset.k, val = f.type === 'checkbox' ? f.checked : (f.type === 'number' ? (parseInt(f.value, 10) || 0) : f.value);
+      var p = {}; p[k] = val; updateChart(cid, p); _redrawCard(host, cid);
+    }; });
+    card.querySelectorAll('.ps-cset-col').forEach(function (c) { c.onchange = function () {
+      setSeriesColor(c.dataset.series, c.value);
+      renderProgressView();  // project-wide colour — refresh every chart (and the table when it repaints)
+    }; });
+    var del = card.querySelector('.ps-chart-del'); if (del) del.onclick = function () { removeChart(cid); renderProgressView(); };
+    card.querySelectorAll('.ps-cchk').forEach(function (c) { c.onchange = function () {
+      var acts = DL.filter(function (nd) { return !hiddenRow(nd) && !isWbsNode(nd) && nd.activity_id; });
+      var all = acts.map(function (a) { return String(a.id); });
+      var cur = chartById(cid).sel; var set = new Set(cur ? cur.map(String) : all);
+      if (c.checked) set.add(c.dataset.id); else set.delete(c.dataset.id);
+      var arr = Array.from(set);
+      updateChart(cid, { sel: arr.length === all.length ? null : arr });
+      // only the chart body + Data count depend on selection — redraw the card, keep panel open
+      _redrawCard(host, cid);
+    }; });
+    var ab = card.querySelector('[data-call="1"]'); if (ab) ab.onclick = function () { updateChart(cid, { sel: null }); _redrawCard(host, cid); };
+    var cb = card.querySelector('[data-call="0"]'); if (cb) cb.onclick = function () { updateChart(cid, { sel: [] }); _redrawCard(host, cid); };
+    var rz = card.querySelector('.ps-chart-res'); if (rz) rz.addEventListener('mousedown', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      var body = card.querySelector('.ps-chart-body'), startX = e.clientX, startY = e.clientY, startW = card.offsetWidth, startH = body.offsetHeight;
+      function mm(ev) { var w = Math.max(280, startW + (ev.clientX - startX)), h = Math.max(220, startH + (ev.clientY - startY)); card.style.width = w + 'px'; body.style.height = h + 'px'; updateChart(cid, { w: Math.round(w), h: Math.round(h) }); }
+      function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); }
+      document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+    });
+    // Move the chart graphic inside its box (pan). Double-click recenters.
+    var body2 = card.querySelector('.ps-chart-body'), pan = card.querySelector('.ps-chart-pan');
+    if (body2 && pan) {
+      body2.addEventListener('mousedown', function (e) {
+        if (e.target.closest('.ps-chart-res')) return;
+        e.preventDefault();
+        var cfg0 = chartById(cid) || {}, sx = e.clientX, sy = e.clientY, ox0 = cfg0.ox || 0, oy0 = cfg0.oy || 0, moved = false;
+        body2.classList.add('ps-panning');
+        function mm(ev) { moved = true; var nx = ox0 + (ev.clientX - sx), ny = oy0 + (ev.clientY - sy); pan.style.transform = 'translate(' + nx + 'px,' + ny + 'px)'; updateChart(cid, { ox: Math.round(nx), oy: Math.round(ny) }); }
+        function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); body2.classList.remove('ps-panning'); }
+        document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+      });
+      body2.addEventListener('dblclick', function () { updateChart(cid, { ox: 0, oy: 0 }); pan.style.transform = ''; });
+    }
+    // Drag the whole box to reorder within the workspace (grip handle).
+    var grip = card.querySelector('.ps-chart-grip');
+    if (grip) {
+      grip.addEventListener('mousedown', function () { card.setAttribute('draggable', 'true'); });
+      grip.addEventListener('mouseup', function () { setTimeout(function () { if (!_dragCard) card.setAttribute('draggable', 'false'); }, 0); });
+      card.addEventListener('dragstart', function (e) { _dragCard = cid; card.classList.add('ps-card-drag'); try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', cid); } catch (x) {} });
+      card.addEventListener('dragend', function () { card.classList.remove('ps-card-drag'); card.setAttribute('draggable', 'false'); _dragCard = null; });
+      card.addEventListener('dragover', function (e) { if (_dragCard && _dragCard !== cid) { e.preventDefault(); card.classList.add('ps-card-over'); } });
+      card.addEventListener('dragleave', function () { card.classList.remove('ps-card-over'); });
+      card.addEventListener('drop', function (e) {
+        e.preventDefault(); card.classList.remove('ps-card-over');
+        if (!_dragCard || _dragCard === cid) return;
+        var ids = chartsList().map(function (c) { return c.id; }), toIdx = ids.indexOf(cid);
+        moveChart(_dragCard, toIdx); renderProgressView();
+      });
+    }
+  }
+  var _dragCard = null;
+  function wireProgCtrls(host) {
+    host.querySelectorAll('[data-pres]').forEach(function (b) { b.onclick = function () { try { localStorage.setItem('ps_progpres', b.dataset.pres); } catch (e) {} renderProgressView(); }; });
+    var add = host.querySelector('#ps-chart-add'); if (add) add.onclick = function () { addChart(); renderProgressView(); };
+    host.querySelectorAll('.ps-chart-card').forEach(function (card) {
+      var cid = card.dataset.cid;
+      if (_openData[cid]) { var w = card.querySelector('.ps-cdata-wrap'); if (w) w.style.display = 'block'; }
+      if (_openSet[cid]) { var s = card.querySelector('.ps-cset-wrap'); if (s) s.style.display = 'block'; }
+      _wireChartCard(host, card);
+    });
+  }
   // ---- Per-cell manual formatting (bold / italic / size / text colour / fill), persisted per project.
   // Store: localStorage ps_cellfmt = { <pid>: { <rowId>: { <col>: {b,i,sz,fg,bg} } } }. Used by the
   // Activity Progress table and the Activities grid (right-click a cell → Format cell…).
@@ -3116,9 +3495,10 @@
   // Two bars — Planned (grey) over Actual (red), each 0–100%, with the % beside it.
   function _progBar(phys, plan) {
     var p = Math.max(0, Math.min(100, phys || 0)), pl = (plan != null) ? Math.max(0, Math.min(100, plan)) : 0;
+    var cPlan = seriesColor('plan'), cAct = seriesColor('phys');
     return '<div class="ps-prog-dual" title="Planned ' + Math.round(pl) + '% · Actual ' + Math.round(p) + '%">' +
-      '<div class="ps-prog-row2"><span class="ps-prog-lbl2">P</span><div class="ps-prog-track"><div class="ps-prog-planbar" style="width:' + pl + '%;"></div></div><span class="ps-prog-num2">' + (plan != null ? Math.round(pl) + '%' : '—') + '</span></div>' +
-      '<div class="ps-prog-row2"><span class="ps-prog-lbl2">A</span><div class="ps-prog-track"><div class="ps-prog-actbar" style="width:' + p + '%;"></div></div><span class="ps-prog-num2">' + Math.round(p) + '%</span></div>' +
+      '<div class="ps-prog-row2"><span class="ps-prog-lbl2">P</span><div class="ps-prog-track"><div class="ps-prog-planbar" style="width:' + pl + '%;background:' + cPlan + ';"></div></div><span class="ps-prog-num2">' + (plan != null ? Math.round(pl) + '%' : '—') + '</span></div>' +
+      '<div class="ps-prog-row2"><span class="ps-prog-lbl2">A</span><div class="ps-prog-track"><div class="ps-prog-actbar" style="width:' + p + '%;background:' + cAct + ';"></div></div><span class="ps-prog-num2">' + Math.round(p) + '%</span></div>' +
     '</div>';
   }
   function _progCell(key, row, ctx) {
@@ -3133,6 +3513,13 @@
   }
   function renderProgressView() {
     var host = document.getElementById('ps-progress'); if (!host) return;
+    var pres = progPres();
+    var bar = '<div class="ps-prog-ctrls"><div class="ps-seg2">' +
+      '<button data-pres="table" class="' + (pres === 'table' ? 'on' : '') + '">Table</button>' +
+      '<button data-pres="chart" class="' + (pres === 'chart' ? 'on' : '') + '">Charts</button></div>' +
+      (pres === 'chart' ? '<button class="pd-btn pd-btn-primary" id="ps-chart-add">+ Add chart</button><span class="ps-chart-hint">Each chart is independent — set its type, axes and activities, and drag the corner to resize.</span>' : '') +
+      '</div>';
+    if (pres === 'chart') { host.innerHTML = bar + renderProgressChart(); wireProgCtrls(host); if (window.Icons) Icons.hydrate(host); return; }
     var order = progColOrder(), cw = progColW(), rh = progRh();
     var colW = function (k) { return (cw[k] && cw[k] >= 40) ? cw[k] : PROG_DEF[k].w; };
     var tblW = order.reduce(function (s, k) { return s + colW(k); }, 0);
@@ -3143,10 +3530,11 @@
       var isW = isWbsNode(nd), depth = ddepth(nd), pad = 4 + depth * 14, ctx;
       if (isW) { var cm = _costMap[nd._realCode || nd.wbs]; ctx = { isW: true, pad: pad, phys: (cm && cm.wd > 0) ? Math.round(cm.wearn / cm.wd) : 0, planv: (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) : null }; }
       else { ctx = { isW: false, pad: pad, no: ++_no, phys: Math.max(0, Math.min(100, nd.percent_complete || 0)), planv: plannedPOC(nd) }; }
-      var tds = order.map(function (k, ci) { return '<td data-id="' + esc(String(nd.id || '')) + '" data-col="' + k + '"' + _cellFmtStyleAttr(nd.id, k) + '>' + _progCell(k, nd, ctx) + (ci === 0 ? '<span class="ps-prog-rowres"></span>' : '') + '</td>'; }).join('');
+      var tds = order.map(function (k, ci) { return '<td data-id="' + esc(String(nd.id || '')) + '" data-col="' + k + '"' + (PROG_DEF[k].center ? ' class="ps-prog-cc"' : '') + _cellFmtStyleAttr(nd.id, k) + '>' + _progCell(k, nd, ctx) + (ci === 0 ? '<span class="ps-prog-rowres"></span>' : '') + '</td>'; }).join('');
       return '<tr' + (isW ? ' class="ps-prog-wbs ps-wl' + Math.min(depth, 5) + '"' : '') + '>' + tds + '</tr>';
     }).join('');
-    host.innerHTML = '<table class="ps-prog-table" style="width:' + tblW + 'px;--prog-rh:' + rh + 'px;"><thead>' + thead + '</thead><tbody>' + body + '</tbody></table>';
+    host.innerHTML = bar + '<table class="ps-prog-table" style="width:' + tblW + 'px;--prog-rh:' + rh + 'px;"><thead>' + thead + '</thead><tbody>' + body + '</tbody></table>';
+    wireProgCtrls(host);
     host.querySelectorAll('.ps-prog-desc').forEach(function (ta) {
       var r = rows.find(function (x) { return x.id === ta.dataset.id; }); if (!r) return; var t;
       ta.oninput = function () { clearTimeout(t); t = setTimeout(function () { _saveActField(r, 'remarks', ta.value); }, 500); };
@@ -3202,12 +3590,14 @@
     });
     if (window.Icons) Icons.hydrate(host);
   }
+  function _animIn(el) { if (!el) return; el.classList.remove('ps-anim'); void el.offsetWidth; el.classList.add('ps-anim'); }
   function setProgressMode(on) {
     progressMode = on;
     var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-progress-mode', on);
     var btn = document.getElementById('ps-progressbtn'); if (btn) btn.classList.toggle('active', on);
     var host = document.getElementById('ps-progress'); if (host) host.style.display = on ? 'block' : 'none';
-    if (on) renderProgressView();
+    if (on) { renderProgressView(); _animIn(host); }
+    else { _animIn(document.querySelector('.ps-split')); }
   }
   function renderNetwork() {
     var host = document.getElementById('ps-network'); if (!host) return;
