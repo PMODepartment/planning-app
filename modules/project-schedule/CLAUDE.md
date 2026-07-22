@@ -1,5 +1,21 @@
 # Module: project-schedule
 
+## wbs_nodes load truncated at 1000 (fixed) + WBS Manager verified live (2026-07-22) — fmlozano
+Found while verifying the WBS optimization **live on a large project** (deployed GitHub Pages, in the
+user's logged-in Chrome). `load()` fetched `wbs_nodes` with a plain `select('*')` — Supabase caps at
+1000 rows, so a big P6 import loaded a **truncated** tree; nodes whose parent fell past row 1000
+dropped out of the walk. Live symptom: project **“4PH Jab Greenwoods Dasmariñas”** reported "1000
+nodes" but rendered only 2 connected rows. **Fix:** keyset-paginate by `id` (the render/index re-sorts
+by `sort_order`, so load order is irrelevant); same fix applied to the copy-WBS-from-project source
+read. Same bug class as the audited resource_assignments/drawing/photos loads. No migration, no `?v=`.
+- **After the fix, verified live** the project actually has **8,596 WBS nodes** (was capped at 1000):
+  default load renders **6 rows** (large-tree collapse) instantly; **Expand all** → all 8,596 rows in
+  ~1.4s (worst case); **Collapse all** → 1 row in ~114ms; caret toggle collapses/expands correctly;
+  **Search** "Closeout" → 20 matches / 62 rows revealing each match **plus its full ancestor chain**
+  (verified a 6-level-deep node: 1 → 1.4 Execution → 1.4.3 Superstructure → … → Closeout) in ~1s; clearing
+  search restores the collapsed default. No console errors. (Very broad search terms render
+  proportionally many rows — expected, same cost as Expand all.)
+
 ## WBS Manager optimized: indexed render + collapse/expand + search (2026-07-22) — fmlozano
 `renderWbsManager` was O(N²)/O(N·rows) and painted **every** node at once — on a P6-scale tree
 (~14k nodes / ~27k activities) it froze the tab. Per node it called `wbsActivityCount` (a full

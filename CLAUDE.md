@@ -77,6 +77,17 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: fix wbs_nodes 1000-row truncation + live-verify the WBS Manager
+- Verifying the WBS optimization **live on a large project** surfaced a pre-existing bug: `load()`
+  fetched `wbs_nodes` with a plain `select('*')` (Supabase caps at 1000), so big P6 imports loaded a
+  **truncated tree** — children past row 1000 vanished from the walk. Live symptom: a project showing
+  "1000 nodes" but only 2 connected rows. **Fixed** with keyset pagination (same as the audited
+  resource/drawing/photo loads); also fixed the copy-WBS-from-project source read. No migration, no `?v=`.
+- **Live-verified** (deployed site, logged-in Chrome): the project actually has **8,596 WBS nodes**
+  (was capped at 1000). Default load = 6 rows instant; Expand all = 8,596 rows in ~1.4s; Collapse all =
+  1 row in ~114ms; caret toggle works; search "Closeout" = 20 matches / 62 rows with correct
+  full ancestor chains (6-level-deep match revealed); no console errors. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-22 — Project Schedule: optimize the WBS Manager (indexed render + collapse/search)
 - `renderWbsManager` was O(N²)/O(N·rows) and rendered every node at once, freezing the tab on
   P6-scale trees (~14k nodes / ~27k activities). Rebuilt around a **one-pass index**
