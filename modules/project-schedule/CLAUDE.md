@@ -1,5 +1,27 @@
 # Module: project-schedule
 
+## Load race: footer count populated while grid shows "Select a project." (2026-07-21)
+Reported from a screenshot: a big schedule (16,409 activities) with the footer reading
+"Total: 16409 activities" but the grid showing "Select a project." — the count and the grid
+disagreeing about whether a project was even selected.
+- **Root cause: `load()` was async + keyset-paginated (up to ~17 sequential round-trips for a 16k-row
+  project) with NO re-entrancy guard.** Switching or deselecting a project mid-load left the STALE
+  load to run its terminal `rows = all; rebuild(); … renderAll()` after `pid` had already changed —
+  clobbering `rows`, the footer count, and the rendered grid with the wrong project's state. The exact
+  visible symptom depends on the precise rAF/await interleaving (grid can end up empty *or* showing a
+  deselected project's rows); both are the same bug.
+- **Fix: a monotonic load token `_loadGen`.** `load()` does `var gen = ++_loadGen` at entry and, after
+  **every await** (each pagination page, the catch, before the commit `rows = all`, after
+  `loadResourcesAssignments`, after `_wbsEnsureSummaries`), bails with `if (gen !== _loadGen) return`
+  if a newer load has started. The `!pid` early-return branch now also `hideLoading()`s, since a stale
+  load aborts silently and never touches the overlay (the newest/terminal load owns it). Covers every
+  `load()` caller (project switch, undo/redo, import, scenario restore) uniformly.
+- **Verified in a Node harness** modeling the real `load()`/`rebuild()`/`doRender()` + rAF deferral:
+  WITHOUT the guard, deselecting or switching mid-load leaves pid/footer/grid inconsistent in 2 of 3
+  scenarios; WITH the guard all three are consistent (deselect → "Select a project." + count 0;
+  re-select same project → loads normally). Full inline script still parses. No shared asset, no `?v`
+  bump. (Live click-through needs a real 16k-row project + a mid-load switch — the harness stands in.)
+
 ## Brand icon beside the title (2026-07-21)
 The title is a **view-switcher button** (`.ps-title-btn`), so unlike every other module it never had
 the brand-red module icon before its text — the `calendar` icon (the module's `config.js` icon) only

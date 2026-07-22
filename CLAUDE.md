@@ -77,6 +77,19 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Project Schedule: fix load race (count populated, grid empty)
+- Screenshot showed a 16,409-activity project with the footer count set but the grid reading "Select a
+  project." **Root cause: `load()` is async + paginated (~17 sequential round-trips for a 16k schedule)
+  with no re-entrancy guard** — switching/deselecting a project mid-load let the stale load commit its
+  `rows`/count/render after `pid` had already changed, so the footer and grid disagreed about the
+  selection (grid ends up empty or showing a deselected project's rows depending on timing; same bug).
+- **Fix: a monotonic `_loadGen` token** — `load()` claims `gen = ++_loadGen` and bails after every
+  await if a newer load started; the `!pid` branch also clears the overlay. Applies to every load
+  caller (switch, undo/redo, import, scenario restore).
+- **Verified in a Node harness** modeling the real load/rebuild/doRender + rAF: without the guard, 2 of
+  3 mid-load scenarios leave pid/footer/grid inconsistent; with it, all three are consistent. Parses
+  clean. Module-only, no `?v` bump. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-21 — Project Schedule: brand icon beside the title (uniform topbar)
 - The Project Schedule title is a **view-switcher button**, so it never carried the brand-red module
   icon every other module shows — the `calendar` icon only lived inside the switcher's dropdown items.

@@ -1471,6 +1471,13 @@
   'use strict';
   var TABLE = 'project_schedule';
   var pid = null, rows = [], editId = null, UID = null;
+  // Monotonic load token. load() is async + paginated (up to ~17 round-trips for a
+  // 16k-row schedule) and used to have NO guard, so switching/deselecting a project
+  // mid-load let the STALE load commit its rows/count/render after pid had already
+  // changed — leaving the footer count and the grid disagreeing about whether a
+  // project is selected. Every await in load() re-checks this against its own gen and
+  // bails if a newer load has started.
+  var _loadGen = 0;
   var PROJECTS = [], WORKSPACES = [], layoutMode = 'split', activeTab = 'schedule';
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
@@ -1861,11 +1868,14 @@
     }
   }
   async function load() {
+    var gen = ++_loadGen;   // claim this load; any older in-flight load is now stale
     loadDataDate();   // per-project data date (persisted); drives CPM / gantt line / usage
     _fmtRules = loadFmtRules();   // per-project conditional-formatting rules
     // Archived projects are read-only (feeds the ~8 edit guards that read window.__archived).
     window.__archived = ((PROJECTS.find(function (x) { return x.id === pid; }) || {}).status === 'archived');
-    if (!pid) { rows = []; rebuild(); renderAll(); return; }
+    // hideLoading here clears any overlay a now-superseded load left showing (a stale
+    // load aborts silently and never hides it — this branch owns the terminal state).
+    if (!pid) { hideLoading(); rows = []; rebuild(); renderAll(); return; }
     showLoading('Loading schedule…');
     var all = [];
     try {
@@ -1883,17 +1893,21 @@
         var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
         if (last) q = q.gt('id', last);
         var r1 = await q; if (r1.error) throw r1.error;
+        if (gen !== _loadGen) return;   // a newer load started — drop this stale one (newer owns the overlay/state)
         var batch = r1.data || []; all = all.concat(batch);
         setLoading(total ? ('Loading ' + all.length + ' / ' + total + '…') : ('Loading… ' + all.length));
         if (batch.length < 1000) break;
         last = batch[batch.length - 1].id;
       }
-    } catch (err) { hideLoading(); UI.toast('Load failed: ' + (err.message || err), 'error'); return; }
+    } catch (err) { if (gen !== _loadGen) return; hideLoading(); UI.toast('Load failed: ' + (err.message || err), 'error'); return; }
+    if (gen !== _loadGen) return;   // superseded while paginating — don't clobber the newer load's state
     hideLoading();
     rows = all; rebuild();
     await loadResourcesAssignments();   // loads WBS_NODES
+    if (gen !== _loadGen) return;
     // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
     var healed = await _wbsEnsureSummaries();
+    if (gen !== _loadGen) return;
     if (healed) { rebuild(); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
     populateGroupSelect();
     // Large schedule: default to a collapsed outline so we don't render thousands of DOM rows.
