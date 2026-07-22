@@ -1,5 +1,26 @@
 # Module: project-schedule
 
+## WBS Manager tree virtualized + verified live (2026-07-22) — fmlozano
+Broad searches / Expand-all painted every visible row into the DOM (7,691 rows for a broad search on
+the 8,596-node project → ~1s+). Now the render flattens the visible tree into `_wbsFlat` and only the
+scroll-viewport window (+8-row buffer, ~24 rows) is in the DOM at once, offset by `translateY` over a
+spacer that reserves the full scroll height — mirrors the grid/Gantt virtualization (`WBS_ROWH=34`).
+- **Event delegation** on the persistent `#ps-wbs-tree` (attached once via `_wbsWire`) replaces per-row
+  `onclick` — the window's rows are recreated on every scroll, so per-row handlers couldn't survive.
+  Buttons dispatch by `data-*` key; focusing a name input selects its row via a class toggle (no full
+  re-render → no blur mid-edit); scroll position is preserved across full re-renders (searches reset to
+  top). Row height is fixed (34px) to match `WBS_ROWH`.
+- **Verified live** on the 8,596-node project (deployed, logged-in Chrome): default 6 rows instant;
+  **Expand all = 45ms with only 23 DOM rows** (was 1,433ms / 8,596 rows); search "Tower" = 34 matches /
+  48-row set → 24 DOM rows; **extreme search "a" = 6,671 matches / 7,691-row set → 24 DOM rows, no
+  freeze** (~400ms); delegated caret-collapse (→1 row) and row-select both work; screenshot shows the
+  tree rendering correctly (hierarchy/codes/badges/carets/scrollbar). Window-slicing math unit-verified
+  (~30 rows constant across 8,596). No console errors.
+- ⚠️ **Caveat:** scroll-driven window repaint is gated behind `requestAnimationFrame` (same as the
+  grid/Gantt). rAF is throttled when the tab isn't the OS-foreground window, so in the automated session
+  programmatic `scrollTop` changes didn't repaint the window; in normal interactive use rAF fires and the
+  window follows the scrollbar. The synchronous paths (expand/collapse/search) were verified directly.
+
 ## wbs_nodes load truncated at 1000 (fixed) + WBS Manager verified live (2026-07-22) — fmlozano
 Found while verifying the WBS optimization **live on a large project** (deployed GitHub Pages, in the
 user's logged-in Chrome). `load()` fetched `wbs_nodes` with a plain `select('*')` — Supabase caps at

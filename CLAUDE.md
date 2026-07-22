@@ -77,6 +77,15 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: virtualize the WBS Manager tree (+ live verification)
+- Broad searches / Expand-all painted every visible row into the DOM (up to ~7,700 rows → ~1s+). The
+  tree render now flattens the visible nodes into a list and only paints the scroll-viewport window
+  (~24 rows) offset by `translateY` over a full-height spacer — same virtualization as the grid/Gantt.
+  Listeners are delegated on the persistent container so they survive per-scroll window repaints.
+- **Live-verified** on the 8,596-node project (deployed, logged-in Chrome): Expand all = **45ms with 23
+  DOM rows** (was 1,433ms / 8,596 rows); extreme search "a" = **6,671 matches / 7,691-row set → 24 DOM
+  rows, no freeze**; delegated caret/row-select work; no console errors. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-22 — Project Schedule: fix wbs_nodes 1000-row truncation + live-verify the WBS Manager
 - Verifying the WBS optimization **live on a large project** surfaced a pre-existing bug: `load()`
   fetched `wbs_nodes` with a plain `select('*')` (Supabase caps at 1000), so big P6 imports loaded a
