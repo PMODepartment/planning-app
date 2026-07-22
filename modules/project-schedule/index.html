@@ -1903,6 +1903,16 @@
     if (gen !== _loadGen) return;   // superseded while paginating — don't clobber the newer load's state
     hideLoading();
     rows = all; rebuild();
+    // Large schedule: default to a collapsed outline so we don't render thousands of DOM rows.
+    if (rows.length > 400 && Object.keys(collapsed).length === 0) {
+      rows.forEach(function (r) { if (isWbs(r) && r._depth >= 3) collapsed[r.wbs] = true; });
+    }
+    // PAINT NOW, from the primary activity rows. The grid/Gantt only need `rows`; resources
+    // and WBS_NODES below are for the Resource-Usage tab + WBS Manager. Loading those for a 17k
+    // activity project takes several seconds, and rendering only after them left the grid showing
+    // the stale "Select a project." for that whole window while the footer already showed the
+    // count. Render here, then re-render below once resources/heals are in.
+    renderAll();
     await loadResourcesAssignments();   // loads WBS_NODES
     if (gen !== _loadGen) return;
     // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
@@ -1910,10 +1920,6 @@
     if (gen !== _loadGen) return;
     if (healed) { rebuild(); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
     populateGroupSelect();
-    // Large schedule: default to a collapsed outline so we don't render thousands of DOM rows.
-    if (rows.length > 400 && Object.keys(collapsed).length === 0) {
-      rows.forEach(function (r) { if (isWbs(r) && r._depth >= 3) collapsed[r.wbs] = true; });
-    }
     renderAll();
     if (isAdmin && rows.length) updateProjectSummary();
   }

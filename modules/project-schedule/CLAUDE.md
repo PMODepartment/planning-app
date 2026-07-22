@@ -1,5 +1,26 @@
 # Module: project-schedule
 
+## THE ACTUAL "count populated, grid empty" bug: deferred render (2026-07-21)
+**Verified on the deployed page** with a real 17,122-activity project (GPR101), driving the user's
+logged-in Chrome. The screenshot bug reproduces on initial load: for ~8 seconds the footer reads
+"Total: 17122 activities" while the grid still shows **"Select a project."**, then it self-corrects
+at ~t=10s. **This is NOT the switch race fixed just below — that fix was correct but addressed a
+different failure mode.** Root cause, from the live timing (footer set at t≈2s, grid painted at
+t≈10s, overlay already hidden in between):
+- `load()` finishes pagination (~2s), `hideLoading()`, `rows = all; rebuild()` → **footer count set
+  immediately**.
+- It then `await`s `loadResourcesAssignments()` + `_wbsEnsureSummaries()` — several seconds for a 17k
+  activity project (many resource/assignment rows) — and **only called `renderAll()` AFTER those**.
+- So the grid kept the stale pid=null "Select a project." paint for the whole resource-load window
+  while the footer already showed the count.
+- **Fix:** call `renderAll()` right after `rows = all; rebuild()` (and moved the large-schedule
+  collapse block up before it), *then* load resources, *then* `renderAll()` again. The grid/Gantt
+  only need `rows`; resources + WBS_NODES are for the Resource-Usage tab and WBS Manager, so painting
+  before them is safe. Window drops from ~8s to ~0 (pagination is covered by the loading overlay).
+- Verified live that the render itself works (a user-triggered switch to the same 17k project paints
+  correctly — footer + grid consistent); the only defect was the *timing* of the paint. Re-verify on
+  the deployed page after this ships. Module-only, no `?v` bump.
+
 ## Load race: footer count populated while grid shows "Select a project." (2026-07-21)
 Reported from a screenshot: a big schedule (16,409 activities) with the footer reading
 "Total: 16409 activities" but the grid showing "Select a project." — the count and the grid

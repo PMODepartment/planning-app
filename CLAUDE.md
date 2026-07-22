@@ -77,6 +77,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-21 — Project Schedule: fix the ACTUAL "count populated, grid empty" bug (deferred render)
+- **Verified the load-race fix (below) on the deployed page with a real 17,122-activity project and
+  found the screenshot bug still reproduced** — so the race fix, though correct, addressed a different
+  failure mode. On initial load the footer showed "17122" while the grid read "Select a project." for
+  ~8s, then self-corrected.
+- **Real root cause (from live timing):** `load()` sets the footer via `rebuild()` right after
+  pagination (~2s), then `await`s `loadResourcesAssignments()` + `_wbsEnsureSummaries()` (several
+  seconds on a 17k-activity project) and **only rendered the grid AFTER those** — so the grid kept its
+  stale "Select a project." paint the whole time.
+- **Fix:** `renderAll()` immediately after `rows = all; rebuild()` (collapse block moved up too), then
+  load resources, then `renderAll()` again. The grid/Gantt need only `rows`; resources/WBS_NODES are
+  for other tabs. Closes the window from ~8s to ~0.
+- Verified live that rendering works (a user-triggered switch to the same 17k project paints
+  correctly) — only the paint *timing* was wrong. Re-verify on deploy. Module-only, no `?v` bump.
+
 ### 2026-07-21 — Project Schedule: fix load race (count populated, grid empty)
 - Screenshot showed a 16,409-activity project with the footer count set but the grid reading "Select a
   project." **Root cause: `load()` is async + paginated (~17 sequential round-trips for a 16k schedule)
