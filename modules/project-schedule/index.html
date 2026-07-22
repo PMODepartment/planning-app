@@ -2845,6 +2845,8 @@
         [K('Insert'), 'Add a new activity'],
         [K('Delete') + ' / ' + K('Backspace'), 'Delete the selected activit(ies)'],
         ['Double-click a cell', 'Edit that cell inline'],
+        [K('Enter') + ' (while editing)', 'Commit and move down a row (' + K('Shift') + '+' + K('Enter') + ' up)'],
+        [K('Tab') + ' (while editing)', 'Commit and move to the next cell (' + K('Shift') + '+' + K('Tab') + ' previous)'],
         [K('Ctrl') + '+' + K('D'), 'Fill the active cell’s value down to the selected rows'],
         [K('Ctrl') + '+' + K('Z'), 'Undo'],
         [K('Ctrl') + '+' + K('Shift') + '+' + K('Z') + ' / ' + K('Ctrl') + '+' + K('Y'), 'Redo'] ] },
@@ -5548,7 +5550,15 @@
       persist(id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); } });
     }
     inp.onblur = function () { commit(true); };
-    inp.onkeydown = function (e) { if (e.key === 'Enter') { inp.blur(); } else if (e.key === 'Escape') { commit(false); } };
+    // Excel-style commit+advance: Enter commits and moves the active cell DOWN a row (Shift+Enter up),
+    // Tab commits and moves to the next cell (Shift+Tab previous, wrapping rows). The column is kept.
+    // The move runs after blur→commit; commit's DB write is async, so selId/_cellAnchor move now and
+    // the later re-render re-highlights by id. Escape cancels without advancing.
+    inp.onkeydown = function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); var up = e.shiftKey; inp.blur(); moveRowSel(up ? -1 : 1, false); }
+      else if (e.key === 'Tab') { e.preventDefault(); var back = e.shiftKey; inp.blur(); moveCell(back ? -1 : 1, true, false); }
+      else if (e.key === 'Escape') { commit(false); }
+    };
   }
 
   // ----- RIGHT GANTT: per-row bar builder (used by the windowed renderer) -----

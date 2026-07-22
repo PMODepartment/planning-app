@@ -2674,3 +2674,11 @@ cell range, and Enter/F2 edit the active cell. ↑/↓ now preserve the active-c
 horizontal navigation share one cursor. New `moveCell`/`scrollCellVisible`/`_nextRowIdx`/`editActiveCell`
 helpers; horizontal autoscroll reveals the target column. Verified: inline JS passes `node --check`,
 no console errors on load. Module-only, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: Enter/Tab commit-and-advance in the cell editor
+
+While editing a cell inline, Enter now commits and moves the active cell down a row (Shift+Enter up),
+and Tab commits and moves to the next cell (Shift+Tab previous, wrapping rows) — Excel-style, keeping
+the column and landing in ready mode. Escape still cancels. Wired in `beginEdit` via the existing
+`moveRowSel`/`moveCell` cursor. Verified: inline JS passes `node --check`, no console errors on load.
+Module-only, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.

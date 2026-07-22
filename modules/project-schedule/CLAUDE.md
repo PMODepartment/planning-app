@@ -2006,3 +2006,18 @@ Extended the arrow-key work above into a full Excel-style active-cell cursor on 
 - Wired into the grid keydown handler (same guards); shortcuts modal updated.
 - Verified: inline JS passes `node --check`; module loads with no console errors. Live keyboard test
   needs a login. Module-only, no migration, no `?v=` bump.
+
+## Enter/Tab commit-and-advance in the inline cell editor (2026-07-22c) — fmlozano
+
+Excel-style commit navigation from within an active inline cell edit (`beginEdit`):
+- **Enter** commits the edit and moves the active cell **down one row** (Shift+Enter up), keeping
+  the column — via `moveRowSel(±1, false)`, which preserves the `_cellAnchor` column.
+- **Tab** commits and moves to the **next cell** (Shift+Tab previous), wrapping across rows — via
+  `moveCell(±1, true, false)`.
+- **Escape** still cancels without advancing.
+- The move runs right after `inp.blur()` triggers `commit()`. `commit()`s DB write is async, so
+  `selId`/`_cellAnchor` advance immediately and the later re-render (`persist().then` → `renderGrid`
+  → `renderWindow`/`highlightRow`) re-highlights by id — correct even if a date/cost edit reorders
+  rows. Advance lands in ready (not editing) mode, matching Excel.
+- Shortcuts modal updated (Editing section). Verified: inline JS passes `node --check`, module loads
+  with no console errors. Live keyboard test needs a login. Module-only, no migration, no `?v=` bump.
