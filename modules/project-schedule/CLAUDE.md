@@ -1985,3 +1985,24 @@ Excel-style arrow-key row selection to the Schedule grid:
   modal, when the Schedule view is hidden, or view-only/archived). Documented in the ？ shortcuts modal.
 - Verified: inline JS passes `node --check`; module loads in-browser with no console errors. Live
   keyboard interaction needs a login (auth wall). Module-only, no migration, no `?v=` bump.
+
+## Horizontal active-cell navigation — arrows / Tab / Enter (2026-07-22b) — fmlozano
+
+Extended the arrow-key work above into a full Excel-style active-cell cursor on the Schedule grid:
+- **← / →** move the active cell one column left / right (clamped to the visible columns).
+- **Tab / Shift+Tab** move to the next / previous cell, **wrapping to the next / previous row** at the
+  row ends (`_nextRowIdx` skips id-less group headers; the row selection + details panel sync when a
+  wrap changes rows).
+- **Shift+← / →** extend the cell rectangle from the anchor (`_cellSel`), complementing the existing
+  Shift+click range and Shift+↑/↓ row-extend.
+- **Enter / F2** begin inline editing of the active cell (`editActiveCell` → `beginEdit`, only for
+  `.ps-editable` columns).
+- **↑ / ↓** now also **preserve the active-cell column** (Excel column-persistence) and paint the
+  active cell, so vertical + horizontal navigation share one cursor.
+- `moveCell(dc, tab, extend)` seeds the cursor from `selId` (or the first real row) on first press;
+  `scrollCellVisible(r,c)` is the horizontal autoscroll (reveals the target column via the rendered
+  cells offsetLeft/offsetWidth; frozen sticky columns are always visible so only non-sticky cells
+  scroll). Deferred one rAF so a Tab-wrapped row is painted before the cell is scrolled/highlighted.
+- Wired into the grid keydown handler (same guards); shortcuts modal updated.
+- Verified: inline JS passes `node --check`; module loads with no console errors. Live keyboard test
+  needs a login. Module-only, no migration, no `?v=` bump.

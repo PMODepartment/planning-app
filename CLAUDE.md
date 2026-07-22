@@ -2665,3 +2665,12 @@ working with the virtualized renderer. New `moveRowSel`/`scrollRowVisible`/`_gri
 wired into the existing grid keydown handler; documented in the shortcuts modal. Verified: inline JS
 passes `node --check`, module loads with no console errors. Module-only, no `?v=` bump. See
 `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: horizontal active-cell navigation (arrows / Tab / Enter)
+
+Extended the arrow-key row selection into a full Excel-style active-cell cursor: ←/→ move the active
+cell across columns, Tab/Shift+Tab move next/previous cell wrapping across rows, Shift+←/→ extend the
+cell range, and Enter/F2 edit the active cell. ↑/↓ now preserve the active-cell column so vertical +
+horizontal navigation share one cursor. New `moveCell`/`scrollCellVisible`/`_nextRowIdx`/`editActiveCell`
+helpers; horizontal autoscroll reveals the target column. Verified: inline JS passes `node --check`,
+no console errors on load. Module-only, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
