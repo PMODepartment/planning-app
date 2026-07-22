@@ -77,6 +77,18 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: optimize the WBS Manager (indexed render + collapse/search)
+- `renderWbsManager` was O(N²)/O(N·rows) and rendered every node at once, freezing the tab on
+  P6-scale trees (~14k nodes / ~27k activities). Rebuilt around a **one-pass index**
+  (`_wbsBuildIndex`: byId / sorted childrenOf / activity counts / codes) so the render walk does no
+  per-node scans — benchmarked **11,171ms → 12ms** on a 14,420-node fixture. `computeWbsCodes`
+  de-nested the same way (O(N²·log N) → O(N·log N), identical output, verified).
+- Added **collapse/expand** per node (only visible rows hit the DOM; large trees default-collapse
+  below the top level), toolbar **Expand all / Collapse all**, and a **search box** that reveals
+  matches + their ancestors. Editing behavior (all row buttons, rename, select) unchanged.
+- Module-local, no migration, no `?v=` bump. Inline script parses; logic unit-verified in a Node
+  harness. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-22 — Project Schedule: make the merged Last Planner section collapsible
 - Follow-up to the merge below. The Last Planner block made the Planner Cockpit a long scroll on load,
   so its section divider is now a toggle (rotating chevron) that collapses/expands the whole weekly

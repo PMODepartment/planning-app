@@ -873,6 +873,11 @@
     .ps-ck-tl-legend i { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:5px; vertical-align:middle; }
     /* WBS Manager tree */
     .ps-wbs-tree { padding:6px 4px 12px; }
+    .ps-wbs-caret { flex:none; width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center;
+      border:none; background:none; cursor:pointer; color:var(--pd-muted); border-radius:4px; padding:0; font-size:11px; line-height:1; }
+    .ps-wbs-caret:hover { background:var(--pd-card); color:var(--pd-ink); }
+    .ps-wbs-caret.leaf { cursor:default; visibility:hidden; }
+    .ps-wbs-matchcount { font-size:12px; color:var(--pd-muted); margin-left:12px; }
     .ps-wbs-row { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; cursor:pointer; border-left:3px solid transparent; }
     .ps-wbs-row:hover { background:var(--pd-bg); }
     .ps-wbs-row:hover .ps-wbs-acts, .ps-wbs-row.selected .ps-wbs-acts { visibility:visible; }
@@ -1100,6 +1105,10 @@
           <button class="pd-btn pd-btn-primary" id="ps-wbs-addroot"><span data-ico="plus" data-ico-size="15"></span> Add top-level WBS</button>
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-wbs-adopt" title="Build the tree from the project's existing WBS-Summary rows (imported / legacy)"><span data-ico="download" data-ico-size="15"></span> Adopt existing WBS</button>
+          <span class="ps-tb-div"></span>
+          <button class="pd-btn ps-icobtn" id="ps-wbs-expand" title="Expand all"><span data-ico="chevronDown" data-ico-size="15"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-wbs-collapse" title="Collapse all"><span data-ico="chevronRight" data-ico-size="15"></span></button>
+          <input class="pd-input" id="ps-wbs-search" placeholder="Search code / name…" style="height:32px;width:200px;">
           <span id="ps-wbs-hint" style="font-size:12px;color:var(--pd-muted);margin-left:auto;">Build the WBS first, then add activities under any node.</span>
         </div>
         <div class="pd-card ps-ck-card ps-ck-trend-card">
@@ -1505,6 +1514,9 @@
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
+  var _wbsCollapsed = {};   // WBS Manager: node id -> true means its children are hidden
+  var _wbsSearch = '';      // WBS Manager: current search filter (code / name)
+  var _wbsCollapseInit = false;   // have we applied the large-tree default-collapse once?
   var _wbsSel = null;   // selected WBS node id (drives the Add-activity parent preselect)
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
   function calById(id) { return id && CALS.find(function (c) { return c.id === id; }); }
@@ -1571,9 +1583,20 @@
   // Auto-numbered dotted codes from tree position; a code_custom node keeps its own code and its
   // subtree is prefixed by it. Returns { id: code }.
   function computeWbsCodes() {
+    // Build a parent -> sorted-children index once (O(N log N)) instead of re-scanning WBS_NODES
+    // per tree level via wbsChildren (which made this O(N²·log N) on big P6 trees). Same ordering.
+    var childrenOf = new Map();
+    for (var i = 0; i < WBS_NODES.length; i++) {
+      var nd = WBS_NODES[i], p = nd.parent_id || null;
+      var arr = childrenOf.get(p); if (!arr) { arr = []; childrenOf.set(p, arr); }
+      arr.push(nd);
+    }
+    childrenOf.forEach(function (arr) {
+      arr.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); });
+    });
     var codeOf = {};
     (function walk(parentId, parentCode) {
-      wbsChildren(parentId).forEach(function (n, i) {
+      (childrenOf.get(parentId) || []).forEach(function (n, i) {
         var auto = (parentCode ? parentCode + '.' : '') + (i + 1);
         codeOf[n.id] = (n.code_custom && n.code) ? n.code : auto;
         walk(n.id, codeOf[n.id]);
@@ -1839,7 +1862,9 @@
     var sel = document.getElementById('ps-project'); if (sel) sel.value = pid || '';
     if (pid) sessionStorage.setItem('pd_project', pid);
     updateProjSelLabel(); updateWorkspaceCaption();
-    collapsed = {}; resetUndo(); load();
+    collapsed = {}; _wbsSel = null; _wbsCollapsed = {}; _wbsSearch = ''; _wbsCollapseInit = false;
+    var wsi = document.getElementById('ps-wbs-search'); if (wsi) wsi.value = '';
+    resetUndo(); load();
   }
   // OPC-style project browser — a FOLDER navigator (one level at a time) so it scales to
   // hundreds of schedules. `_pssPath` = current folder (workspace id; '' = root). Drill into a
@@ -1891,6 +1916,7 @@
   }
   async function load() {
     var gen = ++_loadGen;   // claim this load; any older in-flight load is now stale
+    _wbsCollapseInit = false;   // re-apply the large-tree default-collapse for this freshly-loaded tree
     loadDataDate();   // per-project data date (persisted); drives CPM / gantt line / usage
     _fmtRules = loadFmtRules();   // per-project conditional-formatting rules
     // Archived projects are read-only (feeds the ~8 edit guards that read window.__archived).
@@ -6783,25 +6809,78 @@
   }
 
   // ===== WBS MANAGER (first-class Work Breakdown Structure tree) =====
+  // Build one-pass indices for the WBS Manager render so the walk is O(N), not O(N²)/O(N·rows):
+  //  byId          — id -> node (O(1) lookup; replaces the per-node wbsById linear scan)
+  //  childrenOf    — parentId -> sorted children[] (built + sorted once)
+  //  actCount      — nodeId -> direct activity count (one pass over rows; was a full rows.filter per node)
+  //  codeOf        — dotted codes computed from childrenOf (no per-level re-scan of WBS_NODES)
+  function _wbsBuildIndex() {
+    var byId = new Map(), childrenOf = new Map(), actCount = new Map();
+    for (var i = 0; i < WBS_NODES.length; i++) { var n = WBS_NODES[i]; byId.set(n.id, n); }
+    for (var j = 0; j < WBS_NODES.length; j++) {
+      var nd = WBS_NODES[j], p = nd.parent_id || null;
+      var arr = childrenOf.get(p); if (!arr) { arr = []; childrenOf.set(p, arr); }
+      arr.push(nd);
+    }
+    childrenOf.forEach(function (arr) {
+      arr.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); });
+    });
+    for (var k = 0; k < rows.length; k++) { var r = rows[k]; if (!isWbs(r) && r.wbs_node_id) actCount.set(r.wbs_node_id, (actCount.get(r.wbs_node_id) || 0) + 1); }
+    var codeOf = {};
+    (function walk(parentId, parentCode) {
+      (childrenOf.get(parentId) || []).forEach(function (n, i) {
+        var auto = (parentCode ? parentCode + '.' : '') + (i + 1);
+        codeOf[n.id] = (n.code_custom && n.code) ? n.code : auto;
+        walk(n.id, codeOf[n.id]);
+      });
+    })(null, '');
+    return { byId: byId, childrenOf: childrenOf, actCount: actCount, codeOf: codeOf };
+  }
   function renderWbsManager() {
     var host = document.getElementById('ps-wbs-tree'), cnt = document.getElementById('ps-wbs-count');
     if (!host) return;
     if (!pid) { host.innerHTML = '<div class="ps-wbs-empty">Select a project.</div>'; if (cnt) cnt.textContent = ''; return; }
-    if (cnt) cnt.textContent = WBS_NODES.length + ' node' + (WBS_NODES.length === 1 ? '' : 's');
     var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id; }).length;
     var adoptBtn = document.getElementById('ps-wbs-adopt'); if (adoptBtn) adoptBtn.style.display = legacy ? '' : 'none';
     if (!WBS_NODES.length) {
+      if (cnt) cnt.textContent = '';
       host.innerHTML = '<div class="ps-wbs-empty">' + (legacy ?
         'This project has ' + legacy + ' WBS summary rows from an import / the old model. Click <strong>Adopt existing WBS</strong> above to load them into the tree editor.' :
         'No WBS yet. Click <strong>Add top-level WBS</strong> to start building the structure, then add activities under any node.') + '</div>';
       return;
     }
-    var codeOf = computeWbsCodes();
-    var html = '';
-    (function walk(parentId) {
-      wbsChildren(parentId).forEach(function (n) {
-        var depth = wbsDepthOf(n.id), nAct = wbsActivityCount(n.id), nKids = wbsChildren(n.id).length;
+    var idx = _wbsBuildIndex(), childrenOf = idx.childrenOf, byId = idx.byId, actCount = idx.actCount, codeOf = idx.codeOf;
+    // Large trees default to a collapsed outline (top level shown, deeper nodes folded) so we don't
+    // paint tens of thousands of rows at once. Applied once per project load.
+    if (!_wbsCollapseInit) {
+      _wbsCollapseInit = true;
+      if (WBS_NODES.length > 300) WBS_NODES.forEach(function (n) { if ((n.parent_id || null) !== null && childrenOf.get(n.id)) _wbsCollapsed[n.id] = true; });
+    }
+    // Search: reveal any node whose code/name matches, plus its ancestors (so it's reachable). While
+    // searching, collapse state is ignored on the matched path and non-matching branches are hidden.
+    var q = _wbsSearch.trim().toLowerCase(), visible = null, forceOpen = null, nMatch = 0;
+    if (q) {
+      visible = new Set(); forceOpen = new Set();
+      WBS_NODES.forEach(function (n) {
+        if ((codeOf[n.id] || '').toLowerCase().indexOf(q) >= 0 || (n.name || '').toLowerCase().indexOf(q) >= 0) {
+          nMatch++;
+          var a = n;
+          while (a) { visible.add(a.id); if (a.id !== n.id || childrenOf.get(a.id)) forceOpen.add(a.id); a = a.parent_id ? byId.get(a.parent_id) : null; }
+        }
+      });
+    }
+    if (cnt) cnt.innerHTML = WBS_NODES.length + ' node' + (WBS_NODES.length === 1 ? '' : 's') +
+      (q ? '<span class="ps-wbs-matchcount">' + nMatch + ' match' + (nMatch === 1 ? '' : 'es') + '</span>' : '');
+    var html = '', shown = 0;
+    (function walk(parentId, depth) {
+      (childrenOf.get(parentId) || []).forEach(function (n) {
+        if (visible && !visible.has(n.id)) return;
+        var kids = childrenOf.get(n.id), nKids = kids ? kids.length : 0, nAct = actCount.get(n.id) || 0;
+        var open = q ? forceOpen.has(n.id) : !_wbsCollapsed[n.id];
+        var caret = nKids ? ('<button class="ps-wbs-caret' + (open ? '' : ' collapsed') + '" data-wbs-toggle="' + esc(n.id) + '" title="' + (open ? 'Collapse' : 'Expand') + '">' + (open ? '▾' : '▸') + '</button>')
+                          : '<span class="ps-wbs-caret leaf">▾</span>';
         html += '<div class="ps-wbs-row' + (_wbsSel === n.id ? ' selected' : '') + '" data-wid="' + esc(n.id) + '" style="padding-left:' + (8 + depth * 22) + 'px;">' +
+          caret +
           '<span class="ps-wbs-code" title="' + (n.code_custom ? 'Custom code (click ✎ to change)' : 'Auto-numbered') + '">' + esc(codeOf[n.id]) + (n.code_custom ? ' *' : '') + '</span>' +
           '<span class="ps-wbs-name"><input data-wbs-name="' + esc(n.id) + '" value="' + esc(n.name || '') + '" placeholder="WBS name…"></span>' +
           '<span class="ps-wbs-badge">' + (nKids ? nKids + ' sub' + (nKids === 1 ? '' : 's') + ' · ' : '') + nAct + ' activit' + (nAct === 1 ? 'y' : 'ies') + '</span>' +
@@ -6815,10 +6894,15 @@
             '<button data-wbs-code="' + esc(n.id) + '" title="Edit code">✎</button>' +
             '<button class="danger" data-wbs-del="' + esc(n.id) + '" title="Delete">✕</button>' +
           '</span></div>';
-        walk(n.id);
+        shown++;
+        if (nKids && open) walk(n.id, depth + 1);
       });
-    })(null);
+    })(null, 0);
     host.innerHTML = html;
+    // Caret: expand/collapse this node's children (no full data reload — just re-render).
+    host.querySelectorAll('[data-wbs-toggle]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); var id = b.dataset.wbsToggle; if (_wbsCollapsed[id]) delete _wbsCollapsed[id]; else _wbsCollapsed[id] = true; renderWbsManager(); };
+    });
     // Click a row (anywhere but a button) to select it — the selected WBS preselects the parent
     // when you add an activity. The name input still selects the row (so typing a name selects it).
     host.querySelectorAll('.ps-wbs-row').forEach(function (rw) {
@@ -6939,6 +7023,7 @@
       }
       if (sres.data) rows.push(sres.data);
       _wbsSel = res.data.id;   // select the new node so the next Add-activity targets it
+      if (parentId) delete _wbsCollapsed[parentId];   // expand the parent so the new child is visible
       await _wbsCommit();
       UI.toast('WBS “' + name + '” added.', 'success');
     }
@@ -9182,6 +9267,19 @@
     document.getElementById('ps-lp-add').onclick = function () { openCommitmentForm(null); };
     document.getElementById('ps-wbs-addroot').onclick = wbsAddRoot;
     document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
+    document.getElementById('ps-wbs-expand').onclick = function () { _wbsCollapsed = {}; renderWbsManager(); };
+    document.getElementById('ps-wbs-collapse').onclick = function () {
+      _wbsCollapsed = {}; WBS_NODES.forEach(function (n) { if ((n.parent_id || null) === null) _wbsCollapsed[n.id] = true; });
+      // collapse every node that has children, leaving only the top level visible
+      var hasKids = {}; WBS_NODES.forEach(function (n) { if (n.parent_id) hasKids[n.parent_id] = true; });
+      WBS_NODES.forEach(function (n) { if (hasKids[n.id]) _wbsCollapsed[n.id] = true; });
+      renderWbsManager();
+    };
+    (function () {
+      var si = document.getElementById('ps-wbs-search'); if (!si) return;
+      var t = null;
+      si.oninput = function () { clearTimeout(t); t = setTimeout(function () { _wbsSearch = si.value; renderWbsManager(); }, 180); };
+    })();
     document.getElementById('ps-crit').onclick = function () {
       critMode = !critMode;
       document.getElementById('ps-crit').classList.toggle('active', critMode);

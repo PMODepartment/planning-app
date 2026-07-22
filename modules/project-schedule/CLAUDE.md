@@ -1,5 +1,27 @@
 # Module: project-schedule
 
+## WBS Manager optimized: indexed render + collapse/expand + search (2026-07-22) — fmlozano
+`renderWbsManager` was O(N²)/O(N·rows) and painted **every** node at once — on a P6-scale tree
+(~14k nodes / ~27k activities) it froze the tab. Per node it called `wbsActivityCount` (a full
+`rows.filter` — ~378M iterations total), `wbsChildren` (filter+sort of all nodes), and `wbsDepthOf`
+(linear `wbsById` walk). Fixes:
+- **New `_wbsBuildIndex()`** builds `byId` / `childrenOf` (sorted) / `actCount` / `codeOf` in **one
+  pass** at the top of the render; the walk uses those (no per-node scans). Benchmarked on a
+  14,420-node / 27,600-activity fixture: the per-node-scan render cost dropped **11,171ms → 12ms**.
+- **`computeWbsCodes` de-nested** the same way (was calling `wbsChildren` per level → O(N²·log N),
+  now O(N·log N)). **Pure, identical output** (custom `code_custom` codes preserved, same sibling
+  numbering + comparator) — verified against the old algorithm on a mixed fixture.
+- **Collapse/expand** per node via a caret glyph (`_wbsCollapsed` set); only visible (expanded) rows
+  are emitted, so the DOM stays small. Large trees (>300 nodes) **default-collapse** below the top
+  level on load (`_wbsCollapseInit`, reset in `load()` + `selectProject`). Toolbar **Expand all /
+  Collapse all** buttons. Adding a child auto-expands its parent so the new node is visible.
+- **Search box** (`_wbsSearch`, 180ms debounce): reveals nodes whose code/name matches **plus their
+  ancestors** (so matches are reachable), ignoring collapse on the matched path; shows a match count.
+- Editing behavior unchanged — all existing row buttons (＋Act/＋/▲▼/→←/✎/✕), row-click select, and
+  name-input rename are untouched. State (`_wbsCollapsed`/`_wbsSearch`/`_wbsCollapseInit`) resets on
+  project switch + Clear. Module-local, no migration, no `?v=` bump. Inline script parses; index /
+  codes / activity counts / search-visibility unit-verified in a Node harness.
+
 ## Last Planner section made collapsible (2026-07-22) — fmlozano
 Follow-up to the merge below: the merged Last Planner block made the cockpit a long scroll on load,
 so the `.ps-ck-secdiv` divider is now a **toggle button** (`#ps-lp-toggle`, a `<button>` styled as the
