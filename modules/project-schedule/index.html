@@ -742,6 +742,9 @@
     .ps-filter-foot { display:flex; justify-content:space-between; margin-top:10px; border-top:1px solid var(--pd-line); padding-top:8px; }
     /* Planner cockpit */
     .ps-ck-bar { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+    /* Section divider between the cockpit KPIs/forecast and the merged Last Planner weekly section */
+    .ps-ck-secdiv { display:flex; align-items:center; gap:8px; margin:26px 0 14px; padding-top:18px; border-top:2px solid var(--pd-line); font-size:15px; font-weight:800; color:var(--pd-ink); letter-spacing:.01em; }
+    .ps-ck-secdiv [data-ico] { color:var(--pd-red); }
     .ps-ck-look-lbl { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); }
     /* Bulk update grid */
     .ps-bulk-back { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:250; display:none; align-items:center; justify-content:center; }
@@ -925,7 +928,6 @@
           <button data-tab="wbs"><span data-ico="layers" data-ico-size="14"></span> WBS Manager</button>
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
           <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost / EVM</button>
-          <button data-tab="lastplanner"><span data-ico="check" data-ico-size="14"></span> Last Planner</button>
         </div>
       </div>
       <!-- Project context sits next to the title (OPC-style), name over workspace, left-aligned.
@@ -1149,10 +1151,11 @@
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Top risk drivers</div><div id="ps-ck-behind" class="ps-ck-body"></div></div>
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="pulse" data-ico-size="15"></span> Critical-path drivers</div><div id="ps-ck-buckets" class="ps-ck-buckets"></div><div id="ps-ck-crit" class="ps-ck-pills"></div></div>
         </div>
-      </div>
 
-      <!-- LAST PLANNER: weekly work plan + Percent Plan Complete (PPC) -->
-      <div id="ps-view-lastplanner" style="display:none;">
+        <!-- LAST PLANNER: weekly work plan + Percent Plan Complete (PPC) — merged into the
+             cockpit so the planner has one management surface (KPIs/forecast above, the
+             weekly commitment loop below) instead of two separate tabs. -->
+        <div class="ps-ck-secdiv"><span data-ico="check" data-ico-size="16"></span> Weekly Work Plan · Last Planner</div>
         <div class="ps-ck-bar">
           <button class="pd-btn ps-icobtn" id="ps-lp-prev" title="Previous week"><span data-ico="arrowLeft" data-ico-size="15"></span></button>
           <strong id="ps-lp-weeklbl" style="min-width:180px;text-align:center;"></strong>
@@ -2989,7 +2992,7 @@
   }
 
   // ---- render everything ----
-  function renderAll() { renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') renderPlanner(); else if (activeTab === 'lastplanner') openLastPlanner(); else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); }
+  function renderAll() { renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
@@ -7396,18 +7399,18 @@
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     document.getElementById('ps-view-cost').style.display = tab === 'cost' ? '' : 'none';
     document.getElementById('ps-view-planner').style.display = tab === 'planner' ? '' : 'none';
-    document.getElementById('ps-view-lastplanner').style.display = tab === 'lastplanner' ? '' : 'none';
     document.getElementById('ps-view-wbs').style.display = tab === 'wbs' ? '' : 'none';
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Cockpit or Cost table.
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'lastplanner' ? 'Last Planner' : (tab === 'wbs' ? 'WBS Manager' : 'Project Schedule')));
+    var name = tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : 'Project Schedule'));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
-    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'lastplanner') openLastPlanner(); else if (tab === 'wbs') renderWbsManager(); else renderPlanner();
+    // Planner Cockpit now hosts the Last Planner weekly section too — render both.
+    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'wbs') renderWbsManager(); else { renderPlanner(); openLastPlanner(); }
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,

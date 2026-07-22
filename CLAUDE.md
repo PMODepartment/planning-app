@@ -77,6 +77,18 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: merge Last Planner into the Planner Cockpit tab
+- User flagged the **Planner Cockpit** and **Last Planner** tabs as redundant / low-value as two
+  separate top-level views. Chose to **merge (keep all functionality), not remove**: the Last Planner
+  weekly section (week nav, PPC KPIs, weekly commitments, PPC trend, reasons-for-variance) is now a
+  section **inside the Planner Cockpit view**, under a divider, below the cockpit KPIs/forecast. The
+  separate `lastplanner` tab + `#ps-view-lastplanner` wrapper are gone; `switchTab`/`renderAll` render
+  both cockpit + Last Planner when the `planner` tab is active.
+- IDs unchanged (`ps-ck-*`/`ps-lp-*` never collided) so all handlers keep working; no DB/migration
+  change, module-local HTML/CSS/JS only → **no `?v=` bump**. Verified in-browser: no console errors,
+  Last Planner table resolves inside the cockpit view, old view removed, 0 `lastplanner` refs remain.
+  See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-21 — Project Schedule: remove dead old cost-table code (cleanup after the EVM rebuild)
 - Follow-up to the Cost/EVM rebuild below: it orphaned the old per-activity cost table, leaving
   `COST_COLS`, `_vc`, `costW`, `costColW`, `costVisibleCols`, `startCostColResize` and the
