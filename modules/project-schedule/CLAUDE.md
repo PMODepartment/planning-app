@@ -8,6 +8,17 @@
 > 4. Work only inside this folder, on branch `module/project-schedule`, then PR to `main`.
 > 5. Update this file as you build.
 
+## Activity Progress: centered %-cells + Pie presentation with activity data-selection (2026-07-17c) — jasantos2 / eprobles
+- **Centered cells:** No. / Planned Value % / Activity % Complete cells centered for task + WBS rows
+  (`PROG_DEF[k].center` → `.ps-prog-cc`), matching the centered headers.
+- **Presentation toggle (Table / Pie chart):** persisted `ps_progpres`. Pie mode (`renderProgressPie`)
+  draws an SVG pie where each **selected** activity is a slice, sized by a metric (`ps_progmetric`:
+  Activity % Complete or Planned Value %), full-circle when a single 100% slice; colours matched between
+  slices and the legend.
+- **Data selection:** a checklist of activities with All/Clear (`ps_progsel` per project; null = all) —
+  tick which activities appear in the pie; `wireProgCtrls` handles the toggle, metric, checkboxes.
+- Parses clean; served-file check passed.
+
 ## Duration model: baseline-locked planned, live actual, independent remaining, at-completion (2026-07-17b) — jasantos2 / eprobles
 - **Planned (original) duration = BASELINE span** (`_origDurOf` prefers BL finish − BL start + 1), else the
   current span, else duration_days. **Locked/read-only when a baseline exists** — grid DUR cell drops
@@ -1553,3 +1564,80 @@ of typing the Activity ID. `setupPredPicker(row)` (called from `openForm`) rebui
 `predRels`-parseable token (`ID [type][±lag]`, FS omitted unless a lag is set) to `#ps-f-pred`,
 de-duplicated by ID (via `predIds`), rejecting self-links and unknown IDs. The text field is kept
 as the source of truth (typing + CSV/XER import unchanged); the picker only appends to it.
+
+---
+
+## Activity Progress — view transition + configurable chart builder (2026-07-21)
+
+**Transition:** switching into/out of the Activity Progress view now fades/slides in
+(`@keyframes ps-viewin`, `.ps-anim` on `.ps-progress`/`.ps-split`/`.ps-network`).
+`_animIn(el)` reflow-restarts the animation; `setProgressMode(on)` triggers it on toggle.
+
+**Chart builder** (replaces the fixed pie). The presentation toggle is now **Table / Chart**.
+In Chart mode a control bar exposes:
+- **Chart type** (`#ps-chart-type`): Pie, Pie (hollow core / donut), Column, Horizontal bar,
+  Stacked column, Stacked bar. Types listed in `CHART_TYPES`.
+- **X-axis category** (`#ps-chart-cat`): Activity / WBS / Status (`CHART_CATS`).
+- **Y-axis series** (`[data-series]` checkboxes): any of Activity % Complete (`phys`),
+  Planned Value % (`plan`), Duration % Complete (`durpct`) — multiple = planned-vs-actual
+  comparison. Defined in `CHART_METRICS` (label + color + `val(row)`).
+
+Config persisted per project in `localStorage ps_chartcfg = { <pid>: {type,cat,series[]} }`
+via `chartCfg()`/`setChartCfg(patch)`. Activity data-selection checklist (`.ps-pie-chk`,
+All/Clear) still filters which leaf activities feed the chart (reuses `progSelSet`/`setProgSel`).
+
+**Multiple independent resizable charts (2026-07-21b):** the Chart mode is now a **workspace**
+(`.ps-chart-ws`, large wrapping grid) holding any number of chart **cards**, each fully independent.
+Storage moved to `localStorage ps_charts = { <pid>: [ {id,type,cat,series[],sel,w,h}, … ] }`
+(`chartsList()`/`setCharts()`/`chartById()`/`updateChart(id,patch)`/`addChart()`/`removeChart(id)`;
+legacy `ps_chartcfg` auto-migrated to the first card). Top bar = Table/Charts toggle + **+ Add chart**.
+Each card (`_chartCard(cfg)`) has its own toolbar: type select, X-axis (By Activity/WBS/Status),
+Y-series swatches, a **Data ▾** toggle opening a per-card activity checklist (`_chartDataPanel`,
+`.ps-cchk`, All/Clear — `sel` array per card, null = all), and a **✕** delete. Bottom-right
+**resize handle** (`.ps-chart-res`) drag-sets the card width + body height (persisted live). SVGs use
+`preserveAspectRatio` + `.ps-chart-svg{width/height:100%}` so they scale to the card. Edits redraw
+only the affected card in place (`_redrawCard`/`_wireChartCard`, Data-panel open state kept in
+`_openData`) — no full-view rerender, so resizing/tweaking one chart never disturbs the others.
+`_chartBuckets(cfg)` now filters by the card's own `cfg.sel` instead of the shared selection.
+
+Rendering: `_chartBuckets(cfg)` groups selected leaf activities by category and means each metric;
+`_pieSVG(buckets,metric,hollow)` (donut = center hole), `_barsSVG(buckets,cfg,horizontal,stacked)`
+(grouped or stacked, 0–100 grid, rotated category labels). Pie/donut use the first series only
+(note shown when >1 selected). `renderProgressChart()` dispatches by type; `wireProgCtrls` handles
+the type/category selects + series checkboxes (keeps ≥1 series). Back-compat: old stored
+`ps_progpres='pie'` maps to `'chart'`.
+
+**Chart cards — data labels, moving, dark-mode text (2026-07-21c):**
+- **Pie/donut data labels:** each pie card gets a **labels** select (No labels / % of total /
+  Value % / Category / Category + %), stored per chart as `labels`. `_pieLabel(mode,d,frac)` +
+  `_pieSVG(…,labelMode)` draw label text at the slice centroid (only for slices > 4%);
+  `.ps-pie-dl` = white glyph + dark outline (`paint-order:stroke`) so it reads on any slice
+  colour in either theme.
+- **Move the whole box:** a grip handle (`.ps-chart-grip`) makes the card `draggable`;
+  HTML5 drag-and-drop reorders cards in the workspace via `moveChart(id,toIdx)` + `_dragCard`
+  (`.ps-card-drag`/`.ps-card-over` visuals).
+- **Move the chart inside the box:** dragging inside `.ps-chart-body` pans the `.ps-chart-pan`
+  wrapper (persisted `ox`/`oy`); double-click recenters. Cursor grab/grabbing.
+- **Dark-mode text fix:** SVG axis/label text used the **undefined** `--pd-ink-soft` var (fell back
+  to black → invisible on dark). Switched all SVG text fills to `var(--pd-muted)`; legend/notes
+  already inherit `--pd-ink`. (`--pd-ink-soft` does not exist in dashboard.css — only
+  `--pd-ink/-muted/-line/-bg/-card` remap under `html.pd-dark`.)
+- Resize (bottom-right `.ps-chart-res`) unchanged and still per-card/persisted.
+
+**Chart cards — Excel-like formatting (2026-07-21d):** each card gained a **⚙ options** panel
+(toggle `.ps-chart-settog`, open-state in `_openSet`, `_chartSettingsPanel`) exposing:
+- **Chart title** (`title`) — rendered centered above the plot at `titleSize` px.
+- **Axis titles** — `xTitle` / `yTitle` drawn on the bar/column axes (rotated Y); margins grow
+  to fit them.
+- **Font sizes** — `titleSize` (chart title), `tickFont` (axis tick labels), `titleFont`
+  (axis titles), `dlFont` (pie data labels); all resizable 6–48 px.
+- **Element toggles** — `legend` (pie inline legend / bar series legend `_seriesLegend`) and
+  `grid` (bar/column gridlines) hide/show.
+- **Series colours** — colour pickers for Actual / Planned / Duration write **project-scoped**
+  `ps_seriescolor` (`seriesColor`/`setSeriesColor`) shared by the charts AND the Activity
+  Progress **table bars** (`_progBar` now inlines them) — per the request, recolouring is
+  limited to those two features. `chartColor(cfg,m)` allows a per-chart override (`cfg.colors`)
+  over the project colour; the toolbar swatches + bar fills use it. Changing a colour
+  re-renders the whole workspace (panels reopen from `_openData`/`_openSet`).
+- `_barsSVG` rewritten around margins (mL/mR/mT/mB) so axis titles/fonts/gridline toggles all
+  compose; `_pieSVG(buckets,cfg)` now reads legend + dlFont from cfg.
