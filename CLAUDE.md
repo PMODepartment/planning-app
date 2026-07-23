@@ -2800,3 +2800,25 @@ confirmed live: hidden-column skip, horizontal autoscroll, render guard (input s
 repaints), entry-column anchor, single-step Enter/Tab, type-to-edit, and Escape-cancels-without-write.
 Data integrity confirmed by direct Supabase query — no test data written, edited row unchanged, and
 nothing touched in the real project. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-23 — Merge module/project-schedule (per-chart activity label) into main
+
+Merged `origin/module/project-schedule` into `main` (merge commit `c6bf04c`). **Divergence was much
+smaller than the branch age suggested:** the merge base `a1292e1` is itself on the branch (it was
+merged into main on 2026-07-22 as `7b9fc4e`), so main already contained everything except **one new
+branch commit** — `0683da1` "per-chart activity label field (ID / Name / both)" by ethanrobles10
+(2 files, +17/−2). Main meanwhile had 100 commits, 39 of them touching
+`modules/project-schedule/index.html`.
+- **One conflict, docs only** — `modules/project-schedule/CLAUDE.md`: both sides appended a new
+  section at EOF. Resolved by **keeping both**, with the branch's "Chart cards — activity label
+  field" note placed next to the surrounding chart docs and main's "Merge to main + verification
+  (2026-07-22)" section after it.
+- **`index.html` auto-merged clean, and the auto-merge is safe on inspection, not just textually:**
+  the branch change is confined to the chart builder (`_chartBuckets` label fn, chart config
+  normalization, the `.ps-cset` settings panel), while every main-side change this window was in the
+  grid/keyboard/loading paths (cell navigation, cache-first load, `schedule_rows` RPC, Gantt range,
+  WBS virtualization, Cost/EVM) — no overlapping regions, no shared state.
+- **Verified:** no conflict markers anywhere in the repo, `catField` present in all 3 expected places
+  in `index.html`, and the module's 690KB inline script parses clean (`new Function`). **Not**
+  browser-verified — no signed-in click-through of the chart settings panel this pass. Module-local
+  files only → **no `?v=` bump**.
