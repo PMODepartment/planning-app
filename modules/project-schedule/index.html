@@ -5655,8 +5655,11 @@
     var done = false;
     function commit(save) {
       if (done) return; done = true;
-      // Editor is closing: re-enable repaints and flush any repaint deferred while it was open.
-      _editing = false; if (_pendingWin) { _pendingWin = false; scheduleRender(); }
+      // Editor is closing: re-enable repaints, and ALWAYS schedule one. Unconditional because the
+      // per-branch renders below are conditional (a no-op/failed persist skips `if (ok) renderGrid()`),
+      // which used to leave the closing editor's <input> orphaned in the cell — visible now that
+      // Tab/Enter move the cursor away from it. rAF-batched + `_rafP`-deduped, so this is free.
+      _editing = false; _pendingWin = false; scheduleRender();
       if (!save) { renderGrid(); return; }
       var val = inp.value;
       var patch = {};
