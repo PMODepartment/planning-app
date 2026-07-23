@@ -5690,13 +5690,17 @@
     // Tab commits and moves to the next cell (Shift+Tab previous, wrapping rows). The column is kept.
     // The move runs after blur→commit; commit's DB write is async, so selId/_cellAnchor move now and
     // the later re-render re-highlights by id. Escape cancels without advancing.
+    // ⚠️ stopPropagation is REQUIRED here. `inp.blur()` below switches document.activeElement to
+    // <body> SYNCHRONOUSLY, so without it the same keystroke keeps bubbling to the grid's
+    // document-level keydown handler — whose "focus is in an INPUT → bail" guard no longer matches —
+    // and the move runs TWICE (live-caught: Enter skipped 2 rows, Tab skipped 2 columns).
     inp.onkeydown = function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); var up = e.shiftKey; inp.blur();
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); var up = e.shiftKey; inp.blur();
         // Excel: drop a row and RETURN to the entry column (where this row's typing began).
         if (_entryCol !== null && _cellAnchor) _cellAnchor.c = _entryCol;
         moveRowSel(up ? -1 : 1, false); }
-      else if (e.key === 'Tab') { e.preventDefault(); var back = e.shiftKey; inp.blur(); moveCell(back ? -1 : 1, true, false); }
-      else if (e.key === 'Escape') { commit(false); }
+      else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); var back = e.shiftKey; inp.blur(); moveCell(back ? -1 : 1, true, false); }
+      else if (e.key === 'Escape') { e.stopPropagation(); commit(false); }
     };
   }
 
