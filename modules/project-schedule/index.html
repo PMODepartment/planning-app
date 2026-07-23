@@ -8117,6 +8117,7 @@
       _selSet = new Set([nd.id]); _selAnchor = nd.id;
       // Preserve the active-cell column while moving down/up (Excel-style), and paint the active cell.
       var col = _cellAnchor ? _cellAnchor.c : (_cellSel ? Math.min(_cellSel.c0, _cellSel.c1) : 0);
+      if (!_colShown(col)) col = _firstVisCol();   // never park the cursor on a hidden column
       _cellAnchor = { r: target, c: col };
       _cellSel = { r0: target, c0: col, r1: target, c1: col };
     }
@@ -8135,13 +8136,13 @@
       // no active cell yet — seed it on the selected row (or the first real row), just placing the cursor
       r = -1; for (var i = 0; i < DL.length; i++) { if (DL[i].id && DL[i].id === selId) { r = i; break; } }
       if (r < 0) { for (var j = 0; j < DL.length; j++) { if (DL[j].id) { r = j; break; } } }
-      if (r < 0) return; c = 0; seeded = true;
+      if (r < 0) return; c = _firstVisCol(); seeded = true;
     }
-    var nc = seeded ? 0 : c + dc, nr = r;
+    var nc = seeded ? c : _nextVisCol(c, dc >= 0 ? 1 : -1), nr = r;
     if (!seeded && tab) {
-      if (nc >= ncol) { nc = 0; nr = _nextRowIdx(r, 1); }
-      else if (nc < 0) { nc = ncol - 1; nr = _nextRowIdx(r, -1); }
-    } else { nc = Math.max(0, Math.min(ncol - 1, nc)); }
+      if (nc >= ncol) { nc = _firstVisCol(); nr = _nextRowIdx(r, 1); }        // wrap to next row
+      else if (nc < 0) { nc = _lastVisCol(); nr = _nextRowIdx(r, -1); }       // wrap to previous row
+    } else if (nc >= ncol || nc < 0) { nc = c; }                              // arrows: no further visible column → stay put
     if (extend && _cellAnchor && !seeded) { _cellSel = { r0: _cellAnchor.r, c0: _cellAnchor.c, r1: nr, c1: nc }; }
     else { _cellAnchor = { r: nr, c: nc }; _cellSel = { r0: nr, c0: nc, r1: nr, c1: nc }; }
     var rowChanged = nr !== r;
@@ -8153,6 +8154,13 @@
   }
   // Next display-list row index in direction `step`, skipping id-less group headers; stays put if none.
   function _nextRowIdx(from, step) { var i = from + step; while (i >= 0 && i < DL.length && !DL[i].id) i += step; return (i >= 0 && i < DL.length && DL[i].id) ? i : from; }
+  // Column visibility (same source of truth as the Columns chooser / applyColHidden's nth-child rules).
+  // Keyboard navigation must SKIP hidden columns — otherwise ←/→/Tab march the cursor through
+  // zero-width `display:none` cells and the active-cell box appears to vanish for several presses.
+  function _colShown(ci) { var cs = gridCols(); return ci >= 0 && ci < cs.length && !colHidden[colKey(cs[ci])]; }
+  function _nextVisCol(from, step) { var i = from + step, n = gridCols().length; while (i >= 0 && i < n && !_colShown(i)) i += step; return i; }
+  function _firstVisCol() { var n = gridCols().length; for (var i = 0; i < n; i++) if (_colShown(i)) return i; return 0; }
+  function _lastVisCol() { for (var i = gridCols().length - 1; i >= 0; i--) if (_colShown(i)) return i; return 0; }
   // Horizontal autoscroll: reveal grid column `c` of the (rendered) row `r`. The leading columns
   // (# gutter, Activity ID, Activity Name) are position:sticky — they float OVER the scrolled content
   // and cover the left edge of the viewport. So a non-frozen cell can be inside the scroll viewport
