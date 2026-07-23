@@ -138,3 +138,23 @@ html.pd-dark .cc-age.warn { color:#f0c469; }
   .cc-table { min-width:0; font-size:10px; }
   .cc-kpi { break-inside:avoid; }
 }
+
+/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
+   Shared chrome comes from dashboard.css.
+
+   Unlike risk-register / stakeholder-map, this register stays a HORIZONTAL
+   SCROLLER rather than card-stacking. Three reasons: its columns are the
+   pipeline stages (Estimated → Submitted → Evaluated → Approved) and are built
+   dynamically per view, it carries a TOTALS row that only means anything as a
+   column-aligned footer, and money is read by comparing figures down a column —
+   stacking would destroy all three. Only the chrome is adjusted here.
+   -------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  .cc-tablecard { overflow-x: auto; }
+  .cc-table { min-width: 860px; font-size: 12.5px; }
+  .cc-desc { min-width: 190px; max-width: 240px; }
+  .cc-filters { flex-wrap: wrap; gap: 8px; }
+  .cc-filters > * { flex: 1 1 100%; min-width: 0; }
+  .cc-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .cc-form { grid-template-columns: 1fr; }
+}

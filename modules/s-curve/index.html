@@ -71,7 +71,27 @@
     .sc-spin { width:36px; height:36px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:sc-spin .8s linear infinite; }
     @keyframes sc-spin { to { transform:rotate(360deg); } }
     @media (max-width:820px) { .sc-title-txt { display:none; } .sc-fc { font-size:0; } .sc-fc .pd-input { width:130px; } }
-  </style>
+  
+      /* ---- Mobile & tablet (2026-07-23) --------------------------------
+         Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets)
+         comes from dashboard.css.
+
+         CHARTS: every SVG here already uses viewBox + width:100%, so it
+         *scales* — but scaling a ~900-unit-wide chart into ~350px shrinks its
+         9.5px labels to under 4px, i.e. unreadable. So below 700px the chart
+         keeps a legible minimum width and its card scrolls horizontally
+         instead of shrinking further. Do not "fix" this by dropping the
+         min-width — that restores the unreadable version.
+         ------------------------------------------------------------------ */
+      @media (max-width: 700px) {
+        .sc-card { overflow-x: auto; }
+        .sc-svg { min-width: 560px; }
+        .sc-table { min-width: 520px; }
+        .sc-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .sc-fc { flex-wrap: wrap; gap: 8px; }
+        .sc-topbar-tools { flex-wrap: wrap; }
+      }
+    </style>
 </head>
 <body>
 <div class="pd-app">

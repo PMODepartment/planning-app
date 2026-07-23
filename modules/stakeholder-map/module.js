@@ -206,23 +206,26 @@ window.StakeholderMap = (function () {
       var imp = importanceOf(r.influence, r.interest);
       var strat = strategyOf(gapOf(r.current_rel, r.target_rel));
       var relTxt = (n(r.current_rel) || '—') + ' → ' + (n(r.target_rel) || '—');
+      // data-l = the column heading. Unused on desktop (the <thead> supplies it);
+      // below 700px module.css hides the head and stacks each row into a card,
+      // where every value needs its own inline label (.sm-table td::before).
       return '<tr>' +
-        '<td><strong>' + Fmt.esc(r.name) + '</strong>' +
+        '<td class="sm-c-name"><strong>' + Fmt.esc(r.name) + '</strong>' +
           (r.nickname ? ' <span class="sm-nick">“' + Fmt.esc(r.nickname) + '”</span>' : '') +
           (r.engagement ? '<div class="sm-sub">' + Fmt.esc(r.engagement) + '</div>' : '') + '</td>' +
-        '<td>' + (r.category ? '<span class="sm-cat">' + Fmt.esc(r.category) + '</span>' : '') + '</td>' +
-        '<td>' + Fmt.esc(r.stakeholder_group) + '</td>' +
-        '<td>' + Fmt.esc(r.organization) + '</td>' +
-        '<td>' + Fmt.esc(r.role_title) + '</td>' +
-        '<td class="sm-num">' + (n(r.influence) || '—') + '</td>' +
-        '<td class="sm-num">' + (n(r.interest) || '—') + '</td>' +
-        '<td>' + (imp ? '<span class="sm-pill ' + rankClass(imp) + '">' + imp + '</span>' : '—') + '</td>' +
-        '<td>' + Fmt.esc(approachOf(imp)) + '</td>' +
-        '<td class="sm-num">' + relTxt + '</td>' +
-        '<td>' + (strat && strat !== 'N/A' ? '<span class="sm-strat sm-s-' + strat.replace(/\s/g,'') + '">' + Fmt.esc(strat) + '</span>' : Fmt.esc(strat)) + '</td>' +
-        '<td>' + Fmt.esc(freqOf(strat)) + '</td>' +
-        '<td>' + Fmt.esc(r.primary_responsible) + '</td>' +
-        '<td style="white-space:nowrap;">' +
+        '<td data-l="Sector">' + (r.category ? '<span class="sm-cat">' + Fmt.esc(r.category) + '</span>' : '') + '</td>' +
+        '<td data-l="Group">' + Fmt.esc(r.stakeholder_group) + '</td>' +
+        '<td data-l="Institution">' + Fmt.esc(r.organization) + '</td>' +
+        '<td data-l="Position">' + Fmt.esc(r.role_title) + '</td>' +
+        '<td class="sm-num" data-l="Impact">' + (n(r.influence) || '—') + '</td>' +
+        '<td class="sm-num" data-l="Interest">' + (n(r.interest) || '—') + '</td>' +
+        '<td data-l="Importance">' + (imp ? '<span class="sm-pill ' + rankClass(imp) + '">' + imp + '</span>' : '—') + '</td>' +
+        '<td data-l="Approach">' + Fmt.esc(approachOf(imp)) + '</td>' +
+        '<td class="sm-num" data-l="Rel (C→T)">' + relTxt + '</td>' +
+        '<td data-l="Strategy">' + (strat && strat !== 'N/A' ? '<span class="sm-strat sm-s-' + strat.replace(/\s/g,'') + '">' + Fmt.esc(strat) + '</span>' : Fmt.esc(strat)) + '</td>' +
+        '<td data-l="Frequency">' + Fmt.esc(freqOf(strat)) + '</td>' +
+        '<td data-l="Responsible">' + Fmt.esc(r.primary_responsible) + '</td>' +
+        '<td class="sm-rowacts" style="white-space:nowrap;">' +
           '<button class="pd-btn" data-edit="' + r.id + '">Edit</button> ' +
           '<button class="pd-btn" data-del="' + r.id + '">Delete</button></td>' +
       '</tr>';

@@ -146,18 +146,21 @@ window.RiskRegister = (function () {
       '</tr></thead>';
     var body = data.map(function (r) {
       var band = ratingBand(r.rating);
+      // data-l = the column heading. Unused on desktop (the <thead> supplies it);
+      // below 700px module.css hides the head and stacks each row into a card,
+      // where every value needs its own inline label (.rr-table td::before).
       return '<tr>' +
-        '<td>' + Fmt.esc(r.risk_code) + '</td>' +
-        '<td><strong>' + Fmt.esc(r.title) + '</strong>' +
+        '<td class="rr-c-code" data-l="Code">' + Fmt.esc(r.risk_code) + '</td>' +
+        '<td class="rr-c-title"><strong>' + Fmt.esc(r.title) + '</strong>' +
           (r.description ? '<div class="rr-sub">' + Fmt.esc(r.description) + '</div>' : '') + '</td>' +
-        '<td>' + Fmt.esc(r.category) + '</td>' +
-        '<td>' + (r.likelihood || '—') + '</td>' +
-        '<td>' + (r.impact || '—') + '</td>' +
-        '<td><span class="rr-pill ' + band.cls + '">' + (r.rating || '—') + ' · ' + band.label + '</span></td>' +
-        '<td>' + Fmt.esc(r.response) + '</td>' +
-        '<td>' + Fmt.esc(r.owner) + '</td>' +
-        '<td>' + Fmt.esc(r.status) + '</td>' +
-        '<td style="white-space:nowrap;">' +
+        '<td data-l="Category">' + Fmt.esc(r.category) + '</td>' +
+        '<td data-l="Likelihood">' + (r.likelihood || '—') + '</td>' +
+        '<td data-l="Impact">' + (r.impact || '—') + '</td>' +
+        '<td data-l="Rating"><span class="rr-pill ' + band.cls + '">' + (r.rating || '—') + ' · ' + band.label + '</span></td>' +
+        '<td data-l="Response">' + Fmt.esc(r.response) + '</td>' +
+        '<td data-l="Owner">' + Fmt.esc(r.owner) + '</td>' +
+        '<td data-l="Status">' + Fmt.esc(r.status) + '</td>' +
+        '<td class="rr-rowacts" style="white-space:nowrap;">' +
           '<button class="pd-btn" data-edit="' + r.id + '">Edit</button> ' +
           '<button class="pd-btn" data-del="' + r.id + '">Delete</button></td>' +
       '</tr>';

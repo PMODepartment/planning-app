@@ -82,7 +82,21 @@
     .rl-hint { grid-column:1 / -1; font-size:11.5px; color:var(--pd-muted); margin:-6px 0 0; }
     .rl-days { display:flex; gap:10px; flex-wrap:wrap; }
     .rl-days label { display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:400; }
-  </style>
+  
+      /* ---- Mobile & tablet (2026-07-23) --------------------------------
+         Shared chrome comes from dashboard.css. The rosters and the Loading
+         utilization matrix stay horizontal scrollers: the matrix compares
+         resources ACROSS months, which a stacked card layout would destroy.
+         ------------------------------------------------------------------ */
+      @media (max-width: 700px) {
+        .rl-table { min-width: 700px; }
+        .rl-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .rl-filters { flex-wrap: wrap; gap: 8px; }
+        .rl-filters > * { flex: 1 1 100%; min-width: 0; }
+        .rl-search-input { width: 100%; }
+        .rl-form-grid { grid-template-columns: 1fr; }
+      }
+    </style>
 </head>
 <body>
 <div class="pd-app">

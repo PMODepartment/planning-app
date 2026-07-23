@@ -110,3 +110,33 @@
 
 .sm-gcell-strat { line-height:1.2; }
 @media (max-width:700px) { .sm-kpis { grid-template-columns:repeat(2,1fr); } .sm-gcell { width:118px; height:110px; } }
+
+/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
+   Shared chrome comes from dashboard.css. Same treatment as risk-register:
+   the register is read-mostly (editing is modal-based), so below 700px each
+   row becomes a card with cells labelled from data-l (set in module.js).
+   14 columns at min-width:1180px is otherwise ~3 screens of side-scrolling.
+
+   NOTE: written as '.pd-table.sm-table' to outrank the shared '.pd-table'
+   phone scroller rule — see the risk-register note.
+   -------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  .pd-table.sm-table { display: block; min-width: 0; overflow-x: visible; white-space: normal; background: none; }
+  .sm-table thead { display: none; }
+  .sm-table tbody { display: block; }
+  .sm-table tr { display: block; margin-bottom: 10px; padding: 12px;
+    background: var(--pd-card); border: 1px solid var(--pd-line);
+    border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); }
+  .sm-table tr:hover td { background: none; }
+  .sm-table td { display: block; border: 0; padding: 3px 0; white-space: normal; font-size: 13px; text-align: left; }
+  .sm-table td[data-l]::before { content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: 12px; }
+  .sm-table td.sm-c-name { font-size: 14px; padding-bottom: 6px; }
+  /* .sm-num is right-aligned for column comparison on desktop; in a stacked
+     card there is no column to align to, so it reads as a stray indent. */
+  .sm-table td.sm-num { text-align: left; }
+  .sm-table td.sm-rowacts { display: flex; gap: 8px; margin-top: 8px; white-space: normal !important; }
+  .sm-table td.sm-rowacts .pd-btn { flex: 1 1 auto; justify-content: center; }
+  .sm-table td[colspan] { text-align: center; }
+  .sm-filters { flex-wrap: wrap; gap: 8px; }
+  .sm-filters > * { flex: 1 1 100%; min-width: 0; }
+}

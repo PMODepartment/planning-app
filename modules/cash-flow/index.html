@@ -223,7 +223,33 @@
     .cf-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--pd-line); }
     .cf-tab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; border-bottom:2px solid transparent; }
     .cf-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
-  </style>
+  
+      /* ---- Mobile & tablet (2026-07-23) --------------------------------
+         Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets)
+         comes from dashboard.css.
+
+         CHARTS: every SVG here already uses viewBox + width:100%, so it
+         *scales* — but scaling a ~900-unit-wide chart into ~350px shrinks its
+         9.5px labels to under 4px, i.e. unreadable. So below 700px the chart
+         keeps a legible minimum width and its card scrolls horizontally
+         instead of shrinking further. Do not "fix" this by dropping the
+         min-width — that restores the unreadable version.
+         ------------------------------------------------------------------ */
+      @media (max-width: 700px) {
+        .cf-chart-wrap { overflow-x: auto; }
+        .cf-svg { min-width: 600px; }
+        .cf-donut-wrap { justify-content: center; }
+        .cf-kpis { flex-wrap: wrap; }
+        .cf-kpi { flex: 1 1 calc(50% - 6px); min-width: 0; padding: 12px 14px; }
+        /* A 200px sticky label column is 53% of a 375px screen, so the months
+           you scroll to have nowhere to land. Narrow it rather than unfreezing
+           it — without a row label the matrix numbers are meaningless. */
+        .cf-matrix th.lbl, .cf-matrix td.lbl { min-width: 118px; font-size: 11.5px; }
+        .cf-matrix { font-size: 11.5px; }
+        .cf-matrix-wrap { overflow-x: auto; }
+        .cf-viewbar { flex-wrap: wrap; gap: 8px; }
+      }
+    </style>
 </head>
 <body>
 <div class="pd-app">

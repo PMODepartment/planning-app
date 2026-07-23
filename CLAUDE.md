@@ -2920,3 +2920,36 @@ condensed read-only activity list (`#ps-mobile` / `renderMobile()`); above 700px
   the real CSS. Data binding rests on `node --check` + confirming every helper it calls exists.
   **Worth a signed-in pass on a real project.** See `modules/project-schedule/CLAUDE.md`.
 - Module-local only; `?v=20260723a` from part 1 already covers it.
+
+### 2026-07-23 — Mobile & tablet, part 4: the remaining eight modules (suite complete)
+
+Finished the sweep — all 13 modules now have a phone/tablet pass. Same deciding question as part 2
+(*can this be card-stacked without breaking how it's used?*), which sorted them into three treatments:
+- **Card-stacked (read-mostly registers):** **Risk Register** (10 cols) and **Stakeholder Map**
+  (14 cols, `min-width:1180px` ≈ 3 screens of side-scrolling). Both edit via a modal, so nothing is
+  lost by stacking. `data-l` labels added in each `module.js`; overrides written `.pd-table.rr-table` /
+  `.pd-table.sm-table` to outrank the shared `.pd-table` phone scroller. On Stakeholder Map the
+  `.sm-num` right-alignment is reset to left — in a stacked card there is no column to align to, so it
+  reads as a stray indent.
+- **Kept as scrollers (structure would be destroyed):** **Contracts & Claims** — its columns *are* the
+  pipeline stages and are built dynamically per view, it carries a **totals row** that only means
+  anything column-aligned, and money is read by comparing down a column. **Resource Loading** — the
+  Loading matrix compares resources *across months*. Both got chrome/filter/KPI polish only.
+- **Charts (S-Curve, Cash Flow, Portfolio Overview, Productivity Rates).** ⚠️ **The charts were the
+  non-obvious problem.** Every SVG already uses `viewBox` + `width:100%`, so they *scale* — which
+  looks fine until you check the type: scaling a 900-unit chart into ~351px is a 0.39 factor, rendering
+  its 9.5px labels at **3.7px**. Below 700px each chart now keeps a legible minimum width and its card
+  scrolls instead of shrinking further — **measured 5.91px** on screen at 375px. Don't "simplify" the
+  min-width away; that restores the unreadable version. Cash Flow additionally narrows its sticky
+  matrix label column 200px → 118px (200px was 53% of a 375px screen, leaving the months nowhere to land).
+- ⚠️ **Method note worth keeping:** every selector was checked against the module's markup *before*
+  writing the rule — a first pass had invented ~10 wrapper classes (`sc-controls`, `po-tablewrap`,
+  `rl-card`, …) that don't exist. Those would have been **silent no-ops**, not errors, and the modules
+  would have looked "done" while nothing applied.
+- **Verified in-browser** at 375 and 1280 on the two new patterns: Risk Register card-stack (no page
+  or table h-scroll, thead hidden, all cells at one x, labels rendering, title unlabelled) and the
+  S-Curve chart (svg pinned at 560px, card scrolls, page does not, label 5.91px). **Desktop unchanged
+  at 1280** for both — table `display:table`, 10 distinct column x-positions, `::before` labels `none`,
+  chart back to 1202px with all phone min-widths resolving to `0px`. The other six share these two
+  verified patterns plus chrome-only changes.
+- Module-local only; `?v=20260723a` from part 1 already covers every module's assets.

@@ -67,3 +67,36 @@
 .rr-cell-active { outline:3px solid var(--pd-ink); outline-offset:-3px; }
 
 @media (max-width:700px) { .rr-kpis { grid-template-columns:repeat(2,1fr); } }
+
+/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
+   Shared chrome comes from dashboard.css. The register is read-mostly (all
+   editing happens in a modal), so below 700px each row becomes a CARD:
+   thead hidden, cells stacked and labelled from data-l (set in module.js).
+
+   NOTE: the table also carries the shared '.pd-table' class, whose phone rule
+   makes it a nowrap horizontal scroller. These selectors are written
+   '.pd-table.rr-table' / '.rr-table td' so they outrank it — dropping the
+   '.pd-table' qualifier silently restores side-scrolling.
+   -------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  .pd-table.rr-table { display: block; min-width: 0; overflow-x: visible; white-space: normal; background: none; }
+  .rr-table thead { display: none; }
+  .rr-table tbody { display: block; }
+  .rr-table tr { display: block; margin-bottom: 10px; padding: 12px;
+    background: var(--pd-card); border: 1px solid var(--pd-line);
+    border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); }
+  .rr-table tr:hover td { background: none; }
+  .rr-table td { display: block; border: 0; padding: 3px 0; white-space: normal; font-size: 13px; }
+  .rr-table td[data-l]::before { content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: 12px; }
+  /* Title is the card headline; code is a small index above it. */
+  .rr-table td.rr-c-title { font-size: 14px; padding-bottom: 6px; }
+  .rr-table td.rr-c-code { font-size: 11px; color: var(--pd-muted); }
+  .rr-table td.rr-rowacts { display: flex; gap: 8px; margin-top: 8px; white-space: normal !important; }
+  .rr-table td.rr-rowacts .pd-btn { flex: 1 1 auto; justify-content: center; }
+  .rr-table td[colspan] { text-align: center; }
+  .rr-filters { flex-wrap: wrap; gap: 8px; }
+  .rr-filters > * { flex: 1 1 100%; min-width: 0; }
+  /* Matrix cells shrink so the 5x5 grid still fits a phone. */
+  .rr-matrix td, .rr-matrix th { font-size: 11px; }
+  .rr-cell { width: auto; height: 54px; }
+}
