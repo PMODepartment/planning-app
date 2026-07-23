@@ -77,6 +77,14 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: Gantt timeline no longer starts years before the schedule
+- User: Gantt showed bars/timeline from ~2022 though the schedule starts 2025. Not stray data (verified
+  live the dates are clean) — `range()` padded the timeline **2 years before / 3 after** the schedule
+  (old deep-scroll feature) and opens scrolled to the far-left past. Tightened to ~1 month before / 1
+  quarter after; pane still scrolls. Live-verified: GPR101's Gantt header went 2024–2032 → 2026–2029,
+  opening at the project start with no empty leading years. Module-local, no `?v=` bump.
+  See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-22 — Project Schedule: one-call schedule_rows RPC (fast cold load)
 - Cache made *reopen* instant; this makes *cold first-open* fast. New SQL function
   `schedule_rows(project_id) returns jsonb` returns ALL of a project's rows as one jsonb array in a
