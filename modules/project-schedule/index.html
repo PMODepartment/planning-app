@@ -3005,11 +3005,12 @@
   // Pad the timeline so there are trailing (succeeding) months after the last activity and a little
   // lead before the first — the Gantt shows context beyond the exact activity span.
   function range() {
-    // Extend the scrollable timeline well past the schedule: 2 years before the earliest activity and
-    // 3 years after the latest, so the planner can scroll into the deep past/future (the Gantt pane
-    // already scrolls horizontally; this just widens the content).
-    var mn = _min ? addDays(_min, -730) : addDays(today(), -365);
-    var mx = _max ? addDays(_max, 1095) : addDays(today(), 365);
+    // Hug the actual schedule with a small margin — a month before the earliest activity and a
+    // quarter after the latest (the Gantt pane still scrolls horizontally). Previously this padded
+    // 2 YEARS before / 3 after, so a schedule starting in 2025 opened showing empty years back to
+    // ~2022–2023, which reads as if the project starts years too early.
+    var mn = _min ? addDays(_min, -31) : addDays(today(), -30);
+    var mx = _max ? addDays(_max, 92) : addDays(today(), 90);
     return { min: mn, max: mx };
   }
 
