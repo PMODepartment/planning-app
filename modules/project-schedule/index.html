@@ -2082,27 +2082,41 @@
     } catch (e) {}
     if (!painted) showLoading('Loading schedule…');
     var eseq = _editSeq;   // if the user edits during the bg fetch, don't clobber their edit on reconcile
-    var all = [];
+    var all = null;
     try {
-      // Count round-trip is cosmetic (drives the "Loading N…" text) — skip it on the cached path.
-      var total = 0;
-      if (!painted) { var cnt = await sb().from(TABLE).select('*', { count: 'exact', head: true }).eq('project_id', pid); if (gen !== _loadGen) return; total = (cnt && cnt.count) || 0; if (total > 0) setLoading('Loading ' + total + ' activities…'); }
-      // Keyset pagination (order by the id PK, fetch id > last) instead of .range()/OFFSET.
-      // OFFSET makes far pages re-scan every preceding row — a 42k-row project's deep pages blew past
-      // Supabase's statement_timeout (found via a live P6 import, 2026-07-11). Keyset is an indexed PK
-      // range scan per page, so it stays fast at any size. Sequential (each page needs the prior page's
-      // last id) — slightly slower than the old parallel fetch for mid-size projects, but it doesn't
-      // time out. Load order (by uuid) is irrelevant: rebuild() sorts by WBS.
-      var last = null;
-      while (true) {
-        var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
-        if (last) q = q.gt('id', last);
-        var r1 = await q; if (r1.error) throw r1.error;
-        if (gen !== _loadGen) return;   // a newer load started — drop this stale one (newer owns the overlay/state)
-        var batch = r1.data || []; all = all.concat(batch);
-        if (!painted) setLoading(total ? ('Loading ' + all.length + ' / ' + total + '…') : ('Loading… ' + all.length));
-        if (batch.length < 1000) break;
-        last = batch[batch.length - 1].id;
+      // FAST PATH: one-call RPC `schedule_rows(project_id)` returns ALL rows as a single jsonb array in
+      // ONE round-trip (a scalar jsonb return isn't subject to PostgREST's 1000-row cap), collapsing the
+      // ~8 sequential keyset pages that dominate cold load. security invoker → the caller's RLS applies.
+      // If the function isn't deployed yet (migration 2026-07-22-schedule-rows-rpc.sql not run), this
+      // returns an error and we fall through to keyset pagination — so the app works before AND after.
+      if (!painted) setLoading('Loading schedule…');
+      try {
+        var rp = await sb().rpc('schedule_rows', { p_project_id: pid });
+        if (gen !== _loadGen) return;
+        if (!rp.error && Array.isArray(rp.data)) { all = rp.data; if (!painted) setLoading('Loading ' + all.length + ' activities…'); }
+      } catch (e) { /* RPC unavailable — fall back to pagination below */ }
+      if (all === null) {
+        all = [];
+        // Count round-trip is cosmetic (drives the "Loading N…" text) — skip it on the cached path.
+        var total = 0;
+        if (!painted) { var cnt = await sb().from(TABLE).select('*', { count: 'exact', head: true }).eq('project_id', pid); if (gen !== _loadGen) return; total = (cnt && cnt.count) || 0; if (total > 0) setLoading('Loading ' + total + ' activities…'); }
+        // Keyset pagination (order by the id PK, fetch id > last) instead of .range()/OFFSET.
+        // OFFSET makes far pages re-scan every preceding row — a 42k-row project's deep pages blew past
+        // Supabase's statement_timeout (found via a live P6 import, 2026-07-11). Keyset is an indexed PK
+        // range scan per page, so it stays fast at any size. Sequential (each page needs the prior page's
+        // last id) — slightly slower than the old parallel fetch for mid-size projects, but it doesn't
+        // time out. Load order (by uuid) is irrelevant: rebuild() sorts by WBS.
+        var last = null;
+        while (true) {
+          var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+          if (last) q = q.gt('id', last);
+          var r1 = await q; if (r1.error) throw r1.error;
+          if (gen !== _loadGen) return;   // a newer load started — drop this stale one (newer owns the overlay/state)
+          var batch = r1.data || []; all = all.concat(batch);
+          if (!painted) setLoading(total ? ('Loading ' + all.length + ' / ' + total + '…') : ('Loading… ' + all.length));
+          if (batch.length < 1000) break;
+          last = batch[batch.length - 1].id;
+        }
       }
     } catch (err) {
       if (gen !== _loadGen) return; hideLoading();
