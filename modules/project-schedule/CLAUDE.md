@@ -1641,3 +1641,10 @@ the type/category selects + series checkboxes (keeps ≥1 series). Back-compat: 
   re-renders the whole workspace (panels reopen from `_openData`/`_openSet`).
 - `_barsSVG` rewritten around margins (mL/mR/mT/mB) so axis titles/fonts/gridline toggles all
   compose; `_pieSVG(buckets,cfg)` now reads legend + dlFont from cfg.
+
+**Chart cards — activity label field (2026-07-21e):** each chart's ⚙ options panel gained an
+**Activity label** select (`catField`: `both` / `id` / `name`) controlling how activities are
+labelled everywhere the chart shows them — axis category labels, pie/donut slice legend, and
+data labels. Default `both` = "ID  Name"; `id` = Activity ID only; `name` = Activity name only
+(each falls back to the other when its field is blank). Applied in `_chartBuckets` for the
+Activity X-axis; wired via the generic `.ps-cset-f` handler. Persisted per chart in `ps_charts`.

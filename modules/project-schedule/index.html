@@ -3037,6 +3037,7 @@
         series: series,
         sel: Array.isArray(c.sel) ? c.sel : null,
         labels: ['none', 'pct', 'val', 'name', 'namepct'].indexOf(c.labels) >= 0 ? c.labels : 'pct',
+        catField: ['both', 'id', 'name'].indexOf(c.catField) >= 0 ? c.catField : 'both',
         title: typeof c.title === 'string' ? c.title : '',
         xTitle: typeof c.xTitle === 'string' ? c.xTitle : '',
         yTitle: typeof c.yTitle === 'string' ? c.yTitle : '',
@@ -3083,7 +3084,12 @@
     var keyOf, labelOf;
     if (cfg.cat === 'wbs') { keyOf = function (r) { return r.wbs || '—'; }; labelOf = function (r) { return r.wbs || '(no WBS)'; }; }
     else if (cfg.cat === 'status') { keyOf = function (r) { return isComplete(r) ? 'Completed' : (r.actual_start ? 'In Progress' : 'Not Started'); }; labelOf = keyOf; }
-    else { keyOf = function (r) { return String(r.id); }; labelOf = function (r) { return (r.activity_id || '') + '  ' + (r.activity_name || ''); }; }
+    else { var cf = cfg.catField || 'both'; keyOf = function (r) { return String(r.id); }; labelOf = function (r) {
+      var id = r.activity_id || '', nm = r.activity_name || '';
+      if (cf === 'id') return id || nm;
+      if (cf === 'name') return nm || id;
+      return (id + '  ' + nm).trim();
+    }; }
     var order = [], map = {};
     acts.forEach(function (r) {
       var k = keyOf(r); if (!map[k]) { map[k] = { label: labelOf(r), rows: [] }; order.push(k); }
@@ -3194,8 +3200,10 @@
     var txt = function (k, label, v) { return '<label class="ps-cset-row"><span>' + label + '</span><input type="text" class="pd-input ps-cset-f" data-cid="' + esc(cfg.id) + '" data-k="' + k + '" value="' + esc(v || '') + '" placeholder="—"></label>'; };
     var chk = function (k, label, on) { return '<label class="ps-cset-row ps-cset-chk"><input type="checkbox" class="ps-cset-f" data-cid="' + esc(cfg.id) + '" data-k="' + k + '"' + (on ? ' checked' : '') + '><span>' + label + '</span></label>'; };
     var colors = Object.keys(CHART_METRICS).map(function (m) { return '<label class="ps-cset-row"><span>' + esc(CHART_METRICS[m].label) + '</span><input type="color" class="ps-cset-col" data-cid="' + esc(cfg.id) + '" data-series="' + m + '" value="' + seriesColor(m) + '"></label>'; }).join('');
+    var catOpts = [['both', 'Activity ID + Name'], ['id', 'Activity ID only'], ['name', 'Activity name only']];
+    var catSel = '<label class="ps-cset-row"><span>Activity label</span><select class="pd-select ps-cset-f" data-cid="' + esc(cfg.id) + '" data-k="catField">' + catOpts.map(function (o) { return '<option value="' + o[0] + '"' + (cfg.catField === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
     return '<div class="ps-cset">' +
-      '<div class="ps-pie-sel-h">Chart</div>' + txt('title', 'Title', cfg.title) +
+      '<div class="ps-pie-sel-h">Chart</div>' + txt('title', 'Title', cfg.title) + catSel +
       '<div class="ps-cset-grid">' + chk('legend', 'Legend', cfg.legend) + chk('grid', 'Gridlines', cfg.grid) + '</div>' +
       '<div class="ps-pie-sel-h">Axis titles</div>' + txt('xTitle', 'X-axis', cfg.xTitle) + txt('yTitle', 'Y-axis', cfg.yTitle) +
       '<div class="ps-pie-sel-h">Font sizes (px)</div>' +
