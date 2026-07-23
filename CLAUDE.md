@@ -77,6 +77,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Dashboard: remove redundant Program/Workspace tabs from Project Home
+- `dashboard.html` (Project Home) is scoped to ONE selected project, but the **Program** and
+  **Workspace** tabs rendered cross-project portfolio rollups (same `portfolioHtml`, different ancestor
+  node) — redundant with the far richer **Portfolio Overview module** already linked in this page's
+  sidebar (donut, budget bars, grouping, filters, S-Curve/Cash Flow), and a scope mix (one-project home
+  showing many-project tables). User chose **delete** over repurpose.
+- Removed the tab bar + both panels (Project Home is now a clean module launcher) and deleted the dead
+  code: `wireTabs`, `renderScaffolds`, `renderProgramTab`, `renderWorkspaceTab`, `portfolioHtml`,
+  `breadcrumbHtml`, `schedCell`, `statusPill`, `wirePortfolioRows`, `card`, and the tree helpers
+  (`buildChildren`/`childrenOf`/`descendantIds`/`ancestorOfType`/`projectsInSubtree`). Kept
+  `pathOf`/`groupHead`/`renderHeader`/`renderSwitcherMenu` (project switcher). 271 → 154 lines.
+- **Live-verified** (deployed, logged-in Chrome): Project Home renders no tab bar, 12 module cards, the
+  project switcher header (full workspace path + Group Head) and its dropdown (16 projects + All
+  projects link) both work, Portfolio Overview still in the sidebar; no console errors. Shell HTML/JS
+  only (no shared asset changed), so **no `?v=` bump**.
+
 ### 2026-07-22 — Project Schedule: fix cell-nav horizontal autoscroll (cells hidden behind frozen columns)
 - User: Left/Right/Tab didn't autoscroll columns correctly. The #, Activity ID, Activity Name columns
   are position:sticky and float over the viewport's left edge, so a cell could be scrolled into view yet
