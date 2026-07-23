@@ -57,6 +57,14 @@
        overflow the viewport edge. */
     .ps-datadate-badge { font-size:12px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
       border:1px solid var(--pd-line); border-radius:999px; padding:3px 11px; white-space:nowrap; margin-left:6px; }
+    /* Freshness badge for the cache-first (stale-while-revalidate) load */
+    .ps-fresh { font-size:11px; font-weight:700; border-radius:999px; padding:2px 9px; white-space:nowrap; margin-left:6px; display:inline-flex; align-items:center; gap:5px; }
+    .ps-fresh::before { content:""; width:7px; height:7px; border-radius:50%; display:inline-block; }
+    .ps-fresh-stale { color:var(--pd-warn); background:rgba(199,119,0,.12); }
+    .ps-fresh-stale::before { background:var(--pd-warn); animation:ps-fresh-pulse 1s ease-in-out infinite; }
+    .ps-fresh-live { color:var(--pd-ok); background:rgba(31,143,78,.12); }
+    .ps-fresh-live::before { background:var(--pd-ok); }
+    @keyframes ps-fresh-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
     .ps-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; min-width:0;
       padding-left:10px; margin-left:auto; border-left:1px solid var(--pd-line); }
     .ps-topbar-tools .pd-btn { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
@@ -1017,6 +1025,7 @@
         <div class="ps-menu ps-projsel-menu" id="ps-projsel-menu"></div>
       </div>
       <span class="ps-datadate-badge" id="ps-datadate-badge" title="As-of date driving the schedule — change it in Schedule ▸ Data Date">Data Date: —</span>
+      <span class="ps-fresh" id="ps-fresh" style="display:none;"></span>
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
            before #user-bar, so these sit immediately beside the night-mode button -->
       <div class="ps-topbar-tools" id="ps-topbar-tools">
@@ -2002,6 +2011,55 @@
       return '<div class="ps-pss-search"><input type="text" id="ps-pss-q" placeholder="Search all projects…" value="' + esc(_pssSearch) + '">' + bc + '</div>';
     }
   }
+  // ---- Cache-first load (stale-while-revalidate) ----------------------------------------------
+  // Opening a big schedule cold takes seconds (dominated by the sequential paginated round-trips, not
+  // bytes — ~8 round-trips ≈ 9s for a 6k-activity project). To make REOPENING instant, the full row
+  // set is cached in IndexedDB per project. On open we paint the cached rows immediately (no overlay),
+  // then re-fetch from the DB in the background and reconcile. First open per project is unchanged.
+  var _cacheDbP = null;
+  function _cacheDb() {
+    if (_cacheDbP) return _cacheDbP;
+    _cacheDbP = new Promise(function (resolve) {
+      try {
+        var rq = indexedDB.open('ps_schedule_cache', 1);
+        rq.onupgradeneeded = function () { var db = rq.result; if (!db.objectStoreNames.contains('rows')) db.createObjectStore('rows'); };
+        rq.onsuccess = function () { resolve(rq.result); };
+        rq.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+    return _cacheDbP;
+  }
+  function _cacheGet(key) {
+    return _cacheDb().then(function (db) { if (!db) return null; return new Promise(function (res) {
+      try { var g = db.transaction('rows', 'readonly').objectStore('rows').get(key); g.onsuccess = function () { res(g.result || null); }; g.onerror = function () { res(null); }; }
+      catch (e) { res(null); } }); });
+  }
+  function _cachePut(key, rowset) {
+    _cacheDb().then(function (db) { if (!db) return; try {
+      // Store only real DB columns — strip the `_`-prefixed fields rebuild()/CPM attach (some reference
+      // other rows, which would bloat or fail structured-clone). rebuild() recomputes them on load.
+      var clean = rowset.map(function (r) { var o = {}; for (var k in r) { if (Object.prototype.hasOwnProperty.call(r, k) && k.charAt(0) !== '_') o[k] = r[k]; } return o; });
+      db.transaction('rows', 'readwrite').objectStore('rows').put({ rows: clean, savedAt: new Date().toISOString(), uid: UID }, key);
+    } catch (e) {} });
+  }
+  var _cacheSaveT = null;
+  // Debounced re-cache after inline edits (which mutate `rows` in place but don't reload).
+  function _cacheSaveSoon() { if (_cacheSaveT) clearTimeout(_cacheSaveT); _cacheSaveT = setTimeout(function () { if (pid && rows && rows.length) _cachePut(pid, rows); }, 1500); }
+  var _editSeq = 0;   // bumped on every inline edit; guards the background refresh from clobbering an edit made mid-fetch
+  var _freshHideT = null;
+  // Freshness badge: 'cached' = showing last-known set, refreshing; 'live' = reconciled with the DB.
+  function _setFresh(state) {
+    var el = document.getElementById('ps-fresh'); if (!el) return;
+    clearTimeout(_freshHideT);
+    if (state === 'cached') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-stale'; el.textContent = 'Cached · updating…'; el.title = 'Showing the last-loaded schedule instantly; refreshing from the database…'; }
+    else if (state === 'live') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-live'; el.textContent = 'Live'; el.title = 'Up to date with the database.'; _freshHideT = setTimeout(function () { var e2 = document.getElementById('ps-fresh'); if (e2) e2.style.display = 'none'; }, 2500); }
+    else { el.style.display = 'none'; }
+  }
+  function _applyBigCollapse() {
+    if (rows.length > 400 && Object.keys(collapsed).length === 0) {
+      rows.forEach(function (r) { if (isWbs(r) && r._depth >= 3) collapsed[r.wbs] = true; });
+    }
+  }
   async function load() {
     var gen = ++_loadGen;   // claim this load; any older in-flight load is now stale
     _wbsCollapseInit = false;   // re-apply the large-tree default-collapse for this freshly-loaded tree
@@ -2011,13 +2069,24 @@
     window.__archived = ((PROJECTS.find(function (x) { return x.id === pid; }) || {}).status === 'archived');
     // hideLoading here clears any overlay a now-superseded load left showing (a stale
     // load aborts silently and never hides it — this branch owns the terminal state).
-    if (!pid) { hideLoading(); rows = []; rebuild(); renderAll(); return; }
-    showLoading('Loading schedule…');
+    if (!pid) { hideLoading(); _setFresh('hide'); rows = []; rebuild(); renderAll(); return; }
+    // CACHE-FIRST: paint the last-known rows instantly (no overlay), then revalidate below.
+    var painted = false;
+    try {
+      var cached = await _cacheGet(pid);
+      if (gen !== _loadGen) return;
+      if (cached && cached.uid === UID && cached.rows && cached.rows.length) {
+        rows = cached.rows; rebuild(); _applyBigCollapse(); renderAll();
+        _setFresh('cached'); painted = true;
+      }
+    } catch (e) {}
+    if (!painted) showLoading('Loading schedule…');
+    var eseq = _editSeq;   // if the user edits during the bg fetch, don't clobber their edit on reconcile
     var all = [];
     try {
-      var cnt = await sb().from(TABLE).select('*', { count: 'exact', head: true }).eq('project_id', pid);
-      var total = (cnt && cnt.count) || 0;
-      if (total > 0) setLoading('Loading ' + total + ' activities…');
+      // Count round-trip is cosmetic (drives the "Loading N…" text) — skip it on the cached path.
+      var total = 0;
+      if (!painted) { var cnt = await sb().from(TABLE).select('*', { count: 'exact', head: true }).eq('project_id', pid); if (gen !== _loadGen) return; total = (cnt && cnt.count) || 0; if (total > 0) setLoading('Loading ' + total + ' activities…'); }
       // Keyset pagination (order by the id PK, fetch id > last) instead of .range()/OFFSET.
       // OFFSET makes far pages re-scan every preceding row — a 42k-row project's deep pages blew past
       // Supabase's statement_timeout (found via a live P6 import, 2026-07-11). Keyset is an indexed PK
@@ -2031,30 +2100,35 @@
         var r1 = await q; if (r1.error) throw r1.error;
         if (gen !== _loadGen) return;   // a newer load started — drop this stale one (newer owns the overlay/state)
         var batch = r1.data || []; all = all.concat(batch);
-        setLoading(total ? ('Loading ' + all.length + ' / ' + total + '…') : ('Loading… ' + all.length));
+        if (!painted) setLoading(total ? ('Loading ' + all.length + ' / ' + total + '…') : ('Loading… ' + all.length));
         if (batch.length < 1000) break;
         last = batch[batch.length - 1].id;
       }
-    } catch (err) { if (gen !== _loadGen) return; hideLoading(); UI.toast('Load failed: ' + (err.message || err), 'error'); return; }
+    } catch (err) {
+      if (gen !== _loadGen) return; hideLoading();
+      if (!painted) { UI.toast('Load failed: ' + (err.message || err), 'error'); }
+      else { var ef = document.getElementById('ps-fresh'); if (ef) { ef.className = 'ps-fresh ps-fresh-stale'; ef.textContent = 'Cached (offline)'; ef.title = 'Showing the last-loaded schedule — could not reach the database to refresh.'; } }
+      return;
+    }
     if (gen !== _loadGen) return;   // superseded while paginating — don't clobber the newer load's state
     hideLoading();
-    rows = all; rebuild();
-    // Large schedule: default to a collapsed outline so we don't render thousands of DOM rows.
-    if (rows.length > 400 && Object.keys(collapsed).length === 0) {
-      rows.forEach(function (r) { if (isWbs(r) && r._depth >= 3) collapsed[r.wbs] = true; });
+    // Reconcile the (cache-painted) view with the fresh DB set — UNLESS the user made an inline edit
+    // while the fetch was in flight (that edit already went to the DB; keep the live in-memory rows
+    // instead of overwriting with a set that raced the edit — the debounced _cacheSaveSoon re-caches).
+    if (_editSeq === eseq) {
+      rows = all; rebuild(); _applyBigCollapse();
+      // PAINT from the primary activity rows. The grid/Gantt only need `rows`; resources + WBS_NODES
+      // below are for the Resource-Usage tab + WBS Manager and take seconds on a 17k-activity project.
+      renderAll();
+      _cachePut(pid, all);
     }
-    // PAINT NOW, from the primary activity rows. The grid/Gantt only need `rows`; resources
-    // and WBS_NODES below are for the Resource-Usage tab + WBS Manager. Loading those for a 17k
-    // activity project takes several seconds, and rendering only after them left the grid showing
-    // the stale "Select a project." for that whole window while the footer already showed the
-    // count. Render here, then re-render below once resources/heals are in.
-    renderAll();
+    _setFresh('live');
     await loadResourcesAssignments();   // loads WBS_NODES
     if (gen !== _loadGen) return;
     // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
-    if (healed) { rebuild(); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
+    if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
     populateGroupSelect();
     renderAll();
     if (isAdmin && rows.length) updateProjectSummary();
@@ -2087,6 +2161,7 @@
     var res = await sb().from(TABLE).update(patch).eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return false; }
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
+    _editSeq++; _cacheSaveSoon();   // keep the IndexedDB cache in sync + guard the bg refresh from clobbering this edit
     if (before) pushUndo({ type: 'update', id: id, before: before, after: patch });
     logAudit(r, 'update', _auditChanges(prev, patch));
     // Incremental rebuild: only recompute what the edit can actually affect.
