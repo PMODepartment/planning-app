@@ -77,6 +77,16 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: fix cell-nav horizontal autoscroll (cells hidden behind frozen columns)
+- User: Left/Right/Tab didn't autoscroll columns correctly. The #, Activity ID, Activity Name columns
+  are position:sticky and float over the viewport's left edge, so a cell could be scrolled into view yet
+  stay hidden behind them; `scrollCellVisible` ignored that (checked `left < scrollLeft`), so it never
+  uncovered left-obscured cells and scrolled pointlessly on frozen targets. Fixed to reserve the frozen
+  columns' width as the true left edge and no-op for frozen targets.
+- **Live-verified** (GPR101): all 11 visible columns revealed from every scroll position (old algo
+  failed all); ArrowRight scrolled 0→274, ArrowLeft 274→0, active cell always visible. Module-local, no
+  `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-22 — Project Schedule: Gantt timeline no longer starts years before the schedule
 - User: Gantt showed bars/timeline from ~2022 though the schedule starts 2025. Not stray data (verified
   live the dates are clean) — `range()` padded the timeline **2 years before / 3 after** the schedule

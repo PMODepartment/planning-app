@@ -1,5 +1,23 @@
 # Module: project-schedule
 
+## Cell-nav horizontal autoscroll fixed (cells hidden behind frozen columns) (2026-07-22) — fmlozano
+User: Left/Right/Tab cell navigation didn't autoscroll the columns correctly. Root cause in
+`scrollCellVisible(r, c)`: the leading **#, Activity ID, Activity Name** columns are `position:sticky`
+and float OVER the left edge of the scroll viewport, so a non-frozen cell can be scrolled *into* the
+viewport yet stay **hidden behind those sticky columns**. The old check `if (left < sc.scrollLeft)`
+ignored the frozen overlay entirely, so it never scrolled to uncover a left-obscured cell — and it
+also scrolled pointlessly when the target itself was a frozen column.
+- **Fix:** treat the frozen columns' combined width as the true left edge — reveal a left-obscured
+  cell to `left − frozen − 4` (just past them), keep the right-edge case, and **no-op for frozen target
+  columns** (they're always on-screen). `frozen` is summed from the row's first 3 children's live
+  `offsetWidth` (hidden columns measure 0, so it's correct when columns are hidden/reordered off).
+- **Verified live** (deployed, GPR101): deterministic replay of the exact math against real cell
+  geometry — **all 11 visible columns are revealed from every scroll position (0 failures)** where the
+  OLD algorithm failed all 21 in the tucked-behind-frozen case; the "failures" in a first pass were all
+  hidden (width-0) cost columns, not real. End-to-end with real key events: ArrowRight scrolled 0→274
+  (active cell revealed past the frozen columns), ArrowLeft scrolled 274→0 (active cell walked back,
+  always visible). Module-local, no `?v=` bump.
+
 ## Gantt timeline no longer starts years before the schedule (2026-07-22) — fmlozano
 User: the Gantt showed bars/timeline "all the way from 2022" though the schedule starts 2025.
 **Not stray data** — verified live that the project's dates are clean (GPR101: all dates 2025–2029,
