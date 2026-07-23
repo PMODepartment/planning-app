@@ -330,14 +330,18 @@ window.ProgressPhotos = (function () {
         '<span class="pp-groupcount">' + g.items.length + '</span></div>';
       if (isCol) return header;
       return header + g.items.map(function (r) {
+        // data-l = the column's label. Unused on desktop (the sticky .pp-grid-head
+        // supplies the headings); at phone width the head is hidden and the row
+        // restacks under the thumbnail, where each value needs its own label —
+        // module.css renders these via .pp-cell[data-l]::before.
         return '<div class="pp-row" data-id="' + r.id + '">' +
           '<div class="pp-cell pp-thumbcell">' + thumb(r, 'pp-thumb') + '</div>' +
-          '<div class="pp-cell">' + Fmt.esc(r.description || '—') + '</div>' +
-          '<div class="pp-cell">' + Fmt.esc(r.trade || '—') + '</div>' +
-          '<div class="pp-cell">' + Fmt.esc(r.works || '—') + '</div>' +
-          '<div class="pp-cell">' + Fmt.esc(r.location || '—') + '</div>' +
-          '<div class="pp-cell pp-date">' + (r.taken_at ? Fmt.date(r.taken_at) : '—') + '</div>' +
-          '<div class="pp-cell">' + rowActions(r) + '</div>' +
+          '<div class="pp-cell pp-desc">' + Fmt.esc(r.description || '—') + '</div>' +
+          '<div class="pp-cell" data-l="Trade">' + Fmt.esc(r.trade || '—') + '</div>' +
+          '<div class="pp-cell" data-l="Works">' + Fmt.esc(r.works || '—') + '</div>' +
+          '<div class="pp-cell" data-l="Location">' + Fmt.esc(r.location || '—') + '</div>' +
+          '<div class="pp-cell pp-date" data-l="Captured">' + (r.taken_at ? Fmt.date(r.taken_at) : '—') + '</div>' +
+          '<div class="pp-cell pp-actcell">' + rowActions(r) + '</div>' +
           '</div>';
       }).join('');
     }).join('');

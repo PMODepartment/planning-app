@@ -191,3 +191,50 @@
   .il-filters .il-search { flex: 1 1 100%; }
   .il-title-txt { display: none; }
 }
+
+/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
+   Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets) comes
+   from dashboard.css. The issues register is an 11-column table with
+   min-width:980px — side-scrolling a table that wide on a phone is unusable,
+   so below 700px each ROW BECOMES A CARD: thead hidden, cells stacked and
+   labelled from data-l (set in module.js).
+
+   NOTE: the table also carries the shared `.pd-table` class, whose phone rule
+   makes it a nowrap horizontal scroller. These selectors are deliberately
+   written as `.pd-table.il-table` / `.il-table td` so they outrank it —
+   dropping the `.pd-table` qualifier here silently restores side-scrolling.
+   -------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  .pd-table.il-table { display: block; min-width: 0; overflow-x: visible; white-space: normal; background: none; }
+  .il-table thead { display: none; }
+  .il-table tbody { display: block; }
+  .il-table tr {
+    display: block; margin-bottom: 10px; padding: 12px;
+    background: var(--pd-card); border: 1px solid var(--pd-line);
+    border-radius: var(--pd-radius); box-shadow: var(--pd-shadow);
+  }
+  .il-table tr:hover td { background: none; }
+  .il-table td {
+    display: block; border: 0; padding: 3px 0;
+    white-space: normal; max-width: none; font-size: 13px;
+  }
+  .il-table td[data-l]::before {
+    content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: 12px;
+  }
+  /* The issue text is the headline of the card, not a labelled field. */
+  .il-table td.il-cell-issue { font-size: 14px; font-weight: 600; padding-bottom: 6px; }
+  .il-table td.il-cell-issue::before { content: none; }
+  .il-table td.il-cell-issue .il-clip { -webkit-line-clamp: 4; }
+  /* Row number reads as a card index, kept small and unlabelled. */
+  .il-table td.il-cell-num { font-size: 11px; color: var(--pd-muted); }
+  .il-table td.il-cell-num::before { content: "#"; }
+  .il-table td.il-rowacts { display: flex; gap: 8px; margin-top: 8px; }
+  .il-iconbtn { width: 42px; height: 42px; font-size: 16px; }
+  /* An empty-state row spans the card, not a phantom column. */
+  .il-table td[colspan] { text-align: center; }
+
+  .il-filters { flex-wrap: wrap; gap: 8px; }
+  .il-filters > * { flex: 1 1 100%; min-width: 0; }
+  .il-kpis, .il-kpis-2 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .il-lessons { grid-template-columns: 1fr; }
+}

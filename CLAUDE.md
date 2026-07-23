@@ -2862,3 +2862,38 @@ shell pages and all 13 modules get the baseline without touching module code.
   + virtualized 18-column grid + keyboard nav, genuinely a desktop tool); `drawing-register`,
   `material-submittal`, `cash-flow`, `contracts-claims`, `stakeholder-map` are moderate; `s-curve`,
   `resource-loading`, `portfolio-overview` are light.
+
+### 2026-07-23 — Mobile & tablet, part 2: the four field-use modules
+
+Owner chose to prioritise **what people actually open on-site**. Each module got the treatment its
+interaction model allows — the deciding question was *"can this be card-stacked without breaking how
+it's used?"*, and the answer differed:
+- **Progress Photos — restacked (list view).** The list was a 7-column grid at `min-width:980px`.
+  Below 700px the header row is dropped and each row becomes a card: thumbnail pinned in a 104px left
+  column spanning the stack, every other cell forced into column 2 so they stack and wrap. Cells are
+  labelled from a new `data-l` attribute (added in `module.js`) via `::before`. ⚠️ The stacked cells
+  must also drop `white-space:nowrap` — inherited from the desktop grid, it ellipsizes them to nothing.
+  Lightbox photo gets the screen (96vw) with 44px controls.
+- **Issues & Lessons — card-stacked (real `<table>`).** 11 columns at `min-width:980px`. Below 700px
+  `thead` is hidden and each `<tr>` becomes a bordered card with labelled cells; the issue text is the
+  unlabelled headline. ⚠️ **Selector trap:** the element is `class="pd-table il-table"`, and the shared
+  phone rule turns `.pd-table` into a nowrap horizontal scroller — the overrides are deliberately
+  written `.pd-table.il-table` / `.il-table td` to outrank it. Dropping the `.pd-table` qualifier
+  silently restores side-scrolling.
+- **Drawing Register + Material Submittal — kept as scrollers, fixed the FREEZE.** Both are *editable*
+  registers (inline cell editing, drag-reorder, range selection, bulk actions), so card-stacking would
+  break the interaction model — they stay horizontal scrollers. The actual phone bug was the sticky
+  columns: Drawing Register froze checkbox + Code (130px) + Title (300px), and Material Submittal froze
+  190px + 230px — **420–430px of frozen columns on a 375px viewport**, so whatever you scrolled to had
+  nowhere to land. Below 700px only the identity column (Code) stays frozen; Title / `ms-fz2` release.
+- **Verified in-browser** at 375 and 1280 with gitignored harnesses carrying the **row markup copied
+  verbatim from each module.js**: at 375 no page- or table-level horizontal scroll, header hidden,
+  cells stacked at a single x with labels rendering, 40–42px row buttons, KPIs at 2 columns; at 1280
+  **desktop is byte-for-byte unchanged** — 7/11 distinct column x-positions, header visible, `::before`
+  labels resolve to `none`, `min-width:980px` intact. For the two scroller modules (whose editable
+  grids are impractical to harness faithfully) the change was confirmed by verifying the targeted
+  classes are actually emitted by `module.js`, so no rule is a silent no-op.
+- Module-local files only; the `?v=20260723a` bump from part 1 already covers their `module.css`/
+  `module.js` links, so **no further bump**.
+- **Still to do:** Project Schedule's read-only phone view (owner's choice), then the analysis modules
+  (S-Curve, Cash Flow, Portfolio Overview) and the remaining registers.

@@ -244,19 +244,22 @@ window.IssuesLessons = (function () {
       var a = agingDays(r);
       var agingTxt = a == null ? '—' : (a + ' day' + (a === 1 ? '' : 's'));
       var hot = a != null && a > 90 && (r.status || 'Open') !== 'Closed';
+      // data-l = the column heading. Unused on desktop (the <thead> supplies it);
+      // at phone width module.css hides the head and stacks each row into a card,
+      // where every value needs its own inline label (.il-table td::before).
       return '<tr>' +
         '<td class="il-cell-num">' + (i + 1) + '</td>' +
-        '<td>' + Fmt.esc(r.department) + '</td>' +
-        '<td class="il-cell-wrap"><div class="il-clip">' + Fmt.esc(r.description) + '</div>' +
+        '<td data-l="Department">' + Fmt.esc(r.department) + '</td>' +
+        '<td class="il-cell-wrap il-cell-issue" data-l="Issue"><div class="il-clip">' + Fmt.esc(r.description) + '</div>' +
           (hasLesson(r) ? '<span class="il-lessontag"><span data-ico="bulb" data-ico-size="12"></span>Lesson captured</span>' : '') +
         '</td>' +
-        '<td class="il-cell-wrap"><div class="il-clip">' + Fmt.esc(r.caused_by) + '</div></td>' +
-        '<td class="il-cell-wrap"><div class="il-clip">' + Fmt.esc(r.corrective_action) + '</div></td>' +
-        '<td class="il-champ">' + Fmt.esc(r.champion) + '</td>' +
-        '<td><span class="il-pill ' + statusClass(r.status) + '">' + Fmt.esc(r.status || 'Open') + '</span></td>' +
-        '<td>' + Fmt.date(r.date_presented) + '</td>' +
-        '<td class="il-aging' + (hot ? ' is-hot' : '') + '">' + agingTxt + '</td>' +
-        '<td>' + Fmt.date(r.date_resolved) + '</td>' +
+        '<td class="il-cell-wrap" data-l="Caused by"><div class="il-clip">' + Fmt.esc(r.caused_by) + '</div></td>' +
+        '<td class="il-cell-wrap" data-l="Corrective action"><div class="il-clip">' + Fmt.esc(r.corrective_action) + '</div></td>' +
+        '<td class="il-champ" data-l="Champion">' + Fmt.esc(r.champion) + '</td>' +
+        '<td data-l="Status"><span class="il-pill ' + statusClass(r.status) + '">' + Fmt.esc(r.status || 'Open') + '</span></td>' +
+        '<td data-l="Presented">' + Fmt.date(r.date_presented) + '</td>' +
+        '<td class="il-aging' + (hot ? ' is-hot' : '') + '" data-l="Aging">' + agingTxt + '</td>' +
+        '<td data-l="Resolved">' + Fmt.date(r.date_resolved) + '</td>' +
         (canWrite ? '<td class="il-rowacts">' +
           '<button class="il-iconbtn" title="Edit" data-edit="' + r.id + '">✎</button> ' +
           '<button class="il-iconbtn is-danger" title="Delete" data-del="' + r.id + '">🗑</button></td>' : '') +

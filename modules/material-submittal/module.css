@@ -219,3 +219,31 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
   .ms-table { min-width:0; font-size:10px; }
   .ms-table th.ms-fz1, .ms-table td.ms-fz1, .ms-table th.ms-fz2, .ms-table td.ms-fz2 { position:static; }
 }
+
+/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
+   Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets) comes
+   from dashboard.css.
+
+   The log is a ~1500px-wide table and stays a horizontal scroller here — it is
+   an EDITABLE, wide register (selection, bulk actions, inline status), so
+   card-stacking it the way issues-lessons does would break how it is used.
+   What actually broke on a phone was the FREEZE: ms-fz1 (190px) + ms-fz2
+   (230px) = 420px of sticky columns on a 375px viewport, leaving no room for
+   the data you scroll to. Below 700px only the code column stays frozen.
+   -------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  /* Release the second frozen column; keep the code as the identity anchor. */
+  .ms-table th.ms-fz2, .ms-table td.ms-fz2 { position: static; min-width: 150px; }
+  .ms-table th.ms-fz1, .ms-table td.ms-fz1 { min-width: 132px; }
+  .ms-table { min-width: 1100px; }
+  .ms-tablecard { max-height: none; }
+  .ms-sub { max-width: 180px; }
+
+  .ms-filters { flex-wrap: wrap; gap: 8px; }
+  .ms-filters > * { flex: 1 1 100%; min-width: 0; }
+  .ms-count { margin-left: 0; }
+  .ms-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .ms-form, .ms-imp { grid-template-columns: 1fr; }
+  .ms-codeparts { grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); }
+  .ms-legend { min-width: 0; }
+}

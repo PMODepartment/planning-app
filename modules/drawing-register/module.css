@@ -324,3 +324,29 @@ td.dr-editing { padding:2px 4px; }
 .dr-view-save { display:block; width:100%; text-align:left; border:0; background:transparent; color:var(--pd-red);
   padding:7px 10px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; }
 .dr-view-save:hover { background:var(--pd-bg); }
+
+/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
+   Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets) comes
+   from dashboard.css; the KPI/dash grids already collapse at 1000/700 above.
+
+   The register stays a horizontal scroller — it is an EDITABLE tree grid
+   (inline cell editing, drag-to-reorder, range selection), so card-stacking it
+   would break the interaction model. What broke on a phone was the FREEZE:
+   checkbox + Code (130px) + Title (300px) = well over 430px of sticky columns
+   on a 375px viewport, so the columns you scrolled to had nowhere to land.
+   Below 700px only Code stays frozen; Title scrolls with everything else.
+   -------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  /* Title un-freezes; Code remains the identity anchor. */
+  .dr-grid td.dr-freeze-title, .dr-grid th.dr-freeze-title { position: static; }
+  .dr-c-title { width: 200px; }
+  .dr-c-code { width: 110px; }
+  .dr-grid { min-width: 900px; }
+  .dr-tablecard { max-height: none; }
+
+  .dr-filters { flex-wrap: wrap; gap: 8px; }
+  .dr-filters > * { flex: 1 1 100%; min-width: 0; }
+  .dr-filters .dr-search { flex: 1 1 100%; }
+  .dr-rowbtn { min-width: 34px; min-height: 34px; }
+  .dr-prog { min-width: 70px; }
+}
