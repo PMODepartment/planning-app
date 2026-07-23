@@ -2204,3 +2204,46 @@ deployed site on the real **4PH Jab Greenwoods Dasmariñas** project (17,122 act
 - **Still unverified live, needs Chrome focused + a scratch project** (must not write to a real
   17k-activity schedule): horizontal autoscroll (`scrollCellVisible`), Enter/Tab commit-and-advance,
   the `_entryCol` type-down anchor, type-to-edit, and the `_editing` render guard.
+
+## Signed-in verification on XERTEST — 3 bugs found + fixed, all behaviours confirmed (2026-07-22g) — fmlozano
+
+Full keyboard/entry verification driven in the owners logged-in Chrome against the deployed site,
+on the **XERTEST** sandbox (the safe venue — the earlier pass deliberately refused to write to the
+real 17k-activity project).
+
+**Bugs found by this pass, each fixed + redeployed + re-verified:**
+1. **Navigation stepped into HIDDEN columns** (`4f8661c`). XERTEST/4PH hide 6 of 19 columns
+   (`display:none`, width 0). `moveCell` walked raw indices, so →/Tab parked the cursor on invisible
+   cells (measured `offsetLeft 0 / width 0 / text ""`). Fixed with `_colShown`/`_nextVisCol`/
+   `_firstVisCol`/`_lastVisCol` off the same `colHidden` source of truth as the Columns chooser.
+   **Re-verified: col 10 → 17, skipping 11–16.**
+2. **In-edit Enter/Tab moved TWICE** (`11e6551`). `inp.blur()` switches `document.activeElement` to
+   `<body>` synchronously, so the keystroke kept bubbling to the document-level grid handler whose
+   "focus is in an INPUT → bail" guard no longer matched — the move ran twice (**Enter skipped 2 rows
+   (4→6), Tab skipped 2 columns (1→4)**). Fixed with `e.stopPropagation()` on the editors
+   Enter/Tab/Escape. **Re-verified: Enter 4→5, Tab×2 = col 1→3.**
+3. **Closing editor left an orphaned `<input>`** (`86d2ea1`). `commit()`s per-branch renders are
+   conditional (`if (ok) renderGrid()`), so a no-op/failed persist skipped the repaint and left the
+   input sitting in the cell with blank text — newly visible now that Tab/Enter navigate away from it.
+   `commit()` now always `scheduleRender()`s. (Pre-existing; only surfaced by the new navigation.)
+
+**Verified PASSING live:** click sets active cell · ↓×3 rows advance with the column held · →×3 ·
+Tab×6 · **hidden-column skip** · **horizontal autoscroll** (`scrollLeft` 0→504) · **render guard**
+(input survived 6 forced repaint cycles as the SAME DOM node with its uncommitted value intact) ·
+**Escape cancels with no write** · **entry-column anchor** (Enter from col 3 returned to col 1 on the
+next row) · **single-step Enter/Tab** · **type-to-edit** (typing `z` opened an editor seeded with `z`,
+focus in the input).
+
+**Data integrity confirmed by direct Supabase query** (not just the DOM): `project_schedule` in
+XERTEST has **0 rows named `z`**, and the row whose editor was Tab/Enter-committed still holds its
+original `activity_name` ("Start of Precast Production") — the commits wrote the unchanged value back,
+nothing was corrupted. No writes at all reached the real 4PH project.
+
+⚠️ **Environment notes for the next person automating this.** Chrome sits behind the Claude app, so the
+tab is `visibilityState:"hidden"` → **native rAF never fires** and `Page.captureScreenshot` times out.
+Workaround: overwrite `window.requestAnimationFrame` with a `setTimeout` shim (the module reads it at
+call time via `(window.requestAnimationFrame || fallback)(fn)`, so a post-load swap works). ⚠️ But if
+any `scheduleRender()` latched `_rafP = true` under the NATIVE rAF before the shim, that latch never
+clears and every later `scheduleRender` no-ops — the grid then paints 0 rows and commits appear not to
+repaint. The scroll path (`onVScroll`, own `winRaf` guard) still repaints and can be nudged with a
+synthetic `scroll` event. Both are automation artifacts, NOT product defects.

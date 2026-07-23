@@ -2789,3 +2789,14 @@ zero-width) columns, so the cursor appeared to vanish; `moveCell`/`moveRowSel` n
 via `_colShown`/`_nextVisCol` using the same `colHidden` source of truth as the Columns chooser.
 Remaining edit-path checks are blocked by Chrome being backgrounded (rAF suspended, renderer throttled)
 and need a scratch project rather than real data. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: signed-in verification on XERTEST (3 bugs found + fixed)
+
+Ran the full keyboard/data-entry verification signed in, on the XERTEST sandbox. Found and fixed three
+real bugs: (1) navigation stepped into hidden columns, (2) in-edit Enter/Tab moved twice because
+`blur()` let the keystroke bubble to the document handler past its INPUT guard, (3) a closing editor
+could leave an orphaned `<input>` when the commits conditional render was skipped. After fixes,
+confirmed live: hidden-column skip, horizontal autoscroll, render guard (input survived forced
+repaints), entry-column anchor, single-step Enter/Tab, type-to-edit, and Escape-cancels-without-write.
+Data integrity confirmed by direct Supabase query — no test data written, edited row unchanged, and
+nothing touched in the real project. See `modules/project-schedule/CLAUDE.md`.
