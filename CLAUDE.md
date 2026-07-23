@@ -2822,3 +2822,43 @@ branch commit** — `0683da1` "per-chart activity label field (ID / Name / both)
   in `index.html`, and the module's 690KB inline script parses clean (`new Function`). **Not**
   browser-verified — no signed-in click-through of the chart settings panel this pass. Module-local
   files only → **no `?v=` bump**.
+
+### 2026-07-23 — Mobile & tablet, part 1: the shared responsive layer
+
+Start of making the dashboard usable on phones and tablets. This pass does the **shared layer only**
+(`assets/css/dashboard.css` + `assets/js/ui.js`), which every one of the 21 pages inherits — so all
+shell pages and all 13 modules get the baseline without touching module code.
+- **New "MOBILE & TABLET" section in `dashboard.css`** with four breakpoints — 1024 tablet · 820
+  drawer · 700 phone · 420 small. Covers: off-canvas sidebar drawer + scrim, scrolling tab strips,
+  stacked toolbars, tables that scroll inside their card instead of widening the page, sheet-style
+  modals, viewport-anchored dropdowns, 44px touch targets, and safe-area insets for notched phones.
+  New `.pd-tablewrap` utility for wide tables.
+- **Two traps documented in the CSS itself** because both are easy to "fix" back into bugs:
+  1. **iOS Safari zooms the page when a focused input is under 16px** — all form controls go to 16px
+     at phone width. Do not restore 13/14px to match the desktop look.
+  2. **`initShell` adds `.pd-collapsed` by DEFAULT.** Left alone that made the mobile drawer open as
+     a **useless 64px icon rail with no labels** — the drawer width/labels are re-asserted at ≤820px.
+- **`ui.js` drawer behaviour.** The hamburger previously just toggled a class: no scrim, no dismiss,
+  no scroll lock. Now it injects a scrim, locks background scroll, sets `aria-expanded`/`aria-controls`,
+  and dismisses on scrim tap / nav tap / Escape. A `resize` past 820px closes the drawer so a tablet
+  rotation can't leave a scrim + scroll lock stranded. Mobile open/closed state is deliberately **not**
+  persisted (a drawer that reopens itself each page load would cover the content every time).
+- **`body { overflow-x: clip }`, not `hidden`** — `hidden` on body breaks `position:sticky`
+  descendants, and the topbar plus every sticky table header depends on sticky working.
+- **Verified in-browser** (real CSS + real `ui.js`, gitignored `_ui_test.html` harness with stubbed
+  auth/DB) at 375 / 768 / 1200: no page-level horizontal scroll at any width; drawer opens to the
+  full 290px with labels (not the 64px rail) and sits above the scrim; 44px nav rows; scrim/Escape/
+  nav-tap all dismiss; modal is a true bottom sheet (full width, flush to viewport bottom, top-only
+  radius); inputs 16px. Also verified on the **real login page**: card fits 375px, 44px targets, no
+  errors. ⚠️ Two **measurement artifacts, not defects**, cost time — worth knowing: CSS transitions
+  never advance in this environment (backgrounded tab → stalled compositor), so a settled drawer reads
+  as still-closed until you inject `transition:none`; and `resize_window` doesn't dispatch a `resize`
+  event, so the breakpoint-crossing handler looks dead until you dispatch one manually. Screenshots
+  remain impossible here.
+- Shared assets changed → **`?v=` bumped `20260720b` → `20260723a` across all 21 HTML files** (154 refs).
+- **NOT done — module interiors.** The shared layer fixes chrome, tables, modals and dropdowns
+  everywhere, but each module's own dense UI still needs a pass. Hazard scan (fixed min-widths /
+  nowrap / fixed grids): `project-schedule` is by far the heaviest (27 min-widths, 39 nowraps — Gantt
+  + virtualized 18-column grid + keyboard nav, genuinely a desktop tool); `drawing-register`,
+  `material-submittal`, `cash-flow`, `contracts-claims`, `stakeholder-map` are moderate; `s-curve`,
+  `resource-loading`, `portfolio-overview` are light.

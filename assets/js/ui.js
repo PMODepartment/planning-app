@@ -190,10 +190,19 @@
     return api;
   }
 
-  // ---- Collapsible sidebar ----
+  // ---- Collapsible sidebar / mobile drawer ----
   // Auto-injects a hamburger toggle into the topbar of any shell page (a page
-  // with both .pd-sidebar and .pd-topbar). Desktop: collapses the sidebar to
-  // zero width (persisted). Mobile (≤820px): slides the sidebar in/out.
+  // with both .pd-sidebar and .pd-topbar).
+  //   Desktop (>820px): collapses the sidebar to a slim icon rail (persisted).
+  //   Mobile  (≤820px): the sidebar is an off-canvas DRAWER — it slides over the
+  //                     content behind a scrim, locks background scroll, and
+  //                     dismisses on scrim tap / nav tap / Escape.
+  // The 820px breakpoint must stay in sync with the drawer media query in
+  // dashboard.css. Mobile state is deliberately NOT persisted: a drawer that
+  // reopens itself on every page load would cover the content each time.
+  var MOBILE_Q = '(max-width: 820px)';
+  function isMobile() { return window.matchMedia(MOBILE_Q).matches; }
+
   function initShell() {
     var app = document.querySelector('.pd-app');
     var sidebar = document.querySelector('.pd-sidebar');
@@ -205,21 +214,58 @@
     if (topbar.querySelector('.pd-sidebar-toggle')) return;
 
     // Default to collapsed for a clean entry; only an explicit '0' keeps it open.
+    // (On mobile the CSS re-expands the drawer — .pd-collapsed must not turn the
+    // drawer into a label-less 64px rail.)
     if (localStorage.getItem('pd_sidebar_collapsed') !== '0') app.classList.add('pd-collapsed');
+
+    var scrim = document.querySelector('.pd-scrim');
+    if (!scrim) {
+      scrim = document.createElement('div');
+      scrim.className = 'pd-scrim';
+      document.body.appendChild(scrim);
+    }
+
+    function openDrawer(on) {
+      sidebar.classList.toggle('open', on);
+      scrim.classList.toggle('open', on);
+      document.body.classList.toggle('pd-noscroll', on);
+      btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    }
+    function closeDrawer() { openDrawer(false); }
 
     var btn = document.createElement('button');
     btn.className = 'pd-sidebar-toggle';
+    btn.type = 'button';
     btn.setAttribute('aria-label', 'Toggle menu');
+    btn.setAttribute('aria-controls', sidebar.id || 'pd-sidebar');
+    btn.setAttribute('aria-expanded', 'false');
+    if (!sidebar.id) sidebar.id = 'pd-sidebar';
     btn.innerHTML = '<span></span><span></span><span></span>';
     btn.onclick = function () {
-      if (window.matchMedia('(max-width: 820px)').matches) {
-        sidebar.classList.toggle('open');
+      if (isMobile()) {
+        openDrawer(!sidebar.classList.contains('open'));
       } else {
         app.classList.toggle('pd-collapsed');
         localStorage.setItem('pd_sidebar_collapsed', app.classList.contains('pd-collapsed') ? '1' : '0');
       }
     };
     topbar.insertBefore(btn, topbar.firstChild);
+
+    scrim.addEventListener('click', closeDrawer);
+    // Tapping a nav link navigates; close so the drawer isn't left open behind
+    // the next page's paint (and for same-page anchors, so content is visible).
+    sidebar.addEventListener('click', function (e) {
+      if (isMobile() && e.target.closest('a')) closeDrawer();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && sidebar.classList.contains('open')) closeDrawer();
+    });
+    // Rotating a tablet from portrait to landscape can cross the breakpoint with
+    // the drawer open — it would otherwise stay "open" as a docked sidebar with
+    // the scrim and the body scroll lock still applied.
+    window.addEventListener('resize', function () {
+      if (!isMobile() && sidebar.classList.contains('open')) closeDrawer();
+    });
   }
 
   if (document.readyState === 'loading') {

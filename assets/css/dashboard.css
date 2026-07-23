@@ -325,6 +325,9 @@ a:hover { text-decoration: underline; }
 }
 
 /* ---- Responsive ---- */
+/* NOTE: the full mobile/tablet layer lives in the "MOBILE & TABLET" section at the
+   end of this file. This block is the historical base rule, kept so the off-canvas
+   sidebar still works if the later section is ever trimmed. */
 @media (max-width: 820px) {
   .pd-sidebar { position: fixed; left: -100%; transition: left .2s ease; z-index: 50; }
   .pd-sidebar.open { left: 0; }
@@ -547,3 +550,173 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-icon-btn { display: inline-flex; align-items: center; justify-content: center; }
 .pd-projsw-all { display: inline-flex; align-items: center; gap: 6px; }
 .pd-theme-toggle { display: inline-flex !important; align-items: center; justify-content: center; }
+
+/* ============================================================================
+   MOBILE & TABLET — added 2026-07-23
+   ----------------------------------------------------------------------------
+   One shared responsive layer so every page and module adapts without its own
+   breakpoint work. Read this before adding module-level media queries — most of
+   what a module needs (off-canvas sidebar, scrollable tables/tabs, sheet-style
+   modals, touch targets) is already handled here.
+
+   Breakpoints:
+     <= 1024px  tablet   — tighter chrome, narrower sidebar, scrolling tab strips
+     <=  820px  drawer   — sidebar becomes an off-canvas drawer (matches the
+                           820px check in ui.js initShell — keep them in sync)
+     <=  700px  phone    — stacked toolbars, sheet modals, 16px inputs
+     <=  420px  small    — minimum-chrome phone
+
+   Two rules that are easy to get wrong, handled here once:
+   1. iOS Safari ZOOMS the page when a focused input's font-size is under 16px.
+      All form controls go to 16px at phone width — do not "fix" this back to
+      13/14px to match the desktop look.
+   2. initShell adds .pd-collapsed by DEFAULT (clean desktop entry). Left alone
+      that makes the mobile drawer open as a useless 64px icon rail with no
+      labels, so the drawer width and labels are re-asserted below.
+   ============================================================================ */
+
+:root {
+  --pd-tap: 44px;              /* minimum comfortable touch target */
+  --pd-drawer-w: min(84vw, 290px);
+}
+
+/* Never let a wide child (table, Gantt, chart) scroll the whole PAGE sideways.
+   `clip` not `hidden`: `hidden` on body breaks position:sticky descendants, and
+   the topbar plus every sticky table header depends on sticky working. */
+body { overflow-x: clip; }
+.pd-content, .pd-main { min-width: 0; }
+
+/* Drawer scrim (injected by ui.js on every shell page). Explicitly display:none
+   outside the drawer breakpoint so a stale .open left over from a resize can
+   never intercept clicks on desktop — don't rely on it being an unstyled div. */
+.pd-scrim { display: none; }
+
+/* Horizontal-scroll wrapper for wide content. Wrap any wide table in one:
+   <div class="pd-tablewrap"><table class="pd-table"> … </table></div> */
+.pd-tablewrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.pd-tablewrap > table { min-width: max-content; }
+
+/* ---- Tablet ---- */
+@media (max-width: 1024px) {
+  :root { --pd-sidebar-w: 210px; }
+  .pd-topbar { padding: 10px 16px; gap: 10px; }
+  .pd-main { padding: 18px; }
+  .pd-module-grid { gap: 16px; }
+  /* Tab strips scroll sideways rather than wrapping into a tall stack. */
+  .pd-tabbar { padding: 0 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .pd-tabbar::-webkit-scrollbar { display: none; }
+  .pd-tab { white-space: nowrap; }
+}
+
+/* ---- Sidebar becomes an off-canvas drawer ---- */
+@media (max-width: 820px) {
+  .pd-sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; height: 100dvh;
+    width: var(--pd-drawer-w); flex-basis: var(--pd-drawer-w);
+    transform: translateX(-100%); transition: transform .22s ease;
+    z-index: 70; box-shadow: 0 0 40px rgba(0,0,0,.35);
+    padding-top: max(18px, env(safe-area-inset-top));
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  .pd-sidebar.open { transform: none; }
+
+  /* Re-assert the FULL drawer even when .pd-collapsed is set (see note 2 above).
+     On mobile the hamburger opens/closes the drawer; it never icon-rails. */
+  .pd-app.pd-collapsed .pd-sidebar { width: var(--pd-drawer-w); flex-basis: var(--pd-drawer-w); padding-left: 16px; padding-right: 16px; }
+  .pd-app.pd-collapsed .pd-sidebar nav a { justify-content: flex-start; padding: 12px; gap: 10px; font-size: 13.5px; }
+  .pd-app.pd-collapsed .pd-navtxt { display: flex; }
+  .pd-app.pd-collapsed .pd-navsec { display: block; }
+  .pd-app.pd-collapsed .pd-navico { margin-right: 11px; }
+  .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: block; }
+  .pd-app.pd-collapsed .pd-brand { margin-bottom: 14px; padding-bottom: 14px; }
+
+  /* Nav rows are the primary touch targets on a phone. */
+  .pd-sidebar nav a { min-height: var(--pd-tap); }
+
+  /* Scrim behind the open drawer (injected by ui.js). */
+  .pd-scrim { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60;
+    opacity: 0; pointer-events: none; transition: opacity .22s ease; }
+  .pd-scrim.open { opacity: 1; pointer-events: auto; }
+  body.pd-noscroll { overflow: hidden; }
+
+  .pd-main { padding: 16px; }
+  /* Project selector: the tree stacks above the list and stops eating height. */
+  .pd-tree { max-height: 300px; }
+}
+
+/* ---- Phone ---- */
+@media (max-width: 700px) {
+  .pd-topbar { padding: 9px 12px; gap: 8px; flex-wrap: wrap; row-gap: 8px; }
+  .pd-topbar h1 { font-size: 15px; }
+  .pd-topbar-mark { height: 24px; }
+  .pd-main { padding: 12px; }
+  .pd-card { padding: 14px; }
+
+  /* iOS zoom guard — see note 1 at the top of this section. */
+  .pd-input, .pd-select, .pd-textarea, .pd-input-sm,
+  input[type="text"], input[type="number"], input[type="date"],
+  input[type="email"], input[type="password"], input[type="search"],
+  select, textarea { font-size: 16px; }
+  .pd-input, .pd-select, .pd-textarea { padding: 10px 12px; }
+  .pd-input-sm { height: 40px; padding: 8px 10px; }
+
+  /* Touch targets */
+  .pd-btn { padding: 10px 14px; min-height: var(--pd-tap); }
+  .pd-btn-sm { min-height: 36px; }
+  .pd-vt, .pd-icon-btn, .pd-theme-toggle, .pd-sidebar-toggle { min-width: var(--pd-tap); min-height: var(--pd-tap); }
+  .pd-avatar { width: 40px; height: 40px; }
+
+  /* Toolbars stack; search takes a full row instead of being squeezed out. */
+  .pd-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .pd-toolbar-left, .pd-toolbar-right { justify-content: flex-start; flex-wrap: wrap; }
+  .pd-toolbar-right .pd-input-sm { flex: 1 1 100%; }
+
+  /* Tables scroll inside their own card rather than widening the page. Applied
+     to the shared table classes so modules inherit it without markup changes. */
+  .pd-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+  .pd-proj-table { overflow-x: auto; }
+
+  /* Modals become bottom sheets — reachable with a thumb, full-height scroll. */
+  .pd-modal-overlay { padding: 0; align-items: flex-end; }
+  .pd-modal { max-width: none; width: 100%; border-radius: 14px 14px 0 0;
+    max-height: 92dvh; padding: 18px;
+    padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+  .pd-modal-header { margin: -18px -18px 14px; padding: 13px 16px; border-radius: 14px 14px 0 0; }
+  .pd-modal-footer { margin: 14px -18px -18px; padding: 12px 16px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom)); flex-wrap: wrap; }
+  .pd-modal-footer .pd-btn { flex: 1 1 auto; justify-content: center; }
+  .pd-modal-close { width: var(--pd-tap); height: var(--pd-tap); }
+
+  /* Dropdown popovers: anchor to the viewport instead of running off-screen. */
+  .pd-psel-pop, .pd-projsw-menu, .pd-add-menu {
+    position: fixed; left: 8px; right: 8px; top: auto; width: auto;
+    min-width: 0; max-width: none; max-height: 70dvh; }
+  .pd-usermenu { position: fixed; right: 8px; left: auto; top: 58px; width: auto; min-width: 220px; }
+
+  .pd-projsw-btn { max-width: 100%; }
+  .pd-projsw-txt strong, .pd-projsw-txt small { max-width: 52vw; }
+  .pd-tab { padding: 12px 14px; font-size: 13.5px; }
+  .pd-proj-cards { grid-template-columns: 1fr; }
+  .pd-info-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .pd-module-card { min-height: 0; padding: 18px 16px; gap: 10px; }
+  .pd-module-icon { width: 44px; height: 44px; border-radius: 11px; }
+  .pd-home-head h2 { font-size: 19px; }
+  .pd-toast { left: 12px; right: 12px; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateY(20px); }
+  .pd-toast.show { transform: none; }
+  .pd-auth-wrap { padding: 16px; align-items: flex-start; padding-top: 8vh; }
+}
+
+/* ---- Small phone ---- */
+@media (max-width: 420px) {
+  .pd-topbar h1 { font-size: 14px; }
+  .pd-main { padding: 10px; }
+  .pd-card { padding: 12px; }
+  .pd-userbar-role, .pd-userbar-name { display: none; }   /* the avatar carries identity */
+  .pd-module-grid { gap: 12px; }
+}
+
+/* Coarse pointers (touch): reveal controls that are hover-gated on desktop,
+   since a touch device never produces the hover that would show them. */
+@media (hover: none) {
+  .pd-tree-edit { opacity: 1; }
+}
