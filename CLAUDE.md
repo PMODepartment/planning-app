@@ -77,6 +77,17 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: one-call schedule_rows RPC (fast cold load)
+- Cache made *reopen* instant; this makes *cold first-open* fast. New SQL function
+  `schedule_rows(project_id) returns jsonb` returns ALL of a project's rows as one jsonb array in a
+  SINGLE round-trip (scalar jsonb return isn't row-capped), collapsing the ~8 keyset pages into 1.
+  `security invoker` so RLS still applies. Migration **`migrations/2026-07-22-schedule-rows-rpc.sql`
+  (USER MUST RUN)**; idempotent.
+- Client `load()` calls the RPC first and **falls back to keyset pagination if it's absent**, so it's
+  safe to deploy before/after the migration. **Live-verified** (migration not yet run): RPC returns 404,
+  fallback loads a 17,122-activity project fine — no regression. Speedup activates once the migration
+  runs. Module-local JS + new migration, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-22 — Project Schedule: cache-first load (instant reopen via IndexedDB SWR)
 - Goal: eliminate the schedule's loading time on open. **Measured first:** a 6k-activity project
   cold-loads in ~8.9s across ~8 sequential paginated round-trips — the wait is round-trip latency ×

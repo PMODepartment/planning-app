@@ -1,5 +1,23 @@
 # Module: project-schedule
 
+## One-call schedule_rows RPC — fast cold load (2026-07-22) — fmlozano
+Follow-up to the cache-first work: cache makes *reopen* instant, but *cold first-open* was still ~8
+sequential keyset round-trips (PostgREST caps table reads at 1000 rows). New SQL function
+**`schedule_rows(p_project_id text) returns jsonb`** (migration
+**`migrations/2026-07-22-schedule-rows-rpc.sql` — USER MUST RUN**) returns ALL of a project's rows as
+a **single jsonb array in ONE round-trip** — a scalar jsonb return isn't subject to the max-rows cap.
+`jsonb_agg(to_jsonb(t))` auto-includes every column (future-proof). **`security invoker`** so the
+caller's RLS on `project_schedule` still applies (⚠️ never make it `security definer` — that would leak
+cross-project rows). `grant execute … to authenticated`. Idempotent (create-or-replace + grant); lives
+only in the migration, matching the sibling `schedule_scurve_agg` precedent (not in setup/schema).
+- **Client:** `load()` calls `sb().rpc('schedule_rows', {p_project_id})` **first**; if it errors / isn't
+  deployed, it **falls back to the keyset pagination loop** — so the app works before AND after the
+  migration. Composes with the IndexedDB cache (RPC = fast cold/first open; cache = instant reopen).
+- **Verified live** (deployed, migration NOT yet run): the RPC endpoint returns **404**, the client
+  falls back to keyset, and a **17,122-activity project (Naga) loaded correctly** with no regression.
+  The RPC *speedup* itself can't be verified until the migration runs (DDL needs DB privileges the
+  in-browser anon client doesn't have) — after running it, the ~8 round-trips collapse to 1 automatically.
+
 ## Cache-first load — instant reopen (IndexedDB stale-while-revalidate) (2026-07-22) — fmlozano
 User: "eliminate the loading time when the schedule is opened." **Measured the real bottleneck live**
 first: Avesta (6,017 activities) cold-loaded in **~8.9s across ~8 sequential paginated round-trips** —
