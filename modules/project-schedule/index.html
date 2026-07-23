@@ -8153,16 +8153,27 @@
   }
   // Next display-list row index in direction `step`, skipping id-less group headers; stays put if none.
   function _nextRowIdx(from, step) { var i = from + step; while (i >= 0 && i < DL.length && !DL[i].id) i += step; return (i >= 0 && i < DL.length && DL[i].id) ? i : from; }
-  // Horizontal autoscroll: reveal grid column `c` of the (rendered) row `r`. Frozen sticky columns
-  // are always visible, so only non-sticky cells need scrolling; offsetLeft is content-relative here.
+  // Horizontal autoscroll: reveal grid column `c` of the (rendered) row `r`. The leading columns
+  // (# gutter, Activity ID, Activity Name) are position:sticky — they float OVER the scrolled content
+  // and cover the left edge of the viewport. So a non-frozen cell can be inside the scroll viewport
+  // yet still HIDDEN behind those sticky columns. The visible area for a scrollable cell therefore
+  // starts `frozen` px in from the left, not at 0 — the previous check ignored that (and also scrolled
+  // pointlessly when the target itself was a frozen column), which is why Left/Right/Tab didn't reveal
+  // cells correctly.
   function scrollCellVisible(r, c) {
     var host = document.getElementById('ps-grid-rows'), sc = document.getElementById('ps-grid-scroll');
     if (!host || !sc) return;
     var rw = host.querySelector('.ps-grid-row[data-i="' + r + '"]'); if (!rw) return;
     var cell = rw.children[c + 1]; if (!cell) return;                 // child 0 = "#" gutter
+    // Frozen columns are always on-screen (sticky) — never scroll for them.
+    if (cell.classList.contains('c-num') || cell.classList.contains('c-id') || cell.classList.contains('c-name')) return;
+    // Width of the sticky columns that overlay the left edge (#, ID, Name — hidden ones measure 0).
+    var frozen = 0; for (var k = 0; k < 3; k++) { if (rw.children[k]) frozen += rw.children[k].offsetWidth; }
     var left = cell.offsetLeft, right = left + cell.offsetWidth;
-    if (left < sc.scrollLeft) sc.scrollLeft = Math.max(0, left - 4);
-    else if (right > sc.scrollLeft + sc.clientWidth) sc.scrollLeft = right - sc.clientWidth + 4;
+    // Obscured on the left (tucked under the frozen columns) → bring it just past them.
+    if (left - sc.scrollLeft < frozen) sc.scrollLeft = Math.max(0, left - frozen - 4);
+    // Off the right edge → bring its right edge into view.
+    else if (right - sc.scrollLeft > sc.clientWidth) sc.scrollLeft = right - sc.clientWidth + 4;
   }
   // Enter/F2: begin inline editing of the active cell (if it's an editable column).
   function editActiveCell() {
