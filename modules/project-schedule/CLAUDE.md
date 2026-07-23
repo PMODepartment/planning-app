@@ -2254,3 +2254,36 @@ any `scheduleRender()` latched `_rafP = true` under the NATIVE rAF before the sh
 clears and every later `scheduleRender` no-ops — the grid then paints 0 rows and commits appear not to
 repaint. The scroll path (`onVScroll`, own `winRaf` guard) still repaints and can be nudged with a
 synthetic `scroll` event. Both are automation artifacts, NOT product defects.
+
+## Phone read-only activity list (2026-07-23)
+
+Below **700px** the grid+Gantt split is hidden outright (`.ps-split`, `.ps-divider`, `.ps-toolbar`,
+`.ps-legend`, `#ps-details` all `display:none`) and replaced by **`#ps-mobile`** — a condensed
+**read-only** activity list painted by `renderMobile()`. Rationale: this module is an 18-column
+virtualized grid beside a time-scaled Gantt with Excel-style keyboard navigation and drag-to-link;
+none of that survives a 375px touch screen, and the owner chose a read-only field view over
+pan-and-zoom.
+
+- **Same data path, different presentation.** `renderMobile()` reads `displayList()`, so the active
+  search / filters / grouping / collapse state all carry over. It renders only `_dkind === 'task'`
+  nodes (WBS summary rows are skipped) as cards: Activity ID, status pill (derived the same way as
+  the grid — `isComplete()` → Completed, `actual_start` → In Progress, else Not Started), name,
+  Start / Finish / % Complete / Float, and a progress bar. Critical-path activities get a red left rail.
+- **Deliberately read-only** — no edit, drag, link or keyboard handlers are wired to these cards.
+- ⚠️ **`PS_M_CAP = 300` is a real guard, not a nicety.** This list is **not virtualized** (the desktop
+  grid is), and projects here reach 17k+ activities — painting every card would lock up a phone. Over
+  the cap it renders the first 300 and tells the user to narrow with search/filters. Only raise it
+  together with virtualization.
+- `renderAll()` calls `renderMobile()` only when already at phone width; a debounced `resize`
+  listener repaints on the way in, so rotating from desktop into phone can't reveal an empty pane.
+- **Verified** at 375px against the module's real stylesheet: cards 351px wide with no page-level
+  horizontal scroll, 4-column meta grid with no cell overflow, correct status colours
+  (muted/amber/green), red rail on critical-path only, progress fill exact (45% → 0.45), toolbar
+  hidden. At 1280px **desktop is unchanged** — mobile list `display:none`, split `flex`
+  (grid 660px + Gantt 588px), divider and toolbar visible.
+- ⚠️ **Verification gap, stated plainly:** `renderMobile()` was **not** exercised end-to-end against
+  loaded rows. The harness stubs could not satisfy this module's `load()` path (RPC → keyset
+  fallback), so it rendered its genuine empty state and the card branch was verified by injecting
+  `renderMobile()`'s exact template against the real CSS. The data binding itself rests on
+  `node --check` plus confirming every helper it calls (`esc`, `dispStart`, `dispFin`, `isComplete`,
+  `displayList`, `Fmt.date`) exists. **Worth a signed-in pass on a real project.**

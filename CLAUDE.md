@@ -2897,3 +2897,26 @@ it's used?"*, and the answer differed:
   `module.js` links, so **no further bump**.
 - **Still to do:** Project Schedule's read-only phone view (owner's choice), then the analysis modules
   (S-Curve, Cash Flow, Portfolio Overview) and the remaining registers.
+
+### 2026-07-23 — Mobile & tablet, part 3: Project Schedule read-only phone view
+
+Owner's choice for the heaviest module: **a read-only mobile view**, not pan-and-zoom and not a
+"use a bigger screen" notice. Below **700px** the grid+Gantt split is hidden and replaced by a
+condensed read-only activity list (`#ps-mobile` / `renderMobile()`); above 700px nothing changes.
+- **Same data path, different presentation** — `renderMobile()` reads `displayList()`, so search,
+  filters, grouping and collapse state all carry over. Cards show Activity ID, a status pill derived
+  exactly as the grid derives it, name, Start/Finish/%/Float and a progress bar; critical-path
+  activities get a red left rail. WBS summary rows are skipped. No edit/drag/link/keyboard handlers
+  are wired — editing stays desktop/tablet only.
+- ⚠️ **`PS_M_CAP = 300` is load-bearing.** The phone list is **not** virtualized (the desktop grid is)
+  and real projects here hit 17k+ activities, so painting every card would lock up a phone. Over the
+  cap it shows the first 300 and says to narrow with search/filters. Raise it only with virtualization.
+- **Verified** at 375px against the module's real stylesheet (cards 351px, no page h-scroll, 4-column
+  meta with no overflow, correct status colours, red rail on critical only, 45% fill exact) and at
+  1280px **desktop unchanged** (split `flex`, grid 660 + Gantt 588, toolbar/divider visible).
+- ⚠️ **Verification gap:** `renderMobile()` was not exercised end-to-end against loaded rows — the
+  harness stubs couldn't satisfy this module's `load()` (RPC → keyset fallback), so it rendered its
+  real empty state and the card branch was verified by injecting the function's exact template against
+  the real CSS. Data binding rests on `node --check` + confirming every helper it calls exists.
+  **Worth a signed-in pass on a real project.** See `modules/project-schedule/CLAUDE.md`.
+- Module-local only; `?v=20260723a` from part 1 already covers it.

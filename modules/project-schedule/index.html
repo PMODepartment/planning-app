@@ -997,6 +997,49 @@
     .ps-sc-tbl td.k { white-space:nowrap; padding-right:12px; width:1%; }
     .ps-kbd { display:inline-block; font:600 11px/1.4 var(--pd-font,inherit); background:var(--pd-bg); border:1px solid var(--pd-line);
       border-bottom-width:2px; border-radius:4px; padding:1px 5px; color:var(--pd-ink); }
+
+    /* ---- PHONE read-only list (<=700px) ---------------------------------
+       This module is a desktop planning tool: an 18-column virtualized grid
+       beside a time-scaled Gantt, with Excel-style keyboard navigation and
+       drag-to-link. Below 700px that split is hidden outright and replaced by
+       #ps-mobile — a condensed READ-ONLY activity list (renderMobile()).
+       Above 700px #ps-mobile is display:none and never rendered. */
+    .ps-mobile { display:none; }
+    @media (max-width:700px) {
+      .ps-split, .ps-divider { display:none !important; }
+      .ps-mobile { display:block; padding:2px 0 14px; }
+      /* Editing/authoring controls are meaningless in a read-only view. */
+      .ps-toolbar, .ps-legend, #ps-details { display:none !important; }
+
+      .ps-m-bar { display:flex; align-items:center; gap:8px; padding:8px 2px 10px;
+        font-size:13px; color:var(--pd-muted); }
+      .ps-m-ro { margin-left:auto; font-size:10px; font-weight:700; text-transform:uppercase;
+        letter-spacing:.05em; color:var(--pd-muted); background:var(--pd-bg);
+        border:1px solid var(--pd-line); border-radius:999px; padding:2px 9px; }
+      .ps-mcard { background:var(--pd-card); border:1px solid var(--pd-line);
+        border-left:3px solid var(--pd-line); border-radius:var(--pd-radius);
+        padding:11px 12px; margin-bottom:9px; }
+      .ps-mcard.is-cp { border-left-color:var(--pd-red); }
+      .ps-mtop { display:flex; align-items:center; gap:8px; margin-bottom:3px; }
+      .ps-mid { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:11.5px;
+        font-weight:700; color:var(--pd-muted); }
+      .ps-mstat { margin-left:auto; font-size:10.5px; font-weight:700; color:#fff;
+        border-radius:999px; padding:2px 9px; white-space:nowrap; }
+      .ps-mstat.is-new  { background:var(--pd-muted); }
+      .ps-mstat.is-wip  { background:var(--pd-warn); }
+      .ps-mstat.is-done { background:var(--pd-ok); }
+      .ps-mname { font-size:14px; font-weight:600; line-height:1.3; margin-bottom:8px; }
+      .ps-mmeta { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+      .ps-mmeta > div { display:flex; flex-direction:column; min-width:0; }
+      .ps-mmeta span { font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+      .ps-mmeta strong { font-size:12.5px; font-variant-numeric:tabular-nums; }
+      .ps-mbar { height:5px; background:var(--pd-line); border-radius:999px; overflow:hidden; margin-top:9px; }
+      .ps-mbar i { display:block; height:100%; background:var(--pd-red); }
+      .ps-m-empty, .ps-m-more { padding:22px 14px; text-align:center; color:var(--pd-muted);
+        font-size:13px; background:var(--pd-card); border:1px dashed var(--pd-line);
+        border-radius:var(--pd-radius); }
+      .ps-m-more { margin-top:4px; }
+    }
 </style>
 </head>
 <body>
@@ -1131,6 +1174,13 @@
             <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
           </div>
         </div>
+
+        <!-- PHONE ONLY (<=700px): a condensed READ-ONLY activity list that replaces the
+             grid+Gantt split. The split is an 18-column virtualized grid beside a
+             time-scaled Gantt with Excel-style keyboard navigation and drag-to-link —
+             none of which is usable on a phone. Editing stays desktop/tablet only.
+             Rendered by renderMobile(); shown/hidden purely by CSS. -->
+        <div class="ps-mobile" id="ps-mobile"></div>
 
         <!-- Activity Network View (PERT diagram) — shown via the Layout menu -->
         <div class="ps-network" id="ps-network" style="display:none;"></div>
@@ -3213,7 +3263,77 @@
   }
 
   // ---- render everything ----
-  function renderAll() { renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); }
+  // ---- PHONE read-only activity list ---------------------------------------
+  // Replaces the grid+Gantt split below 700px (see #ps-mobile in the markup).
+  // Reads displayList(), so the current search / filters / grouping / collapse
+  // state all carry over — this is a different PRESENTATION of the same rows,
+  // not a second data path.
+  //
+  // Deliberately read-only: no edit, drag, link or keyboard handlers are wired.
+  //
+  // PS_M_CAP guards the render. Real projects here run to 17k+ activities and
+  // this list is NOT virtualized (the desktop grid is) — painting every card
+  // would lock up a phone. Over the cap we render the first N and tell the user
+  // to narrow with search/filters. Raise this only alongside virtualization.
+  var PS_M_CAP = 300;
+  function psIsPhone() { return window.matchMedia('(max-width: 700px)').matches; }
+
+  function renderMobile() {
+    var host = document.getElementById('ps-mobile');
+    if (!host) return;
+    if (!pid) { host.innerHTML = '<div class="ps-m-empty">Select a project to see its schedule.</div>'; return; }
+
+    var nodes = displayList();
+    var acts = nodes.filter(function (n) { return n._dkind === 'task'; });
+    if (!acts.length) {
+      host.innerHTML = '<div class="ps-m-empty">No activities match the current filters.</div>';
+      return;
+    }
+    var shown = acts.slice(0, PS_M_CAP), clipped = acts.length - shown.length;
+
+    var head = '<div class="ps-m-bar">' +
+      '<strong>' + shown.length + '</strong> of ' + acts.length + ' activities' +
+      '<span class="ps-m-ro" title="Editing, the Gantt and keyboard navigation are available on a larger screen">read-only</span></div>';
+
+    var body = shown.map(function (r) {
+      var done = isComplete(r);
+      var started = !!r.actual_start;
+      var stat = done ? 'Completed' : (started ? 'In Progress' : 'Not Started');
+      var scls = done ? 'is-done' : (started ? 'is-wip' : 'is-new');
+      var pct = r.percent_complete != null ? Math.max(0, Math.min(100, +r.percent_complete)) : 0;
+      var s = dispStart(r), f = dispFin(r);
+      var flt = r._critical ? 'CP' : (r._float != null ? r._float + 'd' : '—');
+      return '<div class="ps-mcard' + (r._critical ? ' is-cp' : '') + '">' +
+        '<div class="ps-mtop"><span class="ps-mid">' + esc(r.activity_id || '') + '</span>' +
+          '<span class="ps-mstat ' + scls + '">' + stat + '</span></div>' +
+        '<div class="ps-mname">' + esc(r.activity_name || '') + '</div>' +
+        '<div class="ps-mmeta">' +
+          '<div><span>Start</span><strong>' + (s ? Fmt.date(s) : '—') + '</strong></div>' +
+          '<div><span>Finish</span><strong>' + (f ? Fmt.date(f) : '—') + '</strong></div>' +
+          '<div><span>Complete</span><strong>' + (r.percent_complete != null ? pct + '%' : '—') + '</strong></div>' +
+          '<div><span>Float</span><strong>' + flt + '</strong></div>' +
+        '</div>' +
+        '<div class="ps-mbar"><i style="width:' + pct + '%"></i></div>' +
+      '</div>';
+    }).join('');
+
+    var more = clipped > 0
+      ? '<div class="ps-m-more">' + clipped + ' more activities not shown. Use search or filters to narrow the list.</div>'
+      : '';
+    host.innerHTML = head + body + more;
+  }
+
+  // renderAll() only paints the phone list when already at phone width, so a
+  // rotation/resize from desktop into phone would otherwise reveal an empty
+  // #ps-mobile. Repaint on the way in; debounced because resize fires in bursts.
+  var _psMTimer = null;
+  window.addEventListener('resize', function () {
+    if (!psIsPhone()) return;
+    clearTimeout(_psMTimer);
+    _psMTimer = setTimeout(renderMobile, 150);
+  });
+
+  function renderAll() { renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (psIsPhone()) renderMobile(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
