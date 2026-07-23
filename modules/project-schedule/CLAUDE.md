@@ -2175,3 +2175,32 @@ freshly opened inline `<input>`, dropping a keystroke during fast type-down entr
   via blur/Enter/Tab/Escape, all of which run `commit`. No stuck-`_editing` path.
 - Verified: inline JS passes `node --check`, module loads with no console errors. Live keyboard test
   needs a login. Module-only, no migration, no `?v=` bump.
+
+## LIVE verification of the keyboard navigation — found + fixed a hidden-column bug (2026-07-22f) — fmlozano
+
+First signed-in run of the 22a–22e keyboard work, driven in the owners logged-in Chrome against the
+deployed site on the real **4PH Jab Greenwoods Dasmariñas** project (17,122 activities).
+- **Verified working live** with real key events (DOM-inspected after each): active cell set by click
+  (row 2 / col 0 / "A227380"); **↓×3** moved rows 2→5 with the **column held at 0** (column
+  persistence) and the row selection following; **→×3** moved col 0→3 with the row unchanged;
+  **Tab×6** moved col 3→9. Deployed build confirmed to contain every new symbol.
+- **BUG FOUND (now fixed): navigation stepped into HIDDEN columns.** That project hides 6 of its 19
+  grid columns (indices 11–16 → `display:none`, width 0 — the cost/IBB block). `moveCell` walked raw
+  column indices, so ←/→/Tab marched the cursor through zero-width invisible cells: measured the
+  active cell at `offsetLeft 0 / width 0 / text ""` after Tabbing past column 10. The user would press
+  → and watch the active-cell box vanish for six presses.
+  **Fix:** `_colShown(ci)` (reads the same `colHidden`/`colKey` source of truth as the Columns chooser
+  and `applyColHidden`s nth-child rules) + `_nextVisCol`/`_firstVisCol`/`_lastVisCol`; `moveCell`
+  now steps to the next VISIBLE column (Tab wrap uses first/last visible; arrows stay put when there
+  is no further visible column), and `moveRowSel` snaps to the first visible column if the preserved
+  one is hidden. Shipped + deployed.
+- ⚠️ **Environment blocker for the rest.** Chrome sits BEHIND the Claude app, so the tab is
+  `visibilityState:"hidden"` → **rAF never fires** (measured: no callback in 1.2s) and the renderer is
+  throttled hard enough that `Page.captureScreenshot` times out. Since `scheduleRender`/`doRender` and
+  `scrollCellVisible` are rAF-gated, a reload in that state paints **0 rows** (the `_rafP` latch is set
+  by a render that can never run). Same caveat already documented for the WBS virtualization work.
+  Swapping `window.requestAnimationFrame` for a `setTimeout` shim revives the paths, but only if
+  installed BEFORE module init — not achievable post-navigation.
+- **Still unverified live, needs Chrome focused + a scratch project** (must not write to a real
+  17k-activity schedule): horizontal autoscroll (`scrollCellVisible`), Enter/Tab commit-and-advance,
+  the `_entryCol` type-down anchor, type-to-edit, and the `_editing` render guard.

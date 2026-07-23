@@ -2779,3 +2779,13 @@ editor during fast type-down entry. New `_editing` flag (set in `beginEdit`, cle
 deferred paint when it closes. The edited value is read synchronously before any repaint, so no data
 is lost. Verified: inline JS passes `node --check`, no console errors on load. Module-only, no `?v=`
 bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: live keyboard verification + hidden-column navigation fix
+
+First signed-in verification of the new grid keyboard navigation, on the real 17,122-activity project.
+Confirmed working live: click-to-set active cell, ↓×3 (rows advance, column persists), →×3, Tab×6.
+**Found and fixed a real bug** — navigation stepped the active cell into hidden (`display:none`,
+zero-width) columns, so the cursor appeared to vanish; `moveCell`/`moveRowSel` now skip hidden columns
+via `_colShown`/`_nextVisCol` using the same `colHidden` source of truth as the Columns chooser.
+Remaining edit-path checks are blocked by Chrome being backgrounded (rAF suspended, renderer throttled)
+and need a scratch project rather than real data. See `modules/project-schedule/CLAUDE.md`.
