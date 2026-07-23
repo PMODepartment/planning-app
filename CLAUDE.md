@@ -77,6 +77,19 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-22 — Project Schedule: cache-first load (instant reopen via IndexedDB SWR)
+- Goal: eliminate the schedule's loading time on open. **Measured first:** a 6k-activity project
+  cold-loads in ~8.9s across ~8 sequential paginated round-trips — the wait is round-trip latency ×
+  page count, **not bytes**. So "lean columns" was deliberately skipped (wouldn't cut round-trips, risks
+  dropping fields). Instead made **reopen instant** with an IndexedDB stale-while-revalidate cache: paint
+  the cached rows immediately (no overlay) + a "Cached · updating…" badge, then re-fetch and reconcile to
+  "Live". Edit-guard (`_editSeq`) prevents a mid-fetch edit from being clobbered; cached rows are cleaned
+  of computed fields; count round-trip skipped on the cached path.
+- **Live-verified:** reopening Avesta painted from cache in **~640ms vs ~8,900ms cold (~14×)**, badge
+  cycled Cached→Live, no console errors. Cold first-open unchanged — the real fix for that is a one-call
+  server RPC (follow-up, same pattern as `schedule_scurve_agg`). Module-local, no migration, no `?v=`
+  bump. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-07-22 — Project Schedule: inline Status dropdown in the grid (one-click change)
 - Changing an activity's status required right-click → Edit activity (tedious on 10,000+ activities).
   The grid Status cell is now a dropdown (the coloured pill IS a `<select>`) for writers, so status

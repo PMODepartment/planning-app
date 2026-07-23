@@ -1,5 +1,30 @@
 # Module: project-schedule
 
+## Cache-first load — instant reopen (IndexedDB stale-while-revalidate) (2026-07-22) — fmlozano
+User: "eliminate the loading time when the schedule is opened." **Measured the real bottleneck live**
+first: Avesta (6,017 activities) cold-loaded in **~8.9s across ~8 sequential paginated round-trips** —
+the wait is **round-trip latency × page count, NOT bytes**. So column-trimming ("lean columns") was
+**deliberately not done** — it wouldn't cut the round-trips and risks silently dropping fields; the
+real cold-load lever is a one-call server RPC (follow-up). Instead made **reopen instant**:
+- **IndexedDB SWR** (`ps_schedule_cache`, store `rows`, keyed by project id). On open: if a cached row
+  set exists (and its `uid` matches the logged-in user), paint it immediately with **no loading
+  overlay** (`rebuild()` + `renderAll()` from cache), show a **"Cached · updating…"** badge, then
+  re-fetch from the DB in the background and reconcile → **"Live"** (badge auto-hides), or
+  **"Cached (offline)"** if the refresh fails. First open per project is unchanged (normal overlay).
+- **Cached value is cleaned** — `_cachePut` strips `_`-prefixed fields `rebuild()`/CPM attach (some
+  reference other rows → would bloat / break structured-clone); `rebuild()` recomputes them on load.
+- **Edit-guard:** `_editSeq` bumps on every inline `persist()`; the background reconcile skips the
+  `rows =` replace if an edit happened mid-fetch (that edit already hit the DB) so it never clobbers a
+  live edit. `persist()` also debounce-recaches (`_cacheSaveSoon`).
+- The cosmetic **count round-trip is skipped** on the cached path.
+- **Verified live** (deployed, logged-in Chrome): reopening Avesta painted from cache in **~640ms vs
+  ~8,900ms cold (~14×)** — the "Cached · updating…" badge fired (proving cache paint before network),
+  then reconciled to "Live" and auto-hid; no console errors. The residual ~0.6s is local `rebuild()`
+  (CPM/rollups), not network. Module-local, no migration, no `?v=` bump.
+- **Follow-up for cold first-load:** a server-side RPC returning the whole schedule in one call (same
+  pattern as `schedule_scurve_agg`) to collapse the ~8 round-trips into 1; and optional cross-project
+  cache warming from the picker.
+
 ## Inline Status dropdown in the grid — one-click change (2026-07-22) — fmlozano
 Changing an activity's status meant right-click → Edit activity → change the Status field — tedious on
 10,000+ activity projects. The grid Status cell is now a **`<select>` styled as the coloured pill**
