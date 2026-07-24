@@ -2287,3 +2287,78 @@ pan-and-zoom.
   `renderMobile()`'s exact template against the real CSS. The data binding itself rests on
   `node --check` plus confirming every helper it calls (`esc`, `dispStart`, `dispFin`, `isComplete`,
   `displayList`, `Fmt.date`) exists. **Worth a signed-in pass on a real project.**
+
+### 2026-07-23 — Schedule Builder view (bottom-up / location-based setup)
+- Added a **Schedule Builder** view to the title-switcher (between Project Schedule and Cost/EVM):
+  a 5-step wizard implementing the planning team's whiteboard flow (steps 1–7). Steps: **Activities**
+  (class-code list — code/name/group ST·AR·OTHER/required duration, drag to reorder = trade sequence)
+  → **Floors & Zones** (Location Breakdown) → **Zone sequence** (drag; default floor×zone) →
+  **Scope per zone** (location×activity checkbox matrix, stored inverted as `scopeOff`) →
+  **Generate** (sequential FS chain through locations from a start date → KPIs, duration-per-zone
+  bars, grouped preview, CSV export; "Push to Project Schedule" is a stub for the next milestone).
+- Code: a self-contained `ScheduleBuilder` closure with its OWN helpers (`e2`/`pdd`/`iso2`/`render`/
+  `load`/`save`/`generate`…) so nothing collides with the module's same-named functions. Reads the
+  module's live `pid`/`UID`. Wired via `switchTab('builder')` (view `#ps-view-builder`, rail
+  `#ps-bld-rail`, panel `#ps-bld-panel`) + a `renderAll` hook so switching project while on the tab
+  reloads it. `.sbld-*` CSS added to the module `<style>`.
+- Storage: one jsonb `config` per project in **`schedule_builder`** — migration
+  `migrations/2026-07-23-schedule-builder.sql` (**USER MUST RUN**; project-scoped RLS, read
+  `can_access_project` / write `is_writer()`+`can_access_project`). Save/load show a "run migration"
+  toast until applied. Icons: drag grip is the text glyph ⠇ (no `menu` in icons.js); Save uses `check`.
+- **Standalone `modules/schedule-builder/` was removed** — this integrated view supersedes it.
+- Verified: inline JS parses (`node --check`); loads with no console errors (auth gate blocks the
+  click-through). Not yet exercised signed-in.
+
+### 2026-07-23 — Schedule Builder: per-trade zoning + tower visual + Gantt link canvas
+- **Trades expanded** to ST · AR · MEPF · Allied · Other (`GROUPS`/`GLABEL`/`GCOLOR`); step-1
+  activity group select uses them.
+- **Step 2 rebuilt — per-trade, per-floor zoning.** Trade chips select the trade being edited;
+  per trade you add floors (drag to reorder) and set each floor's zone count (± stepper, zones
+  auto-name Z1..Zn), or bulk "Quick: N floors × M zones". A **tower/high-rise SVG visual**
+  (`towerSVG`) renders the selected trade's floors stacked (ground at bottom) with zone cells in
+  the trade colour. Model: `config.zoning[trade].floors[].zones[]`.
+- **Step 3 rebuilt — Gantt link canvas.** Every zone(-trade) is a bar (length = its trade's
+  day-sum); drag the dot on a bar's right edge onto another bar to create a finish-to-start link
+  (`addLink`, with cycle guard via `reaches`); click a connector to remove it. Bars slide to the
+  longest-path earliest start (`computeStarts`). Auto-chain / Clear links buttons. Self-contained
+  SVG + a single document-level mouseup (`upWired`) resolving the drop target by `elementFromPoint`.
+- **Step 4 (scope)** now renders one matrix per trade (that trade's locations × its activities);
+  `scopeOff` keyed by `locUid|activityId` where `locUid = trade/floorId/zoneId`.
+- **Step 5 (generate)** iterates per-trade locations, offsets each by its link-derived start, and
+  FS-chains that trade's activities within the location; per-zone bars coloured by trade.
+- Config model changed (`zoning`+`links` replace flat `floors`/`zones`/`sequence`) — same
+  `schedule_builder` table/jsonb; old flat configs are ignored by `normalize` (feature is new).
+- Verified: inline JS parses (`node --check`); scheduling math (longest-path starts, total, cycle
+  guard) unit-checked in Node; module loads with no console errors. Not yet exercised signed-in.
+
+### 2026-07-24 — Schedule Builder step 3: Start/End milestones + auto-traced interphase logic
+- **Start & End nodes** added to the link canvas: a green **START** milestone (top row) and a red
+  **END** milestone (bottom row, at the project's longest-path end). START has a source handle;
+  END is a terminal drop target. Both are valid link endpoints (markers, 0 duration — they bookend
+  the network without affecting timing). `Auto-chain` now also links Start→first and last→End.
+- **Auto-trace of construction logic.** New helpers `locKeyOf` (floor+zone), `tryLink` (dedupe +
+  cycle-safe), `traceInterphase`, `autoTrace`. When you draw a link between two zones **at the same
+  location** (same floor+zone across trades), the builder auto-chains the remaining trades there in
+  order **ST → AR → MEPF → Allied → Other** — the structural→architectural→MEPF interphasing.
+  A new **Auto-trace logic** button builds it for the whole building: interphase every location's
+  trades, then bookend Start→sources and sinks→End. All additions are cycle-guarded via `reaches`.
+- Verified: inline JS parses (`node --check`); loads with no console errors. Signed-in click-through
+  (drag-to-link firing the interphase trace, Start/End rendering) still pending — auth-gated here.
+
+### 2026-07-24 — Schedule Builder step 3 redesign: takt floor-lead logic + tower-connect UI
+- **Zone-sequence logic is now takt/location-based.** `autoTrace` rebuilds the flow from rules:
+  (1) each trade climbs its own floors zone-by-zone (vertical progression), (2) a following trade
+  stays a configurable **floor lead** behind the previous one — e.g. "Structure leads by 4 floors
+  before the next trade starts" (Architecture on the ground floor can't begin until Structure is
+  4 floors up), (3) bookended by Start → sources and sinks → End. New `cfg.floorLead` (default 4),
+  editable inline in step 3. Helpers `floorsOf`/`zoneByCode`/`uidFor`/`floorAxis`. First cross-trade
+  transition uses the lead; later ones stay 1 floor behind. Unit-checked in Node: with ST dur 2/floor
+  and lead 4, AR ground start = day 8 (= 4 structural floors) — correct staircase.
+- **Linking UI rebuilt as a tower + schedule split.** LEFT: a tower (floors stacked, ground at
+  bottom; union of floor codes) where every zone is a clickable **node** grouped by trade and
+  coloured by trade. Click a source node then a target to connect them (finish-to-start, with the
+  same-location interphase auto-trace + cycle guard); the pending source is outlined. RIGHT: the
+  **resulting schedule** (`scheduleSVG`) — read-only takt bars from the links with Start/End +
+  arrows; click an arrow to remove that link. Replaces the SVG drag-handle canvas (drag-to-link).
+- Verified: inline JS parses (`node --check`); takt scheduling unit-checked; module loads with no
+  console errors. Signed-in click-through still pending (auth-gated here).

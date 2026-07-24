@@ -2953,3 +2953,22 @@ Finished the sweep — all 13 modules now have a phone/tablet pass. Same decidin
   chart back to 1202px with all phone min-widths resolving to `0px`. The other six share these two
   verified patterns plus chrome-only changes.
 - Module-local only; `?v=20260723a` from part 1 already covers every module's assets.
+
+### 2026-07-23 — Schedule Builder folded INTO Project Schedule (not a standalone module)
+
+Built the bottom-up / location-based **Schedule Builder** (reverse-engineered from the planning
+team's whiteboard) as a **view inside the Project Schedule & Cost Loading module** — per the owner,
+not a separate module. It's a fourth entry in the title-switcher ("Schedule Builder", between
+Project Schedule and Cost / EVM), a 5-step wizard: Activities (class-code list + duration) → Floors
+& Zones (location breakdown) → Zone sequence → Scope-per-zone matrix → **Generate** (sequential FS
+chain through locations → KPIs, duration-per-zone bars, grouped preview, CSV export).
+- Implemented as a self-contained `ScheduleBuilder` closure inside `modules/project-schedule/
+  index.html` (own helpers, no collision with the module's `esc`/`pd`/`render`/`load`/`save`/
+  `generate`); reads the module's current `pid`/`UID`; `switchTab('builder')` + `renderAll` drive it.
+- Table **`schedule_builder`** (project_id PK, config jsonb) — migration
+  `migrations/2026-07-23-schedule-builder.sql` (**USER MUST RUN**); project-scoped RLS.
+- The earlier standalone `modules/schedule-builder/` + its `config.js` registry entry were
+  **removed** (this supersedes them). Generated preview stays in the builder; pushing it into the
+  live schedule is the next milestone (whiteboard steps 8–10 also deferred).
+- Verified: module + config parse (`node --check`); loads on the local server with no console
+  errors (auth gate blocks click-through). See `modules/project-schedule/CLAUDE.md`.
