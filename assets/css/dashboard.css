@@ -773,10 +773,48 @@ body { overflow-x: clip; }
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px;
   }
   .pd-topbar .pd-tb-tools button, .pd-topbar .pd-tb-tools .pd-btn { white-space: nowrap; }
-  /* The project selector is the widest control and reads best on its own line. */
-  .pd-topbar .pd-tb-tools > [class$="-projctx"] { flex: 1 1 100%; min-width: 0; }
+  /* ⚠️ These are `flex: 1 1 <basis>`, deliberately NOT `1 1 100%`. Forcing each
+     group onto its own row made the bar 197px tall on a 375px phone. With a
+     real basis they pair up when they fit (project + a 2-tab strip share one
+     line) and only claim a row of their own when they genuinely don't — and
+     because they still grow, a group alone on a row stretches full width, so
+     the layout stays edge-aligned either way. */
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] { flex: 1 1 190px; min-width: 0; }
   .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-select,
   .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-psel { width: 100%; max-width: none; }
+
+  /* ---- Make the wrapped rows look designed rather than merely wrapped ----
+     Tabs plus three action buttons genuinely cannot fit one 351px line, so the
+     controls occupy a few rows. Left to itself that reads as broken wrapping:
+     the modules push their tool cluster right with `margin-left:auto`, which on
+     its own row leaves it floating half-centred, misaligned with the tabs above
+     it. Instead each group claims a full row and divides it evenly, so every row
+     is a deliberate full-width control. Suffix selectors — every module names
+     these consistently (`-tabs`, `-topbar-tools`, `-tb-sep`). */
+  .pd-topbar .pd-tb-tools > * { margin-left: 0; margin-right: 0; }
+
+  .pd-topbar .pd-tb-tools > [class$="-tabs"] {
+    flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0;
+  }
+  /* The action cluster keeps its own row — its buttons carry the longest labels
+     ("+ Add photos", "+ New PPR") and squeezing them beside tabs truncates them. */
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"],
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] {
+    flex: 1 1 100%; display: flex; align-items: center; gap: 6px; min-width: 0;
+  }
+  /* Equal segments, like a native segmented control. */
+  .pd-topbar .pd-tb-tools > [class$="-tabs"] > button { flex: 1 1 0; justify-content: center; }
+  /* Actions share their row proportionally, so a labelled button keeps its words
+     while an icon-only one stays compact. */
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"] > .pd-btn,
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] > .pd-btn,
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"] > button,
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] > button {
+    flex: 1 1 auto; justify-content: center; min-height: var(--pd-tap);
+  }
+  /* Vertical rules were dividing a horizontal cluster; on its own row they just
+     add noise between full-width buttons. */
+  .pd-topbar .pd-tb-tools [class$="-tb-sep"] { display: none; }
 }
 
 /* ---- Phone: module title + filter panels ---- */

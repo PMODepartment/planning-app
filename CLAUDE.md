@@ -3041,3 +3041,32 @@ shots surfaced **a regression I had just introduced** plus three defects the ear
   never fires in this environment, so harnesses must force layout synchronously instead of awaiting a
   frame — an awaited rAF hangs the harness at "running…".
 - Shared assets only; `?v=20260724a` from part 5 already covers them.
+
+### 2026-07-24 — Mobile & tablet, part 7: make the wrapped topbar rows look designed
+
+Owner: *"the top bar for mobiles are showing 2 rows. Doesn't look very nice."* The screenshot showed
+four rows, and the ugliness was **alignment, not row count**: modules push their tool cluster right
+with `margin-left:auto`, which on its own wrapped row leaves it floating half-centred and misaligned
+with the left-aligned tabs above it. Tabs plus three actions genuinely cannot fit one 351px line, so
+the fix is to make the rows look deliberate and to spend as few as possible.
+- **Each control group now claims a row and divides it evenly** — auto margins neutralised, tab strips
+  become equal segments like a native segmented control, action buttons share their row proportionally
+  (measured 3 × 113px filling 351px exactly, 44px tall). The vertical `-tb-sep` rules are hidden on
+  phones: they divided a horizontal cluster and read as noise between full-width buttons.
+- ⚠️ **First attempt made it WORSE and the measurement caught it.** Giving every group `flex: 1 1 100%`
+  forced each onto its own row — **197px**, taller than what the owner complained about. The groups now
+  use a real basis (`flex: 1 1 190px` on the project selector, `1 1 auto` on tabs) so they **pair up
+  when they fit and only claim their own row when they don't**, while still growing to fill the row
+  when alone. Progress Photos: **197 → 157px, 3 rows** (project + tabs share a line). Do not "tidy"
+  these back to `100%`.
+- **Trade-off accepted:** sharing that line truncates the project name to "Megaworld Projects DP T…"
+  (needs 211px, has ~153px). Kept because the truncated form is already the norm on the wider modules
+  in the owner's own screenshots, and the control is still a tappable dropdown — whereas a full extra
+  row costs 40px on every module.
+- **Adaptive, not hard-coded:** verified on Contracts & Claims, the densest topbar (3 long tab labels
+  + a 4-action cluster) — it takes 4 rows / 196px but **every tab label stays intact**, everything is
+  on screen, and the tab strip stretches to the full 351px when it wraps alone. Nothing is hidden or
+  clipped at either extreme.
+- **Desktop re-verified at 1280:** single 65px row, wrappers `display:contents`, correct left-to-right
+  order, separators visible again, buttons not stretched (`flex-grow: 0`).
+- Shared CSS only; `?v=20260724a` already covers it.
