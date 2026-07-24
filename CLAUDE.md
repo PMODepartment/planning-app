@@ -2972,3 +2972,196 @@ chain through locations → KPIs, duration-per-zone bars, grouped preview, CSV e
   live schedule is the next milestone (whiteboard steps 8–10 also deferred).
 - Verified: module + config parse (`node --check`); loads on the local server with no console
   errors (auth gate blocks click-through). See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-24 — Mobile & tablet, part 5: the module topbar (the last full-screen offender)
+
+Owner sent phone screenshots of nine modules. Parts 1–4 had fixed drawers, tables, modals and charts,
+but **every screenshot showed the same remaining defect**: the topbar. It is one flat flex row
+(back · title · project select · view tabs · tool cluster · theme · avatar), so `flex-wrap` on a
+375px screen broke it into four or five full-width rows — the avatar stranded alone on its own line —
+consuming most of the viewport before any content appeared.
+- **Fixed once in the shared layer, not in 14 modules.** New `UI.initModuleTopbar()` (`ui.js`) wraps
+  the topbar's existing children into two groups — `.pd-tb-main` (back · title · theme · avatar) and
+  `.pd-tb-tools` (project select · tabs · buttons) — without changing any module's markup. Both are
+  **`display:contents`** by default, so desktop layout is untouched; only below **900px** do they
+  become real rows: identity on one line (title truncates so the avatar can never be pushed off),
+  controls collapsed into ONE horizontally-scrolling strip. Topbar at 375px: **117px, two rows.**
+- ⚠️ **Three traps, all found by measuring rather than by reading the code:**
+  1. **`display:contents` hides the wrappers from layout but the DOM regrouping is still real** — the
+     account controls now precede the tool cluster in source order, which on desktop moved the avatar
+     from x=1211 into the **middle of the bar (x=284)**. Fixed with `order` on the two groups. Verified
+     the desktop sequence is byte-for-byte back→title→project→tabs→tools→theme→avatar on one 61px row.
+  2. **Every `module.css` re-declares `.pd-topbar { display:flex; flex-wrap:wrap }` and loads AFTER
+     `dashboard.css`** — a media query adds no specificity, so a bare `.pd-topbar` rule here loses on
+     source order and the fix would silently no-op in all 12 modules. Rules are qualified `.pd-app
+     .pd-topbar` / `.pd-topbar .pd-tb-main` purely to outrank that. Do not "simplify" the selectors.
+  3. The tools strip's edge-bleed negative margin didn't match the topbar's *responsive* padding and
+     pushed `documentElement.scrollWidth` 4px past the viewport (invisible only because `body` is
+     `overflow-x:clip`). Removed — `scrollWidth` now equals the viewport exactly.
+- **Filter bars**: module filter controls pin themselves to desktop widths with **inline**
+  `max-width:150px`-style attributes, leaving each select at half width with dead space beside it.
+  Overridden at ≤700px (needs `!important` — they are inline styles, not rules), excluding controls
+  inside tables/segmented toggles, which are sized by their container.
+- **Scope guard:** the enhancer only runs on topbars containing a back-to-modules link
+  (`a[class*="modback"]`), so the four shell pages (dashboard/projects/admin/portfolio-overview) keep
+  their existing chrome and drawer.
+- **Verified against all 12 modules' real markup** (harness fetching each `index.html`, injecting its
+  actual topbar, running the shipped `initModuleTopbar`): every module puts back+title+theme+avatar in
+  the identity row and its controls in the strip, with **`nothingLost: true`** (element counts and
+  identities reconcile exactly — no child dropped). ⚠️ Project Schedule's title is a `<button>`
+  view-switcher, **not an `<h1>`**, so title detection matches the class name too; without that its
+  title scrolled away leaving a back arrow and an avatar. `portfolio-overview` correctly skipped.
+  Screenshots remain impossible in this environment (stalled compositor) — all checks are measured
+  geometry.
+- Shared assets changed → **`?v=` bumped `20260723a` → `20260724a` across all 21 HTML files.**
+
+### 2026-07-24 — Mobile & tablet, part 6: fix the part-5 shell regression + three real defects
+
+Owner sent a second batch of phone screenshots. The module topbars from part 5 were working, but the
+shots surfaced **a regression I had just introduced** plus three defects the earlier passes missed.
+- ⚠️ **REGRESSION (mine, part 5): the shell pages were destroyed.** `projects.html` / `dashboard.html`
+  rendered a **~660px** topbar — hamburger, two giant distorted red bars, title, theme toggle and
+  avatar each on its own full-width row. Cause: part 5 gated the *JS* restructure to module topbars
+  (`a[class*="modback"]`) but the *CSS* `flex-direction:column; align-items:stretch` matched **every**
+  `.pd-topbar` at ≤900px. On an unrestructured topbar that turns each child into a full-width row and
+  stretches `.pd-topbar-mark` (`width:auto`) into those red bars. **Fix:** the JS now stamps
+  `.pd-tb-split` on topbars it actually restructures and **all** mobile column rules key off that
+  class, never off `.pd-topbar` alone. Belt-and-braces `flex:none; width:auto` on the mark.
+  **Measured after: projects 71px, dashboard 101px, admin 63px** (from ~660px), logo 29×24 undistorted,
+  avatar back on the identity row. Shell pages are now restructured too (they were the worst
+  offenders), with the mark treated as identity.
+- ⚠️ **The scrolling tools strip from part 5 was the wrong call — replaced with wrapping.** The
+  screenshots showed Progress Photos' leading **"Photos" tab pushed half off the left edge**, i.e.
+  unreachable unless you guessed a hidden horizontal scroll existed. Worse, `overflow-x:auto`
+  establishes a **clipping context that would cut off every dropdown opened from inside it** (project
+  switcher, add menus, module tool menus) — a latent bug in the 700–900px band where the shared
+  "popovers go position:fixed" rules don't yet apply. The controls row now **wraps**; the project
+  selector takes its own full-width line. Costs ~40px of height (117px → 157px on Progress Photos)
+  and buys every control visible and every popover unclipped. Verified `allTabsOnScreen: true`.
+- **Module titles were showing as a bare unlabelled icon.** Every module hides its own `.xx-title-txt`
+  at 820–1250px to buy room in the one-row topbar; with two rows there is space, so the text is
+  restored at ≤900px via `.pd-tb-main [class$="-title-txt"]` (0,2,0, to outrank the modules' 0,1,0).
+- **Filter selects were clipping their own text** ("All categories", "Filter by Works" lost their
+  descenders). Modules pin `.xx-filters .pd-select { height:34px }` while the phone layer raises the
+  font to 16px + 10px padding ≈ 42px of content in a 34px box. Height is now free to grow
+  (`min-height:44px`). Measured 44px box vs 36px needed.
+- ⚠️ **Found while verifying: the part-1 iOS zoom guard has been silently defeated since it shipped.**
+  The guard is `.pd-input { font-size:16px }` (0,1,0); every module's `.xx-filters .pd-input {
+  font-size:13px }` is (0,2,0) and loads later — so tapping a filter search box **still zoomed the
+  page on iPhone** in at least 6 modules. Measured 13px on Progress Photos. Re-asserted at (0,3,0).
+  This is the second time this exact specificity trap has bitten (see part 5's `.pd-topbar` note) —
+  **module CSS loads after `dashboard.css`, so any shared mobile rule targeting a single class will
+  lose.** Qualify shared overrides.
+- **Verified** at 375px (shell topbars via harness injecting the real `projects/dashboard/admin`
+  markup with the runtime-injected hamburger + toggle; module title/filters against the real
+  `progress-photos/module.css`) and at 1280px: **desktop byte-for-byte unchanged** — 61px single row,
+  wrappers `display:contents`, filters back to the module's own 34px/13px/180px. No page h-scroll at
+  either width. Screenshots still impossible here (stalled compositor); ⚠️ note `requestAnimationFrame`
+  never fires in this environment, so harnesses must force layout synchronously instead of awaiting a
+  frame — an awaited rAF hangs the harness at "running…".
+- Shared assets only; `?v=20260724a` from part 5 already covers them.
+
+### 2026-07-24 — Mobile & tablet, part 7: make the wrapped topbar rows look designed
+
+Owner: *"the top bar for mobiles are showing 2 rows. Doesn't look very nice."* The screenshot showed
+four rows, and the ugliness was **alignment, not row count**: modules push their tool cluster right
+with `margin-left:auto`, which on its own wrapped row leaves it floating half-centred and misaligned
+with the left-aligned tabs above it. Tabs plus three actions genuinely cannot fit one 351px line, so
+the fix is to make the rows look deliberate and to spend as few as possible.
+- **Each control group now claims a row and divides it evenly** — auto margins neutralised, tab strips
+  become equal segments like a native segmented control, action buttons share their row proportionally
+  (measured 3 × 113px filling 351px exactly, 44px tall). The vertical `-tb-sep` rules are hidden on
+  phones: they divided a horizontal cluster and read as noise between full-width buttons.
+- ⚠️ **First attempt made it WORSE and the measurement caught it.** Giving every group `flex: 1 1 100%`
+  forced each onto its own row — **197px**, taller than what the owner complained about. The groups now
+  use a real basis (`flex: 1 1 190px` on the project selector, `1 1 auto` on tabs) so they **pair up
+  when they fit and only claim their own row when they don't**, while still growing to fill the row
+  when alone. Progress Photos: **197 → 157px, 3 rows** (project + tabs share a line). Do not "tidy"
+  these back to `100%`.
+- **Trade-off accepted:** sharing that line truncates the project name to "Megaworld Projects DP T…"
+  (needs 211px, has ~153px). Kept because the truncated form is already the norm on the wider modules
+  in the owner's own screenshots, and the control is still a tappable dropdown — whereas a full extra
+  row costs 40px on every module.
+- **Adaptive, not hard-coded:** verified on Contracts & Claims, the densest topbar (3 long tab labels
+  + a 4-action cluster) — it takes 4 rows / 196px but **every tab label stays intact**, everything is
+  on screen, and the tab strip stretches to the full 351px when it wraps alone. Nothing is hidden or
+  clipped at either extreme.
+- **Desktop re-verified at 1280:** single 65px row, wrappers `display:contents`, correct left-to-right
+  order, separators visible again, buttons not stretched (`flex-grow: 0`).
+- Shared CSS only; `?v=20260724a` already covers it.
+
+### 2026-07-24 — Mobile & tablet, part 8: `dev-mobile.html` simulator + topbar audit across all 12 modules
+
+Owner reported the multi-row topbar on Issues, Claims, Stakeholder Map, Drawing Register, Material
+Submittal, Productivity Rates and Cash Flow, and asked for **an iPhone-resolution simulator to make
+testing easier**. Built the tool, then used it to audit every module — which surfaced defects the
+per-module spot checks had missed.
+- **NEW `dev-mobile.html`** (committed, deployed, not linked from the app). Renders any of the 15
+  pages in an iframe at an exact iPhone **CSS** viewport — SE 375×667, 13 mini 375×812, 15/14 Pro
+  393×852, 15 Pro Max 430×932, iPad mini/Pro — with rotate, an optional device frame, a side-by-side
+  compare slot, and a cache-busted reload. **It works because it is same-origin:** the iframe inherits
+  the real Supabase session and the `pd_project` sessionStorage key, so it shows the actual logged-in
+  module rather than a login redirect. Sign in first, then open it.
+- **Built an all-module audit harness** that measures each module's real topbar in **its own iframe**
+  (all 12 stylesheets define `.pd-topbar` and would otherwise contaminate each other) at 393px.
+  Findings, none of which were visible from testing one module:
+  1. **The named modules were at 195–200px in 4 rows** — worse than Progress Photos' 157px. Their tab
+     labels are too wide to share a line with the project selector, so both claimed their own row.
+  2. ⚠️ **Tap targets far below the 44px minimum: tab buttons were 28px and every project selector
+     34px** — the two things you hit most often in the bar were the hardest to hit.
+  3. ⚠️ **Contracts & Claims was silently CLIPPING a tab.** Its labels ("Contract" / "Claims / Change
+     Order" / "Extension of Time") measured **416px inside a 393px viewport**, and because the strip
+     is `overflow:hidden` the third tab was cut off rather than visibly overflowing. A flex item will
+     not shrink below its text width, so `flex:1 1 0` alone could not save it.
+- **Fixes.** The project selector now rides in the **identity row** (`initModuleTopbar` classifies
+  `-projctx` as identity): which project you are editing must never be ambiguous, and it stops the
+  selector fighting a wide tab strip for a shared line. Tab buttons and the selector get
+  `min-height:44px`; tab labels get `min-width:0` + **wrapping to two lines** (ellipsis would hide
+  which tab you are on). On phones the module's *title text* hides again — reverting part 6 **for
+  ≤700px only**, keeping it on tablets — because the icon plus the project name is the more useful
+  pairing when only one fits. Desktop order is preserved by giving `-projctx` the same `order` band
+  as the tools.
+- **Result across all 12 modules at 393px:** the seven named ones **195 → 169px, 4 → 3 rows**;
+  Cash Flow and S-Curve **157 → 115px (2 rows)**; Resource Master 197 → 155px. Every control on
+  screen, **zero tap targets under 44px**, no h-scroll anywhere. (Remaining zero-height controls were
+  verified to be items inside *closed dropdown menus*, not layout faults.)
+- **Desktop re-verified at 1280** on three modules: single 61px row, wrappers `display:contents`,
+  order still back → title → project → tabs → tools → theme → avatar, title text shown.
+- Shared assets only; `?v=20260724a` already covers them.
+
+### 2026-07-24 — Mobile & tablet, part 9: title text kept on phones + full audit (2 real overflows fixed)
+
+Owner: keep the module title text on phones, let the project name truncate instead. Then audit
+mobile/tablet and suggest improvements.
+- **Title restored at every width.** The ≤700px `display:none` on `.xx-title-txt` is gone and must not
+  come back (noted in the CSS). ⚠️ The project selector could NOT simply move up beside it — back +
+  icon + title + theme + avatar already consume ~295px of a 375px line, leaving the selector ~56px,
+  enough to read "Meg…" and nothing else. It therefore went back to the controls group, where it pairs
+  with a narrow tab strip (truncating, as the owner accepted) or takes a full row.
+- ⚠️ **`flex-basis: 120px` on the project selector is measured, not taste.** It is the largest value at
+  which Material Submittal's selector still pairs with its tabs instead of taking a 4th row (130px →
+  221px vs 169px). Issues and Contracts have tab labels too long to pair at ANY basis, even 110px, so
+  they keep 4 rows / 221px — the honest cost of long tab labels plus a visible title.
+- **Tablet topbar 163 → 99px.** The action cluster claimed a full row at every width; it now only does
+  so below 700px and shares the line on tablets, which have the width.
+- **Audit method:** every module measured in **its own iframe** (12 stylesheets all define `.pd-topbar`)
+  at **393px and 768px**, checking page overflow, off-screen controls, sub-40px tap targets and
+  sub-12px text. Two REAL defects found, both module-local and both now fixed:
+  1. ⚠️ **Cash Flow's action buttons were UNREACHABLE on a phone.** `.cf-controls` is
+     `flex-wrap:nowrap; overflow-x:auto` (fine on desktop), which put the whole cluster — Refresh,
+     Sync, Export, Actuals, Assumptions — **354px past the right edge**, and since `body` is
+     `overflow-x:clip` the page cannot scroll to them. `margin-left:auto` had also pushed them out of
+     the strip's own start. Now wraps. **Measured 354px overflow / 4 off-screen buttons → 0.**
+  2. ⚠️ **Project Schedule gave the whole page a horizontal scroll on tablet.** Its `.ps-tb-row` is
+     `flex-wrap:nowrap` (deliberate — single-row OPC toolbar with escaping popovers), overflowing
+     **~126px at 768px**. Now wraps in the 701–900px band only; phones drop the toolbar entirely.
+- **Result at 393px and 768px:** no page h-scroll anywhere, no off-screen controls, no sub-12px text
+  except Cash Flow's deliberately dense matrix (11.5px, documented).
+- **⚠️ KNOWN GAP — not fixed, needs an owner decision.** The 44px touch minimums apply **only below
+  700px**, but iPads (768–1024px) are touch devices. Measured at 768px: **tab strips 28px, selects and
+  buttons 34–36px** — 7 to 43 undersized controls per module (Project Schedule 43, Progress
+  Photos/Contracts/Material 16). Body-level tab strips (e.g. `.rl-tab`) are 34px even on phones, since
+  the 44px rule targets topbar strips only. Fixing means extending the touch sizing to ~900px, which
+  visibly loosens iPad density — a design call, so it was left for the owner rather than applied
+  unilaterally.
+- Shared CSS + two module-local files; `?v=20260724a` already covers them.

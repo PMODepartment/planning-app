@@ -715,6 +715,181 @@ body { overflow-x: clip; }
   .pd-module-grid { gap: 12px; }
 }
 
+/* ============================================================================
+   MODULE TOPBAR — two-row layout on phones/tablets
+   ----------------------------------------------------------------------------
+   ui.js `initModuleTopbar()` wraps the topbar's children into .pd-tb-main
+   (back · icon · title · theme · avatar) and .pd-tb-tools (project select ·
+   view tabs · action buttons). Both are display:contents here, so on desktop
+   the topbar is byte-for-byte the flat flex row it has always been — the
+   wrappers do not participate in layout at all.
+
+   Below 900px they become real rows: identity stays on one line, and the
+   controls collapse into ONE horizontally-scrolling strip instead of wrapping
+   into four full-height rows that push the content off the screen.
+   ============================================================================ */
+.pd-tb-main, .pd-tb-tools { display: contents; }
+
+/* ⚠️ `display:contents` makes the wrappers invisible to layout, but the DOM
+   REGROUPING is still real: the account controls now precede the tool cluster
+   in source order, which on desktop dropped the avatar into the middle of the
+   bar. `order` restores the original left-to-right sequence — back/title, then
+   tools, then theme + avatar. Required on desktop; harmless on mobile, where it
+   happens to be the order each row wants anyway. */
+.pd-topbar .pd-tb-tools > * { order: 1; }
+.pd-topbar .pd-tb-main > #pd-theme-toggle,
+.pd-topbar .pd-tb-main > #user-bar { order: 2; }
+
+/* ⚠️ Every module.css re-declares `.pd-topbar { display:flex; flex-wrap:wrap }`
+   and loads AFTER this file, so a bare `.pd-topbar` here loses on source order
+   (a media query adds no specificity). These rules are qualified with `.pd-app`
+   / `.pd-topbar` purely to outrank that — do not "simplify" the selectors. */
+@media (max-width: 900px) {
+  .pd-app .pd-topbar.pd-tb-split { flex-direction: column; align-items: stretch; gap: 8px; flex-wrap: nowrap; }
+
+  .pd-topbar .pd-tb-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  /* The Megawide mark is `width:auto`, so a stretching column would blow it up
+     to full width. This is what produced the giant red bars on the shell pages. */
+  .pd-topbar .pd-tb-main > img { flex: none; width: auto; align-self: center; }
+  /* The title takes the slack and truncates, so the avatar can never be pushed
+     onto a line of its own (what the topbar did when it simply wrapped). */
+  .pd-topbar .pd-tb-main h1 { flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pd-topbar .pd-tb-main > a, .pd-topbar .pd-tb-main > button,
+  .pd-topbar .pd-tb-main > #user-bar,
+  .pd-topbar .pd-tb-main > #pd-theme-toggle { flex: none; }
+  /* The avatar's desktop divider reads as a stray rule once it is the row's
+     last item against the screen edge. */
+  .pd-topbar .pd-tb-main > #user-bar { margin-left: auto; padding-left: 0; border-left: 0; }
+
+  /* ⚠️ The controls row WRAPS — it is deliberately not a horizontal scroller.
+     A scroller was tried first and failed on two counts: it pushed the leading
+     view tab half off the left edge (so the "Photos" tab was unreachable unless
+     you guessed there was a hidden scroll), and `overflow-x:auto` establishes a
+     clipping context that cuts off every dropdown opened from inside it — the
+     project switcher, the add menus, the module tool menus. Wrapping keeps all
+     controls visible and all popovers unclipped. */
+  .pd-topbar .pd-tb-tools {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px;
+  }
+  .pd-topbar .pd-tb-tools button, .pd-topbar .pd-tb-tools .pd-btn { white-space: nowrap; }
+  /* Pairs with a narrow tab strip when both fit (the project name truncates in
+     that case, which the owner has accepted) and takes a full row of its own
+     otherwise. Not `1 1 100%` — see the note below on why that costs height. */
+  /* ⚠️ 120px is measured, not arbitrary. It is the largest basis at which
+     Material Submittal's selector still pairs with its tab strip instead of
+     taking a 4th row (at 130px it wraps: 221px vs 169px). Raising this costs a
+     whole row on that module; lowering it buys nothing — Issues and Contracts
+     have tab labels too long to pair at any basis, even 110px. */
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] { flex: 1 1 120px; min-width: 0; }
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-select,
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-psel,
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] > button { width: 100%; max-width: none; }
+
+  /* ---- Make the wrapped rows look designed rather than merely wrapped ----
+     Tabs plus three action buttons genuinely cannot fit one 351px line, so the
+     controls occupy a few rows. Left to itself that reads as broken wrapping:
+     the modules push their tool cluster right with `margin-left:auto`, which on
+     its own row leaves it floating half-centred, misaligned with the tabs above
+     it. Instead each group claims a full row and divides it evenly, so every row
+     is a deliberate full-width control. Suffix selectors — every module names
+     these consistently (`-tabs`, `-topbar-tools`, `-tb-sep`). */
+  .pd-topbar .pd-tb-tools > * { margin-left: 0; margin-right: 0; }
+
+  .pd-topbar .pd-tb-tools > [class$="-tabs"] {
+    flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0;
+  }
+  /* On a phone the action cluster keeps its own row — its buttons carry the
+     longest labels ("+ Add photos", "+ New PPR") and squeezing them beside tabs
+     truncates them. A tablet has the width to share, so it only claims a full
+     row below 700px; at 700–900px it sits beside whatever fits. */
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"],
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] {
+    flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"],
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] { flex: 1 1 100%; }
+  /* Equal segments, like a native segmented control. ⚠️ `min-height` matters:
+     the modules size these to 28px, well under the 44px touch minimum — they
+     were among the hardest things on the page to hit accurately. */
+  .pd-topbar .pd-tb-tools > [class$="-tabs"] > button {
+    flex: 1 1 0; justify-content: center; min-height: var(--pd-tap);
+    /* ⚠️ `min-width:0` + wrapping are load-bearing for long tab labels. A flex
+       item will not shrink below its text width by default, so Contracts &
+       Claims ("Contract" / "Claims / Change Order" / "Extension of Time") blew
+       past the viewport and — because the strip is `overflow:hidden` — the last
+       tab was silently CLIPPED rather than visibly overflowing. Measured 416px
+       of tabs in a 393px viewport. Wrapping to two lines keeps every label
+       readable in full; ellipsis would hide which tab you are on. */
+    min-width: 0; white-space: normal; line-height: 1.15;
+    font-size: 12.5px; padding-left: 6px; padding-right: 6px; text-align: center;
+  }
+  /* Same for the project selector — it was 34px. */
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-select,
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] > button { min-height: var(--pd-tap); height: auto; }
+  /* Actions share their row proportionally, so a labelled button keeps its words
+     while an icon-only one stays compact. */
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"] > .pd-btn,
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] > .pd-btn,
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"] > button,
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] > button {
+    flex: 1 1 auto; justify-content: center; min-height: var(--pd-tap);
+  }
+  /* Vertical rules were dividing a horizontal cluster; on its own row they just
+     add noise between full-width buttons. */
+  .pd-topbar .pd-tb-tools [class$="-tb-sep"] { display: none; }
+}
+
+/* ---- Phone: module title + filter panels ---- */
+@media (max-width: 900px) {
+  /* Every module hides its own title TEXT on narrow screens (`.rr-title-txt`,
+     `.pp-title-txt`, … at 820–1250px) to buy room in the single-row topbar,
+     which now leaves the identity row showing a bare unlabelled icon. The
+     two-row layout has the space, so put the words back. Selector is
+     `.pd-tb-main [class$=…]` (0,2,0) to outrank the modules' own (0,1,0) rule
+     in a stylesheet that loads after this one. */
+  .pd-topbar .pd-tb-main [class$="-title-txt"] { display: inline !important; }
+}
+
+@media (max-width: 700px) {
+  /* Module filter bars pin their controls to desktop pixel widths with inline
+     `max-width` styles (e.g. `max-width:150px`), which on a phone leaves each
+     select stranded at half width with dead space beside it. Let every filter
+     control span the row it already wraps onto. `!important` is required — the
+     widths are inline styles in the modules' markup, not stylesheet rules. */
+  .pd-app .pd-main .pd-select, .pd-app .pd-main .pd-input, .pd-app .pd-main .pd-textarea {
+    max-width: none !important; width: 100%;
+  }
+  /* ⚠️ Modules pin filter controls to `height:34px` (e.g. `.pp-filters
+     .pd-select`), but the iOS zoom guard above raises them to 16px + 10px
+     padding — about 42px of content in a 34px box, which clipped the descenders
+     off "All categories" / "Filter by Works". Height must be free to grow.
+     `.pd-app .pd-main` (0,3,0) outranks the modules' `.xx-filters .pd-select`. */
+  .pd-app .pd-main .pd-select, .pd-app .pd-main .pd-input {
+    height: auto; min-height: var(--pd-tap);
+    /* ⚠️ Re-assert the iOS zoom guard. The generic `.pd-input` rule above is
+       (0,1,0) and every module's `.xx-filters .pd-input { font-size:13px }` is
+       (0,2,0) in a stylesheet that loads later — so the guard was being
+       silently overridden and tapping a filter search still zoomed the page.
+       Measured 13px on Progress Photos before this rule. */
+    font-size: 16px;
+  }
+  /* Inputs inside a table cell or a segmented control are sized by their
+     container, not the filter bar — leave those alone. */
+  .pd-app .pd-main table .pd-select, .pd-app .pd-main table .pd-input,
+  .pd-app .pd-main .pd-viewtoggle .pd-select { width: auto; height: 34px; min-height: 0; }
+
+  /* ⚠️ The module title keeps its TEXT at every width (owner's call) — do not
+     re-add a phone-width `display:none` here. The modules' own CSS hides
+     `.xx-title-txt` below 820–1250px for the old single-row bar; the ≤900px
+     rule above overrides that, and this block must not undo it. The title takes
+     the slack and ellipsises if a module name is long. */
+  .pd-topbar .pd-tb-main h1 { flex: 1 1 auto; min-width: 0; font-size: 15px; }
+}
+
 /* Coarse pointers (touch): reveal controls that are hover-gated on desktop,
    since a touch device never produces the hover that would show them. */
 @media (hover: none) {

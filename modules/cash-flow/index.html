@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260723a"></script>
+  <script src="../../assets/js/theme.js?v=20260724a"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260723a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
   <style>
     /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
     .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
@@ -248,6 +248,17 @@
         .cf-matrix { font-size: 11.5px; }
         .cf-matrix-wrap { overflow-x: auto; }
         .cf-viewbar { flex-wrap: wrap; gap: 8px; }
+        /* ⚠️ The control strip is `flex-wrap:nowrap` with `overflow-x:auto` — a
+           deliberate desktop choice, but on a phone it put the whole action
+           cluster (Refresh / Sync / Export / Actuals / Assumptions) ~354px past
+           the right edge. Because `body` is `overflow-x:clip` the page cannot
+           scroll to them, so those buttons were simply UNREACHABLE on mobile;
+           the strip's own scroll is easy to miss and `margin-left:auto` pushed
+           them out of its start. Wrap instead, and drop the auto margin. */
+        .cf-controls { flex-wrap: wrap; overflow-x: visible; }
+        .cf-actions { flex-wrap: wrap; margin-left: 0; flex: 1 1 100%; }
+        .cf-actions .pd-btn { flex: 1 1 auto; min-height: 44px; }
+        .cf-viewbar { flex: 1 1 100%; min-width: 0; }
       }
     </style>
 </head>
@@ -348,11 +359,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../../assets/js/config.js?v=20260723a"></script>
-<script src="../../assets/js/auth.js?v=20260723a"></script>
-<script src="../../assets/js/db.js?v=20260723a"></script>
-<script src="../../assets/js/ui.js?v=20260723a"></script>
-<script src="../../assets/js/icons.js?v=20260723a"></script>
+<script src="../../assets/js/config.js?v=20260724a"></script>
+<script src="../../assets/js/auth.js?v=20260724a"></script>
+<script src="../../assets/js/db.js?v=20260724a"></script>
+<script src="../../assets/js/ui.js?v=20260724a"></script>
+<script src="../../assets/js/icons.js?v=20260724a"></script>
 <script>
 (function () {
   'use strict';

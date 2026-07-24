@@ -268,9 +268,68 @@
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initShell);
-  } else { initShell(); }
+  // ---- Module topbar: two-row restructure for phones/tablets ----
+  // Every module topbar is one flat flex row: back · title · project select ·
+  // view tabs · tool cluster · theme toggle · #user-bar. On a phone that wraps
+  // into four or five full-width rows and eats the whole screen before any
+  // content shows (the tools row, then the avatar alone on its own line).
+  //
+  // Rather than patch 14 modules, wrap the children ONCE into two groups:
+  //   .pd-tb-main  — back button, module icon, <h1>, theme toggle, #user-bar
+  //   .pd-tb-tools — everything else (project select, tabs, buttons)
+  // Both are `display: contents` by default, so on desktop the topbar is still
+  // the exact same flat flex row it always was — the wrappers are invisible to
+  // layout. Only below the mobile breakpoint do they become real rows (identity
+  // on top, a single horizontally-scrolling strip of controls beneath).
+  //
+  // Safe because no CSS anywhere targets topbar children with a DIRECT-child
+  // combinator (`.pd-topbar > x`) — those would break under display:contents.
+  // Every module rule is a descendant selector. Check before adding one.
+  function initModuleTopbar() {
+    var topbar = document.querySelector('.pd-topbar');
+    if (!topbar || topbar.querySelector(':scope > .pd-tb-main')) return;
 
-  window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal, initShell: initShell, enhanceProjectSelect: enhanceProjectSelect };
+    var kids = Array.prototype.slice.call(topbar.children);
+    if (!kids.length) return;
+
+    var main = document.createElement('div');
+    main.className = 'pd-tb-main';
+    var tools = document.createElement('div');
+    tools.className = 'pd-tb-tools';
+
+    kids.forEach(function (el, i) {
+      // The identity cluster: the leading back button / hamburger, the module
+      // icon + title, and the account controls that must never scroll away.
+      var isLead = i === 0 && (el.tagName === 'A' || el.classList.contains('pd-sidebar-toggle'));
+      // Project Schedule's title is a <button> view-switcher, not an <h1>, so
+      // match on the class name too — otherwise its title scrolls away with the
+      // tools and the identity row is left with just a back arrow and avatar.
+      var isTitle = el.tagName === 'H1' || !!el.querySelector('h1') ||
+                    /(^|[\s-])[\w-]*title/i.test(el.className || '');
+      // The shell pages lead with the Megawide mark instead of a back link.
+      var isMark = el.tagName === 'IMG';
+      var isAccount = el.id === 'user-bar' || el.id === 'pd-theme-toggle';
+      // ⚠️ The project selector stays with the CONTROLS, not the identity row.
+      // It was briefly moved up beside the title, but the two cannot share a
+      // 375px line: back + icon + title + theme + avatar consume ~295px of it,
+      // leaving the selector about 56px — narrow enough to read "Meg…" and
+      // nothing else. Below the title it gets the full width instead.
+      (isLead || isMark || isTitle || isAccount ? main : tools).appendChild(el);
+    });
+
+    topbar.appendChild(main);
+    if (tools.children.length) topbar.appendChild(tools);
+    // Marks the topbar as restructured. ⚠️ The mobile CSS keys off THIS class,
+    // never off `.pd-topbar` alone — the column layout assumes the two wrapper
+    // rows exist. Applied to a plain topbar it turns every child into a
+    // full-width row and stretches the logo <img> into a giant red bar.
+    topbar.classList.add('pd-tb-split');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { initShell(); initModuleTopbar(); });
+  } else { initShell(); initModuleTopbar(); }
+
+  window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal, initShell: initShell,
+                enhanceProjectSelect: enhanceProjectSelect, initModuleTopbar: initModuleTopbar };
 })();

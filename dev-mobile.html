@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+  <script src="assets/js/theme.js?v=20260724a"></script>
+  <title>Mobile Preview · Planners Dashboard</title>
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260724a" />
+  <style>
+    /* ------------------------------------------------------------------
+       DEV TOOL — not part of the app's navigation. Renders any page of the
+       suite inside an iframe sized to an exact iPhone CSS viewport, so the
+       responsive layer can be checked on a desktop browser.
+
+       It works because it is SAME-ORIGIN: the iframe shares this tab's
+       Supabase session and its sessionStorage (the pd_project key), so the
+       real, logged-in module renders — not a login redirect.
+       ------------------------------------------------------------------ */
+    .dv-wrap { max-width: 1180px; margin: 0 auto; padding: 18px; }
+    .dv-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;
+      background: var(--pd-card); border: 1px solid var(--pd-line);
+      border-radius: var(--pd-radius); padding: 12px 14px; margin-bottom: 16px; }
+    .dv-f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .dv-f label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); font-weight: 700; }
+    .dv-note { color: var(--pd-muted); font-size: 12.5px; margin: 0 0 16px; line-height: 1.5; }
+    .dv-stage { display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+    .dv-dev { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    /* The phone shell is cosmetic; the iframe inside is the real viewport. */
+    .dv-shell { background: #111; border-radius: 44px; padding: 12px;
+      box-shadow: 0 18px 50px rgba(0,0,0,.35); border: 1px solid #2a2a2a; }
+    .dv-screen { position: relative; overflow: hidden; border-radius: 32px; background: #000; }
+    .dv-screen iframe { border: 0; display: block; background: var(--pd-bg); }
+    .dv-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+      width: 130px; height: 26px; background: #111; border-radius: 0 0 16px 16px; z-index: 2; pointer-events: none; }
+    .dv-cap { font-size: 12px; color: var(--pd-muted); font-weight: 600; }
+    .dv-cap b { color: var(--pd-ink); }
+    .dv-plain .dv-shell { background: none; border: 0; padding: 0; box-shadow: none; }
+    .dv-plain .dv-screen { border-radius: var(--pd-radius); border: 1px solid var(--pd-line); }
+    .dv-plain .dv-notch { display: none; }
+  </style>
+</head>
+<body>
+  <div class="dv-wrap">
+    <h1 style="margin:0 0 4px;font-size:20px;">Mobile Preview</h1>
+    <p class="dv-note">
+      Renders any page at an exact iPhone CSS viewport. Because this runs on the same origin,
+      the frame uses your existing login and selected project — so it shows the real module,
+      not the login screen. <strong>Sign in and pick a project first</strong>, then come back here.
+      <br />Dev tool only; not linked from the app.
+    </p>
+
+    <div class="dv-bar">
+      <div class="dv-f" style="flex:1 1 260px;">
+        <label for="dv-page">Page</label>
+        <select class="pd-select" id="dv-page"></select>
+      </div>
+      <div class="dv-f">
+        <label for="dv-device">Device</label>
+        <select class="pd-select" id="dv-device"></select>
+      </div>
+      <div class="dv-f">
+        <label for="dv-cmp">Compare with</label>
+        <select class="pd-select" id="dv-cmp">
+          <option value="">— none —</option>
+        </select>
+      </div>
+      <button class="pd-btn" id="dv-rotate" type="button">Rotate</button>
+      <button class="pd-btn" id="dv-frame" type="button">Hide frame</button>
+      <button class="pd-btn pd-btn-primary" id="dv-reload" type="button">Reload</button>
+    </div>
+
+    <div class="dv-stage" id="dv-stage"></div>
+  </div>
+
+  <script src="assets/js/config.js?v=20260724a"></script>
+  <script>
+  (function () {
+    // CSS-pixel viewports (not physical pixels) — what a page's media queries see.
+    var DEVICES = [
+      { id: 'se',     name: 'iPhone SE',            w: 375, h: 667 },
+      { id: '13mini', name: 'iPhone 13 mini',       w: 375, h: 812 },
+      { id: '15',     name: 'iPhone 15 / 14 Pro',   w: 393, h: 852 },
+      { id: '15pm',   name: 'iPhone 15 Pro Max',    w: 430, h: 932 },
+      { id: 'ipadm',  name: 'iPad mini',            w: 768, h: 1024 },
+      { id: 'ipad',   name: 'iPad Pro 11"',         w: 834, h: 1194 }
+    ];
+    var PAGES = [
+      { name: 'Projects (selector)', path: 'projects.html' },
+      { name: 'Project Home',        path: 'dashboard.html' },
+      { name: 'Admin',               path: 'admin.html' }
+    ].concat((window.APP_CONFIG && APP_CONFIG.MODULES || [])
+      .filter(function (m) { return m.enabled; })
+      .map(function (m) { return { name: m.name, path: m.path }; }));
+
+    var pageSel = document.getElementById('dv-page');
+    var devSel = document.getElementById('dv-device');
+    var cmpSel = document.getElementById('dv-cmp');
+    var stage = document.getElementById('dv-stage');
+    var landscape = false, framed = true;
+
+    PAGES.forEach(function (p) {
+      pageSel.add(new Option(p.name, p.path));
+    });
+    DEVICES.forEach(function (d) {
+      devSel.add(new Option(d.name + ' — ' + d.w + '×' + d.h, d.id));
+      cmpSel.add(new Option(d.name + ' — ' + d.w + '×' + d.h, d.id));
+    });
+    devSel.value = '15';
+
+    // Remember the last selection so a reload keeps you where you were.
+    try {
+      var saved = JSON.parse(localStorage.getItem('pd_devmobile') || '{}');
+      if (saved.page) pageSel.value = saved.page;
+      if (saved.dev) devSel.value = saved.dev;
+      if (saved.cmp) cmpSel.value = saved.cmp;
+      if (saved.landscape) landscape = true;
+      if (saved.framed === false) framed = false;
+    } catch (e) {}
+
+    function save() {
+      try {
+        localStorage.setItem('pd_devmobile', JSON.stringify({
+          page: pageSel.value, dev: devSel.value, cmp: cmpSel.value,
+          landscape: landscape, framed: framed }));
+      } catch (e) {}
+    }
+
+    function deviceById(id) {
+      for (var i = 0; i < DEVICES.length; i++) if (DEVICES[i].id === id) return DEVICES[i];
+      return null;
+    }
+
+    function phone(dev, path) {
+      var w = landscape ? dev.h : dev.w, h = landscape ? dev.w : dev.h;
+      var wrap = document.createElement('div');
+      wrap.className = 'dv-dev';
+      var shell = document.createElement('div');
+      shell.className = 'dv-shell';
+      var screen = document.createElement('div');
+      screen.className = 'dv-screen';
+      screen.style.width = w + 'px';
+      screen.style.height = h + 'px';
+      if (framed && !landscape) {
+        var notch = document.createElement('div');
+        notch.className = 'dv-notch';
+        screen.appendChild(notch);
+      }
+      var f = document.createElement('iframe');
+      f.width = w; f.height = h;
+      // Cache-bust so a reload always fetches the current CSS/JS.
+      f.src = path + (path.indexOf('?') < 0 ? '?' : '&') + '_dv=' + Date.now();
+      screen.appendChild(f);
+      shell.appendChild(screen);
+      var cap = document.createElement('div');
+      cap.className = 'dv-cap';
+      cap.innerHTML = '<b>' + dev.name + '</b> · ' + w + '×' + h + ' CSS px';
+      wrap.appendChild(shell); wrap.appendChild(cap);
+      return wrap;
+    }
+
+    function render() {
+      stage.innerHTML = '';
+      stage.classList.toggle('dv-plain', !framed);
+      var path = pageSel.value;
+      stage.appendChild(phone(deviceById(devSel.value), path));
+      if (cmpSel.value) stage.appendChild(phone(deviceById(cmpSel.value), path));
+      save();
+    }
+
+    pageSel.onchange = devSel.onchange = cmpSel.onchange = render;
+    document.getElementById('dv-reload').onclick = render;
+    document.getElementById('dv-rotate').onclick = function () { landscape = !landscape; render(); };
+    document.getElementById('dv-frame').onclick = function () {
+      framed = !framed;
+      this.textContent = framed ? 'Hide frame' : 'Show frame';
+      render();
+    };
+    document.getElementById('dv-frame').textContent = framed ? 'Hide frame' : 'Show frame';
+    render();
+  })();
+  </script>
+</body>
+</html>
