@@ -2362,3 +2362,43 @@ pan-and-zoom.
   arrows; click an arrow to remove that link. Replaces the SVG drag-handle canvas (drag-to-link).
 - Verified: inline JS parses (`node --check`); takt scheduling unit-checked; module loads with no
   console errors. Signed-in click-through still pending (auth-gated here).
+
+### 2026-07-24 — Schedule Builder: "Push to Project Schedule" hand-off (add + choose WBS)
+- Step 5's **Push to Project Schedule** now actually writes the generated activities into the live
+  `project_schedule` — **adds** to the existing schedule (never replaces). A modal asks which **WBS**
+  to file them under (dropdown of existing WBS-Summary rows, or "Top level"), plus a checkbox to
+  **organise into Trade → Floor → Zone sub-WBS** (on by default; off = flat under the chosen WBS).
+- New builder fns `nextChildIndex(base)` (next free dotted-code child under a parent), `openPushModal`,
+  `pushToSchedule(parentCode, grouped)`: builds WBS-Summary + Task payloads (dates + baseline from the
+  takt result, unique `activity_id`s vs existing rows, `created_by=UID`), chunked-inserts to `TABLE`,
+  then `switchTab('schedule')` + module `load()` to repaint the Gantt.
+- Enabler: the builder's internal `load` was renamed **`loadCfg`** so it no longer shadows the
+  module's schedule `load()` (needed to reload after the insert). `open()` updated accordingly.
+- Verified: inline JS parses (`node --check`); loads with no console errors. Signed-in click-through
+  of the actual insert still pending (auth-gated here).
+
+### 2026-07-24 — Schedule Builder step 3: typed/lagged links, unlink, multi-link, narrow tower, zoomable/editable schedule
+- **Relationship type + lag.** Links now carry `type` (FS/SS/FF/SF) + `lag` (days). A dialog
+  (`openLinkDialog`) asks both whenever you connect two nodes; `computeStarts` honours them via
+  `linkStart()` (FS/SS/FF/SF math, negatives floored to 0). Arrows on the schedule show a
+  `TYPE±lag` label and anchor from the correct edge (start for SS/SF, finish for FS/FF).
+- **Unlink + edit.** Click any arrow (or re-click a linked pair) to open the dialog with an
+  **Unlink** button and editable type/lag (`linkOf`/`removeLink`). Removed the old auto-interphase-
+  on-manual-link (surprising now that linking is explicit); the bulk logic stays in **Auto-trace**.
+- **Multiple linking.** The source node stays selected after a link so you can fan out to several
+  targets; **Done linking** / clicking the source again releases it.
+- **Narrower vertical tower.** Zone nodes are compact fixed-width squares and floors are tighter, so
+  the left pane reads as a stacked tower; the split is now ~270px tower : expanded schedule.
+- **Zoomable, editable schedule.** Right pane uses a `seqZoom` px/day scale with − / + buttons;
+  schedule **bars are clickable** (act as link source/target too, so you can wire relationships from
+  the Gantt), and arrows are clickable to edit/unlink.
+- Verified: inline JS parses (`node --check`); FS/SS/FF/SF + lag math unit-checked; loads with no
+  console errors. Signed-in click-through still pending (auth-gated here).
+
+### 2026-07-24 — Schedule Builder step 3: draggable tower/schedule split + scaling nodes
+- Step 3 is now a **draggable split** (`.sbld-seq2` flex + `.sbld-seq2-grip` col-resize divider,
+  width in `seqLeftW`): drag to give more room to the tower or the schedule. Min 150px tower,
+  schedule keeps ≥260px.
+- Zone **nodes now flex** to fill their (resizable) trade cell (`flex:1 1 22px; min 20 / max 72px`),
+  so they grow when the tower pane is widened and shrink when narrowed — no longer a fixed tiny size.
+- Verified: inline JS parses; loads with no console errors.
