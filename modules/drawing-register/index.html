@@ -5,52 +5,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260712"></script>
+  <script src="../../assets/js/theme.js?v=20260724a"></script>
   <title>Drawing Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260712" />
-  <link rel="stylesheet" href="module.css" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
+  <link rel="stylesheet" href="module.css?v=20260724a" />
 </head>
 <body>
   <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Drawing Register</small></div>
-      <nav>
-        <a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a>
-        <a href="#" class="active"><span class="pd-navico" data-ico="ruler"></span>Drawings</a>
-      </nav>
-    </aside>
-
+    <!-- Sidebar removed (matches Project Schedule / Cash Flow): the back button returns to the module selector. -->
     <div class="pd-content">
       <div class="pd-topbar">
-        <h1>Drawing Register</h1>
+        <a class="pd-btn dr-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
+        <h1 class="dr-title" style="margin:0;"><span class="dr-title-ico" data-ico="ruler" data-ico-size="20"></span> <span class="dr-title-txt">Drawing Register</span></h1>
+        <div class="dr-projctx">
+          <select class="pd-select dr-project" id="dr-project" title="Project"></select>
+        </div>
+        <div class="dr-tabs" role="tablist">
+          <button class="dr-tab active" data-view="register">Register</button>
+          <button class="dr-tab" data-view="progress">Progress</button>
+        </div>
+        <!-- Global tools sit beside the profile (theme.js injects the dark-mode toggle before #user-bar) -->
+        <div class="dr-topbar-tools" id="dr-topbar-tools">
+          <button class="pd-btn dr-tb-labeled pd-btn-primary" id="dr-add" title="Add a drawing under the selected level (Enter)">+ Add</button>
+          <div class="dr-menuwrap">
+            <button class="pd-btn dr-tb-labeled" id="dr-addlevel" style="display:none;">+ Level <span data-ico="chevronDown" data-ico-size="13"></span></button>
+            <div class="dr-menu" id="dr-addlevel-menu" hidden>
+              <button data-add="phase">Phase</button>
+              <button data-add="discipline">Discipline</button>
+              <button data-add="category">Category</button>
+            </div>
+          </div>
+          <span class="dr-tb-sep"></span>
+          <button class="pd-btn" id="dr-import" title="Import from Excel"><span data-ico="upload" data-ico-size="16"></span></button>
+          <button class="pd-btn" id="dr-export" title="Export to Excel"><span data-ico="download" data-ico-size="16"></span></button>
+          <button class="pd-btn dr-clearbtn" id="dr-clear" title="Clear all drawings for this project" style="display:none;"><span data-ico="trash" data-ico-size="16"></span></button>
+        </div>
         <div id="user-bar"></div>
       </div>
       <div class="pd-main">
-        <div class="dr-controls">
-          <select class="pd-select" id="dr-project" style="max-width:260px;"></select>
-          <select class="pd-select" id="dr-f-status" style="max-width:160px;">
+        <div class="dr-filters">
+          <span class="dr-filt-ico" data-ico="filter" data-ico-size="15"></span>
+          <input class="pd-input dr-search" id="dr-f-search" placeholder="Search code, title, description…" />
+          <select class="pd-select" id="dr-f-phase"><option value="">All phases</option></select>
+          <select class="pd-select" id="dr-f-discipline"><option value="">All disciplines</option></select>
+          <select class="pd-select" id="dr-f-status">
             <option value="">All statuses</option>
-            <option>For Review</option><option>Approved</option><option>Superseded</option>
+            <option>For Review</option><option>Revise &amp; Resubmit</option>
+            <option>Approved w/ comments</option>
+            <option>Approved</option><option>Superseded</option>
           </select>
-          <select class="pd-select" id="dr-f-discipline" style="max-width:170px;"><option value="">All disciplines</option></select>
-          <input class="pd-input" id="dr-f-search" placeholder="Search…" style="max-width:200px;" />
-          <button class="pd-btn pd-btn-primary" id="dr-add" style="margin-left:auto;">+ Add drawing</button>
+          <div class="dr-menuwrap dr-views-wrap">
+            <button class="pd-btn dr-views-btn" id="dr-viewsbtn" title="Saved filter views">Views <span data-ico="chevronDown" data-ico-size="12"></span></button>
+            <div class="dr-menu dr-views-menu" id="dr-views-menu" hidden></div>
+          </div>
         </div>
 
-        <div class="pd-card" style="padding:0;overflow:auto;">
-          <table class="pd-table dr-table" id="dr-table"></table>
-        </div>
+        <div id="dr-view"></div>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js?v=20260712"></script>
-  <script src="../../assets/js/auth.js?v=20260712"></script>
-  <script src="../../assets/js/db.js?v=20260712"></script>
-  <script src="../../assets/js/ui.js?v=20260712"></script>
-  <script src="../../assets/js/icons.js?v=20260712"></script>
-  <script src="module.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="../../assets/js/config.js?v=20260724a"></script>
+  <script src="../../assets/js/auth.js?v=20260724a"></script>
+  <script src="../../assets/js/db.js?v=20260724a"></script>
+  <script src="../../assets/js/ui.js?v=20260724a"></script>
+  <script src="../../assets/js/icons.js?v=20260724a"></script>
+  <script src="module.js?v=20260724a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

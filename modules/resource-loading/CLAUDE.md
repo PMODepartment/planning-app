@@ -84,5 +84,40 @@ their existing padding untouched).
   `block`), footer is `flex`/`flex-end`, new-resource Calendar select pre-selects "Philippine
   Standard (6-day, 8h) (Default)", and the Add Calendar form's old verbose label is gone.
 
+## Built — Loading view + usability polish + cost roll-up (2026-07-21)
+User asked to improve the module (chose: Loading view + usability polish + cost roll-up).
+- **Resource Loading view (4th tab, the module's namesake).** Reads `resource_assignments`
+  (lazy, on first visit) + the assigned activities' `project_schedule` dates and renders a
+  **resources × months utilization matrix**. Each assignment's budgeted units/cost are
+  **time-phased** across its activity's date range, weighted by working days from the resource's
+  calendar (`PDCal`); a cell's **utilization = allocated ÷ (Max Units/Time% × working capacity)**
+  (capacity = maxpct × working days × hours/day for hour-UoM resources, × days otherwise). Cells
+  color green ≤85% / amber ≤100% / **red > 100%**; a resource with any month > 100% gets an OVER
+  tag. Display modes **Utilization % / Units / Cost** (+ totals row for units/cost — utilization
+  doesn't sum across resources), an **over-allocated-only** filter, and an empty state pointing to
+  Project Schedule's Resource Assignments. Units on dateless activities are counted in totals only
+  (noted in-view).
+- **Usability polish.** Per-tab **KPI cards** (Resources/Roles/Calendars/Avg-max-availability on
+  the master tabs; Assigned/Units/Cost/Over-allocated on Loading). **Filter bar** (suite funnel
+  pattern): Type + Role on Resources, Discipline on Roles. **"# Resources" count** column on Roles
+  and Calendars. **Delete guards** (the FKs have no ON DELETE, so an in-use delete would fail with
+  a raw PG error): a calendar in use is **blocked** with a reassign message; a resource with
+  assignments is **blocked** (server-side `count` head query — assignments aren't loaded on master
+  tabs); deleting a role warns it leaves the primary-role text on N resources. **Duplicate
+  resource-code** is blocked on save (case-insensitive, within the project).
+- **Cost roll-up.** A role's Price/Unit **cascades** to a resource's rate when picking that role
+  with no rate set; total budgeted resource **cost KPI** + a **Cost** matrix mode (uses
+  `budgeted_cost`, falling back to units × resource rate).
+- **No DB change** — reuses `resources`/`resource_roles`/`calendars`/`resource_assignments` and
+  `project_schedule` as-is. Module-local only → **no `?v=` bump**.
+- **Verified in a stubbed harness** (real module code + real ui.js/PDCal, in-memory Supabase stub
+  seeded with 2 resources / 2 roles / 1 calendar / 3 assignments / 2 dated activities): matrix
+  spread hand-checked exact (Carpenter Mar 2,449 / Apr 2,845.1 / May 305.9 = 5,600; footer + KPI
+  totals 6,000 units / ₱2.98M; both crews flagged OVER with the right utilization %), Units/Cost/
+  Utilization modes + totals + over-only, KPIs (avg availability 75%), Type filter (Nonlabor → "No
+  resources match", Labor → 2), role→rate cascade (Carpenter → 550), dup-code blocked (no row
+  inserted), calendar delete blocked before confirm with "2 resource(s) use this calendar". No
+  console errors. Screenshots still impossible in this env — checks are DOM/JS-based.
+
 ## Notes
 (Record decisions, columns added via `alter table ... add column if not exists`, etc.)

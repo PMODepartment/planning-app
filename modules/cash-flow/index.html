@@ -5,10 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260714"></script>
+  <script src="../../assets/js/theme.js?v=20260724a"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260714" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
   <style>
+    /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
+    .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+    .cf-topbar-tools .pd-btn { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
+    .cf-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+    .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
+    .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); }
+    .cf-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+    .cf-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .cf-project:hover, .cf-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .cf-controls { display:flex; flex-wrap:nowrap; gap:10px 16px; align-items:center; margin-bottom:16px; overflow-x:auto;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:9px 14px; }
     .cf-viewbar { display:flex; align-items:center; gap:14px; flex-wrap:nowrap; flex:none; }
@@ -41,8 +50,9 @@
     .cf-svg { width:100%; height:auto; display:block; }
     .cf-grid { stroke:var(--pd-line); stroke-width:1; }
     .cf-zero { stroke:var(--pd-muted); stroke-width:1; stroke-dasharray:3 3; }
-    .cf-ylab { fill:var(--pd-muted); font-size:10.5px; text-anchor:end; }
-    .cf-xlab { fill:var(--pd-muted); font-size:10.5px; text-anchor:middle; }
+    .cf-ylab { fill:var(--pd-muted); font-size:9.5px; text-anchor:end; }
+    .cf-xlab { fill:var(--pd-muted); font-size:9.5px; text-anchor:middle; }
+    .cf-vgrid { stroke:var(--pd-line); stroke-width:1; opacity:.45; }
     .cf-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
     .cf-lg { display:inline-flex; align-items:center; }
     .sw { display:inline-block; width:14px; height:10px; margin-right:6px; border-radius:2px; }
@@ -61,13 +71,64 @@
     .cf-seg button.disabled { opacity:.4; cursor:not-allowed; }
     .cf-seg button.active { background:var(--pd-red); color:#fff; }
     .cf-chart-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-    .cf-dlab { fill:var(--pd-muted); font-size:9px; text-anchor:middle; }
+    .cf-dlab { fill:var(--pd-muted); font-size:9.5px; text-anchor:middle; }
     .cf-axis { stroke:var(--pd-muted); stroke-width:1; }
     .cf-selband { fill:rgba(238,49,36,0.12); stroke:var(--pd-red); stroke-width:1; stroke-dasharray:3 2; }
+    .cf-matrix td.cf-oc { cursor:pointer; }
+    .cf-matrix td.cf-oc:hover { background:var(--pd-red-light); outline:1px solid var(--pd-red); }
+    .cf-drill-card { margin-top:14px; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .cf-drill-hd { display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--pd-bg); font-weight:700; font-size:13px; border-bottom:1px solid var(--pd-line); }
+    .cf-drill-hd span { font-weight:400; color:var(--pd-muted); font-size:12px; }
+    .cf-drill-hd button { margin-left:auto; }
+    .cf-drill-card .cf-table { font-size:12px; }
+    .cf-donut-wrap { display:flex; gap:24px; align-items:center; padding:16px 14px 6px; flex-wrap:wrap; }
+    .cf-donut { width:180px; height:180px; flex:none; }
+    .cf-donut-c1 { text-anchor:middle; font-weight:800; font-size:15px; fill:var(--pd-ink); }
+    .cf-donut-c2 { text-anchor:middle; font-size:9px; fill:var(--pd-muted); }
+    .cf-donut-lg { display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--pd-ink); }
+    .cf-sw2 { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:7px; vertical-align:middle; }
+    .cf-trade-hd .cf-tri { display:inline-block; width:12px; color:var(--pd-muted); }
+    .cf-trade-hd { cursor:pointer; } .cf-trade-hd td { font-weight:700; background:var(--pd-bg); }
+    .cf-trade-n { font-weight:400; color:var(--pd-muted); font-size:11px; }
+    .cf-trade-hd { cursor:pointer; background:var(--pd-bg); }
+    .cf-trade-hd:hover { background:var(--pd-red-light); }
+    .cf-trade-hd td { font-weight:700; border-top:1px solid var(--pd-line); }
+    .cf-trade-hd .cf-tri { display:inline-block; width:12px; color:var(--pd-red); }
+    .cf-trade-n { font-weight:400; color:var(--pd-muted); font-size:11px; margin-left:6px; }
+    .cf-trade-row td:first-child { padding-left:22px; }
+    .cf-drill-seg { margin-left:auto; }
+    .cf-drill-seg button { padding:4px 12px; }
+    .cf-drill-hd button.cf-btn-sm { margin-left:8px; }
+    .cf-miss { display:inline-block; margin-left:8px; font-size:10.5px; font-weight:700; color:#d99100; white-space:nowrap; }
+    /* incomplete-terms tracker */
+    .cf-terms .cf-terms-hd { display:flex; align-items:center; gap:8px; cursor:pointer; }
+    .cf-terms .cf-terms-chev { margin-left:auto; font-size:12px; font-weight:700; color:var(--pd-red); white-space:nowrap; }
+    /* drill chart (ranked horizontal bars) */
+    .cf-bk { padding:4px 2px 2px; }
+    .cf-bk-gh { font-size:12px; margin:12px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--pd-line); }
+    .cf-bk-gh b { font-weight:700; } .cf-bk-gh span { color:var(--pd-muted); margin-left:6px; }
+    .cf-bk-row { display:grid; grid-template-columns:minmax(140px,1.4fr) 2fr auto auto; gap:10px; align-items:center; padding:4px 0; font-size:12px; }
+    .cf-bk-lab { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cf-bk-track { background:var(--pd-bg); border-radius:4px; height:14px; overflow:hidden; }
+    .cf-bk-fill { height:100%; border-radius:4px; min-width:2px; }
+    .cf-bk-amt { text-align:right; font-weight:600; white-space:nowrap; }
+    .cf-bk-st { font-size:10px; padding:1px 6px; border-radius:999px; white-space:nowrap; }
+    .cf-bk-st.a { background:rgba(238,49,36,0.12); color:var(--pd-red); }
+    .cf-bk-st.f { background:var(--pd-bg); color:var(--pd-muted); }
+    @media (max-width:640px) { .cf-bk-row { grid-template-columns:1fr auto; } .cf-bk-track { display:none; } }
     .cf-matrix th.mcol { cursor:pointer; }
     .cf-matrix th.mcol:hover { color:var(--pd-red); }
     .cf-matrix th.mcol.sel { background:var(--pd-red); color:#fff; }
     .cf-empty { text-align:center; padding:40px; color:var(--pd-muted); }
+    /* loading skeleton */
+    .cf-sk-bar { background:linear-gradient(90deg, var(--pd-line) 25%, var(--pd-bg) 37%, var(--pd-line) 63%); background-size:400% 100%; animation:cf-sh 1.3s ease infinite; border-radius:5px; }
+    @keyframes cf-sh { 0% { background-position:100% 0; } 100% { background-position:0 0; } }
+    .cf-kpi.cf-sk { pointer-events:none; }
+    .cf-sk .cf-sk-l { height:9px; width:55%; margin-bottom:10px; }
+    .cf-sk .cf-sk-v { height:20px; width:75%; margin-bottom:9px; }
+    .cf-sk .cf-sk-s { height:8px; width:65%; }
+    .cf-sk-h { height:14px; width:220px; margin-bottom:16px; }
+    .cf-sk-chart { height:260px; width:100%; }
 
     /* projection matrix */
     .cf-matrix-wrap { overflow-x:auto; }
@@ -90,6 +151,10 @@
 
     .cf-check { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--pd-ink); cursor:pointer; padding:7px 0; }
     .cf-check input { width:16px; height:16px; accent-color:var(--pd-red); cursor:pointer; }
+    .cf-tabstrip { display:flex; gap:2px; flex-wrap:wrap; border-bottom:1px solid var(--pd-line); margin-bottom:14px; }
+    .cf-ftab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); background:transparent; border:0; border-bottom:2px solid transparent; cursor:pointer; }
+    .cf-ftab:hover { color:var(--pd-ink); }
+    .cf-ftab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
     .cf-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .cf-form-full { grid-column:1 / -1; }
     .cf-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
@@ -117,6 +182,11 @@
     .cf-alert.bad { border-color:var(--pd-bad); background:rgba(238,49,36,0.07); } .cf-alert.bad .cf-alert-dot { background:var(--pd-bad); }
     .cf-alert.warn { border-color:#d99100; background:rgba(217,145,0,0.08); } .cf-alert.warn .cf-alert-dot { background:#d99100; }
     .cf-alert.info .cf-alert-dot { background:var(--pd-ok); }
+    .cf-nudge { border:1px solid #d99100; background:rgba(217,145,0,0.07); border-radius:8px; padding:11px 14px 12px; margin-bottom:14px; font-size:13px; }
+    .cf-nudge .cf-nudge-t { display:flex; align-items:center; gap:8px; }
+    .cf-nudge .cf-alert-dot { background:#d99100; margin-top:0; }
+    .cf-nudge ul { margin:8px 0 10px 26px; padding:0; color:var(--pd-muted); font-size:12.5px; line-height:1.6; }
+    .cf-nudge b { color:var(--pd-ink); }
 
     /* scenarios */
     .cf-scn-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
@@ -144,15 +214,53 @@
     .cf-tr-sub { margin:0 0 12px 14px; padding:9px 11px; border-left:3px solid var(--pd-red); background:var(--pd-bg); border-radius:0 6px 6px 0; }
     .cf-trt-row { display:grid; grid-template-columns:1.1fr 0.9fr 0.7fr 1fr 1fr 0.8fr auto auto; gap:6px; align-items:center; margin-bottom:6px; }
     .cf-trt-row .pd-input, .cf-trt-row .pd-select { padding:5px 7px; font-size:12px; }
+    .cf-bm-row { display:grid; grid-template-columns:1.6fr 0.9fr 0.8fr 1fr 1.1fr auto auto; gap:6px; align-items:center; margin-bottom:6px; }
+    .cf-bm-row .pd-input, .cf-bm-row .pd-select { padding:5px 7px; font-size:12px; }
 
     /* sidebar-less shell (matches Project Schedule) */
     .cf-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-right:6px; }
-    .pd-topbar #user-bar { margin-left:auto; }
 
     .cf-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--pd-line); }
     .cf-tab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; border-bottom:2px solid transparent; }
     .cf-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
-  </style>
+  
+      /* ---- Mobile & tablet (2026-07-23) --------------------------------
+         Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets)
+         comes from dashboard.css.
+
+         CHARTS: every SVG here already uses viewBox + width:100%, so it
+         *scales* — but scaling a ~900-unit-wide chart into ~350px shrinks its
+         9.5px labels to under 4px, i.e. unreadable. So below 700px the chart
+         keeps a legible minimum width and its card scrolls horizontally
+         instead of shrinking further. Do not "fix" this by dropping the
+         min-width — that restores the unreadable version.
+         ------------------------------------------------------------------ */
+      @media (max-width: 700px) {
+        .cf-chart-wrap { overflow-x: auto; }
+        .cf-svg { min-width: 600px; }
+        .cf-donut-wrap { justify-content: center; }
+        .cf-kpis { flex-wrap: wrap; }
+        .cf-kpi { flex: 1 1 calc(50% - 6px); min-width: 0; padding: 12px 14px; }
+        /* A 200px sticky label column is 53% of a 375px screen, so the months
+           you scroll to have nowhere to land. Narrow it rather than unfreezing
+           it — without a row label the matrix numbers are meaningless. */
+        .cf-matrix th.lbl, .cf-matrix td.lbl { min-width: 118px; font-size: 11.5px; }
+        .cf-matrix { font-size: 11.5px; }
+        .cf-matrix-wrap { overflow-x: auto; }
+        .cf-viewbar { flex-wrap: wrap; gap: 8px; }
+        /* ⚠️ The control strip is `flex-wrap:nowrap` with `overflow-x:auto` — a
+           deliberate desktop choice, but on a phone it put the whole action
+           cluster (Refresh / Sync / Export / Actuals / Assumptions) ~354px past
+           the right edge. Because `body` is `overflow-x:clip` the page cannot
+           scroll to them, so those buttons were simply UNREACHABLE on mobile;
+           the strip's own scroll is easy to miss and `margin-left:auto` pushed
+           them out of its start. Wrap instead, and drop the auto margin. */
+        .cf-controls { flex-wrap: wrap; overflow-x: visible; }
+        .cf-actions { flex-wrap: wrap; margin-left: 0; flex: 1 1 100%; }
+        .cf-actions .pd-btn { flex: 1 1 auto; min-height: 44px; }
+        .cf-viewbar { flex: 1 1 100%; min-width: 0; }
+      }
+    </style>
 </head>
 <body>
 <div class="pd-app">
@@ -160,14 +268,21 @@
   <div class="pd-content">
     <div class="pd-topbar">
       <a class="pd-btn cf-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
-      <h1 style="margin:0;">Cash Flow Projection</h1>
+      <h1 style="margin:0;"><span data-ico="cash" data-ico-size="20" style="color:var(--pd-red);vertical-align:-3px;margin-right:6px;"></span>Cash Flow Projection</h1>
+      <div class="cf-projctx">
+        <select class="pd-select cf-project" id="cf-project" title="Project"></select>
+      </div>
+      <div class="cf-topbar-tools">
+        <button class="pd-btn" id="cf-refresh" title="Reload the projection"><span data-ico="refresh" data-ico-size="17"></span></button>
+        <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="17"></span></button>
+        <button class="pd-btn" id="cf-print" title="Print / save the cashflow sheet as PDF"><span data-ico="printer" data-ico-size="17"></span></button>
+        <button class="pd-btn" id="cf-check" title="Setup check — verify DB tables / columns / RPC are in place"><span data-ico="check" data-ico-size="17"></span></button>
+      </div>
       <div id="user-bar"></div>
     </div>
     <div class="pd-main">
       <div class="cf-controls">
         <div class="cf-viewbar">
-          <select class="pd-select" id="cf-project" style="max-width:260px;"></select>
-          <span class="cf-ctl-div"></span>
           <label class="cf-dd-lbl" title="As-of date: cash-in actuals vs forecast split, and the drawdown/financing basis. Shared with Project Schedule.">Data date
             <input class="pd-input" id="cf-datadate" type="date" style="width:148px;">
             <button class="cf-btn-sm" id="cf-dd-clear" title="Clear override (use today / schedule data date)">&#215;</button></label>
@@ -178,11 +293,7 @@
             </span></label>
         </div>
         <div class="cf-actions">
-          <button class="pd-btn" id="cf-refresh" title="Reload the projection"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
           <button class="pd-btn" id="cf-sync" title="Pull the latest procurement work packages from WPM (admins/planners)" style="display:none;"><span data-ico="refresh" data-ico-size="15"></span> Sync from WPM</button>
-          <button class="pd-btn" id="cf-export" title="Export the projection to Excel"><span data-ico="download" data-ico-size="15"></span> Export</button>
-          <button class="pd-btn" id="cf-print" title="Print / save the cashflow sheet as PDF"><span data-ico="printer" data-ico-size="15"></span> Print</button>
-          <span class="cf-ctl-div"></span>
           <button class="pd-btn" id="cf-actuals" title="Record actual cash received / paid"><span data-ico="clipboard" data-ico-size="15"></span> Actuals</button>
           <button class="pd-btn pd-btn-primary" id="cf-settings"><span data-ico="settings" data-ico-size="15"></span> Assumptions</button>
         </div>
@@ -234,13 +345,25 @@
   </div>
 </div>
 
+<!-- Setup check modal -->
+<div class="pd-modal-overlay" id="cf-chk-modal" style="display:none;">
+  <div class="pd-modal" style="max-width:640px;width:96vw;">
+    <div class="pd-modal-header"><span>Cash Flow — Setup Check</span><button class="pd-modal-close" id="cf-chk-x">&#215;</button></div>
+    <div class="pd-modal-body">
+      <div class="cf-hint" style="margin-bottom:10px;">Pings each database object this module needs and reports what's present, so you can confirm the migrations / RPC / mirror are all applied.</div>
+      <div id="cf-chk-list"><div class="cf-empty">Running checks…</div></div>
+    </div>
+    <div class="pd-modal-footer"><button class="pd-btn" id="cf-chk-re">Re-run</button> <button class="pd-btn" id="cf-chk-cancel">Close</button></div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../../assets/js/config.js?v=20260714"></script>
-<script src="../../assets/js/auth.js?v=20260714"></script>
-<script src="../../assets/js/db.js?v=20260714"></script>
-<script src="../../assets/js/ui.js?v=20260714"></script>
-<script src="../../assets/js/icons.js?v=20260714"></script>
+<script src="../../assets/js/config.js?v=20260724a"></script>
+<script src="../../assets/js/auth.js?v=20260724a"></script>
+<script src="../../assets/js/db.js?v=20260724a"></script>
+<script src="../../assets/js/ui.js?v=20260724a"></script>
+<script src="../../assets/js/icons.js?v=20260724a"></script>
 <script>
 (function () {
   'use strict';
@@ -254,7 +377,8 @@
 
   var pid = null, profile = null, projName = '';
   var settings = null;           // cash_flow_settings row (or defaults)
-  var scheduleRows = [];         // project_schedule leaves
+  var scheduleRows = [];         // project_schedule leaves (client fallback only)
+  var sched = null;              // pre-aggregated monthly S-curve (server RPC or client fallback)
   var milestones = [];           // {name, date} for DP-tranche milestone timing
   var tranches = [];             // cash_flow_dp_tranches rows (client DP breakdown)
   var editTranches = [];         // working copy while the Assumptions modal is open
@@ -262,9 +386,14 @@
   var editActuals = [];          // working copy while the Actuals modal is open
   var trades = [];               // cash_flow_trade_packages rows (per-trade cash-in split)
   var editTrades = [];           // working copy while the Assumptions modal is open
+  var billingMs = [];            // cash_flow_billing_milestones rows (milestone billing)
+  var editBillingMs = [];        // working copy while the Assumptions modal is open
   var scenarios = [];            // cash_flow_scenarios rows (saved projection snapshots)
   var dataDate = null;           // settable data date (as-of); null → wall clock
   var periodMode = 'month';      // periodic chart aggregation: 'month' | 'quarter'
+  var chartMode = 'net';         // periodic chart view: 'net' | 'trade' (cash-out stacked by trade)
+  var lastDrill = null;          // {dir,comp,mi} — remembered so the Chart/Table toggle re-renders
+  var drillView = (function () { try { return localStorage.getItem('cf_drillview') === 'table' ? 'table' : 'chart'; } catch (e) { return 'chart'; } })();
   var pvState = null;            // geometry + data for the periodic-chart tooltip
   var selRange = null;           // {i0,i1} highlighted month-index range (matrix ↔ chart)
   var wpRows = [];               // mirrored WPM work packages (cash-out)
@@ -321,11 +450,11 @@
   // ---- Defaults for a project with no saved assumptions ----
   function defaults() {
     return { project_id: pid, contract_ibb: null, contract_bcb: null, dp_percent: 0,
-      retention_percent: 0.10, dp_recoup_percent: null, billing_terms_months: 1,
+      retention_percent: 0.10, billing_terms_months: 1,
       retention_release_months: 1, start_period: null, wpm_project_id: pid, remarks: null,
       ewt_percent: 0.02, vat_percent: 0.12, ret_rel1_pct: 1, ret_rel2_months: 12,
       co_ret_rel1_pct: null, co_ret_rel1_months: null, co_ret_rel2_months: null,
-      finance_rate: 0, funding_limit: null, scurve_basis: 'duration' };
+      finance_rate: 0, funding_limit: null, scurve_basis: 'duration', billing_basis: 'poc' };
   }
 
   // ==========================================================================
@@ -340,6 +469,7 @@
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker
     if (pid) loadAll();
   }
 
@@ -347,7 +477,6 @@
     var res = await sb().from('cash_flow_settings').select('*').eq('project_id', pid).maybeSingle();
     if (res.error && res.error.code !== 'PGRST116') { UI.toast(res.error.message, 'error'); }
     settings = res.data || defaults();
-    if (settings.dp_recoup_percent == null) settings.dp_recoup_percent = settings.dp_percent;
     if (!settings.wpm_project_id) settings.wpm_project_id = pid;
     // Basis: DB column wins when present (v3 migration applied); else the local cache.
     if (settings.scurve_basis == null) {
@@ -356,32 +485,68 @@
     }
   }
 
+  // Load the monthly S-curve aggregate. Prefer the server RPC (returns ~1 row/month
+  // instead of 16k+ activities); fall back to the old client-side pull + JS aggregate
+  // if the RPC isn't installed yet.
   async function loadSchedule() {
-    // Keyset pagination (order by id, id > last) — each page is an indexed PK range
-    // scan, unlike OFFSET/.range() which re-scans more rows the deeper it goes and
-    // times out on large schedules (16k+ activities). Matches the Project Schedule fix.
-    scheduleRows = [];
-    var page = 1000, last = null;
+    sched = null; milestones = []; scheduleRows = [];
+    var res = await sb().rpc('cashflow_schedule_agg', { p_id: pid });
+    if (!res.error && res.data) {
+      var d = res.data;
+      sched = { months: d.months || [], map: {}, totDur: num(d.totDur), totCost: num(d.totCost),
+        doneDur: num(d.doneDur), doneCost: num(d.doneCost), nAct: d.nAct || 0, nCost: d.nCost || 0,
+        min: pd(d.minDate), max: pd(d.maxDate) };
+      sched.months.forEach(function (x) { sched.map[x.key] = x; });
+      milestones = (d.milestones || []).map(function (m) { return { name: m.name, date: m.date }; });
+      return;
+    }
+    // Fallback: RPC missing/unavailable → keyset-page the activities and aggregate here.
+    var page = 1000, last = null, rows = [];
     for (;;) {
       var q = sb().from('project_schedule').select('id,activity_name,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish,planned_cost,bl_cost')
         .eq('project_id', pid).order('id', { ascending: true }).limit(page);
       if (last != null) q = q.gt('id', last);
-      var res = await q;
-      if (res.error) { UI.toast('Schedule: ' + res.error.message, 'error'); break; }
-      var d = res.data || []; scheduleRows = scheduleRows.concat(d);
-      if (d.length < page) break;
-      last = d[d.length - 1].id;
+      var r2 = await q;
+      if (r2.error) { UI.toast('Schedule: ' + r2.error.message, 'error'); break; }
+      var dd = r2.data || []; rows = rows.concat(dd);
+      if (dd.length < page) break;
+      last = dd[dd.length - 1].id;
     }
-    // milestones (named, 0-duration or typed) — for DP-tranche timing
-    milestones = scheduleRows.filter(function (r) {
-      var t = (r.activity_type || '').toLowerCase();
-      return (t.indexOf('milestone') !== -1 || num(r.duration_days) === 0) && r.activity_name && r.start_date;
-    }).map(function (r) { return { name: r.activity_name, date: r.start_date }; });
-    // keep only leaf activities (not WBS summaries) that have a start date
-    scheduleRows = scheduleRows.filter(function (r) {
-      var t = (r.activity_type || '').toLowerCase();
-      return t.indexOf('wbs') === -1 && t.indexOf('summary') === -1 && r.start_date;
+    sched = schedFromRows(rows);
+    milestones = sched.milestones;
+  }
+
+  // Client-side S-curve aggregate (mirrors the cashflow_schedule_agg RPC exactly) —
+  // used only as a fallback when the RPC isn't installed.
+  function schedFromRows(rows) {
+    var dW = function (a) { if (num(a.duration_days)) return num(a.duration_days); var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; };
+    var ms = rows.filter(function (r) { var t = (r.activity_type || '').toLowerCase(); return (t.indexOf('milestone') !== -1 || num(r.duration_days) === 0) && r.activity_name && r.start_date; })
+      .map(function (r) { return { name: r.activity_name, date: r.start_date }; });
+    var leaves = rows.filter(function (r) { var t = (r.activity_type || '').toLowerCase(); return t.indexOf('wbs') === -1 && t.indexOf('summary') === -1 && r.start_date; });
+    var out = { months: [], map: {}, totDur: 0, totCost: 0, doneDur: 0, doneCost: 0, nAct: leaves.length, nCost: 0, min: null, max: null, milestones: ms };
+    if (!leaves.length) return out;
+    var starts = [], ends = [];
+    leaves.forEach(function (a) {
+      var s = pd(a.start_date), e = pd(a.end_date) || s; if (s) starts.push(+s); if (e) ends.push(+e);
+      var wd = dW(a), wc = num(a.planned_cost) || num(a.bl_cost) || 0, pcv = Math.max(0, Math.min(100, num(a.percent_complete))) / 100;
+      out.totDur += wd; out.totCost += wc; if (wc > 0) out.nCost++; out.doneDur += wd * pcv; out.doneCost += wc * pcv;
     });
+    out.min = new Date(Math.min.apply(null, starts)); out.max = new Date(Math.max.apply(null, ends));
+    var c = new Date(out.min.getFullYear(), out.min.getMonth(), 1), lastM = new Date(out.max.getFullYear(), out.max.getMonth(), 1);
+    while (c <= lastM) {
+      var mo = new Date(c), me = new Date(mo.getFullYear(), mo.getMonth() + 1, 0), row = { key: monthKeyOf(mo), pd: 0, pc: 0, ad: 0, ac: 0 };
+      leaves.forEach(function (a) {
+        var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return;
+        var wd = dW(a), wc = num(a.planned_cost) || num(a.bl_cost) || 0, pcv = Math.max(0, Math.min(100, num(a.percent_complete))) / 100;
+        var pf = me >= e ? 1 : (me < s ? 0 : (e > s ? (me - s) / (e - s) : 1));
+        row.pd += wd * pf; row.pc += wc * pf;
+        var aS = pd(a.actual_start || a.start_date), aE = pd(a.actual_finish) || pd(a.end_date) || aS;
+        if (aS) { var af = me >= aE ? 1 : (me < aS ? 0 : (aE > aS ? (me - aS) / (aE - aS) : 1)); row.ad += wd * pcv * af; row.ac += wc * pcv * af; }
+      });
+      out.months.push(row); out.map[row.key] = row;
+      c = new Date(c.getFullYear(), c.getMonth() + 1, 1);
+    }
+    return out;
   }
 
   async function loadTranches() {
@@ -399,6 +564,10 @@
     var res = await sb().from('cash_flow_trade_packages').select('*').eq('project_id', pid).order('seq');
     trades = (res.error ? [] : (res.data || []));
   }
+  async function loadBillingMs() {
+    var res = await sb().from('cash_flow_billing_milestones').select('*').eq('project_id', pid).order('seq');
+    billingMs = (res.error ? [] : (res.data || []));
+  }
 
   async function loadScenarios() {
     var res = await sb().from('cash_flow_scenarios').select('*').eq('project_id', pid).order('created_at', { ascending: false });
@@ -411,9 +580,12 @@
     if (!pid || !model || model.empty) return;
     try {
       await sb().from('cash_flow_rollup').delete().eq('project_id', pid);
+      // Persist the LIVE series (actual-to-date + forecast, incl. recorded actuals) so
+      // the Portfolio consolidated view matches this module's KPIs/peak-funding.
       var rows = model.months.map(function (mo, i) {
+        var ci = model.inActualPer[i] + model.inForecastPer[i], co = model.outActualPer[i] + model.outForecastPer[i];
         return { project_id: pid, period: iso(new Date(mo.getFullYear(), mo.getMonth(), 1)),
-          cash_in: model.inPer[i], cash_out: model.outPer[i], net: model.netPer[i], updated_at: new Date().toISOString() };
+          cash_in: ci, cash_out: co, net: model.liveNetPer[i], updated_at: new Date().toISOString() };
       }).filter(function (r) { return r.cash_in || r.cash_out; });
       for (var i = 0; i < rows.length; i += 500) { await sb().from('cash_flow_rollup').insert(rows.slice(i, i + 500)); }
     } catch (e) { /* roll-up is best-effort; never block the view */ }
@@ -423,7 +595,12 @@
     wpRows = []; wpmStatus = 'loading'; wpmMsg = ''; wpmSyncedAt = null;
     var wpmPid = settings.wpm_project_id;
     if (!wpmPid) { wpmStatus = 'no-map'; wpmMsg = 'No WPM project id mapped'; return; }
-    var res = await sb().from('wpm_work_packages').select('*').eq('wpm_project_id', wpmPid);
+    var cols = 'wp_no,description,trade,approved_budget_bcb,awarded_cost,total_awarded,dp_percent,retention_percent,payment_terms_days,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at';
+    var res = await sb().from('wpm_work_packages').select(cols).eq('wpm_project_id', wpmPid);
+    // `trade` column may not exist yet (migration/sync not run) — retry without it.
+    if (res.error && /trade|column|schema cache/i.test(res.error.message || '')) {
+      res = await sb().from('wpm_work_packages').select(cols.replace(',trade', '')).eq('wpm_project_id', wpmPid);
+    }
     if (res.error) { wpmStatus = 'error'; wpmMsg = res.error.message; return; }
     wpRows = res.data || [];
     wpmStatus = wpRows.length ? 'ok' : 'empty';
@@ -453,10 +630,10 @@
 
   async function loadAll(persist) {
     if (!pid) { render(); return; }
-    document.getElementById('cf-body').innerHTML = '<div class="cf-empty">Loading projection…</div>';
+    document.getElementById('cf-body').innerHTML = skeletonHTML();
     loadDataDate();
     await loadSettings();
-    await Promise.all([loadSchedule(), loadWPM(), loadTranches(), loadActuals(), loadTrades(), loadScenarios()]);
+    await Promise.all([loadSchedule(), loadWPM(), loadTranches(), loadActuals(), loadTrades(), loadBillingMs(), loadScenarios()]);
     model = computeProjection();
     render();
     // Roll-up (Portfolio cache) is only rewritten on explicit user actions — Refresh,
@@ -473,65 +650,46 @@
   // The same weight function is used for planned and actual accrual so the S-curve the
   // Cash Flow projects is exactly the S-curve the schedule implies.
   // ==========================================================================
-  function durWeight(a) { if (a.duration_days) return num(a.duration_days); var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; }
+  // Everything below reads the pre-aggregated monthly S-curve (`sched`, from the
+  // server RPC or the client fallback) — NOT the raw activities — so large schedules
+  // (16k+ activities) don't have to be pulled into the browser.
+  function monthKeyOf(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+  // Cumulative weighted value at a timeline month: exact match in the aggregate, else
+  // 0 before the schedule's first month or `after` (total / done) past its last month.
+  function cumAt(mkey, field, after) {
+    if (!sched || !sched.months.length) return 0;
+    var x = sched.map[mkey]; if (x) return num(x[field]);
+    return mkey < sched.months[0].key ? 0 : after;
+  }
   function scurveWeight() {
     var basis = settings && settings.scurve_basis === 'cost' ? 'cost' : 'duration';
-    var withCost = scheduleRows.reduce(function (c, a) { return c + ((num(a.planned_cost) || num(a.bl_cost)) > 0 ? 1 : 0); }, 0);
-    var nAct = scheduleRows.length;
-    if (basis === 'cost') {
-      var totalCost = scheduleRows.reduce(function (s, a) { return s + (num(a.planned_cost) || num(a.bl_cost)); }, 0);
-      if (totalCost > 0) return { fn: function (a) { return num(a.planned_cost) || num(a.bl_cost) || 0; }, basis: 'cost', fellBack: false, withCost: withCost, nAct: nAct };
-      return { fn: durWeight, basis: 'duration', fellBack: true, withCost: withCost, nAct: nAct };   // requested cost, but none loaded
-    }
-    return { fn: durWeight, basis: 'duration', fellBack: false, withCost: withCost, nAct: nAct };
+    var withCost = sched ? sched.nCost : 0, nAct = sched ? sched.nAct : 0;
+    if (basis === 'cost' && sched && sched.totCost > 0)
+      return { basis: 'cost', fellBack: false, withCost: withCost, nAct: nAct, planField: 'pc', actField: 'ac', tot: sched.totCost, done: sched.doneCost };
+    return { basis: 'duration', fellBack: basis === 'cost', withCost: withCost, nAct: nAct, planField: 'pd', actField: 'ad', tot: sched ? sched.totDur : 1, done: sched ? sched.doneDur : 0 };
   }
 
-  function scheduleCurve(months, val) {
-    val = val || durWeight;
-    var TOT = scheduleRows.reduce(function (s, a) { return s + val(a); }, 0) || 1;
-    // cumulative planned fraction at each month end
-    return months.map(function (m) {
-      var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0);
-      var pvDone = 0;
-      scheduleRows.forEach(function (a) {
-        var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return;
-        var pf = mEnd >= e ? 1 : (mEnd < s ? 0 : (e > s ? (mEnd - s) / (e - s) : 1));
-        pvDone += val(a) * pf;
-      });
-      return pvDone / TOT;   // 0..1 cumulative
-    });
+  // Cumulative planned fraction (0..1) per timeline month.
+  function scheduleCurve(months, W) {
+    W = W || scurveWeight(); var tot = W.tot || 1;
+    return months.map(function (m) { return cumAt(monthKeyOf(m), W.planField, tot) / tot; });
   }
 
-  // Blended cumulative fraction: ACTUAL progress (duration-weighted % complete,
-  // using actual dates) up to the data date, then PLANNED-shaped continuation from
-  // the actual %-to-date up to 100%. So cash-in billing to date reflects real
-  // physical progress, and the forecast resumes on the plan's remaining shape.
-  function scheduleCurveBlended(months, ddIdx, val) {
-    val = val || durWeight;
-    var TOT = scheduleRows.reduce(function (s, a) { return s + val(a); }, 0) || 1;
-    var planned = scheduleCurve(months, val);
-    var overallDone = scheduleRows.reduce(function (s, a) { return s + val(a) * Math.max(0, Math.min(100, num(a.percent_complete))) / 100; }, 0);
-    var actualFracDD = overallDone / TOT;                 // true % complete at the data date
+  // Blended cumulative fraction: ACTUAL progress (weighted % complete, using actual
+  // dates) up to the data date, then PLANNED-shaped continuation from the actual
+  // %-to-date up to 100%.
+  function scheduleCurveBlended(months, ddIdx, W) {
+    W = W || scurveWeight(); var tot = W.tot || 1, done = W.done || 0;
+    var planned = months.map(function (m) { return cumAt(monthKeyOf(m), W.planField, tot) / tot; });
+    var actualFracDD = tot ? done / tot : 0;              // true % complete
     var plannedDD = planned[clampIdx(ddIdx, months.length)];
-    var totRem = 1 - plannedDD;                            // planned work remaining after the data date
-    var nAfter = months.length - 1 - ddIdx;               // forecast months available
+    var totRem = 1 - plannedDD, nAfter = months.length - 1 - ddIdx;
     return months.map(function (m, i) {
-      if (i < ddIdx) {
-        // actual accrual to this month end, weighted by each activity's % complete
-        var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0), av = 0;
-        scheduleRows.forEach(function (a) {
-          var aS = pd(a.actual_start || a.start_date), aE = pd(a.actual_finish) || pd(a.end_date) || aS; if (!aS) return;
-          var f = mEnd >= aE ? 1 : (mEnd < aS ? 0 : (aE > aS ? (mEnd - aS) / (aE - aS) : 1));
-          av += val(a) * (Math.max(0, Math.min(100, num(a.percent_complete))) / 100) * f;
-        });
-        return Math.min(actualFracDD, av / TOT);
-      }
+      if (i < ddIdx) return Math.min(actualFracDD, cumAt(monthKeyOf(m), W.actField, done) / tot);
       if (i === ddIdx) return actualFracDD;               // anchor to true % complete
-      // Planned-shaped continuation from actual%→100%. If no planned shape remains
-      // (data date at/after the planned finish but work is still incomplete), ramp
-      // linearly to 100% across the remaining months so all work still bills.
-      var frac = totRem > 0 ? (planned[i] - plannedDD) / totRem
-        : (nAfter > 0 ? (i - ddIdx) / nAfter : 1);
+      // Planned-shaped continuation; if no planned shape remains (data date at/after
+      // the planned finish, work incomplete), ramp linearly to 100% so all work bills.
+      var frac = totRem > 0 ? (planned[i] - plannedDD) / totRem : (nAfter > 0 ? (i - ddIdx) / nAfter : 1);
       return actualFracDD + Math.max(0, Math.min(1, frac)) * (1 - actualFracDD);
     });
   }
@@ -563,7 +721,7 @@
   // Build the month timeline covering schedule + all WP windows (+ retention tail)
   function buildTimeline() {
     var dates = [];
-    scheduleRows.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date); if (s) dates.push(s); if (e) dates.push(e); });
+    if (sched && sched.min) dates.push(sched.min); if (sched && sched.max) dates.push(sched.max);
     wpRows.forEach(function (w) {
       [w.awarding_date, w.actual_awarding_date, w.target_delivery, w.target_installation, w.target_completion].forEach(function (d) { var x = pd(d); if (x) dates.push(x); });
     });
@@ -584,6 +742,13 @@
   // ==========================================================================
   // PROJECTION ENGINE (matches the Excel Cashflow sheet structure)
   // ==========================================================================
+  // Trade for a work package — the synced WPM `trade` is authoritative. Every WP in WPM
+  // has a trade, so a blank here means the mirror wasn't (re)synced with the trade column,
+  // NOT that the WP is genuinely untraded. We deliberately do NOT guess from the
+  // description (that mislabels ~1 in 4 for this data) — an honest "Uncategorized" flags
+  // the sync gap instead of silently mis-grouping cash-out.
+  function tradeOf(w) { var t = w.trade && String(w.trade).trim(); return t || 'Uncategorized'; }
+
   function computeProjection() {
     var months = buildTimeline();
     var n = months.length;
@@ -592,6 +757,10 @@
     var z = function () { return new Array(n).fill(0); };
     // ---- CASH IN (revenue) — driven by the schedule S-curve ----
     var inDP = z(), inBill = z(), inRet = z(), inEwt = z();   // periodic components (received basis)
+    // Per-source attribution per month for the cash-in drill-down (DP tranches /
+    // trades / milestones / contract progress billing).
+    var brkInDP = [], brkInBill = [], brkInRet = [];
+    function inAdd(bucket, idx, label, amt, sub) { if (amt > 0) (bucket[idx] || (bucket[idx] = [])).push({ no: label, desc: sub || '', amt: amt }); }
     var base = num(settings.contract_ibb);         // billable contract (VAT inc)
     var retPct = num(settings.retention_percent);
     var ewtPct = num(settings.ewt_percent);        // creditable withholding tax on billings
@@ -606,10 +775,10 @@
     var coRel2 = settings.co_ret_rel2_months != null ? Math.round(num(settings.co_ret_rel2_months)) : rel2;
     // Retention release helper: stage-1 fraction at (completion + relIn), remainder
     // at (completion + rel2). rel1Pct = 1 → single release (backward compatible).
-    function releaseRetention(arr, retTotal, lastIdx) {
+    function releaseRetention(arr, retTotal, lastIdx, bucket, label) {
       if (retTotal <= 0) return;
-      arr[clampIdx(lastIdx + relIn, n)] += retTotal * rel1Pct;
-      if (rel1Pct < 1) arr[clampIdx(lastIdx + rel2, n)] += retTotal * (1 - rel1Pct);
+      var i1 = clampIdx(lastIdx + relIn, n); arr[i1] += retTotal * rel1Pct; if (bucket) inAdd(bucket, i1, label, retTotal * rel1Pct);
+      if (rel1Pct < 1) { var i2 = clampIdx(lastIdx + rel2, n); arr[i2] += retTotal * (1 - rel1Pct); if (bucket) inAdd(bucket, i2, label, retTotal * (1 - rel1Pct)); }
     }
 
     // Resolve the DP tranches into {dueIdx, amount, recoupRate, pool}. If none are
@@ -630,21 +799,32 @@
         tranches: trTr };
     }).filter(function (t) { return t.amount > 0; });
     var tradeTotal = tradePkgs.reduce(function (a, t) { return a + t.amount; }, 0);
-    var usingTrades = tradePkgs.length > 0;
+    // Milestone billing takes precedence over trades/POC when selected + defined.
+    var usingMilestones = settings.billing_basis === 'milestone' && billingMs.length > 0;
+    var usingTrades = !usingMilestones && tradePkgs.length > 0;
+    var msResolved = usingMilestones ? billingMs.map(function (bm) {
+      var amt = bm.basis === 'amount' ? num(bm.amount) : base * num(bm.percent);
+      var mi;
+      if (bm.trigger_mode === 'month' && bm.trigger_month) mi = monthDiff(months[0], pd(bm.trigger_month));
+      else if (bm.trigger_mode === 'offset') mi = Math.round(num(bm.trigger_offset));
+      else { var md = bm.milestone ? milestoneDate(bm.milestone) : null; mi = md ? monthDiff(months[0], md) : 0; }
+      return { desc: bm.description, amount: amt, mi: clampIdx(mi, n) };
+    }).filter(function (x) { return x.amount > 0; }) : [];
+    var msTotal = msResolved.reduce(function (a, x) { return a + x.amount; }, 0);
 
     var ddIdxIn = clampIdx(monthDiff(months[0], new Date(today().getFullYear(), today().getMonth(), 1)), n);
     var W = scurveWeight();   // switchable duration/cost weighting (with cost→duration fallback)
-    var cum = (base > 0 || usingTrades) ? scheduleCurveBlended(months, ddIdxIn, W.fn) : null;
+    var cum = (base > 0 || usingTrades) ? scheduleCurveBlended(months, ddIdxIn, W) : null;
 
     // Accrue one package's cash-in (DP up front, proportional recoup, retention, EWT,
     // terms lag) into the shared inDP/inBill/inRet/inEwt arrays. Returns nothing.
-    function accrueCashIn(amount, dpPct, retPctL, termsL, dpTr) {
+    function accrueCashIn(amount, dpPct, retPctL, termsL, dpTr, label) {
       if (amount <= 0) return;
       // DP tranches (if any) replace the single up-front DP: each lands at its own
       // due month and is recouped at its own rate. Else a single DP up front.
       var dpList = (dpTr && dpTr.length) ? resolveTrancheList(dpTr, amount, months)
         : (dpPct > 0 ? [{ amount: amount * dpPct, dueIdx: 0, recoupRate: dpPct, pool: amount * dpPct }] : []);
-      dpList.forEach(function (d) { if (d.amount > 0) inDP[clampIdx(d.dueIdx, n)] += d.amount; });
+      dpList.forEach(function (d) { if (d.amount > 0) { var di = clampIdx(d.dueIdx, n); inDP[di] += d.amount; inAdd(brkInDP, di, label + (d.label ? ' · ' + d.label : ' DP'), d.amount); } });
       var retTotal = 0, lastBillMonth = 0, prev = 0;
       for (var i = 0; i < n; i++) {
         var progress = Math.max(0, cum[i] - prev); prev = cum[i];
@@ -655,18 +835,32 @@
         var recoup = 0;
         dpList.forEach(function (d) { if (d.pool <= 0) return; var r = Math.min(d.pool, gross * d.recoupRate); d.pool -= r; recoup += r; });
         var recv = Math.min(n - 1, i + termsL);
-        inBill[recv] += (gross - ret - recoup);
+        inBill[recv] += (gross - ret - recoup); inAdd(brkInBill, recv, label, gross - ret - recoup);
         inEwt[recv] += ewt;
         lastBillMonth = i;
       }
-      releaseRetention(inRet, retTotal, lastBillMonth);
+      releaseRetention(inRet, retTotal, lastBillMonth, brkInRet, label);
     }
 
-    if (usingTrades) {
-      tradePkgs.forEach(function (t) { accrueCashIn(t.amount, t.dp, t.ret, t.terms, t.tranches); });
+    if (usingMilestones) {
+      // Lump-sum billing: each milestone's amount is certified at its trigger month,
+      // then run through retention / EWT / DP-recoup / terms lag (like POC, but discrete).
+      dpTranches.forEach(function (t) { if (t.amount > 0) { var di = clampIdx(t.dueIdx, n); inDP[di] += t.amount; inAdd(brkInDP, di, t.label || 'Downpayment', t.amount); } });
+      var mret = 0, mlast = 0;
+      msResolved.slice().sort(function (a, b) { return a.mi - b.mi; }).forEach(function (x) {
+        var gross = x.amount, ret = gross * retPct, ewt = (gross / (1 + vatPct)) * ewtPct, recoup = 0;
+        mret += ret;
+        dpTranches.forEach(function (t) { if (t.pool <= 0) return; var r = Math.min(t.pool, gross * t.recoupRate); t.pool -= r; recoup += r; });
+        var recv = Math.min(n - 1, x.mi + termsIn);
+        inBill[recv] += (gross - ret - recoup); inAdd(brkInBill, recv, x.desc || 'Milestone', gross - ret - recoup); inEwt[recv] += ewt;
+        mlast = Math.max(mlast, x.mi);
+      });
+      releaseRetention(inRet, mret, mlast, brkInRet, 'Milestone billings');
+    } else if (usingTrades) {
+      tradePkgs.forEach(function (t) { accrueCashIn(t.amount, t.dp, t.ret, t.terms, t.tranches, t.name || 'Trade'); });
     } else if (base > 0) {
       // Each tranche's cash lands at its own resolved due month (its own schedule).
-      dpTranches.forEach(function (t) { if (t.amount > 0) inDP[clampIdx(t.dueIdx, n)] += t.amount; });
+      dpTranches.forEach(function (t) { if (t.amount > 0) { var di = clampIdx(t.dueIdx, n); inDP[di] += t.amount; inAdd(brkInDP, di, t.label || 'Downpayment', t.amount); } });
       var retTotal = 0, lastBillMonth = 0, prev = 0;
       for (var i = 0; i < n; i++) {
         var progress = Math.max(0, cum[i] - prev); prev = cum[i];
@@ -681,7 +875,7 @@
           var r = Math.min(t.pool, gross * t.recoupRate); t.pool -= r; recoup += r;
         });
         var recv = Math.min(n - 1, i + termsIn);   // cash received after terms lag
-        inBill[recv] += (gross - ret - recoup);    // billing net of retention & recoup (before EWT)
+        inBill[recv] += (gross - ret - recoup); inAdd(brkInBill, recv, 'Progress billing', gross - ret - recoup);    // billing net of retention & recoup (before EWT)
         inEwt[recv] += ewt;                        // EWT withheld (shown as its own deduction)
         lastBillMonth = i;
       }
@@ -698,22 +892,33 @@
     // payments landing on/before the data date are actual committed cash-out;
     // the awarded remainder + all un-awarded packages are forecast.
     var outActual = z(), outForecast = z();
+    // Per-work-package attribution per month, so the matrix cells drill down to WPs.
+    var brkDP = [], brkBill = [], brkRet = [];
     var ddIdx = clampIdx(monthDiff(months[0], new Date(today().getFullYear(), today().getMonth(), 1)), n);
     function isAwarded(w) {
       if (/award/i.test(w.award_status || '')) return true;      // "Awarded" / "Partially Awarded"
       return num(w.awarded_cost) > 0 || num(w.total_awarded) > 0 || !!w.actual_awarding_date;
     }
-    function outAdd(arr, idx, amt, awarded) { arr[idx] += amt; if (awarded && idx <= ddIdx) outActual[idx] += amt; else outForecast[idx] += amt; }
-    var schedDates = scheduleRows.map(function (a) { return pd(a.start_date); }).filter(Boolean).map(Number);
-    var schedEndDates = scheduleRows.map(function (a) { return pd(a.end_date) || pd(a.start_date); }).filter(Boolean).map(Number);
-    var fbStart = schedDates.length ? new Date(Math.min.apply(null, schedDates)) : months[0];
-    var fbEnd = schedEndDates.length ? new Date(Math.max.apply(null, schedEndDates)) : months[n - 1];
-    var wpNoDates = 0, wpNoDatesAmt = 0;
+    function outAdd(arr, idx, amt, awarded, bucket, wp) {
+      arr[idx] += amt;
+      if (awarded && idx <= ddIdx) outActual[idx] += amt; else outForecast[idx] += amt;
+      if (bucket && amt > 0) (bucket[idx] || (bucket[idx] = [])).push({ no: wp.no, desc: wp.desc, trade: wp.trade, miss: wp.miss, amt: amt, awd: awarded && idx <= ddIdx });
+    }
+    var fbStart = (sched && sched.min) ? sched.min : months[0];
+    var fbEnd = (sched && sched.max) ? sched.max : months[n - 1];
+    var wpNoDates = 0, wpNoDatesAmt = 0, wpIncomplete = [];
+    function blankF(v) { return v == null || v === ''; }
     wpRows.forEach(function (w) {
       var budget = num(w.total_awarded) || num(w.awarded_cost) || num(w.approved_budget_bcb);
       if (budget <= 0) return;
       var wdp = num(w.dp_percent), wret = num(w.retention_percent);
       var wterms = Math.round(num(w.payment_terms_days) / 30);   // days → months
+      // Which financial terms are blank in WPM → this WP's cash-out is un-shaped
+      // (no DP / no retention / no lag for the blank ones). Tracked for the planner.
+      var miss = [];
+      if (blankF(w.dp_percent)) miss.push('DP %');
+      if (blankF(w.retention_percent)) miss.push('Retention %');
+      if (blankF(w.payment_terms_days)) miss.push('Terms');
       // window: award/delivery start → completion
       var ws = pd(w.actual_awarding_date) || pd(w.awarding_date) || pd(w.target_delivery) || pd(w.target_installation);
       var we = pd(w.target_completion) || pd(w.target_installation) || pd(w.target_delivery) || ws;
@@ -723,8 +928,10 @@
       var span = Math.max(1, eIdx - sIdx + 1);
       // DP paid at window start (+terms)
       var awd = isAwarded(w);
+      var wpLbl = { no: w.wp_no, desc: w.description, trade: tradeOf(w), miss: miss };
+      if (miss.length) wpIncomplete.push({ no: w.wp_no, desc: w.description, trade: wpLbl.trade, miss: miss, budget: budget });
       var dpAmtO = budget * wdp;
-      if (dpAmtO > 0) outAdd(outDP, clampIdx(sIdx + wterms, n), dpAmtO, awd);
+      if (dpAmtO > 0) outAdd(outDP, clampIdx(sIdx + wterms, n), dpAmtO, awd, brkDP, wpLbl);
       var dpPoolO = dpAmtO, retTotalO = 0;
       var billable = budget;                       // gross progress payments total = budget
       for (var k = 0; k < span; k++) {
@@ -733,11 +940,11 @@
         var retO = grossO * wret; retTotalO += retO;
         var recoupO = Math.min(dpPoolO, grossO * wdp); dpPoolO -= recoupO;
         var netO = grossO - retO - recoupO;
-        outAdd(outBill, clampIdx(mIdx + wterms, n), netO, awd);
+        outAdd(outBill, clampIdx(mIdx + wterms, n), netO, awd, brkBill, wpLbl);
       }
       if (retTotalO > 0) {   // staged release on the cash-out schedule (own, or cash-in fallback)
-        outAdd(outRet, clampIdx(eIdx + wterms + coRelIn, n), retTotalO * coRel1Pct, awd);
-        if (coRel1Pct < 1) outAdd(outRet, clampIdx(eIdx + wterms + coRel2, n), retTotalO * (1 - coRel1Pct), awd);
+        outAdd(outRet, clampIdx(eIdx + wterms + coRelIn, n), retTotalO * coRel1Pct, awd, brkRet, wpLbl);
+        if (coRel1Pct < 1) outAdd(outRet, clampIdx(eIdx + wterms + coRel2, n), retTotalO * (1 - coRel1Pct), awd, brkRet, wpLbl);
       }
     });
 
@@ -816,7 +1023,22 @@
       for (var bm = 0; bm < n; bm++) { if (liveNetCum[bm] < -fundingLimit) breachMonths.push(bm); }
     }
 
+    // Per-month cash-out totals by trade (for the "By trade" chart view), + an
+    // ordered trade list with stable colors.
+    var CFPAL = ['#EE3124', '#d99100', '#1f8f4e', '#2f6fb0', '#8e5bd0', '#C42127', '#5A5858', '#00a6a6', '#F4A9A2', '#9a9a9a'];
+    var outTradePer = [], tradeTot = {};
+    for (var tt = 0; tt < n; tt++) outTradePer[tt] = {};
+    [brkDP, brkBill, brkRet].forEach(function (bucket) {
+      bucket.forEach(function (arr, mi) {
+        if (!arr) return;
+        arr.forEach(function (x) { var t = x.trade || 'Uncategorized'; outTradePer[mi][t] = (outTradePer[mi][t] || 0) + x.amt; tradeTot[t] = (tradeTot[t] || 0) + x.amt; });
+      });
+    });
+    var tradeList = Object.keys(tradeTot).sort(function (a, b) { return tradeTot[b] - tradeTot[a]; })
+      .map(function (t, i) { return { name: t, total: tradeTot[t], color: CFPAL[i % CFPAL.length] }; });
+
     return { empty: false, months: months, n: n, ddIdx: ddIdx,
+      outTradePer: outTradePer, tradeList: tradeList,
       inDP: inDP, inBill: inBill, inRet: inRet, inEwt: inEwt, inPer: inPer, inCum: inCum,
       outDP: outDP, outBill: outBill, outRet: outRet, outPer: outPer, outCum: outCum,
       inActualPer: inActualPer, inForecastPer: inForecastPer,
@@ -827,6 +1049,10 @@
       financeRate: financeRate, financePer: financePer, financeTot: financeTot,
       fundingLimit: fundingLimit, breachMonths: breachMonths,
       usingTrades: usingTrades, tradeTotal: tradeTotal, tradeCount: tradePkgs.length,
+      usingMilestones: usingMilestones, msTotal: msTotal, msCount: msResolved.length,
+      outBreak: { dp: brkDP, bill: brkBill, ret: brkRet },
+      inBreak: { dp: brkInDP, bill: brkInBill, ret: brkInRet },
+      wpIncomplete: wpIncomplete,
       scurveBasis: W.basis, scurveFellBack: W.fellBack, scurveWithCost: W.withCost, scurveActs: W.nAct,
       wpCount: wpRows.length, wpNoDates: wpNoDates, wpNoDatesAmt: wpNoDatesAmt,
       dpTotal: dpTotal, dpCount: dpTranches.length,
@@ -838,10 +1064,20 @@
   // ==========================================================================
   // RENDER
   // ==========================================================================
+  // Loading skeleton — KPI tiles + chart placeholder with a shimmer, so the wait on
+  // the schedule/WPM fetch reads as "loading" rather than a bare line of text.
+  function skeletonHTML() {
+    var kpi = '';
+    for (var i = 0; i < 6; i++) kpi += '<div class="cf-kpi cf-sk"><div class="cf-sk-l cf-sk-bar"></div><div class="cf-sk-v cf-sk-bar"></div><div class="cf-sk-s cf-sk-bar"></div></div>';
+    return '<div class="cf-kpis">' + kpi + '</div>' +
+      '<div class="cf-card"><div class="cf-sk-h cf-sk-bar"></div><div class="cf-sk-chart cf-sk-bar"></div></div>';
+  }
+
   function srcChips() {
     var host = document.getElementById('cf-src');
     var hasContract = settings && num(settings.contract_ibb) > 0;
-    var schedCls = scheduleRows.length ? 'ok' : 'warn';
+    var nAct = sched ? sched.nAct : 0;
+    var schedCls = nAct ? 'ok' : 'warn';
     var contractCls = hasContract ? 'ok' : 'warn';
     var wpmCls = wpmStatus === 'ok' ? 'ok' : (wpmStatus === 'loading' ? '' : (wpmStatus === 'empty' || wpmStatus === 'no-map' ? 'warn' : 'bad'));
     var syncedTxt = wpmSyncedAt ? ' · synced ' + Fmt.date(wpmSyncedAt) : '';
@@ -850,7 +1086,7 @@
       : 'WPM cash-out · ' + (wpmMsg || wpmStatus);
     host.innerHTML =
       chip(contractCls, hasContract ? 'Contract set · IBB ' + Fmt.moneyShort(settings.contract_ibb) : 'Contract not set — open Assumptions') +
-      chip(schedCls, scheduleRows.length ? 'Schedule S-curve · ' + scheduleRows.length + ' activities' : 'No schedule — cash-in needs the Project Schedule') +
+      chip(schedCls, nAct ? 'Schedule S-curve · ' + nAct + ' activities' : 'No schedule — cash-in needs the Project Schedule') +
       chip(wpmCls, wpmTxt) +
       (model && !model.empty ? (function () {
         var partial = model.scurveBasis === 'cost' && model.scurveWithCost < model.scurveActs;
@@ -883,14 +1119,23 @@
       host.innerHTML = '<div class="cf-empty">Nothing to project yet. This module derives cash-in from the <b>Project Schedule</b> and cash-out from <b>WPM</b> work packages. Add a schedule and set the contract value under <b>Assumptions</b>.</div>';
       return;
     }
-    host.innerHTML = kpiHTML() + alertsHTML() + chartHTML() + matrixHTML() + varianceHTML() + scenarioHTML();
+    host.innerHTML = kpiHTML() + nudgeHTML() + alertsHTML() + wpTermsHTML() + chartHTML() + matrixHTML() + varianceHTML() + scenarioHTML();
+    var no = document.getElementById('cf-nudge-open'); if (no) no.onclick = openSettings;
+    var tt = document.getElementById('cf-terms-tgl');
+    if (tt) tt.onclick = function () { var b = document.getElementById('cf-terms-body'), cv = document.getElementById('cf-terms-chev'), open = b.style.display === 'none'; b.style.display = open ? '' : 'none'; if (cv) cv.textContent = open ? 'Hide ▴' : 'Show ▾'; };
     wireScenarioBtns();
     drawPeriodic();
     var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter');
     if (mb) mb.onclick = function () { setPeriodMode('month'); };
     if (qb) qb.onclick = function () { setPeriodMode('quarter'); };
+    var cn = document.getElementById('cf-cm-net'), ct = document.getElementById('cf-cm-trade');
+    if (cn) cn.onclick = function () { setChartMode('net'); };
+    if (ct) ct.onclick = function () { setChartMode('trade'); };
     host.querySelectorAll('.cf-matrix th.mcol').forEach(function (th) {
       th.onclick = function () { selectMonth(+th.dataset.mi); };
+    });
+    host.querySelectorAll('.cf-matrix td.cf-oc').forEach(function (td) {
+      td.onclick = function () { renderDrill(td.dataset.dir, td.dataset.comp, +td.dataset.mi); };
     });
   }
 
@@ -942,6 +1187,37 @@
     '</div>';
   }
 
+  // Assumptions completeness nudge — gentle prompts for values that are unset/zero
+  // and would otherwise silently make the projection understate. Not errors, just cues.
+  function nudgeHTML() {
+    var s = settings || {}, items = [];
+    if (!(num(s.contract_bcb) > 0)) items.push('Set the contract <b>BCB</b> to see gross margin');
+    if (!(num(s.retention_percent) > 0)) items.push('<b>Retention</b> is 0% — set it if the client withholds retention');
+    var hasDP = num(s.dp_percent) > 0 || (tranches && tranches.length) || (model && (model.usingTrades || model.usingMilestones));
+    if (!hasDP) items.push('No <b>downpayment</b> configured (DP % or tranches)');
+    if (!(num(s.ewt_percent) > 0)) items.push('<b>EWT</b> is 0% — set the creditable withholding (usually 2%)');
+    if (wpmStatus !== 'ok') items.push('<b>Cash-out source</b> (WPM) not connected — map the WPM project id, then Sync');
+    if (!items.length) return '';
+    return '<div class="cf-nudge"><div class="cf-nudge-t"><span class="cf-alert-dot"></span><b>Assumptions look incomplete</b> — for a fuller projection you may want to:</div><ul>' +
+      items.map(function (t) { return '<li>' + t + '</li>'; }).join('') +
+      '</ul><button class="cf-btn-sm" id="cf-nudge-open">Open Assumptions</button></div>';
+  }
+
+  // Tracker: work packages whose WPM terms (DP% / Retention% / Terms) are blank, so
+  // their cash-out is modeled un-shaped (no DP / no retention / no lag for those fields).
+  function wpTermsHTML() {
+    var list = (model && model.wpIncomplete) || [];
+    if (!list.length) return '';
+    var rows = list.slice().sort(function (a, b) { return b.budget - a.budget; }).map(function (x) {
+      return '<tr><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td>' + esc(x.trade || '') + '</td><td>' + esc(x.miss.join(' / ')) + '</td><td class="num">' + Fmt.moneyShort(x.budget) + '</td></tr>';
+    }).join('');
+    return '<div class="cf-card cf-terms"><div class="cf-terms-hd" id="cf-terms-tgl"><span class="cf-alert-dot" style="background:#d99100;margin-top:0;"></span>' +
+      '<b>' + list.length + ' work package' + (list.length > 1 ? 's' : '') + ' with incomplete WPM terms</b>' +
+      '<span class="cf-hint" style="margin:0 0 0 8px;">— cash-out has no DP / retention / lag for the blank fields.</span>' +
+      '<span class="cf-terms-chev" id="cf-terms-chev">Show ▾</span></div>' +
+      '<div id="cf-terms-body" style="display:none;overflow-x:auto;margin-top:12px;"><table class="cf-table"><thead><tr><th>WP No.</th><th>Description</th><th>Trade</th><th>Missing fields</th><th class="num">Budget</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }
+
   // Funding-limit breach (#8) + per-trade reconciliation (#7) banners.
   function alertsHTML() {
     var m = model, out = '';
@@ -957,6 +1233,13 @@
       out += '<div class="cf-alert ' + (off ? 'warn' : 'info') + '"><span class="cf-alert-dot"></span><div>' +
         'Cash-in built from <b>' + m.tradeCount + ' trade package' + (m.tradeCount > 1 ? 's' : '') + '</b> totaling <b>' + Fmt.moneyShort(m.tradeTotal) + '</b>' +
         (off ? ' — this differs from Contract IBB ' + Fmt.moneyShort(num(settings.contract_ibb)) + ' by ' + (diff > 0 ? '+' : '') + Fmt.moneyShort(diff) + '. Adjust the package shares to reconcile.' : ' (reconciles with Contract IBB). Client DP tranches are ignored in per-trade mode.') +
+        '</div></div>';
+    }
+    if (m.usingMilestones) {
+      var mdiff = m.msTotal - num(settings.contract_ibb), moff = Math.abs(mdiff) > 1;
+      out += '<div class="cf-alert ' + (moff ? 'warn' : 'info') + '"><span class="cf-alert-dot"></span><div>' +
+        'Progress billing by <b>' + m.msCount + ' milestone' + (m.msCount > 1 ? 's' : '') + '</b> totaling <b>' + Fmt.moneyShort(m.msTotal) + '</b>' +
+        (moff ? ' — differs from Contract IBB ' + Fmt.moneyShort(num(settings.contract_ibb)) + ' by ' + (mdiff > 0 ? '+' : '') + Fmt.moneyShort(mdiff) + '. Adjust milestone amounts to reconcile.' : ' (reconciles with Contract IBB). Billed as lump sums at each milestone, not by % POC.') +
         '</div></div>';
     }
     return out;
@@ -995,9 +1278,14 @@
   function chartHTML() {
     var seg = '<div class="cf-seg"><button id="cf-pm-month" class="' + (periodMode === 'month' ? 'active' : '') + '">Monthly</button>' +
       '<button id="cf-pm-quarter" class="' + (periodMode === 'quarter' ? 'active' : '') + '">Quarterly</button></div>';
+    var seg2 = '<div class="cf-seg"><button id="cf-cm-net" class="' + (chartMode === 'net' ? 'active' : '') + '">Net</button>' +
+      '<button id="cf-cm-trade" class="' + (chartMode === 'trade' ? 'active' : '') + '">Cash-out by trade</button></div>';
+    var subTxt = chartMode === 'trade'
+      ? 'Cash paid per period, <b>stacked by trade</b> (from WPM work packages). Cash-in shown as a line for context.'
+      : 'Cash received (up) vs paid (down) per period; net line. Solid = actual through the data date (' + Fmt.date(iso(today())) + ') — ' + (model && model.hasActuals ? '<b>recorded actuals</b>' : 'cash-in from schedule <b>% complete</b>, cash-out from <b>awarded</b> WPs') + '; faded/dashed = forecast. Click a month in the table below to highlight its bar.';
     return '<div class="cf-card">' +
       '<div class="cf-chart-head"><div><h3>Periodic Cash Flow</h3>' +
-      '<p class="sub" style="margin-bottom:0;">Cash received (up) vs paid (down) per period; net line. Solid = actual through the data date (' + Fmt.date(iso(today())) + ') — ' + (model && model.hasActuals ? '<b>recorded actuals</b>' : 'cash-in from schedule <b>% complete</b>, cash-out from <b>awarded</b> WPs') + '; faded/dashed = forecast. Click a month in the table below to highlight its bar.</p></div>' + seg + '</div>' +
+      '<p class="sub" style="margin-bottom:0;">' + subTxt + '</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;">' + seg2 + seg + '</div></div>' +
       '<div class="cf-chart-wrap" id="cf-chart-periodic"></div></div>';
   }
 
@@ -1005,10 +1293,10 @@
   // forecast split for both cash-in and cash-out.
   function buildPeriods() {
     var m = model;
-    function mk(label, date) { return { label: label, date: date, inv: 0, out: 0, net: 0, invA: 0, invF: 0, outA: 0, outF: 0, i0: Infinity, i1: -Infinity }; }
+    function mk(label, date) { return { label: label, date: date, inv: 0, out: 0, net: 0, invA: 0, invF: 0, outA: 0, outF: 0, otr: {}, i0: Infinity, i1: -Infinity }; }
     // Accumulate the actual/forecast split; derive inv/out/net from it so the bars,
     // net line and tooltip stay consistent when recorded actuals override the past.
-    function add(b, i) { b.invA += m.inActualPer[i]; b.invF += m.inForecastPer[i]; b.outA += m.outActualPer[i]; b.outF += m.outForecastPer[i]; b.i0 = Math.min(b.i0, i); b.i1 = Math.max(b.i1, i); }
+    function add(b, i) { b.invA += m.inActualPer[i]; b.invF += m.inForecastPer[i]; b.outA += m.outActualPer[i]; b.outF += m.outForecastPer[i]; var tr = m.outTradePer[i] || {}; for (var t in tr) b.otr[t] = (b.otr[t] || 0) + tr[t]; b.i0 = Math.min(b.i0, i); b.i1 = Math.max(b.i1, i); }
     function fin(b) { b.inv = b.invA + b.invF; b.out = b.outA + b.outF; b.net = b.inv + b.out; return b; }
     if (periodMode === 'quarter') {
       var order = [], by = {};
@@ -1028,7 +1316,7 @@
   function drawPeriodic() {
     var host = document.getElementById('cf-chart-periodic'); if (!host) return;
     var P = buildPeriods(), nP = P.length;
-    var W = 1000, H = 320, padL = 64, padR = 18, padT = 18, padB = 40;
+    var W = 1000, H = 320, padL = 82, padR = 18, padT = 18, padB = 40;
     var cw = W - padL - padR, ch = H - padT - padB;
     var maxAbs = Math.max(
       Math.max.apply(null, P.map(function (p) { return p.inv; })),
@@ -1062,18 +1350,30 @@
       if (p.i1 >= selRange.i0 && p.i0 <= selRange.i1) grid += '<rect x="' + (padL + band * j) + '" y="' + padT + '" width="' + band + '" height="' + ch + '" class="cf-selband"/>';
     });
 
+    var byTrade = chartMode === 'trade' && model.tradeList && model.tradeList.length;
     var bw = Math.max(2, Math.min(28, band * 0.62)), showLab = periodMode === 'quarter' || band >= 44;
     var bars = '', labs = '', hovers = '';
     function rect(x, yy, w, h, fill, op) { return h > 0.3 ? '<rect x="' + x + '" y="' + yy + '" width="' + w + '" height="' + h + '" fill="' + fill + '" ' + op + '/>' : ''; }
     P.forEach(function (p, i) {
       var x0 = cx(i) - bw / 2;
-      // cash IN (up): actual solid, forecast faded, stacked
-      if (p.invA > 0) { var ya = y(p.invA); bars += rect(x0, ya, bw, zeroY - ya, 'var(--pd-ok)', ''); }
-      if (p.invF > 0) { var yt = y(p.invA + p.invF); bars += rect(x0, yt, bw, y(p.invA) - yt, 'var(--pd-ok)', 'opacity="0.4"'); }
-      // cash OUT (down): actual solid, forecast faded, stacked (values negative)
-      if (p.outA < 0) { bars += rect(x0, zeroY, bw, y(p.outA) - zeroY, 'var(--pd-red)', ''); }
-      if (p.outF < 0) { bars += rect(x0, y(p.outA), bw, y(p.outA + p.outF) - y(p.outA), 'var(--pd-red)', 'opacity="0.4"'); }
-      if (showLab && p.inv > 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.inv) - 3) + '" class="cf-dlab">' + Fmt.moneyShort(p.inv) + '</text>';
+      if (byTrade) {
+        // cash OUT (down): stacked segments by trade (WPM cost mix over time)
+        var acc = 0;
+        model.tradeList.forEach(function (tr) {
+          var amt = p.otr[tr.name] || 0; if (amt <= 0) return;
+          var yTop = y(-acc), h = y(-(acc + amt)) - yTop;
+          bars += rect(x0, yTop, bw, h, tr.color, '');
+          acc += amt;
+        });
+      } else {
+        // cash IN (up): actual solid, forecast faded, stacked
+        if (p.invA > 0) { var ya = y(p.invA); bars += rect(x0, ya, bw, zeroY - ya, 'var(--pd-ok)', ''); }
+        if (p.invF > 0) { var yt = y(p.invA + p.invF); bars += rect(x0, yt, bw, y(p.invA) - yt, 'var(--pd-ok)', 'opacity="0.4"'); }
+        // cash OUT (down): actual solid, forecast faded, stacked (values negative)
+        if (p.outA < 0) { bars += rect(x0, zeroY, bw, y(p.outA) - zeroY, 'var(--pd-red)', ''); }
+        if (p.outF < 0) { bars += rect(x0, y(p.outA), bw, y(p.outA + p.outF) - y(p.outA), 'var(--pd-red)', 'opacity="0.4"'); }
+        if (showLab && p.inv > 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.inv) - 3) + '" class="cf-dlab">' + Fmt.moneyShort(p.inv) + '</text>';
+      }
       if (showLab && p.out < 0) labs += '<text x="' + cx(i) + '" y="' + (y(p.out) + 10) + '" class="cf-dlab">' + Fmt.moneyShort(-p.out) + '</text>';
       hovers += '<rect class="cf-hover" data-i="' + i + '" x="' + (padL + band * i) + '" y="' + padT + '" width="' + band + '" height="' + ch + '"/>';
     });
@@ -1082,18 +1382,28 @@
     // net line — solid (actual) then dashed (forecast), sharing the boundary point
     function seg(a, b, dash) { var pts = []; for (var i = a; i < b; i++) pts.push(cx(i) + ',' + y(P[i].net)); return pts.length > 1 ? '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--pd-ink)" stroke-width="2.25" ' + (dash ? 'stroke-dasharray="5 4"' : '') + '/>' : ''; }
     var netLine = seg(0, split, false) + seg(Math.max(0, split - 1), nP, true);
-    // X labels (centred under bands)
-    var xlab = '', step = Math.max(1, Math.ceil(nP / 14));
-    P.forEach(function (p, i) { if (i % step === 0) xlab += '<text x="' + cx(i) + '" y="' + (H - padB + 18) + '" class="cf-xlab">' + esc(p.label) + '</text>'; });
+    // in trade mode, show cash-in as a context line instead of green up-bars
+    var inLine = byTrade ? '<polyline points="' + P.map(function (p, i) { return cx(i) + ',' + y(p.inv); }).join(' ') + '" fill="none" stroke="var(--pd-ok)" stroke-width="2" stroke-dasharray="2 3"/>' : '';
+    // X labels (centred under bands) + a light vertical gridline at each labelled
+    // period (drawn behind the bars) so bars line up with the axis.
+    var xlab = '', vg = '', step = Math.max(1, Math.ceil(nP / 14));
+    P.forEach(function (p, i) {
+      if (i % step !== 0) return;
+      vg += '<line x1="' + cx(i) + '" y1="' + padT + '" x2="' + cx(i) + '" y2="' + (padT + ch) + '" class="cf-vgrid"/>';
+      xlab += '<text x="' + cx(i) + '" y="' + (H - padB + 18) + '" class="cf-xlab">' + esc(p.label) + '</text>';
+    });
 
-    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + bars + netLine + labs + xlab + hovers + '</svg>' +
+    var legendHtml = byTrade
+      ? model.tradeList.map(function (tr) { return '<span class="cf-lg"><span class="sw" style="background:' + tr.color + ';"></span>' + esc(tr.name) + '</span>'; }).join('') +
+        '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ok);border-style:dashed;"></span>Cash In</span>' +
+        '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ink);"></span>Net</span>'
+      : '<span class="cf-lg"><span class="sw" style="background:var(--pd-ok);"></span>Cash In</span>' +
+        '<span class="cf-lg"><span class="sw" style="background:var(--pd-red);"></span>Cash Out</span>' +
+        '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ink);"></span>Net</span>' +
+        '<span class="cf-lg"><span class="sw fc" style="background:var(--pd-muted);"></span>Forecast (faded / dashed)</span>';
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="cf-svg">' + grid + vg + bars + inLine + netLine + labs + xlab + hovers + '</svg>' +
       '<div class="cf-tip" id="cf-tip"></div>' +
-      '<div class="cf-legend">' +
-      '<span class="cf-lg"><span class="sw" style="background:var(--pd-ok);"></span>Cash In</span>' +
-      '<span class="cf-lg"><span class="sw" style="background:var(--pd-red);"></span>Cash Out</span>' +
-      '<span class="cf-lg"><span class="sw-line" style="border-color:var(--pd-ink);"></span>Net</span>' +
-      '<span class="cf-lg"><span class="sw fc" style="background:var(--pd-muted);"></span>Forecast (faded / dashed)</span>' +
-      '</div>';
+      '<div class="cf-legend">' + legendHtml + '</div>';
 
     // running balance for the tooltip (reuses bal computed above)
     pvState = { P: P, bal: bal, split: split, W: W, host: host };
@@ -1124,6 +1434,7 @@
     });
   }
   function setPeriodMode(mode) { periodMode = mode; drawPeriodic(); var mb = document.getElementById('cf-pm-month'), qb = document.getElementById('cf-pm-quarter'); if (mb) mb.className = mode === 'month' ? 'active' : ''; if (qb) qb.className = mode === 'quarter' ? 'active' : ''; }
+  function setChartMode(mode) { chartMode = mode; render(); }   // re-render: header text + toggle + chart change
 
   // Recorded actual vs plan-to-date variance (shown only when actuals exist).
   function varianceHTML() {
@@ -1244,24 +1555,133 @@
         arr.map(cell).join('') + cell(total(arr)) + '</tr>';
     }
     function secHead(label) { return '<tr class="cf-sec"><th class="lbl">' + label + '</th>' + m.months.map(function () { return '<th></th>'; }).join('') + '<th></th></tr>'; }
+    // Drill-able rows: cells are clickable to break the amount down by source
+    // (cash-in: DP tranches / trades / milestones / progress; cash-out: work packages).
+    // dir 'out' displays magnitudes as negative; 'in' displays them as positive.
+    function rowDrill(label, arr, comp, dir) {
+      var neg = dir === 'out';
+      var cells = arr.map(function (v, i) {
+        var disp = neg ? -v : v;
+        return '<td class="cf-oc' + (disp < 0 ? ' cf-neg' : '') + '" data-comp="' + comp + '" data-dir="' + dir + '" data-mi="' + i + '" title="Click for the breakdown">' + (v ? Fmt.moneyShort(disp) : '–') + '</td>';
+      }).join('');
+      var tot = total(arr), dt = neg ? -tot : tot;
+      return '<tr class="cf-sub"><td class="lbl">' + label + '</td>' + cells + '<td' + (dt < 0 ? ' class="cf-neg"' : '') + '>' + (tot ? Fmt.moneyShort(dt) : '–') + '</td></tr>';
+    }
 
     return '<div class="cf-card"><h3>Monthly Projection</h3>' +
-      '<p class="sub">Cash In (from schedule S-curve × contract) · Cash Out (from WPM work packages) · Net. Cumulative rows in bold.</p>' +
+      '<p class="sub">Cash In (from schedule S-curve × contract) · Cash Out (from WPM work packages) · Net. Cumulative rows in bold. <b>Click any Cash In or Cash Out cell</b> to see what makes it up.</p>' +
       '<div class="cf-matrix-wrap"><table class="cf-matrix"><thead><tr>' + hdr + '</tr></thead><tbody>' +
       secHead('CASH IN') +
-      row('Downpayment', m.inDP, '', true) +
-      row('Billing (net of retention &amp; recoup)', m.inBill, '', true) +
+      rowDrill('Downpayment', m.inDP, 'dp', 'in') +
+      rowDrill('Billing (net of retention &amp; recoup)', m.inBill, 'bill', 'in') +
       row('Less: EWT withheld', m.inEwt.map(function (v) { return -v; }), '', true) +
-      row('Retention release', m.inRet, '', true) +
+      rowDrill('Retention release', m.inRet, 'ret', 'in') +
       row('Cash In — cumulative', m.inCum, 'cf-cum') +
       secHead('CASH OUT') +
-      row('Downpayment', m.outDP.map(function (v) { return -v; }), '', true) +
-      row('Billing', m.outBill.map(function (v) { return -v; }), '', true) +
-      row('Retention', m.outRet.map(function (v) { return -v; }), '', true) +
+      rowDrill('Downpayment', m.outDP, 'dp', 'out') +
+      rowDrill('Billing', m.outBill, 'bill', 'out') +
+      rowDrill('Retention', m.outRet, 'ret', 'out') +
       row('Cash Out — cumulative', m.outCum, 'cf-cum') +
       '<tr class="cf-net"><td class="lbl">NET CASH FLOW — periodic</td>' + m.netPer.map(cell).join('') + cell(total(m.netPer)) + '</tr>' +
       '<tr class="cf-net"><td class="lbl">NET CASH FLOW — cumulative</td>' + m.netCum.map(function (v) { return '<td>' + (v ? Fmt.moneyShort(v) : '–') + '</td>'; }).join('') + '<td></td></tr>' +
-      '</tbody></table></div></div>';
+      '</tbody></table></div><div id="cf-drill"></div></div>';
+  }
+
+  // Drill-down: what makes up a cash cell (direction × component × month).
+  // Cash-out lists the contributing work packages (with status); cash-in lists the
+  // contributing sources (DP tranches / trades / milestones / progress billing).
+  // Amber "incomplete terms" badge for a cash-out WP whose DP/retention/terms are blank
+  // in WPM (its cash-out is un-shaped for those). Tooltip lists the fields.
+  function missBadge(x) {
+    return (x.miss && x.miss.length) ? ' <span class="cf-miss" title="Blank in WPM (no ' + esc(x.miss.join(' / ')) + ') — cash-out is un-shaped for these">&#9888; ' + esc(x.miss.join(' / ')) + '</span>' : '';
+  }
+  function renderDrill(dir, comp, mi) {
+    lastDrill = { dir: dir, comp: comp, mi: mi };
+    var host = document.getElementById('cf-drill'); if (!host || !model) return;
+    var isOut = dir === 'out';
+    var list = (((isOut ? model.outBreak : model.inBreak)[comp] || [])[mi]) || [];
+    var label = { dp: 'Downpayment', bill: 'Billing', ret: 'Retention' }[comp] || comp;
+    var side = isOut ? 'Cash Out' : 'Cash In';
+    var mo = monthLabel(model.months[mi]);
+    var closeBtn = '<button class="cf-btn-sm" id="cf-drill-x">Close</button>';
+    var toggle = '<span class="cf-seg cf-drill-seg"><button data-dv="chart"' + (drillView === 'chart' ? ' class="active"' : '') + '>Chart</button><button data-dv="table"' + (drillView === 'table' ? ' class="active"' : '') + '>Table</button></span>';
+    if (!list.length) { host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">' + side + ' · ' + label + ' · ' + mo + ' <span>' + (isOut ? 'no work packages' : 'no sources') + '</span>' + closeBtn + '</div></div>'; document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; }; return; }
+    var sorted = list.slice().sort(function (a, b) { return b.amt - a.amt; });
+    var tot = sorted.reduce(function (a, x) { return a + x.amt; }, 0);
+    var maxAmt = sorted.reduce(function (m, x) { return Math.max(m, x.amt); }, 0) || 1;
+    var sgn = isOut ? -1 : 1, unit = isOut ? ('work package' + (sorted.length > 1 ? 's' : '')) : ('source' + (sorted.length > 1 ? 's' : ''));
+
+    // Group by trade (cash-out) or a single flat group (cash-in).
+    var groups = {}, order = [];
+    sorted.forEach(function (x) { var t = isOut ? (x.trade || 'Uncategorized') : '_'; if (!groups[t]) { groups[t] = []; order.push(t); } groups[t].push(x); });
+    order.sort(function (a, b) { return groups[b].reduce(function (s, x) { return s + x.amt; }, 0) - groups[a].reduce(function (s, x) { return s + x.amt; }, 0); });
+
+    var body;
+    if (drillView === 'table') {
+      var head = isOut ? '<th>WP No.</th><th>Description</th><th class="num">Amount</th><th>Status</th>' : '<th>Source</th><th>Detail</th><th class="num">Amount</th>';
+      var rowsHtml;
+      if (isOut) {
+        rowsHtml = order.map(function (t, gi) {
+          var rows = groups[t], gsub = rows.reduce(function (s, x) { return s + x.amt; }, 0);
+          var hd = '<tr class="cf-trade-hd" data-g="' + gi + '"><td colspan="2"><span class="cf-tri">&#9662;</span> ' + esc(t) + ' <span class="cf-trade-n">' + rows.length + ' WP' + (rows.length > 1 ? 's' : '') + '</span></td><td class="num cf-neg">' + Fmt.moneyShort(-gsub) + '</td><td></td></tr>';
+          var mem = rows.map(function (x) { return '<tr class="cf-trade-row cf-g' + gi + '"><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + missBadge(x) + '</td><td class="num cf-neg">' + Fmt.moneyShort(-x.amt) + '</td><td>' + (x.awd ? 'actual' : 'forecast') + '</td></tr>'; }).join('');
+          return hd + mem;
+        }).join('');
+      } else {
+        rowsHtml = sorted.map(function (x) { return '<tr><td>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td class="num">' + Fmt.moneyShort(x.amt) + '</td></tr>'; }).join('');
+      }
+      body = '<div style="overflow-x:auto;"><table class="cf-table"><thead><tr>' + head + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>';
+    } else {
+      // Chart view: a 100%-stacked distribution bar segmented by trade (cash-out) or by
+      // source (cash-in) showing each part's share of the total, + a grouped detail table.
+      var PAL = ['#EE3124', '#d99100', '#1f8f4e', '#2f6fb0', '#8e5bd0', '#C42127', '#5A5858', '#00a6a6', '#F4A9A2', '#9a9a9a'];
+      var segs = isOut
+        ? order.map(function (t) { return { name: t, amt: groups[t].reduce(function (s, x) { return s + x.amt; }, 0) }; })
+        : sorted.map(function (x) { return { name: (x.desc || x.no || '—'), amt: x.amt }; });
+      var colorOf = {}; segs.forEach(function (sg, i) { colorOf[sg.name] = PAL[i % PAL.length]; });
+      // Donut by trade/source (matches the WPM portfolio "by trade" donuts).
+      var R = 64, CIRC = 2 * Math.PI * R, off = 0;
+      var arcs = segs.map(function (sg) {
+        var frac = tot > 0 ? sg.amt / tot : 0, len = frac * CIRC;
+        var a = '<circle cx="90" cy="90" r="' + R + '" fill="none" stroke="' + colorOf[sg.name] + '" stroke-width="26" stroke-dasharray="' + len.toFixed(2) + ' ' + (CIRC - len).toFixed(2) + '" stroke-dashoffset="' + (-off).toFixed(2) + '" transform="rotate(-90 90 90)"><title>' + esc(sg.name) + ' · ' + Fmt.moneyShort(sgn * sg.amt) + ' · ' + (frac * 100).toFixed(1) + '%</title></circle>';
+        off += len; return a;
+      }).join('');
+      var donut = '<svg viewBox="0 0 180 180" class="cf-donut">' + arcs +
+        '<text x="90" y="86" class="cf-donut-c1">' + Fmt.moneyShort(sgn * tot) + '</text>' +
+        '<text x="90" y="104" class="cf-donut-c2">' + segs.length + (isOut ? ' trades' : ' sources') + '</text></svg>';
+      var legend = '<div class="cf-donut-lg">' + segs.map(function (sg) {
+        return '<span class="cf-lg"><span class="sw" style="background:' + colorOf[sg.name] + ';"></span>' + esc(sg.name) + ' · ' + Fmt.moneyShort(sgn * sg.amt) + ' · ' + (tot > 0 ? (sg.amt / tot * 100).toFixed(0) : 0) + '%</span>';
+      }).join('') + '</div>';
+      // grouped detail table with % share
+      function shr(a) { return tot > 0 ? (a / tot * 100).toFixed(1) + '%' : '—'; }
+      var tbl;
+      if (isOut) {
+        tbl = order.map(function (t, gi) {
+          var rows = groups[t], gsub = rows.reduce(function (s, x) { return s + x.amt; }, 0);
+          var hd = '<tr class="cf-trade-hd" data-g="' + gi + '"><td><span class="cf-sw2" style="background:' + colorOf[t] + ';"></span><span class="cf-tri">&#9662;</span> ' + esc(t) + ' <span class="cf-trade-n">' + rows.length + ' WP' + (rows.length > 1 ? 's' : '') + '</span></td><td class="num cf-neg">' + Fmt.moneyShort(-gsub) + '</td><td class="num">' + shr(gsub) + '</td><td></td></tr>';
+          var mem = rows.map(function (x) { return '<tr class="cf-trade-row cf-g' + gi + '"><td>WP ' + esc(x.no || '—') + ' · ' + esc(x.desc || '') + missBadge(x) + '</td><td class="num cf-neg">' + Fmt.moneyShort(-x.amt) + '</td><td class="num">' + shr(x.amt) + '</td><td>' + (x.awd ? 'actual' : 'forecast') + '</td></tr>'; }).join('');
+          return hd + mem;
+        }).join('');
+        tbl = '<div style="overflow-x:auto;"><table class="cf-table"><thead><tr><th>Trade / Work package</th><th class="num">Amount</th><th class="num">Share</th><th>Status</th></tr></thead><tbody>' + tbl + '</tbody></table></div>';
+      } else {
+        tbl = '<div style="overflow-x:auto;"><table class="cf-table"><thead><tr><th>Source</th><th>Detail</th><th class="num">Amount</th><th class="num">Share</th></tr></thead><tbody>' +
+          sorted.map(function (x) { return '<tr><td><span class="cf-sw2" style="background:' + colorOf[x.desc || x.no || '—'] + ';"></span>' + esc(x.no || '—') + '</td><td>' + esc(x.desc || '') + '</td><td class="num">' + Fmt.moneyShort(x.amt) + '</td><td class="num">' + shr(x.amt) + '</td></tr>'; }).join('') +
+          '</tbody></table></div>';
+      }
+      body = '<div class="cf-donut-wrap">' + donut + legend + '</div>' + tbl;
+    }
+
+    host.innerHTML = '<div class="cf-drill-card"><div class="cf-drill-hd">' + side + ' · ' + label + ' · ' + mo +
+      ' <span>' + sorted.length + ' ' + unit + ' · ' + Fmt.moneyShort(sgn * tot) + (isOut ? ' · by trade' : '') + '</span>' +
+      toggle + closeBtn + '</div>' + body + '</div>';
+    document.getElementById('cf-drill-x').onclick = function () { host.innerHTML = ''; lastDrill = null; };
+    host.querySelectorAll('.cf-drill-seg button').forEach(function (b) {
+      b.onclick = function () { drillView = b.dataset.dv; try { localStorage.setItem('cf_drillview', drillView); } catch (e) {} renderDrill(dir, comp, mi); };
+    });
+    host.querySelectorAll('.cf-trade-hd').forEach(function (h) {
+      h.onclick = function () { var gi = h.dataset.g, tri = h.querySelector('.cf-tri'), c = h.classList.toggle('collapsed'); if (tri) tri.innerHTML = c ? '&#9656;' : '&#9662;'; host.querySelectorAll('.cf-g' + gi).forEach(function (r) { r.style.display = c ? 'none' : ''; }); };
+    });
+    host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   // ==========================================================================
@@ -1272,40 +1692,80 @@
     if (!pid) { UI.toast('Select a project first.', 'error'); return; }
     var s = settings || defaults();
     var form = document.getElementById('cf-form');
+    form.className = 'cf-form-tabs';
     function fld(label, ctrl, hint, full) { return '<div class="' + (full ? 'cf-form-full' : '') + '"><label class="pd-label">' + label + '</label>' + ctrl + (hint ? '<div class="cf-hint">' + hint + '</div>' : '') + '</div>'; }
-    form.innerHTML =
+    function pane(key, active, inner) { return '<div class="cf-form-grid cf-fpane" data-pane="' + key + '"' + (active ? '' : ' style="display:none;"') + '>' + inner + '</div>'; }
+
+    var contractPane =
       fld('Contract Amount — IBB (₱, VAT inc.)', '<input class="pd-input" id="s-ibb" type="number" step="0.01" value="' + (s.contract_ibb != null ? s.contract_ibb : '') + '">', 'Cash-in base — total billable to the client.') +
       fld('Contract Amount — BCB (₱, VAT inc.)', '<input class="pd-input" id="s-bcb" type="number" step="0.01" value="' + (s.contract_bcb != null ? s.contract_bcb : '') + '">', 'Cost baseline, VAT-inclusive (same basis as IBB) — compared to IBB for gross margin.') +
-      fld('Downpayment % (simple)', '<input class="pd-input" id="s-dp" type="number" step="0.01" value="' + pctVal(s.dp_percent) + '">', 'Used only when NO tranches are defined below.') +
-      fld('Retention %', '<input class="pd-input" id="s-ret" type="number" step="0.01" value="' + pctVal(s.retention_percent) + '">', 'Withheld from each billing, e.g. 10.') +
-      fld('EWT % (creditable withholding)', '<input class="pd-input" id="s-ewt" type="number" step="0.01" value="' + pctVal(s.ewt_percent) + '">', 'Withheld from each billing, e.g. 2. On the VAT-exclusive base.') +
+      fld('Cashflow start month', '<input class="pd-input" id="s-start" type="month" value="' + (s.start_period ? String(s.start_period).slice(0, 7) : '') + '">', 'Blank → schedule start.') +
       fld('VAT', '<label class="cf-check"><input type="checkbox" id="s-vat"' + ((s.vat_percent == null || num(s.vat_percent) > 0) ? ' checked' : '') + '> Contract is VAT-inclusive (12%)</label>', 'Untick only for zero-rated / VAT-exempt contracts. Used to derive the VAT-exclusive base for EWT.') +
-      fld('Billing terms (months)', '<input class="pd-input" id="s-terms" type="number" step="1" value="' + (s.billing_terms_months != null ? s.billing_terms_months : 1) + '">', 'Lag from certification to cash receipt.') +
+      fld('WPM project id (cash-out source)', '<input class="pd-input" id="s-wpm" value="' + esc(s.wpm_project_id || '') + '">', 'The Procurement app project id whose work packages fund cash-out. Blank → this project id.', true) +
+      fld('Remarks', '<textarea class="pd-input" id="s-rem" rows="2">' + esc(s.remarks) + '</textarea>', '', true);
+
+    var taxPane =
+      fld('EWT % (creditable withholding)', '<input class="pd-input" id="s-ewt" type="number" step="0.01" value="' + pctVal(s.ewt_percent) + '">', 'Withheld from each billing, e.g. 2. On the VAT-exclusive base.') +
+      fld('Retention %', '<input class="pd-input" id="s-ret" type="number" step="0.01" value="' + pctVal(s.retention_percent) + '">', 'Withheld from each billing, e.g. 10.') +
       fld('Retention release — stage 1 (months after completion)', '<input class="pd-input" id="s-rel" type="number" step="1" value="' + (s.retention_release_months != null ? s.retention_release_months : 1) + '">') +
       fld('Retention released at stage 1 (%)', '<input class="pd-input" id="s-rel1pct" type="number" step="1" value="' + pctVal(s.ret_rel1_pct != null ? s.ret_rel1_pct : 1) + '">', '100 = single release. E.g. 50 → half now, half at stage 2.') +
       fld('Retention release — stage 2 (months after completion)', '<input class="pd-input" id="s-rel2" type="number" step="1" value="' + (s.ret_rel2_months != null ? s.ret_rel2_months : 12) + '">', 'Remainder (defects-liability period). Ignored if stage 1 = 100%.') +
       fld('Cash-out retention — stage 1 released (%)', '<input class="pd-input" id="s-corel1pct" type="number" step="1" value="' + (s.co_ret_rel1_pct != null ? pctVal(s.co_ret_rel1_pct) : '') + '" placeholder="= cash-in">', 'Subcontract retention release. Blank → follows the cash-in staging above.') +
       fld('Cash-out retention — stage 1 lag (months)', '<input class="pd-input" id="s-corel1" type="number" step="1" value="' + (s.co_ret_rel1_months != null ? s.co_ret_rel1_months : '') + '" placeholder="= cash-in">', 'Months after each WP completion. Blank → = cash-in.') +
-      fld('Cash-out retention — stage 2 lag (months)', '<input class="pd-input" id="s-corel2" type="number" step="1" value="' + (s.co_ret_rel2_months != null ? s.co_ret_rel2_months : '') + '" placeholder="= cash-in">', 'Remainder. Blank → = cash-in.') +
+      fld('Cash-out retention — stage 2 lag (months)', '<input class="pd-input" id="s-corel2" type="number" step="1" value="' + (s.co_ret_rel2_months != null ? s.co_ret_rel2_months : '') + '" placeholder="= cash-in">', 'Remainder. Blank → = cash-in.');
+
+    var termsPane =
+      fld('Billing terms (months)', '<input class="pd-input" id="s-terms" type="number" step="1" value="' + (s.billing_terms_months != null ? s.billing_terms_months : 1) + '">', 'Lag from certification to cash receipt.') +
       fld('Financing rate (% p.a. on drawdowns)', '<input class="pd-input" id="s-fin" type="number" step="0.01" value="' + pctVal(s.finance_rate) + '">', 'Annual interest applied to the negative cumulative (peak funding). 0 = off.') +
-      fld('Funding / credit-line limit (₱)', '<input class="pd-input" id="s-limit" type="number" step="0.01" value="' + (s.funding_limit != null ? s.funding_limit : '') + '">', 'Flag months where cumulative net drops below −this. Blank = no limit.') +
-      fld('Cashflow start month', '<input class="pd-input" id="s-start" type="month" value="' + (s.start_period ? String(s.start_period).slice(0, 7) : '') + '">', 'Blank → schedule start.') +
-      fld('WPM project id (cash-out source)', '<input class="pd-input" id="s-wpm" value="' + esc(s.wpm_project_id || '') + '">', 'The Procurement app project id whose work packages fund cash-out. Blank → this project id.', true) +
-      fld('Remarks', '<textarea class="pd-input" id="s-rem" rows="2">' + esc(s.remarks) + '</textarea>', '', true) +
-      // ---- Downpayment tranches ----
+      fld('Funding / credit-line limit (₱)', '<input class="pd-input" id="s-limit" type="number" step="0.01" value="' + (s.funding_limit != null ? s.funding_limit : '') + '">', 'Flag months where cumulative net drops below −this. Blank = no limit.');
+
+    var dpPane =
+      fld('Downpayment % (simple)', '<input class="pd-input" id="s-dp" type="number" step="0.01" value="' + pctVal(s.dp_percent) + '">', 'Used only when NO tranches are defined below.') +
       '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Downpayment Tranches</label>' +
         '<button type="button" class="cf-btn-sm" id="cf-dp-add">+ Add tranche</button></div>' +
         '<div class="cf-hint">Break the DP into tranches — each tagged by trade/agreement, timed by a schedule milestone, a fixed month, or an offset from start, and recouped proportionally. When any tranche exists it overrides the simple % above. <b id="cf-dp-sum"></b></div>' +
-        '<div id="cf-dp-list"></div></div>' +
-      // ---- Per-trade cash-in packages (#7) ----
+        '<div id="cf-dp-list"></div></div>';
+
+    var billingPane =
+      '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Progress Billing Basis</label>' +
+        '<select class="pd-select" id="s-billing-basis" style="max-width:220px;"><option value="poc"' + (s.billing_basis !== 'milestone' ? ' selected' : '') + '>% POC (schedule S-curve)</option><option value="milestone"' + (s.billing_basis === 'milestone' ? ' selected' : '') + '>Milestone (lump sums)</option></select></div>' +
+        '<div class="cf-hint">Milestone billing certifies a fixed amount when a schedule milestone is reached — e.g. "Structural Foundation ₱33M". <b>When selected, it replaces both the S-curve and trade packages above.</b> Amounts should sum to Contract IBB. <b id="cf-bm-sum"></b></div>' +
+        '<div class="cf-dp-head" style="justify-content:flex-end;"><button type="button" class="cf-btn-sm" id="cf-bm-add">+ Add milestone</button></div>' +
+        '<div id="cf-bm-list"></div></div>' +
       '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Cash-In Trade Packages</label>' +
         '<button type="button" class="cf-btn-sm" id="cf-tr-add">+ Add package</button></div>' +
         '<div class="cf-hint">Split the contract into trades (ST / AR / MEPF …), each billing its own share over the schedule S-curve with its own DP / retention / terms. <b>When any package exists it replaces the contract-level cash-in and the DP tranches above are ignored.</b> Shares should sum to Contract IBB. <b id="cf-tr-sum"></b></div>' +
         '<div id="cf-tr-list"></div></div>';
+
+    form.innerHTML =
+      '<div class="cf-tabstrip">' +
+        '<button type="button" class="cf-ftab active" data-pane="contract">Contract</button>' +
+        '<button type="button" class="cf-ftab" data-pane="tax">Tax &amp; Retention</button>' +
+        '<button type="button" class="cf-ftab" data-pane="terms">Terms &amp; Funding</button>' +
+        '<button type="button" class="cf-ftab" data-pane="downpayment">Downpayment</button>' +
+        '<button type="button" class="cf-ftab" data-pane="billing">Billing</button>' +
+      '</div>' +
+      pane('contract', true, contractPane) + pane('tax', false, taxPane) + pane('terms', false, termsPane) +
+      pane('downpayment', false, dpPane) + pane('billing', false, billingPane);
+
+    form.querySelectorAll('.cf-ftab').forEach(function (b) {
+      b.onclick = function () {
+        var p = b.dataset.pane;
+        form.querySelectorAll('.cf-ftab').forEach(function (x) { x.classList.toggle('active', x === b); });
+        form.querySelectorAll('.cf-fpane').forEach(function (x) { x.style.display = x.dataset.pane === p ? '' : 'none'; });
+      };
+    });
     editTranches = (tranches || []).map(function (t) { return JSON.parse(JSON.stringify(t)); });
     editTrades = (trades || []).map(function (t) { return JSON.parse(JSON.stringify(t)); });
+    editBillingMs = (billingMs || []).map(function (t) { return JSON.parse(JSON.stringify(t)); });
     renderTranches();
     renderTrades();
+    renderBillingMs();
+    document.getElementById('s-billing-basis').onchange = function () { renderBillingMs(); };
+    document.getElementById('cf-bm-add').onclick = function () {
+      editBillingMs.push({ description: 'Milestone ' + (editBillingMs.length + 1), basis: 'amount', amount: null, percent: null, trigger_mode: 'milestone', milestone: '', trigger_month: null, trigger_offset: 0 });
+      renderBillingMs();
+    };
     document.getElementById('cf-tr-add').onclick = function () {
       editTrades.push({ name: 'Trade ' + (editTrades.length + 1), basis: 'percent', percent: null, amount: null, dp_percent: num(settings.dp_percent), retention_percent: num(settings.retention_percent), billing_terms_months: null });
       renderTrades();
@@ -1455,6 +1915,52 @@
     el.textContent = 'Total packages: ' + Fmt.moneyShort(tot) + (base > 0 ? (Math.abs(diff) > 1 ? ' — off IBB by ' + (diff > 0 ? '+' : '') + Fmt.moneyShort(diff) : ' — reconciles with IBB') : '');
   }
 
+  // Billing-milestones editor (milestone progress-billing mode).
+  function renderBillingMs() {
+    var host = document.getElementById('cf-bm-list'); if (!host) return;
+    var base = numInput('s-ibb') || 0;
+    var active = (document.getElementById('s-billing-basis') || {}).value === 'milestone';
+    var mlOpts = milestones.map(function (m) { return '<option value="' + esc(m.name) + '">'; }).join('');
+    host.style.opacity = active ? '1' : '0.5';
+    function timingCtrl(t, i) {
+      if (t.trigger_mode === 'month') return '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="trigger_month" type="month" value="' + (t.trigger_month ? String(t.trigger_month).slice(0, 7) : '') + '">';
+      if (t.trigger_mode === 'offset') return '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="trigger_offset" type="number" step="1" placeholder="mo from start" value="' + (t.trigger_offset != null ? t.trigger_offset : 0) + '">';
+      return '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="milestone" list="cf-bm-ml" placeholder="schedule milestone" value="' + esc(t.milestone || '') + '">';
+    }
+    host.innerHTML = '<datalist id="cf-bm-ml">' + mlOpts + '</datalist>' + (editBillingMs.length ? editBillingMs.map(function (t, i) {
+      var amt = t.basis === 'amount' ? num(t.amount) : base * num(t.percent);
+      return '<div class="cf-bm-row">' +
+        '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="description" placeholder="Milestone description" value="' + esc(t.description || '') + '">' +
+        '<select class="pd-select cf-bm-i" data-i="' + i + '" data-k="basis"><option value="amount"' + (t.basis !== 'percent' ? ' selected' : '') + '>fixed ₱</option><option value="percent"' + (t.basis === 'percent' ? ' selected' : '') + '>% of IBB</option></select>' +
+        '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="' + (t.basis === 'percent' ? 'percent_pct' : 'amount') + '" type="number" step="0.01" placeholder="' + (t.basis === 'percent' ? '%' : '₱') + '" value="' + (t.basis === 'percent' ? pctVal(t.percent) : (t.amount != null ? t.amount : '')) + '">' +
+        '<select class="pd-select cf-bm-i" data-i="' + i + '" data-k="trigger_mode"><option value="milestone"' + (t.trigger_mode === 'milestone' ? ' selected' : '') + '>@ milestone</option><option value="month"' + (t.trigger_mode === 'month' ? ' selected' : '') + '>fixed month</option><option value="offset"' + (t.trigger_mode === 'offset' ? ' selected' : '') + '>offset</option></select>' +
+        timingCtrl(t, i) +
+        '<button type="button" class="cf-btn-sm cf-bm-del" data-i="' + i + '" title="Remove">&#215;</button>' +
+        '<div class="cf-dp-amt">' + (amt > 0 ? Fmt.moneyShort(amt) : '—') + '</div></div>';
+    }).join('') : '<div class="cf-hint" style="padding:6px 0;">No milestones — add the billing milestones (Structural Foundation, 3rd Floor, …).</div>');
+    host.querySelectorAll('.cf-bm-i').forEach(function (el) {
+      el.onchange = function () {
+        var i = +el.dataset.i, k = el.dataset.k, v = el.value, t = editBillingMs[i]; if (!t) return;
+        if (k === 'percent_pct') t.percent = v === '' ? null : num(v) / 100;
+        else if (k === 'amount') t.amount = v === '' ? null : num(v);
+        else if (k === 'trigger_offset') t.trigger_offset = v === '' ? 0 : Math.round(num(v));
+        else if (k === 'trigger_month') t.trigger_month = v ? v + '-01' : null;
+        else t[k] = v;
+        if (k === 'basis' || k === 'trigger_mode') renderBillingMs(); else updateBmSum();
+      };
+    });
+    host.querySelectorAll('.cf-bm-del').forEach(function (b) { b.onclick = function () { editBillingMs.splice(+b.dataset.i, 1); renderBillingMs(); }; });
+    updateBmSum();
+  }
+  function updateBmSum() {
+    var el = document.getElementById('cf-bm-sum'); if (!el) return;
+    var base = numInput('s-ibb') || 0;
+    var tot = editBillingMs.reduce(function (a, t) { return a + (t.basis === 'percent' ? base * num(t.percent) : num(t.amount)); }, 0);
+    if (!editBillingMs.length) { el.textContent = ''; return; }
+    var diff = tot - base;
+    el.textContent = 'Total milestones: ' + Fmt.moneyShort(tot) + (base > 0 ? (Math.abs(diff) > 1 ? ' — off IBB by ' + (diff > 0 ? '+' : '') + Fmt.moneyShort(diff) : ' — reconciles with IBB') : '');
+  }
+
   function pctInput(id) { var e = document.getElementById(id); var v = e && e.value.trim(); return v === '' || v == null ? null : num(v) / 100; }
   function numInput(id) { var e = document.getElementById(id); var v = e && e.value.trim(); return v === '' || v == null ? null : num(v); }
   function txtInput(id) { var e = document.getElementById(id); return e && e.value.trim() ? e.value.trim() : null; }
@@ -1492,6 +1998,7 @@
       co_ret_rel1_months: numInput('s-corel1') != null ? Math.round(numInput('s-corel1')) : null,
       co_ret_rel2_months: numInput('s-corel2') != null ? Math.round(numInput('s-corel2')) : null,
       finance_rate: pctInput('s-fin') || 0, funding_limit: numInput('s-limit'),
+      billing_basis: ((document.getElementById('s-billing-basis') || {}).value === 'milestone') ? 'milestone' : 'poc',
       start_period: txtInput('s-start') ? txtInput('s-start') + '-01' : null,
       wpm_project_id: txtInput('s-wpm') || pid,
       remarks: txtInput('s-rem'),
@@ -1538,6 +2045,28 @@
       var insT = await tolerantWrite(function (r) { return sb().from('cash_flow_trade_packages').insert(r); }, trows, dropped);
       if (insT.error) { UI.toast('Packages: ' + insT.error.message, 'error'); return; }
     }
+
+    // Persist billing milestones: replace the project's set (delete all → insert current).
+    var delB = await sb().from('cash_flow_billing_milestones').delete().eq('project_id', pid);
+    if (delB.error && !/does not exist|schema cache|relation/i.test(delB.error.message)) { UI.toast('Milestones: ' + delB.error.message, 'error'); return; }
+    if (!delB.error) {
+      var brows = editBillingMs.map(function (t, i) {
+        return { project_id: pid, seq: i, description: t.description || null,
+          basis: t.basis === 'percent' ? 'percent' : 'amount',
+          amount: t.basis === 'percent' ? null : (t.amount != null ? num(t.amount) : null),
+          percent: t.basis === 'percent' ? (t.percent != null ? num(t.percent) : null) : null,
+          trigger_mode: t.trigger_mode || 'milestone',
+          milestone: t.trigger_mode === 'milestone' ? (t.milestone || null) : null,
+          trigger_month: t.trigger_mode === 'month' ? t.trigger_month : null,
+          trigger_offset: t.trigger_mode === 'offset' ? Math.round(num(t.trigger_offset)) : 0,
+          created_by: profile.id, updated_at: new Date().toISOString() };
+      });
+      if (brows.length) {
+        var insB = await sb().from('cash_flow_billing_milestones').insert(brows);
+        if (insB.error) { UI.toast('Milestones: ' + insB.error.message, 'error'); return; }
+      }
+    } else if (dropped.indexOf('cash_flow_billing_milestones') === -1) { dropped.push('cash_flow_billing_milestones'); }
+
     if (dropped.length) {
       UI.toast('Saved, but ' + dropped.length + ' field(s) not stored — run the pending migration(s): ' + dropped.join(', '), 'error');
     } else {
@@ -1676,6 +2205,46 @@
   }
 
   // ==========================================================================
+  // SETUP CHECK — one-shot probe of every DB object the module needs.
+  // ==========================================================================
+  function classifyErr(err) {
+    if (!err) return { ok: true };
+    var m = err.message || '', code = err.code || '';
+    if (/could not find the table|relation .* does not exist|PGRST205/i.test(m) && !/column/i.test(m)) return { ok: false, reason: 'table/RPC missing — run its migration' };
+    if (/could not find the function|function .* does not exist/i.test(m)) return { ok: false, reason: 'RPC missing — run cashflow-schedule-agg migration' };
+    if (/column .* does not exist|PGRST204/i.test(m)) return { ok: false, reason: m.replace(/^.*?(column[^,.]*).*/i, '$1') + ' — run the pending migration' };
+    if (code === '42501' || /permission denied/i.test(m)) return { ok: 'warn', reason: 'present, but no grant — re-run grants' };
+    return { ok: 'warn', reason: m };
+  }
+  async function probeTable(t, cols) { return classifyErr((await sb().from(t).select(cols || 'id').limit(1)).error); }
+  async function runSetupCheck() {
+    var host = document.getElementById('cf-chk-list');
+    document.getElementById('cf-chk-modal').style.display = 'flex';
+    host.innerHTML = '<div class="cf-empty">Running checks…</div>';
+    var items = [];
+    var tables = ['cash_flow_settings', 'cash_flow_dp_tranches', 'cash_flow_trade_packages', 'cash_flow_billing_milestones',
+      'cash_flow_actuals', 'cash_flow_scenarios', 'cash_flow_rollup', 'wpm_work_packages'];
+    for (var i = 0; i < tables.length; i++) items.push({ label: 'Table · ' + tables[i], res: await probeTable(tables[i]) });
+    // settings columns (one probe listing the newer columns — fails naming the first missing)
+    items.push({ label: 'Columns · cash_flow_settings (v2/v3/basis)', res: await probeTable('cash_flow_settings', 'ewt_percent,vat_percent,ret_rel1_pct,ret_rel2_months,co_ret_rel1_pct,finance_rate,funding_limit,scurve_basis,billing_basis') });
+    items.push({ label: 'Columns · wpm_work_packages (trade, award_status)', res: await probeTable('wpm_work_packages', 'trade,award_status,procurement_status') });
+    items.push({ label: 'Columns · cash_flow_trade_packages (dp_tranches)', res: await probeTable('cash_flow_trade_packages', 'dp_tranches') });
+    // RPC
+    var rpc = await sb().rpc('cashflow_schedule_agg', { p_id: pid || '__probe__' });
+    items.push({ label: 'RPC · cashflow_schedule_agg', res: classifyErr(rpc.error) });
+    // WPM mirror populated?
+    var wc = 0; try { var r = await sb().from('wpm_work_packages').select('wp_no', { count: 'exact', head: true }); wc = r.count || 0; } catch (e) {}
+    items.push({ label: 'WPM mirror rows (all projects)', res: wc > 0 ? { ok: true, reason: wc + ' rows' } : { ok: 'warn', reason: 'empty — deploy sync-wpm + Sync from WPM' } });
+
+    function icon(r) { return r.ok === true ? '<span style="color:var(--pd-ok)">&#10003;</span>' : r.ok === 'warn' ? '<span style="color:#d99100">&#9888;</span>' : '<span style="color:var(--pd-bad)">&#10007;</span>'; }
+    var okN = items.filter(function (x) { return x.res.ok === true; }).length;
+    host.innerHTML = '<div class="cf-hint" style="margin-bottom:8px;"><b>' + okN + ' / ' + items.length + '</b> checks passed.</div>' +
+      '<table class="cf-table"><tbody>' + items.map(function (x) {
+        return '<tr><td style="width:22px;">' + icon(x.res) + '</td><td>' + esc(x.label) + '</td><td style="color:var(--pd-muted);font-size:11px;">' + esc(x.res.ok === true ? (x.res.reason || 'ok') : x.res.reason) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  // ==========================================================================
   // WIRE-UP
   // ==========================================================================
   AppAuth.requireLogin(function (user, prof) {
@@ -1694,6 +2263,10 @@
     document.getElementById('cf-modal-x').onclick = document.getElementById('cf-cancel').onclick = function () { document.getElementById('cf-modal').style.display = 'none'; };
     document.getElementById('cf-save').onclick = saveSettings;
     document.getElementById('cf-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
+    document.getElementById('cf-check').onclick = runSetupCheck;
+    document.getElementById('cf-chk-re').onclick = runSetupCheck;
+    document.getElementById('cf-chk-x').onclick = document.getElementById('cf-chk-cancel').onclick = function () { document.getElementById('cf-chk-modal').style.display = 'none'; };
+    document.getElementById('cf-chk-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
     document.getElementById('cf-actuals').onclick = openActuals;
     document.getElementById('cf-act-x').onclick = document.getElementById('cf-act-cancel').onclick = function () { document.getElementById('cf-act-modal').style.display = 'none'; };
     document.getElementById('cf-act-save').onclick = saveActuals;

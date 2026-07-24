@@ -31,12 +31,16 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-// Columns pulled from WPM → mirror. Keep in sync with the mirror table + module.
-const WP_COLS =
-  "id,project_id,wp_no,description,approved_budget_bcb,awarded_cost,total_awarded," +
-  "dp_percent,retention_percent,payment_terms_days,awarding_date,actual_awarding_date," +
-  "target_delivery,target_installation,target_completion," +
-  "award_status,procurement_status,delivery_status";
+// Pull the FULL WPM work-package row (*) so we can auto-detect the trade / cost-code
+// group column without knowing its exact name (WPM schema isn't fixed here). We only
+// copy the known columns + the detected trade into the mirror below.
+const WP_COLS = "*";
+
+// First non-empty value (trade auto-detection across likely WPM column names).
+const pick = (...v: any[]) => {
+  for (const x of v) if (x != null && String(x).trim() !== "") return String(x).trim();
+  return null;
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -108,6 +112,9 @@ Deno.serve(async (req) => {
     wpm_project_id: w.project_id,
     wp_no: w.wp_no,
     description: w.description,
+    trade: pick(w.trade, w.cost_code_category, w.cost_code_group, w.category,
+                w.discipline, w.division, w.work_category, w.works, w.type_of_works,
+                w.scope, w.cost_code),
     approved_budget_bcb: w.approved_budget_bcb,
     awarded_cost: w.awarded_cost,
     total_awarded: w.total_awarded,
@@ -127,15 +134,30 @@ Deno.serve(async (req) => {
   })).filter((r: any) => r.wpm_project_id && r.wp_no);
 
   // ---- Upsert into the mirror (chunked) ------------------------------------
+  // Self-heal against a partially-migrated mirror: if a column (e.g. `trade` before
+  // its migration is run) is missing, strip it from every row and retry so the sync
+  // still lands; report which columns were dropped so the caller can run the migration.
+  const dropped: string[] = [];
+  async function upsertChunk(chunk: any[]): Promise<string | null> {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const { error } = await plAdmin.from("wpm_work_packages").upsert(chunk, { onConflict: "wpm_project_id,wp_no" });
+      if (!error) return null;
+      const m = /Could not find the '([^']+)' column/i.exec(error.message || "");
+      if (!m) return error.message;
+      const col = m[1];
+      if (!dropped.includes(col)) dropped.push(col);
+      chunk.forEach((r) => { delete r[col]; });
+    }
+    return "too many missing columns";
+  }
+
   let written = 0;
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
-    const { error: iErr } = await plAdmin
-      .from("wpm_work_packages")
-      .upsert(chunk, { onConflict: "wpm_project_id,wp_no" });
-    if (iErr) return json({ error: "Mirror write failed: " + iErr.message, written }, 500);
+    const err = await upsertChunk(chunk);
+    if (err) return json({ error: "Mirror write failed: " + err, written }, 500);
     written += chunk.length;
   }
 
-  return json({ ok: true, read: wps?.length || 0, written, scope: scope || "all", synced_at: now });
+  return json({ ok: true, read: wps?.length || 0, written, dropped, scope: scope || "all", synced_at: now });
 });

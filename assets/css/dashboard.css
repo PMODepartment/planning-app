@@ -224,6 +224,50 @@ a:hover { text-decoration: underline; }
 }
 .pd-input:focus, .pd-select:focus, .pd-textarea:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
 
+/* ---- Project selector (UI.enhanceProjectSelect) ----
+   Shared across every module: the Project-Schedule-style OPC folder browser —
+   drill Workspace → Program → Group one level at a time (scales to 100s of
+   projects), with a breadcrumb and a search box that flattens across the tree.
+   The trigger button copies the native <select>'s classes/inline style, so a
+   module's per-topbar look (borderless, max-width) carries over unchanged. */
+.pd-psel { position: relative; display: inline-flex; vertical-align: middle; }
+.pd-psel-native { display: none !important; }
+.pd-psel-btn { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; text-align: left; }
+.pd-psel-btn .pd-psel-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-psel-txt.pd-psel-ph { color: var(--pd-muted); }
+.pd-psel-caret { flex: none; color: var(--pd-muted); }
+.pd-psel-pop {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 1000;
+  min-width: 320px; max-width: 460px; max-height: 72vh; overflow: auto;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  box-shadow: 0 10px 28px rgba(0,0,0,.16); padding: 0;
+}
+/* Folder-browser internals (ported from Project Schedule's .ps-pss-*) */
+.pd-pss-search { position: sticky; top: 0; background: var(--pd-card); padding: 8px; border-bottom: 1px solid var(--pd-line); z-index: 1; }
+.pd-pss-search input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--pd-line); border-radius: 6px; font: inherit; background: var(--pd-bg); color: var(--pd-ink); }
+.pd-pss-search input:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
+.pd-pss-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 8px; font-size: 11.5px; }
+.pd-pss-crumb { cursor: pointer; color: var(--pd-muted); padding: 2px 5px; border-radius: 5px; white-space: nowrap; }
+.pd-pss-crumb:hover { background: var(--pd-bg); color: var(--pd-ink); }
+.pd-pss-crumb:last-child { color: var(--pd-ink); font-weight: 700; }
+.pd-pss-sep { color: var(--pd-muted); opacity: .6; }
+.pd-pss-tree { padding: 4px 0; }
+.pd-pss-folder { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--pd-ink); border-bottom: 1px solid var(--pd-line); }
+.pd-pss-folder:hover { background: var(--pd-bg); }
+.pd-pss-folder [data-ico], .pd-pss-folder svg { color: var(--pd-red); flex: none; }
+.pd-pss-count { font-size: 11px; font-weight: 700; color: var(--pd-muted); background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 999px; padding: 1px 8px; flex: none; }
+.pd-pss-chev { color: var(--pd-muted); font-size: 16px; flex: none; }
+.pd-pss-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pd-pss-badge { font-size: 9px; text-transform: uppercase; letter-spacing: .03em; font-weight: 700; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--pd-line); color: var(--pd-muted); }
+.pd-pss-badge.pd-pss-program { color: #2563EB; border-color: rgba(37,99,235,.35); }
+.pd-pss-badge.pd-pss-group { color: var(--pd-red); border-color: rgba(238,49,36,.35); }
+.pd-pss-proj { display: flex; align-items: center; gap: 7px; padding: 7px 10px; cursor: pointer; font-size: 13px; color: var(--pd-ink); }
+.pd-pss-proj svg { color: var(--pd-muted); flex: none; }
+.pd-pss-proj:hover { background: var(--pd-red-light); }
+.pd-pss-proj.sel { background: var(--pd-red); color: #fff; }
+.pd-pss-proj.sel svg { color: #fff; }
+.pd-pss-empty { padding: 20px 12px; text-align: center; color: var(--pd-muted); font-size: 12.5px; }
+
 /* ---- Tables ---- */
 .pd-table { width: 100%; border-collapse: collapse; background: var(--pd-card); }
 .pd-table th, .pd-table td { padding: 10px 12px; border-bottom: 1px solid var(--pd-line); text-align: left; }
@@ -281,6 +325,9 @@ a:hover { text-decoration: underline; }
 }
 
 /* ---- Responsive ---- */
+/* NOTE: the full mobile/tablet layer lives in the "MOBILE & TABLET" section at the
+   end of this file. This block is the historical base rule, kept so the off-canvas
+   sidebar still works if the later section is ever trimmed. */
 @media (max-width: 820px) {
   .pd-sidebar { position: fixed; left: -100%; transition: left .2s ease; z-index: 50; }
   .pd-sidebar.open { left: 0; }
@@ -355,14 +402,29 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-tree-count { font-size: 11px; color: var(--pd-muted); background: var(--pd-bg);
   border: 1px solid var(--pd-line); border-radius: 999px; padding: 0 7px; min-width: 18px; text-align: center; }
 .pd-tree-node.active .pd-tree-count { background: #fff; }
+/* Gear to edit/delete a workspace or program. Hidden until hover/selection so the tree stays
+   calm; opacity (not display) keeps it keyboard-reachable — focus-visible reveals it. */
+.pd-tree-edit { flex: 0 0 auto; border: none; background: transparent; cursor: pointer;
+  color: var(--pd-muted); padding: 2px; border-radius: 5px; line-height: 1;
+  display: inline-flex; align-items: center; opacity: 0; transition: opacity .12s; }
+.pd-tree-node:hover .pd-tree-edit, .pd-tree-node.active .pd-tree-edit { opacity: 1; }
+.pd-tree-edit:hover { color: var(--pd-red); background: var(--pd-card); }
+.pd-tree-edit:focus-visible { opacity: 1; outline: 2px solid var(--pd-red); outline-offset: 1px; }
 .pd-icon-btn { border: none; background: transparent; cursor: pointer; font-size: 18px; color: var(--pd-red); line-height: 1; }
 
 /* toolbar */
 .pd-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   margin-bottom: 12px; flex-wrap: wrap; }
 .pd-toolbar-left, .pd-toolbar-right { display: flex; align-items: center; gap: 10px; }
-.pd-proj-count { color: var(--pd-muted); font-size: 13px; }
-.pd-viewtoggle { display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
+/* A flex item defaults to min-width:auto, and a text input's min-content width is its `size`
+   (~170px+) — so .pd-toolbar-right could not shrink below search+toggle and overflowed the pane
+   to the right, clipping the card/list toggle at the window edge. min-width:0 lets the row shrink,
+   the input absorbs it, and the toggle stays fixed and always visible. */
+.pd-toolbar-left { min-width: 0; flex-wrap: wrap; }
+.pd-toolbar-right { flex: 1 1 auto; min-width: 0; justify-content: flex-end; flex-wrap: wrap; }
+.pd-toolbar-right .pd-input-sm { flex: 0 1 220px; min-width: 0; }
+.pd-proj-count { color: var(--pd-muted); font-size: 13px; white-space: nowrap; }
+.pd-viewtoggle { flex: 0 0 auto; display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
 .pd-vt { border: none; background: var(--pd-card); padding: 6px 12px; cursor: pointer; color: var(--pd-muted); font-size: 14px; }
 .pd-vt.active { background: var(--pd-red); color: #fff; }
 
@@ -488,3 +550,348 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-icon-btn { display: inline-flex; align-items: center; justify-content: center; }
 .pd-projsw-all { display: inline-flex; align-items: center; gap: 6px; }
 .pd-theme-toggle { display: inline-flex !important; align-items: center; justify-content: center; }
+
+/* ============================================================================
+   MOBILE & TABLET — added 2026-07-23
+   ----------------------------------------------------------------------------
+   One shared responsive layer so every page and module adapts without its own
+   breakpoint work. Read this before adding module-level media queries — most of
+   what a module needs (off-canvas sidebar, scrollable tables/tabs, sheet-style
+   modals, touch targets) is already handled here.
+
+   Breakpoints:
+     <= 1024px  tablet   — tighter chrome, narrower sidebar, scrolling tab strips
+     <=  820px  drawer   — sidebar becomes an off-canvas drawer (matches the
+                           820px check in ui.js initShell — keep them in sync)
+     <=  700px  phone    — stacked toolbars, sheet modals, 16px inputs
+     <=  420px  small    — minimum-chrome phone
+
+   Two rules that are easy to get wrong, handled here once:
+   1. iOS Safari ZOOMS the page when a focused input's font-size is under 16px.
+      All form controls go to 16px at phone width — do not "fix" this back to
+      13/14px to match the desktop look.
+   2. initShell adds .pd-collapsed by DEFAULT (clean desktop entry). Left alone
+      that makes the mobile drawer open as a useless 64px icon rail with no
+      labels, so the drawer width and labels are re-asserted below.
+   ============================================================================ */
+
+:root {
+  --pd-tap: 44px;              /* minimum comfortable touch target */
+  --pd-drawer-w: min(84vw, 290px);
+}
+
+/* Never let a wide child (table, Gantt, chart) scroll the whole PAGE sideways.
+   `clip` not `hidden`: `hidden` on body breaks position:sticky descendants, and
+   the topbar plus every sticky table header depends on sticky working. */
+body { overflow-x: clip; }
+.pd-content, .pd-main { min-width: 0; }
+
+/* Drawer scrim (injected by ui.js on every shell page). Explicitly display:none
+   outside the drawer breakpoint so a stale .open left over from a resize can
+   never intercept clicks on desktop — don't rely on it being an unstyled div. */
+.pd-scrim { display: none; }
+
+/* Horizontal-scroll wrapper for wide content. Wrap any wide table in one:
+   <div class="pd-tablewrap"><table class="pd-table"> … </table></div> */
+.pd-tablewrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.pd-tablewrap > table { min-width: max-content; }
+
+/* ---- Tablet ---- */
+@media (max-width: 1024px) {
+  :root { --pd-sidebar-w: 210px; }
+  .pd-topbar { padding: 10px 16px; gap: 10px; }
+  .pd-main { padding: 18px; }
+  .pd-module-grid { gap: 16px; }
+  /* Tab strips scroll sideways rather than wrapping into a tall stack. */
+  .pd-tabbar { padding: 0 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .pd-tabbar::-webkit-scrollbar { display: none; }
+  .pd-tab { white-space: nowrap; }
+}
+
+/* ---- Sidebar becomes an off-canvas drawer ---- */
+@media (max-width: 820px) {
+  .pd-sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; height: 100dvh;
+    width: var(--pd-drawer-w); flex-basis: var(--pd-drawer-w);
+    transform: translateX(-100%); transition: transform .22s ease;
+    z-index: 70; box-shadow: 0 0 40px rgba(0,0,0,.35);
+    padding-top: max(18px, env(safe-area-inset-top));
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  .pd-sidebar.open { transform: none; }
+
+  /* Re-assert the FULL drawer even when .pd-collapsed is set (see note 2 above).
+     On mobile the hamburger opens/closes the drawer; it never icon-rails. */
+  .pd-app.pd-collapsed .pd-sidebar { width: var(--pd-drawer-w); flex-basis: var(--pd-drawer-w); padding-left: 16px; padding-right: 16px; }
+  .pd-app.pd-collapsed .pd-sidebar nav a { justify-content: flex-start; padding: 12px; gap: 10px; font-size: 13.5px; }
+  .pd-app.pd-collapsed .pd-navtxt { display: flex; }
+  .pd-app.pd-collapsed .pd-navsec { display: block; }
+  .pd-app.pd-collapsed .pd-navico { margin-right: 11px; }
+  .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: block; }
+  .pd-app.pd-collapsed .pd-brand { margin-bottom: 14px; padding-bottom: 14px; }
+
+  /* Nav rows are the primary touch targets on a phone. */
+  .pd-sidebar nav a { min-height: var(--pd-tap); }
+
+  /* Scrim behind the open drawer (injected by ui.js). */
+  .pd-scrim { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60;
+    opacity: 0; pointer-events: none; transition: opacity .22s ease; }
+  .pd-scrim.open { opacity: 1; pointer-events: auto; }
+  body.pd-noscroll { overflow: hidden; }
+
+  .pd-main { padding: 16px; }
+  /* Project selector: the tree stacks above the list and stops eating height. */
+  .pd-tree { max-height: 300px; }
+}
+
+/* ---- Phone ---- */
+@media (max-width: 700px) {
+  .pd-topbar { padding: 9px 12px; gap: 8px; flex-wrap: wrap; row-gap: 8px; }
+  .pd-topbar h1 { font-size: 15px; }
+  .pd-topbar-mark { height: 24px; }
+  .pd-main { padding: 12px; }
+  .pd-card { padding: 14px; }
+
+  /* iOS zoom guard — see note 1 at the top of this section. */
+  .pd-input, .pd-select, .pd-textarea, .pd-input-sm,
+  input[type="text"], input[type="number"], input[type="date"],
+  input[type="email"], input[type="password"], input[type="search"],
+  select, textarea { font-size: 16px; }
+  .pd-input, .pd-select, .pd-textarea { padding: 10px 12px; }
+  .pd-input-sm { height: 40px; padding: 8px 10px; }
+
+  /* Touch targets */
+  .pd-btn { padding: 10px 14px; min-height: var(--pd-tap); }
+  .pd-btn-sm { min-height: 36px; }
+  .pd-vt, .pd-icon-btn, .pd-theme-toggle, .pd-sidebar-toggle { min-width: var(--pd-tap); min-height: var(--pd-tap); }
+  .pd-avatar { width: 40px; height: 40px; }
+
+  /* Toolbars stack; search takes a full row instead of being squeezed out. */
+  .pd-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .pd-toolbar-left, .pd-toolbar-right { justify-content: flex-start; flex-wrap: wrap; }
+  .pd-toolbar-right .pd-input-sm { flex: 1 1 100%; }
+
+  /* Tables scroll inside their own card rather than widening the page. Applied
+     to the shared table classes so modules inherit it without markup changes. */
+  .pd-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+  .pd-proj-table { overflow-x: auto; }
+
+  /* Modals become bottom sheets — reachable with a thumb, full-height scroll. */
+  .pd-modal-overlay { padding: 0; align-items: flex-end; }
+  .pd-modal { max-width: none; width: 100%; border-radius: 14px 14px 0 0;
+    max-height: 92dvh; padding: 18px;
+    padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+  .pd-modal-header { margin: -18px -18px 14px; padding: 13px 16px; border-radius: 14px 14px 0 0; }
+  .pd-modal-footer { margin: 14px -18px -18px; padding: 12px 16px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom)); flex-wrap: wrap; }
+  .pd-modal-footer .pd-btn { flex: 1 1 auto; justify-content: center; }
+  .pd-modal-close { width: var(--pd-tap); height: var(--pd-tap); }
+
+  /* Dropdown popovers: anchor to the viewport instead of running off-screen. */
+  .pd-psel-pop, .pd-projsw-menu, .pd-add-menu {
+    position: fixed; left: 8px; right: 8px; top: auto; width: auto;
+    min-width: 0; max-width: none; max-height: 70dvh; }
+  .pd-usermenu { position: fixed; right: 8px; left: auto; top: 58px; width: auto; min-width: 220px; }
+
+  .pd-projsw-btn { max-width: 100%; }
+  .pd-projsw-txt strong, .pd-projsw-txt small { max-width: 52vw; }
+  .pd-tab { padding: 12px 14px; font-size: 13.5px; }
+  .pd-proj-cards { grid-template-columns: 1fr; }
+  .pd-info-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .pd-module-card { min-height: 0; padding: 18px 16px; gap: 10px; }
+  .pd-module-icon { width: 44px; height: 44px; border-radius: 11px; }
+  .pd-home-head h2 { font-size: 19px; }
+  .pd-toast { left: 12px; right: 12px; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateY(20px); }
+  .pd-toast.show { transform: none; }
+  .pd-auth-wrap { padding: 16px; align-items: flex-start; padding-top: 8vh; }
+}
+
+/* ---- Small phone ---- */
+@media (max-width: 420px) {
+  .pd-topbar h1 { font-size: 14px; }
+  .pd-main { padding: 10px; }
+  .pd-card { padding: 12px; }
+  .pd-userbar-role, .pd-userbar-name { display: none; }   /* the avatar carries identity */
+  .pd-module-grid { gap: 12px; }
+}
+
+/* ============================================================================
+   MODULE TOPBAR — two-row layout on phones/tablets
+   ----------------------------------------------------------------------------
+   ui.js `initModuleTopbar()` wraps the topbar's children into .pd-tb-main
+   (back · icon · title · theme · avatar) and .pd-tb-tools (project select ·
+   view tabs · action buttons). Both are display:contents here, so on desktop
+   the topbar is byte-for-byte the flat flex row it has always been — the
+   wrappers do not participate in layout at all.
+
+   Below 900px they become real rows: identity stays on one line, and the
+   controls collapse into ONE horizontally-scrolling strip instead of wrapping
+   into four full-height rows that push the content off the screen.
+   ============================================================================ */
+.pd-tb-main, .pd-tb-tools { display: contents; }
+
+/* ⚠️ `display:contents` makes the wrappers invisible to layout, but the DOM
+   REGROUPING is still real: the account controls now precede the tool cluster
+   in source order, which on desktop dropped the avatar into the middle of the
+   bar. `order` restores the original left-to-right sequence — back/title, then
+   tools, then theme + avatar. Required on desktop; harmless on mobile, where it
+   happens to be the order each row wants anyway. */
+.pd-topbar .pd-tb-tools > * { order: 1; }
+.pd-topbar .pd-tb-main > #pd-theme-toggle,
+.pd-topbar .pd-tb-main > #user-bar { order: 2; }
+
+/* ⚠️ Every module.css re-declares `.pd-topbar { display:flex; flex-wrap:wrap }`
+   and loads AFTER this file, so a bare `.pd-topbar` here loses on source order
+   (a media query adds no specificity). These rules are qualified with `.pd-app`
+   / `.pd-topbar` purely to outrank that — do not "simplify" the selectors. */
+@media (max-width: 900px) {
+  .pd-app .pd-topbar.pd-tb-split { flex-direction: column; align-items: stretch; gap: 8px; flex-wrap: nowrap; }
+
+  .pd-topbar .pd-tb-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  /* The Megawide mark is `width:auto`, so a stretching column would blow it up
+     to full width. This is what produced the giant red bars on the shell pages. */
+  .pd-topbar .pd-tb-main > img { flex: none; width: auto; align-self: center; }
+  /* The title takes the slack and truncates, so the avatar can never be pushed
+     onto a line of its own (what the topbar did when it simply wrapped). */
+  .pd-topbar .pd-tb-main h1 { flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pd-topbar .pd-tb-main > a, .pd-topbar .pd-tb-main > button,
+  .pd-topbar .pd-tb-main > #user-bar,
+  .pd-topbar .pd-tb-main > #pd-theme-toggle { flex: none; }
+  /* The avatar's desktop divider reads as a stray rule once it is the row's
+     last item against the screen edge. */
+  .pd-topbar .pd-tb-main > #user-bar { margin-left: auto; padding-left: 0; border-left: 0; }
+
+  /* ⚠️ The controls row WRAPS — it is deliberately not a horizontal scroller.
+     A scroller was tried first and failed on two counts: it pushed the leading
+     view tab half off the left edge (so the "Photos" tab was unreachable unless
+     you guessed there was a hidden scroll), and `overflow-x:auto` establishes a
+     clipping context that cuts off every dropdown opened from inside it — the
+     project switcher, the add menus, the module tool menus. Wrapping keeps all
+     controls visible and all popovers unclipped. */
+  .pd-topbar .pd-tb-tools {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px;
+  }
+  .pd-topbar .pd-tb-tools button, .pd-topbar .pd-tb-tools .pd-btn { white-space: nowrap; }
+  /* Pairs with a narrow tab strip when both fit (the project name truncates in
+     that case, which the owner has accepted) and takes a full row of its own
+     otherwise. Not `1 1 100%` — see the note below on why that costs height. */
+  /* ⚠️ 120px is measured, not arbitrary. It is the largest basis at which
+     Material Submittal's selector still pairs with its tab strip instead of
+     taking a 4th row (at 130px it wraps: 221px vs 169px). Raising this costs a
+     whole row on that module; lowering it buys nothing — Issues and Contracts
+     have tab labels too long to pair at any basis, even 110px. */
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] { flex: 1 1 120px; min-width: 0; }
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-select,
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-psel,
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] > button { width: 100%; max-width: none; }
+
+  /* ---- Make the wrapped rows look designed rather than merely wrapped ----
+     Tabs plus three action buttons genuinely cannot fit one 351px line, so the
+     controls occupy a few rows. Left to itself that reads as broken wrapping:
+     the modules push their tool cluster right with `margin-left:auto`, which on
+     its own row leaves it floating half-centred, misaligned with the tabs above
+     it. Instead each group claims a full row and divides it evenly, so every row
+     is a deliberate full-width control. Suffix selectors — every module names
+     these consistently (`-tabs`, `-topbar-tools`, `-tb-sep`). */
+  .pd-topbar .pd-tb-tools > * { margin-left: 0; margin-right: 0; }
+
+  .pd-topbar .pd-tb-tools > [class$="-tabs"] {
+    flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0;
+  }
+  /* On a phone the action cluster keeps its own row — its buttons carry the
+     longest labels ("+ Add photos", "+ New PPR") and squeezing them beside tabs
+     truncates them. A tablet has the width to share, so it only claims a full
+     row below 700px; at 700–900px it sits beside whatever fits. */
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"],
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] {
+    flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"],
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] { flex: 1 1 100%; }
+  /* Equal segments, like a native segmented control. ⚠️ `min-height` matters:
+     the modules size these to 28px, well under the 44px touch minimum — they
+     were among the hardest things on the page to hit accurately. */
+  .pd-topbar .pd-tb-tools > [class$="-tabs"] > button {
+    flex: 1 1 0; justify-content: center; min-height: var(--pd-tap);
+    /* ⚠️ `min-width:0` + wrapping are load-bearing for long tab labels. A flex
+       item will not shrink below its text width by default, so Contracts &
+       Claims ("Contract" / "Claims / Change Order" / "Extension of Time") blew
+       past the viewport and — because the strip is `overflow:hidden` — the last
+       tab was silently CLIPPED rather than visibly overflowing. Measured 416px
+       of tabs in a 393px viewport. Wrapping to two lines keeps every label
+       readable in full; ellipsis would hide which tab you are on. */
+    min-width: 0; white-space: normal; line-height: 1.15;
+    font-size: 12.5px; padding-left: 6px; padding-right: 6px; text-align: center;
+  }
+  /* Same for the project selector — it was 34px. */
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-select,
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] > button { min-height: var(--pd-tap); height: auto; }
+  /* Actions share their row proportionally, so a labelled button keeps its words
+     while an icon-only one stays compact. */
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"] > .pd-btn,
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] > .pd-btn,
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"] > button,
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] > button {
+    flex: 1 1 auto; justify-content: center; min-height: var(--pd-tap);
+  }
+  /* Vertical rules were dividing a horizontal cluster; on its own row they just
+     add noise between full-width buttons. */
+  .pd-topbar .pd-tb-tools [class$="-tb-sep"] { display: none; }
+}
+
+/* ---- Phone: module title + filter panels ---- */
+@media (max-width: 900px) {
+  /* Every module hides its own title TEXT on narrow screens (`.rr-title-txt`,
+     `.pp-title-txt`, … at 820–1250px) to buy room in the single-row topbar,
+     which now leaves the identity row showing a bare unlabelled icon. The
+     two-row layout has the space, so put the words back. Selector is
+     `.pd-tb-main [class$=…]` (0,2,0) to outrank the modules' own (0,1,0) rule
+     in a stylesheet that loads after this one. */
+  .pd-topbar .pd-tb-main [class$="-title-txt"] { display: inline !important; }
+}
+
+@media (max-width: 700px) {
+  /* Module filter bars pin their controls to desktop pixel widths with inline
+     `max-width` styles (e.g. `max-width:150px`), which on a phone leaves each
+     select stranded at half width with dead space beside it. Let every filter
+     control span the row it already wraps onto. `!important` is required — the
+     widths are inline styles in the modules' markup, not stylesheet rules. */
+  .pd-app .pd-main .pd-select, .pd-app .pd-main .pd-input, .pd-app .pd-main .pd-textarea {
+    max-width: none !important; width: 100%;
+  }
+  /* ⚠️ Modules pin filter controls to `height:34px` (e.g. `.pp-filters
+     .pd-select`), but the iOS zoom guard above raises them to 16px + 10px
+     padding — about 42px of content in a 34px box, which clipped the descenders
+     off "All categories" / "Filter by Works". Height must be free to grow.
+     `.pd-app .pd-main` (0,3,0) outranks the modules' `.xx-filters .pd-select`. */
+  .pd-app .pd-main .pd-select, .pd-app .pd-main .pd-input {
+    height: auto; min-height: var(--pd-tap);
+    /* ⚠️ Re-assert the iOS zoom guard. The generic `.pd-input` rule above is
+       (0,1,0) and every module's `.xx-filters .pd-input { font-size:13px }` is
+       (0,2,0) in a stylesheet that loads later — so the guard was being
+       silently overridden and tapping a filter search still zoomed the page.
+       Measured 13px on Progress Photos before this rule. */
+    font-size: 16px;
+  }
+  /* Inputs inside a table cell or a segmented control are sized by their
+     container, not the filter bar — leave those alone. */
+  .pd-app .pd-main table .pd-select, .pd-app .pd-main table .pd-input,
+  .pd-app .pd-main .pd-viewtoggle .pd-select { width: auto; height: 34px; min-height: 0; }
+
+  /* ⚠️ The module title keeps its TEXT at every width (owner's call) — do not
+     re-add a phone-width `display:none` here. The modules' own CSS hides
+     `.xx-title-txt` below 820–1250px for the old single-row bar; the ≤900px
+     rule above overrides that, and this block must not undo it. The title takes
+     the slack and ellipsises if a module name is long. */
+  .pd-topbar .pd-tb-main h1 { flex: 1 1 auto; min-width: 0; font-size: 15px; }
+}
+
+/* Coarse pointers (touch): reveal controls that are hover-gated on desktop,
+   since a touch device never produces the hover that would show them. */
+@media (hover: none) {
+  .pd-tree-edit { opacity: 1; }
+}

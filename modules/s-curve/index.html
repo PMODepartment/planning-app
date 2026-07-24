@@ -5,14 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260712"></script>
+  <script src="../../assets/js/theme.js?v=20260724a"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260712" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
   <style>
-    /* sidebar-less shell (matches Cash Flow / Project Schedule) */
-    .sc-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-right:6px; }
-    .pd-topbar #user-bar { margin-left:auto; }
-    .sc-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
+    /* ---- Uniform sidebar-less chrome (matches Progress Photos / Drawing
+       Register / Cash Flow / Project Schedule). Keep in sync with those. ---- */
+    .pd-content { width:100%; }
+    .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
+    .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+    .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+    .sc-modback { width:36px; height:36px; padding:0; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+    .sc-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; margin:0; }
+    .sc-title .sc-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sc-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
+    /* Project context — borderless until hover */
+    .sc-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+    .sc-project { max-width:260px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .sc-project:hover, .sc-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+    /* Tool cluster beside the profile */
+    .sc-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; flex-wrap:wrap; }
+    .sc-topbar-tools .pd-btn { height:34px; width:34px; padding:0; font-size:13px; display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
+    .sc-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+    .sc-topbar-tools .pd-btn.is-active { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    .sc-topbar-tools .pd-btn.sc-tb-labeled { width:auto; padding:0 12px; gap:6px; }
+    .sc-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
+    /* Forecast-finish control lives in the tool cluster */
+    .sc-fc { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); white-space:nowrap; flex:none; }
+    .sc-fc .pd-input { height:34px; width:150px; font-size:13px; }
     .sc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
     .sc-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
     .sc-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
@@ -44,11 +64,34 @@
     .sc-table td:first-child { background:var(--pd-card); }
     .sc-table th:first-child { background:var(--pd-bg); }
     .sc-table td { padding:7px 12px; border-bottom:1px solid var(--pd-line); text-align:right; }
+    .sc-fc-row td { color:var(--pd-red); font-style:italic; }
+    .sc-fc-row td:first-child { color:var(--pd-red); }
     .sc-note { font-size:12px; color:var(--pd-muted); margin-top:8px; }
     .sc-loading { position:fixed; inset:0; background:rgba(20,20,20,.4); display:flex; align-items:center; justify-content:center; gap:12px; z-index:999; color:#fff; font-weight:600; }
     .sc-spin { width:36px; height:36px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:sc-spin .8s linear infinite; }
     @keyframes sc-spin { to { transform:rotate(360deg); } }
-  </style>
+    @media (max-width:820px) { .sc-title-txt { display:none; } .sc-fc { font-size:0; } .sc-fc .pd-input { width:130px; } }
+  
+      /* ---- Mobile & tablet (2026-07-23) --------------------------------
+         Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets)
+         comes from dashboard.css.
+
+         CHARTS: every SVG here already uses viewBox + width:100%, so it
+         *scales* — but scaling a ~900-unit-wide chart into ~350px shrinks its
+         9.5px labels to under 4px, i.e. unreadable. So below 700px the chart
+         keeps a legible minimum width and its card scrolls horizontally
+         instead of shrinking further. Do not "fix" this by dropping the
+         min-width — that restores the unreadable version.
+         ------------------------------------------------------------------ */
+      @media (max-width: 700px) {
+        .sc-card { overflow-x: auto; }
+        .sc-svg { min-width: 560px; }
+        .sc-table { min-width: 520px; }
+        .sc-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .sc-fc { flex-wrap: wrap; gap: 8px; }
+        .sc-topbar-tools { flex-wrap: wrap; }
+      }
+    </style>
 </head>
 <body>
 <div class="pd-app">
@@ -56,16 +99,23 @@
   <div class="pd-content">
     <div class="pd-topbar">
       <a class="pd-btn sc-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
-      <h1 style="margin:0;">Project S-Curve</h1>
+      <h1 class="sc-title">
+        <span class="sc-title-ico" data-ico="trendingUp" data-ico-size="20"></span>
+        <span class="sc-title-txt">Project S-Curve</span>
+      </h1>
+      <div class="sc-projctx">
+        <select class="pd-select sc-project" id="sc-project" title="Project"></select>
+      </div>
+      <div class="sc-topbar-tools">
+        <label class="sc-fc">Forecast finish
+          <input class="pd-input" type="date" id="sc-forecast" title="Forecast completion date — sets the end of the red dashed forecast line" /></label>
+        <span class="sc-tb-sep"></span>
+        <button class="pd-btn" id="sc-tabletoggle" title="Show data table"><span data-ico="listView" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="sc-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
+      </div>
       <div id="user-bar"></div>
     </div>
     <div class="pd-main">
-      <div class="sc-controls">
-        <select class="pd-select" id="sc-project" style="max-width:340px;"></select>
-        <button class="pd-btn" id="sc-refresh"><span data-ico="refresh" data-ico-size="15"></span> Refresh</button>
-        <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--pd-muted);">Forecast finish <input class="pd-input" type="date" id="sc-forecast" style="max-width:160px;" title="Forecast completion date — sets the end of the red dashed forecast line" /></label>
-        <button class="pd-btn" id="sc-tabletoggle" style="margin-left:auto;"><span data-ico="listView" data-ico-size="15"></span> Show data table</button>
-      </div>
       <div class="sc-kpis" id="sc-kpis"></div>
       <div class="sc-card">
         <h3>Project S-Curve — Planned vs Actual (cumulative %)</h3>
@@ -81,15 +131,15 @@
 <div class="sc-loading" id="sc-loading" style="display:none;"><div class="sc-spin"></div><span>Loading schedule…</span></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260712"></script>
-<script src="../../assets/js/auth.js?v=20260712"></script>
-<script src="../../assets/js/db.js?v=20260712"></script>
-<script src="../../assets/js/ui.js?v=20260712"></script>
-<script src="../../assets/js/icons.js?v=20260712"></script>
+<script src="../../assets/js/config.js?v=20260724a"></script>
+<script src="../../assets/js/auth.js?v=20260724a"></script>
+<script src="../../assets/js/db.js?v=20260724a"></script>
+<script src="../../assets/js/ui.js?v=20260724a"></script>
+<script src="../../assets/js/icons.js?v=20260724a"></script>
 <script>
 (function () {
   'use strict';
-  var TABLE = 'project_schedule', pid = null, rows = [], forecastFinish = null, fcManual = false;
+  var TABLE = 'project_schedule', pid = null, rows = [], agg = null, forecastFinish = null, fcManual = false;
   function sb() { return AppAuth.getSB(); }
   function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); if (!m) return null; return new Date(+m[1], +m[2]-1, +m[3]); }
   function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
@@ -108,26 +158,35 @@
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker
     if (pid) load();
   }
   async function load() {
-    if (!pid) { rows = []; render(); return; }
+    if (!pid) { rows = []; agg = null; render(); return; }
     showLoading();
-    var all = [];
+    rows = []; agg = null;
+    // FAST PATH: the shared server-side monthly aggregate — the browser gets ~1 row per
+    // month instead of every leaf activity (16k–40k on large schedules). Falls back to a
+    // lean, keyset-paginated row fetch when the RPC isn't deployed yet.
     try {
-      var cnt = await sb().from(TABLE).select('*', { count: 'exact', head: true }).eq('project_id', pid);
-      var total = (cnt && cnt.count) || 0;
-      if (total > 0) {
-        var pages = Math.ceil(total / 1000), reqs = [];
-        for (var p = 0; p < pages; p++) reqs.push(sb().from(TABLE).select('*').eq('project_id', pid).range(p * 1000, p * 1000 + 999));
-        var res = await Promise.all(reqs);
-        for (var i = 0; i < res.length; i++) { if (res[i].error) throw res[i].error; all = all.concat(res[i].data || []); }
-      } else {
-        var from = 0;
-        while (true) { var r1 = await sb().from(TABLE).select('*').eq('project_id', pid).range(from, from + 999); if (r1.error) throw r1.error; all = all.concat(r1.data || []); if ((r1.data || []).length < 1000) break; from += 1000; }
-      }
-    } catch (e) { hideLoading(); UI.toast('Load failed: ' + (e.message || e), 'error'); return; }
-    hideLoading(); rows = all;
+      var r = await sb().rpc('schedule_scurve_agg', { p_id: pid });
+      if (!r.error && r.data && r.data.months) agg = r.data;
+    } catch (e) { agg = null; }
+    if (!agg) {
+      try {
+        var last = null;
+        while (true) {
+          var q = sb().from(TABLE)
+            .select('id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish')
+            .eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+          if (last) q = q.gt('id', last);
+          var r1 = await q; if (r1.error) throw r1.error;
+          var b = r1.data || []; rows = rows.concat(b);
+          if (b.length < 1000) break; last = b[b.length - 1].id;
+        }
+      } catch (e) { hideLoading(); UI.toast('Load failed: ' + (e.message || e), 'error'); return; }
+    }
+    hideLoading();
     // Forecast finish is performance-based (auto) unless the user has pinned a date for this
     // project; a saved value = manual override. The input is filled in render() with the
     // effective date (auto or manual) once the SPI-based projection is computed.
@@ -136,63 +195,101 @@
     render();
   }
 
-  // Schedule progress S-curve (duration-weighted). Cost / earned-value (EVM) is
-  // intentionally out of scope here — a separate team owns the EVM dashboard.
-  function compute() {
+  // Base monthly series (duration-weighted): cumulative planned + actual as functions of
+  // date, plus totals + bounds. Sourced from the server RPC aggregate when present (agg),
+  // else computed per-activity from the fallback rows. Both expose the SAME shape so the
+  // rest of compute() is source-agnostic. Cost / earned-value (EVM) is out of scope here.
+  function baseSeries() {
+    if (agg && agg.months && agg.months.length) {
+      // RPC gives cumulative planned (pd) + actual (ad) at each month END. Prepend a 0-point
+      // at the schedule start so sub-month values interpolate linearly (the chart is monthly,
+      // so interpolation only affects the SPI-at-data-date and forecast-date sampling).
+      var start = pd(agg.minDate);
+      var pts = [{ t: +start, pd: 0, ad: 0 }];
+      agg.months.forEach(function (mm) {
+        var y = +String(mm.key).slice(0, 4), mo = +String(mm.key).slice(5, 7);
+        pts.push({ t: +new Date(y, mo, 0), pd: +mm.pd || 0, ad: +mm.ad || 0 });
+      });
+      function interp(f, t) {
+        if (t <= pts[0].t) return 0;
+        var last = pts[pts.length - 1]; if (t >= last.t) return last[f];
+        for (var i = 1; i < pts.length; i++) { if (t <= pts[i].t) { var a = pts[i - 1], b = pts[i]; var r = (b.t - a.t) ? (t - a.t) / (b.t - a.t) : 0; return a[f] + (b[f] - a[f]) * r; } }
+        return last[f];
+      }
+      if (!(+agg.totDur > 0) || !start) return null;
+      return {
+        TOT: +agg.totDur, overallDone: +agg.doneDur || 0,
+        minDate: start, plannedEnd: pd(agg.maxDate), nAct: agg.nAct || 0,
+        plannedAt: function (D) { return interp('pd', +D); },
+        actualAt: function (D) { return interp('ad', +D); }
+      };
+    }
+    // Fallback: per-activity from the (keyset-loaded) rows.
     var leaves = rows.filter(function (r) { return !isWbs(r); });
-    if (!leaves.length) return { empty: true };
+    if (!leaves.length) return null;
     function val(a) { if (a.duration_days) return a.duration_days; var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; }
     function done(a) { return val(a) * (Math.max(0, Math.min(100, a.percent_complete || 0)) / 100); }
     var TOT = leaves.reduce(function (s, a) { return s + val(a); }, 0);
     var ds = [], de = [];
     leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date); if (s) ds.push(+s); if (e) de.push(+e); });
-    if (!ds.length) return { empty: true };
-    var min = new Date(Math.min.apply(null, ds)), max = new Date(Math.max.apply(null, de.length ? de : ds));
-    var plannedEnd = max;
+    if (!ds.length) return null;
+    return {
+      TOT: TOT, overallDone: leaves.reduce(function (s, a) { return s + done(a); }, 0),
+      minDate: new Date(Math.min.apply(null, ds)), plannedEnd: new Date(Math.max.apply(null, de.length ? de : ds)), nAct: leaves.length,
+      plannedAt: function (D) { var pv = 0; leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return; var pf = D >= e ? 1 : (D < s ? 0 : (e > s ? (D - s) / (e - s) : 1)); pv += val(a) * pf; }); return pv; },
+      actualAt: function (D) { var av = 0; leaves.forEach(function (a) { var aS = pd(a.actual_start || a.start_date), aE = pd(a.actual_finish) || pd(a.end_date) || aS; if (!aS) return; var af = D >= aE ? 1 : (D < aS ? 0 : (aE > aS ? (D - aS) / (aE - aS) : 1)); av += done(a) * af; }); return av; }
+    };
+  }
+
+  function compute() {
+    var base = baseSeries();
+    if (!base) return { empty: true };
+    var TOT = base.TOT, overallDone = base.overallDone, plannedEnd = base.plannedEnd, minDate = base.minDate;
+    var plannedAt = base.plannedAt, actualAt = base.actualAt;
+    if (!TOT || !minDate || !plannedEnd) return { empty: true };
     var tnow = today();
-    // Performance-based (SPI) forecast finish: project the current pace forward.
-    // SPI = actual% ÷ planned% at the data date; the remaining planned duration is stretched
-    // by 1/SPI, so a behind-schedule project (SPI<1) forecasts a LATER finish (and vice-versa).
-    // A user-pinned date overrides. The timeline extends to cover whichever is later.
-    var overallDone = leaves.reduce(function (s, a) { return s + done(a); }, 0);
-    function plannedValueAt(D) { var pv = 0; leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return; var pf = D >= e ? 1 : (D < s ? 0 : (e > s ? (D - s) / (e - s) : 1)); pv += val(a) * pf; }); return pv; }
+    // Performance-based (SPI) forecast finish: SPI = actual% ÷ planned% at the data date; the
+    // remaining planned duration is stretched by 1/SPI (behind → later finish). A pinned date
+    // overrides; the timeline extends to cover whichever is later.
     var pctNow = TOT ? overallDone / TOT * 100 : 0;
-    var plPctNow = TOT ? plannedValueAt(tnow) / TOT * 100 : 0;
+    var plPctNow = TOT ? plannedAt(tnow) / TOT * 100 : 0;
     var spi = plPctNow > 0 ? pctNow / plPctNow : 1;
-    spi = Math.max(0.1, Math.min(spi, 3));   // clamp so a near-zero planned% can't explode the date
+    spi = Math.max(0.1, Math.min(spi, 3));
     var remMs = Math.max(0, +plannedEnd - +tnow);
     var autoFc = pctNow >= 100 ? tnow : new Date(+tnow + remMs / spi);
     var fc = (fcManual && forecastFinish) ? forecastFinish : autoFc;
-    var domainMax = new Date(Math.max(+max, +tnow, +fc));
-    var months = [], c = new Date(min.getFullYear(), min.getMonth(), 1);
+    var domainMax = new Date(Math.max(+plannedEnd, +tnow, +fc));
+    var months = [], c = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
     while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
-    var plannedC = [], actualC = [];
-    months.forEach(function (m) {
-      var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0);
-      var pv = 0, av = 0;
-      leaves.forEach(function (a) {
-        var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return;
-        var pf = mEnd >= e ? 1 : (mEnd < s ? 0 : (e > s ? (mEnd - s) / (e - s) : 1));
-        pv += val(a) * pf;
-        // Actual accrues for months that have fully ended (before the data date).
-        if (mEnd < tnow) {
-          var aS = pd(a.actual_start || a.start_date);
-          var aE = pd(a.actual_finish) || pd(a.end_date) || aS;
-          if (aS) { var af = mEnd >= aE ? 1 : (mEnd < aS ? 0 : (aE > aS ? (mEnd - aS) / (aE - aS) : 1)); av += done(a) * af; }
-        }
-      });
-      plannedC.push(pv); actualC.push(av);
-    });
+    function monthEnd(m) { return new Date(m.getFullYear(), m.getMonth() + 1, 0); }
+    var plannedC = months.map(function (m) { return plannedAt(monthEnd(m)); });
     var ti = -1;
-    for (var i = 0; i < months.length; i++) { var me = new Date(months[i].getFullYear(), months[i].getMonth() + 1, 0); if (me >= tnow) { ti = i; break; } }
+    for (var i = 0; i < months.length; i++) { if (monthEnd(months[i]) >= tnow) { ti = i; break; } }
     if (ti < 0) ti = months.length - 1;
-    // Anchor the actual curve at the data date to the true overall % complete, so
-    // the partial current month doesn't read 0 (which made the line drop to zero).
+    // Actual only up to the data date; anchor the current month to true overall % complete.
+    var actualC = months.map(function (m, idx) { return idx < ti ? actualAt(monthEnd(m)) : 0; });
     actualC[ti] = overallDone;
-    for (var k = ti + 1; k < actualC.length; k++) actualC[k] = 0;  // no actuals past the data date
+    // Forecast to finish: follow the remaining plan's shape, time-stretched to fc, from the
+    // actual point up to 100%. null before the data date.
+    var forecastC = months.map(function () { return null; });
+    var rem = TOT - plannedC[ti];
+    if (fc && actualC[ti] < TOT && rem > 0.0001) {
+      var fcSpan = +fc - +tnow;
+      forecastC[ti] = actualC[ti];
+      for (var fj = ti + 1; fj < months.length; fj++) {
+        var mE = monthEnd(months[fj]);
+        if (fcSpan <= 0) { forecastC[fj] = TOT; continue; }
+        var realFrac = (+mE - +tnow) / fcSpan;
+        if (realFrac <= 0) { forecastC[fj] = actualC[ti]; continue; }
+        if (realFrac >= 1) { forecastC[fj] = TOT; continue; }
+        var planDate = new Date(+tnow + realFrac * (+plannedEnd - +tnow));
+        var valFrac = Math.min(1, Math.max(0, (plannedAt(planDate) - plannedC[ti]) / rem));
+        forecastC[fj] = actualC[ti] + valFrac * (TOT - actualC[ti]);
+      }
+    }
     var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0;
     var overallPct = TOT ? overallDone / TOT * 100 : 0;
-    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length, plannedEnd: plannedEnd, fcFinish: fc, autoFc: autoFc, spi: spi, manual: fcManual };
+    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, forecastC: forecastC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: base.nAct, plannedEnd: plannedEnd, fcFinish: fc, autoFc: autoFc, spi: spi, manual: fcManual };
   }
 
   function render() {
@@ -282,7 +379,20 @@
       var a = (i <= d.ti && d.TOT) ? Math.round(d.actualC[i] / d.TOT * 1000) / 10 : null;
       return '<td>' + (a != null ? a + '%' : '—') + '</td>';
     }).join('');
-    wrap.innerHTML = '<table class="sc-table"><thead><tr>' + head + '</tr></thead><tbody><tr>' + planned + '</tr><tr>' + actual + '</tr></tbody></table>';
+    // Forecast % row — only when a forecast series exists (project not complete + a finish set).
+    var fcArr = d.forecastC || [];
+    var hasForecast = fcArr.some(function (v) { return v != null; });
+    var forecast = '';
+    if (hasForecast) {
+      forecast = '<td>Forecast %</td>' + d.months.map(function (mo, i) {
+        var f = (fcArr[i] != null && d.TOT) ? Math.round(fcArr[i] / d.TOT * 1000) / 10 : null;
+        return '<td class="sc-fc-cell">' + (f != null ? f + '%' : '—') + '</td>';
+      }).join('');
+    }
+    wrap.innerHTML = '<table class="sc-table"><thead><tr>' + head + '</tr></thead><tbody><tr>' +
+      planned + '</tr><tr>' + actual + '</tr>' +
+      (hasForecast ? '<tr class="sc-fc-row">' + forecast + '</tr>' : '') +
+      '</tbody></table>';
   }
 
   AppAuth.requireLogin(function (user, profile) {
@@ -301,8 +411,9 @@
       var card = document.getElementById('sc-tablecard');
       var show = card.style.display === 'none';
       card.style.display = show ? '' : 'none';
-      this.innerHTML = '<span data-ico="listView" data-ico-size="15"></span> ' + (show ? 'Hide data table' : 'Show data table');
-      if (window.Icons) Icons.hydrate(this);
+      // icon-only tool: reflect state via title + active fill, not a text relabel
+      this.title = show ? 'Hide data table' : 'Show data table';
+      this.classList.toggle('is-active', show);
     };
     loadProjects();
   });

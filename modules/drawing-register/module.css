@@ -1,10 +1,352 @@
-/* Drawing Register module styles — all classes prefixed .dr- */
+/* Drawing Register & Tracker — module styles (all classes prefixed .dr-) */
 
-.dr-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; }
+/* ---- Topbar: project selector + tabs + tools (matches Project Schedule) -- */
+.dr-title-txt { white-space:nowrap; }
+@media (max-width:1150px){ .dr-title-txt { display:none; } }   /* icon-only title on tighter widths */
+
+.dr-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+.dr-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px;
+  background:transparent; border-color:transparent; }
+.dr-project:hover, .dr-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+
+/* View tabs (segmented) */
+.dr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
+.dr-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600;
+  cursor:pointer; font-size:13px; transition:background .12s; }
+.dr-tab + .dr-tab { border-left:1px solid var(--pd-line); }
+.dr-tab:hover:not(.active) { background:var(--pd-bg); }
+.dr-tab.active { background:var(--pd-red); color:#fff; }
+
+/* Tool cluster beside the profile */
+.dr-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+.dr-topbar-tools .pd-btn { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
+  background:transparent; border-color:transparent; font-size:13px; }
+.dr-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
+.dr-topbar-tools .pd-btn.dr-tb-labeled { width:auto; padding:0 12px; gap:6px; }
+.dr-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+.dr-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
+.dr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
+.dr-clearbtn { color:var(--pd-bad,#dc2626); }
+.dr-clearbtn:hover { background:var(--pd-bad,#dc2626) !important; border-color:var(--pd-bad,#dc2626) !important; color:#fff; }
+.dr-topbar-tools .dr-menu { left:auto; right:0; }
+
+/* Loading spinner (import) */
+.dr-spin { display:inline-block; width:13px; height:13px; vertical-align:-2px; margin-right:6px;
+  border:2px solid var(--pd-line); border-top-color:var(--pd-red); border-radius:50%;
+  animation:dr-spin .7s linear infinite; }
+@keyframes dr-spin { to { transform:rotate(360deg); } }
+
+/* ---- Slim filter bar (in the body) -------------------------------------- */
+.dr-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px;
+  background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
+.dr-filt-ico { color:var(--pd-muted); flex:none; }
+.dr-filters .dr-search { flex:1 1 300px; min-width:180px; }
+.dr-filters .pd-select { flex:0 0 auto; max-width:180px; }
+
+/* ---- List bar (count + selection) --------------------------------------- */
+.dr-listbar { display:flex; align-items:center; gap:12px; margin-bottom:10px; min-height:30px; }
+.dr-xall { flex:0 0 auto; }
+.dr-listcount { color:var(--pd-muted); font-size:13px; }
+.dr-selbar { display:flex; align-items:center; gap:10px; margin-left:auto;
+  background:rgba(238,49,36,.08); border:1px solid var(--pd-red); border-radius:999px; padding:4px 6px 4px 14px; }
+.dr-selbar[hidden] { display:none; }
+.dr-selbar span { font-weight:700; font-size:13px; color:var(--pd-red); }
+
+/* ---- Table -------------------------------------------------------------- */
+.dr-tablecard { padding:0; overflow:auto; max-height:calc(100vh - 250px); }
+.dr-table { border-collapse:separate; border-spacing:0; width:100%; }
+.dr-table thead th { position:sticky; top:0; z-index:2; background:var(--pd-card);
+  border-bottom:2px solid var(--pd-line); font-size:11px; letter-spacing:.03em; text-transform:uppercase;
+  color:var(--pd-muted); padding:10px 12px; white-space:nowrap; }
+.dr-table td { padding:9px 12px; vertical-align:middle; border-bottom:1px solid var(--pd-line); }
+.dr-table tbody tr:not(.dr-grp):hover td { background:var(--pd-bg); }
 .dr-table td .dr-sub { color:var(--pd-muted); font-size:12px; margin-top:2px;
-  max-width:380px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  max-width:440px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dr-r { text-align:right; white-space:nowrap; }
+.dr-nowrap { white-space:nowrap; }
+.dr-mut, .dr-mini { color:var(--pd-muted); }
+.dr-mini { font-size:11px; }
+.dr-count { color:var(--pd-muted); font-weight:500; font-size:12px; }
+.dr-cb { width:34px; text-align:center; }
+.dr-cb input { width:15px; height:15px; cursor:pointer; accent-color:var(--pd-red); }
+.dr-actcol { width:96px; }
+.dr-code { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:12.5px; }
+.dr-selrow td { background:rgba(238,49,36,.06) !important; }
 
-.dr-pill { display:inline-block; padding:2px 10px; border-radius:999px; font-weight:700; font-size:12px; color:#fff; }
-.dr-review { background:#d97706; }   /* For Review  */
-.dr-ok     { background:#16a34a; }   /* Approved    */
-.dr-old    { background:#6b7280; }   /* Superseded  */
+/* ---- Drag-and-drop row reorder (within a group) -------------------------
+   Mirrors Project Schedule: dim the dragged row, red insertion line on the
+   hovered target's top or bottom edge, grab cursor only while reorder is armed
+   (it's disabled whenever a filter/search narrows the list). */
+.dr-grid.dr-reorder tr.dr-drow { cursor:grab; }
+.dr-grid.dr-reorder tr.dr-drow:active { cursor:grabbing; }
+tr.dr-drow.dr-rowdragging { opacity:.45; }
+tr.dr-drow.dr-drop-above td { box-shadow:inset 0 2px 0 0 var(--pd-red); }
+tr.dr-drow.dr-drop-below td { box-shadow:inset 0 -2px 0 0 var(--pd-red); }
+/* Shift-click range selection (and drag) must NOT drag a native text selection
+   — keep cells unselectable, but re-enable text in the inline editors/inputs. */
+.dr-grid td, .dr-grid th { user-select:none; -webkit-user-select:none; }
+.dr-grid input, .dr-grid select, .dr-grid textarea, .dr-grid .dr-editin { user-select:text; -webkit-user-select:text; }
+
+/* ---- Active group (the "+ Add drawing" target) --------------------------
+   Project Schedule marks the selected WBS row; without this the add target was
+   invisible. A left rail rather than a fill, so the level tints still read. */
+tr.dr-grp.dr-grpactive td { box-shadow:inset 3px 0 0 0 var(--pd-red); }
+tr.dr-grp { cursor:pointer; }              /* the whole row toggles collapse */
+tr.dr-grp .dr-glabel { cursor:text; }      /* except the label: dblclick renames */
+.dr-empty { padding:40px 24px; color:var(--pd-muted); text-align:center; }
+
+/* Row action buttons */
+.dr-rowbtn { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
+  border-radius:6px; padding:3px 9px; font-size:12px; font-weight:600; cursor:pointer; }
+.dr-rowbtn:hover { background:var(--pd-bg); border-color:var(--pd-muted); }
+.dr-rowbtn-del:hover { background:var(--pd-bad,#dc2626); border-color:var(--pd-bad,#dc2626); color:#fff; }
+
+/* Group roll-up rows */
+.dr-grp td { border-bottom:1px solid var(--pd-line); }
+.dr-grplabel { display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+.dr-caret { display:inline-block; font-size:11px; color:var(--pd-muted); transition:transform .12s; }
+.dr-caret-col { transform:rotate(-90deg); }
+
+/* ---- Level indentation + colour coding ---------------------------------- */
+/* Indent grows with hierarchy depth; applied to the first content cell.      */
+.dr-lvl-1 .dr-indent { padding-left:10px; }
+.dr-lvl-2 .dr-indent { padding-left:30px; }
+.dr-lvl-3 .dr-indent { padding-left:50px; }
+.dr-lvl-4 .dr-indent { padding-left:70px; }
+/* A coloured rail on the first cell marks the level at a glance. */
+.dr-lvl-1 .dr-indent { box-shadow:inset 4px 0 0 var(--pd-red); }
+.dr-lvl-2 .dr-indent { box-shadow:inset 4px 0 0 #2b2c2b; }
+.dr-lvl-3 .dr-indent { box-shadow:inset 4px 0 0 #9aa0a6; }
+.dr-lvl-4 .dr-indent { box-shadow:inset 4px 0 0 var(--pd-line); }
+
+/* Level backgrounds (phase darkest → drawing plain) */
+.dr-grp-phase td { background:rgba(238,49,36,.12); border-top:2px solid var(--pd-red); padding-top:11px; padding-bottom:11px; }
+.dr-grp-phase td strong { text-transform:uppercase; letter-spacing:.03em; font-size:13px; }
+.dr-grp-disc td { background:rgba(43,44,43,.07); }
+.dr-grp-disc td strong { font-size:12.5px; }
+.dr-grp-cat td { background:var(--pd-bg); }
+.dr-grp-cat td strong { font-weight:600; font-size:12px; color:var(--pd-muted); text-transform:none; }
+html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
+
+/* Status pills */
+.dr-pill { display:inline-block; padding:3px 10px; border-radius:999px; font-weight:700; font-size:11px; color:#fff; white-space:nowrap; }
+.dr-review { background:#d97706; }  /* For Review */
+.dr-rr     { background:#dc2626; }  /* Revise & Resubmit */
+.dr-okc    { background:#0891b2; }  /* Approved w/ comments */
+.dr-ok     { background:#16a34a; }  /* Approved / w/o comments */
+.dr-old    { background:#6b7280; }  /* Superseded */
+
+/* Progress bar */
+.dr-prog { position:relative; height:16px; background:var(--pd-line); border-radius:999px; overflow:hidden; min-width:100px; max-width:220px; }
+.dr-prog-fill { position:absolute; inset:0 auto 0 0; background:linear-gradient(90deg,var(--pd-red),#f2683f); border-radius:999px; }
+.dr-prog-txt { position:relative; display:block; text-align:center; font-size:10px; font-weight:700;
+  line-height:16px; color:var(--pd-ink); }
+
+/* ---- KPI cards ---------------------------------------------------------- */
+.dr-kpis { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:18px; }
+.dr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:16px 18px;
+  position:relative; overflow:hidden; }
+.dr-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pd-red); opacity:.5; }
+.dr-kpi-val { font-size:26px; font-weight:800; line-height:1; }
+.dr-kpi-label { color:var(--pd-muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin-top:7px; }
+.dr-kpi.dr-ok .dr-kpi-val { color:var(--pd-good,#16a34a); }
+.dr-kpi.dr-ok::before { background:var(--pd-good,#16a34a); }
+.dr-kpi.dr-warn .dr-kpi-val { color:var(--pd-warn,#d97706); }
+.dr-kpi.dr-warn::before { background:var(--pd-warn,#d97706); }
+
+/* Dashboard layout */
+.dr-dash-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.dr-h3 { margin:0 0 12px; font-size:14px; font-weight:700; }
+
+/* ---- Form (modal) ------------------------------------------------------- */
+.pd-modal-overlay:has(.dr-form-sec) .pd-modal { max-width:780px; width:96%; }
+.dr-form-sec { font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--pd-red); margin:18px 0 10px; padding-bottom:5px; border-bottom:1px solid var(--pd-line);
+  display:flex; align-items:center; gap:10px; }
+.dr-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.dr-grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+.dr-grid4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; }
+.dr-code-preview { font-family:ui-monospace,Consolas,monospace; font-size:13px; background:var(--pd-bg);
+  border:1px dashed var(--pd-line); border-radius:6px; padding:8px 12px; margin-top:2px; }
+.dr-code-preview span { font-weight:700; color:var(--pd-red); }
+
+/* Submission revision rows */
+.dr-subrow { display:flex; align-items:flex-end; gap:10px; margin-bottom:8px; }
+.dr-subrow label { display:flex; flex-direction:column; font-size:11px; color:var(--pd-muted); gap:3px; }
+.dr-subrev { font-weight:700; min-width:52px; padding-bottom:8px; }
+
+@media (max-width:1000px) {
+  .dr-dash-grid { grid-template-columns:1fr; }
+  .dr-kpis { grid-template-columns:repeat(3,1fr); }
+  .dr-grid4 { grid-template-columns:1fr 1fr; }
+}
+@media (max-width:700px) {
+  .dr-kpis { grid-template-columns:repeat(2,1fr); }
+  .dr-grid3, .dr-grid2 { grid-template-columns:1fr; }
+  .dr-actions { margin-left:0; }
+}
+
+/* ============ Editable tree grid (compact, one-screen) ================== */
+.dr-tablecard { max-height:calc(100vh - 205px); }
+.dr-grid { font-size:12px; min-width:1080px; }   /* so narrow viewports scroll (and the frozen Code+Title stay put) */
+.dr-grid thead th { padding:7px 8px; font-size:10px; }
+.dr-grid td { padding:4px 8px; }
+.dr-grid:focus { outline:none; }
+.dr-grid:focus-within { box-shadow:none; }
+
+/* fixed column widths (needed so the frozen columns have deterministic offsets) */
+.dr-c-code { width:130px; } .dr-c-title { width:300px; } .dr-c-rev { width:46px; text-align:center; }
+.dr-c-status { width:158px; } .dr-c-sh { width:44px; } .dr-c-ap { width:66px; }
+.dr-c-date { width:82px; } .dr-c-resp { width:90px; }
+.dr-grid .dr-actcol { width:78px; text-align:right; white-space:nowrap; }
+.dr-grid td.dr-c-rev { text-align:center; }
+
+/* ---- Frozen Code + Title columns (Excel-style) [feature 1] -------------- */
+/* Sticky left so the drawing identity stays visible when scrolling right.    */
+.dr-grid td.dr-freeze, .dr-grid th.dr-freeze { position:sticky; z-index:1; background:var(--pd-card); }
+.dr-grid th.dr-freeze { z-index:3; }                    /* header corner above all */
+.dr-freeze-cb    { left:0; }
+.dr-freeze-code, .dr-freeze-grp { left:var(--cbw,0px); }
+.dr-freeze-title { left:calc(var(--cbw,0px) + 130px); }
+.dr-freeze-title, .dr-freeze-grp { border-right:1px solid var(--pd-line); }
+/* opaque state backgrounds so nothing bleeds through while scrolling */
+.dr-grid .dr-grp-phase td.dr-freeze { background:#fbe4e1; }
+.dr-grid .dr-grp-disc  td.dr-freeze { background:#ececec; }
+.dr-grid .dr-grp-cat   td.dr-freeze { background:var(--pd-bg); }
+.dr-grid tbody tr.dr-drow:hover td.dr-freeze { background:var(--pd-bg); }
+.dr-grid .dr-selrow td.dr-freeze { background:#f7d7d3 !important; }
+html.pd-dark .dr-grid td.dr-freeze, html.pd-dark .dr-grid th.dr-freeze { background:var(--pd-card); }
+html.pd-dark .dr-grid .dr-grp-phase td.dr-freeze { background:#3a2a29; }
+html.pd-dark .dr-grid .dr-grp-disc  td.dr-freeze { background:#343434; }
+html.pd-dark .dr-grid .dr-grp-cat   td.dr-freeze { background:var(--pd-bg); }
+html.pd-dark .dr-grid .dr-selrow td.dr-freeze { background:#4a2b28 !important; }
+
+/* ---- Duplicate-code flag [feature 2] ------------------------------------ */
+/* No cell background tint (looked off / two-tone). The ⚠ badge on the code +
+   the list-bar legend carry the signal. */
+.dr-dupmark { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+  border-radius:50%; background:#d97706; color:#fff; font-size:10px; line-height:1; margin-left:5px; cursor:help; }
+/* legend chip in the list bar (click to filter to duplicates) */
+.dr-duplegend { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; cursor:pointer;
+  border:1px solid #d97706; color:#b45309; background:rgba(217,119,6,.10);
+  border-radius:999px; padding:3px 10px; font-size:12px; font-weight:600; }
+.dr-duplegend:hover { background:rgba(217,119,6,.18); }
+.dr-duplegend.dr-on { background:#d97706; color:#fff; }
+.dr-duplegend .dr-dupmark { margin-left:0; width:14px; height:14px; }
+.dr-duplegend.dr-on .dr-dupmark { background:#fff; color:#d97706; }
+html.pd-dark .dr-duplegend { color:#f0b45e; }
+
+/* editable cell affordance */
+.dr-ed { cursor:text; }
+.dr-drow:hover td.dr-ed { background:color-mix(in srgb, var(--pd-red) 6%, transparent); }
+.dr-editin { width:100%; box-sizing:border-box; border:1px solid var(--pd-red); border-radius:4px;
+  padding:2px 5px; font:inherit; background:var(--pd-card); color:var(--pd-ink); }
+td.dr-editing { padding:2px 4px; }
+
+/* selected row + click cursor */
+.dr-drow { cursor:default; }
+.dr-selrow td { background:rgba(238,49,36,.10) !important; }
+
+/* inline status dropdown, tinted by status */
+.dr-stsel { width:100%; box-sizing:border-box; border:1px solid var(--pd-line); border-radius:999px;
+  padding:2px 6px; font-size:11px; font-weight:700; cursor:pointer; color:#fff; -webkit-appearance:none; appearance:none;
+  text-align:center; }
+.dr-stsel option { color:var(--pd-ink); background:var(--pd-card); font-weight:600; }
+.dr-st-dr-review { background:#d97706; border-color:#d97706; }
+.dr-st-dr-rr     { background:#dc2626; border-color:#dc2626; }
+.dr-st-dr-okc    { background:#0891b2; border-color:#0891b2; }
+.dr-st-dr-ok     { background:#16a34a; border-color:#16a34a; }
+.dr-st-dr-old    { background:#6b7280; border-color:#6b7280; }
+
+/* small icon action buttons */
+.dr-iconbtn { border:0; background:transparent; color:var(--pd-muted); cursor:pointer;
+  font-size:13px; padding:2px 4px; border-radius:4px; line-height:1; }
+.dr-iconbtn:hover { background:var(--pd-bg); color:var(--pd-ink); }
+.dr-iconbtn.dr-rowbtn-del:hover { background:var(--pd-bad,#dc2626); color:#fff; }
+
+/* group label editable hint */
+.dr-glabel { cursor:default; }
+.dr-grp .dr-glabel:hover { text-decoration:underline dotted; }
+
+/* toolbar "+ Level" menu */
+.dr-menuwrap { position:relative; display:inline-block; }
+.dr-menu { position:absolute; top:calc(100% + 4px); left:0; z-index:20; min-width:150px;
+  background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  box-shadow:0 8px 24px rgba(0,0,0,.14); padding:4px; }
+.dr-menu[hidden] { display:none; }
+.dr-menu button { display:block; width:100%; text-align:left; border:0; background:transparent;
+  color:var(--pd-ink); padding:7px 12px; border-radius:6px; cursor:pointer; font-size:13px; }
+.dr-menu button:hover { background:var(--pd-bg); }
+
+/* list-bar hint */
+.dr-hint { color:var(--pd-muted); font-size:11px; margin-left:auto; }
+@media (max-width:1100px){ .dr-hint { display:none; } }
+
+/* structural-level code chip (A-100, AR-000, …) */
+.dr-gcode { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:11px;
+  color:var(--pd-red); background:rgba(238,49,36,.10); border-radius:4px; padding:1px 6px; margin-right:2px; }
+.dr-grp-disc .dr-gcode, .dr-grp-cat .dr-gcode { color:var(--pd-muted); background:var(--pd-bg); }
+
+/* ============ Sidebar-less shell (matches Project Schedule / Cash Flow) === */
+.pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
+.pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+.pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; flex:none; }
+.dr-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; flex:none; }
+.dr-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; }
+.dr-title .dr-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dr-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:2px; }
+.pd-content { width:100%; }
+
+/* group-row delete affordance */
+.dr-grp .dr-lvldel { border:0; background:transparent; color:var(--pd-muted); cursor:pointer;
+  font-size:12px; padding:2px 6px; border-radius:4px; opacity:0; transition:opacity .12s; }
+.dr-grp:hover .dr-lvldel { opacity:1; }
+.dr-grp .dr-lvldel:hover { background:var(--pd-bad,#dc2626); color:#fff; }
+
+/* bulk set-status dropdown in the selection bar */
+.dr-selstatus { height:26px; padding:2px 8px; font-size:12px; font-weight:600; max-width:170px; }
+
+/* jump-to-phase select in the list bar [feature 6] */
+.dr-jump { height:26px; padding:2px 8px; font-size:12px; max-width:230px; flex:0 0 auto; }
+
+/* saved filter views [feature 5] */
+.dr-views-wrap { position:relative; flex:0 0 auto; }
+.dr-views-btn { display:inline-flex; align-items:center; gap:5px; }
+.dr-views-menu { min-width:210px; }
+.dr-view-item { display:flex; align-items:center; }
+.dr-view-apply { flex:1; text-align:left; border:0; background:transparent; color:var(--pd-ink);
+  padding:7px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
+.dr-view-apply:hover { background:var(--pd-bg); }
+.dr-view-del { border:0; background:transparent; color:var(--pd-muted); cursor:pointer; padding:4px 8px; border-radius:6px; }
+.dr-view-del:hover { background:var(--pd-bad,#dc2626); color:#fff; }
+.dr-view-empty { padding:8px 10px; color:var(--pd-muted); font-size:12px; }
+.dr-view-sep { height:1px; background:var(--pd-line); margin:4px 0; }
+.dr-view-save { display:block; width:100%; text-align:left; border:0; background:transparent; color:var(--pd-red);
+  padding:7px 10px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; }
+.dr-view-save:hover { background:var(--pd-bg); }
+
+/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
+   Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets) comes
+   from dashboard.css; the KPI/dash grids already collapse at 1000/700 above.
+
+   The register stays a horizontal scroller — it is an EDITABLE tree grid
+   (inline cell editing, drag-to-reorder, range selection), so card-stacking it
+   would break the interaction model. What broke on a phone was the FREEZE:
+   checkbox + Code (130px) + Title (300px) = well over 430px of sticky columns
+   on a 375px viewport, so the columns you scrolled to had nowhere to land.
+   Below 700px only Code stays frozen; Title scrolls with everything else.
+   -------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  /* Title un-freezes; Code remains the identity anchor. */
+  .dr-grid td.dr-freeze-title, .dr-grid th.dr-freeze-title { position: static; }
+  .dr-c-title { width: 200px; }
+  .dr-c-code { width: 110px; }
+  .dr-grid { min-width: 900px; }
+  .dr-tablecard { max-height: none; }
+
+  .dr-filters { flex-wrap: wrap; gap: 8px; }
+  .dr-filters > * { flex: 1 1 100%; min-width: 0; }
+  .dr-filters .dr-search { flex: 1 1 100%; }
+  .dr-rowbtn { min-width: 34px; min-height: 34px; }
+  .dr-prog { min-width: 70px; }
+}

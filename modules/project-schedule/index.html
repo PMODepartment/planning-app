@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260712"></script>
+  <script src="../../assets/js/theme.js?v=20260724a"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260712" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -18,6 +18,9 @@
       font-family:inherit; font-size:18px; font-weight:800; letter-spacing:-.01em; color:var(--pd-ink); padding:3px 6px; border-radius:7px; }
     .ps-title-btn:hover { background:var(--pd-bg); }
     .ps-title-btn [data-ico] { color:var(--pd-muted); }
+    /* Brand-red module icon before the title, matching every other module's -title-ico.
+       `span.ps-title-ico` (0,2,1) outspecifies `.ps-title-btn [data-ico]` (0,2,0) above. */
+    .ps-title-btn span.ps-title-ico { color:var(--pd-red); }
     #ps-title-menu button { font-size:14px; font-weight:600; }
     .ps-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .ps-seg button { border:none; background:var(--pd-card); padding:6px 12px; cursor:pointer; color:var(--pd-muted); font-size:12px; font-weight:600; }
@@ -54,6 +57,14 @@
        overflow the viewport edge. */
     .ps-datadate-badge { font-size:12px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
       border:1px solid var(--pd-line); border-radius:999px; padding:3px 11px; white-space:nowrap; margin-left:6px; }
+    /* Freshness badge for the cache-first (stale-while-revalidate) load */
+    .ps-fresh { font-size:11px; font-weight:700; border-radius:999px; padding:2px 9px; white-space:nowrap; margin-left:6px; display:inline-flex; align-items:center; gap:5px; }
+    .ps-fresh::before { content:""; width:7px; height:7px; border-radius:50%; display:inline-block; }
+    .ps-fresh-stale { color:var(--pd-warn); background:rgba(199,119,0,.12); }
+    .ps-fresh-stale::before { background:var(--pd-warn); animation:ps-fresh-pulse 1s ease-in-out infinite; }
+    .ps-fresh-live { color:var(--pd-ok); background:rgba(31,143,78,.12); }
+    .ps-fresh-live::before { background:var(--pd-ok); }
+    @keyframes ps-fresh-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
     .ps-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; min-width:0;
       padding-left:10px; margin-left:auto; border-left:1px solid var(--pd-line); }
     .ps-topbar-tools .pd-btn { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
@@ -122,8 +133,6 @@
        eye menu or drag the divider to shrink it toward a bars-only view. */
     .ps-split.ps-grid-only .ps-gantt-pane, .ps-split.ps-grid-only .ps-divider { display:none; }
     .ps-split.ps-gantt-only .ps-grid-pane { flex:0 0 300px; }
-    .ps-cost-th { position:relative; }
-    .ps-cost-table th { overflow:hidden; }
     /* Single row, never wraps. Items are flex:none (see .ps-tb-row rule above) so they don't
        squish; the search is the only flexible item and shrinks first. If the row still can't fit
        an extremely narrow viewport it scrolls horizontally inside itself (only then does overflow
@@ -309,6 +318,15 @@
     .ps-status-notstarted { background:var(--pd-line); color:var(--pd-muted); }
     .ps-status-inprogress { background:rgba(199,119,0,.14); color:var(--pd-warn); }
     .ps-status-completed { background:rgba(31,143,78,.14); color:var(--pd-ok); }
+    /* Inline status dropdown — the pill IS a <select> so status changes in one click (no right-click → edit).
+       Keeps the pill's colour by status; a small chevron signals it's changeable. */
+    select.ps-status-pill { border:none; cursor:pointer; font-family:inherit; line-height:1.4; max-width:100%;
+      -webkit-appearance:none; -moz-appearance:none; appearance:none; padding:2px 19px 2px 9px;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat:no-repeat; background-position:right 6px center; }
+    select.ps-status-pill:hover { box-shadow:0 0 0 1px var(--pd-red-mid) inset; }
+    select.ps-status-pill:focus { outline:none; box-shadow:0 0 0 2px var(--pd-red-mid) inset; }
+    select.ps-status-pill option { color:var(--pd-ink); background:var(--pd-card); font-weight:600; }
     .c-dur { width:var(--c-dur); justify-content:flex-end; } .c-pct { width:var(--c-pct); justify-content:flex-end; position:relative; }
     .c-durpct { width:var(--c-durpct); justify-content:flex-end; }
     /* In-cell A/C date badges + % Complete progress bar (OPC-style readability) */
@@ -672,6 +690,28 @@
     .ps-totals-row > td { font-weight:700; border-top:2px solid var(--pd-line); background:var(--pd-bg); }
     .ps-empty { text-align:center; padding:40px; color:var(--pd-muted); }
     .ps-red { color:var(--pd-bad); } .ps-green { color:var(--pd-ok); }
+    /* ---- Cost / EVM dashboard (rebuilt Cost Loading tab) ---- */
+    .ps-cost-status { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; padding:5px 13px; border-radius:999px; margin-bottom:14px; }
+    .ps-cost-status.ok { background:rgba(22,163,74,.15); color:var(--pd-ok); }
+    .ps-cost-status.warn { background:rgba(217,119,6,.18); color:#d97706; }
+    .ps-cost-status.bad { background:rgba(220,38,38,.18); color:var(--pd-bad); }
+    .ps-cost-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(138px,1fr)); gap:10px; margin-bottom:16px; }
+    .ps-cost-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:11px 13px; }
+    .ps-cost-kpi .k-l { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .ps-cost-kpi .k-v { font-size:18px; font-weight:800; line-height:1.15; margin-top:3px; }
+    .ps-cost-kpi .k-s { font-size:11px; color:var(--pd-muted); margin-top:1px; }
+    .ps-cost-curvecard { padding:16px; margin-bottom:16px; }
+    .ps-cost-curvecard h3 { margin:0 0 10px; font-size:14px; }
+    .ps-cost-svg { width:100%; height:auto; display:block; }
+    .ps-cost-note { font-size:11.5px; color:var(--pd-muted); margin:8px 0 0; }
+    .ps-cc-grid { stroke:var(--pd-line); stroke-width:1; }
+    .ps-cc-lab { fill:var(--pd-muted); font-size:10.5px; } .ps-cc-lab.r { text-anchor:end; } .ps-cc-lab.m { text-anchor:middle; }
+    .ps-cc-pv { fill:none; stroke:var(--pd-dark); stroke-width:2.2; } html.pd-dark .ps-cc-pv { stroke:#c7ccd1; }
+    .ps-cc-bac { stroke:#9aa0a6; stroke-width:1.2; stroke-dasharray:5 4; }
+    .ps-cc-dd { stroke:var(--pd-red); stroke-width:1.3; stroke-dasharray:4 3; }
+    .ps-cc-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
+    .ps-cc-lg { display:inline-flex; align-items:center; gap:6px; } .ps-cc-lg .sw { width:16px; height:3px; display:inline-block; } .ps-cc-lg .dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
+    .ps-cost-wbs-over td { color:var(--pd-bad); }
     .ps-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .ps-form-full { grid-column:1 / -1; }
 
@@ -775,6 +815,13 @@
     .ps-filter-foot { display:flex; justify-content:space-between; margin-top:10px; border-top:1px solid var(--pd-line); padding-top:8px; }
     /* Planner cockpit */
     .ps-ck-bar { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+    /* Section divider between the cockpit KPIs/forecast and the merged Last Planner weekly section */
+    .ps-ck-secdiv { display:flex; align-items:center; gap:8px; width:100%; margin:26px 0 14px; padding:18px 0 0; border:none; border-top:2px solid var(--pd-line); background:none; font:inherit; font-size:15px; font-weight:800; color:var(--pd-ink); letter-spacing:.01em; text-align:left; cursor:pointer; }
+    .ps-ck-secdiv [data-ico] { color:var(--pd-red); }
+    .ps-ck-secdiv:hover { color:var(--pd-red); }
+    .ps-ck-secdiv-chev { display:inline-flex; align-items:center; color:var(--pd-muted) !important; transition:transform .18s ease; }
+    .ps-ck-secdiv.collapsed .ps-ck-secdiv-chev { transform:rotate(-90deg); }
+    #ps-lp-section.collapsed { display:none; }
     .ps-ck-look-lbl { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); }
     /* Bulk update grid */
     .ps-bulk-back { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:250; display:none; align-items:center; justify-content:center; }
@@ -897,9 +944,17 @@
     .ps-ck-tl-svg { width:100%; height:auto; display:block; }
     .ps-ck-tl-legend { display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--pd-muted); margin-top:6px; }
     .ps-ck-tl-legend i { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:5px; vertical-align:middle; }
-    /* WBS Manager tree */
-    .ps-wbs-tree { padding:6px 4px 12px; }
-    .ps-wbs-row { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; cursor:pointer; border-left:3px solid transparent; }
+    /* WBS Manager tree (virtualized: fixed row height, spacer reserves scroll height,
+       only the viewport window of rows is in the DOM at once) */
+    .ps-wbs-tree { padding:6px 4px 12px; overflow:auto; position:relative; max-height:calc(100vh - 250px); }
+    .ps-wbs-spacer { position:relative; }
+    .ps-wbs-win { position:absolute; left:0; right:0; top:0; }
+    .ps-wbs-caret { flex:none; width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center;
+      border:none; background:none; cursor:pointer; color:var(--pd-muted); border-radius:4px; padding:0; font-size:11px; line-height:1; }
+    .ps-wbs-caret:hover { background:var(--pd-card); color:var(--pd-ink); }
+    .ps-wbs-caret.leaf { cursor:default; visibility:hidden; }
+    .ps-wbs-matchcount { font-size:12px; color:var(--pd-muted); margin-left:12px; }
+    .ps-wbs-row { display:flex; align-items:center; gap:8px; padding:4px 8px; height:34px; box-sizing:border-box; border-radius:6px; cursor:pointer; border-left:3px solid transparent; }
     .ps-wbs-row:hover { background:var(--pd-bg); }
     .ps-wbs-row:hover .ps-wbs-acts, .ps-wbs-row.selected .ps-wbs-acts { visibility:visible; }
     .ps-wbs-row.selected { background:var(--pd-red-light); border-left-color:var(--pd-red); }
@@ -942,8 +997,6 @@
     .ps-sc-tbl td.k { white-space:nowrap; padding-right:12px; width:1%; }
     .ps-kbd { display:inline-block; font:600 11px/1.4 var(--pd-font,inherit); background:var(--pd-bg); border:1px solid var(--pd-line);
       border-bottom-width:2px; border-radius:4px; padding:1px 5px; color:var(--pd-ink); }
-<<<<<<< Updated upstream
-=======
 
     /* ---- PHONE read-only list (<=700px) ---------------------------------
        This module is a desktop planning tool: an 18-column virtualized grid
@@ -1095,7 +1148,6 @@
     .sbld-ld-row input[type=number] { font:inherit; padding:4px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
     @media (max-width:900px){ .sbld-seq2 { grid-template-columns:1fr; } }
     @media (max-width:820px){ .sbld-wrap { grid-template-columns:1fr; } .sbld-rail { position:static; flex-direction:row; overflow-x:auto; } .sbld-step-s { display:none; } }
->>>>>>> Stashed changes
 </style>
 </head>
 <body>
@@ -1106,13 +1158,13 @@
     <div class="pd-topbar">
       <a class="pd-btn ps-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
       <div class="ps-title-switch ps-menu-wrap">
-        <button class="ps-title-btn" id="ps-title-btn" title="Switch view"><span id="ps-title-txt">Project Schedule</span><span data-ico="chevronDown" data-ico-size="16"></span></button>
+        <button class="ps-title-btn" id="ps-title-btn" title="Switch view"><span class="ps-title-ico" data-ico="calendar" data-ico-size="20"></span><span id="ps-title-txt">Project Schedule</span><span data-ico="chevronDown" data-ico-size="16"></span></button>
         <div class="ps-menu" id="ps-title-menu">
           <button data-tab="planner"><span data-ico="pulse" data-ico-size="14"></span> Planner Cockpit</button>
           <button data-tab="wbs"><span data-ico="layers" data-ico-size="14"></span> WBS Manager</button>
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
-          <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
-          <button data-tab="lastplanner"><span data-ico="check" data-ico-size="14"></span> Last Planner</button>
+          <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Builder</button>
+          <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost / EVM</button>
         </div>
       </div>
       <!-- Project context sits next to the title (OPC-style), name over workspace, left-aligned.
@@ -1125,6 +1177,7 @@
         <div class="ps-menu ps-projsel-menu" id="ps-projsel-menu"></div>
       </div>
       <span class="ps-datadate-badge" id="ps-datadate-badge" title="As-of date driving the schedule — change it in Schedule ▸ Data Date">Data Date: —</span>
+      <span class="ps-fresh" id="ps-fresh" style="display:none;"></span>
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
            before #user-bar, so these sit immediately beside the night-mode button -->
       <div class="ps-topbar-tools" id="ps-topbar-tools">
@@ -1231,6 +1284,13 @@
           </div>
         </div>
 
+        <!-- PHONE ONLY (<=700px): a condensed READ-ONLY activity list that replaces the
+             grid+Gantt split. The split is an 18-column virtualized grid beside a
+             time-scaled Gantt with Excel-style keyboard navigation and drag-to-link —
+             none of which is usable on a phone. Editing stays desktop/tablet only.
+             Rendered by renderMobile(); shown/hidden purely by CSS. -->
+        <div class="ps-mobile" id="ps-mobile"></div>
+
         <!-- Activity Network View (PERT diagram) — shown via the Layout menu -->
         <div class="ps-network" id="ps-network" style="display:none;"></div>
 
@@ -1281,6 +1341,10 @@
           <button class="pd-btn pd-btn-primary" id="ps-wbs-addroot"><span data-ico="plus" data-ico-size="15"></span> Add top-level WBS</button>
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-wbs-adopt" title="Build the tree from the project's existing WBS-Summary rows (imported / legacy)"><span data-ico="download" data-ico-size="15"></span> Adopt existing WBS</button>
+          <span class="ps-tb-div"></span>
+          <button class="pd-btn ps-icobtn" id="ps-wbs-expand" title="Expand all"><span data-ico="chevronDown" data-ico-size="15"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-wbs-collapse" title="Collapse all"><span data-ico="chevronRight" data-ico-size="15"></span></button>
+          <input class="pd-input" id="ps-wbs-search" placeholder="Search code / name…" style="height:32px;width:200px;">
           <span id="ps-wbs-hint" style="font-size:12px;color:var(--pd-muted);margin-left:auto;">Build the WBS first, then add activities under any node.</span>
         </div>
         <div class="pd-card ps-ck-card ps-ck-trend-card">
@@ -1289,16 +1353,32 @@
         </div>
       </div>
 
+      <!-- SCHEDULE BUILDER (bottom-up / location-based setup, steps 1-7) -->
+      <div id="ps-view-builder" style="display:none;">
+        <div class="ps-ck-bar">
+          <span style="font-size:12px;color:var(--pd-muted);">Bottom-up / location-based schedule setup — the generated preview stays here; pushing it into the schedule above is a later step.</span>
+          <span class="sbld-save-state" id="ps-bld-savestate" style="margin-left:auto;"></span>
+          <button class="pd-btn pd-btn-primary" id="ps-bld-save"><span data-ico="check" data-ico-size="14"></span> Save setup</button>
+        </div>
+        <div class="sbld-wrap">
+          <div class="sbld-rail" id="ps-bld-rail"></div>
+          <div class="sbld-panel" id="ps-bld-panel"></div>
+        </div>
+      </div>
+
       <!-- COST LOADING -->
       <div id="ps-view-cost" style="display:none;">
-        <div class="pd-card" style="padding:0;overflow:hidden;">
-          <div class="ps-table-wrap">
-            <table class="ps-table ps-cost-table" id="ps-cost-table" style="table-layout:fixed;">
-              <colgroup id="ps-cost-colgroup"></colgroup>
-              <thead id="ps-cost-head"></thead>
-              <tbody id="ps-cost-body"><tr><td class="ps-empty">Select a project to view cost loading.</td></tr></tbody>
-            </table>
-          </div>
+        <!-- Cost / EVM dashboard (rebuilt): project cost-performance, not a per-activity table
+             (that lives in the Schedule grid; time-phased per-activity curves in Activity Usage). -->
+        <div id="ps-cost-status"></div>
+        <div class="ps-cost-kpis" id="ps-cost-kpis"></div>
+        <div class="pd-card ps-cost-curvecard">
+          <h3>Cost Performance (EVM) — Planned Value vs Earned / Actual</h3>
+          <div id="ps-cost-curve"></div>
+          <p class="ps-cost-note" id="ps-cost-note"></p>
+        </div>
+        <div class="pd-card" style="padding:0;overflow:auto;">
+          <table class="ps-table" id="ps-cost-wbs"><tbody><tr><td class="ps-empty">Select a project to view cost performance.</td></tr></tbody></table>
         </div>
       </div>
 
@@ -1333,26 +1413,29 @@
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Top risk drivers</div><div id="ps-ck-behind" class="ps-ck-body"></div></div>
           <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="pulse" data-ico-size="15"></span> Critical-path drivers</div><div id="ps-ck-buckets" class="ps-ck-buckets"></div><div id="ps-ck-crit" class="ps-ck-pills"></div></div>
         </div>
-      </div>
 
-      <!-- LAST PLANNER: weekly work plan + Percent Plan Complete (PPC) -->
-      <div id="ps-view-lastplanner" style="display:none;">
-        <div class="ps-ck-bar">
-          <button class="pd-btn ps-icobtn" id="ps-lp-prev" title="Previous week"><span data-ico="arrowLeft" data-ico-size="15"></span></button>
-          <strong id="ps-lp-weeklbl" style="min-width:180px;text-align:center;"></strong>
-          <button class="pd-btn ps-icobtn" id="ps-lp-next" title="Next week"><span data-ico="arrowRight" data-ico-size="15"></span></button>
-          <button class="pd-btn" id="ps-lp-thisweek">This week</button>
-          <span class="ps-tb-div"></span>
-          <button class="pd-btn pd-btn-primary" id="ps-lp-add"><span data-ico="plus" data-ico-size="15"></span> Add commitment</button>
-        </div>
-        <div class="ps-ck-kpis" id="ps-lp-kpis"></div>
-        <div class="pd-card ps-ck-card ps-ck-trend-card">
-          <div class="ps-ck-h"><span data-ico="check" data-ico-size="15"></span> Weekly commitments</div>
-          <div id="ps-lp-table"></div>
-        </div>
-        <div class="ps-ck-grid">
-          <div class="pd-card ps-ck-card ps-ck-trend-card"><div class="ps-ck-h"><span data-ico="trendingUp" data-ico-size="15"></span> PPC trend</div><div id="ps-lp-ppc-trend" class="ps-ck-trend-body"></div></div>
-          <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Reasons for variance</div><div id="ps-lp-reasons" class="ps-ck-body"></div></div>
+        <!-- LAST PLANNER: weekly work plan + Percent Plan Complete (PPC) — merged into the
+             cockpit so the planner has one management surface (KPIs/forecast above, the
+             weekly commitment loop below) instead of two separate tabs. -->
+        <button type="button" class="ps-ck-secdiv" id="ps-lp-toggle" aria-expanded="true" aria-controls="ps-lp-section"><span class="ps-ck-secdiv-chev" data-ico="chevronDown" data-ico-size="16"></span><span data-ico="check" data-ico-size="16"></span> Weekly Work Plan · Last Planner</button>
+        <div id="ps-lp-section">
+          <div class="ps-ck-bar">
+            <button class="pd-btn ps-icobtn" id="ps-lp-prev" title="Previous week"><span data-ico="arrowLeft" data-ico-size="15"></span></button>
+            <strong id="ps-lp-weeklbl" style="min-width:180px;text-align:center;"></strong>
+            <button class="pd-btn ps-icobtn" id="ps-lp-next" title="Next week"><span data-ico="arrowRight" data-ico-size="15"></span></button>
+            <button class="pd-btn" id="ps-lp-thisweek">This week</button>
+            <span class="ps-tb-div"></span>
+            <button class="pd-btn pd-btn-primary" id="ps-lp-add"><span data-ico="plus" data-ico-size="15"></span> Add commitment</button>
+          </div>
+          <div class="ps-ck-kpis" id="ps-lp-kpis"></div>
+          <div class="pd-card ps-ck-card ps-ck-trend-card">
+            <div class="ps-ck-h"><span data-ico="check" data-ico-size="15"></span> Weekly commitments</div>
+            <div id="ps-lp-table"></div>
+          </div>
+          <div class="ps-ck-grid">
+            <div class="pd-card ps-ck-card ps-ck-trend-card"><div class="ps-ck-h"><span data-ico="trendingUp" data-ico-size="15"></span> PPC trend</div><div id="ps-lp-ppc-trend" class="ps-ck-trend-body"></div></div>
+            <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Reasons for variance</div><div id="ps-lp-reasons" class="ps-ck-body"></div></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1432,7 +1515,7 @@
       <span class="ps-bulk-count" id="ps-cost-count"></span>
       <button class="ps-bulk-x" id="ps-cost-x">&#215;</button>
     </div>
-    <div class="ps-snap-detail" id="ps-cost-body" style="padding:14px;"></div>
+    <div class="ps-snap-detail" id="ps-cost-acct-body" style="padding:14px;"></div>
   </div>
 </div>
 
@@ -1656,23 +1739,37 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260712"></script>
-<script src="../../assets/js/auth.js?v=20260712"></script>
-<script src="../../assets/js/db.js?v=20260712"></script>
-<script src="../../assets/js/ui.js?v=20260712"></script>
-<script src="../../assets/js/icons.js?v=20260712"></script>
-<script src="../../assets/js/calendar.js?v=20260712"></script>
+<script src="../../assets/js/config.js?v=20260724a"></script>
+<script src="../../assets/js/auth.js?v=20260724a"></script>
+<script src="../../assets/js/db.js?v=20260724a"></script>
+<script src="../../assets/js/ui.js?v=20260724a"></script>
+<script src="../../assets/js/icons.js?v=20260724a"></script>
+<script src="../../assets/js/calendar.js?v=20260724a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
   'use strict';
   var TABLE = 'project_schedule';
   var pid = null, rows = [], editId = null, UID = null;
+  // Monotonic load token. load() is async + paginated (up to ~17 round-trips for a
+  // 16k-row schedule) and used to have NO guard, so switching/deselecting a project
+  // mid-load let the STALE load commit its rows/count/render after pid had already
+  // changed — leaving the footer count and the grid disagreeing about whether a
+  // project is selected. Every await in load() re-checks this against its own gen and
+  // bails if a newer load has started.
+  var _loadGen = 0;
   var PROJECTS = [], WORKSPACES = [], layoutMode = 'split', activeTab = 'schedule';
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
+  var _wbsCollapsed = {};   // WBS Manager: node id -> true means its children are hidden
+  var _wbsSearch = '';      // WBS Manager: current search filter (code / name)
+  var _wbsCollapseInit = false;   // have we applied the large-tree default-collapse once?
+  var WBS_ROWH = 34;        // fixed WBS-row height (must match .ps-wbs-row height) for virtualization
+  var _wbsFlat = [];        // flattened visible-row descriptors (source for the virtual window)
+  var _wbsWired = false;    // delegated listeners attached to #ps-wbs-tree once
+  var _wbsScrollRaf = false;
   var _wbsSel = null;   // selected WBS node id (drives the Add-activity parent preselect)
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
   function calById(id) { return id && CALS.find(function (c) { return c.id === id; }); }
@@ -1690,9 +1787,19 @@
     if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; return; }
     try {
       var r1 = await sb().from('resources').select('*').eq('project_id', pid).order('name');
-      var r2 = await sb().from('resource_assignments').select('*').eq('project_id', pid);
       var r3 = await sb().from('calendars').select('*').eq('project_id', pid).order('name');
-      RESRC = (r1 && r1.data) || []; ASSIGN = (r2 && r2.data) || []; CALS = (r3 && r3.data) || [];
+      // resource_assignments reaches tens of thousands of rows on a P6/XER import, so a single
+      // select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost roll-ups.
+      // Keyset-paginate (indexed PK range scan) — same pattern as the main activity load().
+      var asg = [], alast = null;
+      while (true) {
+        var aq = sb().from('resource_assignments').select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+        if (alast) aq = aq.gt('id', alast);
+        var ar = await aq; if (ar.error) throw ar.error;
+        var ab = ar.data || []; asg = asg.concat(ab);
+        if (ab.length < 1000) break; alast = ab[ab.length - 1].id;
+      }
+      RESRC = (r1 && r1.data) || []; ASSIGN = asg; CALS = (r3 && r3.data) || [];
     } catch (e) { RESRC = []; ASSIGN = []; CALS = []; }
     try {
       var r4 = await sb().from('activity_code_types').select('*').eq('project_id', pid).order('sort_order');
@@ -1708,8 +1815,19 @@
       UDF_DEFS = (r7 && r7.data) || [];
     } catch (e) { UDF_DEFS = []; }
     try {
-      var r8 = await sb().from('wbs_nodes').select('*').eq('project_id', pid).order('sort_order');
-      WBS_NODES = (r8 && r8.data) || [];
+      // Keyset-paginate: a plain select caps at Supabase's 1000-row limit, which silently TRUNCATED
+      // the tree on big P6 imports (>1000 WBS nodes) — children whose parent fell past row 1000
+      // dropped out of the walk and vanished from the Manager. Paginate by id; the render/index
+      // re-sorts by sort_order, so load order is irrelevant.
+      var wnodes = [], wlast = null;
+      while (true) {
+        var wq = sb().from('wbs_nodes').select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+        if (wlast) wq = wq.gt('id', wlast);
+        var wr = await wq; if (wr.error) throw wr.error;
+        var wb = wr.data || []; wnodes = wnodes.concat(wb);
+        if (wb.length < 1000) break; wlast = wb[wb.length - 1].id;
+      }
+      WBS_NODES = wnodes;
     } catch (e) { WBS_NODES = []; }
     try {
       var r9 = await sb().from('cost_accounts').select('*').eq('project_id', pid).order('sort_order');
@@ -1729,9 +1847,20 @@
   // Auto-numbered dotted codes from tree position; a code_custom node keeps its own code and its
   // subtree is prefixed by it. Returns { id: code }.
   function computeWbsCodes() {
+    // Build a parent -> sorted-children index once (O(N log N)) instead of re-scanning WBS_NODES
+    // per tree level via wbsChildren (which made this O(N²·log N) on big P6 trees). Same ordering.
+    var childrenOf = new Map();
+    for (var i = 0; i < WBS_NODES.length; i++) {
+      var nd = WBS_NODES[i], p = nd.parent_id || null;
+      var arr = childrenOf.get(p); if (!arr) { arr = []; childrenOf.set(p, arr); }
+      arr.push(nd);
+    }
+    childrenOf.forEach(function (arr) {
+      arr.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); });
+    });
     var codeOf = {};
     (function walk(parentId, parentCode) {
-      wbsChildren(parentId).forEach(function (n, i) {
+      (childrenOf.get(parentId) || []).forEach(function (n, i) {
         var auto = (parentCode ? parentCode + '.' : '') + (i + 1);
         codeOf[n.id] = (n.code_custom && n.code) ? n.code : auto;
         walk(n.id, codeOf[n.id]);
@@ -1750,6 +1879,11 @@
   // values. Independent of the row selection/clipboard above (a click sets both, but Ctrl+C/X/V and
   // the context menu treat cells and whole rows as distinct operations).
   var _cellSel = null, _cellAnchor = null, _cellClip = null;
+  // Excel-style data-entry anchor: the column where the current row's entry began. Tab walks across
+  // columns keeping this; Enter drops a row and returns to it. Reset (null) by any navigation that
+  // isn't Tab/Enter (arrows, clicks, Escape), so the next fresh edit re-anchors.
+  var _entryCol = null;
+  function _resetEntry() { _entryCol = null; }
   var _dragRowId = null;   // activity row being drag-reordered (within its WBS)
   // Drag-reorder is only meaningful in WBS grouping with no active column sort (otherwise order is
   // derived from the grouping / column sort, so a manual sequence wouldn't stick).
@@ -1762,6 +1896,9 @@
   var groupBy = 'wbs';   // 'wbs' | 'status' | 'responsible' | 'type'
   var _dspan = {};       // span map keyed by display code (real WBS codes in WBS mode)
   var isAdmin = false;
+  // Roles that may write the schedule (matches is_planner() in the DB). Used to gate the
+  // WBS-summary self-repair so a read-only user never triggers a write on load.
+  var canWrite = false;
   var DAYW = { month: 4.2, quarter: 1.55, year: 0.62 };
   // User-adjustable timeline column width — multiplies DAYW[zoom] so the Month/Quarter/Year
   // columns can be made wider or narrower. Persisted; clamped to a sane range.
@@ -1994,7 +2131,9 @@
     var sel = document.getElementById('ps-project'); if (sel) sel.value = pid || '';
     if (pid) sessionStorage.setItem('pd_project', pid);
     updateProjSelLabel(); updateWorkspaceCaption();
-    collapsed = {}; resetUndo(); load();
+    collapsed = {}; _wbsSel = null; _wbsCollapsed = {}; _wbsSearch = ''; _wbsCollapseInit = false;
+    var wsi = document.getElementById('ps-wbs-search'); if (wsi) wsi.value = '';
+    resetUndo(); load();
   }
   // OPC-style project browser — a FOLDER navigator (one level at a time) so it scales to
   // hundreds of schedules. `_pssPath` = current folder (workspace id; '' = root). Drill into a
@@ -2044,41 +2183,139 @@
       return '<div class="ps-pss-search"><input type="text" id="ps-pss-q" placeholder="Search all projects…" value="' + esc(_pssSearch) + '">' + bc + '</div>';
     }
   }
-  async function load() {
-    loadDataDate();   // per-project data date (persisted); drives CPM / gantt line / usage
-    _fmtRules = loadFmtRules();   // per-project conditional-formatting rules
-    if (!pid) { rows = []; rebuild(); renderAll(); return; }
-    showLoading('Loading schedule…');
-    var all = [];
-    try {
-      var cnt = await sb().from(TABLE).select('*', { count: 'exact', head: true }).eq('project_id', pid);
-      var total = (cnt && cnt.count) || 0;
-      if (total > 0) setLoading('Loading ' + total + ' activities…');
-      // Keyset pagination (order by the id PK, fetch id > last) instead of .range()/OFFSET.
-      // OFFSET makes far pages re-scan every preceding row — a 42k-row project's deep pages blew past
-      // Supabase's statement_timeout (found via a live P6 import, 2026-07-11). Keyset is an indexed PK
-      // range scan per page, so it stays fast at any size. Sequential (each page needs the prior page's
-      // last id) — slightly slower than the old parallel fetch for mid-size projects, but it doesn't
-      // time out. Load order (by uuid) is irrelevant: rebuild() sorts by WBS.
-      var last = null;
-      while (true) {
-        var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
-        if (last) q = q.gt('id', last);
-        var r1 = await q; if (r1.error) throw r1.error;
-        var batch = r1.data || []; all = all.concat(batch);
-        setLoading(total ? ('Loading ' + all.length + ' / ' + total + '…') : ('Loading… ' + all.length));
-        if (batch.length < 1000) break;
-        last = batch[batch.length - 1].id;
-      }
-    } catch (err) { hideLoading(); UI.toast('Load failed: ' + (err.message || err), 'error'); return; }
-    hideLoading();
-    rows = all; rebuild();
-    await loadResourcesAssignments();
-    populateGroupSelect();
-    // Large schedule: default to a collapsed outline so we don't render thousands of DOM rows.
+  // ---- Cache-first load (stale-while-revalidate) ----------------------------------------------
+  // Opening a big schedule cold takes seconds (dominated by the sequential paginated round-trips, not
+  // bytes — ~8 round-trips ≈ 9s for a 6k-activity project). To make REOPENING instant, the full row
+  // set is cached in IndexedDB per project. On open we paint the cached rows immediately (no overlay),
+  // then re-fetch from the DB in the background and reconcile. First open per project is unchanged.
+  var _cacheDbP = null;
+  function _cacheDb() {
+    if (_cacheDbP) return _cacheDbP;
+    _cacheDbP = new Promise(function (resolve) {
+      try {
+        var rq = indexedDB.open('ps_schedule_cache', 1);
+        rq.onupgradeneeded = function () { var db = rq.result; if (!db.objectStoreNames.contains('rows')) db.createObjectStore('rows'); };
+        rq.onsuccess = function () { resolve(rq.result); };
+        rq.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+    return _cacheDbP;
+  }
+  function _cacheGet(key) {
+    return _cacheDb().then(function (db) { if (!db) return null; return new Promise(function (res) {
+      try { var g = db.transaction('rows', 'readonly').objectStore('rows').get(key); g.onsuccess = function () { res(g.result || null); }; g.onerror = function () { res(null); }; }
+      catch (e) { res(null); } }); });
+  }
+  function _cachePut(key, rowset) {
+    _cacheDb().then(function (db) { if (!db) return; try {
+      // Store only real DB columns — strip the `_`-prefixed fields rebuild()/CPM attach (some reference
+      // other rows, which would bloat or fail structured-clone). rebuild() recomputes them on load.
+      var clean = rowset.map(function (r) { var o = {}; for (var k in r) { if (Object.prototype.hasOwnProperty.call(r, k) && k.charAt(0) !== '_') o[k] = r[k]; } return o; });
+      db.transaction('rows', 'readwrite').objectStore('rows').put({ rows: clean, savedAt: new Date().toISOString(), uid: UID }, key);
+    } catch (e) {} });
+  }
+  var _cacheSaveT = null;
+  // Debounced re-cache after inline edits (which mutate `rows` in place but don't reload).
+  function _cacheSaveSoon() { if (_cacheSaveT) clearTimeout(_cacheSaveT); _cacheSaveT = setTimeout(function () { if (pid && rows && rows.length) _cachePut(pid, rows); }, 1500); }
+  var _editSeq = 0;   // bumped on every inline edit; guards the background refresh from clobbering an edit made mid-fetch
+  var _freshHideT = null;
+  // Freshness badge: 'cached' = showing last-known set, refreshing; 'live' = reconciled with the DB.
+  function _setFresh(state) {
+    var el = document.getElementById('ps-fresh'); if (!el) return;
+    clearTimeout(_freshHideT);
+    if (state === 'cached') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-stale'; el.textContent = 'Cached · updating…'; el.title = 'Showing the last-loaded schedule instantly; refreshing from the database…'; }
+    else if (state === 'live') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-live'; el.textContent = 'Live'; el.title = 'Up to date with the database.'; _freshHideT = setTimeout(function () { var e2 = document.getElementById('ps-fresh'); if (e2) e2.style.display = 'none'; }, 2500); }
+    else { el.style.display = 'none'; }
+  }
+  function _applyBigCollapse() {
     if (rows.length > 400 && Object.keys(collapsed).length === 0) {
       rows.forEach(function (r) { if (isWbs(r) && r._depth >= 3) collapsed[r.wbs] = true; });
     }
+  }
+  async function load() {
+    var gen = ++_loadGen;   // claim this load; any older in-flight load is now stale
+    _wbsCollapseInit = false;   // re-apply the large-tree default-collapse for this freshly-loaded tree
+    loadDataDate();   // per-project data date (persisted); drives CPM / gantt line / usage
+    _fmtRules = loadFmtRules();   // per-project conditional-formatting rules
+    // Archived projects are read-only (feeds the ~8 edit guards that read window.__archived).
+    window.__archived = ((PROJECTS.find(function (x) { return x.id === pid; }) || {}).status === 'archived');
+    // hideLoading here clears any overlay a now-superseded load left showing (a stale
+    // load aborts silently and never hides it — this branch owns the terminal state).
+    if (!pid) { hideLoading(); _setFresh('hide'); rows = []; rebuild(); renderAll(); return; }
+    // CACHE-FIRST: paint the last-known rows instantly (no overlay), then revalidate below.
+    var painted = false;
+    try {
+      var cached = await _cacheGet(pid);
+      if (gen !== _loadGen) return;
+      if (cached && cached.uid === UID && cached.rows && cached.rows.length) {
+        rows = cached.rows; rebuild(); _applyBigCollapse(); renderAll();
+        _setFresh('cached'); painted = true;
+      }
+    } catch (e) {}
+    if (!painted) showLoading('Loading schedule…');
+    var eseq = _editSeq;   // if the user edits during the bg fetch, don't clobber their edit on reconcile
+    var all = null;
+    try {
+      // FAST PATH: one-call RPC `schedule_rows(project_id)` returns ALL rows as a single jsonb array in
+      // ONE round-trip (a scalar jsonb return isn't subject to PostgREST's 1000-row cap), collapsing the
+      // ~8 sequential keyset pages that dominate cold load. security invoker → the caller's RLS applies.
+      // If the function isn't deployed yet (migration 2026-07-22-schedule-rows-rpc.sql not run), this
+      // returns an error and we fall through to keyset pagination — so the app works before AND after.
+      if (!painted) setLoading('Loading schedule…');
+      try {
+        var rp = await sb().rpc('schedule_rows', { p_project_id: pid });
+        if (gen !== _loadGen) return;
+        if (!rp.error && Array.isArray(rp.data)) { all = rp.data; if (!painted) setLoading('Loading ' + all.length + ' activities…'); }
+      } catch (e) { /* RPC unavailable — fall back to pagination below */ }
+      if (all === null) {
+        all = [];
+        // Count round-trip is cosmetic (drives the "Loading N…" text) — skip it on the cached path.
+        var total = 0;
+        if (!painted) { var cnt = await sb().from(TABLE).select('*', { count: 'exact', head: true }).eq('project_id', pid); if (gen !== _loadGen) return; total = (cnt && cnt.count) || 0; if (total > 0) setLoading('Loading ' + total + ' activities…'); }
+        // Keyset pagination (order by the id PK, fetch id > last) instead of .range()/OFFSET.
+        // OFFSET makes far pages re-scan every preceding row — a 42k-row project's deep pages blew past
+        // Supabase's statement_timeout (found via a live P6 import, 2026-07-11). Keyset is an indexed PK
+        // range scan per page, so it stays fast at any size. Sequential (each page needs the prior page's
+        // last id) — slightly slower than the old parallel fetch for mid-size projects, but it doesn't
+        // time out. Load order (by uuid) is irrelevant: rebuild() sorts by WBS.
+        var last = null;
+        while (true) {
+          var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+          if (last) q = q.gt('id', last);
+          var r1 = await q; if (r1.error) throw r1.error;
+          if (gen !== _loadGen) return;   // a newer load started — drop this stale one (newer owns the overlay/state)
+          var batch = r1.data || []; all = all.concat(batch);
+          if (!painted) setLoading(total ? ('Loading ' + all.length + ' / ' + total + '…') : ('Loading… ' + all.length));
+          if (batch.length < 1000) break;
+          last = batch[batch.length - 1].id;
+        }
+      }
+    } catch (err) {
+      if (gen !== _loadGen) return; hideLoading();
+      if (!painted) { UI.toast('Load failed: ' + (err.message || err), 'error'); }
+      else { var ef = document.getElementById('ps-fresh'); if (ef) { ef.className = 'ps-fresh ps-fresh-stale'; ef.textContent = 'Cached (offline)'; ef.title = 'Showing the last-loaded schedule — could not reach the database to refresh.'; } }
+      return;
+    }
+    if (gen !== _loadGen) return;   // superseded while paginating — don't clobber the newer load's state
+    hideLoading();
+    // Reconcile the (cache-painted) view with the fresh DB set — UNLESS the user made an inline edit
+    // while the fetch was in flight (that edit already went to the DB; keep the live in-memory rows
+    // instead of overwriting with a set that raced the edit — the debounced _cacheSaveSoon re-caches).
+    if (_editSeq === eseq) {
+      rows = all; rebuild(); _applyBigCollapse();
+      // PAINT from the primary activity rows. The grid/Gantt only need `rows`; resources + WBS_NODES
+      // below are for the Resource-Usage tab + WBS Manager and take seconds on a 17k-activity project.
+      renderAll();
+      _cachePut(pid, all);
+    }
+    _setFresh('live');
+    await loadResourcesAssignments();   // loads WBS_NODES
+    if (gen !== _loadGen) return;
+    // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
+    var healed = await _wbsEnsureSummaries();
+    if (gen !== _loadGen) return;
+    if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
+    populateGroupSelect();
     renderAll();
     if (isAdmin && rows.length) updateProjectSummary();
   }
@@ -2110,6 +2347,7 @@
     var res = await sb().from(TABLE).update(patch).eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return false; }
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
+    _editSeq++; _cacheSaveSoon();   // keep the IndexedDB cache in sync + guard the bg refresh from clobbering this edit
     if (before) pushUndo({ type: 'update', id: id, before: before, after: patch });
     logAudit(r, 'update', _auditChanges(prev, patch));
     // Incremental rebuild: only recompute what the edit can actually affect.
@@ -2499,7 +2737,10 @@
   }
   async function doImport(recs, replace, fname) {
     showLoading('Preparing import…');
-    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } }
+    // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
+    // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
+    // _wbsEnsureSummaries. The tree is rebuilt from this import by autoAdoptAfterImport() below.
+    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } }
     var uid = UID;
     var payloads = recs.map(recToPayload); if (uid) payloads.forEach(function(p){ p.created_by=uid; });
     var ok=0, err=null, CH=500;
@@ -2762,7 +3003,9 @@
   }
   async function doImportXER(parsed, replace, fname) {
     showLoading('Preparing import…');
-    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } }
+    // Same as the Excel path: replacing the activities must drop the tree, or the P6 WBS is adopted
+    // on top of the previous import's nodes and every level duplicates.
+    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } }
     var uid = UID, CH = 500;
     // 1) Calendars first — activities/resources reference their real (DB-generated) ids.
     var calIdMap = {};
@@ -2877,6 +3120,9 @@
         [K('Insert'), 'Add a new activity'],
         [K('Delete') + ' / ' + K('Backspace'), 'Delete the selected activit(ies)'],
         ['Double-click a cell', 'Edit that cell inline'],
+        ['Type on a selected cell', 'Start editing, seeded with that character'],
+        [K('Enter') + ' (while editing)', 'Commit and drop a row, back to the column you started in'],
+        [K('Tab') + ' (while editing)', 'Commit and move to the next cell (' + K('Shift') + '+' + K('Tab') + ' previous)'],
         [K('Ctrl') + '+' + K('D'), 'Fill the active cell’s value down to the selected rows'],
         [K('Ctrl') + '+' + K('Z'), 'Undo'],
         [K('Ctrl') + '+' + K('Shift') + '+' + K('Z') + ' / ' + K('Ctrl') + '+' + K('Y'), 'Redo'] ] },
@@ -2886,6 +3132,14 @@
         [K('Ctrl') + '+' + K('V'), 'Paste — cells fill/paste, or whole rows'] ] },
       { h: 'Selection', rows: [
         ['Click', 'Select a row / active cell'],
+        [K('↑') + ' / ' + K('↓'), 'Move the active cell / row up / down (autoscrolls)'],
+        [K('←') + ' / ' + K('→'), 'Move the active cell left / right'],
+        [K('Tab') + ' / ' + K('Shift') + '+' + K('Tab'), 'Next / previous cell (wraps rows)'],
+        [K('Enter') + ' / ' + K('F2'), 'Edit the active cell'],
+        [K('Shift') + '+' + K('↑') + '/' + K('↓'), 'Extend the row selection'],
+        [K('Shift') + '+' + K('←') + '/' + K('→'), 'Extend the cell range'],
+        [K('PageUp') + ' / ' + K('PageDown'), 'Move the selection one screen'],
+        [K('Home') + ' / ' + K('End'), 'Jump to the first / last row'],
         [K('Shift') + '+click', 'Extend a rectangular cell range'],
         [K('Ctrl') + '/' + K('Cmd') + '+click', 'Add/remove a row from the selection'],
         ['Right-click', 'Context menu (Fill down, copy/paste, add WBS…)'],
@@ -2923,11 +3177,12 @@
   // Pad the timeline so there are trailing (succeeding) months after the last activity and a little
   // lead before the first — the Gantt shows context beyond the exact activity span.
   function range() {
-    // Extend the scrollable timeline well past the schedule: 2 years before the earliest activity and
-    // 3 years after the latest, so the planner can scroll into the deep past/future (the Gantt pane
-    // already scrolls horizontally; this just widens the content).
-    var mn = _min ? addDays(_min, -730) : addDays(today(), -365);
-    var mx = _max ? addDays(_max, 1095) : addDays(today(), 365);
+    // Hug the actual schedule with a small margin — a month before the earliest activity and a
+    // quarter after the latest (the Gantt pane still scrolls horizontally). Previously this padded
+    // 2 YEARS before / 3 after, so a schedule starting in 2025 opened showing empty years back to
+    // ~2022–2023, which reads as if the project starts years too early.
+    var mn = _min ? addDays(_min, -31) : addDays(today(), -30);
+    var mx = _max ? addDays(_max, 92) : addDays(today(), 90);
     return { min: mn, max: mx };
   }
 
@@ -3130,7 +3385,77 @@
   }
 
   // ---- render everything ----
-  function renderAll() { renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') renderPlanner(); else if (activeTab === 'lastplanner') openLastPlanner(); else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); }
+  // ---- PHONE read-only activity list ---------------------------------------
+  // Replaces the grid+Gantt split below 700px (see #ps-mobile in the markup).
+  // Reads displayList(), so the current search / filters / grouping / collapse
+  // state all carry over — this is a different PRESENTATION of the same rows,
+  // not a second data path.
+  //
+  // Deliberately read-only: no edit, drag, link or keyboard handlers are wired.
+  //
+  // PS_M_CAP guards the render. Real projects here run to 17k+ activities and
+  // this list is NOT virtualized (the desktop grid is) — painting every card
+  // would lock up a phone. Over the cap we render the first N and tell the user
+  // to narrow with search/filters. Raise this only alongside virtualization.
+  var PS_M_CAP = 300;
+  function psIsPhone() { return window.matchMedia('(max-width: 700px)').matches; }
+
+  function renderMobile() {
+    var host = document.getElementById('ps-mobile');
+    if (!host) return;
+    if (!pid) { host.innerHTML = '<div class="ps-m-empty">Select a project to see its schedule.</div>'; return; }
+
+    var nodes = displayList();
+    var acts = nodes.filter(function (n) { return n._dkind === 'task'; });
+    if (!acts.length) {
+      host.innerHTML = '<div class="ps-m-empty">No activities match the current filters.</div>';
+      return;
+    }
+    var shown = acts.slice(0, PS_M_CAP), clipped = acts.length - shown.length;
+
+    var head = '<div class="ps-m-bar">' +
+      '<strong>' + shown.length + '</strong> of ' + acts.length + ' activities' +
+      '<span class="ps-m-ro" title="Editing, the Gantt and keyboard navigation are available on a larger screen">read-only</span></div>';
+
+    var body = shown.map(function (r) {
+      var done = isComplete(r);
+      var started = !!r.actual_start;
+      var stat = done ? 'Completed' : (started ? 'In Progress' : 'Not Started');
+      var scls = done ? 'is-done' : (started ? 'is-wip' : 'is-new');
+      var pct = r.percent_complete != null ? Math.max(0, Math.min(100, +r.percent_complete)) : 0;
+      var s = dispStart(r), f = dispFin(r);
+      var flt = r._critical ? 'CP' : (r._float != null ? r._float + 'd' : '—');
+      return '<div class="ps-mcard' + (r._critical ? ' is-cp' : '') + '">' +
+        '<div class="ps-mtop"><span class="ps-mid">' + esc(r.activity_id || '') + '</span>' +
+          '<span class="ps-mstat ' + scls + '">' + stat + '</span></div>' +
+        '<div class="ps-mname">' + esc(r.activity_name || '') + '</div>' +
+        '<div class="ps-mmeta">' +
+          '<div><span>Start</span><strong>' + (s ? Fmt.date(s) : '—') + '</strong></div>' +
+          '<div><span>Finish</span><strong>' + (f ? Fmt.date(f) : '—') + '</strong></div>' +
+          '<div><span>Complete</span><strong>' + (r.percent_complete != null ? pct + '%' : '—') + '</strong></div>' +
+          '<div><span>Float</span><strong>' + flt + '</strong></div>' +
+        '</div>' +
+        '<div class="ps-mbar"><i style="width:' + pct + '%"></i></div>' +
+      '</div>';
+    }).join('');
+
+    var more = clipped > 0
+      ? '<div class="ps-m-more">' + clipped + ' more activities not shown. Use search or filters to narrow the list.</div>'
+      : '';
+    host.innerHTML = head + body + more;
+  }
+
+  // renderAll() only paints the phone list when already at phone width, so a
+  // rotation/resize from desktop into phone would otherwise reveal an empty
+  // #ps-mobile. Repaint on the way in; debounced because resize fires in bursts.
+  var _psMTimer = null;
+  window.addEventListener('resize', function () {
+    if (!psIsPhone()) return;
+    clearTimeout(_psMTimer);
+    _psMTimer = setTimeout(renderMobile, 150);
+  });
+
+  function renderAll() { renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (psIsPhone()) renderMobile(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
@@ -5039,14 +5364,13 @@
   // Column chooser (the OPC grid-settings wrench). Activity Name can't be hidden (anchor column).
   function saveColHidden() { try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} }
   // Multi-select show/hide chooser opened from the eye button. Each row is a checkbox
-  // (ticked = visible); footer has Show all / Hide all / Reset. Covers the active view's
-  // columns — the Schedule grid (GRID_COLS) or the Cost Loading table (COST_COLS).
+  // (ticked = visible); footer has Show all / Hide all / Reset. Covers the Schedule grid
+  // columns (GRID_COLS). Only reachable on the Schedule tab — the toolbar (and this button)
+  // is hidden on the others, and the rebuilt Cost tab is a dashboard with no hideable columns.
   function renderColsMenu() {
     var m = document.getElementById('ps-cols-menu'); if (!m) return;
-    var onCost = activeTab === 'cost';
-    if (!onCost) seedExtraHidden();
-    var defs = onCost ? COST_COLS.map(function (c) { return { key: c.label, label: c.label, locked: c.locked }; })
-      : gridCols().map(function (c) { return { key: colKey(c), label: colLabel(c), extra: !!c[3], locked: c[1] === 'Activity Name' }; });
+    seedExtraHidden();
+    var defs = gridCols().map(function (c) { return { key: colKey(c), label: colLabel(c), extra: !!c[3], locked: c[1] === 'Activity Name' }; });
     var builtin = defs.filter(function (d) { return !d.extra; }), extra = defs.filter(function (d) { return d.extra; });
     function rowHTML(d) {
       return '<label' + (d.locked ? ' style="opacity:.5;cursor:default;"' : '') + '>' +
@@ -5055,8 +5379,8 @@
         esc(d.label) + '</label>';
     }
     function hdr(t) { return '<div style="padding:6px 12px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' + t + '</div>'; }
-    m.innerHTML = (onCost ? '' : '<label style="border-bottom:1px solid var(--pd-line);"><input type="checkbox" id="ps-colf-toggle"' + (_colFilterOn ? ' checked' : '') + '> <span style="font-weight:600;">Show column filter row</span></label>') +
-      hdr(onCost ? 'Cost Loading columns' : 'Schedule columns') + builtin.map(rowHTML).join('') +
+    m.innerHTML = '<label style="border-bottom:1px solid var(--pd-line);"><input type="checkbox" id="ps-colf-toggle"' + (_colFilterOn ? ' checked' : '') + '> <span style="font-weight:600;">Show column filter row</span></label>' +
+      hdr('Schedule columns') + builtin.map(rowHTML).join('') +
       (extra.length ? hdr('Activity Codes &amp; User-Defined Fields') + extra.map(rowHTML).join('') : '') +
       '<div class="ps-cols-foot"><button data-colact="show">Show all</button><button data-colact="hide">Hide all</button><button data-colact="reset">Reset</button></div>';
     var ft = m.querySelector('#ps-colf-toggle');
@@ -5094,6 +5418,11 @@
   // geometry read live, so reassigning it and re-rendering keeps both panes aligned.
   var _density = 'comfortable'; try { if (localStorage.getItem('ps_density') === 'compact') _density = 'compact'; } catch (e) {}
   var ROWH = _density === 'compact' ? 27 : 34, DL = [], _rMin = null, _rDayw = 0, _rafP = false, _tlW = 0;
+  // `_editing` is true only while an inline cell editor is genuinely open (not mid-commit). While set,
+  // the windowed repaint is deferred (it replaces #ps-grid-rows innerHTML, which would destroy a
+  // freshly opened input) — so an in-flight save's async re-render can't drop a keystroke during
+  // rapid type-down entry. `_pendingWin` remembers a repaint was skipped so the closing editor flushes it.
+  var _editing = false, _pendingWin = false;
   // Gantt display settings (OPC "Gantt Settings"). labels: none|name|dates; toggles for baseline
   // bar, data-date line, relationship lines. Persisted per browser.
   var _gset = { labels: 'name', baseline: true, ddline: true, relLines: false };
@@ -5133,10 +5462,17 @@
   // Days the forecast finish is past the CONTRACT date (+ = LD exposure). null if no contract date.
   function contractVar(r) { if (!r.contract_date) return null; var c = pd(r.contract_date), f = pd(r.actual_finish || r.end_date); if (!c || !f) return null; return dayDiff(c, f); }
   function varCellHtml(r) { var d = finVar(r); if (d == null) return '<div class="ps-cell c-var"></div>'; var cls = d > 0 ? 'ps-var-late' : (d < 0 ? 'ps-var-early' : ''); return '<div class="ps-cell c-var ' + cls + '">' + (d > 0 ? '+' : '') + d + 'd</div>'; }
+  var STATUS_OPTS = ['Not Started', 'In Progress', 'Completed'];
   function statusCellHtml(r) {
     var s = r.status || 'Not Started';
     var cls = s === 'Completed' ? 'ps-status-completed' : (s === 'In Progress' ? 'ps-status-inprogress' : 'ps-status-notstarted');
-    return '<div class="ps-cell c-status"><span class="ps-status-pill ' + cls + '">' + esc(s) + '</span></div>';
+    // Read-only users (viewer / archived project) see the static pill; writers get a one-click
+    // dropdown right in the cell so status changes without the right-click → Edit activity round-trip.
+    if (!canWrite || window.__viewOnly || window.__archived) {
+      return '<div class="ps-cell c-status"><span class="ps-status-pill ' + cls + '">' + esc(s) + '</span></div>';
+    }
+    var opts = STATUS_OPTS.map(function (o) { return '<option value="' + esc(o) + '"' + (o === s ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
+    return '<div class="ps-cell c-status"><select class="ps-status-sel ps-status-pill ' + cls + '" data-id="' + esc(r.id) + '" title="Change status">' + opts + '</select></div>';
   }
   // POC/IBB cell block shared by the WBS-summary and task branches. For summaries the values
   // are the _costMap roll-ups (sums + duration-weighted %s); for tasks they're the row's own
@@ -5293,6 +5629,7 @@
   }
 
   function doRender() {
+    if (_editing) { _pendingWin = true; return; }   // defer full repaint while an inline editor is open
     DL = displayList();
     var rg = range(), min = rg.min, max = rg.max, dayw = DAYW[zoom] * ganttScale;
     _rMin = min; _rDayw = dayw;
@@ -5350,6 +5687,7 @@
 
   function renderWindow() {
     if (!DL.length) return;
+    if (_editing) { _pendingWin = true; return; }   // don't wipe an open inline editor; flush on close
     var scr = document.getElementById('ps-gantt-scroll');
     var top = scr ? scr.scrollTop : 0, vh = scr ? scr.clientHeight : 600;
     var maxTop = Math.max(0, DL.length * ROWH - vh);
@@ -5383,6 +5721,17 @@
         openRowMenu(e, nd);
       }); });
     host.querySelectorAll('.ps-editable').forEach(function (c) { c.ondblclick = function (e) { e.stopPropagation(); beginEdit(c); }; });
+    // Inline Status dropdown — change status in one click, routed through _statusPatch (Completed →
+    // Actual Finish + 100% + 0 remaining, etc.) and the undoable persist(). stopPropagation so opening
+    // the dropdown doesn't also trigger row-select / cell-nav.
+    host.querySelectorAll('.ps-status-sel').forEach(function (sel) {
+      sel.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+      sel.addEventListener('click', function (e) { e.stopPropagation(); });
+      sel.addEventListener('change', function () {
+        var id = sel.dataset.id, r = rows.find(function (x) { return x.id === id; }); if (!r) return;
+        persist(id, _statusPatch(r, sel.value)).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
+      });
+    });
     host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function (e) {
       var id = rw.dataset.rowid;
       // Excel-style selection: Ctrl/Cmd-click toggles a row; Shift-click extends a range from the
@@ -5541,6 +5890,9 @@
     var id = cell.dataset.id, field = cell.dataset.field, type = cell.dataset.type;
     var r = rows.find(function (x) { return x.id === id; });
     if (!r) return;
+    // Anchor the entry column on the first edit of a Tab/Enter chain (kept while chaining).
+    if (_entryCol === null) { var _rw0 = cell.closest && cell.closest('.ps-grid-row');
+      if (_rw0) { var _ci0 = Array.prototype.indexOf.call(_rw0.children, cell) - 1; if (_ci0 >= 0) _entryCol = _ci0; } }
     var cur = r[field]; var raw = cur == null ? '' : cur;
     if (type === 'date') { var dv = (field === 'actual_start' || field === 'start_date') ? dispStart(r) : (field === 'actual_finish' || field === 'end_date' ? dispFin(r) : r[field]); raw = dv ? String(dv).slice(0, 10) : ''; }
     if (type === 'pdur') { var pd0 = _origDurOf(r); raw = (pd0 == null ? '' : pd0); }
@@ -5549,9 +5901,15 @@
     inp.type = type === 'date' ? 'date' : (type === 'number' || type === 'money' || type === 'pdur' || type === 'dpct' ? 'number' : 'text');
     inp.value = raw;
     cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); if (inp.select) inp.select();
+    _editing = true;
     var done = false;
     function commit(save) {
       if (done) return; done = true;
+      // Editor is closing: re-enable repaints, and ALWAYS schedule one. Unconditional because the
+      // per-branch renders below are conditional (a no-op/failed persist skips `if (ok) renderGrid()`),
+      // which used to leave the closing editor's <input> orphaned in the cell — visible now that
+      // Tab/Enter move the cursor away from it. rAF-batched + `_rafP`-deduped, so this is free.
+      _editing = false; _pendingWin = false; scheduleRender();
       if (!save) { renderGrid(); return; }
       var val = inp.value;
       var patch = {};
@@ -5581,7 +5939,22 @@
       persist(id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); } });
     }
     inp.onblur = function () { commit(true); };
-    inp.onkeydown = function (e) { if (e.key === 'Enter') { inp.blur(); } else if (e.key === 'Escape') { commit(false); } };
+    // Excel-style commit+advance: Enter commits and moves the active cell DOWN a row (Shift+Enter up),
+    // Tab commits and moves to the next cell (Shift+Tab previous, wrapping rows). The column is kept.
+    // The move runs after blur→commit; commit's DB write is async, so selId/_cellAnchor move now and
+    // the later re-render re-highlights by id. Escape cancels without advancing.
+    // ⚠️ stopPropagation is REQUIRED here. `inp.blur()` below switches document.activeElement to
+    // <body> SYNCHRONOUSLY, so without it the same keystroke keeps bubbling to the grid's
+    // document-level keydown handler — whose "focus is in an INPUT → bail" guard no longer matches —
+    // and the move runs TWICE (live-caught: Enter skipped 2 rows, Tab skipped 2 columns).
+    inp.onkeydown = function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); var up = e.shiftKey; inp.blur();
+        // Excel: drop a row and RETURN to the entry column (where this row's typing began).
+        if (_entryCol !== null && _cellAnchor) _cellAnchor.c = _entryCol;
+        moveRowSel(up ? -1 : 1, false); }
+      else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); var back = e.shiftKey; inp.blur(); moveCell(back ? -1 : 1, true, false); }
+      else if (e.key === 'Escape') { e.stopPropagation(); commit(false); }
+    };
   }
 
   // ----- RIGHT GANTT: per-row bar builder (used by the windowed renderer) -----
@@ -5712,49 +6085,88 @@
   // Cost Loading columns — each: label, num (right-align), locked (can't hide), default width,
   // a per-row cell renderer and a totals-row renderer. Rendered dynamically so columns can be
   // hidden (via the eye chooser — hidden ones are simply skipped) and drag-resized (colgroup).
-  function _vc(n) { return n > 0 ? 'ps-green' : n < 0 ? 'ps-red' : ''; }
-  var COST_COLS = [
-    { label: 'WBS', w: 90, cell: function (r) { return '<code>' + esc(r.wbs || '') + '</code>'; }, tot: function (T) { return 'TOTAL (' + T.n + ')'; } },
-    { label: 'Activity Name', locked: true, w: 240, cell: function (r) { return esc(r.activity_name || ''); }, tot: function () { return ''; } },
-    { label: 'Baseline Cost (₱)', num: true, w: 130, cell: function (r) { return r.bl_cost != null ? Fmt.money(r.bl_cost) : '—'; }, tot: function (T) { return Fmt.money(T.bl); } },
-    { label: 'Planned Cost (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.planned_cost || 0); }, tot: function (T) { return Fmt.money(T.tp); } },
-    { label: 'Actual Cost (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.actual_cost || 0); }, tot: function (T) { return Fmt.money(T.ta); } },
-    { label: 'Earned Value (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(r.earned_value || 0); }, tot: function (T) { return Fmt.money(T.tv); } },
-    { label: 'At Completion (₱)', num: true, w: 130, cell: function (r) { return Fmt.money(eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null)); }, tot: function (T) { return Fmt.money(T.tac); } },
-    { label: 'Cost Variance (₱)', num: true, w: 130, cell: function (r) { var cv = (r.earned_value || 0) - (r.actual_cost || 0); return '<span class="' + _vc(cv) + '">' + (cv >= 0 ? '+' : '') + Fmt.money(cv) + '</span>'; }, tot: function (T) { var d = T.tv - T.ta; return '<span class="' + _vc(d) + '">' + (d >= 0 ? '+' : '') + Fmt.money(d) + '</span>'; } },
-    { label: 'CPI', num: true, w: 70, cell: function (r) { var c = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; return c !== null ? c.toFixed(2) : '—'; }, tot: function (T) { return T.ta > 0 ? (T.tv / T.ta).toFixed(2) : '—'; } },
-    { label: 'Planned % (POC)', num: true, w: 110, cell: function (r) { var p = plannedPOC(r); return p != null ? p + '%' : '—'; }, tot: function () { return ''; } },
-    { label: '% Complete', num: true, w: 110, cell: function (r) { return (r.percent_complete || 0) + '%'; }, tot: function () { return ''; } },
-    { label: '% Complete Type', w: 150, cell: function (r) { return esc(r.percent_complete_type || '—'); }, tot: function () { return ''; } }
-  ];
-  var costW = {}; try { costW = JSON.parse(localStorage.getItem('ps_costcols') || '{}') || {}; } catch (e) { costW = {}; }
-  function costColW(c) { return costW[c.label] || c.w; }
-  function costVisibleCols() { return COST_COLS.filter(function (c) { return c.locked || !colHidden[c.label]; }); }
+  // ── Cost / EVM dashboard (rebuilt Cost Loading tab) ─────────────────────────
+  // (The old per-activity cost TABLE — COST_COLS / costVisibleCols / costColW /
+  //  startCostColResize / _vc — was removed when this tab was rebuilt into the
+  //  EVM dashboard below. Its columns already live in the Schedule grid.)
+  // Project-level cost performance at the data date. The per-activity cost columns
+  // already live in the Schedule grid, and the time-phased per-activity cost curves
+  // in the Activity Usage detail tab — so this tab is the EVM roll-up, not a table.
+  function _niceTop(v) { if (!(v > 0)) return 1; var s = Math.pow(10, Math.floor(Math.log10(v))); var m = v / s; var n = m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10; var top = n * s; while (top < v) top += s; return top; }
   function renderCost() {
-    var body = document.getElementById('ps-cost-body'), head = document.getElementById('ps-cost-head'), cg = document.getElementById('ps-cost-colgroup');
-    if (!body || !head || !cg) return;
-    var cols = costVisibleCols();
-    cg.innerHTML = cols.map(function (c) { return '<col style="width:' + costColW(c) + 'px;">'; }).join('');
-    head.innerHTML = '<tr>' + cols.map(function (c) {
-      return '<th class="' + (c.num ? 'ps-num ' : '') + 'ps-cost-th"' + '>' + esc(c.label) +
-        '<span class="ps-colgrip" data-costcol="' + esc(c.label) + '" title="Drag to resize column"></span></th>';
-    }).join('') + '</tr>';
-    head.querySelectorAll('.ps-colgrip').forEach(function (g) { g.addEventListener('mousedown', function (e) { startCostColResize(e, g.dataset.costcol); }); });
-    var f = rows.filter(function (r) { return !isWbs(r); });
-    if (!f.length) { body.innerHTML = '<tr><td class="ps-empty" colspan="' + cols.length + '">' + (pid ? 'No activities.' : 'Select a project to view cost loading.') + '</td></tr>'; return; }
-    var T = { n: f.length, bl: 0, tp: 0, ta: 0, tv: 0, tac: 0 };
-    f.forEach(function (r) { T.bl += r.bl_cost || 0; T.tp += r.planned_cost || 0; T.ta += r.actual_cost || 0; T.tv += r.earned_value || 0; T.tac += eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null); });
-    body.innerHTML = f.map(function (r) {
-      return '<tr>' + cols.map(function (c) { return '<td class="' + (c.num ? 'ps-num' : '') + '">' + c.cell(r) + '</td>'; }).join('') + '</tr>';
-    }).join('') + '<tr class="ps-totals-row">' + cols.map(function (c) { return '<td class="' + (c.num ? 'ps-num' : '') + '">' + c.tot(T) + '</td>'; }).join('') + '</tr>';
-  }
-  function startCostColResize(e, label) {
-    e.preventDefault(); e.stopPropagation();
-    var col = COST_COLS.filter(function (c) { return c.label === label; })[0]; if (!col) return;
-    var sx = e.clientX, start = costColW(col);
-    function mm(ev) { costW[label] = Math.max(48, start + (ev.clientX - sx)); var cg = document.getElementById('ps-cost-colgroup'); var vis = costVisibleCols(); var idx = vis.indexOf(col); if (cg && cg.children[idx]) cg.children[idx].style.width = costW[label] + 'px'; }
-    function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); document.body.style.cursor = ''; try { localStorage.setItem('ps_costcols', JSON.stringify(costW)); } catch (e2) {} }
-    document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu); document.body.style.cursor = 'col-resize';
+    if (activeTab !== 'cost') return;   // heavy EVM compute only while this tab is open
+    var kHost = document.getElementById('ps-cost-kpis'), sEl = document.getElementById('ps-cost-status'),
+        cHost = document.getElementById('ps-cost-curve'), nEl = document.getElementById('ps-cost-note'),
+        wTbl = document.getElementById('ps-cost-wbs');
+    if (!kHost || !cHost || !wTbl) return;
+    var leaves = rows.filter(function (r) { return !isWbs(r); });
+    if (!pid || !leaves.length) {
+      if (sEl) sEl.innerHTML = ''; kHost.innerHTML = '';
+      cHost.innerHTML = '<div class="ps-empty">' + (pid ? 'No cost-loaded activities.' : 'Select a project.') + '</div>';
+      if (nEl) nEl.textContent = ''; wTbl.innerHTML = ''; return;
+    }
+    var dd = today(), money = Fmt.money;
+    function evOf(r) { return (r.earned_value != null && r.earned_value !== 0) ? r.earned_value : (r.planned_cost || 0) * (Math.max(0, Math.min(100, r.percent_complete || 0)) / 100); }
+    function pvFrac(r) { var p = plannedPOC(r); if (p != null) return Math.max(0, Math.min(1, p / 100)); var s = pd(r.start_date), e = pd(r.end_date); if (!s) return 0; if (!e || e <= s) return dd >= s ? 1 : 0; return Math.max(0, Math.min(1, (dd - s) / (e - s))); }
+    var BAC = 0, PV = 0, EV = 0, AC = 0;
+    leaves.forEach(function (r) { var b = r.planned_cost || 0; BAC += b; PV += b * pvFrac(r); EV += evOf(r); AC += r.actual_cost || 0; });
+    var SV = EV - PV, CV = EV - AC, SPI = PV > 0 ? EV / PV : null, CPI = AC > 0 ? EV / AC : null;
+    var EAC = (CPI && CPI > 0) ? AC + (BAC - EV) / CPI : BAC, VAC = BAC - EAC, TCPI = (BAC - AC) !== 0 ? (BAC - EV) / (BAC - AC) : null;
+    function vcls(n) { return n > 0 ? 'ps-green' : n < 0 ? 'ps-red' : ''; }
+    function icls(n) { return n == null ? '' : n >= 1 ? 'ps-green' : 'ps-red'; }
+    function sgn(n) { return (n >= 0 ? '+' : '') + money(n); }
+    function ix(n) { return n == null ? '—' : n.toFixed(2); }
+    function k(l, v, s, cls) { return '<div class="ps-cost-kpi"><div class="k-l">' + l + '</div><div class="k-v ' + (cls || '') + '">' + v + '</div>' + (s ? '<div class="k-s">' + s + '</div>' : '') + '</div>'; }
+    var overBudget = (CV < 0) || (CPI != null && CPI < 1), behind = (SV < 0) || (SPI != null && SPI < 1);
+    if (sEl) sEl.innerHTML = '<span class="ps-cost-status ' + (overBudget ? 'bad' : behind ? 'warn' : 'ok') + '">' +
+      (overBudget ? 'Over budget' : 'On / under budget') + ' · ' + (behind ? 'Behind schedule' : 'On / ahead of schedule') + '</span>';
+    kHost.innerHTML =
+      k('BAC', money(BAC), 'Budget at completion') +
+      k('Planned value', money(PV), 'PV — to data date') +
+      k('Earned value', money(EV), 'EV — physical progress') +
+      k('Actual cost', money(AC), 'AC — spent to date') +
+      k('Schedule var.', sgn(SV), 'SV = EV − PV', vcls(SV)) +
+      k('Cost var.', sgn(CV), 'CV = EV − AC', vcls(CV)) +
+      k('SPI', ix(SPI), 'EV ÷ PV', icls(SPI)) +
+      k('CPI', ix(CPI), 'EV ÷ AC', icls(CPI)) +
+      k('EAC', money(EAC), 'Forecast at completion') +
+      k('VAC', sgn(VAC), 'BAC − EAC', vcls(VAC)) +
+      k('TCPI', ix(TCPI), 'To-complete index', icls(TCPI));
+    // ----- cost S-curve: PV cumulative (linear spread) + EV/AC points at the data date -----
+    var months = []; if (_min && _max) { var c0 = new Date(_min.getFullYear(), _min.getMonth(), 1); while (c0 <= _max) { months.push(new Date(c0)); c0 = new Date(c0.getFullYear(), c0.getMonth() + 1, 1); } }
+    if (months.length) {
+      function mEnd(m) { return new Date(m.getFullYear(), m.getMonth() + 1, 0); }
+      var pvC = months.map(function (m) { var me = mEnd(m), sum = 0; leaves.forEach(function (r) { var b = r.planned_cost || 0; if (!b) return; var st = pd(r.start_date), en = pd(r.end_date); if (!st) return; var f = (!en || en <= st) ? (me >= st ? 1 : 0) : Math.max(0, Math.min(1, (me - st) / (en - st))); sum += b * f; }); return sum; });
+      var W = 1000, H = 300, padL = 64, padR = 18, padT = 14, padB = 34, n = months.length;
+      var top = _niceTop(Math.max(BAC, EAC, AC, EV, pvC[n - 1] || 0));
+      function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
+      function y(v) { return padT + (1 - (v / top)) * (H - padT - padB); }
+      var grid = ''; [0, .25, .5, .75, 1].forEach(function (p) { var yy = y(top * p); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="ps-cc-grid"/><text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="ps-cc-lab r">' + Fmt.moneyShort(top * p) + '</text>'; });
+      var xlab = ''; months.forEach(function (m, i) { if (m.getMonth() === 0 || i === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 15) + '" class="ps-cc-lab m">' + m.getFullYear() + '</text>'; });
+      var pvLine = '<polyline class="ps-cc-pv" points="' + pvC.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ') + '"/>';
+      var bacLine = '<line x1="' + padL + '" y1="' + y(BAC) + '" x2="' + (W - padR) + '" y2="' + y(BAC) + '" class="ps-cc-bac"/>';
+      var ddi = -1; for (var di = 0; di < months.length; di++) { if (mEnd(months[di]) >= dd) { ddi = di; break; } } if (ddi < 0) ddi = months.length - 1;
+      var ddx = x(ddi);
+      var ddLine = '<line x1="' + ddx + '" y1="' + padT + '" x2="' + ddx + '" y2="' + (H - padB) + '" class="ps-cc-dd"/>';
+      cHost.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="ps-cost-svg">' + grid + bacLine + ddLine + pvLine +
+        '<circle cx="' + ddx + '" cy="' + y(EV) + '" r="4.5" fill="#F5A623"/><circle cx="' + ddx + '" cy="' + y(AC) + '" r="4.5" fill="var(--pd-red)"/></svg>' +
+        '<div class="ps-cc-legend"><span class="ps-cc-lg"><span class="sw" style="background:var(--pd-dark)"></span> Planned value (PV)</span>' +
+        '<span class="ps-cc-lg"><span class="dot" style="background:#F5A623"></span> Earned value @ data date</span>' +
+        '<span class="ps-cc-lg"><span class="dot" style="background:var(--pd-red)"></span> Actual cost @ data date</span>' +
+        '<span class="ps-cc-lg"><span class="sw" style="border-top:2px dashed #9aa0a6;height:0"></span> BAC</span></div>';
+    } else { cHost.innerHTML = '<div class="ps-empty">No dated activities to plot.</div>'; }
+    if (nEl) { var MB = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; nEl.textContent = 'PV is spread linearly across each activity’s planned dates. EV/AC are shown at the data date (' + MB[dd.getMonth()] + ' ' + dd.getFullYear() + ') as points — no cost history is stored. EAC = AC + (BAC − EV) ÷ CPI.'; }
+    // ----- cost variance by WBS (roll-up from _costMap) -----
+    var wbsRows = rows.filter(isWbs).filter(function (r) { var cm = _costMap[r.wbs]; return cm && (cm.pc || cm.ac || cm.ev); });
+    var head = '<thead><tr><th>WBS</th><th>Name</th><th class="ps-num">Budget</th><th class="ps-num">Actual</th><th class="ps-num">Earned</th><th class="ps-num">Cost Var.</th><th class="ps-num">CPI</th><th class="ps-num">% Spent</th></tr></thead>';
+    var brows = wbsRows.sort(function (a, b) { return String(a.wbs).localeCompare(String(b.wbs), undefined, { numeric: true }); }).map(function (r) {
+      var cm = _costMap[r.wbs], cv = (cm.ev || 0) - (cm.ac || 0), cpi = cm.ac > 0 ? cm.ev / cm.ac : null, sp = cm.pc > 0 ? cm.ac / cm.pc * 100 : null;
+      return '<tr' + (cv < 0 ? ' class="ps-cost-wbs-over"' : '') + '><td><code>' + esc(r.wbs || '') + '</code></td><td>' + esc(r.activity_name || '') + '</td>' +
+        '<td class="ps-num">' + money(cm.pc || 0) + '</td><td class="ps-num">' + money(cm.ac || 0) + '</td><td class="ps-num">' + money(cm.ev || 0) + '</td>' +
+        '<td class="ps-num ' + vcls(cv) + '">' + sgn(cv) + '</td><td class="ps-num ' + icls(cpi) + '">' + ix(cpi) + '</td><td class="ps-num">' + (sp != null ? Math.round(sp) + '%' : '—') + '</td></tr>';
+    }).join('');
+    var totRow = '<tr class="ps-totals-row"><td colspan="2">TOTAL (' + leaves.length + ' activities)</td><td class="ps-num">' + money(BAC) + '</td><td class="ps-num">' + money(AC) + '</td><td class="ps-num">' + money(EV) + '</td><td class="ps-num ' + vcls(CV) + '">' + sgn(CV) + '</td><td class="ps-num ' + icls(CPI) + '">' + ix(CPI) + '</td><td class="ps-num">' + (BAC > 0 ? Math.round(AC / BAC * 100) + '%' : '—') + '</td></tr>';
+    wTbl.innerHTML = head + '<tbody>' + brows + totRow + '</tbody>';
   }
 
   // ----- PLANNER COCKPIT: the weekly "Monday morning" view (all from existing data) -----
@@ -6958,7 +7370,7 @@
   function openCostAccounts() { if (!pid) { UI.toast('Load a project first.', 'warn'); return; } document.getElementById('ps-cost-back').classList.add('open'); renderCostAccounts(); }
   function closeCostAccounts() { document.getElementById('ps-cost-back').classList.remove('open'); }
   function renderCostAccounts() {
-    var body = document.getElementById('ps-cost-body'); if (!body) return;
+    var body = document.getElementById('ps-cost-acct-body'); if (!body) return;
     var cnt = document.getElementById('ps-cost-count'); if (cnt) cnt.textContent = COST_ACCTS.length + ' account' + (COST_ACCTS.length === 1 ? '' : 's');
     var tree = costAcctTree();
     if (!tree.length) { body.innerHTML = '<div class="ps-ck-empty">No cost accounts yet. Use “New top-level account”. Build a breakdown (e.g. 01 Preliminaries → 01-100 Site Office) by adding child accounts. Assign accounts to resource assignments and expenses to report cost by account.</div>'; return; }
@@ -7219,63 +7631,190 @@
   }
 
   // ===== WBS MANAGER (first-class Work Breakdown Structure tree) =====
+  // Build one-pass indices for the WBS Manager render so the walk is O(N), not O(N²)/O(N·rows):
+  //  byId          — id -> node (O(1) lookup; replaces the per-node wbsById linear scan)
+  //  childrenOf    — parentId -> sorted children[] (built + sorted once)
+  //  actCount      — nodeId -> direct activity count (one pass over rows; was a full rows.filter per node)
+  //  codeOf        — dotted codes computed from childrenOf (no per-level re-scan of WBS_NODES)
+  function _wbsBuildIndex() {
+    var byId = new Map(), childrenOf = new Map(), actCount = new Map();
+    for (var i = 0; i < WBS_NODES.length; i++) { var n = WBS_NODES[i]; byId.set(n.id, n); }
+    for (var j = 0; j < WBS_NODES.length; j++) {
+      var nd = WBS_NODES[j], p = nd.parent_id || null;
+      var arr = childrenOf.get(p); if (!arr) { arr = []; childrenOf.set(p, arr); }
+      arr.push(nd);
+    }
+    childrenOf.forEach(function (arr) {
+      arr.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); });
+    });
+    for (var k = 0; k < rows.length; k++) { var r = rows[k]; if (!isWbs(r) && r.wbs_node_id) actCount.set(r.wbs_node_id, (actCount.get(r.wbs_node_id) || 0) + 1); }
+    var codeOf = {};
+    (function walk(parentId, parentCode) {
+      (childrenOf.get(parentId) || []).forEach(function (n, i) {
+        var auto = (parentCode ? parentCode + '.' : '') + (i + 1);
+        codeOf[n.id] = (n.code_custom && n.code) ? n.code : auto;
+        walk(n.id, codeOf[n.id]);
+      });
+    })(null, '');
+    return { byId: byId, childrenOf: childrenOf, actCount: actCount, codeOf: codeOf };
+  }
+  // Build one row's HTML from a flat descriptor. Shared by the full render + the virtual window.
+  function _wbsRowHTML(e) {
+    var caret = e.nKids
+      ? '<button class="ps-wbs-caret' + (e.open ? '' : ' collapsed') + '" data-wbs-toggle="' + esc(e.id) + '" title="' + (e.open ? 'Collapse' : 'Expand') + '">' + (e.open ? '▾' : '▸') + '</button>'
+      : '<span class="ps-wbs-caret leaf">▾</span>';
+    return '<div class="ps-wbs-row' + (_wbsSel === e.id ? ' selected' : '') + '" data-wid="' + esc(e.id) + '" style="padding-left:' + (8 + e.depth * 22) + 'px;">' +
+      caret +
+      '<span class="ps-wbs-code" title="' + (e.custom ? 'Custom code (click ✎ to change)' : 'Auto-numbered') + '">' + esc(e.code) + (e.custom ? ' *' : '') + '</span>' +
+      '<span class="ps-wbs-name"><input data-wbs-name="' + esc(e.id) + '" value="' + esc(e.name || '') + '" placeholder="WBS name…"></span>' +
+      '<span class="ps-wbs-badge">' + (e.nKids ? e.nKids + ' sub' + (e.nKids === 1 ? '' : 's') + ' · ' : '') + e.nAct + ' activit' + (e.nAct === 1 ? 'y' : 'ies') + '</span>' +
+      '<span class="ps-wbs-acts">' +
+        '<button class="wbs-act" data-wbs-act="' + esc(e.id) + '" title="Add an activity under this WBS">＋Act</button>' +
+        '<button data-wbs-add="' + esc(e.id) + '" title="Add child WBS">＋</button>' +
+        '<button data-wbs-up="' + esc(e.id) + '" title="Move up">▲</button>' +
+        '<button data-wbs-down="' + esc(e.id) + '" title="Move down">▼</button>' +
+        '<button data-wbs-indent="' + esc(e.id) + '" title="Indent (make child of the node above)">→</button>' +
+        '<button data-wbs-outdent="' + esc(e.id) + '" title="Outdent (promote a level)">←</button>' +
+        '<button data-wbs-code="' + esc(e.id) + '" title="Edit code">✎</button>' +
+        '<button class="danger" data-wbs-del="' + esc(e.id) + '" title="Delete">✕</button>' +
+      '</span></div>';
+  }
+  // Paint only the rows in the current scroll viewport (+buffer) from _wbsFlat, offset by translateY.
+  // This keeps the DOM small no matter how many rows are visible — broad searches / Expand-all included.
+  function _wbsRenderWindow() {
+    var host = document.getElementById('ps-wbs-tree'); if (!host) return;
+    var win = host.querySelector('.ps-wbs-win'); if (!win) return;
+    var total = _wbsFlat.length, vh = host.clientHeight || 500, top = host.scrollTop;
+    var first = Math.max(0, Math.floor(top / WBS_ROWH) - 8);
+    var last = Math.min(total, Math.ceil((top + vh) / WBS_ROWH) + 8);
+    var h = '';
+    for (var i = first; i < last; i++) h += _wbsRowHTML(_wbsFlat[i]);
+    win.style.transform = 'translateY(' + (first * WBS_ROWH) + 'px)';
+    win.innerHTML = h;
+  }
+  // Delegated listeners on the (persistent) tree container — attached once, so they survive every
+  // window re-paint (per-row onclick handlers can't, since the window's rows are recreated on scroll).
+  function _wbsWire() {
+    if (_wbsWired) return;
+    var host = document.getElementById('ps-wbs-tree'); if (!host) return;
+    _wbsWired = true;
+    host.addEventListener('scroll', function () {
+      if (_wbsScrollRaf) return; _wbsScrollRaf = true;
+      (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { _wbsScrollRaf = false; _wbsRenderWindow(); });
+    });
+    host.addEventListener('click', function (e) {
+      var row = e.target.closest('.ps-wbs-row'); if (!row) return;
+      var id = row.dataset.wid, btn = e.target.closest('button');
+      if (btn) {
+        var d = btn.dataset;
+        if (d.wbsToggle != null) { if (_wbsCollapsed[id]) delete _wbsCollapsed[id]; else _wbsCollapsed[id] = true; renderWbsManager(); }
+        else if (d.wbsAct != null) wbsAddActivity(id);
+        else if (d.wbsAdd != null) wbsAddChild(id);
+        else if (d.wbsUp != null) wbsMove(id, 'up');
+        else if (d.wbsDown != null) wbsMove(id, 'down');
+        else if (d.wbsIndent != null) wbsMove(id, 'indent');
+        else if (d.wbsOutdent != null) wbsMove(id, 'outdent');
+        else if (d.wbsCode != null) wbsEditCode(id);
+        else if (d.wbsDel != null) wbsDelete(id);
+        return;
+      }
+      if (e.target.closest('.ps-wbs-name')) return;   // clicking the name input just edits (focusin selects)
+      wbsSelect(id);
+    });
+    // Focusing a name input selects its row without a full re-render (which would blur mid-edit).
+    host.addEventListener('focusin', function (e) {
+      if (!e.target.matches || !e.target.matches('[data-wbs-name]')) return;
+      var row = e.target.closest('.ps-wbs-row'); if (!row) return;
+      _wbsSel = row.dataset.wid;
+      host.querySelectorAll('.ps-wbs-row.selected').forEach(function (r) { if (r !== row) r.classList.remove('selected'); });
+      row.classList.add('selected');
+    });
+    host.addEventListener('change', function (e) { if (e.target.matches && e.target.matches('[data-wbs-name]')) wbsRename(e.target.dataset.wbsName, e.target.value); });
+    host.addEventListener('keydown', function (e) { if (e.target.matches && e.target.matches('[data-wbs-name]') && e.key === 'Enter') e.target.blur(); });
+  }
   function renderWbsManager() {
     var host = document.getElementById('ps-wbs-tree'), cnt = document.getElementById('ps-wbs-count');
     if (!host) return;
-    if (!pid) { host.innerHTML = '<div class="ps-wbs-empty">Select a project.</div>'; if (cnt) cnt.textContent = ''; return; }
-    if (cnt) cnt.textContent = WBS_NODES.length + ' node' + (WBS_NODES.length === 1 ? '' : 's');
+    _wbsWire();
+    var savedTop = host.scrollTop;   // keep the scroll position across a full re-render (caret/rename/move)
+    if (!pid) { _wbsFlat = []; host.innerHTML = '<div class="ps-wbs-empty">Select a project.</div>'; if (cnt) cnt.textContent = ''; return; }
     var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id; }).length;
     var adoptBtn = document.getElementById('ps-wbs-adopt'); if (adoptBtn) adoptBtn.style.display = legacy ? '' : 'none';
     if (!WBS_NODES.length) {
+      _wbsFlat = [];
+      if (cnt) cnt.textContent = '';
       host.innerHTML = '<div class="ps-wbs-empty">' + (legacy ?
         'This project has ' + legacy + ' WBS summary rows from an import / the old model. Click <strong>Adopt existing WBS</strong> above to load them into the tree editor.' :
         'No WBS yet. Click <strong>Add top-level WBS</strong> to start building the structure, then add activities under any node.') + '</div>';
       return;
     }
-    var codeOf = computeWbsCodes();
-    var html = '';
-    (function walk(parentId) {
-      wbsChildren(parentId).forEach(function (n) {
-        var depth = wbsDepthOf(n.id), nAct = wbsActivityCount(n.id), nKids = wbsChildren(n.id).length;
-        html += '<div class="ps-wbs-row' + (_wbsSel === n.id ? ' selected' : '') + '" data-wid="' + esc(n.id) + '" style="padding-left:' + (8 + depth * 22) + 'px;">' +
-          '<span class="ps-wbs-code" title="' + (n.code_custom ? 'Custom code (click ✎ to change)' : 'Auto-numbered') + '">' + esc(codeOf[n.id]) + (n.code_custom ? ' *' : '') + '</span>' +
-          '<span class="ps-wbs-name"><input data-wbs-name="' + esc(n.id) + '" value="' + esc(n.name || '') + '" placeholder="WBS name…"></span>' +
-          '<span class="ps-wbs-badge">' + (nKids ? nKids + ' sub' + (nKids === 1 ? '' : 's') + ' · ' : '') + nAct + ' activit' + (nAct === 1 ? 'y' : 'ies') + '</span>' +
-          '<span class="ps-wbs-acts">' +
-            '<button class="wbs-act" data-wbs-act="' + esc(n.id) + '" title="Add an activity under this WBS">＋Act</button>' +
-            '<button data-wbs-add="' + esc(n.id) + '" title="Add child WBS">＋</button>' +
-            '<button data-wbs-up="' + esc(n.id) + '" title="Move up">▲</button>' +
-            '<button data-wbs-down="' + esc(n.id) + '" title="Move down">▼</button>' +
-            '<button data-wbs-indent="' + esc(n.id) + '" title="Indent (make child of the node above)">→</button>' +
-            '<button data-wbs-outdent="' + esc(n.id) + '" title="Outdent (promote a level)">←</button>' +
-            '<button data-wbs-code="' + esc(n.id) + '" title="Edit code">✎</button>' +
-            '<button class="danger" data-wbs-del="' + esc(n.id) + '" title="Delete">✕</button>' +
-          '</span></div>';
-        walk(n.id);
+    var idx = _wbsBuildIndex(), childrenOf = idx.childrenOf, byId = idx.byId, actCount = idx.actCount, codeOf = idx.codeOf;
+    // Large trees default to a collapsed outline (top level shown, deeper nodes folded) so we don't
+    // paint tens of thousands of rows at once. Applied once per project load.
+    if (!_wbsCollapseInit) {
+      _wbsCollapseInit = true;
+      if (WBS_NODES.length > 300) WBS_NODES.forEach(function (n) { if ((n.parent_id || null) !== null && childrenOf.get(n.id)) _wbsCollapsed[n.id] = true; });
+    }
+    // Search: reveal any node whose code/name matches, plus its ancestors (so it's reachable). While
+    // searching, collapse state is ignored on the matched path and non-matching branches are hidden.
+    var q = _wbsSearch.trim().toLowerCase(), visible = null, forceOpen = null, nMatch = 0;
+    if (q) {
+      visible = new Set(); forceOpen = new Set();
+      WBS_NODES.forEach(function (n) {
+        if ((codeOf[n.id] || '').toLowerCase().indexOf(q) >= 0 || (n.name || '').toLowerCase().indexOf(q) >= 0) {
+          nMatch++;
+          var a = n;
+          while (a) { visible.add(a.id); if (a.id !== n.id || childrenOf.get(a.id)) forceOpen.add(a.id); a = a.parent_id ? byId.get(a.parent_id) : null; }
+        }
       });
-    })(null);
-    host.innerHTML = html;
-    // Click a row (anywhere but a button) to select it — the selected WBS preselects the parent
-    // when you add an activity. The name input still selects the row (so typing a name selects it).
-    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) {
-      rw.onclick = function (e) { if (e.target.closest('button')) return; wbsSelect(rw.dataset.wid); };
-    });
-    host.querySelectorAll('[data-wbs-name]').forEach(function (inp) {
-      inp.onchange = function () { wbsRename(inp.dataset.wbsName, inp.value); };
-      inp.onkeydown = function (e) { if (e.key === 'Enter') inp.blur(); };
-    });
-    host.querySelectorAll('[data-wbs-act]').forEach(function (b) { b.onclick = function () { wbsAddActivity(b.dataset.wbsAct); }; });
-    host.querySelectorAll('[data-wbs-add]').forEach(function (b) { b.onclick = function () { wbsAddChild(b.dataset.wbsAdd); }; });
-    host.querySelectorAll('[data-wbs-up]').forEach(function (b) { b.onclick = function () { wbsMove(b.dataset.wbsUp, 'up'); }; });
-    host.querySelectorAll('[data-wbs-down]').forEach(function (b) { b.onclick = function () { wbsMove(b.dataset.wbsDown, 'down'); }; });
-    host.querySelectorAll('[data-wbs-indent]').forEach(function (b) { b.onclick = function () { wbsMove(b.dataset.wbsIndent, 'indent'); }; });
-    host.querySelectorAll('[data-wbs-outdent]').forEach(function (b) { b.onclick = function () { wbsMove(b.dataset.wbsOutdent, 'outdent'); }; });
-    host.querySelectorAll('[data-wbs-code]').forEach(function (b) { b.onclick = function () { wbsEditCode(b.dataset.wbsCode); }; });
-    host.querySelectorAll('[data-wbs-del]').forEach(function (b) { b.onclick = function () { wbsDelete(b.dataset.wbsDel); }; });
+    }
+    if (cnt) cnt.innerHTML = WBS_NODES.length + ' node' + (WBS_NODES.length === 1 ? '' : 's') +
+      (q ? '<span class="ps-wbs-matchcount">' + nMatch + ' match' + (nMatch === 1 ? '' : 'es') + '</span>' : '');
+    // Flatten the visible tree into an ordered row list (the virtual window renders slices of it).
+    var flat = [];
+    (function walk(parentId, depth) {
+      (childrenOf.get(parentId) || []).forEach(function (n) {
+        if (visible && !visible.has(n.id)) return;
+        var kids = childrenOf.get(n.id), nKids = kids ? kids.length : 0;
+        var open = q ? forceOpen.has(n.id) : !_wbsCollapsed[n.id];
+        flat.push({ id: n.id, depth: depth, code: codeOf[n.id], name: n.name, nKids: nKids, nAct: actCount.get(n.id) || 0, open: open, custom: !!n.code_custom });
+        if (nKids && open) walk(n.id, depth + 1);
+      });
+    })(null, 0);
+    _wbsFlat = flat;
+    if (!flat.length) { host.innerHTML = '<div class="ps-wbs-empty">No WBS matches “' + esc(_wbsSearch) + '”.</div>'; return; }
+    // Skeleton: spacer reserves the full scroll height; the window holds only the visible slice.
+    host.innerHTML = '<div class="ps-wbs-spacer" style="height:' + (flat.length * WBS_ROWH) + 'px;"><div class="ps-wbs-win"></div></div>';
+    host.scrollTop = _wbsSearch ? 0 : savedTop;   // searches jump to top; edits keep position (browser clamps)
+    _wbsRenderWindow();
   }
   // Persist code / name / activity-code changes across nodes + their projected WBS-Summary rows +
   // child activities, then refresh. Recomputes codes each call so any structural change re-numbers.
+  // Every wbs_nodes row MUST have a projected WBS-Summary row — that projection is the ONLY thing
+  // the Schedule grid renders (it keys off activity_type='WBS Summary' + the dotted wbs code; it
+  // never reads wbs_nodes). Nodes created while `project_schedule.wbs_node_id` was un-migrated lost
+  // their projection (the insert carried that column and failed wholesale), leaving ORPHAN nodes:
+  // present in the WBS Manager, invisible in the Project Schedule, with no repair path — "Adopt
+  // existing WBS" only runs the other way (summary rows -> nodes). Re-project anything missing.
+  // Additive + idempotent: only inserts where no summary row references the node.
+  async function _wbsEnsureSummaries() {
+    if (!pid || !canWrite || !WBS_NODES.length) return 0;
+    var have = {};
+    rows.forEach(function (r) { if (isWbs(r) && r.wbs_node_id) have[r.wbs_node_id] = true; });
+    var missing = WBS_NODES.filter(function (n) { return !have[n.id]; });
+    if (!missing.length) return 0;
+    var codeOf = computeWbsCodes(), made = 0;
+    for (var i = 0; i < missing.length; i++) {
+      var n = missing[i];
+      var res = await _insertWbsSummary({ project_id: pid, wbs_node_id: n.id, activity_type: 'WBS Summary',
+        wbs: codeOf[n.id], activity_name: n.name, created_by: UID });
+      if (res.error) { UI.toast('Could not restore the schedule row for WBS “' + esc(n.name || '') + '”: ' + res.error.message, 'error'); break; }
+      if (res.data) { rows.push(res.data); made++; }
+    }
+    return made;
+  }
   async function _wbsCommit() {
+    await _wbsEnsureSummaries();   // heal orphans before syncing codes/names onto their rows
     var codeOf = computeWbsCodes();
     var nodeUp = [], schedUp = [];   // schedUp: {id, patch} for project_schedule rows (summary + activities)
     WBS_NODES.forEach(function (n) {
@@ -7288,6 +7827,20 @@
     await _batchUpdate('wbs_nodes', nodeUp);
     await _batchUpdate(TABLE, schedUp);
     rebuild(); renderWbsManager(); renderGrid(); renderGantt();
+  }
+  // Insert a projected WBS-Summary row. `wbs_node_id` is treated as optional here for the same
+  // reason save() writes it separately (see the note above the contract_date/wbs_node_id writes):
+  // on a DB where that column was never migrated, including it in the payload fails the WHOLE
+  // insert — which used to leave the node in the tree with no Project Schedule row. Retry without
+  // it so the row (and the grid) still works; the link is then re-established by Adopt existing WBS.
+  async function _insertWbsSummary(payload) {
+    var res = await sb().from(TABLE).insert(payload).select().single();
+    if (res.error && payload.wbs_node_id && /wbs_node_id/.test(res.error.message || '')) {
+      var fallback = Object.assign({}, payload); delete fallback.wbs_node_id;
+      res = await sb().from(TABLE).insert(fallback).select().single();
+      if (!res.error) UI.toast('Saved without the WBS link — run the wbs-nodes migration.', 'warn');
+    }
+    return res;
   }
   async function _batchUpdate(table, ups) {
     for (var i = 0; i < ups.length; i += 40) {
@@ -7328,9 +7881,16 @@
       WBS_NODES.push(res.data);
       var codeOf2 = computeWbsCodes();
       // project a WBS-Summary row so the grid shows the node with its name + rolled-up dates
-      var sres = await sb().from(TABLE).insert({ project_id: pid, wbs_node_id: res.data.id, activity_type: 'WBS Summary', wbs: codeOf2[res.data.id], activity_name: name, created_by: UID }).select().single();
-      if (!sres.error && sres.data) rows.push(sres.data);
+      var sres = await _insertWbsSummary({ project_id: pid, wbs_node_id: res.data.id, activity_type: 'WBS Summary', wbs: codeOf2[res.data.id], activity_name: name, created_by: UID });
+      if (sres.error) {
+        // Never silent: without this row the node exists in the tree but the Project Schedule
+        // shows nothing — the exact symptom this used to fail with.
+        UI.toast('WBS “' + name + '” was created, but its Project Schedule row failed: ' + sres.error.message, 'error');
+        renderWbsManager(); return;
+      }
+      if (sres.data) rows.push(sres.data);
       _wbsSel = res.data.id;   // select the new node so the next Add-activity targets it
+      if (parentId) delete _wbsCollapsed[parentId];   // expand the parent so the new child is visible
       await _wbsCommit();
       UI.toast('WBS “' + name + '” added.', 'success');
     }
@@ -7425,9 +7985,17 @@
     m.el.querySelector('#wbsfp-go').onclick = async function () {
       var srcPid = m.el.querySelector('#wbsfp-proj').value; if (!srcPid) return; m.close();
       showLoading('Reading source WBS…');
-      var res = await sb().from('wbs_nodes').select('*').eq('project_id', srcPid).order('sort_order');
-      if (res.error) { hideLoading(); UI.toast('Could not read source WBS: ' + res.error.message, 'error'); return; }
-      var src = res.data || []; if (!src.length) { hideLoading(); UI.toast('That project has no WBS nodes to copy.', 'warn'); return; }
+      // Keyset-paginate (see load()): a plain select caps at 1000 and would copy a truncated tree.
+      var src = [], slast = null, serr = null;
+      while (true) {
+        var sq = sb().from('wbs_nodes').select('*').eq('project_id', srcPid).order('id', { ascending: true }).limit(1000);
+        if (slast) sq = sq.gt('id', slast);
+        var sres = await sq; if (sres.error) { serr = sres.error; break; }
+        var sb2 = sres.data || []; src = src.concat(sb2);
+        if (sb2.length < 1000) break; slast = sb2[sb2.length - 1].id;
+      }
+      if (serr) { hideLoading(); UI.toast('Could not read source WBS: ' + serr.message, 'error'); return; }
+      if (!src.length) { hideLoading(); UI.toast('That project has no WBS nodes to copy.', 'warn'); return; }
       var byId = {}; src.forEach(function (n) { byId[n.id] = n; });
       function depth(n) { var d = 0, c = n, g = 0; while (c && c.parent_id && byId[c.parent_id] && g++ < 50) { d++; c = byId[c.parent_id]; } return d; }
       src.sort(function (a, b) { return depth(a) - depth(b) || (a.sort_order || 0) - (b.sort_order || 0); });
@@ -7438,12 +8006,27 @@
         var ins = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: newParent, name: n.name || 'WBS', code: null, code_custom: false, sort_order: n.sort_order != null ? n.sort_order : i, created_by: UID }).select().single();
         if (ins.error) { hideLoading(); UI.toast('Copy failed after ' + made + ': ' + ins.error.message, 'error'); await _wbsCommit(); return; }
         map[n.id] = ins.data.id; WBS_NODES.push(ins.data); made++;
-        var sres = await sb().from(TABLE).insert({ project_id: pid, wbs_node_id: ins.data.id, activity_type: 'WBS Summary', wbs: '', activity_name: n.name || 'WBS', created_by: UID }).select().single();
-        if (!sres.error && sres.data) rows.push(sres.data);
+        var sres = await _insertWbsSummary({ project_id: pid, wbs_node_id: ins.data.id, activity_type: 'WBS Summary', wbs: '', activity_name: n.name || 'WBS', created_by: UID });
+        if (sres.error) { hideLoading(); UI.toast('Copied ' + made + ' node(s), then the Project Schedule row failed: ' + sres.error.message, 'error'); await _wbsCommit(); return; }
+        if (sres.data) rows.push(sres.data);
       }
       await _wbsCommit();
       hideLoading(); UI.toast('Copied ' + made + ' WBS node' + (made === 1 ? '' : 's') + ' from ' + (others.find(function (p) { return p.id === srcPid; }) || {}).name + '.', 'success');
     };
+  }
+  // Clearing / replacing the schedule must ALSO drop the WBS tree. `wbs_nodes` is a separate table and
+  // the grid's WBS rows are only a PROJECTION of it, so deleting project_schedule alone leaves every
+  // node behind — and load()'s _wbsEnsureSummaries() then faithfully re-projects them, which is why a
+  // Clear looked like it "did nothing". The same leftovers are what a re-import adopts a SECOND time
+  // into new nodes, duplicating every WBS level. Tolerant: a DB without the wbs-nodes migration has no
+  // table to clear, which is not an error.
+  async function _clearWbsTree() {
+    try {
+      var res = await sb().from('wbs_nodes').delete().eq('project_id', pid);
+      if (res.error && !/wbs_nodes|does not exist|schema cache|PGRST/i.test(res.error.message || '')) return res.error;
+    } catch (e) {}
+    WBS_NODES = [];
+    return null;
   }
   // One-time bridge: build the tree from existing project_schedule WBS-Summary rows (import / legacy),
   // preserving their exact codes (as custom) + names, then link summary rows + matching activities.
@@ -7464,7 +8047,12 @@
     var depths = Object.keys(byDepth).map(Number).sort(function (a, b) { return a - b; });
     for (var di = 0; di < depths.length; di++) {
       var group = byDepth[depths[di]];
-      var payloads = group.map(function (r) {
+      // A code that ALREADY has a node must be linked, not re-inserted. Without this filter, adopting
+      // over a surviving tree (e.g. a re-import, which replaces project_schedule but historically left
+      // wbs_nodes untouched) inserts a second node for every code — the duplicated WBS levels. The
+      // link loop below resolves each code through nodeByCode, so an existing node is picked up and
+      // the fresh summary row is attached to it instead.
+      var payloads = group.filter(function (r) { return !nodeByCode[String(r.wbs)]; }).map(function (r) {
         var code = String(r.wbs), parentCode = code.split('.').slice(0, -1).join('.');
         var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;
         var k = parentId || '', so = (sibCount[k] || 0); sibCount[k] = so + 1;
@@ -7753,6 +8341,113 @@
     var vh = sc.clientHeight, y = idx * ROWH;
     if (y < sc.scrollTop || y > sc.scrollTop + vh - ROWH) sc.scrollTop = Math.max(0, y - Math.floor(vh / 2));
   }
+  // Excel-style minimal autoscroll: reveal DL row `idx` by scrolling just enough (row sticks to the
+  // top edge when moving up past the viewport, to the bottom edge when moving down past it), rather
+  // than re-centering like scrollSelIntoView. Used by the arrow-key navigation below.
+  // How many whole rows fit in the grid viewport — the PageUp/PageDown jump distance.
+  function _gridPageRows() { var sc = document.getElementById('ps-grid-scroll'); var vh = sc ? sc.clientHeight : 600; return Math.max(1, Math.floor(vh / ROWH) - 1); }
+  function scrollRowVisible(idx) {
+    var sc = document.getElementById('ps-grid-scroll'); if (!sc) return;
+    var vh = sc.clientHeight, y = idx * ROWH;
+    if (y < sc.scrollTop) sc.scrollTop = y;                         // row is above the viewport → pin to top
+    else if (y + ROWH > sc.scrollTop + vh) sc.scrollTop = y + ROWH - vh; // below the viewport → pin to bottom
+  }
+  // Arrow-key row selection (Excel-like). `delta` moves the active row by N visible DL rows (±1 for
+  // Up/Down, ±page for PageUp/Down); `absolute` (0 = Home / DL.length-1 = End) jumps to a row. Skips
+  // group-header rows that have no id. With `extend` (Shift held), grows the multi-row selection from
+  // the anchor; otherwise it's a single-row move. Autoscrolls the grid to keep the row visible.
+  function moveRowSel(delta, extend, absolute) {
+    if (!DL.length) return;
+    // current index of the active row within the visible display list
+    var cur = -1; for (var i = 0; i < DL.length; i++) { if (DL[i].id && DL[i].id === selId) { cur = i; break; } }
+    if (cur < 0) cur = (delta > 0 || absolute != null) ? -1 : 0;    // no selection yet → Down starts at row 0
+    var target = (absolute != null) ? absolute : cur + delta;
+    target = Math.max(0, Math.min(DL.length - 1, target));
+    // skip over id-less rows (group headers) in the direction of travel so navigation never dead-ends
+    var step = (absolute != null) ? (absolute === 0 ? 1 : -1) : (delta >= 0 ? 1 : -1);
+    while (target >= 0 && target < DL.length && !DL[target].id) target += step;
+    if (target < 0 || target >= DL.length || !DL[target].id) return;
+    var nd = DL[target];
+    selId = nd.id;
+    if (extend) { if (!_selAnchor) _selAnchor = (cur >= 0 && DL[cur] ? DL[cur].id : nd.id); _selRange(_selAnchor, nd.id); _selSet.add(nd.id); }
+    else {
+      _selSet = new Set([nd.id]); _selAnchor = nd.id;
+      // Preserve the active-cell column while moving down/up (Excel-style), and paint the active cell.
+      var col = _cellAnchor ? _cellAnchor.c : (_cellSel ? Math.min(_cellSel.c0, _cellSel.c1) : 0);
+      if (!_colShown(col)) col = _firstVisCol();   // never park the cursor on a hidden column
+      _cellAnchor = { r: target, c: col };
+      _cellSel = { r0: target, c0: col, r1: target, c1: col };
+    }
+    scrollRowVisible(target);
+    highlightRow();
+    renderDetails();
+  }
+  // Horizontal active-cell navigation (Excel-style). `dc` = ±1 column; `tab` wraps to the next/prev
+  // row at the row ends; `extend` (Shift) grows the cell rectangle from the anchor. Keeps the row
+  // selection in sync when a Tab wraps to another row, and autoscrolls the cell into view.
+  function moveCell(dc, tab, extend) {
+    if (!DL.length) return;
+    var ncol = gridCols().length, r, c, seeded = false;
+    if (_cellAnchor) { r = _cellAnchor.r; c = _cellAnchor.c; }
+    else {
+      // no active cell yet — seed it on the selected row (or the first real row), just placing the cursor
+      r = -1; for (var i = 0; i < DL.length; i++) { if (DL[i].id && DL[i].id === selId) { r = i; break; } }
+      if (r < 0) { for (var j = 0; j < DL.length; j++) { if (DL[j].id) { r = j; break; } } }
+      if (r < 0) return; c = _firstVisCol(); seeded = true;
+    }
+    var nc = seeded ? c : _nextVisCol(c, dc >= 0 ? 1 : -1), nr = r;
+    if (!seeded && tab) {
+      if (nc >= ncol) { nc = _firstVisCol(); nr = _nextRowIdx(r, 1); }        // wrap to next row
+      else if (nc < 0) { nc = _lastVisCol(); nr = _nextRowIdx(r, -1); }       // wrap to previous row
+    } else if (nc >= ncol || nc < 0) { nc = c; }                              // arrows: no further visible column → stay put
+    if (extend && _cellAnchor && !seeded) { _cellSel = { r0: _cellAnchor.r, c0: _cellAnchor.c, r1: nr, c1: nc }; }
+    else { _cellAnchor = { r: nr, c: nc }; _cellSel = { r0: nr, c0: nc, r1: nr, c1: nc }; }
+    var rowChanged = nr !== r;
+    if (rowChanged) { var d = DL[nr]; if (d && d.id) { selId = d.id; _selSet = new Set([d.id]); _selAnchor = d.id; } }
+    scrollRowVisible(nr);
+    highlightRow();
+    if (rowChanged) renderDetails();
+    (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { scrollCellVisible(nr, nc); highlightCells(); });
+  }
+  // Next display-list row index in direction `step`, skipping id-less group headers; stays put if none.
+  function _nextRowIdx(from, step) { var i = from + step; while (i >= 0 && i < DL.length && !DL[i].id) i += step; return (i >= 0 && i < DL.length && DL[i].id) ? i : from; }
+  // Column visibility (same source of truth as the Columns chooser / applyColHidden's nth-child rules).
+  // Keyboard navigation must SKIP hidden columns — otherwise ←/→/Tab march the cursor through
+  // zero-width `display:none` cells and the active-cell box appears to vanish for several presses.
+  function _colShown(ci) { var cs = gridCols(); return ci >= 0 && ci < cs.length && !colHidden[colKey(cs[ci])]; }
+  function _nextVisCol(from, step) { var i = from + step, n = gridCols().length; while (i >= 0 && i < n && !_colShown(i)) i += step; return i; }
+  function _firstVisCol() { var n = gridCols().length; for (var i = 0; i < n; i++) if (_colShown(i)) return i; return 0; }
+  function _lastVisCol() { for (var i = gridCols().length - 1; i >= 0; i--) if (_colShown(i)) return i; return 0; }
+  // Horizontal autoscroll: reveal grid column `c` of the (rendered) row `r`. The leading columns
+  // (# gutter, Activity ID, Activity Name) are position:sticky — they float OVER the scrolled content
+  // and cover the left edge of the viewport. So a non-frozen cell can be inside the scroll viewport
+  // yet still HIDDEN behind those sticky columns. The visible area for a scrollable cell therefore
+  // starts `frozen` px in from the left, not at 0 — the previous check ignored that (and also scrolled
+  // pointlessly when the target itself was a frozen column), which is why Left/Right/Tab didn't reveal
+  // cells correctly.
+  function scrollCellVisible(r, c) {
+    var host = document.getElementById('ps-grid-rows'), sc = document.getElementById('ps-grid-scroll');
+    if (!host || !sc) return;
+    var rw = host.querySelector('.ps-grid-row[data-i="' + r + '"]'); if (!rw) return;
+    var cell = rw.children[c + 1]; if (!cell) return;                 // child 0 = "#" gutter
+    // Frozen columns are always on-screen (sticky) — never scroll for them.
+    if (cell.classList.contains('c-num') || cell.classList.contains('c-id') || cell.classList.contains('c-name')) return;
+    // Width of the sticky columns that overlay the left edge (#, ID, Name — hidden ones measure 0).
+    var frozen = 0; for (var k = 0; k < 3; k++) { if (rw.children[k]) frozen += rw.children[k].offsetWidth; }
+    var left = cell.offsetLeft, right = left + cell.offsetWidth;
+    // Obscured on the left (tucked under the frozen columns) → bring it just past them.
+    if (left - sc.scrollLeft < frozen) sc.scrollLeft = Math.max(0, left - frozen - 4);
+    // Off the right edge → bring its right edge into view.
+    else if (right - sc.scrollLeft > sc.clientWidth) sc.scrollLeft = right - sc.clientWidth + 4;
+  }
+  // Enter/F2: begin inline editing of the active cell (if it's an editable column).
+  function editActiveCell() {
+    if (!_cellAnchor) return;
+    var host = document.getElementById('ps-grid-rows'); if (!host) return;
+    var rw = host.querySelector('.ps-grid-row[data-i="' + _cellAnchor.r + '"]'); if (!rw) return;
+    var cell = rw.children[_cellAnchor.c + 1];
+    if (cell && cell.classList.contains('ps-editable')) beginEdit(cell);
+  }
   // Next Activity ID for a new activity under WBS `wbs`, scoped to that WBS as "<wbs>-A<num>" with
   // num in increments of 10 starting at 1000 (e.g. 1.1 → 1.1-A1000, then 1.1-A1010). Continues from
   // the highest number already used under that same WBS prefix; guarantees project-wide uniqueness.
@@ -7771,8 +8466,6 @@
   }
 
   // ----- tabs / view switch -----
-<<<<<<< Updated upstream
-=======
   // ======================================================================
   //  SCHEDULE BUILDER — bottom-up / location-based schedule setup (steps 1-7).
   //  Self-contained closure (own helpers, no collision with the module's).
@@ -8291,25 +8984,25 @@
     return { open: open, save: save, isDirty: isDirty };
   })();
 
->>>>>>> Stashed changes
   function switchTab(tab) {
     activeTab = tab;
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     document.getElementById('ps-view-cost').style.display = tab === 'cost' ? '' : 'none';
     document.getElementById('ps-view-planner').style.display = tab === 'planner' ? '' : 'none';
-    document.getElementById('ps-view-lastplanner').style.display = tab === 'lastplanner' ? '' : 'none';
     document.getElementById('ps-view-wbs').style.display = tab === 'wbs' ? '' : 'none';
+    var vb = document.getElementById('ps-view-builder'); if (vb) vb.style.display = tab === 'builder' ? '' : 'none';
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Cockpit or Cost table.
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'cost' ? 'Cost Loading' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'lastplanner' ? 'Last Planner' : (tab === 'wbs' ? 'WBS Manager' : 'Project Schedule')));
+    var name = tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Builder' : 'Project Schedule')));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
-    applyColHidden();   // hidden-column rules differ per view (Schedule grid vs Cost table)
-    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'lastplanner') openLastPlanner(); else if (tab === 'wbs') renderWbsManager(); else renderPlanner();
+    applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
+    // Planner Cockpit now hosts the Last Planner weekly section too — render both.
+    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'wbs') renderWbsManager(); else if (tab === 'builder') ScheduleBuilder.open(pid, UID); else { renderPlanner(); openLastPlanner(); }
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
@@ -9377,6 +10070,7 @@
     var ri = parseInt(rw.dataset.i, 10); if (isNaN(ri)) return;
     var cellEl = e.target && e.target.closest ? e.target.closest('.ps-cell') : null; if (!cellEl) return;
     var ci = Array.prototype.indexOf.call(rw.children, cellEl) - 1; if (ci < 0 || ci >= gridCols().length) return;
+    _resetEntry();   // a mouse click starts a fresh entry context
     if (e.shiftKey && _cellAnchor) { _cellSel = { r0: _cellAnchor.r, c0: _cellAnchor.c, r1: ri, c1: ci }; }
     else { _cellAnchor = { r: ri, c: ci }; _cellSel = { r0: ri, c0: ci, r1: ri, c1: ci }; }
   }
@@ -9728,6 +10422,10 @@
   AppAuth.requireLogin(function (user, profile) {
     UID = (user && user.id) || (profile && profile.id) || null;
     isAdmin = !!(profile && (profile.role === 'admin' || profile.role === 'super_admin'));
+    canWrite = !!(profile && ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1);
+    // Read-only guards (were read in ~8 edit paths but never assigned): a 'viewer' is
+    // read-only per the roles model; __archived is set per-project in load().
+    window.__viewOnly = !!(profile && profile.role === 'viewer');
     var clrBtn = document.getElementById('ps-clear'); if (clrBtn && !isAdmin) clrBtn.style.display = 'none';
     UI.renderUserBar(profile);
     UI.initShell();
@@ -9774,6 +10472,23 @@
     document.getElementById('ps-title-btn').onclick = function (e) { e.stopPropagation(); var o = tMenu.classList.contains('open'); closeMenus(); if (!o) tMenu.classList.add('open'); };
     tMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     tMenu.querySelectorAll('[data-tab]').forEach(function (b) { b.onclick = function () { tMenu.classList.remove('open'); switchTab(b.dataset.tab); }; });
+    // ---- Collapsible Last Planner section (persisted) ----
+    (function () {
+      var tgl = document.getElementById('ps-lp-toggle'), sec = document.getElementById('ps-lp-section');
+      if (!tgl || !sec) return;
+      var collapsed = false; try { collapsed = localStorage.getItem('ps_lp_collapsed') === '1'; } catch (e) {}
+      function apply() {
+        tgl.classList.toggle('collapsed', collapsed);
+        sec.classList.toggle('collapsed', collapsed);
+        tgl.setAttribute('aria-expanded', String(!collapsed));
+      }
+      apply();
+      tgl.onclick = function () {
+        collapsed = !collapsed;
+        try { localStorage.setItem('ps_lp_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+        apply();
+      };
+    })();
     // ---- Layout menu (view arrangement, like OPC's Layout / grid settings) ----
     try { layoutMode = localStorage.getItem('ps_layout') || 'split'; } catch (e) {}
     var detailsHidden = false; try { detailsHidden = localStorage.getItem('ps_details_hidden') === '1'; } catch (e) {}
@@ -9836,8 +10551,30 @@
     document.getElementById('ps-layoutbtn').onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { renderLayoutMenu(); lMenu.classList.add('open'); } };
     var pgBtn = document.getElementById('ps-progressbtn'); if (pgBtn) pgBtn.onclick = function (e) { e.stopPropagation(); closeMenus(); setProgressMode(!progressMode); };
     lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.getElementById('ps-colsbtn').onclick = function (e) { e.stopPropagation(); var o = colsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColsMenu(); colsMenu.classList.add('open'); } };
+    // `.ps-split` sets overflow:hidden, and the chooser is absolutely positioned inside
+    // `.ps-grid-pane` within it — so the menu was CLIPPED at the split's bottom edge, which is
+    // wherever the details panel happens to push it. Its own overflow-y:auto couldn't help: the
+    // ancestor did the clipping, so the scrollable remainder was unreachable. Pin it to the
+    // VIEWPORT on open (escapes every ancestor's overflow) and cap its height to the real space
+    // below the button — same approach openRowMenu already uses for the row context menu.
+    function positionColsMenu() {
+      var btn = document.getElementById('ps-colsbtn'); if (!btn) return;
+      var r = btn.getBoundingClientRect();
+      colsMenu.style.position = 'fixed';
+      colsMenu.style.left = 'auto';
+      colsMenu.style.top = Math.round(r.bottom + 4) + 'px';
+      colsMenu.style.right = Math.round(window.innerWidth - r.right) + 'px';
+      colsMenu.style.maxHeight = Math.max(180, Math.round(window.innerHeight - r.bottom - 16)) + 'px';
+    }
+    document.getElementById('ps-colsbtn').onclick = function (e) { e.stopPropagation(); var o = colsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColsMenu(); colsMenu.classList.add('open'); positionColsMenu(); } };
     colsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    // Fixed positioning is viewport-relative, so it must re-anchor if anything moves under it.
+    // Capture phase catches scrolls in any ancestor (the page, the grid pane), not just window.
+    (function () {
+      var sync = function () { if (colsMenu.classList.contains('open')) positionColsMenu(); };
+      window.addEventListener('resize', sync);
+      window.addEventListener('scroll', sync, true);
+    })();
     // Reports modal (OPC "Select Report to Run")
     document.getElementById('ps-report').onclick = function (e) { e.stopPropagation(); openReports(); };
     document.getElementById('ps-rep-x').onclick = closeReports;
@@ -9872,7 +10609,11 @@
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       var mod = document.getElementById('ps-modal');
       if (mod && getComputedStyle(mod).display !== 'none') return;
-      if (document.querySelector('.pd-modal-overlay, .ps-back.open, .ps-rep-back.open')) return;
+      // Bail only for overlays that are actually VISIBLE. `#ps-modal` itself carries .pd-modal-overlay
+      // and is always in the DOM (just display:none), so a bare presence check here matched it and
+      // disabled EVERY grid shortcut. Check offsetParent so a hidden overlay never blocks navigation.
+      var _ovs = document.querySelectorAll('.pd-modal-overlay, .ps-back.open, .ps-rep-back.open');
+      for (var _oi = 0; _oi < _ovs.length; _oi++) { if (_ovs[_oi].offsetParent !== null) return; }
       var sv = document.getElementById('ps-view-schedule');
       if (!sv || sv.offsetParent === null) return;           // Schedule view not visible
       if (window.__viewOnly || window.__archived) return;
@@ -9887,10 +10628,36 @@
         if (_cellSel) { var _ci = _cellSel.c0, _meta = _CELL_META[_ci]; var _src = DL[_cellSel.r0];
           if (_meta && _meta.f && _meta.edit && _src && _src._dkind === 'task') { e.preventDefault(); fillDown(_meta.f, _src); } }
       }
+      // Plain navigation breaks the Tab/Enter entry chain (re-anchors on the next fresh edit).
+      else if (!ctrl && k === 'ArrowDown') { e.preventDefault(); _resetEntry(); moveRowSel(1, e.shiftKey); }
+      else if (!ctrl && k === 'ArrowUp') { e.preventDefault(); _resetEntry(); moveRowSel(-1, e.shiftKey); }
+      else if (!ctrl && k === 'ArrowRight') { e.preventDefault(); _resetEntry(); moveCell(1, false, e.shiftKey); }
+      else if (!ctrl && k === 'ArrowLeft') { e.preventDefault(); _resetEntry(); moveCell(-1, false, e.shiftKey); }
+      else if (!ctrl && k === 'Tab') { e.preventDefault(); moveCell(e.shiftKey ? -1 : 1, true, false); }   // keeps the entry chain
+      // Ready-mode Enter drops a row and returns to the entry column (Excel); F2 edits in place.
+      else if (!ctrl && k === 'Enter') { e.preventDefault(); if (_cellAnchor && _entryCol !== null) _cellAnchor.c = _entryCol; moveRowSel(e.shiftKey ? -1 : 1, false); }
+      else if (!ctrl && k === 'F2') { e.preventDefault(); editActiveCell(); }
+      else if (!ctrl && k === 'PageDown') { e.preventDefault(); _resetEntry(); moveRowSel(_gridPageRows(), e.shiftKey); }
+      else if (!ctrl && k === 'PageUp') { e.preventDefault(); _resetEntry(); moveRowSel(-_gridPageRows(), e.shiftKey); }
+      else if (!ctrl && k === 'Home') { e.preventDefault(); _resetEntry(); moveRowSel(0, e.shiftKey, 0); }
+      else if (!ctrl && k === 'End') { e.preventDefault(); _resetEntry(); moveRowSel(0, e.shiftKey, DL.length - 1); }
       else if (!ctrl && k === 'Insert') { e.preventDefault(); if (pid) openForm(null); }
       else if (!ctrl && (k === 'Delete' || k === 'Backspace')) { if (_selectedTaskRows().length) { e.preventDefault(); deleteSelected(); } }
-      else if (!ctrl && k === 'Escape') { if (_selSet.size || _cellSel) { _selSet = new Set(); _cellSel = null; _cellAnchor = null; highlightRow(); } }
+      else if (!ctrl && k === 'Escape') { _resetEntry(); if (_selSet.size || _cellSel) { _selSet = new Set(); _cellSel = null; _cellAnchor = null; highlightRow(); } }
       else if (!ctrl && (k === '?' || (k === '/' && e.shiftKey))) { e.preventDefault(); openShortcuts(); }
+      // Excel type-to-edit: a printable key over a ready editable active cell starts editing seeded
+      // with that character, so you can keep typing down/across a column without F2 each time.
+      else if (!ctrl && !e.altKey && e.key && e.key.length === 1 && _cellAnchor) {
+        var _host = document.getElementById('ps-grid-rows');
+        var _rw = _host && _host.querySelector('.ps-grid-row[data-i="' + _cellAnchor.r + '"]');
+        var _cel = _rw && _rw.children[_cellAnchor.c + 1];
+        if (_cel && _cel.classList.contains('ps-editable')) {
+          e.preventDefault(); beginEdit(_cel);
+          var _in = _cel.querySelector('input');
+          if (_in) { if (_in.type === 'text' || (_in.type === 'number' && /[0-9.\-]/.test(e.key))) { _in.value = e.key; }
+            try { _in.setSelectionRange(_in.value.length, _in.value.length); } catch (_e) {} }
+        }
+      }
     });
     document.getElementById('ps-health-close').onclick = closeHealthPanel;
     document.getElementById('ps-health-backdrop').onclick = closeHealthPanel;
@@ -10032,6 +10799,19 @@
     document.getElementById('ps-lp-add').onclick = function () { openCommitmentForm(null); };
     document.getElementById('ps-wbs-addroot').onclick = wbsAddRoot;
     document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
+    document.getElementById('ps-wbs-expand').onclick = function () { _wbsCollapsed = {}; renderWbsManager(); };
+    document.getElementById('ps-wbs-collapse').onclick = function () {
+      _wbsCollapsed = {}; WBS_NODES.forEach(function (n) { if ((n.parent_id || null) === null) _wbsCollapsed[n.id] = true; });
+      // collapse every node that has children, leaving only the top level visible
+      var hasKids = {}; WBS_NODES.forEach(function (n) { if (n.parent_id) hasKids[n.parent_id] = true; });
+      WBS_NODES.forEach(function (n) { if (hasKids[n.id]) _wbsCollapsed[n.id] = true; });
+      renderWbsManager();
+    };
+    (function () {
+      var si = document.getElementById('ps-wbs-search'); if (!si) return;
+      var t = null;
+      si.oninput = function () { clearTimeout(t); t = setTimeout(function () { _wbsSearch = si.value; renderWbsManager(); }, 180); };
+    })();
     document.getElementById('ps-crit').onclick = function () {
       critMode = !critMode;
       document.getElementById('ps-crit').classList.toggle('active', critMode);
@@ -10060,9 +10840,9 @@
       if (!isAdmin) { UI.toast('Clearing the schedule is restricted to admins.', 'error'); return; }
       if (!pid) { UI.toast('Select a project first.', 'error'); return; }
       var m = UI.modal('<h2 style="margin-top:0;">Clear schedule</h2>' +
-        '<p style="color:var(--pd-muted);font-size:13px;">This permanently deletes <strong>all activities</strong> for project <strong>' + esc(pid) + '</strong> and cannot be undone. To confirm, type the project code below.</p>' +
+        '<p style="color:var(--pd-muted);font-size:13px;">This permanently deletes <strong>all activities and the entire WBS tree</strong> for project <strong>' + esc(pid) + '</strong> and cannot be undone. To confirm, type the project code below.</p>' +
         '<input class="pd-input" id="ps-clr-in" placeholder="Type ' + esc(pid) + ' to confirm" autocomplete="off" />' +
-        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-clr-x">Cancel</button> <button class="pd-btn pd-btn-danger" id="ps-clr-go" disabled>Delete all activities</button></div>');
+        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-clr-x">Cancel</button> <button class="pd-btn pd-btn-danger" id="ps-clr-go" disabled>Delete all activities + WBS</button></div>');
       var inp = m.el.querySelector('#ps-clr-in'), go = m.el.querySelector('#ps-clr-go');
       inp.oninput = function () { go.disabled = inp.value.trim() !== String(pid); };
       inp.focus();
@@ -10071,9 +10851,14 @@
         if (inp.value.trim() !== String(pid)) return;
         m.close(); showLoading('Clearing schedule…');
         var del = await sb().from(TABLE).delete().eq('project_id', pid);
+        if (del.error) { hideLoading(); UI.toast(del.error.message, 'error'); return; }
+        // Must drop the tree too, or load()'s _wbsEnsureSummaries() re-projects every surviving node
+        // and the WBS rows come straight back — the "Clear did nothing" report.
+        var werr = await _clearWbsTree();
         hideLoading();
-        if (del.error) { UI.toast(del.error.message, 'error'); return; }
-        UI.toast('Schedule cleared.', 'success'); collapsed = {}; resetUndo(); load();
+        if (werr) { UI.toast('Activities cleared, but the WBS tree could not be: ' + werr.message, 'error'); }
+        else { UI.toast('Schedule and WBS cleared.', 'success'); }
+        collapsed = {}; _wbsSel = null; resetUndo(); load();
       };
     };
     // Labeled-mode toggle: reveals text labels on the view icon buttons (persisted).

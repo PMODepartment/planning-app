@@ -1,0 +1,142 @@
+/* Stakeholder Map module styles — all classes prefixed .sm- to avoid collisions.
+   Structure mirrors risk-register (the reference CRUD + matrix module). */
+
+/* ---- Shared topbar chrome (VERBATIM from drawing-register/module.css) -----
+   Every uniform module carries this block. Without it the topbar inherits
+   dashboard.css's `gap:14px` with no wrapping, the avatar loses its left
+   divider, and theme.js's injected toggle keeps its default size instead of
+   matching the 34x34 tool buttons — which reads as "the buttons beside the
+   profile icon are misplaced". Do not drop it when copying this module. */
+.pd-content { width:100%; }
+.pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
+.pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+.pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+
+/* ---- Topbar: back / title / project / tabs / tools ---------------------- */
+.sm-modback { width:36px; height:36px; padding:0; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+.sm-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; }
+.sm-title .sm-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
+.sm-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+.sm-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+.sm-project:hover, .sm-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+.sm-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
+.sm-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600; font-size:13px; cursor:pointer; font-family:var(--pd-font); transition:background .12s; white-space:nowrap; }
+.sm-tab + .sm-tab { border-left:1px solid var(--pd-line); }
+.sm-tab:hover:not(.active) { background:var(--pd-bg); }
+.sm-tab.active { background:var(--pd-red); color:#fff; }
+.sm-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
+.sm-topbar-tools .pd-btn { height:34px; display:inline-flex; align-items:center; justify-content:center; }
+.sm-topbar-tools .pd-btn.sm-tb-labeled { padding:0 12px; gap:6px; }
+.sm-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+.sm-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
+@media (max-width:820px) { .sm-title-txt { display:none; } }
+
+/* ---- Filter bar (card, matches the suite) ------------------------------ */
+.sm-filters {
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px;
+  background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px;
+}
+.sm-filt-ico { color:var(--pd-muted); flex:none; }
+.sm-filters .pd-input, .sm-filters .pd-select { height:34px; font-size:13px; }
+.sm-filters .sm-search { flex:1 1 220px; min-width:160px; }
+.sm-clear { border:0; background:transparent; color:var(--pd-muted); cursor:pointer; height:34px;
+  display:none; align-items:center; gap:4px; padding:0 8px; border-radius:var(--pd-radius); font-family:var(--pd-font); }
+.sm-clear:hover { background:var(--pd-bg); color:var(--pd-ink); }
+.sm-clear.show { display:inline-flex; }
+
+/* ---- KPIs -------------------------------------------------------------- */
+.sm-kpis { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:18px; }
+.sm-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  box-shadow:var(--pd-shadow); padding:14px 16px; }
+.sm-kpi-val { font-size:26px; font-weight:800; line-height:1; }
+.sm-kpi-label { color:var(--pd-muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin-top:6px; }
+.sm-kpi.sm-manage .sm-kpi-val { color:var(--pd-red); }
+.sm-kpi.sm-satisfy .sm-kpi-val { color:#d97706; }
+.sm-kpi.sm-catchup .sm-kpi-val { color:#2563eb; }
+
+/* ---- Table ------------------------------------------------------------- */
+.sm-table { min-width:1180px; }   /* many columns — scrolls inside its card */
+.sm-table td .sm-sub { color:var(--pd-muted); font-size:12px; margin-top:2px;
+  max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-table td.sm-num { text-align:center; white-space:nowrap; }
+.sm-nick { color:var(--pd-muted); font-weight:600; font-size:12px; }
+.sm-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:700; font-size:12px; color:#fff; white-space:nowrap; }
+.sm-cat { display:inline-block; padding:1px 8px; border-radius:6px; font-size:12px; font-weight:600;
+  background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
+.sm-strat { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:700; color:#fff; white-space:nowrap; }
+.sm-strat.sm-sCatchup { background:#dc2626; }
+.sm-strat.sm-sEnhance { background:#d97706; }
+.sm-strat.sm-sMaintain { background:#16a34a; }
+
+/* Importance rank colours — ONLY on pills and grid cells, never the KPI cards. */
+.sm-pill.sm-imp-1, .sm-gcell.sm-imp-1 { background:#dc2626; }   /* 1st Manage Closely */
+.sm-pill.sm-imp-2, .sm-gcell.sm-imp-2 { background:#d97706; }   /* 2nd Keep Satisfied */
+.sm-pill.sm-imp-3, .sm-gcell.sm-imp-3 { background:#2563eb; }   /* 3rd Keep Informed  */
+.sm-pill.sm-imp-4, .sm-gcell.sm-imp-4 { background:#6b7280; }   /* 4th Monitor        */
+
+/* ---- Add/Edit form sections ------------------------------------------- */
+.sm-form-sec { font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--pd-muted); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--pd-line); }
+.sm-form-sec:first-of-type { margin-top:8px; }
+.sm-derived { text-transform:none; letter-spacing:0; font-weight:700; color:var(--pd-red); margin-left:8px; }
+.sm-frow { display:flex; gap:10px; flex-wrap:wrap; }
+.sm-frow .pd-field { min-width:120px; }
+
+/* ---- Impact / Interest grid (4×4) ------------------------------------- */
+.sm-grid-wrap { overflow-x:auto; }
+.sm-grid { border-collapse:separate; border-spacing:6px; margin:6px auto; }
+.sm-grid th.sm-axis { color:var(--pd-muted); font-size:12px; font-weight:700; padding:4px; }
+.sm-grid th.sm-axis-y { writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; }
+.sm-gcell {
+  width:160px; height:118px; vertical-align:top; text-align:left; color:#fff;
+  border-radius:8px; padding:8px; cursor:pointer; transition:transform .06s ease, filter .12s;
+  border:2px solid transparent;
+}
+.sm-gcell:hover { filter:brightness(1.06); }
+.sm-gcell.sm-cell-active { outline:3px solid var(--pd-ink); outline-offset:-3px; }
+.sm-gcell-strat { font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:.03em; opacity:.95; }
+.sm-gcell-count { float:right; font-weight:800; font-size:12px; background:rgba(0,0,0,.18); border-radius:999px; padding:0 7px; }
+.sm-gchips { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+.sm-gchip { background:rgba(255,255,255,.22); border-radius:5px; padding:2px 6px; font-size:12px; font-weight:600;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-gchip.sm-more { background:transparent; font-weight:700; opacity:.9; }
+.sm-grid-empty { color:rgba(255,255,255,.7); font-size:12px; font-style:italic; margin-top:4px; }
+
+/* Legend */
+.sm-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:14px; }
+.sm-leg { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); }
+.sm-leg-sw { width:14px; height:14px; border-radius:4px; flex:none; }
+
+.sm-gcell-strat { line-height:1.2; }
+@media (max-width:700px) { .sm-kpis { grid-template-columns:repeat(2,1fr); } .sm-gcell { width:118px; height:110px; } }
+
+/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
+   Shared chrome comes from dashboard.css. Same treatment as risk-register:
+   the register is read-mostly (editing is modal-based), so below 700px each
+   row becomes a card with cells labelled from data-l (set in module.js).
+   14 columns at min-width:1180px is otherwise ~3 screens of side-scrolling.
+
+   NOTE: written as '.pd-table.sm-table' to outrank the shared '.pd-table'
+   phone scroller rule — see the risk-register note.
+   -------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  .pd-table.sm-table { display: block; min-width: 0; overflow-x: visible; white-space: normal; background: none; }
+  .sm-table thead { display: none; }
+  .sm-table tbody { display: block; }
+  .sm-table tr { display: block; margin-bottom: 10px; padding: 12px;
+    background: var(--pd-card); border: 1px solid var(--pd-line);
+    border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); }
+  .sm-table tr:hover td { background: none; }
+  .sm-table td { display: block; border: 0; padding: 3px 0; white-space: normal; font-size: 13px; text-align: left; }
+  .sm-table td[data-l]::before { content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: 12px; }
+  .sm-table td.sm-c-name { font-size: 14px; padding-bottom: 6px; }
+  /* .sm-num is right-aligned for column comparison on desktop; in a stacked
+     card there is no column to align to, so it reads as a stray indent. */
+  .sm-table td.sm-num { text-align: left; }
+  .sm-table td.sm-rowacts { display: flex; gap: 8px; margin-top: 8px; white-space: normal !important; }
+  .sm-table td.sm-rowacts .pd-btn { flex: 1 1 auto; justify-content: center; }
+  .sm-table td[colspan] { text-align: center; }
+  .sm-filters { flex-wrap: wrap; gap: 8px; }
+  .sm-filters > * { flex: 1 1 100%; min-width: 0; }
+}

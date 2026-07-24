@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
-  <script src="assets/js/theme.js?v=20260712"></script>
+  <script src="assets/js/theme.js?v=20260724a"></script>
   <title>Projects — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260712" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260724a" />
 </head>
 <body>
   <div class="pd-app">
@@ -74,21 +74,23 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260712"></script>
-  <script src="assets/js/auth.js?v=20260712"></script>
-  <script src="assets/js/db.js?v=20260712"></script>
-  <script src="assets/js/ui.js?v=20260712"></script>
-  <script src="assets/js/icons.js?v=20260712"></script>
+  <script src="assets/js/config.js?v=20260724a"></script>
+  <script src="assets/js/auth.js?v=20260724a"></script>
+  <script src="assets/js/db.js?v=20260724a"></script>
+  <script src="assets/js/ui.js?v=20260724a"></script>
+  <script src="assets/js/icons.js?v=20260724a"></script>
   <script>
   (function () {
     var WS = [], PROJ = [], wsById = {}, childrenMap = {};
     var selectedWs = null;          // current workspace scope (null = all)
     var view = 'list';
     var canWrite = false;
+    var IS_ADMIN = false;           // archive/delete are admin-only (also enforced in DB)
 
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       canWrite = ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1;
+      IS_ADMIN = ['super_admin', 'admin'].indexOf(profile.role) !== -1;
       if (profile.role === 'admin' || profile.role === 'super_admin') {
         document.getElementById('nav-admin').style.display = '';
         var ns = document.getElementById('nav-sys'); if (ns) ns.style.display = '';
@@ -150,6 +152,9 @@
         return '<div class="' + cls + '" data-ws="' + w.id + '" style="padding-left:' + (8 + depth * 14) + 'px;">' +
           '<span class="pd-tree-ic">' + typeIc + '</span>' +
           '<span class="pd-tree-name">' + Fmt.esc(w.name) + '</span>' +
+          // Until now nothing opened workspaceModal with an existing node, so there was no way to
+          // edit — or delete — a workspace/program once created. Gear reveals on hover/selection.
+          (canWrite ? '<button class="pd-tree-edit" data-wsedit="' + Fmt.esc(w.id) + '" title="Edit ' + Fmt.esc(w.node_type || 'workspace') + ' (rename, move, delete)">' + Icons.svg('settings', 13) + '</button>' : '') +
           '<span class="pd-tree-count">' + countInScope(w.id) + '</span></div>' + kidHtml;
       }
       var html = '<div class="pd-tree-node' + (selectedWs === null ? ' active' : '') + '" data-ws="__all__" style="padding-left:8px;">' +
@@ -164,6 +169,10 @@
           updateContext();
           renderTree(); render();
         };
+      });
+      // Must stop propagation — the gear sits inside the [data-ws] row, whose click selects.
+      host.querySelectorAll('[data-wsedit]').forEach(function (b) {
+        b.onclick = function (e) { e.stopPropagation(); workspaceModal(wsById[b.dataset.wsedit]); };
       });
     }
     function countInScope(wsId) {
@@ -311,8 +320,25 @@
         '<div class="pd-field" style="flex:1;"><label>Forecast Finish</label><input class="pd-input" type="date" id="p-ff" value="' + (p.forecast_finish || '') + '"></div></div>' +
         '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Original Budget (₱)</label><input class="pd-input" type="number" id="p-ob" value="' + (p.original_budget != null ? p.original_budget : '') + '"></div>' +
         '<div class="pd-field" style="flex:1;"><label>Estimated Cost (₱)</label><input class="pd-input" type="number" id="p-ec" value="' + (p.estimated_cost != null ? p.estimated_cost : '') + '"></div></div>' +
-        '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="p-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="p-save">Save</button></div>');
+        // Admin-only destructive actions sit left, away from Save. Archive is the
+        // safe everyday action; Delete only ever succeeds on an empty project.
+        '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">' +
+        (isNew || !IS_ADMIN ? '<div style="flex:1;"></div>' :
+          '<button class="pd-btn" id="p-arch">' + (p.status === 'archived' ? 'Restore' : 'Archive') + '</button>' +
+          '<button class="pd-btn pd-btn-danger" id="p-del">Delete…</button><div style="flex:1;"></div>') +
+        '<button class="pd-btn" id="p-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="p-save">Save</button></div>');
       m.el.querySelector('#p-cancel').onclick = m.close;
+      if (!isNew && IS_ADMIN) {
+        m.el.querySelector('#p-arch').onclick = async function () {
+          var toArchive = p.status !== 'archived';
+          try {
+            await PDb.archiveProject(p.id, toArchive);
+            UI.toast(toArchive ? 'Project archived' : 'Project restored', 'ok');
+            m.close(); await reloadData();
+          } catch (e) { UI.toast(e.message, 'error'); }
+        };
+        m.el.querySelector('#p-del').onclick = function () { deleteProjectModal(p, m); };
+      }
       m.el.querySelector('#p-save').onclick = async function () {
         var num = function (id) { var v = m.el.querySelector(id).value; return v === '' ? null : Number(v); };
         var data = {
@@ -338,6 +364,53 @@
       };
     }
 
+    // ---- Delete confirmations (admin) ----
+    // Both deletes are hard and unguarded by any undo, so the id must be typed
+    // to arm the button. The DB refuses a non-empty project / non-leaf workspace
+    // and returns a message naming what's blocking — shown verbatim.
+    function confirmDelete(opts) {
+      var m = UI.modal(
+        '<h2 style="margin-top:0;">' + Fmt.esc(opts.title) + '</h2>' +
+        '<p style="color:var(--pd-muted);">' + opts.body + '</p>' +
+        '<div class="pd-field"><label>Type <b>' + Fmt.esc(opts.id) + '</b> to confirm</label>' +
+        '<input class="pd-input" id="d-echo" autocomplete="off"></div>' +
+        '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="d-cancel">Cancel</button> ' +
+        '<button class="pd-btn pd-btn-danger" id="d-go" disabled>Delete permanently</button></div>');
+      var echo = m.el.querySelector('#d-echo'), go = m.el.querySelector('#d-go');
+      echo.oninput = function () { go.disabled = echo.value.trim() !== opts.id; };
+      m.el.querySelector('#d-cancel').onclick = m.close;
+      go.onclick = async function () {
+        go.disabled = true;
+        try {
+          await opts.run();
+          UI.toast(opts.ok, 'ok'); m.close(); if (opts.parent) opts.parent.close();
+          await reloadData();
+        } catch (e) { UI.toast(e.message, 'error'); go.disabled = false; }
+      };
+      echo.focus();
+    }
+
+    function deleteProjectModal(p, parent) {
+      confirmDelete({
+        id: p.id, parent: parent, title: 'Delete project ' + Fmt.esc(p.id) + '?',
+        body: 'This cannot be undone. It only works if the project has <b>no module data at all</b> — ' +
+              'if any schedule, risk, cash-flow or other record exists, the delete is refused and you ' +
+              'should <b>Archive</b> instead (keeps the history, hides it from active use).',
+        ok: 'Project deleted',
+        run: function () { return PDb.deleteProject(p.id); },
+      });
+    }
+
+    function deleteWorkspaceModal(w, parent) {
+      confirmDelete({
+        id: w.id, parent: parent, title: 'Delete ' + Fmt.esc(w.node_type || 'workspace') + ' ' + Fmt.esc(w.id) + '?',
+        body: 'This cannot be undone. It only works if nothing hangs off this node — any child ' +
+              'workspace, program or project must be moved or removed first.',
+        ok: 'Workspace deleted',
+        run: function () { return PDb.deleteWorkspace(w.id); },
+      });
+    }
+
     // ---- Add / edit Workspace ----
     function workspaceModal(w) {
       var isNew = !w; w = w || {};
@@ -349,8 +422,14 @@
         '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Type</label><select class="pd-select" id="w-type">' + ['workspace', 'program', 'group'].map(function (t) { return '<option' + (w.node_type === t ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></div>' +
         '<div class="pd-field" style="flex:1;"><label>Parent</label><select class="pd-select" id="w-parent"><option value="">— Root —</option>' + wsOptions(w.parent_id) + '</select></div></div>' +
         '<div class="pd-field"><label>Group Head <small>(for group nodes — the assignment basis)</small></label><input class="pd-input" id="w-gh" value="' + Fmt.esc(w.group_head) + '"></div>' +
-        '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="w-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="w-save">Save</button></div>');
+        '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">' +
+        (isNew || !IS_ADMIN ? '<div style="flex:1;"></div>' :
+          '<button class="pd-btn pd-btn-danger" id="w-del">Delete…</button><div style="flex:1;"></div>') +
+        '<button class="pd-btn" id="w-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="w-save">Save</button></div>');
       m.el.querySelector('#w-cancel').onclick = m.close;
+      if (!isNew && IS_ADMIN) {
+        m.el.querySelector('#w-del').onclick = function () { deleteWorkspaceModal(w, m); };
+      }
       m.el.querySelector('#w-save').onclick = async function () {
         var data = {
           name: m.el.querySelector('#w-name').value.trim(),

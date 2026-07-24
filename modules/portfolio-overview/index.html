@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260712"></script>
+  <script src="../../assets/js/theme.js?v=20260724a"></script>
   <title>Portfolio Overview · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260712" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -85,7 +85,27 @@
     .po-planned2 { fill:none; stroke:var(--pd-dark); stroke-width:2; }
     html.pd-dark .po-planned2 { stroke:#c7ccd1; }
     .po-actual2 { fill:none; stroke:var(--pd-red); stroke-width:2.5; }
-  </style>
+  
+      /* ---- Mobile & tablet (2026-07-23) --------------------------------
+         Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets)
+         comes from dashboard.css.
+
+         CHARTS: every SVG here already uses viewBox + width:100%, so it
+         *scales* — but scaling a ~900-unit-wide chart into ~350px shrinks its
+         9.5px labels to under 4px, i.e. unreadable. So below 700px the chart
+         keeps a legible minimum width and its card scrolls horizontally
+         instead of shrinking further. Do not "fix" this by dropping the
+         min-width — that restores the unreadable version.
+         ------------------------------------------------------------------ */
+      @media (max-width: 700px) {
+        .po-card { overflow-x: auto; }
+        .po-svg { min-width: 520px; }
+        .po-donut-wrap { justify-content: center; }
+        .po-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .po-table { min-width: 760px; }
+        .po-projfilter { max-width: 100%; }
+      }
+    </style>
 </head>
 <body>
 <div class="pd-app">
@@ -199,11 +219,11 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260712"></script>
-<script src="../../assets/js/auth.js?v=20260712"></script>
-<script src="../../assets/js/db.js?v=20260712"></script>
-<script src="../../assets/js/ui.js?v=20260712"></script>
-<script src="../../assets/js/icons.js?v=20260712"></script>
+<script src="../../assets/js/config.js?v=20260724a"></script>
+<script src="../../assets/js/auth.js?v=20260724a"></script>
+<script src="../../assets/js/db.js?v=20260724a"></script>
+<script src="../../assets/js/ui.js?v=20260724a"></script>
+<script src="../../assets/js/icons.js?v=20260724a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -483,10 +503,19 @@
     var total = cnt.count || 0;
     if (!total) return [];
     if (total > 20000) UI.toast('Loading ' + total + ' activities across ' + ids.length + ' project(s) — this may take a moment. Narrow the project filter for a faster view.', 'warn');
-    var pages = Math.ceil(total / 1000), reqs = [];
-    for (var p = 0; p < pages; p++) reqs.push(sb().from('project_schedule').select('*').in('project_id', ids).range(p * 1000, p * 1000 + 999));
-    var res = await Promise.all(reqs);
-    for (var i = 0; i < res.length; i++) { if (res[i].error) throw res[i].error; all = all.concat(res[i].data || []); }
+    // Keyset pagination with an explicit order (indexed PK range scan) instead of parallel
+    // OFFSET .range(): OFFSET re-scans every preceding row (deep pages timed out on 42k-row
+    // projects) and, with NO .order(), OFFSET pages can duplicate/skip rows → wrong totals.
+    // Lean columns only (the fields scCompute reads) — not select('*') across tens of thousands.
+    var LEAN = 'id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish';
+    var last = null;
+    while (true) {
+      var q = sb().from('project_schedule').select(LEAN).in('project_id', ids).order('id', { ascending: true }).limit(1000);
+      if (last) q = q.gt('id', last);
+      var r = await q; if (r.error) throw r.error;
+      var b = r.data || []; all = all.concat(b);
+      if (b.length < 1000) break; last = b[b.length - 1].id;
+    }
     return all;
   }
   function scCompute(list) {
@@ -530,6 +559,26 @@
     var overallPct = TOT ? overallDone / TOT * 100 : 0;
     return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length };
   }
+  // Same shape as scCompute(), but from the server-side combined aggregate (one JSON of
+  // ~monthly buckets) instead of every raw activity row across the scoped projects.
+  function scComputeFromAgg(a) {
+    if (!a || !a.months || !a.months.length || !(+a.totDur > 0)) return { empty: true };
+    var start = pd(a.minDate), maxEnd = pd(a.maxDate); if (!start) return { empty: true };
+    var pts = [{ t: +start, pd: 0, ad: 0 }];
+    a.months.forEach(function (mm) { var y = +String(mm.key).slice(0, 4), mo = +String(mm.key).slice(5, 7); pts.push({ t: +new Date(y, mo, 0), pd: +mm.pd || 0, ad: +mm.ad || 0 }); });
+    function interp(f, t) { if (t <= pts[0].t) return 0; var last = pts[pts.length - 1]; if (t >= last.t) return last[f]; for (var i = 1; i < pts.length; i++) { if (t <= pts[i].t) { var A = pts[i - 1], B = pts[i]; var r = (B.t - A.t) ? (t - A.t) / (B.t - A.t) : 0; return A[f] + (B[f] - A[f]) * r; } } return last[f]; }
+    var TOT = +a.totDur, overallDone = +a.doneDur || 0, tnow = today();
+    var domainMax = new Date(Math.max(+maxEnd, +tnow));
+    var months = [], c = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    function me(m) { return new Date(m.getFullYear(), m.getMonth() + 1, 0); }
+    var plannedC = months.map(function (m) { return interp('pd', +me(m)); });
+    var ti = -1; for (var i = 0; i < months.length; i++) { if (me(months[i]) >= tnow) { ti = i; break; } } if (ti < 0) ti = months.length - 1;
+    var actualC = months.map(function (m, idx) { return idx < ti ? interp('ad', +me(m)) : 0; });
+    actualC[ti] = overallDone;
+    var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0, overallPct = TOT ? overallDone / TOT * 100 : 0;
+    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: a.nAct || 0 };
+  }
   function kpi2(l, v, cls) { return '<div class="po-kpi2"><div class="po-kpi2-l">' + l + '</div><div class="po-kpi2-v"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + v + '</div></div>'; }
   function scRenderKpis(d) {
     var host = document.getElementById('po-sc-kpis');
@@ -568,9 +617,16 @@
     document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">Loading schedules across ' + ids.length + ' project(s)…</div>';
     document.getElementById('po-sc-kpis').innerHTML = '';
     try {
-      var list = await fetchScheduleForIds(ids);
+      // FAST PATH: one combined server-side aggregate across the scoped projects (dozens of
+      // monthly buckets) instead of every raw activity row. Falls back to the row fetch when
+      // the RPC isn't deployed yet.
+      var d = null;
+      try {
+        var r = await sb().rpc('schedule_scurve_agg_multi', { p_ids: ids });
+        if (!r.error && r.data && r.data.months) d = scComputeFromAgg(r.data);
+      } catch (e) { d = null; }
+      if (!d) { var list = await fetchScheduleForIds(ids); d = scCompute(list); }
       scLoadedIds = ids;
-      var d = scCompute(list);
       scRenderKpis(d); scRenderChart(d);
     } catch (e) { UI.toast('Could not load schedules: ' + (e.message || e), 'error'); document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">Load failed.</div>'; }
   }

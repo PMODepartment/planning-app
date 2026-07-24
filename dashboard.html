@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
-  <script src="assets/js/theme.js?v=20260712"></script>
+  <script src="assets/js/theme.js?v=20260724a"></script>
   <title>Project Home — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260712" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260724a" />
 </head>
 <body>
   <div class="pd-app">
@@ -39,15 +39,8 @@
         <div id="user-bar"></div>
       </div>
 
-      <!-- Primavera-style tab bar -->
-      <div class="pd-tabbar" id="tabbar">
-        <button class="pd-tab active" data-tab="project">Project</button>
-        <button class="pd-tab" data-tab="program">Program</button>
-        <button class="pd-tab" data-tab="workspace">Workspace</button>
-      </div>
-
       <div class="pd-main">
-        <!-- PROJECT tab: module launcher -->
+        <!-- Project Home: module launcher for the selected project -->
         <section class="pd-tabpanel" data-panel="project">
           <div class="pd-home-head">
             <h2 id="welcome">Project Home</h2>
@@ -55,28 +48,16 @@
           </div>
           <div class="pd-module-grid" id="module-grid"></div>
         </section>
-
-        <!-- PROGRAM tab -->
-        <section class="pd-tabpanel" data-panel="program" hidden>
-          <div class="pd-home-head"><h2>Program</h2><p>Program-level rollups across the projects in this workspace.</p></div>
-          <div class="pd-scaffold" id="program-scaffold"></div>
-        </section>
-
-        <!-- WORKSPACE tab -->
-        <section class="pd-tabpanel" data-panel="workspace" hidden>
-          <div class="pd-home-head"><h2>Workspace</h2><p>Workspace settings, group-head assignments, and the project portfolio.</p></div>
-          <div class="pd-scaffold" id="workspace-scaffold"></div>
-        </section>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260712"></script>
-  <script src="assets/js/auth.js?v=20260712"></script>
-  <script src="assets/js/db.js?v=20260712"></script>
-  <script src="assets/js/ui.js?v=20260712"></script>
-  <script src="assets/js/icons.js?v=20260712"></script>
+  <script src="assets/js/config.js?v=20260724a"></script>
+  <script src="assets/js/auth.js?v=20260724a"></script>
+  <script src="assets/js/db.js?v=20260724a"></script>
+  <script src="assets/js/ui.js?v=20260724a"></script>
+  <script src="assets/js/icons.js?v=20260724a"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
@@ -94,7 +75,6 @@
         var ns = document.getElementById('nav-sys'); if (ns) ns.style.display = '';
       }
       renderModules();
-      wireTabs();
       boot();
     });
 
@@ -104,12 +84,10 @@
         PROJ = res[0]; WS = res[1];
       } catch (e) { /* still show cached header */ }
       WS.forEach(function (w) { wsById[w.id] = w; });
-      buildChildren();
       curProj = PROJ.find(function (p) { return p.id === pid; }) || { id: pid, name: sessionStorage.getItem('pd_project_name') || pid };
       curWs = curProj.workspace_id ? wsById[curProj.workspace_id] : (sessionStorage.getItem('pd_workspace') ? wsById[sessionStorage.getItem('pd_workspace')] : null);
       renderHeader();
       renderSwitcherMenu();
-      renderScaffolds();
     }
 
     function pathOf(id) {
@@ -124,25 +102,6 @@
       while (cur) { if (cur.group_head) return cur.group_head; cur = cur.parent_id ? wsById[cur.parent_id] : null; }
       return null;
     }
-    var childrenMap = {};
-    function buildChildren() { childrenMap = {}; WS.forEach(function (w) { (childrenMap[w.parent_id] = childrenMap[w.parent_id] || []).push(w); }); }
-    function childrenOf(id) { return childrenMap[id] || []; }
-    function descendantIds(id) {
-      var out = [id], stack = [id];
-      while (stack.length) { var c = stack.pop(); childrenOf(c).forEach(function (k) { out.push(k.id); stack.push(k.id); }); }
-      return out;
-    }
-    // nearest ancestor (inclusive) matching node_type
-    function ancestorOfType(startId, type) {
-      var cur = startId ? wsById[startId] : null;
-      while (cur) { if (cur.node_type === type) return cur; cur = cur.parent_id ? wsById[cur.parent_id] : null; }
-      return null;
-    }
-    function projectsInSubtree(nodeId) {
-      var ids = descendantIds(nodeId);
-      return PROJ.filter(function (p) { return ids.indexOf(p.workspace_id) !== -1; });
-    }
-
     function renderHeader() {
       document.getElementById('projsw-name').textContent = (curProj.name || curProj.id) + ' (' + curProj.id + ')';
       var path = curWs ? pathOf(curWs.id).join(' › ') : '';
@@ -189,122 +148,6 @@
       }).join('');
     }
 
-    function renderScaffolds() {
-      renderProgramTab();
-      renderWorkspaceTab();
-    }
-
-    // PROGRAM tab: roll up the nearest Program ancestor; if none, fall back to
-    // the Group Head node (the assignment unit). Shows KPIs + project portfolio.
-    function renderProgramTab() {
-      var host = document.getElementById('program-scaffold');
-      var prog = ancestorOfType(curProj.workspace_id, 'program');
-      var scope = prog || ancestorOfType(curProj.workspace_id, 'group');
-      if (!scope) {
-        host.innerHTML = '<div class="pd-note">This project is not under a Program or Group node yet. Assign it to a workspace from the <a href="projects.html">Projects selector</a> to see program rollups.</div>';
-        return;
-      }
-      var kind = prog ? 'Program' : 'Group Head';
-      var note = prog ? '' : '<div class="pd-note">No Program node in this branch — rolling up by <strong>Group Head</strong> (the assignment unit) instead.</div>';
-      host.innerHTML = portfolioHtml(scope, kind) + note;
-      wirePortfolioRows(host);
-    }
-
-    // WORKSPACE tab: the project's own workspace branch (node + descendants).
-    function renderWorkspaceTab() {
-      var host = document.getElementById('workspace-scaffold');
-      if (!curWs) {
-        host.innerHTML = '<div class="pd-note">This project is not assigned to a workspace. Assign it from the <a href="projects.html">Projects selector</a>.</div>';
-        return;
-      }
-      host.innerHTML = portfolioHtml(curWs, 'Workspace') + breadcrumbHtml(curWs);
-      wirePortfolioRows(host);
-    }
-
-    function breadcrumbHtml(node) {
-      return '<div class="pd-note">Workspace path: <strong>' + Fmt.esc(pathOf(node.id).join(' › ')) + '</strong>. ' +
-        'Settings &amp; group-head assignments are managed from the <a href="projects.html">Projects selector</a> and Admin.</div>';
-    }
-
-    // Shared portfolio: scope header + KPI cards + projects table.
-    function portfolioHtml(node, kind) {
-      var list = projectsInSubtree(node.id);
-      var active = list.filter(function (p) { return (p.status || 'active') === 'active'; }).length;
-      var sum = function (f) { return list.reduce(function (a, p) { return a + (Number(p[f]) || 0); }, 0); };
-      var orig = sum('original_budget'), est = sum('estimated_cost'), variance = est - orig;
-      var head = '<div class="pd-rollup-head"><span class="pd-rollup-kind">' + Fmt.esc(kind) + '</span>' +
-        '<h3>' + Fmt.esc(node.name) + '</h3>' + (node.group_head ? '<span class="pd-rollup-gh">' + Icons.svg('user', 15) + ' ' + Fmt.esc(node.group_head) + '</span>' : '') + '</div>';
-      var pv = list.map(function (p) { return p.schedule_progress; }).filter(function (x) { return x != null; });
-      var avgProg = pv.length ? Math.round(pv.reduce(function (a, b) { return a + Number(b); }, 0) / pv.length) : null;
-      var kpis = '<div class="pd-info-grid">' +
-        card('layers', 'Projects', String(list.length)) +
-        card('check', 'Active', String(active)) +
-        card('barChart', 'Avg Schedule %', avgProg != null ? avgProg + '%' : '—') +
-        card('cash', 'Original Budget', orig ? Fmt.moneyShort(orig) : '—') +
-        card('calculator', 'Estimated Cost', est ? Fmt.moneyShort(est) : '—') +
-        card(variance > 0 ? 'triangleUp' : 'triangleDown', 'Budget Variance', (orig || est) ? Fmt.moneyShort(variance) : '—') +
-        '</div>';
-      var rows = list.length ? list.map(function (p) {
-        var v = (Number(p.estimated_cost) || 0) - (Number(p.original_budget) || 0);
-        return '<tr class="pd-proj-row' + (p.id === curProj.id ? ' cur' : '') + '" data-pick="' + Fmt.esc(p.id) + '">' +
-          '<td class="pd-proj-name"><span class="pd-proj-ic">' + Icons.svg('project', 16) + '</span>' + Fmt.esc(p.name || p.id) + '</td>' +
-          '<td><code>' + Fmt.esc(p.id) + '</code></td>' +
-          '<td>' + statusPill(p.status) + '</td>' +
-          '<td>' + schedCell(p) + '</td>' +
-          '<td>' + Fmt.esc(groupHead(p) || '—') + '</td>' +
-          '<td>' + Fmt.date(p.forecast_start || p.start_date) + '</td>' +
-          '<td>' + Fmt.date(p.forecast_finish || p.end_date) + '</td>' +
-          '<td class="num">' + (p.original_budget != null ? Fmt.moneyShort(p.original_budget) : '—') + '</td>' +
-          '<td class="num">' + (p.estimated_cost != null ? Fmt.moneyShort(p.estimated_cost) : '—') + '</td>' +
-          '<td class="num">' + ((p.original_budget != null || p.estimated_cost != null) ? Fmt.moneyShort(v) : '—') + '</td>' +
-          '</tr>';
-      }).join('') : '<tr><td colspan="10" style="padding:22px;color:var(--pd-muted);">No projects in scope.</td></tr>';
-      var table = '<table class="pd-table pd-proj-table" style="margin-top:14px;"><thead><tr>' +
-        '<th>Project</th><th>ID</th><th>Status</th><th>Schedule</th><th>Group Head</th><th>Forecast Start</th><th>Forecast Finish</th>' +
-        '<th class="num">Original</th><th class="num">Estimated</th><th class="num">Variance</th></tr></thead><tbody>' + rows + '</tbody></table>';
-      return head + kpis + table;
-    }
-
-    function schedCell(p) {
-      if (p.schedule_progress == null) return '<span style="color:var(--pd-muted);">—</span>';
-      var v = Math.max(0, Math.min(100, Number(p.schedule_progress)));
-      return '<div style="display:flex;align-items:center;gap:6px;"><div style="flex:0 0 56px;height:7px;background:var(--pd-line);border-radius:4px;overflow:hidden;"><div style="width:' + v + '%;height:100%;background:var(--pd-red);"></div></div><span style="font-size:12px;">' + v + '%</span></div>';
-    }
-
-    function statusPill(s) {
-      s = (s || 'active').toLowerCase();
-      var cls = s === 'archived' ? 'pd-pill-muted' : 'pd-pill-ok';
-      return '<span class="pd-pill ' + cls + '">' + Fmt.esc(s.charAt(0).toUpperCase() + s.slice(1)) + '</span>';
-    }
-
-    // Clicking a portfolio row switches the active project (reload Project Home).
-    function wirePortfolioRows(host) {
-      host.querySelectorAll('[data-pick]').forEach(function (r) {
-        r.onclick = function () {
-          var np = PROJ.find(function (x) { return x.id === r.dataset.pick; });
-          if (!np) return;
-          sessionStorage.setItem('pd_project', np.id);
-          sessionStorage.setItem('pd_project_name', np.name || np.id);
-          sessionStorage.setItem('pd_workspace', np.workspace_id || '');
-          location.reload();
-        };
-      });
-    }
-
-    function card(ic, label, val) {
-      return '<div class="pd-info-card"><div class="pd-info-ic">' + Icons.svg(ic, 22) + '</div><div class="pd-info-label">' + Fmt.esc(label) + '</div><div class="pd-info-val">' + Fmt.esc(val) + '</div></div>';
-    }
-
-    function wireTabs() {
-      var tabs = document.querySelectorAll('.pd-tab');
-      tabs.forEach(function (t) {
-        t.onclick = function () {
-          tabs.forEach(function (x) { x.classList.remove('active'); });
-          t.classList.add('active');
-          document.querySelectorAll('.pd-tabpanel').forEach(function (p) { p.hidden = (p.dataset.panel !== t.dataset.tab); });
-        };
-      });
-    }
   })();
   </script>
 </body>

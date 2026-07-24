@@ -56,7 +56,7 @@ window.RiskRegister = (function () {
       };
     });
     // sidebar view switch
-    document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) {
+    document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a) {
       a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); };
     });
 
@@ -72,6 +72,7 @@ window.RiskRegister = (function () {
         return '<option value="' + p.id + '"' + (p.id === pid ? ' selected' : '') + '>' +
           Fmt.esc(p.name) + '</option>';
       }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker
     if (!projects.length) {
       document.getElementById('rr-table').innerHTML =
         '<tr><td style="padding:24px;color:var(--pd-muted);">No projects yet. Ask an admin to create one.</td></tr>';
@@ -145,18 +146,21 @@ window.RiskRegister = (function () {
       '</tr></thead>';
     var body = data.map(function (r) {
       var band = ratingBand(r.rating);
+      // data-l = the column heading. Unused on desktop (the <thead> supplies it);
+      // below 700px module.css hides the head and stacks each row into a card,
+      // where every value needs its own inline label (.rr-table td::before).
       return '<tr>' +
-        '<td>' + Fmt.esc(r.risk_code) + '</td>' +
-        '<td><strong>' + Fmt.esc(r.title) + '</strong>' +
+        '<td class="rr-c-code" data-l="Code">' + Fmt.esc(r.risk_code) + '</td>' +
+        '<td class="rr-c-title"><strong>' + Fmt.esc(r.title) + '</strong>' +
           (r.description ? '<div class="rr-sub">' + Fmt.esc(r.description) + '</div>' : '') + '</td>' +
-        '<td>' + Fmt.esc(r.category) + '</td>' +
-        '<td>' + (r.likelihood || '—') + '</td>' +
-        '<td>' + (r.impact || '—') + '</td>' +
-        '<td><span class="rr-pill ' + band.cls + '">' + (r.rating || '—') + ' · ' + band.label + '</span></td>' +
-        '<td>' + Fmt.esc(r.response) + '</td>' +
-        '<td>' + Fmt.esc(r.owner) + '</td>' +
-        '<td>' + Fmt.esc(r.status) + '</td>' +
-        '<td style="white-space:nowrap;">' +
+        '<td data-l="Category">' + Fmt.esc(r.category) + '</td>' +
+        '<td data-l="Likelihood">' + (r.likelihood || '—') + '</td>' +
+        '<td data-l="Impact">' + (r.impact || '—') + '</td>' +
+        '<td data-l="Rating"><span class="rr-pill ' + band.cls + '">' + (r.rating || '—') + ' · ' + band.label + '</span></td>' +
+        '<td data-l="Response">' + Fmt.esc(r.response) + '</td>' +
+        '<td data-l="Owner">' + Fmt.esc(r.owner) + '</td>' +
+        '<td data-l="Status">' + Fmt.esc(r.status) + '</td>' +
+        '<td class="rr-rowacts" style="white-space:nowrap;">' +
           '<button class="pd-btn" data-edit="' + r.id + '">Edit</button> ' +
           '<button class="pd-btn" data-del="' + r.id + '">Delete</button></td>' +
       '</tr>';
@@ -205,8 +209,8 @@ window.RiskRegister = (function () {
         if (filters.cell && filters.cell.l === l && filters.cell.i === i) filters.cell = null;
         else filters.cell = { l: l, i: i };
         switchView('list');
-        document.querySelector('.pd-sidebar [data-view="list"]').classList.add('active');
-        document.querySelector('.pd-sidebar [data-view="matrix"]').classList.remove('active');
+        document.querySelector('.rr-tabs [data-view="list"]').classList.add('active');
+        document.querySelector('.rr-tabs [data-view="matrix"]').classList.remove('active');
         render();
       };
     });
@@ -216,7 +220,7 @@ window.RiskRegister = (function () {
     document.getElementById('rr-view-list').style.display   = view === 'list'   ? '' : 'none';
     document.getElementById('rr-view-matrix').style.display = view === 'matrix' ? '' : 'none';
     if (link) {
-      document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a){ a.classList.remove('active'); });
+      document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a){ a.classList.remove('active'); });
       link.classList.add('active');
     }
   }

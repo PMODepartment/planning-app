@@ -1,5 +1,424 @@
 # Module: project-schedule
 
+## Cell-nav horizontal autoscroll fixed (cells hidden behind frozen columns) (2026-07-22) — fmlozano
+User: Left/Right/Tab cell navigation didn't autoscroll the columns correctly. Root cause in
+`scrollCellVisible(r, c)`: the leading **#, Activity ID, Activity Name** columns are `position:sticky`
+and float OVER the left edge of the scroll viewport, so a non-frozen cell can be scrolled *into* the
+viewport yet stay **hidden behind those sticky columns**. The old check `if (left < sc.scrollLeft)`
+ignored the frozen overlay entirely, so it never scrolled to uncover a left-obscured cell — and it
+also scrolled pointlessly when the target itself was a frozen column.
+- **Fix:** treat the frozen columns' combined width as the true left edge — reveal a left-obscured
+  cell to `left − frozen − 4` (just past them), keep the right-edge case, and **no-op for frozen target
+  columns** (they're always on-screen). `frozen` is summed from the row's first 3 children's live
+  `offsetWidth` (hidden columns measure 0, so it's correct when columns are hidden/reordered off).
+- **Verified live** (deployed, GPR101): deterministic replay of the exact math against real cell
+  geometry — **all 11 visible columns are revealed from every scroll position (0 failures)** where the
+  OLD algorithm failed all 21 in the tucked-behind-frozen case; the "failures" in a first pass were all
+  hidden (width-0) cost columns, not real. End-to-end with real key events: ArrowRight scrolled 0→274
+  (active cell revealed past the frozen columns), ArrowLeft scrolled 274→0 (active cell walked back,
+  always visible). Module-local, no `?v=` bump.
+
+## Gantt timeline no longer starts years before the schedule (2026-07-22) — fmlozano
+User: the Gantt showed bars/timeline "all the way from 2022" though the schedule starts 2025.
+**Not stray data** — verified live that the project's dates are clean (GPR101: all dates 2025–2029,
+zero rows before 2024). Root cause: `range()` padded the scrollable timeline **2 YEARS before the
+earliest activity and 3 after the latest** (`_min − 730` / `_max + 1095` days — the old "deep past/
+future scroll" feature), and the Gantt opens at `scrollLeft 0`, so a 2025 schedule opened showing
+empty years back to ~2023 (2024 for a project whose earliest start is late-2025; ~2022 for one
+starting 2024). Confirmed live: GPR101's header spanned **2024–2032** for work that's really 2026–2027.
+- **Fix:** padding tightened to a small margin — `_min − 31` days (≈1 month before) / `_max + 92`
+  (≈1 quarter after; `_max` already extends +2 months). The pane still scrolls horizontally.
+- **Verified live** (deployed): GPR101's header went **2024–2032 → 2026–2029**, opening at Nov/Dec 2025
+  (the project starts Dec 22 2025) with summary bars at the left edge, no empty leading years; no
+  console errors. Module-local, no `?v=` bump.
+
+## One-call schedule_rows RPC — fast cold load (2026-07-22) — fmlozano
+Follow-up to the cache-first work: cache makes *reopen* instant, but *cold first-open* was still ~8
+sequential keyset round-trips (PostgREST caps table reads at 1000 rows). New SQL function
+**`schedule_rows(p_project_id text) returns jsonb`** (migration
+**`migrations/2026-07-22-schedule-rows-rpc.sql` — USER MUST RUN**) returns ALL of a project's rows as
+a **single jsonb array in ONE round-trip** — a scalar jsonb return isn't subject to the max-rows cap.
+`jsonb_agg(to_jsonb(t))` auto-includes every column (future-proof). **`security invoker`** so the
+caller's RLS on `project_schedule` still applies (⚠️ never make it `security definer` — that would leak
+cross-project rows). `grant execute … to authenticated`. Idempotent (create-or-replace + grant); lives
+only in the migration, matching the sibling `schedule_scurve_agg` precedent (not in setup/schema).
+- **Client:** `load()` calls `sb().rpc('schedule_rows', {p_project_id})` **first**; if it errors / isn't
+  deployed, it **falls back to the keyset pagination loop** — so the app works before AND after the
+  migration. Composes with the IndexedDB cache (RPC = fast cold/first open; cache = instant reopen).
+- **Verified live** (deployed, migration NOT yet run): the RPC endpoint returns **404**, the client
+  falls back to keyset, and a **17,122-activity project (Naga) loaded correctly** with no regression.
+  The RPC *speedup* itself can't be verified until the migration runs (DDL needs DB privileges the
+  in-browser anon client doesn't have) — after running it, the ~8 round-trips collapse to 1 automatically.
+
+## Cache-first load — instant reopen (IndexedDB stale-while-revalidate) (2026-07-22) — fmlozano
+User: "eliminate the loading time when the schedule is opened." **Measured the real bottleneck live**
+first: Avesta (6,017 activities) cold-loaded in **~8.9s across ~8 sequential paginated round-trips** —
+the wait is **round-trip latency × page count, NOT bytes**. So column-trimming ("lean columns") was
+**deliberately not done** — it wouldn't cut the round-trips and risks silently dropping fields; the
+real cold-load lever is a one-call server RPC (follow-up). Instead made **reopen instant**:
+- **IndexedDB SWR** (`ps_schedule_cache`, store `rows`, keyed by project id). On open: if a cached row
+  set exists (and its `uid` matches the logged-in user), paint it immediately with **no loading
+  overlay** (`rebuild()` + `renderAll()` from cache), show a **"Cached · updating…"** badge, then
+  re-fetch from the DB in the background and reconcile → **"Live"** (badge auto-hides), or
+  **"Cached (offline)"** if the refresh fails. First open per project is unchanged (normal overlay).
+- **Cached value is cleaned** — `_cachePut` strips `_`-prefixed fields `rebuild()`/CPM attach (some
+  reference other rows → would bloat / break structured-clone); `rebuild()` recomputes them on load.
+- **Edit-guard:** `_editSeq` bumps on every inline `persist()`; the background reconcile skips the
+  `rows =` replace if an edit happened mid-fetch (that edit already hit the DB) so it never clobbers a
+  live edit. `persist()` also debounce-recaches (`_cacheSaveSoon`).
+- The cosmetic **count round-trip is skipped** on the cached path.
+- **Verified live** (deployed, logged-in Chrome): reopening Avesta painted from cache in **~640ms vs
+  ~8,900ms cold (~14×)** — the "Cached · updating…" badge fired (proving cache paint before network),
+  then reconciled to "Live" and auto-hid; no console errors. The residual ~0.6s is local `rebuild()`
+  (CPM/rollups), not network. Module-local, no migration, no `?v=` bump.
+- **Follow-up for cold first-load:** a server-side RPC returning the whole schedule in one call (same
+  pattern as `schedule_scurve_agg`) to collapse the ~8 round-trips into 1; and optional cross-project
+  cache warming from the picker.
+
+## Inline Status dropdown in the grid — one-click change (2026-07-22) — fmlozano
+Changing an activity's status meant right-click → Edit activity → change the Status field — tedious on
+10,000+ activity projects. The grid Status cell is now a **`<select>` styled as the coloured pill**
+(`statusCellHtml`), so a writer changes status in one click directly in the grid. Read-only users
+(`!canWrite` / `window.__viewOnly` / `__archived`) still get the static `<span>` pill.
+- `change` is wired via re-attachment in `renderWindow` (rows are virtualized/windowed, like the
+  `.ps-editable` dblclick wiring) and routed through **`_statusPatch`** (Completed → Actual Finish +
+  100% + 0 remaining; In Progress → clear finish, reseed remaining; Not Started → clear actuals) and the
+  undoable **`persist()`** — identical write path to the other inline cell edits, so it's undoable and
+  has the same side-effect semantics as the detail-panel Status field. `mousedown`/`click`
+  `stopPropagation` so opening the dropdown doesn't trigger row-select / cell-nav.
+- WBS-summary / group rows keep an empty status cell (unchanged). Only ~visible rows render a select
+  (grid virtualization), so no cost on huge schedules. Module-local, no migration, no `?v=` bump.
+- **Verified live** (deployed, logged-in Chrome): on Avesta (real) the cells render as enabled selects
+  with correct values; on the DEMO01 sandbox, changing M2003 Not Started → In Progress via the dropdown
+  **persisted through a full DB reload** (searched it back, read "In Progress"), then restored to
+  "Not Started". Screenshot shows every task row's Status as a "· ⌄" dropdown pill; WBS rows blank.
+
+## Grid keyboard shortcuts never fired — hidden overlay tripped the guard (2026-07-22) — fmlozano
+User: Arrow keys scrolled the panel instead of moving the selection; Tab traversed page buttons
+instead of grid cells (not Excel-like). Root cause: the grid-shortcut `keydown` handler bailed on
+`if (document.querySelector('.pd-modal-overlay, .ps-back.open, .ps-rep-back.open')) return;` — a
+**bare presence** check. But `#ps-modal` **is** `.pd-modal-overlay` and is always in the DOM
+(`display:none`), so the selector always matched and the handler returned before ANY branch
+(Arrow/Tab/Enter/PageUp-Down/Home/End/F2/type-to-edit/Delete/Esc/Ctrl-C-X-V-D) — every key fell
+through to the browser default (panel scroll / focus traversal). The line above already gates
+`#ps-modal` via a `display` check, so this term was both redundant and wrong.
+- **Fix:** iterate the overlay matches and bail only when one is actually **visible** (`offsetParent
+  !== null`), so the always-present hidden `#ps-modal` no longer blocks; real open modals / `.ps-back.open`
+  still block. Module-local, no `?v=` bump.
+- **Verified live** (deployed app, logged-in Chrome) by reproducing the exact condition (temporarily
+  removing the `.pd-modal-overlay` class from the hidden `#ps-modal`, which is what the visibility guard
+  achieves): ArrowDown then prevents default (no scroll) and moves the selection across rows; Tab
+  prevents default (focus stays in the grid, no button traversal) and sets the active grid cell.
+
+## WBS Manager tree virtualized + verified live (2026-07-22) — fmlozano
+Broad searches / Expand-all painted every visible row into the DOM (7,691 rows for a broad search on
+the 8,596-node project → ~1s+). Now the render flattens the visible tree into `_wbsFlat` and only the
+scroll-viewport window (+8-row buffer, ~24 rows) is in the DOM at once, offset by `translateY` over a
+spacer that reserves the full scroll height — mirrors the grid/Gantt virtualization (`WBS_ROWH=34`).
+- **Event delegation** on the persistent `#ps-wbs-tree` (attached once via `_wbsWire`) replaces per-row
+  `onclick` — the window's rows are recreated on every scroll, so per-row handlers couldn't survive.
+  Buttons dispatch by `data-*` key; focusing a name input selects its row via a class toggle (no full
+  re-render → no blur mid-edit); scroll position is preserved across full re-renders (searches reset to
+  top). Row height is fixed (34px) to match `WBS_ROWH`.
+- **Verified live** on the 8,596-node project (deployed, logged-in Chrome): default 6 rows instant;
+  **Expand all = 45ms with only 23 DOM rows** (was 1,433ms / 8,596 rows); search "Tower" = 34 matches /
+  48-row set → 24 DOM rows; **extreme search "a" = 6,671 matches / 7,691-row set → 24 DOM rows, no
+  freeze** (~400ms); delegated caret-collapse (→1 row) and row-select both work; screenshot shows the
+  tree rendering correctly (hierarchy/codes/badges/carets/scrollbar). Window-slicing math unit-verified
+  (~30 rows constant across 8,596). No console errors.
+- ⚠️ **Caveat:** scroll-driven window repaint is gated behind `requestAnimationFrame` (same as the
+  grid/Gantt). rAF is throttled when the tab isn't the OS-foreground window, so in the automated session
+  programmatic `scrollTop` changes didn't repaint the window; in normal interactive use rAF fires and the
+  window follows the scrollbar. The synchronous paths (expand/collapse/search) were verified directly.
+
+## wbs_nodes load truncated at 1000 (fixed) + WBS Manager verified live (2026-07-22) — fmlozano
+Found while verifying the WBS optimization **live on a large project** (deployed GitHub Pages, in the
+user's logged-in Chrome). `load()` fetched `wbs_nodes` with a plain `select('*')` — Supabase caps at
+1000 rows, so a big P6 import loaded a **truncated** tree; nodes whose parent fell past row 1000
+dropped out of the walk. Live symptom: project **“4PH Jab Greenwoods Dasmariñas”** reported "1000
+nodes" but rendered only 2 connected rows. **Fix:** keyset-paginate by `id` (the render/index re-sorts
+by `sort_order`, so load order is irrelevant); same fix applied to the copy-WBS-from-project source
+read. Same bug class as the audited resource_assignments/drawing/photos loads. No migration, no `?v=`.
+- **After the fix, verified live** the project actually has **8,596 WBS nodes** (was capped at 1000):
+  default load renders **6 rows** (large-tree collapse) instantly; **Expand all** → all 8,596 rows in
+  ~1.4s (worst case); **Collapse all** → 1 row in ~114ms; caret toggle collapses/expands correctly;
+  **Search** "Closeout" → 20 matches / 62 rows revealing each match **plus its full ancestor chain**
+  (verified a 6-level-deep node: 1 → 1.4 Execution → 1.4.3 Superstructure → … → Closeout) in ~1s; clearing
+  search restores the collapsed default. No console errors. (Very broad search terms render
+  proportionally many rows — expected, same cost as Expand all.)
+
+## WBS Manager optimized: indexed render + collapse/expand + search (2026-07-22) — fmlozano
+`renderWbsManager` was O(N²)/O(N·rows) and painted **every** node at once — on a P6-scale tree
+(~14k nodes / ~27k activities) it froze the tab. Per node it called `wbsActivityCount` (a full
+`rows.filter` — ~378M iterations total), `wbsChildren` (filter+sort of all nodes), and `wbsDepthOf`
+(linear `wbsById` walk). Fixes:
+- **New `_wbsBuildIndex()`** builds `byId` / `childrenOf` (sorted) / `actCount` / `codeOf` in **one
+  pass** at the top of the render; the walk uses those (no per-node scans). Benchmarked on a
+  14,420-node / 27,600-activity fixture: the per-node-scan render cost dropped **11,171ms → 12ms**.
+- **`computeWbsCodes` de-nested** the same way (was calling `wbsChildren` per level → O(N²·log N),
+  now O(N·log N)). **Pure, identical output** (custom `code_custom` codes preserved, same sibling
+  numbering + comparator) — verified against the old algorithm on a mixed fixture.
+- **Collapse/expand** per node via a caret glyph (`_wbsCollapsed` set); only visible (expanded) rows
+  are emitted, so the DOM stays small. Large trees (>300 nodes) **default-collapse** below the top
+  level on load (`_wbsCollapseInit`, reset in `load()` + `selectProject`). Toolbar **Expand all /
+  Collapse all** buttons. Adding a child auto-expands its parent so the new node is visible.
+- **Search box** (`_wbsSearch`, 180ms debounce): reveals nodes whose code/name matches **plus their
+  ancestors** (so matches are reachable), ignoring collapse on the matched path; shows a match count.
+- Editing behavior unchanged — all existing row buttons (＋Act/＋/▲▼/→←/✎/✕), row-click select, and
+  name-input rename are untouched. State (`_wbsCollapsed`/`_wbsSearch`/`_wbsCollapseInit`) resets on
+  project switch + Clear. Module-local, no migration, no `?v=` bump. Inline script parses; index /
+  codes / activity counts / search-visibility unit-verified in a Node harness.
+
+## Last Planner section made collapsible (2026-07-22) — fmlozano
+Follow-up to the merge below: the merged Last Planner block made the cockpit a long scroll on load,
+so the `.ps-ck-secdiv` divider is now a **toggle button** (`#ps-lp-toggle`, a `<button>` styled as the
+divider) with a rotating chevron; it collapses `#ps-lp-section` (all LP content wrapped in it) via a
+`.collapsed` class → `display:none`. State persists in `localStorage['ps_lp_collapsed']`, applied on
+init (default expanded). Wired next to the title-menu handler (same proven pattern). ⚠️ The chevron
+`.ps-ck-secdiv-chev` needs `display:inline-flex` for the `rotate(-90deg)` to apply (an un-hydrated
+inline icon span isn't transformable). Verified in a browser snapshot: only the `.collapsed` rule sets
+the chevron transform, section toggles block↔none, no console errors. (Computed-transform readout is
+unreliable in the static-snapshot renderer after a dynamic class change — the known quirk — so the
+rotation was confirmed via the selector engine + the collapsed-state matrix, not the stale post-toggle
+read.) Module-local, no `?v=` bump.
+
+## Merged Last Planner into the Planner Cockpit tab (2026-07-22) — fmlozano
+User felt the separate **Planner Cockpit** and **Last Planner** tabs were redundant / low-value as
+two top-level views. Chose to **merge, not remove** (kept all functionality). The Last Planner
+weekly section (week nav toolbar, PPC KPIs, weekly commitments table, PPC trend, reasons-for-variance)
+now lives **inside `#ps-view-planner`**, below the cockpit KPIs/forecast, under a new
+`.ps-ck-secdiv` divider ("Weekly Work Plan · Last Planner"). The `#ps-view-lastplanner` wrapper and
+the `lastplanner` title-menu item are gone; `switchTab`/`renderAll` now call **both** `renderPlanner()`
+and `openLastPlanner()` when the `planner` tab is active. All element IDs unchanged
+(`ps-ck-*` vs `ps-lp-*` never collided), so every existing event handler keeps working; no DB change,
+no `weekly_commitments` migration touched, no `?v=` bump (module-local HTML/CSS/JS only). Verified in
+the browser: no console errors, `#ps-lp-table` resolves inside `#ps-view-planner`, `ps-view-lastplanner`
+removed, menu down to planner/wbs/schedule/cost. Zero `lastplanner` references remain in the file.
+
+## Cleanup: remove the dead old cost-TABLE code (2026-07-21)
+Follows the Cost/EVM rebuild below, which orphaned the old per-activity cost table. Removed the
+now-inert cluster (verified zero live refs first): `COST_COLS`, `_vc`, `costW`, `costColW`,
+`costVisibleCols`, `startCostColResize`, and the now-dead `table.ps-cost-table` / `.ps-cost-th` CSS
+(my WBS-overlap fix from `a109ae3` — that table no longer exists). Also simplified `renderColsMenu` to
+drop its `onCost`/`COST_COLS` branch: the Columns chooser is only reachable on the Schedule tab (the
+whole toolbar is `display:none` on other tabs, per `switchTab`), and the rebuilt Cost tab has no
+hideable columns. **Behavior-preserving** — the removed branch was already unreachable,
+`startCostColResize` had no callers, `applyColHidden` only ever used `gridCols()`. Verified: zero
+remaining references to any removed symbol, script parses, and on the deployed page the Cost/EVM
+dashboard renders and the Schedule column chooser still works.
+
+## Cost Loading rebuilt → Cost / EVM dashboard (2026-07-21)
+The old "Cost Loading" tab was a flat per-activity cost table — redundant (the Schedule grid already
+shows per-activity Planned/Actual/EV/At-Completion IBB columns; the **Activity Usage** detail tab
+already draws the time-phased per-activity cost curves) and low-value. Rebuilt into a **project-level
+EVM dashboard** (tab relabelled **Cost / EVM**):
+- **EVM KPI cards** at the data date: BAC, PV, EV, AC, SV, CV, SPI, CPI, EAC, VAC, TCPI + an over/under-
+  budget · on/behind-schedule status chip. Math: PV = Σ budget × plannedPOC (planned % by data date);
+  EV = Σ earned_value (fallback planned_cost × %); AC = Σ actual_cost; EAC = AC + (BAC−EV)/CPI;
+  TCPI = (BAC−EV)/(BAC−AC).
+- **Cost S-curve**: cumulative PV spread linearly across each activity's planned dates, with EV/AC
+  plotted as points at the data date (no cost history is stored) + a BAC reference line.
+- **Cost variance by WBS**: `_costMap` roll-up (Budget/Actual/Earned/CV/CPI/%Spent per branch),
+  over-budget rows flagged red, + a project TOTAL row.
+- `renderCost()` early-returns unless `activeTab==='cost'` (the EVM compute is heavier than the old
+  table and `renderAll()` calls it every render). New DOM ids: `#ps-cost-status/-kpis/-curve/-note/-wbs`.
+- The old flat-table helpers (`COST_COLS`, `startCostColResize`, `costColW/costVisibleCols`) are now
+  dead code — left in place (inert; the cost-tab toolbar/column-chooser is hidden anyway). Minor cleanup TODO.
+- Verified: inline script parses; EVM aggregation unit-tested (SV −10k/CV −15k/SPI 0.9/CPI 0.857/EAC
+  350k/VAC −50k/TCPI 1.077 on a fixture); browser harness with a cost-loaded fixture rendered the KPIs
+  (BAC 300k/EV 90k/AC 105k…), PV S-curve (13 months), status chip, and WBS table with no console errors.
+  No migration, no `?v=` bump.
+
+## THE ACTUAL "count populated, grid empty" bug: deferred render (2026-07-21)
+**Verified on the deployed page** with a real 17,122-activity project (GPR101), driving the user's
+logged-in Chrome. The screenshot bug reproduces on initial load: for ~8 seconds the footer reads
+"Total: 17122 activities" while the grid still shows **"Select a project."**, then it self-corrects
+at ~t=10s. **This is NOT the switch race fixed just below — that fix was correct but addressed a
+different failure mode.** Root cause, from the live timing (footer set at t≈2s, grid painted at
+t≈10s, overlay already hidden in between):
+- `load()` finishes pagination (~2s), `hideLoading()`, `rows = all; rebuild()` → **footer count set
+  immediately**.
+- It then `await`s `loadResourcesAssignments()` + `_wbsEnsureSummaries()` — several seconds for a 17k
+  activity project (many resource/assignment rows) — and **only called `renderAll()` AFTER those**.
+- So the grid kept the stale pid=null "Select a project." paint for the whole resource-load window
+  while the footer already showed the count.
+- **Fix:** call `renderAll()` right after `rows = all; rebuild()` (and moved the large-schedule
+  collapse block up before it), *then* load resources, *then* `renderAll()` again. The grid/Gantt
+  only need `rows`; resources + WBS_NODES are for the Resource-Usage tab and WBS Manager, so painting
+  before them is safe. Window drops from ~8s to ~0 (pagination is covered by the loading overlay).
+- Verified live that the render itself works (a user-triggered switch to the same 17k project paints
+  correctly — footer + grid consistent); the only defect was the *timing* of the paint. Re-verify on
+  the deployed page after this ships. Module-only, no `?v` bump.
+
+## Load race: footer count populated while grid shows "Select a project." (2026-07-21)
+Reported from a screenshot: a big schedule (16,409 activities) with the footer reading
+"Total: 16409 activities" but the grid showing "Select a project." — the count and the grid
+disagreeing about whether a project was even selected.
+- **Root cause: `load()` was async + keyset-paginated (up to ~17 sequential round-trips for a 16k-row
+  project) with NO re-entrancy guard.** Switching or deselecting a project mid-load left the STALE
+  load to run its terminal `rows = all; rebuild(); … renderAll()` after `pid` had already changed —
+  clobbering `rows`, the footer count, and the rendered grid with the wrong project's state. The exact
+  visible symptom depends on the precise rAF/await interleaving (grid can end up empty *or* showing a
+  deselected project's rows); both are the same bug.
+- **Fix: a monotonic load token `_loadGen`.** `load()` does `var gen = ++_loadGen` at entry and, after
+  **every await** (each pagination page, the catch, before the commit `rows = all`, after
+  `loadResourcesAssignments`, after `_wbsEnsureSummaries`), bails with `if (gen !== _loadGen) return`
+  if a newer load has started. The `!pid` early-return branch now also `hideLoading()`s, since a stale
+  load aborts silently and never touches the overlay (the newest/terminal load owns it). Covers every
+  `load()` caller (project switch, undo/redo, import, scenario restore) uniformly.
+- **Verified in a Node harness** modeling the real `load()`/`rebuild()`/`doRender()` + rAF deferral:
+  WITHOUT the guard, deselecting or switching mid-load leaves pid/footer/grid inconsistent in 2 of 3
+  scenarios; WITH the guard all three are consistent (deselect → "Select a project." + count 0;
+  re-select same project → loads normally). Full inline script still parses. No shared asset, no `?v`
+  bump. (Live click-through needs a real 16k-row project + a mid-load switch — the harness stands in.)
+
+## Brand icon beside the title (2026-07-21)
+The title is a **view-switcher button** (`.ps-title-btn`), so unlike every other module it never had
+the brand-red module icon before its text — the `calendar` icon (the module's `config.js` icon) only
+appeared inside the dropdown menu items. Added `<span class="ps-title-ico" data-ico="calendar">` before
+`#ps-title-txt` inside the button, so it's `[calendar] Project Schedule ▾` matching the suite.
+- ⚠️ Existing `.ps-title-btn [data-ico] { color:var(--pd-muted) }` (for the chevron) also matches the
+  new icon. Override with **`.ps-title-btn span.ps-title-ico`** (0,2,1) which outspecifies it (0,2,0)
+  regardless of source order. Verified the icon is brand-red (`#EE3124`) while the **chevron stays
+  muted** — the override is scoped, not bleeding to the chevron.
+- Kept it inside the switcher button on purpose: clicking the icon still opens the view switcher.
+- Verified in a harness (real title markup + module CSS + icons.js): icon hydrates to SVG, brand-red
+  via `currentColor`, 20×20, left of the text, chevron muted, order ICON→TEXT→chevron, and stays
+  brand-red in dark mode. Screenshot still impossible (compositor stall) — measured via
+  getComputedStyle. Module-only, no shared asset, no `?v` bump.
+
+## Cost Loading tab: WBS/name overlap + duplicate-ID fixes (2026-07-21)
+Reported: the Cost Loading table's WBS code visually overlapped the Activity Name (e.g.
+"1.4.2.5.2.3.1Cabinetry" with ghosted text). Two real bugs found:
+- **Overlap (visible).** `.ps-cost-table` is `table-layout:fixed`, but `.ps-table td` had **no
+  overflow clipping** — so a WBS `<code>` wider than its 90px column bled straight into the next
+  cell. Fixed with `table.ps-cost-table td { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }`
+  (full value now on hover via a `title` attr set in `renderCost`), widened the WBS column 90→120,
+  and monospaced the code. ⚠️ **Specificity gotcha:** headers wrap via `table.ps-cost-table th` (0,1,2)
+  because plain `.ps-cost-th`/`.ps-cost-table th` (0,1,1) is *outspecified* by `.ps-table th`'s
+  `white-space:nowrap` which appears later in the sheet — so headers now WRAP ("Planned % (POC)"
+  instead of clipping to "(PC") instead of being cut mid-word.
+- **Duplicate `id="ps-cost-body"` (latent).** The Cost Loading `<tbody>` AND the "Cost Accounts (CBS)"
+  modal panel both used it. `renderCostAccounts()` grabbed the first match (the hidden cost tbody),
+  so the CBS manager wrote into the wrong element and appeared empty. Renamed the panel to
+  `ps-cost-acct-body` + its one reader.
+- Scope is safe: the new rules match `table.ps-cost-table` only — the two import-preview `.ps-table`
+  tables lack that class and the Schedule grid uses `.ps-grid-*`, so neither is touched.
+- **NOT a bug: the ₱0 / "—" cells.** That project's schedule was imported from P6/OPC with no cost
+  loaded, so planned/actual/EV are genuinely 0 and baseline/CPI are null (—). Nothing to "fix" there.
+- Verified in a browser harness using the module's real `<style>` + long screenshot WBS codes at the
+  actual 12-column widths (sanity-asserting the CSS loaded first): WBS cell clips with no overlap into
+  Activity Name, title tooltip present, and all 12 headers wrap to 2 lines with **none clipped**.
+  Screenshot still impossible (compositor stall) — measured via `getBoundingClientRect` /
+  `getComputedStyle`. Module-only change (project-schedule/index.html), no shared asset, no `?v` bump.
+
+## Audit fix: paginate resource_assignments (2026-07-21)
+`loadResourcesAssignments()` fetched `resource_assignments` with a single `select('*')` — Supabase
+caps at 1000 rows, so P6/XER projects (~51k–55k assignments) silently loaded only the first 1000,
+corrupting Resource/Role Usage, resource leveling and cost roll-ups. Now **keyset-paginated**
+(`order id.asc`, `gt(id,last)`, `limit 1000`), matching the main activity `load()`. Assignment order
+is irrelevant (aggregated by activity). Verified: parses clean; Node test confirms the loop loads all
+rows (2500/2500) and terminates. No migration, no `?v=` bump. (Also see the RLS project-scope fix
+migration `2026-07-21-rls-project-scope-fix.sql` — the schedule support tables' reads/writes are now
+project-scoped.)
+
+## Clear didn't clear, and re-import duplicated every WBS level (2026-07-17) — fmlozano
+Two reports, **one root cause**: `wbs_nodes` was never deleted by any destructive path. Clear schedule
+and both importers' "Replace existing" only ever ran `delete().eq('project_id', pid)` on `TABLE`
+(`project_schedule`). The tree is a **separate table**, and the grid's WBS rows are only a *projection*
+of it — so the nodes always survived, and the two symptoms fall straight out of that:
+- **"Clear did nothing."** Clear deleted the summary rows, then `load()` → **`_wbsEnsureSummaries()`**
+  (the orphan self-heal added 2026-07-16) faithfully re-projected a summary row for every surviving
+  node. The rows were genuinely deleted and then immediately recreated — working as designed, on a
+  tree that should no longer have existed. ⚠️ **These two features are only correct together**: the
+  self-heal makes any path that drops schedule rows *without* dropping nodes look like a no-op.
+- **Re-import duplicated the WBS levels.** "Replace" wiped `project_schedule`, so the importer's fresh
+  summary rows all arrived with `wbs_node_id = null` → `autoAdoptAfterImport()` → `wbsAdopt()` mapped
+  **every** legacy row to a new node payload with no check against the codes already in `WBS_NODES`
+  (`nodeByCode` was seeded from them, but only ever *read* for parent lookup). One extra node per code
+  per import, each then re-projected by the self-heal into another summary row.
+- **Fixes.** (1) New **`_clearWbsTree()`** — deletes the project's `wbs_nodes` and resets the in-memory
+  `WBS_NODES`; tolerant of a DB without the wbs-nodes migration (nothing to clear is not an error).
+  Called by the Clear handler (which now also resets `_wbsSel`, and says "activities **and the entire
+  WBS tree**" — it always destroyed more than the old copy admitted) and by the `replace` branch of
+  **both** `doImport` and `doImportXER`; the tree is rebuilt from the incoming file by the existing
+  `autoAdoptAfterImport()`. (2) `wbsAdopt` now builds node payloads only for codes **not already in
+  `nodeByCode`** — the link loop below it already resolves each code through `nodeByCode`, so an
+  existing node is **adopted and linked** rather than re-inserted. Belt-and-braces: it makes adopt
+  idempotent on its own, so a re-run can't duplicate even if a tree survives some other way.
+  ⚠️ Do **not** "simplify" this by filtering the `legacy` list instead — skipping those rows leaves
+  them with `wbs_node_id = null`, and the self-heal then duplicates the *summary rows* instead.
+- **Verified in a node simulation** of the real cycle (import → re-import ×3 → load) against a mutable
+  store, mirroring `wbsAdopt` + `_wbsEnsureSummaries`. Reproduced the bug from the **shipped** code
+  exactly — 4 codes → `1 x4, 1.1 x4, 1.2 x4, 1.1.1 x4`, self-heal adding 12 rows (matching the
+  reported screenshot's repeated "1.1 Project Milestones") — and confirmed the fix holds at 4 nodes /
+  4 summary rows / 0 duplicates / 0 unlinked across 3 re-imports; Clear+load now leaves **0** rows
+  (was 4 resurrected). Not yet clicked through on a live login (needs a session + a project).
+- **Existing duplicated data is not migrated** — the fix stops new duplicates, it doesn't clean up the
+  ones already in the DB. Remediation is now possible for the first time: **Clear schedule → re-import**.
+- **No migration.** `project_schedule.wbs_node_id` is a plain uuid with **no FK** to `wbs_nodes`, so
+  deleting nodes first can't raise a constraint error and the delete order doesn't matter.
+
+## Column chooser clipped by the details panel (2026-07-16) — fmlozano
+The `+` column chooser (`#ps-cols-menu`) was cut off mid-list — worse the further up the details
+panel was dragged.
+- **Root cause:** `.ps-split` sets **`overflow:hidden`** (line ~243, for its border-radius + pane
+  clipping), and `.ps-cols-corner`/`.ps-cols-menu` are absolutely positioned **inside**
+  `.ps-grid-pane` within it. So the menu was clipped at the split's bottom edge — i.e. wherever the
+  details panel happened to push it. The chooser's own `max-height:340px; overflow-y:auto` was
+  useless here: the **ancestor** did the clipping, so the scrollable remainder was unreachable (this
+  is a *different* bug from the 2026-07-14 cascade fix below, which made it scroll at its own cap).
+- **Fix:** `positionColsMenu()` pins the menu to the **viewport** (`position:fixed`, re-anchored to
+  the button's rect on every open) — which escapes every ancestor's overflow — and caps
+  `max-height` to the real space below the button (`innerHeight − r.bottom − 16`, floor 180). Same
+  approach `openRowMenu` already uses. Re-anchored on `resize` + `scroll` (capture phase, so it also
+  catches ancestor scrolls) while open, since fixed positioning is viewport-relative.
+- **Verified in a browser harness** against the module's real CSS, using `elementFromPoint` (CSS
+  overflow clipping doesn't shrink `getBoundingClientRect`, so a rect check would have missed it):
+  with a 280px split — before: content 726px, capped to 340px, **103px of that clipped away**, bottom
+  not hittable (`bottomOfMenuActuallyVisible:false`); after: fully visible. At a 600px-tall viewport:
+  menu bottom 588 ≤ 600 (fits), scrolls internally (517px box / 707px content), scrolls to the end,
+  right edge still aligned to the button.
+
+## WBS added in the Manager didn't appear in the Schedule (2026-07-16) — fmlozano
+Reported on **Naga City Integrated Terminal**: adding a WBS Level 1 in the WBS Manager showed the node
+in the tree but **nothing in the Project Schedule**; an activity added under it *did* appear.
+- **Mechanism (explains both halves).** The tree lives in `wbs_nodes`; the grid only ever renders
+  **projected `project_schedule` WBS-Summary rows**. Two writers, inconsistent treatment of
+  `wbs_node_id`: the activity `save()` deliberately keeps it **out** of the main payload and writes it
+  after in its own try/catch ("so a not-yet-migrated DB never breaks the main save"), but
+  `wbsAddChild`'s projection insert put `wbs_node_id` **in** the payload — so on a DB missing that
+  column the activity insert survives and the summary insert fails. And the failure was **silent**:
+  `if (!sres.error && sres.data) rows.push(...)` dropped the error on the floor. Node in the tree, no
+  schedule row, no message.
+- **Fix:** new **`_insertWbsSummary(payload)`** — retries without `wbs_node_id` when the error names
+  that column (warn toast: "Saved without the WBS link — run the wbs-nodes migration"), and **surfaces
+  any other error** instead of swallowing it. Used by `wbsAddChild` and the copy-from-another-project
+  path (which had the identical swallow).
+- **CONFIRMED (2026-07-16):** the column really was missing — the user ran
+  `migrations/2026-07-07-wbs-nodes.sql` only after hitting this, so every node created before that ran
+  lost its projection. (An `information_schema` check *after* the migration shows the column present,
+  which briefly looked like a disproof — it isn't; it's just post-migration state.)
+- **Orphan nodes + `_wbsEnsureSummaries()` (the actual repair).** The failure left Naga with 3 nodes in
+  `wbs_nodes` and **zero** WBS-Summary rows: visible in the WBS Manager, absent from the Schedule, and
+  **unrepairable** — "Adopt existing WBS" only runs the other direction (summary rows → nodes), and its
+  button is hidden precisely when there are no summary rows to adopt. New `_wbsEnsureSummaries()`
+  re-projects any node lacking a summary row; it is **additive + idempotent** (keyed on
+  `wbs_node_id`, so a reload can't duplicate) and gated on the new module-scope **`canWrite`**
+  (super_admin/admin/planner — mirrors `is_planner()`) so a read-only user never triggers a write on
+  load. Called from `load()` (after `loadResourcesAssignments`, which populates `WBS_NODES`) and at the
+  top of `_wbsCommit()`. No-op on healthy projects. Verified in a node harness against Naga's exact
+  state: 3 nodes → codes 1/2/3, second pass finds 0 missing, activities at `wbs "1"` nest under the
+  restored Pre-Development row.
+- **Related inconsistency (not fixed):** `2026-07-07-wbs-nodes.sql` was folded into `supabase-setup.sql`
+  but **NOT into `supabase-schema.sql`** (0 mentions of `wbs_nodes`/`wbs_node_id` there), so any DB
+  built from `supabase-schema.sql` lacks both the table and the column — i.e. this bug is still
+  reproducible from a fresh schema build. Worth reconciling.
+- **Dead read-only guards (pre-existing, NOT fixed):** neither `window.__viewOnly` nor
+  `window.__archived` is **ever assigned** anywhere in the repo — both are read in ~8 guards each and
+  are permanently `undefined`, so the intended "read-only / archived project" protections do nothing.
+  This is why `canWrite` above had to be introduced rather than reusing `__viewOnly`.
+
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).
 > 2. This module is **Project Schedule & Cost Loading** (Phase 2). Your DB table is `project_schedule`
@@ -1648,8 +2067,6 @@ labelled everywhere the chart shows them — axis category labels, pie/donut sli
 data labels. Default `both` = "ID  Name"; `id` = Activity ID only; `name` = Activity name only
 (each falls back to the other when its field is blank). Applied in `_chartBuckets` for the
 Activity X-axis; wired via the generic `.ps-cset-f` handler. Persisted per chart in `ps_charts`.
-<<<<<<< Updated upstream
-=======
 
 ## Merge to main + verification (2026-07-22)
 
@@ -1985,4 +2402,3 @@ pan-and-zoom.
 - Zone **nodes now flex** to fill their (resizable) trade cell (`flex:1 1 22px; min 20 / max 72px`),
   so they grow when the tower pane is widened and shrink when narrowed — no longer a fixed tiny size.
 - Verified: inline JS parses; loads with no console errors.
->>>>>>> Stashed changes

@@ -5,33 +5,109 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260712"></script>
-  <title>issues-lessons · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260712" />
+  <script src="../../assets/js/theme.js?v=20260724a"></script>
+  <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
+  <link rel="stylesheet" href="module.css?v=20260724a" />
 </head>
 <body>
   <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Module</small></div>
-      <nav><a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a></nav>
-    </aside>
+    <!-- Sidebar-less shell (matches Progress Photos / Cash Flow / Project Schedule) -->
     <div class="pd-content">
-      <div class="pd-topbar"><h1>issues-lessons</h1><div id="user-bar"></div></div>
+      <div class="pd-topbar">
+        <a class="pd-btn il-modback" href="../../dashboard.html" title="Back to modules">
+          <span data-ico="arrowLeft" data-ico-size="18"></span></a>
+        <h1 class="il-title" style="margin:0;">
+          <span class="il-title-ico" data-ico="clipboard" data-ico-size="20"></span>
+          <span class="il-title-txt" id="il-screen-title">Issues &amp; Concerns</span>
+        </h1>
+        <div class="il-projctx">
+          <select class="pd-select il-project" id="il-project" title="Project"></select>
+        </div>
+
+        <!-- Top-level screens -->
+        <div class="il-tabs" role="tablist">
+          <button class="il-tab active" data-screen="issues">Issues &amp; Concerns</button>
+          <button class="il-tab" data-screen="lessons">Lessons Learned</button>
+        </div>
+
+        <!-- Tool cluster beside the profile: one labelled primary + icon tools -->
+        <div class="il-topbar-tools">
+          <button class="pd-btn pd-btn-primary il-tb-labeled" id="il-new" title="Log a new issue">+ New issue</button>
+          <span class="il-tb-sep" id="il-sep"></span>
+          <button class="pd-btn" id="il-refresh" title="Reload">
+            <span data-ico="refresh" data-ico-size="16"></span></button>
+        </div>
+        <div id="user-bar"></div>
+      </div>
+
       <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>issues-lessons</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code>.</p>
+        <!-- ================= Issues & Concerns ================= -->
+        <div id="il-screen-issues">
+          <div class="il-filters">
+            <span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>
+            <input class="pd-input il-search" id="il-f-search" placeholder="Search issue, cause, corrective action, champion…" />
+            <select class="pd-select" id="il-f-status"><option value="">All statuses</option></select>
+            <select class="pd-select" id="il-f-department"><option value="">All departments</option></select>
+            <select class="pd-select" id="il-f-champion"><option value="">All champions</option></select>
+            <select class="pd-select" id="il-f-aging">
+              <option value="">Any aging</option>
+              <option value="open">Open items only</option>
+              <option value="0-30">0–30 days</option>
+              <option value="31-90">31–90 days</option>
+              <option value="90+">Over 90 days</option>
+            </select>
+            <button class="il-clear" id="il-clearfilters" title="Clear all filters" hidden>
+              <span data-ico="x" data-ico-size="14"></span>Clear filters</button>
+          </div>
+
+          <div class="il-kpis" id="il-kpis"></div>
+
+          <div class="pd-card" style="padding:0;overflow:auto;">
+            <table class="pd-table il-table" id="il-table"></table>
+          </div>
+        </div>
+
+        <!-- ================= Lessons Learned ================= -->
+        <div id="il-screen-lessons" hidden>
+          <div class="il-lead pd-card">
+            <span class="il-lead-ico" data-ico="bulb" data-ico-size="20"></span>
+            <div>
+              <strong>Lessons Learned library.</strong>
+              <span class="il-lead-sub">Every lesson captured on an issue or concern is collected here so management
+              and operations can reference it on future projects. Add or edit a lesson from any issue's
+              <em>Lessons Learned</em> section.</span>
+            </div>
+          </div>
+
+          <div class="il-filters">
+            <span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>
+            <input class="pd-input il-search" id="il-lf-search" placeholder="Search lessons, recommendations…" />
+            <select class="pd-select" id="il-lf-department"><option value="">All departments</option></select>
+            <select class="pd-select" id="il-lf-category"><option value="">All categories</option></select>
+            <button class="il-clear" id="il-lclearfilters" title="Clear all filters" hidden>
+              <span data-ico="x" data-ico-size="14"></span>Clear filters</button>
+          </div>
+
+          <div class="il-kpis il-kpis-2" id="il-lkpis"></div>
+          <div id="il-lessons-view"></div>
         </div>
       </div>
     </div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js?v=20260712"></script>
-  <script src="../../assets/js/auth.js?v=20260712"></script>
-  <script src="../../assets/js/db.js?v=20260712"></script>
-  <script src="../../assets/js/ui.js?v=20260712"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+  <script src="../../assets/js/config.js?v=20260724a"></script>
+  <script src="../../assets/js/auth.js?v=20260724a"></script>
+  <script src="../../assets/js/db.js?v=20260724a"></script>
+  <script src="../../assets/js/ui.js?v=20260724a"></script>
+  <script src="../../assets/js/icons.js?v=20260724a"></script>
+  <script src="module.js?v=20260724a"></script>
+  <script>
+    AppAuth.requireLogin(function (user, profile) {
+      UI.renderUserBar(profile);
+      IssuesLessons.init(user, profile);
+    });
+  </script>
 </body>
 </html>

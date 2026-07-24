@@ -3,6 +3,12 @@
 -- Run this in the Supabase SQL Editor of the NEW planning project.
 -- All statements are idempotent (IF NOT EXISTS) and safe to re-run.
 --
+-- ⚠️ NOT the complete DB (audit 2026-07-21). This file is the Phase-1 base; many
+-- Phase-2 tables live only in /migrations (schedule/cash-flow/resource/PPR/WPM
+-- support tables). **For a complete one-paste build, use `supabase-setup.sql`** —
+-- it now folds in every Phase-2 table/column with project-scoped RLS. Otherwise
+-- run /migrations in date order after this file.
+--
 -- Conventions for module developers (see MODULE_CONTRACT.md):
 --   * Every module owns its own table(s), prefixed with the module key,
 --     e.g. risk_register, drawing_register, material_submittal.
@@ -50,13 +56,53 @@ create table if not exists progress_photos (
   title       text,
   description text,
   photo_url   text,                  -- Supabase Storage path
-  taken_at    date,
+  taken_at    date,                  -- capture date
   location    text,
+  trade       text,                  -- e.g. Site Works, Mechanical Works
+  works       text,                  -- work item within the trade
+  sort_order  integer,
   tags        text[],
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
+
+-- 1b) PPR Presentations (progress-photos module) -----------------------------
+-- A PPR = one monthly Project Performance Review presentation; each slide is a
+-- before/after pair referencing two `progress_photos` rows (the photo library
+-- stays the single source of truth). See migrations/2026-07-17-ppr-presentations.sql
+create table if not exists ppr_presentations (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  text references projects(id),
+  ppr_date    date,                  -- PPR meeting date
+  description text,                  -- e.g. "PPR ftm of June 2026"
+  created_by  uuid references users(id),
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
+);
+
+create table if not exists ppr_slides (
+  id              uuid primary key default gen_random_uuid(),
+  ppr_id          uuid references ppr_presentations(id) on delete cascade,
+  project_id      text references projects(id),
+  slide_no        integer default 1,
+  trade           text,
+  works           text,
+  location        text,
+  key_plan_url    text,              -- Storage path (progress-photos bucket)
+  before_photo_id uuid references progress_photos(id) on delete set null,
+  after_photo_id  uuid references progress_photos(id) on delete set null,
+  before_caption  text,
+  after_caption   text,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+
+create index if not exists ppr_presentations_proj_date_idx
+  on ppr_presentations (project_id, ppr_date desc);
+create index if not exists ppr_slides_ppr_idx
+  on ppr_slides (ppr_id, slide_no);
 
 -- 2) Issues, Concerns & Lessons Learned --------------------------------------
 create table if not exists issues_lessons (
@@ -64,18 +110,31 @@ create table if not exists issues_lessons (
   project_id  text references projects(id),
   type        text,                  -- Issue | Concern | Lesson Learned
   title       text,
-  description text,
+  description text,                  -- the ISSUE text (Power Apps "Issue:")
   category    text,
   severity    text,                  -- Low | Medium | High | Critical
-  status      text default 'Open',   -- Open | In Progress | Closed
+  status      text default 'Open',   -- Open | On Hold | Closed
   raised_by   text,
   date_raised date,
   resolution  text,
   date_closed date,
+  -- Power Apps "Issues & Concerns" fields (2026-07-17-issues-lessons.sql):
+  department        text,
+  champion          text,
+  caused_by         text,
+  corrective_action text,
+  date_presented    date,
+  date_resolved     date,
+  -- Lessons Learned (this module's addition) — captured on the issue itself:
+  lesson_learned    text,
+  lesson_category   text,
+  recommendation    text,
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
+create index if not exists issues_lessons_proj_date_idx
+  on issues_lessons (project_id, date_presented desc);
 
 -- 3) Contracts & Claims Register ---------------------------------------------
 create table if not exists contracts_claims (
@@ -122,13 +181,26 @@ create table if not exists stakeholder_map (
   id            uuid primary key default gen_random_uuid(),
   project_id    text references projects(id),
   name          text,
-  organization  text,
-  role_title    text,
-  category       text,               -- Internal | Client | Regulator | Vendor | Community
-  influence     text,                -- Low | Medium | High
-  interest      text,                -- Low | Medium | High
+  organization  text,                -- Institution (agency / company)
+  role_title    text,                -- Position (e.g. City Mayor)
+  category      text,                -- Sector: Government | Private
+  influence     text,                -- Impact rating 1-4 (capability to disrupt business)
+  interest      text,                -- Interest rating 1-4
   contact       text,
-  engagement    text,                -- engagement strategy / notes
+  engagement    text,                -- free-text engagement notes (optional)
+  -- corporate-BD methodology (2026-07-20-stakeholder-map-full.sql).
+  -- DERIVED, never stored: Importance(1st-4th)+Approach from Impact×Interest;
+  -- Engagement Strategy+Frequency from (target_rel - current_rel) gap.
+  stakeholder_group   text,          -- LGU | NGA | GOCC | Partners | Consultants | ...
+  title               text,          -- honorific / formal title
+  nickname            text,
+  birthday            date,
+  email               text,
+  current_rel         smallint,      -- Current Relationship 1-4
+  target_rel          smallint,      -- Target Relationship 1-4
+  primary_responsible text,
+  alternate           text,
+  gift_tier           text,
   created_by    uuid references users(id),
   created_at    timestamptz default now(),
   updated_at    timestamptz default now()
@@ -142,11 +214,31 @@ create table if not exists drawing_register (
   title          text,
   discipline     text,
   revision       text,
-  status         text,               -- For Review | Approved | Superseded
+  status         text,               -- For Review | Revise & Resubmit | Approved w/ comments | Approved w/o comments | Approved | Superseded
   issue_date     date,
   due_date       date,
   file_url       text,
   remarks        text,
+  -- Full-fidelity fields (2026-07-16-drawing-register-full.sql) --------------
+  proj_code      text,               -- structured drawing-code parts (Coding Reference sheet)
+  building_ref   text,               -- TW1..TW9 / GEN
+  company        text,               -- MCC (Megawide) / subcontractor acronym
+  drawing_type   text,               -- ECD/SD1/SD2/FCD/CSD/ISD/DRC
+  floor_level    text,               -- GEN/FD/GF/2F.. / RDF / RORD
+  dwg_number     text,               -- numeric sheet no (4750, A-101)
+  drawing_code   text,               -- full composed code
+  phase          text,               -- Concept Design / Schematic Design 1 / 2 / For Construction
+  category       text,               -- Floor Plan / Elevation / Section
+  description    text,
+  responsible    text,               -- consultant / party (ECTA, RBS, In-House)
+  no_of_sheets    integer default 1,
+  approved_sheets integer default 0,
+  approved_pct    numeric,           -- 0..1
+  submissions    jsonb default '[]'::jsonb,  -- [{rev,planned,actual}]
+  planned_approval date,
+  actual_approval  date,
+  sort_order      integer default 0,
+  node_kind       text default 'drawing',   -- phase | discipline | category | drawing (tree skeleton)
   created_by     uuid references users(id),
   created_at     timestamptz default now(),
   updated_at     timestamptz default now()
@@ -258,6 +350,41 @@ create table if not exists productivity_rates (
   created_at        timestamptz default now(),
   updated_at        timestamptz default now()
 );
+-- Productivity Monitoring (full module — supersedes the flat productivity_rates
+-- starter above). One row per trade + monthly Planned/Actual/BL0 manpower &
+-- output; rate/cumulative/variance are DERIVED in the app. See
+-- migrations/2026-07-20-productivity-rates-full.sql.
+create table if not exists productivity_activities (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     text references projects(id),
+  name           text not null,
+  category       text,
+  unit           text,
+  resource_type  text default 'Manpower',
+  resource_unit  text default 'pax',
+  subcontractor  text,
+  sort_order     numeric,
+  remarks        text,
+  created_by     uuid references users(id),
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now()
+);
+create table if not exists productivity_entries (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     text references projects(id),
+  activity_id    uuid references productivity_activities(id) on delete cascade,
+  period         date not null,
+  work_days      numeric,
+  mp_bl0 numeric, mp_planned numeric, mp_actual numeric,
+  qty_bl0 numeric, qty_planned numeric, qty_actual numeric,
+  remarks        text,
+  created_by     uuid references users(id),
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now()
+);
+create unique index if not exists productivity_entries_uq  on productivity_entries(activity_id, period);
+create index        if not exists productivity_entries_prj on productivity_entries(project_id, period);
+create index        if not exists productivity_act_prj     on productivity_activities(project_id, sort_order);
 
 -- Cash Flow ------------------------------------------------------------------
 create table if not exists cash_flow (
@@ -374,6 +501,14 @@ create or replace function is_approved() returns boolean
   select exists (select 1 from users u where u.id = auth.uid() and u.status = 'approved');
 $$;
 
+-- Helper: may the current user WRITE? Approved and NOT a 'viewer' (viewer is
+-- read-only per the roles model). Gates module-table insert/update/delete so a
+-- viewer can read every accessible project but change nothing.
+create or replace function is_writer() returns boolean
+  language sql stable security definer set search_path = public as $$
+  select exists (select 1 from users u where u.id = auth.uid() and u.status = 'approved' and u.role <> 'viewer');
+$$;
+
 -- Helper: may the current user access this project? Admins: all. Others: only
 -- projects listed in their users.projects array. This enforces the admin
 -- "Assign projects" feature at the database level.
@@ -430,19 +565,21 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'progress_photos','issues_lessons','contracts_claims','risk_register',
+    'progress_photos','ppr_presentations','ppr_slides',
+    'issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
-    'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve'
+    'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve',
+    'productivity_activities','productivity_entries'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
     execute format('create policy %I on %I for select using (can_access_project(project_id))', t||'_read', t);
     execute format('drop policy if exists %I on %I', t||'_ins', t);
-    execute format('create policy %I on %I for insert with check (is_approved() and created_by = auth.uid() and can_access_project(project_id))', t||'_ins', t);
+    execute format('create policy %I on %I for insert with check (is_writer() and created_by = auth.uid() and can_access_project(project_id))', t||'_ins', t);
     execute format('drop policy if exists %I on %I', t||'_upd', t);
-    execute format('create policy %I on %I for update using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_upd', t);
+    execute format('create policy %I on %I for update using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin())) with check (is_writer() and can_access_project(project_id))', t||'_upd', t);
     execute format('drop policy if exists %I on %I', t||'_del', t);
-    execute format('create policy %I on %I for delete using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_del', t);
+    execute format('create policy %I on %I for delete using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_del', t);
   end loop;
 end $$;
 
@@ -483,8 +620,20 @@ drop policy if exists workspaces_write on workspaces;
 create policy workspaces_write on workspaces for all using (is_planner()) with check (is_planner());
 grant select, insert, update, delete on workspaces to authenticated;
 drop policy if exists projects_admin_write on projects;
+-- Per-command, never `for all`: `for all` covers SELECT too, which would OR with
+-- projects_read and let planners see unassigned projects. Insert stays unfiltered
+-- because a new project isn't in anyone's users.projects array yet.
 drop policy if exists projects_write on projects;
-create policy projects_write on projects for all using (is_planner()) with check (is_planner());
+drop policy if exists projects_ins on projects;
+drop policy if exists projects_upd on projects;
+drop policy if exists projects_del on projects;
+create policy projects_ins on projects for insert
+  with check (is_planner());
+create policy projects_upd on projects for update
+  using (is_planner() and (is_admin() or can_access_project(id)))
+  with check (is_planner() and (is_admin() or can_access_project(id)));
+create policy projects_del on projects for delete
+  using (is_planner() and (is_admin() or can_access_project(id)));
 insert into workspaces (id, name, code, parent_id, node_type, group_head, sort_order) values
   ('CORP','Corporate Root','Corp',null,'workspace',null,0),
   ('NONPROD','Non Production','NonP','CORP','workspace',null,1),

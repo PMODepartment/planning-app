@@ -5,33 +5,89 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260712"></script>
-  <title>stakeholder-map · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260712" />
+  <script src="../../assets/js/theme.js?v=20260724a"></script>
+  <title>Stakeholder Map · Planners Dashboard</title>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
+  <link rel="stylesheet" href="module.css?v=20260724a" />
 </head>
 <body>
   <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Module</small></div>
-      <nav><a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a></nav>
-    </aside>
+    <!-- Sidebar-less shell (uniform across the suite) -->
     <div class="pd-content">
-      <div class="pd-topbar"><h1>stakeholder-map</h1><div id="user-bar"></div></div>
+      <div class="pd-topbar">
+        <a class="pd-btn sm-modback" href="../../dashboard.html" title="Back to modules">
+          <span data-ico="arrowLeft" data-ico-size="18"></span></a>
+        <h1 class="sm-title" style="margin:0;">
+          <span class="sm-title-ico" data-ico="compass" data-ico-size="20"></span>
+          <span class="sm-title-txt">Stakeholder Map</span>
+        </h1>
+        <div class="sm-projctx">
+          <select class="pd-select sm-project" id="sm-project" title="Project"></select>
+        </div>
+        <div class="sm-tabs" role="tablist">
+          <button class="sm-tab active" data-view="list">Register</button>
+          <button class="sm-tab" data-view="grid">Impact / Interest</button>
+        </div>
+        <div class="sm-topbar-tools">
+          <button class="pd-btn pd-btn-primary sm-tb-labeled" id="sm-add" title="Add a stakeholder">+ Add stakeholder</button>
+        </div>
+        <div id="user-bar"></div>
+      </div>
       <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>stakeholder-map</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code>.</p>
+        <!-- Filters -->
+        <div class="sm-filters">
+          <span class="sm-filt-ico" data-ico="filter" data-ico-size="15"></span>
+          <select class="pd-select" id="sm-f-sector" style="max-width:150px;"><option value="">All sectors</option>
+            <option>Government</option><option>Private</option>
+          </select>
+          <select class="pd-select" id="sm-f-group" style="max-width:160px;"><option value="">All groups</option></select>
+          <select class="pd-select" id="sm-f-importance" style="max-width:150px;"><option value="">All importance</option>
+            <option>1st</option><option>2nd</option><option>3rd</option><option>4th</option>
+          </select>
+          <input class="pd-input sm-search" id="sm-f-search" placeholder="Search…" />
+          <button class="sm-clear" id="sm-clear"><span data-ico="x" data-ico-size="14"></span>Clear</button>
+        </div>
+
+        <!-- KPIs -->
+        <div class="sm-kpis" id="sm-kpis"></div>
+
+        <!-- Register (list) view -->
+        <div id="sm-view-list">
+          <div class="pd-card" style="padding:0;overflow:auto;">
+            <table class="pd-table sm-table" id="sm-table"></table>
+          </div>
+        </div>
+
+        <!-- Impact / Interest grid view -->
+        <div id="sm-view-grid" style="display:none;">
+          <div class="pd-card">
+            <h2 style="margin-top:0;">Impact – Interest Grid</h2>
+            <p style="color:var(--pd-muted);margin-top:0;">Stakeholders placed by Impact (1–4) × Interest (1–4). Each cell's Importance rank sets the engagement approach. Click a cell to filter the register.</p>
+            <div class="sm-grid-wrap"><div id="sm-grid"></div></div>
+            <div class="sm-legend">
+              <span class="sm-leg"><span class="sm-leg-sw" style="background:#dc2626;"></span>1st · Manage Closely</span>
+              <span class="sm-leg"><span class="sm-leg-sw" style="background:#d97706;"></span>2nd · Keep Satisfied</span>
+              <span class="sm-leg"><span class="sm-leg-sw" style="background:#2563eb;"></span>3rd · Keep Informed</span>
+              <span class="sm-leg"><span class="sm-leg-sw" style="background:#6b7280;"></span>4th · Monitor (minimum effort)</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js?v=20260712"></script>
-  <script src="../../assets/js/auth.js?v=20260712"></script>
-  <script src="../../assets/js/db.js?v=20260712"></script>
-  <script src="../../assets/js/ui.js?v=20260712"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+  <script src="../../assets/js/config.js?v=20260724a"></script>
+  <script src="../../assets/js/auth.js?v=20260724a"></script>
+  <script src="../../assets/js/db.js?v=20260724a"></script>
+  <script src="../../assets/js/ui.js?v=20260724a"></script>
+  <script src="../../assets/js/icons.js?v=20260724a"></script>
+  <script src="module.js?v=20260724a"></script>
+  <script>
+    AppAuth.requireLogin(function (user, profile) {
+      UI.renderUserBar(profile);
+      StakeholderMap.init(user, profile);
+    });
+  </script>
 </body>
 </html>
