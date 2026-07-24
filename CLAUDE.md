@@ -3165,3 +3165,35 @@ mobile/tablet and suggest improvements.
   visibly loosens iPad density — a design call, so it was left for the owner rather than applied
   unilaterally.
 - Shared CSS + two module-local files; `?v=20260724a` already covers them.
+
+### 2026-07-25 — Signed-in check of the Project Schedule phone view (gap closed, 1 bug fixed)
+
+Closed the verification gap flagged when the phone list shipped — `renderMobile()` had never run
+against real loaded rows. Checked signed in on the deployed site against **GPR101** (17k+ activities)
+and **OPW101** (698 leaf activities).
+- **Works against real data.** 112 cards on GPR101's default outline, 0 blank IDs / names / dates,
+  status derivation matching the rows (20 Completed / 39 In Progress / 53 Not Started), 38 critical-path
+  rails, progress bars matching `percent_complete`. **`PS_M_CAP` verified live** on OPW101: expand-all
+  gave *"300 of 698 activities"*, exactly 300 cards, plus the *"398 more not shown"* note.
+- **Bug found and fixed — date overflow.** The real `Fmt.date` renders **"Feb 15, 2027"** = **80px** at
+  the card's 12.5px meta font, but a meta column is only **~77px on a 375px phone**. It fit at 390px by
+  one pixel, so it looked fine at a glance. Now uses the module's own `fmtOPCDate` (DD-Mon-YY, 65px) plus
+  a 2×2 meta fallback below 380px; re-verified live at 66px. ⚠️ **The local harness stubbed `Fmt.date`
+  with a short form — this class of bug is invisible to harness testing.**
+- ⚠️ **Performance finding, NOT fixed — needs a decision.** The phone view hides the desktop UI in CSS
+  but **doesn't stop it being built**: `renderAll()` still runs `renderGrid`/`renderGantt`/`renderCost`/
+  `renderDetails` at phone width and then `renderMobile` on top. Measured on OPW101 (desktop CPU),
+  `renderMobile` alone is **~865ms median**; on GPR101 an Expand-all **froze the renderer** (that test
+  also drove the desktop rebuild, so not attributable to `renderMobile` alone — but the combined cost is
+  not phone-safe). Cost is `displayList()`/`buildNodes()` traversing every row; `PS_M_CAP` caps cards
+  painted, not the traversal. **Recommended:** gate `renderGrid`/`renderGantt` on `!psIsPhone()` and
+  repaint when crossing back above 700px. Not done here because `index.html` is under active concurrent
+  development (Schedule Builder landed mid-session) and restructuring `renderAll()` risks the desktop path.
+- **Scope note:** the phone block hides `.ps-toolbar`, a **shared** element outside `#ps-view-schedule`,
+  so it is hidden on the Cost/EVM, Planner, WBS and new Schedule Builder views too. Coherent with
+  "read-only on a phone", but not a considered decision for Builder, which arrived later.
+- ⚠️ **Method:** the Chrome window would not resize below ~1432px, so the phone path was driven by
+  patching `window.matchMedia` (read at call time by `psIsPhone()`) and firing the module's own debounced
+  resize handler. That verifies **data binding + the cap against live data** — the open gap. **CSS
+  presentation at a true 375px viewport is still only harness-verified.**
+  See `modules/project-schedule/CLAUDE.md`.

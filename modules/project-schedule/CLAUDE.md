@@ -2431,3 +2431,48 @@ Owner: the Gantt-only layout view isn't working when clicked. **Reproduced and r
   420px inside Gantt-only survives a re-render; with no saved width, leaving Gantt-only falls back to the
   660px CSS default. Inline script parses; module loads with no console errors (auth-gated here, so no
   signed-in click-through). Module-local, no migration, no `?v=` bump.
+
+## Signed-in verification of the phone view (2026-07-25)
+
+Closed the verification gap left when the phone list shipped: `renderMobile()` had never run against
+real loaded rows. Checked on the deployed site, signed in, against **GPR101** (4PH Jab Greenwoods,
+17k+ activities) and **OPW101** (One Portwood, 862 rows / 698 leaf activities).
+
+**Confirmed working.** `renderMobile()` renders real rows correctly: 112 cards on GPR101's default
+(collapsed) outline with 0 blank IDs, 0 blank names and 0 missing dates; status derivation matched the
+data (20 Completed / 39 In Progress / 53 Not Started); 38 critical-path cards carried the red rail;
+progress bars matched `percent_complete`. **`PS_M_CAP` verified live on OPW101** — expanding all gave
+*"300 of 698 activities"*, exactly 300 cards, and the *"398 more activities not shown"* note.
+
+**BUG FOUND AND FIXED — date overflow.** The real `Fmt.date` renders **"Feb 15, 2027"**, which measures
+**80px** at the card's 12.5px meta font, but a meta column is only **~77px on a 375px phone** — it
+overflowed. It fit at 390px by a single pixel, which is why nothing looked wrong at first glance. The
+local harness had stubbed `Fmt.date` with a short form, so **this was invisible to harness testing and
+could only surface against real data.** Fixed by using this module's own `fmtOPCDate` (DD-Mon-YY, 65px),
+plus a 2×2 meta fallback below 380px. Re-verified live: max date width now 66px vs 77px available.
+
+⚠️ **PERFORMANCE FINDING — not fixed, needs a decision.** The phone view hides the desktop UI with CSS
+but **does not stop it being built**: `renderAll()` still runs `renderGrid()`, `renderGantt()`,
+`renderCost()` and `renderDetails()` at phone width, and then `renderMobile()` on top — so a phone pays
+for the desktop pipeline *plus* the card list. Measured on OPW101 (698 activities, desktop CPU):
+`renderMobile()` alone is **~865ms median** (3 runs: 172 / 865 / 868), isolated by confirming a resize
+with phone mode off leaves `#ps-mobile` untouched. On GPR101, clicking **Expand all** (17k activities)
+**froze the renderer** — that test drove the desktop grid+Gantt rebuild simultaneously so the freeze is
+not attributable to `renderMobile` alone, but it does show the combined cost is not phone-safe.
+The cost is `displayList()`/`buildNodes()`, which sorts and filters every row — `PS_M_CAP` caps the
+*cards painted*, not that traversal. **Recommended fix:** gate `renderGrid()`/`renderGantt()` on
+`!psIsPhone()` inside `renderAll()` and repaint them when crossing back above 700px. Deliberately NOT
+done here — `index.html` is under active concurrent development (the Schedule Builder view landed
+mid-session) and restructuring `renderAll()` risks regressing the desktop path.
+
+**Note on scope:** the phone block hides `.ps-toolbar`, which is a **shared** element sitting outside
+`#ps-view-schedule` — so it is hidden for the Cost/EVM, Planner, WBS Manager and the new Schedule
+Builder views too, not just the schedule. That is coherent with "read-only on a phone" (the toolbar is
+all authoring controls), but it was not a considered decision for Builder, which arrived later.
+`#ps-mobile` itself is correctly nested inside `#ps-view-schedule`, so it only appears on that view.
+
+⚠️ **Method note:** the Chrome window could not be resized below ~1432px in this environment, so the
+phone path was exercised by patching `window.matchMedia` (which `psIsPhone()` reads at call time) and
+firing the module's own debounced resize handler. That verifies the **data binding and the cap against
+live data**, which was the open gap; the **CSS presentation at a true 375px viewport** remains verified
+only in the local harness.
