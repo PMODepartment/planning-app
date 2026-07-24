@@ -3070,3 +3070,42 @@ the fix is to make the rows look deliberate and to spend as few as possible.
 - **Desktop re-verified at 1280:** single 65px row, wrappers `display:contents`, correct left-to-right
   order, separators visible again, buttons not stretched (`flex-grow: 0`).
 - Shared CSS only; `?v=20260724a` already covers it.
+
+### 2026-07-24 — Mobile & tablet, part 8: `dev-mobile.html` simulator + topbar audit across all 12 modules
+
+Owner reported the multi-row topbar on Issues, Claims, Stakeholder Map, Drawing Register, Material
+Submittal, Productivity Rates and Cash Flow, and asked for **an iPhone-resolution simulator to make
+testing easier**. Built the tool, then used it to audit every module — which surfaced defects the
+per-module spot checks had missed.
+- **NEW `dev-mobile.html`** (committed, deployed, not linked from the app). Renders any of the 15
+  pages in an iframe at an exact iPhone **CSS** viewport — SE 375×667, 13 mini 375×812, 15/14 Pro
+  393×852, 15 Pro Max 430×932, iPad mini/Pro — with rotate, an optional device frame, a side-by-side
+  compare slot, and a cache-busted reload. **It works because it is same-origin:** the iframe inherits
+  the real Supabase session and the `pd_project` sessionStorage key, so it shows the actual logged-in
+  module rather than a login redirect. Sign in first, then open it.
+- **Built an all-module audit harness** that measures each module's real topbar in **its own iframe**
+  (all 12 stylesheets define `.pd-topbar` and would otherwise contaminate each other) at 393px.
+  Findings, none of which were visible from testing one module:
+  1. **The named modules were at 195–200px in 4 rows** — worse than Progress Photos' 157px. Their tab
+     labels are too wide to share a line with the project selector, so both claimed their own row.
+  2. ⚠️ **Tap targets far below the 44px minimum: tab buttons were 28px and every project selector
+     34px** — the two things you hit most often in the bar were the hardest to hit.
+  3. ⚠️ **Contracts & Claims was silently CLIPPING a tab.** Its labels ("Contract" / "Claims / Change
+     Order" / "Extension of Time") measured **416px inside a 393px viewport**, and because the strip
+     is `overflow:hidden` the third tab was cut off rather than visibly overflowing. A flex item will
+     not shrink below its text width, so `flex:1 1 0` alone could not save it.
+- **Fixes.** The project selector now rides in the **identity row** (`initModuleTopbar` classifies
+  `-projctx` as identity): which project you are editing must never be ambiguous, and it stops the
+  selector fighting a wide tab strip for a shared line. Tab buttons and the selector get
+  `min-height:44px`; tab labels get `min-width:0` + **wrapping to two lines** (ellipsis would hide
+  which tab you are on). On phones the module's *title text* hides again — reverting part 6 **for
+  ≤700px only**, keeping it on tablets — because the icon plus the project name is the more useful
+  pairing when only one fits. Desktop order is preserved by giving `-projctx` the same `order` band
+  as the tools.
+- **Result across all 12 modules at 393px:** the seven named ones **195 → 169px, 4 → 3 rows**;
+  Cash Flow and S-Curve **157 → 115px (2 rows)**; Resource Master 197 → 155px. Every control on
+  screen, **zero tap targets under 44px**, no h-scroll anywhere. (Remaining zero-height controls were
+  verified to be items inside *closed dropdown menus*, not layout faults.)
+- **Desktop re-verified at 1280** on three modules: single 61px row, wrappers `display:contents`,
+  order still back → title → project → tabs → tools → theme → avatar, title text shown.
+- Shared assets only; `?v=20260724a` already covers them.

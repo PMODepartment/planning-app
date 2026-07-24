@@ -309,7 +309,14 @@
       // The shell pages lead with the Megawide mark instead of a back link.
       var isMark = el.tagName === 'IMG';
       var isAccount = el.id === 'user-bar' || el.id === 'pd-theme-toggle';
-      (isLead || isMark || isTitle || isAccount ? main : tools).appendChild(el);
+      // The project selector rides in the identity row: which project you are
+      // editing is the single most important thing on the screen, and on a phone
+      // it earns that space more than the module's own name does (you just
+      // tapped that module's card, and its icon is right beside it). Giving it
+      // this row also stops it fighting a wide tab strip for a shared line,
+      // which is what pushed these topbars to four rows.
+      var isProject = /-projctx$/.test(el.className || '');
+      (isLead || isMark || isTitle || isProject || isAccount ? main : tools).appendChild(el);
     });
 
     topbar.appendChild(main);
