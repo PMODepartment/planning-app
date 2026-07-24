@@ -10492,11 +10492,39 @@
     // ---- Layout menu (view arrangement, like OPC's Layout / grid settings) ----
     try { layoutMode = localStorage.getItem('ps_layout') || 'split'; } catch (e) {}
     var detailsHidden = false; try { detailsHidden = localStorage.getItem('ps_details_hidden') === '1'; } catch (e) {}
+    // ⚠️ "Gantt only" narrows the activities grid via
+    // `.ps-split.ps-gantt-only .ps-grid-pane { flex:0 0 300px }` — but the divider
+    // drag (and the `ps_grid_w` width it restores on load) writes an INLINE
+    // flex-basis on that pane, and an inline style beats any stylesheet rule. So
+    // for anyone who had ever dragged the divider, clicking "Gantt only" did
+    // NOTHING: measured 660px → 660px where a fresh browser gave 660px → 300px.
+    // The width is therefore applied imperatively here, on the mode TRANSITION
+    // only (not on every applyLayout call, so a drag while in Gantt-only isn't
+    // snapped back). Leaving Gantt-only restores the user's own saved width.
+    // `!important` in the CSS would also beat the inline style, but it would then
+    // block the divider drag in Gantt-only mode — the pane is meant to stay
+    // resizable there.
+    var _prevLayout = null;
+    function _applyGridPaneWidth() {
+      var gp = document.querySelector('.ps-grid-pane');
+      if (!gp || _prevLayout === layoutMode) return;
+      if (layoutMode === 'gantt') {
+        gp.style.flexBasis = '300px'; gp.style.maxWidth = 'none';
+      } else if (_prevLayout === 'gantt') {
+        var saved = null; try { saved = localStorage.getItem('ps_grid_w'); } catch (e) {}
+        // No saved width → clear the inline value so the stylesheet default returns.
+        gp.style.flexBasis = saved ? saved + 'px' : '';
+        gp.style.maxWidth = saved ? 'none' : '';
+      }
+      _prevLayout = layoutMode;
+    }
+
     function applyLayout() {
       var vs = document.getElementById('ps-view-schedule'), net = layoutMode === 'network';
       if (vs) vs.classList.toggle('ps-net-mode', net);
       var sp = document.querySelector('.ps-split');
       if (sp) { sp.classList.toggle('ps-grid-only', layoutMode === 'grid'); sp.classList.toggle('ps-gantt-only', layoutMode === 'gantt'); sp.classList.toggle('ps-compact', _density === 'compact'); }
+      _applyGridPaneWidth();
       var det = document.getElementById('ps-details'); if (det) det.style.display = detailsHidden ? 'none' : '';
       if (net) renderNetwork(); else renderGantt();
       requestAnimationFrame(syncHeadHeights);   // re-measure after the toggle reflow so the Gantt date header stays
@@ -10915,7 +10943,11 @@
     var divider = document.getElementById('ps-divider'), gridPane = document.querySelector('.ps-grid-pane'), split = document.querySelector('.ps-split');
     if (divider && gridPane && split) {
       var saved = null; try { saved = localStorage.getItem('ps_grid_w'); } catch (e) {}
-      if (saved) { gridPane.style.flexBasis = saved + 'px'; gridPane.style.maxWidth = 'none'; }
+      // ⚠️ This block runs AFTER applyLayout(), so restoring the saved width
+      // unconditionally would immediately undo the 300px that Gantt-only just
+      // set — reintroducing the bug on page load for anyone whose saved layout
+      // is Gantt-only. Leave the pane alone while in that mode.
+      if (saved && layoutMode !== 'gantt') { gridPane.style.flexBasis = saved + 'px'; gridPane.style.maxWidth = 'none'; }
       divider.addEventListener('mousedown', function (e) {
         e.preventDefault(); divider.classList.add('drag'); document.body.style.cursor = 'col-resize';
         var sx = e.clientX, sw = gridPane.getBoundingClientRect().width;

@@ -2402,3 +2402,32 @@ pan-and-zoom.
 - Zone **nodes now flex** to fill their (resizable) trade cell (`flex:1 1 22px; min 20 / max 72px`),
   so they grow when the tower pane is widened and shrink when narrowed — no longer a fixed tiny size.
 - Verified: inline JS parses; loads with no console errors.
+
+### 2026-07-24 — Fix: "Gantt only" layout did nothing when clicked
+
+Owner: the Gantt-only layout view isn't working when clicked. **Reproduced and root-caused, not guessed.**
+- **Cause: an inline style silently beat the stylesheet.** Gantt-only narrows the activities grid purely
+  via `.ps-split.ps-gantt-only .ps-grid-pane { flex:0 0 300px }`. But the divider drag handler — and the
+  `ps_grid_w` width it restores on every load — writes **`gridPane.style.flexBasis` inline**, and an
+  inline declaration outranks any normal stylesheet rule. So the class was applied, the CSS was correct,
+  and nothing moved.
+- **Measured, with the module's real stylesheet:** fresh browser (never dragged, empty localStorage)
+  660px → **300px**, works; after a drag (inline basis set) 660px → **660px**, dead. That's why it would
+  have looked fine on a clean profile — every real user who had ever touched the divider had it broken.
+- **Fix:** the width is now applied **imperatively** in `_applyGridPaneWidth()`, called from
+  `applyLayout()`, and only on the **mode transition** — so a divider drag *while in* Gantt-only isn't
+  snapped back on the next render. Leaving Gantt-only restores the user's saved `ps_grid_w`, or clears
+  the inline value so the 660px stylesheet default returns when there is none.
+- ⚠️ **Second, load-order half of the bug:** the divider's saved-width restore block runs **after**
+  `applyLayout()` during init, so it re-clobbered the 300px for anyone whose persisted `ps_layout` was
+  already `gantt` — Gantt-only would have been broken on page load even with the fix above. That restore
+  now skips while `layoutMode === 'gantt'`.
+- ⚠️ **Why not `!important`:** it would also win against the inline style, but it would then block the
+  divider drag in Gantt-only mode — and that pane is deliberately meant to stay resizable there (the
+  whole point of the 2026-07-07 "Gantt-only keeps the columns" change).
+- **Verified in-browser** by extracting the **shipped** `_applyGridPaneWidth` out of `index.html` and
+  running it against the module's real CSS — 5/5: Gantt-only narrows to 300px with a dragged width
+  present; returning to Split restores the user's 660px; Grid-only still hides the Gantt pane; a drag to
+  420px inside Gantt-only survives a re-render; with no saved width, leaving Gantt-only falls back to the
+  660px CSS default. Inline script parses; module loads with no console errors (auth-gated here, so no
+  signed-in click-through). Module-local, no migration, no `?v=` bump.
