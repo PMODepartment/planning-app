@@ -289,13 +289,6 @@
     var topbar = document.querySelector('.pd-topbar');
     if (!topbar || topbar.querySelector(':scope > .pd-tb-main')) return;
 
-    // Only the sidebar-less MODULE topbars, identified by their back-to-modules
-    // link (every module has one: .rr-modback, .pp-modback, .ps-modback, …).
-    // The four shell pages (dashboard/projects/admin/portfolio-overview) have a
-    // different topbar shape and already get their nav from the mobile drawer —
-    // regrouping theirs would reorder chrome for no benefit.
-    if (!topbar.querySelector('a[class*="modback"]')) return;
-
     var kids = Array.prototype.slice.call(topbar.children);
     if (!kids.length) return;
 
@@ -313,12 +306,19 @@
       // tools and the identity row is left with just a back arrow and avatar.
       var isTitle = el.tagName === 'H1' || !!el.querySelector('h1') ||
                     /(^|[\s-])[\w-]*title/i.test(el.className || '');
+      // The shell pages lead with the Megawide mark instead of a back link.
+      var isMark = el.tagName === 'IMG';
       var isAccount = el.id === 'user-bar' || el.id === 'pd-theme-toggle';
-      (isLead || isTitle || isAccount ? main : tools).appendChild(el);
+      (isLead || isMark || isTitle || isAccount ? main : tools).appendChild(el);
     });
 
     topbar.appendChild(main);
     if (tools.children.length) topbar.appendChild(tools);
+    // Marks the topbar as restructured. ⚠️ The mobile CSS keys off THIS class,
+    // never off `.pd-topbar` alone — the column layout assumes the two wrapper
+    // rows exist. Applied to a plain topbar it turns every child into a
+    // full-width row and stretches the logo <img> into a giant red bar.
+    topbar.classList.add('pd-tb-split');
   }
 
   if (document.readyState === 'loading') {

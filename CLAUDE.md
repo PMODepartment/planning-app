@@ -2995,3 +2995,49 @@ consuming most of the viewport before any content appeared.
   Screenshots remain impossible in this environment (stalled compositor) — all checks are measured
   geometry.
 - Shared assets changed → **`?v=` bumped `20260723a` → `20260724a` across all 21 HTML files.**
+
+### 2026-07-24 — Mobile & tablet, part 6: fix the part-5 shell regression + three real defects
+
+Owner sent a second batch of phone screenshots. The module topbars from part 5 were working, but the
+shots surfaced **a regression I had just introduced** plus three defects the earlier passes missed.
+- ⚠️ **REGRESSION (mine, part 5): the shell pages were destroyed.** `projects.html` / `dashboard.html`
+  rendered a **~660px** topbar — hamburger, two giant distorted red bars, title, theme toggle and
+  avatar each on its own full-width row. Cause: part 5 gated the *JS* restructure to module topbars
+  (`a[class*="modback"]`) but the *CSS* `flex-direction:column; align-items:stretch` matched **every**
+  `.pd-topbar` at ≤900px. On an unrestructured topbar that turns each child into a full-width row and
+  stretches `.pd-topbar-mark` (`width:auto`) into those red bars. **Fix:** the JS now stamps
+  `.pd-tb-split` on topbars it actually restructures and **all** mobile column rules key off that
+  class, never off `.pd-topbar` alone. Belt-and-braces `flex:none; width:auto` on the mark.
+  **Measured after: projects 71px, dashboard 101px, admin 63px** (from ~660px), logo 29×24 undistorted,
+  avatar back on the identity row. Shell pages are now restructured too (they were the worst
+  offenders), with the mark treated as identity.
+- ⚠️ **The scrolling tools strip from part 5 was the wrong call — replaced with wrapping.** The
+  screenshots showed Progress Photos' leading **"Photos" tab pushed half off the left edge**, i.e.
+  unreachable unless you guessed a hidden horizontal scroll existed. Worse, `overflow-x:auto`
+  establishes a **clipping context that would cut off every dropdown opened from inside it** (project
+  switcher, add menus, module tool menus) — a latent bug in the 700–900px band where the shared
+  "popovers go position:fixed" rules don't yet apply. The controls row now **wraps**; the project
+  selector takes its own full-width line. Costs ~40px of height (117px → 157px on Progress Photos)
+  and buys every control visible and every popover unclipped. Verified `allTabsOnScreen: true`.
+- **Module titles were showing as a bare unlabelled icon.** Every module hides its own `.xx-title-txt`
+  at 820–1250px to buy room in the one-row topbar; with two rows there is space, so the text is
+  restored at ≤900px via `.pd-tb-main [class$="-title-txt"]` (0,2,0, to outrank the modules' 0,1,0).
+- **Filter selects were clipping their own text** ("All categories", "Filter by Works" lost their
+  descenders). Modules pin `.xx-filters .pd-select { height:34px }` while the phone layer raises the
+  font to 16px + 10px padding ≈ 42px of content in a 34px box. Height is now free to grow
+  (`min-height:44px`). Measured 44px box vs 36px needed.
+- ⚠️ **Found while verifying: the part-1 iOS zoom guard has been silently defeated since it shipped.**
+  The guard is `.pd-input { font-size:16px }` (0,1,0); every module's `.xx-filters .pd-input {
+  font-size:13px }` is (0,2,0) and loads later — so tapping a filter search box **still zoomed the
+  page on iPhone** in at least 6 modules. Measured 13px on Progress Photos. Re-asserted at (0,3,0).
+  This is the second time this exact specificity trap has bitten (see part 5's `.pd-topbar` note) —
+  **module CSS loads after `dashboard.css`, so any shared mobile rule targeting a single class will
+  lose.** Qualify shared overrides.
+- **Verified** at 375px (shell topbars via harness injecting the real `projects/dashboard/admin`
+  markup with the runtime-injected hamburger + toggle; module title/filters against the real
+  `progress-photos/module.css`) and at 1280px: **desktop byte-for-byte unchanged** — 61px single row,
+  wrappers `display:contents`, filters back to the module's own 34px/13px/180px. No page h-scroll at
+  either width. Screenshots still impossible here (stalled compositor); ⚠️ note `requestAnimationFrame`
+  never fires in this environment, so harnesses must force layout synchronously instead of awaiting a
+  frame — an awaited rAF hangs the harness at "running…".
+- Shared assets only; `?v=20260724a` from part 5 already covers them.
