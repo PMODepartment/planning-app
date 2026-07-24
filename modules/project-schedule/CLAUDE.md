@@ -1648,3 +1648,341 @@ labelled everywhere the chart shows them — axis category labels, pie/donut sli
 data labels. Default `both` = "ID  Name"; `id` = Activity ID only; `name` = Activity name only
 (each falls back to the other when its field is blank). Applied in `_chartBuckets` for the
 Activity X-axis; wired via the generic `.ps-cset-f` handler. Persisted per chart in `ps_charts`.
+<<<<<<< Updated upstream
+=======
+
+## Merge to main + verification (2026-07-22)
+
+Merged branch `module/project-schedule` (commit a1292e1, "Excel-like configurable
+chart builder in Activity Progress") into `main` via a no-ff merge commit (7b9fc4e).
+Branch was 74 commits behind main and both `index.html` and this `CLAUDE.md` had also
+been heavily edited on main since the merge base, but git auto-merged with **no
+conflicts**.
+
+**Verification:** served locally (python http.server) and loaded the module in-browser —
+scripts executed cleanly and performed the Supabase auth redirect with **zero console
+errors**. Static checks: no conflict markers; inline JS (~668K chars) passes
+`node --check`; both the new chart-builder code and main-branch code present. Logged-in
+visual render not verified (auth wall / no credentials) — recommend a manual eyeball of
+Activity Progress once signed in.
+
+## Arrow-key row selection with Excel-like autoscroll (2026-07-22) — fmlozano
+
+The grid had click / shift-click / ctrl-click row selection but no keyboard navigation. Added
+Excel-style arrow-key row selection to the Schedule grid:
+- **↑ / ↓** move the active row selection to the previous / next visible display-list (`DL`) row;
+  **PageUp / PageDown** jump one viewport of rows (`_gridPageRows()` = floor(viewport/ROWH)−1);
+  **Home / End** jump to the first / last row. **Shift** + any of these extends the multi-row
+  selection from the anchor (reuses `_selRange`/`_selSet`/`_selAnchor`).
+- `moveRowSel(delta, extend, absolute)` computes the target index in `DL`, **skips id-less group
+  headers** in the direction of travel, sets `selId` + `_selSet`, then autoscrolls and re-highlights
+  + `renderDetails()`.
+- **`scrollRowVisible(idx)`** is the Excel-like minimal autoscroll: pins the row to the **top** edge
+  when it moved above the viewport, to the **bottom** edge when below — unlike `scrollSelIntoView`
+  which re-centers. Works with the virtualized grid (setting `scrollTop` fires the scroll listener →
+  rAF → `renderWindow`, which repaints the window and re-runs `highlightRow`).
+- Wired into the existing grid keydown handler (same guards: suppressed while editing a field, over a
+  modal, when the Schedule view is hidden, or view-only/archived). Documented in the ？ shortcuts modal.
+- Verified: inline JS passes `node --check`; module loads in-browser with no console errors. Live
+  keyboard interaction needs a login (auth wall). Module-only, no migration, no `?v=` bump.
+
+## Horizontal active-cell navigation — arrows / Tab / Enter (2026-07-22b) — fmlozano
+
+Extended the arrow-key work above into a full Excel-style active-cell cursor on the Schedule grid:
+- **← / →** move the active cell one column left / right (clamped to the visible columns).
+- **Tab / Shift+Tab** move to the next / previous cell, **wrapping to the next / previous row** at the
+  row ends (`_nextRowIdx` skips id-less group headers; the row selection + details panel sync when a
+  wrap changes rows).
+- **Shift+← / →** extend the cell rectangle from the anchor (`_cellSel`), complementing the existing
+  Shift+click range and Shift+↑/↓ row-extend.
+- **Enter / F2** begin inline editing of the active cell (`editActiveCell` → `beginEdit`, only for
+  `.ps-editable` columns).
+- **↑ / ↓** now also **preserve the active-cell column** (Excel column-persistence) and paint the
+  active cell, so vertical + horizontal navigation share one cursor.
+- `moveCell(dc, tab, extend)` seeds the cursor from `selId` (or the first real row) on first press;
+  `scrollCellVisible(r,c)` is the horizontal autoscroll (reveals the target column via the rendered
+  cells offsetLeft/offsetWidth; frozen sticky columns are always visible so only non-sticky cells
+  scroll). Deferred one rAF so a Tab-wrapped row is painted before the cell is scrolled/highlighted.
+- Wired into the grid keydown handler (same guards); shortcuts modal updated.
+- Verified: inline JS passes `node --check`; module loads with no console errors. Live keyboard test
+  needs a login. Module-only, no migration, no `?v=` bump.
+
+## Enter/Tab commit-and-advance in the inline cell editor (2026-07-22c) — fmlozano
+
+Excel-style commit navigation from within an active inline cell edit (`beginEdit`):
+- **Enter** commits the edit and moves the active cell **down one row** (Shift+Enter up), keeping
+  the column — via `moveRowSel(±1, false)`, which preserves the `_cellAnchor` column.
+- **Tab** commits and moves to the **next cell** (Shift+Tab previous), wrapping across rows — via
+  `moveCell(±1, true, false)`.
+- **Escape** still cancels without advancing.
+- The move runs right after `inp.blur()` triggers `commit()`. `commit()`s DB write is async, so
+  `selId`/`_cellAnchor` advance immediately and the later re-render (`persist().then` → `renderGrid`
+  → `renderWindow`/`highlightRow`) re-highlights by id — correct even if a date/cost edit reorders
+  rows. Advance lands in ready (not editing) mode, matching Excel.
+- Shortcuts modal updated (Editing section). Verified: inline JS passes `node --check`, module loads
+  with no console errors. Live keyboard test needs a login. Module-only, no migration, no `?v=` bump.
+
+## Excel type-down-a-column entry anchor + type-to-edit (2026-07-22d) — fmlozano
+
+Completes the Excel data-entry flow on the Schedule grid with an **entry-column anchor** (`_entryCol`):
+- Editing a cell anchors the column the current row-entry began in. **Tab** walks across columns
+  keeping the anchor; **Enter** commits, drops to the next row, and **returns to the anchor column**
+  (classic Excel type-a-row-then-Enter-back-to-start). Enter with no Tab just goes straight down the
+  same column. Shift+Enter goes up.
+- **Type-to-edit:** pressing a printable key on a ready (selected, not-editing) editable cell now
+  **begins editing seeded with that character** (text cells and numeric-compatible chars on number
+  cells; date cells just open) — so you can keep typing down/across without F2 each time.
+- **Ready-mode Enter** now moves down (at the entry column) instead of opening the editor; **F2**
+  (or double-click, or typing) opens the editor — matching Excel.
+- The anchor is **reset** by any non-entry navigation (arrows, PageUp/Down, Home/End, mouse click via
+  `_setCellFromClick`, Escape) so the next fresh edit re-anchors; Tab/Enter preserve it.
+- Implementation: `_entryCol`/`_resetEntry()`; `beginEdit` sets `_entryCol` when null; the in-edit
+  Enter and ready-mode Enter set `_cellAnchor.c = _entryCol` before `moveRowSel`; type-to-edit lives
+  in the grid keydown handler after the `?` branch (so `?` still opens shortcuts).
+- ⚠️ **Known minor race:** type-to-edit opens the editor on the current DOM; a still-in-flight prior
+  `persist().then → renderGrid` could repaint and drop that just-opened input if the next keystroke
+  lands before the async write returns. Pre-existing for any fast edit-then-edit; acceptable for
+  normal-paced entry. A render guard (skip re-render while an input is open) is the follow-up if it bites.
+- Shortcuts modal updated. Verified: inline JS passes `node --check`, module loads with no console
+  errors. Live keyboard test needs a login. Module-only, no migration, no `?v=` bump.
+
+## Render guard: defer repaints while an inline editor is open (2026-07-22e) — fmlozano
+
+Fixes the documented type-to-edit keystroke race from 22d. A still-in-flight `persist().then →
+renderGrid` (or any scheduled repaint) could replace `#ps-grid-rows` innerHTML and destroy a
+freshly opened inline `<input>`, dropping a keystroke during fast type-down entry.
+- New **`_editing`** flag: set true in `beginEdit` right after the input is appended, cleared at the
+  **top of `commit()`** (so it is false the instant the editor starts closing).
+- **`doRender()` and `renderWindow()`** both early-return while `_editing`, setting **`_pendingWin`**
+  instead of repainting — so neither the grid rows nor the Gantt bars layer (`#ps-tl-bars`, cleared in
+  doRender) get wiped under an open editor.
+- The closing editor **flushes** the deferred paint: `commit()` clears `_editing` then, if
+  `_pendingWin`, calls `scheduleRender()`. Guaranteed even on a failed save (whose branch skips its
+  own `renderGrid`). `_rafP` dedups the flush against the branchs own render within a frame.
+- Correct because the edited value is read synchronously in `commit` before any repaint; the flush
+  repaint (and the branchs own `.then` render) run after, on fresh `rows`. Arrow/click nav cant
+  reach here — the global keydown returns early while focus is in the input, so the editor only closes
+  via blur/Enter/Tab/Escape, all of which run `commit`. No stuck-`_editing` path.
+- Verified: inline JS passes `node --check`, module loads with no console errors. Live keyboard test
+  needs a login. Module-only, no migration, no `?v=` bump.
+
+## LIVE verification of the keyboard navigation — found + fixed a hidden-column bug (2026-07-22f) — fmlozano
+
+First signed-in run of the 22a–22e keyboard work, driven in the owners logged-in Chrome against the
+deployed site on the real **4PH Jab Greenwoods Dasmariñas** project (17,122 activities).
+- **Verified working live** with real key events (DOM-inspected after each): active cell set by click
+  (row 2 / col 0 / "A227380"); **↓×3** moved rows 2→5 with the **column held at 0** (column
+  persistence) and the row selection following; **→×3** moved col 0→3 with the row unchanged;
+  **Tab×6** moved col 3→9. Deployed build confirmed to contain every new symbol.
+- **BUG FOUND (now fixed): navigation stepped into HIDDEN columns.** That project hides 6 of its 19
+  grid columns (indices 11–16 → `display:none`, width 0 — the cost/IBB block). `moveCell` walked raw
+  column indices, so ←/→/Tab marched the cursor through zero-width invisible cells: measured the
+  active cell at `offsetLeft 0 / width 0 / text ""` after Tabbing past column 10. The user would press
+  → and watch the active-cell box vanish for six presses.
+  **Fix:** `_colShown(ci)` (reads the same `colHidden`/`colKey` source of truth as the Columns chooser
+  and `applyColHidden`s nth-child rules) + `_nextVisCol`/`_firstVisCol`/`_lastVisCol`; `moveCell`
+  now steps to the next VISIBLE column (Tab wrap uses first/last visible; arrows stay put when there
+  is no further visible column), and `moveRowSel` snaps to the first visible column if the preserved
+  one is hidden. Shipped + deployed.
+- ⚠️ **Environment blocker for the rest.** Chrome sits BEHIND the Claude app, so the tab is
+  `visibilityState:"hidden"` → **rAF never fires** (measured: no callback in 1.2s) and the renderer is
+  throttled hard enough that `Page.captureScreenshot` times out. Since `scheduleRender`/`doRender` and
+  `scrollCellVisible` are rAF-gated, a reload in that state paints **0 rows** (the `_rafP` latch is set
+  by a render that can never run). Same caveat already documented for the WBS virtualization work.
+  Swapping `window.requestAnimationFrame` for a `setTimeout` shim revives the paths, but only if
+  installed BEFORE module init — not achievable post-navigation.
+- **Still unverified live, needs Chrome focused + a scratch project** (must not write to a real
+  17k-activity schedule): horizontal autoscroll (`scrollCellVisible`), Enter/Tab commit-and-advance,
+  the `_entryCol` type-down anchor, type-to-edit, and the `_editing` render guard.
+
+## Signed-in verification on XERTEST — 3 bugs found + fixed, all behaviours confirmed (2026-07-22g) — fmlozano
+
+Full keyboard/entry verification driven in the owners logged-in Chrome against the deployed site,
+on the **XERTEST** sandbox (the safe venue — the earlier pass deliberately refused to write to the
+real 17k-activity project).
+
+**Bugs found by this pass, each fixed + redeployed + re-verified:**
+1. **Navigation stepped into HIDDEN columns** (`4f8661c`). XERTEST/4PH hide 6 of 19 columns
+   (`display:none`, width 0). `moveCell` walked raw indices, so →/Tab parked the cursor on invisible
+   cells (measured `offsetLeft 0 / width 0 / text ""`). Fixed with `_colShown`/`_nextVisCol`/
+   `_firstVisCol`/`_lastVisCol` off the same `colHidden` source of truth as the Columns chooser.
+   **Re-verified: col 10 → 17, skipping 11–16.**
+2. **In-edit Enter/Tab moved TWICE** (`11e6551`). `inp.blur()` switches `document.activeElement` to
+   `<body>` synchronously, so the keystroke kept bubbling to the document-level grid handler whose
+   "focus is in an INPUT → bail" guard no longer matched — the move ran twice (**Enter skipped 2 rows
+   (4→6), Tab skipped 2 columns (1→4)**). Fixed with `e.stopPropagation()` on the editors
+   Enter/Tab/Escape. **Re-verified: Enter 4→5, Tab×2 = col 1→3.**
+3. **Closing editor left an orphaned `<input>`** (`86d2ea1`). `commit()`s per-branch renders are
+   conditional (`if (ok) renderGrid()`), so a no-op/failed persist skipped the repaint and left the
+   input sitting in the cell with blank text — newly visible now that Tab/Enter navigate away from it.
+   `commit()` now always `scheduleRender()`s. (Pre-existing; only surfaced by the new navigation.)
+
+**Verified PASSING live:** click sets active cell · ↓×3 rows advance with the column held · →×3 ·
+Tab×6 · **hidden-column skip** · **horizontal autoscroll** (`scrollLeft` 0→504) · **render guard**
+(input survived 6 forced repaint cycles as the SAME DOM node with its uncommitted value intact) ·
+**Escape cancels with no write** · **entry-column anchor** (Enter from col 3 returned to col 1 on the
+next row) · **single-step Enter/Tab** · **type-to-edit** (typing `z` opened an editor seeded with `z`,
+focus in the input).
+
+**Data integrity confirmed by direct Supabase query** (not just the DOM): `project_schedule` in
+XERTEST has **0 rows named `z`**, and the row whose editor was Tab/Enter-committed still holds its
+original `activity_name` ("Start of Precast Production") — the commits wrote the unchanged value back,
+nothing was corrupted. No writes at all reached the real 4PH project.
+
+⚠️ **Environment notes for the next person automating this.** Chrome sits behind the Claude app, so the
+tab is `visibilityState:"hidden"` → **native rAF never fires** and `Page.captureScreenshot` times out.
+Workaround: overwrite `window.requestAnimationFrame` with a `setTimeout` shim (the module reads it at
+call time via `(window.requestAnimationFrame || fallback)(fn)`, so a post-load swap works). ⚠️ But if
+any `scheduleRender()` latched `_rafP = true` under the NATIVE rAF before the shim, that latch never
+clears and every later `scheduleRender` no-ops — the grid then paints 0 rows and commits appear not to
+repaint. The scroll path (`onVScroll`, own `winRaf` guard) still repaints and can be nudged with a
+synthetic `scroll` event. Both are automation artifacts, NOT product defects.
+
+## Phone read-only activity list (2026-07-23)
+
+Below **700px** the grid+Gantt split is hidden outright (`.ps-split`, `.ps-divider`, `.ps-toolbar`,
+`.ps-legend`, `#ps-details` all `display:none`) and replaced by **`#ps-mobile`** — a condensed
+**read-only** activity list painted by `renderMobile()`. Rationale: this module is an 18-column
+virtualized grid beside a time-scaled Gantt with Excel-style keyboard navigation and drag-to-link;
+none of that survives a 375px touch screen, and the owner chose a read-only field view over
+pan-and-zoom.
+
+- **Same data path, different presentation.** `renderMobile()` reads `displayList()`, so the active
+  search / filters / grouping / collapse state all carry over. It renders only `_dkind === 'task'`
+  nodes (WBS summary rows are skipped) as cards: Activity ID, status pill (derived the same way as
+  the grid — `isComplete()` → Completed, `actual_start` → In Progress, else Not Started), name,
+  Start / Finish / % Complete / Float, and a progress bar. Critical-path activities get a red left rail.
+- **Deliberately read-only** — no edit, drag, link or keyboard handlers are wired to these cards.
+- ⚠️ **`PS_M_CAP = 300` is a real guard, not a nicety.** This list is **not virtualized** (the desktop
+  grid is), and projects here reach 17k+ activities — painting every card would lock up a phone. Over
+  the cap it renders the first 300 and tells the user to narrow with search/filters. Only raise it
+  together with virtualization.
+- `renderAll()` calls `renderMobile()` only when already at phone width; a debounced `resize`
+  listener repaints on the way in, so rotating from desktop into phone can't reveal an empty pane.
+- **Verified** at 375px against the module's real stylesheet: cards 351px wide with no page-level
+  horizontal scroll, 4-column meta grid with no cell overflow, correct status colours
+  (muted/amber/green), red rail on critical-path only, progress fill exact (45% → 0.45), toolbar
+  hidden. At 1280px **desktop is unchanged** — mobile list `display:none`, split `flex`
+  (grid 660px + Gantt 588px), divider and toolbar visible.
+- ⚠️ **Verification gap, stated plainly:** `renderMobile()` was **not** exercised end-to-end against
+  loaded rows. The harness stubs could not satisfy this module's `load()` path (RPC → keyset
+  fallback), so it rendered its genuine empty state and the card branch was verified by injecting
+  `renderMobile()`'s exact template against the real CSS. The data binding itself rests on
+  `node --check` plus confirming every helper it calls (`esc`, `dispStart`, `dispFin`, `isComplete`,
+  `displayList`, `Fmt.date`) exists. **Worth a signed-in pass on a real project.**
+
+### 2026-07-23 — Schedule Builder view (bottom-up / location-based setup)
+- Added a **Schedule Builder** view to the title-switcher (between Project Schedule and Cost/EVM):
+  a 5-step wizard implementing the planning team's whiteboard flow (steps 1–7). Steps: **Activities**
+  (class-code list — code/name/group ST·AR·OTHER/required duration, drag to reorder = trade sequence)
+  → **Floors & Zones** (Location Breakdown) → **Zone sequence** (drag; default floor×zone) →
+  **Scope per zone** (location×activity checkbox matrix, stored inverted as `scopeOff`) →
+  **Generate** (sequential FS chain through locations from a start date → KPIs, duration-per-zone
+  bars, grouped preview, CSV export; "Push to Project Schedule" is a stub for the next milestone).
+- Code: a self-contained `ScheduleBuilder` closure with its OWN helpers (`e2`/`pdd`/`iso2`/`render`/
+  `load`/`save`/`generate`…) so nothing collides with the module's same-named functions. Reads the
+  module's live `pid`/`UID`. Wired via `switchTab('builder')` (view `#ps-view-builder`, rail
+  `#ps-bld-rail`, panel `#ps-bld-panel`) + a `renderAll` hook so switching project while on the tab
+  reloads it. `.sbld-*` CSS added to the module `<style>`.
+- Storage: one jsonb `config` per project in **`schedule_builder`** — migration
+  `migrations/2026-07-23-schedule-builder.sql` (**USER MUST RUN**; project-scoped RLS, read
+  `can_access_project` / write `is_writer()`+`can_access_project`). Save/load show a "run migration"
+  toast until applied. Icons: drag grip is the text glyph ⠇ (no `menu` in icons.js); Save uses `check`.
+- **Standalone `modules/schedule-builder/` was removed** — this integrated view supersedes it.
+- Verified: inline JS parses (`node --check`); loads with no console errors (auth gate blocks the
+  click-through). Not yet exercised signed-in.
+
+### 2026-07-23 — Schedule Builder: per-trade zoning + tower visual + Gantt link canvas
+- **Trades expanded** to ST · AR · MEPF · Allied · Other (`GROUPS`/`GLABEL`/`GCOLOR`); step-1
+  activity group select uses them.
+- **Step 2 rebuilt — per-trade, per-floor zoning.** Trade chips select the trade being edited;
+  per trade you add floors (drag to reorder) and set each floor's zone count (± stepper, zones
+  auto-name Z1..Zn), or bulk "Quick: N floors × M zones". A **tower/high-rise SVG visual**
+  (`towerSVG`) renders the selected trade's floors stacked (ground at bottom) with zone cells in
+  the trade colour. Model: `config.zoning[trade].floors[].zones[]`.
+- **Step 3 rebuilt — Gantt link canvas.** Every zone(-trade) is a bar (length = its trade's
+  day-sum); drag the dot on a bar's right edge onto another bar to create a finish-to-start link
+  (`addLink`, with cycle guard via `reaches`); click a connector to remove it. Bars slide to the
+  longest-path earliest start (`computeStarts`). Auto-chain / Clear links buttons. Self-contained
+  SVG + a single document-level mouseup (`upWired`) resolving the drop target by `elementFromPoint`.
+- **Step 4 (scope)** now renders one matrix per trade (that trade's locations × its activities);
+  `scopeOff` keyed by `locUid|activityId` where `locUid = trade/floorId/zoneId`.
+- **Step 5 (generate)** iterates per-trade locations, offsets each by its link-derived start, and
+  FS-chains that trade's activities within the location; per-zone bars coloured by trade.
+- Config model changed (`zoning`+`links` replace flat `floors`/`zones`/`sequence`) — same
+  `schedule_builder` table/jsonb; old flat configs are ignored by `normalize` (feature is new).
+- Verified: inline JS parses (`node --check`); scheduling math (longest-path starts, total, cycle
+  guard) unit-checked in Node; module loads with no console errors. Not yet exercised signed-in.
+
+### 2026-07-24 — Schedule Builder step 3: Start/End milestones + auto-traced interphase logic
+- **Start & End nodes** added to the link canvas: a green **START** milestone (top row) and a red
+  **END** milestone (bottom row, at the project's longest-path end). START has a source handle;
+  END is a terminal drop target. Both are valid link endpoints (markers, 0 duration — they bookend
+  the network without affecting timing). `Auto-chain` now also links Start→first and last→End.
+- **Auto-trace of construction logic.** New helpers `locKeyOf` (floor+zone), `tryLink` (dedupe +
+  cycle-safe), `traceInterphase`, `autoTrace`. When you draw a link between two zones **at the same
+  location** (same floor+zone across trades), the builder auto-chains the remaining trades there in
+  order **ST → AR → MEPF → Allied → Other** — the structural→architectural→MEPF interphasing.
+  A new **Auto-trace logic** button builds it for the whole building: interphase every location's
+  trades, then bookend Start→sources and sinks→End. All additions are cycle-guarded via `reaches`.
+- Verified: inline JS parses (`node --check`); loads with no console errors. Signed-in click-through
+  (drag-to-link firing the interphase trace, Start/End rendering) still pending — auth-gated here.
+
+### 2026-07-24 — Schedule Builder step 3 redesign: takt floor-lead logic + tower-connect UI
+- **Zone-sequence logic is now takt/location-based.** `autoTrace` rebuilds the flow from rules:
+  (1) each trade climbs its own floors zone-by-zone (vertical progression), (2) a following trade
+  stays a configurable **floor lead** behind the previous one — e.g. "Structure leads by 4 floors
+  before the next trade starts" (Architecture on the ground floor can't begin until Structure is
+  4 floors up), (3) bookended by Start → sources and sinks → End. New `cfg.floorLead` (default 4),
+  editable inline in step 3. Helpers `floorsOf`/`zoneByCode`/`uidFor`/`floorAxis`. First cross-trade
+  transition uses the lead; later ones stay 1 floor behind. Unit-checked in Node: with ST dur 2/floor
+  and lead 4, AR ground start = day 8 (= 4 structural floors) — correct staircase.
+- **Linking UI rebuilt as a tower + schedule split.** LEFT: a tower (floors stacked, ground at
+  bottom; union of floor codes) where every zone is a clickable **node** grouped by trade and
+  coloured by trade. Click a source node then a target to connect them (finish-to-start, with the
+  same-location interphase auto-trace + cycle guard); the pending source is outlined. RIGHT: the
+  **resulting schedule** (`scheduleSVG`) — read-only takt bars from the links with Start/End +
+  arrows; click an arrow to remove that link. Replaces the SVG drag-handle canvas (drag-to-link).
+- Verified: inline JS parses (`node --check`); takt scheduling unit-checked; module loads with no
+  console errors. Signed-in click-through still pending (auth-gated here).
+
+### 2026-07-24 — Schedule Builder: "Push to Project Schedule" hand-off (add + choose WBS)
+- Step 5's **Push to Project Schedule** now actually writes the generated activities into the live
+  `project_schedule` — **adds** to the existing schedule (never replaces). A modal asks which **WBS**
+  to file them under (dropdown of existing WBS-Summary rows, or "Top level"), plus a checkbox to
+  **organise into Trade → Floor → Zone sub-WBS** (on by default; off = flat under the chosen WBS).
+- New builder fns `nextChildIndex(base)` (next free dotted-code child under a parent), `openPushModal`,
+  `pushToSchedule(parentCode, grouped)`: builds WBS-Summary + Task payloads (dates + baseline from the
+  takt result, unique `activity_id`s vs existing rows, `created_by=UID`), chunked-inserts to `TABLE`,
+  then `switchTab('schedule')` + module `load()` to repaint the Gantt.
+- Enabler: the builder's internal `load` was renamed **`loadCfg`** so it no longer shadows the
+  module's schedule `load()` (needed to reload after the insert). `open()` updated accordingly.
+- Verified: inline JS parses (`node --check`); loads with no console errors. Signed-in click-through
+  of the actual insert still pending (auth-gated here).
+
+### 2026-07-24 — Schedule Builder step 3: typed/lagged links, unlink, multi-link, narrow tower, zoomable/editable schedule
+- **Relationship type + lag.** Links now carry `type` (FS/SS/FF/SF) + `lag` (days). A dialog
+  (`openLinkDialog`) asks both whenever you connect two nodes; `computeStarts` honours them via
+  `linkStart()` (FS/SS/FF/SF math, negatives floored to 0). Arrows on the schedule show a
+  `TYPE±lag` label and anchor from the correct edge (start for SS/SF, finish for FS/FF).
+- **Unlink + edit.** Click any arrow (or re-click a linked pair) to open the dialog with an
+  **Unlink** button and editable type/lag (`linkOf`/`removeLink`). Removed the old auto-interphase-
+  on-manual-link (surprising now that linking is explicit); the bulk logic stays in **Auto-trace**.
+- **Multiple linking.** The source node stays selected after a link so you can fan out to several
+  targets; **Done linking** / clicking the source again releases it.
+- **Narrower vertical tower.** Zone nodes are compact fixed-width squares and floors are tighter, so
+  the left pane reads as a stacked tower; the split is now ~270px tower : expanded schedule.
+- **Zoomable, editable schedule.** Right pane uses a `seqZoom` px/day scale with − / + buttons;
+  schedule **bars are clickable** (act as link source/target too, so you can wire relationships from
+  the Gantt), and arrows are clickable to edit/unlink.
+- Verified: inline JS parses (`node --check`); FS/SS/FF/SF + lag math unit-checked; loads with no
+  console errors. Signed-in click-through still pending (auth-gated here).
+
+### 2026-07-24 — Schedule Builder step 3: draggable tower/schedule split + scaling nodes
+- Step 3 is now a **draggable split** (`.sbld-seq2` flex + `.sbld-seq2-grip` col-resize divider,
+  width in `seqLeftW`): drag to give more room to the tower or the schedule. Min 150px tower,
+  schedule keeps ≥260px.
+- Zone **nodes now flex** to fill their (resizable) trade cell (`flex:1 1 22px; min 20 / max 72px`),
+  so they grow when the tower pane is widened and shrink when narrowed — no longer a fixed tiny size.
+- Verified: inline JS parses; loads with no console errors.
+>>>>>>> Stashed changes

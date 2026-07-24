@@ -942,6 +942,160 @@
     .ps-sc-tbl td.k { white-space:nowrap; padding-right:12px; width:1%; }
     .ps-kbd { display:inline-block; font:600 11px/1.4 var(--pd-font,inherit); background:var(--pd-bg); border:1px solid var(--pd-line);
       border-bottom-width:2px; border-radius:4px; padding:1px 5px; color:var(--pd-ink); }
+<<<<<<< Updated upstream
+=======
+
+    /* ---- PHONE read-only list (<=700px) ---------------------------------
+       This module is a desktop planning tool: an 18-column virtualized grid
+       beside a time-scaled Gantt, with Excel-style keyboard navigation and
+       drag-to-link. Below 700px that split is hidden outright and replaced by
+       #ps-mobile — a condensed READ-ONLY activity list (renderMobile()).
+       Above 700px #ps-mobile is display:none and never rendered. */
+    .ps-mobile { display:none; }
+    /* ⚠️ Tablet: the toolbar row is `flex-wrap:nowrap` (deliberate on desktop —
+       it keeps the single-row OPC-style toolbar and lets its popovers escape via
+       `overflow:visible`). At 768px that pushed the row ~126px past the viewport
+       and gave the whole PAGE a horizontal scroll, so the trailing tools drifted
+       off-screen. Phones drop the toolbar entirely (below), so this only needs to
+       cover the tablet band. */
+    @media (min-width:701px) and (max-width:900px) {
+      .ps-toolbar .ps-tb-row { flex-wrap:wrap; row-gap:6px; }
+    }
+
+    @media (max-width:700px) {
+      .ps-split, .ps-divider { display:none !important; }
+      .ps-mobile { display:block; padding:2px 0 14px; }
+      /* Editing/authoring controls are meaningless in a read-only view. */
+      .ps-toolbar, .ps-legend, #ps-details { display:none !important; }
+
+      .ps-m-bar { display:flex; align-items:center; gap:8px; padding:8px 2px 10px;
+        font-size:13px; color:var(--pd-muted); }
+      .ps-m-ro { margin-left:auto; font-size:10px; font-weight:700; text-transform:uppercase;
+        letter-spacing:.05em; color:var(--pd-muted); background:var(--pd-bg);
+        border:1px solid var(--pd-line); border-radius:999px; padding:2px 9px; }
+      .ps-mcard { background:var(--pd-card); border:1px solid var(--pd-line);
+        border-left:3px solid var(--pd-line); border-radius:var(--pd-radius);
+        padding:11px 12px; margin-bottom:9px; }
+      .ps-mcard.is-cp { border-left-color:var(--pd-red); }
+      .ps-mtop { display:flex; align-items:center; gap:8px; margin-bottom:3px; }
+      .ps-mid { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:11.5px;
+        font-weight:700; color:var(--pd-muted); }
+      .ps-mstat { margin-left:auto; font-size:10.5px; font-weight:700; color:#fff;
+        border-radius:999px; padding:2px 9px; white-space:nowrap; }
+      .ps-mstat.is-new  { background:var(--pd-muted); }
+      .ps-mstat.is-wip  { background:var(--pd-warn); }
+      .ps-mstat.is-done { background:var(--pd-ok); }
+      .ps-mname { font-size:14px; font-weight:600; line-height:1.3; margin-bottom:8px; }
+      .ps-mmeta { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+      .ps-mmeta > div { display:flex; flex-direction:column; min-width:0; }
+      .ps-mmeta span { font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+      .ps-mmeta strong { font-size:12.5px; font-variant-numeric:tabular-nums; }
+      .ps-mbar { height:5px; background:var(--pd-line); border-radius:999px; overflow:hidden; margin-top:9px; }
+      .ps-mbar i { display:block; height:100%; background:var(--pd-red); }
+      .ps-m-empty, .ps-m-more { padding:22px 14px; text-align:center; color:var(--pd-muted);
+        font-size:13px; background:var(--pd-card); border:1px dashed var(--pd-line);
+        border-radius:var(--pd-radius); }
+      .ps-m-more { margin-top:4px; }
+    }
+    /* ===== Schedule Builder view (bottom-up / location-based setup, steps 1-7) ===== */
+    .sbld-wrap { display:grid; grid-template-columns:230px 1fr; gap:18px; align-items:start; }
+    .sbld-rail { position:sticky; top:12px; display:flex; flex-direction:column; gap:4px; }
+    .sbld-step { display:flex; align-items:flex-start; gap:10px; text-align:left; padding:9px 11px; border:1px solid transparent; border-radius:8px; background:none; cursor:pointer; font:inherit; color:var(--pd-ink); }
+    .sbld-step:hover { background:var(--pd-bg); }
+    .sbld-step.on { background:var(--pd-card); border-color:var(--pd-line); box-shadow:var(--pd-shadow); }
+    .sbld-step-n { flex:none; width:22px; height:22px; border-radius:50%; background:var(--pd-bg); color:var(--pd-muted); font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--pd-line); }
+    .sbld-step.on .sbld-step-n { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    .sbld-step-t { font-size:13px; font-weight:600; line-height:1.25; }
+    .sbld-step-s { font-size:11px; color:var(--pd-muted); }
+    .sbld-panel { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:20px; min-height:55vh; }
+    .sbld-panel h2 { margin:0 0 4px; font-size:18px; }
+    .sbld-panel .sbld-lede { margin:0 0 18px; color:var(--pd-muted); font-size:13px; max-width:70ch; }
+    .sbld-sec-actions { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .sbld-foot { display:flex; justify-content:space-between; gap:10px; margin-top:22px; padding-top:16px; border-top:1px solid var(--pd-line); }
+    .sbld-list { display:flex; flex-direction:column; gap:8px; margin-bottom:8px; }
+    .sbld-row { display:flex; gap:8px; align-items:center; }
+    .sbld-row .pd-input, .sbld-row .pd-select { height:34px; font-size:13px; }
+    .sbld-row .grow { flex:1 1 auto; min-width:0; }
+    .sbld-row .w80 { width:80px; flex:none; } .sbld-row .w120 { width:120px; flex:none; }
+    .sbld-del { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; color:var(--pd-bad); }
+    .sbld-grab { cursor:grab; color:var(--pd-muted); flex:none; user-select:none; }
+    .sbld-tag { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:999px; background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
+    .sbld-hint { font-size:12px; color:var(--pd-muted); margin:6px 0 0; }
+    .sbld-empty { color:var(--pd-muted); font-size:13px; padding:22px; text-align:center; border:1px dashed var(--pd-line); border-radius:8px; }
+    .sbld-save-state { font-size:12px; color:var(--pd-muted); white-space:nowrap; }
+    .sbld-tablewrap { overflow:auto; border:1px solid var(--pd-line); border-radius:8px; }
+    table.sbld-tbl { border-collapse:collapse; width:100%; font-size:12.5px; }
+    table.sbld-tbl th, table.sbld-tbl td { border:1px solid var(--pd-line); padding:6px 9px; text-align:left; white-space:nowrap; }
+    table.sbld-tbl thead th { background:var(--pd-bg); position:sticky; top:0; z-index:1; }
+    table.sbld-tbl td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    table.sbld-tbl tr.grp td { background:var(--pd-bg); font-weight:700; }
+    .sbld-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+    .sbld-kpi { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:8px; padding:12px 14px; }
+    .sbld-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); }
+    .sbld-kpi-v { font-size:20px; font-weight:700; margin-top:4px; }
+    .sbld-bargrp { display:flex; align-items:center; gap:10px; margin:5px 0; font-size:12.5px; }
+    .sbld-bargrp .lab { width:150px; flex:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sbld-bar { height:16px; background:var(--pd-red); border-radius:3px; }
+    /* step 2 — trade chips + tower */
+    .sbld-tradechips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+    .sbld-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border:1px solid var(--pd-line); border-radius:999px; background:var(--pd-card); cursor:pointer; font:inherit; font-size:12.5px; color:var(--pd-ink); }
+    .sbld-chip:hover { background:var(--pd-bg); }
+    .sbld-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); font-weight:700; }
+    .sbld-chip b { font-size:11px; background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:999px; padding:0 6px; }
+    .sbld-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:none; }
+    .sbld-quick { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); flex-wrap:wrap; }
+    .sbld-step2ct { font-size:11px; color:var(--pd-muted); margin-left:4px; }
+    .sbld-znplus, .sbld-znminus { width:30px; height:32px; padding:0; flex:none; font-size:16px; font-weight:700; }
+    .sbld-zncount { min-width:20px; text-align:center; font-variant-numeric:tabular-nums; font-weight:700; }
+    .sbld-tower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); position:sticky; top:12px; }
+    .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; margin-bottom:8px; }
+    /* step 3 — link canvas */
+    .sbld-canvaswrap { overflow:auto; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); }
+    svg.sbld-canvas { display:block; }
+    .sbld-handle { fill:var(--pd-card); stroke:var(--pd-dark); stroke-width:1.5; cursor:crosshair; }
+    html.pd-dark .sbld-handle { stroke:#c7ccd1; }
+    .sbld-handle:hover { fill:var(--pd-red); }
+    .sbld-link { fill:none; stroke:var(--pd-ink); stroke-width:1.6; marker-end:url(#sbldarrow); opacity:.75; }
+    .sbld-linkhit { fill:none; stroke:transparent; stroke-width:12; cursor:pointer; }
+    .sbld-tmpline { stroke:var(--pd-red); stroke-width:1.8; stroke-dasharray:4 3; pointer-events:none; }
+    /* step 3 v3 — resizable split: vertical tower (left) + schedule (right), draggable divider */
+    .sbld-seq2 { display:flex; align-items:stretch; gap:0; }
+    .sbld-seq2-left { flex:0 0 auto; border:1px solid var(--pd-line); border-radius:8px; padding:10px; background:var(--pd-bg); overflow:auto; height:70vh; min-width:150px; display:flex; flex-direction:column; }
+    .sbld-seq2-grip { flex:none; width:10px; cursor:col-resize; align-self:stretch; display:flex; align-items:center; justify-content:center; }
+    .sbld-seq2-grip::after { content:''; width:3px; height:44px; border-radius:2px; background:var(--pd-line); }
+    .sbld-seq2-grip:hover::after, .sbld-seq2-grip.drag::after { background:var(--pd-red); }
+    .sbld-seq2-right { flex:1 1 0; min-width:0; }
+    .sbld-seq2-h { font-size:12px; font-weight:700; color:var(--pd-muted); margin-bottom:6px; }
+    .sbld-twr { display:flex; flex-direction:column; gap:4px; flex:1 1 auto; min-height:0; }
+    .sbld-twr-floor { display:flex; align-items:stretch; gap:4px; flex:1 1 0; min-height:40px; }
+    .sbld-twr-legend { flex:0 0 auto; }
+    .sbld-twr-lab { flex:none; width:40px; font-size:13px; font-weight:700; color:var(--pd-muted); display:flex; align-items:center; justify-content:flex-end; padding-right:4px; }
+    .sbld-twr-trade { flex:1 1 0; display:flex; gap:4px; padding:3px; border:1px dashed var(--pd-line); border-radius:5px; flex-wrap:wrap; justify-content:center; align-items:stretch; }
+    .sbld-twr-trade.sbld-twr-empty { border-style:solid; border-color:transparent; }
+    .sbld-twr-legend .sbld-twr-trade { border:none; align-items:center; min-height:16px; font-size:12px; }
+    /* nodes flex to fill the (resizable) trade cell in BOTH axes, so they grow with the pane */
+    .sbld-znode { flex:1 1 40px; min-width:34px; display:flex; align-items:center; justify-content:center; border:1.5px solid var(--zc); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:14px; font-weight:700; cursor:pointer; padding:2px 4px; line-height:1; }
+    .sbld-znode:hover { background:var(--zc); color:#fff; }
+    .sbld-znode.pend { background:var(--zc); color:#fff; outline:2px solid var(--pd-red); outline-offset:1px; }
+    svg.sbld-sched { display:block; }
+    svg.sbld-sched .sbld-link { marker-end:url(#sbldarrow2); }
+    .sbld-schedbar { cursor:pointer; }
+    .sbld-schedbar:hover { opacity:.85; }
+    .sbld-schedbar.pend { stroke:var(--pd-red); stroke-width:2; }
+    .sbld-linklbl { fill:var(--pd-muted); pointer-events:none; }
+    .sbld-zbtn { width:28px; height:28px; padding:0; font-size:15px; font-weight:700; }
+    .sbld-tb-sep2 { width:1px; align-self:stretch; background:var(--pd-line); margin:2px 4px; }
+    /* relationship dialog */
+    .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.2); padding:10px; width:224px; }
+    .sbld-ld-h { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-bottom:6px; }
+    .sbld-ld-row { display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:12px; }
+    .sbld-ld-row.sbld-ld-foot { justify-content:space-between; margin-bottom:0; }
+    .sbld-ld-t { flex:1 1 0; border:1px solid var(--pd-line); background:var(--pd-card); border-radius:5px; padding:5px 0; font:inherit; font-size:12px; font-weight:700; cursor:pointer; color:var(--pd-ink); }
+    .sbld-ld-t.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    .sbld-ld-row input[type=number] { font:inherit; padding:4px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
+    @media (max-width:900px){ .sbld-seq2 { grid-template-columns:1fr; } }
+    @media (max-width:820px){ .sbld-wrap { grid-template-columns:1fr; } .sbld-rail { position:static; flex-direction:row; overflow-x:auto; } .sbld-step-s { display:none; } }
+>>>>>>> Stashed changes
 </style>
 </head>
 <body>
@@ -7617,6 +7771,527 @@
   }
 
   // ----- tabs / view switch -----
+<<<<<<< Updated upstream
+=======
+  // ======================================================================
+  //  SCHEDULE BUILDER — bottom-up / location-based schedule setup (steps 1-7).
+  //  Self-contained closure (own helpers, no collision with the module's).
+  //  State = one jsonb `config` per project in the `schedule_builder` table.
+  //  Generated preview stays here; pushing into project_schedule is a later step.
+  // ======================================================================
+  var ScheduleBuilder = (function () {
+    var GROUPS = ['ST', 'AR', 'MEPF', 'ALLIED', 'OTHER'];
+    var GLABEL = { ST: 'Structure', AR: 'Architecture / NRF', MEPF: 'MEPF', ALLIED: 'Allied Services', OTHER: 'Other' };
+    var GCOLOR = { ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e', OTHER: '#6f7276' };
+    var cfg = null, step = 0, dirty = false, curPid = null, curUid = null, wired = false;
+    var uiTrade = 'ST';            // trade being edited/visualised in step 2
+    var linkDrag = null, stepPos = {}, upWired = false;  // step-3 link canvas drag state
+    var pendSrc = null;   // step-3 tower click-to-connect: pending source node
+    var seqZoom = 8;      // step-3 schedule zoom (px per day)
+    var seqLeftW = 300;   // step-3 tower pane width (px) — draggable divider
+    function sbc() { return AppAuth.getSB(); }
+    function e2(s) { return Fmt.esc(String(s == null ? '' : s)); }
+    function uidv() { return 'x' + Math.random().toString(36).slice(2, 9); }
+    function pdd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; }
+    function iso2(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+    function addD(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
+    function fmtD(d) { return d ? d.toLocaleDateString('en-US', { day:'2-digit', month:'short', year:'2-digit' }) : '—'; }
+    function blankZoning() { var z = {}; GROUPS.forEach(function (g) { z[g] = { floors: [] }; }); return z; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], zoning: blankZoning(), links: [], scopeOff: {}, floorLead: 4 }; }
+    function normalize(c) {
+      c = c && typeof c === 'object' ? c : {}; var d = blank();
+      d.startDate = c.startDate || d.startDate;
+      d.activities = Array.isArray(c.activities) ? c.activities.map(function (a) { return { id: a.id || uidv(), code: a.code || '', name: a.name || '', group: GROUPS.indexOf(a.group) >= 0 ? a.group : 'ST', duration: +a.duration || 0 }; }) : [];
+      // Per-trade zoning: each trade has its own floors, each floor its own zones.
+      GROUPS.forEach(function (g) {
+        var src = (c.zoning && c.zoning[g]) || {};
+        var floors = Array.isArray(src.floors) ? src.floors : [];
+        d.zoning[g] = { floors: floors.map(function (f) {
+          return { id: f.id || uidv(), code: f.code || '', name: f.name || '',
+            zones: (Array.isArray(f.zones) ? f.zones : []).map(function (z) { return { id: z.id || uidv(), code: z.code || '', name: z.name || '' }; }) };
+        }) };
+      });
+      d.links = Array.isArray(c.links) ? c.links.filter(function (k) { return k && k.from && k.to; }).map(function (k) { return { from: k.from, to: k.to, type: (['FS', 'SS', 'FF', 'SF'].indexOf(k.type) >= 0 ? k.type : 'FS'), lag: (typeof k.lag === 'number' ? k.lag : (parseInt(k.lag, 10) || 0)) }; }) : [];
+      d.scopeOff = (c.scopeOff && typeof c.scopeOff === 'object') ? c.scopeOff : {};
+      d.floorLead = (c.floorLead >= 1 && c.floorLead <= 40) ? c.floorLead : 4;
+      return d;
+    }
+    function setState(t) { var el = document.getElementById('ps-bld-savestate'); if (el) el.textContent = t || ''; }
+    function markDirty() { dirty = true; setState('Unsaved changes'); }
+    function isDirty() { return dirty; }
+
+    async function loadCfg() {
+      cfg = blank();
+      if (!curPid) { render(); return; }
+      try {
+        var r = await sbc().from('schedule_builder').select('config').eq('project_id', curPid).maybeSingle();
+        if (r.error && r.error.code !== 'PGRST116') {
+          if (/schedule_builder/.test(r.error.message || '')) UI.toast('Run migration 2026-07-23-schedule-builder.sql to save/load builder setups.', 'error');
+        } else if (r.data && r.data.config) cfg = normalize(r.data.config);
+      } catch (er) {}
+      dirty = false; setState('Saved'); render();
+    }
+    async function save() {
+      if (!curPid || !cfg) return; setState('Saving…');
+      try {
+        var r = await sbc().from('schedule_builder').upsert({ project_id: curPid, config: cfg, updated_at: new Date().toISOString(), updated_by: curUid }, { onConflict: 'project_id' });
+        if (r.error) throw r.error;
+        dirty = false; setState('Saved'); UI.toast('Builder setup saved.', 'success');
+      } catch (er) {
+        setState('Save failed');
+        UI.toast(/schedule_builder/.test(er.message || '') ? 'Run migration 2026-07-23-schedule-builder.sql first.' : ('Save failed: ' + (er.message || er)), 'error');
+      }
+    }
+    async function open(projectId, userId) {
+      curUid = userId;
+      if (!wired) { var sv = document.getElementById('ps-bld-save'); if (sv) sv.onclick = save; wired = true; }
+      if (projectId !== curPid) { curPid = projectId; step = 0; await loadCfg(); } else render();
+    }
+
+    // ---- location model (per-trade, per-floor zones) --------------------
+    function locList() {
+      var out = [];
+      GROUPS.forEach(function (tr) { cfg.zoning[tr].floors.forEach(function (f) { f.zones.forEach(function (z) {
+        out.push({ uid: tr + '/' + f.id + '/' + z.id, trade: tr, floor: f, zone: z });
+      }); }); });
+      return out;
+    }
+    function tradeActs(tr) { return cfg.activities.filter(function (a) { return a.group === tr; }); }
+    function included(uid, aid) { return !cfg.scopeOff[uid + '|' + aid]; }
+    function nodeDays(loc) { return tradeActs(loc.trade).reduce(function (t, a) { return t + (included(loc.uid, a.id) ? Math.max(0, +a.duration || 0) : 0); }, 0); }
+    function locLabel(loc) { return (loc.floor.code || loc.floor.name || 'Flr') + ' · ' + (loc.zone.code || loc.zone.name || 'Zn'); }
+
+    // earliest start of `to` given `from` per relationship type + lag
+    function linkStart(fs, fd, td, type, lag) {
+      lag = lag || 0;
+      if (type === 'SS') return fs + lag;
+      if (type === 'FF') return fs + fd + lag - td;
+      if (type === 'SF') return fs + lag - td;
+      return fs + fd + lag;   // FS
+    }
+    // longest-path earliest start (days) honoring each link's type (FS/SS/FF/SF) + lag
+    function computeStarts(locs, days) {
+      var incoming = {}; locs.forEach(function (l) { incoming[l.uid] = []; });
+      cfg.links.forEach(function (k) { if (incoming[k.to]) incoming[k.to].push(k); });
+      var memo = {}, stack = {};
+      function st(uid) {
+        if (memo[uid] != null) return memo[uid]; if (stack[uid]) return 0; stack[uid] = 1;
+        var m = 0; (incoming[uid] || []).forEach(function (k) { var c = linkStart(st(k.from), days[k.from] || 0, days[uid] || 0, k.type, k.lag); if (c > m) m = c; });
+        stack[uid] = 0; return (memo[uid] = Math.max(0, m));
+      }
+      var out = {}; locs.forEach(function (l) { out[l.uid] = st(l.uid); }); return out;
+    }
+    // would from→to create a cycle? (does `to` already reach `from`?)
+    function reaches(a, b) { var seen = {}, stack = [a]; while (stack.length) { var x = stack.pop(); if (x === b) return true; if (seen[x]) continue; seen[x] = 1; cfg.links.forEach(function (k) { if (k.from === x) stack.push(k.to); }); } return false; }
+    function locByUid(uid) { return locList().find(function (l) { return l.uid === uid; }); }
+    function locKeyOf(l) { return (l.floor.code || l.floor.name || l.floor.id) + '|' + (l.zone.code || l.zone.name || l.zone.id); }
+    function START() { return '__start__'; } function END() { return '__end__'; }
+    function isMarker(uid) { return uid === '__start__' || uid === '__end__'; }
+    function tryLink(a, b, type, lag) { if (!a || !b || a === b) return false; if (cfg.links.some(function (k) { return k.from === a && k.to === b; })) return false; if (reaches(b, a)) return false; cfg.links.push({ from: a, to: b, type: type || 'FS', lag: lag || 0 }); return true; }
+    function linkOf(from, to) { return cfg.links.find(function (k) { return k.from === from && k.to === to; }); }
+    function removeLink(from, to) { cfg.links = cfg.links.filter(function (k) { return !(k.from === from && k.to === to); }); markDirty(); render(); }
+    function addLink(from, to, type, lag) {
+      if (!from || !to || from === to) return;
+      if (linkOf(from, to)) { UI.toast('Those two are already linked.', 'warn'); return; }
+      if (reaches(to, from)) { UI.toast('That link would create a loop.', 'error'); return; }
+      cfg.links.push({ from: from, to: to, type: type || 'FS', lag: lag || 0 });
+      markDirty(); render();
+    }
+    function floorsOf(tr) { return cfg.zoning[tr].floors; }             // listed order: index 0 = lowest/ground
+    function zoneByCode(floor, code) { return floor.zones.find(function (z) { return (z.code || z.id) === code; }); }
+    function uidFor(tr, f, z) { return tr + '/' + f.id + '/' + z.id; }
+    // Takt / location-based logic: each trade climbs its own floors zone-by-zone, and a following
+    // trade stays a configurable number of floors BEHIND the one before it — e.g. "structure leads
+    // by 4 floors" means Architecture on a floor can't start until Structure is 4 floors ahead.
+    function autoTrace() {
+      if (!locList().length) return;
+      var lead = Math.max(1, +cfg.floorLead || 4);
+      cfg.links = [];   // rebuild from the logic rules
+      var present = GROUPS.filter(function (tr) { return floorsOf(tr).length && tradeActs(tr).length; });
+      // 1) vertical progression within each trade (same zone code, floor i-1 → i)
+      present.forEach(function (tr) { var fs = floorsOf(tr); for (var i = 1; i < fs.length; i++) fs[i].zones.forEach(function (z) { var pz = zoneByCode(fs[i - 1], z.code || z.id); if (pz) tryLink(uidFor(tr, fs[i - 1], pz), uidFor(tr, fs[i], z)); }); });
+      // 2) cross-trade lead: next-trade floor j follows prev-trade floor (j + lead − 1); first transition uses `lead`, later ones stay 1 floor behind
+      for (var t = 1; t < present.length; t++) {
+        var prev = present[t - 1], next = present[t], L = (t === 1) ? lead : 1, fp = floorsOf(prev), fn = floorsOf(next);
+        fn.forEach(function (nf, j) {
+          var srcIdx = Math.min(j + L - 1, fp.length - 1); if (srcIdx < 0) srcIdx = 0; var pf = fp[srcIdx]; if (!pf) return;
+          nf.zones.forEach(function (z) { var pz = zoneByCode(pf, z.code || z.id) || pf.zones[0]; if (pz) tryLink(uidFor(prev, pf, pz), uidFor(next, nf, z)); });
+        });
+      }
+      // 3) bookend with Start / End
+      var hasIn = {}, hasOut = {}; cfg.links.forEach(function (k) { hasIn[k.to] = 1; hasOut[k.from] = 1; });
+      locList().forEach(function (l) { if (!hasIn[l.uid]) tryLink(START(), l.uid); if (!hasOut[l.uid]) tryLink(l.uid, END()); });
+      markDirty(); render();
+    }
+
+    function generate() {
+      var locs = locList(), days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l); });
+      var starts = computeStarts(locs, days), start = pdd(cfg.startDate) || new Date();
+      var rows = [], perZone = [];
+      locs.slice().sort(function (a, b) { return (starts[a.uid] - starts[b.uid]) || (GROUPS.indexOf(a.trade) - GROUPS.indexOf(b.trade)); }).forEach(function (loc) {
+        var off = starts[loc.uid] || 0, cursor = addD(start, off);
+        tradeActs(loc.trade).forEach(function (a) {
+          if (!included(loc.uid, a.id)) return; var dur = Math.max(0, +a.duration || 0); if (dur <= 0) return;
+          var aS = new Date(cursor), aF = addD(aS, dur - 1);
+          rows.push({ loc: loc, act: a, dur: dur, start: aS, finish: aF, group: a.group });
+          cursor = addD(aF, 1);
+        });
+        var d = days[loc.uid] || 0;
+        perZone.push({ loc: loc, days: d, start: addD(start, off), finish: addD(start, off + Math.max(0, d) - 1) });
+      });
+      var total = 0; locs.forEach(function (l) { total = Math.max(total, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
+      return { rows: rows, perZone: perZone, totalDays: rows.reduce(function (t, r) { return t + r.dur; }, 0), start: start, finish: addD(start, Math.max(0, total - 1)), starts: starts, days: days, locs: locs };
+    }
+
+    // ---- drag reorder ----
+    var _dEl = null, _dArr = null, _dGet = null;
+    function wireDrag(row, arr, get) {
+      row.addEventListener('dragstart', function () { _dEl = row; _dArr = arr; _dGet = get || null; row.style.opacity = '.5'; });
+      row.addEventListener('dragend', function () { row.style.opacity = ''; _dEl = null; });
+      row.addEventListener('dragover', function (ev) { ev.preventDefault(); });
+      row.addEventListener('drop', function (ev) {
+        ev.preventDefault(); if (!_dEl || _dEl === row) return; var a = _dGet ? _dGet() : _dArr; if (!a) return;
+        var from = +_dEl.dataset.i, to = +row.dataset.i; if (isNaN(from) || isNaN(to)) return;
+        var it = a.splice(from, 1)[0]; a.splice(to, 0, it); markDirty(); render();
+      });
+    }
+
+    var STEPS = [
+      { t: 'Activities', s: 'Class-code list + duration', fn: stActivities },
+      { t: 'Floors & Zones', s: 'Location breakdown', fn: stLevels },
+      { t: 'Zone sequence', s: 'Order of locations', fn: stSequence },
+      { t: 'Scope per zone', s: 'Activities per location', fn: stScope },
+      { t: 'Generate', s: 'Build & preview', fn: stGenerate },
+    ];
+
+    function stActivities(host) {
+      var b = '<h2>1 · Activities &amp; required duration</h2>' +
+        '<p class="sbld-lede">The activity list from your class-code list (whiteboard steps 1–2 &amp; 6): code, name, discipline group (ST / AR / OTHER) and required duration in days. Row order = the trade sequence within a zone.</p>' +
+        '<div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-add">+ Add activity</button><button class="pd-btn" id="b-seed">Load typical set</button></div>';
+      if (!cfg.activities.length) b += '<div class="sbld-empty">No activities yet. Add rows, or load a typical set.</div>';
+      else b += '<div class="sbld-list">' + cfg.activities.map(function (a, i) {
+        return '<div class="sbld-row" data-i="' + i + '" draggable="true"><span class="sbld-grab" title="Drag to reorder">⠇</span>' +
+          '<input class="pd-input w120" data-k="code" value="' + e2(a.code) + '" placeholder="Code" />' +
+          '<input class="pd-input grow" data-k="name" value="' + e2(a.name) + '" placeholder="Activity name" />' +
+          '<select class="pd-select w120" data-k="group">' + GROUPS.map(function (g) { return '<option value="' + g + '"' + (a.group === g ? ' selected' : '') + '>' + g + '</option>'; }).join('') + '</select>' +
+          '<input class="pd-input w80" type="number" min="0" step="1" data-k="duration" value="' + (a.duration || '') + '" placeholder="days" />' +
+          '<button class="pd-btn sbld-del" data-del="' + i + '"><span data-ico="trash" data-ico-size="15"></span></button></div>';
+      }).join('') + '</div><p class="sbld-hint">Drag the handle to reorder — this order is the trade sequence within each zone.</p>';
+      host.innerHTML = b;
+      host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', duration: 0 }); markDirty(); render(); };
+      host.querySelector('#b-seed').onclick = function () {
+        [['REBAR','Rebar','ST',3],['FORM','Formworks','ST',3],['POUR','Concreting','ST',2],['MAS','Masonry','AR',5],['PLA','Plastering','AR',5],['TILE','Tiling','AR',4],['CEIL','Ceiling','AR',3],['PAINT','Painting','AR',4]].forEach(function (r) { cfg.activities.push({ id: uidv(), code: r[0], name: r[1], group: r[2], duration: r[3] }); });
+        markDirty(); render();
+      };
+      host.querySelectorAll('.sbld-row').forEach(function (row) {
+        var i = +row.dataset.i;
+        row.querySelectorAll('[data-k]').forEach(function (inp) { inp.onchange = function () { var k = inp.dataset.k; cfg.activities[i][k] = (k === 'duration') ? (+inp.value || 0) : inp.value; markDirty(); }; });
+        var del = row.querySelector('[data-del]'); if (del) del.onclick = function () { cfg.activities.splice(i, 1); markDirty(); render(); };
+        wireDrag(row, cfg.activities);
+      });
+    }
+
+    function towerSVG(tr) {
+      var floors = cfg.zoning[tr].floors;
+      if (!floors.length) return '<div class="sbld-empty">No floors yet for ' + e2(GLABEL[tr]) + '. Add floors on the left.</div>';
+      var W = 300, fh = 34, gap = 5, pad = 12, labelW = 52, col = GCOLOR[tr];
+      var rev = floors.slice().reverse();   // first-listed floor at the bottom (ground)
+      var H = pad * 2 + rev.length * (fh + gap) + 6, svg = '';
+      rev.forEach(function (f, i) {
+        var y = pad + i * (fh + gap), zones = f.zones.length ? f.zones : [{ code: '—' }];
+        var zw = (W - labelW - pad * 2) / zones.length;
+        svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="11" fill="var(--pd-muted)">' + e2(f.code || f.name || ('F' + (floors.length - i))) + '</text>';
+        zones.forEach(function (z, zi) {
+          var x = pad + labelW + zi * zw;
+          svg += '<rect x="' + x + '" y="' + y + '" width="' + (zw - 2) + '" height="' + fh + '" rx="3" fill="' + col + '" opacity="' + (zi % 2 ? 0.72 : 0.92) + '"></rect>';
+          svg += '<text x="' + (x + zw / 2) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="middle" font-size="10" fill="#fff">' + e2(z.code || ('Z' + (zi + 1))) + '</text>';
+        });
+      });
+      svg += '<line x1="' + pad + '" y1="' + (H - pad + 2) + '" x2="' + (W - pad) + '" y2="' + (H - pad + 2) + '" stroke="var(--pd-line)" stroke-width="2"/>';
+      return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;height:auto;">' + svg + '</svg>';
+    }
+    function stLevels(host) {
+      var tr = uiTrade, zn = cfg.zoning[tr];
+      var chips = '<div class="sbld-tradechips">' + GROUPS.map(function (g) {
+        var n = cfg.zoning[g].floors.reduce(function (t, f) { return t + f.zones.length; }, 0);
+        return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + GCOLOR[g] + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
+      }).join('') + '</div>';
+      var floorsHtml = zn.floors.length ? '<div class="sbld-list">' + zn.floors.map(function (f, i) {
+        return '<div class="sbld-row" data-i="' + i + '" draggable="true"><span class="sbld-grab">⠇</span>' +
+          '<input class="pd-input w120" data-k="code" value="' + e2(f.code) + '" placeholder="Floor code" />' +
+          '<input class="pd-input grow" data-k="name" value="' + e2(f.name) + '" placeholder="Floor name" />' +
+          '<span class="sbld-step2ct">Zones</span>' +
+          '<button class="pd-btn sbld-znminus" data-i="' + i + '" title="Remove a zone">−</button>' +
+          '<span class="sbld-zncount">' + f.zones.length + '</span>' +
+          '<button class="pd-btn sbld-znplus" data-i="' + i + '" title="Add a zone">+</button>' +
+          '<button class="pd-btn sbld-del" data-del="' + i + '"><span data-ico="trash" data-ico-size="15"></span></button></div>';
+      }).join('') + '</div>' : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' yet.</div>';
+      host.innerHTML = '<h2>2 · Floors &amp; Zones — per trade</h2>' +
+        '<p class="sbld-lede">Pick a trade, then define its floors and how many zones divide each floor. Each trade has its own zoning; the tower on the right visualises the selected trade.</p>' +
+        chips +
+        '<div style="display:grid;grid-template-columns:1fr 320px;gap:22px;align-items:start;margin-top:6px;">' +
+        '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button>' +
+        '<span class="sbld-quick">Quick: <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="5" style="width:60px;height:30px;"> floors × <input class="pd-input" id="q-zones" type="number" min="1" max="20" value="2" style="width:60px;height:30px;"> zones <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
+        floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder floors. Zones auto-name Z1, Z2… per floor.</p></div>' +
+        '<div class="sbld-tower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
+        '</div>';
+      host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; render(); }; });
+      host.querySelector('#b-addfloor').onclick = function () { zn.floors.push({ id: uidv(), code: 'F' + (zn.floors.length + 1), name: '', zones: [{ id: uidv(), code: 'Z1' }, { id: uidv(), code: 'Z2' }] }); markDirty(); render(); };
+      host.querySelector('#b-quick').onclick = function () {
+        var F = Math.max(1, Math.min(80, +host.querySelector('#q-floors').value || 1)), Z = Math.max(1, Math.min(20, +host.querySelector('#q-zones').value || 1));
+        if (zn.floors.length && !confirm('Replace the ' + zn.floors.length + ' existing floor(s) for ' + GLABEL[tr] + '?')) return;
+        zn.floors = []; for (var i = 1; i <= F; i++) { var zs = []; for (var j = 1; j <= Z; j++) zs.push({ id: uidv(), code: 'Z' + j }); zn.floors.push({ id: uidv(), code: 'F' + i, name: '', zones: zs }); }
+        cfg.links = []; markDirty(); render();
+      };
+      host.querySelectorAll('.sbld-znplus').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.i]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1) }); cfg.links = []; markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-znminus').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.i]; if (f.zones.length) f.zones.pop(); cfg.links = []; markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-row').forEach(function (row) {
+        var i = +row.dataset.i;
+        row.querySelectorAll('[data-k]').forEach(function (inp) { inp.onchange = function () { zn.floors[i][inp.dataset.k] = inp.value; markDirty(); render(); }; });
+        var del = row.querySelector('[data-del]'); if (del) del.onclick = function () { zn.floors.splice(i, 1); cfg.links = []; markDirty(); render(); };
+        wireDrag(row, zn.floors);
+      });
+    }
+
+    var NS = 'http://www.w3.org/2000/svg';
+    // Ordered union of floor codes across all trades (index 0 = lowest / ground).
+    function floorAxis() {
+      var seen = {}, order = [];
+      GROUPS.forEach(function (tr) { floorsOf(tr).forEach(function (f) { var c = f.code || f.name || f.id; if (!seen[c]) { seen[c] = 1; order.push(c); } }); });
+      return order;
+    }
+    // ---- schedule (right pane): bars from the links, Start/End + labelled arrows; bars/arrows editable ----
+    function scheduleSVG(locs, days, starts) {
+      var scale = seqZoom, rowH = 26, pad = 8, labelW = 138, chartX = labelW + 6, mw = 40;
+      var maxEnd = 0; locs.forEach(function (l) { maxEnd = Math.max(maxEnd, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
+      var startX = chartX, endX = chartX + maxEnd * scale;
+      var W = chartX + Math.max(maxEnd * scale, 160) + mw + 30, H = pad * 2 + (locs.length + 2) * rowH;
+      var pos = {}, bars = '', links = '';
+      function bar(uid, y, x, w, fill, label, txt) { pos[uid] = { x: x, y: y, w: w, cy: y + rowH / 2 };
+        return '<text x="3" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="var(--pd-ink)">' + e2(label) + '</text>' +
+          '<rect class="sbld-schedbar' + (uid === pendSrc ? ' pend' : '') + '" data-uid="' + uid + '" x="' + x + '" y="' + (y + 3) + '" width="' + w + '" height="' + (rowH - 8) + '" rx="3" fill="' + fill + '"></rect>' +
+          '<text x="' + (x + 4) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="#fff" pointer-events="none">' + txt + '</text>'; }
+      bars += bar('__start__', pad, startX, mw, 'var(--pd-ok)', 'Start', 'START');
+      locs.forEach(function (l, i) { var y = pad + (i + 1) * rowH; bars += bar(l.uid, y, chartX + (starts[l.uid] || 0) * scale, Math.max((days[l.uid] || 0) * scale, 14), GCOLOR[l.trade], l.trade + ' ' + locLabel(l), (days[l.uid] || 0) + 'd'); });
+      bars += bar('__end__', pad + (locs.length + 1) * rowH, endX, mw, 'var(--pd-red)', 'End', 'END');
+      cfg.links.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
+        var fx = (k.type === 'SS' || k.type === 'SF') ? a.x : a.x + a.w;   // leave from start (SS/SF) or finish (FS/FF)
+        var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;   // arrive at to finish (FF/SF) or start (FS/SS)
+        var y1 = a.cy, y2 = b.cy, mx = fx + 8, lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
+        var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
+        links += '<path class="sbld-link" d="' + d + '"></path>' +
+          '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' +
+          '<path class="sbld-linkhit" data-fk="' + e2(k.from + '~' + k.to) + '" d="' + d + '"></path>'; });
+      return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + links + bars + '</svg>';
+    }
+    function stSequence(host) {
+      var locs = locList(), days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l); });
+      var starts = computeStarts(locs, days);
+      var axis = floorAxis(), rev = axis.slice().reverse();
+      var present = GROUPS.filter(function (tr) { return floorsOf(tr).length; });
+      var tower = !locs.length ? '<div class="sbld-empty">Add per-trade floors &amp; zones in step 2 first.</div>' :
+        '<div class="sbld-twr">' + rev.map(function (fc) {
+          var cells = present.map(function (tr) {
+            var f = floorsOf(tr).find(function (x) { return (x.code || x.name || x.id) === fc; });
+            if (!f) return '<div class="sbld-twr-trade sbld-twr-empty"></div>';
+            return '<div class="sbld-twr-trade">' + f.zones.map(function (z) { var uid = uidFor(tr, f, z);
+              return '<button class="sbld-znode' + (pendSrc === uid ? ' pend' : '') + '" data-uid="' + uid + '" title="' + e2(GLABEL[tr] + ' · ' + fc + ' · ' + (z.code || z.id)) + '" style="--zc:' + GCOLOR[tr] + '">' + e2(z.code || 'Z') + '</button>'; }).join('') + '</div>';
+          }).join('');
+          return '<div class="sbld-twr-floor"><span class="sbld-twr-lab">' + e2(fc) + '</span>' + cells + '</div>';
+        }).join('') +
+        '<div class="sbld-twr-floor sbld-twr-legend"><span class="sbld-twr-lab"></span>' + present.map(function (tr) { return '<div class="sbld-twr-trade" style="justify-content:center;font-size:9px;color:' + GCOLOR[tr] + ';font-weight:700;">' + tr + '</div>'; }).join('') + '</div></div>';
+      host.innerHTML = '<h2>3 · Zone sequence — connect the flow</h2>' +
+        '<p class="sbld-lede">The <b>tower</b> (left) stacks the floors; each cell is a zone node. <b>Click a source node, then one or more target nodes</b> to link them — a dialog asks the relationship (FS/SS/FF/SF) and lag. The source stays selected so you can link several; click it again or <b>Done</b> to release. Click a bar or arrow on the schedule to edit or unlink. <b>Auto-trace logic</b> builds the takt flow.</p>' +
+        '<div class="sbld-sec-actions">' +
+        '<button class="pd-btn pd-btn-primary" id="b-autotrace">Auto-trace logic</button>' +
+        '<label class="sbld-quick">Structure leads by <input class="pd-input" id="b-lead" type="number" min="1" max="40" value="' + (cfg.floorLead || 4) + '" style="width:52px;height:30px;"> floor(s)</label>' +
+        (pendSrc ? '<button class="pd-btn" id="b-done">Done linking</button>' : '') +
+        '<button class="pd-btn" id="b-clear">Clear links</button>' +
+        '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-zout">−</button><button class="pd-btn sbld-zbtn" id="b-zin">+</button></span>' +
+        '<span class="sbld-hint" id="b-pend"></span></div>' +
+        '<div class="sbld-seq2"><div class="sbld-seq2-left" style="width:' + seqLeftW + 'px;"><div class="sbld-seq2-h">Tower — zone nodes</div>' + tower + '</div>' +
+        '<div class="sbld-seq2-grip" id="b-grip" title="Drag to resize the tower / schedule"></div>' +
+        '<div class="sbld-seq2-right"><div class="sbld-seq2-h">Resulting schedule (' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's') + ')</div><div class="sbld-canvaswrap">' + scheduleSVG(locs, days, starts) + '</div></div></div>';
+      host.querySelector('#b-autotrace').onclick = autoTrace;
+      host.querySelector('#b-clear').onclick = function () { cfg.links = []; pendSrc = null; markDirty(); render(); };
+      var doneb = host.querySelector('#b-done'); if (doneb) doneb.onclick = function () { pendSrc = null; render(); };
+      var lead = host.querySelector('#b-lead'); if (lead) lead.onchange = function () { cfg.floorLead = Math.max(1, Math.min(40, +lead.value || 4)); markDirty(); };
+      host.querySelector('#b-zout').onclick = function () { seqZoom = Math.max(2, seqZoom - 2); render(); };
+      host.querySelector('#b-zin').onclick = function () { seqZoom = Math.min(30, seqZoom + 2); render(); };
+      var grip = host.querySelector('#b-grip'), leftPane = host.querySelector('.sbld-seq2-left'), splitRow = host.querySelector('.sbld-seq2');
+      if (grip && leftPane && splitRow) grip.addEventListener('mousedown', function (ev) {
+        ev.preventDefault(); grip.classList.add('drag');
+        var startX = ev.clientX, startW = leftPane.offsetWidth;
+        function mm(e2v) { var maxW = splitRow.clientWidth - 260; var w = Math.max(150, Math.min(maxW > 200 ? maxW : 200, startW + (e2v.clientX - startX))); leftPane.style.width = w + 'px'; seqLeftW = Math.round(w); }
+        function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); grip.classList.remove('drag'); }
+        document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+      });
+      var pendEl = host.querySelector('#b-pend'); if (pendEl) pendEl.textContent = pendSrc ? 'Source selected — click target node(s) to link.' : (locs.length ? 'Click a node to start a link.' : '');
+      host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { nodeConnect(b.dataset.uid, b); }; });
+      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { nodeConnect(b.getAttribute('data-uid'), b); }); });
+      host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
+        var fk = (p.getAttribute('data-fk') || '').split('~'), ex = linkOf(fk[0], fk[1]); if (!ex) return;
+        openLinkDialog(ev.clientX, ev.clientY, { type: ex.type, lag: ex.lag, existing: true }, function (type, lag) { ex.type = type; ex.lag = lag; markDirty(); render(); }, function () { removeLink(fk[0], fk[1]); });
+      }); });
+    }
+    // click-to-connect (from tower node or schedule bar); keeps source selected for multi-linking
+    function nodeConnect(uid, anchorEl) {
+      if (!uid) return;
+      if (!pendSrc) { pendSrc = uid; render(); return; }
+      if (pendSrc === uid) { pendSrc = null; render(); return; }
+      var from = pendSrc, to = uid, ex = linkOf(from, to), r = anchorEl.getBoundingClientRect();
+      openLinkDialog(r.left + r.width / 2, r.bottom, ex ? { type: ex.type, lag: ex.lag, existing: true } : { type: 'FS', lag: 0 },
+        function (type, lag) { if (ex) { ex.type = type; ex.lag = lag; markDirty(); render(); } else { addLink(from, to, type, lag); } },
+        ex ? function () { removeLink(from, to); } : null);
+    }
+    // relationship dialog: asks FS/SS/FF/SF + lag (and Unlink when editing an existing link)
+    function openLinkDialog(x, y, cur, onSave, onUnlink) {
+      closeLinkDialog();
+      var types = ['FS', 'SS', 'FF', 'SF'], sel = (cur && cur.type) || 'FS';
+      var d = document.createElement('div'); d.className = 'sbld-linkdlg'; d.id = 'sbld-linkdlg';
+      d.innerHTML = '<div class="sbld-ld-h">Relationship</div><div class="sbld-ld-row">' + types.map(function (t) { return '<button class="sbld-ld-t' + (sel === t ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>'; }).join('') + '</div>' +
+        '<div class="sbld-ld-row"><label>Lag <input type="number" id="sbld-ld-lag" value="' + ((cur && cur.lag) || 0) + '" style="width:56px;"> day(s)</label></div>' +
+        '<div class="sbld-ld-row sbld-ld-foot">' + (onUnlink ? '<button class="pd-btn" id="sbld-ld-unlink">Unlink</button>' : '<span></span>') + '<span><button class="pd-btn" id="sbld-ld-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="sbld-ld-ok">' + (cur && cur.existing ? 'Update' : 'Link') + '</button></span></div>';
+      document.body.appendChild(d);
+      d.style.left = Math.max(6, Math.min(x, window.innerWidth - 236)) + 'px'; d.style.top = Math.max(6, Math.min(y, window.innerHeight - 150)) + 'px';
+      d.querySelectorAll('[data-t]').forEach(function (b) { b.onclick = function () { sel = b.dataset.t; d.querySelectorAll('[data-t]').forEach(function (x) { x.classList.toggle('on', x === b); }); }; });
+      d.querySelector('#sbld-ld-cancel').onclick = closeLinkDialog;
+      d.querySelector('#sbld-ld-ok').onclick = function () { var lag = parseInt(d.querySelector('#sbld-ld-lag').value, 10) || 0; closeLinkDialog(); onSave(sel, lag); };
+      if (onUnlink) d.querySelector('#sbld-ld-unlink').onclick = function () { closeLinkDialog(); onUnlink(); };
+      setTimeout(function () { document.addEventListener('mousedown', _ldOut); }, 0);
+    }
+    function _ldOut(e) { var d = document.getElementById('sbld-linkdlg'); if (d && !d.contains(e.target)) closeLinkDialog(); }
+    function closeLinkDialog() { var d = document.getElementById('sbld-linkdlg'); if (d) d.remove(); document.removeEventListener('mousedown', _ldOut); }
+
+    function stScope(host) {
+      var locs = locList();
+      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>4 · Scope per zone</h2><div class="sbld-empty">Add activities (step 1) and per-trade floors/zones (step 2) first.</div>'; return; }
+      var sections = '';
+      GROUPS.forEach(function (tr) {
+        var tlocs = locs.filter(function (l) { return l.trade === tr; }), acts = tradeActs(tr);
+        if (!tlocs.length || !acts.length) return;
+        var head = '<tr><th>' + e2(GLABEL[tr]) + '</th>' + acts.map(function (a) { return '<th title="' + e2(a.name) + '">' + e2(a.code || a.name) + '</th>'; }).join('') + '</tr>';
+        var body = tocs(tlocs, acts);
+        sections += '<h3 style="font-size:13px;margin:14px 0 6px;"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
+      });
+      function tocs(tlocs, acts) { return tlocs.map(function (l) { return '<tr><td>' + e2(locLabel(l)) + '</td>' + acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join(''); }
+      host.innerHTML = '<h2>4 · Scope per zone</h2>' +
+        '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations (all on by default). Untick where a trade doesn\'t occur.</p>' +
+        '<div class="sbld-sec-actions"><button class="pd-btn" id="b-all">All on</button><button class="pd-btn" id="b-none">All off</button></div>' +
+        (sections || '<div class="sbld-empty">Assign activities to trades (step 1) and give those trades floors/zones (step 2).</div>');
+      host.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.onchange = function () { var key = c.dataset.uid + '|' + c.dataset.act; if (c.checked) delete cfg.scopeOff[key]; else cfg.scopeOff[key] = true; markDirty(); }; });
+      host.querySelector('#b-all').onclick = function () { cfg.scopeOff = {}; markDirty(); render(); };
+      host.querySelector('#b-none').onclick = function () { cfg.scopeOff = {}; locs.forEach(function (l) { tradeActs(l.trade).forEach(function (a) { cfg.scopeOff[l.uid + '|' + a.id] = true; }); }); markDirty(); render(); };
+    }
+
+    function stGenerate(host) {
+      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>5 · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
+      var g = generate(), maxZ = g.perZone.reduce(function (m, z) { return Math.max(m, z.days); }, 0) || 1;
+      function kpi(l, v) { return '<div class="sbld-kpi"><div class="sbld-kpi-l">' + l + '</div><div class="sbld-kpi-v">' + v + '</div></div>'; }
+      var kpis = '<div class="sbld-kpis">' + kpi('Locations', g.perZone.length) + kpi('Activities generated', g.rows.length) + kpi('Total duration', g.totalDays + ' days') + kpi('Start', fmtD(g.start)) + kpi('Finish', fmtD(g.finish)) + '</div>';
+      var pz = '<h3 style="font-size:14px;margin:6px 0 10px;">Duration per zone</h3>' + g.perZone.map(function (z) { return '<div class="sbld-bargrp"><span class="lab">' + e2(z.loc.trade + ' · ' + locLabel(z.loc)) + '</span><div class="sbld-bar" style="width:' + Math.round(z.days / maxZ * 260) + 'px;background:' + GCOLOR[z.loc.trade] + '"></div><span>' + z.days + 'd</span></div>'; }).join('');
+      var last = null, pv = '';
+      g.rows.forEach(function (r) { var loc = r.loc.trade + ' · ' + locLabel(r.loc); if (loc !== last) { pv += '<tr class="grp"><td colspan="5">' + e2(loc) + '</td></tr>'; last = loc; } pv += '<tr><td>' + e2(r.act.code) + '</td><td>' + e2(r.act.name) + '</td><td>' + e2(r.group) + '</td><td class="num">' + r.dur + 'd</td><td>' + fmtD(r.start) + ' – ' + fmtD(r.finish) + '</td></tr>'; });
+      host.innerHTML = '<h2>5 · Generate &amp; preview</h2>' +
+        '<p class="sbld-lede">Chains the trades through each location using the durations + the zone links from step 3 (whiteboard step 7). Use <b>Push to Project Schedule</b> to add these activities to the live schedule — pick which WBS to file them under; nothing is replaced.</p>' +
+        '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Project start&nbsp; <input class="pd-input" type="date" id="b-start" value="' + e2(cfg.startDate) + '" style="height:30px;"></label>' +
+        '<button class="pd-btn" id="b-csv">Export preview (CSV)</button><button class="pd-btn pd-btn-primary" id="b-push" title="Add these activities to the live schedule">Push to Project Schedule</button></div>' +
+        kpis + pz + '<h3 style="font-size:14px;margin:18px 0 10px;">Generated activities (' + g.rows.length + ')</h3>' +
+        '<div class="sbld-tablewrap" style="max-height:400px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Group</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div>';
+      host.querySelector('#b-start').onchange = function (ev) { cfg.startDate = ev.target.value || cfg.startDate; markDirty(); render(); };
+      host.querySelector('#b-csv').onclick = function () { exportCsv(g); };
+      host.querySelector('#b-push').onclick = openPushModal;
+    }
+
+    function exportCsv(g) {
+      function q(s) { s = String(s == null ? '' : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+      var lines = [['Trade','Location','Code','Activity','Duration(days)','Start','Finish'].join(',')];
+      g.rows.forEach(function (r) { lines.push([r.loc.trade, q(locLabel(r.loc)), q(r.act.code), q(r.act.name), r.dur, iso2(r.start), iso2(r.finish)].join(',')); });
+      var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'schedule-builder-preview.csv'; a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    }
+
+    // ---- Push the generated activities INTO the live project_schedule (add, don't replace) ----
+    // next free child index under a dotted WBS code (or top level when base is empty)
+    function nextChildIndex(base) {
+      var re = base ? new RegExp('^' + base.replace(/\./g, '\\.') + '\\.(\\d+)$') : /^(\d+)$/, mx = 0;
+      rows.forEach(function (r) { if (!r.wbs) return; var m = String(r.wbs).match(re); if (m) { var n = +m[1]; if (n > mx) mx = n; } });
+      return mx + 1;
+    }
+    function openPushModal() {
+      var g = generate(); if (!g.rows.length) { UI.toast('Generate a schedule first (add activities + zones).', 'warn'); return; }
+      var wbsOpts = '<option value="">— Top level (new WBS branch) —</option>' + rows.filter(isWbs).sort(function (a, b) { return String(a.wbs).localeCompare(String(b.wbs), undefined, { numeric: true }); }).map(function (r) { return '<option value="' + e2(r.wbs) + '">' + e2(r.wbs + '  ' + (r.activity_name || '')) + '</option>'; }).join('');
+      var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 500;
+      ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+        '<div style="padding:16px;">' +
+        '<p class="sbld-hint" style="margin:0 0 12px;"><b>' + g.rows.length + '</b> generated activities will be <b>added</b> to the existing schedule (nothing is replaced).</p>' +
+        '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Assign under WBS</label>' +
+        '<select class="pd-select" id="sbpush-wbs" style="width:100%;height:34px;">' + wbsOpts + '</select>' +
+        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;"><input type="checkbox" id="sbpush-grp" checked> Organise into Trade → Floor → Zone sub-WBS</label>' +
+        '</div>' +
+        '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbpush-go">Add to schedule</button></div></div>';
+      document.body.appendChild(ov);
+      function close() { ov.remove(); }
+      ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
+      ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+      ov.querySelector('#sbpush-go').onclick = function () { var pc = ov.querySelector('#sbpush-wbs').value; var grp = ov.querySelector('#sbpush-grp').checked; close(); pushToSchedule(pc, grp); };
+    }
+    async function pushToSchedule(parentCode, grouped) {
+      var g = generate(); if (!g.rows.length) return;
+      var base = parentCode || '', payloads = [], idset = {};
+      rows.forEach(function (r) { if (r.activity_id) idset[r.activity_id] = 1; });
+      function uniqId(cand) { var id = cand, n = 2; while (idset[id]) { id = cand + '-' + n; n++; } idset[id] = 1; return id; }
+      function code(parent, i) { return parent ? parent + '.' + i : '' + i; }
+      function addSummary(c, name) { payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: name, activity_type: 'WBS Summary', created_by: UID }); }
+      function addTask(c, name, r) { payloads.push({ project_id: pid, wbs: c, activity_id: uniqId(c), activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, created_by: UID }); }
+      var ci = nextChildIndex(base);
+      if (grouped) {
+        var byTrade = {}; g.rows.forEach(function (r) { (byTrade[r.loc.trade] = byTrade[r.loc.trade] || []).push(r); });
+        GROUPS.forEach(function (tr) {
+          var trRows = byTrade[tr]; if (!trRows || !trRows.length) return;
+          var tCode = code(base, ci++); addSummary(tCode, GLABEL[tr]);
+          var byFloor = {}, fOrder = []; trRows.forEach(function (r) { var k = r.loc.floor.id; if (!byFloor[k]) { byFloor[k] = []; fOrder.push(r.loc.floor); } byFloor[k].push(r); });
+          var fi = 1; fOrder.forEach(function (f) {
+            var fCode = tCode + '.' + (fi++); addSummary(fCode, f.code || f.name || 'Floor');
+            var byZone = {}, zOrder = []; byFloor[f.id].forEach(function (r) { var k = r.loc.zone.id; if (!byZone[k]) { byZone[k] = []; zOrder.push(r.loc.zone); } byZone[k].push(r); });
+            var zi = 1; zOrder.forEach(function (z) {
+              var zCode = fCode + '.' + (zi++); addSummary(zCode, z.code || z.name || 'Zone');
+              var ai = 1; byZone[z.id].forEach(function (r) { addTask(zCode + '.' + (ai++), r.act.name, r); });
+            });
+          });
+        });
+      } else {
+        g.rows.forEach(function (r) { addTask(code(base, ci++), r.loc.trade + ' ' + locLabel(r.loc) + ' — ' + r.act.name, r); });
+      }
+      var taskN = payloads.filter(function (p) { return p.activity_type === 'Task'; }).length, CH = 500, ok = true, msg = '';
+      for (var i = 0; i < payloads.length; i += CH) { var res = await sb().from(TABLE).insert(payloads.slice(i, i + CH)); if (res.error) { ok = false; msg = res.error.message; break; } }
+      if (!ok) { UI.toast('Could not add to schedule: ' + msg, 'error'); return; }
+      UI.toast('Added ' + taskN + ' activities to the schedule' + (base ? ' under ' + base : '') + '.', 'success');
+      switchTab('schedule');
+      if (typeof load === 'function') load();   // module schedule reload (loadCfg no longer shadows it)
+    }
+
+    function render() {
+      var rail = document.getElementById('ps-bld-rail'), panel = document.getElementById('ps-bld-panel');
+      if (!rail || !panel) return;
+      if (!curPid || !cfg) { rail.innerHTML = ''; panel.innerHTML = '<div class="sbld-empty">Select a project to build its schedule.</div>'; return; }
+      rail.innerHTML = STEPS.map(function (s, i) { return '<button class="sbld-step ' + (i === step ? 'on' : '') + '" data-step="' + i + '"><span class="sbld-step-n">' + (i + 1) + '</span><span><span class="sbld-step-t">' + e2(s.t) + '</span><br><span class="sbld-step-s">' + e2(s.s) + '</span></span></button>'; }).join('');
+      rail.querySelectorAll('[data-step]').forEach(function (b) { b.onclick = function () { step = +b.dataset.step; render(); }; });
+      STEPS[step].fn(panel);
+      var foot = document.createElement('div'); foot.className = 'sbld-foot';
+      foot.innerHTML = '<button class="pd-btn" id="b-prev"' + (step === 0 ? ' disabled' : '') + '>← Back</button>' + (step < STEPS.length - 1 ? '<button class="pd-btn pd-btn-primary" id="b-next">Next →</button>' : '<button class="pd-btn pd-btn-primary" id="b-savefoot">Save setup</button>');
+      panel.appendChild(foot);
+      var pv = foot.querySelector('#b-prev'); if (pv) pv.onclick = function () { if (step > 0) { step--; render(); } };
+      var nx = foot.querySelector('#b-next'); if (nx) nx.onclick = function () { if (step < STEPS.length - 1) { step++; render(); } };
+      var sf = foot.querySelector('#b-savefoot'); if (sf) sf.onclick = save;
+      if (window.Icons) { Icons.hydrate(panel); Icons.hydrate(rail); }
+    }
+
+    return { open: open, save: save, isDirty: isDirty };
+  })();
+
+>>>>>>> Stashed changes
   function switchTab(tab) {
     activeTab = tab;
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
