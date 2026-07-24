@@ -715,6 +715,84 @@ body { overflow-x: clip; }
   .pd-module-grid { gap: 12px; }
 }
 
+/* ============================================================================
+   MODULE TOPBAR — two-row layout on phones/tablets
+   ----------------------------------------------------------------------------
+   ui.js `initModuleTopbar()` wraps the topbar's children into .pd-tb-main
+   (back · icon · title · theme · avatar) and .pd-tb-tools (project select ·
+   view tabs · action buttons). Both are display:contents here, so on desktop
+   the topbar is byte-for-byte the flat flex row it has always been — the
+   wrappers do not participate in layout at all.
+
+   Below 900px they become real rows: identity stays on one line, and the
+   controls collapse into ONE horizontally-scrolling strip instead of wrapping
+   into four full-height rows that push the content off the screen.
+   ============================================================================ */
+.pd-tb-main, .pd-tb-tools { display: contents; }
+
+/* ⚠️ `display:contents` makes the wrappers invisible to layout, but the DOM
+   REGROUPING is still real: the account controls now precede the tool cluster
+   in source order, which on desktop dropped the avatar into the middle of the
+   bar. `order` restores the original left-to-right sequence — back/title, then
+   tools, then theme + avatar. Required on desktop; harmless on mobile, where it
+   happens to be the order each row wants anyway. */
+.pd-topbar .pd-tb-tools > * { order: 1; }
+.pd-topbar .pd-tb-main > #pd-theme-toggle,
+.pd-topbar .pd-tb-main > #user-bar { order: 2; }
+
+/* ⚠️ Every module.css re-declares `.pd-topbar { display:flex; flex-wrap:wrap }`
+   and loads AFTER this file, so a bare `.pd-topbar` here loses on source order
+   (a media query adds no specificity). These rules are qualified with `.pd-app`
+   / `.pd-topbar` purely to outrank that — do not "simplify" the selectors. */
+@media (max-width: 900px) {
+  .pd-app .pd-topbar { flex-direction: column; align-items: stretch; gap: 8px; flex-wrap: nowrap; }
+
+  .pd-topbar .pd-tb-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  /* The title takes the slack and truncates, so the avatar can never be pushed
+     onto a line of its own (what the topbar did when it simply wrapped). */
+  .pd-topbar .pd-tb-main h1 { flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pd-topbar .pd-tb-main > a, .pd-topbar .pd-tb-main > button,
+  .pd-topbar .pd-tb-main > #user-bar,
+  .pd-topbar .pd-tb-main > #pd-theme-toggle { flex: none; }
+  /* The avatar's desktop divider reads as a stray rule once it is the row's
+     last item against the screen edge. */
+  .pd-topbar .pd-tb-main > #user-bar { margin-left: auto; padding-left: 0; border-left: 0; }
+
+  /* One scrolling strip. `nowrap` is the whole point — wrapping is the bug. */
+  .pd-topbar .pd-tb-tools {
+    display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain; scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .pd-topbar .pd-tb-tools::-webkit-scrollbar { display: none; }
+  .pd-topbar .pd-tb-tools > * { flex: none; }
+  /* Module tab strips are themselves flex rows; stop them wrapping inside the
+     strip (they would grow the topbar's height instead of scrolling). */
+  .pd-topbar .pd-tb-tools [role="tablist"],
+  .pd-topbar .pd-tb-tools > div { flex-wrap: nowrap; }
+  .pd-topbar .pd-tb-tools button, .pd-topbar .pd-tb-tools .pd-btn { white-space: nowrap; }
+}
+
+/* ---- Phone: filter panels ---- */
+@media (max-width: 700px) {
+  /* Module filter bars pin their controls to desktop pixel widths with inline
+     `max-width` styles (e.g. `max-width:150px`), which on a phone leaves each
+     select stranded at half width with dead space beside it. Let every filter
+     control span the row it already wraps onto. `!important` is required — the
+     widths are inline styles in the modules' markup, not stylesheet rules. */
+  .pd-main .pd-select, .pd-main .pd-input, .pd-main .pd-textarea {
+    max-width: none !important; width: 100%;
+  }
+  /* Inputs inside a table cell or a segmented control are sized by their
+     container, not the filter bar — leave those alone. */
+  .pd-main table .pd-select, .pd-main table .pd-input,
+  .pd-main .pd-viewtoggle .pd-select { width: auto; }
+
+  .pd-tb-main h1 { font-size: 15px; }
+}
+
 /* Coarse pointers (touch): reveal controls that are hover-gated on desktop,
    since a touch device never produces the hover that would show them. */
 @media (hover: none) {

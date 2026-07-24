@@ -2953,3 +2953,45 @@ Finished the sweep — all 13 modules now have a phone/tablet pass. Same decidin
   chart back to 1202px with all phone min-widths resolving to `0px`. The other six share these two
   verified patterns plus chrome-only changes.
 - Module-local only; `?v=20260723a` from part 1 already covers every module's assets.
+
+### 2026-07-24 — Mobile & tablet, part 5: the module topbar (the last full-screen offender)
+
+Owner sent phone screenshots of nine modules. Parts 1–4 had fixed drawers, tables, modals and charts,
+but **every screenshot showed the same remaining defect**: the topbar. It is one flat flex row
+(back · title · project select · view tabs · tool cluster · theme · avatar), so `flex-wrap` on a
+375px screen broke it into four or five full-width rows — the avatar stranded alone on its own line —
+consuming most of the viewport before any content appeared.
+- **Fixed once in the shared layer, not in 14 modules.** New `UI.initModuleTopbar()` (`ui.js`) wraps
+  the topbar's existing children into two groups — `.pd-tb-main` (back · title · theme · avatar) and
+  `.pd-tb-tools` (project select · tabs · buttons) — without changing any module's markup. Both are
+  **`display:contents`** by default, so desktop layout is untouched; only below **900px** do they
+  become real rows: identity on one line (title truncates so the avatar can never be pushed off),
+  controls collapsed into ONE horizontally-scrolling strip. Topbar at 375px: **117px, two rows.**
+- ⚠️ **Three traps, all found by measuring rather than by reading the code:**
+  1. **`display:contents` hides the wrappers from layout but the DOM regrouping is still real** — the
+     account controls now precede the tool cluster in source order, which on desktop moved the avatar
+     from x=1211 into the **middle of the bar (x=284)**. Fixed with `order` on the two groups. Verified
+     the desktop sequence is byte-for-byte back→title→project→tabs→tools→theme→avatar on one 61px row.
+  2. **Every `module.css` re-declares `.pd-topbar { display:flex; flex-wrap:wrap }` and loads AFTER
+     `dashboard.css`** — a media query adds no specificity, so a bare `.pd-topbar` rule here loses on
+     source order and the fix would silently no-op in all 12 modules. Rules are qualified `.pd-app
+     .pd-topbar` / `.pd-topbar .pd-tb-main` purely to outrank that. Do not "simplify" the selectors.
+  3. The tools strip's edge-bleed negative margin didn't match the topbar's *responsive* padding and
+     pushed `documentElement.scrollWidth` 4px past the viewport (invisible only because `body` is
+     `overflow-x:clip`). Removed — `scrollWidth` now equals the viewport exactly.
+- **Filter bars**: module filter controls pin themselves to desktop widths with **inline**
+  `max-width:150px`-style attributes, leaving each select at half width with dead space beside it.
+  Overridden at ≤700px (needs `!important` — they are inline styles, not rules), excluding controls
+  inside tables/segmented toggles, which are sized by their container.
+- **Scope guard:** the enhancer only runs on topbars containing a back-to-modules link
+  (`a[class*="modback"]`), so the four shell pages (dashboard/projects/admin/portfolio-overview) keep
+  their existing chrome and drawer.
+- **Verified against all 12 modules' real markup** (harness fetching each `index.html`, injecting its
+  actual topbar, running the shipped `initModuleTopbar`): every module puts back+title+theme+avatar in
+  the identity row and its controls in the strip, with **`nothingLost: true`** (element counts and
+  identities reconcile exactly — no child dropped). ⚠️ Project Schedule's title is a `<button>`
+  view-switcher, **not an `<h1>`**, so title detection matches the class name too; without that its
+  title scrolled away leaving a back arrow and an avatar. `portfolio-overview` correctly skipped.
+  Screenshots remain impossible in this environment (stalled compositor) — all checks are measured
+  geometry.
+- Shared assets changed → **`?v=` bumped `20260723a` → `20260724a` across all 21 HTML files.**
