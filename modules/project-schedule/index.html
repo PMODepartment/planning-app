@@ -1005,6 +1005,16 @@
        #ps-mobile — a condensed READ-ONLY activity list (renderMobile()).
        Above 700px #ps-mobile is display:none and never rendered. */
     .ps-mobile { display:none; }
+    /* ⚠️ Tablet: the toolbar row is `flex-wrap:nowrap` (deliberate on desktop —
+       it keeps the single-row OPC-style toolbar and lets its popovers escape via
+       `overflow:visible`). At 768px that pushed the row ~126px past the viewport
+       and gave the whole PAGE a horizontal scroll, so the trailing tools drifted
+       off-screen. Phones drop the toolbar entirely (below), so this only needs to
+       cover the tablet band. */
+    @media (min-width:701px) and (max-width:900px) {
+      .ps-toolbar .ps-tb-row { flex-wrap:wrap; row-gap:6px; }
+    }
+
     @media (max-width:700px) {
       .ps-split, .ps-divider { display:none !important; }
       .ps-mobile { display:block; padding:2px 0 14px; }

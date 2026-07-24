@@ -737,11 +737,6 @@ body { overflow-x: clip; }
    tools, then theme + avatar. Required on desktop; harmless on mobile, where it
    happens to be the order each row wants anyway. */
 .pd-topbar .pd-tb-tools > * { order: 1; }
-/* The project selector lives in the identity group but must still paint between
-   the title and the tabs on desktop, so it shares the tools' order band — and
-   because .pd-tb-main precedes .pd-tb-tools in the DOM, equal order puts it
-   first within that band, exactly where it was before. */
-.pd-topbar .pd-tb-main > [class$="-projctx"] { order: 1; }
 .pd-topbar .pd-tb-main > #pd-theme-toggle,
 .pd-topbar .pd-tb-main > #user-bar { order: 2; }
 
@@ -778,12 +773,18 @@ body { overflow-x: clip; }
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px;
   }
   .pd-topbar .pd-tb-tools button, .pd-topbar .pd-tb-tools .pd-btn { white-space: nowrap; }
-  /* The project selector takes the slack in the identity row and truncates
-     rather than pushing the avatar off the end. */
-  .pd-topbar .pd-tb-main > [class$="-projctx"] { flex: 1 1 auto; min-width: 0; }
-  .pd-topbar .pd-tb-main > [class$="-projctx"] .pd-select,
-  .pd-topbar .pd-tb-main > [class$="-projctx"] .pd-psel,
-  .pd-topbar .pd-tb-main > [class$="-projctx"] > button { width: 100%; max-width: none; }
+  /* Pairs with a narrow tab strip when both fit (the project name truncates in
+     that case, which the owner has accepted) and takes a full row of its own
+     otherwise. Not `1 1 100%` — see the note below on why that costs height. */
+  /* ⚠️ 120px is measured, not arbitrary. It is the largest basis at which
+     Material Submittal's selector still pairs with its tab strip instead of
+     taking a 4th row (at 130px it wraps: 221px vs 169px). Raising this costs a
+     whole row on that module; lowering it buys nothing — Issues and Contracts
+     have tab labels too long to pair at any basis, even 110px. */
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] { flex: 1 1 120px; min-width: 0; }
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-select,
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-psel,
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] > button { width: 100%; max-width: none; }
 
   /* ---- Make the wrapped rows look designed rather than merely wrapped ----
      Tabs plus three action buttons genuinely cannot fit one 351px line, so the
@@ -798,12 +799,19 @@ body { overflow-x: clip; }
   .pd-topbar .pd-tb-tools > [class$="-tabs"] {
     flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0;
   }
-  /* The action cluster keeps its own row — its buttons carry the longest labels
-     ("+ Add photos", "+ New PPR") and squeezing them beside tabs truncates them. */
+  /* On a phone the action cluster keeps its own row — its buttons carry the
+     longest labels ("+ Add photos", "+ New PPR") and squeezing them beside tabs
+     truncates them. A tablet has the width to share, so it only claims a full
+     row below 700px; at 700–900px it sits beside whatever fits. */
   .pd-topbar .pd-tb-tools > [class$="-topbar-tools"],
   .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] {
-    flex: 1 1 100%; display: flex; align-items: center; gap: 6px; min-width: 0;
+    flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0;
   }
+}
+
+@media (max-width: 700px) {
+  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"],
+  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] { flex: 1 1 100%; }
   /* Equal segments, like a native segmented control. ⚠️ `min-height` matters:
      the modules size these to 28px, well under the 44px touch minimum — they
      were among the hardest things on the page to hit accurately. */
@@ -820,8 +828,8 @@ body { overflow-x: clip; }
     font-size: 12.5px; padding-left: 6px; padding-right: 6px; text-align: center;
   }
   /* Same for the project selector — it was 34px. */
-  .pd-topbar .pd-tb-main > [class$="-projctx"] .pd-select,
-  .pd-topbar .pd-tb-main > [class$="-projctx"] > button { min-height: var(--pd-tap); height: auto; }
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-select,
+  .pd-topbar .pd-tb-tools > [class$="-projctx"] > button { min-height: var(--pd-tap); height: auto; }
   /* Actions share their row proportionally, so a labelled button keeps its words
      while an icon-only one stays compact. */
   .pd-topbar .pd-tb-tools > [class$="-topbar-tools"] > .pd-btn,
@@ -874,15 +882,12 @@ body { overflow-x: clip; }
   .pd-app .pd-main table .pd-select, .pd-app .pd-main table .pd-input,
   .pd-app .pd-main .pd-viewtoggle .pd-select { width: auto; height: 34px; min-height: 0; }
 
-  /* ⚠️ Deliberately re-hiding what the ≤900px rule above restores. On a tablet
-     the identity row fits both the module name and the project; on a phone it
-     does not, and the PROJECT wins — you already know which module you opened
-     (you tapped its card, and its brand-red icon is still here), but which
-     project you are editing is the one thing that must never be ambiguous.
-     This is also what every module's own CSS did before the two-row layout. */
-  .pd-topbar .pd-tb-main [class$="-title-txt"] { display: none !important; }
-  /* The title shrinks to its icon, so the project selector takes the slack. */
-  .pd-topbar .pd-tb-main h1 { flex: 0 0 auto; font-size: 15px; }
+  /* ⚠️ The module title keeps its TEXT at every width (owner's call) — do not
+     re-add a phone-width `display:none` here. The modules' own CSS hides
+     `.xx-title-txt` below 820–1250px for the old single-row bar; the ≤900px
+     rule above overrides that, and this block must not undo it. The title takes
+     the slack and ellipsises if a module name is long. */
+  .pd-topbar .pd-tb-main h1 { flex: 1 1 auto; min-width: 0; font-size: 15px; }
 }
 
 /* Coarse pointers (touch): reveal controls that are hover-gated on desktop,

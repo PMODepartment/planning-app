@@ -248,6 +248,17 @@
         .cf-matrix { font-size: 11.5px; }
         .cf-matrix-wrap { overflow-x: auto; }
         .cf-viewbar { flex-wrap: wrap; gap: 8px; }
+        /* ⚠️ The control strip is `flex-wrap:nowrap` with `overflow-x:auto` — a
+           deliberate desktop choice, but on a phone it put the whole action
+           cluster (Refresh / Sync / Export / Actuals / Assumptions) ~354px past
+           the right edge. Because `body` is `overflow-x:clip` the page cannot
+           scroll to them, so those buttons were simply UNREACHABLE on mobile;
+           the strip's own scroll is easy to miss and `margin-left:auto` pushed
+           them out of its start. Wrap instead, and drop the auto margin. */
+        .cf-controls { flex-wrap: wrap; overflow-x: visible; }
+        .cf-actions { flex-wrap: wrap; margin-left: 0; flex: 1 1 100%; }
+        .cf-actions .pd-btn { flex: 1 1 auto; min-height: 44px; }
+        .cf-viewbar { flex: 1 1 100%; min-width: 0; }
       }
     </style>
 </head>

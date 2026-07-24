@@ -3109,3 +3109,40 @@ per-module spot checks had missed.
 - **Desktop re-verified at 1280** on three modules: single 61px row, wrappers `display:contents`,
   order still back → title → project → tabs → tools → theme → avatar, title text shown.
 - Shared assets only; `?v=20260724a` already covers them.
+
+### 2026-07-24 — Mobile & tablet, part 9: title text kept on phones + full audit (2 real overflows fixed)
+
+Owner: keep the module title text on phones, let the project name truncate instead. Then audit
+mobile/tablet and suggest improvements.
+- **Title restored at every width.** The ≤700px `display:none` on `.xx-title-txt` is gone and must not
+  come back (noted in the CSS). ⚠️ The project selector could NOT simply move up beside it — back +
+  icon + title + theme + avatar already consume ~295px of a 375px line, leaving the selector ~56px,
+  enough to read "Meg…" and nothing else. It therefore went back to the controls group, where it pairs
+  with a narrow tab strip (truncating, as the owner accepted) or takes a full row.
+- ⚠️ **`flex-basis: 120px` on the project selector is measured, not taste.** It is the largest value at
+  which Material Submittal's selector still pairs with its tabs instead of taking a 4th row (130px →
+  221px vs 169px). Issues and Contracts have tab labels too long to pair at ANY basis, even 110px, so
+  they keep 4 rows / 221px — the honest cost of long tab labels plus a visible title.
+- **Tablet topbar 163 → 99px.** The action cluster claimed a full row at every width; it now only does
+  so below 700px and shares the line on tablets, which have the width.
+- **Audit method:** every module measured in **its own iframe** (12 stylesheets all define `.pd-topbar`)
+  at **393px and 768px**, checking page overflow, off-screen controls, sub-40px tap targets and
+  sub-12px text. Two REAL defects found, both module-local and both now fixed:
+  1. ⚠️ **Cash Flow's action buttons were UNREACHABLE on a phone.** `.cf-controls` is
+     `flex-wrap:nowrap; overflow-x:auto` (fine on desktop), which put the whole cluster — Refresh,
+     Sync, Export, Actuals, Assumptions — **354px past the right edge**, and since `body` is
+     `overflow-x:clip` the page cannot scroll to them. `margin-left:auto` had also pushed them out of
+     the strip's own start. Now wraps. **Measured 354px overflow / 4 off-screen buttons → 0.**
+  2. ⚠️ **Project Schedule gave the whole page a horizontal scroll on tablet.** Its `.ps-tb-row` is
+     `flex-wrap:nowrap` (deliberate — single-row OPC toolbar with escaping popovers), overflowing
+     **~126px at 768px**. Now wraps in the 701–900px band only; phones drop the toolbar entirely.
+- **Result at 393px and 768px:** no page h-scroll anywhere, no off-screen controls, no sub-12px text
+  except Cash Flow's deliberately dense matrix (11.5px, documented).
+- **⚠️ KNOWN GAP — not fixed, needs an owner decision.** The 44px touch minimums apply **only below
+  700px**, but iPads (768–1024px) are touch devices. Measured at 768px: **tab strips 28px, selects and
+  buttons 34–36px** — 7 to 43 undersized controls per module (Project Schedule 43, Progress
+  Photos/Contracts/Material 16). Body-level tab strips (e.g. `.rl-tab`) are 34px even on phones, since
+  the 44px rule targets topbar strips only. Fixing means extending the touch sizing to ~900px, which
+  visibly loosens iPad density — a design call, so it was left for the owner rather than applied
+  unilaterally.
+- Shared CSS + two module-local files; `?v=20260724a` already covers them.
