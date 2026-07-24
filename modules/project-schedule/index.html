@@ -1045,6 +1045,10 @@
       .ps-mmeta strong { font-size:12.5px; font-variant-numeric:tabular-nums; }
       .ps-mbar { height:5px; background:var(--pd-line); border-radius:999px; overflow:hidden; margin-top:9px; }
       .ps-mbar i { display:block; height:100%; background:var(--pd-red); }
+      /* Below ~380px a 4-up meta row leaves under 64px per column, which is
+         narrower than a DD-Mon-YY date (65px at 12.5px). Drop to 2x2 rather
+         than let the dates clip. */
+      @media (max-width: 380px) { .ps-mmeta { grid-template-columns:repeat(2,1fr); row-gap:7px; } }
       .ps-m-empty, .ps-m-more { padding:22px 14px; text-align:center; color:var(--pd-muted);
         font-size:13px; background:var(--pd-card); border:1px dashed var(--pd-line);
         border-radius:var(--pd-radius); }
@@ -3425,13 +3429,18 @@
       var pct = r.percent_complete != null ? Math.max(0, Math.min(100, +r.percent_complete)) : 0;
       var s = dispStart(r), f = dispFin(r);
       var flt = r._critical ? 'CP' : (r._float != null ? r._float + 'd' : '—');
+      // Dates use fmtOPCDate (DD-Mon-YY), NOT Fmt.date. Measured against real
+      // GPR101 data: Fmt.date renders "Feb 15, 2027" = 80px at 12.5px, but a
+      // meta column is only ~77px on a 375px phone, so it overflowed. The OPC
+      // form is 65px and is this module's own date convention anyway.
+      var sTxt = s ? fmtOPCDate(s) : '—', fTxt = f ? fmtOPCDate(f) : '—';
       return '<div class="ps-mcard' + (r._critical ? ' is-cp' : '') + '">' +
         '<div class="ps-mtop"><span class="ps-mid">' + esc(r.activity_id || '') + '</span>' +
           '<span class="ps-mstat ' + scls + '">' + stat + '</span></div>' +
         '<div class="ps-mname">' + esc(r.activity_name || '') + '</div>' +
         '<div class="ps-mmeta">' +
-          '<div><span>Start</span><strong>' + (s ? Fmt.date(s) : '—') + '</strong></div>' +
-          '<div><span>Finish</span><strong>' + (f ? Fmt.date(f) : '—') + '</strong></div>' +
+          '<div><span>Start</span><strong>' + sTxt + '</strong></div>' +
+          '<div><span>Finish</span><strong>' + fTxt + '</strong></div>' +
           '<div><span>Complete</span><strong>' + (r.percent_complete != null ? pct + '%' : '—') + '</strong></div>' +
           '<div><span>Float</span><strong>' + flt + '</strong></div>' +
         '</div>' +
