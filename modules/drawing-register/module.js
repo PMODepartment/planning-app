@@ -24,6 +24,15 @@ window.DrawingRegister = (function () {
   var dupSet = {};                             // phasecode -> count (>1) for duplicate-code flagging
   var canWrite = false;                        // planner+ / admin / super_admin
 
+  // ---- Project Schedule link -----------------------------------------------
+  // A drawing is a prerequisite for construction work: the linked activity's
+  // start is the "need-by" date; (start − lead_days) is the required approval
+  // date. See migrations/2026-07-25-schedule-document-links.sql.
+  var schedActs = [];        // [{id, activity_id, activity_name, start_date, actual_start}]
+  var schedById = {};        // activity_id -> activity
+  var schedPid  = null;      // project the schedule cache was loaded for
+  var LEAD_DEFAULT = 30;     // drawings approved ~30 days before the work they enable
+
   // ---- Coding Reference (from the workbook "Coding Reference" sheet) --------
   var BUILDINGS = ['GEN','TW1','TW2','TW3','TW4','TW5','TW6','TW7','TW8','TW9'];
   var COMPANIES = ['MCC'];
@@ -229,6 +238,76 @@ window.DrawingRegister = (function () {
       if (!restoreUI()) rows.forEach(function (r){ collapsed['P:' + (r.phase || 'Ungrouped')] = true; });
     }
     render();
+    ensureSchedule();   // lazy — re-renders the Need-by column when it resolves
+  }
+
+  // ---- Project Schedule cache (for the Need-by column + Add/Edit picker) ----
+  function ensureSchedule(){
+    if (schedPid === pid) return Promise.resolve();
+    return loadSchedule().then(function(){ schedPid = pid; if (view === 'register') render(); });
+  }
+  async function loadSchedule(){
+    schedActs = []; schedById = {};
+    if (!pid) return;
+    var all = [], last = null;
+    while (true) {
+      var q = sb().from('project_schedule')
+        .select('id,activity_id,activity_name,start_date,actual_start,activity_type,wbs')
+        .eq('project_id', pid).order('id', { ascending:true }).limit(1000);
+      if (last) q = q.gt('id', last);
+      var res = await q;
+      if (res.error) return;   // schedule link is optional — degrade quietly
+      var batch = res.data || []; all = all.concat(batch);
+      if (batch.length < 1000) break; last = batch[batch.length - 1].id;
+    }
+    all.forEach(function (a){
+      if (!a.activity_id || a.activity_type === 'WBS Summary') return;  // leaf activities only
+      if (!schedById[a.activity_id]) { schedById[a.activity_id] = a; schedActs.push(a); }
+    });
+  }
+
+  // ---- schedule-link derivations -------------------------------------------
+  function leadOf(r){ var l = r.lead_days; return (l == null || l === '') ? LEAD_DEFAULT : num(l); }
+  function needByOf(r){                          // the activity start = need-on-site date
+    var a = r.schedule_activity_id && schedById[r.schedule_activity_id];
+    return a ? (a.start_date || a.actual_start || null) : null;
+  }
+  function minusDays(iso, n){
+    var d = new Date(iso + 'T00:00:00'); if (isNaN(d)) return null;
+    d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10);
+  }
+  function requiredApprovalOf(r){                // deadline = need-by − lead
+    var nb = needByOf(r); return nb ? minusDays(nb, leadOf(r)) : null;
+  }
+  function docFloatOf(r){                         // +slack / −late, days vs the deadline
+    var req = requiredApprovalOf(r); if (!req) return null;
+    var have = r.actual_approval || r.planned_approval; if (!have) return null;
+    return Math.round((new Date(req + 'T00:00:00') - new Date(have + 'T00:00:00')) / 86400000);
+  }
+  // Need-by cell: the required-approval deadline + a float chip (green slack /
+  // amber tight / red late). Blank when the drawing isn't linked to an activity.
+  function needByCellHtml(r){
+    if (!r.schedule_activity_id) return '<span class="dr-mut">—</span>';
+    var req = requiredApprovalOf(r);
+    if (!req) {   // linked, but the activity is missing / has no start date yet
+      return '<span class="dr-needby-unl" title="Linked activity '+Fmt.esc(r.schedule_activity_id)+
+             ' — no start date in the schedule yet">'+Fmt.esc(r.schedule_activity_id)+'</span>';
+    }
+    var fl = docFloatOf(r), chip = '';
+    if (fl != null) {
+      var cls = fl < 0 ? 'dr-fl-late' : (fl <= 3 ? 'dr-fl-tight' : 'dr-fl-ok');
+      chip = ' <span class="dr-flchip '+cls+'" title="Float of the approval date vs the required-by deadline">'+
+             (fl > 0 ? '+' : '')+fl+'d</span>';
+    }
+    return '<span class="dr-needby" title="Required approval for activity '+Fmt.esc(r.schedule_activity_id)+
+           '">'+Fmt.date(req)+'</span>'+chip;
+  }
+  // datalist options for the Add/Edit activity picker (capped for huge schedules)
+  function schedOptions(){
+    return schedActs.slice(0, 3000).map(function (a){
+      return '<option value="'+Fmt.esc(a.activity_id)+'">'+
+             Fmt.esc((a.activity_id || '') + ' — ' + (a.activity_name || '')) + '</option>';
+    }).join('');
   }
 
   // ---------------------------------------------------------- derivations ----
@@ -453,6 +532,7 @@ window.DrawingRegister = (function () {
       '<th class="dr-c-rev">Rev</th><th class="dr-c-status">Status</th>' +
       '<th class="dr-r dr-c-sh">Sh</th><th class="dr-r dr-c-ap">Appr</th>' +
       '<th class="dr-c-date">Latest Sub.</th><th class="dr-c-date">Approval</th>' +
+      '<th class="dr-c-date dr-c-needby" title="Required approval = linked activity start − lead days">Need-by</th>' +
       '<th class="dr-c-resp">Resp.</th><th class="dr-actcol"></th></tr>';
 
     var html = toolbar + '<div class="pd-card dr-tablecard"><table class="pd-table dr-table dr-grid'+(CB?' dr-has-cb':'')+'" style="--cbw:'+(CB?'34px':'0px')+'" tabindex="0"><thead>'+head+'</thead><tbody>';
@@ -485,7 +565,8 @@ window.DrawingRegister = (function () {
       '<td class="dr-r">'+tot+'</td>' +
       '<td class="dr-r">'+ap+'</td>' +
       '<td colspan="2">'+progressBar(pct)+'</td>' +
-      '<td></td>' +
+      '<td></td>' +   // Need-by
+      '<td></td>' +   // Resp.
       '<td class="dr-nowrap dr-actcol">'+(canWrite?'<button class="dr-lvldel" title="Delete this level and everything under it">✕</button>':'')+'</td></tr>';
   }
 
@@ -521,6 +602,7 @@ window.DrawingRegister = (function () {
       '<td class="dr-r dr-c-ap'+ed+'" data-f="approved_sheets" data-t="num">'+ap+' <span class="dr-mini">'+pct+'%</span></td>' +
       '<td class="dr-nowrap dr-c-date'+ed+'" data-f="latest_sub" data-t="date">'+(sub?Fmt.date(sub):'—')+'</td>' +
       '<td class="dr-nowrap dr-c-date'+ed+'" data-f="actual_approval" data-t="date">'+(appr?Fmt.date(appr):'—')+'</td>' +
+      '<td class="dr-nowrap dr-c-date dr-c-needby">'+needByCellHtml(r)+'</td>' +
       '<td class="dr-c-resp'+ed+'" data-f="responsible" data-t="text">'+Fmt.esc(r.responsible)+'</td>' +
       '<td class="dr-nowrap dr-actcol">'+(r.file_url?'<button class="dr-iconbtn" data-view="'+Fmt.esc(r.file_url)+'" title="View file">▤</button>':'')+
         '<button class="dr-iconbtn" data-edit="'+r.id+'" title="Full editor">✎</button>' +
@@ -1096,6 +1178,15 @@ window.DrawingRegister = (function () {
         field('Planned approval','<input class="pd-input" type="date" id="f-papp" value="'+(r.planned_approval||'')+'">') +
         field('Actual approval','<input class="pd-input" type="date" id="f-aapp" value="'+(r.actual_approval||'')+'">') +
       '</div>' +
+
+      '<div class="dr-form-sec">Schedule link <span class="dr-mut" style="font-weight:400;">— the activity this drawing must be approved for</span></div>' +
+      '<div class="dr-grid3">' +
+        field('Activity (need-by)','<input class="pd-input" id="f-sact" list="f-sactlist" value="'+Fmt.esc(r.schedule_activity_id)+'" placeholder="e.g. A1010"><datalist id="f-sactlist">'+schedOptions()+'</datalist>') +
+        field('Lead days','<input class="pd-input" type="number" min="0" id="f-lead" value="'+(r.lead_days!=null?r.lead_days:'')+'" placeholder="'+LEAD_DEFAULT+'">') +
+        field('Required approval','<input class="pd-input" id="f-req" readonly placeholder="—">') +
+      '</div>' +
+      '<div class="dr-schedhint dr-mut" id="f-schedhint"></div>' +
+
       field('Remarks','<textarea class="pd-textarea" id="f-rem" rows="2">'+Fmt.esc(r.remarks)+'</textarea>') +
       field('Drawing file (PDF/DWG/image)'+(r.file_url?' — attached; choosing a new one replaces it':''),
             '<input class="pd-input" type="file" id="f-file" accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg">') +
@@ -1143,6 +1234,32 @@ window.DrawingRegister = (function () {
     });
     refreshCode();
 
+    // ---- schedule link: live "required approval" preview + auto-fill --------
+    var computedReq = null;   // last derived required-approval date (ISO)
+    function refreshSched(){
+      var aid  = m.el.querySelector('#f-sact').value.trim();
+      var lead = m.el.querySelector('#f-lead').value.trim();
+      var reqEl = m.el.querySelector('#f-req'), hint = m.el.querySelector('#f-schedhint');
+      computedReq = null; reqEl.value = '';
+      if (!aid){ hint.innerHTML = 'Link a schedule activity to auto-derive the required approval date.'; return; }
+      var a = schedById[aid];
+      if (!a){
+        hint.innerHTML = '<span class="dr-warn-t">Activity “'+Fmt.esc(aid)+'” isn’t in this project’s schedule'+
+                         (schedPid!==pid?' (schedule still loading…)':'')+'.</span>'; return;
+      }
+      var nb = a.start_date || a.actual_start;
+      if (!nb){ hint.innerHTML = 'Activity <strong>'+Fmt.esc(aid)+'</strong> has no start date in the schedule yet.'; return; }
+      var L = lead === '' ? LEAD_DEFAULT : num(lead);
+      computedReq = minusDays(nb, L);
+      reqEl.value = computedReq ? Fmt.date(computedReq) : '';
+      hint.innerHTML = 'Need-by (activity start) <strong>'+Fmt.date(nb)+'</strong> · required approval <strong>'+
+        Fmt.date(computedReq)+'</strong> ('+L+'d lead). '+
+        '<label style="margin-left:6px;white-space:nowrap;"><input type="checkbox" id="f-usereq"'+
+        (r.planned_approval?'':' checked')+'> set as Planned approval</label>';
+    }
+    ['f-sact','f-lead'].forEach(function (id){ var el=m.el.querySelector('#'+id); el.oninput=el.onchange=refreshSched; });
+    refreshSched();
+
     m.el.querySelector('#f-cancel').onclick = m.close;
     m.el.querySelector('#f-save').onclick = async function () {
       var btn = m.el.querySelector('#f-save');
@@ -1174,9 +1291,15 @@ window.DrawingRegister = (function () {
         status:       m.el.querySelector('#f-status').value,
         planned_approval: m.el.querySelector('#f-papp').value || null,
         actual_approval:  m.el.querySelector('#f-aapp').value || null,
+        schedule_activity_id: m.el.querySelector('#f-sact').value.trim() || null,
+        lead_days:    (m.el.querySelector('#f-lead').value.trim() === '' ? null : num(m.el.querySelector('#f-lead').value)),
         remarks:      m.el.querySelector('#f-rem').value.trim(),
         updated_at:   new Date().toISOString()
       };
+      // auto-fill Planned approval from the derived required-approval deadline
+      // when the planner opted in (checkbox in the schedule-link preview).
+      var useReq = m.el.querySelector('#f-usereq');
+      if (useReq && useReq.checked && computedReq) data.planned_approval = computedReq;
       // build the composed code with the discipline *code* (not the long name)
       data.drawing_code = composeCode({
         proj_code:data.proj_code, building_ref:data.building_ref, company:data.company,
@@ -1196,11 +1319,26 @@ window.DrawingRegister = (function () {
         if (isNew) {
           data.created_by = uid;
           data.sort_order = (rows.length ? Math.max.apply(null, rows.map(function(x){return x.sort_order||0;})) : 0) + 1;
-          var ins = await sb().from(TABLE).insert(data); if (ins.error) throw ins.error;
-        } else {
-          var upd = await sb().from(TABLE).update(data).eq('id', r.id); if (upd.error) throw upd.error;
         }
-        UI.toast('Saved', 'ok'); m.close(); load();
+        // Tolerant write: if the schedule-link migration hasn't been run yet, a
+        // missing-column error strips those fields and retries so the save still
+        // lands (matches the material-submittal tolerant-write pattern).
+        var warned = false;
+        async function writeRow(){
+          var res = isNew ? await sb().from(TABLE).insert(data)
+                          : await sb().from(TABLE).update(data).eq('id', r.id);
+          if (res.error && /schedule_activity_id|lead_days|column/i.test(res.error.message||'')
+              && ('schedule_activity_id' in data)) {
+            delete data.schedule_activity_id; delete data.lead_days; warned = true;
+            res = isNew ? await sb().from(TABLE).insert(data)
+                        : await sb().from(TABLE).update(data).eq('id', r.id);
+          }
+          return res;
+        }
+        var wr = await writeRow(); if (wr.error) throw wr.error;
+        UI.toast(warned ? 'Saved — but the schedule link wasn’t stored; run the 2026-07-25 migration.'
+                        : 'Saved', warned ? 'warn' : 'ok');
+        m.close(); load();
       } catch (e) {
         UI.toast(e.message, 'error'); btn.disabled=false; btn.textContent='Save';
       }

@@ -6,6 +6,22 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## Project Schedule link — Need-by column + auto-derived plan approval (2026-07-25)
+Same feature as the drawing-register's, applied here (a submittal is a prerequisite for construction:
+the linked activity's **start** is the need-by date; (start − `lead_days`) is the required approval
+date — procurement + delivery lead, so `LEAD_DEFAULT` = **45** vs drawings' 30).
+- **Migration `../../migrations/2026-07-25-schedule-document-links.sql` (USER MUST RUN)** — adds
+  `schedule_activity_id` (→ `project_schedule.activity_id`, survives re-import), `schedule_wbs`,
+  `lead_days` on `material_submittal`.
+- **Schedule cache** (`ensureSchedule`/`loadSchedule`) keyset-loads leaf activities lazily after the
+  log loads, then re-renders. **New "Need-by" column** (`needByCell`) in the log table with the
+  required-approval date + a float chip (green/amber/red) vs the actual-or-plan approval date; the
+  column count is driven by the `HEAD` array, so group rows + empty-state colspans update automatically.
+- **Add/Edit form — "Schedule link" section:** activity datalist (`schedOptions`), lead days, a
+  read-only required-approval preview, and a "set as Plan approval" checkbox. Saved via a **tolerant
+  write** (strips the fields + warns if the migration isn't run).
+- Verified: `node --check` passes. Not yet browser-verified (auth wall). Assets `?v=20260725a`.
+
 ## Built 2026-07-20 — Dashboard + Material Submittal Log (from the PMO workbook)
 Built against **“EPC. PMO. Material Submittal List Dashboard. 2025 01 25.xlsx”** (Modan Loft
 Ortigas Hills). All 14 sheets were surveyed; `Material submittal log`, `Dashboard`, `Library`

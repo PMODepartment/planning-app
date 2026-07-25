@@ -3214,3 +3214,30 @@ but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and t
   which hangs an automated tab with no one to dismiss it. Never a render cost. The pipeline fix is still a
   genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
   See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-25 — Connect Drawing Register + Material Submittal Log to the Project Schedule (phase 1–3 of 4)
+- User asked to connect both registers to the Project Schedule. Design: each drawing / material submittal
+  is a **prerequisite** for construction work, so it links to the schedule **activity** whose start it
+  gates. The activity's start = **need-by** date; (start − `lead_days`) = the **required approval** date.
+  This drives the register's planned-approval field automatically AND surfaces schedule risk (a **float
+  chip** on each row: green slack / amber tight / red late vs the deadline).
+- **Migration `migrations/2026-07-25-schedule-document-links.sql` (USER MUST RUN)** — adds
+  `schedule_activity_id`, `schedule_wbs`, `lead_days` to **both** `drawing_register` and
+  `material_submittal`. ⚠️ Links to `project_schedule.activity_id` (the P6/business key, stable across
+  re-imports), NOT the row uuid (which changes every P6/XER "Replace"). No FK (schedule row may not exist
+  at link time); plain text scoped by `project_id`, indexed.
+- **Drawing Register + Material Submittal** each got: a lazy schedule cache (keyset-loaded leaf
+  activities), a **"Need-by" column** (required-approval date + float chip), and a **"Schedule link"**
+  section in the Add/Edit form (activity datalist + lead days + live required-approval preview + a
+  "set as planned approval" checkbox). Both use a **tolerant write** so saves still work before the
+  migration is run (they just warn). Lead default 30d (drawings) / 45d (materials). Module assets
+  `?v=20260725a`.
+- Verified: both `module.js` pass `node --check`; grid cell-count alignment (header ↔ group rows)
+  re-checked. **Not browser-verified** — the registers need a signed-in session with a real project +
+  schedule (documented environment constraint).
+- **Phase 4 NOT done (deferred): the Project Schedule side** — a per-activity "Documents" detail tab
+  listing linked drawings/submittals + their status, and a schedule-level **document-readiness flag**
+  (activities blocked by un-approved enabling docs). Deliberately deferred: `modules/project-schedule/
+  index.html` is a ~690KB inline file under active concurrent development, so the heavy schedule-side
+  change is a separate, careful pass. The register-side float chip already surfaces the risk from the
+  document side.

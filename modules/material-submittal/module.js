@@ -107,6 +107,13 @@ window.MaterialSubmittal = (function () {
   var sel = {}, collapsed = {}, noteDismissed = false;
   var filters = { q: '', section: '', disc: '', status: '', pres: '', overdue: false };
 
+  // ---- Project Schedule link -----------------------------------------------
+  // A submittal is a prerequisite for construction work: the linked activity's
+  // start is the "need-by" date; (start − lead_days) is the required approval
+  // date (procurement + delivery lead). See migrations/2026-07-25-...sql.
+  var schedActs = [], schedById = {}, schedPid = null;
+  var LEAD_DEFAULT = 45;   // materials approved ~45 days before the work they enable
+
   // ---- date helpers --------------------------------------------------------
   var MON = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
   var MNAME = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -182,6 +189,66 @@ window.MaterialSubmittal = (function () {
     var p = [r.code_project, r.code_building, r.code_company, r.code_doctype, r.code_discipline, r.code_floor, r.code_number];
     var got = p.filter(function (x) { return x != null && String(x).trim() !== ''; });
     return got.length >= 2 ? p.map(function (x) { return (x == null ? '' : String(x).trim()); }).filter(Boolean).join('-') : (r.submittal_no || '');
+  }
+
+  // ---- Project Schedule link (Need-by column + Add/Edit picker) ------------
+  function ensureSchedule() {
+    if (schedPid === pid) return Promise.resolve();
+    return loadSchedule().then(function () { schedPid = pid; if (view === 'log') renderLog(); });
+  }
+  async function loadSchedule() {
+    schedActs = []; schedById = {};
+    if (!pid) return;
+    var all = [], last = null;
+    while (true) {
+      var q = sb().from('project_schedule')
+        .select('id,activity_id,activity_name,start_date,actual_start,activity_type,wbs')
+        .eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+      if (last) q = q.gt('id', last);
+      var res = await q;
+      if (res.error) return;   // schedule link is optional — degrade quietly
+      var batch = res.data || []; all = all.concat(batch);
+      if (batch.length < 1000) break; last = batch[batch.length - 1].id;
+    }
+    all.forEach(function (a) {
+      if (!a.activity_id || a.activity_type === 'WBS Summary') return;
+      if (!schedById[a.activity_id]) { schedById[a.activity_id] = a; schedActs.push(a); }
+    });
+  }
+  function leadOf(r) { var l = r.lead_days; return (l == null || l === '') ? LEAD_DEFAULT : (+l || 0); }
+  function needByOf(r) {
+    var a = r.schedule_activity_id && schedById[r.schedule_activity_id];
+    return a ? (a.start_date || a.actual_start || null) : null;
+  }
+  function minusDays(isoStr, n) {
+    var d = new Date(isoStr + 'T00:00:00'); if (isNaN(d)) return null;
+    d.setDate(d.getDate() - n); return isoUTC(d);
+  }
+  function requiredApprovalOf(r) { var nb = needByOf(r); return nb ? minusDays(String(nb).slice(0, 10), leadOf(r)) : null; }
+  function docFloatOf(r) {
+    var req = requiredApprovalOf(r); if (!req) return null;
+    var have = r.date_approved || r.plan_approval_date; if (!have) return null;
+    return Math.round((new Date(req + 'T00:00:00') - new Date(String(have).slice(0, 10) + 'T00:00:00')) / 86400000);
+  }
+  function needByCell(r) {
+    if (!r.schedule_activity_id) return '<span class="ms-mut ms-mini">—</span>';
+    var req = requiredApprovalOf(r);
+    if (!req) return '<span class="ms-mut ms-mini" title="Linked activity ' + esc(r.schedule_activity_id) +
+      ' — no start date in the schedule yet">' + esc(r.schedule_activity_id) + '</span>';
+    var fl = docFloatOf(r), chip = '';
+    if (fl != null) {
+      var cls = fl < 0 ? 'ms-fl-late' : (fl <= 3 ? 'ms-fl-tight' : 'ms-fl-ok');
+      chip = ' <span class="ms-flchip ' + cls + '" title="Float of the approval date vs the required-by deadline">' +
+        (fl > 0 ? '+' : '') + fl + 'd</span>';
+    }
+    return '<span class="ms-needby" title="Required approval for activity ' + esc(r.schedule_activity_id) + '">' +
+      fmtDate(req) + '</span>' + chip;
+  }
+  function schedOptions() {
+    return schedActs.slice(0, 3000).map(function (a) {
+      return '<option value="' + esc(a.activity_id) + '">' +
+        esc((a.activity_id || '') + ' — ' + (a.activity_name || '')) + '</option>';
+    }).join('');
   }
 
   // ==========================================================================
@@ -476,6 +543,7 @@ window.MaterialSubmittal = (function () {
       '<th>Disc.</th>', '<th>Location</th>', '<th>Brand</th>', '<th>Vendor</th>', '<th>Presentation</th>',
       '<th class="ms-doccol">Doc</th>',
       '<th>Req. baseline</th>', '<th>Plan sub.</th>', '<th>Actual sub.</th>', '<th>Plan appr.</th>', '<th>Actual appr.</th>',
+      '<th class="ms-needbycol" title="Required approval = linked activity start − lead days">Need-by</th>',
       '<th>Approver</th>', '<th>Rev</th>', '<th>Status</th>', '<th>MAS ID</th>'];
     if (canWrite) HEAD.push('<th class="ms-actcol"></th>');
     var SPAN = HEAD.length;
@@ -513,6 +581,7 @@ window.MaterialSubmittal = (function () {
           '<td class="ms-nowrap">' + fmtDate(r.date_submitted) + '</td>' +
           '<td class="ms-nowrap ' + (od ? 'ms-od' : 'ms-mut') + '"' + (od ? ' title="Overdue — planned approval has passed"' : '') + '>' + fmtDate(r.plan_approval_date) + (od ? ' !' : '') + '</td>' +
           '<td class="ms-nowrap">' + fmtDate(r.date_approved) + '</td>' +
+          '<td class="ms-nowrap ms-needbycol">' + needByCell(r) + '</td>' +
           '<td class="ms-nowrap ms-mini">' + esc([r.approver_consultant, r.approver_client].filter(Boolean).join(' / ')) + '</td>' +
           '<td class="ms-r">' + esc(r.revision_no || '') + '</td>' +
           '<td>' + (st ? '<span class="ms-pill ' + (meta ? meta.cls : 's-forsub') + '">' + esc(st) + '</span>' : '<span class="ms-mut ms-mini">—</span>') + '</td>' +
@@ -630,6 +699,13 @@ window.MaterialSubmittal = (function () {
       f('Plan approval', 'ms-f-pappr', e.plan_approval_date, 'date') +
       f('Actual approval', 'ms-f-aappr', e.date_approved, 'date') +
 
+      '<div class="ms-sec">Schedule link <span class="ms-mut" style="font-weight:400;">— the activity this material must be approved for</span></div>' +
+      '<label>Activity (need-by)<input id="ms-f-sact" list="ms-dl-sact" value="' + esc(e.schedule_activity_id || '') + '" placeholder="e.g. A1010" />' +
+        '<datalist id="ms-dl-sact">' + schedOptions() + '</datalist></label>' +
+      '<label>Lead days<input id="ms-f-lead" type="number" min="0" value="' + (e.lead_days == null ? '' : esc(e.lead_days)) + '" placeholder="' + LEAD_DEFAULT + '" /></label>' +
+      '<label>Required approval<input id="ms-f-req2" readonly placeholder="—" /></label>' +
+      '<div class="ms-schedhint ms-mut" id="ms-f-schedhint" style="grid-column:1/-1;"></div>' +
+
       '<div class="ms-sec">Approval</div>' +
       '<label>Approver — consultant<input id="ms-f-cons" list="ms-dl-cons" value="' + esc(e.approver_consultant || '') + '" />' +
         '<datalist id="ms-dl-cons">' + CONSULTANTS.map(function (c) { return '<option value="' + esc(c) + '">'; }).join('') + '</datalist></label>' +
@@ -674,6 +750,31 @@ window.MaterialSubmittal = (function () {
       if (!el('ms-f-disc2').value) el('ms-f-disc2').value = el('ms-c-disc').value;
     });
     syncPrev();
+
+    // ---- schedule link: live "required approval" preview + auto-fill --------
+    var computedReq = null;
+    function refreshSched() {
+      var aid = (el('ms-f-sact').value || '').trim();
+      var lead = (el('ms-f-lead').value || '').trim();
+      var reqEl = el('ms-f-req2'), hint = el('ms-f-schedhint');
+      computedReq = null; reqEl.value = '';
+      if (!aid) { hint.innerHTML = 'Link a schedule activity to auto-derive the required approval date.'; return; }
+      var a = schedById[aid];
+      if (!a) { hint.innerHTML = '<span class="ms-warn-t">Activity “' + esc(aid) + '” isn’t in this project’s schedule' +
+        (schedPid !== pid ? ' (schedule still loading…)' : '') + '.</span>'; return; }
+      var nb = a.start_date || a.actual_start;
+      if (!nb) { hint.innerHTML = 'Activity <strong>' + esc(aid) + '</strong> has no start date in the schedule yet.'; return; }
+      var L = lead === '' ? LEAD_DEFAULT : (+lead || 0);
+      computedReq = minusDays(String(nb).slice(0, 10), L);
+      reqEl.value = computedReq ? fmtDate(computedReq) : '';
+      hint.innerHTML = 'Need-by (activity start) <strong>' + fmtDate(nb) + '</strong> · required approval <strong>' +
+        fmtDate(computedReq) + '</strong> (' + L + 'd lead). ' +
+        '<label style="display:inline;margin-left:6px;white-space:nowrap;"><input type="checkbox" id="ms-f-usereq"' +
+        (e.plan_approval_date ? '' : ' checked') + ' /> set as Plan approval</label>';
+    }
+    ['ms-f-sact', 'ms-f-lead'].forEach(function (id) { el(id).addEventListener('input', refreshSched); el(id).addEventListener('change', refreshSched); });
+    refreshSched();
+
     if (window.Icons && Icons.hydrate) Icons.hydrate(m.el);
 
     // Attachment controls. `fileCleared` is only committed on Save, so cancelling
@@ -703,11 +804,16 @@ window.MaterialSubmittal = (function () {
         plan_approval_date: v('ms-f-pappr'), date_approved: v('ms-f-aappr'),
         approver_consultant: v('ms-f-cons'), approver_client: v('ms-f-client'),
         revision_no: v('ms-f-rev'), status: v('ms-f-stat2'), mas_id: v('ms-f-mas'), remarks: v('ms-f-rem'),
+        schedule_activity_id: v('ms-f-sact'),
+        lead_days: (function () { var x = (el('ms-f-lead').value || '').trim(); return x === '' ? null : (+x || 0); })(),
         updated_at: new Date().toISOString()
       };
       payload.submittal_no = [payload.code_project, payload.code_building, payload.code_company, payload.code_doctype,
         payload.code_discipline, payload.code_floor, payload.code_number].filter(Boolean).join('-') || null;
       if (!payload.material) { UI.toast('Item is required.', 'error'); return; }
+      // auto-fill Plan approval from the derived required-approval deadline when opted in
+      var useReq = el('ms-f-usereq');
+      if (useReq && useReq.checked && computedReq) payload.plan_approval_date = computedReq;
 
       // ---- attachment: upload BEFORE the row write, so a failed upload can't
       // leave the row pointing at an object that doesn't exist. -----------------
@@ -728,15 +834,29 @@ window.MaterialSubmittal = (function () {
       }
       saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
 
-      var res;
-      if (r) res = await sb().from(TABLE).update(payload).eq('id', r.id).select().single();
-      else { payload.created_by = UID; res = await sb().from(TABLE).insert(payload).select().single(); }
+      if (!r) payload.created_by = UID;
+      // Tolerant write: if the schedule-link migration hasn't been run yet, strip
+      // those fields on a missing-column error and retry so the save still lands.
+      var schedWarn = false;
+      async function writeRow() {
+        var rr = r ? await sb().from(TABLE).update(payload).eq('id', r.id).select().single()
+                   : await sb().from(TABLE).insert(payload).select().single();
+        if (rr.error && /schedule_activity_id|lead_days|column|schema cache|PGRST204/i.test(rr.error.message || '')
+            && ('schedule_activity_id' in payload)) {
+          delete payload.schedule_activity_id; delete payload.lead_days; schedWarn = true;
+          rr = r ? await sb().from(TABLE).update(payload).eq('id', r.id).select().single()
+                 : await sb().from(TABLE).insert(payload).select().single();
+        }
+        return rr;
+      }
+      var res = await writeRow();
       if (res.error) {
         // Roll the orphan back rather than leaving it in the bucket forever.
         if (uploaded) await removeFiles([uploaded]);
         saveBtn.disabled = false; saveBtn.textContent = 'Save';
         UI.toast(res.error.message, 'error'); return;
       }
+      if (schedWarn) UI.toast('Saved — but the schedule link wasn’t stored; run the 2026-07-25 migration.', 'warn');
       // Row now points at the new object (or none) — drop the superseded one.
       if (oldPath && (uploaded || fileCleared) && oldPath !== payload.file_url) await removeFiles([oldPath]);
 
@@ -1113,6 +1233,7 @@ window.MaterialSubmittal = (function () {
     });
     fillFilters();
     render();
+    ensureSchedule();   // lazy — re-renders the Need-by column when it resolves
   }
 
   function switchTab(v) {

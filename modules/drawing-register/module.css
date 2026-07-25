@@ -188,7 +188,7 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 
 /* ============ Editable tree grid (compact, one-screen) ================== */
 .dr-tablecard { max-height:calc(100vh - 205px); }
-.dr-grid { font-size:12px; min-width:1080px; }   /* so narrow viewports scroll (and the frozen Code+Title stay put) */
+.dr-grid { font-size:12px; min-width:1180px; }   /* so narrow viewports scroll (and the frozen Code+Title stay put) */
 .dr-grid thead th { padding:7px 8px; font-size:10px; }
 .dr-grid td { padding:4px 8px; }
 .dr-grid:focus { outline:none; }
@@ -198,6 +198,17 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-c-code { width:130px; } .dr-c-title { width:300px; } .dr-c-rev { width:46px; text-align:center; }
 .dr-c-status { width:158px; } .dr-c-sh { width:44px; } .dr-c-ap { width:66px; }
 .dr-c-date { width:82px; } .dr-c-resp { width:90px; }
+.dr-c-needby { width:100px; }
+
+/* ---- Schedule link: Need-by column + float chip ------------------------ */
+.dr-needby { font-weight:600; }
+.dr-needby-unl { color:var(--pd-muted); font-style:italic; }
+.dr-flchip { display:inline-block; padding:0 5px; border-radius:9px; font-size:10px; font-weight:700; line-height:15px; }
+.dr-fl-ok    { background:rgba(31,143,78,.14);  color:var(--pd-ok, #1f8f4e); }
+.dr-fl-tight { background:rgba(199,119,0,.16);  color:var(--pd-warn, #c77700); }
+.dr-fl-late  { background:rgba(238,49,36,.15);   color:var(--pd-red, #ee3124); }
+.dr-schedhint { margin:2px 0 4px; font-size:12px; }
+.dr-warn-t { color:var(--pd-red, #ee3124); font-weight:600; }
 .dr-grid .dr-actcol { width:78px; text-align:right; white-space:nowrap; }
 .dr-grid td.dr-c-rev { text-align:center; }
 

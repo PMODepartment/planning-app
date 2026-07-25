@@ -3,6 +3,31 @@
 Developer change log for the **drawing-register** module. Also the **reference
 module for file uploads** (private bucket + signed-URL viewing). Update every PR.
 
+## Project Schedule link — Need-by column + auto-derived planned approval (2026-07-25)
+Connected the register to the Project Schedule. A drawing is a prerequisite for construction work:
+the linked activity's **start** is the drawing's **need-by** date, and (start − `lead_days`) is the
+date it must be **approved by**.
+- **Migration `../../migrations/2026-07-25-schedule-document-links.sql` (USER MUST RUN).** Adds
+  `schedule_activity_id` (links to `project_schedule.activity_id`, the **business key** — survives P6/XER
+  re-imports, which delete+reinsert rows and change the uuid), `schedule_wbs` (reserved for a coarser
+  WBS-level link), and `lead_days` (NULL → `LEAD_DEFAULT` = 30).
+- **Schedule cache** (`ensureSchedule`/`loadSchedule`): keyset-loads the project's leaf activities
+  (`activity_id`, `activity_name`, `start_date`, `actual_start`) lazily after the main load, then
+  re-renders the register. Skips WBS-Summary rows. Degrades quietly if the schedule can't be read.
+- **New "Need-by" grid column** (`needByCellHtml`): shows the required-approval deadline + a **float
+  chip** — green slack / amber ≤3d / red late — comparing the actual-or-planned approval date against
+  the deadline. Blank when the drawing isn't linked. ⚠️ Adding the column touched **both** the header
+  and `groupRowHTML`'s cell count (added the th + two empty `<td>`s so the group-row spans still align);
+  `.dr-grid` min-width bumped 1080→1180.
+- **Add/Edit form — "Schedule link" section:** an activity datalist (`schedOptions`, capped 3000),
+  `lead_days`, a read-only **Required approval** preview, and a live hint that offers to **set it as the
+  Planned approval** (checkbox, default on when the drawing has no planned approval yet). Saved via a
+  **tolerant write** (strips the two new fields + warns if the migration hasn't run, so saves never break).
+- Verified: `node --check` passes. **Not yet browser-verified** (auth wall + the schedule cache needs a
+  real project with a schedule). Assets `?v=20260725a`.
+- **Reciprocal not built here:** the Project Schedule "Documents" tab / document-readiness flag (the
+  schedule-side view of the same link) is a follow-up in `modules/project-schedule/`.
+
 ## Audit fix: paginate the register load (2026-07-21)
 `load()` used a single `select('*')` (Supabase caps at 1000) — the register **already truncated**
 (the GPR101 workbook is 1,032 drawings), so the grid, Progress KPIs, phase/discipline roll-ups,
