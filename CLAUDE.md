@@ -3197,3 +3197,20 @@ and **OPW101** (698 leaf activities).
   resize handler. That verifies **data binding + the cap against live data** — the open gap. **CSS
   presentation at a true 375px viewport is still only harness-verified.**
   See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-25 — Project Schedule: render-pipeline fix (phone no longer builds the desktop grid)
+
+Closed the performance finding from the signed-in check. At phone width the desktop UI was hidden in CSS
+but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and then `renderMobile()` on top.
+- **Fix:** `renderAll()` returns after `renderMobile()` when `psIsPhone()`; `doRender()` (the choke point
+  every build funnels through) bails to the list too as a safety net; the debounced `resize` handler
+  tracks `_psWasPhone` so crossing phone→desktop runs a full `renderAll()` to build what was skipped.
+- **Verified live, signed in:** GPR101 (17,122 activities) in phone mode, Expand-all → no freeze (~83ms),
+  grid stays unbuilt, list shows "300 of 17122", cap holds. OPW101 (698) same. Round-trip desktop→phone→
+  desktop rebuilds the 380-cell grid; clean desktop reload renders normally; no console errors.
+- ⚠️ **Correction to the entry above.** The prior check said GPR101 Expand-all "froze the renderer" from
+  render cost. **Mis-diagnosis:** with the grid build now skipped the freeze reproduced identically — the
+  real cause is the Expand-all handler's blocking `window.confirm()` (shown when `rows.length > 4000`),
+  which hangs an automated tab with no one to dismiss it. Never a render cost. The pipeline fix is still a
+  genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
+  See `modules/project-schedule/CLAUDE.md`.

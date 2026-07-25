@@ -2476,3 +2476,30 @@ phone path was exercised by patching `window.matchMedia` (which `psIsPhone()` re
 firing the module's own debounced resize handler. That verifies the **data binding and the cap against
 live data**, which was the open gap; the **CSS presentation at a true 375px viewport** remains verified
 only in the local harness.
+
+## Render-pipeline fix for the phone view (2026-07-25)
+
+Closed the performance finding from the signed-in check. The phone view hid the desktop UI in CSS but
+still BUILT it: `renderAll()` ran `renderGrid`/`renderGantt`/`renderCost`/`renderDetails` at phone width
+and then `renderMobile()` on top, so a phone paid for the full desktop pipeline plus the card list.
+- **Fix (three coordinated changes):** `renderAll()` now returns after `renderMobile()` when
+  `psIsPhone()`; `doRender()` (the single choke point every grid+Gantt build funnels through, also poked
+  by scroll/edit/load-reconcile) bails to `renderMobile()` on phone as a safety net; and the debounced
+  `resize` handler tracks `_psWasPhone` so crossing phone→desktop runs a full `renderAll()` to build the
+  grid/Gantt that were skipped while phone.
+- **Verified live, signed in** (deployed):
+  - OPW101 (698 activities), phone mode, Expand-all: grid DOM stays unbuilt, list updates to "300 of 698",
+    cap holds, no freeze.
+  - **GPR101 (17,122 activities), phone mode, Expand-all: no freeze (~83ms to rAF), grid unbuilt, list
+    "300 of 17122", cap holds.** This is the operation that appeared to freeze before.
+  - Round-trip: desktop 380 grid cells → phone 112 cards → back to desktop **380 cells rebuilt**, split
+    visible. Clean desktop reload renders normally (380 cells, 44 Gantt bars, real data). No console errors.
+
+⚠️ **CORRECTION to the 2026-07-25 check entry above.** That entry said GPR101 Expand-all "froze the
+renderer" and attributed it to the desktop render cost. **That was wrong.** Re-testing with the fix
+deployed, the freeze reproduced *identically even with the grid build now skipped* — the actual cause is
+the Expand-all handler's **blocking `window.confirm()`** (shown when `rows.length > 4000`): with no user
+to dismiss it, the main thread blocks and CDP times out at 45s. It was never a render cost. The
+`renderMobile`-alone ~865ms measurement on OPW101 stands (OPW is < 4000, no dialog), and the pipeline fix
+is still a real improvement — a phone no longer builds the desktop grid at all — but the "17k froze the
+renderer" claim was a mis-diagnosis of a modal dialog.
