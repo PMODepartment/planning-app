@@ -3454,17 +3454,32 @@
     host.innerHTML = head + body + more;
   }
 
-  // renderAll() only paints the phone list when already at phone width, so a
-  // rotation/resize from desktop into phone would otherwise reveal an empty
-  // #ps-mobile. Repaint on the way in; debounced because resize fires in bursts.
-  var _psMTimer = null;
+  // Repaint on resize, debounced (resize fires in bursts). Crossing the 700px
+  // boundary is what matters: at phone width we paint ONLY the read-only list
+  // (renderAll skips the desktop grid/Gantt build — see below), so on the way
+  // DOWN we must paint the list, and on the way back UP we must run the full
+  // renderAll to build the desktop grid/Gantt that were never rendered while
+  // phone. _psWasPhone tracks the last side so a within-band resize is cheap.
+  var _psMTimer = null, _psWasPhone = psIsPhone();
   window.addEventListener('resize', function () {
-    if (!psIsPhone()) return;
     clearTimeout(_psMTimer);
-    _psMTimer = setTimeout(renderMobile, 150);
+    _psMTimer = setTimeout(function () {
+      var now = psIsPhone();
+      if (now) renderMobile();
+      else if (_psWasPhone) renderAll();   // crossed phone -> desktop: build the grid/Gantt
+      _psWasPhone = now;
+    }, 150);
   });
 
-  function renderAll() { renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (psIsPhone()) renderMobile(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); }
+  function renderAll() {
+    // At phone width the entire desktop UI is hidden by CSS and only the
+    // read-only #ps-mobile list shows, so building the grid/Gantt/cost/details
+    // (and the per-tab views, whose switch controls live in the hidden toolbar)
+    // is wasted work — and on a 17k-activity schedule it froze the renderer.
+    // Paint only the list. The desktop pipeline is (re)built by renderAll when a
+    // resize crosses back above 700px (see the resize handler above).
+    if (psIsPhone()) { renderMobile(); return; }
+    renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
@@ -5639,6 +5654,12 @@
 
   function doRender() {
     if (_editing) { _pendingWin = true; return; }   // defer full repaint while an inline editor is open
+    // Safety net: scheduleRender()/doRender() is the single choke point every
+    // grid+Gantt build funnels through, and it is also poked by scroll, edit and
+    // load-reconcile paths. At phone width the split is hidden and only the
+    // read-only list is shown, so never build the (17k-row) desktop DOM here —
+    // repaint the list instead. renderAll rebuilds the grid when crossing back up.
+    if (psIsPhone()) { renderMobile(); return; }
     DL = displayList();
     var rg = range(), min = rg.min, max = rg.max, dayw = DAYW[zoom] * ganttScale;
     _rMin = min; _rDayw = dayw;
