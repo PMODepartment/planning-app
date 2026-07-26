@@ -151,7 +151,12 @@
       lastMembers = out; return out;
     }
 
-    ch.on('presence', { event: 'sync' }, function () { if (opts.onPresence) opts.onPresence(buildMembers()); });
+    function onPresenceChange() { if (opts.onPresence) opts.onPresence(buildMembers()); }
+    ch.on('presence', { event: 'sync' }, onPresenceChange);
+    // Belt-and-braces: some clients/networks deliver join/leave more reliably than a full
+    // 'sync' diff — re-render the roster on those too so presence never goes stale one-way.
+    ch.on('presence', { event: 'join' }, onPresenceChange);
+    ch.on('presence', { event: 'leave' }, onPresenceChange);
     ch.on('broadcast', { event: 'sel' }, function (p) {
       var d = (p && p.payload) || {};
       if (d.id === selfId) return;
@@ -163,14 +168,39 @@
         function (payload) { opts.onRemoteChange(payload); });
     }
 
-    ch.subscribe(function (status) {
-      if (status === 'SUBSCRIBED') {
-        try { ch.track(trackState); } catch (e) {}
-        if (opts.onStatus) opts.onStatus('online');
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-        if (opts.onStatus) opts.onStatus(status === 'CLOSED' ? 'offline' : 'error');
+    function doSubscribe() {
+      ch.subscribe(function (status) {
+        if (status === 'SUBSCRIBED') {
+          try { ch.track(trackState); } catch (e) {}   // (re)announce presence — also runs after a reconnect
+          if (opts.onStatus) opts.onStatus('online');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          if (opts.onStatus) opts.onStatus(status === 'CLOSED' ? 'offline' : 'error');
+        }
+      });
+    }
+    // CRITICAL for the live-value stream: postgres_changes is RLS-protected, so the socket must
+    // carry the user's JWT or the DB change events are silently dropped (presence/broadcast still
+    // work without it — which is exactly the "cursors work but live updates lag" symptom). Set the
+    // token from the current session BEFORE subscribing; fall back to subscribing anyway.
+    try {
+      var gs = client.auth && client.auth.getSession && client.auth.getSession();
+      if (gs && gs.then) {
+        gs.then(function (res) {
+          var tok = res && res.data && res.data.session && res.data.session.access_token;
+          if (tok) { try { client.realtime.setAuth(tok); } catch (e) {} }
+          doSubscribe();
+        }, function () { doSubscribe(); });
+      } else { doSubscribe(); }
+    } catch (e) { doSubscribe(); }
+    // Keep the socket token fresh across hourly JWT refreshes so the stream doesn't silently die
+    // mid-session (the change events would just stop arriving).
+    try {
+      if (client.auth && client.auth.onAuthStateChange) {
+        client.auth.onAuthStateChange(function (_evt, session) {
+          if (session && session.access_token) { try { client.realtime.setAuth(session.access_token); } catch (e) {} }
+        });
       }
-    });
+    } catch (e) {}
 
     // sel = {rowId, field, editing} | null. Broadcast immediately (throttled) for
     // snappy cursors, and fold into presence so a late joiner sees it on sync.

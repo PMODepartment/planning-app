@@ -1751,7 +1751,7 @@
 <script src="../../assets/js/ui.js?v=20260724a"></script>
 <script src="../../assets/js/icons.js?v=20260724a"></script>
 <script src="../../assets/js/calendar.js?v=20260724a"></script>
-<script src="../../assets/js/collab.js?v=20260726b"></script>
+<script src="../../assets/js/collab.js?v=20260726c"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -2330,8 +2330,17 @@
     var rec = payload['new'] || payload.record || null;
     var old = payload['old'] || payload.old_record || null;
     var id = (rec && rec.id) || (old && old.id);
-    // Skip the echo of my OWN recent write — my optimistic local state is already correct.
-    if (id != null && _myWrites[id] && (Date.now() - _myWrites[id] < 4000)) return false;
+    // Skip the echo of MY OWN recent write — but ONLY if the incoming record still matches what I
+    // wrote. If another user changed the same row, the values differ, so we fall through and apply
+    // it (otherwise same-row concurrent edits would be dropped for up to 4s).
+    if (id != null && rec && _myWrites[id] && (Date.now() - _myWrites[id].t < 4000)) {
+      var mine = Object.keys(_myWrites[id].patch || {}).every(function (k) {
+        var a = rec[k], b = _myWrites[id].patch[k];
+        return (a === b) || (JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b));
+      });
+      if (mine) return false;   // my own echo — local state already correct
+      delete _myWrites[id];     // superseded by someone else's edit — stop suppressing this row
+    }
     if (evt === 'DELETE') {
       if (id == null) return false;
       var i = rows.findIndex(function (x) { return x.id === id; }); if (i === -1) return false;
@@ -2461,7 +2470,7 @@
     var res = await sb().from(TABLE).update(patch).eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return false; }
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
-    _myWrites[id] = Date.now();   // suppress the Realtime echo of my own write (my local state is already correct)
+    _myWrites[id] = { t: Date.now(), patch: patch };   // suppress the Realtime echo of MY OWN write (content-checked below)
     _editSeq++; _cacheSaveSoon();   // keep the IndexedDB cache in sync + guard the bg refresh from clobbering this edit
     if (before) pushUndo({ type: 'update', id: id, before: before, after: patch });
     logAudit(r, 'update', _auditChanges(prev, patch));

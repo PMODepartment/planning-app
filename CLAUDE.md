@@ -3215,6 +3215,26 @@ but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and t
   genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
   See `modules/project-schedule/CLAUDE.md`.
 
+### 2026-07-26 — Live collaboration: reliability fixes (live-value stream + echo + presence)
+- User tested two sessions: avatars + cursors showed, but **live value updates were flaky ("sometimes
+  need to refresh")** and **presence looked one-directional**. Root cause of the flaky live values:
+  `postgres_changes` is RLS-protected, so the Realtime socket must carry the user's JWT or the DB change
+  events are silently dropped — while presence/broadcast work without it (exactly the observed "cursors
+  work, updates lag" split). supabase-js sets the token automatically but can race the channel subscribe.
+- **Fixes in `collab.js` (`?v=20260726c`):** (1) explicitly `client.realtime.setAuth(access_token)` from
+  the current session **before** `subscribe()`, and re-set it on `onAuthStateChange` so the stream
+  survives hourly JWT refreshes; (2) added presence **`join`/`leave`** listeners (re-render the roster on
+  those, not only the full `sync` diff) so presence can't go stale one-way.
+- **Content-aware echo suppression (PS):** `_myWrites` now stores the patch, and `_applyRemoteRow` skips
+  the echo **only if the incoming record still matches what I wrote** — so two users editing the *same
+  row* no longer drop each other's change for 4s (verified in a Node harness).
+- ⚠️ **Testing notes for the user:** (a) confirm **both** realtime migrations ran (`...realtime-collab.sql`
+  + `...realtime-collab-project-schedule.sql`) — without them the live-value stream never fires; (b)
+  **hard-reload both tabs** to pick up `?v=c`; (c) test with **two different accounts** — presence is
+  keyed by user id, so the same account in two windows shows as one person by design (and Edge InPrivate
+  windows share one session/login). Verified: `node --check` + echo-logic harness. Still needs the real
+  two-user live re-test.
+
 ### 2026-07-26 — Live collaboration: wire Project Schedule (phase-1 rollout)
 - Dropped the shared PDCollab layer into **Project Schedule** (the flagship). Topbar presence avatars
   (`#ps-presence`); colored outline + initials flag on the `.ps-grid-row[data-rowid] .ps-cell[data-field]`
