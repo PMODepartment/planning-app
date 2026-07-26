@@ -1053,6 +1053,36 @@
         font-size:13px; background:var(--pd-card); border:1px dashed var(--pd-line);
         border-radius:var(--pd-radius); }
       .ps-m-more { margin-top:4px; }
+      /* List/Gantt toggle */
+      .ps-m-seg { display:inline-flex; margin-left:auto; border:1px solid var(--pd-line); border-radius:999px; overflow:hidden; }
+      .ps-m-seg button { border:0; background:var(--pd-card); color:var(--pd-muted); font:600 11.5px/1 inherit; padding:6px 13px; cursor:pointer; }
+      .ps-m-seg button.on { background:var(--pd-red); color:#fff; }
+      .ps-m-ro { margin-left:0; }
+      /* --- Mobile Gantt (read-only, touch-scroll; self-contained, not the desktop pane) --- */
+      .ps-mg-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--pd-line);
+        border-radius:var(--pd-radius); background:var(--pd-card); }
+      .ps-mg-inner { position:relative; }
+      .ps-mg-head { display:flex; position:sticky; top:0; z-index:3; height:24px; background:var(--pd-card); border-bottom:1px solid var(--pd-line); }
+      .ps-mg-corner { position:sticky; left:0; z-index:4; flex:0 0 auto; background:var(--pd-card); border-right:1px solid var(--pd-line); }
+      .ps-mg-mon { flex:0 0 auto; box-sizing:border-box; font-size:10px; color:var(--pd-muted);
+        border-left:1px solid var(--pd-line); padding:6px 4px 0; white-space:nowrap; overflow:hidden; }
+      .ps-mg-rows { position:relative; }
+      .ps-mg-row { display:flex; height:26px; border-bottom:1px solid var(--pd-line); }
+      .ps-mg-row:last-child { border-bottom:0; }
+      .ps-mg-label { position:sticky; left:0; z-index:2; flex:0 0 auto; box-sizing:border-box;
+        background:var(--pd-card); border-right:1px solid var(--pd-line); display:flex; align-items:center;
+        gap:5px; padding:0 6px; font-size:11px; white-space:nowrap; overflow:hidden; }
+      .ps-mg-label.wbs { font-weight:700; }
+      .ps-mg-label .id { font-family:ui-monospace,Consolas,monospace; color:var(--pd-muted); font-size:10px; }
+      .ps-mg-label .nm { overflow:hidden; text-overflow:ellipsis; }
+      .ps-mg-track { position:relative; flex:0 0 auto; }
+      .ps-mg-b { position:absolute; top:7px; height:12px; border-radius:3px; background:#6b7280; overflow:hidden; }
+      .ps-mg-b i { position:absolute; left:0; top:0; bottom:0; background:var(--pd-red); }
+      .ps-mg-b.cp { outline:1.5px solid var(--pd-red); outline-offset:0; }
+      .ps-mg-sum { position:absolute; top:10px; height:6px; background:var(--pd-ink); opacity:.85; border-radius:2px; }
+      .ps-mg-mile { position:absolute; top:6px; width:13px; height:13px; margin-left:-6px; background:var(--pd-red); transform:rotate(45deg); }
+      .ps-mg-today { position:absolute; top:0; width:2px; background:var(--pd-red); z-index:1; }
+      .ps-mg-more { padding:12px; text-align:center; color:var(--pd-muted); font-size:12px; }
     }
     /* ===== Schedule Builder view (bottom-up / location-based setup, steps 1-7) ===== */
     .sbld-wrap { display:grid; grid-template-columns:230px 1fr; gap:18px; align-items:start; }
@@ -3531,6 +3561,9 @@
   var PS_M_CAP = 300;
   function psIsPhone() { return window.matchMedia('(max-width: 700px)').matches; }
 
+  // List | Gantt toggle for the mobile view (persisted per browser).
+  var _psMView = (function () { try { return localStorage.getItem('ps_mview') === 'gantt' ? 'gantt' : 'list'; } catch (e) { return 'list'; } })();
+
   function renderMobile() {
     var host = document.getElementById('ps-mobile');
     if (!host) return;
@@ -3542,12 +3575,71 @@
       host.innerHTML = '<div class="ps-m-empty">No activities match the current filters.</div>';
       return;
     }
+    var shownN = Math.min(acts.length, PS_M_CAP);
+    var seg = '<div class="ps-m-seg" role="tablist">' +
+      '<button data-mv="list" class="' + (_psMView === 'list' ? 'on' : '') + '">List</button>' +
+      '<button data-mv="gantt" class="' + (_psMView === 'gantt' ? 'on' : '') + '">Gantt</button></div>';
+    var bar = '<div class="ps-m-bar"><strong>' + shownN + '</strong> of ' + acts.length + ' activities' +
+      '<span class="ps-m-ro" title="This is a read-only view; edit on a larger screen">read-only</span>' + seg + '</div>';
+
+    host.innerHTML = bar + (_psMView === 'gantt' ? renderMobileGanttBody(nodes) : renderMobileList(acts));
+    host.querySelectorAll('.ps-m-seg [data-mv]').forEach(function (b) {
+      b.onclick = function () { _psMView = b.dataset.mv; try { localStorage.setItem('ps_mview', _psMView); } catch (e) {} renderMobile(); };
+    });
+  }
+
+  // Read-only touch Gantt: same displayList() data, a self-contained compact renderer (NOT the
+  // desktop virtualized pane, which stays hidden on phones). Frozen label column + horizontally
+  // scrollable timeline with month header, task/summary bars, milestones and a data-date line.
+  function renderMobileGanttBody(nodes) {
+    var shown = nodes.slice(0, PS_M_CAP), clipped = nodes.length - shown.length;
+    var mn = null, mx = null;
+    shown.forEach(function (nd) {
+      var s = null, e = null;
+      if (nd._dkind === 'task') { s = pd(dispStart(nd)); e = pd(dispFin(nd)); }
+      else { var sp = wbsSpan(nd); if (sp) { s = sp.s; e = sp.e; } }
+      if (s) { if (!mn || s < mn) mn = s; if (!mx || s > mx) mx = s; }
+      if (e) { if (!mx || e > mx) mx = e; if (!mn || e < mn) mn = e; }
+    });
+    if (!mn || !mx) { var rg = range(); mn = rg.min; mx = rg.max; }
+    mn = addDays(mn, -4); mx = addDays(mx, 4);
+    var totalDays = Math.max(1, dayDiff(mn, mx) + 1);
+    var dayw = Math.max(1.2, Math.min(6, 1600 / totalDays));   // auto-fit ~1600px timeline, then scroll
+    var labelW = 104, tlW = Math.round(totalDays * dayw);
+    function xOf(d) { return Math.round(dayDiff(mn, d) * dayw); }
+
+    var head = '<div class="ps-mg-head"><div class="ps-mg-corner" style="width:' + labelW + 'px"></div>';
+    var cur = new Date(mn.getFullYear(), mn.getMonth(), 1);
+    while (cur <= mx) {
+      var next = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+      var a = cur < mn ? mn : cur, b = next > addDays(mx, 1) ? addDays(mx, 1) : next;
+      var mw = Math.max(0, Math.round(dayDiff(a, b) * dayw));
+      head += '<div class="ps-mg-mon" style="width:' + mw + 'px">' + MON3[cur.getMonth()] + (cur.getMonth() === 0 ? " '" + String(cur.getFullYear()).slice(2) : '') + '</div>';
+      cur = next;
+    }
+    head += '</div>';
+
+    var body = shown.map(function (nd) {
+      var isW = nd._dkind !== 'task';
+      var label = '<div class="ps-mg-label' + (isW ? ' wbs' : '') + '" style="width:' + labelW + 'px">' +
+        (isW ? '' : '<span class="id">' + esc(nd.activity_id || '') + '</span>') +
+        '<span class="nm">' + esc(nd.activity_name || nd._dcode || '') + '</span></div>';
+      var bar = '';
+      if (isW) { var sp = wbsSpan(nd); if (sp) { var wx = xOf(sp.s), ww = Math.max(4, xOf(sp.e) - wx + Math.round(dayw)); bar = '<div class="ps-mg-sum" style="left:' + wx + 'px;width:' + ww + 'px"></div>'; } }
+      else if (isMile(nd)) { var md = isFinishMile(nd) ? (pd(dispFin(nd)) || pd(dispStart(nd))) : (pd(dispStart(nd)) || pd(dispFin(nd))); if (md) bar = '<div class="ps-mg-mile" style="left:' + xOf(md) + 'px"></div>'; }
+      else { var s = pd(dispStart(nd)), e = pd(dispFin(nd)); if (s && e) { var bx = xOf(s), bw = Math.max(3, xOf(e) - bx + Math.round(dayw)); var pct = nd.percent_complete != null ? Math.max(0, Math.min(100, +nd.percent_complete)) : 0; bar = '<div class="ps-mg-b' + (nd._critical ? ' cp' : '') + '" style="left:' + bx + 'px;width:' + bw + 'px"><i style="width:' + pct + '%"></i></div>'; } }
+      return '<div class="ps-mg-row">' + label + '<div class="ps-mg-track" style="width:' + tlW + 'px">' + bar + '</div></div>';
+    }).join('');
+
+    var td = today(), todayLine = '';
+    if (td && td >= mn && td <= mx) todayLine = '<div class="ps-mg-today" style="left:' + (labelW + xOf(td)) + 'px;height:' + (shown.length * 26) + 'px"></div>';
+    var more = clipped > 0 ? '<div class="ps-mg-more">' + clipped + ' more rows not shown — narrow with search / filters.</div>' : '';
+    return '<div class="ps-mg-scroll"><div class="ps-mg-inner" style="width:' + (labelW + tlW) + 'px">' +
+      head + '<div class="ps-mg-rows">' + body + todayLine + '</div></div></div>' + more;
+  }
+
+  function renderMobileList(acts) {
     var shown = acts.slice(0, PS_M_CAP), clipped = acts.length - shown.length;
-
-    var head = '<div class="ps-m-bar">' +
-      '<strong>' + shown.length + '</strong> of ' + acts.length + ' activities' +
-      '<span class="ps-m-ro" title="Editing, the Gantt and keyboard navigation are available on a larger screen">read-only</span></div>';
-
     var body = shown.map(function (r) {
       var done = isComplete(r);
       var started = !!r.actual_start;
@@ -3578,7 +3670,7 @@
     var more = clipped > 0
       ? '<div class="ps-m-more">' + clipped + ' more activities not shown. Use search or filters to narrow the list.</div>'
       : '';
-    host.innerHTML = head + body + more;
+    return body + more;
   }
 
   // Repaint on resize, debounced (resize fires in bursts). Crossing the 700px

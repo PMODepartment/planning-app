@@ -1,5 +1,20 @@
 # Module: project-schedule
 
+## Mobile Gantt view (read-only, touch-scroll) (2026-07-26) — fmlozano
+The phone view (`#ps-mobile`, <700px) was a card list only; added a **List | Gantt** segmented toggle
+(persisted `ps_mview`). `renderMobile()` now dispatches to `renderMobileList(acts)` (the old cards) or
+**`renderMobileGanttBody(nodes)`** — a self-contained compact Gantt (NOT the desktop virtualized pane,
+which stays hidden on phones):
+- Same `displayList()` data (respects search/filters/grouping/collapse), capped at `PS_M_CAP` (300) rows.
+- Frozen sticky-left label column (`position:sticky;left:0`) + horizontally-scrollable timeline; month
+  header (sticky-top); task bars with red %-fill, WBS-summary roll-up bars (`wbsSpan`), milestone
+  diamonds (`isFinishMile` anchors on finish), a red data-date line, critical outline.
+- Auto-fit scale: `dayw = clamp(1600/totalDays, 1.2, 6)` so the timeline is ~1600px then scrolls.
+- Verified: `node --check`; geometry harness confirms month-cell widths **sum exactly to the timeline
+  width** (header aligns with bars, diff 0), 1-day bars get a 3px min, data-date maps in range. Read-only
+  (no edit/drag). **NOT browser-verified at 375px** (auth wall) — worth an eyeball on a real phone. CSS
+  `.ps-mg-*` in the `@media (max-width:700px)` block; module-local, no `?v=` bump.
+
 ## Offline editing + sync — Phase 2 (2026-07-26) — fmlozano
 Wired the shared **PDSync** outbox (`assets/js/offline.js`): inline-edit the schedule offline, sync on
 reconnect.

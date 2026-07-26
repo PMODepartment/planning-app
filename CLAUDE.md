@@ -3215,6 +3215,15 @@ but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and t
   genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
   See `modules/project-schedule/CLAUDE.md`.
 
+### 2026-07-26 — Project Schedule: mobile Gantt view (read-only, touch-scroll)
+- The phone view (`#ps-mobile`, <700px) gained a **List | Gantt** toggle (persisted `ps_mview`).
+  `renderMobileGanttBody()` is a self-contained compact Gantt on the same `displayList()` data (capped at
+  300 rows): frozen sticky-left labels + horizontally-scrollable timeline, month header, task bars with
+  red %-fill, WBS-summary roll-up bars, milestone diamonds, red data-date line, critical outline. Auto-fit
+  scale `dayw = clamp(1600/totalDays, 1.2, 6)`. Read-only; the desktop virtualized Gantt pane stays hidden
+  on phones. Verified: `node --check` + geometry harness (month cells sum exactly to timeline width; 1-day
+  bars get a 3px min). NOT browser-verified at 375px (auth wall). Module-local, no `?v=` bump.
+
 ### 2026-07-26 — Phase 2: offline editing + sync (Drawing Register + Project Schedule)
 - Second collaboration capability: **edit with no connection, sync on reconnect.** New shared
   **`assets/js/offline.js` (`PDSync`)** — an IndexedDB write outbox + read cache, generic like PDCollab.
