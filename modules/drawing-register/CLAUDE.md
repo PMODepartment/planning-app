@@ -1,5 +1,26 @@
 # Module: drawing-register
 
+## Live collaboration — presence + live cell editing (2026-07-26) — fmlozano
+Proving ground for the app-wide **PDCollab** layer (shared `assets/js/collab.js`, Supabase Realtime).
+Google-Sheets/Teams-style co-editing: topbar avatars of who's viewing the project, colored outlines of
+the cell each person is editing, and live row updates when someone else saves.
+- **Wiring:** `joinCollab()` (re)joins a per-project channel on load + project switch (`key =
+  drawing_register:<pid>`, `table = drawing_register`). `renderPresence` → `#dr-presence` avatars.
+  `broadcastSel(rowId,field,editing)` fires on cell click + on `beginEdit`/commit. `paintRemote()`
+  (called at the end of `render()`) outlines each remote user's `tr.dr-drow[data-id] td[data-f]` cell
+  via `PDCollab.paintCell`. `applyRemoteChange` patches `rows` from postgres_changes (INSERT/UPDATE/
+  DELETE) and re-renders — **deferred while `.dr-editing` is open** (`_deferredRemote`) so a remote save
+  can't wipe my inline input, then flushed on commit.
+- **Conflict model:** last-write-wins per cell (a grid, not rich text). Two users on different fields of
+  the same row both win; same-cell simultaneous edits converge via each write's own echo (brief flash).
+- **Migration `../../migrations/2026-07-26-realtime-collab.sql` (USER MUST RUN)** — adds
+  `drawing_register` to the `supabase_realtime` publication + `replica identity full`. Presence/cursors
+  work WITHOUT it; only the live-value stream needs it. Without the migration the module still works
+  (avatars + cursors), just no live row updates.
+- Verified: `node --check` + presence-render unit checks. **NOT browser-verified** — needs two
+  signed-in sessions to observe presence/cursors. Assets `?v=20260726a` (+ new shared `collab.js`).
+- **Next:** once live-verified with 2 users, the same pattern drops into Project Schedule.
+
 Developer change log for the **drawing-register** module. Also the **reference
 module for file uploads** (private bucket + signed-URL viewing). Update every PR.
 

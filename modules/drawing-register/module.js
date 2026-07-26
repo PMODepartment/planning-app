@@ -88,6 +88,90 @@ window.DrawingRegister = (function () {
   }
 
   function sb() { return AppAuth.getSB(); }
+
+  // ================= live collaboration (presence + cell cursors) ============
+  // Google-Sheets-style co-editing via the shared PDCollab layer (Supabase
+  // Realtime): topbar avatars of who's here, colored outlines of the cell each
+  // person is editing, and live row updates when someone else saves.
+  var collab = null;        // PDCollab channel handle for the current project
+  var remoteSel = {};       // userId -> { name, color, sel:{rowId,field,editing} }
+  var _deferredRemote = []; // remote row changes queued while I have an editor open
+
+  function selfName() { return (profile && (profile.name || profile.email)) || 'Someone'; }
+
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (collab) { collab.leave(); collab = null; }
+    remoteSel = {};
+    if (!pid) { renderPresence([]); return; }
+    collab = PDCollab.join({
+      key: 'drawing_register:' + pid,
+      table: TABLE, projectId: pid,
+      self: { id: uid, name: selfName() },
+      onPresence: function (members) {
+        renderPresence(members);
+        // reseed cursors from presence so a late joiner sees existing selections
+        remoteSel = {};
+        members.forEach(function (m) { if (!m.self && m.sel) remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; });
+        paintRemote();
+      },
+      onSelection: function (d) {
+        if (d.sel) remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel };
+        else delete remoteSel[d.id];
+        paintRemote();
+      },
+      onRemoteChange: applyRemoteChange
+    });
+  }
+
+  function renderPresence(members) {
+    var el = document.getElementById('dr-presence'); if (!el) return;
+    el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(members || []) : '';
+  }
+
+  // Broadcast MY selection (row + field). Debounced inside PDCollab.
+  function broadcastSel(rowId, field, editing) {
+    if (collab) collab.setSelection(rowId ? { rowId: rowId, field: field || null, editing: !!editing } : null);
+  }
+
+  // Paint every remote user's active cell (colored outline + initials flag).
+  function paintRemote() {
+    if (!window.PDCollab) return;
+    PDCollab.clearCells(document);
+    if (view !== 'register') return;
+    Object.keys(remoteSel).forEach(function (k) {
+      var m = remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return;
+      var rid = (window.CSS && CSS.escape) ? CSS.escape(m.sel.rowId) : m.sel.rowId;
+      var tr = document.querySelector('tr.dr-drow[data-id="' + rid + '"]'); if (!tr) return;
+      var td = m.sel.field ? tr.querySelector('td[data-f="' + m.sel.field + '"]') : tr.querySelector('td[data-f]');
+      if (td) PDCollab.paintCell(td, m);
+    });
+  }
+
+  // A remote user saved/inserted/deleted a row: patch the local model + re-render.
+  // Deferred while I have an inline editor open so it can't wipe my input mid-edit.
+  function _applyRemoteOne(payload) {
+    var evt = payload.eventType || payload.event;
+    var rec = payload['new'] || payload.record || null;
+    var old = payload['old'] || payload.old_record || null;
+    if (evt === 'DELETE') {
+      var did = old && old.id; if (did == null) return;
+      var i = rows.findIndex(function (x) { return x.id === did; });
+      if (i !== -1) rows.splice(i, 1);
+    } else if (rec) {
+      var j = rows.findIndex(function (x) { return x.id === rec.id; });
+      if (j === -1) rows.push(rec); else rows[j] = rec;
+    }
+  }
+  function applyRemoteChange(payload) {
+    if (document.querySelector('.dr-editing')) { _deferredRemote.push(payload); return; }
+    _applyRemoteOne(payload); render();
+  }
+  function flushDeferredRemote() {
+    if (!_deferredRemote.length) return;
+    var q = _deferredRemote; _deferredRemote = [];
+    q.forEach(_applyRemoteOne); render();
+  }
   function num(v){ v = parseFloat(v); return isFinite(v) ? v : 0; }
 
   // ---- per-project UI persistence (view + collapse state) [feature 3] ------
@@ -139,7 +223,14 @@ window.DrawingRegister = (function () {
       pid = e.target.value; sessionStorage.setItem('pd_project', pid);
       var p = e.target.selectedOptions[0]; projName = p ? p.textContent : '';
       load({ reset:true });
+      joinCollab();
     };
+    // Broadcast my active cell to other viewers (click / keyboard focus).
+    document.addEventListener('click', function (e) {
+      var td = e.target.closest && e.target.closest('tr.dr-drow td[data-f]');
+      if (!td) return; var tr = td.closest('tr.dr-drow'); if (!tr) return;
+      broadcastSel(tr.dataset.id, td.dataset.f, false);
+    });
     document.querySelectorAll('.dr-tab').forEach(function (b) {
       b.onclick = function () {
         view = b.dataset.view;
@@ -163,6 +254,7 @@ window.DrawingRegister = (function () {
       document.addEventListener('click', function(){ if (vMenu) vMenu.hidden = true; });
     }
     if (pid) load({ reset:true });
+    joinCollab();
   }
 
   // ---- saved filter views [feature 5] --------------------------------------
@@ -371,8 +463,9 @@ window.DrawingRegister = (function () {
     var fb = document.querySelector('.dr-filters');
     if (fb) fb.style.display = (view === 'progress') ? 'none' : '';
     populateFilterSelects();
-    if (view === 'progress') return renderProgress();
-    renderRegister();
+    if (view === 'progress') { renderProgress(); }
+    else { renderRegister(); }
+    paintRemote();
   }
 
   function populateFilterSelects() {
@@ -901,6 +994,7 @@ window.DrawingRegister = (function () {
             : f==='latest_sub' ? (latestSub(r,'actual')||'')
             : (r[f]!=null?r[f]:'');
     td.classList.add('dr-editing');
+    broadcastSel(r.id, f, true);
     var input=document.createElement('input');
     input.className='dr-editin'; input.type = (t==='num'?'number':t==='date'?'date':'text'); input.value=cur;
     td.innerHTML=''; td.appendChild(input); input.focus(); if (t!=='date') input.select();
@@ -908,7 +1002,8 @@ window.DrawingRegister = (function () {
     function commit(save){
       if (done) return; done=true;
       td.classList.remove('dr-editing');
-      if (!save) { render(); return; }
+      broadcastSel(r.id, f, false);
+      if (!save) { render(); flushDeferredRemote(); return; }
       var val=input.value.trim(), patch={};
       if (f==='code'){ patch.dwg_number=val; patch.drawing_no=val; patch.drawing_code=val; }
       else if (f==='latest_sub'){
@@ -921,7 +1016,7 @@ window.DrawingRegister = (function () {
       else if (t==='num'){ patch[f]=num(val); }
       else if (t==='date'){ patch[f]=val||null; }
       else patch[f]=val;
-      persistCell(r, patch).then(function(){ render(); });
+      persistCell(r, patch).then(function(){ render(); flushDeferredRemote(); });
     }
     input.onkeydown=function(e){ if(e.key==='Enter'){e.preventDefault();commit(true);} else if(e.key==='Escape'){e.preventDefault();commit(false);} };
     input.onblur=function(){ commit(true); };

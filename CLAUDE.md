@@ -3215,6 +3215,37 @@ but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and t
   genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
   See `modules/project-schedule/CLAUDE.md`.
 
+### 2026-07-26 — Live collaboration phase 1: shared PDCollab layer + Drawing Register (presence + live cells)
+- User wants Google-Sheets/Teams-style **live collaboration** (who's viewing a project + which cell each
+  person is editing) and **offline editing with sync**, across applicable modules. Decided scope with the
+  user: **phase 1 = presence + live cells** (offline-writes deferred as a separate, larger phase), proven
+  on **Drawing Register first**, then dropped into Project Schedule.
+- **Key insight:** a register/schedule is a grid of DISCRETE cells, not a rich-text doc — no OT/CRDT
+  merge; conflicting cell edits are last-write-wins like Sheets. That's why the transport is small.
+- **New shared `assets/js/collab.js` (`PDCollab`)** on Supabase Realtime (`window.__sb`; no build step;
+  websocket to Supabase, works on GitHub Pages). Three primitives: **Presence** (topbar avatars),
+  **Broadcast 'sel'** (ephemeral "editing row R field F" cursor), **Postgres Changes** (another user
+  saved → my grid patches live). API `PDCollab.join({key,table,projectId,self,onPresence,onSelection,
+  onRemoteChange})` + `avatarsHTML`/`paintCell`/`clearCells`/`colorFor`/`initials`; injects its own
+  `.pd-collab-*` CSS (no per-module CSS edits). Built generic so every module reuses it — each supplies
+  only "serialize my selection" + "apply a remote row change".
+- **Drawing Register wired** (`modules/drawing-register/`): topbar presence avatars (`#dr-presence`),
+  colored outline + initials flag on the cell each remote user is editing (`paintRemote`), live row
+  updates via `applyRemoteChange` (INSERT/UPDATE/DELETE patched into `rows`; **deferred while I have an
+  inline editor open** so it can't wipe my input, flushed on commit). My selection is broadcast on cell
+  click + on `beginEdit`. Channel (re)joins on load + project switch.
+- **Migration `2026-07-26-realtime-collab.sql` (USER MUST RUN):** adds `drawing_register` to the
+  `supabase_realtime` publication + `replica identity full` (so filtered UPDATE/DELETE payloads carry
+  `project_id`). Presence/broadcast need NO server change; only the live-value stream does. RLS still
+  applies to Realtime. Other tables added per-module as wired (not preemptively — replica-identity-full
+  adds WAL; project_schedule is 40k-row/high-write).
+- Verified: `collab.js` + `module.js` pass `node --check`; presence rendering (avatars, +N overflow,
+  editing/me classes, stable colors, empty case) unit-checked in a Node DOM shim. **NOT browser-verified**
+  — presence/cursors need the deployed site + **two signed-in sessions**, which a single auth-walled
+  session here can't exercise. Assets: `collab.js?v=20260726a` + drawing-register `module.js?v=20260726a`
+  (new script, not referenced elsewhere → no global `?v=` bump).
+- **Next:** live-verify with 2 users → wire Project Schedule → scope the offline-writes phase.
+
 ### 2026-07-26 — Schedule↔document link phase 4: Project Schedule "Documents" tab
 - Reciprocal of the register-side Need-by work below: the **Project Schedule** side of the connection.
   New **"Documents" detail tab** on each activity (`detDocs` in `modules/project-schedule/index.html`,
