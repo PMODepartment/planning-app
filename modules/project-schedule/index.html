@@ -1327,6 +1327,7 @@
             <button class="ps-dtab" data-dtab="steps">Steps</button>
             <button class="ps-dtab" data-dtab="assign">Resource Assignments</button>
             <button class="ps-dtab" data-dtab="expenses">Expenses</button>
+            <button class="ps-dtab" data-dtab="docs">Documents</button>
             <button class="ps-dtab" data-dtab="rels">Relationships</button>
             <button class="ps-dtab" data-dtab="trace">Trace Logic</button>
             <span class="ps-dt-sep"></span>
@@ -1766,6 +1767,7 @@
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
+  var DOC_DRAWINGS = [], DOC_SUBMITTALS = [];   // Drawing Register + Material Submittal rows LINKED to this project's schedule activities (phase-4 document connection)
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
   var _wbsCollapsed = {};   // WBS Manager: node id -> true means its children are hidden
   var _wbsSearch = '';      // WBS Manager: current search filter (code / name)
@@ -1841,6 +1843,19 @@
       var r10 = await sb().from('activity_expenses').select('*').eq('project_id', pid);
       EXPENSES = (r10 && r10.data) || [];
     } catch (e) { EXPENSES = []; }
+    // Phase-4 document connection: pull the Drawing Register + Material Submittal rows that are
+    // LINKED to this project's schedule activities (schedule_activity_id set). Only the linked
+    // subset is fetched (usually a handful per project), so a single filtered read is enough.
+    // Tolerant: if the schedule-document-links migration hasn't run, the column is absent and the
+    // query errors — we just leave the caches empty (the Documents tab shows a hint).
+    try {
+      var rd = await sb().from('drawing_register').select('id,schedule_activity_id,schedule_wbs,lead_days,drawing_no,drawing_code,title,discipline,status,plan_approval_date,actual_approval').eq('project_id', pid).not('schedule_activity_id', 'is', null);
+      DOC_DRAWINGS = (rd && rd.data) || [];
+    } catch (e) { DOC_DRAWINGS = []; }
+    try {
+      var rm = await sb().from('material_submittal').select('id,schedule_activity_id,schedule_wbs,lead_days,material,specification,discipline,status,plan_approval_date,date_approved').eq('project_id', pid).not('schedule_activity_id', 'is', null);
+      DOC_SUBMITTALS = (rm && rm.data) || [];
+    } catch (e) { DOC_SUBMITTALS = []; }
   }
   // ---- WBS tree algorithms (verified pure logic) ----
   function wbsChildren(parentId) {
@@ -4583,6 +4598,77 @@
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     UI.toast('Deleted.', 'success'); await loadResourcesAssignments(); await syncActivityCost(r); renderDetails(); renderGrid(); renderGantt();
   }
+  // ---- Documents (phase-4 link to Drawing Register + Material Submittal) ----
+  // A drawing / material submittal is a PREREQUISITE for construction work: the activity's start is
+  // the document's need-by date, and (start − lead_days) is the date it must be APPROVED by. This tab
+  // surfaces every enabling document linked to the selected activity + a readiness verdict.
+  function _docApprovedDr(s) { s = (s || '').trim(); return s === 'Approved' || s === 'Approved w/o comments' || s === 'Approved w/ comments'; }
+  function _docApprovedMs(s) { s = (s || '').trim(); return s === 'Approved' || s === 'Approved w/ Comments'; }
+  function _docLeadDefault(kind) { return kind === 'ms' ? 45 : 30; }
+  function docsFor(aid) {
+    aid = String(aid);
+    return {
+      drawings: DOC_DRAWINGS.filter(function (d) { return String(d.schedule_activity_id) === aid; }),
+      submittals: DOC_SUBMITTALS.filter(function (d) { return String(d.schedule_activity_id) === aid; })
+    };
+  }
+  // Readiness verdict for one activity, from its linked enabling documents. null = nothing linked.
+  function docReadiness(r) {
+    if (!r || !r.activity_id) return null;
+    var docs = docsFor(r.activity_id);
+    var open = 0, total = docs.drawings.length + docs.submittals.length;
+    if (!total) return null;
+    docs.drawings.forEach(function (d) { if (!_docApprovedDr(d.status)) open++; });
+    docs.submittals.forEach(function (d) { if (!_docApprovedMs(d.status)) open++; });
+    var needBy = dispStart(r), days = null;
+    if (needBy) days = Math.round((new Date(needBy) - new Date(today())) / 86400000);
+    if (open === 0) return { level: 'ready', open: 0, total: total, days: days };
+    var level = (days != null && days <= 0) ? 'late' : (days != null && days <= 14) ? 'risk' : 'pending';
+    return { level: level, open: open, total: total, days: days };
+  }
+  function _docChip(level) {
+    var map = { ready: ['#137333', '#e6f4ea', 'Documents ready'], pending: ['#5f6368', '#f1f3f4', 'Docs pending'],
+      risk: ['#b06000', '#fef7e0', 'Docs at risk'], late: ['#c5221f', '#fce8e6', 'Docs late'] };
+    var c = map[level] || map.pending;
+    return '<span style="display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:600;color:' + c[0] + ';background:' + c[1] + ';">' + esc(c[2]) + '</span>';
+  }
+  function detDocs(r) {
+    if (!r.activity_id) return '<div class="ps-empty-detail">Give this activity an <strong>Activity ID</strong> first (double-click the ID cell), then link drawings / material submittals to it from the <strong>Drawing Register</strong> and <strong>Material Submittal Log</strong> modules.</div>';
+    var docs = docsFor(r.activity_id);
+    var total = docs.drawings.length + docs.submittals.length;
+    var rd = docReadiness(r), needBy = dispStart(r);
+    function reqBy(lead) { if (!needBy) return null; var dt = new Date(needBy); dt.setDate(dt.getDate() - lead); return dt.toISOString().slice(0, 10); }
+    function docRow(kind, d, approved) {
+      var lead = (d.lead_days != null ? d.lead_days : _docLeadDefault(kind));
+      var rb = reqBy(lead);
+      var name = kind === 'dr' ? (d.drawing_no || d.drawing_code || '(untitled)') : (d.material || '(untitled)');
+      var desc = kind === 'dr' ? (d.title || d.discipline || '') : (d.specification || d.discipline || '');
+      return '<tr>' +
+        '<td><span style="font-size:10px;color:var(--pd-muted);font-weight:600;">' + (kind === 'dr' ? 'DWG' : 'MAT') + '</span></td>' +
+        '<td>' + esc(name) + (desc ? '<div style="color:var(--pd-muted);font-size:11px;">' + esc(desc) + '</div>' : '') + '</td>' +
+        '<td>' + esc(d.status || '—') + (approved ? ' <span style="color:#137333;">&#10003;</span>' : '') + '</td>' +
+        '<td class="num">' + lead + 'd</td>' +
+        '<td>' + (rb ? fmtOPCDate(rb) : '—') + '</td></tr>';
+    }
+    var body = '';
+    if (!total) {
+      body = '<div class="ps-empty-detail">No documents are linked to this activity yet. In the <strong>Drawing Register</strong> or <strong>Material Submittal Log</strong>, open a document\'s Add/Edit form and pick <em>' + esc(r.activity_id) + '</em> under “Schedule link”.</div>';
+    } else {
+      var rowsH = docs.drawings.map(function (d) { return docRow('dr', d, _docApprovedDr(d.status)); }).join('') +
+        docs.submittals.map(function (d) { return docRow('ms', d, _docApprovedMs(d.status)); }).join('');
+      body = '<table class="ps-mini"><thead><tr><th>Type</th><th>Document</th><th>Status</th><th class="num">Lead</th><th>Approve by</th></tr></thead><tbody>' + rowsH + '</tbody></table>' +
+        (rd && rd.open ? '<p class="ps-usage-note" style="margin-top:8px;">' + rd.open + ' of ' + rd.total + ' enabling document(s) not yet approved' +
+          (rd.days != null ? (rd.days <= 0 ? ' — this activity\'s start date has arrived/passed.' : ' — ' + rd.days + ' day(s) to the need-by date.') : '.') + '</p>'
+          : '<p class="ps-usage-note" style="margin-top:8px;">All enabling documents are approved — this activity is document-ready.</p>');
+    }
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">' +
+      '<strong>' + esc(r.activity_id) + ' — ' + esc(r.activity_name || '') + '</strong>' +
+      (rd ? _docChip(rd.level) : '') +
+      '<span style="margin-left:auto;color:var(--pd-muted);font-size:12px;">Need-by (start): <strong>' + (needBy ? fmtOPCDate(needBy) : '—') + '</strong></span></div>' +
+      body +
+      '<p class="ps-usage-note" style="margin-top:8px;">Documents are linked from the Drawing Register / Material Submittal Log (each document points to the activity its approval gates). “Approve by” = need-by − lead time.</p>';
+  }
+  function wireDocs(root, r) { if (window.Icons) Icons.hydrate(root); }
   function traceNode(label, sub, cur) { return '<div class="ps-trace-node' + (cur ? ' cur' : '') + '"><strong>' + esc(label) + '</strong>' + (sub ? '<div style="color:var(--pd-muted);">' + esc(sub) + '</div>' : '') + '</div>'; }
   // Trace Logic — walk the predecessor/successor chain N levels deep (OPC "Predecessor/Successor
   // Levels"). Level control persisted; a `seen` set dedups and stops cycles.
@@ -5118,6 +5204,7 @@
     else if (t === 'steps') { body.innerHTML = detSteps(r); wireSteps(body, r); }
     else if (t === 'assign') { body.innerHTML = detAssign(r); wireAssign(body, r); }
     else if (t === 'expenses') { body.innerHTML = detExpenses(r); wireExpenses(body, r); }
+    else if (t === 'docs') { body.innerHTML = detDocs(r); wireDocs(body, r); }
     else if (t === 'rels') { body.innerHTML = detRelsEdit(r); wireRels(body, r); wireDetailSplits(body); }
     else if (t === 'trace') { body.innerHTML = detTrace(r); wireTrace(body, r); }
   }

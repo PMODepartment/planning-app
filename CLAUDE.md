@@ -3215,6 +3215,23 @@ but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and t
   genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
   See `modules/project-schedule/CLAUDE.md`.
 
+### 2026-07-26 — Schedule↔document link phase 4: Project Schedule "Documents" tab
+- Reciprocal of the register-side Need-by work below: the **Project Schedule** side of the connection.
+  New **"Documents" detail tab** on each activity (`detDocs` in `modules/project-schedule/index.html`,
+  between Expenses and Relationships) lists every Drawing Register + Material Submittal row linked to
+  that activity (`schedule_activity_id` = the activity's `activity_id`), each with approval status, lead
+  days, and an **"Approve by"** date (need-by − lead). A **document-readiness chip** (`docReadiness`:
+  ready / pending / at-risk / late) summarises whether the enabling docs will be approved before the
+  activity's start.
+- Docs are lazy-loaded in `loadResourcesAssignments` into `DOC_DRAWINGS`/`DOC_SUBMITTALS` — an explicit
+  column list filtered to `schedule_activity_id NOT NULL` (only the linked subset), **tolerant** of the
+  un-run `2026-07-25-schedule-document-links.sql` migration (query errors → empty caches → tab shows a
+  hint). Read-only (linking is done from the register side). No migration, **no `?v=` bump** (module-local).
+- Verified: inline script parses clean. **Not browser-verified** (auth wall + needs a real project with
+  linked documents). **Deferred (deliberate):** a schedule-GRID readiness column + filter — the
+  per-activity chip already surfaces the risk; a grid column across the virtualized 3-branch render is
+  the risky part in this ~690KB concurrently-edited file. Phase 4 of the connection is otherwise complete.
+
 ### 2026-07-25 — Connect Drawing Register + Material Submittal Log to the Project Schedule (phase 1–3 of 4)
 - User asked to connect both registers to the Project Schedule. Design: each drawing / material submittal
   is a **prerequisite** for construction work, so it links to the schedule **activity** whose start it

@@ -1,5 +1,28 @@
 # Module: project-schedule
 
+## Documents tab — schedule↔document link, phase 4 (2026-07-26) — fmlozano
+Reciprocal of the Drawing Register / Material Submittal "Need-by" work: the schedule side of the
+document connection. A drawing / submittal gates an activity's start, so each activity can now show
+its enabling documents + whether they're approved in time.
+- **New "Documents" detail tab** (`detDocs`/`wireDocs`, between Expenses and Relationships): lists every
+  Drawing Register + Material Submittal row whose `schedule_activity_id` = this activity's `activity_id`,
+  with type (DWG/MAT), name/desc, approval status (✓ when approved), lead days, and an **"Approve by"**
+  date (need-by − lead). Header shows the activity's need-by (= its start) + a **readiness chip**.
+- **`docReadiness(r)`** → ready / pending / at-risk (≤14d to need-by) / late (need-by passed) / null
+  (nothing linked). Approved = drawing `Approved[ w/(o) comments]`, submittal `Approved[ w/ Comments]`
+  (mirrors each register's own rule).
+- **Lazy load** in `loadResourcesAssignments`: `DOC_DRAWINGS`/`DOC_SUBMITTALS` fetched with an explicit
+  column list filtered to `schedule_activity_id NOT NULL` (only the linked subset — a handful/project,
+  so one read, no pagination). **Tolerant** — if `migrations/2026-07-25-schedule-document-links.sql`
+  hasn't run the column is absent, the query errors, caches stay empty, and the tab shows a hint.
+- **Read-only** — linking is done from the register side (each document points at the activity it gates).
+- Verified: inline script parses (`new Function`, 1 block, 0 fail). **Not browser-verified** (auth wall +
+  needs a real project with linked documents + the migration run).
+- **Deferred (deliberate):** a schedule-GRID document-readiness column + filter. The per-activity chip
+  already surfaces the risk; a grid column across the virtualized 3-branch render (cell-count alignment +
+  nth-child hide) is the risky change in this ~690KB concurrently-edited file — same call the register
+  side made about grid changes. No `?v=` bump (module-local, no shared asset).
+
 ## Cell-nav horizontal autoscroll fixed (cells hidden behind frozen columns) (2026-07-22) — fmlozano
 User: Left/Right/Tab cell navigation didn't autoscroll the columns correctly. Root cause in
 `scrollCellVisible(r, c)`: the leading **#, Activity ID, Activity Name** columns are `position:sticky`
