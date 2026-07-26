@@ -1,5 +1,31 @@
 # Module: project-schedule
 
+## Live collaboration — presence + live cell editing (2026-07-26) — fmlozano
+Wired the shared **PDCollab** layer (`assets/js/collab.js`, Supabase Realtime) into the schedule grid —
+same pattern proven on Drawing Register, plus two schedule-specific hardenings.
+- **Wiring:** `maybeJoinCollab()` (re)joins a per-project channel in `load()` (guarded on pid change;
+  `leaveCollab()` when no project); `key = project_schedule:<pid>`. `renderCollabPresence` → `#ps-presence`
+  avatars. `broadcastCollabSel` fires from `_setCellFromClick` (column index → field via `_CELL_META`)
+  and on `beginEdit`/commit. `paintRemoteCollab()` outlines each remote user's `.ps-grid-row[data-rowid]
+  .ps-cell[data-field]` cell — called from the end of `highlightCells()`, so it re-applies after every
+  virtualized `renderWindow` repaint. Only paints on the schedule tab (only it has cells).
+- **Hardening 1 — coalesced remote changes + storm guard.** `_onRemoteChange` buffers postgres_changes
+  and `_flushCollab` (180ms) applies the batch in ONE `rebuild()`+`renderAll()`. A **bulk storm**
+  (import/global-change/clear fans out thousands of events) past **300** buffered → ONE `load()` reload
+  instead of per-row patching. Essential: this is a 40k-row virtualized grid, not a small register.
+- **Hardening 2 — echo suppression.** `persist()` stamps `_myWrites[id]`; `_applyRemoteRow` skips the
+  Realtime echo of my own write for 4s (my optimistic local state is already correct), so an inline edit
+  doesn't cause a redundant rebuild+render ~180ms later. Remote changes are also **deferred while an
+  inline editor is open** (`_editing`).
+- **Conflict model:** last-write-wins per cell (grid, not rich text); different fields of one row both
+  win, same-cell clashes converge via each write's echo.
+- **Migration `../../migrations/2026-07-26-realtime-collab-project-schedule.sql` (USER MUST RUN)** — adds
+  `project_schedule` to `supabase_realtime` + `replica identity full`. Presence/cursors work WITHOUT it;
+  only the live-value stream needs it.
+- Verified: `node --check` + a Node harness for the coalesce/storm/echo/delete/defer logic (1 render for
+  a 3-change burst, 0 for my own echo, 1 reload for 400 events, deferred-then-applied while editing).
+  **NOT browser-verified** — needs two signed-in sessions. Assets `collab.js?v=20260726b`.
+
 ## Documents tab — schedule↔document link, phase 4 (2026-07-26) — fmlozano
 Reciprocal of the Drawing Register / Material Submittal "Need-by" work: the schedule side of the
 document connection. A drawing / submittal gates an activity's start, so each activity can now show

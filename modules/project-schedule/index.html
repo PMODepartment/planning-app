@@ -1202,6 +1202,7 @@
         <div class="ps-menu-wrap"><button class="pd-btn" id="ps-filterbtn" title="Filter"><span data-ico="filter" data-ico-size="16"></span></button><div class="ps-menu ps-filter-menu" id="ps-filter-menu"></div></div>
         <button class="pd-btn" id="ps-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
       </div>
+      <div id="ps-presence" title="People viewing this project"></div>
       <div id="user-bar"></div>
     </div>
 
@@ -1750,11 +1751,15 @@
 <script src="../../assets/js/ui.js?v=20260724a"></script>
 <script src="../../assets/js/icons.js?v=20260724a"></script>
 <script src="../../assets/js/calendar.js?v=20260724a"></script>
+<script src="../../assets/js/collab.js?v=20260726b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
   'use strict';
   var TABLE = 'project_schedule';
+  // ---- live collaboration (PDCollab) state ----
+  var _collab = null, _collabPid = null, _remoteSel = {}, _profName = '';
+  var _collabBuf = [], _collabTimer = null, _collabReloading = false, _myWrites = {};
   var pid = null, rows = [], editId = null, UID = null;
   // Monotonic load token. load() is async + paginated (up to ~17 round-trips for a
   // 16k-row schedule) and used to have NO guard, so switching/deselecting a project
@@ -2251,6 +2256,95 @@
       rows.forEach(function (r) { if (isWbs(r) && r._depth >= 3) collapsed[r.wbs] = true; });
     }
   }
+  // ================= live collaboration (presence + cell cursors) ============
+  // Shared PDCollab layer (Supabase Realtime): topbar avatars of who's viewing,
+  // colored outlines of the cell each person is editing, and live row updates
+  // when someone else saves. The grid is virtualized and project_schedule is a
+  // huge, high-write table, so remote row changes are COALESCED and a bulk storm
+  // (import / global change / clear = thousands of events) falls back to ONE reload.
+  function maybeJoinCollab() {
+    if (!window.PDCollab) return;
+    if (_collabPid === pid && _collab) return;   // already on this project's channel
+    if (_collab) { _collab.leave(); _collab = null; }
+    _remoteSel = {}; _collabBuf = []; _collabPid = pid;
+    if (!pid) { renderCollabPresence([]); return; }
+    _collab = PDCollab.join({
+      key: 'project_schedule:' + pid,
+      table: TABLE, projectId: pid,
+      self: { id: UID, name: _profName || 'Someone' },
+      onPresence: function (members) {
+        renderCollabPresence(members);
+        _remoteSel = {};
+        members.forEach(function (m) { if (!m.self && m.sel) _remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; });
+        paintRemoteCollab();
+      },
+      onSelection: function (d) {
+        if (d.sel) _remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel };
+        else delete _remoteSel[d.id];
+        paintRemoteCollab();
+      },
+      onRemoteChange: _onRemoteChange
+    });
+  }
+  function leaveCollab() { if (_collab) { _collab.leave(); _collab = null; } _collabPid = null; _remoteSel = {}; renderCollabPresence([]); }
+  function renderCollabPresence(members) {
+    var el = document.getElementById('ps-presence'); if (!el) return;
+    el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(members || []) : '';
+  }
+  function broadcastCollabSel(rowId, field, editing) {
+    if (_collab) _collab.setSelection(rowId ? { rowId: rowId, field: field || null, editing: !!editing } : null);
+  }
+  // Paint every remote user's active cell (only the schedule grid has cells).
+  function paintRemoteCollab() {
+    if (!window.PDCollab) return;
+    var host = document.getElementById('ps-grid-rows'); if (!host) return;
+    PDCollab.clearCells(host);
+    if (activeTab !== 'schedule') return;
+    Object.keys(_remoteSel).forEach(function (k) {
+      var m = _remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return;
+      var rid = (window.CSS && CSS.escape) ? CSS.escape(String(m.sel.rowId)) : m.sel.rowId;
+      var rw = host.querySelector('.ps-grid-row[data-rowid="' + rid + '"]'); if (!rw) return;
+      var td = m.sel.field ? rw.querySelector('.ps-cell[data-field="' + m.sel.field + '"]') : rw.querySelector('.ps-cell.c-name');
+      if (td) PDCollab.paintCell(td, m);
+    });
+  }
+  function _onRemoteChange(payload) {
+    _collabBuf.push(payload);
+    if (!_collabTimer) _collabTimer = setTimeout(_flushCollab, 180);
+  }
+  function _flushCollab() {
+    _collabTimer = null;
+    if (_editing) { _collabTimer = setTimeout(_flushCollab, 250); return; }   // don't wipe an open editor
+    var buf = _collabBuf; _collabBuf = [];
+    if (!buf.length) return;
+    if (buf.length > 300) {   // bulk storm → one reload instead of per-row patch + re-render
+      if (!_collabReloading) { _collabReloading = true; Promise.resolve(load()).then(function () { _collabReloading = false; }, function () { _collabReloading = false; }); }
+      return;
+    }
+    var changed = false;
+    buf.forEach(function (p) { if (_applyRemoteRow(p)) changed = true; });
+    if (changed) { rebuild(); renderAll(); try { _cachePut(pid, rows); } catch (e) {} }
+  }
+  function _applyRemoteRow(payload) {
+    var evt = payload.eventType || payload.event;
+    var rec = payload['new'] || payload.record || null;
+    var old = payload['old'] || payload.old_record || null;
+    var id = (rec && rec.id) || (old && old.id);
+    // Skip the echo of my OWN recent write — my optimistic local state is already correct.
+    if (id != null && _myWrites[id] && (Date.now() - _myWrites[id] < 4000)) return false;
+    if (evt === 'DELETE') {
+      if (id == null) return false;
+      var i = rows.findIndex(function (x) { return x.id === id; }); if (i === -1) return false;
+      rows.splice(i, 1); return true;
+    }
+    if (rec) {
+      var j = rows.findIndex(function (x) { return x.id === rec.id; });
+      if (j === -1) rows.push(rec); else rows[j] = rec;
+      return true;
+    }
+    return false;
+  }
+
   async function load() {
     var gen = ++_loadGen;   // claim this load; any older in-flight load is now stale
     _wbsCollapseInit = false;   // re-apply the large-tree default-collapse for this freshly-loaded tree
@@ -2260,7 +2354,8 @@
     window.__archived = ((PROJECTS.find(function (x) { return x.id === pid; }) || {}).status === 'archived');
     // hideLoading here clears any overlay a now-superseded load left showing (a stale
     // load aborts silently and never hides it — this branch owns the terminal state).
-    if (!pid) { hideLoading(); _setFresh('hide'); rows = []; rebuild(); renderAll(); return; }
+    if (!pid) { hideLoading(); _setFresh('hide'); rows = []; rebuild(); renderAll(); leaveCollab(); return; }
+    maybeJoinCollab();   // connect presence/cursors as soon as a project is selected (needs only pid)
     // CACHE-FIRST: paint the last-known rows instantly (no overlay), then revalidate below.
     var painted = false;
     try {
@@ -2366,6 +2461,7 @@
     var res = await sb().from(TABLE).update(patch).eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return false; }
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
+    _myWrites[id] = Date.now();   // suppress the Realtime echo of my own write (my local state is already correct)
     _editSeq++; _cacheSaveSoon();   // keep the IndexedDB cache in sync + guard the bg refresh from clobbering this edit
     if (before) pushUndo({ type: 'update', id: id, before: before, after: patch });
     logAudit(r, 'update', _auditChanges(prev, patch));
@@ -6000,6 +6096,7 @@
       if (_cellAnchor && _cellAnchor.r === ri) { var ae = cells[_cellAnchor.c + 1]; if (ae) ae.classList.add('ps-cell-active'); }
       if (_cellClip && _cellClip.cut) { _cellClip.refs.forEach(function (ref) { if (ref.ri === ri) { var ce = cells[ref.ci + 1]; if (ce) ce.classList.add('ps-cell-cut'); } }); }
     });
+    paintRemoteCollab();   // re-apply other users' cursors after every grid repaint
   }
 
   function beginEdit(cell) {
@@ -6019,9 +6116,11 @@
     inp.value = raw;
     cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); if (inp.select) inp.select();
     _editing = true;
+    broadcastCollabSel(id, field, true);
     var done = false;
     function commit(save) {
       if (done) return; done = true;
+      broadcastCollabSel(id, field, false);
       // Editor is closing: re-enable repaints, and ALWAYS schedule one. Unconditional because the
       // per-branch renders below are conditional (a no-op/failed persist skips `if (ok) renderGrid()`),
       // which used to leave the closing editor's <input> orphaned in the cell — visible now that
@@ -10190,6 +10289,9 @@
     _resetEntry();   // a mouse click starts a fresh entry context
     if (e.shiftKey && _cellAnchor) { _cellSel = { r0: _cellAnchor.r, c0: _cellAnchor.c, r1: ri, c1: ci }; }
     else { _cellAnchor = { r: ri, c: ci }; _cellSel = { r0: ri, c0: ci, r1: ri, c1: ci }; }
+    // Broadcast my active cell to other viewers (row id + field, via the column meta).
+    var _d = DL[ri], _meta = _CELL_META[ci];
+    broadcastCollabSel(_d && _d.id, _meta && _meta.f, false);
   }
   // Display text for a cell (used for the TSV written to the system clipboard).
   function _cellText(r, ci) {
@@ -10538,6 +10640,7 @@
   // ----- init -----
   AppAuth.requireLogin(function (user, profile) {
     UID = (user && user.id) || (profile && profile.id) || null;
+    _profName = (profile && (profile.name || profile.email)) || 'Someone';
     isAdmin = !!(profile && (profile.role === 'admin' || profile.role === 'super_admin'));
     canWrite = !!(profile && ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1);
     // Read-only guards (were read in ~8 edit paths but never assigned): a 'viewer' is

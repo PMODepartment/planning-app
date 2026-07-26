@@ -3215,6 +3215,28 @@ but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and t
   genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
   See `modules/project-schedule/CLAUDE.md`.
 
+### 2026-07-26 — Live collaboration: wire Project Schedule (phase-1 rollout)
+- Dropped the shared PDCollab layer into **Project Schedule** (the flagship). Topbar presence avatars
+  (`#ps-presence`); colored outline + initials flag on the `.ps-grid-row[data-rowid] .ps-cell[data-field]`
+  cell each remote user is editing (`paintRemoteCollab`, re-applied from `highlightCells` after every
+  virtualized repaint); my selection broadcast from `_setCellFromClick` (cell → field via `_CELL_META`)
+  and on `beginEdit`/commit. Channel (re)joins in `load()` (`maybeJoinCollab`, guarded on pid change),
+  leaves when no project.
+- **Two schedule-specific hardenings** the register didn't need: (1) **remote changes are COALESCED**
+  (`_onRemoteChange`→180ms `_flushCollab`) so a burst applies in one `rebuild()`+`renderAll()`, and a
+  **bulk storm** (import/global-change/clear = thousands of events) past 300 buffered falls back to ONE
+  `load()` instead of per-row patching; (2) **my own write echo is suppressed** (`_myWrites` stamped in
+  `persist`) so an inline edit doesn't trigger a redundant rebuild ~180ms later. Remote changes are
+  **deferred while an inline editor is open** (`_editing`) so they can't wipe my input.
+- **Migration `2026-07-26-realtime-collab-project-schedule.sql` (USER MUST RUN):** adds `project_schedule`
+  to the `supabase_realtime` publication + `replica identity full`. Presence/cursors work without it;
+  only the live-value stream needs it. RLS still applies.
+- Verified: PS inline script + `collab.js` pass `node --check`; the coalesce / storm-guard / echo-
+  suppression / delete / edit-defer logic validated in a Node harness (1 render for a 3-change burst,
+  0 for my own echo, 1 reload for a 400-event storm, deferred-then-applied while editing). **NOT
+  browser-verified** — needs the deployed site + two signed-in sessions. `collab.js?v=20260726b` (paint
+  flag now unclips the cell; bumped on both referencing pages); PS `index.html` inline only.
+
 ### 2026-07-26 — Live collaboration phase 1: shared PDCollab layer + Drawing Register (presence + live cells)
 - User wants Google-Sheets/Teams-style **live collaboration** (who's viewing a project + which cell each
   person is editing) and **offline editing with sync**, across applicable modules. Decided scope with the

@@ -99,20 +99,25 @@
     var color = member.color || colorFor(member.id);
     td.classList.add('pd-collab-cell');
     td.style.boxShadow = 'inset 0 0 0 2px ' + color;
+    // Grid cells clip overflow (ellipsis / frozen columns); the name flag sits just
+    // above the cell, so unclip while painted and restore the prior value on clear.
+    td.setAttribute('data-pd-ov', td.style.overflow || '');
+    td.style.overflow = 'visible';
     var flag = document.createElement('span');
     flag.className = 'pd-collab-flag'; flag.style.background = color;
     flag.textContent = initials(member.name); flag.title = member.name;
     flag.setAttribute('data-pd-collab', '1');
     td.appendChild(flag);
-    return function () {
-      td.style.boxShadow = ''; td.classList.remove('pd-collab-cell');
-      if (flag.parentNode) flag.parentNode.removeChild(flag);
-    };
+    return function () { _clearCell(td, flag); };
+  }
+  function _clearCell(td, flag) {
+    td.style.boxShadow = ''; td.classList.remove('pd-collab-cell');
+    if (td.hasAttribute('data-pd-ov')) { td.style.overflow = td.getAttribute('data-pd-ov'); td.removeAttribute('data-pd-ov'); }
+    if (flag && flag.parentNode) flag.parentNode.removeChild(flag);
   }
   function clearCells(root) {
     (root || document).querySelectorAll('[data-pd-collab]').forEach(function (f) {
-      var td = f.parentNode; if (td) { td.style.boxShadow = ''; td.classList.remove('pd-collab-cell'); }
-      if (f.parentNode) f.parentNode.removeChild(f);
+      _clearCell(f.parentNode || document.createElement('div'), f);
     });
   }
 
