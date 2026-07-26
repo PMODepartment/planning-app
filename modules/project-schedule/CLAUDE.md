@@ -1,5 +1,21 @@
 # Module: project-schedule
 
+## Offline editing + sync — Phase 2 (2026-07-26) — fmlozano
+Wired the shared **PDSync** outbox (`assets/js/offline.js`): inline-edit the schedule offline, sync on
+reconnect.
+- **`persist()`** routes its `update` through `PDSync.write` (falls back to a direct write if PDSync is
+  absent). The local apply (`r[k]=patch[k]`), `_myWrites` echo-stamp, undo, audit and `rebuild()` all run
+  as before — a queued offline write returns ok and flows through the same optimistic path.
+- **Read-offline** already existed (the IndexedDB stale-while-revalidate cache + `_cacheSaveSoon`, so an
+  offline edit persists to the read cache too).
+- **Field-level LWW**; online behaviour byte-identical to before. Composes with Phase-1 Realtime: a
+  flushed offline edit streams to other viewers like any save.
+- ⚠️ **Scope:** offline covers the **inline-edit `persist()` path only.** Bulk paths (import / global
+  change / clear / leveling / bulk progress) and activity **delete/insert** stay **online-only** — not
+  field scenarios, and queueing 40k offline rows is impractical. No migration. Verified: `node --check` +
+  the shared outbox Node harness. NOT browser-verified (needs a real offline→online cycle). Assets: new
+  `offline.js?v=20260726d`.
+
 ## Live collaboration — presence + live cell editing (2026-07-26) — fmlozano
 Wired the shared **PDCollab** layer (`assets/js/collab.js`, Supabase Realtime) into the schedule grid —
 same pattern proven on Drawing Register, plus two schedule-specific hardenings.

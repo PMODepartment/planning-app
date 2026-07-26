@@ -307,12 +307,17 @@ window.DrawingRegister = (function () {
     // Keyset-paginate (a single select caps at 1000; a large register already exceeds it —
     // the GPR101 workbook alone is 1032 drawings), then restore the sort_order / drawing_no
     // ordering the grid + roll-ups rely on.
-    var all = [], last = null;
+    var all = [], last = null, fromCache = false;
     while (true) {
       var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
       if (last) q = q.gt('id', last);
       var res = await q;
-      if (res.error) { UI.toast(res.error.message, 'error'); return; }
+      if (res.error) {
+        // Offline / network failure: open from the last cached copy so the register still works
+        // (edits made now queue via PDSync and sync on reconnect).
+        if (window.PDSync) { var c = await PDSync.cacheGet('dr:' + pid); if (c && c.rows) { all = c.rows.slice(); fromCache = true; break; } }
+        UI.toast(res.error.message, 'error'); return;
+      }
       var batch = res.data || []; all = all.concat(batch);
       if (batch.length < 1000) break; last = batch[batch.length - 1].id;
     }
@@ -322,6 +327,7 @@ window.DrawingRegister = (function () {
       return String(a.drawing_no || '').localeCompare(String(b.drawing_no || ''));
     });
     rows = all;
+    if (!fromCache && window.PDSync) PDSync.cachePut('dr:' + pid, all);   // refresh the offline cache
     if (opts.reset) {
       // fresh view (project switch / import / clear): reset selection; restore
       // the saved per-project view + collapse state, else default to phases collapsed
@@ -979,7 +985,13 @@ window.DrawingRegister = (function () {
       patch.approved_pct = ns ? as/ns : 0;
     }
     patch.updated_at = new Date().toISOString();
-    Object.assign(r, patch);
+    Object.assign(r, patch);   // optimistic — applies whether online or queued offline
+    if (window.PDSync) {
+      var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: patch });
+      if (!w.ok) { UI.toast((w.error && w.error.message) || 'Save failed', 'error'); return false; }
+      PDSync.cachePut('dr:' + pid, rows);   // keep the offline read-cache in step so a reload shows the pending edit
+      return true;   // queued offline writes still count as saved-locally
+    }
     var res = await sb().from(TABLE).update(patch).eq('id', r.id);
     if (res.error) { UI.toast(res.error.message, 'error'); return false; }
     return true;

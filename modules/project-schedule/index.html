@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260724a"></script>
+  <script src="../../assets/js/theme.js?v=20260726d"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
   <style>
@@ -1751,6 +1751,7 @@
 <script src="../../assets/js/ui.js?v=20260724a"></script>
 <script src="../../assets/js/icons.js?v=20260724a"></script>
 <script src="../../assets/js/calendar.js?v=20260724a"></script>
+<script src="../../assets/js/offline.js?v=20260726d"></script>
 <script src="../../assets/js/collab.js?v=20260726c"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
@@ -2467,8 +2468,14 @@
     var before = null;
     if (r && !skipUndo) { before = {}; Object.keys(patch).forEach(function (k) { before[k] = (r[k] === undefined ? null : r[k]); }); }
     var prev = {}; if (r) Object.keys(patch).forEach(function (k) { prev[k] = (r[k] === undefined ? null : r[k]); });   // for audit
-    var res = await sb().from(TABLE).update(patch).eq('id', id);
-    if (res.error) { UI.toast(res.error.message, 'error'); return false; }
+    if (window.PDSync) {
+      var w = await PDSync.write({ table: TABLE, op: 'update', id: id, patch: patch });
+      if (!w.ok) { UI.toast((w.error && w.error.message) || 'Save failed', 'error'); return false; }
+      // queued offline writes count as saved-locally (w.queued) — fall through to apply + rebuild
+    } else {
+      var res = await sb().from(TABLE).update(patch).eq('id', id);
+      if (res.error) { UI.toast(res.error.message, 'error'); return false; }
+    }
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
     _myWrites[id] = { t: Date.now(), patch: patch };   // suppress the Realtime echo of MY OWN write (content-checked below)
     _editSeq++; _cacheSaveSoon();   // keep the IndexedDB cache in sync + guard the bg refresh from clobbering this edit

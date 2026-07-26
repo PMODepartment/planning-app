@@ -3215,6 +3215,38 @@ but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and t
   genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
   See `modules/project-schedule/CLAUDE.md`.
 
+### 2026-07-26 — Phase 2: offline editing + sync (Drawing Register + Project Schedule)
+- Second collaboration capability: **edit with no connection, sync on reconnect.** New shared
+  **`assets/js/offline.js` (`PDSync`)** — an IndexedDB write outbox + read cache, generic like PDCollab.
+- **Model = field-level last-write-wins** (a grid of discrete cells, not rich text): each queued op
+  carries only the changed fields, so replaying it sets just those; two people touching different fields
+  of one row both survive, only a same-field clash resolves to whoever syncs last. No CRDT/OT.
+- **`PDSync.write({table,op,id,patch})`** — optimistic apply stays the caller's job. **Online behaviour
+  is byte-identical to before**: with a live connection + empty queue it does the SAME direct Supabase op.
+  It only diverges to the IndexedDB queue when offline, on a network-failed write, or when a backlog
+  exists (preserving order). `flush()` on reconnect drains FIFO, **coalescing** per (table,id) into one
+  op (merged patches; insert+delete collapses to nothing); permanent errors (RLS/constraint) are dropped
+  with a warning, network errors stop and retry the whole backlog later.
+- **Wired the inline-edit choke points:** DR `persistCell` + PS `persist` route through `PDSync.write`.
+  **Read-offline:** PS already had its IndexedDB cache; added a light one to DR (`load()` caches on
+  success, renders from cache on an offline fetch, and `persistCell` refreshes the cache so an offline
+  reload shows pending edits). PS's own `_cacheSaveSoon` already covers it.
+- **UX:** `theme.js` offline badge is now PDSync-aware — *"Offline — your edits are saved on this device
+  (N pending) and will sync when you reconnect"* and *"Syncing N changes…"* on reconnect (was the
+  inaccurate "changes won't save"). Composes with Phase 1: a flushed offline edit is just a deferred
+  write → Realtime streams it to others, no extra plumbing.
+- ⚠️ **Scope boundary (deliberate, documented):** offline covers **UPDATES** (the on-site "update the
+  register/schedule" workflow). **New-row creation, deletes, the modal editor, and bulk import/global-
+  change/clear stay online-only** — those are desk activities and involve id-threading/reload/40k-row
+  queueing that isn't a field scenario. A follow-up can extend to offline inserts (the outbox already
+  supports them via client uuid).
+- No migration (client-side only). Verified: all four files `node --check`; the outbox
+  write/queue/flush/coalesce/LWW/insert+delete/permanent-error logic validated in a Node harness (offline
+  edits queue in order → reconnect merges to final server state; someone-else's field preserved; insert+
+  delete = no-op; RLS-rejected op dropped, rest continue). **NOT browser-verified** — needs a real
+  offline→online cycle signed in. Assets: new `offline.js?v=20260726d`; `theme.js?v=` bumped
+  20260724a→20260726d across all 21 pages (shared asset changed).
+
 ### 2026-07-26 — Live collaboration: reliability fixes (live-value stream + echo + presence)
 - User tested two sessions: avatars + cursors showed, but **live value updates were flaky ("sometimes
   need to refresh")** and **presence looked one-directional**. Root cause of the flaky live values:

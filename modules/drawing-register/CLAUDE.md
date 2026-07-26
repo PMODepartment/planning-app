@@ -1,5 +1,20 @@
 # Module: drawing-register
 
+## Offline editing + sync — Phase 2 (2026-07-26) — fmlozano
+Wired the shared **PDSync** outbox (`assets/js/offline.js`): edit inline with no connection, sync on
+reconnect.
+- **`persistCell`** routes its update through `PDSync.write({table,op:'update',id,patch})` (falls back to
+  a direct write if PDSync is absent). Optimistic `Object.assign(r,patch)` is unchanged, so the edit
+  shows instantly whether online or queued.
+- **Read-offline:** `load()` caches rows via `PDSync.cachePut('dr:'+pid, rows)` on success and, when the
+  fetch fails (offline), renders from `PDSync.cacheGet`. `persistCell` re-caches after each edit so an
+  offline reload shows the pending change (the outbox re-applies it on reconnect regardless).
+- **Field-level LWW**, online behaviour byte-identical to before (see main CLAUDE.md).
+- ⚠️ **Scope:** offline covers **inline cell UPDATES only.** The modal Add/Edit, single/bulk **delete**,
+  Clear-all, and Excel import stay **online-only** (desk activities; deletes still call `load()`). No
+  migration. Verified: `node --check` + the shared outbox Node harness. NOT browser-verified (needs a real
+  offline→online cycle). Assets: new `offline.js?v=20260726d`.
+
 ## Live collaboration — presence + live cell editing (2026-07-26) — fmlozano
 Proving ground for the app-wide **PDCollab** layer (shared `assets/js/collab.js`, Supabase Realtime).
 Google-Sheets/Teams-style co-editing: topbar avatars of who's viewing the project, colored outlines of
