@@ -3215,6 +3215,18 @@ but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and t
   genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
   See `modules/project-schedule/CLAUDE.md`.
 
+### 2026-07-26 — Collaboration rollout: Material Submittal Log (Phase 1 + 2)
+- Wired PDCollab + PDSync into **Material Submittal**. It's **modal-edit** (no inline cells), so this is
+  the "◑ register" pattern: presence avatars (`#ms-presence`), live row updates via postgres_changes, and
+  a **row-level cursor** — `openForm(r)` broadcasts "editing this submittal" (cleared on every close),
+  `paintRemote` flags that row. **Phase 2:** `bulkStatus` is offline-capable (one `PDSync.write` per id,
+  field-level LWW) + a read-cache (`load` renders from cache offline). ⚠️ **Modal Add/Edit stays
+  online-only** (file upload + tolerant schema-strip retry the outbox can't replicate), as do delete/
+  import/clear — offline covers **bulk status + read**.
+- **Migration `2026-07-26-realtime-collab-material-submittal.sql` (USER MUST RUN)** for the live stream
+  (presence/cursors/offline work without it). Verified: `node --check`. NOT browser-verified. Assets:
+  `offline.js?v=20260726d` + `collab.js?v=20260726c`; `module.js?v=20260726a`.
+
 ### 2026-07-26 — Project Schedule: mobile Gantt view (read-only, touch-scroll)
 - The phone view (`#ps-mobile`, <700px) gained a **List | Gantt** toggle (persisted `ps_mview`).
   `renderMobileGanttBody()` is a self-contained compact Gantt on the same `displayList()` data (capped at

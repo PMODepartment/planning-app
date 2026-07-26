@@ -105,6 +105,52 @@ window.MaterialSubmittal = (function () {
   var UID = null, PROFILE = null, pid = null, rows = [], view = 'dashboard';
   var canWrite = false, isAdmin = false, loading = false;
   var sel = {}, collapsed = {}, noteDismissed = false;
+
+  // ===== live collaboration (presence + "who's editing this submittal") =====
+  // Shared PDCollab layer (Supabase Realtime): topbar avatars, a colored flag on
+  // the row a teammate has open in the edit modal, and live row updates on save.
+  var _collab = null, _collabPid = null, _remoteSel = {};
+  function _selfName() { return (PROFILE && (PROFILE.name || PROFILE.email)) || 'Someone'; }
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    _remoteSel = {};
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: 'material_submittal:' + pid, table: TABLE, projectId: pid,
+      self: { id: UID, name: _selfName() },
+      onPresence: function (members) {
+        renderPresence(members);
+        _remoteSel = {}; members.forEach(function (m) { if (!m.self && m.sel) _remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; });
+        paintRemote();
+      },
+      onSelection: function (d) { if (d.sel) _remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel }; else delete _remoteSel[d.id]; paintRemote(); },
+      onRemoteChange: applyRemoteChange
+    });
+  }
+  function renderPresence(members) { var el = document.getElementById('ms-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(members || []) : ''; }
+  function broadcastCollabSel(rowId, editing) { if (_collab) _collab.setSelection(rowId ? { rowId: rowId, editing: !!editing } : null); }
+  function _msClearEditing() { broadcastCollabSel(null); }
+  function paintRemote() {
+    if (!window.PDCollab) return;
+    var host = document.getElementById('ms-view'); if (!host) return;
+    PDCollab.clearCells(host);
+    if (view !== 'log') return;
+    Object.keys(_remoteSel).forEach(function (k) {
+      var m = _remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return;
+      var rid = (window.CSS && CSS.escape) ? CSS.escape(String(m.sel.rowId)) : m.sel.rowId;
+      var tr = host.querySelector('tr[data-id="' + rid + '"]'); if (!tr) return;
+      var td = tr.querySelector('.ms-fz2') || tr.querySelector('td'); if (td) PDCollab.paintCell(td, m);
+    });
+  }
+  function applyRemoteChange(payload) {
+    var evt = payload.eventType || payload.event;
+    var rec = payload['new'] || payload.record || null, old = payload['old'] || payload.old_record || null;
+    if (evt === 'DELETE') { var did = old && old.id; if (did == null) return; rows = rows.filter(function (x) { return String(x.id) !== String(did); }); }
+    else if (rec) { var j = -1; for (var i = 0; i < rows.length; i++) { if (String(rows[i].id) === String(rec.id)) { j = i; break; } } if (j < 0) rows.push(rec); else rows[j] = rec; }
+    else return;
+    render();
+  }
   var filters = { q: '', section: '', disc: '', status: '', pres: '', overdue: false };
 
   // ---- Project Schedule link -----------------------------------------------
@@ -652,6 +698,7 @@ window.MaterialSubmittal = (function () {
   function openForm(r) {
     if (!canWrite) { UI.toast('You do not have permission to edit submittals.', 'error'); return; }
     var e = r || {};
+    if (r) broadcastCollabSel(r.id, true);   // tell other viewers I'm editing this submittal
     function opts(list, cur, blank) {
       return (blank ? '<option value="">' + blank + '</option>' : '') + list.map(function (o) {
         var v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? (o[0] + ' — ' + title(o[1])) : o;
@@ -788,8 +835,8 @@ window.MaterialSubmittal = (function () {
       UI.toast('Attachment will be removed when you save.', 'info');
     };
 
-    el('ms-m-x').onclick = m.close;
-    el('ms-m-cancel').onclick = m.close;
+    el('ms-m-x').onclick = function () { _msClearEditing(); m.close(); };
+    el('ms-m-cancel').onclick = function () { _msClearEditing(); m.close(); };
     el('ms-m-save').onclick = async function () {
       var v = function (id) { var x = (el(id).value || '').trim(); return x === '' ? null : x; };
       var payload = {
@@ -861,7 +908,8 @@ window.MaterialSubmittal = (function () {
       if (oldPath && (uploaded || fileCleared) && oldPath !== payload.file_url) await removeFiles([oldPath]);
 
       if (r) Object.assign(r, res.data); else rows.push(res.data);
-      m.close(); UI.toast(r ? 'Submittal updated.' : 'Submittal added.', 'success');
+      if (window.PDSync) PDSync.cachePut('ms:' + pid, rows);   // keep the offline cache current
+      _msClearEditing(); m.close(); UI.toast(r ? 'Submittal updated.' : 'Submittal added.', 'success');
       render();
     };
   }
@@ -880,9 +928,18 @@ window.MaterialSubmittal = (function () {
   async function bulkStatus(status) {
     var ids = Object.keys(sel).filter(function (k) { return sel[k]; });
     if (!ids.length) return;
-    var res = await sb().from(TABLE).update({ status: status, updated_at: new Date().toISOString() }).in('id', ids);
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
-    rows.forEach(function (r) { if (sel[r.id]) r.status = status; });
+    rows.forEach(function (r) { if (sel[r.id]) r.status = status; });   // optimistic
+    var patch = { status: status, updated_at: new Date().toISOString() };
+    if (window.PDSync) {
+      // Offline-capable: queue one update per id (each syncs on reconnect, field-level LWW).
+      var failed = 0;
+      for (var i = 0; i < ids.length; i++) { var w = await PDSync.write({ table: TABLE, op: 'update', id: ids[i], patch: patch }); if (!w.ok) failed++; }
+      PDSync.cachePut('ms:' + pid, rows);
+      if (failed) { UI.toast(failed + ' change(s) could not be saved.', 'error'); }
+    } else {
+      var res = await sb().from(TABLE).update(patch).in('id', ids);
+      if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    }
     UI.toast('Updated ' + ids.length + ' submittal' + (ids.length === 1 ? '' : 's') + '.', 'success');
     sel = {}; render();
   }
@@ -1186,6 +1243,7 @@ window.MaterialSubmittal = (function () {
     document.getElementById('ms-filters').style.display = view === 'log' ? '' : 'none';
     if (view === 'dashboard') renderDashboard(); else renderLog();
     syncClearFilt();
+    paintRemote();
   }
 
   function syncClearFilt() {
@@ -1218,6 +1276,9 @@ window.MaterialSubmittal = (function () {
     var res = await sb().from(TABLE).select('*').eq('project_id', pid).order('sort_order', { ascending: true });
     loading = false;
     if (res.error) {
+      // Offline / network failure → open from the last cached copy so the log still works
+      // (bulk status changes made now queue via PDSync and sync on reconnect).
+      if (window.PDSync) { var c = await PDSync.cacheGet('ms:' + pid); if (c && c.rows) { rows = c.rows.slice(); fillFilters(); render(); return; } }
       // The module ships ahead of its migration on some environments — be explicit.
       var missing = /column|schema cache|PGRST204|does not exist/i.test(res.error.message || '');
       document.getElementById('ms-view').innerHTML = '<div class="pd-card ms-empty"><h3>Could not load the log</h3><p>' +
@@ -1231,6 +1292,7 @@ window.MaterialSubmittal = (function () {
       d = (a.seq_no || 0) - (b.seq_no || 0); if (d) return d;
       return String(a.material || '').localeCompare(String(b.material || ''));
     });
+    if (window.PDSync) PDSync.cachePut('ms:' + pid, rows);   // refresh the offline cache
     fillFilters();
     render();
     ensureSchedule();   // lazy — re-renders the Need-by column when it resolves
@@ -1269,6 +1331,7 @@ window.MaterialSubmittal = (function () {
       sessionStorage.setItem('pd_project', pid);
       sel = {}; collapsed = {}; noteDismissed = false;
       load();
+      joinCollab();
     });
 
     // ---- tabs ----
@@ -1307,6 +1370,7 @@ window.MaterialSubmittal = (function () {
     };
 
     await load();
+    joinCollab();
   }
 
   // Exposed for the harness/tests as well as the page.

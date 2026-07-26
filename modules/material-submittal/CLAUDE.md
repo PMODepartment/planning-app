@@ -6,6 +6,26 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## Live collaboration + offline editing (Phase 1 & 2) (2026-07-26) — fmlozano
+Wired the shared **PDCollab** (Realtime) + **PDSync** (offline outbox) layers. This module is
+**modal-edit** (no inline cells), so cursors are **row-level**.
+- **Phase 1 (presence + live rows + row cursor):** `joinCollab()` on load / project switch
+  (`key = material_submittal:<pid>`). Topbar avatars (`#ms-presence`). `openForm(r)` broadcasts
+  "editing this submittal"; every close path (×/Cancel/Save) clears it. `paintRemote()` (called at the
+  end of `render()`) flags the `tr[data-id]` row (its `.ms-fz2` item cell) of whoever has it open.
+  `applyRemoteChange` patches `rows` from postgres_changes (INSERT/UPDATE/DELETE) + re-renders.
+- **Phase 2 (offline):** **`bulkStatus`** is offline-capable — it queues one `PDSync.write` update per
+  selected id (field-level LWW, syncs on reconnect) and refreshes the cache. **Read-offline:** `load()`
+  caches rows (`ms:<pid>`) and renders from cache on an offline fetch; modal save + bulkStatus refresh it.
+  ⚠️ **Scope:** the **modal Add/Edit stays online-only** (it does file upload + a tolerant schema-strip
+  retry that the outbox can't replicate), as do **delete / import / clear**. Offline covers **bulk status
+  + read**. Follow-up could route no-file modal updates through PDSync.
+- **Migration `../../migrations/2026-07-26-realtime-collab-material-submittal.sql` (USER MUST RUN)** —
+  adds `material_submittal` to `supabase_realtime` + `replica identity full`. Presence/cursors/offline
+  work without it; only the live-value stream needs it.
+- Verified: `node --check`. NOT browser-verified (needs 2 sessions + an offline cycle). Assets: new
+  `offline.js?v=20260726d` + `collab.js?v=20260726c`; `module.js?v=20260726a`.
+
 ## Project Schedule link — Need-by column + auto-derived plan approval (2026-07-25)
 Same feature as the drawing-register's, applied here (a submittal is a prerequisite for construction:
 the linked activity's **start** is the need-by date; (start − `lead_days`) is the required approval
