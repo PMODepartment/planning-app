@@ -1,5 +1,12 @@
 # Module: issues-lessons
 
+## Live collaboration + offline (Phase 1 & 2) (2026-07-26) — fmlozano
+Same "◑ register" recipe as risk-register (see that module's CLAUDE.md): presence (`#il-presence`),
+row-level cursor on Edit-modal open (`wireModalCursor`/`paintRemote`), live rows via postgres_changes,
+offline modal-update via `PDSync.write` + read-cache (`il:<pid>`). Realtime migration
+`2026-07-26-realtime-collab-registers.sql` (USER MUST RUN). `node --check` ok; not browser-verified.
+Assets + `module.js?v=20260726a`.
+
 Developer change log for the **Issues, Concerns & Lessons Learned** module.
 Update every PR. Table: `issues_lessons`.
 

@@ -3215,6 +3215,28 @@ but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and t
   genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
   See `modules/project-schedule/CLAUDE.md`.
 
+### 2026-07-26 — Collaboration rollout: the five modal-edit registers (Phase 1 + 2)
+- Applied the "◑ register" recipe (from Material Submittal) to **Risk Register, Issues & Lessons,
+  Contracts & Claims, Stakeholder Map, and Resource & Role Master** in one batch. Each got a small,
+  near-identical collab block (presence avatars via `#<x>-presence`, a **row-level cursor** — opening a
+  row's Edit modal broadcasts "editing this row" and flags it for others via `wireModalCursor`/
+  `paintRemote`, cleared on cancel/save/backdrop — and `applyRemoteChange` patching `rows` from
+  postgres_changes). A generic `_collabRow(id)` finds the row by `tr[data-id]` or `[data-edit]`, so it
+  works across the four modules' differing row markup.
+- **Phase 2 (offline):** the modal **update** path routes through `PDSync.write` (insert/delete stay
+  online), plus a per-module read-cache (`load` caches on success, renders from cache on an offline
+  fetch, and the save refreshes it). Contracts & Claims' **bulk status** is also offline-capable.
+  Online behaviour is byte-identical (the outbox only diverges offline/on failure).
+- **Resource & Role Master** is the reduced case: multi-table master data (resources/roles/calendars),
+  so it gets **presence + row cursor + offline updates + read-cache but NO live-value stream** (a
+  3-table subscription isn't worth it for low-traffic master data) — hence no realtime migration for it.
+- **Migration `2026-07-26-realtime-collab-registers.sql` (USER MUST RUN)** enables the live-value stream
+  for the four register tables (`risk_register`, `issues_lessons`, `contracts_claims`, `stakeholder_map`).
+  Presence/cursors/offline work without it.
+- Verified: all five pass `node --check` (4 module.js + resource-loading inline). NOT browser-verified
+  (needs 2 signed-in sessions + an offline cycle). Assets per module: `offline.js?v=20260726d` +
+  `collab.js?v=20260726c`; the four `module.js` bumped to `?v=20260726a` (resource-loading is inline).
+
 ### 2026-07-26 — Collaboration rollout: Material Submittal Log (Phase 1 + 2)
 - Wired PDCollab + PDSync into **Material Submittal**. It's **modal-edit** (no inline cells), so this is
   the "◑ register" pattern: presence avatars (`#ms-presence`), live row updates via postgres_changes, and

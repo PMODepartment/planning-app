@@ -16,6 +16,33 @@ window.ContractsClaims = (function () {
 
   var TABLE = 'contracts_claims';
   var sb = function () { return window.__sb || (window.__sb = supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY)); };
+
+  // ===== live collaboration (presence + who's-editing row cursor) + offline =====
+  var _collab = null, _remoteSel = {}, _collabSelf = {}, PKEY = 'contracts_claims', PID_PFX = 'cc';
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    _remoteSel = {};
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: PKEY + ':' + pid, table: TABLE, projectId: pid, self: _collabSelf,
+      onPresence: function (ms) { renderPresence(ms); _remoteSel = {}; ms.forEach(function (m) { if (!m.self && m.sel) _remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; }); paintRemote(); },
+      onSelection: function (d) { if (d.sel) _remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel }; else delete _remoteSel[d.id]; paintRemote(); },
+      onRemoteChange: applyRemoteChange
+    });
+  }
+  function renderPresence(ms) { var el = document.getElementById(PID_PFX + '-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(ms || []) : ''; }
+  function broadcastCollabSel(id, editing) { if (_collab) _collab.setSelection(id ? { rowId: id, editing: !!editing } : null); }
+  function _collabRow(id) { var rid = (window.CSS && CSS.escape) ? CSS.escape(String(id)) : id; return document.querySelector('tr[data-id="' + rid + '"]') || (function () { var b = document.querySelector('[data-edit="' + rid + '"]'); return b ? b.closest('tr') : null; })(); }
+  function paintRemote() { if (!window.PDCollab) return; PDCollab.clearCells(document); Object.keys(_remoteSel).forEach(function (k) { var m = _remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return; var tr = _collabRow(m.sel.rowId); if (!tr) return; var td = tr.querySelector('td'); if (td) PDCollab.paintCell(td, m); }); }
+  function applyRemoteChange(payload) {
+    var evt = payload.eventType || payload.event, rec = payload['new'] || payload.record || null, old = payload['old'] || payload.old_record || null;
+    if (evt === 'DELETE') { var did = old && old.id; if (did == null) return; rows = rows.filter(function (x) { return String(x.id) !== String(did); }); }
+    else if (rec) { var j = -1; for (var i = 0; i < rows.length; i++) { if (String(rows[i].id) === String(rec.id)) { j = i; break; } } if (j < 0) rows.push(rec); else rows[j] = rec; }
+    else return;
+    render();
+  }
+  function wireModalCursor(m, r) { if (!r || !r.id) return; var oc = m.close; m.close = function () { broadcastCollabSel(null); oc(); }; broadcastCollabSel(r.id, true); m.el.addEventListener('click', function (e) { if (e.target === m.el) broadcastCollabSel(null); }); }
   var esc = function (s) { return Fmt.esc(s == null ? '' : String(s)); };
 
   // ---- vocabularies (from the app's own dropdowns) --------------------------
@@ -194,6 +221,7 @@ window.ContractsClaims = (function () {
     host.innerHTML = h;
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
     wire();
+    paintRemote();
   }
 
   function kpiHTML(list, t) {
@@ -335,6 +363,7 @@ window.ContractsClaims = (function () {
     el('cc-f-rtype').addEventListener('change', applyType);
     applyType();
 
+    wireModalCursor(m, r);
     el('cc-m-x').onclick = m.close;
     el('cc-m-cancel').onclick = m.close;
     el('cc-m-save').onclick = async function () {
@@ -364,17 +393,23 @@ window.ContractsClaims = (function () {
       if (!payload.description && !payload.reference_no) { UI.toast('Give the record a description or a reference number.', 'error'); return; }
 
       var btn = el('cc-m-save'); btn.disabled = true; btn.textContent = 'Saving…';
-      var res;
-      if (r) res = await sb().from(TABLE).update(payload).eq('id', r.id).select().single();
-      else { payload.created_by = UID; payload.sort_order = rows.length; res = await sb().from(TABLE).insert(payload).select().single(); }
-      if (res.error) {
-        btn.disabled = false; btn.textContent = 'Save';
-        var msg = /column|schema cache|PGRST204/i.test(res.error.message || '')
-          ? 'Save failed — run migrations/2026-07-20-contracts-claims-full.sql first. (' + res.error.message + ')'
-          : res.error.message;
-        UI.toast(msg, 'error'); return;
+      function failMsg(e) { return /column|schema cache|PGRST204/i.test(e.message || '') ? 'Save failed — run migrations/2026-07-20-contracts-claims-full.sql first. (' + e.message + ')' : e.message; }
+      if (r) {
+        Object.assign(r, payload);   // optimistic — applies whether online or queued offline
+        if (window.PDSync) {
+          var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: payload });
+          if (!w.ok) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(w.error ? failMsg(w.error) : 'Save failed', 'error'); return; }
+          PDSync.cachePut(PID_PFX + ':' + pid, rows);
+        } else {
+          var ur = await sb().from(TABLE).update(payload).eq('id', r.id);
+          if (ur.error) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(failMsg(ur.error), 'error'); return; }
+        }
+      } else {
+        payload.created_by = UID; payload.sort_order = rows.length;
+        var ir = await sb().from(TABLE).insert(payload).select().single();
+        if (ir.error) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(failMsg(ir.error), 'error'); return; }
+        rows.push(ir.data);
       }
-      if (r) Object.assign(r, res.data); else rows.push(res.data);
       m.close(); UI.toast(r ? 'Record updated.' : 'Record added.', 'success');
       // Follow the record if its type moved it to another tab, so it doesn't
       // silently "disappear" from the view you're looking at.
@@ -396,9 +431,17 @@ window.ContractsClaims = (function () {
   async function bulkStatus(status) {
     var ids = Object.keys(sel).filter(function (k) { return sel[k]; });
     if (!ids.length) return;
-    var res = await sb().from(TABLE).update({ status: status, updated_at: new Date().toISOString() }).in('id', ids);
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
-    rows.forEach(function (r) { if (sel[r.id]) r.status = status; });
+    rows.forEach(function (r) { if (sel[r.id]) r.status = status; });   // optimistic
+    var patch = { status: status, updated_at: new Date().toISOString() };
+    if (window.PDSync) {
+      var failed = 0;
+      for (var i = 0; i < ids.length; i++) { var w = await PDSync.write({ table: TABLE, op: 'update', id: ids[i], patch: patch }); if (!w.ok) failed++; }
+      PDSync.cachePut(PID_PFX + ':' + pid, rows);
+      if (failed) UI.toast(failed + ' change(s) could not be saved.', 'error');
+    } else {
+      var res = await sb().from(TABLE).update(patch).in('id', ids);
+      if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    }
     UI.toast('Updated ' + ids.length + ' record' + (ids.length === 1 ? '' : 's') + '.', 'success');
     sel = {}; render();
   }
@@ -497,6 +540,7 @@ window.ContractsClaims = (function () {
     document.getElementById('cc-view').innerHTML = '<div class="pd-card cc-empty"><h3><span class="cc-spin"></span>Loading…</h3></div>';
     var res = await sb().from(TABLE).select('*').eq('project_id', pid);
     if (res.error) {
+      if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); fillFilters(); render(); return; } }
       var missing = /column|schema cache|PGRST204|does not exist/i.test(res.error.message || '');
       document.getElementById('cc-view').innerHTML = '<div class="pd-card cc-empty"><h3>Could not load the register</h3><p>' +
         esc(res.error.message) + '</p>' + (missing
@@ -508,6 +552,7 @@ window.ContractsClaims = (function () {
       var d = (a.sort_order || 0) - (b.sort_order || 0); if (d) return d;
       return String(a.reference_no || '').localeCompare(String(b.reference_no || ''), undefined, { numeric: true });
     });
+    if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
     fillFilters();
     render();
   }
@@ -522,6 +567,7 @@ window.ContractsClaims = (function () {
 
   async function init(user, profile) {
     UID = (user && user.id) || (profile && profile.id) || null;
+    _collabSelf = { id: UID, name: (profile && (profile.name || profile.email)) || 'Someone' };
     isAdmin = !!(profile && (profile.role === 'admin' || profile.role === 'super_admin'));
     canWrite = !!(profile && ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1);
     UI.initShell();
@@ -540,7 +586,7 @@ window.ContractsClaims = (function () {
     pid = selEl.value || (projects[0] && projects[0].id) || null;
     if (UI.enhanceProjectSelect) UI.enhanceProjectSelect(selEl);
     selEl.addEventListener('change', function () {
-      pid = selEl.value; sessionStorage.setItem('pd_project', pid); sel = {}; load();
+      pid = selEl.value; sessionStorage.setItem('pd_project', pid); sel = {}; load(); joinCollab();
     });
 
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); }; });
@@ -566,6 +612,7 @@ window.ContractsClaims = (function () {
     };
 
     await load();
+    joinCollab();
   }
 
   return {

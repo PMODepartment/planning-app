@@ -1,5 +1,11 @@
 # Module: contracts-claims
 
+## Live collaboration + offline (Phase 1 & 2) (2026-07-26) — fmlozano
+Same "◑ register" recipe as risk-register: presence (`#cc-presence`), row cursor on Edit-modal open,
+live rows via postgres_changes, offline modal-update + **offline bulk-status** via `PDSync.write` +
+read-cache (`cc:<pid>`). Realtime migration `2026-07-26-realtime-collab-registers.sql` (USER MUST RUN).
+`node --check` ok; not browser-verified. Assets + `module.js?v=20260726a`.
+
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).
 > 2. This module is **Contracts & Claims Register**. DB table `contracts_claims`.

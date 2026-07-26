@@ -38,6 +38,7 @@
           <button class="pd-btn" id="il-refresh" title="Reload">
             <span data-ico="refresh" data-ico-size="16"></span></button>
         </div>
+        <div id="il-presence" title="People viewing this project"></div>
         <div id="user-bar"></div>
       </div>
 
@@ -102,7 +103,9 @@
   <script src="../../assets/js/db.js?v=20260724a"></script>
   <script src="../../assets/js/ui.js?v=20260724a"></script>
   <script src="../../assets/js/icons.js?v=20260724a"></script>
-  <script src="module.js?v=20260724a"></script>
+  <script src="../../assets/js/offline.js?v=20260726d"></script>
+  <script src="../../assets/js/collab.js?v=20260726c"></script>
+  <script src="module.js?v=20260726a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

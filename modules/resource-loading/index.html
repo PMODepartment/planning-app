@@ -116,6 +116,7 @@
         <span class="rl-tb-sep"></span>
         <button class="pd-btn pd-btn-primary rl-tb-labeled" id="rl-add"><span data-ico="plus" data-ico-size="15"></span> <span id="rl-add-lbl">Add resource</span></button>
       </div>
+      <div id="rl-presence" title="People viewing this project"></div>
       <div id="user-bar"></div>
     </div>
     <div class="pd-main">
@@ -182,6 +183,8 @@
 <script src="../../assets/js/ui.js?v=20260724a"></script>
 <script src="../../assets/js/icons.js?v=20260724a"></script>
 <script src="../../assets/js/calendar.js?v=20260724a"></script>
+<script src="../../assets/js/offline.js?v=20260726d"></script>
+<script src="../../assets/js/collab.js?v=20260726c"></script>
 <script>
 (function () {
   'use strict';
@@ -191,6 +194,27 @@
   var loadMode = 'util', overOnly = false;
   function sb() { return AppAuth.getSB(); }
   function esc(s) { return Fmt.esc(s); }
+
+  // ===== live collaboration (presence + who's-editing row cursor) + offline =====
+  // Master data: presence + a row cursor when someone opens the Edit modal + offline
+  // UPDATES + a read-cache. Deliberately NO live-value stream (three tables, low
+  // traffic) — a reduced form of the register recipe.
+  var _collab = null, _remoteSel = {}, _collabSelf = {};
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    _remoteSel = {};
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: 'resource_loading:' + pid, projectId: pid, self: _collabSelf,
+      onPresence: function (ms) { renderPresence(ms); _remoteSel = {}; ms.forEach(function (m) { if (!m.self && m.sel) _remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; }); paintRemote(); },
+      onSelection: function (d) { if (d.sel) _remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel }; else delete _remoteSel[d.id]; paintRemote(); }
+    });
+  }
+  function renderPresence(ms) { var el = document.getElementById('rl-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(ms || []) : ''; }
+  function broadcastCollabSel(id, editing) { if (_collab) _collab.setSelection(id ? { rowId: id, editing: !!editing } : null); }
+  function _collabRow(id) { var rid = (window.CSS && CSS.escape) ? CSS.escape(String(id)) : id; return document.querySelector('tr[data-id="' + rid + '"]') || (function () { var b = document.querySelector('[data-edit="' + rid + '"]'); return b ? b.closest('tr') : null; })(); }
+  function paintRemote() { if (!window.PDCollab) return; PDCollab.clearCells(document); Object.keys(_remoteSel).forEach(function (k) { var m = _remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return; var tr = _collabRow(m.sel.rowId); if (!tr) return; var td = tr.querySelector('td'); if (td) PDCollab.paintCell(td, m); }); }
   var TYPES = ['Labor', 'Nonlabor', 'Material'];
   var TABLES = { resources: 'resources', roles: 'resource_roles', calendars: 'calendars' };
   var DAYS = [['work_mon', 'Mon'], ['work_tue', 'Tue'], ['work_wed', 'Wed'], ['work_thu', 'Thu'], ['work_fri', 'Fri'], ['work_sat', 'Sat'], ['work_sun', 'Sun']];
@@ -214,10 +238,20 @@
     var r1 = await sb().from('resources').select('*').eq('project_id', pid).order('resource_code');
     var r2 = await sb().from('resource_roles').select('*').eq('project_id', pid).order('name');
     var r3 = await sb().from('calendars').select('*').eq('project_id', pid).order('name');
-    if (r1.error) { UI.toast(r1.error.message, 'error'); return; }
-    if (r2.error) { UI.toast(r2.error.message, 'error'); return; }
-    if (r3.error) { UI.toast(r3.error.message, 'error'); return; }
+    if (r1.error || r2.error || r3.error) {
+      // Offline / network failure → open from the last cached copy (edits queue via PDSync).
+      if (window.PDSync) {
+        var c1 = await PDSync.cacheGet('rl:resources:' + pid);
+        if (c1 && c1.rows) {
+          var c2 = await PDSync.cacheGet('rl:roles:' + pid), c3 = await PDSync.cacheGet('rl:calendars:' + pid);
+          rows.resources = c1.rows.slice(); rows.roles = (c2 && c2.rows) ? c2.rows.slice() : []; rows.calendars = (c3 && c3.rows) ? c3.rows.slice() : [];
+          render(); return;
+        }
+      }
+      UI.toast((r1.error || r2.error || r3.error).message, 'error'); return;
+    }
     rows.resources = r1.data || []; rows.roles = r2.data || []; rows.calendars = r3.data || [];
+    if (window.PDSync) { PDSync.cachePut('rl:resources:' + pid, rows.resources); PDSync.cachePut('rl:roles:' + pid, rows.roles); PDSync.cachePut('rl:calendars:' + pid, rows.calendars); }
     await ensureDefaultCalendar();
     if (tab === 'loading') await loadLoading();
     render();
@@ -309,6 +343,7 @@
     renderKpis();
     renderFilterbar();
     if (isLoad) renderLoading(); else renderRoster();
+    paintRemote();
   }
 
   function kpi(l, v, cls) { return '<div class="rl-kpi"><div class="rl-kpi-v ' + (cls || '') + '">' + v + '</div><div class="rl-kpi-l">' + l + '</div></div>'; }
@@ -521,6 +556,7 @@
     if (!pid) { UI.toast('Select a project first.', 'error'); return; }
     if (tab === 'loading') return;
     editId = row ? row.id : null;
+    if (row && row.id) broadcastCollabSel(row.id, true);   // tell other viewers I'm editing this row
     var form = document.getElementById('rl-form');
     document.getElementById('rl-modal-title').textContent = (row ? 'Edit ' : 'Add ') + (tab === 'roles' ? 'role' : tab === 'calendars' ? 'calendar' : 'resource');
     if (tab === 'resources') {
@@ -595,12 +631,27 @@
       payload = { project_id: pid, name: v('f-name'), hours_per_day: num('f-hpd') || 8, extra_holidays: holidays, updated_at: new Date().toISOString() };
       DAYS.forEach(function (d) { payload[d[0]] = !!document.querySelector('[data-day="' + d[0] + '"]').checked; });
     }
-    var res;
-    if (editId) { res = await sb().from(table).update(payload).eq('id', editId); }
-    else { payload.created_by = profile.id; res = await sb().from(table).insert(payload); }
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
-    UI.toast(editId ? 'Saved.' : 'Added.', 'success');
-    document.getElementById('rl-modal').style.display = 'none'; editId = null; load();
+    if (editId) {
+      var cur = rows[tab].find(function (x) { return x.id === editId; });
+      if (cur) Object.assign(cur, payload);   // optimistic — applies whether online or queued offline
+      if (window.PDSync) {
+        var w = await PDSync.write({ table: table, op: 'update', id: editId, patch: payload });
+        if (!w.ok) { UI.toast((w.error && w.error.message) || 'Save failed', 'error'); return; }
+        PDSync.cachePut('rl:' + tab + ':' + pid, rows[tab]);
+      } else {
+        var ur = await sb().from(table).update(payload).eq('id', editId);
+        if (ur.error) { UI.toast(ur.error.message, 'error'); return; }
+      }
+      UI.toast('Saved.', 'success');
+      broadcastCollabSel(null);
+      document.getElementById('rl-modal').style.display = 'none'; editId = null; render();
+    } else {
+      payload.created_by = profile.id;
+      var ir = await sb().from(table).insert(payload);
+      if (ir.error) { UI.toast(ir.error.message, 'error'); return; }
+      UI.toast('Added.', 'success');
+      document.getElementById('rl-modal').style.display = 'none'; editId = null; load();
+    }
   }
 
   // Delete with referential guards (the FKs have no ON DELETE, so an in-use delete
@@ -628,6 +679,7 @@
 
   AppAuth.requireLogin(function (user, prof) {
     profile = prof; UI.renderUserBar(prof); UI.initShell();
+    _collabSelf = { id: (user && user.id) || (prof && prof.id), name: (prof && (prof.name || prof.email)) || 'Someone' };
     document.querySelectorAll('.rl-tab').forEach(function (b) {
       b.onclick = function () {
         tab = b.dataset.tab;
@@ -635,15 +687,15 @@
         if (tab === 'loading' && !loadingLoaded && pid) { loadLoading().then(render); } else { render(); }
       };
     });
-    document.getElementById('rl-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load(); };
+    document.getElementById('rl-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load(); joinCollab(); };
     document.getElementById('rl-search').oninput = function (e) { search = e.target.value; renderRoster(); };
     document.getElementById('rl-add').onclick = function () { openForm(null); };
-    document.getElementById('rl-modal-x').onclick = document.getElementById('rl-cancel').onclick = function () { document.getElementById('rl-modal').style.display = 'none'; editId = null; };
+    document.getElementById('rl-modal-x').onclick = document.getElementById('rl-cancel').onclick = function () { broadcastCollabSel(null); document.getElementById('rl-modal').style.display = 'none'; editId = null; };
     document.getElementById('rl-save').onclick = save;
-    document.getElementById('rl-modal').onclick = function (e) { if (e.target === this) { this.style.display = 'none'; editId = null; } };
+    document.getElementById('rl-modal').onclick = function (e) { if (e.target === this) { broadcastCollabSel(null); this.style.display = 'none'; editId = null; } };
     document.querySelectorAll('#rl-mode button').forEach(function (b) { b.onclick = function () { loadMode = b.dataset.mode; renderLoading(); }; });
     document.getElementById('rl-overonly').onchange = function (e) { overOnly = e.target.checked; renderLoading(); };
-    loadProjects();
+    loadProjects().then(function () { joinCollab(); });
   });
 })();
 </script>

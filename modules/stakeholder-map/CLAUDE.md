@@ -1,5 +1,11 @@
 # Module: stakeholder-map
 
+## Live collaboration + offline (Phase 1 & 2) (2026-07-26) — fmlozano
+Same "◑ register" recipe as risk-register: presence (`#sm-presence`), row cursor on Edit-modal open,
+live rows via postgres_changes, offline modal-update via `PDSync.write` + read-cache (`sm:<pid>`).
+Realtime migration `2026-07-26-realtime-collab-registers.sql` (USER MUST RUN). `node --check` ok; not
+browser-verified. Assets + `module.js?v=20260726a`.
+
 Developer change log for the **Stakeholder Map** module. Update this every PR.
 
 ## Status

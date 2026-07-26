@@ -1,5 +1,17 @@
 # Module: resource-loading
 
+## Live collaboration + offline (2026-07-26) — fmlozano
+Reduced form of the register recipe — this is multi-table master data (resources/roles/calendars via
+`TABLES[tab]`), so it gets **presence + row cursor + offline updates + read-cache, but NO live-value
+stream** (a 3-table postgres_changes subscription isn't worth it for low-traffic master data → no
+realtime migration for this module). `joinCollab` (key `resource_loading:<pid>`, project-level, no
+table/onRemoteChange). Presence in `#rl-presence`; `openForm(row)` broadcasts the editing row (cleared
+on the modal's ×/cancel/backdrop/save handlers); `paintRemote()` at the end of `render()` flags it.
+**Offline:** `save()` routes the UPDATE through `PDSync.write` (table = `TABLES[tab]`; insert/delete stay
+online) + per-tab read-cache (`rl:<tab>:<pid>`); `load()` renders from cache on an offline fetch. Inline
+`<script>`, so `offline.js`/`collab.js` added to index.html (no module.js version). `node --check` ok;
+not browser-verified.
+
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).
 > 2. This module is **Resource Loading** (Phase 2). Your DB table is `resource_loading`

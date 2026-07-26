@@ -33,6 +33,33 @@ window.IssuesLessons = (function () {
                      'Contract', 'Communication', 'Resource', 'Stakeholder', 'Other'];
 
   function sb() { return AppAuth.getSB(); }
+
+  // ===== live collaboration (presence + who's-editing row cursor) + offline =====
+  var _collab = null, _remoteSel = {}, _collabSelf = {}, PKEY = 'issues_lessons', PID_PFX = 'il';
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    _remoteSel = {};
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: PKEY + ':' + pid, table: TABLE, projectId: pid, self: _collabSelf,
+      onPresence: function (ms) { renderPresence(ms); _remoteSel = {}; ms.forEach(function (m) { if (!m.self && m.sel) _remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; }); paintRemote(); },
+      onSelection: function (d) { if (d.sel) _remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel }; else delete _remoteSel[d.id]; paintRemote(); },
+      onRemoteChange: applyRemoteChange
+    });
+  }
+  function renderPresence(ms) { var el = document.getElementById(PID_PFX + '-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(ms || []) : ''; }
+  function broadcastCollabSel(id, editing) { if (_collab) _collab.setSelection(id ? { rowId: id, editing: !!editing } : null); }
+  function _collabRow(id) { var rid = (window.CSS && CSS.escape) ? CSS.escape(String(id)) : id; return document.querySelector('tr[data-id="' + rid + '"]') || (function () { var b = document.querySelector('[data-edit="' + rid + '"]'); return b ? b.closest('tr') : null; })(); }
+  function paintRemote() { if (!window.PDCollab) return; PDCollab.clearCells(document); Object.keys(_remoteSel).forEach(function (k) { var m = _remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return; var tr = _collabRow(m.sel.rowId); if (!tr) return; var td = tr.querySelector('td'); if (td) PDCollab.paintCell(td, m); }); }
+  function applyRemoteChange(payload) {
+    var evt = payload.eventType || payload.event, rec = payload['new'] || payload.record || null, old = payload['old'] || payload.old_record || null;
+    if (evt === 'DELETE') { var did = old && old.id; if (did == null) return; rows = rows.filter(function (x) { return String(x.id) !== String(did); }); }
+    else if (rec) { var j = -1; for (var i = 0; i < rows.length; i++) { if (String(rows[i].id) === String(rec.id)) { j = i; break; } } if (j < 0) rows.push(rec); else rows[j] = rec; }
+    else return;
+    render();
+  }
+  function wireModalCursor(m, r) { if (!r || !r.id) return; var oc = m.close; m.close = function () { broadcastCollabSel(null); oc(); }; broadcastCollabSel(r.id, true); m.el.addEventListener('click', function (e) { if (e.target === m.el) broadcastCollabSel(null); }); }
   function $(id) { return document.getElementById(id); }
   function statusClass(s) {
     return s === 'Closed' ? 'is-closed' : (s === 'On Hold' ? 'is-hold' : 'is-open');
@@ -54,12 +81,14 @@ window.IssuesLessons = (function () {
   async function init(user, prof) {
     profile = prof;
     UID = (user && user.id) || (prof && prof.id) || null;
+    _collabSelf = { id: UID, name: (prof && (prof.name || prof.email)) || 'Someone' };
     canWrite = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0;
 
     await loadProjects();
     wire();
     syncChrome();
     if (pid) load();
+    joinCollab();
   }
 
   async function loadProjects() {
@@ -84,6 +113,7 @@ window.IssuesLessons = (function () {
       projName = opt ? opt.textContent : '';
       if (pid) sessionStorage.setItem('pd_project', pid);
       load();
+      joinCollab();
     };
 
     // Screen tabs
@@ -160,8 +190,12 @@ window.IssuesLessons = (function () {
       .eq('project_id', pid)
       .order('date_presented', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false });
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (res.error) {
+      if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); populateFilterOptions(); render(); return; } }
+      UI.toast(res.error.message, 'error'); return;
+    }
     rows = res.data || [];
+    if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
     populateFilterOptions();
     render();
   }
@@ -192,6 +226,7 @@ window.IssuesLessons = (function () {
   function render() {
     if (screen === 'lessons') renderLessons(); else renderIssues();
     if (window.Icons && Icons.hydrate) Icons.hydrate($('il-screen-' + screen));
+    paintRemote();
   }
 
   // ------------------------------------------------------------- Issues ------
@@ -411,6 +446,7 @@ window.IssuesLessons = (function () {
         '<button class="pd-btn pd-btn-primary" id="f-save">Save</button></div>'
     );
 
+    wireModalCursor(m, isNew ? null : r);
     m.el.querySelector('#f-cancel').onclick = m.close;
     m.el.querySelector('#f-save').onclick = async function () {
       var data = {
@@ -435,11 +471,19 @@ window.IssuesLessons = (function () {
           data.created_by = UID;               // REQUIRED for RLS
           var ins = await sb().from(TABLE).insert(data);
           if (ins.error) throw ins.error;
+          UI.toast('Saved', 'ok'); m.close(); load();
         } else {
-          var upd = await sb().from(TABLE).update(data).eq('id', r.id);
-          if (upd.error) throw upd.error;
+          Object.assign(r, data);   // optimistic — applies whether online or queued offline
+          if (window.PDSync) {
+            var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: data });
+            if (!w.ok) throw (w.error || new Error('Save failed'));
+            PDSync.cachePut(PID_PFX + ':' + pid, rows);
+          } else {
+            var upd = await sb().from(TABLE).update(data).eq('id', r.id);
+            if (upd.error) throw upd.error;
+          }
+          UI.toast('Saved', 'ok'); m.close(); render();
         }
-        UI.toast('Saved', 'ok'); m.close(); load();
       } catch (e) { UI.toast(e.message, 'error'); }
     };
   }

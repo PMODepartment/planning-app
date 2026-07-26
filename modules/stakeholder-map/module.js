@@ -31,6 +31,33 @@ window.StakeholderMap = (function () {
                  'Partners','Consultants','External Stakeholders','Other'];
 
   function sb() { return AppAuth.getSB(); }
+
+  // ===== live collaboration (presence + who's-editing row cursor) + offline =====
+  var _collab = null, _remoteSel = {}, _collabSelf = {}, PKEY = 'stakeholder_map', PID_PFX = 'sm';
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    _remoteSel = {};
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: PKEY + ':' + pid, table: TABLE, projectId: pid, self: _collabSelf,
+      onPresence: function (ms) { renderPresence(ms); _remoteSel = {}; ms.forEach(function (m) { if (!m.self && m.sel) _remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; }); paintRemote(); },
+      onSelection: function (d) { if (d.sel) _remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel }; else delete _remoteSel[d.id]; paintRemote(); },
+      onRemoteChange: applyRemoteChange
+    });
+  }
+  function renderPresence(ms) { var el = document.getElementById(PID_PFX + '-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(ms || []) : ''; }
+  function broadcastCollabSel(id, editing) { if (_collab) _collab.setSelection(id ? { rowId: id, editing: !!editing } : null); }
+  function _collabRow(id) { var rid = (window.CSS && CSS.escape) ? CSS.escape(String(id)) : id; return document.querySelector('tr[data-id="' + rid + '"]') || (function () { var b = document.querySelector('[data-edit="' + rid + '"]'); return b ? b.closest('tr') : null; })(); }
+  function paintRemote() { if (!window.PDCollab) return; PDCollab.clearCells(document); Object.keys(_remoteSel).forEach(function (k) { var m = _remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return; var tr = _collabRow(m.sel.rowId); if (!tr) return; var td = tr.querySelector('td'); if (td) PDCollab.paintCell(td, m); }); }
+  function applyRemoteChange(payload) {
+    var evt = payload.eventType || payload.event, rec = payload['new'] || payload.record || null, old = payload['old'] || payload.old_record || null;
+    if (evt === 'DELETE') { var did = old && old.id; if (did == null) return; rows = rows.filter(function (x) { return String(x.id) !== String(did); }); }
+    else if (rec) { var j = -1; for (var i = 0; i < rows.length; i++) { if (String(rows[i].id) === String(rec.id)) { j = i; break; } } if (j < 0) rows.push(rec); else rows[j] = rec; }
+    else return;
+    render();
+  }
+  function wireModalCursor(m, r) { if (!r || !r.id) return; var oc = m.close; m.close = function () { broadcastCollabSel(null); oc(); }; broadcastCollabSel(r.id, true); m.el.addEventListener('click', function (e) { if (e.target === m.el) broadcastCollabSel(null); }); }
   function n(v) { var x = parseInt(v, 10); return (x >= 1 && x <= 4) ? x : null; }
 
   // ---- Chain 1: Impact × Interest → Importance → Approach -----------------
@@ -79,11 +106,12 @@ window.StakeholderMap = (function () {
   // ========================================================================
   async function init(user, prof) {
     profile = prof;
+    _collabSelf = { id: (user && user.id) || (prof && prof.id), name: (prof && (prof.name || prof.email)) || 'Someone' };
     await loadProjects();
 
     document.getElementById('sm-add').onclick = function () { openForm(null); };
     document.getElementById('sm-project').onchange = function (e) {
-      pid = e.target.value; sessionStorage.setItem('pd_project', pid); load();
+      pid = e.target.value; sessionStorage.setItem('pd_project', pid); load(); joinCollab();
     };
     ['sm-f-sector','sm-f-group','sm-f-importance','sm-f-search'].forEach(function (id) {
       var el = document.getElementById(id);
@@ -105,6 +133,7 @@ window.StakeholderMap = (function () {
     });
 
     if (pid) load();
+    joinCollab();
   }
 
   async function loadProjects() {
@@ -127,11 +156,13 @@ window.StakeholderMap = (function () {
     var res = await sb().from(TABLE).select('*')
       .eq('project_id', pid).order('name', { ascending: true, nullsFirst: false });
     if (res.error) {
+      if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); render(); return; } }
       var msg = /column .* does not exist|schema cache/i.test(res.error.message || '')
         ? 'Run the migration 2026-07-20-stakeholder-map-full.sql first.' : res.error.message;
       UI.toast(msg, 'error'); return;
     }
     rows = res.data || [];
+    if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
     // populate the Group filter from data + the canonical list
     var groups = {};
     GROUPS.forEach(function (g){ groups[g] = 1; });
@@ -169,6 +200,7 @@ window.StakeholderMap = (function () {
     renderTable();
     renderGrid();
     document.getElementById('sm-clear').classList.toggle('show', anyFilter());
+    paintRemote();
   }
 
   function renderKpis() {
@@ -377,6 +409,7 @@ window.StakeholderMap = (function () {
     q('#f-cur').onchange = q('#f-tgt').onchange = function () {
       q('#f-rel-out').textContent = derivedRelText(q('#f-cur').value, q('#f-tgt').value);
     };
+    wireModalCursor(m, isNew ? null : r);
     q('#f-cancel').onclick = m.close;
     q('#f-save').onclick = async function () {
       var data = {
@@ -407,11 +440,19 @@ window.StakeholderMap = (function () {
           data.created_by = profile.id;
           var ins = await sb().from(TABLE).insert(data);
           if (ins.error) throw ins.error;
+          UI.toast('Saved', 'ok'); m.close(); load();
         } else {
-          var upd = await sb().from(TABLE).update(data).eq('id', r.id);
-          if (upd.error) throw upd.error;
+          Object.assign(r, data);   // optimistic — applies whether online or queued offline
+          if (window.PDSync) {
+            var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: data });
+            if (!w.ok) throw (w.error || new Error('Save failed'));
+            PDSync.cachePut(PID_PFX + ':' + pid, rows);
+          } else {
+            var upd = await sb().from(TABLE).update(data).eq('id', r.id);
+            if (upd.error) throw upd.error;
+          }
+          UI.toast('Saved', 'ok'); m.close(); render();
         }
-        UI.toast('Saved', 'ok'); m.close(); load();
       } catch (e) {
         var msg = /column .* does not exist|schema cache/i.test(e.message || '')
           ? 'Run the migration 2026-07-20-stakeholder-map-full.sql first.' : e.message;
