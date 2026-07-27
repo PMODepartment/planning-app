@@ -143,7 +143,11 @@
       var out = [], st = {};
       try { st = ch.presenceState() || {}; } catch (e) { st = {}; }
       Object.keys(st).forEach(function (k) {
-        var meta = (st[k] && st[k][0]) || {};
+        var arr = st[k] || [], meta = arr[0] || {};
+        // A key can carry several presence refs (same user in >1 tab, or a channel
+        // re-join). arr[0] may be a stale sel:null entry that masks an active cursor,
+        // so prefer the most-informative ref: one whose sel is set.
+        for (var qi = 0; qi < arr.length; qi++) { if (arr[qi] && arr[qi].sel) { meta = arr[qi]; break; } }
         out.push({ id: k, name: meta.name || 'Someone', color: meta.color || colorFor(k), sel: meta.sel || null, self: k === selfId });
       });
       // stable order: me first, then by name
