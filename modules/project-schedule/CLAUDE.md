@@ -50,6 +50,32 @@ is confirmed APPLIED.**
 - The `collab.js` **buildMembers sel-ref fix** (`?v=20260727b`, prior turn) applies here too — the avatar
   editing dot no longer masked by a stale presence ref when a user has multiple tabs.
 
+## UI batch: collab cursor on all columns + keyboard, data-date line, network, L1/L2 IDs (2026-07-27) — fmlozano
+Verified live on **Test Project** (id `Test`, 80 activities) throughout.
+- **Collab cursor on every column, not just Activity Name.** `_setCellFromClick` broadcast the field via
+  the stale `_CELL_META[ci]` (legacy built-in column order, out of sync with the live grid), so most
+  columns sent the wrong field or null (null → painted the name cell). Now it reads the **clicked cell's
+  own `data-field`**. Also added `data-field="status"` to the status cell (both pill + dropdown branches)
+  so the cursor lands there too.
+- **Cursor follows keyboard navigation.** New `broadcastActiveCell()` (reads the painted
+  `.ps-cell-active` `data-field`) called from `moveRowSel` + `moveCell`, so arrow / Tab / Enter movement
+  broadcasts, not only clicks.
+- **Data-date line: label removed + drawn above the row highlight.** Removed the Gantt "Data date …"
+  text label and the topbar "Data Date:" badge. The line lived in the static layer (z1) while the
+  highlight band (`.ps-gantt-selband`) is in the bars layer (z3) → band drew over it ("broken"). Moved
+  the line to a **top-level child of `.ps-tl`** (sibling of both layers) so its z6 wins — verified with
+  `elementFromPoint` that the line is the topmost element over a highlighted row.
+- **Activity Network never blank.** When no activity has links it showed only a hint. Now it renders
+  **every activity as a node** (edgeless network) with a note; once links exist, behaviour is unchanged
+  (linked set by default, toggle for the rest). Verified: 80 nodes render on the link-less Test Project.
+- **Grid-only / Gantt-only confirmed working** (not a code change) — grid-only hides the gantt + grid
+  full-width; gantt-only narrows the grid to 300px (OPC-style, intentional) + gantt fills. Both render
+  visible content live; the only broken-looking view was the Network empty state (fixed above).
+- **Hide Activity ID (WBS code) on WBS L1 + L2** (depth 0/1) in the grid — cleaner summary rows; L3+
+  unchanged. Verified: Structure/F1/F2 blank, Z1/Z2 show `1.1.1`/`1.1.2`.
+- Module-local (index.html inline), no migration, no `?v=` (index.html isn't cache-busted — hard-refresh
+  to pick up).
+
 ## Offline editing + sync — Phase 2 (2026-07-26) — fmlozano
 Wired the shared **PDSync** outbox (`assets/js/offline.js`): inline-edit the schedule offline, sync on
 reconnect.
