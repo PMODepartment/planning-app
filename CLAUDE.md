@@ -77,6 +77,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-27 — Collaboration rollout: Productivity Rates (full: presence + cursors + live + offline)
+- Wired PDCollab + PDSync into **Productivity Rates** with the full feature set. This module spans
+  **two tables**, so I **extended the shared `collab.js`** with an additive **`opts.tables` array**
+  (backward compatible; `opts.table` still works) and subscribed to both `productivity_activities` +
+  `productivity_entries`; `applyRemoteChange` switches on `payload.table`. **`collab.js?v=` bumped
+  `20260726c → 20260727a` across all 9 referencing modules** (additive change, no behaviour change for
+  the others).
+- **Presence** avatars (`#pr-presence`); **cursor** = the activity's Data-register row (both the
+  activity form and the monthly editor broadcast "editing this activity", `paintRemote` on the Data
+  view); **live** register + monitoring updates on any activity/entry change.
+- **Offline (full):** a `persist()` helper routes activity add/edit, delete, and the monthly-editor
+  save (deletes + upserts) through `PDSync.write` (field-level LWW; optimistic when queued, `load()`
+  when it goes through online). Both tables are read-cached under `pr:<pid>` and restored on a failed
+  fetch. **Import stays online-only** (bulk; `navigator.onLine`-guarded). Offline inserts use PDSync's
+  client uuid so a new activity + its months queue and replay in order.
+- **Migration `2026-07-27-realtime-collab-productivity-rates.sql` (USER MUST RUN)** enables the
+  live-value stream for both tables (presence/cursors/offline work without it).
+- Verified: inline module + `collab.js` pass `node --check`. Live two-session verification pending.
+  Assets: `offline.js?v=20260726d` + `collab.js?v=20260727a`.
+
 ### 2026-07-27 — Progress Photos collab: live two-session verification (migration confirmed)
 - User ran `2026-07-26-realtime-collab-progress-photos.sql`; verified the whole transport **live on the
   deployed site**, signed in (Fernando Lozano) on GPR101, driving the real module via the browser. The

@@ -159,6 +159,7 @@
         <button class="pd-btn" id="pr-import" title="Import productivity workbook (Excel)"><span data-ico="upload" data-ico-size="16"></span></button>
         <button class="pd-btn" id="pr-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
       </div>
+      <div id="pr-presence" title="People viewing this project"></div>
       <div id="user-bar"></div>
     </div>
     <div class="pd-main">
@@ -206,6 +207,8 @@
 <script src="../../assets/js/ui.js?v=20260724a"></script>
 <script src="../../assets/js/icons.js?v=20260724a"></script>
 <script src="../../assets/js/calendar.js?v=20260724a"></script>
+<script src="../../assets/js/offline.js?v=20260726d"></script>
+<script src="../../assets/js/collab.js?v=20260727a"></script>
 <script>
 // ============================================================================
 // Productivity Rates — Productivity Monitoring (per project).
@@ -322,6 +325,87 @@
   function rateOf(qty, res, wd) { return (qty != null && res > 0 && wd > 0) ? qty / (res * wd) : null; }
   function rateUnit(a) { return (a.unit || 'unit') + '/' + (a.resource_type === 'Equipment' ? (a.resource_unit || 'unit') + '-day' : 'man-day'); }
 
+  // ===== live collaboration (presence + "who's editing this activity") ======
+  // Shared PDCollab layer (Supabase Realtime). This module spans TWO tables
+  // (productivity_activities + productivity_entries), so it subscribes to both
+  // via opts.tables; payload.table tells applyRemoteChange which one changed.
+  // Cursor granularity is the ACTIVITY (its register row) — both the activity
+  // form and the monthly editor operate on one activity.
+  var _collab = null, _remoteSel = {};
+  function _selfName() { return (profile && (profile.name || profile.email)) || 'Someone'; }
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    _remoteSel = {};
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: 'productivity_rates:' + pid,
+      tables: ['productivity_activities', 'productivity_entries'], projectId: pid,
+      self: { id: UID, name: _selfName() },
+      onPresence: function (members) {
+        renderPresence(members);
+        _remoteSel = {}; members.forEach(function (m) { if (!m.self && m.sel) _remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; });
+        paintRemote();
+      },
+      onSelection: function (d) { if (d.sel) _remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel }; else delete _remoteSel[d.id]; paintRemote(); },
+      onRemoteChange: applyRemoteChange
+    });
+  }
+  function renderPresence(members) { var el = document.getElementById('pr-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(members || []) : ''; }
+  function broadcastCollabSel(actId, editing) { if (_collab) _collab.setSelection(actId ? { rowId: actId, editing: !!editing } : null); }
+  function paintRemote() {
+    if (!window.PDCollab) return;
+    var host = document.getElementById('pr-datatable'); if (!host) return;
+    PDCollab.clearCells(host);
+    if (view !== 'data') return;   // the activity-row cursor lives in the Data register
+    Object.keys(_remoteSel).forEach(function (k) {
+      var m = _remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return;
+      var rid = (window.CSS && CSS.escape) ? CSS.escape(String(m.sel.rowId)) : m.sel.rowId;
+      var tr = host.querySelector('tr[data-id="' + rid + '"]'); if (!tr) return;
+      var td = tr.querySelector('td'); if (td) PDCollab.paintCell(td, m);
+    });
+  }
+  function applyRemoteChange(payload) {
+    var evt = payload.eventType || payload.event;
+    var rec = payload['new'] || payload.record || null, old = payload['old'] || payload.old_record || null;
+    var tbl = payload.table;
+    if (tbl === 'productivity_activities') {
+      if (evt === 'DELETE') { var did = old && old.id; if (did == null) return; acts = acts.filter(function (x) { return String(x.id) !== String(did); }); delete entriesByAct[did]; }
+      else if (rec) { var j = idx(acts, rec.id); if (j < 0) acts.push(rec); else acts[j] = rec; }
+      else return;
+    } else if (tbl === 'productivity_entries') {
+      if (evt === 'DELETE') {
+        var eid = old && old.id; if (eid == null) return;
+        Object.keys(entriesByAct).forEach(function (aid) { entriesByAct[aid] = entriesByAct[aid].filter(function (e) { return String(e.id) !== String(eid); }); });
+      } else if (rec) {
+        var aid2 = rec.activity_id, arr = entriesByAct[aid2] = entriesByAct[aid2] || [];
+        var k2 = idx(arr, rec.id); if (k2 < 0) arr.push(rec); else arr[k2] = rec;
+        arr.sort(function (a, b) { return (a.period < b.period) ? -1 : (a.period > b.period ? 1 : 0); });
+      } else return;
+    } else return;
+    if (window.PDSync) cacheState();
+    render();
+  }
+  function idx(list, id) { for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(id)) return i; return -1; }
+
+  // ===== offline read-cache (both tables under one key) =====================
+  function allEntries() { var out = []; Object.keys(entriesByAct).forEach(function (k) { out = out.concat(entriesByAct[k]); }); return out; }
+  function cacheState() { if (window.PDSync && pid) PDSync.cachePut('pr:' + pid, { acts: acts, entries: allEntries() }); }
+  function restoreFromCache(rowsObj) {
+    acts = (rowsObj && rowsObj.acts) || [];
+    entriesByAct = {};
+    ((rowsObj && rowsObj.entries) || []).forEach(function (row) { (entriesByAct[row.activity_id] = entriesByAct[row.activity_id] || []).push(row); });
+  }
+  // One write op through PDSync (offline-capable) with a direct-Supabase fallback.
+  async function persist(job) {
+    if (window.PDSync) return await PDSync.write(job);
+    var q = sb().from(job.table), res;
+    if (job.op === 'insert') res = await q.insert(job.patch).select();
+    else if (job.op === 'update') res = await q.update(job.patch).eq('id', job.id);
+    else res = await q.delete().eq('id', job.id);
+    return { ok: !(res && res.error), queued: false, error: res && res.error, id: (job.patch && job.patch.id) || job.id, data: res && res.data };
+  }
+
   // ======================================================================
   async function init(user, prof) {
     UID = user.id; profile = prof;
@@ -331,7 +415,7 @@
     });
     document.getElementById('pr-project').onchange = function (e) {
       pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid);
-      selAct = null; load();
+      selAct = null; load().then(joinCollab);
     };
     document.getElementById('pr-add').onclick = function () { openActForm(null); };
     document.getElementById('pr-refresh').onclick = function () { load(); };
@@ -346,7 +430,7 @@
       this.classList.toggle('is-active', showTable);
       if (showTable) renderMonitorTable();
     };
-    if (pid) load();
+    if (pid) load().then(joinCollab);
   }
 
   async function loadProjects() {
@@ -371,9 +455,21 @@
       var e = await sb().from('productivity_entries').select('*').eq('project_id', pid).order('period', { ascending: true });
       if (e.error) throw e.error;
       (e.data || []).forEach(function (row) { (entriesByAct[row.activity_id] = entriesByAct[row.activity_id] || []).push(row); });
+      cacheState();   // keep the offline read-cache current
     } catch (err) {
       hideLoading();
       var msg = (err && err.message) || String(err);
+      // Offline / fetch failed: fall back to the read-cache so monitoring + the
+      // register still open (edits made offline queue via PDSync and sync later).
+      if (window.PDSync) {
+        var c = await PDSync.cacheGet('pr:' + pid);
+        if (c && c.rows) {
+          restoreFromCache(c.rows);
+          if (selAct && !acts.some(function (x) { return x.id === selAct; })) selAct = null;
+          if (!selAct && acts.length) selAct = acts[0].id;
+          render(); return;
+        }
+      }
       if (/productivity_activities|productivity_entries|schema cache|does not exist/i.test(msg))
         msg = 'Run migration 2026-07-20-productivity-rates-full.sql in Supabase first. (' + msg + ')';
       UI.toast(msg, 'error'); acts = []; entriesByAct = {}; render(); return;
@@ -553,7 +649,7 @@
       var es = entriesByAct[a.id] || [];
       var latest = null; for (var i = es.length - 1; i >= 0; i--) { var r = rateOf(es[i].qty_actual, es[i].mp_actual, es[i].work_days); if (r != null) { latest = r; break; } }
       var cumA = es.reduce(function (s, e) { return s + (e.qty_actual || 0); }, 0);
-      return '<tr>' +
+      return '<tr data-id="' + esc(a.id) + '">' +
         '<td><strong>' + esc(a.name) + '</strong></td>' +
         '<td>' + esc(a.category || '—') + '</td>' +
         '<td><span class="pr-chip">' + esc(a.unit || '—') + '</span></td>' +
@@ -572,6 +668,7 @@
     t.querySelectorAll('[data-months]').forEach(function (b) { b.onclick = function () { openEditor(acts.find(function (x) { return x.id === b.dataset.months; })); }; });
     t.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { openActForm(acts.find(function (x) { return x.id === b.dataset.edit; })); }; });
     t.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { delAct(b.dataset.del); }; });
+    paintRemote();
   }
 
   // ---- Activity add / edit modal -----------------------------------------
@@ -580,6 +677,7 @@
   function openActForm(a) {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
     var isNew = !a; a = a || {};
+    if (!isNew) broadcastCollabSel(a.id, true);   // tell others I'm editing this activity
     function opts(list, val) { return list.map(function (o) { return '<option' + (val === o ? ' selected' : '') + '>' + o + '</option>'; }).join(''); }
     var m = UI.modal(
       '<h2 style="margin-top:0;">' + (isNew ? 'Add activity' : 'Edit activity') + '</h2>' +
@@ -596,7 +694,7 @@
       '<div class="pd-field"><label>Remarks</label><textarea class="pd-textarea" id="f-rem" rows="2">' + esc(a.remarks) + '</textarea></div>' +
       '<div style="text-align:right;margin-top:6px;"><button class="pd-btn" id="f-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="f-save">Save</button></div>'
     );
-    m.el.querySelector('#f-cancel').onclick = m.close;
+    m.el.querySelector('#f-cancel').onclick = function () { if (!isNew) broadcastCollabSel(null); m.close(); };
     m.el.querySelector('#f-save').onclick = async function () {
       var data = {
         project_id: pid,
@@ -611,17 +709,28 @@
       };
       if (!data.name) { UI.toast('Activity name is required', 'warn'); return; }
       try {
+        var w;
         if (isNew) {
-          data.created_by = UID;
-          data.sort_order = acts.length;
-          var ins = await sb().from('productivity_activities').insert(data).select();
-          if (ins.error) throw ins.error;
-          if (ins.data && ins.data[0]) selAct = ins.data[0].id;
+          data.created_by = UID; data.sort_order = acts.length;
+          w = await persist({ table: 'productivity_activities', op: 'insert', patch: data });
+          if (!w.ok) throw (w.error || new Error('Save failed'));
+          var newId = (w.data && w.data[0] && w.data[0].id) || w.id || data.id;
+          data.id = newId; selAct = newId;
         } else {
-          var upd = await sb().from('productivity_activities').update(data).eq('id', a.id);
-          if (upd.error) throw upd.error;
+          w = await persist({ table: 'productivity_activities', op: 'update', id: a.id, patch: data });
+          if (!w.ok) throw (w.error || new Error('Save failed'));
+          broadcastCollabSel(null);
         }
-        UI.toast('Saved', 'ok'); m.close(); load();
+        m.close();
+        if (w.queued) {
+          // offline: apply optimistically so the register reflects the edit now
+          if (isNew) acts.push(Object.assign({ id: data.id }, data));
+          else { var jj = idx(acts, a.id); if (jj >= 0) acts[jj] = Object.assign({}, acts[jj], data); }
+          cacheState(); render();
+          UI.toast('Saved on this device — will sync when you reconnect', 'ok');
+        } else {
+          UI.toast('Saved', 'ok'); load();
+        }
       } catch (e) { UI.toast(e.message || String(e), 'error'); }
     };
   }
@@ -630,15 +739,20 @@
     var a = acts.find(function (x) { return x.id === id; });
     var nEntries = (entriesByAct[id] || []).length;
     if (!confirm('Delete activity “' + (a ? a.name : '') + '”' + (nEntries ? ' and its ' + nEntries + ' monthly record(s)' : '') + '? This cannot be undone.')) return;
-    var res = await sb().from('productivity_activities').delete().eq('id', id);   // entries cascade
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
-    UI.toast('Deleted', 'ok'); if (selAct === id) selAct = null; load();
+    var w = await persist({ table: 'productivity_activities', op: 'delete', id: id });   // entries cascade server-side
+    if (!w.ok) { UI.toast((w.error && w.error.message) || 'Delete failed', 'error'); return; }
+    if (selAct === id) selAct = null;
+    if (w.queued) {
+      acts = acts.filter(function (x) { return x.id !== id; }); delete entriesByAct[id];
+      cacheState(); render(); UI.toast('Deleted on this device — will sync when you reconnect', 'ok');
+    } else { UI.toast('Deleted', 'ok'); load(); }
   }
 
   // ---- Monthly data editor ----------------------------------------------
   function defaultWorkDays(y, mo) { try { return PDCal.workingDaysInMonth(null, y, mo); } catch (e) { return 26; } }
   function openEditor(act) {
     if (!act) return;
+    broadcastCollabSel(act.id, true);   // tell others I'm editing this activity's months
     // working copy of the entries
     var rows = (entriesByAct[act.id] || []).map(function (e) {
       var d = pd(e.period);
@@ -707,24 +821,43 @@
       });
       box.querySelector('#ed-add').onclick = function () { addMonth(); draw(); };
       box.querySelector('#ed-addyear').onclick = function () { for (var k = 0; k < 12; k++) addMonth(); draw(); };
-      box.querySelector('#ed-cancel').onclick = m.close;
+      box.querySelector('#ed-cancel').onclick = function () { broadcastCollabSel(null); m.close(); };
       box.querySelector('#ed-save').onclick = save;
     }
     async function save() {
       showLoading('Saving…');
       try {
+        var anyQueued = false;
         // deletes
-        for (var d = 0; d < removed.length; d++) { var dr = await sb().from('productivity_entries').delete().eq('id', removed[d]); if (dr.error) throw dr.error; }
-        // upserts
+        for (var d = 0; d < removed.length; d++) {
+          var wd = await persist({ table: 'productivity_entries', op: 'delete', id: removed[d] });
+          if (!wd.ok) throw (wd.error || new Error('Save failed'));
+          if (wd.queued) anyQueued = true;
+        }
+        // upserts (each month is its own field-level op → LWW-safe under PDSync)
         for (var i = 0; i < rows.length; i++) {
           var r = rows[i];
           var rec = { project_id: pid, activity_id: act.id, period: periodISO(r.y, r.mo), work_days: r.work_days,
             mp_bl0: r.mp_bl0, mp_planned: r.mp_planned, mp_actual: r.mp_actual,
             qty_bl0: r.qty_bl0, qty_planned: r.qty_planned, qty_actual: r.qty_actual, updated_at: new Date().toISOString() };
-          if (r.id) { var u = await sb().from('productivity_entries').update(rec).eq('id', r.id); if (u.error) throw u.error; }
-          else { rec.created_by = UID; var ins = await sb().from('productivity_entries').insert(rec); if (ins.error) throw ins.error; }
+          var w2;
+          if (r.id) { w2 = await persist({ table: 'productivity_entries', op: 'update', id: r.id, patch: rec }); }
+          else { rec.created_by = UID; w2 = await persist({ table: 'productivity_entries', op: 'insert', patch: rec }); }
+          if (!w2.ok) throw (w2.error || new Error('Save failed'));
+          if (!r.id) r.id = (w2.data && w2.data[0] && w2.data[0].id) || w2.id || rec.id;
+          if (w2.queued) anyQueued = true;
         }
-        hideLoading(); UI.toast('Saved', 'ok'); m.close(); load();
+        hideLoading(); broadcastCollabSel(null); m.close();
+        if (anyQueued) {
+          // offline: rebuild this activity's entries from the editor rows so the
+          // register + monitoring reflect the save now; it syncs on reconnect.
+          entriesByAct[act.id] = rows.map(function (r) {
+            return { id: r.id, project_id: pid, activity_id: act.id, period: periodISO(r.y, r.mo), work_days: r.work_days,
+              mp_bl0: r.mp_bl0, mp_planned: r.mp_planned, mp_actual: r.mp_actual,
+              qty_bl0: r.qty_bl0, qty_planned: r.qty_planned, qty_actual: r.qty_actual };
+          });
+          cacheState(); render(); UI.toast('Saved on this device — will sync when you reconnect', 'ok');
+        } else { UI.toast('Saved', 'ok'); load(); }
       } catch (e) { hideLoading(); UI.toast(e.message || String(e), 'error'); }
     }
     draw();
@@ -733,6 +866,7 @@
   // ---- Excel import ------------------------------------------------------
   function openImport() {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (!navigator.onLine) { UI.toast('Importing needs a connection. Reconnect and try again.', 'warn'); return; }
     if (typeof XLSX === 'undefined') { UI.toast('Spreadsheet library not loaded — check your connection.', 'error'); return; }
     var inp = document.createElement('input');
     inp.type = 'file'; inp.accept = '.xlsx,.xls';

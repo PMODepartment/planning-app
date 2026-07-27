@@ -74,6 +74,33 @@ never stored — same "derive, don't persist" rule as risk-register's rating.
   activity modal. No console errors. Screenshots remain impossible in this env
   (stalled compositor) — checks are DOM/JS-based.
 
+## Live collaboration + offline (Phase 1 & 2) (2026-07-27) — fmlozano
+Wired the shared **PDCollab** (Realtime) + **PDSync** (offline outbox) layers — full presence +
+cursors + live + offline.
+- **Multi-table live:** this module spans **two** tables (`productivity_activities` +
+  `productivity_entries`), so `joinCollab()` (`key = productivity_rates:<pid>`) uses the new
+  **`opts.tables` array** on PDCollab.join (added to `collab.js`, backward compatible) to subscribe to
+  both. `applyRemoteChange` switches on `payload.table` and patches `acts` / `entriesByAct`, then
+  re-renders. Topbar avatars (`#pr-presence`).
+- **Cursor granularity = the ACTIVITY** (its Data-register row): both `openActForm` (edit) and
+  `openEditor` (monthly grid) broadcast "editing this activity"; every close path (Cancel/Save) clears
+  it. `paintRemote()` (end of `renderData`) flags the `tr[data-id]` of whoever has it open — only on
+  the **Data** view (that's where the register rows live).
+- **Offline (Phase 2):** a shared `persist(job)` routes every write through `PDSync.write`
+  (field-level LWW). **Activity add/edit, delete, and the monthly-editor save (deletes + upserts) are
+  all offline-capable** — applied optimistically and reconciled on reconnect; when the write goes
+  through online we `load()` for authoritative data, when queued we apply locally + `render()`.
+  Read-cache: `load()` caches **both tables** under `pr:<pid>` and restores from cache on a failed
+  fetch. ⚠️ **Import stays online-only** (bulk insert; guarded on `navigator.onLine`).
+  ⚠️ Offline inserts use PDSync's client-generated uuid as the row id, so a new activity + its months
+  queue consistently and replay in order.
+- **Migration `../../migrations/2026-07-27-realtime-collab-productivity-rates.sql` (USER MUST RUN)** —
+  adds both tables to `supabase_realtime` + `replica identity full`. Presence/cursors/offline work
+  without it; only the live-value stream needs it.
+- Verified: inline module + `collab.js` pass `node --check`. Live two-session verification pending
+  (deployed + 2 sessions + an offline cycle). Assets: `offline.js?v=20260726d` +
+  `collab.js?v=20260727a` (bumped — multi-table support); inline module (no separate file to version).
+
 ## Status
 - [x] Migration written + folded into schema/setup + RLS loop
 - [x] Monitoring (chart + KPIs + table) + Data (register + monthly editor) + import

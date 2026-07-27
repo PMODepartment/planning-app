@@ -162,10 +162,17 @@
       if (d.id === selfId) return;
       if (opts.onSelection) opts.onSelection(d);
     });
-    if (opts.table && opts.projectId != null && opts.onRemoteChange) {
-      ch.on('postgres_changes',
-        { event: '*', schema: 'public', table: opts.table, filter: 'project_id=eq.' + opts.projectId },
-        function (payload) { opts.onRemoteChange(payload); });
+    // Live-value stream: subscribe to one table (opts.table) or several
+    // (opts.tables — for modules whose data spans multiple tables, e.g.
+    // productivity_activities + productivity_entries). payload.table tells the
+    // module which one changed. Backward compatible: opts.table still works.
+    var _tables = (opts.tables && opts.tables.length) ? opts.tables : (opts.table ? [opts.table] : []);
+    if (_tables.length && opts.projectId != null && opts.onRemoteChange) {
+      _tables.forEach(function (tbl) {
+        ch.on('postgres_changes',
+          { event: '*', schema: 'public', table: tbl, filter: 'project_id=eq.' + opts.projectId },
+          function (payload) { opts.onRemoteChange(payload); });
+      });
     }
 
     function doSubscribe() {
