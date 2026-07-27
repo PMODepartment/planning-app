@@ -77,6 +77,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-27 — Collaboration rollout: the three analytics modules (S-Curve, Cash Flow, Portfolio)
+One pass across the derived/read modules. Each scoped to what's meaningful (no invented cursors):
+- **S-Curve** (read-only, derived from `project_schedule`): **presence + live-refresh + offline
+  read-cache**, no cursor. `joinCollab` (`scurve:<pid>`) subscribes to `project_schedule` → a
+  **debounced `load()`** (400ms) recomputes the curve when someone edits the schedule; `{agg,rows}`
+  cached under `sc:<pid>` and rendered on a failed fetch. Live stream reuses the existing
+  `project_schedule` realtime migration.
+- **Cash Flow** (derived projection, editable assumptions across 4 tables): **presence + editing
+  indicator + live recompute + offline READ-cache**. `joinCollab` (`cash_flow:<pid>`) uses the
+  multi-table `opts.tables` (`cash_flow_settings/_actuals/_dp_tranches/_trade_packages`) → **debounced
+  `loadAll(false)`** (500ms). The "cursor" is the avatar **editing dot** (Assumptions/Actuals modal
+  open). Full snapshot cached under `cf:<pid>` + restored offline. ⚠️ **Writes stay online-only** —
+  the saves are multi-table bulk delete+insert keyed by `project_id`, which don't fit the id-based
+  outbox, and are desk activities; each `save*` is `navigator.onLine`-guarded.
+- **Portfolio Overview** (cross-project read-only rollup): **presence-only + offline read-cache**.
+  `PDCollab.join({key:'portfolio'})` with no table/projectId (presence + broadcast only) shows who's
+  viewing the portfolio; `getProjects()+getWorkspaces()` cached under `po:all` and restored offline.
+- **Migration `2026-07-27-realtime-collab-cash-flow.sql` (USER MUST RUN)** enables the live stream for
+  Cash Flow's four tables. S-Curve needs the project_schedule realtime migration; Portfolio needs none.
+- Verified: all three inline modules parse (vm compile). Live verification pending. Assets:
+  `offline.js?v=20260726d` + `collab.js?v=20260727a`.
+
 ### 2026-07-27 — Collaboration rollout: Productivity Rates (full: presence + cursors + live + offline)
 - Wired PDCollab + PDSync into **Productivity Rates** with the full feature set. This module spans
   **two tables**, so I **extended the shared `collab.js`** with an additive **`opts.tables` array**

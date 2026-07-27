@@ -56,5 +56,19 @@ the same forecast the chart's red dashed line draws, sampled at each month end.
   forecast dashes before the data date then climbs monotonically 53.2%→99.9%, one value per month
   column, red + italic; row is absent when there's no forecast (guarded by `hasForecast`).
 
+## Live collaboration + offline (2026-07-27) — fmlozano
+S-Curve is a **read-only** analytics view derived from `project_schedule`, so it gets **presence +
+live-refresh + offline read-cache — no editing cursor** (nothing to edit here).
+- **Presence:** `joinCollab()` (`key = scurve:<pid>`, table `project_schedule`) after every load /
+  project switch; avatars in `#sc-presence`.
+- **Live:** subscribing to `project_schedule` changes → a **debounced `load()`** (400ms coalesce) so a
+  burst of schedule edits (bulk import / global change) triggers one recompute, not thousands.
+- **Offline:** `load()` caches `{agg, rows}` under `sc:<pid>` and, on a failed fetch, renders the
+  last-cached curve. The forecast pin (localStorage) still applies offline.
+- **Migration:** none of its own — the live stream needs `project_schedule` in the realtime publication
+  (`2026-07-26-realtime-collab-project-schedule.sql`). Presence + offline work without it.
+- Verified: inline script parses (`node --check`-equivalent vm compile). Live verification pending.
+  Assets: `offline.js?v=20260726d` + `collab.js?v=20260727a`.
+
 ## Notes
 (Record decisions, columns added via `alter table ... add column if not exists`, etc.)

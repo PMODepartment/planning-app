@@ -113,6 +113,7 @@
         <button class="pd-btn" id="sc-tabletoggle" title="Show data table"><span data-ico="listView" data-ico-size="16"></span></button>
         <button class="pd-btn" id="sc-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
       </div>
+      <div id="sc-presence" title="People viewing this project"></div>
       <div id="user-bar"></div>
     </div>
     <div class="pd-main">
@@ -136,10 +137,13 @@
 <script src="../../assets/js/db.js?v=20260724a"></script>
 <script src="../../assets/js/ui.js?v=20260724a"></script>
 <script src="../../assets/js/icons.js?v=20260724a"></script>
+<script src="../../assets/js/offline.js?v=20260726d"></script>
+<script src="../../assets/js/collab.js?v=20260727a"></script>
 <script>
 (function () {
   'use strict';
   var TABLE = 'project_schedule', pid = null, rows = [], agg = null, forecastFinish = null, fcManual = false;
+  var UID = null, profile = null;
   function sb() { return AppAuth.getSB(); }
   function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); if (!m) return null; return new Date(+m[1], +m[2]-1, +m[3]); }
   function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
@@ -151,6 +155,31 @@
   function showLoading() { var e = document.getElementById('sc-loading'); if (e) e.style.display = 'flex'; }
   function hideLoading() { var e = document.getElementById('sc-loading'); if (e) e.style.display = 'none'; }
 
+  // ===== live collaboration (presence + live refresh) =======================
+  // S-Curve is a READ-ONLY analytics view derived from project_schedule, so there
+  // is no editing cursor. It gets: presence (who's viewing this project's curve)
+  // and a LIVE refresh — when someone edits the schedule elsewhere, the curve
+  // recomputes. Schedule edits can arrive in bursts (bulk import / global change),
+  // so remote changes are coalesced into one debounced reload.
+  var _collab = null, _reloadTimer = null;
+  function _selfName() { return (profile && (profile.name || profile.email)) || 'Someone'; }
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: 'scurve:' + pid, table: TABLE, projectId: pid,
+      self: { id: UID, name: _selfName() },
+      onPresence: function (members) { renderPresence(members); },
+      onSelection: function () {},
+      onRemoteChange: function () {
+        if (_reloadTimer) clearTimeout(_reloadTimer);
+        _reloadTimer = setTimeout(function () { _reloadTimer = null; load(); }, 400);
+      }
+    });
+  }
+  function renderPresence(members) { var el = document.getElementById('sc-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(members || []) : ''; }
+
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = document.getElementById('sc-project');
@@ -159,7 +188,7 @@
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
     UI.enhanceProjectSelect(sel);   // shared searchable project picker
-    if (pid) load();
+    if (pid) load().then(joinCollab);
   }
   async function load() {
     if (!pid) { rows = []; agg = null; render(); return; }
@@ -184,9 +213,20 @@
           var b = r1.data || []; rows = rows.concat(b);
           if (b.length < 1000) break; last = b[b.length - 1].id;
         }
-      } catch (e) { hideLoading(); UI.toast('Load failed: ' + (e.message || e), 'error'); return; }
+      } catch (e) {
+        hideLoading();
+        // Offline / fetch failed: render the last-cached curve so it still opens.
+        if (window.PDSync) {
+          var c = await PDSync.cacheGet('sc:' + pid);
+          if (c && c.rows) { agg = c.rows.agg || null; rows = c.rows.rows || []; }
+        }
+        if (!agg && !rows.length) { UI.toast('Load failed: ' + (e.message || e), 'error'); return; }
+        var sv0 = null; try { var s0 = localStorage.getItem(fcKey()); if (s0) sv0 = pd(s0); } catch (er) {}
+        fcManual = !!sv0; forecastFinish = sv0 || null; render(); return;
+      }
     }
     hideLoading();
+    if (window.PDSync) PDSync.cachePut('sc:' + pid, { agg: agg, rows: rows });   // offline read-cache
     // Forecast finish is performance-based (auto) unless the user has pinned a date for this
     // project; a saved value = manual override. The input is filled in render() with the
     // effective date (auto or manual) once the SPI-based projection is computed.
@@ -395,10 +435,11 @@
       '</tbody></table>';
   }
 
-  AppAuth.requireLogin(function (user, profile) {
-    UI.renderUserBar(profile);
+  AppAuth.requireLogin(function (user, prof) {
+    UID = user.id; profile = prof;
+    UI.renderUserBar(prof);
     UI.initShell();
-    document.getElementById('sc-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load(); };
+    document.getElementById('sc-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load().then(joinCollab); };
     document.getElementById('sc-refresh').onclick = function () { load(); };
     document.getElementById('sc-forecast').onchange = function (e) {
       var v = e.target.value;

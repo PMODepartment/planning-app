@@ -278,6 +278,7 @@
         <button class="pd-btn" id="cf-print" title="Print / save the cashflow sheet as PDF"><span data-ico="printer" data-ico-size="17"></span></button>
         <button class="pd-btn" id="cf-check" title="Setup check — verify DB tables / columns / RPC are in place"><span data-ico="check" data-ico-size="17"></span></button>
       </div>
+      <div id="cf-presence" title="People viewing this project"></div>
       <div id="user-bar"></div>
     </div>
     <div class="pd-main">
@@ -364,6 +365,8 @@
 <script src="../../assets/js/db.js?v=20260724a"></script>
 <script src="../../assets/js/ui.js?v=20260724a"></script>
 <script src="../../assets/js/icons.js?v=20260724a"></script>
+<script src="../../assets/js/offline.js?v=20260726d"></script>
+<script src="../../assets/js/collab.js?v=20260727a"></script>
 <script>
 (function () {
   'use strict';
@@ -447,6 +450,50 @@
     if (res.error && !/scurve_basis|schema cache|column/i.test(res.error.message)) UI.toast('Could not save basis: ' + res.error.message, 'error');
   }
 
+  // ===== live collaboration (presence + editing indicator + live recompute) ==
+  // Cash Flow is a DERIVED projection whose inputs live across several tables
+  // (cash_flow_settings + tranches/trades/actuals). It subscribes to those so a
+  // co-editor's saved assumptions recompute everyone's projection live (coalesced,
+  // since saveSettings is a multi-row delete+insert → a burst of change events).
+  // There is no tabular row to flag, so the "cursor" is the avatar EDITING dot,
+  // lit while someone has the Assumptions / Actuals modal open.
+  var _collab = null, _cfReloadTimer = null;
+  function _cfSelfName() { return (profile && (profile.name || profile.email)) || 'Someone'; }
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: 'cash_flow:' + pid,
+      tables: ['cash_flow_settings', 'cash_flow_actuals', 'cash_flow_dp_tranches', 'cash_flow_trade_packages'],
+      projectId: pid,
+      self: { id: (profile && profile.id) || 'anon', name: _cfSelfName() },
+      onPresence: function (members) { renderPresence(members); },
+      onSelection: function () {},
+      onRemoteChange: function () {
+        if (_cfReloadTimer) clearTimeout(_cfReloadTimer);
+        _cfReloadTimer = setTimeout(function () { _cfReloadTimer = null; loadAll(false); }, 500);
+      }
+    });
+  }
+  function renderPresence(members) { var el = document.getElementById('cf-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(members || []) : ''; }
+  function broadcastCollabSel(what, editing) { if (_collab) _collab.setSelection(what ? { rowId: what, editing: !!editing } : null); }
+
+  // ---- offline read-cache: snapshot the loaded projection inputs so the sheet
+  // opens with no connection. Writes stay online-only (the saves are multi-table
+  // bulk delete+insert keyed by project_id — they don't fit the id-based outbox).
+  function cfSnapshot() {
+    return { settings: settings, sched: sched, milestones: milestones, tranches: tranches,
+      actuals: actuals, trades: trades, billingMs: billingMs, scenarios: scenarios,
+      wpRows: wpRows, wpmStatus: wpmStatus, wpmMsg: wpmMsg, wpmSyncedAt: wpmSyncedAt };
+  }
+  function cfRestore(s) {
+    settings = s.settings || defaults(); if (!settings.wpm_project_id) settings.wpm_project_id = pid;
+    sched = s.sched || null; milestones = s.milestones || []; tranches = s.tranches || [];
+    actuals = s.actuals || []; trades = s.trades || []; billingMs = s.billingMs || []; scenarios = s.scenarios || [];
+    wpRows = s.wpRows || []; wpmStatus = s.wpmStatus || 'idle'; wpmMsg = s.wpmMsg || ''; wpmSyncedAt = s.wpmSyncedAt || null;
+  }
+
   // ---- Defaults for a project with no saved assumptions ----
   function defaults() {
     return { project_id: pid, contract_ibb: null, contract_bcb: null, dp_percent: 0,
@@ -470,7 +517,7 @@
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
     UI.enhanceProjectSelect(sel);   // shared searchable project picker
-    if (pid) loadAll();
+    if (pid) loadAll().then(joinCollab);
   }
 
   async function loadSettings() {
@@ -632,10 +679,16 @@
     if (!pid) { render(); return; }
     document.getElementById('cf-body').innerHTML = skeletonHTML();
     loadDataDate();
+    // Offline: render the last-cached projection instead of failing every loader.
+    if (!navigator.onLine && window.PDSync) {
+      var c = await PDSync.cacheGet('cf:' + pid);
+      if (c && c.rows) { cfRestore(c.rows); model = computeProjection(); render(); return; }
+    }
     await loadSettings();
     await Promise.all([loadSchedule(), loadWPM(), loadTranches(), loadActuals(), loadTrades(), loadBillingMs(), loadScenarios()]);
     model = computeProjection();
     render();
+    if (window.PDSync) PDSync.cachePut('cf:' + pid, cfSnapshot());   // refresh the offline read-cache
     // Roll-up (Portfolio cache) is only rewritten on explicit user actions — Refresh,
     // saving assumptions/actuals, or a WPM sync — not on passive project opens.
     if (persist) persistRollup();
@@ -1456,6 +1509,7 @@
   // ---- Actuals editor ----
   function openActuals() {
     if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+    broadcastCollabSel('actuals', true);   // light the "editing" dot on my avatar for others
     editActuals = (actuals || []).map(function (a) { return JSON.parse(JSON.stringify(a)); });
     renderActualRows();
     document.getElementById('cf-act-add').onclick = function () {
@@ -1481,6 +1535,7 @@
     host.querySelectorAll('.cf-act-del').forEach(function (b) { b.onclick = function () { editActuals.splice(+b.dataset.i, 1); renderActualRows(); }; });
   }
   async function saveActuals() {
+    if (!navigator.onLine) { UI.toast('You are offline — recorded actuals save online only. Reconnect to save.', 'warn'); return; }
     var del = await sb().from('cash_flow_actuals').delete().eq('project_id', pid);
     if (del.error) { UI.toast(del.error.message, 'error'); return; }
     var rows = editActuals.filter(function (a) { return a.period && a.amount; }).map(function (a) {
@@ -1490,6 +1545,7 @@
     });
     if (rows.length) { var ins = await sb().from('cash_flow_actuals').insert(rows); if (ins.error) { UI.toast(ins.error.message, 'error'); return; } }
     UI.toast('Actuals saved.', 'success');
+    broadcastCollabSel(null);
     document.getElementById('cf-act-modal').style.display = 'none';
     loadAll(true);
   }
@@ -1523,6 +1579,7 @@
     host.querySelectorAll('.cf-scn-del').forEach(function (b) { b.onclick = function () { deleteScenario(b.dataset.id); }; });
   }
   async function saveScenario() {
+    if (!navigator.onLine) { UI.toast('You are offline — snapshots save online only. Reconnect to save.', 'warn'); return; }
     var name = (document.getElementById('cf-scn-name').value || '').trim() || ('Snapshot ' + (scenarios.length + 1));
     var makeBaseline = !scenarios.some(function (s) { return s.is_baseline; });   // first snapshot becomes baseline
     var res = await sb().from('cash_flow_scenarios').insert({
@@ -1690,6 +1747,7 @@
   function pctVal(v) { return v == null ? '' : (num(v) * 100); }
   function openSettings() {
     if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+    broadcastCollabSel('assumptions', true);   // light the "editing" dot on my avatar for others
     var s = settings || defaults();
     var form = document.getElementById('cf-form');
     form.className = 'cf-form-tabs';
@@ -1984,6 +2042,7 @@
   }
 
   async function saveSettings() {
+    if (!navigator.onLine) { UI.toast('You are offline — assumptions save online only. Reconnect to save.', 'warn'); return; }
     var payload = {
       project_id: pid,
       contract_ibb: numInput('s-ibb'), contract_bcb: numInput('s-bcb'),
@@ -2072,6 +2131,7 @@
     } else {
       UI.toast('Assumptions saved.', 'success');
     }
+    broadcastCollabSel(null);
     document.getElementById('cf-modal').style.display = 'none';
     loadAll(true);
   }
@@ -2249,7 +2309,7 @@
   // ==========================================================================
   AppAuth.requireLogin(function (user, prof) {
     profile = prof; UI.renderUserBar(prof); UI.initShell();
-    document.getElementById('cf-project').onchange = function (e) { pid = e.target.value || null; if (pid) { sessionStorage.setItem('pd_project', pid); var o = e.target.selectedOptions[0]; projName = o ? o.textContent : ''; } loadAll(); };
+    document.getElementById('cf-project').onchange = function (e) { pid = e.target.value || null; if (pid) { sessionStorage.setItem('pd_project', pid); var o = e.target.selectedOptions[0]; projName = o ? o.textContent : ''; } loadAll().then(joinCollab); };
     document.getElementById('cf-refresh').onclick = function () { loadAll(true); };
     document.getElementById('cf-datadate').onchange = function (e) { setDataDate(e.target.value); loadAll(true); };
     document.getElementById('cf-dd-clear').onclick = function () { setDataDate(null); loadAll(true); };
@@ -2260,17 +2320,17 @@
     document.getElementById('cf-export').onclick = exportExcel;
     document.getElementById('cf-print').onclick = printSheet;
     document.getElementById('cf-settings').onclick = openSettings;
-    document.getElementById('cf-modal-x').onclick = document.getElementById('cf-cancel').onclick = function () { document.getElementById('cf-modal').style.display = 'none'; };
+    document.getElementById('cf-modal-x').onclick = document.getElementById('cf-cancel').onclick = function () { broadcastCollabSel(null); document.getElementById('cf-modal').style.display = 'none'; };
     document.getElementById('cf-save').onclick = saveSettings;
-    document.getElementById('cf-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
+    document.getElementById('cf-modal').onclick = function (e) { if (e.target === this) { broadcastCollabSel(null); this.style.display = 'none'; } };
     document.getElementById('cf-check').onclick = runSetupCheck;
     document.getElementById('cf-chk-re').onclick = runSetupCheck;
     document.getElementById('cf-chk-x').onclick = document.getElementById('cf-chk-cancel').onclick = function () { document.getElementById('cf-chk-modal').style.display = 'none'; };
     document.getElementById('cf-chk-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
     document.getElementById('cf-actuals').onclick = openActuals;
-    document.getElementById('cf-act-x').onclick = document.getElementById('cf-act-cancel').onclick = function () { document.getElementById('cf-act-modal').style.display = 'none'; };
+    document.getElementById('cf-act-x').onclick = document.getElementById('cf-act-cancel').onclick = function () { broadcastCollabSel(null); document.getElementById('cf-act-modal').style.display = 'none'; };
     document.getElementById('cf-act-save').onclick = saveActuals;
-    document.getElementById('cf-act-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
+    document.getElementById('cf-act-modal').onclick = function (e) { if (e.target === this) { broadcastCollabSel(null); this.style.display = 'none'; } };
     document.getElementById('cf-scn-x').onclick = document.getElementById('cf-scn-cancel').onclick = function () { document.getElementById('cf-scn-modal').style.display = 'none'; };
     document.getElementById('cf-scn-modal').onclick = function (e) { if (e.target === this) this.style.display = 'none'; };
     loadProjects();

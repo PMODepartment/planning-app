@@ -125,6 +125,7 @@
   <div class="pd-content">
     <div class="pd-topbar">
       <h1>Portfolio Overview</h1>
+      <div id="po-presence" title="People viewing the portfolio" style="margin-left:auto;"></div>
       <div id="user-bar"></div>
     </div>
 
@@ -224,6 +225,8 @@
 <script src="../../assets/js/db.js?v=20260724a"></script>
 <script src="../../assets/js/ui.js?v=20260724a"></script>
 <script src="../../assets/js/icons.js?v=20260724a"></script>
+<script src="../../assets/js/offline.js?v=20260726d"></script>
+<script src="../../assets/js/collab.js?v=20260727a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -841,10 +844,31 @@
     try {
       var res = await Promise.all([PDb.getProjects(), PDb.getWorkspaces()]);
       PROJ = res[0]; WS = res[1];
-    } catch (e) { UI.toast('Could not load portfolio: ' + (e.message || e), 'error'); }
+      if (window.PDSync) PDSync.cachePut('po:all', { PROJ: PROJ, WS: WS });   // offline read-cache
+    } catch (e) {
+      // Offline / fetch failed: render the last-cached portfolio so it still opens.
+      var restored = false;
+      if (window.PDSync) {
+        var c = await PDSync.cacheGet('po:all');
+        if (c && c.rows) { PROJ = c.rows.PROJ || []; WS = c.rows.WS || []; restored = true; }
+      }
+      if (!restored) UI.toast('Could not load portfolio: ' + (e.message || e), 'error');
+    }
     WS.forEach(function (w) { wsById[w.id] = w; });
     buildChildren();
     renderAll();
+
+    // Presence only: the portfolio spans ALL projects, so there's no single-project
+    // channel and no editing cursor (it's a read-only rollup). This shows who else is
+    // viewing the portfolio right now. Live per-project data still comes via the
+    // per-tab Refresh + the modules that write the rollups.
+    if (window.PDCollab) {
+      PDCollab.join({
+        key: 'portfolio',
+        self: { id: (profile && profile.id) || user.id, name: (profile && (profile.name || profile.email)) || 'Someone' },
+        onPresence: function (members) { var el = document.getElementById('po-presence'); if (el) el.innerHTML = PDCollab.avatarsHTML(members || []); }
+      });
+    }
   });
 })();
 </script>
