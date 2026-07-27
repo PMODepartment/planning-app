@@ -6031,7 +6031,12 @@
   function renderWindow() {
     if (!DL.length) return;
     if (_editing) { _pendingWin = true; return; }   // don't wipe an open inline editor; flush on close
-    var scr = document.getElementById('ps-gantt-scroll');
+    // Use whichever scroll container is VISIBLE for the virtualization viewport. In Grid-only the
+    // gantt pane is display:none (clientHeight 0), so reading it gave vh=0 → only ~10 buffer rows
+    // rendered and the grid scroll never advanced the window. The grid-scroll is the visible one
+    // there; the gantt-scroll is visible in Split / Gantt-only. Both are scroll-synced.
+    var gz = document.getElementById('ps-gantt-scroll'), gs = document.getElementById('ps-grid-scroll');
+    var scr = (gz && gz.clientHeight > 0) ? gz : gs;
     var top = scr ? scr.scrollTop : 0, vh = scr ? scr.clientHeight : 600;
     var maxTop = Math.max(0, DL.length * ROWH - vh);
     if (top > maxTop) { top = maxTop; if (scr) scr.scrollTop = maxTop; }
