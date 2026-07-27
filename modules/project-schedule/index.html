@@ -2324,6 +2324,18 @@
   function broadcastCollabSel(rowId, field, editing) {
     if (_collab) _collab.setSelection(rowId ? { rowId: rowId, field: field || null, editing: !!editing } : null);
   }
+  // Broadcast wherever the active cell currently is — used after keyboard navigation (arrows / Tab /
+  // Enter), so a teammate's cursor follows the moving selection, not just clicks. Reads the painted
+  // `.ps-cell-active` cell's real data-field (same source paintRemoteCollab matches on).
+  function broadcastActiveCell() {
+    if (!_collab) return;
+    var host = document.getElementById('ps-grid-rows'); if (!host) return;
+    var ae = host.querySelector('.ps-cell-active');
+    if (ae) {
+      var rw = ae.closest ? ae.closest('.ps-grid-row') : null;
+      broadcastCollabSel((rw && rw.getAttribute('data-rowid')) || selId, ae.getAttribute('data-field') || null, false);
+    } else if (selId) { broadcastCollabSel(selId, null, false); }
+  }
   // Paint every remote user's active cell (only the schedule grid has cells).
   function paintRemoteCollab() {
     if (!window.PDCollab) return;
@@ -5985,8 +5997,12 @@
     var stat = '', g = new Date(min.getFullYear(), min.getMonth(), 1);
     while (g <= max) { stat += '<div class="ps-grid-v" style="left:' + (dayDiff(min, g) * dayw) + 'px;"></div>'; g = new Date(g.getFullYear(), g.getMonth()+1, 1); }
     var dd = today(), ddx = dayDiff(min, dd) * dayw;
-    if (_gset.ddline) stat += '<div class="ps-datedate" style="left:' + ddx + 'px;"></div><div class="ps-datedate-lbl" id="ps-datedate-lbl" style="left:' + ddx + 'px;">Data date ' + Fmt.date(dstr(dd)) + '</div>';
-    tl.innerHTML = '<div class="ps-tl-static">' + stat + '</div><div id="ps-tl-bars"></div>';
+    // Data-date line is a TOP-LEVEL child of .ps-tl (sibling of the static z1 + bars z3 layers),
+    // so its z-index (6) wins over the row-highlight band (.ps-gantt-selband, in the bars layer) —
+    // previously it lived inside the static layer and the highlight band drew over it ("broken").
+    // Text label removed per request; the line alone marks the data date.
+    tl.innerHTML = '<div class="ps-tl-static">' + stat + '</div><div id="ps-tl-bars"></div>' +
+      (_gset.ddline ? '<div class="ps-datedate" style="left:' + ddx + 'px;"></div>' : '');
     // grid spacer
     var host = document.getElementById('ps-grid-rows');
     if (!DL.length) {
@@ -6014,8 +6030,6 @@
     if (top > maxTop) { top = maxTop; if (scr) scr.scrollTop = maxTop; }
     var first = Math.max(0, Math.floor(top / ROWH) - 10);
     var last = Math.min(DL.length, Math.ceil((top + vh) / ROWH) + 10);
-    // Pin the data-date label to the top of the Gantt viewport so it stays visible while scrolling.
-    var _ddl = document.getElementById('ps-datedate-lbl'); if (_ddl) _ddl.style.top = (top + 2) + 'px';
     // grid: render only the window, offset with translateY
     var gh = '';
     for (var i = first; i < last; i++) gh += gridRowHTML(DL[i], i);
@@ -8703,6 +8717,7 @@
     }
     scrollRowVisible(target);
     highlightRow();
+    broadcastActiveCell();   // let teammates' cursors follow keyboard row navigation
     renderDetails();
   }
   // Horizontal active-cell navigation (Excel-style). `dc` = ±1 column; `tab` wraps to the next/prev
@@ -8730,7 +8745,7 @@
     scrollRowVisible(nr);
     highlightRow();
     if (rowChanged) renderDetails();
-    (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { scrollCellVisible(nr, nc); highlightCells(); });
+    (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { scrollCellVisible(nr, nc); highlightCells(); broadcastActiveCell(); });
   }
   // Next display-list row index in direction `step`, skipping id-less group headers; stays put if none.
   function _nextRowIdx(from, step) { var i = from + step; while (i >= 0 && i < DL.length && !DL[i].id) i += step; return (i >= 0 && i < DL.length && DL[i].id) ? i : from; }
