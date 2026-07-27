@@ -77,6 +77,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-26 — Collaboration rollout: Progress Photos (Phase 1 + 2, offline-limited)
+- Wired PDCollab + PDSync into **Progress Photos** — the deliberately **"presence + live,
+  offline-limited"** case: it's uploads, so photo *blobs* can't be queued offline. Scope delivered:
+  presence avatars (`#pp-presence`), a **live gallery** stream (`applyRemoteChange` patches `rows` on
+  postgres_changes and **signs a newly-arrived photo's URL** via `signOne` so the preview shows live),
+  a **row cursor** when editing a photo's metadata (`openForm` broadcasts, cleared on ×/Cancel/Save;
+  `paintRemote` flags the `.pp-thumbcell`/`.pp-cardimg` in List/Gallery), and **offline metadata
+  edits** (the Edit modal save routes through `PDSync.write` — description/trade/works/location/date,
+  field-level LWW, optimistic) + a read-cache (`pp:<pid>`; renders from cache on a failed fetch).
+- ⚠️ **Images need a connection** (by design): **upload / delete / download stay online-only** (blobs
+  can't be queued; a delete removes a storage object), and offline previews show the placeholder since
+  signed URLs can't be minted offline. Offline covers **metadata edit + read**.
+- **Migration `2026-07-26-realtime-collab-progress-photos.sql` (USER MUST RUN)** enables the live-value
+  stream (`supabase_realtime` + `replica identity full`). Presence/cursors/offline work without it.
+- Verified: `node --check` (module.js + ppr.js). NOT browser-verified (needs 2 signed-in sessions + an
+  offline cycle; auth wall + stalled compositor here). Assets: `offline.js?v=20260726d` +
+  `collab.js?v=20260726c`; progress-photos `module.js?v=20260726d`.
+
 ### 2026-07-22 — Dashboard: remove redundant Program/Workspace tabs from Project Home
 - `dashboard.html` (Project Home) is scoped to ONE selected project, but the **Program** and
   **Workspace** tabs rendered cross-project portfolio rollups (same `portfolioHtml`, different ancestor

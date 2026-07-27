@@ -2,6 +2,29 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Live collaboration + offline metadata edits (Phase 1 & 2) (2026-07-26) — fmlozano
+Wired the shared **PDCollab** (Realtime) + **PDSync** (offline outbox) layers. Progress Photos is the
+**"presence + live, offline-limited"** case: it's uploads, so photo *blobs* can't be queued offline —
+but presence, the live gallery stream, the row cursor and **metadata** edits all work.
+- **Phase 1 (presence + live gallery + row cursor):** `joinCollab()` on load / project switch
+  (`key = progress_photos:<pid>`). Topbar avatars (`#pp-presence`). `openForm(r)` broadcasts "editing
+  this photo"; every close path (×/Cancel/Save) clears it. `paintRemote()` (called at the end of
+  `render()`) flags the photo's `.pp-row .pp-thumbcell` (List) or `.pp-card .pp-cardimg` (Gallery) of
+  whoever has it open. `applyRemoteChange` patches `rows` from postgres_changes (INSERT/UPDATE/DELETE)
+  and re-renders — and **signs a newly-arrived photo's URL** (`signOne`) so the preview shows live.
+- **Phase 2 (offline, metadata only):** the **Edit modal save** routes through `PDSync.write`
+  (field-level LWW: description / trade / works / location / capture date), applied optimistically so
+  it survives offline and syncs on reconnect. **Read-offline:** `load()` caches rows (`pp:<pid>`) and
+  renders from cache on a failed fetch — but **signed image URLs can't be minted offline, so previews
+  show the placeholder**. ⚠️ **Scope:** **Upload (file), delete and download stay online-only** — image
+  blobs can't be queued and a delete removes a storage object. Offline covers **metadata edit + read**.
+- **Migration `../../migrations/2026-07-26-realtime-collab-progress-photos.sql` (USER MUST RUN)** —
+  adds `progress_photos` to `supabase_realtime` + `replica identity full`. Presence/cursors/offline
+  work without it; only the live-value stream needs it.
+- Verified: `node --check` (module.js + ppr.js). **NOT browser-verified** — needs 2 signed-in sessions
+  + an offline cycle, and this env has an auth wall + stalled compositor. Assets: new
+  `offline.js?v=20260726d` + `collab.js?v=20260726c`; `module.js?v=20260726d`.
+
 ## Audit fix: paginate the photo load (2026-07-21)
 `load()` used a single `select('*')` (Supabase caps at 1000), so once a project's library exceeds
 1000 photos the excess were invisible in List/Gallery, unavailable to the PPR slide picker, and

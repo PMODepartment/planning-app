@@ -27,6 +27,66 @@ window.ProgressPhotos = (function () {
   var lightboxIds = [], lightboxAt = 0;
   var projectListeners = [];         // PPR screen subscribes; both share one selector
 
+  // ===== live collaboration (presence + "who's editing this photo") =========
+  // Shared PDCollab layer (Supabase Realtime): topbar avatars, a colored flag on
+  // the photo row/card a teammate has open in the Edit modal, and live gallery
+  // updates when someone saves/uploads/deletes. Images themselves still need a
+  // connection (the signed-URL preview is fetched on the remote change), but the
+  // gallery structure + metadata stream live.
+  var _collab = null, _remoteSel = {};
+  function _selfName() { return (profile && (profile.name || profile.email)) || 'Someone'; }
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    _remoteSel = {};
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: 'progress_photos:' + pid, table: TABLE, projectId: pid,
+      self: { id: uid, name: _selfName() },
+      onPresence: function (members) {
+        renderPresence(members);
+        _remoteSel = {}; members.forEach(function (m) { if (!m.self && m.sel) _remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; });
+        paintRemote();
+      },
+      onSelection: function (d) { if (d.sel) _remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel }; else delete _remoteSel[d.id]; paintRemote(); },
+      onRemoteChange: applyRemoteChange
+    });
+  }
+  function renderPresence(members) { var el = $('pp-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(members || []) : ''; }
+  function broadcastCollabSel(photoId, editing) { if (_collab) _collab.setSelection(photoId ? { rowId: photoId, editing: !!editing } : null); }
+  function paintRemote() {
+    if (!window.PDCollab) return;
+    var host = $('pp-view'); if (!host) return;
+    PDCollab.clearCells(host);
+    Object.keys(_remoteSel).forEach(function (k) {
+      var m = _remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return;
+      var rid = (window.CSS && CSS.escape) ? CSS.escape(String(m.sel.rowId)) : m.sel.rowId;
+      var node = host.querySelector('.pp-row[data-id="' + rid + '"] .pp-thumbcell') ||
+                 host.querySelector('.pp-card[data-id="' + rid + '"] .pp-cardimg') ||
+                 host.querySelector('[data-id="' + rid + '"]');
+      if (node) PDCollab.paintCell(node, m);
+    });
+  }
+  async function applyRemoteChange(payload) {
+    var evt = payload.eventType || payload.event;
+    var rec = payload['new'] || payload.record || null, old = payload['old'] || payload.old_record || null;
+    if (evt === 'DELETE') { var did = old && old.id; if (did == null) return; rows = rows.filter(function (x) { return String(x.id) !== String(did); }); }
+    else if (rec) {
+      var j = -1; for (var i = 0; i < rows.length; i++) { if (String(rows[i].id) === String(rec.id)) { j = i; break; } }
+      if (j < 0) rows.push(rec); else rows[j] = rec;
+      // A newly-inserted / re-pathed photo has no signed URL yet — sign it so the
+      // preview shows live (needs a connection; falls back to the placeholder).
+      if (rec.photo_url && !urlCache[rec.photo_url]) { try { await signOne(rec.photo_url); } catch (e) {} }
+    } else return;
+    if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);
+    fillFilterOptions();
+    render();
+  }
+  async function signOne(path) {
+    var res = await sb().storage.from(BUCKET).createSignedUrl(path, SIGN_TTL);
+    if (res && res.data && res.data.signedUrl) urlCache[path] = res.data.signedUrl;
+  }
+
   // Trades mirror the WPM (procurement) trade vocabulary so photos, work
   // packages and cash-out all speak the same language.
   var TRADES = [
@@ -79,6 +139,7 @@ window.ProgressPhotos = (function () {
     wire();
     syncChrome();
     await load();
+    joinCollab();
   }
 
   async function fillProjects() {
@@ -114,6 +175,7 @@ window.ProgressPhotos = (function () {
       sessionStorage.setItem('pd_project_name', projName);
       restoreUI(); syncChrome(); notifyProject();
       await load();
+      joinCollab();
     };
     // List/Gallery is the shared .pd-viewtoggle. NB: `.pp-tab` now means the
     // topbar's Photos|PPRs screen tabs — don't select on it here.
@@ -167,7 +229,16 @@ window.ProgressPhotos = (function () {
       var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
       if (last) q = q.gt('id', last);
       var res = await q;
-      if (res.error) { host.innerHTML = ''; UI.toast(res.error.message, 'error'); return; }
+      if (res.error) {
+        // Offline / fetch failed: fall back to the read-cache so the gallery still
+        // opens (metadata edits made offline queue via PDSync and sync on reconnect).
+        // Signed image URLs can't be minted offline → previews show the placeholder.
+        if (window.PDSync) {
+          var c = await PDSync.cacheGet('pp:' + pid);
+          if (c && c.rows) { rows = c.rows.slice(); fillFilterOptions(); render(); return; }
+        }
+        host.innerHTML = ''; UI.toast(res.error.message, 'error'); return;
+      }
       var batch = res.data || []; all = all.concat(batch);
       if (batch.length < 1000) break; last = batch[batch.length - 1].id;
     }
@@ -180,6 +251,7 @@ window.ProgressPhotos = (function () {
       return sa - sb2;
     });
     rows = all;
+    if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);   // keep the offline cache current
 
     await signAll();
     fillFilterOptions();
@@ -282,6 +354,7 @@ window.ProgressPhotos = (function () {
     host.innerHTML = (view === 'gallery' ? galleryHTML(list) : listHTML(list));
     hydrate(host);
     wireRows(host);
+    paintRemote();
   }
 
   function hydrate(host) { if (window.Icons && Icons.hydrate) Icons.hydrate(host); }
@@ -511,6 +584,7 @@ window.ProgressPhotos = (function () {
 
   // ----------------------------------------------------------- edit/delete ---
   function openForm(r) {
+    broadcastCollabSel(r.id, true);   // tell other viewers I'm editing this photo
     var html =
       '<div class="pd-modal-header"><h3>Edit photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
@@ -534,6 +608,10 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn pd-btn-primary" id="pp-e-save">Save</button></div>';
 
     var m = openModal(html, 560);
+    // Clear the "editing this photo" cursor on every close path (× / Cancel).
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
+      b.onclick = function () { broadcastCollabSel(null); m.close(); };
+    });
     $('pp-e-save').onclick = async function () {
       this.disabled = true;
       var patch = {
@@ -544,10 +622,22 @@ window.ProgressPhotos = (function () {
         location: $('pp-e-loc').value.trim() || null,
         updated_at: new Date().toISOString()
       };
-      var res = await sb().from(TABLE).update(patch).eq('id', r.id);
-      if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
-      m.close(); UI.toast('Photo updated', 'ok');
-      await load();
+      // Offline-capable metadata edit: apply optimistically, then route through
+      // PDSync (field-level LWW; queues offline and syncs on reconnect). Only the
+      // description/trade/works/location/date change — the image is untouched.
+      Object.assign(r, patch);
+      broadcastCollabSel(null); m.close();
+      fillFilterOptions(); render();
+      if (window.PDSync) {
+        var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: patch });
+        if (!w.ok) { UI.toast(w.error ? w.error.message : 'Save failed', 'error'); return; }
+        UI.toast(w.queued ? 'Saved on this device — will sync when you reconnect' : 'Photo updated', 'ok');
+        PDSync.cachePut('pp:' + pid, rows);
+      } else {
+        var res = await sb().from(TABLE).update(patch).eq('id', r.id);
+        if (res.error) { UI.toast(res.error.message, 'error'); return; }
+        UI.toast('Photo updated', 'ok');
+      }
     };
   }
 
