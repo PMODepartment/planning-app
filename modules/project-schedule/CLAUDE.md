@@ -34,6 +34,16 @@ is confirmed APPLIED.**
   rAF/screenshot caveats above — NOT a product defect: the probe proves the stream delivers, and the
   lightweight page (progress-photos) streamed fine in the same session. **Needs a real foreground
   two-session test** to watch the grid patch itself (open two browsers on the same project, edit in one).
+- **Two-tab foreground attempt (2026-07-27, same session) — blocked by the environment, not the code.**
+  Opened Project Schedule on **XERTEST** in two Chrome tabs; **both channels reported `joined`** (the
+  lighter page kept its sockets alive, unlike the 25k GPR101 page). Fired a DB insert from tab A and
+  sync-read tab B's grid — but tab B showed **0 painted rows**: its grid render is **rAF-gated**, and a
+  Chrome tab that is not the OS-foreground window (Chrome sits behind the Claude app during automation)
+  throttles rAF to a standstill, so the observer DOM never repaints even though the realtime event is
+  delivered. Async fetch callbacks on the backgrounded heavy page also stall. **Conclusion: the visual
+  grid-patch cannot be observed from automation** — it requires two real on-screen browser windows.
+  Everything that does not need a live repaint is green (migration applied, stream delivers, presence,
+  cursor) and the apply→rebuild→render logic is Node-harness-verified. Test insert cleaned up (0 leftover).
 - **Data integrity:** all writes were on the XERTEST sandbox or a single restored GPR101 field
   (`percent_complete` 0→42→0, confirmed back to 0); every test row deleted (0 leftover, exact
   `activity_id` match). Nothing left in any real project.
