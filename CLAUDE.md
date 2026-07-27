@@ -77,6 +77,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-27 — Project Schedule collab: signed-in re-verification (migration confirmed, stream delivers)
+- Re-verified Project Schedule's live collaboration on the deployed site, signed in, with a simulated
+  second user. **Presence** ✅ (avatars, 2nd member live on GPR101 + XERTEST). **Cell cursor** ✅ (Test B
+  editing an `activity_name` cell painted that cell with a "TB" flag). **Live-value stream** ✅ *proven at
+  the infrastructure level* — an isolated probe subscribing to `postgres_changes` on `project_schedule`
+  returned SUBSCRIBED and **received an INSERT event**, so the `2026-07-26-realtime-collab-project-schedule.sql`
+  migration IS applied and events deliver.
+- ⚠️ The module's own live-apply couldn't be watched end-to-end this session: on the heavy ~690KB page,
+  backgrounded during automation, the tab throttles so hard the module's channel goes CHANNEL_ERROR and
+  awaited CDP evals time out (the documented rAF/backgrounded artifact, not a defect). Needs a real
+  **foreground two-browser** test to see the grid patch itself.
+- Data integrity: all test writes on the XERTEST sandbox or one restored GPR101 field; 0 leftover rows.
+  Docs-only change (no code) — the `collab.js?v=20260727b` buildMembers fix from earlier also applies here.
+
 ### 2026-07-27 — Collaboration rollout: the three analytics modules (S-Curve, Cash Flow, Portfolio)
 One pass across the derived/read modules. Each scoped to what's meaningful (no invented cursors):
 - **S-Curve** (read-only, derived from `project_schedule`): **presence + live-refresh + offline

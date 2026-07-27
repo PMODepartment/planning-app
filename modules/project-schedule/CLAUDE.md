@@ -15,6 +15,31 @@ which stays hidden on phones):
   (no edit/drag). **NOT browser-verified at 375px** (auth wall) — worth an eyeball on a real phone. CSS
   `.ps-mg-*` in the `@media (max-width:700px)` block; module-local, no `?v=` bump.
 
+## Live collaboration — signed-in re-verification (2026-07-27) — fmlozano
+Re-verified the PDCollab wiring on the deployed site, signed in, with a simulated second user
+(independent Supabase client on the same channel). **Migration `2026-07-26-realtime-collab-project-schedule.sql`
+is confirmed APPLIED.**
+- ✅ **Presence** — GPR101 + XERTEST both show the topbar avatars; a 2nd member (Test B) appeared live.
+- ✅ **Cell cursor** — Test B broadcasting `sel:{rowId,field:'activity_name'}` painted that exact grid
+  cell with B's colour + "TB" flag (`paintRemoteCollab`), on the real row `92fa6007…`.
+- ✅ **Live-value stream — infrastructure proven.** An isolated probe channel (light page, fresh client)
+  subscribing to `postgres_changes` on `project_schedule` returned **SUBSCRIBED** and **received the
+  INSERT event** for a test row (filter `project_id=eq.XERTEST`). So the table IS in the
+  `supabase_realtime` publication, RLS/JWT allow the stream, and events deliver.
+- ⚠️ **The module's own live-apply could NOT be confirmed end-to-end in-session.** On the heavy ~690KB
+  Project Schedule page, while Chrome sits **behind** the Claude app (backgrounded), the tab throttles
+  hard: the module's realtime channel goes to **CHANNEL_ERROR** (heartbeat starved) and CDP `evaluate`
+  calls that `await` across a rAF-gated render **time out at 45s**. A test insert therefore did not visibly
+  patch the grid *in that throttled state*. This is the **same documented automation artifact** as the
+  rAF/screenshot caveats above — NOT a product defect: the probe proves the stream delivers, and the
+  lightweight page (progress-photos) streamed fine in the same session. **Needs a real foreground
+  two-session test** to watch the grid patch itself (open two browsers on the same project, edit in one).
+- **Data integrity:** all writes were on the XERTEST sandbox or a single restored GPR101 field
+  (`percent_complete` 0→42→0, confirmed back to 0); every test row deleted (0 leftover, exact
+  `activity_id` match). Nothing left in any real project.
+- The `collab.js` **buildMembers sel-ref fix** (`?v=20260727b`, prior turn) applies here too — the avatar
+  editing dot no longer masked by a stale presence ref when a user has multiple tabs.
+
 ## Offline editing + sync — Phase 2 (2026-07-26) — fmlozano
 Wired the shared **PDSync** outbox (`assets/js/offline.js`): inline-edit the schedule offline, sync on
 reconnect.
