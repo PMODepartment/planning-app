@@ -21,9 +21,25 @@ but presence, the live gallery stream, the row cursor and **metadata** edits all
 - **Migration `../../migrations/2026-07-26-realtime-collab-progress-photos.sql` (USER MUST RUN)** —
   adds `progress_photos` to `supabase_realtime` + `replica identity full`. Presence/cursors/offline
   work without it; only the live-value stream needs it.
-- Verified: `node --check` (module.js + ppr.js). **NOT browser-verified** — needs 2 signed-in sessions
-  + an offline cycle, and this env has an auth wall + stalled compositor. Assets: new
-  `offline.js?v=20260726d` + `collab.js?v=20260726c`; `module.js?v=20260726d`.
+- Verified: `node --check` (module.js + ppr.js). Assets: new `offline.js?v=20260726d` +
+  `collab.js?v=20260726c`; `module.js?v=20260726d`.
+- **LIVE-VERIFIED two-session (2026-07-27, deployed site, signed in as Fernando Lozano on GPR101).**
+  Migration confirmed applied — the module's channel reports `state:"joined"`. A simulated second user
+  (independent Supabase client, distinct id, same `collab:progress_photos:GPR101` channel) proved every
+  path against the real deployed module: **presence** roster rendered both avatars (FL + TU);
+  **live gallery** streamed a DB INSERT (0→1 live), UPDATE (description/trade patched live) and DELETE
+  (row removed live, 0); **row cursor** — user B's "editing this photo" painted the correct photo's
+  `.pp-thumbcell` with B's colour + "TU" flag, and it **survives subsequent live re-renders** (verified
+  by a follow-up UPDATE). No console errors; test row cleaned up (0 leftover).
+- ⚠️ **Leave-reconciliation caveat (all collab modules, not PP-specific):** a peer that disconnects
+  **abruptly** (killed socket, no clean websocket close) may leave a **stale avatar** on other clients
+  until they re-sync/reload — a fresh join shows the correct roster. A real browser-tab close sends a
+  clean close, so `collab.js`'s bound `leave` handler fires normally. Confirmed: after B's abrupt
+  disconnect, reloading tab A showed only FL server-side.
+- ⚠️ **Not exercised live:** the **offline** path (queue an edit with the network down → reconnect →
+  sync) — that needs a real offline cycle, which the console-driven harness can't fake convincingly.
+  The online metadata-save-through-PDSync path is exercised implicitly (write() does the same direct op
+  online). Worth a manual DevTools-offline pass.
 
 ## Audit fix: paginate the photo load (2026-07-21)
 `load()` used a single `select('*')` (Supabase caps at 1000), so once a project's library exceeds

@@ -77,6 +77,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-07-27 — Progress Photos collab: live two-session verification (migration confirmed)
+- User ran `2026-07-26-realtime-collab-progress-photos.sql`; verified the whole transport **live on the
+  deployed site**, signed in (Fernando Lozano) on GPR101, driving the real module via the browser. The
+  module's channel reports `state:"joined"` (migration active). A **simulated second user** (independent
+  Supabase client, distinct id, same `collab:progress_photos:GPR101` channel) proved: **presence** (both
+  avatars FL + TU rendered), **live gallery** (DB INSERT 0→1, UPDATE, DELETE all streamed live), and the
+  **row cursor** (B's "editing" painted the right photo's `.pp-thumbcell` with a "TU" flag and survived
+  subsequent live re-renders). No console errors; test row cleaned up.
+- ⚠️ **Leave-reconciliation caveat (applies to ALL collab modules):** an **abrupt** disconnect (killed
+  socket, no clean close) can leave a stale avatar on peers until they re-sync/reload; a real tab close
+  sends a clean websocket close so the bound `leave` handler fires. Confirmed a fresh join shows the
+  correct roster (only FL after B dropped).
+- ⚠️ **Offline path not exercised live** (needs a real network-down→reconnect cycle; the console harness
+  can't fake it). Online save-through-PDSync is covered since `write()` does the same direct op online.
+
 ### 2026-07-26 — Collaboration rollout: Progress Photos (Phase 1 + 2, offline-limited)
 - Wired PDCollab + PDSync into **Progress Photos** — the deliberately **"presence + live,
   offline-limited"** case: it's uploads, so photo *blobs* can't be queued offline. Scope delivered:
