@@ -128,11 +128,10 @@
     .ps-gantt-tools .ps-menu { left:auto; right:0; }
     /* tab-group separator in the single detail-tab strip */
     .ps-dt-sep { width:1px; align-self:stretch; background:var(--pd-line); margin:3px 8px; flex:none; }
-    /* Layout modes: grid-only hides the bars. "Gantt" keeps the (resizable/hideable) column
-       table on the left of the bars like Primavera — narrower by default; hide columns via the
-       eye menu or drag the divider to shrink it toward a bars-only view. */
+    /* Layout modes are symmetric: grid-only hides the bars (+ divider); gantt-only hides the
+       activity grid (+ divider) entirely, so the Gantt bars fill the pane. */
     .ps-split.ps-grid-only .ps-gantt-pane, .ps-split.ps-grid-only .ps-divider { display:none; }
-    .ps-split.ps-gantt-only .ps-grid-pane { flex:0 0 300px; }
+    .ps-split.ps-gantt-only .ps-grid-pane, .ps-split.ps-gantt-only .ps-divider { display:none; }
     /* Single row, never wraps. Items are flex:none (see .ps-tb-row rule above) so they don't
        squish; the search is the only flexible item and shrinks first. If the row still can't fit
        an extremely narrow viewport it scrolls horizontally inside itself (only then does overflow
