@@ -1210,7 +1210,6 @@
         <div class="ps-ws" id="ps-workspace"></div>
         <div class="ps-menu ps-projsel-menu" id="ps-projsel-menu"></div>
       </div>
-      <span class="ps-datadate-badge" id="ps-datadate-badge" title="As-of date driving the schedule — change it in Schedule ▸ Data Date">Data Date: —</span>
       <span class="ps-fresh" id="ps-fresh" style="display:none;"></span>
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
            before #user-bar, so these sit immediately beside the night-mode button -->
@@ -10397,9 +10396,12 @@
     _resetEntry();   // a mouse click starts a fresh entry context
     if (e.shiftKey && _cellAnchor) { _cellSel = { r0: _cellAnchor.r, c0: _cellAnchor.c, r1: ri, c1: ci }; }
     else { _cellAnchor = { r: ri, c: ci }; _cellSel = { r0: ri, c0: ci, r1: ri, c1: ci }; }
-    // Broadcast my active cell to other viewers (row id + field, via the column meta).
-    var _d = DL[ri], _meta = _CELL_META[ci];
-    broadcastCollabSel(_d && _d.id, _meta && _meta.f, false);
+    // Broadcast my active cell to other viewers (row id + field). Read the field from the
+    // clicked cell's OWN data-field — not _CELL_META[ci], which is keyed to the legacy built-in
+    // column order and is out of sync with the live grid (POC / %/ Float / Var / dynamic columns),
+    // so the meta lookup mislabeled most columns (or returned null → fell back to the name cell).
+    var _d = DL[ri];
+    broadcastCollabSel(_d && _d.id, (cellEl.getAttribute && cellEl.getAttribute('data-field')) || null, false);
   }
   // Display text for a cell (used for the TSV written to the system clipboard).
   function _cellText(r, ci) {
