@@ -108,8 +108,10 @@
 }
 .pp-grid-head, .pp-row {
   display: grid;
-  grid-template-columns: 120px minmax(180px, 1.4fr) 150px 150px 160px 120px 118px;
-  min-width: 980px; align-items: center;
+  /* last column holds up to 4 row-action buttons (download/view/edit/delete):
+     4×27px + gaps + padding ≈ 150px, so 118px clipped the delete button. */
+  grid-template-columns: 120px minmax(180px, 1.4fr) 150px 150px 160px 120px 158px;
+  min-width: 1016px; align-items: center;
 }
 .pp-grid-head {
   position: sticky; top: 0; z-index: 2;
@@ -155,7 +157,9 @@
 }
 
 /* ---- Row actions --------------------------------------------------------- */
-.pp-rowacts { display: flex; gap: 3px; padding: 0 6px; }
+/* The actions cell must never clip its buttons (unlike text cells, which ellipsize). */
+.pp-actcell { overflow: visible; }
+.pp-rowacts { display: flex; gap: 3px; padding: 0 6px; justify-content: flex-end; }
 .pp-iconbtn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 27px; height: 27px; cursor: pointer; font-size: 13px;
