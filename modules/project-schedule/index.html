@@ -5930,7 +5930,9 @@
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
       return '<div class="ps-grid-row ps-wbs-row ps-wl' + Math.min(depth, 5) + altc + (r.id === selId ? ' ps-row-sel' : '') + '" data-i="' + i + '" data-code="' + esc(code) + '" data-wbsid="' + esc(String(r.id || '')) + '">' +
         '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
-        '<div class="ps-cell c-id" style="padding-left:' + idPad + 'px;">' + esc(r._realCode || r.wbs || '') + '</div>' +
+        // Hide the Activity ID (WBS code) on the top two WBS levels (L1 = depth 0, L2 = depth 1)
+        // per request — those summary rows read cleaner without their dotted code.
+        '<div class="ps-cell c-id" style="padding-left:' + idPad + 'px;">' + (depth <= 1 ? '' : esc(r._realCode || r.wbs || '')) + '</div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
         '<div class="ps-cell c-status"></div>' +
         (function () { var blsp = (r._dkind === 'group') ? null : wbsBlSpan(r);
