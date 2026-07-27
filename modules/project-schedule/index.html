@@ -4223,14 +4223,20 @@
     computeCPM();   // populates _relObjs / _succObjs so we can detect linked activities
     var all = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
     var linked = all.filter(function (t) { return (t._relObjs && t._relObjs.length) || (t._succObjs && t._succObjs.length); });
+    // If NO activity has a relationship yet, don't leave the view blank with just a hint —
+    // show every activity as a node (a network with no edges) so the view always renders
+    // something. The checkbox is auto-on and its label explains it. Once links exist, the
+    // default is to show only the linked set (unticked) with the toggle to include the rest.
+    var noLinks = linked.length === 0;
+    var showAll = netShowAll || noLinks;
     var head = '<div class="ps-net-head">' +
-      '<label><input type="checkbox" id="ps-net-all"' + (netShowAll ? ' checked' : '') + '> Show unlinked activities too</label>' +
-      '<span>Showing <strong>' + (netShowAll ? all.length : linked.length) + '</strong> of ' + all.length + ' activities' +
-      (netShowAll ? '' : ' · ' + (all.length - linked.length) + ' unlinked hidden') + '</span></div>';
-    function wireHead() { var cb = document.getElementById('ps-net-all'); if (cb) cb.onchange = function () { netShowAll = cb.checked; renderNetwork(); }; }
+      '<label><input type="checkbox" id="ps-net-all"' + (showAll ? ' checked' : '') + (noLinks ? ' disabled' : '') + '> Show unlinked activities too</label>' +
+      '<span>Showing <strong>' + (showAll ? all.length : linked.length) + '</strong> of ' + all.length + ' activities' +
+      (noLinks ? ' · no relationships defined yet — add Predecessors or use the Link tool to draw the network'
+               : (showAll ? '' : ' · ' + (all.length - linked.length) + ' unlinked hidden')) + '</span></div>';
+    function wireHead() { var cb = document.getElementById('ps-net-all'); if (cb && !cb.disabled) cb.onchange = function () { netShowAll = cb.checked; renderNetwork(); }; }
     if (!all.length) { host.innerHTML = head + '<div class="ps-empty">No activities to show. Add activities and link them (Predecessors / Link).</div>'; wireHead(); return; }
-    var leaves = netShowAll ? all : linked;
-    if (!leaves.length) { host.innerHTML = head + '<div class="ps-empty">No linked activities yet. Use the <strong>Link</strong> tool or add Predecessors, or tick “Show unlinked activities too”.</div>'; wireHead(); return; }
+    var leaves = showAll ? all : linked;
     if (leaves.length > 300) { host.innerHTML = head + '<div class="ps-empty">Activity Network view is best with &le; 300 activities (currently ' + leaves.length + '). Use Filter or Search to narrow the set.</div>'; wireHead(); return; }
     var rank = {};
     function getRank(t, seen) {
@@ -5795,10 +5801,10 @@
     // Read-only users (viewer / archived project) see the static pill; writers get a one-click
     // dropdown right in the cell so status changes without the right-click → Edit activity round-trip.
     if (!canWrite || window.__viewOnly || window.__archived) {
-      return '<div class="ps-cell c-status"><span class="ps-status-pill ' + cls + '">' + esc(s) + '</span></div>';
+      return '<div class="ps-cell c-status" data-field="status"><span class="ps-status-pill ' + cls + '">' + esc(s) + '</span></div>';
     }
     var opts = STATUS_OPTS.map(function (o) { return '<option value="' + esc(o) + '"' + (o === s ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
-    return '<div class="ps-cell c-status"><select class="ps-status-sel ps-status-pill ' + cls + '" data-id="' + esc(r.id) + '" title="Change status">' + opts + '</select></div>';
+    return '<div class="ps-cell c-status" data-field="status"><select class="ps-status-sel ps-status-pill ' + cls + '" data-id="' + esc(r.id) + '" title="Change status">' + opts + '</select></div>';
   }
   // POC/IBB cell block shared by the WBS-summary and task branches. For summaries the values
   // are the _costMap roll-ups (sums + duration-weighted %s); for tasks they're the row's own
