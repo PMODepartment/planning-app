@@ -8911,6 +8911,7 @@
     var GCOLOR = { ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e' };
     var cfg = null, step = 0, dirty = false, curPid = null, curUid = null, wired = false;
     var uiTrade = 'ST';            // trade being edited/visualised in step 2
+    var quickN = {};               // per-trade last-used Quick bsmt/floors/zones/units counts (UI-only, not persisted)
     var linkDrag = null, stepPos = {}, upWired = false;  // step-3 link canvas drag state
     var pendSrc = null;   // step-3 tower click-to-connect: pending source node
     var seqZoom = 8;      // step-3 schedule zoom (px per day)
@@ -8994,6 +8995,9 @@
     }
     function locList() { var out = []; GROUPS.forEach(function (tr) { cfg.zoning[tr].floors.forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { out.push(l); }); }); }); return out; }
     function tradeActs(tr) { return cfg.activities.filter(function (a) { return a.group === tr; }); }
+    // Trades actually assigned to a Step-1 activity, in GROUPS order — later steps only ever deal
+    // with these, not the full discipline universe.
+    function usedGroups() { var seen = {}; cfg.activities.forEach(function (a) { if (a.group) seen[a.group] = 1; }); return GROUPS.filter(function (g) { return seen[g]; }); }
     function included(uid, aid) { return !cfg.scopeOff[uid + '|' + aid]; }
     function actDur(a, basis) { return Math.max(0, +(basis === 'ext' ? a.durExt : a.durInt) || 0); }
     function nodeDays(loc, basis) { return tradeActs(loc.trade).reduce(function (t, a) { return t + (included(loc.uid, a.id) ? actDur(a, basis) : 0); }, 0); }
@@ -9217,9 +9221,16 @@
       return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;height:auto;">' + svg + '</svg>';
     }
     function stLevels(host) {
+      var used = usedGroups();
+      if (!used.length) {
+        host.innerHTML = '<h2>2 · Substructure &amp; Superstructure — per trade</h2>' +
+          '<div class="sbld-empty">No trades yet — add activities in step 1 and assign each one a trade. The trades you use there will show up here.</div>';
+        return;
+      }
+      if (used.indexOf(uiTrade) < 0) uiTrade = used[0];
       var tr = uiTrade, zn = cfg.zoning[tr];
       function qv(id, def) { var v = +host.querySelector(id).value; return isNaN(v) ? def : v; }
-      var chips = '<div class="sbld-tradechips">' + GROUPS.map(function (g) {
+      var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
         var n = leafCount(g);
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + GCOLOR[g] + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
@@ -9242,12 +9253,15 @@
           '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
           '<div class="sbld-znwrap">' + zonesHtml + '</div></div>';
       }).join('') : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' yet.</div>';
+      // Quick-generate inputs keep the counts the planner last generated with for THIS trade, so a
+      // value they just typed (e.g. units) stays put instead of snapping back to 0 on re-render.
+      var qd = quickN[tr] || { B: 0, F: 5, Z: 2, U: 0 };
       host.innerHTML = '<h2>2 · Substructure &amp; Superstructure — per trade</h2>' +
         '<p class="sbld-lede">Pick a trade, add its <b>floors</b> (superstructure) and any <b>basements</b> (substructure), then optionally split each into <b>zones</b> and <b>units</b>. Zones/units are optional. The tower on the right shows superstructure above the grade line and basements below.</p>' +
         chips +
         '<div class="sbld-lvlgrid">' +
         '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
-        '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="0" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="5" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="2" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="0" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
+        '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
         floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
         '<div class="sbld-tower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
         '</div>';
@@ -9257,6 +9271,7 @@
       host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, zones: [] }); cfg.links = []; markDirty(); render(); };
       host.querySelector('#b-quick').onclick = function () {
         var B = Math.max(0, Math.min(20, qv('#q-base', 0))), F = Math.max(1, Math.min(80, qv('#q-floors', 1))), Z = Math.max(0, Math.min(20, qv('#q-zones', 0))), U = Math.max(0, Math.min(20, qv('#q-units', 0)));
+        quickN[tr] = { B: B, F: F, Z: Z, U: U };
         if (zn.floors.length && !confirm('Replace the ' + zn.floors.length + ' existing floor(s) for ' + GLABEL[tr] + '?')) return;
         function mkZones() { var zs = []; for (var j = 1; j <= Z; j++) { var us = []; for (var k = 1; k <= U; k++) us.push({ id: uidv(), code: 'U' + k }); zs.push({ id: uidv(), code: 'Z' + j, units: us }); } return zs; }
         zn.floors = [];
@@ -9402,7 +9417,7 @@
       var locs = locList();
       if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>4 · Scope per zone</h2><div class="sbld-empty">Add activities (step 1) and per-trade floors/zones (step 2) first.</div>'; return; }
       var sections = '';
-      GROUPS.forEach(function (tr) {
+      usedGroups().forEach(function (tr) {
         var tlocs = locs.filter(function (l) { return l.trade === tr; }), acts = tradeActs(tr);
         if (!tlocs.length || !acts.length) return;
         var head = '<tr><th>' + e2(GLABEL[tr]) + '</th>' + acts.map(function (a) { return '<th title="' + e2(a.name) + '">' + e2(a.code || a.name) + '</th>'; }).join('') + '</tr>';
@@ -9510,7 +9525,7 @@
       if (grouped) {
         function grp(list, keyFn, ordFn) { var m = {}, ord = []; list.forEach(function (r) { var k = keyFn(r); if (!m[k]) { m[k] = []; ord.push(ordFn(r)); } m[k].push(r); }); return { m: m, ord: ord }; }
         var byTrade = {}; g.rows.forEach(function (r) { (byTrade[r.loc.trade] = byTrade[r.loc.trade] || []).push(r); });
-        GROUPS.forEach(function (tr) {
+        usedGroups().forEach(function (tr) {
           var trRows = byTrade[tr]; if (!trRows || !trRows.length) return;
           var tCode = code(base, ci++); addSummary(tCode, GLABEL[tr]);
           var byF = grp(trRows, function (r) { return r.loc.floor.id; }, function (r) { return r.loc.floor; });
