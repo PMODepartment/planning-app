@@ -2644,3 +2644,140 @@ to dismiss it, the main thread blocks and CDP times out at 45s. It was never a r
 `renderMobile`-alone ~865ms measurement on OPW101 stands (OPW is < 4000, no dialog), and the pipeline fix
 is still a real improvement — a phone no longer builds the desktop grid at all — but the "17k froze the
 renderer" claim was a mis-diagnosis of a modal dialog.
+
+### 2026-07-24 — Schedule Builder step 2: optional Zone → Unit hierarchy (Trade → Floor → Zone? → Unit?)
+- Recovered from a stray git stash-pop that left conflict markers on the stale `module/project-schedule`
+  branch; re-applied this work cleanly on `main` (which already had the builder + typed links + resize).
+- **Model:** each zone now has `units[]`. Leaves (`leavesOfFloor`/`locList`): a floor with no zones is a
+  leaf; a zone with no units is a leaf; else each unit is a leaf. `locLabel` joins present codes;
+  `cellKey`=zone#unit code for cross-trade matching; `floorIndexOf` for the takt index.
+- **Step 2 editor** rebuilt as a nested per-floor card: floor code/name + **+ Zone**; each zone row has a
+  **Units ± stepper** (0 = none) + delete; "Quick" now floors × zones × units. Tower visual nests
+  floors → zones → units.
+- **autoTrace** reworked to index leaves by (trade, floorIdx, cellKey) so the vertical climb + cross-trade
+  floor-lead match by zone+unit. **Step 3 tower** nodes, **scope** matrix, and **Push-to-Schedule**
+  grouping (Trade → Floor → Zone → Unit sub-WBS, each level optional) all leaf-aware.
+- Verified: inline JS parses; leaves/cellKey unit-checked (2 floors × 1 zone × 2 units = 8 leaves,
+  keys Z1#U1/Z1#U2); loads with no console errors. Change Order incorporation still pending (next).
+
+### 2026-07-24 — Schedule Builder: bigger tower, centered steppers, relationships carried on push
+- **Tower visual enlarged** (W 320→430, floor height 40→52, bigger fonts) and its column widened
+  (minmax(400px,460px)); floor/zone/unit labels are more legible.
+- **± steppers centered** (`display:inline-flex; align-items:center; justify-content:center`) and
+  slightly larger; count font bumped.
+- **Relationships carried into the pushed schedule.** `pushToSchedule` now assigns clean sequential
+  activity ids (`SB1`, `SB2`… — dotted WBS codes would break the predecessor parser), chains each
+  location's activities FS internally, and maps every zone→zone link (FS/SS/FF/SF + lag) onto the
+  correct end-activities as `predecessors` tokens (e.g. `SB5+3`, `SB2 SS+2`, `SB9 FF-1`) — matching
+  the module's `predRels` format. Start/End markers are skipped. So the generated CPM logic lands in
+  the live schedule, not just the dates.
+- Verified: inline JS parses; predecessor-token + leaves/cellKey logic unit-checked; loads with no
+  console errors.
+
+### 2026-07-24 — Data date badge restored, actual-duration fix, Activity-Progress collapse, per-project saved views
+- **Data Date badge back in the header.** `renderDataDateBadge` targeted `#ps-datadate-badge`, but the
+  element had been dropped from the topbar (only the CSS class remained) so it silently no-op'd. Re-added
+  a clickable badge next to the tools cluster; clicking it opens the Schedule dialog to change the date.
+- **Duration now updates on actualised finish.** The grid **Dur** column showed `_origDurOf` (planned/
+  baseline span via `end_date`), so changing an actualised activity's finish never moved it. For a
+  completed activity (has `actual_finish`) the Dur cell now shows the **actual span** (`actualDurLive` =
+  actual finish − actual start + 1), read-only, updating live when the finish changes.
+- **Activity Progress table: WBS collapsible** like the Gantt. Added ▼/► carets on WBS rows (toggle the
+  shared `collapsed` map → `renderProgressView`) + **Expand/Collapse all** buttons in the table control bar.
+  It already respected `hiddenRow`, so it inherits the schedule's default-collapsed depth too.
+- **Saved layouts are now PER PROJECT and include the chart template.** `ps_views` re-keyed to
+  `{ <pid>: { name: view } }` (`loadViews`/`saveViews`); a saved layout also captures the
+  Activity-Progress **charts** (`chartsList()`) and `applyView` restores them (`setCharts`). Columns
+  (hidden/order/widths/renames) + filters + grouping + zoom were already in a view. Tooltip updated.
+- Verified: inline JS parses; module loads with no console errors. Change Order incorporation still pending.
+
+### 2026-07-24 — Activity Progress chart: fix scroll reset when picking activities
+- Ticking an activity in a chart card's Data checklist called `_redrawCard` (full card rebuild), so the
+  checklist re-rendered and its scroll snapped to the top after every click. The `.ps-cchk` handler now
+  updates only the chart body (`.ps-chart-pan` innerHTML = `_chartSVG(cfg)`) and the "Data (N)" count in
+  place — the checklist DOM + scroll position are preserved, so you can tick multiple activities in a row.
+
+### 2026-07-24 — Activity Progress chart: "Full labels" option (untruncated, scale with resize)
+- Category/pie labels were truncated to ~14–16 chars with an ellipsis, so long activity/WBS names were
+  cut off. Added a **Full labels** toggle to each chart's ⚙ settings (`cfg.fullLabels`). When on,
+  `_pieLabel` and `_barsSVG` render the whole text; `_barsSVG` also reserves margin for it (horizontal:
+  wider left margin `max(92, lblPx+10)`; column: extra bottom margin `lblPx*0.36`, `lblPx ≈ maxLabelLen
+  × tickFont × 0.58, capped 280). Since chart SVGs scale to the card via viewBox, resizing the card
+  bigger enlarges the full labels so the whole text is readable. Combine with the Data-label / Axis-label
+  font-size controls already in the panel.
+
+### 2026-07-24 — Planning logic: consistent duration recompute + contradiction errors on actual dates
+- `_dateEditPatch` hardened so actualising / re-actualising dates keeps every duration field consistent
+  and blocks contradictions with clear toasts:
+  - **Actual Finish requires an Actual Start** ("an activity can't finish before it has started").
+  - Actual Finish before Actual Start / after Data Date → error (kept, message improved).
+  - **Actual Start can't be after an existing Actual Finish**, and you can't clear an Actual Start while
+    an Actual Finish is set (reopen the finish first).
+  - Re-actualising the finish recomputes Actual = finish−start+1, Remaining = 0, %=100, Completed;
+    Planned + At-Completion are derived from these so they update on render. Clearing the finish reopens
+    to In Progress, reseeds Remaining, and drops % below 100.
+- Verified: inline JS parses; module loads with no console errors.
+
+### 2026-07-24 — Schedule Builder: Internal vs External durations (per activity, generate both)
+- Each activity now carries **two durations** — `durInt` (internal / target) and `durExt` (external /
+  contract). Step 1's editor has Int./Ext. columns (legacy single `duration` auto-migrates into both).
+- `nodeDays(loc, basis)` + `generate(basis)` take a basis (`'int'`|`'ext'`); `actDur(a, basis)` picks the
+  field. Step 3's link canvas uses internal for its bar lengths (relationships are basis-independent).
+- **Step 5 shows BOTH schedules side by side** (`_genPanel` × Internal/External): each with total
+  duration, start, finish, duration-per-zone bars, and the grouped activity table — so you can compare
+  the target vs contract finish dates. Separate CSV per basis.
+- **Push** modal gained a "Schedule to push" select (Internal / External); `pushToSchedule(pc, grp, basis)`
+  generates that basis before writing (relationships still carried).
+- Verified: inline JS parses; module loads with no console errors.
+
+### 2026-07-24 — WBS status pills, WBS selection highlight, dark-mode highlight, push relationships confirmed
+- **WBS/summary rows now show a rolled-up status pill** (Completed / In Progress / Not Started). Counters
+  (`done`/`prog`/`total`) added to the `_costMap` roll-up in `rebuild`; `_wbsStatusPill(code)` renders the
+  pill in the WBS row's status cell (all done → Completed, any started/done → In Progress, else Not Started).
+- **Clicking a WBS now highlights it.** Root cause: the WBS row's `--wl` shade on its frozen cells has
+  higher CSS specificity than `.ps-row-sel`, so the selection tint was hidden. Added
+  `.ps-grid-pane .ps-wbs-row.ps-row-sel > .c-num/.c-id/.c-name { background:var(--pd-red-light) }` (selId was
+  already being set on WBS click).
+- **Dark-mode highlight fixed.** `--pd-red-light` is a near-black maroon in dark mode, so the selection/
+  spotlight barely read. Added `html.pd-dark` overrides using translucent red (`rgba(238,49,36,.22)`) for
+  the selected row + frozen cells + Gantt sel-band, and a theme-neutral translucent blue
+  (`rgba(37,99,235,.12)`) for `.ps-spotrow` (works in both light and dark).
+- **Push relationships confirmed migrating.** `pushToSchedule` already maps each zone link (FS/SS/FF/SF +
+  lag) onto the pushed activities' `predecessors` (SB-ids) and chains each location FS internally — verified
+  the block is intact after the earlier git recovery. (Arrows show once Critical Path / relationship lines
+  are toggled on.)
+- Verified: inline JS parses; module loads with no console errors.
+
+### 2026-07-24 — Schedule Builder: renamed trades + basements (substructure)
+- **Trades** are now **Structural · Architectural · MEPF · Allied Services** (GLABEL/GROUPS updated;
+  dropped the old 'Other'; ST/AR relabelled). Existing 'OTHER' zoning/activities normalise away
+  (activities fall back to ST).
+- **Basements / substructure.** Floors carry an optional `sub:true`. Step 2 gains a **+ Basement**
+  button (inserts at index 0 = deepest, so takt builds bottom-up) and a **basements** field in Quick
+  (`B bsmt + F flr × Z zn × U un`). Basement rows show a **BSMT** badge (dashed card, red header).
+  The **tower** now splits at a **grade line**: superstructure above, basements below (dashed, lower
+  opacity, labelled B1…deepest) with a "grade" marker.
+- Verified: inline JS parses; module loads with no console errors. (Internal/External durations were
+  already served — confirmed via curl; the "not reflected" was a stale browser cache → hard-refresh.)
+
+### 2026-07-24 — Schedule Builder step 3 equal bars + step 1 row layout
+- **Step 3 schedule bars are now equal-length, laid out by dependency rank** (`computeRanks` =
+  topological depth) instead of day-length. Uniform 44px+ bars spaced by rank → always visible and
+  easy to hit when connecting (previously 0-duration zones collapsed to tiny/overlapping bars). Zoom
+  scales the bar width. Arrows/anchors unchanged.
+- **Step 1 row rebalanced**: Activity Name shortened (`.sbld-actname`, flex 1 130 / max 220) and more
+  room given to Trade (170px, now showing the full trade label) and Interior/Exterior durations (90px
+  each). Header labels updated to Interior/Exterior.
+- Verified: inline JS parses; module loads with no console errors.
+
+### 2026-07-24 — Schedule Builder: activity template download/upload + robust step-3 nodes
+- **Step 1 template import/export.** New **Download template** (CSV: Code, Activity Name, Trade,
+  Interior Duration, Exterior Duration + examples) and **Upload CSV/Excel** buttons. `importActivities`
+  maps columns case-insensitively, resolves the Trade by label or code (Structural/ST → ST, etc.),
+  reads Interior→durInt / Exterior→durExt, and asks replace-vs-append when activities already exist.
+  CSV parsed inline (`parseCsv`), .xlsx via the already-loaded SheetJS (`XLSX`).
+- **Step 3 "no nodes" fixed.** The tower was a floor×trade MATRIX keyed off `floorAxis()` code-matching,
+  which could render empty cells (no visible nodes). Rebuilt as **per-trade sections** — each trade
+  heading → its floors (top first) → a row of zone/unit node buttons — so every location in `locList()`
+  is guaranteed to appear as a clickable node. (Bars on the right remain the equal-length connect targets.)
+- Verified: inline JS parses; module loads with no console errors.

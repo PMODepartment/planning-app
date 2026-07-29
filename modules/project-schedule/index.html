@@ -55,8 +55,9 @@
     /* Topbar tools (OPC puts undo/redo/health/share up in the page header) — same flat style,
        sized to sit beside the theme toggle; the filter dropdown right-aligns so it can't
        overflow the viewport edge. */
-    .ps-datadate-badge { font-size:12px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
-      border:1px solid var(--pd-line); border-radius:999px; padding:3px 11px; white-space:nowrap; margin-left:6px; }
+    .ps-datadate-badge { font:inherit; font-size:12px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
+      border:1px solid var(--pd-line); border-radius:999px; padding:4px 12px; white-space:nowrap; margin-left:6px; flex:none; cursor:pointer; }
+    .ps-datadate-badge:hover { border-color:var(--pd-red); color:var(--pd-ink); }
     /* Freshness badge for the cache-first (stale-while-revalidate) load */
     .ps-fresh { font-size:11px; font-weight:700; border-radius:999px; padding:2px 9px; white-space:nowrap; margin-left:6px; display:inline-flex; align-items:center; gap:5px; }
     .ps-fresh::before { content:""; width:7px; height:7px; border-radius:50%; display:inline-block; }
@@ -282,7 +283,23 @@
     .ps-row-sel > .ps-cell.c-num, .ps-row-sel > .ps-cell.c-id, .ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
     /* Full-width selection highlight: the whole grid row tints, and a matching band spans the Gantt. */
     .ps-grid-pane .ps-grid-row.ps-row-sel { background:var(--pd-red-light); box-shadow:inset 2px 0 0 var(--pd-red); }
+    /* A SELECTED WBS row: its frozen cells carry the --wl shade (higher specificity than .ps-row-sel),
+       which hid the selection tint. Re-assert the selection colour on those cells so clicking a WBS
+       highlights it just like an activity. */
+    .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-num,
+    .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-id,
+    .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
+    /* Dark mode: --pd-red-light is a very dark maroon that barely reads — use a clearer translucent
+       red for the selected row (and its frozen cells) so the highlight is obvious in night mode. */
+    html.pd-dark .ps-grid-pane .ps-grid-row.ps-row-sel,
+    html.pd-dark .ps-row-sel > .ps-cell.c-num, html.pd-dark .ps-row-sel > .ps-cell.c-id, html.pd-dark .ps-row-sel > .ps-cell.c-name,
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-num,
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-id,
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-name { background:rgba(238,49,36,.22); }
+    /* Progress Spotlight: a theme-neutral translucent blue row tint (reads in light AND dark). */
+    .ps-spotrow, .ps-spotrow > .ps-cell.c-num, .ps-spotrow > .ps-cell.c-id, .ps-spotrow > .ps-cell.c-name { background:rgba(37,99,235,.12); }
     .ps-gantt-selband { position:absolute; left:0; background:var(--pd-red-light); z-index:1; pointer-events:none; }
+    html.pd-dark .ps-gantt-selband { background:rgba(238,49,36,.22); }
     /* Header sticky needs extra specificity to beat the later `.ps-grid-row.head .ps-cell
        {position:relative}` rule — otherwise the header wouldn't freeze while the body did,
        re-introducing the very misalignment we're fixing. */
@@ -501,6 +518,8 @@
     .ps-prog-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); padding:6px 10px; border-bottom:1px solid var(--pd-line); position:sticky; top:0; background:var(--pd-card); z-index:3; overflow:hidden; text-overflow:ellipsis; }
     .ps-prog-table td { padding:4px 10px; border-bottom:1px solid var(--pd-line); vertical-align:middle; position:relative; height:var(--prog-rh,38px); overflow:hidden; }
     .ps-prog-table tr.ps-prog-wbs td { background:var(--wl,var(--pd-bg)); font-weight:700; }
+    .ps-prog-caret { cursor:pointer; display:inline-block; width:16px; text-align:center; color:var(--pd-muted); font-size:10px; margin-right:2px; user-select:none; }
+    .ps-prog-caret:hover { color:var(--pd-red); }
     /* Resizers (Activity Progress view only) — drag a header edge to resize a column, a row's bottom to resize all rows. */
     .ps-prog-colres { position:absolute; top:0; right:-4px; width:9px; height:100%; cursor:col-resize; z-index:5; }
     .ps-prog-rowres { position:absolute; left:0; right:0; bottom:-3px; height:7px; cursor:row-resize; z-index:4; }
@@ -1102,7 +1121,17 @@
     .sbld-row { display:flex; gap:8px; align-items:center; }
     .sbld-row .pd-input, .sbld-row .pd-select { height:34px; font-size:13px; }
     .sbld-row .grow { flex:1 1 auto; min-width:0; }
-    .sbld-row .w80 { width:80px; flex:none; } .sbld-row .w120 { width:120px; flex:none; }
+    .sbld-row .w80 { width:80px; flex:none; } .sbld-row .w120 { width:120px; flex:none; } .sbld-row .w70 { width:70px; flex:none; }
+    .sbld-row .w100 { width:100px; flex:none; } .sbld-row .w90 { width:90px; flex:none; } .sbld-row .w170 { width:170px; flex:none; }
+    .sbld-actname { flex:1 1 130px; min-width:90px; max-width:220px; }
+    .sbld-acthdr { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); align-items:center; }
+    .sbld-acthdr span { display:inline-flex; align-items:center; }
+    .sbld-acthdr .grow { flex:1 1 auto; min-width:0; }
+    /* step 5 — Internal vs External side by side */
+    .sbld-gen2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+    .sbld-genpanel { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-card); min-width:0; }
+    .sbld-genh { font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; border-left:4px solid; padding-left:8px; margin-bottom:10px; }
+    @media (max-width:900px){ .sbld-gen2 { grid-template-columns:1fr; } }
     .sbld-del { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; color:var(--pd-bad); }
     .sbld-grab { cursor:grab; color:var(--pd-muted); flex:none; user-select:none; }
     .sbld-tag { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:999px; background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
@@ -1131,8 +1160,23 @@
     .sbld-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:none; }
     .sbld-quick { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); flex-wrap:wrap; }
     .sbld-step2ct { font-size:11px; color:var(--pd-muted); margin-left:4px; }
-    .sbld-znplus, .sbld-znminus { width:30px; height:32px; padding:0; flex:none; font-size:16px; font-weight:700; }
-    .sbld-zncount { min-width:20px; text-align:center; font-variant-numeric:tabular-nums; font-weight:700; }
+    .sbld-znplus, .sbld-znminus, .sbld-unplus, .sbld-unminus { width:30px; height:30px; padding:0; flex:none; font-size:17px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
+    .sbld-zncount { min-width:22px; text-align:center; font-variant-numeric:tabular-nums; font-weight:700; font-size:14px; }
+    /* step 2 — nested floor → zone → unit editor */
+    .sbld-lvlgrid { display:grid; grid-template-columns:minmax(0,1fr) minmax(400px,460px); gap:22px; align-items:start; margin-top:6px; }
+    .sbld-flr { border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); margin-bottom:10px; overflow:hidden; }
+    .sbld-flr-sub { border-style:dashed; }
+    .sbld-flr-sub .sbld-flr-h { background:var(--pd-red-light); }
+    .sbld-subtag { flex:none; font-size:9px; font-weight:800; letter-spacing:.05em; color:var(--pd-red); border:1px solid var(--pd-red-mid); border-radius:4px; padding:2px 5px; }
+    .sbld-flr-h { display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); }
+    .sbld-flr-h .grow { flex:1 1 auto; min-width:0; }
+    .sbld-flr-h .pd-input { height:32px; font-size:13px; }
+    .sbld-addzone { flex:none; font-size:12px; height:30px; }
+    .sbld-znwrap { padding:6px 10px 8px; display:flex; flex-direction:column; gap:6px; }
+    .sbld-znrow { display:flex; align-items:center; gap:6px; }
+    .sbld-znrow .pd-input { height:30px; font-size:13px; }
+    .sbld-zntag { flex:none; font-size:9px; font-weight:800; letter-spacing:.05em; border:1px solid; border-radius:4px; padding:2px 5px; }
+    .sbld-znhint { font-size:12px; color:var(--pd-muted); padding:2px 2px 4px; font-style:italic; }
     .sbld-tower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); position:sticky; top:12px; }
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; margin-bottom:8px; }
     /* step 3 — link canvas */
@@ -1155,6 +1199,8 @@
     .sbld-twr { display:flex; flex-direction:column; gap:4px; flex:1 1 auto; min-height:0; }
     .sbld-twr-floor { display:flex; align-items:stretch; gap:4px; flex:1 1 0; min-height:40px; }
     .sbld-twr-legend { flex:0 0 auto; }
+    .sbld-twr-tradehead { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; margin:8px 0 4px; padding-top:6px; border-top:1px solid var(--pd-line); }
+    .sbld-twr-tradehead:first-child { border-top:none; padding-top:0; margin-top:0; }
     .sbld-twr-lab { flex:none; width:40px; font-size:13px; font-weight:700; color:var(--pd-muted); display:flex; align-items:center; justify-content:flex-end; padding-right:4px; }
     .sbld-twr-trade { flex:1 1 0; display:flex; gap:4px; padding:3px; border:1px dashed var(--pd-line); border-radius:5px; flex-wrap:wrap; justify-content:center; align-items:stretch; }
     .sbld-twr-trade.sbld-twr-empty { border-style:solid; border-color:transparent; }
@@ -1212,6 +1258,7 @@
       <span class="ps-fresh" id="ps-fresh" style="display:none;"></span>
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
            before #user-bar, so these sit immediately beside the night-mode button -->
+      <button class="ps-datadate-badge" id="ps-datadate-badge" title="Data date — click to change (Schedule dialog)">Data Date: —</button>
       <div class="ps-topbar-tools" id="ps-topbar-tools">
         <button class="pd-btn" id="ps-undo" title="Undo" disabled><span data-ico="undo" data-ico-size="16"></span></button>
         <button class="pd-btn" id="ps-redo" title="Redo" disabled><span data-ico="redo" data-ico-size="16"></span></button>
@@ -1271,7 +1318,7 @@
             <button data-zoom="year">Year</button>
           </div>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-collapseto" data-label="Outline" title="Outline — expand all or collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="16"></span></button><div class="ps-menu" id="ps-collapse-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" data-label="Layouts" title="Layouts — saved filter + grouping + columns"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" data-label="Layouts" title="Saved layouts (per project) — columns, filters, grouping &amp; Activity-Progress charts"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
           <button class="pd-btn pd-btn-primary" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
           <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" data-label="Layout" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
@@ -2076,6 +2123,8 @@
     }
     if (field === 'actual_start') {
       if (val && pd(val) > dd) return { error: 'Actual Start (' + Fmt.date(val) + ') can’t be later than the Data Date (' + Fmt.date(dstr(dd)) + ').' };
+      if (val && r.actual_finish && pd(val) > pd(r.actual_finish)) return { error: 'Actual Start (' + Fmt.date(val) + ') can’t be after the Actual Finish (' + Fmt.date(r.actual_finish) + ').' };
+      if (!val && r.actual_finish) return { error: 'Clear the Actual Finish first — a finished activity must keep its Actual Start.' };
       if (val) {
         if (r.actual_finish) { patch.actual_duration = actualDurOf(val, r.actual_finish); }
         else {   // started, not finished → derive remaining/actual duration (planned dates untouched)
@@ -2086,11 +2135,14 @@
       } else { patch.actual_duration = null; patch.remaining_duration = _origDurOf(r); patch.status = 'Not Started'; }
     } else if (field === 'actual_finish') {
       var asx = r.actual_start;
-      if (val && asx && pd(val) < pd(asx)) return { error: 'Actual Finish can’t be before Actual Start (' + Fmt.date(asx) + ').' };
+      if (val && !asx) return { error: 'Enter an Actual Start first — an activity can’t be finished before it has started.' };
+      if (val && asx && pd(val) < pd(asx)) return { error: 'Actual Finish (' + Fmt.date(val) + ') can’t be before the Actual Start (' + Fmt.date(asx) + ').' };
       if (val && pd(val) > dd) return { error: 'Actual Finish can’t be later than the Data Date (' + Fmt.date(dstr(dd)) + ').' };
-      // Actual Finish recorded → Physical % Complete = 100 and Remaining Duration = 0 (policy).
+      // Actual Finish recorded / re-actualised → recompute every duration field consistently:
+      // Actual = finish − start + 1, Remaining = 0, Physical % = 100, Completed. (Planned/At-Completion
+      // are derived from these on render, so changing the finish updates them all.)
       if (val) { patch.actual_duration = actualDurOf(asx, val); patch.remaining_duration = 0; patch.status = 'Completed'; patch.percent_complete = 100; }
-      else if (asx) { var od2 = _origDurOf(r); var fc2 = _fcFields(asx, od2, dd); Object.keys(fc2).forEach(function (k) { patch[k] = fc2[k]; }); patch.status = 'In Progress'; }
+      else if (asx) { var od2 = _origDurOf(r); var fc2 = _fcFields(asx, od2, dd); Object.keys(fc2).forEach(function (k) { patch[k] = fc2[k]; }); patch.status = 'In Progress'; if (isComplete(r)) patch.percent_complete = Math.min(99, r.percent_complete || 0); }
     } else if (field === 'start_date') {
       // Adjusting the (not-yet-actual) scheduled Start keeps the Finish and lets the Planned Duration
       // adjust (duration is the derived span end − start + 1).
@@ -2701,7 +2753,8 @@
       var dpEarned = od * (_durPct(r) / 100);
       var codes2 = [r.wbs].concat(r._anc || []);
       for (var j = 0; j < codes2.length; j++) {
-        var cm = _costMap[codes2[j]] || (_costMap[codes2[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0 });
+        var cm = _costMap[codes2[j]] || (_costMap[codes2[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0 });
+        cm.total += 1; if (isComplete(r)) cm.done += 1; else if (r.actual_start || (r.percent_complete || 0) > 0) cm.prog += 1;
         cm.pc += r.planned_cost || 0; cm.ac += r.actual_cost || 0; cm.ev += r.earned_value || 0; cm.bl += r.bl_cost || 0;
         cm.eac += eac(r, cpi);
         if (dur > 0) {
@@ -3775,6 +3828,7 @@
         yTitle: typeof c.yTitle === 'string' ? c.yTitle : '',
         legend: c.legend !== false,
         grid: c.grid !== false,
+        fullLabels: !!c.fullLabels,
         tickFont: (c.tickFont >= 6 && c.tickFont <= 28) ? c.tickFont : 9,
         titleFont: (c.titleFont >= 6 && c.titleFont <= 36) ? c.titleFont : 12,
         titleSize: (c.titleSize >= 8 && c.titleSize <= 48) ? c.titleSize : 15,
@@ -3844,9 +3898,9 @@
     return '<div class="ps-cdata"><div class="ps-pie-sel-h">Select activities <span><button class="pd-btn" data-call="1" data-cid="' + esc(cfg.id) + '">All</button> <button class="pd-btn" data-call="0" data-cid="' + esc(cfg.id) + '">Clear</button></span></div>' +
       (list || '<div class="ps-pie-empty">No activities.</div>') + '</div>';
   }
-  function _pieLabel(mode, d, frac) {
+  function _pieLabel(mode, d, frac, full) {
     if (mode === 'none') return '';
-    var nm = d.label.length > 14 ? d.label.slice(0, 13) + '…' : d.label;
+    var nm = (full || d.label.length <= 14) ? d.label : (d.label.slice(0, 13) + '…');
     if (mode === 'val') return Math.round(d.v) + '%';
     if (mode === 'name') return nm;
     if (mode === 'namepct') return nm + ' ' + Math.round(frac * 100) + '%';
@@ -3864,7 +3918,7 @@
       var full = frac >= 0.999, mid = full ? -Math.PI / 2 : a + frac * Math.PI;
       if (full) slices += '<circle cx="' + cx + '" cy="' + cy + '" r="' + rad + '" fill="' + col + '"><title>' + ttl + '</title></circle>';
       else { var a1 = a + frac * 2 * Math.PI; slices += '<path d="' + _pieArc(cx, cy, rad, a, a1) + '" fill="' + col + '" stroke="var(--pd-card)" stroke-width="1.5"><title>' + ttl + '</title></path>'; a = a1; }
-      var txt = _pieLabel(labelMode, d, frac);
+      var txt = _pieLabel(labelMode, d, frac, cfg.fullLabels);
       if (txt && frac > 0.04) {
         var lx = full ? cx : cx + lr * Math.cos(mid), ly = full ? cy : cy + lr * Math.sin(mid);
         labels += '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" class="ps-pie-dl" style="font-size:' + dlf + 'px;" text-anchor="middle" dominant-baseline="central">' + esc(txt) + '</text>';
@@ -3880,9 +3934,12 @@
     var series = cfg.series, maxV = 100;
     if (stacked) { buckets.forEach(function (b) { var s = series.reduce(function (t, m) { return t + (b.vals[m] || 0); }, 0); if (s > maxV) maxV = s; }); }
     var n = buckets.length, tf = cfg.tickFont || 9, tif = cfg.titleFont || 12;
+    // With "Full labels" on, reserve room so the whole (untruncated) category text is visible.
+    var maxLbl = 0; buckets.forEach(function (b) { if (b.label.length > maxLbl) maxLbl = b.label.length; });
+    var lblPx = cfg.fullLabels ? Math.min(280, Math.round(maxLbl * tf * 0.58)) : 0;
     var mT = 10, mR = 12;
-    var mL = (horizontal ? 92 : 38) + (cfg.yTitle ? tif + 8 : 0);
-    var mB = (horizontal ? 24 : 40) + (cfg.xTitle ? tif + 8 : 0);
+    var mL = (horizontal ? Math.max(92, lblPx + 10) : 38) + (cfg.yTitle ? tif + 8 : 0);
+    var mB = (horizontal ? 24 : (40 + Math.round(lblPx * 0.36))) + (cfg.xTitle ? tif + 8 : 0);
     var band = horizontal ? 24 : 40, gap = 14, groupW = band + gap;
     var catLen = n * groupW + gap, valLen = 240;
     var W = horizontal ? (mL + valLen + mR) : (mL + catLen + mR);
@@ -3904,7 +3961,7 @@
         else { var xb = stacked ? base : base + si * sw, y0 = mT + valLen - len - (stacked ? acc / maxV * valLen : 0); svg += '<rect x="' + xb + '" y="' + y0 + '" width="' + (sw - 3) + '" height="' + len + '" fill="' + col + '" rx="2"><title>' + ttl + '</title></rect>'; }
         if (stacked) acc += v;
       });
-      var lbl = b.label.length > 16 ? b.label.slice(0, 15) + '…' : b.label;
+      var lbl = (cfg.fullLabels || b.label.length <= 16) ? b.label : (b.label.slice(0, 15) + '…');
       if (horizontal) svg += '<text x="' + (mL - 6) + '" y="' + (base + band / 2 + 3) + '" font-size="' + tf + '" fill="var(--pd-muted)" text-anchor="end">' + esc(lbl) + '</text>';
       else svg += '<text x="' + (base + band / 2) + '" y="' + (mT + valLen + 14) + '" font-size="' + tf + '" fill="var(--pd-muted)" text-anchor="middle" transform="rotate(20 ' + (base + band / 2) + ' ' + (mT + valLen + 14) + ')">' + esc(lbl) + '</text>';
     });
@@ -3936,7 +3993,7 @@
     var catSel = '<label class="ps-cset-row"><span>Activity label</span><select class="pd-select ps-cset-f" data-cid="' + esc(cfg.id) + '" data-k="catField">' + catOpts.map(function (o) { return '<option value="' + o[0] + '"' + (cfg.catField === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
     return '<div class="ps-cset">' +
       '<div class="ps-pie-sel-h">Chart</div>' + txt('title', 'Title', cfg.title) + catSel +
-      '<div class="ps-cset-grid">' + chk('legend', 'Legend', cfg.legend) + chk('grid', 'Gridlines', cfg.grid) + '</div>' +
+      '<div class="ps-cset-grid">' + chk('legend', 'Legend', cfg.legend) + chk('grid', 'Gridlines', cfg.grid) + chk('fullLabels', 'Full labels', cfg.fullLabels) + '</div>' +
       '<div class="ps-pie-sel-h">Axis titles</div>' + txt('xTitle', 'X-axis', cfg.xTitle) + txt('yTitle', 'Y-axis', cfg.yTitle) +
       '<div class="ps-pie-sel-h">Font sizes (px)</div>' +
       '<div class="ps-cset-grid">' + num('titleSize', 'Title', cfg.titleSize, 8, 48) + num('tickFont', 'Axis labels', cfg.tickFont, 6, 28) + num('titleFont', 'Axis titles', cfg.titleFont, 6, 36) + num('dlFont', 'Data labels', cfg.dlFont, 6, 28) + '</div>' +
@@ -4009,8 +4066,11 @@
       if (c.checked) set.add(c.dataset.id); else set.delete(c.dataset.id);
       var arr = Array.from(set);
       updateChart(cid, { sel: arr.length === all.length ? null : arr });
-      // only the chart body + Data count depend on selection — redraw the card, keep panel open
-      _redrawCard(host, cid);
+      // Update ONLY the chart body + the Data count in place — do NOT rebuild the card, so the
+      // activity checklist keeps its scroll position (ticking one activity used to jump back to top).
+      var cfg = chartById(cid), pan = card.querySelector('.ps-chart-body .ps-chart-pan') || card.querySelector('.ps-chart-body');
+      if (pan) pan.innerHTML = _chartSVG(cfg);
+      var tog = card.querySelector('.ps-chart-datatog'); if (tog) { var sc = cfg.sel ? cfg.sel.length : null; tog.textContent = 'Data' + (sc != null ? ' (' + sc + ')' : '') + ' ▾'; }
     }; });
     var ab = card.querySelector('[data-call="1"]'); if (ab) ab.onclick = function () { updateChart(cid, { sel: null }); _redrawCard(host, cid); };
     var cb = card.querySelector('[data-call="0"]'); if (cb) cb.onclick = function () { updateChart(cid, { sel: [] }); _redrawCard(host, cid); };
@@ -4135,7 +4195,8 @@
     var bar = '<div class="ps-prog-ctrls"><div class="ps-seg2">' +
       '<button data-pres="table" class="' + (pres === 'table' ? 'on' : '') + '">Table</button>' +
       '<button data-pres="chart" class="' + (pres === 'chart' ? 'on' : '') + '">Charts</button></div>' +
-      (pres === 'chart' ? '<button class="pd-btn pd-btn-primary" id="ps-chart-add">+ Add chart</button><span class="ps-chart-hint">Each chart is independent — set its type, axes and activities, and drag the corner to resize.</span>' : '') +
+      (pres === 'chart' ? '<button class="pd-btn pd-btn-primary" id="ps-chart-add">+ Add chart</button><span class="ps-chart-hint">Each chart is independent — set its type, axes and activities, and drag the corner to resize.</span>'
+        : '<span class="ps-tb-sep" style="margin:0 4px;"></span><button class="pd-btn" id="ps-prog-expand" title="Expand all WBS"><span data-ico="chevronDown" data-ico-size="14"></span> Expand</button><button class="pd-btn" id="ps-prog-collapse" title="Collapse all WBS"><span data-ico="chevronRight" data-ico-size="14"></span> Collapse</button>') +
       '</div>';
     if (pres === 'chart') { host.innerHTML = bar + renderProgressChart(); wireProgCtrls(host); if (window.Icons) Icons.hydrate(host); return; }
     var order = progColOrder(), cw = progColW(), rh = progRh();
@@ -4148,11 +4209,17 @@
       var isW = isWbsNode(nd), depth = ddepth(nd), pad = 4 + depth * 14, ctx;
       if (isW) { var cm = _costMap[nd._realCode || nd.wbs]; ctx = { isW: true, pad: pad, phys: (cm && cm.wd > 0) ? Math.round(cm.wearn / cm.wd) : 0, planv: (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) : null }; }
       else { ctx = { isW: false, pad: pad, no: ++_no, phys: Math.max(0, Math.min(100, nd.percent_complete || 0)), planv: plannedPOC(nd) }; }
-      var tds = order.map(function (k, ci) { return '<td data-id="' + esc(String(nd.id || '')) + '" data-col="' + k + '"' + (PROG_DEF[k].center ? ' class="ps-prog-cc"' : '') + _cellFmtStyleAttr(nd.id, k) + '>' + _progCell(k, nd, ctx) + (ci === 0 ? '<span class="ps-prog-rowres"></span>' : '') + '</td>'; }).join('');
+      var tds = order.map(function (k, ci) {
+        var caret = (ci === 0 && isW) ? '<span class="ps-prog-caret" data-toggle="' + esc(dcode(nd)) + '">' + (collapsed[dcode(nd)] ? '►' : '▼') + '</span>' : '';
+        return '<td data-id="' + esc(String(nd.id || '')) + '" data-col="' + k + '"' + (PROG_DEF[k].center ? ' class="ps-prog-cc"' : '') + _cellFmtStyleAttr(nd.id, k) + '>' + caret + _progCell(k, nd, ctx) + (ci === 0 ? '<span class="ps-prog-rowres"></span>' : '') + '</td>';
+      }).join('');
       return '<tr' + (isW ? ' class="ps-prog-wbs ps-wl' + Math.min(depth, 5) + '"' : '') + '>' + tds + '</tr>';
     }).join('');
     host.innerHTML = bar + '<table class="ps-prog-table" style="width:' + tblW + 'px;--prog-rh:' + rh + 'px;"><thead>' + thead + '</thead><tbody>' + body + '</tbody></table>';
     wireProgCtrls(host);
+    host.querySelectorAll('.ps-prog-caret').forEach(function (t) { t.onclick = function (e) { e.stopPropagation(); collapsed[t.dataset.toggle] = !collapsed[t.dataset.toggle]; renderProgressView(); }; });
+    var pEx = host.querySelector('#ps-prog-expand'); if (pEx) pEx.onclick = function () { collapsed = {}; renderProgressView(); };
+    var pCo = host.querySelector('#ps-prog-collapse'); if (pCo) pCo.onclick = function () { DL.forEach(function (nd) { if (isWbsNode(nd)) collapsed[dcode(nd)] = true; }); renderProgressView(); };
     host.querySelectorAll('.ps-prog-desc').forEach(function (ta) {
       var r = rows.find(function (x) { return x.id === ta.dataset.id; }); if (!r) return; var t;
       ta.oninput = function () { clearTimeout(t); t = setTimeout(function () { _saveActField(r, 'remarks', ta.value); }, 500); };
@@ -5794,6 +5861,16 @@
   function contractVar(r) { if (!r.contract_date) return null; var c = pd(r.contract_date), f = pd(r.actual_finish || r.end_date); if (!c || !f) return null; return dayDiff(c, f); }
   function varCellHtml(r) { var d = finVar(r); if (d == null) return '<div class="ps-cell c-var"></div>'; var cls = d > 0 ? 'ps-var-late' : (d < 0 ? 'ps-var-early' : ''); return '<div class="ps-cell c-var ' + cls + '">' + (d > 0 ? '+' : '') + d + 'd</div>'; }
   var STATUS_OPTS = ['Not Started', 'In Progress', 'Completed'];
+  // Rolled-up status pill for a WBS/summary (from its leaf activities): all done → Completed,
+  // any started/done → In Progress, else Not Started. Uses the precomputed _costMap counters.
+  function _wbsStatusPill(code) {
+    var cm = _costMap[code]; if (!cm || !cm.total) return '';
+    var s, cls;
+    if (cm.done === cm.total) { s = 'Completed'; cls = 'ps-status-completed'; }
+    else if (cm.prog > 0 || cm.done > 0) { s = 'In Progress'; cls = 'ps-status-inprogress'; }
+    else { s = 'Not Started'; cls = 'ps-status-notstarted'; }
+    return '<span class="ps-status-pill ' + cls + '">' + s + '</span>';
+  }
   function statusCellHtml(r) {
     var s = r.status || 'Not Started';
     var cls = s === 'Completed' ? 'ps-status-completed' : (s === 'In Progress' ? 'ps-status-inprogress' : 'ps-status-notstarted');
@@ -5933,7 +6010,7 @@
         // per request — those summary rows read cleaner without their dotted code.
         '<div class="ps-cell c-id" style="padding-left:' + idPad + 'px;">' + (depth <= 1 ? '' : esc(r._realCode || r.wbs || '')) + '</div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
-        '<div class="ps-cell c-status"></div>' +
+        '<div class="ps-cell c-status">' + _wbsStatusPill(r._realCode || r.wbs) + '</div>' +
         (function () { var blsp = (r._dkind === 'group') ? null : wbsBlSpan(r);
           return '<div class="ps-cell c-date">' + (blsp ? Fmt.date(dstr(blsp.s)) : '') + '</div><div class="ps-cell c-date">' + (blsp ? Fmt.date(dstr(blsp.e)) : '') + '</div>'; })() +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
@@ -5943,6 +6020,10 @@
     }
     // Planned (original) duration — baseline-based, always ≥0 and never disturbed by actuals/forecast.
     var dur = _origDurOf(r); if (dur == null) dur = '';
+    // Once an activity is actualised (has an actual finish), the Dur column shows the ACTUAL span
+    // (actual finish − actual start + 1) so it updates live when the finish date is changed.
+    var durDone = isComplete(r) && !isMile(r) && r.actual_finish;
+    var durShown = durDone ? actualDurLive(r) : dur; if (durShown == null) durShown = '';
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
     var fmt = _fmtRules.length ? _rowFmt(r) : null;
     return '<div class="ps-grid-row' + altc + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
@@ -5954,7 +6035,9 @@
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_finish" data-type="date">' + (r.bl_finish ? Fmt.date(r.bl_finish) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="' + (r.actual_start ? 'actual_start' : 'start_date') + '" data-type="date">' + (dispStart(r) ? Fmt.date(dispStart(r)) : '—') + _dateBadge(r.actual_start ? 'A' : (r.primary_constraint ? 'C' : '')) + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="' + (isComplete(r) ? 'actual_finish' : 'end_date') + '" data-type="date">' + (dispFin(r) ? Fmt.date(dispFin(r)) : '—') + _dateBadge(r.actual_finish ? 'A' : '') + '</div>' +
-      (_durLocked(r)
+      (durDone
+        ? '<div class="ps-cell c-dur" title="Actual Duration (actual finish − actual start + 1)">' + (durShown !== '' ? durShown + 'd' : '') + '</div>'
+        : _durLocked(r)
         ? '<div class="ps-cell c-dur" title="Planned Duration = baseline span (locked)">' + (dur !== '' ? dur + 'd' : '') + '</div>'
         : '<div class="ps-cell c-dur ps-editable" data-id="' + r.id + '" data-field="planned_duration" data-type="pdur">' + (dur !== '' ? dur + 'd' : '') + '</div>') +
       costCellsHtml(r) +
@@ -8823,9 +8906,9 @@
   //  Generated preview stays here; pushing into project_schedule is a later step.
   // ======================================================================
   var ScheduleBuilder = (function () {
-    var GROUPS = ['ST', 'AR', 'MEPF', 'ALLIED', 'OTHER'];
-    var GLABEL = { ST: 'Structure', AR: 'Architecture / NRF', MEPF: 'MEPF', ALLIED: 'Allied Services', OTHER: 'Other' };
-    var GCOLOR = { ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e', OTHER: '#6f7276' };
+    var GROUPS = ['ST', 'AR', 'MEPF', 'ALLIED'];
+    var GLABEL = { ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', ALLIED: 'Allied Services' };
+    var GCOLOR = { ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e' };
     var cfg = null, step = 0, dirty = false, curPid = null, curUid = null, wired = false;
     var uiTrade = 'ST';            // trade being edited/visualised in step 2
     var linkDrag = null, stepPos = {}, upWired = false;  // step-3 link canvas drag state
@@ -8844,14 +8927,20 @@
     function normalize(c) {
       c = c && typeof c === 'object' ? c : {}; var d = blank();
       d.startDate = c.startDate || d.startDate;
-      d.activities = Array.isArray(c.activities) ? c.activities.map(function (a) { return { id: a.id || uidv(), code: a.code || '', name: a.name || '', group: GROUPS.indexOf(a.group) >= 0 ? a.group : 'ST', duration: +a.duration || 0 }; }) : [];
+      d.activities = Array.isArray(c.activities) ? c.activities.map(function (a) {
+        var legacy = +a.duration || 0;
+        var di = (a.durInt != null) ? Math.max(0, +a.durInt || 0) : legacy;
+        var de = (a.durExt != null) ? Math.max(0, +a.durExt || 0) : (a.durInt != null ? di : legacy);
+        return { id: a.id || uidv(), code: a.code || '', name: a.name || '', group: GROUPS.indexOf(a.group) >= 0 ? a.group : 'ST', durInt: di, durExt: de };
+      }) : [];
       // Per-trade zoning: each trade has its own floors, each floor its own zones.
       GROUPS.forEach(function (g) {
         var src = (c.zoning && c.zoning[g]) || {};
         var floors = Array.isArray(src.floors) ? src.floors : [];
         d.zoning[g] = { floors: floors.map(function (f) {
-          return { id: f.id || uidv(), code: f.code || '', name: f.name || '',
-            zones: (Array.isArray(f.zones) ? f.zones : []).map(function (z) { return { id: z.id || uidv(), code: z.code || '', name: z.name || '' }; }) };
+          return { id: f.id || uidv(), code: f.code || '', name: f.name || '', sub: !!f.sub,
+            zones: (Array.isArray(f.zones) ? f.zones : []).map(function (z) { return { id: z.id || uidv(), code: z.code || '', name: z.name || '',
+              units: (Array.isArray(z.units) ? z.units : []).map(function (u) { return { id: u.id || uidv(), code: u.code || '', name: u.name || '' }; }) }; }) };
         }) };
       });
       d.links = Array.isArray(c.links) ? c.links.filter(function (k) { return k && k.from && k.to; }).map(function (k) { return { from: k.from, to: k.to, type: (['FS', 'SS', 'FF', 'SF'].indexOf(k.type) >= 0 ? k.type : 'FS'), lag: (typeof k.lag === 'number' ? k.lag : (parseInt(k.lag, 10) || 0)) }; }) : [];
@@ -8892,17 +8981,25 @@
     }
 
     // ---- location model (per-trade, per-floor zones) --------------------
-    function locList() {
+    // Leaf locations: Trade → Floor → Zone (optional) → Unit (optional). A floor with no zones is
+    // itself a leaf; a zone with no units is a leaf; otherwise each unit is a leaf.
+    function leavesOfFloor(tr, f) {
       var out = [];
-      GROUPS.forEach(function (tr) { cfg.zoning[tr].floors.forEach(function (f) { f.zones.forEach(function (z) {
-        out.push({ uid: tr + '/' + f.id + '/' + z.id, trade: tr, floor: f, zone: z });
-      }); }); });
+      if (!f.zones.length) { out.push({ uid: tr + '/' + f.id, trade: tr, floor: f, zone: null, unit: null }); return out; }
+      f.zones.forEach(function (z) {
+        if (!z.units.length) { out.push({ uid: tr + '/' + f.id + '/' + z.id, trade: tr, floor: f, zone: z, unit: null }); }
+        else z.units.forEach(function (u) { out.push({ uid: tr + '/' + f.id + '/' + z.id + '/' + u.id, trade: tr, floor: f, zone: z, unit: u }); });
+      });
       return out;
     }
+    function locList() { var out = []; GROUPS.forEach(function (tr) { cfg.zoning[tr].floors.forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { out.push(l); }); }); }); return out; }
     function tradeActs(tr) { return cfg.activities.filter(function (a) { return a.group === tr; }); }
     function included(uid, aid) { return !cfg.scopeOff[uid + '|' + aid]; }
-    function nodeDays(loc) { return tradeActs(loc.trade).reduce(function (t, a) { return t + (included(loc.uid, a.id) ? Math.max(0, +a.duration || 0) : 0); }, 0); }
-    function locLabel(loc) { return (loc.floor.code || loc.floor.name || 'Flr') + ' · ' + (loc.zone.code || loc.zone.name || 'Zn'); }
+    function actDur(a, basis) { return Math.max(0, +(basis === 'ext' ? a.durExt : a.durInt) || 0); }
+    function nodeDays(loc, basis) { return tradeActs(loc.trade).reduce(function (t, a) { return t + (included(loc.uid, a.id) ? actDur(a, basis) : 0); }, 0); }
+    function locLabel(loc) { var p = [loc.floor.code || loc.floor.name || 'Flr']; if (loc.zone) p.push(loc.zone.code || loc.zone.name || 'Zn'); if (loc.unit) p.push(loc.unit.code || loc.unit.name || 'Un'); return p.join(' · '); }
+    function cellKey(loc) { return (loc.zone ? (loc.zone.code || loc.zone.id) : '') + '#' + (loc.unit ? (loc.unit.code || loc.unit.id) : ''); }
+    function floorIndexOf(loc) { return cfg.zoning[loc.trade].floors.indexOf(loc.floor); }
 
     // earliest start of `to` given `from` per relationship type + lag
     function linkStart(fs, fd, td, type, lag) {
@@ -8927,7 +9024,6 @@
     // would from→to create a cycle? (does `to` already reach `from`?)
     function reaches(a, b) { var seen = {}, stack = [a]; while (stack.length) { var x = stack.pop(); if (x === b) return true; if (seen[x]) continue; seen[x] = 1; cfg.links.forEach(function (k) { if (k.from === x) stack.push(k.to); }); } return false; }
     function locByUid(uid) { return locList().find(function (l) { return l.uid === uid; }); }
-    function locKeyOf(l) { return (l.floor.code || l.floor.name || l.floor.id) + '|' + (l.zone.code || l.zone.name || l.zone.id); }
     function START() { return '__start__'; } function END() { return '__end__'; }
     function isMarker(uid) { return uid === '__start__' || uid === '__end__'; }
     function tryLink(a, b, type, lag) { if (!a || !b || a === b) return false; if (cfg.links.some(function (k) { return k.from === a && k.to === b; })) return false; if (reaches(b, a)) return false; cfg.links.push({ from: a, to: b, type: type || 'FS', lag: lag || 0 }); return true; }
@@ -8941,40 +9037,41 @@
       markDirty(); render();
     }
     function floorsOf(tr) { return cfg.zoning[tr].floors; }             // listed order: index 0 = lowest/ground
-    function zoneByCode(floor, code) { return floor.zones.find(function (z) { return (z.code || z.id) === code; }); }
-    function uidFor(tr, f, z) { return tr + '/' + f.id + '/' + z.id; }
-    // Takt / location-based logic: each trade climbs its own floors zone-by-zone, and a following
-    // trade stays a configurable number of floors BEHIND the one before it — e.g. "structure leads
-    // by 4 floors" means Architecture on a floor can't start until Structure is 4 floors ahead.
+    // Takt / location-based logic: each trade climbs its own floors cell-by-cell (matched by zone+unit
+    // code), and a following trade stays a configurable number of floors BEHIND the one before it.
     function autoTrace() {
-      if (!locList().length) return;
+      var leaves = locList(); if (!leaves.length) return;
       var lead = Math.max(1, +cfg.floorLead || 4);
-      cfg.links = [];   // rebuild from the logic rules
+      cfg.links = [];
       var present = GROUPS.filter(function (tr) { return floorsOf(tr).length && tradeActs(tr).length; });
-      // 1) vertical progression within each trade (same zone code, floor i-1 → i)
-      present.forEach(function (tr) { var fs = floorsOf(tr); for (var i = 1; i < fs.length; i++) fs[i].zones.forEach(function (z) { var pz = zoneByCode(fs[i - 1], z.code || z.id); if (pz) tryLink(uidFor(tr, fs[i - 1], pz), uidFor(tr, fs[i], z)); }); });
-      // 2) cross-trade lead: next-trade floor j follows prev-trade floor (j + lead − 1); first transition uses `lead`, later ones stay 1 floor behind
+      var idx = {}; present.forEach(function (tr) { idx[tr] = floorsOf(tr).map(function () { return {}; }); });
+      leaves.forEach(function (l) { if (idx[l.trade]) { var fi = floorIndexOf(l); if (idx[l.trade][fi]) idx[l.trade][fi][cellKey(l)] = l.uid; } });
+      function firstOf(o) { var k = Object.keys(o); return k.length ? o[k[0]] : null; }
+      // 1) vertical progression within each trade
+      present.forEach(function (tr) { var fl = floorsOf(tr); for (var i = 1; i < fl.length; i++) Object.keys(idx[tr][i]).forEach(function (ck) { var p = idx[tr][i - 1][ck]; if (p) tryLink(p, idx[tr][i][ck]); }); });
+      // 2) cross-trade lead
       for (var t = 1; t < present.length; t++) {
-        var prev = present[t - 1], next = present[t], L = (t === 1) ? lead : 1, fp = floorsOf(prev), fn = floorsOf(next);
-        fn.forEach(function (nf, j) {
-          var srcIdx = Math.min(j + L - 1, fp.length - 1); if (srcIdx < 0) srcIdx = 0; var pf = fp[srcIdx]; if (!pf) return;
-          nf.zones.forEach(function (z) { var pz = zoneByCode(pf, z.code || z.id) || pf.zones[0]; if (pz) tryLink(uidFor(prev, pf, pz), uidFor(next, nf, z)); });
+        var prev = present[t - 1], next = present[t], L = (t === 1) ? lead : 1, fpN = floorsOf(prev).length;
+        floorsOf(next).forEach(function (nf, j) {
+          var si = Math.min(j + L - 1, fpN - 1); if (si < 0) si = 0;
+          Object.keys(idx[next][j]).forEach(function (ck) { var pf = idx[prev][si][ck] || firstOf(idx[prev][si]); if (pf) tryLink(pf, idx[next][j][ck]); });
         });
       }
       // 3) bookend with Start / End
       var hasIn = {}, hasOut = {}; cfg.links.forEach(function (k) { hasIn[k.to] = 1; hasOut[k.from] = 1; });
-      locList().forEach(function (l) { if (!hasIn[l.uid]) tryLink(START(), l.uid); if (!hasOut[l.uid]) tryLink(l.uid, END()); });
+      leaves.forEach(function (l) { if (!hasIn[l.uid]) tryLink(START(), l.uid); if (!hasOut[l.uid]) tryLink(l.uid, END()); });
       markDirty(); render();
     }
 
-    function generate() {
-      var locs = locList(), days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l); });
+    function generate(basis) {
+      basis = basis || 'int';
+      var locs = locList(), days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l, basis); });
       var starts = computeStarts(locs, days), start = pdd(cfg.startDate) || new Date();
       var rows = [], perZone = [];
       locs.slice().sort(function (a, b) { return (starts[a.uid] - starts[b.uid]) || (GROUPS.indexOf(a.trade) - GROUPS.indexOf(b.trade)); }).forEach(function (loc) {
         var off = starts[loc.uid] || 0, cursor = addD(start, off);
         tradeActs(loc.trade).forEach(function (a) {
-          if (!included(loc.uid, a.id)) return; var dur = Math.max(0, +a.duration || 0); if (dur <= 0) return;
+          if (!included(loc.uid, a.id)) return; var dur = actDur(a, basis); if (dur <= 0) return;
           var aS = new Date(cursor), aF = addD(aS, dur - 1);
           rows.push({ loc: loc, act: a, dur: dur, start: aS, finish: aF, group: a.group });
           cursor = addD(aF, 1);
@@ -9007,93 +9104,174 @@
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
 
+    // ---- Activity template: download a CSV users fill in, then upload (CSV or Excel) to load ----
+    function actTemplateCsv() {
+      var lines = ['Code,Activity Name,Trade,Interior Duration (days),Exterior Duration (days)',
+        'REBAR,Rebar,Structural,3,4', 'MAS,Masonry,Architectural,5,6', 'ELEC,Electrical Rough-in,MEPF,3,4', 'LSCP,Landscaping,Allied Services,2,3'];
+      var blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'activities-template.csv'; a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    }
+    function parseCsv(text) {
+      return text.split(/\r?\n/).filter(function (l) { return l.trim() !== ''; }).map(function (l) {
+        var out = [], cur = '', q = false;
+        for (var i = 0; i < l.length; i++) { var c = l[i]; if (q) { if (c === '"') { if (l[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; } else { if (c === '"') q = true; else if (c === ',') { out.push(cur); cur = ''; } else cur += c; } }
+        out.push(cur); return out;
+      });
+    }
+    function importActivities(rows2d) {
+      if (!rows2d || rows2d.length < 2) { UI.toast('No rows found — use the template and keep the header row.', 'error'); return; }
+      var hdr = rows2d[0].map(function (h) { return String(h == null ? '' : h).trim().toLowerCase(); });
+      function idx(names) { for (var i = 0; i < hdr.length; i++) for (var j = 0; j < names.length; j++) if (hdr[i].indexOf(names[j]) >= 0) return i; return -1; }
+      var ci = idx(['code']), ni = idx(['activity name', 'name', 'activity']), gi = idx(['trade', 'discipline', 'group']), ii = idx(['interior', 'internal', 'int']), ei = idx(['exterior', 'external', 'ext']);
+      var tmap = { 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'allied services': 'ALLIED', 'allied': 'ALLIED' };
+      var out = [];
+      for (var r = 1; r < rows2d.length; r++) {
+        var row = rows2d[r]; if (!row) continue;
+        var code = ci >= 0 ? String(row[ci] == null ? '' : row[ci]).trim() : '', name = ni >= 0 ? String(row[ni] == null ? '' : row[ni]).trim() : '';
+        if (!code && !name) continue;
+        var gl = gi >= 0 ? String(row[gi] == null ? '' : row[gi]).trim().toLowerCase() : '';
+        var g = tmap[gl] || (GROUPS.indexOf(gl.toUpperCase()) >= 0 ? gl.toUpperCase() : 'ST');
+        var di = ii >= 0 ? Math.max(0, parseInt(row[ii], 10) || 0) : 0, de = ei >= 0 ? Math.max(0, parseInt(row[ei], 10) || 0) : di;
+        out.push({ id: uidv(), code: code, name: name, group: g, durInt: di, durExt: de });
+      }
+      if (!out.length) { UI.toast('No activity rows read — check the columns (Code / Activity Name / Trade / Interior / Exterior).', 'error'); return; }
+      var mode = cfg.activities.length ? (confirm('Replace the ' + cfg.activities.length + ' existing activities with the ' + out.length + ' uploaded?\n\nOK = replace · Cancel = append') ? 'replace' : 'append') : 'replace';
+      cfg.activities = (mode === 'replace') ? out : cfg.activities.concat(out);
+      markDirty(); render(); UI.toast('Loaded ' + out.length + ' activities (' + mode + ').', 'success');
+    }
+    function uploadActivities(file) {
+      if (!file) return; var name = (file.name || '').toLowerCase(), rd = new FileReader();
+      if (/\.(xlsx|xls)$/.test(name) && typeof XLSX !== 'undefined') {
+        rd.onload = function (e) { try { var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' }); var ws = wb.Sheets[wb.SheetNames[0]]; importActivities(XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })); } catch (err) { UI.toast('Could not read the Excel file: ' + (err.message || err), 'error'); } };
+        rd.readAsArrayBuffer(file);
+      } else { rd.onload = function (e) { importActivities(parseCsv(String(e.target.result))); }; rd.readAsText(file); }
+    }
     function stActivities(host) {
       var b = '<h2>1 · Activities &amp; required duration</h2>' +
-        '<p class="sbld-lede">The activity list from your class-code list (whiteboard steps 1–2 &amp; 6): code, name, discipline group (ST / AR / OTHER) and required duration in days. Row order = the trade sequence within a zone.</p>' +
-        '<div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-add">+ Add activity</button><button class="pd-btn" id="b-seed">Load typical set</button></div>';
+        '<p class="sbld-lede">The activity list from your class-code list: code, name, trade, and TWO durations per activity — <b>Interior</b> (internal / target) and <b>Exterior</b> (external / contract). ' +
+        'Type them in, or <b>download the template</b>, fill it in Excel, and <b>upload</b> it. Step 5 builds both an Internal and an External schedule side by side.</p>' +
+        '<div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-add">+ Add activity</button><button class="pd-btn" id="b-seed">Load typical set</button>' +
+        '<span class="sbld-tb-sep2"></span><button class="pd-btn" id="b-tmpl"><span data-ico="download" data-ico-size="14"></span> Download template</button>' +
+        '<button class="pd-btn" id="b-upl"><span data-ico="box" data-ico-size="14"></span> Upload CSV / Excel</button>' +
+        '<input type="file" id="b-uplfile" accept=".csv,.xlsx,.xls" style="display:none" /></div>';
       if (!cfg.activities.length) b += '<div class="sbld-empty">No activities yet. Add rows, or load a typical set.</div>';
-      else b += '<div class="sbld-list">' + cfg.activities.map(function (a, i) {
+      else b += '<div class="sbld-list"><div class="sbld-row sbld-acthdr"><span style="width:14px;"></span><span class="w100">Code</span><span class="sbld-actname">Activity name</span><span class="w170">Trade</span><span class="w90" title="Internal / target duration">Interior (d)</span><span class="w90" title="External / contract duration">Exterior (d)</span><span style="width:32px;"></span></div>' + cfg.activities.map(function (a, i) {
         return '<div class="sbld-row" data-i="' + i + '" draggable="true"><span class="sbld-grab" title="Drag to reorder">⠇</span>' +
-          '<input class="pd-input w120" data-k="code" value="' + e2(a.code) + '" placeholder="Code" />' +
-          '<input class="pd-input grow" data-k="name" value="' + e2(a.name) + '" placeholder="Activity name" />' +
-          '<select class="pd-select w120" data-k="group">' + GROUPS.map(function (g) { return '<option value="' + g + '"' + (a.group === g ? ' selected' : '') + '>' + g + '</option>'; }).join('') + '</select>' +
-          '<input class="pd-input w80" type="number" min="0" step="1" data-k="duration" value="' + (a.duration || '') + '" placeholder="days" />' +
+          '<input class="pd-input w100" data-k="code" value="' + e2(a.code) + '" placeholder="Code" />' +
+          '<input class="pd-input sbld-actname" data-k="name" value="' + e2(a.name) + '" placeholder="Activity name" />' +
+          '<select class="pd-select w170" data-k="group">' + GROUPS.map(function (g) { return '<option value="' + g + '"' + (a.group === g ? ' selected' : '') + '>' + e2(GLABEL[g]) + '</option>'; }).join('') + '</select>' +
+          '<input class="pd-input w90" type="number" min="0" step="1" data-k="durInt" value="' + (a.durInt || '') + '" placeholder="int" title="Internal / target duration (days)" />' +
+          '<input class="pd-input w90" type="number" min="0" step="1" data-k="durExt" value="' + (a.durExt || '') + '" placeholder="ext" title="External / contract duration (days)" />' +
           '<button class="pd-btn sbld-del" data-del="' + i + '"><span data-ico="trash" data-ico-size="15"></span></button></div>';
       }).join('') + '</div><p class="sbld-hint">Drag the handle to reorder — this order is the trade sequence within each zone.</p>';
       host.innerHTML = b;
-      host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', duration: 0 }); markDirty(); render(); };
+      host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: 0, durExt: 0 }); markDirty(); render(); };
+      host.querySelector('#b-tmpl').onclick = actTemplateCsv;
+      var uf = host.querySelector('#b-uplfile');
+      host.querySelector('#b-upl').onclick = function () { uf.click(); };
+      uf.onchange = function () { if (uf.files && uf.files[0]) uploadActivities(uf.files[0]); uf.value = ''; };
       host.querySelector('#b-seed').onclick = function () {
-        [['REBAR','Rebar','ST',3],['FORM','Formworks','ST',3],['POUR','Concreting','ST',2],['MAS','Masonry','AR',5],['PLA','Plastering','AR',5],['TILE','Tiling','AR',4],['CEIL','Ceiling','AR',3],['PAINT','Painting','AR',4]].forEach(function (r) { cfg.activities.push({ id: uidv(), code: r[0], name: r[1], group: r[2], duration: r[3] }); });
+        [['REBAR','Rebar','ST',3,4],['FORM','Formworks','ST',3,4],['POUR','Concreting','ST',2,3],['MAS','Masonry','AR',5,6],['PLA','Plastering','AR',5,6],['TILE','Tiling','AR',4,5],['CEIL','Ceiling','AR',3,4],['PAINT','Painting','AR',4,5]].forEach(function (r) { cfg.activities.push({ id: uidv(), code: r[0], name: r[1], group: r[2], durInt: r[3], durExt: r[4] }); });
         markDirty(); render();
       };
-      host.querySelectorAll('.sbld-row').forEach(function (row) {
+      host.querySelectorAll('.sbld-row[data-i]').forEach(function (row) {
         var i = +row.dataset.i;
-        row.querySelectorAll('[data-k]').forEach(function (inp) { inp.onchange = function () { var k = inp.dataset.k; cfg.activities[i][k] = (k === 'duration') ? (+inp.value || 0) : inp.value; markDirty(); }; });
+        row.querySelectorAll('[data-k]').forEach(function (inp) { inp.onchange = function () { var k = inp.dataset.k; cfg.activities[i][k] = (k === 'durInt' || k === 'durExt') ? Math.max(0, +inp.value || 0) : inp.value; markDirty(); }; });
         var del = row.querySelector('[data-del]'); if (del) del.onclick = function () { cfg.activities.splice(i, 1); markDirty(); render(); };
         wireDrag(row, cfg.activities);
       });
     }
 
+    function leafCount(tr) { return cfg.zoning[tr].floors.reduce(function (t, f) { return t + leavesOfFloor(tr, f).length; }, 0); }
+    // Tower visual: floors stacked (ground at bottom), each split into zones, each zone into units.
     function towerSVG(tr) {
       var floors = cfg.zoning[tr].floors;
-      if (!floors.length) return '<div class="sbld-empty">No floors yet for ' + e2(GLABEL[tr]) + '. Add floors on the left.</div>';
-      var W = 300, fh = 34, gap = 5, pad = 12, labelW = 52, col = GCOLOR[tr];
-      var rev = floors.slice().reverse();   // first-listed floor at the bottom (ground)
-      var H = pad * 2 + rev.length * (fh + gap) + 6, svg = '';
-      rev.forEach(function (f, i) {
-        var y = pad + i * (fh + gap), zones = f.zones.length ? f.zones : [{ code: '—' }];
-        var zw = (W - labelW - pad * 2) / zones.length;
-        svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="11" fill="var(--pd-muted)">' + e2(f.code || f.name || ('F' + (floors.length - i))) + '</text>';
+      if (!floors.length) return '<div class="sbld-empty">No floors yet for ' + e2(GLABEL[tr]) + '. Add floors or basements on the left.</div>';
+      var W = 430, fh = 52, gap = 6, pad = 14, labelW = 40, col = GCOLOR[tr];
+      // Display order top→bottom: superstructure (highest floor first … ground last), then a GROUND
+      // line, then basements (B1 first … deepest last). Grade sits between the two blocks.
+      var supers = floors.filter(function (f) { return !f.sub; }), subs = floors.filter(function (f) { return f.sub; });
+      var disp = supers.slice().reverse().concat(subs.slice().reverse()), groundAt = supers.length;
+      var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
+      disp.forEach(function (f, i) {
+        var y = pad + i * (fh + gap), plotW = W - labelW - pad * 2, zones = f.zones.length ? f.zones : [null], zw = plotW / zones.length;
+        svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="13" font-weight="700" fill="' + (f.sub ? GCOLOR[tr] : 'var(--pd-muted)') + '">' + e2(f.code || f.name || 'F') + '</text>';
         zones.forEach(function (z, zi) {
-          var x = pad + labelW + zi * zw;
-          svg += '<rect x="' + x + '" y="' + y + '" width="' + (zw - 2) + '" height="' + fh + '" rx="3" fill="' + col + '" opacity="' + (zi % 2 ? 0.72 : 0.92) + '"></rect>';
-          svg += '<text x="' + (x + zw / 2) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="middle" font-size="10" fill="#fff">' + e2(z.code || ('Z' + (zi + 1))) + '</text>';
+          var zx = pad + labelW + zi * zw, hasU = z && z.units.length;
+          svg += '<rect x="' + zx + '" y="' + y + '" width="' + (zw - 3) + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (zi % 2 ? 0.4 : 0.55) : (zi % 2 ? 0.72 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '></rect>';
+          var units = hasU ? z.units : [null], uw = (zw - 3) / units.length;
+          units.forEach(function (u, ui) {
+            var ux = zx + ui * uw;
+            if (ui > 0) svg += '<line x1="' + ux + '" y1="' + (y + 4) + '" x2="' + ux + '" y2="' + (y + fh - 4) + '" stroke="rgba(255,255,255,.55)" stroke-width="1"/>';
+            var lbl = u ? (u.code || 'U') : (z ? (z.code || 'Z') : (f.code || 'F'));
+            svg += '<text x="' + (ux + uw / 2) + '" y="' + (y + fh / 2 + (hasU ? 8 : 5)) + '" text-anchor="middle" font-size="' + (u ? 12 : 14) + '" font-weight="600" fill="#fff">' + e2(lbl) + '</text>';
+          });
+          if (hasU) svg += '<text x="' + (zx + zw / 2) + '" y="' + (y + 13) + '" text-anchor="middle" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)">' + e2(z.code || 'Z') + '</text>';
         });
       });
-      svg += '<line x1="' + pad + '" y1="' + (H - pad + 2) + '" x2="' + (W - pad) + '" y2="' + (H - pad + 2) + '" stroke="var(--pd-line)" stroke-width="2"/>';
+      // ground line between superstructure and basements (or at the very bottom if no basements)
+      var gy = pad + groundAt * (fh + gap) - gap / 2 + (groundAt === disp.length ? 3 : 0);
+      svg += '<line x1="' + pad + '" y1="' + gy + '" x2="' + (W - pad) + '" y2="' + gy + '" stroke="var(--pd-line)" stroke-width="2.5"/>';
+      if (subs.length) svg += '<text x="' + (W - pad) + '" y="' + (gy - 4) + '" text-anchor="end" font-size="9" fill="var(--pd-muted)">grade</text>';
       return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;height:auto;">' + svg + '</svg>';
     }
     function stLevels(host) {
       var tr = uiTrade, zn = cfg.zoning[tr];
+      function qv(id, def) { var v = +host.querySelector(id).value; return isNaN(v) ? def : v; }
       var chips = '<div class="sbld-tradechips">' + GROUPS.map(function (g) {
-        var n = cfg.zoning[g].floors.reduce(function (t, f) { return t + f.zones.length; }, 0);
+        var n = leafCount(g);
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + GCOLOR[g] + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
-      var floorsHtml = zn.floors.length ? '<div class="sbld-list">' + zn.floors.map(function (f, i) {
-        return '<div class="sbld-row" data-i="' + i + '" draggable="true"><span class="sbld-grab">⠇</span>' +
-          '<input class="pd-input w120" data-k="code" value="' + e2(f.code) + '" placeholder="Floor code" />' +
-          '<input class="pd-input grow" data-k="name" value="' + e2(f.name) + '" placeholder="Floor name" />' +
-          '<span class="sbld-step2ct">Zones</span>' +
-          '<button class="pd-btn sbld-znminus" data-i="' + i + '" title="Remove a zone">−</button>' +
-          '<span class="sbld-zncount">' + f.zones.length + '</span>' +
-          '<button class="pd-btn sbld-znplus" data-i="' + i + '" title="Add a zone">+</button>' +
-          '<button class="pd-btn sbld-del" data-del="' + i + '"><span data-ico="trash" data-ico-size="15"></span></button></div>';
-      }).join('') + '</div>' : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' yet.</div>';
-      host.innerHTML = '<h2>2 · Floors &amp; Zones — per trade</h2>' +
-        '<p class="sbld-lede">Pick a trade, then define its floors and how many zones divide each floor. Each trade has its own zoning; the tower on the right visualises the selected trade.</p>' +
+      var floorsHtml = zn.floors.length ? zn.floors.map(function (f, i) {
+        var zonesHtml = f.zones.length ? f.zones.map(function (z, zi) {
+          return '<div class="sbld-znrow"><span class="sbld-zntag" style="border-color:' + GCOLOR[tr] + ';color:' + GCOLOR[tr] + '">ZONE</span>' +
+            '<input class="pd-input" data-zk="code" data-f="' + i + '" data-z="' + zi + '" value="' + e2(z.code) + '" placeholder="Zone" style="width:96px;" />' +
+            '<span class="sbld-step2ct">Units</span>' +
+            '<button class="pd-btn sbld-unminus" data-f="' + i + '" data-z="' + zi + '" title="Remove unit">−</button>' +
+            '<span class="sbld-zncount">' + z.units.length + '</span>' +
+            '<button class="pd-btn sbld-unplus" data-f="' + i + '" data-z="' + zi + '" title="Add unit">+</button>' +
+            '<button class="pd-btn sbld-del sbld-delzone" data-f="' + i + '" data-z="' + zi + '" title="Remove zone"><span data-ico="trash" data-ico-size="13"></span></button></div>';
+        }).join('') : '<div class="sbld-znhint">Floor-level — no zones (one location). Add zones if this floor is split.</div>';
+        return '<div class="sbld-flr' + (f.sub ? ' sbld-flr-sub' : '') + '" data-i="' + i + '" draggable="true">' +
+          '<div class="sbld-flr-h"><span class="sbld-grab">⠇</span>' +
+          (f.sub ? '<span class="sbld-subtag" title="Basement / substructure">BSMT</span>' : '') +
+          '<input class="pd-input" data-fk="code" data-f="' + i + '" value="' + e2(f.code) + '" placeholder="' + (f.sub ? 'B1' : 'Floor') + '" style="width:88px;" />' +
+          '<input class="pd-input grow" data-fk="name" data-f="' + i + '" value="' + e2(f.name) + '" placeholder="Floor name" />' +
+          '<button class="pd-btn sbld-addzone" data-f="' + i + '">+ Zone</button>' +
+          '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
+          '<div class="sbld-znwrap">' + zonesHtml + '</div></div>';
+      }).join('') : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' yet.</div>';
+      host.innerHTML = '<h2>2 · Substructure &amp; Superstructure — per trade</h2>' +
+        '<p class="sbld-lede">Pick a trade, add its <b>floors</b> (superstructure) and any <b>basements</b> (substructure), then optionally split each into <b>zones</b> and <b>units</b>. Zones/units are optional. The tower on the right shows superstructure above the grade line and basements below.</p>' +
         chips +
-        '<div style="display:grid;grid-template-columns:1fr 320px;gap:22px;align-items:start;margin-top:6px;">' +
-        '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button>' +
-        '<span class="sbld-quick">Quick: <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="5" style="width:60px;height:30px;"> floors × <input class="pd-input" id="q-zones" type="number" min="1" max="20" value="2" style="width:60px;height:30px;"> zones <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
-        floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder floors. Zones auto-name Z1, Z2… per floor.</p></div>' +
+        '<div class="sbld-lvlgrid">' +
+        '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
+        '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="0" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="5" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="2" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="0" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
+        floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
         '<div class="sbld-tower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
         '</div>';
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; render(); }; });
-      host.querySelector('#b-addfloor').onclick = function () { zn.floors.push({ id: uidv(), code: 'F' + (zn.floors.length + 1), name: '', zones: [{ id: uidv(), code: 'Z1' }, { id: uidv(), code: 'Z2' }] }); markDirty(); render(); };
+      host.querySelector('#b-addfloor').onclick = function () { var nf = zn.floors.filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', zones: [] }); cfg.links = []; markDirty(); render(); };
+      // Basements build bottom-up (deepest first), so a new basement is INSERTED at index 0 (deepest).
+      host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, zones: [] }); cfg.links = []; markDirty(); render(); };
       host.querySelector('#b-quick').onclick = function () {
-        var F = Math.max(1, Math.min(80, +host.querySelector('#q-floors').value || 1)), Z = Math.max(1, Math.min(20, +host.querySelector('#q-zones').value || 1));
+        var B = Math.max(0, Math.min(20, qv('#q-base', 0))), F = Math.max(1, Math.min(80, qv('#q-floors', 1))), Z = Math.max(0, Math.min(20, qv('#q-zones', 0))), U = Math.max(0, Math.min(20, qv('#q-units', 0)));
         if (zn.floors.length && !confirm('Replace the ' + zn.floors.length + ' existing floor(s) for ' + GLABEL[tr] + '?')) return;
-        zn.floors = []; for (var i = 1; i <= F; i++) { var zs = []; for (var j = 1; j <= Z; j++) zs.push({ id: uidv(), code: 'Z' + j }); zn.floors.push({ id: uidv(), code: 'F' + i, name: '', zones: zs }); }
+        function mkZones() { var zs = []; for (var j = 1; j <= Z; j++) { var us = []; for (var k = 1; k <= U; k++) us.push({ id: uidv(), code: 'U' + k }); zs.push({ id: uidv(), code: 'Z' + j, units: us }); } return zs; }
+        zn.floors = [];
+        for (var bi = B; bi >= 1; bi--) zn.floors.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, zones: mkZones() });   // deepest (B{B}) first
+        for (var i = 1; i <= F; i++) zn.floors.push({ id: uidv(), code: 'F' + i, name: '', zones: mkZones() });
         cfg.links = []; markDirty(); render();
       };
-      host.querySelectorAll('.sbld-znplus').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.i]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1) }); cfg.links = []; markDirty(); render(); }; });
-      host.querySelectorAll('.sbld-znminus').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.i]; if (f.zones.length) f.zones.pop(); cfg.links = []; markDirty(); render(); }; });
-      host.querySelectorAll('.sbld-row').forEach(function (row) {
-        var i = +row.dataset.i;
-        row.querySelectorAll('[data-k]').forEach(function (inp) { inp.onchange = function () { zn.floors[i][inp.dataset.k] = inp.value; markDirty(); render(); }; });
-        var del = row.querySelector('[data-del]'); if (del) del.onclick = function () { zn.floors.splice(i, 1); cfg.links = []; markDirty(); render(); };
-        wireDrag(row, zn.floors);
-      });
+      host.querySelectorAll('.sbld-addzone').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.f]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1), units: [] }); cfg.links = []; markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-delzone').forEach(function (b) { b.onclick = function () { zn.floors[+b.dataset.f].zones.splice(+b.dataset.z, 1); cfg.links = []; markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-unplus').forEach(function (b) { b.onclick = function () { var z = zn.floors[+b.dataset.f].zones[+b.dataset.z]; z.units.push({ id: uidv(), code: 'U' + (z.units.length + 1) }); cfg.links = []; markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-unminus').forEach(function (b) { b.onclick = function () { var z = zn.floors[+b.dataset.f].zones[+b.dataset.z]; if (z.units.length) z.units.pop(); cfg.links = []; markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-delfloor').forEach(function (b) { b.onclick = function () { zn.floors.splice(+b.dataset.f, 1); cfg.links = []; markDirty(); render(); }; });
+      host.querySelectorAll('[data-fk]').forEach(function (inp) { inp.onchange = function () { zn.floors[+inp.dataset.f][inp.dataset.fk] = inp.value; markDirty(); render(); }; });
+      host.querySelectorAll('[data-zk]').forEach(function (inp) { inp.onchange = function () { zn.floors[+inp.dataset.f].zones[+inp.dataset.z][inp.dataset.zk] = inp.value; cfg.links = []; markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-flr').forEach(function (row) { wireDrag(row, zn.floors); });
     }
 
     var NS = 'http://www.w3.org/2000/svg';
@@ -9104,23 +9282,38 @@
       return order;
     }
     // ---- schedule (right pane): bars from the links, Start/End + labelled arrows; bars/arrows editable ----
+    // Dependency rank (topological depth) — 0 for nodes with no predecessor, else max(pred rank)+1.
+    // Used to lay out the step-3 bars EVENLY (equal length, spaced by rank) so connecting is easy.
+    function computeRanks(uids) {
+      var incoming = {}; uids.forEach(function (u) { incoming[u] = []; });
+      cfg.links.forEach(function (k) { if (incoming[k.to]) incoming[k.to].push(k.from); });
+      var memo = {}, stk = {};
+      function r(u) { if (memo[u] != null) return memo[u]; if (stk[u]) return 0; stk[u] = 1; var m = 0; (incoming[u] || []).forEach(function (f) { m = Math.max(m, r(f) + 1); }); stk[u] = 0; return (memo[u] = m); }
+      var out = {}; uids.forEach(function (u) { out[u] = r(u); }); return out;
+    }
     function scheduleSVG(locs, days, starts) {
-      var scale = seqZoom, rowH = 26, pad = 8, labelW = 138, chartX = labelW + 6, mw = 40;
-      var maxEnd = 0; locs.forEach(function (l) { maxEnd = Math.max(maxEnd, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
-      var startX = chartX, endX = chartX + maxEnd * scale;
-      var W = chartX + Math.max(maxEnd * scale, 160) + mw + 30, H = pad * 2 + (locs.length + 2) * rowH;
+      // EQUAL-LENGTH bars laid out by dependency rank (not day-length) — uniform, easy-to-hit targets
+      // for connecting, and always visible even before durations are entered. Zoom scales bar width.
+      var barW = Math.max(44, seqZoom * 10), step = barW + 28, rowH = 28, pad = 8, labelW = 138, chartX = labelW + 6;
+      var uids = ['__start__'].concat(locs.map(function (l) { return l.uid; })).concat(['__end__']);
+      var ranks = computeRanks(uids);
+      var maxLocRank = 0; locs.forEach(function (l) { maxLocRank = Math.max(maxLocRank, ranks[l.uid] || 0); });
+      ranks['__start__'] = 0; ranks['__end__'] = Math.max(ranks['__end__'] || 0, maxLocRank + 1);
+      var maxRank = 0; uids.forEach(function (u) { maxRank = Math.max(maxRank, ranks[u] || 0); });
+      var W = chartX + (maxRank + 1) * step + 30, H = pad * 2 + (locs.length + 2) * rowH;
       var pos = {}, bars = '', links = '';
-      function bar(uid, y, x, w, fill, label, txt) { pos[uid] = { x: x, y: y, w: w, cy: y + rowH / 2 };
+      function bar(uid, y, fill, label, txt) {
+        var x = chartX + (ranks[uid] || 0) * step; pos[uid] = { x: x, y: y, w: barW, cy: y + rowH / 2 };
         return '<text x="3" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="var(--pd-ink)">' + e2(label) + '</text>' +
-          '<rect class="sbld-schedbar' + (uid === pendSrc ? ' pend' : '') + '" data-uid="' + uid + '" x="' + x + '" y="' + (y + 3) + '" width="' + w + '" height="' + (rowH - 8) + '" rx="3" fill="' + fill + '"></rect>' +
-          '<text x="' + (x + 4) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="#fff" pointer-events="none">' + txt + '</text>'; }
-      bars += bar('__start__', pad, startX, mw, 'var(--pd-ok)', 'Start', 'START');
-      locs.forEach(function (l, i) { var y = pad + (i + 1) * rowH; bars += bar(l.uid, y, chartX + (starts[l.uid] || 0) * scale, Math.max((days[l.uid] || 0) * scale, 14), GCOLOR[l.trade], l.trade + ' ' + locLabel(l), (days[l.uid] || 0) + 'd'); });
-      bars += bar('__end__', pad + (locs.length + 1) * rowH, endX, mw, 'var(--pd-red)', 'End', 'END');
+          '<rect class="sbld-schedbar' + (uid === pendSrc ? ' pend' : '') + '" data-uid="' + uid + '" x="' + x + '" y="' + (y + 4) + '" width="' + barW + '" height="' + (rowH - 10) + '" rx="3" fill="' + fill + '"></rect>' +
+          '<text x="' + (x + 5) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="#fff" pointer-events="none">' + txt + '</text>'; }
+      bars += bar('__start__', pad, 'var(--pd-ok)', 'Start', 'START');
+      locs.forEach(function (l, i) { var y = pad + (i + 1) * rowH; bars += bar(l.uid, y, GCOLOR[l.trade], l.trade + ' ' + locLabel(l), (days[l.uid] || 0) + 'd'); });
+      bars += bar('__end__', pad + (locs.length + 1) * rowH, 'var(--pd-red)', 'End', 'END');
       cfg.links.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
         var fx = (k.type === 'SS' || k.type === 'SF') ? a.x : a.x + a.w;   // leave from start (SS/SF) or finish (FS/FF)
         var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;   // arrive at to finish (FF/SF) or start (FS/SS)
-        var y1 = a.cy, y2 = b.cy, mx = fx + 8, lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
+        var y1 = a.cy, y2 = b.cy, mx = fx + 10, lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
         var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
         links += '<path class="sbld-link" d="' + d + '"></path>' +
           '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' +
@@ -9130,19 +9323,18 @@
     function stSequence(host) {
       var locs = locList(), days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l); });
       var starts = computeStarts(locs, days);
-      var axis = floorAxis(), rev = axis.slice().reverse();
       var present = GROUPS.filter(function (tr) { return floorsOf(tr).length; });
-      var tower = !locs.length ? '<div class="sbld-empty">Add per-trade floors &amp; zones in step 2 first.</div>' :
-        '<div class="sbld-twr">' + rev.map(function (fc) {
-          var cells = present.map(function (tr) {
-            var f = floorsOf(tr).find(function (x) { return (x.code || x.name || x.id) === fc; });
-            if (!f) return '<div class="sbld-twr-trade sbld-twr-empty"></div>';
-            return '<div class="sbld-twr-trade">' + f.zones.map(function (z) { var uid = uidFor(tr, f, z);
-              return '<button class="sbld-znode' + (pendSrc === uid ? ' pend' : '') + '" data-uid="' + uid + '" title="' + e2(GLABEL[tr] + ' · ' + fc + ' · ' + (z.code || z.id)) + '" style="--zc:' + GCOLOR[tr] + '">' + e2(z.code || 'Z') + '</button>'; }).join('') + '</div>';
-          }).join('');
-          return '<div class="sbld-twr-floor"><span class="sbld-twr-lab">' + e2(fc) + '</span>' + cells + '</div>';
-        }).join('') +
-        '<div class="sbld-twr-floor sbld-twr-legend"><span class="sbld-twr-lab"></span>' + present.map(function (tr) { return '<div class="sbld-twr-trade" style="justify-content:center;font-size:9px;color:' + GCOLOR[tr] + ';font-weight:700;">' + tr + '</div>'; }).join('') + '</div></div>';
+      // Robust node rendering: one section per trade → its floors (top floor first) → a row of
+      // zone/unit node buttons. Every location in locList() becomes a clickable node here.
+      var tower = !locs.length ? '<div class="sbld-empty">No zones yet — add floors/zones for a trade in <b>Step 2</b>, then their nodes appear here to connect.</div>' :
+        '<div class="sbld-twr">' + present.map(function (tr) {
+          return '<div class="sbld-twr-tradehead" style="color:' + GCOLOR[tr] + '"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span>' + e2(GLABEL[tr]) + '</div>' +
+            floorsOf(tr).slice().reverse().map(function (f) {
+              return '<div class="sbld-twr-floor"><span class="sbld-twr-lab">' + e2(f.code || f.name || 'F') + '</span>' +
+                '<div class="sbld-twr-trade">' + leavesOfFloor(tr, f).map(function (l) { var uid = l.uid, lbl = (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (f.code || 'F')));
+                  return '<button class="sbld-znode' + (pendSrc === uid ? ' pend' : '') + '" data-uid="' + uid + '" title="' + e2(GLABEL[tr] + ' · ' + locLabel(l)) + '" style="--zc:' + GCOLOR[tr] + '">' + e2(lbl) + '</button>'; }).join('') + '</div></div>';
+            }).join('');
+        }).join('') + '</div>';
       host.innerHTML = '<h2>3 · Zone sequence — connect the flow</h2>' +
         '<p class="sbld-lede">The <b>tower</b> (left) stacks the floors; each cell is a zone node. <b>Click a source node, then one or more target nodes</b> to link them — a dialog asks the relationship (FS/SS/FF/SF) and lag. The source stays selected so you can link several; click it again or <b>Done</b> to release. Click a bar or arrow on the schedule to edit or unlink. <b>Auto-trace logic</b> builds the takt flow.</p>' +
         '<div class="sbld-sec-actions">' +
@@ -9227,31 +9419,38 @@
       host.querySelector('#b-none').onclick = function () { cfg.scopeOff = {}; locs.forEach(function (l) { tradeActs(l.trade).forEach(function (a) { cfg.scopeOff[l.uid + '|' + a.id] = true; }); }); markDirty(); render(); };
     }
 
+    // One preview panel (KPIs + duration-per-zone bars + grouped activity table) for a generated schedule.
+    function _genPanel(g, label, accent) {
+      var maxZ = g.perZone.reduce(function (m, z) { return Math.max(m, z.days); }, 0) || 1;
+      function kpi(l, v) { return '<div class="sbld-kpi"><div class="sbld-kpi-l">' + l + '</div><div class="sbld-kpi-v">' + v + '</div></div>'; }
+      var kpis = '<div class="sbld-kpis">' + kpi('Total duration', g.totalDays + ' d') + kpi('Start', fmtD(g.start)) + kpi('Finish', fmtD(g.finish)) + '</div>';
+      var pz = '<h4 style="font-size:12px;margin:4px 0 8px;color:var(--pd-muted);">Duration per zone</h4>' + g.perZone.map(function (z) { return '<div class="sbld-bargrp"><span class="lab">' + e2(z.loc.trade + ' · ' + locLabel(z.loc)) + '</span><div class="sbld-bar" style="width:' + Math.round(z.days / maxZ * 200) + 'px;background:' + GCOLOR[z.loc.trade] + '"></div><span>' + z.days + 'd</span></div>'; }).join('');
+      var last = null, pv = '';
+      g.rows.forEach(function (r) { var loc = r.loc.trade + ' · ' + locLabel(r.loc); if (loc !== last) { pv += '<tr class="grp"><td colspan="4">' + e2(loc) + '</td></tr>'; last = loc; } pv += '<tr><td>' + e2(r.act.code) + '</td><td>' + e2(r.act.name) + '</td><td class="num">' + r.dur + 'd</td><td>' + fmtD(r.start) + ' – ' + fmtD(r.finish) + '</td></tr>'; });
+      return '<div class="sbld-genpanel"><div class="sbld-genh" style="border-color:' + accent + ';color:' + accent + ';">' + e2(label) + ' schedule</div>' +
+        kpis + pz + '<div class="sbld-tablewrap" style="max-height:340px;margin-top:8px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div></div>';
+    }
     function stGenerate(host) {
       if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>5 · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
-      var g = generate(), maxZ = g.perZone.reduce(function (m, z) { return Math.max(m, z.days); }, 0) || 1;
-      function kpi(l, v) { return '<div class="sbld-kpi"><div class="sbld-kpi-l">' + l + '</div><div class="sbld-kpi-v">' + v + '</div></div>'; }
-      var kpis = '<div class="sbld-kpis">' + kpi('Locations', g.perZone.length) + kpi('Activities generated', g.rows.length) + kpi('Total duration', g.totalDays + ' days') + kpi('Start', fmtD(g.start)) + kpi('Finish', fmtD(g.finish)) + '</div>';
-      var pz = '<h3 style="font-size:14px;margin:6px 0 10px;">Duration per zone</h3>' + g.perZone.map(function (z) { return '<div class="sbld-bargrp"><span class="lab">' + e2(z.loc.trade + ' · ' + locLabel(z.loc)) + '</span><div class="sbld-bar" style="width:' + Math.round(z.days / maxZ * 260) + 'px;background:' + GCOLOR[z.loc.trade] + '"></div><span>' + z.days + 'd</span></div>'; }).join('');
-      var last = null, pv = '';
-      g.rows.forEach(function (r) { var loc = r.loc.trade + ' · ' + locLabel(r.loc); if (loc !== last) { pv += '<tr class="grp"><td colspan="5">' + e2(loc) + '</td></tr>'; last = loc; } pv += '<tr><td>' + e2(r.act.code) + '</td><td>' + e2(r.act.name) + '</td><td>' + e2(r.group) + '</td><td class="num">' + r.dur + 'd</td><td>' + fmtD(r.start) + ' – ' + fmtD(r.finish) + '</td></tr>'; });
-      host.innerHTML = '<h2>5 · Generate &amp; preview</h2>' +
-        '<p class="sbld-lede">Chains the trades through each location using the durations + the zone links from step 3 (whiteboard step 7). Use <b>Push to Project Schedule</b> to add these activities to the live schedule — pick which WBS to file them under; nothing is replaced.</p>' +
+      var gInt = generate('int'), gExt = generate('ext');
+      host.innerHTML = '<h2>5 · Generate &amp; preview — Internal vs External</h2>' +
+        '<p class="sbld-lede">Both schedules are built from the same zoning + links (step 3), each using its own activity durations: <b>Internal</b> (target) and <b>External</b> (contract). Use <b>Push to Project Schedule</b> to add one of them to the live schedule (with its relationships).</p>' +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Project start&nbsp; <input class="pd-input" type="date" id="b-start" value="' + e2(cfg.startDate) + '" style="height:30px;"></label>' +
-        '<button class="pd-btn" id="b-csv">Export preview (CSV)</button><button class="pd-btn pd-btn-primary" id="b-push" title="Add these activities to the live schedule">Push to Project Schedule</button></div>' +
-        kpis + pz + '<h3 style="font-size:14px;margin:18px 0 10px;">Generated activities (' + g.rows.length + ')</h3>' +
-        '<div class="sbld-tablewrap" style="max-height:400px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Group</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div>';
+        '<button class="pd-btn" id="b-csv-int">CSV · Internal</button><button class="pd-btn" id="b-csv-ext">CSV · External</button>' +
+        '<button class="pd-btn pd-btn-primary" id="b-push" title="Add one of these schedules to the live schedule">Push to Project Schedule</button></div>' +
+        '<div class="sbld-gen2">' + _genPanel(gInt, 'Internal', 'var(--pd-ok)') + _genPanel(gExt, 'External', 'var(--pd-red)') + '</div>';
       host.querySelector('#b-start').onchange = function (ev) { cfg.startDate = ev.target.value || cfg.startDate; markDirty(); render(); };
-      host.querySelector('#b-csv').onclick = function () { exportCsv(g); };
+      host.querySelector('#b-csv-int').onclick = function () { exportCsv(gInt, 'internal'); };
+      host.querySelector('#b-csv-ext').onclick = function () { exportCsv(gExt, 'external'); };
       host.querySelector('#b-push').onclick = openPushModal;
     }
 
-    function exportCsv(g) {
+    function exportCsv(g, label) {
       function q(s) { s = String(s == null ? '' : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
       var lines = [['Trade','Location','Code','Activity','Duration(days)','Start','Finish'].join(',')];
       g.rows.forEach(function (r) { lines.push([r.loc.trade, q(locLabel(r.loc)), q(r.act.code), q(r.act.name), r.dur, iso2(r.start), iso2(r.finish)].join(',')); });
       var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
-      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'schedule-builder-preview.csv'; a.click();
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'schedule-builder-' + (label || 'preview') + '.csv'; a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
     }
 
@@ -9263,44 +9462,69 @@
       return mx + 1;
     }
     function openPushModal() {
-      var g = generate(); if (!g.rows.length) { UI.toast('Generate a schedule first (add activities + zones).', 'warn'); return; }
+      var gI = generate('int'); if (!gI.rows.length) { UI.toast('Generate a schedule first (add activities + zones).', 'warn'); return; }
       var wbsOpts = '<option value="">— Top level (new WBS branch) —</option>' + rows.filter(isWbs).sort(function (a, b) { return String(a.wbs).localeCompare(String(b.wbs), undefined, { numeric: true }); }).map(function (r) { return '<option value="' + e2(r.wbs) + '">' + e2(r.wbs + '  ' + (r.activity_name || '')) + '</option>'; }).join('');
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 500;
       ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:16px;">' +
-        '<p class="sbld-hint" style="margin:0 0 12px;"><b>' + g.rows.length + '</b> generated activities will be <b>added</b> to the existing schedule (nothing is replaced).</p>' +
-        '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Assign under WBS</label>' +
+        '<p class="sbld-hint" style="margin:0 0 12px;"><b>' + gI.rows.length + '</b> generated activities will be <b>added</b> to the existing schedule with their <b>relationships</b> (FS/SS/FF/SF + lag) as predecessors. Nothing is replaced.</p>' +
+        '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Schedule to push</label>' +
+        '<select class="pd-select" id="sbpush-basis" style="width:100%;height:34px;"><option value="int">Internal (target)</option><option value="ext">External (contract)</option></select>' +
+        '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Assign under WBS</label>' +
         '<select class="pd-select" id="sbpush-wbs" style="width:100%;height:34px;">' + wbsOpts + '</select>' +
-        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;"><input type="checkbox" id="sbpush-grp" checked> Organise into Trade → Floor → Zone sub-WBS</label>' +
+        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;"><input type="checkbox" id="sbpush-grp" checked> Organise into Trade → Floor → Zone → Unit sub-WBS</label>' +
         '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbpush-go">Add to schedule</button></div></div>';
       document.body.appendChild(ov);
       function close() { ov.remove(); }
       ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
-      ov.querySelector('#sbpush-go').onclick = function () { var pc = ov.querySelector('#sbpush-wbs').value; var grp = ov.querySelector('#sbpush-grp').checked; close(); pushToSchedule(pc, grp); };
+      ov.querySelector('#sbpush-go').onclick = function () { var pc = ov.querySelector('#sbpush-wbs').value; var grp = ov.querySelector('#sbpush-grp').checked; var bs = ov.querySelector('#sbpush-basis').value; close(); pushToSchedule(pc, grp, bs); };
     }
-    async function pushToSchedule(parentCode, grouped) {
-      var g = generate(); if (!g.rows.length) return;
+    async function pushToSchedule(parentCode, grouped, basis) {
+      var g = generate(basis || 'int'); if (!g.rows.length) return;
       var base = parentCode || '', payloads = [], idset = {};
       rows.forEach(function (r) { if (r.activity_id) idset[r.activity_id] = 1; });
       function uniqId(cand) { var id = cand, n = 2; while (idset[id]) { id = cand + '-' + n; n++; } idset[id] = 1; return id; }
       function code(parent, i) { return parent ? parent + '.' + i : '' + i; }
+      // --- Carry the builder's zone links into activity-level predecessors ---
+      // Clean sequential ids (dotted WBS codes would confuse the predecessor parser); chain each
+      // location's activities FS internally, then map each zone→zone link (FS/SS/FF/SF + lag) onto
+      // the right end activities of the two locations.
+      var seq = 0, locRows = {};
+      g.rows.forEach(function (r) { r._id = uniqId('SB' + (++seq)); r._preds = []; (locRows[r.loc.uid] = locRows[r.loc.uid] || []).push(r); });
+      Object.keys(locRows).forEach(function (uid) { var arr = locRows[uid]; for (var i = 1; i < arr.length; i++) arr[i]._preds.push(arr[i - 1]._id); });
+      function lagStr(l) { return l ? (l > 0 ? '+' + l : '' + l) : ''; }
+      cfg.links.forEach(function (k) {
+        if (k.from.indexOf('__') === 0 || k.to.indexOf('__') === 0) return;   // skip Start/End markers
+        var A = locRows[k.from], B = locRows[k.to]; if (!A || !B || !A.length || !B.length) return;
+        var aFirst = A[0]._id, aLast = A[A.length - 1]._id, bFirst = B[0], bLast = B[B.length - 1], ty = k.type || 'FS';
+        if (ty === 'FS') bFirst._preds.push(aLast + lagStr(k.lag));
+        else if (ty === 'SS') bFirst._preds.push(aFirst + ' SS' + lagStr(k.lag));
+        else if (ty === 'FF') bLast._preds.push(aLast + ' FF' + lagStr(k.lag));
+        else if (ty === 'SF') bLast._preds.push(aFirst + ' SF' + lagStr(k.lag));
+      });
       function addSummary(c, name) { payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: name, activity_type: 'WBS Summary', created_by: UID }); }
-      function addTask(c, name, r) { payloads.push({ project_id: pid, wbs: c, activity_id: uniqId(c), activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, created_by: UID }); }
+      function addTask(c, name, r) { payloads.push({ project_id: pid, wbs: c, activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), created_by: UID }); }
       var ci = nextChildIndex(base);
       if (grouped) {
+        function grp(list, keyFn, ordFn) { var m = {}, ord = []; list.forEach(function (r) { var k = keyFn(r); if (!m[k]) { m[k] = []; ord.push(ordFn(r)); } m[k].push(r); }); return { m: m, ord: ord }; }
         var byTrade = {}; g.rows.forEach(function (r) { (byTrade[r.loc.trade] = byTrade[r.loc.trade] || []).push(r); });
         GROUPS.forEach(function (tr) {
           var trRows = byTrade[tr]; if (!trRows || !trRows.length) return;
           var tCode = code(base, ci++); addSummary(tCode, GLABEL[tr]);
-          var byFloor = {}, fOrder = []; trRows.forEach(function (r) { var k = r.loc.floor.id; if (!byFloor[k]) { byFloor[k] = []; fOrder.push(r.loc.floor); } byFloor[k].push(r); });
-          var fi = 1; fOrder.forEach(function (f) {
+          var byF = grp(trRows, function (r) { return r.loc.floor.id; }, function (r) { return r.loc.floor; });
+          var fi = 1; byF.ord.forEach(function (f) {
             var fCode = tCode + '.' + (fi++); addSummary(fCode, f.code || f.name || 'Floor');
-            var byZone = {}, zOrder = []; byFloor[f.id].forEach(function (r) { var k = r.loc.zone.id; if (!byZone[k]) { byZone[k] = []; zOrder.push(r.loc.zone); } byZone[k].push(r); });
-            var zi = 1; zOrder.forEach(function (z) {
-              var zCode = fCode + '.' + (zi++); addSummary(zCode, z.code || z.name || 'Zone');
-              var ai = 1; byZone[z.id].forEach(function (r) { addTask(zCode + '.' + (ai++), r.act.name, r); });
+            var rowsF = byF.m[f.id];
+            if (!f.zones.length) { var af = 1; rowsF.forEach(function (r) { addTask(fCode + '.' + (af++), r.act.name, r); }); return; }
+            var byZ = grp(rowsF, function (r) { return r.loc.zone ? r.loc.zone.id : '_'; }, function (r) { return r.loc.zone; });
+            var zi = 1; byZ.ord.forEach(function (z) {
+              var zCode = fCode + '.' + (zi++); addSummary(zCode, z ? (z.code || z.name || 'Zone') : 'Zone');
+              var rowsZ = byZ.m[z ? z.id : '_'];
+              if (!z || !z.units.length) { var az = 1; rowsZ.forEach(function (r) { addTask(zCode + '.' + (az++), r.act.name, r); }); return; }
+              var byU = grp(rowsZ, function (r) { return r.loc.unit ? r.loc.unit.id : '_'; }, function (r) { return r.loc.unit; });
+              var ui = 1; byU.ord.forEach(function (u) { var uCode = zCode + '.' + (ui++); addSummary(uCode, u ? (u.code || u.name || 'Unit') : 'Unit'); var au = 1; byU.m[u ? u.id : '_'].forEach(function (r) { addTask(uCode + '.' + (au++), r.act.name, r); }); });
             });
           });
         });
@@ -9436,8 +9660,9 @@
   }
 
   // ----- Saved Views (zoom + search + filters, per browser) -----
-  function loadViews() { try { return JSON.parse(localStorage.getItem('ps_views') || '{}'); } catch (e) { return {}; } }
-  function saveViews(v) { try { localStorage.setItem('ps_views', JSON.stringify(v)); } catch (e) {} }
+  // Saved layouts are PER PROJECT: ps_views = { <pid>: { <name>: view } }.
+  function loadViews() { try { var all = JSON.parse(localStorage.getItem('ps_views') || '{}') || {}; return all[pid || 'none'] || {}; } catch (e) { return {}; } }
+  function saveViews(v) { try { var all = JSON.parse(localStorage.getItem('ps_views') || '{}') || {}; all[pid || 'none'] = v; localStorage.setItem('ps_views', JSON.stringify(all)); } catch (e) {} }
   function renderViewsMenu() {
     var menu = document.getElementById('ps-views-menu'); if (!menu) return;
     var vs = loadViews(), names = Object.keys(vs);
@@ -9456,8 +9681,9 @@
       v[n] = { zoom: zoom, search: search, filters: JSON.parse(JSON.stringify(filters)),
         groupBy: groupBy, colHidden: JSON.parse(JSON.stringify(colHidden)),
         colSort: colSort ? JSON.parse(JSON.stringify(colSort)) : null,
-        colNames: JSON.parse(JSON.stringify(colNames)), cols: cols };
-      saveViews(v); menu.classList.remove('open'); UI.toast('Layout “' + n + '” saved.', 'success');
+        colNames: JSON.parse(JSON.stringify(colNames)), cols: cols,
+        charts: (function () { try { return JSON.parse(JSON.stringify(chartsList())); } catch (e) { return null; } })() };
+      saveViews(v); menu.classList.remove('open'); UI.toast('Layout “' + n + '” saved for this project.', 'success');
     };
   }
   function applyView(v) {
@@ -9474,6 +9700,7 @@
     if (v.colSort !== undefined) { colSort = v.colSort ? JSON.parse(JSON.stringify(v.colSort)) : null; try { localStorage.setItem('ps_colsort', JSON.stringify(colSort)); } catch (e) {} }
     if (v.colNames !== undefined) { colNames = JSON.parse(JSON.stringify(v.colNames)); try { localStorage.setItem('ps_colnames', JSON.stringify(colNames)); } catch (e) {} }
     if (v.cols) { var pane = document.querySelector('.ps-grid-pane'); if (pane) { Object.keys(v.cols).forEach(function (c) { if (v.cols[c]) pane.style.setProperty('--c-' + c, v.cols[c]); }); try { localStorage.setItem('ps_cols', JSON.stringify(v.cols)); } catch (e) {} } }
+    if (v.charts && typeof setCharts === 'function') { setCharts(v.charts); if (progressMode) renderProgressView(); }   // restore the saved chart template
     var si = document.getElementById('ps-search'); if (si) si.value = search;
     document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.toggle('active', x.dataset.zoom === zoom); });
     buildFilterMenu();
@@ -10915,6 +11142,7 @@
     document.getElementById('ps-filterbtn').onclick = function (e) { e.stopPropagation(); var o = fMenu.classList.contains('open'); closeMenus(); if (!o) fMenu.classList.add('open'); };
     document.getElementById('ps-views').onclick = function (e) { e.stopPropagation(); var o = vMenu.classList.contains('open'); closeMenus(); if (!o) { renderViewsMenu(); vMenu.classList.add('open'); } };
     document.getElementById('ps-schedbtn').onclick = function (e) { e.stopPropagation(); closeMenus(); openSchedule(); };
+    var ddb = document.getElementById('ps-datadate-badge'); if (ddb) ddb.onclick = function (e) { e.stopPropagation(); closeMenus(); openSchedule(); };
     document.getElementById('ps-sched-x').onclick = closeSchedule;
     document.getElementById('ps-sched-cancel').onclick = closeSchedule;
     document.getElementById('ps-sched-back').onclick = function (e) { if (e.target === this) closeSchedule(); };
