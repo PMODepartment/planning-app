@@ -15,10 +15,13 @@ checkbox on/off left the grid showing all 246 activities regardless.
   `filters.crit` verified true, grid still rendered all 246 rows (Cabinets Handles/Solid Wood Riser
   Detail/etc., all with 100+ day float, still visible) — not a UI-interaction miss, a real logic gap.
 - **Fix:** one-token addition — `anyFilter()` now includes `filters.crit` in its OR chain.
-- Verified: inline script (full file) parses clean via `new Function`; single definition of
-  `anyFilter` confirmed (no shadow copy). **Not yet re-verified live** — fixed mid-session against the
-  deployed site; needs a hard-refresh + re-toggle to confirm the grid narrows to critical activities +
-  WBS ancestors only. Module-local, no migration, no `?v=` bump.
+- **Verified live on the deployed site** (BAU101, post-deploy hard-reload): checking "Critical path
+  only" narrowed 246 → 4 critical activities + their WBS ancestors (Landscape/Bath House/Fence PC -
+  Modularize under Designs, ACCU/Chiller under Construction → Mechanical — matching the Critical Path
+  Report exactly); combined with the existing **"Hide empty groups"** toggle, childless ancestor
+  branches (Milestones, Procurement) drop out too, leaving just the critical chain with real WBS
+  context. Unchecking the filter instantly restores all 246 — the "show again" half the user asked
+  for was already there, just inert until this fix. Module-local, no migration, no `?v=` bump.
 
 ## Mobile Gantt view (read-only, touch-scroll) (2026-07-26) — fmlozano
 The phone view (`#ps-mobile`, <700px) was a card list only; added a **List | Gantt** segmented toggle
