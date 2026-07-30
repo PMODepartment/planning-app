@@ -3443,7 +3443,7 @@
   }
 
   // ---- Filter (OPC-style) ----
-  function anyFilter() { return search.trim() || filters.behind || filters.look || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}) || Object.keys(filters.col || {}).some(function(k){return (filters.col[k] || '').trim();}) || (filters.adv && filters.adv.rules && filters.adv.rules.length); }
+  function anyFilter() { return search.trim() || filters.behind || filters.crit || filters.look || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}) || Object.keys(filters.col || {}).some(function(k){return (filters.col[k] || '').trim();}) || (filters.adv && filters.adv.rules && filters.adv.rules.length); }
   // Per-column filter helpers. _colByKey resolves a colKey to its column def; _colText returns the
   // displayed text for a column so the filter matches what the user sees in the cell.
   // Advanced-filter raw value + type per column (for numeric/date comparisons, not just text).

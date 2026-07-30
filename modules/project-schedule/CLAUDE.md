@@ -1,5 +1,25 @@
 # Module: project-schedule
 
+## Fix: "Critical path only" filter had zero effect (2026-07-30) — fmlozano
+User asked for critical-path activities to be isolated (hide the rest, with an easy way to show them
+again) — this feature **already existed** as Filter → Schedule → "Critical path only" (`filters.crit`,
+added 2026-07-14), but testing it live on **Bauhinia (BAU101)** found it did **nothing**: toggling the
+checkbox on/off left the grid showing all 246 activities regardless.
+- **Root cause: `anyFilter()` never checked `filters.crit`.** `buildNodes()`'s WBS-mode branch only
+  runs `rowMatches` filtering when `anyFilter()` returns true; that gate function ORs together search/
+  behind/look/status/type/codes/col/adv but **omitted `filters.crit` entirely**, so toggling Critical-
+  path-only **alone** (no other filter active) left `anyFilter()` false and the whole filter pass never
+  ran — `rowMatches`'s own `if (filters.crit && !isWbs(r) && !r._critical) return false;` line was
+  correct and simply never got invoked. Same bug hit the non-WBS grouped-mode branch (same `anyFilter()`
+  gate). Confirmed via direct DOM inspection on the live site: checkbox toggled to `checked=true`,
+  `filters.crit` verified true, grid still rendered all 246 rows (Cabinets Handles/Solid Wood Riser
+  Detail/etc., all with 100+ day float, still visible) — not a UI-interaction miss, a real logic gap.
+- **Fix:** one-token addition — `anyFilter()` now includes `filters.crit` in its OR chain.
+- Verified: inline script (full file) parses clean via `new Function`; single definition of
+  `anyFilter` confirmed (no shadow copy). **Not yet re-verified live** — fixed mid-session against the
+  deployed site; needs a hard-refresh + re-toggle to confirm the grid narrows to critical activities +
+  WBS ancestors only. Module-local, no migration, no `?v=` bump.
+
 ## Mobile Gantt view (read-only, touch-scroll) (2026-07-26) — fmlozano
 The phone view (`#ps-mobile`, <700px) was a card list only; added a **List | Gantt** segmented toggle
 (persisted `ps_mview`). `renderMobile()` now dispatches to `renderMobileList(acts)` (the old cards) or
