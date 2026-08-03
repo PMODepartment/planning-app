@@ -277,6 +277,8 @@ window.MaterialSubmittal = (function () {
   function agingDays(r) {
     var ref = requiredApprovalOf(r) || r.plan_approval_date;
     if (!ref) return null;
+    var refYear = +String(ref).slice(0, 4);
+    if (refYear < 2015 || refYear > 2100) return null;   // sentinel/placeholder date, not real
     var today = new Date(); today.setHours(0, 0, 0, 0);
     return Math.round((today - new Date(String(ref).slice(0, 10) + 'T00:00:00')) / 86400000);
   }
@@ -411,14 +413,13 @@ window.MaterialSubmittal = (function () {
     var k = kpis(rows), sc = statusCounts(rows), curve = scurve(rows), legacy = legacyScurve(rows);
     var h = '<div class="ms-dash">';
 
-    h += '<div class="ms-kpis">' +
+    h += kpiSection('Log Overview',
       kpi('Total submittals', k.total, k.counted !== k.total ? (k.total - k.counted) + ' with no status yet' : 'all have a status') +
       kpi('Approved', k.approved, k.approvedPct.toFixed(1) + '% of ' + k.counted + ' tracked', 'good') +
       kpi('Pending approval', k.pending, 'submitted, awaiting decision', k.pending ? 'warn' : '') +
       kpi('For submission', k.forSub, 'not yet submitted') +
       kpi('Rejected / resubmit', k.rejected, 'needs rework', k.rejected ? 'bad' : '') +
-      kpi('Overdue', k.overdue, 'past planned approval', k.overdue ? 'bad' : '') +
-      '</div>';
+      kpi('Overdue', k.overdue, 'past planned approval', k.overdue ? 'bad' : ''));
 
     h += '<div class="ms-grid2">';
 
@@ -534,9 +535,14 @@ window.MaterialSubmittal = (function () {
   // ---- Submittals by Period — Planned vs Actual (WPM "Work Package by Period") ---
   var periodMode = 'month';   // 'month' | 'quarter'
   var MNAME3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // Guards against sentinel/placeholder dates (seen live on Drawing Register's
+  // legacy imports — a single bogus far-past date can blow the whole chart's
+  // x-axis out to a multi-decade range) by treating anything outside a sane
+  // project-planning window as "no date" instead of plotting it.
   function periodKeyOf(dateStr, mode) {
     var d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00'); if (isNaN(d)) return null;
     var y = d.getFullYear(), m = d.getMonth();
+    if (y < 2015 || y > 2100) return null;
     if (mode === 'quarter') return y + '-Q' + (Math.floor(m / 3) + 1);
     return y + '-' + String(m + 1).padStart(2, '0');
   }
@@ -600,6 +606,13 @@ window.MaterialSubmittal = (function () {
   function kpi(label, value, sub, cls) {
     return '<div class="ms-kpi ' + (cls || '') + '"><div class="ms-kpi-l">' + esc(label) + '</div>' +
       '<div class="ms-kpi-v">' + value + '</div><div class="ms-kpi-s">' + esc(sub || '') + '</div></div>';
+  }
+  // Groups a KPI row under a small uppercase eyebrow label (WPM "Cost Overview" /
+  // "Work Package Status" pattern) so a page with more than one KPI row reads as
+  // separate sections instead of one long undifferentiated strip.
+  function kpiSection(label, cardsHtml) {
+    return '<div class="ms-kpi-section"><div class="ms-kpi-seclabel">' + esc(label) + '</div>' +
+           '<div class="ms-kpis">' + cardsHtml + '</div></div>';
   }
   function statusColor(s) {
     return ({ 'Approved':'#12693A', 'Approved w/ Comments':'#3F6B21', 'Resubmit':'#9A4A15', 'Rejected':'#9B1C1C',
@@ -1418,6 +1431,12 @@ window.MaterialSubmittal = (function () {
     renderBacklog();
   }
 
+  // A backlog can run into the thousands — the table scrolls inside its own
+  // capped-height card (KPIs/header stay put) and only the first BK_PAGE rows
+  // paint until "Show all" is clicked, same fix as Drawing Register's Backlog.
+  var BK_PAGE = 200;
+  var bkShowAll = false;
+
   function renderBacklog() {
     var host = document.getElementById('ms-view');
     var list = backlogRows();
@@ -1437,14 +1456,15 @@ window.MaterialSubmittal = (function () {
     var late = list.filter(function (r) { var f = docFloatOf(r); return f != null && f < 0; }).length;
     var rejected = list.filter(function (r) { return statusOf(r) === 'Rejected'; }).length;
 
-    var kpis = '<div class="ms-kpis">' +
+    var kpis = kpiSection('Backlog Overview',
       kpi('Open items', list.length, 'not yet approved') +
       kpi('Overdue', overdue, 'past planned approval', overdue ? 'bad' : '') +
       kpi('Late vs need-by', late, 'past the schedule deadline', late ? 'bad' : '') +
-      kpi('Rejected', rejected, 'needs resubmission') +
-    '</div>';
+      kpi('Rejected', rejected, 'needs resubmission'));
 
-    var body = list.map(function (r) {
+    var shown = (bkShowAll || list.length<=BK_PAGE) ? list : list.slice(0, BK_PAGE);
+
+    var body = shown.map(function (r) {
       var meta = statusMeta(statusOf(r)), st = statusOf(r), a = agingDays(r);
       return '<tr class="ms-bk-row" data-id="' + r.id + '">' +
         '<td><span class="ms-code">' + esc(codeOf(r) || '—') + '</span></td>' +
@@ -1463,12 +1483,24 @@ window.MaterialSubmittal = (function () {
         (active ? ' <span class="ms-sortind">' + (bkSort.dir === 1 ? '▲' : '▼') + '</span>' : '') + '</th>';
     }).join('');
 
+    var moreBar = (list.length > BK_PAGE) ?
+      '<div class="ms-bk-more">' +
+        (bkShowAll
+          ? 'Showing all ' + list.length + ' — <button class="ms-linklike" id="ms-bk-collapse">collapse to first ' + BK_PAGE + '</button>'
+          : 'Showing ' + BK_PAGE + ' of ' + list.length + ' — <button class="ms-linklike" id="ms-bk-showall">show all</button>') +
+      '</div>' : '';
+
     host.innerHTML = kpis +
       '<div class="pd-card ms-tablecard"><h3>Open items' +
       '<span class="ms-mut" style="font-weight:400;font-size:12.5px;margin-left:8px;">' +
       (anyFilt ? 'Showing ' + list.length + ' filtered' : list.length + ' total') + '</span></h3>' +
-      '<table class="ms-table ms-bk-table"><thead><tr>' + head + '</tr></thead>' +
-      '<tbody>' + body + '</tbody></table></div>';
+      '<div class="ms-bk-scroll"><table class="ms-table ms-bk-table"><thead><tr>' + head + '</tr></thead>' +
+      '<tbody>' + body + '</tbody></table></div>' + moreBar + '</div>';
+
+    var showAllBtn = document.getElementById('ms-bk-showall');
+    if (showAllBtn) showAllBtn.onclick = function () { bkShowAll = true; renderBacklog(); };
+    var collapseBtn = document.getElementById('ms-bk-collapse');
+    if (collapseBtn) collapseBtn.onclick = function () { bkShowAll = false; renderBacklog(); };
 
     host.querySelectorAll('.ms-bk-table th.ms-sortable').forEach(function (th) {
       th.onclick = function () { bkSetSort(th.dataset.col); };

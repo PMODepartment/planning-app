@@ -388,6 +388,8 @@ window.DrawingRegister = (function () {
   function agingDays(r){
     var ref = requiredApprovalOf(r) || r.planned_approval;
     if (!ref) return null;
+    var refYear = +String(ref).slice(0,4);
+    if (refYear < 2015 || refYear > 2100) return null;   // sentinel/placeholder date, not real
     var today = new Date(); today.setHours(0,0,0,0);
     return Math.round((today - new Date(ref + 'T00:00:00')) / 86400000);
   }
@@ -543,6 +545,15 @@ window.DrawingRegister = (function () {
     renderBacklog();
   }
 
+  // A backlog can run into the thousands (e.g. a fresh import with no statuses
+  // set yet) — rendering + scrolling all of them as one page-length table is the
+  // "vastness" the user hit on Bauhinia. Two mitigations: the table scrolls
+  // inside its own capped-height card (KPIs/header stay put), and only the first
+  // BK_PAGE rows paint until "Show all" is clicked (DOM stays light; sorting/
+  // filtering always re-slices from the full, already-sorted list).
+  var BK_PAGE = 200;
+  var bkShowAll = false;
+
   function renderBacklog(){
     var host = document.getElementById('dr-view');
     var list = backlogRows();
@@ -560,14 +571,15 @@ window.DrawingRegister = (function () {
     var tight = list.filter(function (r){ var f=docFloatOf(r); return f!=null && f>=0 && f<=3; }).length;
     var revise = list.filter(function (r){ return r.status==='Revise & Resubmit'; }).length;
 
-    var kpis = '<div class="dr-kpis">' +
+    var kpis = kpiSection('Backlog Overview',
       kpi(list.length, 'Open items') +
       kpi(late, 'Late vs need-by', late>0?'warn':'') +
       kpi(tight, 'Due ≤3 days', tight>0?'warn':'') +
-      kpi(revise, 'Revise & Resubmit') +
-    '</div>';
+      kpi(revise, 'Revise & Resubmit'));
 
-    var body = list.map(function (r){
+    var shown = (bkShowAll || list.length<=BK_PAGE) ? list : list.slice(0, BK_PAGE);
+
+    var body = shown.map(function (r){
       var a = agingDays(r);
       return '<tr class="dr-bk-row" data-id="'+r.id+'">' +
         '<td class="dr-code">'+Fmt.esc(drawCode(r))+'</td>' +
@@ -586,12 +598,24 @@ window.DrawingRegister = (function () {
         (active ? ' <span class="dr-sortind">'+(bkSort.dir===1?'▲':'▼')+'</span>' : '')+'</th>';
     }).join('');
 
+    var moreBar = (list.length > BK_PAGE) ?
+      '<div class="dr-bk-more">' +
+        (bkShowAll
+          ? 'Showing all '+list.length+' — <button class="dr-linklike" id="dr-bk-collapse">collapse to first '+BK_PAGE+'</button>'
+          : 'Showing '+BK_PAGE+' of '+list.length+' — <button class="dr-linklike" id="dr-bk-showall">show all</button>') +
+      '</div>' : '';
+
     host.innerHTML = kpis +
       '<div class="pd-card"><h3 class="dr-h3">Open items' +
       '<span class="dr-mut" style="font-weight:400;font-size:12.5px;margin-left:8px;">'+
       (anyFilter() ? 'Showing '+list.length+' filtered' : list.length+' total')+'</span></h3>' +
-      '<table class="pd-table dr-table dr-bk-table"><thead><tr>'+head+'</tr></thead>' +
-      '<tbody>'+body+'</tbody></table></div>';
+      '<div class="dr-bk-scroll"><table class="pd-table dr-table dr-bk-table"><thead><tr>'+head+'</tr></thead>' +
+      '<tbody>'+body+'</tbody></table></div>' + moreBar + '</div>';
+
+    var showAllBtn = document.getElementById('dr-bk-showall');
+    if (showAllBtn) showAllBtn.onclick = function (){ bkShowAll = true; renderBacklog(); };
+    var collapseBtn = document.getElementById('dr-bk-collapse');
+    if (collapseBtn) collapseBtn.onclick = function (){ bkShowAll = false; renderBacklog(); };
 
     host.querySelectorAll('.dr-bk-table th.dr-sortable').forEach(function (th){
       th.onclick = function (){ bkSetSort(th.dataset.col); };
@@ -1289,14 +1313,13 @@ window.DrawingRegister = (function () {
     });
     var balance = totSheets - apSheets;
 
-    var kpis = '<div class="dr-kpis">' +
+    var kpis = kpiSection('Register Overview',
       kpi(draws.length, 'Drawings') +
       kpi(totSheets, 'Total sheets') +
       kpi(subSheets, 'Submitted') +
       kpi(apSheets, 'Approved') +
       kpi((totSheets?Math.round(apSheets/totSheets*100):0)+'%', 'Approved %', 'ok') +
-      kpi(balance, 'Balance', balance>0?'warn':'') +
-    '</div>';
+      kpi(balance, 'Balance', balance>0?'warn':''));
 
     // by phase
     var byPhase = groupAgg('phase');
@@ -1370,9 +1393,15 @@ window.DrawingRegister = (function () {
   // ---- Drawings by Period — Planned vs Actual (WPM "Work Package by Period") ---
   var periodMode = 'month';   // 'month' | 'quarter'
   var MNAME3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // Some legacy imports stamp a sentinel/placeholder date (seen live: many rows
+  // carrying "2000-01-06" as actual_approval, clearly not a real approval date)
+  // rather than leaving the field blank. A single such row would otherwise blow
+  // the whole chart's x-axis out to a 25-year range. Treat anything outside a
+  // sane project-planning window as "no date" instead of plotting it.
   function periodKeyOf(dateStr, mode) {
     var d = new Date(dateStr + 'T00:00:00'); if (isNaN(d)) return null;
     var y = d.getFullYear(), m = d.getMonth();
+    if (y < 2015 || y > 2100) return null;
     if (mode === 'quarter') return y + '-Q' + (Math.floor(m/3)+1);
     return y + '-' + String(m+1).padStart(2,'0');
   }
@@ -1509,6 +1538,13 @@ window.DrawingRegister = (function () {
   function kpi(val, label, cls) {
     return '<div class="dr-kpi '+(cls?'dr-'+cls:'')+'"><div class="dr-kpi-val">'+val+'</div>' +
            '<div class="dr-kpi-label">'+label+'</div></div>';
+  }
+  // Groups a KPI row under a small uppercase eyebrow label (WPM "Cost Overview" /
+  // "Work Package Status" pattern) so a page with more than one KPI row reads as
+  // separate sections instead of one long undifferentiated strip.
+  function kpiSection(label, cardsHtml) {
+    return '<div class="dr-kpi-section"><div class="dr-kpi-seclabel">'+Fmt.esc(label)+'</div>' +
+           '<div class="dr-kpis">'+cardsHtml+'</div></div>';
   }
 
   // ------------------------------------------------------------ file view ----

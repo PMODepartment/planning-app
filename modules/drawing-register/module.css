@@ -143,6 +143,13 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-bk-table th.dr-sortable:hover { color:var(--pd-red); }
 .dr-sortind { color:var(--pd-red); font-size:10px; }
 .dr-aging-late { color:var(--pd-red); font-weight:700; }
+/* A large backlog scrolls inside its own card instead of stretching the whole
+   page — the KPI row + card header stay put; only the table body scrolls. */
+.dr-bk-scroll { max-height:min(62vh, 640px); overflow-y:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius); }
+.dr-bk-scroll .dr-bk-table { border:none; }
+.dr-bk-more { margin-top:10px; font-size:12.5px; color:var(--pd-muted); text-align:center; }
+.dr-linklike { background:none; border:none; padding:0; color:var(--pd-red); font-weight:600; font-size:inherit;
+  font-family:inherit; cursor:pointer; text-decoration:underline; }
 
 /* Progress bar */
 .dr-prog { position:relative; height:16px; background:var(--pd-line); border-radius:999px; overflow:hidden; min-width:100px; max-width:220px; }
@@ -151,7 +158,11 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
   line-height:16px; color:var(--pd-ink); }
 
 /* ---- KPI cards ---------------------------------------------------------- */
-.dr-kpis { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:18px; }
+.dr-kpi-section { margin-bottom:18px; }
+.dr-kpi-seclabel { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--pd-muted); margin-bottom:8px; }
+.dr-kpis { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
+.dr-kpi-section .dr-kpis { margin-bottom:0; }
 .dr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:16px 18px;
   position:relative; overflow:hidden; }
 .dr-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pd-red); opacity:.5; }

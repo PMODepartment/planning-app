@@ -77,6 +77,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-03 — Drawing Register + Material Submittal: live UI review fixes (both modules)
+Reviewed the live deployed site (drawing-register + a real project, "Bauhinia") and made several fixes:
+- **Backlog "vastness" fix (user report: Bauhinia's Backlog has a long scroll).** A backlog can run into
+  the thousands (Bauhinia: 1,010 open items) — the table now scrolls **inside its own capped-height
+  card** (`.dr-bk-scroll`/`.ms-bk-scroll`, `max-height:min(62vh,640px)`) so the KPI row + card header
+  stay put, and only the first 200 rows paint until "show all" is clicked (`BK_PAGE`/`bkShowAll`),
+  keeping the DOM light on very large backlogs. Sorting/filtering always re-slices from the full,
+  already-sorted list, so paging never hides the "worst" rows.
+- **Real bug found live: "Jan '00" on the Period chart.** GPR101 has ~9 drawings carrying
+  `actual_approval = "2000-01-06"` — a legacy-import sentinel/placeholder date, not a real approval —
+  which blew the whole chart's x-axis out to a 25-year range. `periodKeyOf()`/`agingDays()` in both
+  modules now treat any date outside a sane 2015–2100 project-planning window as "no date" rather than
+  plotting it.
+- **KPI section labels (user request: "follow how the procurement dashboard separates the KPI
+  cards").** New `kpiSection(label, cardsHtml)` helper wraps each KPI row with a small uppercase
+  eyebrow label (WPM's "Cost Overview" / "Work Package Status" pattern) — "Register Overview" / "Log
+  Overview" on Overview, "Backlog Overview" on Backlog — so a page with more than one KPI row reads as
+  separate sections instead of one undifferentiated strip.
+- Module-local only; no DB/migration change. Assets: drawing-register `module.css/js?v=20260803d/f`,
+  material-submittal `module.css/js?v=20260803d/e`. Verified `node --check` on both; the sentinel-date
+  bug and the Bauhinia row count were confirmed **live** via the deployed site (Supabase query run in
+  the browser console) before fixing.
+
 ### 2026-08-03 — Drawing Register + Material Submittal: add the Aging bar + Period chart to Overview
 Continuation of the WPM look-alike pass: added the two remaining WPM Overview charts to both modules.
 - **"Open Items by Aging"** — a single stacked horizontal bar (>60d overdue / 30-60d overdue / 0-30d

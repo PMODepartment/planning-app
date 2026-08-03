@@ -6,6 +6,19 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## Live UI review fixes: Backlog scroll containment, sentinel-date guard, KPI sections (2026-08-03) — fmlozano
+Applied the same fixes made to Drawing Register after a live review (Bauhinia's Backlog had a very
+long scroll with 1,010 open items):
+- **Backlog scroll containment + paging** — `.ms-bk-scroll` (`max-height:min(62vh,640px)`) plus a
+  200-row page (`BK_PAGE`/`bkShowAll`, "show all"/"collapse" toggle), same pattern as Drawing Register.
+- **Sentinel-date guard** in `periodKeyOf()`/`agingDays()` — discards any `plan_approval_date`/
+  `date_approved` outside 2015–2100 (the bug was confirmed on Drawing Register's live data; applied
+  here pre-emptively since this module reads the same class of legacy-import date fields).
+- **`kpiSection()`** — "Log Overview" / "Backlog Overview" eyebrow labels above each KPI row.
+- Assets `module.css?v=20260803d` / `module.js?v=20260803e`. Verified `node --check`. **Not
+  browser-verified against this module's own live data** (the sentinel-date bug was only directly
+  observed on Drawing Register).
+
 ## Overview: Aging bar + Period chart (2026-08-03) — fmlozano
 User asked for the same Aging-bar + Period-chart treatment given to Drawing Register. This module's
 Overview already had a cumulative-only "S-curve" card from its original 2026-07-20 build — the new

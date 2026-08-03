@@ -1,5 +1,23 @@
 # Module: drawing-register
 
+## Live UI review fixes: Backlog scroll containment, sentinel-date bug, KPI sections (2026-08-03) — fmlozano
+Reviewed the live deployed site against a real project (Bauhinia, BAU101) and GPR101; found and fixed:
+- **Backlog scroll containment.** Bauhinia has **1,010 open items** — rendering all of them as one
+  page-length table was the "vastness" the user hit. `renderBacklog()` now wraps the table in
+  `.dr-bk-scroll` (`max-height:min(62vh,640px); overflow-y:auto`) so the KPI row + card header stay
+  fixed and only the table body scrolls, **and** only paints the first `BK_PAGE` (200) sorted rows
+  until "show all" is clicked (`bkShowAll`) — DOM stays light even on a huge backlog. Sort/filter
+  always operate on the full list before slicing, so paging can never hide the worst-ranked rows.
+- **Real bug found live: "Jan '00" on the new Period chart.** A live Supabase query (run from the
+  browser console against the deployed site) turned up ~9 GPR101 drawings with
+  `actual_approval = "2000-01-06"` — a legacy-import sentinel/placeholder, not a real date — which
+  stretched the whole chart's x-axis to a 25-year span. `periodKeyOf()` and `agingDays()` now discard
+  any date outside 2015–2100 as "no date."
+- **`kpiSection()`** — wraps a KPI row with a small uppercase eyebrow label ("Register Overview" /
+  "Backlog Overview"), matching WPM's "Cost Overview" / "Work Package Status" section-label pattern.
+- Assets `module.css?v=20260803d` / `module.js?v=20260803f`. Verified `node --check`; the sentinel-date
+  bug and Bauhinia's row count were confirmed live before fixing (not guessed).
+
 ## Overview: Aging bar + Period chart (2026-08-03) — fmlozano
 Added the two remaining WPM Overview charts, on top of the status donut from the previous pass.
 - **`agingBuckets()`/`agingBarSVG()`** — a stacked horizontal bar over the whole project's open items
