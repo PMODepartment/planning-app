@@ -77,6 +77,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-03 — Drawing Register: BAU101 (Bauhinia) migration prep — 5 new disciplines, import file built + verified
+- User supplied `EPC. OPS. BAU101 Drawing Register Version 01. 2025 03 14.xlsx` to migrate into the
+  live Drawing Register for project **BAU101**. The workbook turned out to hold **6 different
+  candidate drawing-list sheets**, not one — reverse-engineered all of them before importing anything:
+  - `Dwg Register (Vert)1` (user's chosen "current" pick, 1,232 rows) is actually **stale/templated**:
+    every row across all 4 design phases carries the identical two dates (23-Aug-2019 / 25-Oct-2020)
+    and generic sequential codes — not real per-drawing history.
+  - The real, actively-maintained data lives in **`Dwg Registry (Backup 08012025)`** (315 real-coded
+    drawings, richest — full Landscape & Amenities + Interior/ISD package, real statuses/remarks) and
+    **`Dwg Registry (Based on FCD)`** (223, mostly a subset but with 8 exclusive utility codes the
+    Backup sheet lacks). `Dwg Registry (August 2024)` is a smaller, fully-superseded older snapshot.
+  - Final scope (user's call): merge Backup ∪ FCD (~361 real drawings, real codes/dates/status) as the
+    **For Construction** phase, PLUS Vert1's **Concept Design / Schematic Design 1 / Schematic Design 2**
+    phase-hierarchy (titles/structure only — the fabricated Vert1 dates are dropped, not imported).
+- **5 new disciplines added to the shared importer** (`Temporary Facilities`, `Safety Protection`,
+  `Construction Equipment`, `Other Specialties`, `MEPF Combined`) — additive only, see
+  `modules/drawing-register/CLAUDE.md`.
+- Built a one-off Python transform (not committed — a data-prep step, not app code) that parses the
+  source sheets with the real column layout (verified row-by-row against the actual file, not the
+  header labels, which mismatch the real data columns in places) and emits a clean, GPR101-style flat
+  workbook the existing **unmodified** importer parses correctly.
+- **Verified by running the app's real `parseWorkbook`/`gridOf`/`findHeader`/`parseGrid` functions in
+  Node against the generated file** (extracted from the live `module.js`, not reimplemented): 1,114
+  drawings import correctly (251 per early phase × 3 + 361 For Construction), 0 land with a blank
+  discipline, 0 early-phase drawings carry a stray date. Delivered the generated `.xlsx` to the user to
+  run through the module's existing **Import Excel** button against project BAU101 — not run against
+  the live DB from here (no login session available in this environment).
+
 ### 2026-07-27 — Project Schedule collab: signed-in re-verification (migration confirmed, stream delivers)
 - Re-verified Project Schedule's live collaboration on the deployed site, signed in, with a simulated
   second user. **Presence** ✅ (avatars, 2nd member live on GPR101 + XERTEST). **Cell cursor** ✅ (Test B

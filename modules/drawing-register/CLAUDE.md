@@ -1,5 +1,31 @@
 # Module: drawing-register
 
+## BAU101 (Bauhinia) migration prep: 5 new disciplines recognized (2026-08-03) — fmlozano
+Preparing to migrate the Bauhinia project's real drawing register (multiple candidate sheets in
+`EPC. OPS. BAU101 Drawing Register Version 01. 2025 03 14.xlsx`) surfaced construction-methodology
+"disciplines" the importer didn't recognize: **Temporary Facilities** (workbook also spells this
+"Temporary Works" in an older tab), **Safety Protection**, **Construction Equipment**, **Other
+Specialties**, **MEPF Combined**. Without recognizing them, `disciplineHeader()` fell through to
+the category-classifier and mis-nested those drawings under whichever discipline preceded them.
+- Added all 5 as new `DISCIPLINES` entries + matching `disciplineHeader()` MAP keys — **purely
+  additive** (new recognized labels only; every existing key/value/behavior for GPR101-style
+  imports is untouched). `module.js?v=` bumped `20260726a`→`20260803a`.
+- **Also found and worked around (not a code fix — a data-shaping one) during the same
+  reverse-engineering pass:** the importer's category-vs-drawing classifier only distinguishes the
+  two by "has at least one submission date OR a description" — it does **not** look at the drawing
+  code at all. A drawing row with neither (exactly what you get when deliberately importing a
+  design phase with no real submission history, i.e. skipping fabricated dates) is silently
+  swallowed as a phantom category node. Not fixed in `parseGrid` itself (GPR101's own workbook
+  apparently never hits this — its real drawings always carry a date or description — so changing
+  the classifier's rule risks that primary format instead). Worked around **in the import file
+  itself**: any dateless/descriptionless drawing gets its own (truthful, unembellished) title
+  copied into Description before import, which is enough to survive classification.
+- Verified by extracting the real `parseWorkbook`/`gridOf`/`findHeader`/`parseGrid` functions
+  straight out of this file and running them in Node against the generated import workbook (not a
+  reimplementation) — confirms the shipped importer, unmodified beyond the 5 new disciplines, parses
+  the prepared BAU101 file into the intended phase→discipline→category→drawing tree with 0 drawings
+  landing with a blank discipline and 0 stray dates on the dateless early-phase drawings.
+
 ## Offline editing + sync — Phase 2 (2026-07-26) — fmlozano
 Wired the shared **PDSync** outbox (`assets/js/offline.js`): edit inline with no connection, sync on
 reconnect.

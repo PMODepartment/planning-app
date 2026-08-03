@@ -45,7 +45,9 @@ window.DrawingRegister = (function () {
   var DISCIPLINES = {
     AR:'Architectural', ST:'Structural', CV:'Civil', EL:'Electrical',
     AU:'Auxiliary', PL:'Plumbing', ME:'Mechanical', FP:'Fire Protection',
-    SD:'Site Development', LA:'Landscape'
+    SD:'Site Development', LA:'Landscape',
+    TF:'Temporary Facilities', SP:'Safety Protection', CE:'Construction Equipment',
+    OS:'Other Specialties', MC:'MEPF Combined'
   };
   var FLOORS = ['GEN','FD','GF','2F','3F','4F','5F','6F','7F','8F','9F','10F',
                 '11F','12F','13F','14F','15F','RDF','RORD'];
@@ -1853,7 +1855,11 @@ window.DrawingRegister = (function () {
       'electrical':'Electrical', 'auxiliary':'Auxiliary', 'auxillary':'Auxiliary',
       'plumbing':'Plumbing', 'plumbing & sanitary':'Plumbing', 'sanitary':'Plumbing',
       'mechanical':'Mechanical', 'fire protection':'Fire Protection',
-      'site development':'Site Development', 'landscape':'Landscape'
+      'site development':'Site Development', 'landscape':'Landscape',
+      'temporary facilitie':'Temporary Facilities', 'temporary work':'Temporary Facilities',
+      'safety protection':'Safety Protection', 'construction equipment':'Construction Equipment',
+      'other specialtie':'Other Specialties',
+      'mepf combined services drawing':'MEPF Combined', 'mepf combined service drawing':'MEPF Combined'
     };
     return MAP[t] || null;
   }
