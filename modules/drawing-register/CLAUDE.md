@@ -1,5 +1,20 @@
 # Module: drawing-register
 
+## Overview: Aging bar + Period chart (2026-08-03) — fmlozano
+Added the two remaining WPM Overview charts, on top of the status donut from the previous pass.
+- **`agingBuckets()`/`agingBarSVG()`** — a stacked horizontal bar over the whole project's open items
+  (not status-approved), bucketed by `agingDays()` (>60d overdue / 30-60d overdue / 0-30d current /
+  Future / No due date). Deliberately **unfiltered** — an aggregate independent of the Registry/Backlog
+  filter bar's current selection, same scope as the status donut.
+- **`periodBuckets()`/`periodChartSVG()`** — bar+line chart (grey bars = drawings planned to be
+  approved that period, dark line = cumulative planned, red line = cumulative actual) grouped by
+  `planned_approval`/`actual_approval`, with a Monthly/Quarterly toggle (`periodMode`, `.dr-seg`
+  buttons wired after render).
+- Both live in the Overview tab (`renderProgress`), above the existing Progress-by-Phase/Discipline
+  tables. New CSS: `.dr-seg`/`.dr-seg-btn` (segmented toggle, mirrors the existing tab-strip style).
+- Assets `module.css?v=20260803c` / `module.js?v=20260803e`. Verified `node --check`. **Not
+  browser-verified** (auth wall).
+
 ## Pattern the WPM Backlog/Overview look further: Aging column, sortable headers, status donut (2026-08-03) — fmlozano
 Follow-up after the tabs shipped: user pointed at the live WPM (Procurement) project view and asked to
 match its look more closely.

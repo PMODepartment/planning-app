@@ -164,7 +164,11 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 
 /* Dashboard layout */
 .dr-dash-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.dr-h3 { margin:0 0 12px; font-size:14px; font-weight:700; }
+.dr-h3 { margin:0 0 12px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.dr-seg { display:inline-flex; border:1.5px solid var(--pd-line); border-radius:7px; overflow:hidden; font-weight:400; }
+.dr-seg-btn { border:none; background:transparent; color:var(--pd-text); padding:4px 10px; font-size:11.5px; font-family:inherit; cursor:pointer; }
+.dr-seg-btn.active { background:var(--pd-red); color:#fff; }
+.dr-seg-btn:not(.active):hover { background:var(--pd-bg); }
 
 /* ---- Form (modal) ------------------------------------------------------- */
 .pd-modal-overlay:has(.dr-form-sec) .pd-modal { max-width:780px; width:96%; }

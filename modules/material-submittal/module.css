@@ -149,6 +149,10 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; }
 .ms-card h3 { margin:0 0 2px; font-size:14px; }
 .ms-card .ms-cardsub { color:var(--pd-muted); font-size:12px; margin:0 0 12px; }
+.ms-seg { display:inline-flex; border:1.5px solid var(--pd-line); border-radius:7px; overflow:hidden; font-weight:400; }
+.ms-seg-btn { border:none; background:transparent; color:var(--pd-text); padding:4px 10px; font-size:11.5px; font-family:inherit; cursor:pointer; }
+.ms-seg-btn.active { background:var(--pd-red); color:#fff; }
+.ms-seg-btn:not(.active):hover { background:var(--pd-bg); }
 
 /* Status summary table (mirrors the workbook's Status / No. / Wt % block) */
 .ms-stat { width:100%; border-collapse:collapse; }

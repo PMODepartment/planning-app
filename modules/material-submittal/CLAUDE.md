@@ -6,6 +6,20 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## Overview: Aging bar + Period chart (2026-08-03) — fmlozano
+User asked for the same Aging-bar + Period-chart treatment given to Drawing Register. This module's
+Overview already had a cumulative-only "S-curve" card from its original 2026-07-20 build — the new
+Period chart is **additional**, not a replacement (bar+cumulative-line view of per-period volume,
+vs the existing pure cumulative-trend curve).
+- **`agingBuckets()`/`agingBarSVG()`** — stacked bar over ALL open (`!isApproved`) submittals project-
+  wide (unfiltered), bucketed by the `agingDays()` helper added for the Backlog Aging column.
+- **`periodBuckets()`/`periodChartSVG()`** — bar+line chart grouped by `plan_approval_date`/
+  `date_approved`, Monthly/Quarterly toggle (`periodMode`, `.ms-seg` buttons).
+- Both inserted into `renderDashboard()` after the existing status/S-curve `ms-grid2` row. New CSS:
+  `.ms-seg`/`.ms-seg-btn`.
+- Assets `module.css?v=20260803c` / `module.js?v=20260803d`. Verified `node --check`. **Not
+  browser-verified** (auth wall).
+
 ## Pattern the WPM Backlog look further: Aging column + sortable headers (2026-08-03) — fmlozano
 Follow-up after the tabs below: user pointed at the live WPM (Procurement) project view and asked to
 match its Backlog table more closely. This module's Overview already had a status donut from its

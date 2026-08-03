@@ -77,6 +77,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-03 — Drawing Register + Material Submittal: add the Aging bar + Period chart to Overview
+Continuation of the WPM look-alike pass: added the two remaining WPM Overview charts to both modules.
+- **"Open Items by Aging"** — a single stacked horizontal bar (>60d overdue / 30-60d overdue / 0-30d
+  current / Future / No due date), computed from the whole project (unfiltered — independent of
+  whatever the Registry/Backlog filter bar has selected), reusing the `agingDays()` helper added for
+  the Backlog tab's Aging column. New `agingBuckets()`/`agingBarSVG()` in each module.
+- **"Drawings/Submittals by Period — Planned vs Actual Approval"** — a bar+line chart (grey bars =
+  planned this period, dark line = cumulative planned, red line = cumulative actual/approved) with a
+  Monthly/Quarterly toggle, matching WPM's "Work Packages by Period" card. New `periodBuckets()`/
+  `periodChartSVG()` in each module, grouping by `planned_approval`/`actual_approval` (Drawing
+  Register) or `plan_approval_date`/`date_approved` (Material Submittal). Pure inline SVG, no charting
+  library — same approach as the status donut added earlier.
+- Material Submittal already had a cumulative-only "S-curve" card from its original build; the new
+  Period chart is additional (bar+cumulative-line view), not a replacement — both stay since they show
+  slightly different things (per-period volume vs pure cumulative trend).
+- Module-local only; no DB/migration change. Assets: drawing-register `module.css/js?v=20260803c/e`,
+  material-submittal `module.css/js?v=20260803c/d`. Verified `node --check` on both + no duplicate
+  helper/var names. **Not browser-verified** (auth wall).
+
 ### 2026-08-03 — Drawing Register + Material Submittal: pattern the WPM (Procurement) look further
 User pointed at the live WPM project-view (Overview/Backlog/WP List) and asked to pattern its look more
 closely — specifically its sortable "Backlog" table with an **Aging (d)** column, and its donut-chart

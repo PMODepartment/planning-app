@@ -1306,8 +1306,131 @@ window.DrawingRegister = (function () {
       progTable('Progress by Discipline', byDisc, Object.keys(DISCIPLINES).map(disciplineName)) +
     '</div>';
 
-    host.innerHTML = kpis + '<div class="pd-card"><h3 class="dr-h3">Drawings by Status</h3>' +
-      donutSVG(statusCounts()) + '</div>' + host2;
+    host.innerHTML = kpis +
+      '<div class="dr-dash-grid">' +
+        '<div class="pd-card"><h3 class="dr-h3">Drawings by Status</h3>' + donutSVG(statusCounts()) + '</div>' +
+        '<div class="pd-card"><h3 class="dr-h3">Open Items by Aging</h3>' + agingBarSVG(agingBuckets()) + '</div>' +
+      '</div>' +
+      '<div class="pd-card"><h3 class="dr-h3">Drawings by Period — Planned vs Actual Approval' +
+        '<span class="dr-seg" id="dr-permode">' +
+          '<button class="dr-seg-btn active" data-mode="month">Monthly</button>' +
+          '<button class="dr-seg-btn" data-mode="quarter">Quarterly</button>' +
+        '</span></h3>' +
+        '<div id="dr-period-chart">' + periodChartSVG(periodBuckets(periodMode)) + '</div>' +
+      '</div>' +
+      host2;
+
+    var pm = document.getElementById('dr-permode');
+    if (pm) pm.querySelectorAll('.dr-seg-btn').forEach(function (b){
+      b.onclick = function (){
+        periodMode = b.dataset.mode;
+        pm.querySelectorAll('.dr-seg-btn').forEach(function (x){ x.classList.toggle('active', x===b); });
+        document.getElementById('dr-period-chart').innerHTML = periodChartSVG(periodBuckets(periodMode));
+      };
+    });
+  }
+
+  // ---- Open Items by Aging (WPM "Work Package by Aging" pattern) -----------
+  // Unfiltered — this is an aggregate for the whole project, independent of
+  // whatever the Registry/Backlog filter bar currently has selected.
+  var AGING_ORDER = ['>60d overdue', '30-60d overdue', '0-30d (current)', 'Future', 'No due date'];
+  var AGING_COLOR = { '>60d overdue':'#EE3124', '30-60d overdue':'#d97706',
+    '0-30d (current)':'#8a8f98', 'Future':'#DCDBDB', 'No due date':'#c8c8c8' };
+  function agingBuckets() {
+    var b = {}; AGING_ORDER.forEach(function (k){ b[k]=0; });
+    drawingRows().forEach(function (r){
+      if (!(!isApprovedStatus(r.status) || r.status==='Revise & Resubmit')) return;
+      var a = agingDays(r);
+      if (a==null) b['No due date']++;
+      else if (a>60) b['>60d overdue']++;
+      else if (a>30) b['30-60d overdue']++;
+      else if (a>=0) b['0-30d (current)']++;
+      else b['Future']++;
+    });
+    return b;
+  }
+  function agingBarSVG(buckets) {
+    var total = AGING_ORDER.reduce(function (s,k){ return s+buckets[k]; }, 0);
+    if (!total) return '<p class="dr-mut">No open items.</p>';
+    var bars = AGING_ORDER.filter(function (k){ return buckets[k]>0; }).map(function (k){
+      var pct = buckets[k]/total*100;
+      return '<div style="width:'+pct+'%;background:'+AGING_COLOR[k]+';height:100%;display:flex;' +
+        'align-items:center;justify-content:center;color:#fff;font-size:11.5px;font-weight:700;" title="'+k+': '+buckets[k]+'">' +
+        (pct>6?buckets[k]:'') + '</div>';
+    }).join('');
+    var legend = AGING_ORDER.filter(function (k){ return buckets[k]>0; }).map(function (k){
+      return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;margin:4px 14px 0 0;">' +
+        '<span style="width:10px;height:10px;background:'+AGING_COLOR[k]+';display:inline-block;border-radius:2px;"></span>' +
+        k+' ('+buckets[k]+')</span>';
+    }).join('');
+    return '<div style="height:36px;border-radius:6px;overflow:hidden;display:flex;">'+bars+'</div>' +
+      '<div style="margin-top:4px;">'+legend+'</div>';
+  }
+
+  // ---- Drawings by Period — Planned vs Actual (WPM "Work Package by Period") ---
+  var periodMode = 'month';   // 'month' | 'quarter'
+  var MNAME3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function periodKeyOf(dateStr, mode) {
+    var d = new Date(dateStr + 'T00:00:00'); if (isNaN(d)) return null;
+    var y = d.getFullYear(), m = d.getMonth();
+    if (mode === 'quarter') return y + '-Q' + (Math.floor(m/3)+1);
+    return y + '-' + String(m+1).padStart(2,'0');
+  }
+  function periodLabelOf(key, mode) {
+    if (mode === 'quarter') { var p = key.split('-Q'); return 'Q'+p[1]+" '"+p[0].slice(2); }
+    var p = key.split('-'); return MNAME3[+p[1]-1] + " '" + p[0].slice(2);
+  }
+  function periodBuckets(mode) {
+    var pMap = {}, aMap = {};
+    drawingRows().forEach(function (r) {
+      if (r.planned_approval) { var k = periodKeyOf(r.planned_approval, mode); if (k) pMap[k] = (pMap[k]||0)+1; }
+      if (r.actual_approval)  { var k2 = periodKeyOf(r.actual_approval, mode); if (k2) aMap[k2] = (aMap[k2]||0)+1; }
+    });
+    var keys = Object.keys(pMap).concat(Object.keys(aMap)).filter(function (v,i,a){ return a.indexOf(v)===i; }).sort();
+    var cumP = 0, cumA = 0;
+    return keys.map(function (k) {
+      cumP += pMap[k]||0; cumA += aMap[k]||0;
+      return { key:k, label:periodLabelOf(k, mode), planned:pMap[k]||0, actual:aMap[k]||0, cumPlanned:cumP, cumActual:cumA };
+    });
+  }
+  function niceCeil(v) {
+    if (v<=0) return 1;
+    var pow = Math.pow(10, Math.floor(Math.log10(v))), f = v/pow;
+    return (f<=1?1:f<=2?2:f<=5?5:10) * pow;
+  }
+  function periodChartSVG(data) {
+    if (!data.length) return '<p class="dr-mut">No planned/actual approval dates recorded yet.</p>';
+    var w=900, h=220, padL=36, padR=10, padT=10, padB=26;
+    var innerW=w-padL-padR, innerH=h-padT-padB, n=data.length;
+    var maxY = niceCeil(Math.max.apply(null, data.map(function (d){ return Math.max(d.planned, d.cumPlanned, d.cumActual); }).concat([1])));
+    var xStep = innerW/n, bw = Math.min(xStep*0.6, 40);
+    function X(i){ return padL + i*xStep + xStep/2; }
+    function Y(v){ return padT + innerH - (v/maxY)*innerH; }
+    var bars = data.map(function (d,i){
+      var bh = (d.planned/maxY)*innerH;
+      return '<rect x="'+(X(i)-bw/2)+'" y="'+(padT+innerH-bh)+'" width="'+bw+'" height="'+bh+'" fill="var(--pd-line,#DCDBDB)" rx="1"><title>'+
+        Fmt.esc(d.label)+': '+d.planned+' planned this period</title></rect>';
+    }).join('');
+    function linePts(key){ return data.map(function (d,i){ return X(i)+','+Y(d[key]); }).join(' '); }
+    var gridN = 4, grid = '';
+    for (var g=0; g<=gridN; g++) {
+      var v = maxY/gridN*g, y = Y(v);
+      grid += '<line x1="'+padL+'" y1="'+y+'" x2="'+(w-padR)+'" y2="'+y+'" stroke="var(--pd-line,#e5e5e5)" stroke-width="1" opacity="0.5"/>' +
+        '<text x="'+(padL-6)+'" y="'+(y+3)+'" font-size="9.5" text-anchor="end" fill="currentColor" opacity="0.6">'+Math.round(v)+'</text>';
+    }
+    var xlabels = data.map(function (d,i){
+      if (n>18 && i % Math.ceil(n/18) !== 0) return '';
+      return '<text x="'+X(i)+'" y="'+(h-6)+'" font-size="9" text-anchor="middle" fill="currentColor" opacity="0.6">'+Fmt.esc(d.label)+'</text>';
+    }).join('');
+    return '<svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:'+h+'px;">' + grid + bars +
+      '<polyline fill="none" stroke="currentColor" stroke-width="2" points="'+linePts('cumPlanned')+'"/>' +
+      '<polyline fill="none" stroke="#EE3124" stroke-width="2" points="'+linePts('cumActual')+'"/>' +
+      xlabels + '</svg>' +
+      '<div style="display:flex;gap:16px;font-size:11.5px;flex-wrap:wrap;margin-top:4px;">' +
+      '<span><i style="display:inline-block;width:10px;height:10px;background:var(--pd-line,#DCDBDB);margin-right:4px;"></i>Planned this period</span>' +
+      '<span><i style="display:inline-block;width:14px;height:2px;background:currentColor;margin-right:4px;vertical-align:middle;"></i>Cumulative planned</span>' +
+      '<span><i style="display:inline-block;width:14px;height:2px;background:#EE3124;margin-right:4px;vertical-align:middle;"></i>Cumulative approved</span>' +
+      '</div>';
   }
 
   // Status colors mirror the Registry's own pill colors (statusCls) so the chart
