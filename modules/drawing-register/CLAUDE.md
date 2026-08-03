@@ -1,5 +1,26 @@
 # Module: drawing-register
 
+## KPI card polish + chart readability pass (2026-08-03) — fmlozano
+User reviewed a live screenshot of the Bauhinia Overview and called out three things:
+- **KPI cards "too close together" / "maximize the space" / "look professionally built":** `.dr-kpis`
+  went from a fixed `repeat(6,1fr)` grid to `repeat(auto-fit, minmax(170px,1fr))`, gap 12→18px, card
+  padding 16/18→20/22px, value font 26→32px, added `box-shadow` + hover lift, thicker 4px accent bar.
+  Cards now claim real width on a wide screen instead of being squeezed into six equal narrow slots.
+- **"Open Items by Aging doesn't look very helpful":** Bauhinia has 997 of 1,010 open items with no
+  schedule link, so the old bar (built from ALL 5 buckets incl. "No due date") was one giant grey blob
+  — the genuinely actionable overdue/tight buckets were reduced to a barely-visible sliver. The
+  proportional bar (`AGING_DATED`) now excludes "No due date" entirely; it's reported as a separate
+  line below ("+N open items not yet linked…") instead of competing for bar space. If zero items have
+  a date, the card says so explicitly instead of rendering an all-grey bar.
+- **"The s-curve doesn't look very nice"** (the Period chart): taller (220→280px), rounded bar tops,
+  a translucent gradient area fill under Cumulative Planned (the classic S-curve "target band" look),
+  point markers on both cumulative lines, dashed gridlines, and the planned line recolored from
+  `currentColor` (which reads washed-out, same tone as the muted axis labels) to `var(--pd-ink)` —
+  theme-correct but a solid, clearly visible line.
+- Assets `module.css?v=20260803e` / `module.js?v=20260803g`. Verified `node --check`. **Not
+  browser-verified against a real render** — this pass was visual-design work against the user's
+  screenshot, not something `node --check` can confirm looks right.
+
 ## Live UI review fixes: Backlog scroll containment, sentinel-date bug, KPI sections (2026-08-03) — fmlozano
 Reviewed the live deployed site against a real project (Bauhinia, BAU101) and GPR101; found and fixed:
 - **Backlog scroll containment.** Bauhinia has **1,010 open items** — rendering all of them as one

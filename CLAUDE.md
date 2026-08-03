@@ -77,6 +77,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-03 — Drawing Register + Material Submittal: KPI card polish + chart readability pass
+User reviewed the live Bauhinia Overview and flagged three things: KPI cards feel cramped/close
+together and should "look professionally built" / "maximize the space"; the Period chart "doesn't
+look very nice"; and the Aging bar "doesn't look very helpful" (Bauhinia has 997 of 1,010 open items
+with no schedule link, so the bar was one giant grey blob with the real signal reduced to a sliver).
+- **KPI cards:** switched from a fixed `repeat(6,1fr)` grid to `repeat(auto-fit, minmax(170px,1fr))`
+  with an 18px gap (was 12px) so cards claim real width on a wide screen instead of being squeezed
+  into exactly six narrow slots. Bumped padding (20px 22px), value font 26→32px / 24→32px, added a
+  subtle shadow + hover lift, and a thicker 4px accent bar — reads as a proper stat card now instead
+  of a cramped strip.
+- **Aging bar redesigned to be useful on real (mostly-unlinked) data:** the proportional bar is now
+  built ONLY from items that have a due date (`AGING_DATED`); the undated count is reported as a
+  separate line below ("+N open items not yet linked to a schedule activity"), not a bar segment. On
+  data with zero dated items it now says so explicitly instead of rendering an all-grey bar.
+- **Period chart visual pass:** taller (220→280px), rounded bars, a translucent area fill under the
+  Cumulative Planned line (the "target band" the red Actual line tracks against — the classic S-curve
+  look), point markers on both cumulative lines, dashed gridlines, and the planned line recolored from
+  washed-out `currentColor` to `var(--pd-ink)` (theme-correct dark/light, but a solid, visible color
+  instead of blending into muted axis text).
+- Module-local only; no DB/migration change. Assets: drawing-register `module.css/js?v=20260803e/g`,
+  material-submittal `module.css/js?v=20260803e/f`. Verified `node --check` on both. **Not
+  browser-verified** (auth wall) — visual review was against the user's own screenshot of the live
+  deployed site, not a local render.
+
 ### 2026-08-03 — Drawing Register + Material Submittal: live UI review fixes (both modules)
 Reviewed the live deployed site (drawing-register + a real project, "Bauhinia") and made several fixes:
 - **Backlog "vastness" fix (user report: Bauhinia's Backlog has a long scroll).** A backlog can run into

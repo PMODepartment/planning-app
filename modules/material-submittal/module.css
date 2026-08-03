@@ -139,17 +139,21 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 
 /* ---- Dashboard ---------------------------------------------------------- */
 .ms-dash { display:flex; flex-direction:column; gap:14px; }
-.ms-kpi-section { margin-bottom:18px; }
+.ms-kpi-section { margin-bottom:22px; }
 .ms-kpi-seclabel { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
-  color:var(--pd-muted); margin-bottom:8px; }
-.ms-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  color:var(--pd-muted); margin-bottom:10px; }
+/* Auto-fit with a wider minimum: cards claim real width on a wide screen instead
+   of staying cramped at their old 150px floor, and wrap gracefully when narrow. */
+.ms-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:18px; }
 .ms-kpi-section .ms-kpis { margin-bottom:0; }
 .ms-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
-  padding:12px 14px; position:relative; overflow:hidden; }
-.ms-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pd-red); }
-.ms-kpi-l { color:var(--pd-muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
-.ms-kpi-v { font-size:24px; font-weight:800; margin-top:4px; line-height:1.1; }
-.ms-kpi-s { color:var(--pd-muted); font-size:11.5px; margin-top:3px; }
+  padding:20px 22px; position:relative; overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.05);
+  transition:box-shadow .15s, transform .15s; }
+.ms-kpi:hover { box-shadow:0 4px 14px rgba(0,0,0,.09); transform:translateY(-1px); }
+.ms-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--pd-red); }
+.ms-kpi-l { color:var(--pd-muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
+.ms-kpi-v { font-size:32px; font-weight:800; margin-top:9px; line-height:1.05; letter-spacing:-.01em; }
+.ms-kpi-s { color:var(--pd-muted); font-size:11.5px; margin-top:5px; }
 .ms-kpi.good .ms-kpi-v { color:#12693a; } html.pd-dark .ms-kpi.good .ms-kpi-v { color:#7fd6a2; }
 .ms-kpi.bad  .ms-kpi-v { color:var(--pd-bad,#dc2626); }
 .ms-kpi.warn .ms-kpi-v { color:#b45309; } html.pd-dark .ms-kpi.warn .ms-kpi-v { color:#f0c469; }

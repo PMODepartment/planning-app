@@ -6,6 +6,17 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## KPI card polish + chart readability pass (2026-08-03) — fmlozano
+Ported the same design pass applied to Drawing Register after the user's live-review feedback:
+- **KPI cards:** `.ms-kpis` minmax floor raised 150→170px, gap 12→18px, card padding 12/14→20/22px,
+  value font 24→32px, `box-shadow` + hover lift, thicker 4px accent bar.
+- **Aging bar:** proportional bar now built only from `AGING_DATED` items (excludes "No due date"),
+  with the undated count reported as a separate line instead of dominating the bar.
+- **Period chart:** taller (220→280px), rounded bars, gradient area fill under Cumulative Planned,
+  point markers, dashed gridlines, planned line recolored `currentColor`→`var(--pd-ink)`.
+- Assets `module.css?v=20260803e` / `module.js?v=20260803f`. Verified `node --check`. **Not
+  browser-verified** — visual-design pass, mirrored from Drawing Register's user-reviewed changes.
+
 ## Live UI review fixes: Backlog scroll containment, sentinel-date guard, KPI sections (2026-08-03) — fmlozano
 Applied the same fixes made to Drawing Register after a live review (Bauhinia's Backlog had a very
 long scroll with 1,010 open items):

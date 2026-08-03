@@ -514,22 +514,35 @@ window.MaterialSubmittal = (function () {
     });
     return b;
   }
+  // The bar itself is built only from items that HAVE a due date — letting
+  // "No due date" compete for bar space swamps the whole chart into one giant
+  // grey blob (most submittals aren't linked to the schedule yet) with the
+  // genuinely urgent buckets reduced to a sliver. The undated count is still
+  // reported, just as a separate line, not a bar segment.
+  var AGING_DATED = ['>60d overdue', '30-60d overdue', '0-30d (current)', 'Future'];
   function agingBarSVG(buckets) {
-    var total = AGING_ORDER.reduce(function (s, k) { return s + buckets[k]; }, 0);
-    if (!total) return '<p class="ms-mut">No open items.</p>';
-    var bars = AGING_ORDER.filter(function (k) { return buckets[k] > 0; }).map(function (k) {
-      var pct = buckets[k] / total * 100;
+    var noDate = buckets['No due date'] || 0;
+    var datedTotal = AGING_DATED.reduce(function (s, k) { return s + buckets[k]; }, 0);
+    if (!datedTotal) {
+      return '<p class="ms-mut">' + (noDate
+        ? 'None of the ' + noDate + ' open item' + (noDate === 1 ? '' : 's') + ' are linked to a schedule activity yet — link one from its edit form to see aging here.'
+        : 'No open items.') + '</p>';
+    }
+    var bars = AGING_DATED.filter(function (k) { return buckets[k] > 0; }).map(function (k) {
+      var pct = buckets[k] / datedTotal * 100;
       return '<div style="width:' + pct + '%;background:' + AGING_COLOR[k] + ';height:100%;display:flex;' +
         'align-items:center;justify-content:center;color:#fff;font-size:11.5px;font-weight:700;" title="' + k + ': ' + buckets[k] + '">' +
         (pct > 6 ? buckets[k] : '') + '</div>';
     }).join('');
-    var legend = AGING_ORDER.filter(function (k) { return buckets[k] > 0; }).map(function (k) {
+    var legend = AGING_DATED.filter(function (k) { return buckets[k] > 0; }).map(function (k) {
       return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;margin:4px 14px 0 0;">' +
         '<span style="width:10px;height:10px;background:' + AGING_COLOR[k] + ';display:inline-block;border-radius:2px;"></span>' +
         k + ' (' + buckets[k] + ')</span>';
     }).join('');
     return '<div style="height:36px;border-radius:6px;overflow:hidden;display:flex;">' + bars + '</div>' +
-      '<div style="margin-top:4px;">' + legend + '</div>';
+      '<div style="margin-top:8px;">' + legend + '</div>' +
+      (noDate ? '<p class="ms-mut" style="font-size:12px;margin:8px 0 0;">+ ' + noDate + ' open item' + (noDate === 1 ? '' : 's') +
+        ' not yet linked to a schedule activity (excluded above, no due date to measure against).</p>' : '');
   }
 
   // ---- Submittals by Period — Planned vs Actual (WPM "Work Package by Period") ---
@@ -570,36 +583,49 @@ window.MaterialSubmittal = (function () {
   }
   function periodChartSVG(data) {
     if (!data.length) return '<p class="ms-mut">No planned/actual approval dates recorded yet.</p>';
-    var w = 900, h = 220, padL = 36, padR = 10, padT = 10, padB = 26;
+    var w = 960, h = 280, padL = 40, padR = 14, padT = 16, padB = 30;
     var innerW = w - padL - padR, innerH = h - padT - padB, n = data.length;
     var maxY = niceCeil(Math.max.apply(null, data.map(function (d) { return Math.max(d.planned, d.cumPlanned, d.cumActual); }).concat([1])));
-    var xStep = innerW / n, bw = Math.min(xStep * 0.6, 40);
+    var xStep = innerW / n, bw = Math.min(xStep * 0.55, 34);
     function X(i) { return padL + i * xStep + xStep / 2; }
     function Y(v) { return padT + innerH - (v / maxY) * innerH; }
+    var uid = 'mspc'+Math.random().toString(36).slice(2,8);
     var bars = data.map(function (d, i) {
-      var bh = (d.planned / maxY) * innerH;
+      var bh = Math.max((d.planned / maxY) * innerH, d.planned>0?2:0);
       return '<rect x="' + (X(i) - bw / 2) + '" y="' + (padT + innerH - bh) + '" width="' + bw + '" height="' + bh +
-        '" fill="var(--pd-line,#DCDBDB)" rx="1"><title>' + esc(d.label) + ': ' + d.planned + ' planned this period</title></rect>';
+        '" fill="var(--pd-line,#DCDBDB)" rx="3"><title>' + esc(d.label) + ': ' + d.planned + ' planned this period</title></rect>';
     }).join('');
     function linePts(key) { return data.map(function (d, i) { return X(i) + ',' + Y(d[key]); }).join(' '); }
+    function dots(key,color) { return data.map(function (d,i) {
+      return '<circle cx="'+X(i)+'" cy="'+Y(d[key])+'" r="2.75" fill="'+color+'"><title>'+esc(d.label)+': '+d[key]+'</title></circle>';
+    }).join(''); }
+    var areaPts = 'M'+X(0)+','+Y(0)+' '+data.map(function (d,i){ return 'L'+X(i)+','+Y(d.cumPlanned); }).join(' ') +
+      ' L'+X(n-1)+','+(padT+innerH)+' L'+X(0)+','+(padT+innerH)+' Z';
     var gridN = 4, grid = '';
     for (var g = 0; g <= gridN; g++) {
       var v = maxY / gridN * g, y = Y(v);
-      grid += '<line x1="' + padL + '" y1="' + y + '" x2="' + (w - padR) + '" y2="' + y + '" stroke="var(--pd-line,#e5e5e5)" stroke-width="1" opacity="0.5"/>' +
-        '<text x="' + (padL - 6) + '" y="' + (y + 3) + '" font-size="9.5" text-anchor="end" fill="currentColor" opacity="0.6">' + Math.round(v) + '</text>';
+      grid += '<line x1="' + padL + '" y1="' + y + '" x2="' + (w - padR) + '" y2="' + y + '" stroke="var(--pd-line,#e5e5e5)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>' +
+        '<text x="' + (padL - 8) + '" y="' + (y + 3) + '" font-size="10" text-anchor="end" fill="currentColor" opacity="0.55">' + Math.round(v) + '</text>';
     }
     var xlabels = data.map(function (d, i) {
-      if (n > 18 && i % Math.ceil(n / 18) !== 0) return '';
-      return '<text x="' + X(i) + '" y="' + (h - 6) + '" font-size="9" text-anchor="middle" fill="currentColor" opacity="0.6">' + esc(d.label) + '</text>';
+      if (n > 16 && i % Math.ceil(n / 16) !== 0) return '';
+      return '<text x="' + X(i) + '" y="' + (h - 8) + '" font-size="9.5" text-anchor="middle" fill="currentColor" opacity="0.6">' + esc(d.label) + '</text>';
     }).join('');
-    return '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;height:' + h + 'px;">' + grid + bars +
-      '<polyline fill="none" stroke="currentColor" stroke-width="2" points="' + linePts('cumPlanned') + '"/>' +
-      '<polyline fill="none" stroke="#EE3124" stroke-width="2" points="' + linePts('cumActual') + '"/>' +
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;height:' + h + 'px;">' +
+      '<defs><linearGradient id="'+uid+'" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="var(--pd-ink,#2B2C2B)" stop-opacity="0.16"/>' +
+        '<stop offset="100%" stop-color="var(--pd-ink,#2B2C2B)" stop-opacity="0.02"/>' +
+      '</linearGradient></defs>' +
+      grid + bars +
+      '<path d="'+areaPts+'" fill="url(#'+uid+')" stroke="none"/>' +
+      '<polyline fill="none" stroke="var(--pd-ink,#2B2C2B)" stroke-width="2.25" stroke-linejoin="round" points="' + linePts('cumPlanned') + '"/>' +
+      '<polyline fill="none" stroke="#EE3124" stroke-width="2.25" stroke-linejoin="round" points="' + linePts('cumActual') + '"/>' +
+      dots('cumPlanned','var(--pd-ink,#2B2C2B)') + dots('cumActual','#EE3124') +
       xlabels + '</svg>' +
-      '<div style="display:flex;gap:16px;font-size:11.5px;flex-wrap:wrap;margin-top:4px;">' +
-      '<span><i style="display:inline-block;width:10px;height:10px;background:var(--pd-line,#DCDBDB);margin-right:4px;"></i>Planned this period</span>' +
-      '<span><i style="display:inline-block;width:14px;height:2px;background:currentColor;margin-right:4px;vertical-align:middle;"></i>Cumulative planned</span>' +
-      '<span><i style="display:inline-block;width:14px;height:2px;background:#EE3124;margin-right:4px;vertical-align:middle;"></i>Cumulative approved</span>' +
+      '<div style="display:flex;gap:18px;font-size:11.5px;flex-wrap:wrap;margin-top:8px;">' +
+      '<span><i style="display:inline-block;width:11px;height:11px;border-radius:2px;background:var(--pd-line,#DCDBDB);margin-right:5px;vertical-align:middle;"></i>Planned this period</span>' +
+      '<span><i style="display:inline-block;width:16px;height:2.5px;background:var(--pd-ink,#2B2C2B);margin-right:5px;vertical-align:middle;"></i>Cumulative planned</span>' +
+      '<span><i style="display:inline-block;width:16px;height:2.5px;background:#EE3124;margin-right:5px;vertical-align:middle;"></i>Cumulative approved</span>' +
       '</div>';
   }
 

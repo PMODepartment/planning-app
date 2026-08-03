@@ -158,16 +158,20 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
   line-height:16px; color:var(--pd-ink); }
 
 /* ---- KPI cards ---------------------------------------------------------- */
-.dr-kpi-section { margin-bottom:18px; }
+.dr-kpi-section { margin-bottom:22px; }
 .dr-kpi-seclabel { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
-  color:var(--pd-muted); margin-bottom:8px; }
-.dr-kpis { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
+  color:var(--pd-muted); margin-bottom:10px; }
+/* Auto-fit instead of a fixed 6-up grid: cards claim real width on a wide screen
+   (the number gets room to breathe) and wrap gracefully on a narrow one, instead
+   of being squeezed into exactly six equal slots regardless of viewport. */
+.dr-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:18px; }
 .dr-kpi-section .dr-kpis { margin-bottom:0; }
-.dr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:16px 18px;
-  position:relative; overflow:hidden; }
-.dr-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pd-red); opacity:.5; }
-.dr-kpi-val { font-size:26px; font-weight:800; line-height:1; }
-.dr-kpi-label { color:var(--pd-muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin-top:7px; }
+.dr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:20px 22px;
+  position:relative; overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.05); transition:box-shadow .15s, transform .15s; }
+.dr-kpi:hover { box-shadow:0 4px 14px rgba(0,0,0,.09); transform:translateY(-1px); }
+.dr-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--pd-red); opacity:.6; }
+.dr-kpi-val { font-size:32px; font-weight:800; line-height:1.05; letter-spacing:-.01em; }
+.dr-kpi-label { color:var(--pd-muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; margin-top:9px; font-weight:600; }
 .dr-kpi.dr-ok .dr-kpi-val { color:var(--pd-good,#16a34a); }
 .dr-kpi.dr-ok::before { background:var(--pd-good,#16a34a); }
 .dr-kpi.dr-warn .dr-kpi-val { color:var(--pd-warn,#d97706); }
