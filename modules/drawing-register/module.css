@@ -136,6 +136,10 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-ok     { background:#16a34a; }  /* Approved / w/o comments */
 .dr-old    { background:#6b7280; }  /* Superseded */
 
+/* Backlog tab */
+.dr-bk-table tbody tr.dr-bk-row { cursor:pointer; }
+.dr-bk-table tbody tr.dr-bk-row:hover td { background:var(--pd-bg); }
+
 /* Progress bar */
 .dr-prog { position:relative; height:16px; background:var(--pd-line); border-radius:999px; overflow:hidden; min-width:100px; max-width:220px; }
 .dr-prog-fill { position:absolute; inset:0 auto 0 0; background:linear-gradient(90deg,var(--pd-red),#f2683f); border-radius:999px; }

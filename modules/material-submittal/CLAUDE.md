@@ -6,6 +6,22 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## Overview / Backlog / Registry tabs — procurement-style project view (2026-08-03) — fmlozano
+Restructured the topbar from Dashboard/Log into three tabs matching the Procurement (WPM)
+project-view pattern: **Overview | Backlog | Registry**.
+- **Overview** = the existing Dashboard (`renderDashboard`), unchanged. **Registry** = the existing
+  Material Submittal Log (`renderLog`), unchanged — "the current page folded into the Registry tab."
+- **Backlog** (new): `backlogRows()` = submittals not `isApproved`; sorted by `backlogUrgency()`
+  (the existing schedule-link `docFloatOf()` when linked, else `isOverdue()`/status). KPIs (open
+  items / overdue / late vs need-by / rejected) + a table (Code/Item/Section/Discipline/Status
+  pill/Need-by chip); row click opens the existing `openForm(r)` modal. Reuses `kpi`/`statusMeta`/
+  `needByCell` — no new visual language. `ensureSchedule()`'s post-load re-render now also fires on
+  `view==='backlog'` (previously only `'log'`), so the Need-by column is live-populated there too.
+  Internal `view` values are unchanged (`'dashboard'`/`'log'`/new `'backlog'`) — only the tab labels
+  changed, so nothing else that reads `view` needed touching.
+- No DB/migration change. Assets `module.css/js?v=20260803a`. Verified `node --check` + confirmed
+  all called helpers exist. **Not browser-verified** (auth wall).
+
 ## Live collaboration + offline editing (Phase 1 & 2) (2026-07-26) — fmlozano
 Wired the shared **PDCollab** (Realtime) + **PDSync** (offline outbox) layers. This module is
 **modal-edit** (no inline cells), so cursors are **row-level**.

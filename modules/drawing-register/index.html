@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260726d"></script>
   <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
-  <link rel="stylesheet" href="module.css?v=20260725a" />
+  <link rel="stylesheet" href="module.css?v=20260803a" />
 </head>
 <body>
   <div class="pd-app">
@@ -21,8 +21,9 @@
           <select class="pd-select dr-project" id="dr-project" title="Project"></select>
         </div>
         <div class="dr-tabs" role="tablist">
-          <button class="dr-tab active" data-view="register">Register</button>
-          <button class="dr-tab" data-view="progress">Progress</button>
+          <button class="dr-tab active" data-view="overview">Overview</button>
+          <button class="dr-tab" data-view="backlog">Backlog</button>
+          <button class="dr-tab" data-view="registry">Registry</button>
         </div>
         <!-- Global tools sit beside the profile (theme.js injects the dark-mode toggle before #user-bar) -->
         <div class="dr-topbar-tools" id="dr-topbar-tools">
@@ -75,7 +76,7 @@
   <script src="../../assets/js/icons.js?v=20260724a"></script>
   <script src="../../assets/js/offline.js?v=20260726d"></script>
   <script src="../../assets/js/collab.js?v=20260727b"></script>
-  <script src="module.js?v=20260803a"></script>
+  <script src="module.js?v=20260803b"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

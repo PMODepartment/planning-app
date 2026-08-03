@@ -77,6 +77,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-03 — Drawing Register + Material Submittal: Overview/Backlog/Registry tabs (procurement-style)
+- User asked for the Procurement (WPM) project-view tab pattern (Overview / Backlog / WP List) on both
+  **Drawing Register** and **Material Submittal Log** — as two separate modules (each keeps its own
+  data/table), not merged. Each module's existing single page folds into a new **Registry** tab.
+- **Drawing Register:** topbar tabs renamed **Overview | Backlog | Registry**. Overview = the former
+  "Progress" dashboard (KPIs + phase/discipline roll-ups, `renderProgress`, unchanged). Registry = the
+  former "Register" grid (unchanged). **Backlog** (new, `renderBacklog`): drawings not yet approved,
+  sorted by schedule urgency (`docFloatOf` from the existing Need-by schedule link — late → tight →
+  open, un-linked ranked by status), with its own KPIs (open items / late / due ≤3d / Revise & Resubmit)
+  and click-a-row → opens the existing edit modal. Old `localStorage` view values (`register`/`progress`)
+  migrate transparently to `registry`/`overview` so returning users don't lose their last tab.
+- **Material Submittal Log:** same pattern — tabs **Overview | Backlog | Registry** (Overview = existing
+  Dashboard, Registry = existing Log, both unchanged). **Backlog** (new, `renderBacklog`): submittals not
+  yet approved (`!isApproved`), sorted by the same need-by float / overdue-vs-plan-date logic, reusing
+  the existing `needByCell`/`statusMeta`/`kpi` helpers and the modal editor.
+- Both Backlog tables reuse each module's existing status-pill/need-by/float-chip markup rather than
+  inventing new components. No DB/migration change (pure UI + read-derived sort). Assets bumped:
+  drawing-register `module.css/js?v=20260803a/b`; material-submittal `module.css/js?v=20260803a`
+  (module-local only, no shared-asset `?v=` bump).
+- Verified: both `module.js` pass `node --check`; confirmed every helper the new code calls
+  (`emptyMsg`, `statusCls`, `drawCode`, `needByCellHtml`, `kpi`, `codeOf`, `discOf`, `sectionOf`,
+  `statusMeta`, `isOverdue`, `docFloatOf`, `openForm`, …) actually exists in each file. **Not
+  browser-verified** — this session is auth-walled (no live login available here).
+
 ### 2026-08-03 — Drawing Register: BAU101 (Bauhinia) migration prep — 5 new disciplines, import file built + verified
 - User supplied `EPC. OPS. BAU101 Drawing Register Version 01. 2025 03 14.xlsx` to migrate into the
   live Drawing Register for project **BAU101**. The workbook turned out to hold **6 different

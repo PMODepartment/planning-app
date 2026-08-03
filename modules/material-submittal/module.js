@@ -240,7 +240,7 @@ window.MaterialSubmittal = (function () {
   // ---- Project Schedule link (Need-by column + Add/Edit picker) ------------
   function ensureSchedule() {
     if (schedPid === pid) return Promise.resolve();
-    return loadSchedule().then(function () { schedPid = pid; if (view === 'log') renderLog(); });
+    return loadSchedule().then(function () { schedPid = pid; if (view === 'log' || view === 'backlog') render(); });
   }
   async function loadSchedule() {
     schedActs = []; schedById = {};
@@ -1241,9 +1241,63 @@ window.MaterialSubmittal = (function () {
   // ==========================================================================
   function render() {
     document.getElementById('ms-filters').style.display = view === 'log' ? '' : 'none';
-    if (view === 'dashboard') renderDashboard(); else renderLog();
+    if (view === 'dashboard') renderDashboard();
+    else if (view === 'backlog') renderBacklog();
+    else renderLog();
     syncClearFilt();
     paintRemote();
+  }
+
+  // ---- Backlog: submittals needing action, most urgent first ---------------
+  // "Needing action" = not yet approved (Approved / Approved w/ Comments are the
+  // only DONE statuses), sorted so overdue / late-vs-need-by rows lead.
+  function backlogRows() { return rows.filter(function (r) { return !isApproved(r); }); }
+  function backlogUrgency(r) {
+    var fl = docFloatOf(r);
+    if (fl != null) return fl;                      // negative = late, smaller = worse
+    if (isOverdue(r)) return -1000;                  // overdue vs its own plan date, no schedule link
+    return statusOf(r) === 'Rejected' ? 500 : 1000;
+  }
+  function renderBacklog() {
+    var host = document.getElementById('ms-view');
+    var list = backlogRows();
+    if (!list.length) { host.innerHTML = '<p class="ms-mut" style="padding:24px;">No open items — every submittal is approved.</p>'; return; }
+    list = list.slice().sort(function (a, b) { return backlogUrgency(a) - backlogUrgency(b); });
+
+    var overdue = list.filter(isOverdue).length;
+    var late = list.filter(function (r) { var f = docFloatOf(r); return f != null && f < 0; }).length;
+    var rejected = list.filter(function (r) { return statusOf(r) === 'Rejected'; }).length;
+
+    var kpis = '<div class="ms-kpis">' +
+      kpi('Open items', list.length, 'not yet approved') +
+      kpi('Overdue', overdue, 'past planned approval', overdue ? 'bad' : '') +
+      kpi('Late vs need-by', late, 'past the schedule deadline', late ? 'bad' : '') +
+      kpi('Rejected', rejected, 'needs resubmission') +
+    '</div>';
+
+    var body = list.map(function (r) {
+      var meta = statusMeta(statusOf(r)), st = statusOf(r);
+      return '<tr class="ms-bk-row" data-id="' + r.id + '">' +
+        '<td><span class="ms-code">' + esc(codeOf(r) || '—') + '</span></td>' +
+        '<td>' + esc(r.material || '(untitled)') + '</td>' +
+        '<td>' + esc(sectionOf(r)) + '</td>' +
+        '<td>' + esc(discOf(r) || '—') + '</td>' +
+        '<td>' + (st ? '<span class="ms-pill ' + (meta ? meta.cls : 's-forsub') + '">' + esc(st) + '</span>' : '<span class="ms-mut ms-mini">—</span>') + '</td>' +
+        '<td class="ms-nowrap">' + needByCell(r) + '</td>' +
+      '</tr>';
+    }).join('');
+
+    host.innerHTML = kpis +
+      '<div class="pd-card ms-tablecard"><table class="ms-table ms-bk-table"><thead><tr>' +
+      '<th>Code</th><th>Item</th><th>Section</th><th>Discipline</th><th>Status</th><th>Need-by</th>' +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+
+    host.querySelectorAll('.ms-bk-row').forEach(function (tr) {
+      tr.onclick = function () {
+        var r = rows.find(function (x) { return String(x.id) === tr.dataset.id; });
+        if (r) openForm(r);
+      };
+    });
   }
 
   function syncClearFilt() {

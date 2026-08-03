@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260726d"></script>
   <title>Material Submittal Log · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
-  <link rel="stylesheet" href="module.css?v=20260725a" />
+  <link rel="stylesheet" href="module.css?v=20260803a" />
 </head>
 <body>
   <div class="pd-app">
@@ -21,8 +21,9 @@
           <select class="pd-select ms-project" id="ms-project" title="Project"></select>
         </div>
         <div class="ms-tabs" role="tablist">
-          <button class="ms-tab active" data-view="dashboard">Dashboard</button>
-          <button class="ms-tab" data-view="log">Material Submittal Log</button>
+          <button class="ms-tab active" data-view="dashboard">Overview</button>
+          <button class="ms-tab" data-view="backlog">Backlog</button>
+          <button class="ms-tab" data-view="log">Registry</button>
         </div>
         <!-- Global tools sit beside the profile (theme.js injects the dark-mode toggle before #user-bar) -->
         <div class="ms-topbar-tools" id="ms-topbar-tools">
@@ -67,7 +68,7 @@
   <script src="../../assets/js/icons.js?v=20260724a"></script>
   <script src="../../assets/js/offline.js?v=20260726d"></script>
   <script src="../../assets/js/collab.js?v=20260727b"></script>
-  <script src="module.js?v=20260726a"></script>
+  <script src="module.js?v=20260803a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

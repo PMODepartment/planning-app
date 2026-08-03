@@ -1,5 +1,22 @@
 # Module: drawing-register
 
+## Overview / Backlog / Registry tabs — procurement-style project view (2026-08-03) — fmlozano
+Restructured the topbar from Register/Progress into three tabs matching the Procurement (WPM)
+project-view pattern: **Overview | Backlog | Registry**.
+- **Overview** = the existing "Progress" dashboard (`renderProgress`), unchanged.
+- **Registry** = the existing "Register" grid (`renderRegister`), unchanged — this is "the current
+  page folded into the Registry tab."
+- **Backlog** (new): `backlogRows()` = drawings not `isApprovedStatus` OR still `Revise & Resubmit`;
+  sorted by `backlogUrgency()` (uses the existing schedule-link `docFloatOf()` — negative/late first,
+  then tight ≤3d, then un-linked rows ranked by status). KPIs (open items / late vs need-by / due
+  ≤3d / Revise & Resubmit) + a table (Code/Title/Phase/Discipline/Status pill/Need-by chip); clicking
+  a row opens the existing `openForm(r)` edit modal. Reuses `statusCls`/`needByCellHtml`/`kpi` — no
+  new visual language introduced.
+- `view` default changed `'register'` → `'overview'`; `restoreUI()` migrates old persisted values
+  (`register`→`registry`, `progress`→`overview`) so a returning user's saved tab still resolves.
+- No DB/migration change. Assets `module.css?v=20260803a` / `module.js?v=20260803b`. Verified
+  `node --check` + confirmed all called helpers exist. **Not browser-verified** (auth wall).
+
 ## BAU101 (Bauhinia) migration prep: 5 new disciplines recognized (2026-08-03) — fmlozano
 Preparing to migrate the Bauhinia project's real drawing register (multiple candidate sheets in
 `EPC. OPS. BAU101 Drawing Register Version 01. 2025 03 14.xlsx`) surfaced construction-methodology

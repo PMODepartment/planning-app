@@ -17,7 +17,7 @@ window.DrawingRegister = (function () {
   var BUCKET = 'drawing-register';
   var profile = null, uid = null, pid = null, projName = '';
   var rows = [];
-  var view = 'register';                       // register | progress
+  var view = 'overview';                       // overview | backlog | registry
   var filters = { phase: '', discipline: '', status: '', search: '', dupsOnly: false };
   var selected = {};                           // id -> true (bulk select)
   var collapsed = {};                          // group key -> true (collapsed)
@@ -187,7 +187,10 @@ window.DrawingRegister = (function () {
   function restoreUI(){
     var ok=false;
     try {
-      var v = localStorage.getItem(uiKey('view')); if (v==='register'||v==='progress') view=v;
+      var v = localStorage.getItem(uiKey('view'));
+      if (v==='overview'||v==='backlog'||v==='registry') view=v;
+      else if (v==='register') view='registry';   // legacy value migration
+      else if (v==='progress') view='overview';    // legacy value migration
       var c = localStorage.getItem(uiKey('collapsed'));
       if (c){ var o=JSON.parse(c); if (o && typeof o==='object'){ collapsed=o; ok=true; } }
     } catch (e) {}
@@ -467,13 +470,70 @@ window.DrawingRegister = (function () {
 
   function render() {
     syncTabs();
-    // the filter bar only applies to the Register table, not the Progress dashboard
+    // the filter bar only applies to the Registry table, not Overview/Backlog
     var fb = document.querySelector('.dr-filters');
-    if (fb) fb.style.display = (view === 'progress') ? 'none' : '';
+    if (fb) fb.style.display = (view === 'registry') ? '' : 'none';
     populateFilterSelects();
-    if (view === 'progress') { renderProgress(); }
+    if (view === 'overview') { renderProgress(); }
+    else if (view === 'backlog') { renderBacklog(); }
     else { renderRegister(); }
     paintRemote();
+  }
+
+  // ---- Backlog: drawings needing action, most urgent first -----------------
+  // "Needing action" = not yet approved (For Review / Revise & Resubmit /
+  // Approved w/ comments still carries an open loop) OR overdue against its
+  // linked schedule need-by deadline. Sorted so the worst-off rows lead.
+  function backlogRows(){
+    return drawingRows().filter(function (r){
+      return !isApprovedStatus(r.status) || r.status === 'Revise & Resubmit';
+    });
+  }
+  function backlogUrgency(r){
+    var fl = docFloatOf(r);
+    if (fl != null) return fl;                 // negative = late, smaller = worse
+    return r.status === 'Revise & Resubmit' ? 500 : 1000; // no schedule link: rank by status
+  }
+  function renderBacklog(){
+    var host = document.getElementById('dr-view');
+    var list = backlogRows();
+    if (!list.length) { host.innerHTML = emptyMsg('No open items — every drawing is approved.'); return; }
+    list = list.slice().sort(function (a,b){ return backlogUrgency(a) - backlogUrgency(b); });
+
+    var late = list.filter(function (r){ var f=docFloatOf(r); return f!=null && f<0; }).length;
+    var tight = list.filter(function (r){ var f=docFloatOf(r); return f!=null && f>=0 && f<=3; }).length;
+    var revise = list.filter(function (r){ return r.status==='Revise & Resubmit'; }).length;
+
+    var kpis = '<div class="dr-kpis">' +
+      kpi(list.length, 'Open items') +
+      kpi(late, 'Late vs need-by', late>0?'warn':'') +
+      kpi(tight, 'Due ≤3 days', tight>0?'warn':'') +
+      kpi(revise, 'Revise & Resubmit') +
+    '</div>';
+
+    var body = list.map(function (r){
+      return '<tr class="dr-bk-row" data-id="'+r.id+'">' +
+        '<td class="dr-code">'+Fmt.esc(drawCode(r))+'</td>' +
+        '<td>'+Fmt.esc(r.title||'')+'</td>' +
+        '<td>'+Fmt.esc(r.phase||'')+'</td>' +
+        '<td>'+Fmt.esc(disciplineName(r.discipline))+'</td>' +
+        '<td><span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status||'—')+'</span></td>' +
+        '<td class="dr-nowrap dr-c-needby">'+needByCellHtml(r)+'</td>' +
+      '</tr>';
+    }).join('');
+
+    host.innerHTML = kpis +
+      '<div class="pd-card"><h3 class="dr-h3">Open items — most urgent first</h3>' +
+      '<table class="pd-table dr-table dr-bk-table"><thead><tr>' +
+      '<th>Code</th><th>Title</th><th>Phase</th><th>Discipline</th><th>Status</th><th>Need-by</th>' +
+      '</tr></thead><tbody>'+body+'</tbody></table></div>';
+
+    host.querySelectorAll('.dr-bk-row').forEach(function (tr){
+      tr.onclick = function (){
+        var r = rows.find(function (x){ return String(x.id)===tr.dataset.id; });
+        if (r) openForm(r);
+      };
+    });
   }
 
   function populateFilterSelects() {
