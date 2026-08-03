@@ -1,5 +1,33 @@
 # Module: project-schedule
 
+## Auto-generated WBS skeleton (2026-08-03) — fmlozano
+Every project's WBS Manager now auto-seeds a **fixed 7-node outline** on first load (when
+`WBS_NODES` is empty for that project, `ensureWbsSkeleton()` in `load()`'s resource-loading step):
+- **L1** Milestones · Initiation Phase · Planning Phase · Execution Phase
+- **L2** (under Planning Phase) Project Execution Plan · **Design Development** · **Procurement**
+
+**Two new `wbs_nodes` columns** (migration `migrations/2026-08-03-wbs-skeleton.sql`, **USER MUST
+RUN** — tolerant/no-op until then, just skips seeding):
+- `is_locked` — every seeded node; blocks rename/recode/move/delete (`wbsRename`/`wbsMove`/
+  `wbsEditCode`/`wbsDelete` all guard on it and toast). Add-activity/Add-child stay allowed so the
+  L1 headings + Project Execution Plan remain normal, usable WBS nodes.
+- `source_kind` — only **Design Development** (`'design_development'`) and **Procurement**
+  (`'procurement'`): blocks **+Add activity** and **+Add child WBS** entirely (their data is meant to
+  come from another module, not manual entry) and shows a "🔒 synced" badge instead of the usual
+  action buttons in the WBS Manager row.
+- `SOURCE_KIND_LABEL` names the intended source in every toast/tooltip: Design Development →
+  "Drawing Register + Material Submittal Log"; Procurement → "the Procurement (WPM) app" (the
+  existing `wpm_work_packages` mirror already used by Cash Flow — see [[cashflow-module-model]]).
+- **Deliberately NOT built this pass:** the actual data pipe populating those two nodes' rollups
+  from `drawing_register`/`material_submittal`/`wpm_work_packages` — this change only builds the
+  skeleton + the "can't add activities here" guardrails. A follow-up can add a rollup summary (counts/
+  status) read into each locked node's row, the same pattern as the Documents tab or the WPM mirror.
+- Existing projects (already-nonempty `WBS_NODES`) are **untouched** — the skeleton only seeds a
+  brand-new tree, it never merges into or reshapes an existing WBS.
+- Verified: inline JS passes `node --check`. **Not browser-verified** (auth wall) — needs a signed-in
+  check that a new/scratch project seeds the 7 nodes correctly and the locked/synced guards actually
+  block the UI actions.
+
 ## Fix: "Critical path only" filter had zero effect (2026-07-30) — fmlozano
 User asked for critical-path activities to be isolated (hide the rest, with an easy way to show them
 again) — this feature **already existed** as Filter → Schedule → "Critical path only" (`filters.crit`,

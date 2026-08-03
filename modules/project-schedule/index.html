@@ -982,6 +982,8 @@
     .ps-wbs-name { flex:1; font-size:13px; }
     .ps-wbs-name input { width:100%; font:inherit; padding:3px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
     .ps-wbs-badge { font-size:11px; color:var(--pd-muted); flex:none; white-space:nowrap; }
+    .ps-wbs-synced { color:var(--pd-red); font-weight:600; }
+    .ps-wbs-namefixed { font-weight:600; color:var(--pd-ink); padding:2px 4px; }
     .ps-wbs-acts { display:flex; gap:2px; flex:none; visibility:hidden; }
     .ps-wbs-acts button { width:26px; height:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid transparent; background:none; border-radius:5px; cursor:pointer; color:var(--pd-muted); font-size:13px; }
     .ps-wbs-acts button:hover { background:var(--pd-card); border-color:var(--pd-line); color:var(--pd-ink); }
@@ -1981,6 +1983,7 @@
       }
       WBS_NODES = wnodes;
     } catch (e) { WBS_NODES = []; }
+    try { await ensureWbsSkeleton(); } catch (e) { /* best-effort auto-seed; never blocks load */ }
     try {
       var r9 = await sb().from('cost_accounts').select('*').eq('project_id', pid).order('sort_order');
       COST_ACCTS = (r9 && r9.data) || [];
@@ -8160,21 +8163,28 @@
     var caret = e.nKids
       ? '<button class="ps-wbs-caret' + (e.open ? '' : ' collapsed') + '" data-wbs-toggle="' + esc(e.id) + '" title="' + (e.open ? 'Collapse' : 'Expand') + '">' + (e.open ? '▾' : '▸') + '</button>'
       : '<span class="ps-wbs-caret leaf">▾</span>';
+    var n = wbsById(e.id);
+    var locked = n && n.is_locked;
+    var sk = n && n.source_kind;
+    var acts = sk
+      ? '<span class="ps-wbs-badge ps-wbs-synced" title="' + esc(SOURCE_KIND_LABEL[sk] || '') + '">🔒 synced</span>'
+      : ('<button class="wbs-act" data-wbs-act="' + esc(e.id) + '" title="Add an activity under this WBS">＋Act</button>' +
+         '<button data-wbs-add="' + esc(e.id) + '" title="Add child WBS">＋</button>' +
+         (locked ? '' :
+           '<button data-wbs-up="' + esc(e.id) + '" title="Move up">▲</button>' +
+           '<button data-wbs-down="' + esc(e.id) + '" title="Move down">▼</button>' +
+           '<button data-wbs-indent="' + esc(e.id) + '" title="Indent (make child of the node above)">→</button>' +
+           '<button data-wbs-outdent="' + esc(e.id) + '" title="Outdent (promote a level)">←</button>' +
+           '<button data-wbs-code="' + esc(e.id) + '" title="Edit code">✎</button>' +
+           '<button class="danger" data-wbs-del="' + esc(e.id) + '" title="Delete">✕</button>'));
     return '<div class="ps-wbs-row' + (_wbsSel === e.id ? ' selected' : '') + '" data-wid="' + esc(e.id) + '" style="padding-left:' + (8 + e.depth * 22) + 'px;">' +
       caret +
       '<span class="ps-wbs-code" title="' + (e.custom ? 'Custom code (click ✎ to change)' : 'Auto-numbered') + '">' + esc(e.code) + (e.custom ? ' *' : '') + '</span>' +
-      '<span class="ps-wbs-name"><input data-wbs-name="' + esc(e.id) + '" value="' + esc(e.name || '') + '" placeholder="WBS name…"></span>' +
+      '<span class="ps-wbs-name">' + (locked
+        ? '<span class="ps-wbs-namefixed" title="Fixed WBS heading">' + esc(n.name || '') + '</span>'
+        : '<input data-wbs-name="' + esc(e.id) + '" value="' + esc(e.name || '') + '" placeholder="WBS name…">') + '</span>' +
       '<span class="ps-wbs-badge">' + (e.nKids ? e.nKids + ' sub' + (e.nKids === 1 ? '' : 's') + ' · ' : '') + e.nAct + ' activit' + (e.nAct === 1 ? 'y' : 'ies') + '</span>' +
-      '<span class="ps-wbs-acts">' +
-        '<button class="wbs-act" data-wbs-act="' + esc(e.id) + '" title="Add an activity under this WBS">＋Act</button>' +
-        '<button data-wbs-add="' + esc(e.id) + '" title="Add child WBS">＋</button>' +
-        '<button data-wbs-up="' + esc(e.id) + '" title="Move up">▲</button>' +
-        '<button data-wbs-down="' + esc(e.id) + '" title="Move down">▼</button>' +
-        '<button data-wbs-indent="' + esc(e.id) + '" title="Indent (make child of the node above)">→</button>' +
-        '<button data-wbs-outdent="' + esc(e.id) + '" title="Outdent (promote a level)">←</button>' +
-        '<button data-wbs-code="' + esc(e.id) + '" title="Edit code">✎</button>' +
-        '<button class="danger" data-wbs-del="' + esc(e.id) + '" title="Delete">✕</button>' +
-      '</span></div>';
+      '<span class="ps-wbs-acts">' + acts + '</span></div>';
   }
   // Paint only the rows in the current scroll viewport (+buffer) from _wbsFlat, offset by translateY.
   // This keeps the DOM small no matter how many rows are visible — broad searches / Expand-all included.
@@ -8294,6 +8304,55 @@
   // present in the WBS Manager, invisible in the Project Schedule, with no repair path — "Adopt
   // existing WBS" only runs the other way (summary rows -> nodes). Re-project anything missing.
   // Additive + idempotent: only inserts where no summary row references the node.
+  // Auto-generated WBS skeleton (2026-08-03): every project starts with a fixed, locked outline.
+  // `is_locked` = a skeleton node — its name/code/position can't be edited or deleted.
+  // `source_kind` = a "special" skeleton node whose contents come from ANOTHER module, not manual
+  // activities: 'design_development' rolls up Drawing Register + Material Submittal Log; 'procurement'
+  // rolls up the WPM/Procurement mirror (`wpm_work_packages`). Both block "+ Add activity"/"+ Add WBS".
+  var WBS_SKELETON = [
+    { name: 'Milestones' },
+    { name: 'Initiation Phase' },
+    { name: 'Planning Phase', children: [
+      { name: 'Project Execution Plan' },
+      { name: 'Design Development', source_kind: 'design_development' },
+      { name: 'Procurement', source_kind: 'procurement' }
+    ] },
+    { name: 'Execution Phase' }
+  ];
+  async function ensureWbsSkeleton() {
+    if (!pid || !canWrite || WBS_NODES.length) return;
+    var toInsert = [], flat = [];
+    (function walk(list, parentId) {
+      list.forEach(function (n, i) {
+        var row = { project_id: pid, parent_id: parentId || null, name: n.name, sort_order: i, created_by: UID, is_locked: true, source_kind: n.source_kind || null };
+        flat.push({ row: row, kids: n.children || [] });
+      });
+    })(WBS_SKELETON, null);
+    // insert top level first so children can reference their parent's real id
+    var byRef = new Map();
+    for (var i = 0; i < flat.length; i++) {
+      var f = flat[i];
+      var res = await sb().from('wbs_nodes').insert(f.row).select().single();
+      if (res.error) return;   // tolerant — run the migration and reload to retry
+      WBS_NODES.push(res.data);
+      byRef.set(f, res.data.id);
+      if (f.kids.length) {
+        for (var j = 0; j < f.kids.length; j++) {
+          var kid = f.kids[j];
+          var kres = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: res.data.id, name: kid.name, sort_order: j, created_by: UID, is_locked: true, source_kind: kid.source_kind || null }).select().single();
+          if (!kres.error) WBS_NODES.push(kres.data);
+        }
+      }
+    }
+    var codeOf = computeWbsCodes();
+    for (var k = 0; k < WBS_NODES.length; k++) {
+      var n = WBS_NODES[k];
+      await _insertWbsSummary({ project_id: pid, wbs_node_id: n.id, activity_type: 'WBS Summary', wbs: codeOf[n.id], activity_name: n.name, created_by: UID });
+    }
+  }
+  function wbsIsLocked(id) { var n = wbsById(id); return !!(n && n.is_locked); }
+  function wbsSourceKind(id) { var n = wbsById(id); return n ? (n.source_kind || null) : null; }
+  var SOURCE_KIND_LABEL = { design_development: 'Design Development — synced from Drawing Register + Material Submittal Log', procurement: 'Procurement — synced from the Procurement (WPM) app' };
   async function _wbsEnsureSummaries() {
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
     var have = {};
@@ -8352,11 +8411,14 @@
   // Jump to the Schedule and open the Add-activity form with this WBS preselected as the parent.
   function wbsAddActivity(id) {
     if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    var sk = wbsSourceKind(id);
+    if (sk) { UI.toast('This WBS is ' + SOURCE_KIND_LABEL[sk] + ' — activities can\'t be added here.', 'warn'); return; }
     _wbsSel = id; switchTab('schedule'); openForm(null);
   }
   // In-app "Add WBS" modal (replaces the browser prompt): name + optional custom code.
   function wbsAddChild(parentId) {
     if (!pid) return;
+    if (parentId && wbsSourceKind(parentId)) { UI.toast('This WBS is ' + SOURCE_KIND_LABEL[wbsSourceKind(parentId)] + ' — sub-items can\'t be added here.', 'warn'); return; }
     var codeOf = computeWbsCodes();
     var parent = parentId ? wbsById(parentId) : null;
     var where = parent ? ('under <strong>' + esc(codeOf[parent.id]) + ' ' + esc(parent.name || '') + '</strong>') : 'at the <strong>top level</strong>';
@@ -8396,13 +8458,16 @@
     m.el.querySelectorAll('input').forEach(function (inp) { inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); doSave(); } }; });
   }
   async function wbsRename(id, name) {
-    var n = wbsById(id); if (!n) return; name = (name || '').trim(); if (!name || name === n.name) { renderWbsManager(); return; }
+    var n = wbsById(id); if (!n) return;
+    if (n.is_locked) { UI.toast('This is a fixed WBS heading and can\'t be renamed.', 'warn'); renderWbsManager(); return; }
+    name = (name || '').trim(); if (!name || name === n.name) { renderWbsManager(); return; }
     n.name = name;
     await sb().from('wbs_nodes').update({ name: name }).eq('id', id);
     await _wbsCommit();
   }
   async function wbsMove(id, how) {
     var n = wbsById(id); if (!n) return;
+    if (n.is_locked) { UI.toast('This is a fixed WBS heading and can\'t be moved.', 'warn'); return; }
     var ok = true;
     if (how === 'up' || how === 'down') {
       var sibs = wbsChildren(n.parent_id), i = sibs.indexOf(n), j = how === 'up' ? i - 1 : i + 1;
@@ -8437,6 +8502,7 @@
   // In-app "Edit code" modal (replaces the browser prompt): custom code, or blank to auto-number.
   function wbsEditCode(id) {
     var n = wbsById(id); if (!n) return;
+    if (n.is_locked) { UI.toast('This is a fixed WBS heading and can\'t be recoded.', 'warn'); return; }
     var cur = computeWbsCodes()[id];
     var m = UI.modal('<h2 style="margin-top:0;">WBS code — ' + esc(n.name || '') + '</h2>' +
       '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Auto-numbered code is <strong>' + esc(cur) + '</strong>. Type a custom code, or leave blank to auto-number.</p>' +
@@ -8455,6 +8521,7 @@
   }
   async function wbsDelete(id) {
     var n = wbsById(id); if (!n) return;
+    if (n.is_locked) { UI.toast('This is a fixed WBS heading and can\'t be deleted.', 'warn'); return; }
     if (wbsChildren(id).length) { UI.toast('This WBS has sub-nodes — delete or move them first.', 'warn'); return; }
     var nAct = wbsActivityCount(id);
     if (nAct) { UI.toast('This WBS has ' + nAct + ' activit' + (nAct === 1 ? 'y' : 'ies') + ' — move or delete them first.', 'warn'); return; }
