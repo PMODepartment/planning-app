@@ -77,6 +77,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-03 — Drawing Register + Material Submittal: Backlog UI polish (filters + fixed blank-status pill)
+Follow-up to the Overview/Backlog/Registry rollout below, after seeing it live: on a real project the
+Backlog tab had ~1,000 unfiltered rows and a blank `status` rendered as a solid amber pill showing "—"
+(looked like a real status value, wasn't).
+- **Backlog now shares the existing filter bar** (search/phase/discipline/status, + Overdue-only on
+  Material Submittal) instead of hiding it — both modules extracted their filter-matching logic into a
+  reusable predicate (`matchesFilters()` in Drawing Register; Material Submittal already had one in
+  `visibleRows()`) so Backlog and Registry/Log filter identically, no duplicated logic.
+- **Fixed the blank-status pill** in Drawing Register's Backlog (`statusCls()` defaulted unset status to
+  the amber "For Review" color): now renders a plain muted "—" when `status` is empty, matching how
+  Material Submittal's Backlog already handled it.
+- Both Backlog tables now show a **"Showing N filtered" / "N total"** count in the card header.
+- Module-local only (`module.js?v=20260803c` drawing-register, `20260803b` material-submittal). Verified
+  `node --check` on both. **Not browser-verified** (auth wall).
+
 ### 2026-08-03 — Drawing Register + Material Submittal: Overview/Backlog/Registry tabs (procurement-style)
 - User asked for the Procurement (WPM) project-view tab pattern (Overview / Backlog / WP List) on both
   **Drawing Register** and **Material Submittal Log** — as two separate modules (each keeps its own

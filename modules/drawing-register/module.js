@@ -442,19 +442,26 @@ window.DrawingRegister = (function () {
   function structuralNodes(){ return rows.filter(isNode); }
   function anyFilter(){ return !!(filters.phase || filters.discipline || filters.status || filters.search || filters.dupsOnly); }
 
+  // Shared by the Registry filter bar AND the Backlog tab (dupsOnly is Registry-only).
+  function matchesFilters(r, opts) {
+    opts = opts || {};
+    if (!opts.skipDups && filters.dupsOnly && !dupSet[dupKey(r)]) return false;
+    if (filters.phase && r.phase !== filters.phase) return false;
+    if (filters.discipline &&
+        r.discipline !== filters.discipline &&
+        disciplineName(r.discipline) !== filters.discipline) return false;
+    if (filters.status && r.status !== filters.status) return false;
+    if (filters.search) {
+      var hay = [r.drawing_no, r.drawing_code, r.title, r.description, r.discipline,
+                 r.category, r.phase, r.responsible, r.revision, r.remarks].join(' ').toLowerCase();
+      if (hay.indexOf(filters.search) === -1) return false;
+    }
+    return true;
+  }
+
   function filtered() {
     return drawingRows().filter(function (r) {
-      if (filters.dupsOnly && !dupSet[dupKey(r)]) return false;
-      if (filters.phase && r.phase !== filters.phase) return false;
-      if (filters.discipline &&
-          r.discipline !== filters.discipline &&
-          disciplineName(r.discipline) !== filters.discipline) return false;
-      if (filters.status && r.status !== filters.status) return false;
-      if (filters.search) {
-        var hay = [r.drawing_no, r.drawing_code, r.title, r.description, r.discipline,
-                   r.category, r.phase, r.responsible, r.revision, r.remarks].join(' ').toLowerCase();
-        if (hay.indexOf(filters.search) === -1) return false;
-      }
+      if (!matchesFilters(r)) return false;
       return true;
     });
   }
@@ -470,9 +477,10 @@ window.DrawingRegister = (function () {
 
   function render() {
     syncTabs();
-    // the filter bar only applies to the Registry table, not Overview/Backlog
+    // the filter bar applies to Registry AND Backlog (both are drawing-level lists);
+    // Overview is an aggregate dashboard, so it hides the filters.
     var fb = document.querySelector('.dr-filters');
-    if (fb) fb.style.display = (view === 'registry') ? '' : 'none';
+    if (fb) fb.style.display = (view === 'overview') ? 'none' : '';
     populateFilterSelects();
     if (view === 'overview') { renderProgress(); }
     else if (view === 'backlog') { renderBacklog(); }
@@ -486,6 +494,7 @@ window.DrawingRegister = (function () {
   // linked schedule need-by deadline. Sorted so the worst-off rows lead.
   function backlogRows(){
     return drawingRows().filter(function (r){
+      if (!matchesFilters(r, { skipDups:true })) return false;
       return !isApprovedStatus(r.status) || r.status === 'Revise & Resubmit';
     });
   }
@@ -497,7 +506,10 @@ window.DrawingRegister = (function () {
   function renderBacklog(){
     var host = document.getElementById('dr-view');
     var list = backlogRows();
-    if (!list.length) { host.innerHTML = emptyMsg('No open items — every drawing is approved.'); return; }
+    if (!list.length) {
+      host.innerHTML = emptyMsg(anyFilter() ? 'No open items match these filters.' : 'No open items — every drawing is approved.');
+      return;
+    }
     list = list.slice().sort(function (a,b){ return backlogUrgency(a) - backlogUrgency(b); });
 
     var late = list.filter(function (r){ var f=docFloatOf(r); return f!=null && f<0; }).length;
@@ -517,13 +529,15 @@ window.DrawingRegister = (function () {
         '<td>'+Fmt.esc(r.title||'')+'</td>' +
         '<td>'+Fmt.esc(r.phase||'')+'</td>' +
         '<td>'+Fmt.esc(disciplineName(r.discipline))+'</td>' +
-        '<td><span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status||'—')+'</span></td>' +
+        '<td>'+(r.status ? '<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status)+'</span>' : '<span class="dr-mut">—</span>')+'</td>' +
         '<td class="dr-nowrap dr-c-needby">'+needByCellHtml(r)+'</td>' +
       '</tr>';
     }).join('');
 
     host.innerHTML = kpis +
-      '<div class="pd-card"><h3 class="dr-h3">Open items — most urgent first</h3>' +
+      '<div class="pd-card"><h3 class="dr-h3">Open items — most urgent first' +
+      '<span class="dr-mut" style="font-weight:400;font-size:12.5px;margin-left:8px;">'+
+      (anyFilter() ? 'Showing '+list.length+' filtered' : list.length+' total')+'</span></h3>' +
       '<table class="pd-table dr-table dr-bk-table"><thead><tr>' +
       '<th>Code</th><th>Title</th><th>Phase</th><th>Discipline</th><th>Status</th><th>Need-by</th>' +
       '</tr></thead><tbody>'+body+'</tbody></table></div>';

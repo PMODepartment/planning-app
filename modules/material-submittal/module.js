@@ -1240,7 +1240,9 @@ window.MaterialSubmittal = (function () {
   // SHELL
   // ==========================================================================
   function render() {
-    document.getElementById('ms-filters').style.display = view === 'log' ? '' : 'none';
+    // Overview is an aggregate dashboard (no filters); Registry + Backlog are both
+    // submittal-level lists, so they share the filter bar.
+    document.getElementById('ms-filters').style.display = view === 'dashboard' ? 'none' : '';
     if (view === 'dashboard') renderDashboard();
     else if (view === 'backlog') renderBacklog();
     else renderLog();
@@ -1251,7 +1253,7 @@ window.MaterialSubmittal = (function () {
   // ---- Backlog: submittals needing action, most urgent first ---------------
   // "Needing action" = not yet approved (Approved / Approved w/ Comments are the
   // only DONE statuses), sorted so overdue / late-vs-need-by rows lead.
-  function backlogRows() { return rows.filter(function (r) { return !isApproved(r); }); }
+  function backlogRows() { return visibleRows().filter(function (r) { return !isApproved(r); }); }
   function backlogUrgency(r) {
     var fl = docFloatOf(r);
     if (fl != null) return fl;                      // negative = late, smaller = worse
@@ -1261,7 +1263,12 @@ window.MaterialSubmittal = (function () {
   function renderBacklog() {
     var host = document.getElementById('ms-view');
     var list = backlogRows();
-    if (!list.length) { host.innerHTML = '<p class="ms-mut" style="padding:24px;">No open items — every submittal is approved.</p>'; return; }
+    var anyFilt = !!(filters.q || filters.section || filters.disc || filters.status || filters.pres || filters.overdue);
+    if (!list.length) {
+      host.innerHTML = '<p class="ms-mut" style="padding:24px;">' +
+        (anyFilt ? 'No open items match these filters.' : 'No open items — every submittal is approved.') + '</p>';
+      return;
+    }
     list = list.slice().sort(function (a, b) { return backlogUrgency(a) - backlogUrgency(b); });
 
     var overdue = list.filter(isOverdue).length;
@@ -1288,7 +1295,10 @@ window.MaterialSubmittal = (function () {
     }).join('');
 
     host.innerHTML = kpis +
-      '<div class="pd-card ms-tablecard"><table class="ms-table ms-bk-table"><thead><tr>' +
+      '<div class="pd-card ms-tablecard"><h3>Open items — most urgent first' +
+      '<span class="ms-mut" style="font-weight:400;font-size:12.5px;margin-left:8px;">' +
+      (anyFilt ? 'Showing ' + list.length + ' filtered' : list.length + ' total') + '</span></h3>' +
+      '<table class="ms-table ms-bk-table"><thead><tr>' +
       '<th>Code</th><th>Item</th><th>Section</th><th>Discipline</th><th>Status</th><th>Need-by</th>' +
       '</tr></thead><tbody>' + body + '</tbody></table></div>';
 
