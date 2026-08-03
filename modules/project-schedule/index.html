@@ -1998,7 +1998,7 @@
     // Tolerant: if the schedule-document-links migration hasn't run, the column is absent and the
     // query errors — we just leave the caches empty (the Documents tab shows a hint).
     try {
-      var rd = await sb().from('drawing_register').select('id,schedule_activity_id,schedule_wbs,lead_days,drawing_no,drawing_code,title,discipline,status,plan_approval_date,actual_approval').eq('project_id', pid).not('schedule_activity_id', 'is', null);
+      var rd = await sb().from('drawing_register').select('id,schedule_activity_id,schedule_wbs,lead_days,drawing_no,drawing_code,title,discipline,status,planned_approval,actual_approval').eq('project_id', pid).not('schedule_activity_id', 'is', null);
       DOC_DRAWINGS = (rd && rd.data) || [];
     } catch (e) { DOC_DRAWINGS = []; }
     try {
