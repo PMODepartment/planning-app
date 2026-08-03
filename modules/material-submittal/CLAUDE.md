@@ -6,6 +6,18 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## Pattern the WPM Backlog look further: Aging column + sortable headers (2026-08-03) — fmlozano
+Follow-up after the tabs below: user pointed at the live WPM (Procurement) project view and asked to
+match its Backlog table more closely. This module's Overview already had a status donut from its
+original build (`donutSVG`/`statusColor`), so only the Backlog table needed work.
+- **`agingDays(r)`**: `today − requiredApprovalOf(r)` (falls back to `plan_approval_date` when
+  unlinked) — positive = N days overdue, negative = N days to go, same convention as WPM's Aging(d).
+  Added as a 7th Backlog column.
+- **Sortable Backlog headers** (`bkSort`/`BK_COLS`/`bkSortVal`/`bkSetSort`): click a header to sort by
+  it, click again to flip direction. Default unchanged (most urgent first, via `backlogUrgency`).
+- Assets `module.css?v=20260803b` / `module.js?v=20260803c`. Verified `node --check`. **Not
+  browser-verified** (auth wall).
+
 ## Overview / Backlog / Registry tabs — procurement-style project view (2026-08-03) — fmlozano
 Restructured the topbar from Dashboard/Log into three tabs matching the Procurement (WPM)
 project-view pattern: **Overview | Backlog | Registry**.

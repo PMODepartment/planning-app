@@ -1,5 +1,20 @@
 # Module: drawing-register
 
+## Pattern the WPM Backlog/Overview look further: Aging column, sortable headers, status donut (2026-08-03) — fmlozano
+Follow-up after the tabs shipped: user pointed at the live WPM (Procurement) project view and asked to
+match its look more closely.
+- **`agingDays(r)`**: `today − requiredApprovalOf(r)` (falls back to `planned_approval` when unlinked to
+  a schedule activity) — positive = N days overdue, negative = N days still to go, same convention as
+  WPM's Aging(d) column. Added as a 7th Backlog column.
+- **Sortable Backlog headers** (`bkSort`/`BK_COLS`/`bkSortVal`/`bkSetSort`): click any header to sort by
+  it, click again to flip direction (▲/▼ indicator). Default is unchanged from before (most urgent
+  first, via the existing `backlogUrgency`).
+- **`donutSVG()` + `statusCounts()`** on the Overview tab: a ring chart (pure inline SVG, no library)
+  showing drawing count by approval status, using `STATUS_COLOR` mapped to the same colors as the
+  Registry's status pills (`statusCls`) so the two views agree visually.
+- Assets `module.css?v=20260803b` / `module.js?v=20260803d`. Verified `node --check`. **Not
+  browser-verified** (auth wall).
+
 ## Overview / Backlog / Registry tabs — procurement-style project view (2026-08-03) — fmlozano
 Restructured the topbar from Register/Progress into three tabs matching the Procurement (WPM)
 project-view pattern: **Overview | Backlog | Registry**.

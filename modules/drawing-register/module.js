@@ -382,6 +382,15 @@ window.DrawingRegister = (function () {
   function requiredApprovalOf(r){                // deadline = need-by − lead
     var nb = needByOf(r); return nb ? minusDays(nb, leadOf(r)) : null;
   }
+  // Aging in days, WPM-Backlog style: +N = N days past its deadline, −N = N days
+  // still to go. Prefers the schedule need-by deadline; falls back to the plain
+  // planned-approval date for drawings with no schedule link yet.
+  function agingDays(r){
+    var ref = requiredApprovalOf(r) || r.planned_approval;
+    if (!ref) return null;
+    var today = new Date(); today.setHours(0,0,0,0);
+    return Math.round((today - new Date(ref + 'T00:00:00')) / 86400000);
+  }
   function docFloatOf(r){                         // +slack / −late, days vs the deadline
     var req = requiredApprovalOf(r); if (!req) return null;
     var have = r.actual_approval || r.planned_approval; if (!have) return null;
@@ -503,6 +512,37 @@ window.DrawingRegister = (function () {
     if (fl != null) return fl;                 // negative = late, smaller = worse
     return r.status === 'Revise & Resubmit' ? 500 : 1000; // no schedule link: rank by status
   }
+
+  // Sortable columns (WPM Backlog pattern: click a header to sort by it, click
+  // again to flip direction). Defaults to "most overdue first" like `dr-bk-defcol`.
+  var bkSort = { col:'urgency', dir:1 };
+  var BK_COLS = [
+    { col:'code',       label:'Code' },
+    { col:'title',      label:'Title' },
+    { col:'phase',      label:'Phase' },
+    { col:'discipline', label:'Discipline' },
+    { col:'status',     label:'Status' },
+    { col:'needby',     label:'Need-by' },
+    { col:'aging',      label:'Aging (d)' }
+  ];
+  function bkSortVal(r, col){
+    switch (col){
+      case 'code':       return drawCode(r).toLowerCase();
+      case 'title':      return (r.title||'').toLowerCase();
+      case 'phase':       return r.phase||'';
+      case 'discipline': return disciplineName(r.discipline);
+      case 'status':      return r.status||'';
+      case 'needby':      return requiredApprovalOf(r) || '';
+      case 'aging':       { var a=agingDays(r); return a==null ? -1e9 : a; }
+      default:            return backlogUrgency(r);
+    }
+  }
+  function bkSetSort(col){
+    if (bkSort.col === col) bkSort.dir = -bkSort.dir;
+    else { bkSort.col = col; bkSort.dir = (col==='aging') ? -1 : 1; }
+    renderBacklog();
+  }
+
   function renderBacklog(){
     var host = document.getElementById('dr-view');
     var list = backlogRows();
@@ -510,7 +550,11 @@ window.DrawingRegister = (function () {
       host.innerHTML = emptyMsg(anyFilter() ? 'No open items match these filters.' : 'No open items — every drawing is approved.');
       return;
     }
-    list = list.slice().sort(function (a,b){ return backlogUrgency(a) - backlogUrgency(b); });
+    list = list.slice().sort(function (a,b){
+      var va=bkSortVal(a,bkSort.col), vb=bkSortVal(b,bkSort.col);
+      var cmp = va<vb ? -1 : (va>vb ? 1 : 0);
+      return cmp * bkSort.dir;
+    });
 
     var late = list.filter(function (r){ var f=docFloatOf(r); return f!=null && f<0; }).length;
     var tight = list.filter(function (r){ var f=docFloatOf(r); return f!=null && f>=0 && f<=3; }).length;
@@ -524,6 +568,7 @@ window.DrawingRegister = (function () {
     '</div>';
 
     var body = list.map(function (r){
+      var a = agingDays(r);
       return '<tr class="dr-bk-row" data-id="'+r.id+'">' +
         '<td class="dr-code">'+Fmt.esc(drawCode(r))+'</td>' +
         '<td>'+Fmt.esc(r.title||'')+'</td>' +
@@ -531,17 +576,26 @@ window.DrawingRegister = (function () {
         '<td>'+Fmt.esc(disciplineName(r.discipline))+'</td>' +
         '<td>'+(r.status ? '<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status)+'</span>' : '<span class="dr-mut">—</span>')+'</td>' +
         '<td class="dr-nowrap dr-c-needby">'+needByCellHtml(r)+'</td>' +
+        '<td class="dr-r dr-nowrap'+(a!=null&&a>0?' dr-aging-late':'')+'">'+(a==null?'<span class="dr-mut">—</span>':(a>0?'+':'')+a+'d')+'</td>' +
       '</tr>';
     }).join('');
 
+    var head = BK_COLS.map(function (c){
+      var active = bkSort.col===c.col;
+      return '<th class="dr-sortable" data-col="'+c.col+'">'+c.label+
+        (active ? ' <span class="dr-sortind">'+(bkSort.dir===1?'▲':'▼')+'</span>' : '')+'</th>';
+    }).join('');
+
     host.innerHTML = kpis +
-      '<div class="pd-card"><h3 class="dr-h3">Open items — most urgent first' +
+      '<div class="pd-card"><h3 class="dr-h3">Open items' +
       '<span class="dr-mut" style="font-weight:400;font-size:12.5px;margin-left:8px;">'+
       (anyFilter() ? 'Showing '+list.length+' filtered' : list.length+' total')+'</span></h3>' +
-      '<table class="pd-table dr-table dr-bk-table"><thead><tr>' +
-      '<th>Code</th><th>Title</th><th>Phase</th><th>Discipline</th><th>Status</th><th>Need-by</th>' +
-      '</tr></thead><tbody>'+body+'</tbody></table></div>';
+      '<table class="pd-table dr-table dr-bk-table"><thead><tr>'+head+'</tr></thead>' +
+      '<tbody>'+body+'</tbody></table></div>';
 
+    host.querySelectorAll('.dr-bk-table th.dr-sortable').forEach(function (th){
+      th.onclick = function (){ bkSetSort(th.dataset.col); };
+    });
     host.querySelectorAll('.dr-bk-row').forEach(function (tr){
       tr.onclick = function (){
         var r = rows.find(function (x){ return String(x.id)===tr.dataset.id; });
@@ -1252,7 +1306,49 @@ window.DrawingRegister = (function () {
       progTable('Progress by Discipline', byDisc, Object.keys(DISCIPLINES).map(disciplineName)) +
     '</div>';
 
-    host.innerHTML = kpis + host2;
+    host.innerHTML = kpis + '<div class="pd-card"><h3 class="dr-h3">Drawings by Status</h3>' +
+      donutSVG(statusCounts()) + '</div>' + host2;
+  }
+
+  // Status colors mirror the Registry's own pill colors (statusCls) so the chart
+  // and the grid pills read as one system.
+  var STATUS_COLOR = { 'For Review':'#d97706', 'Revise & Resubmit':'#dc2626',
+    'Approved w/ comments':'#0891b2', 'Approved':'#16a34a', 'Superseded':'#6b7280' };
+  function statusCounts() {
+    var m = {}; STATUSES.forEach(function (s){ m[s]=0; });
+    drawingRows().forEach(function (r){
+      var s = r.status && m.hasOwnProperty(r.status) ? r.status : (r.status || 'For Review');
+      m[s] = (m[s]||0) + 1;
+    });
+    return Object.keys(m).filter(function (s){ return m[s]>0; }).map(function (s){
+      return { label:s, count:m[s], color: STATUS_COLOR[s] || '#8a8f98' };
+    });
+  }
+
+  // Generic donut chart + legend (WPM "Work Package by Status" pattern). Pure SVG,
+  // no dependency; `currentColor` keeps the center total readable in dark mode.
+  function donutSVG(segs) {
+    var total = segs.reduce(function (s,x){ return s+x.count; }, 0);
+    var r=70, cx=100, cy=100, sw=26, circ=2*Math.PI*r, offset=0;
+    var arcs = segs.filter(function (s){ return s.count>0; }).map(function (s){
+      var len = total ? (s.count/total)*circ : 0;
+      var el = '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+s.color+'" stroke-width="'+sw+
+        '" stroke-dasharray="'+len+' '+(circ-len)+'" stroke-dashoffset="'+(-offset)+
+        '" transform="rotate(-90 '+cx+' '+cy+')"></circle>';
+      offset += len; return el;
+    }).join('');
+    var legend = segs.map(function (s){
+      var pct = total ? Math.round(s.count/total*100) : 0;
+      return '<div style="display:flex;align-items:center;gap:7px;font-size:12.5px;margin:4px 0;">' +
+        '<span style="width:10px;height:10px;border-radius:2px;background:'+s.color+';flex:none;"></span>' +
+        '<span style="flex:1;">'+Fmt.esc(s.label)+'</span><b>'+s.count+'</b>' +
+        '<span class="dr-mut" style="width:40px;text-align:right;">'+pct+'%</span></div>';
+    }).join('') || '<span class="dr-mut">No data</span>';
+    return '<div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">' +
+      '<svg viewBox="0 0 200 200" width="160" height="160" style="flex:none;">'+arcs+
+      '<text x="100" y="96" text-anchor="middle" font-size="28" font-weight="700" fill="currentColor">'+total+'</text>' +
+      '<text x="100" y="116" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.6">DRAWINGS</text>' +
+      '</svg><div style="min-width:200px;flex:1;">'+legend+'</div></div>';
   }
 
   function groupAgg(key) {

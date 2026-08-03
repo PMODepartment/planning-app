@@ -271,6 +271,15 @@ window.MaterialSubmittal = (function () {
     d.setDate(d.getDate() - n); return isoUTC(d);
   }
   function requiredApprovalOf(r) { var nb = needByOf(r); return nb ? minusDays(String(nb).slice(0, 10), leadOf(r)) : null; }
+  // Aging in days, WPM-Backlog style: +N = N days past its deadline, −N = N days
+  // still to go. Prefers the schedule need-by deadline; falls back to the plain
+  // planned-approval date for submittals with no schedule link yet.
+  function agingDays(r) {
+    var ref = requiredApprovalOf(r) || r.plan_approval_date;
+    if (!ref) return null;
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.round((today - new Date(String(ref).slice(0, 10) + 'T00:00:00')) / 86400000);
+  }
   function docFloatOf(r) {
     var req = requiredApprovalOf(r); if (!req) return null;
     var have = r.date_approved || r.plan_approval_date; if (!have) return null;
@@ -1260,6 +1269,33 @@ window.MaterialSubmittal = (function () {
     if (isOverdue(r)) return -1000;                  // overdue vs its own plan date, no schedule link
     return statusOf(r) === 'Rejected' ? 500 : 1000;
   }
+  // Sortable columns (WPM Backlog pattern: click a header to sort by it, click
+  // again to flip direction). Defaults to "most overdue first".
+  var bkSort = { col: 'urgency', dir: 1 };
+  var BK_COLS = [
+    { col:'code', label:'Code' }, { col:'item', label:'Item' },
+    { col:'section', label:'Section' }, { col:'discipline', label:'Discipline' },
+    { col:'status', label:'Status' }, { col:'needby', label:'Need-by' },
+    { col:'aging', label:'Aging (d)' }
+  ];
+  function bkSortVal(r, col) {
+    switch (col) {
+      case 'code':       return (codeOf(r) || '').toLowerCase();
+      case 'item':       return (r.material || '').toLowerCase();
+      case 'section':    return sectionOf(r);
+      case 'discipline': return discOf(r);
+      case 'status':     return statusOf(r);
+      case 'needby':     return requiredApprovalOf(r) || '';
+      case 'aging':      { var a = agingDays(r); return a == null ? -1e9 : a; }
+      default:           return backlogUrgency(r);
+    }
+  }
+  function bkSetSort(col) {
+    if (bkSort.col === col) bkSort.dir = -bkSort.dir;
+    else { bkSort.col = col; bkSort.dir = (col === 'aging') ? -1 : 1; }
+    renderBacklog();
+  }
+
   function renderBacklog() {
     var host = document.getElementById('ms-view');
     var list = backlogRows();
@@ -1269,7 +1305,11 @@ window.MaterialSubmittal = (function () {
         (anyFilt ? 'No open items match these filters.' : 'No open items — every submittal is approved.') + '</p>';
       return;
     }
-    list = list.slice().sort(function (a, b) { return backlogUrgency(a) - backlogUrgency(b); });
+    list = list.slice().sort(function (a, b) {
+      var va = bkSortVal(a, bkSort.col), vb = bkSortVal(b, bkSort.col);
+      var cmp = va < vb ? -1 : (va > vb ? 1 : 0);
+      return cmp * bkSort.dir;
+    });
 
     var overdue = list.filter(isOverdue).length;
     var late = list.filter(function (r) { var f = docFloatOf(r); return f != null && f < 0; }).length;
@@ -1283,7 +1323,7 @@ window.MaterialSubmittal = (function () {
     '</div>';
 
     var body = list.map(function (r) {
-      var meta = statusMeta(statusOf(r)), st = statusOf(r);
+      var meta = statusMeta(statusOf(r)), st = statusOf(r), a = agingDays(r);
       return '<tr class="ms-bk-row" data-id="' + r.id + '">' +
         '<td><span class="ms-code">' + esc(codeOf(r) || '—') + '</span></td>' +
         '<td>' + esc(r.material || '(untitled)') + '</td>' +
@@ -1291,17 +1331,26 @@ window.MaterialSubmittal = (function () {
         '<td>' + esc(discOf(r) || '—') + '</td>' +
         '<td>' + (st ? '<span class="ms-pill ' + (meta ? meta.cls : 's-forsub') + '">' + esc(st) + '</span>' : '<span class="ms-mut ms-mini">—</span>') + '</td>' +
         '<td class="ms-nowrap">' + needByCell(r) + '</td>' +
+        '<td class="ms-r ms-nowrap' + (a != null && a > 0 ? ' ms-aging-late' : '') + '">' + (a == null ? '<span class="ms-mut ms-mini">—</span>' : (a > 0 ? '+' : '') + a + 'd') + '</td>' +
       '</tr>';
     }).join('');
 
+    var head = BK_COLS.map(function (c) {
+      var active = bkSort.col === c.col;
+      return '<th class="ms-sortable" data-col="' + c.col + '">' + c.label +
+        (active ? ' <span class="ms-sortind">' + (bkSort.dir === 1 ? '▲' : '▼') + '</span>' : '') + '</th>';
+    }).join('');
+
     host.innerHTML = kpis +
-      '<div class="pd-card ms-tablecard"><h3>Open items — most urgent first' +
+      '<div class="pd-card ms-tablecard"><h3>Open items' +
       '<span class="ms-mut" style="font-weight:400;font-size:12.5px;margin-left:8px;">' +
       (anyFilt ? 'Showing ' + list.length + ' filtered' : list.length + ' total') + '</span></h3>' +
-      '<table class="ms-table ms-bk-table"><thead><tr>' +
-      '<th>Code</th><th>Item</th><th>Section</th><th>Discipline</th><th>Status</th><th>Need-by</th>' +
-      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+      '<table class="ms-table ms-bk-table"><thead><tr>' + head + '</tr></thead>' +
+      '<tbody>' + body + '</tbody></table></div>';
 
+    host.querySelectorAll('.ms-bk-table th.ms-sortable').forEach(function (th) {
+      th.onclick = function () { bkSetSort(th.dataset.col); };
+    });
     host.querySelectorAll('.ms-bk-row').forEach(function (tr) {
       tr.onclick = function () {
         var r = rows.find(function (x) { return String(x.id) === tr.dataset.id; });

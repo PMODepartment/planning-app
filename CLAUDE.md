@@ -77,6 +77,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-03 — Drawing Register + Material Submittal: pattern the WPM (Procurement) look further
+User pointed at the live WPM project-view (Overview/Backlog/WP List) and asked to pattern its look more
+closely — specifically its sortable "Backlog" table with an **Aging (d)** column, and its donut-chart
+status breakdown on Overview.
+- **Aging (d) column on both Backlog tables** (`agingDays()` in each module): `today − required-approval
+  deadline` (positive = days overdue, negative = days still to go) — the same shape as WPM's Aging(d)
+  column, using the existing schedule-link deadline when linked, falling back to the plain planned-
+  approval date otherwise.
+- **Sortable Backlog columns** (both modules): click any header to sort by it (Code/Item/Section-or-
+  Phase/Discipline/Status/Need-by/Aging), click again to flip direction — mirrors the sort arrow on
+  WPM's Backlog table. Default stays "most urgent first."
+- **Status donut chart on Drawing Register's Overview** (`donutSVG()`, new — Material Submittal's
+  Overview already had one from its original build, so no change needed there): a WPM-style ring chart
+  + legend showing the drawing count by approval status, colored to match the existing status-pill
+  palette (`statusCls`) so the chart and the grid pills read as one system.
+- Module-local only; no DB/migration change. Assets: drawing-register `module.css/js?v=20260803b/d`,
+  material-submittal `module.css/js?v=20260803b/c`. Verified `node --check` on both. **Not
+  browser-verified** (auth wall).
+
 ### 2026-08-03 — Drawing Register + Material Submittal: Backlog UI polish (filters + fixed blank-status pill)
 Follow-up to the Overview/Backlog/Registry rollout below, after seeing it live: on a real project the
 Backlog tab had ~1,000 unfiltered rows and a blank `status` rendered as a solid amber pill showing "—"

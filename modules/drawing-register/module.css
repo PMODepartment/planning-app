@@ -139,6 +139,10 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 /* Backlog tab */
 .dr-bk-table tbody tr.dr-bk-row { cursor:pointer; }
 .dr-bk-table tbody tr.dr-bk-row:hover td { background:var(--pd-bg); }
+.dr-bk-table th.dr-sortable { cursor:pointer; user-select:none; }
+.dr-bk-table th.dr-sortable:hover { color:var(--pd-red); }
+.dr-sortind { color:var(--pd-red); font-size:10px; }
+.dr-aging-late { color:var(--pd-red); font-weight:700; }
 
 /* Progress bar */
 .dr-prog { position:relative; height:16px; background:var(--pd-line); border-radius:999px; overflow:hidden; min-width:100px; max-width:220px; }

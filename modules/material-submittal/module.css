@@ -64,6 +64,10 @@
 .ms-table { border-collapse:separate; border-spacing:0; width:100%; min-width:1500px; }
 .ms-table.ms-bk-table { min-width:0; }
 .ms-bk-table tbody tr.ms-bk-row { cursor:pointer; }
+.ms-bk-table th.ms-sortable { cursor:pointer; user-select:none; }
+.ms-bk-table th.ms-sortable:hover { color:var(--pd-red); }
+.ms-sortind { color:var(--pd-red); font-size:10px; }
+.ms-aging-late { color:var(--pd-red); font-weight:700; }
 .ms-table thead th { position:sticky; top:0; z-index:2; background:var(--pd-card);
   border-bottom:2px solid var(--pd-line); font-size:11px; letter-spacing:.03em; text-transform:uppercase;
   color:var(--pd-muted); padding:9px 10px; white-space:nowrap; text-align:left; }
