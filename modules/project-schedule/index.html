@@ -1134,6 +1134,13 @@
     @media (max-width:900px){ .sbld-gen2 { grid-template-columns:1fr; } }
     .sbld-del { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; color:var(--pd-bad); }
     .sbld-grab { cursor:grab; color:var(--pd-muted); flex:none; user-select:none; }
+    /* step 2 — trade sequence rows */
+    .sbld-seqrow { align-items:center; padding:8px 10px; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); cursor:grab; }
+    .sbld-seqrow:hover { border-color:var(--pd-red); }
+    .sbld-seqn { flex:none; width:22px; height:22px; border-radius:50%; background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+    .sbld-seqcode { flex:none; width:100px; font-weight:700; font-size:13px; }
+    .sbld-seqname { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+    .sbld-seqdur { flex:none; font-size:11.5px; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
     .sbld-tag { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:999px; background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
     .sbld-hint { font-size:12px; color:var(--pd-muted); margin:6px 0 0; }
     .sbld-empty { color:var(--pd-muted); font-size:13px; padding:22px; text-align:center; border:1px dashed var(--pd-line); border-radius:8px; }
@@ -1209,6 +1216,55 @@
     .sbld-znode { flex:1 1 40px; min-width:34px; display:flex; align-items:center; justify-content:center; border:1.5px solid var(--zc); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:14px; font-weight:700; cursor:pointer; padding:2px 4px; line-height:1; }
     .sbld-znode:hover { background:var(--zc); color:#fff; }
     .sbld-znode.pend { background:var(--zc); color:#fff; outline:2px solid var(--pd-red); outline-offset:1px; }
+    /* destination selection (2nd phase) — blue accent to distinguish from red sources */
+    .sbld-znode.pend-dst { outline:2px dashed #2f6fed; outline-offset:1px; }
+    .sbld-actrow.pend-dst { outline:2px dashed #2f6fed; outline-offset:1px; }
+    .sbld-schedbar.pend-dst { stroke:#2f6fed; stroke-width:2; stroke-dasharray:3 2; }
+    /* step 4 — class-code list (description emphasized, code beneath) */
+    .sbld-actlist { display:flex; flex-direction:column; gap:6px; }
+    .sbld-actnode { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; border:1px solid var(--pd-line); border-left:4px solid var(--zc); border-radius:6px; background:var(--pd-card); color:var(--pd-ink); font:inherit; cursor:pointer; padding:6px 9px; }
+    .sbld-actnode:hover { border-color:var(--zc); background:var(--pd-bg); }
+    .sbld-actnode.pend { outline:2px solid var(--pd-red); outline-offset:1px; background:var(--pd-bg); }
+    .sbld-actdesc { font-size:12.5px; font-weight:700; line-height:1.2; }
+    .sbld-actcode { font-size:10.5px; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+    /* step 4 — class-code row with inline duration editors */
+    .sbld-actrow { border:1px solid var(--pd-line); border-left:4px solid var(--zc); border-radius:6px; background:var(--pd-card); overflow:hidden; }
+    .sbld-actrow.pend { outline:2px solid var(--pd-red); outline-offset:1px; }
+    .sbld-actrow .sbld-actnode { border:none; border-radius:0; width:100%; }
+    .sbld-actrow .sbld-actnode:hover { background:var(--pd-bg); }
+    .sbld-actdur { display:flex; gap:10px; padding:4px 9px 6px; border-top:1px dashed var(--pd-line); }
+    .sbld-actdur label { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; color:var(--pd-muted); font-weight:600; }
+    .sbld-actdur input { width:48px; height:24px; padding:2px 5px; font-size:11px; border:1px solid var(--pd-line); border-radius:4px; background:var(--pd-bg); color:var(--pd-ink); }
+    .sbld-scopetag { font-size:9.5px; color:var(--pd-muted); font-style:italic; align-self:center; }
+    /* step 1 — activities grid ⇄ holding-area shuttle */
+    .sbld-actsplit { display:flex; gap:0; align-items:stretch; }
+    .sbld-actsplit .sbld-xlwrap { flex:1 1 auto; min-width:0; }
+    .sbld-shuttle { flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; gap:8px; padding:0 8px; }
+    .sbld-shuttle button { width:38px; height:34px; font-size:16px; font-weight:700; }
+    .sbld-hold { flex:0 0 260px; display:flex; flex-direction:column; border:1px solid var(--pd-line); border-radius:8px; max-height:58vh; overflow:hidden; }
+    .sbld-hold-h { padding:7px 10px; font-size:12px; font-weight:700; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); display:flex; align-items:center; justify-content:space-between; gap:6px; }
+    .sbld-hold-list { overflow:auto; padding:6px; display:flex; flex-direction:column; gap:4px; }
+    .sbld-hold-item { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; border:1px solid var(--pd-line); border-left:4px solid var(--zc,var(--pd-line)); border-radius:6px; background:var(--pd-card); color:var(--pd-ink); font:inherit; cursor:pointer; padding:5px 8px; }
+    .sbld-hold-item:hover { background:var(--pd-bg); }
+    .sbld-hold-item.sel { outline:2px solid var(--pd-red); outline-offset:1px; background:var(--pd-red-light,rgba(238,49,36,.08)); }
+    .sbld-hold-desc { font-size:12px; font-weight:700; line-height:1.2; }
+    .sbld-hold-code { font-size:10px; color:var(--pd-muted); }
+    @media (max-width:900px){ .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex-basis:auto; } }
+    .sbld-scbtn { padding:4px 9px; font-size:11.5px; }
+    .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    /* step 1 — Excel-style grid */
+    .sbld-xlwrap { border:1px solid var(--pd-line); border-radius:8px; overflow:auto; max-height:58vh; outline:none; }
+    .sbld-xlwrap:focus { box-shadow:inset 0 0 0 2px var(--pd-red-light); }
+    table.sbld-xl { border-collapse:collapse; font-size:12.5px; width:100%; }
+    table.sbld-xl th, table.sbld-xl td { border:1px solid var(--pd-line); padding:5px 8px; text-align:left; white-space:nowrap; }
+    table.sbld-xl thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-weight:700; }
+    table.sbld-xl td.xl-rn { background:var(--pd-bg); color:var(--pd-muted); text-align:center; width:36px; user-select:none; font-variant-numeric:tabular-nums; }
+    table.sbld-xl td.xl-cell { cursor:cell; user-select:none; min-width:70px; overflow:hidden; text-overflow:ellipsis; max-width:340px; }
+    table.sbld-xl td.xl-cell.xl-sel { background:rgba(47,111,237,.14); }
+    table.sbld-xl td.xl-cell.xl-active { outline:2px solid var(--pd-red); outline-offset:-2px; background:var(--pd-card); }
+    table.sbld-xl td.xl-rowact { width:38px; text-align:center; }
+    table.sbld-xl td.xl-rowact .sbld-del { padding:2px 6px; }
+    table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
     svg.sbld-sched { display:block; }
     svg.sbld-sched .sbld-link { marker-end:url(#sbldarrow2); }
     .sbld-schedbar { cursor:pointer; }
@@ -1216,6 +1272,14 @@
     .sbld-schedbar.pend { stroke:var(--pd-red); stroke-width:2; }
     .sbld-linklbl { fill:var(--pd-muted); pointer-events:none; }
     .sbld-zbtn { width:28px; height:28px; padding:0; font-size:15px; font-weight:700; }
+    .sbld-mini { width:62px; height:30px; padding:2px 6px; font-size:12px; font-weight:700; }
+    .sbld-at-q { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--pd-line); font-size:13px; }
+    .sbld-at-q:last-child { border-bottom:none; }
+    .sbld-help-btn { width:30px; height:30px; padding:0; border-radius:50%; font-weight:700; font-size:14px; flex:none; }
+    .sbld-help-body h4 { margin:14px 0 6px; font-size:13px; color:var(--pd-ink); }
+    .sbld-help-body p, .sbld-help-body li { font-size:12.5px; color:var(--pd-muted); line-height:1.5; }
+    .sbld-help-body ul { margin:4px 0 4px 18px; padding:0; }
+    .sbld-help-body kbd { display:inline-block; padding:1px 6px; border:1px solid var(--pd-line); border-bottom-width:2px; border-radius:4px; background:var(--pd-bg); font:600 11px/1.4 monospace; color:var(--pd-ink); }
     .sbld-tb-sep2 { width:1px; align-self:stretch; background:var(--pd-line); margin:2px 4px; }
     /* relationship dialog */
     .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.2); padding:10px; width:224px; }
@@ -1439,6 +1503,7 @@
         <div class="ps-ck-bar">
           <span style="font-size:12px;color:var(--pd-muted);">Bottom-up / location-based schedule setup — the generated preview stays here; pushing it into the schedule above is a later step.</span>
           <span class="sbld-save-state" id="ps-bld-savestate" style="margin-left:auto;"></span>
+          <button class="pd-btn sbld-help-btn" id="ps-bld-help" title="Instructions & shortcuts">?</button>
           <button class="pd-btn pd-btn-primary" id="ps-bld-save"><span data-ico="check" data-ico-size="14"></span> Save setup</button>
         </div>
         <div class="sbld-wrap">
@@ -8906,15 +8971,63 @@
   //  Generated preview stays here; pushing into project_schedule is a later step.
   // ======================================================================
   var ScheduleBuilder = (function () {
-    var GROUPS = ['ST', 'AR', 'MEPF', 'ALLIED'];
-    var GLABEL = { ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', ALLIED: 'Allied Services' };
-    var GCOLOR = { ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e' };
+    var GROUPS = ['GR', 'SW', 'ST', 'AR', 'MEPF', 'ALLIED'];
+    var GLABEL = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', ALLIED: 'Allied Services' };
+    var GCOLOR = { GR: '#8a5cd1', SW: '#c07f2c', ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e' };
     var cfg = null, step = 0, dirty = false, curPid = null, curUid = null, wired = false;
     var uiTrade = 'ST';            // trade being edited/visualised in step 2
+    var quickN = {};               // per-trade last-used Quick bsmt/floors/zones/units counts (UI-only, not persisted)
     var linkDrag = null, stepPos = {}, upWired = false;  // step-3 link canvas drag state
-    var pendSrc = null;   // step-3 tower click-to-connect: pending source node
-    var seqZoom = 8;      // step-3 schedule zoom (px per day)
+    // step-3 linking is a 2-phase pick: click to select any number of SOURCES → right-click to confirm →
+    // click any number of DESTINATIONS → right-click to confirm → relationship dialog → links src×dst.
+    var pendSet = [];      // selected sources
+    var pendDst = [];      // selected destinations (only during the 'dst' phase)
+    var linkPhase = 'src'; // 'src' | 'dst'
+    function inPend(u) { return pendSet.indexOf(u) >= 0; }
+    function inDst(u) { return pendDst.indexOf(u) >= 0; }
+    // step-4 uses the same 2-phase pick over class codes
+    var pendActSet = [];    // selected source codes
+    var pendActDst = [];    // selected destination codes
+    var actLinkPhase = 'src';
+    function inPendAct(u) { return pendActSet.indexOf(u) >= 0; }
+    function inActDst(u) { return pendActDst.indexOf(u) >= 0; }
+    // step-1 Excel-style grid state (anchor/focus cell, edit flag, focus-restore across re-renders)
+    var xa = { r: 0, c: 0 }, xf = { r: 0, c: 0 }, xEditing = false, xWantFocus = false;
+    var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
+    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Scope', w: 118, scope: true }, { k: 'durInt', label: 'Interior (d)', w: 90, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 90, num: true }];
+    var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
+    function scopeLabel(s) { var o = SCOPE_OPTS.filter(function (x) { return x[0] === (s || 'zone'); })[0]; return o ? o[1] : 'Per zone'; }
+    function parseScope(text) {
+      var t = String(text == null ? '' : text).trim().toLowerCase();
+      if (/proj|whole|total/.test(t)) return 'project';
+      if (/floor|level/.test(t)) return 'floor';
+      if (/zone|unit|as-?is/.test(t)) return 'zone';
+      return null;
+    }
+    function parseTrade(text) {
+      var t = String(text == null ? '' : text).trim().toLowerCase();
+      var map = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'allied services': 'ALLIED', 'allied': 'ALLIED' };
+      if (map[t]) return map[t];
+      var up = t.toUpperCase(); return GROUPS.indexOf(up) >= 0 ? up : null;
+    }
+    function xlGet(a, k) { if (!a) return ''; if (k === 'group') return GLABEL[a.group] || a.group || ''; if (k === 'scope') return scopeLabel(a.scope); if (k === 'durInt' || k === 'durExt') return a[k] ? String(a[k]) : ''; return a[k] || ''; }
+    function xlSetCell(r, c, text) {
+      while (cfg.activities.length <= r) cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: 0, durExt: 0, scope: 'zone' });
+      var a = cfg.activities[r], k = XL_COLS[c].k;
+      if (k === 'group') { var g = parseTrade(text); if (g) a.group = g; }
+      else if (k === 'scope') { var s = parseScope(text); if (s) a.scope = s; }
+      else if (k === 'durInt' || k === 'durExt') a[k] = Math.max(0, parseInt(text, 10) || 0);
+      else a[k] = String(text == null ? '' : text);
+    }
+    var autoChainType = 'FS';  // step-4 Auto-chain relationship type (FS / SS / FF / SF)
+    var tradeView = 'flow';    // step-4 right pane: 'flow' (equal blocks) | 'gantt' (time-scaled)
+    var tradeScale = 'month';  // step-4 Gantt time axis: 'day' | 'week' | 'month' | 'year'
+    var tradeBasis = 'int';    // step-4 Gantt duration basis: 'int' (interior) | 'ext' (exterior)
+    var tgZoom = 2.2;          // step-4 Gantt px-per-day (set by scale presets, fine-tuned by +/-)
+    var TG_PPD = { day: 18, week: 8, month: 2.2, year: 0.6 };
+    var seqZoom = 3;      // Zone-sequence flow diagram: block size / column spacing (zoom +/-)
     var seqLeftW = 300;   // step-3 tower pane width (px) — draggable divider
+    var seqTradeFilter = 'ALL';   // Zone-sequence: which trade's bars/nodes are shown ('ALL' = every trade)
     function sbc() { return AppAuth.getSB(); }
     function e2(s) { return Fmt.esc(String(s == null ? '' : s)); }
     function uidv() { return 'x' + Math.random().toString(36).slice(2, 9); }
@@ -8922,17 +9035,24 @@
     function iso2(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
     function addD(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
     function fmtD(d) { return d ? d.toLocaleDateString('en-US', { day:'2-digit', month:'short', year:'2-digit' }) : '—'; }
+    var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function firstOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+    function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+    function daysBetween(a, b) { return Math.round((b.getTime() - a.getTime()) / 86400000); }
     function blankZoning() { var z = {}; GROUPS.forEach(function (g) { z[g] = { floors: [] }; }); return z; }
-    function blank() { return { startDate: iso2(new Date()), activities: [], zoning: blankZoning(), links: [], scopeOff: {}, floorLead: 4 }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {} }; }
+    function normActivity(a) {
+      var legacy = +a.duration || 0;
+      var di = (a.durInt != null) ? Math.max(0, +a.durInt || 0) : legacy;
+      var de = (a.durExt != null) ? Math.max(0, +a.durExt || 0) : (a.durInt != null ? di : legacy);
+      var sc = (['zone', 'floor', 'project'].indexOf(a.scope) >= 0) ? a.scope : 'zone';
+      return { id: a.id || uidv(), code: a.code || '', name: a.name || '', group: GROUPS.indexOf(a.group) >= 0 ? a.group : 'ST', durInt: di, durExt: de, scope: sc };
+    }
     function normalize(c) {
       c = c && typeof c === 'object' ? c : {}; var d = blank();
       d.startDate = c.startDate || d.startDate;
-      d.activities = Array.isArray(c.activities) ? c.activities.map(function (a) {
-        var legacy = +a.duration || 0;
-        var di = (a.durInt != null) ? Math.max(0, +a.durInt || 0) : legacy;
-        var de = (a.durExt != null) ? Math.max(0, +a.durExt || 0) : (a.durInt != null ? di : legacy);
-        return { id: a.id || uidv(), code: a.code || '', name: a.name || '', group: GROUPS.indexOf(a.group) >= 0 ? a.group : 'ST', durInt: di, durExt: de };
-      }) : [];
+      d.activities = Array.isArray(c.activities) ? c.activities.map(normActivity) : [];
+      d.catalog = Array.isArray(c.catalog) ? c.catalog.map(normActivity) : [];   // holding-area class codes (not loaded into the build)
       // Per-trade zoning: each trade has its own floors, each floor its own zones.
       GROUPS.forEach(function (g) {
         var src = (c.zoning && c.zoning[g]) || {};
@@ -8943,8 +9063,11 @@
               units: (Array.isArray(z.units) ? z.units : []).map(function (u) { return { id: u.id || uidv(), code: u.code || '', name: u.name || '' }; }) }; }) };
         }) };
       });
-      d.links = Array.isArray(c.links) ? c.links.filter(function (k) { return k && k.from && k.to; }).map(function (k) { return { from: k.from, to: k.to, type: (['FS', 'SS', 'FF', 'SF'].indexOf(k.type) >= 0 ? k.type : 'FS'), lag: (typeof k.lag === 'number' ? k.lag : (parseInt(k.lag, 10) || 0)) }; }) : [];
+      function normLinks(src) { return Array.isArray(src) ? src.filter(function (k) { return k && k.from && k.to; }).map(function (k) { return { from: k.from, to: k.to, type: (['FS', 'SS', 'FF', 'SF'].indexOf(k.type) >= 0 ? k.type : 'FS'), lag: (typeof k.lag === 'number' ? k.lag : (parseInt(k.lag, 10) || 0)) }; }) : []; }
+      d.links = normLinks(c.links);           // zone-to-zone links (step 3)
+      d.actLinks = normLinks(c.actLinks);     // class-code-to-class-code links within a trade (step 4)
       d.scopeOff = (c.scopeOff && typeof c.scopeOff === 'object') ? c.scopeOff : {};
+      d.tradeLeads = (c.tradeLeads && typeof c.tradeLeads === 'object') ? c.tradeLeads : {};  // per cross-trade transition: floors of the leading trade done before the following one starts
       d.floorLead = (c.floorLead >= 1 && c.floorLead <= 40) ? c.floorLead : 4;
       return d;
     }
@@ -8974,9 +9097,36 @@
         UI.toast(/schedule_builder/.test(er.message || '') ? 'Run migration 2026-07-23-schedule-builder.sql first.' : ('Save failed: ' + (er.message || er)), 'error');
       }
     }
+    // Instructions & shortcuts reference (the "?" button, top-right of the builder)
+    function openHelp() {
+      var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
+      ov.innerHTML = '<div class="pd-modal" style="max-width:620px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Schedule Builder — instructions &amp; shortcuts</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+        '<div class="sbld-help-body" style="padding:16px;max-height:70vh;overflow:auto;">' +
+        '<h4>The 6 steps</h4><ul>' +
+        '<li><b>1 · Activities</b> — a spreadsheet of your class codes (code · name · trade · <b>scope</b> · interior/exterior durations) beside a holding list of all codes. Click/drag to select cells, type or double-click to edit, <kbd>Ctrl+C</kbd>/<kbd>Ctrl+V</kbd> copy &amp; paste (paste one cell into a selection to fill), <kbd>Ctrl+D</kbd> fill-down, <kbd>Delete</kbd> to clear; paste blocks from Excel. <b>&larr;/&rarr;</b> load/remove codes between the list and the build. <b>Scope</b> (per zone / per floor / whole project) auto-splits a duration down to per-zone; refine it in step 4.</li>' +
+        '<li><b>2 · Floors &amp; Zones</b> — per trade, define floors (and basements) and split each into zones/units.</li>' +
+        '<li><b>3 · Zone sequence</b> — connect the zones (which location follows which). Just topology — blocks are equal size here.</li>' +
+        '<li><b>4 · Trade sequence</b> — connect the class codes within each trade (how they run inside a zone).</li>' +
+        '<li><b>5 · Scope per zone</b> — tick which activities apply to each location.</li>' +
+        '<li><b>6 · Generate</b> — build the schedule and push it into the live Project Schedule.</li></ul>' +
+        '<h4>Linking (steps 3 &amp; 4) — pick, then confirm</h4><ol>' +
+        '<li><b>Click</b> one or more <b>source</b> blocks/nodes (red outline). Click again to deselect.</li>' +
+        '<li><b>Right-click</b> anywhere in the linking area to <b>confirm the sources</b>.</li>' +
+        '<li><b>Click</b> one or more <b>destination</b> blocks/nodes (blue dashed outline).</li>' +
+        '<li><b>Right-click</b> again to confirm.</li>' +
+        '<li>A dialog asks the <b>relationship (FS / SS / FF / SF)</b> and <b>lag</b> — every source is linked to every destination.</li>' +
+        '</ol><p><b>Reset selection</b> cancels; <b>click an arrow</b> to edit its type/lag or unlink. <b>SS</b> lines two bars up at the same start; <b>FS</b> steps the next bar over.</p>' +
+        '<h4>Auto-trace (step 3)</h4><p><b>Auto-trace logic</b> asks how many floors each trade leads the next (e.g. how many Structural floors finish before Architectural starts), then builds the whole takt flow for you. It replaces the current links.</p>' +
+        '<h4>Auto-chain (step 4)</h4><p><b>Auto-chain</b> links a trade\'s class codes back-to-back using the relationship picked in the dropdown beside it (FS / SS / FF / SF).</p>' +
+        '</div><div class="pd-modal-footer"><button class="pd-btn pd-btn-primary" data-x>Got it</button></div></div>';
+      document.body.appendChild(ov);
+      function close() { ov.remove(); }
+      ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
+      ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    }
     async function open(projectId, userId) {
       curUid = userId;
-      if (!wired) { var sv = document.getElementById('ps-bld-save'); if (sv) sv.onclick = save; wired = true; }
+      if (!wired) { var sv = document.getElementById('ps-bld-save'); if (sv) sv.onclick = save; var hb = document.getElementById('ps-bld-help'); if (hb) hb.onclick = openHelp; wired = true; }
       if (projectId !== curPid) { curPid = projectId; step = 0; await loadCfg(); } else render();
     }
 
@@ -8994,9 +9144,196 @@
     }
     function locList() { var out = []; GROUPS.forEach(function (tr) { cfg.zoning[tr].floors.forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { out.push(l); }); }); }); return out; }
     function tradeActs(tr) { return cfg.activities.filter(function (a) { return a.group === tr; }); }
+    // Trades actually assigned to a Step-1 activity, in GROUPS order — later steps only ever deal
+    // with these, not the full discipline universe.
+    function usedGroups() { var seen = {}; cfg.activities.forEach(function (a) { if (a.group) seen[a.group] = 1; }); return GROUPS.filter(function (g) { return seen[g]; }); }
     function included(uid, aid) { return !cfg.scopeOff[uid + '|' + aid]; }
     function actDur(a, basis) { return Math.max(0, +(basis === 'ext' ? a.durExt : a.durInt) || 0); }
-    function nodeDays(loc, basis) { return tradeActs(loc.trade).reduce(function (t, a) { return t + (included(loc.uid, a.id) ? actDur(a, basis) : 0); }, 0); }
+    // Effective PER-ZONE duration for a class code inside a specific location, honoring its scope:
+    // "zone" = entered as-is; "floor" = the entered number is a whole floor's work, split evenly across
+    // that floor's zones/units; "project" = split evenly across all the trade's zones/units.
+    function effDur(a, basis, loc) {
+      var raw = actDur(a, basis); if (raw <= 0) return 0;
+      var sc = a.scope || 'zone';
+      if (sc === 'floor' && loc && loc.floor) { var n = leavesOfFloor(a.group, loc.floor).length || 1; return Math.max(1, Math.round(raw / n)); }
+      if (sc === 'project') { var n2 = leafCount(a.group) || 1; return Math.max(1, Math.round(raw / n2)); }
+      return raw;
+    }
+    // Representative per-zone duration for the step-4 preview (no single location in context): project
+    // splits over all the trade's leaves; floor over the average leaves-per-floor.
+    function pDur(a, basis) {
+      var raw = actDur(a, basis); if (raw <= 0) return 0;
+      var sc = a.scope || 'zone';
+      if (sc === 'project') { var n = leafCount(a.group) || 1; return Math.max(1, Math.round(raw / n)); }
+      if (sc === 'floor') { var fl = floorsOf(a.group).length || 1, per = Math.max(1, Math.round((leafCount(a.group) || 1) / fl)); return Math.max(1, Math.round(raw / per)); }
+      return raw;
+    }
+    // A zone's working span = how long that trade's included class codes take inside the zone. When the
+    // trade has class-code links (step 4) the codes are scheduled by those links (FS/SS/FF/SF + lag, so
+    // some run in parallel); with no links they run back-to-back in the step-1 order. actOffsets returns
+    // each included code's day-offset within the zone plus the total span.
+    function actOffsets(tr, loc, basis) {
+      function dur(a) { return effDur(a, basis, loc); }
+      var acts = tradeActs(tr).filter(function (a) { return included(loc.uid, a.id) && dur(a) > 0; });
+      var ids = {}; acts.forEach(function (a) { ids[a.id] = a; });
+      var trIds = {}; tradeActs(tr).forEach(function (a) { trIds[a.id] = 1; });
+      var hasLinks = cfg.actLinks.some(function (k) { return trIds[k.from] && trIds[k.to]; });
+      if (!hasLinks) { var off = {}, cur = 0; acts.forEach(function (a) { off[a.id] = cur; cur += dur(a); }); return { off: off, span: cur }; }
+      var inc = {}; acts.forEach(function (a) { inc[a.id] = []; });
+      cfg.actLinks.forEach(function (k) { if (ids[k.to] && ids[k.from]) inc[k.to].push(k); });
+      var memo = {}, stk = {};
+      function st(id) { if (memo[id] != null) return memo[id]; if (stk[id]) return 0; stk[id] = 1; var m = 0;
+        inc[id].forEach(function (k) { m = Math.max(m, linkStart(st(k.from), dur(ids[k.from]), dur(ids[id]), k.type, k.lag)); });
+        stk[id] = 0; return (memo[id] = Math.max(0, m)); }
+      var o = {}, span = 0; acts.forEach(function (a) { o[a.id] = st(a.id); span = Math.max(span, o[a.id] + dur(a)); });
+      return { off: o, span: span };
+    }
+    function nodeDays(loc, basis) { return actOffsets(loc.trade, loc, basis).span; }
+    // ---- class-code (trade) link helpers — mirror the zone-link helpers, over cfg.actLinks ----
+    function actLinkOf(f, t) { return cfg.actLinks.find(function (k) { return k.from === f && k.to === t; }); }
+    function reachesAct(a, b) { var seen = {}, stack = [a]; while (stack.length) { var x = stack.pop(); if (x === b) return true; if (seen[x]) continue; seen[x] = 1; cfg.actLinks.forEach(function (k) { if (k.from === x) stack.push(k.to); }); } return false; }
+    function removeActLink(f, t) { cfg.actLinks = cfg.actLinks.filter(function (k) { return !(k.from === f && k.to === t); }); markDirty(); render(); }
+    function addActLink(f, t, type, lag) {
+      if (!f || !t || f === t) return;
+      if (actLinkOf(f, t)) { UI.toast('Those two class codes are already linked.', 'warn'); return; }
+      if (reachesAct(t, f)) { UI.toast('That link would create a loop.', 'error'); return; }
+      cfg.actLinks.push({ from: f, to: t, type: type || 'FS', lag: lag || 0 }); markDirty(); render();
+    }
+    function tradeLinkIds(tr) { var ids = {}; tradeActs(tr).forEach(function (a) { ids[a.id] = 1; }); return ids; }
+    function countTradeLinks(tr) { var ids = tradeLinkIds(tr); return cfg.actLinks.filter(function (k) { return ids[k.from] && ids[k.to]; }).length; }
+    function clearTradeLinks(tr) { var ids = tradeLinkIds(tr); cfg.actLinks = cfg.actLinks.filter(function (k) { return !(ids[k.from] && ids[k.to]); }); markDirty(); }
+    function autoChainTrade(tr, type) { type = (['FS', 'SS', 'FF', 'SF'].indexOf(type) >= 0) ? type : 'FS'; var acts = tradeActs(tr); clearTradeLinks(tr); for (var i = 1; i < acts.length; i++) cfg.actLinks.push({ from: acts[i - 1].id, to: acts[i].id, type: type, lag: 0 }); markDirty(); render(); }
+    // unit layout (1 per code) for the flow diagram — SS lands both in the same column, FS steps one over
+    function actStartsUnit(tr) {
+      var acts = tradeActs(tr), ids = {}; acts.forEach(function (a) { ids[a.id] = 1; });
+      var inc = {}; acts.forEach(function (a) { inc[a.id] = []; });
+      cfg.actLinks.forEach(function (k) { if (ids[k.to] && ids[k.from]) inc[k.to].push(k); });
+      var memo = {}, stk = {};
+      function st(id) { if (memo[id] != null) return memo[id]; if (stk[id]) return 0; stk[id] = 1; var m = 0;
+        inc[id].forEach(function (k) { m = Math.max(m, linkStart(st(k.from), 1, 1, k.type, k.lag)); });
+        stk[id] = 0; return (memo[id] = Math.max(0, m)); }
+      var out = {}; acts.forEach(function (a) { out[a.id] = st(a.id); }); return out;
+    }
+    // 2-phase pick for class codes (mirrors the zone-sequence select/confirm flow)
+    function actSelect(id) {
+      if (!id) return;
+      if (actLinkPhase === 'dst' && pendActSet.indexOf(id) >= 0) return;
+      var set = actLinkPhase === 'src' ? pendActSet : pendActDst, i = set.indexOf(id);
+      if (i >= 0) set.splice(i, 1); else set.push(id);
+      render();
+    }
+    function actConfirm(ev) {
+      if (ev) ev.preventDefault();
+      if (actLinkPhase === 'src') { if (!pendActSet.length) { UI.toast('Select one or more source class codes first.', 'warn'); return; } actLinkPhase = 'dst'; render(); return; }
+      if (!pendActDst.length) { UI.toast('Select one or more destination codes, then right-click.', 'warn'); return; }
+      var srcs = pendActSet.slice(), dsts = pendActDst.slice(), x = ev ? ev.clientX : 200, y = ev ? ev.clientY : 200;
+      openLinkDialog(x, y, { type: 'FS', lag: 0 }, function (type, lag) {
+        srcs.forEach(function (s) { dsts.forEach(function (d) { if (s !== d) addActLink(s, d, type, lag); }); });
+        pendActSet = []; pendActDst = []; actLinkPhase = 'src'; render();
+      }, null);
+    }
+    function actReset() { pendActSet = []; pendActDst = []; actLinkPhase = 'src'; render(); }
+    // uniform-block flow chart for a trade's class codes — description emphasized, code shown
+    function actSchedSVG(acts, starts) {
+      var rowH = 32, pad = 8, labelW = 210, chartX = labelW + 6;
+      var colW = Math.max(26, Math.round(seqZoom * 9)), step = colW + 26;
+      var maxUnit = 1; acts.forEach(function (a) { maxUnit = Math.max(maxUnit, (starts[a.id] || 0) + 1); });
+      var H = pad * 2 + Math.max(acts.length, 1) * rowH, W = chartX + (maxUnit + 1) * step + 30;
+      if (!acts.length) return '<svg viewBox="0 0 300 60" width="300" height="60"><text x="10" y="34" font-size="12" fill="var(--pd-muted)">No class codes for this trade.</text></svg>';
+      var pos = {}, bars = '', links = '', grid = '';
+      function xOf(u) { return chartX + u * step; }
+      for (var u = 0; u <= maxUnit; u++) { var gx = xOf(u); grid += '<line x1="' + gx + '" y1="' + pad + '" x2="' + gx + '" y2="' + (H - pad) + '" stroke="var(--pd-line)" stroke-width="1" opacity=".3"></line>'; }
+      acts.forEach(function (a, i) {
+        var y = pad + i * rowH, x = xOf(starts[a.id] || 0), w = colW, fill = GCOLOR[a.group] || '#6f7276';
+        pos[a.id] = { x: x, y: y, w: w, cy: y + rowH / 2 };
+        var desc = a.name || '(unnamed)', code = a.code || '—';
+        bars += '<text x="3" y="' + (y + rowH / 2 - 2) + '" font-size="11.5" font-weight="700" fill="var(--pd-ink)">' + e2(desc.length > 30 ? desc.slice(0, 29) + '…' : desc) + '</text>' +
+          '<text x="3" y="' + (y + rowH / 2 + 11) + '" font-size="9" fill="var(--pd-muted)">' + e2(code) + '</text>' +
+          '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
+          '<text x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 3) + '" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">' + e2(code) + '</text>';
+      });
+      cfg.actLinks.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
+        var fx = (k.type === 'SS' || k.type === 'SF') ? a.x : a.x + a.w;
+        var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;
+        var y1 = a.cy, y2 = b.cy, mx = (tx >= fx ? fx + 8 : fx - 8), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
+        var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
+        links += '<path class="sbld-link" d="' + d + '" marker-end="url(#sbldarrow3)"></path>' +
+          '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' +
+          '<path class="sbld-linkhit" data-fk="' + e2(k.from + '~' + k.to) + '" d="' + d + '"></path>'; });
+      return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + grid + links + bars + '</svg>';
+    }
+
+    // Longest-path day-offset of each class code within a trade, honoring actLinks + REAL durations
+    // (the given basis). Used by the trade Gantt view.
+    function actDayStarts(tr, basis) {
+      var acts = tradeActs(tr), ids = {}; acts.forEach(function (a) { ids[a.id] = a; });
+      var inc = {}; acts.forEach(function (a) { inc[a.id] = []; });
+      cfg.actLinks.forEach(function (k) { if (ids[k.to] && ids[k.from]) inc[k.to].push(k); });
+      var memo = {}, stk = {};
+      function st(id) { if (memo[id] != null) return memo[id]; if (stk[id]) return 0; stk[id] = 1; var m = 0;
+        inc[id].forEach(function (k) { m = Math.max(m, linkStart(st(k.from), pDur(ids[k.from], basis), pDur(ids[id], basis), k.type, k.lag)); });
+        stk[id] = 0; return (memo[id] = Math.max(0, m)); }
+      var out = {}; acts.forEach(function (a) { out[a.id] = st(a.id); }); return out;
+    }
+    // Time-scaled trade Gantt — bars placed at their real start day (from the project start) and sized
+    // by the chosen duration basis; calendar header + gridlines keyed to tradeScale (day/week/month/
+    // year), column width driven by tgZoom. Bars stay clickable for linking; actLinks drawn as arrows.
+    function actGanttSVG(acts, startsDays, basis) {
+      if (!acts.length) return '<svg viewBox="0 0 300 60" width="300" height="60"><text x="10" y="34" font-size="12" fill="var(--pd-muted)">No class codes for this trade.</text></svg>';
+      var scale = Math.max(0.3, tgZoom), rowH = 30, pad = 8, labelW = 210, chartX = labelW + 6, barMin = 10, headH = 34;
+      var pStart = pdd(cfg.startDate) || new Date();
+      var maxEnd = 1; acts.forEach(function (a) { maxEnd = Math.max(maxEnd, (startsDays[a.id] || 0) + Math.max(1, pDur(a, basis))); });
+      var chartTop = pad + headH, H = chartTop + acts.length * rowH + pad, chartBottom = H - pad;
+      var W = chartX + maxEnd * scale + barMin + 46;
+      function xOf(day) { return chartX + day * scale; }
+      var grid = '', head = '';
+      function vline(x, strong) { grid += '<line x1="' + x + '" y1="' + chartTop + '" x2="' + x + '" y2="' + chartBottom + '" stroke="var(--pd-line)" stroke-width="' + (strong ? 1.4 : 1) + '" opacity="' + (strong ? '.7' : '.35') + '"></line>'; }
+      function minorLbl(x, t) { head += '<text x="' + (x + 3) + '" y="' + (chartTop - 5) + '" font-size="9" fill="var(--pd-muted)">' + e2(t) + '</text>'; }
+      function majorLbl(x, t) { head += '<text x="' + (x + 3) + '" y="' + (pad + 11) + '" font-size="10" font-weight="700" fill="var(--pd-ink)">' + e2(t) + '</text>'; }
+      var endDate = addD(pStart, Math.max(maxEnd, 1));
+      if (tradeScale === 'year') {
+        var firstY = false;
+        for (var yd = new Date(pStart.getFullYear(), 0, 1); yd <= endDate; yd = new Date(yd.getFullYear() + 1, 0, 1)) {
+          var dxY = xOf(daysBetween(pStart, yd));
+          if (dxY < chartX - 1) { if (!firstY) { minorLbl(chartX - 3, yd.getFullYear()); firstY = true; } continue; }
+          vline(dxY, true); minorLbl(dxY, yd.getFullYear()); firstY = true;
+        }
+      } else if (tradeScale === 'month') {
+        var firstM = false;
+        for (var md = firstOfMonth(pStart); md <= endDate; md = addMonths(md, 1)) {
+          var dxM = xOf(daysBetween(pStart, md)), jan = md.getMonth() === 0;
+          if (dxM < chartX - 1) { if (!firstM) { minorLbl(chartX - 3, MONTHS[md.getMonth()]); majorLbl(chartX, md.getFullYear()); firstM = true; } continue; }
+          vline(dxM, jan); minorLbl(dxM, MONTHS[md.getMonth()]);
+          if (jan || !firstM) majorLbl(dxM, md.getFullYear());
+          firstM = true;
+        }
+      } else {
+        var stepDays = tradeScale === 'week' ? 7 : 1;
+        for (var dd = 0; dd <= maxEnd; dd += stepDays) { var dxD = xOf(dd), dt = addD(pStart, dd); vline(dxD, false); minorLbl(dxD, tradeScale === 'week' ? (dt.getDate() + ' ' + MONTHS[dt.getMonth()]) : dt.getDate()); }
+        for (var mo = firstOfMonth(pStart); mo <= endDate; mo = addMonths(mo, 1)) { var dxMo = xOf(Math.max(0, daysBetween(pStart, mo))); majorLbl(dxMo, MONTHS[mo.getMonth()] + " '" + String(mo.getFullYear()).slice(2)); }
+      }
+      head += '<line x1="' + chartX + '" y1="' + chartTop + '" x2="' + (W - 4) + '" y2="' + chartTop + '" stroke="var(--pd-line)" stroke-width="1"></line>';
+      var pos = {}, bars = '', links = '';
+      acts.forEach(function (a, i) {
+        var y = chartTop + i * rowH, dur = Math.max(1, pDur(a, basis)), x = xOf(startsDays[a.id] || 0), w = Math.max(barMin, dur * scale), fill = GCOLOR[a.group] || '#6f7276';
+        pos[a.id] = { x: x, y: y, w: w, cy: y + rowH / 2 };
+        var desc = a.name || '(unnamed)', code = a.code || '—';
+        bars += '<text x="3" y="' + (y + rowH / 2 - 2) + '" font-size="11.5" font-weight="700" fill="var(--pd-ink)">' + e2(desc.length > 30 ? desc.slice(0, 29) + '…' : desc) + '</text>' +
+          '<text x="3" y="' + (y + rowH / 2 + 11) + '" font-size="9" fill="var(--pd-muted)">' + e2(code) + '</text>' +
+          '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
+          '<text x="' + (x + w + 4) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="var(--pd-muted)" pointer-events="none">' + actDur(a, basis) + 'd</text>';
+      });
+      cfg.actLinks.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
+        var fx = (k.type === 'SS' || k.type === 'SF') ? a.x : a.x + a.w;
+        var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;
+        var y1 = a.cy, y2 = b.cy, mx = (tx >= fx ? fx + 8 : fx - 8), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
+        var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
+        links += '<path class="sbld-link" d="' + d + '" marker-end="url(#sbldarrow3)"></path>' +
+          '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' +
+          '<path class="sbld-linkhit" data-fk="' + e2(k.from + '~' + k.to) + '" d="' + d + '"></path>'; });
+      return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + grid + head + links + bars + '</svg>';
+    }
+
     function locLabel(loc) { var p = [loc.floor.code || loc.floor.name || 'Flr']; if (loc.zone) p.push(loc.zone.code || loc.zone.name || 'Zn'); if (loc.unit) p.push(loc.unit.code || loc.unit.name || 'Un'); return p.join(' · '); }
     function cellKey(loc) { return (loc.zone ? (loc.zone.code || loc.zone.id) : '') + '#' + (loc.unit ? (loc.unit.code || loc.unit.id) : ''); }
     function floorIndexOf(loc) { return cfg.zoning[loc.trade].floors.indexOf(loc.floor); }
@@ -9049,9 +9386,10 @@
       function firstOf(o) { var k = Object.keys(o); return k.length ? o[k[0]] : null; }
       // 1) vertical progression within each trade
       present.forEach(function (tr) { var fl = floorsOf(tr); for (var i = 1; i < fl.length; i++) Object.keys(idx[tr][i]).forEach(function (ck) { var p = idx[tr][i - 1][ck]; if (p) tryLink(p, idx[tr][i][ck]); }); });
-      // 2) cross-trade lead
+      // 2) cross-trade lead — each transition uses its own answered lead (how many floors of the
+      //    leading trade must finish before the following trade starts), from cfg.tradeLeads.
       for (var t = 1; t < present.length; t++) {
-        var prev = present[t - 1], next = present[t], L = (t === 1) ? lead : 1, fpN = floorsOf(prev).length;
+        var prev = present[t - 1], next = present[t], L = Math.max(1, +(cfg.tradeLeads[prev + '>' + next]) || lead), fpN = floorsOf(prev).length;
         floorsOf(next).forEach(function (nf, j) {
           var si = Math.min(j + L - 1, fpN - 1); if (si < 0) si = 0;
           Object.keys(idx[next][j]).forEach(function (ck) { var pf = idx[prev][si][ck] || firstOf(idx[prev][si]); if (pf) tryLink(pf, idx[next][j][ck]); });
@@ -9062,6 +9400,31 @@
       leaves.forEach(function (l) { if (!hasIn[l.uid]) tryLink(START(), l.uid); if (!hasOut[l.uid]) tryLink(l.uid, END()); });
       markDirty(); render();
     }
+    // Ask the questions the takt logic needs, THEN auto-trace. One question per cross-trade hand-off:
+    // "How many <leading> floors must be complete before <following> can start?"
+    function openAutoTraceDialog() {
+      var present = GROUPS.filter(function (tr) { return floorsOf(tr).length && tradeActs(tr).length; });
+      if (present.length < 1) { UI.toast('Add activities (step 1) and floors/zones (step 2) first.', 'warn'); return; }
+      var pairs = []; for (var t = 1; t < present.length; t++) pairs.push([present[t - 1], present[t]]);
+      var rowsHtml = pairs.length ? pairs.map(function (p, i) {
+        var key = p[0] + '>' + p[1], v = (cfg.tradeLeads[key] != null ? cfg.tradeLeads[key] : (cfg.floorLead || 4));
+        return '<div class="sbld-at-q"><label>How many <b style="color:' + GCOLOR[p[0]] + '">' + e2(GLABEL[p[0]]) + '</b> floors must be completed before <b style="color:' + GCOLOR[p[1]] + '">' + e2(GLABEL[p[1]]) + '</b> can start?</label>' +
+          '<input class="pd-input" type="number" min="1" max="60" data-atkey="' + e2(key) + '" value="' + v + '" style="width:70px;height:34px;"></div>';
+      }).join('') : '<p class="sbld-hint">Only one trade has locations — auto-trace will just chain its floors vertically.</p>';
+      var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
+      ov.innerHTML = '<div class="pd-modal" style="max-width:560px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Auto-trace logic</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+        '<div style="padding:16px;"><p class="sbld-hint" style="margin:0 0 14px;">Answer how far each trade leads the next. Auto-trace then builds the takt flow: each trade climbs its own floors zone-by-zone, and every following trade stays the answered number of floors behind. <b>This replaces the current links.</b></p>' +
+        rowsHtml + '</div>' +
+        '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbld-at-go">Generate logic</button></div></div>';
+      document.body.appendChild(ov);
+      function close() { ov.remove(); }
+      ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
+      ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+      ov.querySelector('#sbld-at-go').onclick = function () {
+        ov.querySelectorAll('[data-atkey]').forEach(function (inp) { cfg.tradeLeads[inp.dataset.atkey] = Math.max(1, Math.min(60, +inp.value || 4)); });
+        close(); autoTrace();
+      };
+    }
 
     function generate(basis) {
       basis = basis || 'int';
@@ -9069,12 +9432,11 @@
       var starts = computeStarts(locs, days), start = pdd(cfg.startDate) || new Date();
       var rows = [], perZone = [];
       locs.slice().sort(function (a, b) { return (starts[a.uid] - starts[b.uid]) || (GROUPS.indexOf(a.trade) - GROUPS.indexOf(b.trade)); }).forEach(function (loc) {
-        var off = starts[loc.uid] || 0, cursor = addD(start, off);
+        var off = starts[loc.uid] || 0, ao = actOffsets(loc.trade, loc, basis);
         tradeActs(loc.trade).forEach(function (a) {
-          if (!included(loc.uid, a.id)) return; var dur = actDur(a, basis); if (dur <= 0) return;
-          var aS = new Date(cursor), aF = addD(aS, dur - 1);
+          if (!included(loc.uid, a.id)) return; var dur = effDur(a, basis, loc); if (dur <= 0) return;
+          var aS = addD(start, off + (ao.off[a.id] || 0)), aF = addD(aS, dur - 1);
           rows.push({ loc: loc, act: a, dur: dur, start: aS, finish: aF, group: a.group });
-          cursor = addD(aF, 1);
         });
         var d = days[loc.uid] || 0;
         perZone.push({ loc: loc, days: d, start: addD(start, off), finish: addD(start, off + Math.max(0, d) - 1) });
@@ -9084,30 +9446,47 @@
     }
 
     // ---- drag reorder ----
-    var _dEl = null, _dArr = null, _dGet = null;
-    function wireDrag(row, arr, get) {
-      row.addEventListener('dragstart', function () { _dEl = row; _dArr = arr; _dGet = get || null; row.style.opacity = '.5'; });
+    // wireDrag(row, arr, get) reorders `arr` (or get()) by the dropped/target data-i. Pass an
+    // `onMove(from,to)` callback instead to handle the reorder yourself (used to permute a single
+    // trade's activities inside the shared cfg.activities array without touching the other trades).
+    var _dEl = null, _dArr = null, _dGet = null, _dFn = null;
+    function wireDrag(row, arr, get, onMove) {
+      row.addEventListener('dragstart', function () { _dEl = row; _dArr = arr; _dGet = get || null; _dFn = onMove || null; row.style.opacity = '.5'; });
       row.addEventListener('dragend', function () { row.style.opacity = ''; _dEl = null; });
       row.addEventListener('dragover', function (ev) { ev.preventDefault(); });
       row.addEventListener('drop', function (ev) {
-        ev.preventDefault(); if (!_dEl || _dEl === row) return; var a = _dGet ? _dGet() : _dArr; if (!a) return;
+        ev.preventDefault(); if (!_dEl || _dEl === row) return;
         var from = +_dEl.dataset.i, to = +row.dataset.i; if (isNaN(from) || isNaN(to)) return;
+        if (_dFn) { var fn = _dFn; fn(from, to); return; }
+        var a = _dGet ? _dGet() : _dArr; if (!a) return;
         var it = a.splice(from, 1)[0]; a.splice(to, 0, it); markDirty(); render();
       });
+    }
+    // Move activity `from`→`to` WITHIN a trade's own ordered list, then write the new order back into
+    // cfg.activities in place (other trades keep their positions). This trade order = the sequence the
+    // activities run in within every zone of that trade (consumed by generate()).
+    function reorderWithinTrade(tr, from, to) {
+      var sub = tradeActs(tr);
+      if (from < 0 || to < 0 || from >= sub.length || to >= sub.length) return;
+      var it = sub.splice(from, 1)[0]; sub.splice(to, 0, it);
+      var q = sub.slice();
+      cfg.activities = cfg.activities.map(function (a) { return a.group === tr ? q.shift() : a; });
+      markDirty(); render();
     }
 
     var STEPS = [
       { t: 'Activities', s: 'Class-code list + duration', fn: stActivities },
       { t: 'Floors & Zones', s: 'Location breakdown', fn: stLevels },
       { t: 'Zone sequence', s: 'Order of locations', fn: stSequence },
+      { t: 'Trade sequence', s: 'Order codes within a trade', fn: stTradeSeq },
       { t: 'Scope per zone', s: 'Activities per location', fn: stScope },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
 
     // ---- Activity template: download a CSV users fill in, then upload (CSV or Excel) to load ----
     function actTemplateCsv() {
-      var lines = ['Code,Activity Name,Trade,Interior Duration (days),Exterior Duration (days)',
-        'REBAR,Rebar,Structural,3,4', 'MAS,Masonry,Architectural,5,6', 'ELEC,Electrical Rough-in,MEPF,3,4', 'LSCP,Landscaping,Allied Services,2,3'];
+      var lines = ['Code,Activity Name,Trade,Scope,Interior Duration (days),Exterior Duration (days)',
+        'MOB,Mobilization,General Requirements,Per zone,3,3', 'EXC,Excavation,Site Works,Per zone,4,4', 'REBAR,Rebar,Structural,Per zone,3,4', 'MAS,Masonry,Architectural,Per zone,5,6', 'ELEC,Electrical Rough-in,MEPF,Whole project,60,60', 'LSCP,Landscaping,Allied Services,Per floor,2,3'];
       var blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
       var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'activities-template.csv'; a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
@@ -9123,8 +9502,8 @@
       if (!rows2d || rows2d.length < 2) { UI.toast('No rows found — use the template and keep the header row.', 'error'); return; }
       var hdr = rows2d[0].map(function (h) { return String(h == null ? '' : h).trim().toLowerCase(); });
       function idx(names) { for (var i = 0; i < hdr.length; i++) for (var j = 0; j < names.length; j++) if (hdr[i].indexOf(names[j]) >= 0) return i; return -1; }
-      var ci = idx(['code']), ni = idx(['activity name', 'name', 'activity']), gi = idx(['trade', 'discipline', 'group']), ii = idx(['interior', 'internal', 'int']), ei = idx(['exterior', 'external', 'ext']);
-      var tmap = { 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'allied services': 'ALLIED', 'allied': 'ALLIED' };
+      var ci = idx(['code']), ni = idx(['activity name', 'name', 'activity']), gi = idx(['trade', 'discipline', 'group']), si = idx(['scope']), ii = idx(['interior', 'internal', 'int']), ei = idx(['exterior', 'external', 'ext']);
+      var tmap = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'genreq': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'allied services': 'ALLIED', 'allied': 'ALLIED' };
       var out = [];
       for (var r = 1; r < rows2d.length; r++) {
         var row = rows2d[r]; if (!row) continue;
@@ -9133,7 +9512,8 @@
         var gl = gi >= 0 ? String(row[gi] == null ? '' : row[gi]).trim().toLowerCase() : '';
         var g = tmap[gl] || (GROUPS.indexOf(gl.toUpperCase()) >= 0 ? gl.toUpperCase() : 'ST');
         var di = ii >= 0 ? Math.max(0, parseInt(row[ii], 10) || 0) : 0, de = ei >= 0 ? Math.max(0, parseInt(row[ei], 10) || 0) : di;
-        out.push({ id: uidv(), code: code, name: name, group: g, durInt: di, durExt: de });
+        var sc = (si >= 0 ? parseScope(row[si]) : null) || 'zone';
+        out.push({ id: uidv(), code: code, name: name, group: g, durInt: di, durExt: de, scope: sc });
       }
       if (!out.length) { UI.toast('No activity rows read — check the columns (Code / Activity Name / Trade / Interior / Exterior).', 'error'); return; }
       var mode = cfg.activities.length ? (confirm('Replace the ' + cfg.activities.length + ' existing activities with the ' + out.length + ' uploaded?\n\nOK = replace · Cancel = append') ? 'replace' : 'append') : 'replace';
@@ -9148,39 +9528,240 @@
       } else { rd.onload = function (e) { importActivities(parseCsv(String(e.target.result))); }; rd.readAsText(file); }
     }
     function stActivities(host) {
-      var b = '<h2>1 · Activities &amp; required duration</h2>' +
-        '<p class="sbld-lede">The activity list from your class-code list: code, name, trade, and TWO durations per activity — <b>Interior</b> (internal / target) and <b>Exterior</b> (external / contract). ' +
-        'Type them in, or <b>download the template</b>, fill it in Excel, and <b>upload</b> it. Step 5 builds both an Internal and an External schedule side by side.</p>' +
-        '<div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-add">+ Add activity</button><button class="pd-btn" id="b-seed">Load typical set</button>' +
+      var cols = XL_COLS;
+      var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c) { return '<th' + (c.w ? ' style="width:' + c.w + 'px"' : '') + '>' + e2(c.label) + '</th>'; }).join('') + '<th class="xl-rowact"></th></tr>';
+      var body = cfg.activities.map(function (a, r) {
+        return '<tr>' + '<td class="xl-rn" data-r="' + r + '">' + (r + 1) + '</td>' +
+          cols.map(function (c, ci) { return '<td class="xl-cell" data-r="' + r + '" data-c="' + ci + '">' + e2(xlGet(a, c.k)) + '</td>'; }).join('') +
+          '<td class="xl-rowact"><button class="sbld-del" data-del="' + r + '" title="Delete row"><span data-ico="trash" data-ico-size="14"></span></button></td></tr>';
+      }).join('');
+      var holdItems = cfg.catalog.map(function (a) {
+        return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" style="--zc:' + (GCOLOR[a.group] || '#6f7276') + '">' +
+          '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
+          '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
+      }).join('');
+      var holdPane = '<div class="sbld-hold"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') + '</div>' +
+        '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty" style="padding:10px;font-size:11.5px;">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
+      var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
+      host.innerHTML = '<h2>1 · Activities &amp; required duration</h2>' +
+        '<p class="sbld-lede">Your class-code list as a <b>spreadsheet</b> (left) beside a <b>holding list</b> of all class codes (right). The grid works like Excel — <b>click</b> a cell, <b>drag</b>/<b>Shift-click</b> to select a range, <b>double-click</b> or type to edit, <b>Ctrl+C/Ctrl+V</b> copy &amp; paste (paste one cell into a selection to fill), <b>Ctrl+D</b> fill-down, <b>Delete</b> clears, or paste a block from Excel. Use <b>&larr;</b> to load ticked codes from the list into the build and <b>&rarr;</b> to send selected grid rows out to the list. <b>Scope</b> says whether a duration is per zone, per floor, or the whole project (auto-split per zone, editable in step 4).</p>' +
+        '<div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-add">+ Add row</button><button class="pd-btn" id="b-seed">Load typical set</button>' +
+        '<button class="pd-btn" id="b-delrows">Delete selected rows</button>' +
         '<span class="sbld-tb-sep2"></span><button class="pd-btn" id="b-tmpl"><span data-ico="download" data-ico-size="14"></span> Download template</button>' +
         '<button class="pd-btn" id="b-upl"><span data-ico="box" data-ico-size="14"></span> Upload CSV / Excel</button>' +
-        '<input type="file" id="b-uplfile" accept=".csv,.xlsx,.xls" style="display:none" /></div>';
-      if (!cfg.activities.length) b += '<div class="sbld-empty">No activities yet. Add rows, or load a typical set.</div>';
-      else b += '<div class="sbld-list"><div class="sbld-row sbld-acthdr"><span style="width:14px;"></span><span class="w100">Code</span><span class="sbld-actname">Activity name</span><span class="w170">Trade</span><span class="w90" title="Internal / target duration">Interior (d)</span><span class="w90" title="External / contract duration">Exterior (d)</span><span style="width:32px;"></span></div>' + cfg.activities.map(function (a, i) {
-        return '<div class="sbld-row" data-i="' + i + '" draggable="true"><span class="sbld-grab" title="Drag to reorder">⠇</span>' +
-          '<input class="pd-input w100" data-k="code" value="' + e2(a.code) + '" placeholder="Code" />' +
-          '<input class="pd-input sbld-actname" data-k="name" value="' + e2(a.name) + '" placeholder="Activity name" />' +
-          '<select class="pd-select w170" data-k="group">' + GROUPS.map(function (g) { return '<option value="' + g + '"' + (a.group === g ? ' selected' : '') + '>' + e2(GLABEL[g]) + '</option>'; }).join('') + '</select>' +
-          '<input class="pd-input w90" type="number" min="0" step="1" data-k="durInt" value="' + (a.durInt || '') + '" placeholder="int" title="Internal / target duration (days)" />' +
-          '<input class="pd-input w90" type="number" min="0" step="1" data-k="durExt" value="' + (a.durExt || '') + '" placeholder="ext" title="External / contract duration (days)" />' +
-          '<button class="pd-btn sbld-del" data-del="' + i + '"><span data-ico="trash" data-ico-size="15"></span></button></div>';
-      }).join('') + '</div><p class="sbld-hint">Drag the handle to reorder — this order is the trade sequence within each zone.</p>';
-      host.innerHTML = b;
-      host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: 0, durExt: 0 }); markDirty(); render(); };
+        '<input type="file" id="b-uplfile" accept=".csv,.xlsx,.xls" style="display:none" /></div>' +
+        (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — <b>Add row</b>, <b>Load typical set</b>, load from the list with <b>&larr;</b>, or paste rows from Excel into the grid.</div>') +
+        '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
+        '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED). Row order here is the fallback sequence; fine-tune links in step 4.</p>';
+      // toolbar
+      host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: 0, durExt: 0 }); xf = { r: cfg.activities.length - 1, c: 0 }; xa = { r: xf.r, c: 0 }; xWantFocus = true; markDirty(); render(); };
       host.querySelector('#b-tmpl').onclick = actTemplateCsv;
       var uf = host.querySelector('#b-uplfile');
       host.querySelector('#b-upl').onclick = function () { uf.click(); };
       uf.onchange = function () { if (uf.files && uf.files[0]) uploadActivities(uf.files[0]); uf.value = ''; };
       host.querySelector('#b-seed').onclick = function () {
-        [['REBAR','Rebar','ST',3,4],['FORM','Formworks','ST',3,4],['POUR','Concreting','ST',2,3],['MAS','Masonry','AR',5,6],['PLA','Plastering','AR',5,6],['TILE','Tiling','AR',4,5],['CEIL','Ceiling','AR',3,4],['PAINT','Painting','AR',4,5]].forEach(function (r) { cfg.activities.push({ id: uidv(), code: r[0], name: r[1], group: r[2], durInt: r[3], durExt: r[4] }); });
+        [['MOB','Mobilization','GR',3,3],['EXC','Excavation','SW',4,4],['BACKFILL','Backfilling','SW',3,3],['REBAR','Rebar','ST',3,4],['FORM','Formworks','ST',3,4],['POUR','Concreting','ST',2,3],['MAS','Masonry','AR',5,6],['PLA','Plastering','AR',5,6],['TILE','Tiling','AR',4,5],['CEIL','Ceiling','AR',3,4],['PAINT','Painting','AR',4,5]].forEach(function (r) { cfg.activities.push({ id: uidv(), code: r[0], name: r[1], group: r[2], durInt: r[3], durExt: r[4] }); });
         markDirty(); render();
       };
-      host.querySelectorAll('.sbld-row[data-i]').forEach(function (row) {
-        var i = +row.dataset.i;
-        row.querySelectorAll('[data-k]').forEach(function (inp) { inp.onchange = function () { var k = inp.dataset.k; cfg.activities[i][k] = (k === 'durInt' || k === 'durExt') ? Math.max(0, +inp.value || 0) : inp.value; markDirty(); }; });
-        var del = row.querySelector('[data-del]'); if (del) del.onclick = function () { cfg.activities.splice(i, 1); markDirty(); render(); };
-        wireDrag(row, cfg.activities);
+      // holding-area shuttle
+      host.querySelectorAll('[data-cat]').forEach(function (b) { b.onclick = function () { var id = b.dataset.cat, i = catSel.indexOf(id); if (i >= 0) catSel.splice(i, 1); else catSel.push(id); render(); }; });
+      host.querySelector('#b-load').onclick = function () {
+        if (!catSel.length) { UI.toast('Tick one or more class codes in the list first.', 'warn'); return; }
+        var take = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) >= 0; });
+        cfg.catalog = cfg.catalog.filter(function (a) { return catSel.indexOf(a.id) < 0; });
+        cfg.activities = cfg.activities.concat(take); catSel = []; markDirty(); render();
+      };
+      host.querySelector('#b-unload').onclick = function () {
+        if (!cfg.activities.length) return;
+        var r0 = Math.min(xa.r, xf.r), r1 = Math.max(xa.r, xf.r);
+        var moved = cfg.activities.slice(r0, r1 + 1); cfg.activities.splice(r0, r1 - r0 + 1);
+        cfg.catalog = cfg.catalog.concat(moved);
+        xf = { r: clampRowIdx(r0), c: xf.c }; xa = { r: xf.r, c: xf.c }; markDirty(); render();
+      };
+      wireXlGrid(host);
+    }
+    function clampRowIdx(r) { return Math.max(0, Math.min(r, Math.max(0, cfg.activities.length - 1))); }
+
+    // Excel-like grid engine for step 1 — cell selection, drag/shift range, copy/paste/fill, inline edit.
+    function wireXlGrid(host) {
+      var cols = XL_COLS, wrap = host.querySelector('#b-xl'); if (!wrap) return;
+      var nR = function () { return cfg.activities.length; };
+      function clampR(r) { return Math.max(0, Math.min(r, Math.max(0, nR() - 1))); }
+      function clampC(c) { return Math.max(0, Math.min(c, cols.length - 1)); }
+      function cellEl(r, c) { return wrap.querySelector('td.xl-cell[data-r="' + r + '"][data-c="' + c + '"]'); }
+      function bounds() { return { r0: Math.min(xa.r, xf.r), r1: Math.max(xa.r, xf.r), c0: Math.min(xa.c, xf.c), c1: Math.max(xa.c, xf.c) }; }
+      function paint() {
+        wrap.querySelectorAll('td.xl-cell.xl-sel,td.xl-cell.xl-active').forEach(function (td) { td.classList.remove('xl-sel', 'xl-active'); });
+        if (!nR()) return; var b = bounds();
+        for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) { var td = cellEl(r, c); if (td) td.classList.add('xl-sel'); }
+        var af = cellEl(xf.r, xf.c); if (af) { af.classList.add('xl-active'); af.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+      }
+      function setFocus(r, c, extend) { xf = { r: clampR(r), c: clampC(c) }; if (!extend) xa = { r: xf.r, c: xf.c }; paint(); }
+      // restore selection + focus after a re-render
+      xa = { r: clampR(xa.r), c: clampC(xa.c) }; xf = { r: clampR(xf.r), c: clampC(xf.c) };
+      paint(); if (xWantFocus) { wrap.focus(); xWantFocus = false; }
+
+      function commitRender() { markDirty(); xWantFocus = true; render(); }
+      function beginEdit(seed) {
+        if (!nR()) return; var r = xf.r, c = xf.c, a = cfg.activities[r], col = cols[c], td = cellEl(r, c); if (!td) return;
+        xEditing = true; var ctl;
+        if (col.trade) {
+          ctl = document.createElement('select');
+          ctl.innerHTML = GROUPS.map(function (g) { return '<option value="' + g + '"' + (a.group === g ? ' selected' : '') + '>' + e2(GLABEL[g]) + '</option>'; }).join('');
+        } else if (col.scope) {
+          ctl = document.createElement('select');
+          ctl.innerHTML = SCOPE_OPTS.map(function (o) { return '<option value="' + o[0] + '"' + ((a.scope || 'zone') === o[0] ? ' selected' : '') + '>' + e2(o[1]) + '</option>'; }).join('');
+        } else {
+          ctl = document.createElement('input'); ctl.type = col.num ? 'number' : 'text'; if (col.num) ctl.min = '0';
+          ctl.value = seed != null ? seed : xlGet(a, col.k);
+        }
+        td.textContent = ''; td.appendChild(ctl); ctl.focus();
+        if (ctl.select && !col.trade && !col.scope) ctl.select();
+        function commit(move) { if (!xEditing) return; xEditing = false; xlSetCell(r, c, ctl.value); if (move) { if (move === 'down') xf = { r: clampR(r + 1), c: c }; else if (move === 'right') xf = { r: r, c: clampC(c + 1) }; xa = { r: xf.r, c: xf.c }; } commitRender(); }
+        ctl.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); commit('down'); }
+          else if (e.key === 'Tab') { e.preventDefault(); commit('right'); }
+          else if (e.key === 'Escape') { e.preventDefault(); xEditing = false; xWantFocus = true; render(); }
+          e.stopPropagation();
+        });
+        ctl.addEventListener('blur', function () { commit(null); });
+        if (col.trade) ctl.addEventListener('change', function () { commit(null); });
+      }
+
+      // mouse: click to select, drag / shift-click to extend a range
+      var dragging = false;
+      wrap.addEventListener('mousedown', function (e) { var td = e.target.closest && e.target.closest('td.xl-cell'); if (!td) return; if (xEditing) return; e.preventDefault(); wrap.focus(); setFocus(+td.dataset.r, +td.dataset.c, e.shiftKey); dragging = true; });
+      wrap.addEventListener('mouseover', function (e) { if (!dragging) return; var td = e.target.closest && e.target.closest('td.xl-cell'); if (td) setFocus(+td.dataset.r, +td.dataset.c, true); });
+      document.addEventListener('mouseup', function () { dragging = false; });
+      wrap.addEventListener('dblclick', function (e) { var td = e.target.closest && e.target.closest('td.xl-cell'); if (!td) return; setFocus(+td.dataset.r, +td.dataset.c, false); beginEdit(); });
+
+      wrap.addEventListener('keydown', function (e) {
+        if (xEditing) return;
+        var k = e.key;
+        if (k === 'ArrowDown') { e.preventDefault(); setFocus(xf.r + 1, xf.c, e.shiftKey); }
+        else if (k === 'ArrowUp') { e.preventDefault(); setFocus(xf.r - 1, xf.c, e.shiftKey); }
+        else if (k === 'ArrowRight') { e.preventDefault(); setFocus(xf.r, xf.c + 1, e.shiftKey); }
+        else if (k === 'ArrowLeft') { e.preventDefault(); setFocus(xf.r, xf.c - 1, e.shiftKey); }
+        else if (k === 'Tab') { e.preventDefault(); setFocus(xf.r, xf.c + (e.shiftKey ? -1 : 1), false); }
+        else if (k === 'Enter') { e.preventDefault(); beginEdit(); }
+        else if (k === 'F2') { e.preventDefault(); beginEdit(); }
+        else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); var b = bounds(); for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) xlSetCell(r, c, ''); commitRender(); }
+        else if ((e.ctrlKey || e.metaKey) && (k === 'd' || k === 'D')) { e.preventDefault(); var bd = bounds(); for (var c2 = bd.c0; c2 <= bd.c1; c2++) { var v = xlGet(cfg.activities[bd.r0], cols[c2].k); for (var r2 = bd.r0 + 1; r2 <= bd.r1; r2++) xlSetCell(r2, c2, v); } commitRender(); }
+        else if ((e.ctrlKey || e.metaKey) && (k === 'a' || k === 'A')) { e.preventDefault(); if (nR()) { xa = { r: 0, c: 0 }; xf = { r: nR() - 1, c: cols.length - 1 }; paint(); } }
+        else if (!e.ctrlKey && !e.metaKey && !e.altKey && k.length === 1) { beginEdit(k); }
       });
+      // native copy/paste (container is focusable, so these fire on Ctrl+C / Ctrl+V)
+      wrap.addEventListener('copy', function (e) {
+        if (xEditing || !nR()) return; e.preventDefault(); var b = bounds(), out = [];
+        for (var r = b.r0; r <= b.r1; r++) { var row = []; for (var c = b.c0; c <= b.c1; c++) row.push(xlGet(cfg.activities[r], cols[c].k)); out.push(row.join('\t')); }
+        e.clipboardData.setData('text/plain', out.join('\n'));
+      });
+      wrap.addEventListener('paste', function (e) {
+        if (xEditing) return; e.preventDefault();
+        var text = (e.clipboardData || window.clipboardData).getData('text'); if (text == null) return;
+        var lines = text.replace(/\r/g, '').split('\n'); if (lines.length && lines[lines.length - 1] === '') lines.pop();
+        var grid = lines.map(function (l) { return l.split('\t'); });
+        var b = bounds();
+        if (grid.length === 1 && grid[0].length === 1) { var v = grid[0][0]; for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) xlSetCell(r, c, v); }
+        else { var sr = b.r0, sc = b.c0; grid.forEach(function (row, i) { row.forEach(function (val, j) { if (sc + j < cols.length) xlSetCell(sr + i, sc + j, val); }); }); xf = { r: sr + grid.length - 1, c: Math.min(cols.length - 1, sc + grid[0].length - 1) }; xa = { r: sr, c: sc }; }
+        commitRender();
+      });
+      // row delete buttons
+      wrap.querySelectorAll('[data-del]').forEach(function (btn) { btn.onclick = function (e) { e.stopPropagation(); cfg.activities.splice(+btn.dataset.del, 1); commitRender(); }; });
+      // delete selected rows
+      var dr = host.querySelector('#b-delrows'); if (dr) dr.onclick = function () { if (!nR()) return; var b = bounds(); cfg.activities.splice(b.r0, b.r1 - b.r0 + 1); xf = { r: clampR(b.r0), c: xf.c }; xa = { r: xf.r, c: xf.c }; commitRender(); };
+    }
+
+    // Step 4 — connect the class codes WITHIN a trade (mirrors the Zone-sequence layout): a class-code
+    // list on the left, a uniform-block flow chart on the right. Links (FS/SS/FF/SF + lag) between codes
+    // drive how they run inside every zone of that trade when the schedule is generated.
+    function stTradeSeq(host) {
+      var used = usedGroups();
+      if (!used.length) {
+        host.innerHTML = '<h2>4 · Trade sequence — connect the class codes</h2>' +
+          '<div class="sbld-empty">No trades yet — add activities in step 1 and assign each one a trade. The trades you use there will show up here to sequence.</div>';
+        return;
+      }
+      if (used.indexOf(uiTrade) < 0) uiTrade = used[0];
+      var tr = uiTrade, acts = tradeActs(tr);
+      var svg = tradeView === 'gantt' ? actGanttSVG(acts, actDayStarts(tr, tradeBasis), tradeBasis) : actSchedSVG(acts, actStartsUnit(tr));
+      var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
+        var n = tradeActs(g).length;
+        return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + GCOLOR[g] + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
+      }).join('') + '</div>';
+      // Left: complete list of class codes for this trade — description emphasized, code beneath, and
+      // the step-1 Interior/Exterior durations editable inline (edits feed the Gantt widths + Generate).
+      var list = acts.length ? '<div class="sbld-actlist">' + acts.map(function (a) {
+        return '<div class="sbld-actrow' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + '" style="--zc:' + (GCOLOR[a.group] || '#6f7276') + '">' +
+          '<button class="sbld-actnode" data-act="' + a.id + '" title="Click to link · Ctrl/Shift-click a target to link several">' +
+            '<span class="sbld-actdesc">' + e2(a.name || '(unnamed)') + '</span>' +
+            '<span class="sbld-actcode">' + e2(a.code || '—') + '</span></button>' +
+          '<div class="sbld-actdur"' + ((a.scope && a.scope !== 'zone') ? ' title="Shown per zone (computed from the ' + e2(scopeLabel(a.scope)) + ' duration set in step 1). Editing here fixes an explicit per-zone value."' : '') + '>' +
+            '<label>Int<input type="number" min="0" step="1" data-dur="int" data-act="' + a.id + '" value="' + pDur(a, 'int') + '"></label>' +
+            '<label>Ext<input type="number" min="0" step="1" data-dur="ext" data-act="' + a.id + '" value="' + pDur(a, 'ext') + '"></label>' +
+            ((a.scope && a.scope !== 'zone') ? '<span class="sbld-scopetag">per zone · from ' + e2(scopeLabel(a.scope)) + '</span>' : '') +
+          '</div></div>';
+      }).join('') + '</div>' : '<div class="sbld-empty">No class codes assigned to ' + e2(GLABEL[tr]) + ' yet — assign a trade to your activities in step 1.</div>';
+      host.innerHTML = '<h2>4 · Trade sequence — connect the class codes</h2>' +
+        '<p class="sbld-lede">Pick a <b>trade</b>, then connect its <b>class codes</b> the way they run inside a zone. Linking is pick-then-confirm: <b>1)</b> click one or more <b>source</b> codes, <b>2)</b> <b>right-click</b> to confirm, <b>3)</b> click one or more <b>destination</b> codes, <b>4)</b> <b>right-click</b> to confirm, <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Edit <b>Int/Ext</b> durations inline; switch <b>Flow/Gantt</b>. <b>Auto-chain</b> links them back-to-back with the chosen relationship.</p>' +
+        chips +
+        '<div class="sbld-sec-actions">' +
+        '<button class="pd-btn pd-btn-primary" id="b-autochain">Auto-chain</button>' +
+        '<select class="pd-select sbld-mini" id="b-autotype" title="Relationship used when auto-chaining the class codes (FS / SS / FF / SF)">' +
+        ['FS', 'SS', 'FF', 'SF'].map(function (o) { return '<option value="' + o + '"' + (autoChainType === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' +
+        ((pendActSet.length || pendActDst.length || actLinkPhase === 'dst') ? '<button class="pd-btn" id="b-adone">Reset selection</button>' : '') +
+        '<button class="pd-btn" id="b-aclear">Clear links</button>' +
+        '<span class="sbld-tb-sep2"></span><span class="sbld-quick">View ' +
+        [['flow', 'Flow'], ['gantt', 'Gantt']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (tradeView === v[0] ? ' on' : '') + '" data-tview="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
+        (tradeView === 'gantt' ?
+          '<span class="sbld-quick">' + ['day', 'week', 'month', 'year'].map(function (sc) { return '<button class="pd-btn sbld-scbtn' + (tradeScale === sc ? ' on' : '') + '" data-tscale="' + sc + '">' + sc.charAt(0).toUpperCase() + sc.slice(1) + '</button>'; }).join('') + '</span>' +
+          '<span class="sbld-quick">Dur ' + [['int', 'Interior'], ['ext', 'Exterior']].map(function (b) { return '<button class="pd-btn sbld-scbtn' + (tradeBasis === b[0] ? ' on' : '') + '" data-tbasis="' + b[0] + '">' + b[1] + '</button>'; }).join('') + '</span>' : '') +
+        '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-azout">−</button><button class="pd-btn sbld-zbtn" id="b-azin">+</button></span>' +
+        '<span class="sbld-hint" id="b-apend"></span></div>' +
+        '<div class="sbld-seq2"><div class="sbld-seq2-left" style="width:' + seqLeftW + 'px;"><div class="sbld-seq2-h">Class codes — ' + e2(GLABEL[tr]) + '</div>' + list + '</div>' +
+        '<div class="sbld-seq2-grip" id="b-agrip" title="Drag to resize the list / chart"></div>' +
+        '<div class="sbld-seq2-right"><div class="sbld-seq2-h">Trade ' + (tradeView === 'gantt' ? 'Gantt' : 'flow') + ' (' + countTradeLinks(tr) + ' link' + (countTradeLinks(tr) === 1 ? '' : 's') + ')</div><div class="sbld-canvaswrap">' + svg + '</div></div></div>';
+      host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; actReset(); }; });
+      var atSel = host.querySelector('#b-autotype'); if (atSel) atSel.onchange = function () { autoChainType = atSel.value; };
+      host.querySelector('#b-autochain').onclick = function () { autoChainTrade(tr, atSel ? atSel.value : autoChainType); };
+      host.querySelector('#b-aclear').onclick = function () { clearTradeLinks(tr); actReset(); render(); };
+      var ad = host.querySelector('#b-adone'); if (ad) ad.onclick = actReset;
+      host.querySelectorAll('[data-tview]').forEach(function (b) { b.onclick = function () { tradeView = b.dataset.tview; render(); }; });
+      host.querySelectorAll('[data-tscale]').forEach(function (b) { b.onclick = function () { tradeScale = b.dataset.tscale; tgZoom = TG_PPD[tradeScale] || 2.2; render(); }; });
+      host.querySelectorAll('[data-tbasis]').forEach(function (b) { b.onclick = function () { tradeBasis = b.dataset.tbasis; render(); }; });
+      // inline duration edits (Interior / Exterior) → update the step-1 activity, refresh the chart
+      host.querySelectorAll('input[data-dur]').forEach(function (inp) { inp.onchange = function () {
+        var a = cfg.activities.filter(function (x) { return x.id === inp.dataset.act; })[0]; if (!a) return;
+        // Editing the per-zone value here fixes it as an explicit per-zone duration (scope → zone),
+        // overriding a floor/project-scope split from step 1.
+        var v = Math.max(0, +inp.value || 0); if (inp.dataset.dur === 'ext') a.durExt = v; else a.durInt = v; a.scope = 'zone'; markDirty(); render();
+      }; });
+      if (tradeView === 'gantt') {
+        host.querySelector('#b-azout').onclick = function () { tgZoom = Math.max(0.3, tgZoom / 1.25); render(); };
+        host.querySelector('#b-azin').onclick = function () { tgZoom = Math.min(40, tgZoom * 1.25); render(); };
+      } else {
+        host.querySelector('#b-azout').onclick = function () { seqZoom = Math.max(1.5, seqZoom - 1); render(); };
+        host.querySelector('#b-azin').onclick = function () { seqZoom = Math.min(12, seqZoom + 1); render(); };
+      }
+      var grip = host.querySelector('#b-agrip'), leftPane = host.querySelector('.sbld-seq2-left'), splitRow = host.querySelector('.sbld-seq2');
+      if (grip && leftPane && splitRow) grip.addEventListener('mousedown', function (ev) {
+        ev.preventDefault(); grip.classList.add('drag');
+        var startX = ev.clientX, startW = leftPane.offsetWidth;
+        function mm(e2v) { var maxW = splitRow.clientWidth - 260; var w = Math.max(150, Math.min(maxW > 200 ? maxW : 200, startW + (e2v.clientX - startX))); leftPane.style.width = w + 'px'; seqLeftW = Math.round(w); }
+        function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); grip.classList.remove('drag'); }
+        document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+      });
+      var pendEl = host.querySelector('#b-apend'); if (pendEl) pendEl.textContent = !acts.length ? '' :
+        (actLinkPhase === 'src'
+          ? (pendActSet.length ? (pendActSet.length + ' source(s) selected — right-click to confirm, then pick destinations.') : 'Step 1: click one or more source codes (then right-click to confirm).')
+          : (pendActDst.length ? (pendActDst.length + ' destination(s) selected — right-click to choose the relationship.') : 'Step 3: click one or more destination codes (then right-click to confirm).'));
+      host.querySelectorAll('.sbld-actnode').forEach(function (b) { b.onclick = function () { actSelect(b.dataset.act); }; });
+      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { actSelect(b.getAttribute('data-act')); }); });
+      var aseq2 = host.querySelector('.sbld-seq2'); if (aseq2) aseq2.addEventListener('contextmenu', actConfirm);
+      host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
+        var fk = (p.getAttribute('data-fk') || '').split('~'), ex = actLinkOf(fk[0], fk[1]); if (!ex) return;
+        openLinkDialog(ev.clientX, ev.clientY, { type: ex.type, lag: ex.lag, existing: true }, function (type, lag) { ex.type = type; ex.lag = lag; markDirty(); render(); }, function () { removeActLink(fk[0], fk[1]); });
+      }); });
     }
 
     function leafCount(tr) { return cfg.zoning[tr].floors.reduce(function (t, f) { return t + leavesOfFloor(tr, f).length; }, 0); }
@@ -9217,9 +9798,16 @@
       return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;height:auto;">' + svg + '</svg>';
     }
     function stLevels(host) {
+      var used = usedGroups();
+      if (!used.length) {
+        host.innerHTML = '<h2>2 · Substructure &amp; Superstructure — per trade</h2>' +
+          '<div class="sbld-empty">No trades yet — add activities in step 1 and assign each one a trade. The trades you use there will show up here.</div>';
+        return;
+      }
+      if (used.indexOf(uiTrade) < 0) uiTrade = used[0];
       var tr = uiTrade, zn = cfg.zoning[tr];
       function qv(id, def) { var v = +host.querySelector(id).value; return isNaN(v) ? def : v; }
-      var chips = '<div class="sbld-tradechips">' + GROUPS.map(function (g) {
+      var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
         var n = leafCount(g);
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + GCOLOR[g] + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
@@ -9242,12 +9830,15 @@
           '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
           '<div class="sbld-znwrap">' + zonesHtml + '</div></div>';
       }).join('') : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' yet.</div>';
+      // Quick-generate inputs keep the counts the planner last generated with for THIS trade, so a
+      // value they just typed (e.g. units) stays put instead of snapping back to 0 on re-render.
+      var qd = quickN[tr] || { B: 0, F: 5, Z: 2, U: 0 };
       host.innerHTML = '<h2>2 · Substructure &amp; Superstructure — per trade</h2>' +
         '<p class="sbld-lede">Pick a trade, add its <b>floors</b> (superstructure) and any <b>basements</b> (substructure), then optionally split each into <b>zones</b> and <b>units</b>. Zones/units are optional. The tower on the right shows superstructure above the grade line and basements below.</p>' +
         chips +
         '<div class="sbld-lvlgrid">' +
         '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
-        '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="0" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="5" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="2" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="0" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
+        '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
         floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
         '<div class="sbld-tower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
         '</div>';
@@ -9257,6 +9848,7 @@
       host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, zones: [] }); cfg.links = []; markDirty(); render(); };
       host.querySelector('#b-quick').onclick = function () {
         var B = Math.max(0, Math.min(20, qv('#q-base', 0))), F = Math.max(1, Math.min(80, qv('#q-floors', 1))), Z = Math.max(0, Math.min(20, qv('#q-zones', 0))), U = Math.max(0, Math.min(20, qv('#q-units', 0)));
+        quickN[tr] = { B: B, F: F, Z: Z, U: U };
         if (zn.floors.length && !confirm('Replace the ' + zn.floors.length + ' existing floor(s) for ' + GLABEL[tr] + '?')) return;
         function mkZones() { var zs = []; for (var j = 1; j <= Z; j++) { var us = []; for (var k = 1; k <= U; k++) us.push({ id: uidv(), code: 'U' + k }); zs.push({ id: uidv(), code: 'Z' + j, units: us }); } return zs; }
         zn.floors = [];
@@ -9291,68 +9883,92 @@
       function r(u) { if (memo[u] != null) return memo[u]; if (stk[u]) return 0; stk[u] = 1; var m = 0; (incoming[u] || []).forEach(function (f) { m = Math.max(m, r(f) + 1); }); stk[u] = 0; return (memo[u] = m); }
       var out = {}; uids.forEach(function (u) { out[u] = r(u); }); return out;
     }
-    function scheduleSVG(locs, days, starts) {
-      // EQUAL-LENGTH bars laid out by dependency rank (not day-length) — uniform, easy-to-hit targets
-      // for connecting, and always visible even before durations are entered. Zoom scales bar width.
-      var barW = Math.max(44, seqZoom * 10), step = barW + 28, rowH = 28, pad = 8, labelW = 138, chartX = labelW + 6;
-      var uids = ['__start__'].concat(locs.map(function (l) { return l.uid; })).concat(['__end__']);
-      var ranks = computeRanks(uids);
-      var maxLocRank = 0; locs.forEach(function (l) { maxLocRank = Math.max(maxLocRank, ranks[l.uid] || 0); });
-      ranks['__start__'] = 0; ranks['__end__'] = Math.max(ranks['__end__'] || 0, maxLocRank + 1);
-      var maxRank = 0; uids.forEach(function (u) { maxRank = Math.max(maxRank, ranks[u] || 0); });
-      var W = chartX + (maxRank + 1) * step + 30, H = pad * 2 + (locs.length + 2) * rowH;
+    // Time-scaled schedule: each bar is placed at its COMPUTED START (in days) and sized by its
+    // duration, so relationships read truthfully — an SS link with lag 0 lines both bars up at the
+    // same x, FS puts the successor after the predecessor's finish, etc. `dispLocs` is the (possibly
+    // trade-filtered) subset to draw; `starts`/`days` are computed on the FULL graph so filtering
+    // never changes the schedule maths. Bars stay clickable for linking.
+    // Zone-sequence "connect the flow" diagram — NOT a duration Gantt. Each zone is a UNIFORM,
+    // equal-length block (its real activity durations are NOT summed here; that happens in Generate).
+    // Blocks are laid out by their link order (`starts`, computed with 1 unit per node), so an SS link
+    // lines both blocks up in the same column and FS steps the successor to the next column. This keeps
+    // the chart compact and readable — its only job is to show/connect the zones.
+    function scheduleSVG(dispLocs, starts) {
+      var rowH = 28, pad = 8, labelW = 138, chartX = labelW + 6;
+      var colW = Math.max(26, Math.round(seqZoom * 9)), step = colW + 26;   // uniform block width + column gap (zoomable)
+      var maxUnit = 1; dispLocs.forEach(function (l) { maxUnit = Math.max(maxUnit, (starts[l.uid] || 0) + 1); });
+      var rows = [{ uid: '__start__', label: 'Start', fill: 'var(--pd-ok)', s: 0, txt: 'START' }]
+        .concat(dispLocs.map(function (l) { return { uid: l.uid, label: l.trade + ' ' + locLabel(l), fill: GCOLOR[l.trade], s: starts[l.uid] || 0, txt: (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F'))) }; }))
+        .concat([{ uid: '__end__', label: 'End', fill: 'var(--pd-red)', s: maxUnit, txt: 'END' }]);
+      var H = pad * 2 + rows.length * rowH, W = chartX + (maxUnit + 1) * step + 30;
       var pos = {}, bars = '', links = '';
-      function bar(uid, y, fill, label, txt) {
-        var x = chartX + (ranks[uid] || 0) * step; pos[uid] = { x: x, y: y, w: barW, cy: y + rowH / 2 };
-        return '<text x="3" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="var(--pd-ink)">' + e2(label) + '</text>' +
-          '<rect class="sbld-schedbar' + (uid === pendSrc ? ' pend' : '') + '" data-uid="' + uid + '" x="' + x + '" y="' + (y + 4) + '" width="' + barW + '" height="' + (rowH - 10) + '" rx="3" fill="' + fill + '"></rect>' +
-          '<text x="' + (x + 5) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="#fff" pointer-events="none">' + txt + '</text>'; }
-      bars += bar('__start__', pad, 'var(--pd-ok)', 'Start', 'START');
-      locs.forEach(function (l, i) { var y = pad + (i + 1) * rowH; bars += bar(l.uid, y, GCOLOR[l.trade], l.trade + ' ' + locLabel(l), (days[l.uid] || 0) + 'd'); });
-      bars += bar('__end__', pad + (locs.length + 1) * rowH, 'var(--pd-red)', 'End', 'END');
+      function xOf(unit) { return chartX + unit * step; }
+      // faint column guides so aligned (SS) blocks read as sharing a column
+      var grid = ''; for (var u = 0; u <= maxUnit; u++) { var gx = xOf(u); grid += '<line x1="' + gx + '" y1="' + pad + '" x2="' + gx + '" y2="' + (H - pad) + '" stroke="var(--pd-line)" stroke-width="1" opacity=".3"></line>'; }
+      rows.forEach(function (r, i) {
+        var y = pad + i * rowH, x = xOf(r.s), w = colW;
+        pos[r.uid] = { x: x, y: y, w: w, cy: y + rowH / 2 };
+        bars += '<text x="3" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="var(--pd-ink)">' + e2(r.label) + '</text>' +
+          '<rect class="sbld-schedbar' + (inPend(r.uid) ? ' pend' : (inDst(r.uid) ? ' pend-dst' : '')) + '" data-uid="' + r.uid + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
+          '<text x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 3) + '" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">' + e2(r.txt) + '</text>';
+      });
       cfg.links.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
         var fx = (k.type === 'SS' || k.type === 'SF') ? a.x : a.x + a.w;   // leave from start (SS/SF) or finish (FS/FF)
         var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;   // arrive at to finish (FF/SF) or start (FS/SS)
-        var y1 = a.cy, y2 = b.cy, mx = fx + 10, lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
+        var y1 = a.cy, y2 = b.cy, mx = (tx >= fx ? fx + 8 : fx - 8), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
         var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
-        links += '<path class="sbld-link" d="' + d + '"></path>' +
+        links += '<path class="sbld-link" d="' + d + '" marker-end="url(#sbldarrow2)"></path>' +
           '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' +
           '<path class="sbld-linkhit" data-fk="' + e2(k.from + '~' + k.to) + '" d="' + d + '"></path>'; });
-      return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + links + bars + '</svg>';
+      return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + grid + links + bars + '</svg>';
     }
     function stSequence(host) {
-      var locs = locList(), days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l); });
-      var starts = computeStarts(locs, days);
+      // Layout uses a UNIFORM 1 unit per zone (durations are NOT summed here) so the diagram stays a
+      // compact connect-the-zones flow: SS → same column, FS → next column.
+      var locs = locList(), unit = {}; locs.forEach(function (l) { unit[l.uid] = 1; });
+      var starts = computeStarts(locs, unit);
       var present = GROUPS.filter(function (tr) { return floorsOf(tr).length; });
-      // Robust node rendering: one section per trade → its floors (top floor first) → a row of
+      // Trade filter — scope the tower + schedule to one trade so you can link its floors zone-by-zone
+      // without the other trades' bars in the way. 'ALL' shows every trade (to link across trades).
+      if (seqTradeFilter !== 'ALL' && present.indexOf(seqTradeFilter) < 0) seqTradeFilter = 'ALL';
+      var showTr = present.filter(function (tr) { return seqTradeFilter === 'ALL' || tr === seqTradeFilter; });
+      var dispLocs = locs.filter(function (l) { return seqTradeFilter === 'ALL' || l.trade === seqTradeFilter; });
+      var tradeChips = present.length ? '<div class="sbld-tradechips">' +
+        '<button class="sbld-chip' + (seqTradeFilter === 'ALL' ? ' on' : '') + '" data-seqtr="ALL">All trades</button>' +
+        present.map(function (g) { return '<button class="sbld-chip' + (seqTradeFilter === g ? ' on' : '') + '" data-seqtr="' + g + '"><span class="sbld-dot" style="background:' + GCOLOR[g] + '"></span>' + e2(GLABEL[g]) + '</button>'; }).join('') +
+        '</div>' : '';
+      // Robust node rendering: one section per (shown) trade → its floors (top floor first) → a row of
       // zone/unit node buttons. Every location in locList() becomes a clickable node here.
       var tower = !locs.length ? '<div class="sbld-empty">No zones yet — add floors/zones for a trade in <b>Step 2</b>, then their nodes appear here to connect.</div>' :
-        '<div class="sbld-twr">' + present.map(function (tr) {
+        '<div class="sbld-twr">' + showTr.map(function (tr) {
           return '<div class="sbld-twr-tradehead" style="color:' + GCOLOR[tr] + '"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span>' + e2(GLABEL[tr]) + '</div>' +
             floorsOf(tr).slice().reverse().map(function (f) {
               return '<div class="sbld-twr-floor"><span class="sbld-twr-lab">' + e2(f.code || f.name || 'F') + '</span>' +
                 '<div class="sbld-twr-trade">' + leavesOfFloor(tr, f).map(function (l) { var uid = l.uid, lbl = (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (f.code || 'F')));
-                  return '<button class="sbld-znode' + (pendSrc === uid ? ' pend' : '') + '" data-uid="' + uid + '" title="' + e2(GLABEL[tr] + ' · ' + locLabel(l)) + '" style="--zc:' + GCOLOR[tr] + '">' + e2(lbl) + '</button>'; }).join('') + '</div></div>';
+                  return '<button class="sbld-znode' + (inPend(uid) ? ' pend' : (inDst(uid) ? ' pend-dst' : '')) + '" data-uid="' + uid + '" title="' + e2(GLABEL[tr] + ' · ' + locLabel(l)) + '" style="--zc:' + GCOLOR[tr] + '">' + e2(lbl) + '</button>'; }).join('') + '</div></div>';
             }).join('');
         }).join('') + '</div>';
       host.innerHTML = '<h2>3 · Zone sequence — connect the flow</h2>' +
-        '<p class="sbld-lede">The <b>tower</b> (left) stacks the floors; each cell is a zone node. <b>Click a source node, then one or more target nodes</b> to link them — a dialog asks the relationship (FS/SS/FF/SF) and lag. The source stays selected so you can link several; click it again or <b>Done</b> to release. Click a bar or arrow on the schedule to edit or unlink. <b>Auto-trace logic</b> builds the takt flow.</p>' +
+        '<p class="sbld-lede">This step <b>connects the zones</b>. Linking is a pick-then-confirm flow: <b>1)</b> click one or more <b>source</b> zones, <b>2)</b> <b>right-click</b> to confirm the sources, <b>3)</b> click one or more <b>destination</b> zones, <b>4)</b> <b>right-click</b> to confirm, <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Every source is linked to every destination. Click an arrow to edit or unlink; <b>Auto-trace logic</b> builds the takt flow for you.</p>' +
+        tradeChips +
         '<div class="sbld-sec-actions">' +
         '<button class="pd-btn pd-btn-primary" id="b-autotrace">Auto-trace logic</button>' +
         '<label class="sbld-quick">Structure leads by <input class="pd-input" id="b-lead" type="number" min="1" max="40" value="' + (cfg.floorLead || 4) + '" style="width:52px;height:30px;"> floor(s)</label>' +
-        (pendSrc ? '<button class="pd-btn" id="b-done">Done linking</button>' : '') +
+        ((pendSet.length || pendDst.length || linkPhase === 'dst') ? '<button class="pd-btn" id="b-done">Reset selection</button>' : '') +
         '<button class="pd-btn" id="b-clear">Clear links</button>' +
         '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-zout">−</button><button class="pd-btn sbld-zbtn" id="b-zin">+</button></span>' +
         '<span class="sbld-hint" id="b-pend"></span></div>' +
         '<div class="sbld-seq2"><div class="sbld-seq2-left" style="width:' + seqLeftW + 'px;"><div class="sbld-seq2-h">Tower — zone nodes</div>' + tower + '</div>' +
         '<div class="sbld-seq2-grip" id="b-grip" title="Drag to resize the tower / schedule"></div>' +
-        '<div class="sbld-seq2-right"><div class="sbld-seq2-h">Resulting schedule (' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's') + ')</div><div class="sbld-canvaswrap">' + scheduleSVG(locs, days, starts) + '</div></div></div>';
-      host.querySelector('#b-autotrace').onclick = autoTrace;
-      host.querySelector('#b-clear').onclick = function () { cfg.links = []; pendSrc = null; markDirty(); render(); };
-      var doneb = host.querySelector('#b-done'); if (doneb) doneb.onclick = function () { pendSrc = null; render(); };
+        '<div class="sbld-seq2-right"><div class="sbld-seq2-h">Resulting schedule (' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's') + (seqTradeFilter === 'ALL' ? '' : ' · ' + e2(GLABEL[seqTradeFilter]) + ' only') + ')</div><div class="sbld-canvaswrap">' + scheduleSVG(dispLocs, starts) + '</div></div></div>';
+      host.querySelectorAll('[data-seqtr]').forEach(function (b) { b.onclick = function () { seqTradeFilter = b.dataset.seqtr; nodeReset(); }; });
+      host.querySelector('#b-autotrace').onclick = openAutoTraceDialog;
+      host.querySelector('#b-clear').onclick = function () { cfg.links = []; nodeReset(); markDirty(); render(); };
+      var doneb = host.querySelector('#b-done'); if (doneb) doneb.onclick = nodeReset;
       var lead = host.querySelector('#b-lead'); if (lead) lead.onchange = function () { cfg.floorLead = Math.max(1, Math.min(40, +lead.value || 4)); markDirty(); };
-      host.querySelector('#b-zout').onclick = function () { seqZoom = Math.max(2, seqZoom - 2); render(); };
-      host.querySelector('#b-zin').onclick = function () { seqZoom = Math.min(30, seqZoom + 2); render(); };
+      // +/- adjusts the block size / column spacing of the flow diagram
+      host.querySelector('#b-zout').onclick = function () { seqZoom = Math.max(1.5, seqZoom - 1); render(); };
+      host.querySelector('#b-zin').onclick = function () { seqZoom = Math.min(12, seqZoom + 1); render(); };
       var grip = host.querySelector('#b-grip'), leftPane = host.querySelector('.sbld-seq2-left'), splitRow = host.querySelector('.sbld-seq2');
       if (grip && leftPane && splitRow) grip.addEventListener('mousedown', function (ev) {
         ev.preventDefault(); grip.classList.add('drag');
@@ -9361,24 +9977,39 @@
         function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); grip.classList.remove('drag'); }
         document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
       });
-      var pendEl = host.querySelector('#b-pend'); if (pendEl) pendEl.textContent = pendSrc ? 'Source selected — click target node(s) to link.' : (locs.length ? 'Click a node to start a link.' : '');
-      host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { nodeConnect(b.dataset.uid, b); }; });
-      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { nodeConnect(b.getAttribute('data-uid'), b); }); });
+      var pendEl = host.querySelector('#b-pend'); if (pendEl) pendEl.textContent = !locs.length ? '' :
+        (linkPhase === 'src'
+          ? (pendSet.length ? (pendSet.length + ' source(s) selected — right-click to confirm, then pick destinations.') : 'Step 1: click one or more source zones (then right-click to confirm).')
+          : (pendDst.length ? (pendDst.length + ' destination(s) selected — right-click to choose the relationship.') : 'Step 3: click one or more destination zones (then right-click to confirm).'));
+      host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { nodeSelect(b.dataset.uid); }; });
+      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { nodeSelect(b.getAttribute('data-uid')); }); });
+      // right-click anywhere in the linking area confirms the current phase (source → destination → dialog)
+      var seq2 = host.querySelector('.sbld-seq2'); if (seq2) seq2.addEventListener('contextmenu', nodeConfirm);
       host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
         var fk = (p.getAttribute('data-fk') || '').split('~'), ex = linkOf(fk[0], fk[1]); if (!ex) return;
         openLinkDialog(ev.clientX, ev.clientY, { type: ex.type, lag: ex.lag, existing: true }, function (type, lag) { ex.type = type; ex.lag = lag; markDirty(); render(); }, function () { removeLink(fk[0], fk[1]); });
       }); });
     }
-    // click-to-connect (from tower node or schedule bar); keeps source selected for multi-linking
-    function nodeConnect(uid, anchorEl) {
+    // left-click a zone/bar → toggle it in the current phase's set (free multi-select)
+    function nodeSelect(uid) {
       if (!uid) return;
-      if (!pendSrc) { pendSrc = uid; render(); return; }
-      if (pendSrc === uid) { pendSrc = null; render(); return; }
-      var from = pendSrc, to = uid, ex = linkOf(from, to), r = anchorEl.getBoundingClientRect();
-      openLinkDialog(r.left + r.width / 2, r.bottom, ex ? { type: ex.type, lag: ex.lag, existing: true } : { type: 'FS', lag: 0 },
-        function (type, lag) { if (ex) { ex.type = type; ex.lag = lag; markDirty(); render(); } else { addLink(from, to, type, lag); } },
-        ex ? function () { removeLink(from, to); } : null);
+      if (linkPhase === 'dst' && pendSet.indexOf(uid) >= 0) return;   // a source can't also be a destination
+      var set = linkPhase === 'src' ? pendSet : pendDst, i = set.indexOf(uid);
+      if (i >= 0) set.splice(i, 1); else set.push(uid);
+      render();
     }
+    // right-click anywhere in the linking pane → confirm the current phase
+    function nodeConfirm(ev) {
+      if (ev) ev.preventDefault();
+      if (linkPhase === 'src') { if (!pendSet.length) { UI.toast('Select one or more source zones first.', 'warn'); return; } linkPhase = 'dst'; render(); return; }
+      if (!pendDst.length) { UI.toast('Select one or more destination zones, then right-click.', 'warn'); return; }
+      var srcs = pendSet.slice(), dsts = pendDst.slice(), x = ev ? ev.clientX : 200, y = ev ? ev.clientY : 200;
+      openLinkDialog(x, y, { type: 'FS', lag: 0 }, function (type, lag) {
+        srcs.forEach(function (s) { dsts.forEach(function (d) { if (s !== d) addLink(s, d, type, lag); }); });
+        pendSet = []; pendDst = []; linkPhase = 'src'; render();
+      }, null);
+    }
+    function nodeReset() { pendSet = []; pendDst = []; linkPhase = 'src'; render(); }
     // relationship dialog: asks FS/SS/FF/SF + lag (and Unlink when editing an existing link)
     function openLinkDialog(x, y, cur, onSave, onUnlink) {
       closeLinkDialog();
@@ -9400,9 +10031,9 @@
 
     function stScope(host) {
       var locs = locList();
-      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>4 · Scope per zone</h2><div class="sbld-empty">Add activities (step 1) and per-trade floors/zones (step 2) first.</div>'; return; }
+      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>5 · Scope per zone</h2><div class="sbld-empty">Add activities (step 1) and per-trade floors/zones (step 2) first.</div>'; return; }
       var sections = '';
-      GROUPS.forEach(function (tr) {
+      usedGroups().forEach(function (tr) {
         var tlocs = locs.filter(function (l) { return l.trade === tr; }), acts = tradeActs(tr);
         if (!tlocs.length || !acts.length) return;
         var head = '<tr><th>' + e2(GLABEL[tr]) + '</th>' + acts.map(function (a) { return '<th title="' + e2(a.name) + '">' + e2(a.code || a.name) + '</th>'; }).join('') + '</tr>';
@@ -9410,7 +10041,7 @@
         sections += '<h3 style="font-size:13px;margin:14px 0 6px;"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
       });
       function tocs(tlocs, acts) { return tlocs.map(function (l) { return '<tr><td>' + e2(locLabel(l)) + '</td>' + acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join(''); }
-      host.innerHTML = '<h2>4 · Scope per zone</h2>' +
+      host.innerHTML = '<h2>5 · Scope per zone</h2>' +
         '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations (all on by default). Untick where a trade doesn\'t occur.</p>' +
         '<div class="sbld-sec-actions"><button class="pd-btn" id="b-all">All on</button><button class="pd-btn" id="b-none">All off</button></div>' +
         (sections || '<div class="sbld-empty">Assign activities to trades (step 1) and give those trades floors/zones (step 2).</div>');
@@ -9431,10 +10062,10 @@
         kpis + pz + '<div class="sbld-tablewrap" style="max-height:340px;margin-top:8px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div></div>';
     }
     function stGenerate(host) {
-      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>5 · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
+      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>6 · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
       var gInt = generate('int'), gExt = generate('ext');
-      host.innerHTML = '<h2>5 · Generate &amp; preview — Internal vs External</h2>' +
-        '<p class="sbld-lede">Both schedules are built from the same zoning + links (step 3), each using its own activity durations: <b>Internal</b> (target) and <b>External</b> (contract). Use <b>Push to Project Schedule</b> to add one of them to the live schedule (with its relationships).</p>' +
+      host.innerHTML = '<h2>6 · Generate &amp; preview — Internal vs External</h2>' +
+        '<p class="sbld-lede">Both schedules are built from the same zoning + links (steps 2–3), each using its own activity durations: <b>Internal</b> (target) and <b>External</b> (contract). Use <b>Push to Project Schedule</b> to add one of them to the live schedule (with its relationships).</p>' +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Project start&nbsp; <input class="pd-input" type="date" id="b-start" value="' + e2(cfg.startDate) + '" style="height:30px;"></label>' +
         '<button class="pd-btn" id="b-csv-int">CSV · Internal</button><button class="pd-btn" id="b-csv-ext">CSV · External</button>' +
         '<button class="pd-btn pd-btn-primary" id="b-push" title="Add one of these schedules to the live schedule">Push to Project Schedule</button></div>' +
@@ -9483,7 +10114,7 @@
     }
     async function pushToSchedule(parentCode, grouped, basis) {
       var g = generate(basis || 'int'); if (!g.rows.length) return;
-      var base = parentCode || '', payloads = [], idset = {};
+      var base = parentCode || '', idset = {};
       rows.forEach(function (r) { if (r.activity_id) idset[r.activity_id] = 1; });
       function uniqId(cand) { var id = cand, n = 2; while (idset[id]) { id = cand + '-' + n; n++; } idset[id] = 1; return id; }
       function code(parent, i) { return parent ? parent + '.' + i : '' + i; }
@@ -9493,8 +10124,19 @@
       // the right end activities of the two locations.
       var seq = 0, locRows = {};
       g.rows.forEach(function (r) { r._id = uniqId('SB' + (++seq)); r._preds = []; (locRows[r.loc.uid] = locRows[r.loc.uid] || []).push(r); });
-      Object.keys(locRows).forEach(function (uid) { var arr = locRows[uid]; for (var i = 1; i < arr.length; i++) arr[i]._preds.push(arr[i - 1]._id); });
       function lagStr(l) { return l ? (l > 0 ? '+' + l : '' + l) : ''; }
+      // intra-zone predecessors: use the trade's class-code links (step 4) when it has any; otherwise
+      // fall back to a plain FS chain in the step-1 order.
+      Object.keys(locRows).forEach(function (uid) {
+        var arr = locRows[uid], byAct = {}; arr.forEach(function (r) { byAct[r.act.id] = r; });
+        var tr = arr[0].loc.trade, trIds = {}; tradeActs(tr).forEach(function (a) { trIds[a.id] = 1; });
+        var hasLinks = cfg.actLinks.some(function (k) { return trIds[k.from] && trIds[k.to]; });
+        if (hasLinks) {
+          cfg.actLinks.forEach(function (k) { var f = byAct[k.from], t = byAct[k.to]; if (!f || !t) return; var ty = k.type || 'FS'; t._preds.push(f._id + (ty !== 'FS' ? ' ' + ty : '') + lagStr(k.lag)); });
+        } else {
+          for (var i = 1; i < arr.length; i++) arr[i]._preds.push(arr[i - 1]._id);
+        }
+      });
       cfg.links.forEach(function (k) {
         if (k.from.indexOf('__') === 0 || k.to.indexOf('__') === 0) return;   // skip Start/End markers
         var A = locRows[k.from], B = locRows[k.to]; if (!A || !B || !A.length || !B.length) return;
@@ -9504,37 +10146,70 @@
         else if (ty === 'FF') bLast._preds.push(aLast + ' FF' + lagStr(k.lag));
         else if (ty === 'SF') bLast._preds.push(aFirst + ' SF' + lagStr(k.lag));
       });
-      function addSummary(c, name) { payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: name, activity_type: 'WBS Summary', created_by: UID }); }
-      function addTask(c, name, r) { payloads.push({ project_id: pid, wbs: c, activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), created_by: UID }); }
-      var ci = nextChildIndex(base);
-      if (grouped) {
+      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null) }; }
+      var payloads = [], taskN = g.rows.length, wbsMsg = '';
+
+      if (!grouped) {
+        // Flat push — no sub-WBS; tasks get sequential codes under the chosen base (no WBS-Manager nodes).
+        var ci = nextChildIndex(base);
+        g.rows.forEach(function (r) { var p = taskPayload(r, r.loc.trade + ' ' + locLabel(r.loc) + ' — ' + r.act.name); p.project_id = pid; p.created_by = UID; p.wbs = code(base, ci++); payloads.push(p); });
+      } else {
+        // Grouped push — build a real Trade → Floor → Zone → Unit WBS tree and register it in the WBS
+        // Manager (wbs_nodes), linking every summary + task by wbs_node_id. Falls back to plain dotted
+        // WBS-Summary rows if the wbs-nodes table isn't available (migration not yet run).
         function grp(list, keyFn, ordFn) { var m = {}, ord = []; list.forEach(function (r) { var k = keyFn(r); if (!m[k]) { m[k] = []; ord.push(ordFn(r)); } m[k].push(r); }); return { m: m, ord: ord }; }
+        var nodeDescs = [], nodeByKey = {}, taskAssign = [];
+        function ensureNode(key, parentKey, name) { if (!nodeByKey[key]) { var d = { key: key, parentKey: parentKey, name: name }; nodeByKey[key] = d; nodeDescs.push(d); } }
         var byTrade = {}; g.rows.forEach(function (r) { (byTrade[r.loc.trade] = byTrade[r.loc.trade] || []).push(r); });
-        GROUPS.forEach(function (tr) {
+        var ti = 1;
+        usedGroups().forEach(function (tr) {
           var trRows = byTrade[tr]; if (!trRows || !trRows.length) return;
-          var tCode = code(base, ci++); addSummary(tCode, GLABEL[tr]);
+          var tKey = 'T' + (ti++); ensureNode(tKey, '__base__', GLABEL[tr]);
           var byF = grp(trRows, function (r) { return r.loc.floor.id; }, function (r) { return r.loc.floor; });
           var fi = 1; byF.ord.forEach(function (f) {
-            var fCode = tCode + '.' + (fi++); addSummary(fCode, f.code || f.name || 'Floor');
+            var fKey = tKey + '.' + (fi++); ensureNode(fKey, tKey, f.code || f.name || 'Floor');
             var rowsF = byF.m[f.id];
-            if (!f.zones.length) { var af = 1; rowsF.forEach(function (r) { addTask(fCode + '.' + (af++), r.act.name, r); }); return; }
+            if (!f.zones.length) { rowsF.forEach(function (r) { taskAssign.push({ k: fKey, r: r, name: r.act.name }); }); return; }
             var byZ = grp(rowsF, function (r) { return r.loc.zone ? r.loc.zone.id : '_'; }, function (r) { return r.loc.zone; });
             var zi = 1; byZ.ord.forEach(function (z) {
-              var zCode = fCode + '.' + (zi++); addSummary(zCode, z ? (z.code || z.name || 'Zone') : 'Zone');
+              var zKey = fKey + '.' + (zi++); ensureNode(zKey, fKey, z ? (z.code || z.name || 'Zone') : 'Zone');
               var rowsZ = byZ.m[z ? z.id : '_'];
-              if (!z || !z.units.length) { var az = 1; rowsZ.forEach(function (r) { addTask(zCode + '.' + (az++), r.act.name, r); }); return; }
+              if (!z || !z.units.length) { rowsZ.forEach(function (r) { taskAssign.push({ k: zKey, r: r, name: r.act.name }); }); return; }
               var byU = grp(rowsZ, function (r) { return r.loc.unit ? r.loc.unit.id : '_'; }, function (r) { return r.loc.unit; });
-              var ui = 1; byU.ord.forEach(function (u) { var uCode = zCode + '.' + (ui++); addSummary(uCode, u ? (u.code || u.name || 'Unit') : 'Unit'); var au = 1; byU.m[u ? u.id : '_'].forEach(function (r) { addTask(uCode + '.' + (au++), r.act.name, r); }); });
+              var ui = 1; byU.ord.forEach(function (u) { var uKey = zKey + '.' + (ui++); ensureNode(uKey, zKey, u ? (u.code || u.name || 'Unit') : 'Unit'); byU.m[u ? u.id : '_'].forEach(function (r) { taskAssign.push({ k: uKey, r: r, name: r.act.name }); }); });
             });
           });
         });
-      } else {
-        g.rows.forEach(function (r) { addTask(code(base, ci++), r.loc.trade + ' ' + locLabel(r.loc) + ' — ' + r.act.name, r); });
+        // base parent = the wbs_node behind the chosen WBS row (if any)
+        var baseRow = rows.filter(function (r) { return isWbs(r) && String(r.wbs) === String(base); })[0];
+        var baseNodeId = baseRow ? (baseRow.wbs_node_id || null) : null;
+        // 1) create the wbs_nodes parent-first (sequential so children can reference their parent's id)
+        var keyToNodeId = { '__base__': baseNodeId }, soByParent = {}, wbsOk = true;
+        for (var di = 0; di < nodeDescs.length; di++) {
+          var nd = nodeDescs[di]; soByParent[nd.parentKey] = (soByParent[nd.parentKey] || 0);
+          var nres = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: keyToNodeId[nd.parentKey] || null, name: nd.name, sort_order: soByParent[nd.parentKey]++, created_by: UID }).select().single();
+          if (nres.error) { wbsOk = false; wbsMsg = nres.error.message; break; }
+          keyToNodeId[nd.key] = nres.data.id; WBS_NODES.push(nres.data);
+        }
+        if (wbsOk) {
+          // codes computed from the now-updated WBS_NODES tree, so the pushed rows carry their correct
+          // dotted WBS code immediately (load() heals summaries but doesn't re-sync codes).
+          var codeOf = computeWbsCodes();
+          nodeDescs.forEach(function (nd) { var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, created_by: UID }); });
+          taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; var nidt = keyToNodeId[t.k] || baseNodeId || null; p.wbs_node_id = nidt; p.wbs = nidt ? (codeOf[nidt] || null) : null; payloads.push(p); });
+        } else {
+          // fallback: dotted WBS-Summary + task rows (old behavior), so the push still works pre-migration
+          var codeByKey = {}, so2 = {};
+          function childCode(pk) { var pc = pk === '__base__' ? base : codeByKey[pk]; if (so2[pk] == null) so2[pk] = nextChildIndex(pc); return code(pc, so2[pk]++); }
+          nodeDescs.forEach(function (nd) { var c = childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', created_by: UID }); });
+          taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; p.wbs = childCode(t.k); payloads.push(p); });
+        }
       }
-      var taskN = payloads.filter(function (p) { return p.activity_type === 'Task'; }).length, CH = 500, ok = true, msg = '';
+
+      var CH = 500, ok = true, msg = '';
       for (var i = 0; i < payloads.length; i += CH) { var res = await sb().from(TABLE).insert(payloads.slice(i, i + CH)); if (res.error) { ok = false; msg = res.error.message; break; } }
       if (!ok) { UI.toast('Could not add to schedule: ' + msg, 'error'); return; }
-      UI.toast('Added ' + taskN + ' activities to the schedule' + (base ? ' under ' + base : '') + '.', 'success');
+      UI.toast('Added ' + taskN + ' activities with their relationships to the schedule' + (base ? ' under ' + base : '') + (wbsMsg ? ' (WBS Manager not updated — run the wbs-nodes migration)' : '') + '.', 'success');
       switchTab('schedule');
       if (typeof load === 'function') load();   // module schedule reload (loadCfg no longer shadows it)
     }
