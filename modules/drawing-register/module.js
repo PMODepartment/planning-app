@@ -857,7 +857,7 @@ window.DrawingRegister = (function () {
       '<td class="dr-nowrap dr-c-date'+ed+'" data-f="actual_approval" data-t="date">'+(appr?Fmt.date(appr):'—')+'</td>' +
       '<td class="dr-nowrap dr-c-date dr-c-needby">'+needByCellHtml(r)+'</td>' +
       '<td class="dr-c-resp'+ed+'" data-f="responsible" data-t="text">'+Fmt.esc(r.responsible)+'</td>' +
-      '<td class="dr-nowrap dr-actcol">'+(r.file_url?'<button class="dr-iconbtn" data-view="'+Fmt.esc(r.file_url)+'" title="View file">▤</button>':'')+
+      '<td class="dr-nowrap dr-actcol">'+(r.file_url?'<button class="dr-iconbtn" data-view="'+Fmt.esc(r.file_url)+'" title="View approved file">▤</button>':'')+
         '<button class="dr-iconbtn" data-edit="'+r.id+'" title="Full editor">✎</button>' +
         '<button class="dr-iconbtn dr-rowbtn-del" data-del="'+r.id+'" title="Delete">✕</button></td>' +
     '</tr>';
@@ -1329,11 +1329,9 @@ window.DrawingRegister = (function () {
       progTable('Progress by Trade', byDisc, Object.keys(DISCIPLINES).map(disciplineName)) +
     '</div>';
 
-    var renderPeriodChart = function () {
-      var chart = document.getElementById('dr-period-chart');
-      var data = periodScaled(periodBuckets(periodMode), periodValueMode, draws.length);
-      chart.innerHTML = periodChartSVG(data, periodValueMode);
-      wirePeriodHover(chart, data, periodValueMode);
+    var drawPeriod = function () {
+      renderPeriodChart(document.getElementById('dr-period-chart'),
+        periodScaled(periodBuckets(periodMode), periodValueMode, draws.length), periodValueMode);
     };
 
     host.innerHTML = kpis +
@@ -1346,31 +1344,33 @@ window.DrawingRegister = (function () {
           '<button class="dr-seg-btn active" data-mode="month">Monthly</button>' +
           '<button class="dr-seg-btn" data-mode="quarter">Quarterly</button>' +
         '</span>' +
-        '<span class="dr-seg" id="dr-pervalmode">' +
-          '<button class="dr-seg-btn active" data-mode="count">#</button>' +
-          '<button class="dr-seg-btn" data-mode="pct">%</button>' +
-        '</span></h3>' +
+        // ONE button that switches, not two mutually-exclusive buttons — it
+        // shows the mode you'd switch TO, matching the user's "switchable toggle".
+        '<button class="dr-seg dr-segswitch" id="dr-pervalmode" type="button" ' +
+          'title="Switch between counts and % of all drawings">#</button>' +
+        '</h3>' +
         '<div id="dr-period-chart" class="dr-pc-wrap"></div>' +
       '</div>' +
       host2;
 
-    renderPeriodChart();
+    drawPeriod();
     var pm = document.getElementById('dr-permode');
     if (pm) pm.querySelectorAll('.dr-seg-btn').forEach(function (b){
       b.onclick = function (){
         periodMode = b.dataset.mode;
         pm.querySelectorAll('.dr-seg-btn').forEach(function (x){ x.classList.toggle('active', x===b); });
-        renderPeriodChart();
+        drawPeriod();
       };
     });
     var pvm = document.getElementById('dr-pervalmode');
-    if (pvm) pvm.querySelectorAll('.dr-seg-btn').forEach(function (b){
-      b.onclick = function (){
-        periodValueMode = b.dataset.mode;
-        pvm.querySelectorAll('.dr-seg-btn').forEach(function (x){ x.classList.toggle('active', x===b); });
-        renderPeriodChart();
+    if (pvm) {
+      pvm.textContent = periodValueMode === 'pct' ? '%' : '#';
+      pvm.onclick = function (){
+        periodValueMode = (periodValueMode === 'count') ? 'pct' : 'count';
+        pvm.textContent = periodValueMode === 'pct' ? '%' : '#';
+        drawPeriod();
       };
-    });
+    }
   }
 
   // ---- Open Items by Aging (WPM "Work Package by Aging" pattern) -----------
@@ -1472,95 +1472,48 @@ window.DrawingRegister = (function () {
   }
   function periodFmt(v, mode) { return mode==='pct' ? (Math.round(v*10)/10)+'%' : Math.round(v); }
 
-  function periodChartSVG(data, mode) {
-    if (!data.length) return '<p class="dr-mut">No planned/actual approval dates recorded yet.</p>';
-    var w=960, h=310, padL=44, padR=16, padT=26, padB=38;
-    var innerW=w-padL-padR, innerH=h-padT-padB, n=data.length;
-    var maxY = mode==='pct' ? 100 :
-      niceCeil(Math.max.apply(null, data.map(function (d){ return Math.max(d.planned, d.actual, d.cumPlanned, d.cumActual); }).concat([1])));
-    var xStep = innerW/n;
-    var groupW = Math.min(xStep*0.62, 46), barW = groupW/2 - 2;
-    function X(i){ return padL + i*xStep + xStep/2; }
-    function Y(v){ return padT + innerH - (Math.min(v,maxY)/maxY)*innerH; }
-    var uid = 'drpc'+Math.random().toString(36).slice(2,8);
-    var showLabels = n<=20;
-
-    var bars = data.map(function (d,i){
-      var xP = X(i)-groupW/2+barW/2, xA = X(i)+groupW/2-barW/2;
-      var bhP = Math.max((Math.min(d.planned,maxY)/maxY)*innerH, d.planned>0?2:0);
-      var bhA = Math.max((Math.min(d.actual,maxY)/maxY)*innerH, d.actual>0?2:0);
-      var lblP = (showLabels && d.planned>0) ? '<text x="'+xP+'" y="'+(padT+innerH-bhP-4)+'" font-size="8.5" text-anchor="middle" fill="currentColor" opacity="0.65">'+periodFmt(d.planned,mode)+'</text>' : '';
-      var lblA = (showLabels && d.actual>0) ? '<text x="'+xA+'" y="'+(padT+innerH-bhA-4)+'" font-size="8.5" text-anchor="middle" fill="#EE3124" opacity="0.85">'+periodFmt(d.actual,mode)+'</text>' : '';
-      return '<rect x="'+(xP-barW/2)+'" y="'+(padT+innerH-bhP)+'" width="'+barW+'" height="'+bhP+'" rx="2" fill="var(--pd-line,#DCDBDB)"/>' +
-        '<rect x="'+(xA-barW/2)+'" y="'+(padT+innerH-bhA)+'" width="'+barW+'" height="'+bhA+'" rx="2" fill="rgba(238,49,36,.5)"/>' +
-        lblP + lblA;
-    }).join('');
-    function linePts(key){ return data.map(function (d,i){ return X(i)+','+Y(d[key]); }).join(' '); }
-    function dots(key,color){ return data.map(function (d,i){ return '<circle cx="'+X(i)+'" cy="'+Y(d[key])+'" r="2.75" fill="'+color+'"/>'; }).join(''); }
-    // Area fill under the Planned cumulative line — reads as the "target band"
-    // the red Actual line is tracking against, the classic S-curve look.
-    var areaPts = 'M'+X(0)+','+Y(0)+' '+data.map(function (d,i){ return 'L'+X(i)+','+Y(d.cumPlanned); }).join(' ') +
-      ' L'+X(n-1)+','+(padT+innerH)+' L'+X(0)+','+(padT+innerH)+' Z';
-    var gridN = 4, grid = '';
-    for (var g=0; g<=gridN; g++) {
-      var v = maxY/gridN*g, y = Y(v);
-      grid += '<line x1="'+padL+'" y1="'+y+'" x2="'+(w-padR)+'" y2="'+y+'" stroke="var(--pd-line,#e5e5e5)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>' +
-        '<text x="'+(padL-8)+'" y="'+(y+3)+'" font-size="10" text-anchor="end" fill="currentColor" opacity="0.55">'+periodFmt(v,mode)+'</text>';
-    }
-    var xlabels = data.map(function (d,i){
-      if (n>16 && i % Math.ceil(n/16) !== 0) return '';
-      return '<text x="'+X(i)+'" y="'+(h-10)+'" font-size="9.5" text-anchor="middle" fill="currentColor" opacity="0.6">'+Fmt.esc(d.label)+'</text>';
-    }).join('');
-    // Transparent per-period hit zones (drawn last = on top) + a hidden guide
-    // line — wired up for hover by wirePeriodHover() right after this is inserted.
-    var hits = data.map(function (d,i){
-      return '<rect class="dr-pc-hit" data-i="'+i+'" x="'+(X(i)-xStep/2)+'" y="'+padT+'" width="'+xStep+'" height="'+innerH+'" fill="transparent"/>';
-    }).join('');
-    return '<svg class="dr-pc-svg" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" style="width:100%;height:'+h+'px;display:block;">' +
-      '<defs><linearGradient id="'+uid+'" x1="0" y1="0" x2="0" y2="1">' +
-        '<stop offset="0%" stop-color="var(--pd-ink,#2B2C2B)" stop-opacity="0.16"/>' +
-        '<stop offset="100%" stop-color="var(--pd-ink,#2B2C2B)" stop-opacity="0.02"/>' +
-      '</linearGradient></defs>' +
-      grid + '<path d="'+areaPts+'" fill="url(#'+uid+')" stroke="none"/>' + bars +
-      '<polyline fill="none" stroke="var(--pd-ink,#2B2C2B)" stroke-width="2.25" stroke-linejoin="round" points="'+linePts('cumPlanned')+'"/>' +
-      '<polyline fill="none" stroke="#EE3124" stroke-width="2.25" stroke-linejoin="round" points="'+linePts('cumActual')+'"/>' +
-      dots('cumPlanned','var(--pd-ink,#2B2C2B)') + dots('cumActual','#EE3124') +
-      xlabels +
-      '<line class="dr-pc-guide" x1="-99" y1="'+padT+'" x2="-99" y2="'+(padT+innerH)+'" stroke="var(--pd-muted,#8A8F98)" stroke-width="1" stroke-dasharray="2 2" opacity="0"/>' +
-      hits +
-      '</svg>' +
-      '<div class="dr-pc-legend">' +
-      '<span><i style="display:inline-block;width:11px;height:11px;border-radius:2px;background:var(--pd-line,#DCDBDB);margin-right:5px;vertical-align:middle;"></i>Planned this period</span>' +
-      '<span><i style="display:inline-block;width:11px;height:11px;border-radius:2px;background:rgba(238,49,36,.5);margin-right:5px;vertical-align:middle;"></i>Actual this period</span>' +
-      '<span><i style="display:inline-block;width:16px;height:2.5px;background:var(--pd-ink,#2B2C2B);margin-right:5px;vertical-align:middle;"></i>Cumulative planned</span>' +
-      '<span><i style="display:inline-block;width:16px;height:2.5px;background:#EE3124;margin-right:5px;vertical-align:middle;"></i>Cumulative approved</span>' +
-      '</div>';
-  }
-
-  // PowerBI-style hover: a floating tooltip + vertical guide line, wired onto the
-  // transparent per-period hit zones the SVG above draws on top of everything.
-  function wirePeriodHover(container, data, mode) {
-    var guide = container.querySelector('.dr-pc-guide');
-    var tip = container.querySelector('.dr-pc-tip');
-    if (!tip) { tip = document.createElement('div'); tip.className = 'dr-pc-tip'; container.appendChild(tip); }
-    container.querySelectorAll('.dr-pc-hit').forEach(function (hit) {
-      var d = data[+hit.dataset.i];
-      var cx = (+hit.getAttribute('x')) + (+hit.getAttribute('width'))/2;
-      var show = function (e) {
-        if (guide) { guide.setAttribute('x1', cx); guide.setAttribute('x2', cx); guide.style.opacity = 1; }
-        tip.innerHTML = '<b>'+Fmt.esc(d.label)+'</b>' +
-          '<div>Planned this period <b>'+periodFmt(d.planned,mode)+'</b></div>' +
-          '<div>Actual this period <b>'+periodFmt(d.actual,mode)+'</b></div>' +
-          '<div>Cumulative planned <b>'+periodFmt(d.cumPlanned,mode)+'</b></div>' +
-          '<div>Cumulative approved <b>'+periodFmt(d.cumActual,mode)+'</b></div>';
-        tip.style.display = 'block';
-        var r = container.getBoundingClientRect();
-        var x = e.clientX - r.left, y = e.clientY - r.top;
-        tip.style.left = Math.max(0, Math.min(x+12, r.width-190)) + 'px';
-        tip.style.top = Math.max(0, y-8) + 'px';
-      };
-      hit.onmouseenter = show; hit.onmousemove = show;
-      hit.onmouseleave = function () { tip.style.display='none'; if (guide) guide.style.opacity=0; };
+  // Period chart — Chart.js (same stack as the Procurement dashboard) so sizing,
+  // hover tooltips and data labels behave identically there and here. Replaces an
+  // earlier hand-rolled SVG whose fixed viewBox had to be stretched to fill the
+  // card, which distorted text and point markers.
+  var _periodChart = null;
+  function renderPeriodChart(container, data, mode) {
+    if (_periodChart) { _periodChart.destroy(); _periodChart = null; }
+    if (!data.length) { container.innerHTML = '<p class="dr-mut">No planned/actual approval dates recorded yet.</p>'; return; }
+    container.innerHTML = '<canvas id="dr-pc-canvas"></canvas>';
+    var pct = mode === 'pct';
+    var dark = document.documentElement.classList.contains('pd-dark');
+    var ink = dark ? '#F0EFEF' : '#231F20';
+    var gridC = dark ? 'rgba(255,255,255,.09)' : 'rgba(0,0,0,.06)';
+    var plannedBar = dark ? '#8A8F98' : '#282C28';
+    var fmt = function (v) { return v == null ? '' : (pct ? (Math.round(v*10)/10)+'%' : Math.round(v)); };
+    _periodChart = new Chart(container.querySelector('canvas').getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: data.map(function (d){ return d.label; }),
+        datasets: [
+          { label:'Planned this period', data:data.map(function(d){return d.planned;}), backgroundColor:plannedBar, borderRadius:3, order:2 },
+          { label:'Actual this period',  data:data.map(function(d){return d.actual;}),  backgroundColor:'#EE3124', borderRadius:3, order:2 },
+          { label:'Cumulative planned',  data:data.map(function(d){return d.cumPlanned;}), type:'line', borderColor:plannedBar, borderWidth:2, pointRadius:2, fill:false, tension:.15, order:1 },
+          { label:'Cumulative approved', data:data.map(function(d){return d.cumActual;}),  type:'line', borderColor:'#EE3124', borderWidth:2, pointRadius:2, fill:false, tension:.15, order:1 }
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        interaction:{ mode:'index', intersect:false },
+        plugins:{
+          legend:{ position:'bottom', labels:{ usePointStyle:true, boxWidth:12, padding:10, color:ink, font:{size:11} } },
+          tooltip:{ callbacks:{ label:function(c){ return c.dataset.label+': '+fmt(c.parsed.y); } } },
+          datalabels:{ display:function(c){ return c.dataset.type!=='line' && data.length<=20 && c.dataset.data[c.dataIndex]>0; },
+            anchor:'end', align:'end', offset:2, font:{size:9}, color:ink, formatter:fmt }
+        },
+        scales:{
+          x:{ grid:{display:false}, ticks:{ color:ink, font:{size:9}, maxRotation:45, autoSkip:true, maxTicksLimit:24 } },
+          y:{ beginAtZero:true, max: pct ? 100 : undefined, grid:{color:gridC},
+              ticks:{ color:ink, font:{size:9}, callback:function(v){ return fmt(v); } },
+              title:{ display:true, text: pct ? '% of drawings' : 'No. of drawings', color:ink, font:{size:10} } }
+        }
+      }
     });
   }
 
@@ -1662,13 +1615,36 @@ window.DrawingRegister = (function () {
     if (res.error) throw res.error;
     return path;
   }
+  function fileLabel(path) {
+    if (!path) return '';
+    return String(path).split('/').pop().replace(/^\d{10,}_/, '');   // strip the timestamp prefix
+  }
+  // Best-effort: a failed object delete must never block the row write that
+  // already succeeded, or the user is stuck unable to save over a storage hiccup.
+  async function removeFiles(paths) {
+    var list = (paths || []).filter(Boolean);
+    if (!list.length) return;
+    try { await sb().storage.from(BUCKET).remove(list); } catch (e) {}
+  }
+  // Every revision's own file + the approved file, for cleanup on row delete.
+  function allFilesOf(r) {
+    var out = r.file_url ? [r.file_url] : [];
+    (Array.isArray(r.submissions) ? r.submissions : []).forEach(function (s){ if (s && s.file_url) out.push(s.file_url); });
+    return out;
+  }
 
   // --------------------------------------------------------- add/edit form ---
   function openForm(r) {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
     var isNew = !r; r = r || {};
-    var subs = Array.isArray(r.submissions) ? r.submissions.slice() : [];
+    // shallow-clone each submission (not just the array) so editing file_url in
+    // the form doesn't mutate the row still shown in the grid until Save.
+    var subs = Array.isArray(r.submissions) ? r.submissions.map(function (s){ return Object.assign({}, s); }) : [];
     if (!subs.length) subs = [{ rev:0, planned:'', actual:'' }];
+    // Storage objects queued for deletion — only removed AFTER the row write
+    // succeeds, so cancelling the form or a failed save can never delete a file
+    // that's still referenced (matches the module's existing single-file rule).
+    var pendingRemoveFiles = [];
 
     function opt(list, val, blank){
       return (blank?'<option value="">—</option>':'') + list.map(function (o){
@@ -1738,18 +1714,41 @@ window.DrawingRegister = (function () {
     function renderSubs() {
       var host = m.el.querySelector('#f-subs');
       host.innerHTML = subs.map(function (s, i){
+        // Each revision carries its OWN drawing file: a register needs the actual
+        // superseded sheet for every submission, not just a note that a revision
+        // happened. `s.file_url` holds that revision's storage path.
+        var fileBit = s.file_url
+          ? '<span class="dr-subfile"><button class="dr-iconbtn" type="button" data-subview="'+i+'" title="View this revision’s file">▤</button>' +
+            '<span class="dr-subfname" title="'+Fmt.esc(s.file_url)+'">'+Fmt.esc(fileLabel(s.file_url))+'</span>' +
+            '<button class="dr-iconbtn dr-rowbtn-del" type="button" data-subrmfile="'+i+'" title="Remove this file (applied on Save)">✕</button></span>'
+          : '<input class="pd-input dr-subfileinput" type="file" data-subfile="'+i+'" accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg">';
         return '<div class="dr-subrow">' +
           '<span class="dr-subrev">Rev '+(s.rev!=null?s.rev:i)+'</span>' +
           '<label>Planned<input class="pd-input" type="date" data-sub="'+i+'" data-k="planned" value="'+(s.planned||'')+'"></label>' +
           '<label>Actual<input class="pd-input" type="date" data-sub="'+i+'" data-k="actual" value="'+(s.actual||'')+'"></label>' +
+          '<label class="dr-subfilelbl">Drawing file'+fileBit+'</label>' +
           (subs.length>1?'<button class="pd-btn pd-btn-sm" type="button" data-rmsub="'+i+'">✕</button>':'') +
         '</div>';
       }).join('');
       host.querySelectorAll('[data-sub]').forEach(function (el){
         el.onchange = function(){ subs[+el.dataset.sub][el.dataset.k] = el.value || ''; };
       });
+      host.querySelectorAll('[data-subview]').forEach(function (b){
+        b.onclick = function(){ viewFile(subs[+b.dataset.subview].file_url); };
+      });
+      host.querySelectorAll('[data-subrmfile]').forEach(function (b){
+        b.onclick = function(){
+          var i = +b.dataset.subrmfile;
+          if (subs[i].file_url) pendingRemoveFiles.push(subs[i].file_url);
+          subs[i].file_url = null; renderSubs();
+        };
+      });
       host.querySelectorAll('[data-rmsub]').forEach(function (b){
-        b.onclick = function(){ subs.splice(+b.dataset.rmsub,1); renderSubs(); };
+        b.onclick = function(){
+          var i = +b.dataset.rmsub;
+          if (subs[i].file_url) pendingRemoveFiles.push(subs[i].file_url);
+          subs.splice(i,1); renderSubs();
+        };
       });
     }
     renderSubs();
@@ -1804,8 +1803,19 @@ window.DrawingRegister = (function () {
     m.el.querySelector('#f-save').onclick = async function () {
       var btn = m.el.querySelector('#f-save');
       var discCode = m.el.querySelector('#f-disc').value;
-      subs = subs.filter(function (s){ return s.planned || s.actual; })
-                 .map(function (s,i){ return { rev:(s.rev!=null?s.rev:i), planned:s.planned||null, actual:s.actual||null }; });
+      // Read the per-revision file inputs by their CURRENT index, before the
+      // filter below reindexes `subs` — otherwise an unfilled early revision
+      // would shift the array and attach each upload to the wrong revision.
+      var pendingSubUploads = [];
+      m.el.querySelectorAll('[data-subfile]').forEach(function (inp){
+        var i = +inp.dataset.subfile;
+        if (inp.files && inp.files[0] && subs[i]) pendingSubUploads.push({ sub: subs[i], file: inp.files[0] });
+      });
+      // A revision with only a file (dates not filled in yet) is still a real
+      // submission — keep it, or uploading the sheet first would silently drop it.
+      // Objects are kept by reference so a pending upload lands on the right one.
+      subs = subs.filter(function (s){ return s.planned || s.actual || s.file_url ||
+                                              pendingSubUploads.some(function (u){ return u.sub === s; }); });
       var sheets = num(m.el.querySelector('#f-sheets').value);
       var apSheets = num(m.el.querySelector('#f-apsheets').value);
       var data = {
@@ -1827,7 +1837,8 @@ window.DrawingRegister = (function () {
         approved_pct: sheets ? apSheets/sheets : 0,
         responsible:  m.el.querySelector('#f-resp').value.trim(),
         revision:     m.el.querySelector('#f-rev').value.trim(),
-        submissions:  subs,
+        // submissions / issue_date / due_date are set after the uploads below,
+        // once each revision knows its final file path.
         status:       m.el.querySelector('#f-status').value,
         planned_approval: m.el.querySelector('#f-papp').value || null,
         actual_approval:  m.el.querySelector('#f-aapp').value || null,
@@ -1847,15 +1858,39 @@ window.DrawingRegister = (function () {
         dwg_number:data.dwg_number, revision:data.revision
       });
       data.drawing_no = data.drawing_code || data.dwg_number;
-      // keep first submission as issue/due for backward-compat filters
-      data.issue_date = (subs[0] && subs[0].actual) || null;
-      data.due_date   = (subs[0] && subs[0].planned) || null;
 
       if (!data.title && !data.dwg_number) { UI.toast('Sheet title or drawing no. required', 'warn'); return; }
       btn.disabled = true; btn.textContent = 'Saving…';
+      // Objects uploaded during THIS save — rolled back if the row write fails,
+      // so a DB error can't orphan files in the bucket.
+      var uploadedNow = [];
       try {
+        // Uploads run BEFORE the row write: a failed upload must never leave a
+        // row pointing at a missing object.
         var fileEl = m.el.querySelector('#f-file');
-        if (fileEl.files && fileEl.files[0]) { btn.textContent='Uploading…'; data.file_url = await uploadFile(fileEl.files[0]); }
+        if (fileEl.files && fileEl.files[0]) {
+          btn.textContent='Uploading…';
+          var newApproved = await uploadFile(fileEl.files[0]);
+          uploadedNow.push(newApproved);
+          if (r.file_url) pendingRemoveFiles.push(r.file_url);   // replace: drop the old one after the write
+          data.file_url = newApproved;
+        }
+        for (var ui = 0; ui < pendingSubUploads.length; ui++) {
+          btn.textContent = 'Uploading revision '+(ui+1)+'/'+pendingSubUploads.length+'…';
+          var up = pendingSubUploads[ui];
+          var p = await uploadFile(up.file);
+          uploadedNow.push(p);
+          if (up.sub.file_url) pendingRemoveFiles.push(up.sub.file_url);
+          up.sub.file_url = p;
+        }
+        // Normalize AFTER uploads so each revision carries its final file path.
+        data.submissions = subs.map(function (s,i){
+          return { rev:(s.rev!=null?s.rev:i), planned:s.planned||null, actual:s.actual||null, file_url:s.file_url||null };
+        });
+        data.issue_date = (data.submissions[0] && data.submissions[0].actual) || null;
+        data.due_date   = (data.submissions[0] && data.submissions[0].planned) || null;
+        btn.textContent = 'Saving…';
+
         if (isNew) {
           data.created_by = uid;
           data.sort_order = (rows.length ? Math.max.apply(null, rows.map(function(x){return x.sort_order||0;})) : 0) + 1;
@@ -1876,10 +1911,14 @@ window.DrawingRegister = (function () {
           return res;
         }
         var wr = await writeRow(); if (wr.error) throw wr.error;
+        // Superseded/removed objects are deleted only AFTER the row successfully
+        // points away from them.
+        await removeFiles(pendingRemoveFiles);
         UI.toast(warned ? 'Saved — but the schedule link wasn’t stored; run the 2026-07-25 migration.'
                         : 'Saved', warned ? 'warn' : 'ok');
         m.close(); load();
       } catch (e) {
+        await removeFiles(uploadedNow);   // roll back this save's uploads
         UI.toast(e.message, 'error'); btn.disabled=false; btn.textContent='Save';
       }
     };
@@ -1895,7 +1934,7 @@ window.DrawingRegister = (function () {
 
   async function del(r) {
     if (!confirm('Delete drawing "' + (r.drawing_code || r.drawing_no || r.title) + '"?')) return;
-    if (r.file_url) { try { await sb().storage.from(BUCKET).remove([r.file_url]); } catch (e) {} }
+    await removeFiles(allFilesOf(r));   // approved file + every revision's own file
     var res = await sb().from(TABLE).delete().eq('id', r.id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     UI.toast('Deleted', 'ok'); load();
@@ -1906,8 +1945,10 @@ window.DrawingRegister = (function () {
     var ids = Object.keys(selected);
     if (!ids.length) return;
     if (!confirm('Delete ' + ids.length + ' selected drawing(s)? This cannot be undone.')) return;
-    var files = rows.filter(function (r){ return selected[r.id] && r.file_url; }).map(function (r){ return r.file_url; });
-    if (files.length) { try { await sb().storage.from(BUCKET).remove(files); } catch (e) {} }
+    // Capture every file path BEFORE the rows leave `rows` — afterwards they're unrecoverable.
+    var files = [];
+    rows.forEach(function (r){ if (selected[r.id]) files = files.concat(allFilesOf(r)); });
+    await removeFiles(files);
     // delete in chunks to keep the URL length sane
     for (var i=0; i<ids.length; i+=100) {
       var res = await sb().from(TABLE).delete().in('id', ids.slice(i, i+100));
@@ -1948,8 +1989,9 @@ window.DrawingRegister = (function () {
     m.el.querySelector('#dr-clr-cancel').onclick = m.close;
     go.onclick = async function(){
       go.disabled = true; go.textContent = 'Deleting…';
-      var files = rows.filter(function (r){ return r.file_url; }).map(function (r){ return r.file_url; });
-      if (files.length) { try { await sb().storage.from(BUCKET).remove(files); } catch (e) {} }
+      var files = [];
+      rows.forEach(function (r){ files = files.concat(allFilesOf(r)); });
+      await removeFiles(files);
       var res = await sb().from(TABLE).delete().eq('project_id', pid);
       if (res.error) { UI.toast(res.error.message, 'error'); go.disabled=false; go.textContent='Delete all'; return; }
       UI.toast('All drawings cleared', 'ok'); m.close(); load({ reset:true });

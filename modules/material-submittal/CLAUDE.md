@@ -6,6 +6,20 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## Chart.js adoption (2026-08-03) — fmlozano
+Ported from Drawing Register:
+- **Chart.js 4.4.1 + chartjs-plugin-datalabels (CDN)** replaces the hand-rolled SVG period chart,
+  reverting the `preserveAspectRatio="none"` change that was distorting the chart's contents. Native
+  `interaction:{mode:'index'}` tooltips now match the Procurement dashboard's behaviour, because that
+  app was using Chart.js all along. `periodChartSVG`/`wirePeriodHover` deleted. `.ms-pc-wrap` keeps an
+  explicit height (Chart.js `maintainAspectRatio:false` needs a sized parent).
+- **`#`/`%` is one switching button** (`.ms-segswitch`).
+- Assets `module.css?v=20260803g` / `module.js?v=20260803h` + 2 CDN script tags. Verified
+  `node --check`, CSS brace-balance, 0 stale refs. **Not browser-verified.**
+- Per-revision file uploads were **not** ported here — this module's model is deliberately one
+  document per submittal (see the 2026-07-20 entry below); a revision-by-revision file set is a
+  drawing-register concept.
+
 ## Period chart overhaul: PowerBI hover, actual bars, %/# toggle (2026-08-03) — fmlozano
 Ported the same fixes made to Drawing Register:
 - **Real bug fixed:** `preserveAspectRatio="none"` added — without it the chart's fixed-aspect viewBox

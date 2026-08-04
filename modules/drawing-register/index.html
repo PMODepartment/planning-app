@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260726d"></script>
   <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
-  <link rel="stylesheet" href="module.css?v=20260803f" />
+  <link rel="stylesheet" href="module.css?v=20260803g" />
 </head>
 <body>
   <div class="pd-app">
@@ -69,6 +69,10 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Charting: same stack the Procurement (WPM) dashboard uses, so the period
+       chart's sizing, tooltips and data labels behave identically there and here. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <script src="../../assets/js/config.js?v=20260724a"></script>
   <script src="../../assets/js/auth.js?v=20260724a"></script>
   <script src="../../assets/js/db.js?v=20260724a"></script>
@@ -76,7 +80,7 @@
   <script src="../../assets/js/icons.js?v=20260724a"></script>
   <script src="../../assets/js/offline.js?v=20260726d"></script>
   <script src="../../assets/js/collab.js?v=20260727b"></script>
-  <script src="module.js?v=20260803h"></script>
+  <script src="module.js?v=20260803i"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

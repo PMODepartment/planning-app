@@ -467,10 +467,10 @@ window.MaterialSubmittal = (function () {
         '<button class="ms-seg-btn active" data-mode="month">Monthly</button>' +
         '<button class="ms-seg-btn" data-mode="quarter">Quarterly</button>' +
       '</span>' +
-      '<span class="ms-seg" id="ms-pervalmode">' +
-        '<button class="ms-seg-btn active" data-mode="count">#</button>' +
-        '<button class="ms-seg-btn" data-mode="pct">%</button>' +
-      '</span></h3><div id="ms-period-chart" class="ms-pc-wrap"></div></div>';
+      // ONE button that switches, not two mutually-exclusive buttons.
+      '<button class="ms-seg ms-segswitch" id="ms-pervalmode" type="button" ' +
+        'title="Switch between counts and % of all submittals">#</button>' +
+      '</h3><div id="ms-period-chart" class="ms-pc-wrap"></div></div>';
 
     // ---- reconciliation note ----
     if (!noteDismissed && (legacy.planned !== curve.totals.planned || legacy.actual !== curve.totals.actual || legacy.dropped)) {
@@ -489,29 +489,28 @@ window.MaterialSubmittal = (function () {
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
     var x = document.getElementById('ms-note-x');
     if (x) x.onclick = function () { noteDismissed = true; renderDashboard(); };
-    var renderPeriodChart = function () {
-      var chart = document.getElementById('ms-period-chart');
-      var data = periodScaled(periodBuckets(periodMode), periodValueMode, rows.length);
-      chart.innerHTML = periodChartSVG(data, periodValueMode);
-      wirePeriodHover(chart, data, periodValueMode);
+    var drawPeriod = function () {
+      renderPeriodChart(document.getElementById('ms-period-chart'),
+        periodScaled(periodBuckets(periodMode), periodValueMode, rows.length), periodValueMode);
     };
-    renderPeriodChart();
+    drawPeriod();
     var pm = document.getElementById('ms-permode');
     if (pm) pm.querySelectorAll('.ms-seg-btn').forEach(function (b) {
       b.onclick = function () {
         periodMode = b.dataset.mode;
         pm.querySelectorAll('.ms-seg-btn').forEach(function (x2) { x2.classList.toggle('active', x2 === b); });
-        renderPeriodChart();
+        drawPeriod();
       };
     });
     var pvm = document.getElementById('ms-pervalmode');
-    if (pvm) pvm.querySelectorAll('.ms-seg-btn').forEach(function (b) {
-      b.onclick = function () {
-        periodValueMode = b.dataset.mode;
-        pvm.querySelectorAll('.ms-seg-btn').forEach(function (x2) { x2.classList.toggle('active', x2 === b); });
-        renderPeriodChart();
+    if (pvm) {
+      pvm.textContent = periodValueMode === 'pct' ? '%' : '#';
+      pvm.onclick = function () {
+        periodValueMode = (periodValueMode === 'count') ? 'pct' : 'count';
+        pvm.textContent = periodValueMode === 'pct' ? '%' : '#';
+        drawPeriod();
       };
-    });
+    }
   }
 
   // ---- Open Items by Aging (WPM "Work Package by Aging" pattern) -----------
@@ -612,91 +611,48 @@ window.MaterialSubmittal = (function () {
   }
   function periodFmt(v, mode) { return mode==='pct' ? (Math.round(v*10)/10)+'%' : Math.round(v); }
 
-  function periodChartSVG(data, mode) {
-    if (!data.length) return '<p class="ms-mut">No planned/actual approval dates recorded yet.</p>';
-    var w = 960, h = 310, padL = 44, padR = 16, padT = 26, padB = 38;
-    var innerW = w - padL - padR, innerH = h - padT - padB, n = data.length;
-    var maxY = mode==='pct' ? 100 :
-      niceCeil(Math.max.apply(null, data.map(function (d) { return Math.max(d.planned, d.actual, d.cumPlanned, d.cumActual); }).concat([1])));
-    var xStep = innerW / n;
-    var groupW = Math.min(xStep*0.62, 46), barW = groupW/2 - 2;
-    function X(i) { return padL + i * xStep + xStep / 2; }
-    function Y(v) { return padT + innerH - (Math.min(v,maxY) / maxY) * innerH; }
-    var uid = 'mspc'+Math.random().toString(36).slice(2,8);
-    var showLabels = n<=20;
-
-    var bars = data.map(function (d, i) {
-      var xP = X(i)-groupW/2+barW/2, xA = X(i)+groupW/2-barW/2;
-      var bhP = Math.max((Math.min(d.planned,maxY)/maxY) * innerH, d.planned>0?2:0);
-      var bhA = Math.max((Math.min(d.actual,maxY)/maxY) * innerH, d.actual>0?2:0);
-      var lblP = (showLabels && d.planned>0) ? '<text x="'+xP+'" y="'+(padT+innerH-bhP-4)+'" font-size="8.5" text-anchor="middle" fill="currentColor" opacity="0.65">'+periodFmt(d.planned,mode)+'</text>' : '';
-      var lblA = (showLabels && d.actual>0) ? '<text x="'+xA+'" y="'+(padT+innerH-bhA-4)+'" font-size="8.5" text-anchor="middle" fill="#EE3124" opacity="0.85">'+periodFmt(d.actual,mode)+'</text>' : '';
-      return '<rect x="'+(xP-barW/2)+'" y="'+(padT+innerH-bhP)+'" width="'+barW+'" height="'+bhP+'" rx="2" fill="var(--pd-line,#DCDBDB)"/>' +
-        '<rect x="'+(xA-barW/2)+'" y="'+(padT+innerH-bhA)+'" width="'+barW+'" height="'+bhA+'" rx="2" fill="rgba(238,49,36,.5)"/>' +
-        lblP + lblA;
-    }).join('');
-    function linePts(key) { return data.map(function (d, i) { return X(i) + ',' + Y(d[key]); }).join(' '); }
-    function dots(key,color) { return data.map(function (d,i) { return '<circle cx="'+X(i)+'" cy="'+Y(d[key])+'" r="2.75" fill="'+color+'"/>'; }).join(''); }
-    var areaPts = 'M'+X(0)+','+Y(0)+' '+data.map(function (d,i){ return 'L'+X(i)+','+Y(d.cumPlanned); }).join(' ') +
-      ' L'+X(n-1)+','+(padT+innerH)+' L'+X(0)+','+(padT+innerH)+' Z';
-    var gridN = 4, grid = '';
-    for (var g = 0; g <= gridN; g++) {
-      var v = maxY / gridN * g, y = Y(v);
-      grid += '<line x1="' + padL + '" y1="' + y + '" x2="' + (w - padR) + '" y2="' + y + '" stroke="var(--pd-line,#e5e5e5)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>' +
-        '<text x="' + (padL - 8) + '" y="' + (y + 3) + '" font-size="10" text-anchor="end" fill="currentColor" opacity="0.55">' + periodFmt(v,mode) + '</text>';
-    }
-    var xlabels = data.map(function (d, i) {
-      if (n > 16 && i % Math.ceil(n / 16) !== 0) return '';
-      return '<text x="' + X(i) + '" y="' + (h - 10) + '" font-size="9.5" text-anchor="middle" fill="currentColor" opacity="0.6">' + esc(d.label) + '</text>';
-    }).join('');
-    var hits = data.map(function (d,i){
-      return '<rect class="ms-pc-hit" data-i="'+i+'" x="'+(X(i)-xStep/2)+'" y="'+padT+'" width="'+xStep+'" height="'+innerH+'" fill="transparent"/>';
-    }).join('');
-    return '<svg class="ms-pc-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" style="width:100%;height:' + h + 'px;display:block;">' +
-      '<defs><linearGradient id="'+uid+'" x1="0" y1="0" x2="0" y2="1">' +
-        '<stop offset="0%" stop-color="var(--pd-ink,#2B2C2B)" stop-opacity="0.16"/>' +
-        '<stop offset="100%" stop-color="var(--pd-ink,#2B2C2B)" stop-opacity="0.02"/>' +
-      '</linearGradient></defs>' +
-      grid + '<path d="'+areaPts+'" fill="url(#'+uid+')" stroke="none"/>' + bars +
-      '<polyline fill="none" stroke="var(--pd-ink,#2B2C2B)" stroke-width="2.25" stroke-linejoin="round" points="' + linePts('cumPlanned') + '"/>' +
-      '<polyline fill="none" stroke="#EE3124" stroke-width="2.25" stroke-linejoin="round" points="' + linePts('cumActual') + '"/>' +
-      dots('cumPlanned','var(--pd-ink,#2B2C2B)') + dots('cumActual','#EE3124') +
-      xlabels +
-      '<line class="ms-pc-guide" x1="-99" y1="'+padT+'" x2="-99" y2="'+(padT+innerH)+'" stroke="var(--pd-muted,#8A8F98)" stroke-width="1" stroke-dasharray="2 2" opacity="0"/>' +
-      hits +
-      '</svg>' +
-      '<div class="ms-pc-legend">' +
-      '<span><i style="display:inline-block;width:11px;height:11px;border-radius:2px;background:var(--pd-line,#DCDBDB);margin-right:5px;vertical-align:middle;"></i>Planned this period</span>' +
-      '<span><i style="display:inline-block;width:11px;height:11px;border-radius:2px;background:rgba(238,49,36,.5);margin-right:5px;vertical-align:middle;"></i>Actual this period</span>' +
-      '<span><i style="display:inline-block;width:16px;height:2.5px;background:var(--pd-ink,#2B2C2B);margin-right:5px;vertical-align:middle;"></i>Cumulative planned</span>' +
-      '<span><i style="display:inline-block;width:16px;height:2.5px;background:#EE3124;margin-right:5px;vertical-align:middle;"></i>Cumulative approved</span>' +
-      '</div>';
-  }
-
-  // PowerBI-style hover: a floating tooltip + vertical guide line, wired onto the
-  // transparent per-period hit zones the SVG above draws on top of everything.
-  function wirePeriodHover(container, data, mode) {
-    var guide = container.querySelector('.ms-pc-guide');
-    var tip = container.querySelector('.ms-pc-tip');
-    if (!tip) { tip = document.createElement('div'); tip.className = 'ms-pc-tip'; container.appendChild(tip); }
-    container.querySelectorAll('.ms-pc-hit').forEach(function (hit) {
-      var d = data[+hit.dataset.i];
-      var cx = (+hit.getAttribute('x')) + (+hit.getAttribute('width'))/2;
-      var show = function (e) {
-        if (guide) { guide.setAttribute('x1', cx); guide.setAttribute('x2', cx); guide.style.opacity = 1; }
-        tip.innerHTML = '<b>'+esc(d.label)+'</b>' +
-          '<div>Planned this period <b>'+periodFmt(d.planned,mode)+'</b></div>' +
-          '<div>Actual this period <b>'+periodFmt(d.actual,mode)+'</b></div>' +
-          '<div>Cumulative planned <b>'+periodFmt(d.cumPlanned,mode)+'</b></div>' +
-          '<div>Cumulative approved <b>'+periodFmt(d.cumActual,mode)+'</b></div>';
-        tip.style.display = 'block';
-        var r = container.getBoundingClientRect();
-        var x = e.clientX - r.left, y = e.clientY - r.top;
-        tip.style.left = Math.max(0, Math.min(x+12, r.width-190)) + 'px';
-        tip.style.top = Math.max(0, y-8) + 'px';
-      };
-      hit.onmouseenter = show; hit.onmousemove = show;
-      hit.onmouseleave = function () { tip.style.display='none'; if (guide) guide.style.opacity=0; };
+  // Period chart — Chart.js (same stack as the Procurement dashboard) so sizing,
+  // hover tooltips and data labels behave identically there and here. Replaces an
+  // earlier hand-rolled SVG whose fixed viewBox had to be stretched to fill the
+  // card, which distorted text and point markers.
+  var _periodChart = null;
+  function renderPeriodChart(container, data, mode) {
+    if (_periodChart) { _periodChart.destroy(); _periodChart = null; }
+    if (!data.length) { container.innerHTML = '<p class="ms-mut">No planned/actual approval dates recorded yet.</p>'; return; }
+    container.innerHTML = '<canvas></canvas>';
+    var pct = mode === 'pct';
+    var dark = document.documentElement.classList.contains('pd-dark');
+    var ink = dark ? '#F0EFEF' : '#231F20';
+    var gridC = dark ? 'rgba(255,255,255,.09)' : 'rgba(0,0,0,.06)';
+    var plannedBar = dark ? '#8A8F98' : '#282C28';
+    var fmt = function (v) { return v == null ? '' : (pct ? (Math.round(v*10)/10)+'%' : Math.round(v)); };
+    _periodChart = new Chart(container.querySelector('canvas').getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: data.map(function (d){ return d.label; }),
+        datasets: [
+          { label:'Planned this period', data:data.map(function(d){return d.planned;}), backgroundColor:plannedBar, borderRadius:3, order:2 },
+          { label:'Actual this period',  data:data.map(function(d){return d.actual;}),  backgroundColor:'#EE3124', borderRadius:3, order:2 },
+          { label:'Cumulative planned',  data:data.map(function(d){return d.cumPlanned;}), type:'line', borderColor:plannedBar, borderWidth:2, pointRadius:2, fill:false, tension:.15, order:1 },
+          { label:'Cumulative approved', data:data.map(function(d){return d.cumActual;}),  type:'line', borderColor:'#EE3124', borderWidth:2, pointRadius:2, fill:false, tension:.15, order:1 }
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        interaction:{ mode:'index', intersect:false },
+        plugins:{
+          legend:{ position:'bottom', labels:{ usePointStyle:true, boxWidth:12, padding:10, color:ink, font:{size:11} } },
+          tooltip:{ callbacks:{ label:function(c){ return c.dataset.label+': '+fmt(c.parsed.y); } } },
+          datalabels:{ display:function(c){ return c.dataset.type!=='line' && data.length<=20 && c.dataset.data[c.dataIndex]>0; },
+            anchor:'end', align:'end', offset:2, font:{size:9}, color:ink, formatter:fmt }
+        },
+        scales:{
+          x:{ grid:{display:false}, ticks:{ color:ink, font:{size:9}, maxRotation:45, autoSkip:true, maxTicksLimit:24 } },
+          y:{ beginAtZero:true, max: pct ? 100 : undefined, grid:{color:gridC},
+              ticks:{ color:ink, font:{size:9}, callback:function(v){ return fmt(v); } },
+              title:{ display:true, text: pct ? '% of submittals' : 'No. of submittals', color:ink, font:{size:10} } }
+        }
+      }
     });
   }
 

@@ -77,6 +77,44 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-03 — Adopt Chart.js for the period chart + per-revision drawing files
+Third round of live-review feedback. Two substantial changes:
+- **Switched the period chart from hand-rolled SVG to Chart.js 4.4.1 + chartjs-plugin-datalabels
+  (CDN), the exact stack the Procurement/WPM dashboard uses.** ⚠️ **This reverts yesterday's
+  `preserveAspectRatio="none"` "fix", which was itself the cause of the "S-curve looks stretched"
+  report** — non-uniform scaling stretches a fixed-aspect viewBox's *contents* too, so text and point
+  markers were being horizontally distorted. Chart.js's responsive canvas
+  (`maintainAspectRatio:false` in a fixed-height wrapper) is the correct way to fill a card, and it
+  brings native `interaction:{mode:'index'}` tooltips — which is why the hover "didn't work the same
+  as the prc-app": the PRC app was never hand-rolling this, it was Chart.js all along. Datalabels come
+  from the same plugin PRC uses. Net effect: the hand-rolled `periodChartSVG`/`wirePeriodHover` (~110
+  lines each) are deleted from both modules.
+- **`#` / `%` is now ONE switchable button**, not two radio-style buttons (`.dr-segswitch`/
+  `.ms-segswitch`) — the user's original "switchable toggle" ask, which I'd mis-implemented as a
+  2-button segmented control.
+- **Card-collision fix (global, not per-card):** the Overview emitted its top-level blocks (KPI
+  section, chart rows, progress tables) back-to-back with no margin, so "Drawings by Status" visually
+  collided with the chart below it. One `#dr-view > .dr-dash-grid, #dr-view > .pd-card
+  { margin-bottom:16px }` rule gives the whole view consistent vertical rhythm regardless of what
+  sections get added later.
+- **Per-revision drawing files (Drawing Register).** Previously one `file_url` per drawing, so a
+  register tracked *that* a revision happened but never kept the superseded sheet. Each entry in the
+  existing `submissions` jsonb now carries its own `file_url`, with its own upload/view/remove control
+  in the Add/Edit form's Submissions section; the row-level `file_url` is retained as the **approved**
+  version. **No migration needed** — `submissions` is already jsonb, this is an added key.
+  ⚠️ **Ordering rules preserved from the material-submittal attachment work:** uploads run before the
+  row write (a failed upload never leaves a row pointing at a missing object); this save's uploads are
+  rolled back if the row write fails (no orphans); superseded objects are deleted only *after* the row
+  points away from them; and clicking ✕ is deferred to Save, so cancelling can never delete a file.
+  Row/bulk/clear deletes now collect every revision's file via `allFilesOf()`, capturing paths before
+  the rows leave memory.
+- **Also answered (no code change needed):** the Backlog's phase/trade filters already exist — the
+  shared filter bar is wired to Backlog as of the earlier "reuse filters" change, verified live
+  (selecting Structural narrowed 200 → 177 rows).
+- Assets: drawing-register `module.css/js?v=20260803g/i`, material-submittal `module.css/js?v=20260803g/h`
+  + the two new CDN `<script>` tags in both `index.html`. Verified `node --check` on both `module.js`,
+  CSS brace-balance, and 0 stale references to the deleted SVG functions. **Not browser-verified.**
+
 ### 2026-08-03 — Drawing Register + Material Submittal: period chart overhaul (PowerBI-style hover, actual bars, %/# toggle) + layout fixes
 Second round of feedback on the same live Bauhinia screenshot (KPI cards, Period chart, Progress
 tables). Real fixes, not just taste:

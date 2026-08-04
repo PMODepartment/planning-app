@@ -1,5 +1,30 @@
 # Module: drawing-register
 
+## Chart.js adoption + per-revision drawing files (2026-08-03) — fmlozano
+- **Chart.js 4.4.1 + chartjs-plugin-datalabels (CDN) replaces the hand-rolled SVG period chart.**
+  ⚠️ **This reverts the `preserveAspectRatio="none"` change from the previous entry, which WAS the
+  "S-curve looks stretched" bug** — non-uniform scaling distorts the viewBox's contents (text, point
+  markers), not just its box. And the reason hover "didn't work like the prc-app" is simply that PRC
+  uses Chart.js; its `interaction:{mode:'index'}` tooltip is the thing being compared against.
+  `periodChartSVG` + `wirePeriodHover` (~110 lines) deleted. `.dr-pc-wrap` must keep an explicit
+  height — Chart.js with `maintainAspectRatio:false` collapses to 0 without a sized parent.
+- **`#`/`%` is one switching button** (`.dr-segswitch`), not a 2-button segmented control.
+- **`#dr-view > .pd-card / > .dr-dash-grid { margin-bottom:16px }`** — the Overview's top-level blocks
+  had no margin between them, so the Status card collided with the chart below it. Done as one rule
+  for the view rather than per-card so new sections inherit the rhythm.
+- **Per-revision drawing files.** Each `submissions[]` entry now carries its own `file_url` (upload /
+  view / remove per revision in the form); the row-level `file_url` is now specifically the
+  **approved** version. **No migration** — `submissions` is already jsonb.
+  ⚠️ **Ordering invariants (copied from material-submittal's attachment work, don't "simplify" them):**
+  upload before the row write; roll back this save's uploads if the write fails; delete superseded
+  objects only after the row points away; ✕ is deferred to Save so cancelling never deletes a file.
+  New `allFilesOf(r)` collects the approved file + every revision's file for row/bulk/clear deletes,
+  capturing paths before rows leave memory.
+  ⚠️ Per-revision file inputs are read by their **current DOM index before `subs` is filtered** —
+  filtering first would reindex the array and attach uploads to the wrong revision.
+- Assets `module.css?v=20260803g` / `module.js?v=20260803i` + 2 CDN script tags. Verified
+  `node --check`, CSS brace-balance, 0 stale refs. **Not browser-verified.**
+
 ## Period chart overhaul: PowerBI hover, actual bars, %/# toggle + layout fixes (2026-08-03) — fmlozano
 Second round of live-review feedback (Bauhinia). Concrete asks + real bugs found while doing them:
 - **Real bug: the chart wasn't actually full width.** `width:100%` + a fixed pixel `height` with no

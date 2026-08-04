@@ -174,15 +174,16 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-seg-btn.active { background:var(--pd-red); color:#fff; }
 .ms-seg-btn:not(.active):hover { background:var(--pd-bg); }
 
-/* Period chart (Submittals by Period) — PowerBI-style hover tooltip */
-.ms-pc-wrap { position:relative; }
-.ms-pc-svg .ms-pc-hit { cursor:crosshair; }
-.ms-pc-legend { display:flex; gap:18px; flex-wrap:wrap; margin-top:8px; justify-content:center; }
-.ms-pc-tip { position:absolute; display:none; background:var(--pd-card); border:1px solid var(--pd-line);
-  border-radius:8px; padding:9px 12px; font-size:11.5px; line-height:1.6; box-shadow:0 6px 18px rgba(0,0,0,.16);
-  pointer-events:none; z-index:5; min-width:180px; }
-.ms-pc-tip b { color:var(--pd-ink); }
-.ms-pc-tip div { color:var(--pd-muted); display:flex; justify-content:space-between; gap:12px; }
+/* Single-button switch (# ⇄ %) — one control that flips, not two radio-ish buttons */
+.ms-segswitch { min-width:34px; padding:4px 10px; font-size:11.5px; font-weight:700; font-family:inherit;
+  color:var(--pd-red); background:transparent; cursor:pointer; }
+.ms-segswitch:hover { background:var(--pd-bg); }
+
+/* Period chart — Chart.js needs an explicitly-sized, position:relative parent
+   because the canvas is responsive with maintainAspectRatio:false. Without a
+   fixed height here the canvas collapses to 0 or grows unbounded. */
+.ms-pc-wrap { position:relative; height:320px; width:100%; }
+.ms-pc-wrap canvas { display:block; }
 
 /* Status summary table (mirrors the workbook's Status / No. / Wt % block) */
 .ms-stat { width:100%; border-collapse:collapse; }
