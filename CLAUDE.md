@@ -4126,3 +4126,17 @@ User: duplicate isn't working — *"Duplicate failed: invalid input syntax for t
   `slot0 + (c-1)`. Verified in Node against the shipped logic — 3 copies after the first of three
   siblings give `a, a1, a2, a3, b, c` with every sort_order an integer. **Not verified signed-in.**
   Module-local, no migration, no `?v=` bump.
+
+### 2026-08-04 — Project Schedule: Work Package as a grouping level
+`project_schedule.work_package` (an OPC parity field from the 2026-07-01 migration) was stored and
+displayed but read by nothing. It's now a grouping dimension, so the grid can nest by deliverable /
+contract package — e.g. **Work Package › Location › Activity** or **Work Package › WBS**.
+- Three one-line additions (`dimValOf` / `dimLabel` / `allDims`) — the N-level grouping engine from
+  the location/work-type work is dimension-agnostic, so `buildNodes`, `normalizeGroupBys`, collapse,
+  group roll-up bars and per-project persistence all applied unchanged. Blank values bucket into
+  "— No work package —"; search now matches `work_package` too.
+- ⚠️ **Not a grid column** — the value is set in the Add/Edit form or in bulk via Actions ▸ Global
+  Change. An inline-editable column needs a cell in all three row branches; deferred (not asked for).
+- **Verified 11/11 in Node against the shipped functions** (value, trimming, all three blank forms
+  bucketing together, `wbs` still forced last, unknown dims dropped); script parses; only those three
+  sites enumerate dimensions. **Not verified signed-in.** Module-local, no migration, no `?v=` bump.

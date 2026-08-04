@@ -3056,3 +3056,23 @@ User report: "Duplicate failed: invalid input syntax for type integer: "3.001"" 
   order `a, a1, a2, a3, b, c` with **every** sort_order an integer (was `3.001`/`0.001`). Script
   parses. ⚠️ Not verified signed-in — needs a live Duplicate click. Module-local, no migration, no
   `?v=` bump.
+
+### 2026-08-04 — Work Package is now a grouping dimension
+`work_package` was a stored-only OPC parity field (form + General tab + row copy + Global Change);
+nothing read it. It is now a real grouping level, so the grid can nest by deliverable/contract package.
+- Three sites, matching how every other flat dimension is wired: `dimValOf` (`'wp'` → trimmed
+  `work_package`, blank → `— No work package —`), `dimLabel` (`'Work Package'`), `allDims` (after
+  `type`, so it appears in the picker's "Add a level" list). Nothing else needed — `buildNodes`,
+  `normalizeGroupBys`, collapse, group bars and the per-project `ps_groupbys_<pid>` persistence are
+  all dimension-agnostic.
+- Composes with the existing levels, e.g. **Work Package › Location › Activity** or
+  **Work Package › WBS** (wbs stays forced-last by `normalizeGroupBys`).
+- Search now also matches `work_package`, consistent with work type + location values.
+- ⚠️ **No grid column** — the value is only settable in the Add/Edit form (or in bulk via Actions ▸
+  Global Change, which already lists Work Package). An inline-editable column would need a 4th
+  `costCellsHtml` cell across all three row branches; deferred as it wasn't asked for.
+- **Verified: 11/11 in Node against the shipped `dimValOf`/`dimLabel`/`allDims`/`normalizeGroupBys`**
+  (extracted, not reimplemented) — value, trimming, all three blank forms bucketing together, `wp`
+  accepted by the normalizer, `wbs` still forced last from either order, `wp` alone surviving, an
+  unknown dim still dropped. Script parses; only those 3 sites enumerate dimensions, so nothing else
+  needed updating. ⚠️ Not verified signed-in. Module-local, no migration, no `?v=` bump.

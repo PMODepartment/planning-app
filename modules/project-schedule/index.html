@@ -2988,6 +2988,9 @@
     if (dim === 'status') return r.status || 'Not Started';
     if (dim === 'responsible') return r.responsible_party || 'Unassigned';
     if (dim === 'type') return r.activity_type || 'Task';
+    // Work Package is free text (an OPC field), so it buckets like any other flat key. A typo silently
+    // makes a second group — same trade-off as work_type / location values.
+    if (dim === 'wp') return (r.work_package || '').trim() || '— No work package —';
     if (dim.indexOf('loc:') === 0) return locValOf(r, dim.slice(4)) || '— Unassigned —';
     if (dim.indexOf('code:') === 0) {
       var valId = r.activity_codes && r.activity_codes[dim.slice(5)];
@@ -3001,6 +3004,7 @@
     if (dim === 'status') return 'Status';
     if (dim === 'responsible') return 'Responsible';
     if (dim === 'type') return 'Activity Type';
+    if (dim === 'wp') return 'Work Package';
     if (dim.indexOf('loc:') === 0) return locLevelName(dim.slice(4)) || 'Location level';
     if (dim.indexOf('code:') === 0) { var ct = CODE_TYPES.find(function (c) { return 'code:' + c.id === dim; }); return ct ? ct.name : 'Activity code'; }
     return dim;
@@ -3009,7 +3013,7 @@
   function allDims() {
     var out = ['wbs', 'work'];
     LOC_LEVELS.forEach(function (l) { out.push('loc:' + l.id); });
-    out.push('status', 'responsible', 'type');
+    out.push('status', 'responsible', 'type', 'wp');
     CODE_TYPES.forEach(function (ct) { out.push('code:' + ct.id); });
     return out;
   }
@@ -3891,10 +3895,10 @@
     return '';
   }
   function rowMatches(r) {
-    // Search also covers work type + every location value, so "Zone 3" or "Formworks" finds the
-    // right activities even when the grid isn't currently grouped by them.
+    // Search also covers work type, work package + every location value, so "Zone 3" or "Formworks"
+    // finds the right activities even when the grid isn't currently grouped by them.
     if (search.trim()) {
-      var hay = [r.activity_id, r.activity_name, r.wbs, r.work_type].concat(
+      var hay = [r.activity_id, r.activity_name, r.wbs, r.work_type, r.work_package].concat(
         r.location ? Object.keys(r.location).map(function (k) { return r.location[k]; }) : []
       ).join(' ').toLowerCase();
       if (hay.indexOf(search.trim().toLowerCase()) === -1) return false;
