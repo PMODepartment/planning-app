@@ -77,6 +77,38 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — WBS Manager: make it fast for a planner to BUILD a WBS
+The Manager was built for *editing* a tree, not *creating* one — every node cost a modal round-trip,
+and the only bulk paths were "Adopt existing WBS" (import-only) and "Add WBS from Project", which was
+buried in the **grid's** right-click menu and unreachable from the WBS view itself. Four ways in:
+- **Type-to-build outliner.** `＋`/"Add WBS" inserts a **blank node inline** with the cursor already
+  in it — no modal. **Enter** = next WBS, **Shift+Enter** = sub-WBS, **Tab/Shift+Tab** = indent/
+  outdent, **Alt+↑↓** = move, **↑↓** = move the cursor, **Enter on a blank name deletes it** (the
+  outliner way to undo an over-shoot). A persistent key legend sits under the card header.
+- **Paste an outline** — paste from Excel/Word/notes, see a live preview of the tree with the codes
+  it will get, build it in one go. Levels from dotted numbering (`1.2.3 Name`) when the paste is
+  hierarchically numbered, else from indentation rank.
+- **Duplicate a branch** (row action `⧉`) — copy a node + its subtree N times with a `#` placeholder
+  in the name, so "Level #" × 20 gives Level 1…Level 20 (the typical-floor / tower case).
+- **"From project…" surfaced** in the WBS toolbar, and the empty state now offers the three starting
+  points rather than a sentence.
+- ⚠️ **Two real defects were found by the tests, not by reading the code:** an ordinary name like
+  **"2 Storey Annex"** silently lost its "2", and "100 Preliminaries" was split into code + name —
+  the leading number was being stripped before the parse mode was decided. A code is now only split
+  off when the paste demonstrably uses hierarchical numbering.
+- ⚠️ **Also fixed a pre-existing inefficiency:** `_wbsNormalizeAndPersist` persisted **every** node on
+  every indent/outdent (~200 round-trips on an 8.6k-node tree). It now writes only the diff — but a
+  re-parented node can normalize onto the *same* integer `sort_order`, so callers must name their
+  moved ids or the `parent_id` write is silently skipped. Verified.
+- **Verified:** 19/19 Node tests on the shipped outline parser + 10/10 on the sort-order normalizer,
+  plus in-browser against the module's real stylesheet and real row renderer (locked/synced rows
+  expose no editing controls, 9 row actions on editable rows, no h-scroll, 0 console errors).
+  **Not verified signed-in** — no live click-through of the insert/duplicate/paste writes.
+  Module-local, no migration, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+- ⚠️ **Repo note:** these code changes landed inside commit **`c81fe8f`** (whose message is about the
+  Drawing Register UI review) — an automated commit during the session swept the in-progress edits
+  in. Already pushed, so history was left alone rather than rewritten.
+
 ### 2026-08-04 — BAU101 import file v2: auto-numbered codes, legend rows excluded; the bad import was a STALE-CACHE symptom
 User's screenshot showed the import landing as **287 drawings under only 2 phases**, everything piled
 under "For Construction Drawing", with Temporary Works and Individual Services missing.

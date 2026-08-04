@@ -1,5 +1,69 @@
 # Module: project-schedule
 
+## WBS Manager: make it fast to BUILD a WBS (2026-08-04) — fmlozano
+The Manager was good at *editing* an existing tree and slow at *creating* one: every node cost a
+modal round-trip (`wbsAddChild` → type a name → Save → re-render), and the only bulk paths were
+"Adopt existing WBS" (import-only) and "Add WBS from Project", which was buried in the **grid's**
+right-click menu and unreachable from the WBS view. Four ways in, aimed at how a planner actually
+starts a WBS:
+
+- **Type-to-build outliner (the main one).** `＋`/"Add WBS" now inserts a **blank node inline** and
+  puts the cursor in it (`wbsQuickAdd` + `_wbsFocusName`) — no modal. From there the keyboard does
+  the rest: **Enter** = next WBS at the same level, **Shift+Enter** = sub-WBS, **Tab/Shift+Tab** =
+  indent/outdent, **Alt+↑↓** = move among siblings, **↑↓** = move the cursor, **Esc** = revert the
+  field. **Enter on a still-blank name deletes that node** (`_wbsDeleteBlank`, guarded to leaf +
+  0 activities + not locked) — the standard outliner way to undo an over-shoot. A persistent legend
+  under the card header spells the keys out; without it they're invisible.
+- **Paste an outline** (`openWbsOutline` + `parseWbsOutline`): paste from Excel/Word/notes, get a
+  live preview of the tree with the codes it will receive, then build it in one go. Levels come from
+  **dotted numbering** (`1.2.3 Name`) when the paste is demonstrably hierarchically numbered, else
+  from **indentation rank** (tabs or any consistent spacing). Bullets are stripped; a paste can never
+  skip a level. Optional "keep the pasted numbers as custom codes".
+- **Duplicate a branch** (`wbsDuplicate`), row action `⧉`: copies a node + its whole subtree as
+  siblings, N times, with a `#` placeholder in the name → "Level #" × 20 gives Level 1…Level 20.
+  This is the typical-floor / tower / building case that otherwise means retyping the same subtree.
+- **"From project…" surfaced** in the WBS toolbar (`wbsFromProject` already existed but was only
+  reachable from the grid's context menu), and the empty state now offers the three starting points
+  instead of a sentence.
+
+**Behaviour notes / traps:**
+- ⚠️ **`_wbsRenderWindow` now skips a repaint when the same slice is already painted.** Scrolling a
+  row into view to focus its input fires `scroll`, whose rAF repaint would replace the window's
+  `innerHTML` and **destroy the input mid-typing**. `renderWbsManager` always empties `.ps-wbs-win`
+  when it rebuilds the skeleton, so a genuine re-render still paints. Don't "simplify" the guard away.
+- ⚠️ **`_wbsNormalizeAndPersist(forceIds)` — `forceIds` is load-bearing.** It used to persist
+  `parent_id`+`sort_order` for **every** node on every move (200 round-trips on an 8.6k-node tree);
+  it now persists only the diff. But normalization can land a re-parented node on the **same integer
+  `sort_order` it already had**, so the diff alone would silently skip its `parent_id` write —
+  callers that re-parent MUST pass their moved ids. Verified in Node: a re-parent that keeps
+  sort_order 0 is still persisted.
+- **Renames during keyboard nav don't run the full `_wbsCommit`** (`_wbsCommitName`): a rename can't
+  change any code, so the re-number/re-sync pass isn't needed and would steal focus. A `wbsDone` flag
+  on the input stops the browser's change-on-blur firing a second (full) rename.
+- ⚠️ **Batch builders don't rely on PostgREST insert ordering.** `_wbsInsertNodes` stashes a unique
+  throwaway token in `code` (inert — `code_custom` stays false, so `computeWbsCodes` ignores it) and
+  maps created ids back by token; `_wbsCommit` overwrites `code` with the real dotted code straight
+  after. Both builders insert **one depth level per round-trip** (the `wbsAdopt` pattern).
+- Indent now refuses to move a node under a `source_kind` (synced) parent and un-collapses the new
+  parent, so an indented node can't vanish into a collapsed branch.
+- New nodes are created with a **blank name** (placeholder-guided) rather than "New WBS", which is
+  what makes Enter-on-blank a safe delete.
+
+**Verified.** 19/19 in Node on the **shipped** `parseWbsOutline`/`_wbsOutlineCodes` (tab-indented,
+dotted-code with no indentation at all, bullets + blank lines, uneven indent widths, first-line
+over-indent, empty input, and the preview codes both at top level and under an existing parent).
+⚠️ **Two real defects came out of those tests, not out of reading the code:** an ordinary name like
+**"2 Storey Annex"** silently lost its "2", and "100 Preliminaries" was split into code+name — both
+because the leading number was stripped before the mode was decided. Fixed by only splitting a code
+in hierarchical-numbering mode. Plus 10/10 in Node on `_wbsNormalizeAndPersist` (re-parent at equal
+sort_order, mid-list insert via the 0.5 slot, no-op writes nothing, duplicate-copy ordering).
+**In-browser** against the module's real `<style>` + real `_wbsRowHTML`: 34px rows, locked headings
+render fixed text with only ＋Act/＋, `source_kind` rows show the synced badge and **zero** buttons,
+editable rows carry all 9 (incl. the new ⧉), no row or page h-scroll, name field 668px at 1280px
+(the 9th button costs nothing), hint text correct, 0 console errors.
+⚠️ **Not verified signed-in** — no live click-through of the actual insert/duplicate/paste writes.
+Module-local, **no migration**, no `?v=` bump.
+
 ## Auto-generated WBS skeleton (2026-08-03) — fmlozano
 Every project's WBS Manager now auto-seeds a **fixed 7-node outline** on first load (when
 `WBS_NODES` is empty for that project, `ensureWbsSkeleton()` in `load()`'s resource-loading step):
