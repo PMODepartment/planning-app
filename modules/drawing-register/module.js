@@ -313,6 +313,10 @@ window.DrawingRegister = (function () {
     });
     document.querySelectorAll('.dr-tab').forEach(function (b) {
       b.onclick = function () {
+        // Registry and Backlog are different lists with different `visibleIds`;
+        // a selection carried between them would leave the bulk bar counting rows
+        // you can no longer see. Drop it on any tab change.
+        if (view !== b.dataset.view) selected = {};
         view = b.dataset.view;
         syncTabs(); saveUI(); render();
       };
@@ -807,10 +811,19 @@ window.DrawingRegister = (function () {
       kpi(revise, 'Revise & Resubmit', '', { view:'backlog', patch:{ status:'Revise & Resubmit' }, tip:'Filter the Backlog to Revise & Resubmit' }));
 
     var shown = (bkShowAll || list.length<=BK_PAGE) ? list : list.slice(0, BK_PAGE);
+    // Bulk actions operate on `selected` filtered by `visibleIds` (shared with
+    // the Registry via refreshSel/setStatusSelected), so the Backlog must
+    // publish what IS visible here — otherwise a selection made in the Backlog
+    // would be filtered out as "not visible" and the bulk bar would read 0.
+    // ⚠️ Only the PAINTED slice, not the whole filtered list: "Select all shown"
+    // must never silently act on rows behind the 200-row page cap.
+    visibleIds = shown.map(function (r){ return String(r.id); });
 
+    var CB = canWrite;
     var body = shown.map(function (r){
       var a = agingDays(r);
-      return '<tr class="dr-bk-row" data-id="'+r.id+'">' +
+      return '<tr class="dr-bk-row'+(selected[r.id]?' dr-selrow':'')+'" data-id="'+r.id+'">' +
+        (CB ? '<td class="dr-cb"><input type="checkbox" data-sel="'+r.id+'"'+(selected[r.id]?' checked':'')+'></td>' : '') +
         '<td class="dr-code">'+Fmt.esc(drawCode(r))+'</td>' +
         '<td>'+Fmt.esc(r.title||'')+'</td>' +
         '<td>'+Fmt.esc(r.phase||'')+'</td>' +
@@ -818,14 +831,33 @@ window.DrawingRegister = (function () {
         '<td>'+(r.status ? '<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status)+'</span>' : '<span class="dr-mut">—</span>')+'</td>' +
         '<td class="dr-nowrap dr-c-needby">'+needByCellHtml(r)+'</td>' +
         '<td class="dr-r dr-nowrap'+(a!=null&&a>0?' dr-aging-late':'')+'">'+(a==null?'<span class="dr-mut">—</span>':(a>0?'+':'')+a+'d')+'</td>' +
+        // Doc column — the Backlog is where you chase an open submission, so the
+        // approved file needs to be reachable without opening the full editor.
+        '<td class="dr-bk-doc">'+(r.file_url
+          ? '<button class="dr-iconbtn" data-view="'+Fmt.esc(r.file_url)+'" title="View approved file">'+ico('eye',15)+'</button>'
+          : '<span class="dr-mut dr-mini">—</span>')+'</td>' +
       '</tr>';
     }).join('');
 
-    var head = BK_COLS.map(function (c){
-      var active = bkSort.col===c.col;
-      return '<th class="dr-sortable" data-col="'+c.col+'">'+c.label+
-        (active ? ' <span class="dr-sortind">'+(bkSort.dir===1?'▲':'▼')+'</span>' : '')+'</th>';
-    }).join('');
+    var head = (CB ? '<th class="dr-cb"><input type="checkbox" id="dr-selall" title="Select all shown"></th>' : '') +
+      BK_COLS.map(function (c){
+        var active = bkSort.col===c.col;
+        return '<th class="dr-sortable" data-col="'+c.col+'">'+c.label+
+          (active ? ' <span class="dr-sortind">'+(bkSort.dir===1?'▲':'▼')+'</span>' : '')+'</th>';
+      }).join('') +
+      '<th class="dr-bk-doc">Doc</th>';
+
+    // Same selection bar as the Registry (same ids, so wireBacklogSel reuses the
+    // shared handlers) — bulk status is the whole point on a backlog screen.
+    var selbar = CB ? '<div class="dr-selbar dr-bk-selbar" id="dr-selbar" hidden>' +
+        '<span id="dr-selcount"></span>' +
+        '<select class="pd-select pd-btn-sm dr-selstatus" id="dr-selstatus" title="Set status for selected">' +
+          '<option value="">Set status…</option>' +
+          STATUSES.map(function(s){ return '<option>'+s+'</option>'; }).join('') +
+        '</select>' +
+        '<button class="pd-btn pd-btn-sm" id="dr-selclear">Clear</button>' +
+        '<button class="pd-btn pd-btn-sm pd-btn-danger" id="dr-seldel">Delete selected</button>' +
+      '</div>' : '';
 
     var moreBar = (list.length > BK_PAGE) ?
       '<div class="dr-bk-more">' +
@@ -844,7 +876,7 @@ window.DrawingRegister = (function () {
       '<div class="pd-card"><h3 class="dr-h3">Open items' +
       '<span class="dr-mut" style="font-weight:400;font-size:12.5px;margin-left:8px;">'+
       (anyFilter() || bkAging ? 'Showing '+list.length+' filtered' : list.length+' total')+'</span>' +
-      agChip + '</h3>' +
+      agChip + '</h3>' + selbar +
       '<div class="dr-bk-scroll"><table class="pd-table dr-table dr-bk-table"><thead><tr>'+head+'</tr></thead>' +
       '<tbody>'+body+'</tbody></table></div>' + moreBar + '</div>';
 
@@ -862,9 +894,50 @@ window.DrawingRegister = (function () {
         if (r) openForm(r);
       };
     });
+    // ⚠️ The Doc button lives inside a row whose click opens the editor, so it
+    // MUST stopPropagation — otherwise viewing a file also pops the modal.
+    host.querySelectorAll('.dr-bk-doc button[data-view]').forEach(function (b){
+      b.onclick = function (e){ e.stopPropagation(); viewFile(b.dataset.view); };
+    });
+    // Bulk selection — reuses the Registry's shared handlers/ids verbatim.
+    host.querySelectorAll('input[data-sel]').forEach(function (cb){
+      cb.onclick = function (e){ e.stopPropagation(); };
+      cb.onchange = function (){
+        if (cb.checked) selected[cb.dataset.sel] = true; else delete selected[cb.dataset.sel];
+        refreshSelBacklog(host);
+      };
+    });
+    var all = host.querySelector('#dr-selall');
+    if (all) {
+      all.onclick = function (e){ e.stopPropagation(); };
+      all.onchange = function (){
+        visibleIds.forEach(function (id){ if (all.checked) selected[id] = true; else delete selected[id]; });
+        renderBacklog();
+      };
+    }
+    var clr = host.querySelector('#dr-selclear'); if (clr) clr.onclick = function (){ selected = {}; renderBacklog(); };
+    var sd  = host.querySelector('#dr-seldel');   if (sd)  sd.onclick  = deleteSelected;
+    var ss  = host.querySelector('#dr-selstatus'); if (ss) ss.onchange = function (){ if (ss.value) setStatusSelected(ss.value); };
+    refreshSelBacklog(host);
+
     var agc = document.getElementById('dr-agclear');
     if (agc) agc.onclick = function (){ bkAging = ''; render(); };
     wireDrills(host);   // the Backlog KPI cards
+  }
+
+  // Backlog rows are `.dr-bk-row`, not `.dr-drow`, so the shared refreshSel()
+  // row-highlight loop doesn't match them. Same bar/count logic, right rows.
+  function refreshSelBacklog(host) {
+    host = host || document;
+    var ids = Object.keys(selected).filter(function (id){ return visibleIds.indexOf(id)!==-1; });
+    var bar = host.querySelector('#dr-selbar');
+    if (bar) { bar.hidden = ids.length===0; var c=host.querySelector('#dr-selcount'); if (c) c.textContent = ids.length + ' selected'; }
+    var all = host.querySelector('#dr-selall');
+    if (all) all.checked = visibleIds.length>0 && ids.length===visibleIds.length;
+    host.querySelectorAll('tr.dr-bk-row').forEach(function (tr){
+      tr.classList.toggle('dr-selrow', !!selected[tr.dataset.id]);
+      var cb = tr.querySelector('input[data-sel]'); if (cb) cb.checked = !!selected[tr.dataset.id];
+    });
   }
 
   function populateFilterSelects() {
@@ -2304,12 +2377,22 @@ window.DrawingRegister = (function () {
 
   // ---- Bulk delete the currently selected drawings -------------------------
   async function deleteSelected() {
-    var ids = Object.keys(selected);
+    // ⚠️ Scoped to the VISIBLE selection, matching the "N selected" count in the
+    // bar and setStatusSelected(). It used to take every key in `selected`, which
+    // could exceed what the bar reported — a selection made under one filter (or,
+    // now that the Backlog has bulk actions too, on the other tab) stays in
+    // `selected` while `visibleIds` changes. Deleting more rows than the UI says
+    // it will is not a risk worth carrying on an irreversible action.
+    var ids = Object.keys(selected).filter(function (id){ return visibleIds.indexOf(id)!==-1; });
     if (!ids.length) return;
     if (!confirm('Delete ' + ids.length + ' selected drawing(s)? This cannot be undone.')) return;
     // Capture every file path BEFORE the rows leave `rows` — afterwards they're unrecoverable.
+    // ⚠️ Keyed off `ids` (the visible selection actually being deleted), NOT
+    // `selected` — an out-of-view selected row is NOT deleted, so removing its
+    // files would orphan a surviving row from its drawing.
+    var kill = {}; ids.forEach(function (id){ kill[id] = true; });
     var files = [];
-    rows.forEach(function (r){ if (selected[r.id]) files = files.concat(allFilesOf(r)); });
+    rows.forEach(function (r){ if (kill[r.id]) files = files.concat(allFilesOf(r)); });
     await removeFiles(files);
     // delete in chunks to keep the URL length sane
     for (var i=0; i<ids.length; i+=100) {

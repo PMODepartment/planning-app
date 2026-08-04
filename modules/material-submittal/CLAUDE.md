@@ -29,6 +29,48 @@ had the other two, which is worth knowing before "porting" them again:
   `min-width`). Screenshots impossible here (stalled compositor). **Not verified signed-in.**
 - Assets `module.css?v=20260804a` / `module.js?v=20260804a`.
 
+## Brought to parity with drawing-register: Backlog Doc+bulk (#8), Registry sort (#3), drillable Overview (#7) (2026-08-04) — fmlozano
+The previous entry noted #3/#7 weren't ported here; they are now, along with #8, so both registers
+behave the same way.
+- **#8 Backlog Doc column + bulk actions.** Eye → `viewFile`; checkbox column + "select all shown" +
+  the log's own bulk bar (same ids, so `bulkStatus`/`bulkDelete` are reused — both already end in the
+  **view-aware `render()`**, not `renderLog()`, so they work from the Backlog unchanged).
+  ⚠️ Select-all iterates **`shown`**, not `list`, so it can't act on rows behind the 200-row page cap.
+  ⚠️ The Doc button and checkboxes `stopPropagation()` — the row click opens the editor.
+  ⚠️ `bulkDelete`/`bulkStatus` and the "N selected" count are all **unfiltered** here (unlike
+  drawing-register's, which scope by `visibleIds`), so this module is already self-consistent — the bar
+  reports exactly what the action will touch. Left as-is deliberately; **selection is now cleared in
+  `switchTab`** so it can't span two different lists.
+- **#3 Sortable Registry columns.** All 17 data columns via `logSort`/`LOG_SORTABLE`/`logTh`, cycling
+  asc → desc → natural. ⚠️ **Sorting is applied inside each trade-section group** (`logSortList(g)`) —
+  the section grouping is how this register and its source workbook are structured. Blanks sort last in
+  both directions. A red "Sorted by X ▲ ×" chip restores the natural order (this module has no
+  drag-reorder, so the chip is purely an undo). Doc / checkbox / actions stay non-sortable.
+- **#7 Drillable Overview.** Donut legend rows and the status table → Registry by status; the S-curve's
+  discipline rows → Registry by discipline; aging segments + legend and the unlinked-items count →
+  Backlog by bucket; Total submittals → Registry; Overdue → Backlog with the overdue-only filter.
+  ⚠️ **"Approved" and "Pending approval" are deliberately NOT drillable** — `kpis()` aggregates each
+  over several statuses, so no single filter value reproduces them and the destination count wouldn't
+  match the card. Zero-count legend/table rows aren't links either (nothing to show).
+  New **`agingBucketOf()`** is the single source of truth for both the chart and the drill filter.
+  New Backlog-only **`bkAging`** filter with a removable chip — including on the empty state, or a
+  drill that matches nothing would be a dead end with no visible cause.
+  ⚠️ `drillTo`'s select-setter **adds a missing option**, since a `<select>` silently ignores an
+  unmatched value and the filter would apply while the control still read "All statuses".
+- **Group carets are now SVG chevrons** (`ico('chevronDown')` + `.ms-caret-col` rotation) instead of the
+  `&#9656;`/`&#9662;` text glyphs — finishing the icon pass for this module.
+- **Verified: 68/68 in a Node harness** over the real extracted source — sort semantics (case,
+  blanks-last both ways, no caller mutation, 3-click cycle, unknown-column guard), **every
+  `LOG_SORTABLE` key actually handled by `logSortVal` and every one actually rendered in `HEAD`** (a
+  mismatch would silently sort by nothing), all aging boundaries (60/30/0), select-all scoped to
+  `shown`, propagation stops, 9-column head/body agreement, and state reset on tab/project change.
+  **In-browser** against the real chrome + `module.css`: sorted header red with red indicator,
+  `user-select:none`, **both frozen columns still `position:sticky`** now that headers are buttons,
+  caret rotates when collapsed, drill targets have `cursor:pointer` + `role=button` while zero-count
+  rows have neither, Doc 14×14 in a 47px column, 0 page h-scroll, no console errors.
+  ⚠️ **Not verified signed-in**; screenshots impossible here.
+- Assets `module.css?v=20260804c` / `module.js?v=20260804c`.
+
 ## Pagination FIXED + viewport fit + a real date bug (2026-08-04) — fmlozano
 - **`load()` is now keyset-paginated** — closes the truncation bug flagged below (that section is kept
   for the history but is **no longer outstanding**). ⚠️ Paginates by **`id`**, not `sort_order`:

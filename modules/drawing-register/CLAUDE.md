@@ -1,5 +1,44 @@
 # Module: drawing-register
 
+## UI review pt.3: Backlog Doc column + bulk actions (#8) — + a delete-scope bug (2026-08-04) — fmlozano
+Last item of the UI review. The Registry had a Doc column and bulk actions; the Backlog — the screen
+you actually work from when chasing an open submission — had neither.
+- **Doc column** on the Backlog (eye → `viewFile`, em-dash when there's no file).
+- **Bulk actions**: checkbox column, "select all shown", and the Registry's own selection bar
+  (`#dr-selbar` — same ids, so `deleteSelected`/`setStatusSelected` are reused verbatim). Bulk status
+  is the point on a backlog screen.
+- ⚠️ **`visibleIds` is now published by `renderBacklog()` too**, from the **painted slice** (`shown`),
+  not the full filtered list — `refreshSel`/`setStatusSelected` scope the selection by it, so without
+  this a Backlog selection would be filtered out as "not visible" and the bar would read 0; and using
+  the full list would let "select all shown" silently act on rows behind the 200-row page cap.
+- ⚠️ **New `refreshSelBacklog()`** rather than reusing `refreshSel()`: Backlog rows are `.dr-bk-row`,
+  not `.dr-drow`, so the shared row-highlight loop doesn't match them.
+- ⚠️ **Both the Doc button and the checkboxes `stopPropagation()`** — they sit inside a row whose click
+  opens the editor, so without it viewing a file also pops the modal.
+
+### ⚠️ REAL BUG FIXED: `deleteSelected()` could delete more rows than the bar said
+It took **every** key in `selected`, while the "N selected" count (and `setStatusSelected`) scope by
+`visibleIds`. A selection made under one filter stays in `selected` while `visibleIds` changes, so the
+bar could read "3 selected" and the delete could remove 10. Adding bulk actions to a second surface
+made this trivially reachable, so it's now scoped to the visible selection like everything else.
+⚠️ **And the file-capture loop had to move with it** — it was keyed off `selected`, so once `ids` was
+narrowed it would have deleted the storage objects of rows that *survive*, orphaning them from their
+files. Now keyed off `ids`. **Selection is also cleared on any tab change**, since Registry and Backlog
+are different lists with different `visibleIds` and a carried-over selection just leaves the bar
+counting rows you can't see.
+
+### Verification
+**68/68 in a Node harness** over the real extracted source (plus the 41 from pt.2, re-run green):
+head/body column counts agree (9 = cb + 7 + Doc), select-all is scoped to `shown` in both modules,
+every inner control stops propagation, `deleteSelected` is visibleIds-scoped *and* its file capture is
+keyed off `ids`, selection/aging/sort all reset on tab or project change, every emitted CSS class
+exists, and no text glyph was reintroduced. **In-browser** against the real chrome + `module.css`:
+9/9 columns aligned, 15×15 Doc icon in a 51px column, the selection bar's shared `margin-left:auto`
+correctly overridden to 0 (it would otherwise be shoved to the card's right edge), selected-row tint
+distinct, aging chip a red pill inside the heading, 0 page h-scroll, no console errors.
+⚠️ **Not verified signed-in**; screenshots impossible here (stalled compositor).
+- Assets `module.css?v=20260804c` / `module.js?v=20260804c`.
+
 ## UI review pt.2: sortable Registry, drillable Overview, viewport fit — + a real date bug (2026-08-04) — fmlozano
 Items 3, 7 and 9 of the UI review, plus a genuine correctness bug found while testing them.
 

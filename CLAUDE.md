@@ -77,6 +77,61 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — UI review #8 (Backlog Doc + bulk) on both registers, Material Submittal brought to full parity — and a delete-scope bug
+Final batch of the Drawing Register UI review. Since the previous entry recorded that #3/#7 had **not**
+been ported to Material Submittal, "make sure Material Submittal has the improvements as well" was read
+as bringing it to parity — so this covers #8 on both modules plus #3 and #7 on Material Submittal.
+
+- **#8 Backlog Doc column + bulk actions (both modules).** The Registry/log had both; the Backlog — the
+  screen you actually work from when chasing an open item — had neither. Added an eye → signed-URL Doc
+  cell and a checkbox column + "select all shown" + each module's existing bulk bar, reusing the same
+  element ids so `deleteSelected`/`setStatusSelected` (DR) and `bulkStatus`/`bulkDelete` (MS) are reused
+  verbatim. ⚠️ Select-all is scoped to the **painted slice**, never the full filtered list, so it can't
+  silently act on rows behind the 200-row page cap. ⚠️ The Doc button and every checkbox
+  `stopPropagation()`, because the row click opens the editor.
+
+- **⚠️ REAL BUG FIXED — `deleteSelected()` (Drawing Register) could delete more rows than the UI said.**
+  It operated on **every** key in `selected`, while the "N selected" count and `setStatusSelected()`
+  both scope by `visibleIds`. A selection made under one filter survives in `selected` while
+  `visibleIds` changes, so the bar could read "3 selected" and the delete remove 10 — on an irreversible
+  action. Now scoped like the rest. ⚠️ **The file-capture loop had to move with it**: it was keyed off
+  `selected`, so narrowing `ids` alone would have deleted the storage objects of rows that *survive*,
+  orphaning them from their files. Selection is now also cleared on tab change in both modules, since
+  Registry and Backlog are different lists. (Material Submittal's bulk paths were already
+  self-consistent — bar and action are both unfiltered — so only the tab-change reset applied there.)
+
+- **#3 Sortable Registry columns → Material Submittal.** All 17 data columns, cycling asc → desc →
+  natural, with a chip back to natural order. ⚠️ Sorting is applied **inside each trade-section group**,
+  mirroring how Drawing Register sorts inside each leaf of its phase tree — in both cases the grouping
+  is how the register is read. Blanks last in both directions.
+
+- **#7 Drillable Overview → Material Submittal.** Donut legend + status table → Registry by status;
+  S-curve discipline rows → Registry by discipline; aging segments/legend and the unlinked count →
+  Backlog by bucket; Overdue → Backlog with the overdue filter. ⚠️ **"Approved" and "Pending approval"
+  are deliberately not drillable** — `kpis()` aggregates each over several statuses, so no single filter
+  reproduces them and the destination count wouldn't match the card; zero-count rows aren't links
+  either. Same honesty rule as Drawing Register's sheet-count KPIs: no hover, no pointer, so "looks
+  clickable" always means "is clickable".
+
+- **Material Submittal group carets → SVG chevrons** (were `&#9656;`/`&#9662;`), finishing the icon pass.
+
+- **Verified: 68/68 in a new Node harness** over the real extracted source, with the earlier 41 re-run
+  green. Beyond the sort/bucket semantics it checks the things that fail *silently*: head-vs-body column
+  counts (9 = checkbox + 7 + Doc) in both Backlogs, **every `LOG_SORTABLE` key actually handled by
+  `logSortVal` AND actually rendered in `HEAD`** (a mismatch sorts by nothing), select-all scoped to the
+  painted slice, every inner control's propagation stop, `deleteSelected`'s scope *and* its file-capture
+  key, state reset on tab/project change, a CSS rule existing for every class the JS emits, and no text
+  glyph reintroduced. **In-browser** against the real `index.html` chrome and `module.css`: columns
+  aligned, Doc icons 15×15/14×14 in 51/47px columns, the selection bar's shared `margin-left:auto`
+  overridden to 0 (it would otherwise sit at the card's right edge), selected-row tints distinct, sorted
+  headers red with red indicators, **frozen columns still `position:sticky`** now that headers are also
+  buttons, group carets rotating when collapsed, drill targets carrying `cursor:pointer` + `role=button`
+  while non-drillable aggregates carry neither, 0 page h-scroll, no console errors.
+  ⚠️ **Not verified signed-in against live data**; screenshots remain impossible here (stalled
+  compositor), so UI claims are measured geometry.
+- Assets: both modules `module.css/js?v=20260804c`.
+- **The UI review list is now complete** (items 1–9). Nothing from it is outstanding.
+
 ### 2026-08-04 — Material Submittal pagination fix + UI review #3/#7/#9 — and a one-day date bug in both modules
 Second batch off the Drawing Register UI review, plus the latent truncation bug flagged last prompt.
 

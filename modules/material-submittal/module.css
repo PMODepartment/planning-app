@@ -67,9 +67,45 @@
 .ms-table { border-collapse:separate; border-spacing:0; width:100%; min-width:1500px; }
 .ms-table.ms-bk-table { min-width:0; }
 .ms-bk-table tbody tr.ms-bk-row { cursor:pointer; }
-.ms-bk-table th.ms-sortable { cursor:pointer; user-select:none; }
-.ms-bk-table th.ms-sortable:hover { color:var(--pd-red); }
+/* Sortable headers — shared by the Backlog table and (UI review #3) the Registry
+   log, so the same gesture reads the same way in both. */
+.ms-bk-table th.ms-sortable, .ms-table th.ms-sortable { cursor:pointer; user-select:none; }
+.ms-bk-table th.ms-sortable:hover, .ms-table th.ms-sortable:hover { color:var(--pd-red); }
+.ms-table th.ms-sorted { color:var(--pd-red); }
 .ms-sortind { color:var(--pd-red); font-size:10px; }
+
+/* "Sorted by X ▲ ×" chip — the one-click way back to the natural order. */
+.ms-sortchip { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+  border:1px solid var(--pd-red); background:var(--pd-red); color:#fff;
+  font:inherit; font-size:12px; font-weight:600; padding:4px 9px; border-radius:999px; flex:none; }
+.ms-sortchip:hover { filter:brightness(1.08); }
+.ms-sortchip svg { display:block; }
+.ms-agchip { margin-left:10px; vertical-align:2px; }
+
+/* ---- Backlog: Doc column + bulk actions [UI review #8] ------------------- */
+.ms-bk-doc { width:46px; text-align:center; }
+.ms-bk-table .ms-bk-doc button, .ms-bk-table .ms-cb input { cursor:pointer; }
+.ms-bk-selbar { margin-left:0; }
+
+/* ---- Overview drill-through affordances [UI review #7] -------------------
+   Non-clickable aggregates deliberately get NO hover state, so "looks
+   clickable" always means "is clickable". */
+.ms-kpi-drill { cursor:pointer; }
+.ms-kpi-drill:hover { border-color:var(--pd-red); }
+.ms-kpi-drill:hover .ms-kpi-v { color:var(--pd-red); }
+.ms-kpi-drill:focus-visible { outline:2px solid var(--pd-red); outline-offset:2px; }
+.ms-legendrow { cursor:pointer; margin:0 -6px; padding:2px 6px; border-radius:5px; }
+.ms-legendrow:hover { background:var(--pd-bg); color:var(--pd-red); }
+.ms-legendrow:focus-visible { outline:2px solid var(--pd-red); outline-offset:1px; }
+.ms-agseg { height:100%; display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:11.5px; font-weight:700; cursor:pointer; }
+.ms-agseg:hover { filter:brightness(1.12); box-shadow:inset 0 0 0 2px rgba(255,255,255,.75); }
+.ms-aglegend { display:inline-flex; align-items:center; gap:5px; font-size:12px;
+  margin:4px 14px 0 0; padding:2px 5px; border-radius:5px; cursor:pointer; }
+.ms-aglegend:hover { background:var(--pd-bg); color:var(--pd-red); }
+.ms-drillrow { cursor:pointer; }
+.ms-drillrow:hover > td { background:var(--pd-bg); }
+.ms-drillrow:hover > td:first-child { color:var(--pd-red); }
 .ms-aging-late { color:var(--pd-red); font-weight:700; }
 /* A large backlog scrolls inside its own card instead of stretching the whole
    page — the KPI row + card header stay put; only the table body scrolls. */
@@ -107,7 +143,12 @@ tr.ms-grp td { background:var(--pd-red-light,rgba(238,49,36,.07)); font-weight:7
   letter-spacing:.02em; cursor:pointer; box-shadow:inset 3px 0 0 0 var(--pd-red); }
 tr.ms-grp td.ms-fz1, tr.ms-grp td.ms-fz2 { background:var(--pd-red-light,rgba(238,49,36,.07)); }
 html.pd-dark tr.ms-grp td, html.pd-dark tr.ms-grp td.ms-fz1, html.pd-dark tr.ms-grp td.ms-fz2 { background:rgba(238,49,36,.16); }
-.ms-grp-caret { display:inline-block; width:12px; color:var(--pd-muted); }
+/* Now an inline SVG chevron (was the ▸/▾ text glyphs) — rotated when collapsed,
+   matching drawing-register's .dr-caret. */
+.ms-grp-caret { display:inline-flex; align-items:center; width:12px; line-height:0;
+  color:var(--pd-muted); transition:transform .12s; }
+.ms-grp-caret svg { display:block; }
+.ms-caret-col { transform:rotate(-90deg); }
 .ms-grp-count { color:var(--pd-muted); font-weight:500; font-size:11.5px; margin-left:6px; }
 
 /* ---- Status pills ------------------------------------------------------- */

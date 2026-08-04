@@ -179,6 +179,17 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-bk-scroll { max-height:min(62vh, 640px); overflow-y:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius); }
 .dr-bk-scroll .dr-bk-table { border:none; }
 .dr-bk-more { margin-top:10px; font-size:12.5px; color:var(--pd-muted); text-align:center; }
+
+/* ---- Backlog: Doc column + bulk actions [UI review #8] ------------------- */
+/* The shared .dr-selbar carries `margin-left:auto` because in the Registry it
+   sits at the end of the flex .dr-listbar. Here it is a standalone block inside
+   the card, where auto margin would shove it to the right edge. */
+.dr-bk-selbar { margin-left:0; margin-bottom:10px; }
+.dr-bk-doc { width:46px; text-align:center; }
+/* The Doc button and the checkbox both live inside a row whose click opens the
+   editor; the JS stops propagation, this just keeps them from looking like text. */
+.dr-bk-table .dr-bk-doc button, .dr-bk-table .dr-cb input { cursor:pointer; }
+.dr-bk-table tbody tr.dr-selrow > td { background:var(--pd-red-light, rgba(238,49,36,.07)); }
 .dr-linklike { background:none; border:none; padding:0; color:var(--pd-red); font-weight:600; font-size:inherit;
   font-family:inherit; cursor:pointer; text-decoration:underline; }
 

@@ -511,13 +511,19 @@ window.MaterialSubmittal = (function () {
     var k = kpis(rows), sc = statusCounts(rows), curve = scurve(rows), legacy = legacyScurve(rows);
     var h = '<div class="ms-dash">';
 
+    // ⚠️ "Approved / Pending approval" are aggregates over SEVERAL statuses
+    // (see kpis()), so there is no single status filter that reproduces them —
+    // drilling them would land on a list whose count doesn't match the card.
+    // Only cards backed by one filter value are clickable.
     h += kpiSection('Log Overview',
-      kpi('Total submittals', k.total, k.counted !== k.total ? (k.total - k.counted) + ' with no status yet' : 'all have a status') +
+      kpi('Total submittals', k.total, k.counted !== k.total ? (k.total - k.counted) + ' with no status yet' : 'all have a status',
+        '', { view: 'log', patch: {}, tip: 'Show all submittals in the Registry' }) +
       kpi('Approved', k.approved, k.approvedPct.toFixed(1) + '% of ' + k.counted + ' tracked', 'good') +
       kpi('Pending approval', k.pending, 'submitted, awaiting decision', k.pending ? 'warn' : '') +
       kpi('For submission', k.forSub, 'not yet submitted') +
       kpi('Rejected / resubmit', k.rejected, 'needs rework', k.rejected ? 'bad' : '') +
-      kpi('Overdue', k.overdue, 'past planned approval', k.overdue ? 'bad' : ''));
+      kpi('Overdue', k.overdue, 'past planned approval', k.overdue ? 'bad' : '',
+        { view: 'backlog', patch: { overdue: true }, tip: 'Show the overdue items in the Backlog' }));
 
     h += '<div class="ms-grid2">';
 
@@ -527,14 +533,19 @@ window.MaterialSubmittal = (function () {
       '<div class="ms-donutwrap">' + donutSVG(sc) + '<div class="ms-legend">' +
       STATUS_ORDER.map(function (s) {
         var n = sc.map[s] || 0, pct = sc.total ? (n / sc.total * 100) : 0;
-        return '<div><span class="ms-sw" style="background:' + statusColor(s) + '"></span>' +
+        // Legend rows drill into the Registry filtered to that status (#7).
+        // Zero-count rows aren't links — there'd be nothing to show.
+        return '<div' + (n ? ' class="ms-legendrow"' + drillAttr('log', { status: s }) +
+            ' title="Show the ' + n + ' ' + esc(s) + ' submittal' + (n === 1 ? '' : 's') + ' in the Registry"' : '') + '>' +
+          '<span class="ms-sw" style="background:' + statusColor(s) + '"></span>' +
           '<span style="flex:1">' + esc(s) + '</span><b>' + n + '</b> <span class="ms-mut">' + pct.toFixed(1) + '%</span></div>';
       }).join('') + '</div></div>';
 
     h += '<table class="ms-stat" style="margin-top:14px;"><thead><tr><th>Status</th><th>No. of Material Submittal</th><th>Wt %</th></tr></thead><tbody>';
     STATUS_ORDER.forEach(function (s) {
       var n = sc.map[s] || 0, pct = sc.total ? (n / sc.total * 100) : 0;
-      h += '<tr' + (n ? '' : ' class="ms-zero"') + '><td>' + esc(s) +
+      h += '<tr' + (n ? ' class="ms-drillrow"' + drillAttr('log', { status: s }) +
+            ' title="Show these ' + n + ' in the Registry"' : ' class="ms-zero"') + '><td>' + esc(s) +
         '<div class="ms-bar"><i style="width:' + pct.toFixed(2) + '%;background:' + statusColor(s) + '"></i></div></td>' +
         '<td>' + n + '</td><td>' + pct.toFixed(2) + '%</td></tr>';
     });
@@ -548,7 +559,10 @@ window.MaterialSubmittal = (function () {
     h += '<table class="ms-stat" style="margin-top:14px;"><thead><tr><th>Discipline</th><th>Planned</th><th>Actual</th><th>%</th></tr></thead><tbody>';
     curve.series.forEach(function (s) {
       var p = s.planned[s.planned.length - 1], a = s.actual[s.actual.length - 1];
-      h += '<tr><td><span class="ms-sw" style="display:inline-block;background:' + s.color + ';margin-right:7px;"></span>' +
+      // Discipline rows drill into the Registry filtered to that discipline (#7).
+      h += '<tr class="ms-drillrow"' + drillAttr('log', { disc: s.disc }) +
+        ' title="Show the ' + esc(discName(s.disc)) + ' submittals in the Registry">' +
+        '<td><span class="ms-sw" style="display:inline-block;background:' + s.color + ';margin-right:7px;"></span>' +
         esc(discName(s.disc)) + '</td><td>' + p + '</td><td>' + a + '</td><td>' + (p ? (a / p * 100).toFixed(1) : '0.0') + '%</td></tr>';
     });
     h += '<tr><td>Overall</td><td>' + curve.totals.planned + '</td><td>' + curve.totals.actual + '</td><td>' +
@@ -585,6 +599,7 @@ window.MaterialSubmittal = (function () {
     h += '</div>';
     host.innerHTML = h;
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+    wireDrills(host);   // KPI cards, donut legend, status + discipline tables, aging bar
     var x = document.getElementById('ms-note-x');
     if (x) x.onclick = function () { noteDismissed = true; renderDashboard(); };
     var drawPeriod = function () {
@@ -617,16 +632,22 @@ window.MaterialSubmittal = (function () {
   var AGING_ORDER = ['>60d overdue', '30-60d overdue', '0-30d (current)', 'Future', 'No due date'];
   var AGING_COLOR = { '>60d overdue':'#EE3124', '30-60d overdue':'#d97706',
     '0-30d (current)':'#8a8f98', 'Future':'#DCDBDB', 'No due date':'#c8c8c8' };
+  // Single source of truth for which bucket a row falls in — used to build the
+  // chart AND to filter the Backlog when a segment is clicked (#7), so the
+  // drill-through can never disagree with the bar it came from.
+  function agingBucketOf(r) {
+    var a = agingDays(r);
+    if (a == null) return 'No due date';
+    if (a > 60)    return '>60d overdue';
+    if (a > 30)    return '30-60d overdue';
+    if (a >= 0)    return '0-30d (current)';
+    return 'Future';
+  }
   function agingBuckets() {
     var b = {}; AGING_ORDER.forEach(function (k) { b[k] = 0; });
     rows.forEach(function (r) {
       if (isApproved(r)) return;
-      var a = agingDays(r);
-      if (a == null) b['No due date']++;
-      else if (a > 60) b['>60d overdue']++;
-      else if (a > 30) b['30-60d overdue']++;
-      else if (a >= 0) b['0-30d (current)']++;
-      else b['Future']++;
+      b[agingBucketOf(r)]++;
     });
     return b;
   }
@@ -644,20 +665,25 @@ window.MaterialSubmittal = (function () {
         ? 'None of the ' + noDate + ' open item' + (noDate === 1 ? '' : 's') + ' are linked to a schedule activity yet — link one from its edit form to see aging here.'
         : 'No open items.') + '</p>';
     }
+    // Segments + legend drill into the Backlog filtered to that bucket (#7).
     var bars = AGING_DATED.filter(function (k) { return buckets[k] > 0; }).map(function (k) {
       var pct = buckets[k] / datedTotal * 100;
-      return '<div style="width:' + pct + '%;background:' + AGING_COLOR[k] + ';height:100%;display:flex;' +
-        'align-items:center;justify-content:center;color:#fff;font-size:11.5px;font-weight:700;" title="' + k + ': ' + buckets[k] + '">' +
+      return '<div class="ms-agseg" style="width:' + pct + '%;background:' + AGING_COLOR[k] + ';"' +
+        drillAttr('backlog', { aging: k }) +
+        ' title="' + k + ': ' + buckets[k] + ' — click to list them in the Backlog">' +
         (pct > 6 ? buckets[k] : '') + '</div>';
     }).join('');
     var legend = AGING_DATED.filter(function (k) { return buckets[k] > 0; }).map(function (k) {
-      return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;margin:4px 14px 0 0;">' +
+      return '<span class="ms-aglegend"' + drillAttr('backlog', { aging: k }) +
+        ' title="Show these ' + buckets[k] + ' item' + (buckets[k] === 1 ? '' : 's') + ' in the Backlog">' +
         '<span style="width:10px;height:10px;background:' + AGING_COLOR[k] + ';display:inline-block;border-radius:2px;"></span>' +
         k + ' (' + buckets[k] + ')</span>';
     }).join('');
     return '<div style="height:36px;border-radius:6px;overflow:hidden;display:flex;">' + bars + '</div>' +
       '<div style="margin-top:8px;">' + legend + '</div>' +
-      (noDate ? '<p class="ms-mut" style="font-size:12px;margin:8px 0 0;">+ ' + noDate + ' open item' + (noDate === 1 ? '' : 's') +
+      (noDate ? '<p class="ms-mut" style="font-size:12px;margin:8px 0 0;">+ ' +
+        '<button class="ms-linklike"' + drillAttr('backlog', { aging: 'No due date' }) +
+        ' title="List the unlinked open items in the Backlog">' + noDate + ' open item' + (noDate === 1 ? '' : 's') + '</button>' +
         ' not yet linked to a schedule activity (excluded above, no due date to measure against).</p>' : '');
   }
 
@@ -754,8 +780,55 @@ window.MaterialSubmittal = (function () {
     });
   }
 
-  function kpi(label, value, sub, cls) {
-    return '<div class="ms-kpi ' + (cls || '') + '"><div class="ms-kpi-l">' + esc(label) + '</div>' +
+  // ---- Overview drill-through [UI review #7, ported from drawing-register] ---
+  // Every aggregate that corresponds to a real ROW SET links into the list that
+  // produced it. ⚠️ Aggregates that are NOT row sets stay non-clickable and get
+  // no hover, so "looks clickable" always means "is clickable".
+  function drillTo(targetView, patch) {
+    patch = patch || {};
+    filters.q = ''; filters.section = patch.section || ''; filters.disc = patch.disc || '';
+    filters.status = patch.status || ''; filters.pres = patch.pres || '';
+    filters.overdue = !!patch.overdue;
+    bkAging = patch.aging || '';
+    var set = function (id, v) {
+      var el = document.getElementById(id); if (!el) return;
+      v = v || '';
+      // ⚠️ A <select> silently ignores a value with no matching <option>; the
+      // filter would apply while the control still read "All …". Add it instead.
+      if (v && el.tagName === 'SELECT' && !Array.prototype.some.call(el.options, function (o) { return o.value === v || o.text === v; })) {
+        el.add(new Option(v, v));
+      }
+      el.value = v;
+    };
+    set('ms-f-search', ''); set('ms-f-section', filters.section);
+    set('ms-f-discipline', filters.disc); set('ms-f-status', filters.status);
+    set('ms-f-pres', filters.pres);
+    var ov = document.getElementById('ms-f-overdue'); if (ov) ov.checked = filters.overdue;
+    // A filtered log with sections collapsed shows headers and no rows, which
+    // reads as "the drill found nothing".
+    if (targetView === 'log') collapsed = {};
+    view = targetView; switchTab(targetView);
+  }
+  function drillAttr(targetView, patch) {
+    return ' data-drill="' + targetView + '" data-dpatch="' + esc(JSON.stringify(patch || {})) + '"' +
+           ' role="button" tabindex="0"';
+  }
+  function wireDrills(host) {
+    host.querySelectorAll('[data-drill]').forEach(function (el) {
+      var go = function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var p = {}; try { p = JSON.parse(el.dataset.dpatch || '{}'); } catch (err) {}
+        drillTo(el.dataset.drill, p);
+      };
+      el.onclick = go;
+      el.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') go(e); };
+    });
+  }
+
+  function kpi(label, value, sub, cls, drill) {
+    return '<div class="ms-kpi ' + (cls || '') + (drill ? ' ms-kpi-drill' : '') + '"' +
+      (drill ? drillAttr(drill.view, drill.patch) + ' title="' + esc(drill.tip || ('Show these in the ' + drill.view)) + '"' : '') +
+      '><div class="ms-kpi-l">' + esc(label) + '</div>' +
       '<div class="ms-kpi-v">' + value + '</div><div class="ms-kpi-s">' + esc(sub || '') + '</div></div>';
   }
   // Groups a KPI row under a small uppercase eyebrow label (WPM "Cost Overview" /
@@ -856,6 +929,73 @@ window.MaterialSubmittal = (function () {
     });
   }
 
+  // ---- Registry column sort [UI review #3, ported from drawing-register] ----
+  // ⚠️ Sorting is applied INSIDE each trade-section group, never across the whole
+  // log — the section grouping is how this register is read (and how the workbook
+  // is structured), so a flat sort would destroy it. `col:null` = the natural
+  // sort_order/seq_no order from load(). Clicking cycles asc → desc → natural.
+  var logSort = { col: null, dir: 1 };
+  var LOG_SORTABLE = {
+    code: 'Submittal No.', item: 'Item', discipline: 'Disc.', location: 'Location',
+    brand: 'Brand', vendor: 'Vendor', presentation: 'Presentation',
+    req: 'Req. baseline', psub: 'Plan sub.', asub: 'Actual sub.',
+    pappr: 'Plan appr.', aappr: 'Actual appr.', needby: 'Need-by',
+    approver: 'Approver', rev: 'Rev', status: 'Status', mas: 'MAS ID'
+  };
+  function logSortVal(r, col) {
+    switch (col) {
+      case 'code':         return String(codeOf(r) || '').toLowerCase();
+      case 'item':         return String(r.material || '').toLowerCase();
+      case 'discipline':   return String(discOf(r) || '');
+      case 'location':     return String(r.location || '').toLowerCase();
+      case 'brand':        return String(r.brand || '').toLowerCase();
+      case 'vendor':       return String(r.supplier || '').toLowerCase();
+      case 'presentation': return String(r.type_presentation || '');
+      case 'req':          return r.date_required || '';
+      case 'psub':         return r.plan_submission_date || '';
+      case 'asub':         return r.date_submitted || '';
+      case 'pappr':        return r.plan_approval_date || '';
+      case 'aappr':        return r.date_approved || '';
+      case 'needby':       return requiredApprovalOf(r) || '';
+      case 'approver':     return [r.approver_consultant, r.approver_client].filter(Boolean).join(' / ').toLowerCase();
+      case 'rev':          return String(r.revision_no || '');
+      case 'status':       return statusOf(r) || '';
+      case 'mas':          return String(r.mas_id || '');
+      default:             return 0;
+    }
+  }
+  // Blanks last in BOTH directions — an empty date or status is "unknown", not
+  // "earliest", and burying them is what you want when hunting the populated ends.
+  function logSortList(list) {
+    if (!logSort.col) return list;
+    var col = logSort.col, dir = logSort.dir;
+    return list.slice().sort(function (a, b) {
+      var va = logSortVal(a, col), vb = logSortVal(b, col);
+      var ea = (va === '' || va == null), eb = (vb === '' || vb == null);
+      if (ea && eb) return 0;
+      if (ea) return 1;
+      if (eb) return -1;
+      var cmp = va < vb ? -1 : (va > vb ? 1 : 0);
+      return cmp * dir;
+    });
+  }
+  function logSetSort(col) {
+    if (!LOG_SORTABLE[col]) return;
+    if (logSort.col !== col) { logSort.col = col; logSort.dir = 1; }
+    else if (logSort.dir === 1) { logSort.dir = -1; }
+    else { logSort.col = null; logSort.dir = 1; }   // third click → natural order
+    renderLog();
+  }
+  function logTh(col, cls) {
+    var active = logSort.col === col;
+    var tip = active
+      ? (logSort.dir === 1 ? 'Sorted ascending — click for descending' : 'Sorted descending — click to restore natural order')
+      : 'Click to sort by this column';
+    return '<th class="' + (cls || '') + ' ms-sortable' + (active ? ' ms-sorted' : '') +
+      '" data-lcol="' + col + '" title="' + esc(tip) + '">' + esc(LOG_SORTABLE[col]) +
+      (active ? ' <span class="ms-sortind">' + (logSort.dir === 1 ? '▲' : '▼') + '</span>' : '') + '</th>';
+  }
+
   function renderLog() {
     var host = document.getElementById('ms-view');
     if (!rows.length) { host.innerHTML = emptyHTML(); wireEmpty(); return; }
@@ -880,16 +1020,24 @@ window.MaterialSubmittal = (function () {
     // the empty state both span it, and a hardcoded number silently breaks the
     // moment a column is added.
     var HEAD = ['<th class="ms-cb"><input type="checkbox" id="ms-xall" title="Select all shown" /></th>',
-      '<th class="ms-fz1">Submittal No.</th>', '<th class="ms-fz2">Item</th>',
-      '<th>Disc.</th>', '<th>Location</th>', '<th>Brand</th>', '<th>Vendor</th>', '<th>Presentation</th>',
+      logTh('code', 'ms-fz1'), logTh('item', 'ms-fz2'),
+      logTh('discipline'), logTh('location'), logTh('brand'), logTh('vendor'), logTh('presentation'),
       '<th class="ms-doccol">Doc</th>',
-      '<th>Req. baseline</th>', '<th>Plan sub.</th>', '<th>Actual sub.</th>', '<th>Plan appr.</th>', '<th>Actual appr.</th>',
-      '<th class="ms-needbycol" title="Required approval = linked activity start − lead days">Need-by</th>',
-      '<th>Approver</th>', '<th>Rev</th>', '<th>Status</th>', '<th>MAS ID</th>'];
+      logTh('req'), logTh('psub'), logTh('asub'), logTh('pappr'), logTh('aappr'),
+      logTh('needby', 'ms-needbycol'),
+      logTh('approver'), logTh('rev'), logTh('status'), logTh('mas')];
     if (canWrite) HEAD.push('<th class="ms-actcol"></th>');
     var SPAN = HEAD.length;
 
-    var h = '<div class="pd-card ms-tablecard"><table class="ms-table"><thead><tr>' +
+    // Says a sort is active and restores the natural (workbook/import) order in
+    // one click — the log has no drag-reorder, so this is purely an "undo".
+    var sortChip = logSort.col ?
+      '<div class="ms-listbar" style="margin-bottom:10px;">' +
+        '<button class="ms-sortchip" id="ms-sortclear" title="Back to the natural order">' +
+        'Sorted by ' + esc(LOG_SORTABLE[logSort.col]) + ' ' + (logSort.dir === 1 ? '▲' : '▼') +
+        ' ' + ico('x', 12) + '</button></div>' : '';
+
+    var h = sortChip + '<div class="pd-card ms-tablecard"><table class="ms-table"><thead><tr>' +
       HEAD.join('') + '</tr></thead><tbody>';
 
     if (!list.length) {
@@ -899,10 +1047,10 @@ window.MaterialSubmittal = (function () {
       var g = groups[secName], isColl = !!collapsed[secName];
       var appr = g.filter(isApproved).length;
       h += '<tr class="ms-grp" data-sec="' + esc(secName) + '"><td colspan="' + SPAN + '">' +
-        '<span class="ms-grp-caret">' + (isColl ? '&#9656;' : '&#9662;') + '</span>' + esc(secName) +
+        '<span class="ms-grp-caret' + (isColl ? ' ms-caret-col' : '') + '">' + ico('chevronDown', 12) + '</span>' + esc(secName) +
         '<span class="ms-grp-count">' + g.length + ' item' + (g.length === 1 ? '' : 's') + ' · ' + appr + ' approved</span></td></tr>';
       if (isColl) return;
-      g.forEach(function (r) {
+      logSortList(g).forEach(function (r) {
         var st = statusOf(r), meta = statusMeta(st), od = isOverdue(r);
         h += '<tr' + (sel[r.id] ? ' class="ms-selrow"' : '') + ' data-id="' + esc(r.id) + '">' +
           '<td class="ms-cb"><input type="checkbox" data-cb="' + esc(r.id) + '"' + (sel[r.id] ? ' checked' : '') + ' /></td>' +
@@ -956,6 +1104,12 @@ window.MaterialSubmittal = (function () {
     host.querySelectorAll('.ms-grp').forEach(function (tr) {
       tr.onclick = function () { var s = tr.dataset.sec; collapsed[s] = !collapsed[s]; renderLog(); };
     });
+    // Column sort [#3] — click a header to cycle asc → desc → natural.
+    host.querySelectorAll('th.ms-sortable[data-lcol]').forEach(function (th) {
+      th.onclick = function () { logSetSort(th.dataset.lcol); };
+    });
+    var lsc = document.getElementById('ms-sortclear');
+    if (lsc) lsc.onclick = function () { logSort.col = null; logSort.dir = 1; renderLog(); };
     host.querySelectorAll('[data-cb]').forEach(function (cb) {
       cb.onclick = function (e) { e.stopPropagation(); sel[cb.dataset.cb] = cb.checked; renderLog(); };
     });
@@ -1563,7 +1717,18 @@ window.MaterialSubmittal = (function () {
   // ---- Backlog: submittals needing action, most urgent first ---------------
   // "Needing action" = not yet approved (Approved / Approved w/ Comments are the
   // only DONE statuses), sorted so overdue / late-vs-need-by rows lead.
-  function backlogRows() { return visibleRows().filter(function (r) { return !isApproved(r); }); }
+  // `bkAging` is a Backlog-ONLY filter set by clicking a segment of the Overview's
+  // aging bar (#7). Deliberately not in the shared filter bar: aging is derived
+  // from the schedule link, is meaningful only for open items, and the Registry
+  // has no aging column to filter on.
+  var bkAging = '';
+  function backlogRows() {
+    return visibleRows().filter(function (r) {
+      if (isApproved(r)) return false;
+      if (bkAging && agingBucketOf(r) !== bkAging) return false;
+      return true;
+    });
+  }
   function backlogUrgency(r) {
     var fl = docFloatOf(r);
     if (fl != null) return fl;                      // negative = late, smaller = worse
@@ -1606,10 +1771,15 @@ window.MaterialSubmittal = (function () {
   function renderBacklog() {
     var host = document.getElementById('ms-view');
     var list = backlogRows();
-    var anyFilt = !!(filters.q || filters.section || filters.disc || filters.status || filters.pres || filters.overdue);
+    var anyFilt = !!(filters.q || filters.section || filters.disc || filters.status || filters.pres || filters.overdue || bkAging);
     if (!list.length) {
+      // ⚠️ Must still offer a way out of a drill-through that matched nothing,
+      // or the aging filter is a dead end with no visible cause.
       host.innerHTML = '<p class="ms-mut" style="padding:24px;">' +
-        (anyFilt ? 'No open items match these filters.' : 'No open items — every submittal is approved.') + '</p>';
+        (anyFilt ? 'No open items match these filters.' : 'No open items — every submittal is approved.') +
+        (bkAging ? ' <button class="ms-linklike" id="ms-agclear">Clear the “' + esc(bkAging) + '” filter</button>' : '') + '</p>';
+      var ac0 = document.getElementById('ms-agclear');
+      if (ac0) ac0.onclick = function () { bkAging = ''; renderBacklog(); };
       return;
     }
     list = list.slice().sort(function (a, b) {
@@ -1622,17 +1792,25 @@ window.MaterialSubmittal = (function () {
     var late = list.filter(function (r) { var f = docFloatOf(r); return f != null && f < 0; }).length;
     var rejected = list.filter(function (r) { return statusOf(r) === 'Rejected'; }).length;
 
+    // "Rejected" is a status → a real filter. Overdue is the existing overdue-only
+    // checkbox. Open items / late are already what this view shows, so they only
+    // clear back rather than pretending to be their own filters.
     var kpis = kpiSection('Backlog Overview',
-      kpi('Open items', list.length, 'not yet approved') +
-      kpi('Overdue', overdue, 'past planned approval', overdue ? 'bad' : '') +
+      kpi('Open items', list.length, 'not yet approved', '',
+        (bkAging || filters.status || filters.overdue) ? { view: 'backlog', patch: {}, tip: 'Clear the filters and show every open item' } : null) +
+      kpi('Overdue', overdue, 'past planned approval', overdue ? 'bad' : '',
+        overdue ? { view: 'backlog', patch: { overdue: true }, tip: 'Filter the Backlog to overdue items' } : null) +
       kpi('Late vs need-by', late, 'past the schedule deadline', late ? 'bad' : '') +
-      kpi('Rejected', rejected, 'needs resubmission'));
+      kpi('Rejected', rejected, 'needs resubmission', '',
+        rejected ? { view: 'backlog', patch: { status: 'Rejected' }, tip: 'Filter the Backlog to Rejected' } : null));
 
     var shown = (bkShowAll || list.length<=BK_PAGE) ? list : list.slice(0, BK_PAGE);
 
+    var CB = canWrite;
     var body = shown.map(function (r) {
       var meta = statusMeta(statusOf(r)), st = statusOf(r), a = agingDays(r);
-      return '<tr class="ms-bk-row" data-id="' + r.id + '">' +
+      return '<tr class="ms-bk-row' + (sel[r.id] ? ' ms-selrow' : '') + '" data-id="' + r.id + '">' +
+        (CB ? '<td class="ms-cb"><input type="checkbox" data-cb="' + esc(r.id) + '"' + (sel[r.id] ? ' checked' : '') + ' /></td>' : '') +
         '<td><span class="ms-code">' + esc(codeOf(r) || '—') + '</span></td>' +
         '<td>' + esc(r.material || '(untitled)') + '</td>' +
         '<td>' + esc(sectionOf(r)) + '</td>' +
@@ -1640,14 +1818,32 @@ window.MaterialSubmittal = (function () {
         '<td>' + (st ? '<span class="ms-pill ' + (meta ? meta.cls : 's-forsub') + '">' + esc(st) + '</span>' : '<span class="ms-mut ms-mini">—</span>') + '</td>' +
         '<td class="ms-nowrap">' + needByCell(r) + '</td>' +
         '<td class="ms-r ms-nowrap' + (a != null && a > 0 ? ' ms-aging-late' : '') + '">' + (a == null ? '<span class="ms-mut ms-mini">—</span>' : (a > 0 ? '+' : '') + a + 'd') + '</td>' +
+        // Doc column — the Backlog is where an open submittal gets chased, so its
+        // document must be reachable without opening the full editor.
+        '<td class="ms-bk-doc">' + (r.file_url
+          ? '<button class="ms-filebtn" data-file="' + esc(r.file_url) + '" title="Open ' + esc(fileLabel(r.file_url)) + '">' + ico('eye', 14) + '</button>'
+          : '<span class="ms-mut ms-mini">—</span>') + '</td>' +
       '</tr>';
     }).join('');
 
-    var head = BK_COLS.map(function (c) {
-      var active = bkSort.col === c.col;
-      return '<th class="ms-sortable" data-col="' + c.col + '">' + c.label +
-        (active ? ' <span class="ms-sortind">' + (bkSort.dir === 1 ? '▲' : '▼') + '</span>' : '') + '</th>';
-    }).join('');
+    var head = (CB ? '<th class="ms-cb"><input type="checkbox" id="ms-bk-xall" title="Select all shown" /></th>' : '') +
+      BK_COLS.map(function (c) {
+        var active = bkSort.col === c.col;
+        return '<th class="ms-sortable" data-col="' + c.col + '">' + c.label +
+          (active ? ' <span class="ms-sortind">' + (bkSort.dir === 1 ? '▲' : '▼') + '</span>' : '') + '</th>';
+      }).join('') +
+      '<th class="ms-bk-doc">Doc</th>';
+
+    // Same bulk bar as the log (same ids → the same bulkStatus/bulkDelete, both
+    // of which end in the view-aware render(), so they work from here unchanged).
+    var selN = Object.keys(sel).filter(function (k) { return sel[k]; }).length;
+    var selbar = (CB && selN) ?
+      '<div class="ms-listbar ms-bk-selbar" style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">' +
+        '<span style="font-weight:700;color:var(--pd-red);">' + selN + ' selected</span>' +
+        '<select class="pd-select" id="ms-bulkstatus" style="max-width:210px;"><option value="">Set status…</option>' +
+        STATUS_ORDER.map(function (s) { return '<option>' + esc(s) + '</option>'; }).join('') + '</select>' +
+        '<button class="pd-btn" id="ms-bulkdel">Delete selected</button>' +
+        '<button class="pd-btn" id="ms-selnone">Clear selection</button></div>' : '';
 
     var moreBar = (list.length > BK_PAGE) ?
       '<div class="ms-bk-more">' +
@@ -1659,7 +1855,11 @@ window.MaterialSubmittal = (function () {
     host.innerHTML = kpis +
       '<div class="pd-card ms-tablecard"><h3>Open items' +
       '<span class="ms-mut" style="font-weight:400;font-size:12.5px;margin-left:8px;">' +
-      (anyFilt ? 'Showing ' + list.length + ' filtered' : list.length + ' total') + '</span></h3>' +
+      (anyFilt ? 'Showing ' + list.length + ' filtered' : list.length + ' total') + '</span>' +
+      // The aging filter arrives by drill-through and isn't in the filter bar, so
+      // it must be visible and removable here.
+      (bkAging ? '<button class="ms-sortchip ms-agchip" id="ms-agclear" title="Clear the aging filter">' +
+        esc(bkAging) + ' ' + ico('x', 12) + '</button>' : '') + '</h3>' + selbar +
       '<div class="ms-bk-scroll"><table class="ms-table ms-bk-table"><thead><tr>' + head + '</tr></thead>' +
       '<tbody>' + body + '</tbody></table></div>' + moreBar + '</div>';
 
@@ -1677,6 +1877,31 @@ window.MaterialSubmittal = (function () {
         if (r) openForm(r);
       };
     });
+    // ⚠️ Both the Doc button and the checkbox sit inside a row whose click opens
+    // the editor, so both MUST stopPropagation or they also pop the modal.
+    host.querySelectorAll('[data-file]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); viewFile(b.dataset.file); };
+    });
+    host.querySelectorAll('[data-cb]').forEach(function (cb) {
+      cb.onclick = function (e) { e.stopPropagation(); sel[cb.dataset.cb] = cb.checked; renderBacklog(); };
+    });
+    var xall = document.getElementById('ms-bk-xall');
+    if (xall) xall.onclick = function (e) {
+      e.stopPropagation();
+      // ⚠️ Only the PAINTED slice — "select all shown" must never silently act on
+      // rows hidden behind the 200-row page cap.
+      shown.forEach(function (r) { sel[r.id] = xall.checked; });
+      renderBacklog();
+    };
+    if (xall) xall.checked = shown.length > 0 && shown.every(function (r) { return sel[r.id]; });
+    var bs = document.getElementById('ms-bulkstatus');
+    if (bs) bs.onchange = function () { if (bs.value) bulkStatus(bs.value); };
+    var bd = document.getElementById('ms-bulkdel'); if (bd) bd.onclick = bulkDelete;
+    var sn = document.getElementById('ms-selnone'); if (sn) sn.onclick = function () { sel = {}; renderBacklog(); };
+    var ac = document.getElementById('ms-agclear');
+    if (ac) ac.onclick = function () { bkAging = ''; renderBacklog(); };
+    wireDrills(host);   // the Backlog KPI cards
+    if (window.Icons && Icons.hydrate) Icons.hydrate(host);
   }
 
   function syncClearFilt() {
@@ -1751,6 +1976,9 @@ window.MaterialSubmittal = (function () {
   }
 
   function switchTab(v) {
+    // Registry and Backlog are different lists; a selection carried between them
+    // would leave the bulk bar counting rows you can no longer see.
+    if (view !== v) sel = {};
     view = v;
     document.querySelectorAll('.ms-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.view === v); });
     render();
@@ -1782,6 +2010,9 @@ window.MaterialSubmittal = (function () {
       pid = selEl.value;
       sessionStorage.setItem('pd_project', pid);
       sel = {}; collapsed = {}; noteDismissed = false;
+      // A drill-through aging filter / column sort / page cap must not leak
+      // across projects.
+      bkAging = ''; bkShowAll = false; logSort = { col: null, dir: 1 };
       load();
       joinCollab();
     });
