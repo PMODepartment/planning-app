@@ -989,6 +989,20 @@
     .ps-wbs-acts button:hover { background:var(--pd-card); border-color:var(--pd-line); color:var(--pd-ink); }
     .ps-wbs-acts button.danger:hover { color:var(--pd-red); border-color:var(--pd-red-mid); }
     .ps-wbs-empty { padding:26px 14px; text-align:center; color:var(--pd-muted); font-size:13px; }
+    .ps-wbs-empty .ps-wbs-emptyacts { display:flex; gap:8px; justify-content:center; margin-top:12px; }
+    /* Type-to-build keyboard legend under the card header */
+    .ps-wbs-keys { display:flex; flex-wrap:wrap; gap:6px 16px; padding:7px 14px; font-size:11.5px;
+      color:var(--pd-muted); border-bottom:1px solid var(--pd-line); }
+    .ps-wbs-keys .ps-kbd { font-weight:600; }
+    /* Paste-outline modal: source textarea beside a live parsed-tree preview */
+    .ps-wbso-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
+    .ps-wbso-grid textarea { width:100%; height:260px; resize:vertical; font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      padding:8px 10px; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-bg); color:var(--pd-ink); }
+    .ps-wbso-prev { height:260px; overflow:auto; border:1px solid var(--pd-line); border-radius:6px;
+      background:var(--pd-bg); padding:8px 10px; font-size:12.5px; }
+    .ps-wbso-prev div { padding:1px 0; white-space:nowrap; }
+    .ps-wbso-prev code { color:var(--pd-red); font-weight:700; margin-right:8px; }
+    @media (max-width:820px) { .ps-wbso-grid { grid-template-columns:1fr; } }
     /* Critical-path driver pills (compact, non-scrolling — replaces the old row list) */
     .ps-ck-pills { display:flex; flex-wrap:wrap; gap:6px; padding:12px 14px; }
     .ps-ck-pill { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:999px; padding:4px 10px;
@@ -1485,7 +1499,10 @@
       <!-- WBS MANAGER: build the Work Breakdown Structure tree (unlimited depth) -->
       <div id="ps-view-wbs" style="display:none;">
         <div class="ps-ck-bar">
-          <button class="pd-btn pd-btn-primary" id="ps-wbs-addroot"><span data-ico="plus" data-ico-size="15"></span> Add top-level WBS</button>
+          <button class="pd-btn pd-btn-primary" id="ps-wbs-addroot" title="Add a WBS under the selected node (top level when nothing is selected), then keep typing — Enter adds the next one"><span data-ico="plus" data-ico-size="15"></span> Add WBS</button>
+          <button class="pd-btn" id="ps-wbs-paste" title="Paste an indented or numbered outline (Excel / Word / notes) and build the whole tree in one go"><span data-ico="clipboard" data-ico-size="15"></span> Paste outline…</button>
+          <button class="pd-btn" id="ps-wbs-dup" title="Duplicate the selected branch — e.g. repeat a typical floor 20 times"><span data-ico="layers" data-ico-size="15"></span> Duplicate branch…</button>
+          <button class="pd-btn" id="ps-wbs-fromproj" title="Copy the WBS structure from another project"><span data-ico="download" data-ico-size="15"></span> From project…</button>
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-wbs-adopt" title="Build the tree from the project's existing WBS-Summary rows (imported / legacy)"><span data-ico="download" data-ico-size="15"></span> Adopt existing WBS</button>
           <span class="ps-tb-div"></span>
@@ -1496,6 +1513,16 @@
         </div>
         <div class="pd-card ps-ck-card ps-ck-trend-card">
           <div class="ps-ck-h"><span data-ico="layers" data-ico-size="15"></span> Work Breakdown Structure<span class="ps-ck-trend-sub" id="ps-wbs-count"></span></div>
+          <!-- Type-to-build keyboard legend: the tree is an outliner, not a form. Without this the
+               shortcuts are invisible and every node costs a mouse round-trip. -->
+          <div class="ps-wbs-keys">
+            <span><b class="ps-kbd">Enter</b> next WBS</span>
+            <span><b class="ps-kbd">Shift</b>+<b class="ps-kbd">Enter</b> sub-WBS</span>
+            <span><b class="ps-kbd">Tab</b> / <b class="ps-kbd">Shift</b>+<b class="ps-kbd">Tab</b> indent / outdent</span>
+            <span><b class="ps-kbd">Alt</b>+<b class="ps-kbd">↑</b><b class="ps-kbd">↓</b> move</span>
+            <span><b class="ps-kbd">↑</b><b class="ps-kbd">↓</b> next / previous</span>
+            <span><b class="ps-kbd">Enter</b> on a blank name deletes it</span>
+          </div>
           <div id="ps-wbs-tree" class="ps-wbs-tree"></div>
         </div>
       </div>
@@ -1891,7 +1918,7 @@
 <script src="../../assets/js/auth.js?v=20260724a"></script>
 <script src="../../assets/js/db.js?v=20260724a"></script>
 <script src="../../assets/js/ui.js?v=20260724a"></script>
-<script src="../../assets/js/icons.js?v=20260724a"></script>
+<script src="../../assets/js/icons.js?v=20260804a"></script>
 <script src="../../assets/js/calendar.js?v=20260724a"></script>
 <script src="../../assets/js/offline.js?v=20260726d"></script>
 <script src="../../assets/js/collab.js?v=20260727b"></script>
@@ -1925,6 +1952,7 @@
   var _wbsWired = false;    // delegated listeners attached to #ps-wbs-tree once
   var _wbsScrollRaf = false;
   var _wbsSel = null;   // selected WBS node id (drives the Add-activity parent preselect)
+  var _wbsWinKey = '';  // slice currently painted in the virtual window (skip no-op repaints — see _wbsRenderWindow)
   function assignsFor(actId) { return actId ? ASSIGN.filter(function (a) { return a.activity_id === actId; }) : []; }
   function calById(id) { return id && CALS.find(function (c) { return c.id === id; }); }
   function calName(id, legacyText) { var c = calById(id); return c ? c.name : (legacyText || '—'); }
@@ -8169,12 +8197,13 @@
     var acts = sk
       ? '<span class="ps-wbs-badge ps-wbs-synced" title="' + esc(SOURCE_KIND_LABEL[sk] || '') + '">🔒 synced</span>'
       : ('<button class="wbs-act" data-wbs-act="' + esc(e.id) + '" title="Add an activity under this WBS">＋Act</button>' +
-         '<button data-wbs-add="' + esc(e.id) + '" title="Add child WBS">＋</button>' +
+         '<button data-wbs-add="' + esc(e.id) + '" title="Add sub-WBS (Shift+Enter in the name)">＋</button>' +
          (locked ? '' :
-           '<button data-wbs-up="' + esc(e.id) + '" title="Move up">▲</button>' +
-           '<button data-wbs-down="' + esc(e.id) + '" title="Move down">▼</button>' +
-           '<button data-wbs-indent="' + esc(e.id) + '" title="Indent (make child of the node above)">→</button>' +
-           '<button data-wbs-outdent="' + esc(e.id) + '" title="Outdent (promote a level)">←</button>' +
+           '<button data-wbs-up="' + esc(e.id) + '" title="Move up (Alt+↑)">▲</button>' +
+           '<button data-wbs-down="' + esc(e.id) + '" title="Move down (Alt+↓)">▼</button>' +
+           '<button data-wbs-indent="' + esc(e.id) + '" title="Indent — make it a child of the node above (Tab)">→</button>' +
+           '<button data-wbs-outdent="' + esc(e.id) + '" title="Outdent — promote a level (Shift+Tab)">←</button>' +
+           '<button data-wbs-dup="' + esc(e.id) + '" title="Duplicate this branch (repeat a typical floor / tower)">⧉</button>' +
            '<button data-wbs-code="' + esc(e.id) + '" title="Edit code">✎</button>' +
            '<button class="danger" data-wbs-del="' + esc(e.id) + '" title="Delete">✕</button>'));
     return '<div class="ps-wbs-row' + (_wbsSel === e.id ? ' selected' : '') + '" data-wid="' + esc(e.id) + '" style="padding-left:' + (8 + e.depth * 22) + 'px;">' +
@@ -8194,10 +8223,61 @@
     var total = _wbsFlat.length, vh = host.clientHeight || 500, top = host.scrollTop;
     var first = Math.max(0, Math.floor(top / WBS_ROWH) - 8);
     var last = Math.min(total, Math.ceil((top + vh) / WBS_ROWH) + 8);
+    // ⚠️ Skip the repaint when the same slice is already painted. Scrolling a row into view to focus
+    // its name input fires a `scroll` event whose rAF repaint would otherwise replace the window's
+    // innerHTML — destroying the input we just focused mid-typing. The skeleton rebuild in
+    // renderWbsManager() always empties `win`, so a genuine re-render still paints.
+    var key = first + ':' + last + ':' + total;
+    if (key === _wbsWinKey && win.childElementCount) return;
+    _wbsWinKey = key;
     var h = '';
     for (var i = first; i < last; i++) h += _wbsRowHTML(_wbsFlat[i]);
     win.style.transform = 'translateY(' + (first * WBS_ROWH) + 'px)';
     win.innerHTML = h;
+  }
+  // ---- Type-to-build helpers ------------------------------------------------------------------
+  // The tree is an OUTLINER: a planner should be able to type a whole WBS without touching the
+  // mouse. These move focus between rows' name inputs across the virtualized window.
+  function _wbsNeighbourId(id, step) {
+    var i = -1;
+    for (var k = 0; k < _wbsFlat.length; k++) if (_wbsFlat[k].id === id) { i = k; break; }
+    if (i < 0) return null;
+    for (var j = i + step; j >= 0 && j < _wbsFlat.length; j += step) {
+      var n = wbsById(_wbsFlat[j].id);
+      if (n && !n.is_locked && !n.source_kind) return n.id;   // locked/synced rows render fixed text, not an input
+    }
+    return null;
+  }
+  // Re-render, bring `id` into the virtual window, and put the cursor in its name input.
+  function _wbsFocusName(id) {
+    if (!id) { renderWbsManager(); return; }
+    var a = (wbsById(id) || {}).parent_id;
+    while (a) { delete _wbsCollapsed[a]; a = (wbsById(a) || {}).parent_id; }   // reveal the row
+    _wbsSel = id;
+    renderWbsManager();
+    var host = document.getElementById('ps-wbs-tree'); if (!host) return;
+    var idx = -1;
+    for (var k = 0; k < _wbsFlat.length; k++) if (_wbsFlat[k].id === id) { idx = k; break; }
+    if (idx < 0) return;
+    var top = idx * WBS_ROWH, vh = host.clientHeight || 400;
+    if (top < host.scrollTop) host.scrollTop = top;
+    else if (top + WBS_ROWH > host.scrollTop + vh) host.scrollTop = top + WBS_ROWH - vh;
+    _wbsRenderWindow();
+    var inp = host.querySelector('[data-wbs-name="' + id + '"]');
+    if (inp) { inp.focus(); inp.select(); }
+  }
+  // Save a name edit WITHOUT the full _wbsCommit() recompute — a rename can't change any code, so
+  // the expensive re-number/re-sync pass isn't needed and would steal focus mid-typing.
+  async function _wbsCommitName(inp) {
+    var id = inp && inp.dataset && inp.dataset.wbsName, n = id && wbsById(id);
+    if (!n) return;
+    var v = (inp.value || '').trim();
+    if (n.is_locked) { inp.value = n.name || ''; return; }
+    if (v === (n.name || '')) return;
+    n.name = v;
+    await sb().from('wbs_nodes').update({ name: v }).eq('id', id);
+    var sr = rows.find(function (r) { return isWbs(r) && r.wbs_node_id === id; });
+    if (sr && sr.activity_name !== v) { sr.activity_name = v; await sb().from(TABLE).update({ activity_name: v }).eq('id', sr.id); }
   }
   // Delegated listeners on the (persistent) tree container — attached once, so they survive every
   // window re-paint (per-row onclick handlers can't, since the window's rows are recreated on scroll).
@@ -8216,7 +8296,8 @@
         var d = btn.dataset;
         if (d.wbsToggle != null) { if (_wbsCollapsed[id]) delete _wbsCollapsed[id]; else _wbsCollapsed[id] = true; renderWbsManager(); }
         else if (d.wbsAct != null) wbsAddActivity(id);
-        else if (d.wbsAdd != null) wbsAddChild(id);
+        else if (d.wbsAdd != null) wbsQuickAdd(id, null);
+        else if (d.wbsDup != null) wbsDuplicate(id);
         else if (d.wbsUp != null) wbsMove(id, 'up');
         else if (d.wbsDown != null) wbsMove(id, 'down');
         else if (d.wbsIndent != null) wbsMove(id, 'indent');
@@ -8236,8 +8317,55 @@
       host.querySelectorAll('.ps-wbs-row.selected').forEach(function (r) { if (r !== row) r.classList.remove('selected'); });
       row.classList.add('selected');
     });
-    host.addEventListener('change', function (e) { if (e.target.matches && e.target.matches('[data-wbs-name]')) wbsRename(e.target.dataset.wbsName, e.target.value); });
-    host.addEventListener('keydown', function (e) { if (e.target.matches && e.target.matches('[data-wbs-name]') && e.key === 'Enter') e.target.blur(); });
+    // `wbsDone` marks a name input whose value was already committed by the keyboard handler below,
+    // so the browser's own change-on-blur doesn't run a second (full-recompute) rename.
+    host.addEventListener('change', function (e) {
+      if (!(e.target.matches && e.target.matches('[data-wbs-name]'))) return;
+      if (e.target.dataset.wbsDone) return;
+      wbsRename(e.target.dataset.wbsName, e.target.value);
+    });
+    // ---- Outliner keyboard: build a whole WBS without leaving the keyboard --------------------
+    //   Enter        commit + add the next WBS at the same level (blank name -> delete this one)
+    //   Shift+Enter  commit + add a sub-WBS under it
+    //   Tab / S+Tab  indent / outdent
+    //   Alt+Up/Down  move the node up / down among its siblings
+    //   Up / Down    move the cursor to the previous / next editable row
+    //   Escape       revert the field and leave it
+    host.addEventListener('keydown', function (e) {
+      var inp = e.target;
+      if (!(inp.matches && inp.matches('[data-wbs-name]'))) return;
+      var id = inp.dataset.wbsName, k = e.key;
+      if (k === 'Escape') {
+        e.preventDefault(); inp.dataset.wbsDone = '1';
+        inp.value = (wbsById(id) || {}).name || ''; inp.blur(); return;
+      }
+      if (k === 'Enter') {
+        e.preventDefault(); inp.dataset.wbsDone = '1';
+        if (!e.shiftKey && !(inp.value || '').trim()) { _wbsDeleteBlank(id); return; }   // undo an over-shoot
+        _wbsCommitName(inp).then(function () {
+          var n = wbsById(id);
+          if (e.shiftKey) wbsQuickAdd(id, null);                       // sub-WBS
+          else wbsQuickAdd(n ? (n.parent_id || null) : null, id);       // next sibling, right after this row
+        });
+        return;
+      }
+      if (k === 'Tab') {
+        e.preventDefault(); inp.dataset.wbsDone = '1';
+        _wbsCommitName(inp).then(function () {
+          wbsMove(id, e.shiftKey ? 'outdent' : 'indent').then(function () { _wbsFocusName(id); });
+        });
+        return;
+      }
+      if (k === 'ArrowUp' || k === 'ArrowDown') {
+        e.preventDefault(); inp.dataset.wbsDone = '1';
+        var down = k === 'ArrowDown';
+        _wbsCommitName(inp).then(function () {
+          if (e.altKey) wbsMove(id, down ? 'down' : 'up').then(function () { _wbsFocusName(id); });
+          else _wbsFocusName(_wbsNeighbourId(id, down ? 1 : -1) || id);
+        });
+        return;
+      }
+    });
   }
   function renderWbsManager() {
     var host = document.getElementById('ps-wbs-tree'), cnt = document.getElementById('ps-wbs-count');
@@ -8250,9 +8378,20 @@
     if (!WBS_NODES.length) {
       _wbsFlat = [];
       if (cnt) cnt.textContent = '';
+      _wbsSetHint(null, null);
       host.innerHTML = '<div class="ps-wbs-empty">' + (legacy ?
         'This project has ' + legacy + ' WBS summary rows from an import / the old model. Click <strong>Adopt existing WBS</strong> above to load them into the tree editor.' :
-        'No WBS yet. Click <strong>Add top-level WBS</strong> to start building the structure, then add activities under any node.') + '</div>';
+        'No WBS yet — pick the quickest way in:' +
+        '<div class="ps-wbs-emptyacts">' +
+          '<button class="pd-btn pd-btn-primary" data-wbs-start="type">Type it out</button>' +
+          '<button class="pd-btn" data-wbs-start="paste">Paste an outline</button>' +
+          '<button class="pd-btn" data-wbs-start="proj">Copy from another project</button>' +
+        '</div>' +
+        '<div style="margin-top:10px;font-size:12px;">Typing is fastest: <b class="ps-kbd">Enter</b> for the next WBS, ' +
+        '<b class="ps-kbd">Tab</b> to indent it under the one above.</div>') + '</div>';
+      var sa = host.querySelector('[data-wbs-start="type"]'); if (sa) sa.onclick = function () { wbsQuickAdd(null, null); };
+      var sp = host.querySelector('[data-wbs-start="paste"]'); if (sp) sp.onclick = function () { openWbsOutline(null); };
+      var sf = host.querySelector('[data-wbs-start="proj"]'); if (sf) sf.onclick = function () { wbsFromProject(null); };
       return;
     }
     var idx = _wbsBuildIndex(), childrenOf = idx.childrenOf, byId = idx.byId, actCount = idx.actCount, codeOf = idx.codeOf;
@@ -8277,6 +8416,7 @@
     }
     if (cnt) cnt.innerHTML = WBS_NODES.length + ' node' + (WBS_NODES.length === 1 ? '' : 's') +
       (q ? '<span class="ps-wbs-matchcount">' + nMatch + ' match' + (nMatch === 1 ? '' : 'es') + '</span>' : '');
+    _wbsSetHint(_wbsSel && byId.get(_wbsSel), codeOf);
     // Flatten the visible tree into an ordered row list (the virtual window renders slices of it).
     var flat = [];
     (function walk(parentId, depth) {
@@ -8457,6 +8597,272 @@
     m.el.querySelector('#wbsm-x').onclick = m.close;
     m.el.querySelectorAll('input').forEach(function (inp) { inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); doSave(); } }; });
   }
+  // Tell the planner exactly where the toolbar's "Add WBS" will land, so they never have to guess.
+  function _wbsSetHint(sel, codeOf) {
+    var h = document.getElementById('ps-wbs-hint'); if (!h) return;
+    h.innerHTML = sel
+      ? 'Add WBS → next to <strong>' + esc((codeOf && codeOf[sel.id]) || '') + ' ' + esc(sel.name || '(unnamed)') + '</strong> · use ＋ on a row for a sub-WBS'
+      : 'Nothing selected — Add WBS goes to the top level.';
+  }
+  // Insert a blank node inline and drop the cursor in it, instead of a modal round-trip per node.
+  // `afterId` places it right after that sibling (Enter continues a list); otherwise it goes last.
+  async function wbsQuickAdd(parentId, afterId) {
+    if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
+    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (parentId && wbsSourceKind(parentId)) { UI.toast('This WBS is ' + SOURCE_KIND_LABEL[wbsSourceKind(parentId)] + ' — sub-items can\'t be added here.', 'warn'); return; }
+    var after = afterId && wbsById(afterId);
+    var so = after ? (after.sort_order || 0) + 0.5 : wbsChildren(parentId || null).length;
+    var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId || null, name: '', sort_order: so, created_by: UID }).select().single();
+    if (res.error) { UI.toast(res.error.message + ' — run the wbs-nodes migration.', 'error'); return; }
+    WBS_NODES.push(res.data);
+    if (after) await _wbsNormalizeAndPersist([res.data.id]);   // renumber the fractional slot back to integers
+    var codeOf2 = computeWbsCodes();
+    var sres = await _insertWbsSummary({ project_id: pid, wbs_node_id: res.data.id, activity_type: 'WBS Summary', wbs: codeOf2[res.data.id], activity_name: '', created_by: UID });
+    if (sres.error) UI.toast('WBS created, but its Project Schedule row failed: ' + sres.error.message, 'error');
+    else if (sres.data) rows.push(sres.data);
+    if (parentId) delete _wbsCollapsed[parentId];
+    await _wbsCommit();
+    _wbsFocusName(res.data.id);
+  }
+  // Enter on a still-blank node removes it — the standard outliner way to undo an over-shoot.
+  // Guarded so it can only ever drop the empty placeholder the planner just made.
+  async function _wbsDeleteBlank(id) {
+    var n = wbsById(id);
+    if (!n || n.is_locked || (n.name || '').trim() || wbsChildren(id).length || wbsActivityCount(id)) { _wbsFocusName(id); return; }
+    var prev = _wbsNeighbourId(id, -1);
+    await sb().from('wbs_nodes').delete().eq('id', id);
+    var sr = rows.find(function (r) { return isWbs(r) && r.wbs_node_id === id; });
+    if (sr) { await sb().from(TABLE).delete().eq('id', sr.id); rows = rows.filter(function (r) { return r.id !== sr.id; }); }
+    WBS_NODES = WBS_NODES.filter(function (x) { return x.id !== id; });
+    if (_wbsSel === id) _wbsSel = prev || null;
+    await _wbsCommit();
+    if (prev) _wbsFocusName(prev);
+  }
+  // ---- Batch builders (paste an outline / duplicate a branch) ----------------------------------
+  // Both create many nodes at once, so they insert a whole DEPTH LEVEL per round-trip (the pattern
+  // wbsAdopt uses) rather than one node at a time.
+  var _wbsTokSeq = 0;
+  function _wbsToken() { return '__t' + Date.now().toString(36) + '_' + (_wbsTokSeq++); }
+  // ⚠️ Each payload carries a unique throwaway token in `code` so the created ids map back to the
+  // caller's items WITHOUT relying on the order PostgREST returns inserted rows in. The token is
+  // inert (`code_custom` stays false, so computeWbsCodes ignores it) and _wbsCommit() overwrites
+  // `code` with the real dotted code immediately afterwards.
+  async function _wbsInsertNodes(payloads) {
+    var byToken = {}, ids = [];
+    for (var i = 0; i < payloads.length; i += 400) {
+      var res = await sb().from('wbs_nodes').insert(payloads.slice(i, i + 400)).select();
+      if (res.error) return { error: res.error, byToken: byToken, ids: ids };
+      (res.data || []).forEach(function (n) { byToken[n.code] = n.id; ids.push(n.id); WBS_NODES.push(n); });
+    }
+    return { byToken: byToken, ids: ids };
+  }
+  // Bulk _insertWbsSummary, with the same "DB never got the wbs_node_id column" tolerance.
+  async function _insertWbsSummaries(payloads) {
+    var made = [], warned = false;
+    for (var i = 0; i < payloads.length; i += 200) {
+      var chunk = payloads.slice(i, i + 200);
+      var res = await sb().from(TABLE).insert(chunk).select();
+      if (res.error && /wbs_node_id/.test(res.error.message || '')) {
+        res = await sb().from(TABLE).insert(chunk.map(function (p) { var q = Object.assign({}, p); delete q.wbs_node_id; return q; })).select();
+        if (!res.error && !warned) { warned = true; UI.toast('Saved without the WBS link — run the wbs-nodes migration.', 'warn'); }
+      }
+      if (res.error) return { error: res.error, data: made };
+      made = made.concat(res.data || []);
+    }
+    return { data: made };
+  }
+  // Project a WBS-Summary row for each freshly created node. `wbs` is left blank on purpose —
+  // _wbsCommit() fills in every code right after, from the finished tree.
+  async function _wbsProjectNew(ids) {
+    return _insertWbsSummaries(ids.map(function (nid) {
+      var nn = wbsById(nid) || {};
+      return { project_id: pid, wbs_node_id: nid, activity_type: 'WBS Summary', wbs: '', activity_name: nn.name || '', created_by: UID };
+    }));
+  }
+  // Turn pasted text into [{depth,name,code,parent}]. Levels come from dotted outline numbering when
+  // every line has it (far more reliable than whitespace survived a copy/paste), else from indentation.
+  function parseWbsOutline(text) {
+    var raw = String(text || '').replace(/\r/g, '').split('\n'), lines = [];
+    raw.forEach(function (l) {
+      if (!l.trim()) return;
+      var m = l.match(/^([\t ]*)([\s\S]*)$/);
+      var ind = m[1].replace(/\t/g, '    ').length;                  // one tab == 4 columns
+      var body = m[2].trim().replace(/^[-*•·+]\s+/, '');             // drop Word / markdown bullets
+      if (!body) return;
+      var dm = body.match(/^(\d+(?:\.\d+)*)[.)]?\s+(.+)$/);          // "1.2.3  Name"
+      lines.push({ ind: ind, body: body, code: dm ? dm[1] : null, name: dm ? dm[2].trim() : body });
+    });
+    if (!lines.length) return [];
+    // ⚠️ Only treat a leading number as a CODE when the paste is demonstrably hierarchically
+    // numbered (every line numbered AND at least one nested). Otherwise a perfectly ordinary name
+    // like "2 Storey Annex" would silently lose its "2".
+    var coded = lines.every(function (l) { return !!l.code; }) &&
+                lines.some(function (l) { return l.code.indexOf('.') >= 0; });
+    var widths = [];
+    lines.forEach(function (l) { if (widths.indexOf(l.ind) < 0) widths.push(l.ind); });
+    widths.sort(function (a, b) { return a - b; });
+    var items = [], prev = -1;
+    lines.forEach(function (l) {
+      var d = coded ? l.code.split('.').length - 1 : widths.indexOf(l.ind);
+      if (d > prev + 1) d = prev + 1;                                // a paste can never skip a level
+      if (d < 0) d = 0;
+      prev = d;
+      items.push({ depth: d, name: coded ? l.name : l.body, code: coded ? l.code : null });
+    });
+    var stack = [];
+    items.forEach(function (it, i) {
+      it.parent = (it.depth > 0 && stack[it.depth - 1] != null) ? stack[it.depth - 1] : null;
+      stack[it.depth] = i; stack.length = it.depth + 1;
+    });
+    return items;
+  }
+  // The dotted codes the outline WILL get once created (preview only).
+  function _wbsOutlineCodes(items, baseCode, startIdx) {
+    var cnt = {}, codes = [];
+    items.forEach(function (it, i) {
+      var key = it.parent == null ? '_r' : String(it.parent);
+      var base = it.parent == null ? baseCode : codes[it.parent];
+      cnt[key] = (cnt[key] == null ? (it.parent == null ? startIdx : 0) : cnt[key]) + 1;
+      codes[i] = (base ? base + '.' : '') + cnt[key];
+    });
+    return codes;
+  }
+  function openWbsOutline(parentId) {
+    if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
+    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (parentId && wbsSourceKind(parentId)) { UI.toast('This WBS is ' + SOURCE_KIND_LABEL[wbsSourceKind(parentId)] + ' — sub-items can\'t be added here.', 'warn'); return; }
+    var codeOf = computeWbsCodes(), parent = parentId && wbsById(parentId);
+    var where = parent ? ('under <strong>' + esc(codeOf[parent.id]) + ' ' + esc(parent.name || '') + '</strong>') : 'at the <strong>top level</strong>';
+    var sample = 'Preliminaries\n\tMobilisation\n\tSite facilities\nSubstructure\n\tExcavation\n\tPile caps\nSuperstructure\n\tTypical floor\n\t\tColumns\n\t\tSlab';
+    var m = UI.modal('<h2 style="margin-top:0;">Paste a WBS outline</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 10px;">Paste from Excel, Word or notes — the tree is built ' + where + '. ' +
+      'Levels come from the indentation, or from numbering like <code>1.2.3&nbsp;Name</code> when every line has it.</p>' +
+      '<div class="ps-wbso-grid"><textarea id="wbso-src" spellcheck="false" placeholder="' + esc(sample) + '"></textarea>' +
+      '<div class="ps-wbso-prev" id="wbso-prev"></div></div>' +
+      '<label style="display:block;margin-top:10px;font-size:12.5px;"><input type="checkbox" id="wbso-keep"> Keep the pasted numbers as custom codes <span style="color:var(--pd-muted);">(otherwise codes are auto-numbered)</span></label>' +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="wbso-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="wbso-go" disabled>Create</button></div>');
+    var src = m.el.querySelector('#wbso-src'), prev = m.el.querySelector('#wbso-prev'),
+        go = m.el.querySelector('#wbso-go'), keep = m.el.querySelector('#wbso-keep');
+    var items = [];
+    function repaint() {
+      items = parseWbsOutline(src.value);
+      var codes = _wbsOutlineCodes(items, parent ? codeOf[parent.id] : '', wbsChildren(parentId || null).length);
+      prev.innerHTML = items.length
+        ? items.map(function (it, i) {
+            return '<div style="padding-left:' + (it.depth * 16) + 'px;"><code>' + esc(keep.checked && it.code ? it.code : codes[i]) + '</code>' + esc(it.name) + '</div>';
+          }).join('')
+        : '<div style="color:var(--pd-muted);">Paste your outline on the left — a preview of the tree appears here.</div>';
+      go.disabled = !items.length;
+      go.textContent = items.length ? 'Create ' + items.length + ' WBS node' + (items.length === 1 ? '' : 's') : 'Create';
+    }
+    src.oninput = repaint; keep.onchange = repaint; repaint(); src.focus();
+    m.el.querySelector('#wbso-x').onclick = m.close;
+    go.onclick = function () { var list = items.slice(), kc = keep.checked; m.close(); wbsCreateOutline(parentId || null, list, kc); };
+  }
+  async function wbsCreateOutline(parentId, items, keepCodes) {
+    if (!items || !items.length) return;
+    showLoading('Building WBS…');
+    var maxD = 0, soCount = {}, baseSo = wbsChildren(parentId || null).length;
+    items.forEach(function (it) {
+      if (it.depth > maxD) maxD = it.depth;
+      var k = it.parent == null ? '_r' : String(it.parent);
+      soCount[k] = (soCount[k] || 0) + 1;
+      it._so = soCount[k] - 1 + (it.parent == null ? baseSo : 0);
+    });
+    var idOf = [], newIds = [];
+    for (var d = 0; d <= maxD; d++) {
+      var payloads = [], idxs = [];
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i]; if (it.depth !== d) continue;
+        it._tok = _wbsToken(); idxs.push(i);
+        payloads.push({ project_id: pid, parent_id: it.parent == null ? (parentId || null) : idOf[it.parent],
+          name: it.name || '', code: it._tok, code_custom: false, sort_order: it._so, created_by: UID });
+      }
+      if (!payloads.length) continue;
+      setLoading('Building WBS… level ' + (d + 1) + ' of ' + (maxD + 1));
+      var ins = await _wbsInsertNodes(payloads);
+      if (ins.error) { hideLoading(); UI.toast('Could not create the WBS: ' + ins.error.message + ' — run the wbs-nodes migration.', 'error'); await _wbsCommit(); return; }
+      idxs.forEach(function (i2) { idOf[i2] = ins.byToken[items[i2]._tok]; });
+      newIds = newIds.concat(ins.ids);
+    }
+    if (keepCodes) {
+      var ups = [];
+      items.forEach(function (it, i) {
+        if (!it.code || !idOf[i]) return;
+        var n = wbsById(idOf[i]); if (n) { n.code = it.code; n.code_custom = true; }
+        ups.push({ id: idOf[i], patch: { code: it.code, code_custom: true } });
+      });
+      await _batchUpdate('wbs_nodes', ups);
+    }
+    var sres = await _wbsProjectNew(newIds);
+    if (sres.data) rows = rows.concat(sres.data);
+    if (parentId) delete _wbsCollapsed[parentId];
+    await _wbsCommit();
+    hideLoading();
+    if (sres.error) UI.toast('Created the WBS, but some Project Schedule rows failed: ' + sres.error.message, 'error');
+    else UI.toast('Added ' + newIds.length + ' WBS node' + (newIds.length === 1 ? '' : 's') + ' from the outline.', 'success');
+  }
+  // Repeat a branch — the typical-floor / tower / building case that otherwise means retyping the
+  // same sub-tree by hand N times. Structure only; activities under the original stay where they are.
+  async function wbsDuplicate(id) {
+    var n = wbsById(id); if (!n || !pid) return;
+    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (n.is_locked) { UI.toast('This is a fixed WBS heading and can\'t be duplicated.', 'warn'); return; }
+    var sub = [], q = [n], depth = {}; depth[n.id] = 0;
+    while (q.length) {   // breadth-first, so a node always follows its parent
+      var c = q.shift(); sub.push(c);
+      wbsChildren(c.id).forEach(function (k) { depth[k.id] = depth[c.id] + 1; q.push(k); });
+    }
+    var maxD = sub.reduce(function (a, s) { return Math.max(a, depth[s.id]); }, 0);
+    var nAct = sub.reduce(function (a, s) { return a + wbsActivityCount(s.id); }, 0);
+    var m = UI.modal('<h2 style="margin-top:0;">Duplicate WBS branch</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Copies <strong>' + esc(n.name || '(unnamed)') + '</strong>' +
+      (sub.length > 1 ? ' and its ' + (sub.length - 1) + ' sub-node' + (sub.length === 2 ? '' : 's') : '') +
+      ', placed right after it. Structure only — activities are not copied' + (nAct ? ' (the ' + nAct + ' in this branch stay where they are)' : '') + '.</p>' +
+      '<div class="pd-field"><label class="pd-label">Number of copies</label><input class="pd-input" id="wbsd-n" type="number" min="1" max="60" value="1"></div>' +
+      '<div class="pd-field"><label class="pd-label">Name for the copies <small>— a # is replaced by the copy number, e.g. “Level #”</small></label><input class="pd-input" id="wbsd-name" value="' + esc(n.name || '') + '"></div>' +
+      '<div style="text-align:right;margin-top:8px;"><button class="pd-btn" id="wbsd-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="wbsd-go">Duplicate</button></div>');
+    m.el.querySelector('#wbsd-x').onclick = m.close;
+    m.el.querySelector('#wbsd-go').onclick = async function () {
+      var count = Math.max(1, Math.min(60, parseInt(m.el.querySelector('#wbsd-n').value, 10) || 1));
+      var pattern = (m.el.querySelector('#wbsd-name').value || '').trim() || (n.name || 'WBS');
+      m.close();
+      showLoading('Duplicating…');
+      var idOf = {}, newIds = [];
+      for (var d = 0; d <= maxD; d++) {
+        var payloads = [], keys = [];
+        for (var c = 1; c <= count; c++) {
+          for (var i = 0; i < sub.length; i++) {
+            var s = sub[i]; if (depth[s.id] !== d) continue;
+            var tok = _wbsToken(); keys.push({ tok: tok, key: c + '|' + s.id });
+            payloads.push({ project_id: pid,
+              parent_id: d === 0 ? (n.parent_id || null) : idOf[c + '|' + s.parent_id],
+              name: d === 0
+                ? (pattern.indexOf('#') >= 0 ? pattern.replace(/#/g, String(c)) : (count > 1 ? pattern + ' ' + c : pattern))
+                : (s.name || ''),
+              code: tok, code_custom: false,
+              // fractional slots keep the copies immediately after the original, in order;
+              // _wbsNormalizeAndPersist below renumbers the whole sibling group back to integers.
+              sort_order: d === 0 ? (n.sort_order || 0) + c / 1000 : (s.sort_order || 0),
+              created_by: UID });
+          }
+        }
+        if (!payloads.length) continue;
+        setLoading('Duplicating… level ' + (d + 1) + ' of ' + (maxD + 1));
+        var ins = await _wbsInsertNodes(payloads);
+        if (ins.error) { hideLoading(); UI.toast('Duplicate failed: ' + ins.error.message, 'error'); await _wbsCommit(); return; }
+        keys.forEach(function (k) { idOf[k.key] = ins.byToken[k.tok]; });
+        newIds = newIds.concat(ins.ids);
+      }
+      var sres = await _wbsProjectNew(newIds);
+      if (sres.data) rows = rows.concat(sres.data);
+      await _wbsNormalizeAndPersist(newIds);
+      await _wbsCommit();
+      hideLoading();
+      if (sres.error) UI.toast('Duplicated, but some Project Schedule rows failed: ' + sres.error.message, 'error');
+      else UI.toast('Created ' + count + ' cop' + (count === 1 ? 'y' : 'ies') + ' (' + newIds.length + ' node' + (newIds.length === 1 ? '' : 's') + ').', 'success');
+    };
+  }
   async function wbsRename(id, name) {
     var n = wbsById(id); if (!n) return;
     if (n.is_locked) { UI.toast('This is a fixed WBS heading and can\'t be renamed.', 'warn'); renderWbsManager(); return; }
@@ -8478,26 +8884,35 @@
       var sibs2 = wbsChildren(n.parent_id), i2 = sibs2.indexOf(n);
       if (i2 <= 0) { UI.toast('Nothing above to indent under.', 'warn'); return; }
       var newParent = sibs2[i2 - 1];
+      if (wbsSourceKind(newParent.id)) { UI.toast('This WBS is ' + SOURCE_KIND_LABEL[wbsSourceKind(newParent.id)] + ' — sub-items can\'t be added here.', 'warn'); return; }
       n.parent_id = newParent.id; n.sort_order = wbsChildren(newParent.id).length;
-      _wbsNormalizeAndPersist();
+      delete _wbsCollapsed[newParent.id];   // otherwise the node vanishes into a collapsed parent
+      await _wbsNormalizeAndPersist([n.id]);
     } else if (how === 'outdent') {
       if (!n.parent_id) { UI.toast('Already at the top level.', 'warn'); return; }
       var parent = wbsById(n.parent_id);
       n.parent_id = parent.parent_id || null; n.sort_order = (parent.sort_order || 0) + 0.5;
-      _wbsNormalizeAndPersist();
+      await _wbsNormalizeAndPersist([n.id]);
     }
     await _wbsCommit();
   }
-  // Re-normalize sort_order to 0..k-1 in every sibling group and persist the ones that changed.
-  function _wbsNormalizeAndPersist() {
+  // Re-normalize sort_order to 0..k-1 in every sibling group and persist ONLY what changed.
+  // ⚠️ `forceIds` must name every node the caller re-parented: normalization can land a moved node
+  // on the same integer sort_order it already had, so the diff alone would silently skip its
+  // parent_id write. (This used to persist all N nodes on every move — 200 round-trips on a big tree.)
+  function _wbsNormalizeAndPersist(forceIds) {
+    var force = {}; (forceIds || []).forEach(function (i) { force[i] = 1; });
+    var before = {}; WBS_NODES.forEach(function (n) { before[n.id] = n.sort_order; });
     var byParent = {}; WBS_NODES.forEach(function (n) { var p = n.parent_id || '__root'; (byParent[p] = byParent[p] || []).push(n); });
-    var changed = [];
+    var ups = [];
     Object.keys(byParent).forEach(function (p) {
       byParent[p].sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); })
-        .forEach(function (n, i) { if (n.sort_order !== i || n._pparent !== (n.parent_id || null)) { changed.push(n); } n.sort_order = i; });
+        .forEach(function (n, i) {
+          if (before[n.id] !== i || force[n.id]) ups.push({ id: n.id, patch: { parent_id: n.parent_id || null, sort_order: i } });
+          n.sort_order = i;
+        });
     });
-    // persist parent_id + sort_order for all (cheap; trees are small)
-    _batchUpdate('wbs_nodes', WBS_NODES.map(function (n) { return { id: n.id, patch: { parent_id: n.parent_id || null, sort_order: n.sort_order } }; }));
+    return _batchUpdate('wbs_nodes', ups);
   }
   // In-app "Edit code" modal (replaces the browser prompt): custom code, or blank to auto-number.
   function wbsEditCode(id) {
@@ -8533,7 +8948,6 @@
     await _wbsCommit();
     UI.toast('WBS deleted.', 'success');
   }
-  async function wbsAddRoot() { await wbsAddChild(null); }
   // Copy another project's WBS tree into this project (structure only, no activities) — under the
   // given parent node, or at the top level when parentId is null. Codes are re-derived by _wbsCommit.
   async function wbsFromProject(parentId) {
@@ -12152,7 +12566,18 @@
     document.getElementById('ps-lp-next').onclick = function () { lpMoveWeek(1); };
     document.getElementById('ps-lp-thisweek').onclick = function () { _lpWeek = mondayOf(wallToday()); try { localStorage.setItem(_lpWeekKey(), dstr(_lpWeek)); } catch (e) {} renderLastPlanner(); };
     document.getElementById('ps-lp-add').onclick = function () { openCommitmentForm(null); };
-    document.getElementById('ps-wbs-addroot').onclick = wbsAddRoot;
+    // "Add WBS" = a sibling AFTER the selected node (same as Enter in the tree), or top level when
+    // nothing is selected — so clicking it repeatedly builds a list instead of burrowing deeper.
+    document.getElementById('ps-wbs-addroot').onclick = function () {
+      var sel = _wbsSel && wbsById(_wbsSel);
+      wbsQuickAdd(sel ? (sel.parent_id || null) : null, sel ? sel.id : null);
+    };
+    document.getElementById('ps-wbs-paste').onclick = function () { openWbsOutline(_wbsSel || null); };
+    document.getElementById('ps-wbs-dup').onclick = function () {
+      if (!_wbsSel || !wbsById(_wbsSel)) { UI.toast('Select the WBS branch you want to duplicate first.', 'warn'); return; }
+      wbsDuplicate(_wbsSel);
+    };
+    document.getElementById('ps-wbs-fromproj').onclick = function () { wbsFromProject(_wbsSel || null); };
     document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
     document.getElementById('ps-wbs-expand').onclick = function () { _wbsCollapsed = {}; renderWbsManager(); };
     document.getElementById('ps-wbs-collapse').onclick = function () {

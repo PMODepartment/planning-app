@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260726d"></script>
   <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260724a" />
-  <link rel="stylesheet" href="module.css?v=20260803h" />
+  <link rel="stylesheet" href="module.css?v=20260804a" />
 </head>
 <body>
   <div class="pd-app">
@@ -60,6 +60,9 @@
             <button class="pd-btn dr-views-btn" id="dr-viewsbtn" title="Saved filter views">Views <span data-ico="chevronDown" data-ico-size="12"></span></button>
             <div class="dr-menu dr-views-menu" id="dr-views-menu" hidden></div>
           </div>
+          <!-- Ghost clear-filters button (matches Material Submittal / Progress Photos):
+               only visible when a filter is actually set, so it never sits in dead space. -->
+          <button class="dr-clearfilt" id="dr-f-clear" title="Clear all filters" hidden><span data-ico="x" data-ico-size="13"></span> Clear</button>
         </div>
 
         <div id="dr-view"></div>
@@ -77,10 +80,10 @@
   <script src="../../assets/js/auth.js?v=20260724a"></script>
   <script src="../../assets/js/db.js?v=20260724a"></script>
   <script src="../../assets/js/ui.js?v=20260724a"></script>
-  <script src="../../assets/js/icons.js?v=20260724a"></script>
+  <script src="../../assets/js/icons.js?v=20260804a"></script>
   <script src="../../assets/js/offline.js?v=20260726d"></script>
   <script src="../../assets/js/collab.js?v=20260727b"></script>
-  <script src="module.js?v=20260803j"></script>
+  <script src="module.js?v=20260804a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

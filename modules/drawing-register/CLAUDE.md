@@ -1,5 +1,41 @@
 # Module: drawing-register
 
+## UI review: debounced search, loading skeleton, clear-filters, icons (2026-08-04) — fmlozano
+Four items from a UI review of this module (items 1/2/4/5 of the review; sorting, KPI click-through
+and the Backlog Doc column were deferred).
+- **Search is debounced (160ms); the selects still apply instantly.** ⚠️ **Do not fold search back
+  in with the selects.** The old handler was `el.oninput = el.onchange` over all four controls, so
+  **every keystroke ran `computeDups()` + `buildModel()` + a full `innerHTML` rebuild of every row** —
+  visible typing lag on a 1,000+ drawing register (Bauhinia is 1,114). New `readFilters()` is shared
+  by both paths so there's still one place that reads the controls.
+- **Loading skeleton** (`skeletonHTML()`, `.dr-sk*`): spinner + 9 shimmer rows. ⚠️ **Gated on
+  `opts.reset`** — a bare `load()` is a post-edit refresh, and flashing a skeleton there would make
+  every save look like a full reload. Only project switch / init / import / clear show it. Without
+  this, `load()`'s keyset pagination (1000 rows per round-trip) left the *previous* project's grid on
+  screen and then swapped, which read as a glitch.
+- **Ghost clear-filters button** (`#dr-f-clear` / `.dr-clearfilt`), copied from
+  `.ms-clearfilt`/`.pp-clear`. `syncClearFilt()` shows it only when `anyFilter()` is true (which
+  includes the duplicates-only toggle), so it never orphans in dead space; it's called from
+  `render()`, so the saved-views and dup-legend paths keep it in sync too. Clearing also resets
+  `filters.dupsOnly` and cancels a pending debounce.
+- **Text glyphs → inline SVG** (`ico()` → `Icons.svg`): row actions `▤ ✎ ✕` → eye / pencil / trash,
+  level delete `✕` → trash, group caret `▾` → chevronDown, saved-views `✕`/`＋` → x / plus, and the
+  per-revision file buttons in the edit form. The glyphs rendered at inconsistent weights across
+  Windows font fallbacks. ⚠️ **Must be `Icons.svg` inline, not `data-ico`** — `Icons.hydrate()` only
+  runs on DOMContentLoaded, and grid rows are re-rendered constantly. `⚠` (duplicate-code mark) is
+  deliberately kept: icons.js has no warning glyph and it's a semantic marker, not a control.
+- **`icons.js` gained a `pencil` icon** (there was none) → **`icons.js?v=` bumped
+  `20260724a` → `20260804a` across all 17 referencing HTML files** (shared asset).
+- **Verified in-browser** (gitignored `_ui_test.html` against the real `module.css` + `icons.js`,
+  deleted after): skeleton 9 rows / 11px bars / 13×13 spinner; clear button `display:none` when no
+  filter → `flex` 52×31 with a hydrated 13×13 × icon, contained in the filter bar, and **adds no row
+  to it at 1280px even with the Views button present** (57px either way); all row/level/caret buttons
+  emit a 15×15 SVG inheriting `currentColor` through every existing hover rule; caret collapse still
+  rotates (`matrix(0,-1,1,0,0,0)`); `pencil` geometry sane (17×17 inside the 24×24 viewBox, in line
+  with trash/eye); 0 page h-scroll; no console errors. ⚠️ **Screenshots remain impossible here**
+  (stalled compositor) — checks are measured geometry. **Not verified signed-in against live data.**
+- Assets `module.css?v=20260804a` / `module.js?v=20260804a`.
+
 ## Searchable schedule-activity picker (2026-08-03) — fmlozano
 Replaced the Activity (need-by) `<input list>` + `<datalist>` with a real searchable dropdown.
 - ⚠️ **A datalist physically cannot search by name.** Browsers filter datalist options by the option's

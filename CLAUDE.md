@@ -77,6 +77,60 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — Drawing Register UI review → debounced search, loading skeleton, clear filters, real icons
+User asked for a UI review of the Drawing Register, then to apply the agreed items (and whatever
+transfers) to Material Submittal. Reviewed the module's actual code rather than its changelog; the
+Overview/Backlog have had several polish passes, so the gaps were in the **Registry grid**, the
+**filter bar** and **feedback/consistency**. Four items done, three deferred (below).
+- **Debounced search (160ms) — a real performance defect, not polish.** The filter handler was
+  `el.oninput = el.onchange` across all four controls, so **every keystroke ran `computeDups()` +
+  `buildModel()` + a full `innerHTML` rebuild over every row** — typing lag on a 1,000+ drawing
+  register (Bauhinia: 1,114). Selects still apply instantly; both paths share one `readFilters()`.
+  ⚠️ Material Submittal **already** had this (160ms) — Drawing Register was the one out of step.
+- **Loading skeleton** on both modules (`skeletonHTML()`, `.dr-sk*`/`.ms-sk*`: spinner + 9 shimmer
+  rows). Drawing Register had **no** loading state at all — `load()` keyset-paginates (1000 rows per
+  round-trip) and only rendered at the end, so a project switch sat on the *previous* project's grid
+  and then swapped. ⚠️ **Gated on `opts.reset`**: a bare `load()` is a post-edit refresh, and a
+  skeleton there would make every save look like a full reload. Material Submittal's bare
+  "Loading…" line was upgraded to the same skeleton.
+- **Ghost clear-filters button** on Drawing Register (`#dr-f-clear`), copied from `.ms-clearfilt` /
+  `.pp-clear` — shown only when `anyFilter()` is true (incl. the duplicates-only toggle), driven from
+  `render()` so the saved-views and dup-legend paths stay in sync. ⚠️ Material Submittal **already**
+  had one; nothing to do there.
+- **Text glyphs → inline SVG icons.** Row actions `▤ ✎ ✕` → eye/pencil/trash, level delete → trash,
+  group caret `▾` → chevronDown, saved-views `✕`/`＋` → x/plus (Drawing Register); `&#9998;`/`&times;`
+  → pencil/trash (Material Submittal). The glyphs rendered at inconsistent weights across Windows
+  font fallbacks — the most visible "not professionally built" tell left in either grid. ⚠️ Emitted
+  via **`Icons.svg` inline, not `data-ico`** — `Icons.hydrate()` only runs on DOMContentLoaded and
+  these rows re-render constantly. `⚠` (duplicate-code mark) deliberately kept: icons.js has no
+  warning glyph and it's a semantic marker, not a control.
+- **`icons.js` gained a `pencil` icon** (there was none — this is why material-submittal's 2026-07-20
+  Doc column had to reuse `eye`). Shared asset → **`icons.js?v=` bumped `20260724a` → `20260804a`
+  across all 17 referencing HTML files.** Module assets → `?v=20260804a` on both.
+- **Verified in-browser** with gitignored `_ui_test.html` harnesses against each module's **real**
+  `module.css` + `icons.js` (deleted after): skeletons (9 rows / 11px bars / 13×13 spinner); the clear
+  button `display:none` → `flex` 52×31 with a hydrated 13×13 × icon, and — measured — **it adds no row
+  to the filter bar at 1280px even with the Views button present** (57px either way); every row/level/
+  caret button emits a 15×15 SVG inheriting `currentColor` through the existing hover rules; caret
+  collapse still rotates; MS's two buttons still fit `.ms-actcol`'s 76px; new `pencil` geometry sane
+  (17×17 in the 24×24 viewBox); `node --check` on both `module.js` + `icons.js`; CSS braces balanced;
+  0 stale glyph references; no console errors. ⚠️ **Screenshots remain impossible** (stalled
+  compositor) — all checks are measured geometry. **Not verified signed-in against live data.**
+- **Deferred, with reasons:** (a) **sortable Registry columns** — the Backlog has click-to-sort
+  headers and the Registry doesn't, which is a genuine inconsistency, but sorting inside a 4-level
+  tree with drag-reorder and frozen columns is where this file gets fragile; wants its own pass.
+  (b) **Clickable Overview KPIs / donut slices / aging buckets** → set the filter and jump to
+  Registry/Backlog — highest-value remaining item, but needs a call on whether a click also switches
+  tabs. (c) **Backlog Doc column + bulk actions** (Registry has both). Also noted but not changed:
+  `.dr-tablecard`'s hardcoded `max-height:calc(100vh - 250px)` overshoots now that the topbar wraps
+  to 2–3 rows on tablets.
+- ⚠️ **Found while reading, NOT fixed — latent truncation in Material Submittal.** `load()` there is
+  a single `.select('*')` with no keyset loop, and Supabase caps a select at **1000 rows** — so a
+  >1000-submittal project would silently load a truncated log (KPIs, donut, S-curve and totals all
+  under-report, no error). Same bug class the 2026-07-21 audit fixed in `project_schedule`,
+  `drawing_register` and `progress_photos`; this table was missed. Not hit yet (largest real workbook
+  is 143 rows), so latent. Fix = copy drawing-register's keyset loop. Flagged in the module's CLAUDE.md.
+
 ### 2026-08-03 — Schedule-activity link: real searchable picker (searches ID *and* name)
 User: the Activity Link should be a searchable dropdown, matching on activity **name** as well as code.
 - ⚠️ **The old control physically could not do this.** It was a native `<input list=…>` + `<datalist>`,

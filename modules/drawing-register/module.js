@@ -174,6 +174,13 @@ window.DrawingRegister = (function () {
     var q = _deferredRemote; _deferredRemote = [];
     q.forEach(_applyRemoteOne); render();
   }
+  // Inline SVG for dynamically-rendered markup. Icons.hydrate() only runs on
+  // DOMContentLoaded, so grid rows (re-rendered constantly) must embed the SVG
+  // directly rather than rely on a data-ico attribute being hydrated later.
+  function ico(name, size){
+    return (window.Icons && Icons.svg) ? Icons.svg(name, size || 15) : '';
+  }
+
   function num(v){ v = parseFloat(v); return isFinite(v) ? v : 0; }
 
   // ---- per-project UI persistence (view + collapse state) [feature 3] ------
@@ -242,16 +249,34 @@ window.DrawingRegister = (function () {
         syncTabs(); saveUI(); render();
       };
     });
-    ['dr-f-phase','dr-f-discipline','dr-f-status','dr-f-search'].forEach(function (id) {
-      var el = document.getElementById(id);
-      el.oninput = el.onchange = function () {
-        filters.phase      = document.getElementById('dr-f-phase').value;
-        filters.discipline = document.getElementById('dr-f-discipline').value;
-        filters.status     = document.getElementById('dr-f-status').value;
-        filters.search     = document.getElementById('dr-f-search').value.toLowerCase().trim();
-        render();
-      };
+    // Selects apply instantly; the SEARCH BOX IS DEBOUNCED (160ms, same as the
+    // Material Submittal log). ⚠️ Do not fold search back in with the selects:
+    // every keystroke ran computeDups() + buildModel() + a full innerHTML rebuild
+    // over every row, which is visible typing lag on a 1,000+ drawing register.
+    function readFilters() {
+      filters.phase      = document.getElementById('dr-f-phase').value;
+      filters.discipline = document.getElementById('dr-f-discipline').value;
+      filters.status     = document.getElementById('dr-f-status').value;
+      filters.search     = document.getElementById('dr-f-search').value.toLowerCase().trim();
+      syncClearFilt();
+    }
+    ['dr-f-phase','dr-f-discipline','dr-f-status'].forEach(function (id) {
+      document.getElementById(id).onchange = function () { readFilters(); render(); };
     });
+    var sEl = document.getElementById('dr-f-search'), sT = null;
+    sEl.oninput = function () {
+      clearTimeout(sT);
+      sT = setTimeout(function () { readFilters(); render(); }, 160);
+    };
+    var cf = document.getElementById('dr-f-clear');
+    if (cf) cf.onclick = function () {
+      clearTimeout(sT);
+      filters.dupsOnly = false;
+      ['dr-f-phase','dr-f-discipline','dr-f-status','dr-f-search'].forEach(function (id) {
+        document.getElementById(id).value = '';
+      });
+      readFilters(); render();
+    };
     // Saved filter views [feature 5]
     var vBtn = document.getElementById('dr-viewsbtn'), vMenu = document.getElementById('dr-views-menu');
     if (vBtn) {
@@ -279,9 +304,9 @@ window.DrawingRegister = (function () {
     var views = getViews();
     var html = views.map(function (v, i){
       return '<div class="dr-view-item"><button class="dr-view-apply" data-vi="'+i+'">'+Fmt.esc(v.name)+'</button>' +
-             '<button class="dr-view-del" data-vd="'+i+'" title="Delete view">✕</button></div>';
+             '<button class="dr-view-del" data-vd="'+i+'" title="Delete view">'+ico('x',13)+'</button></div>';
     }).join('') || '<div class="dr-view-empty">No saved views yet.</div>';
-    html += '<div class="dr-view-sep"></div><button class="dr-view-save" id="dr-view-save">＋ Save current filters…</button>';
+    html += '<div class="dr-view-sep"></div><button class="dr-view-save" id="dr-view-save">'+ico('plus',13)+' Save current filters…</button>';
     menu.innerHTML = html;
     menu.querySelectorAll('[data-vi]').forEach(function (b){ b.onclick=function(){ applyFilterValues(getViews()[+b.dataset.vi].f||{}); menu.hidden=true; }; });
     menu.querySelectorAll('[data-vd]').forEach(function (b){ b.onclick=function(e){ e.stopPropagation(); var v=getViews(); v.splice(+b.dataset.vd,1); setViews(v); renderViewsMenu(); }; });
@@ -309,6 +334,13 @@ window.DrawingRegister = (function () {
   async function load(opts) {
     opts = opts || {};
     if (!pid) { rows = []; render(); return; }
+    // Only on a FRESH view (project switch / init / import / clear). A bare
+    // load() is a refresh after an edit — flashing a skeleton there would make
+    // every save look like a full reload.
+    if (opts.reset) {
+      var vh = document.getElementById('dr-view');
+      if (vh) vh.innerHTML = skeletonHTML();
+    }
     // Keyset-paginate (a single select caps at 1000; a large register already exceeds it —
     // the GPR101 workbook alone is 1032 drawings), then restore the sort_order / drawing_no
     // ordering the grid + roll-ups rely on.
@@ -560,8 +592,32 @@ window.DrawingRegister = (function () {
     return 'dr-review';
   }
 
+  // The ghost "Clear" button is shown only when something is actually filtered
+  // (including the duplicates-only toggle, which anyFilter() counts).
+  function syncClearFilt() {
+    var b = document.getElementById('dr-f-clear');
+    if (b) b.hidden = !anyFilter();
+  }
+
+  // Shown while a fresh register loads (project switch / import / clear). load()
+  // keyset-paginates 1000 rows per round-trip, so without this the grid sat on
+  // the PREVIOUS project's rows and then swapped — reading as a glitch.
+  var SK_W = ['15%','38%','12%','16%','10%'];
+  function skeletonHTML() {
+    var rows_ = '', i, j;
+    for (i = 0; i < 9; i++) {
+      var cells = '';
+      for (j = 0; j < SK_W.length; j++) cells += '<span class="dr-sk" style="width:'+SK_W[j]+'"></span>';
+      rows_ += '<div class="dr-sk-row">' + cells + '</div>';
+    }
+    return '<div class="pd-card dr-skcard" aria-busy="true">' +
+      '<div class="dr-sk-head"><span class="dr-sk-spin"></span>Loading register…</div>' +
+      rows_ + '</div>';
+  }
+
   function render() {
     syncTabs();
+    syncClearFilt();
     // the filter bar applies to Registry AND Backlog (both are drawing-level lists);
     // Overview is an aggregate dashboard, so it hides the filters.
     var fb = document.querySelector('.dr-filters');
@@ -879,7 +935,7 @@ window.DrawingRegister = (function () {
     var ids = item.list.map(function(r){return r.id;}).join(',');
     var grpCb = CB ? '<td class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" data-selgrp="'+ids+'" title="Select group"></td>' : '';
     var isCol = !!collapsed[item.key];
-    var caret = '<span class="dr-caret'+(isCol?' dr-caret-col':'')+'">▾</span>';
+    var caret = '<span class="dr-caret'+(isCol?' dr-caret-col':'')+'">'+ico('chevronDown',12)+'</span>';
     return '<tr class="dr-grp dr-grp-'+item.type+' dr-lvl-'+item.level+(isCol?' dr-collapsed':'')+
         (item.key===activeGrpKey?' dr-grpactive':'')+'"'+
         ' data-grp="'+Fmt.esc(item.key)+'" data-kind="'+item.type+'" data-nodeid="'+(item.nodeId||'')+'"'+
@@ -894,7 +950,7 @@ window.DrawingRegister = (function () {
       '<td colspan="2">'+progressBar(pct)+'</td>' +
       '<td></td>' +   // Need-by
       '<td></td>' +   // Resp.
-      '<td class="dr-nowrap dr-actcol">'+(canWrite?'<button class="dr-lvldel" title="Delete this level and everything under it">✕</button>':'')+'</td></tr>';
+      '<td class="dr-nowrap dr-actcol">'+(canWrite?'<button class="dr-lvldel" title="Delete this level and everything under it">'+ico('trash',15)+'</button>':'')+'</td></tr>';
   }
 
   function progressBar(pct) {
@@ -931,9 +987,9 @@ window.DrawingRegister = (function () {
       '<td class="dr-nowrap dr-c-date'+ed+'" data-f="actual_approval" data-t="date">'+(appr?Fmt.date(appr):'—')+'</td>' +
       '<td class="dr-nowrap dr-c-date dr-c-needby">'+needByCellHtml(r)+'</td>' +
       '<td class="dr-c-resp'+ed+'" data-f="responsible" data-t="text">'+Fmt.esc(r.responsible)+'</td>' +
-      '<td class="dr-nowrap dr-actcol">'+(r.file_url?'<button class="dr-iconbtn" data-view="'+Fmt.esc(r.file_url)+'" title="View approved file">▤</button>':'')+
-        '<button class="dr-iconbtn" data-edit="'+r.id+'" title="Full editor">✎</button>' +
-        '<button class="dr-iconbtn dr-rowbtn-del" data-del="'+r.id+'" title="Delete">✕</button></td>' +
+      '<td class="dr-nowrap dr-actcol">'+(r.file_url?'<button class="dr-iconbtn" data-view="'+Fmt.esc(r.file_url)+'" title="View approved file">'+ico('eye',15)+'</button>':'')+
+        '<button class="dr-iconbtn" data-edit="'+r.id+'" title="Full editor">'+ico('pencil',15)+'</button>' +
+        '<button class="dr-iconbtn dr-rowbtn-del" data-del="'+r.id+'" title="Delete">'+ico('trash',15)+'</button></td>' +
     '</tr>';
   }
 
@@ -1792,16 +1848,16 @@ window.DrawingRegister = (function () {
         // superseded sheet for every submission, not just a note that a revision
         // happened. `s.file_url` holds that revision's storage path.
         var fileBit = s.file_url
-          ? '<span class="dr-subfile"><button class="dr-iconbtn" type="button" data-subview="'+i+'" title="View this revision’s file">▤</button>' +
+          ? '<span class="dr-subfile"><button class="dr-iconbtn" type="button" data-subview="'+i+'" title="View this revision’s file">'+ico('eye',15)+'</button>' +
             '<span class="dr-subfname" title="'+Fmt.esc(s.file_url)+'">'+Fmt.esc(fileLabel(s.file_url))+'</span>' +
-            '<button class="dr-iconbtn dr-rowbtn-del" type="button" data-subrmfile="'+i+'" title="Remove this file (applied on Save)">✕</button></span>'
+            '<button class="dr-iconbtn dr-rowbtn-del" type="button" data-subrmfile="'+i+'" title="Remove this file (applied on Save)">'+ico('x',14)+'</button></span>'
           : '<input class="pd-input dr-subfileinput" type="file" data-subfile="'+i+'" accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg">';
         return '<div class="dr-subrow">' +
           '<span class="dr-subrev">Rev '+(s.rev!=null?s.rev:i)+'</span>' +
           '<label>Planned<input class="pd-input" type="date" data-sub="'+i+'" data-k="planned" value="'+(s.planned||'')+'"></label>' +
           '<label>Actual<input class="pd-input" type="date" data-sub="'+i+'" data-k="actual" value="'+(s.actual||'')+'"></label>' +
           '<label class="dr-subfilelbl">Drawing file'+fileBit+'</label>' +
-          (subs.length>1?'<button class="pd-btn pd-btn-sm" type="button" data-rmsub="'+i+'">✕</button>':'') +
+          (subs.length>1?'<button class="pd-btn pd-btn-sm dr-rmsub" type="button" data-rmsub="'+i+'" title="Remove this revision">'+ico('x',14)+'</button>':'') +
         '</div>';
       }).join('');
       host.querySelectorAll('[data-sub]').forEach(function (el){

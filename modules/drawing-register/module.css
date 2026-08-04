@@ -42,6 +42,26 @@
 .dr-filt-ico { color:var(--pd-muted); flex:none; }
 .dr-filters .dr-search { flex:1 1 300px; min-width:180px; }
 .dr-filters .pd-select { flex:0 0 auto; max-width:180px; }
+/* Ghost clear-filters button — same pattern as .ms-clearfilt / .pp-clear.
+   Hidden unless a filter is set, so it never orphans in empty space. */
+.dr-clearfilt { display:inline-flex; align-items:center; gap:5px; border:0; background:none; cursor:pointer;
+  color:var(--pd-muted); font:inherit; font-size:13px; padding:6px 9px; border-radius:6px; flex:none; }
+.dr-clearfilt:hover { background:var(--pd-bg); color:var(--pd-red); }
+.dr-clearfilt[hidden] { display:none; }
+
+/* ---- Loading skeleton (fresh register load) ------------------------------ */
+.dr-skcard { padding:14px 16px; }
+.dr-sk-head { display:flex; align-items:center; gap:8px; color:var(--pd-muted);
+  font-size:13px; font-weight:600; margin-bottom:12px; }
+.dr-sk-spin { width:13px; height:13px; flex:none; border:2px solid var(--pd-line);
+  border-top-color:var(--pd-red); border-radius:50%; animation:dr-spin .7s linear infinite; }
+@keyframes dr-spin { to { transform:rotate(360deg); } }
+.dr-sk-row { display:flex; gap:12px; align-items:center; padding:9px 0;
+  border-bottom:1px solid var(--pd-line); }
+.dr-sk-row:last-child { border-bottom:0; }
+.dr-sk { height:11px; border-radius:4px; background:var(--pd-line); opacity:.75;
+  animation:dr-sk-pulse 1.2s ease-in-out infinite; }
+@keyframes dr-sk-pulse { 0%,100% { opacity:.4; } 50% { opacity:.85; } }
 
 /* ---- List bar (count + selection) --------------------------------------- */
 .dr-listbar { display:flex; align-items:center; gap:12px; margin-bottom:10px; min-height:30px; }
@@ -363,6 +383,17 @@ td.dr-editing { padding:2px 4px; }
 .dr-iconbtn:hover { background:var(--pd-bg); color:var(--pd-ink); }
 .dr-iconbtn.dr-rowbtn-del:hover { background:var(--pd-bad,#dc2626); color:#fff; }
 
+/* The row/level/menu actions render inline SVG (Icons.svg) rather than text
+   glyphs (▤ ✎ ✕), which rendered at inconsistent weights across font
+   fallbacks. `display:block` kills the inline baseline gap so the button box
+   hugs the icon; `currentColor` inherits every hover state above unchanged. */
+.dr-iconbtn svg, .dr-lvldel svg, .dr-caret svg,
+.dr-view-del svg, .dr-view-save svg, .dr-clearfilt svg { display:block; }
+.dr-iconbtn, .dr-grp .dr-lvldel { display:inline-flex; align-items:center; justify-content:center; }
+.dr-rmsub { display:inline-flex; align-items:center; justify-content:center; }
+.dr-rmsub svg { display:block; }
+.dr-caret { line-height:0; }
+
 /* group label editable hint */
 .dr-glabel { cursor:default; }
 .dr-grp .dr-glabel:hover { text-decoration:underline dotted; }
@@ -420,7 +451,7 @@ td.dr-editing { padding:2px 4px; }
 .dr-view-del:hover { background:var(--pd-bad,#dc2626); color:#fff; }
 .dr-view-empty { padding:8px 10px; color:var(--pd-muted); font-size:12px; }
 .dr-view-sep { height:1px; background:var(--pd-line); margin:4px 0; }
-.dr-view-save { display:block; width:100%; text-align:left; border:0; background:transparent; color:var(--pd-red);
+.dr-view-save { display:flex; align-items:center; gap:6px; width:100%; text-align:left; border:0; background:transparent; color:var(--pd-red);
   padding:7px 10px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; }
 .dr-view-save:hover { background:var(--pd-bg); }
 

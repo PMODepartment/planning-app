@@ -28,6 +28,26 @@ window.MaterialSubmittal = (function () {
   var BUCKET = 'material-submittal';
   var sb = function () { return window.__sb || (window.__sb = supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY)); };
   var esc = function (s) { return Fmt.esc(s == null ? '' : String(s)); };
+  // Inline SVG for dynamically-rendered markup (row actions). Icons.hydrate()
+  // only runs on DOMContentLoaded / explicit calls, so embedding the SVG keeps
+  // re-rendered rows correct without depending on a later hydrate pass.
+  function ico(name, size) {
+    return (window.Icons && Icons.svg) ? Icons.svg(name, size || 15) : '';
+  }
+
+  // Shown while the log loads — replaces a bare "Loading…" line so the shape of
+  // what's coming is visible. Same markup/classes as Drawing Register's.
+  var SK_W = ['15%', '38%', '12%', '16%', '10%'];
+  function skeletonHTML() {
+    var out = '', i, j;
+    for (i = 0; i < 9; i++) {
+      var cells = '';
+      for (j = 0; j < SK_W.length; j++) cells += '<span class="ms-sk" style="width:' + SK_W[j] + '"></span>';
+      out += '<div class="ms-sk-row">' + cells + '</div>';
+    }
+    return '<div class="pd-card ms-skcard" aria-busy="true">' +
+      '<div class="ms-sk-head"><span class="ms-spin"></span>Loading log…</div>' + out + '</div>';
+  }
 
   // ---- attachments ---------------------------------------------------------
   // One document per submittal, matching the log's own model: each row carries a
@@ -897,8 +917,8 @@ window.MaterialSubmittal = (function () {
           '<td class="ms-r">' + esc(r.revision_no || '') + '</td>' +
           '<td>' + (st ? '<span class="ms-pill ' + (meta ? meta.cls : 's-forsub') + '">' + esc(st) + '</span>' : '<span class="ms-mut ms-mini">—</span>') + '</td>' +
           '<td class="ms-nowrap ms-mini">' + esc(r.mas_id || '') + '</td>' +
-          (canWrite ? '<td class="ms-actcol"><button class="pd-btn" data-edit="' + esc(r.id) + '" title="Edit">&#9998;</button> ' +
-            '<button class="pd-btn" data-del="' + esc(r.id) + '" title="Delete">&times;</button></td>' : '') +
+          (canWrite ? '<td class="ms-actcol"><button class="pd-btn ms-iconbtn" data-edit="' + esc(r.id) + '" title="Edit">' + ico('pencil', 15) + '</button> ' +
+            '<button class="pd-btn ms-iconbtn ms-iconbtn-del" data-del="' + esc(r.id) + '" title="Delete">' + ico('trash', 15) + '</button></td>' : '') +
           '</tr>';
       });
     });
@@ -1671,7 +1691,7 @@ window.MaterialSubmittal = (function () {
   async function load() {
     if (!pid) { rows = []; render(); return; }
     loading = true;
-    document.getElementById('ms-view').innerHTML = '<div class="pd-card ms-empty"><h3><span class="ms-spin"></span>Loading…</h3></div>';
+    document.getElementById('ms-view').innerHTML = skeletonHTML();
     var res = await sb().from(TABLE).select('*').eq('project_id', pid).order('sort_order', { ascending: true });
     loading = false;
     if (res.error) {

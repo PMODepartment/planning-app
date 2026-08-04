@@ -6,6 +6,38 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## UI review carry-over: loading skeleton + icon row actions (2026-08-04) — fmlozano
+Drawing Register got a 4-item UI pass; **only two of the four applied here** — this module already
+had the other two, which is worth knowing before "porting" them again:
+- **Already had it:** the search box is **already debounced** (160ms, `ms-f-search`) and the
+  **ghost clear-filters button already exists** (`#ms-f-clear` / `.ms-clearfilt`). Drawing Register
+  was in fact copied *from* this module's pattern, not the reverse.
+- **Loading skeleton** — the bare `<span class="ms-spin"></span>Loading…` card is now
+  `skeletonHTML()`: spinner + 9 shimmer rows (`.ms-sk*`, same markup/classes as `.dr-sk*`).
+- **Text glyphs → inline SVG:** the row actions were `&#9998;` (✎) and `&times;` (×) on plain
+  `.pd-btn`s; now `ico('pencil')` / `ico('trash')` on `.ms-iconbtn` / `.ms-iconbtn-del`. ⚠️ Uses
+  `Icons.svg` inline rather than `data-ico` — this module *does* call `Icons.hydrate(host)` after
+  `renderLog`, but embedding the SVG removes the dependency on that call surviving future edits.
+  The Doc column's `data-ico="eye"` is left as-is (it's hydrated and working).
+- **`icons.js` gained `pencil`** (it had none) → `icons.js?v=20260724a → 20260804a` across all 17
+  HTML files.
+- **Verified in-browser** (gitignored `_ui_test.html` on the real `module.css` + `icons.js`, deleted
+  after): skeleton 9 rows / 11px bars / 13×13 spinner / 330px card; both row buttons emit a 15×15
+  SVG in a 29×25 box, so the pair still fits `.ms-actcol`'s 76px; no console errors. ⚠️ The harness's
+  261px page overflow is a **harness artifact** — `.ms-table` is `min-width:1500px` and the harness
+  omitted the scroll wrapper `renderLog` actually uses (confirmed by reading back the computed
+  `min-width`). Screenshots impossible here (stalled compositor). **Not verified signed-in.**
+- Assets `module.css?v=20260804a` / `module.js?v=20260804a`.
+
+## ⚠️ Known latent bug — `load()` is NOT paginated (not fixed)
+`load()` does a single `.select('*').order('sort_order')` with no keyset loop, and **Supabase caps a
+select at 1000 rows** — so a project with >1000 submittals silently loads a truncated log (every KPI,
+donut, S-curve and total then under-reports with no error). This is the exact class of bug the
+2026-07-21 audit fixed in `project_schedule`, `drawing_register` and `progress_photos`; this table
+was missed. Not hit yet in practice (the largest real workbook is 143 rows), so it's latent, not
+active. Fix = copy drawing-register's keyset loop (`order id.asc`, `.gt('id', last)`, `limit 1000`),
+then re-apply the in-memory `sort_order`/`seq_no`/`material` sort it already does.
+
 ## Searchable schedule-activity picker (2026-08-03) — fmlozano
 Replaced the Activity (need-by) `<input list>` + `<datalist>` with a real searchable dropdown.
 - ⚠️ **A datalist physically cannot search by name.** Browsers filter datalist options by the option's

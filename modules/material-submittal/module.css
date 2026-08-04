@@ -285,6 +285,25 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
   border:2px solid var(--pd-line); border-top-color:var(--pd-red); border-radius:50%; animation:ms-spin .7s linear infinite; }
 @keyframes ms-spin { to { transform:rotate(360deg); } }
 
+/* ---- Loading skeleton (mirrors drawing-register's .dr-sk*) --------------- */
+.ms-skcard { padding:14px 16px; }
+.ms-sk-head { display:flex; align-items:center; gap:8px; color:var(--pd-muted);
+  font-size:13px; font-weight:600; margin-bottom:12px; }
+.ms-sk-head .ms-spin { margin-right:0; vertical-align:0; flex:none; }
+.ms-sk-row { display:flex; gap:12px; align-items:center; padding:9px 0;
+  border-bottom:1px solid var(--pd-line); }
+.ms-sk-row:last-child { border-bottom:0; }
+.ms-sk { height:11px; border-radius:4px; background:var(--pd-line); opacity:.75;
+  animation:ms-sk-pulse 1.2s ease-in-out infinite; }
+@keyframes ms-sk-pulse { 0%,100% { opacity:.4; } 50% { opacity:.85; } }
+
+/* Row actions render inline SVG (Icons.svg) instead of the ✎ / × text glyphs,
+   which rendered at inconsistent weights across font fallbacks. */
+.ms-iconbtn { display:inline-flex; align-items:center; justify-content:center;
+  padding:4px 6px; line-height:1; }
+.ms-iconbtn svg { display:block; }
+.ms-iconbtn-del:hover { background:var(--pd-bad,#dc2626); border-color:var(--pd-bad,#dc2626); color:#fff; }
+
 /* ---- Print -------------------------------------------------------------- */
 @media print {
   .pd-topbar, .ms-filters, .ms-actcol, .ms-cb, .ms-doccol { display:none !important; }
