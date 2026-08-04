@@ -77,6 +77,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — Project Schedule: invisible "Structural" trade + duplicated WBS rows (both from a live run)
+Two bugs the user hit doing a real Schedule Builder run → push → Clear.
+- ⚠️ **"Structural" was invisible in the Auto-trace dialog — at a measured 1.00:1 contrast.**
+  `GCOLOR.ST` was the brand Dark Gray `#2B2C2B`, which is **exactly `--pd-card` in dark mode**, so
+  the trade name was the same colour as its background and the question read *"How many ___ floors
+  must be completed before Architectural can start?"*. MEPF's deep blue was 2.21:1. Added a `gc()`
+  accessor with dark-theme substitutes (now **6.28:1** and **5.21:1**), light theme untouched; all
+  17 read sites routed through it. Also fixed the tower headings, zone tags, chips and Gantt bars,
+  which shared the same invisible colour.
+- ⚠️ **Duplicated WBS rows after Clear (9 schedule rows for 7 nodes).** `ensureWbsSkeleton()`
+  **discarded the summary rows it inserted**, so they never entered the in-memory `rows`; the
+  `_wbsEnsureSummaries()` running straight after in `load()` then saw every node as un-projected and
+  inserted a second row for it. Fixed at the root, plus a **self-heal** that removes duplicate
+  projections (keeps the earliest, deletes the rest) so already-broken projects repair themselves on
+  next load, plus a **re-entrancy guard** since seeding is fired from an overlapping `load()`.
+- ⚠️ **Trap worth remembering:** the bulk regex rewriting the colour call sites used
+  `GCOLOR\[([^\]]+)\]`, which stops at the first `]` — the nested `GCOLOR[p[0]]` became the syntax
+  error `gc(p[0)]`, on the exact line the user reported. Caught by the parse check, not by eye.
+- **Verified: 16/16 Node tests** against the shipped `_wbsEnsureSummaries` (healthy project
+  untouched, extras deleted while the first is kept, mixed dedupe+restore, legacy unlinked rows
+  never touched) plus WCAG contrast maths. 33/33 grouping + 39/39 keyboard suites still green.
+  **Not verified signed-in.** See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-04 — Project Schedule: location/zone become activity DATA, so grouping order is interchangeable
 User: the schedule groups Location > Zone > Activity and that should be flippable to **Activity >
 Location > Zone**. Root problem: location and zone existed **only as WBS tree structure**, so the

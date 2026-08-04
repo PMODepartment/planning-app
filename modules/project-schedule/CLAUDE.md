@@ -1,5 +1,47 @@
 # Module: project-schedule
 
+## Two bugs from a live Builder run: invisible "Structural", duplicated WBS rows (2026-08-04) — fmlozano
+
+**1. "Structural" was unreadable in the Auto-trace dialog — measured, not guessed.**
+`GCOLOR.ST` was the brand Dark Gray `#2B2C2B`, which is **exactly `--pd-card` in dark mode**, so the
+trade name rendered at a **1.00:1 contrast ratio** — the same colour as its background. The dialog
+literally read *"How many ___ floors must be completed before Architectural can start?"*. MEPF's deep
+blue `#3a6098` was nearly as bad at 2.21:1.
+- Fix: a `gc(trade)` accessor with dark-theme substitutes (`ST #a9aeb4`, `MEPF #7d9fd6`) — **6.28:1
+  and 5.21:1** on the dark card, with the light-theme colours untouched (both still ≥3:1 on white).
+  All **17** read sites now go through `gc()`; never read `GCOLOR` directly.
+- This affected far more than the dialog: the tower trade headings, zone tags, trade chips, Gantt
+  bars and the per-zone duration bars all used the same invisible colour on dark.
+- ⚠️ Colours are baked into `innerHTML` at render time, so a *live* theme toggle leaves stale colours
+  until the next builder re-render (step change / reopen). Acceptable; noted rather than hidden.
+- ⚠️ **Self-inflicted trap worth remembering:** the bulk regex that rewrote the call sites used
+  `GCOLOR\[([^\]]+)\]`, which stops at the FIRST `]` — so the nested `GCOLOR[p[0]]` became the
+  syntax error `gc(p[0)]`, and it landed on the exact line the user reported. Caught by the parse
+  check, not by eye. Don't bulk-rewrite bracket expressions without re-parsing.
+
+**2. Duplicated WBS rows after a Builder push + Clear (screenshot: 9 schedule rows, 7 nodes).**
+Root cause found by reading, then proven by test: **`ensureWbsSkeleton()` discarded the summary rows
+it inserted** — `await _insertWbsSummary(...)` with the result thrown away, so the freshly created
+rows never entered the in-memory `rows`. The `_wbsEnsureSummaries()` that runs immediately after in
+`load()` then saw every skeleton node as un-projected and inserted a **second** row for it.
+- Fix: push the inserted row into `rows` (the one-line root cause).
+- **Self-heal**, so the user's already-broken project repairs itself on next load:
+  `_wbsEnsureSummaries()` now removes duplicate projections first — one node must have exactly ONE
+  summary row; it keeps the **earliest** and deletes the rest, then rebuilds (the deleted rows are
+  still in `_sorted` and the roll-up maps until a re-sort) and reports what it removed.
+  ⚠️ Safe because activities reference a WBS by dotted **code + `wbs_node_id`**, never by the summary
+  row's id. ⚠️ Legacy rows with no `wbs_node_id` are deliberately left alone (they're the un-adopted
+  import case that "Adopt existing WBS" owns).
+- **Re-entrancy guard** (`_seedingSkeleton`): seeding is fired from `load()`, and `load()` overlaps
+  on a project switch or the reload after Clear — two runs both seeing an empty `WBS_NODES` would
+  each seed a whole skeleton. `ensureWbsSkeleton` is now a guarded wrapper around `_seedSkeleton`.
+
+**Verified: 16/16 in Node against the shipped `_wbsEnsureSummaries`** — healthy project untouched,
+the reported duplicate case deleting exactly the extras while keeping the first, no re-insert after
+cleaning, a mixed dedupe-and-restore pass, legacy unlinked rows never touched, plus the WCAG contrast
+maths above. Existing 33/33 grouping + 39/39 keyboard suites still green; script parses.
+⚠️ **Not verified signed-in** — needs a real Builder push + Clear cycle to confirm end-to-end.
+
 ## Location + Work Type as activity DATA — grouping order is now interchangeable (2026-08-04) — fmlozano
 User: activities are grouped Location > Zone > Activity, and that should be flippable to
 **Activity > Location > Zone**. Root problem: location and zone existed **only as WBS tree

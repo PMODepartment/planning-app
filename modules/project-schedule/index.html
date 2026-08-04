@@ -8841,8 +8841,15 @@
     ] },
     { name: 'Execution Phase' }
   ];
+  var _seedingSkeleton = false;
   async function ensureWbsSkeleton() {
-    if (!pid || !canWrite || WBS_NODES.length) return;
+    // ⚠️ Re-entrancy guard: this is fired from load(), and load() can overlap (project switch, the
+    // reload after Clear). Two runs both seeing an empty WBS_NODES would each seed a full skeleton.
+    if (!pid || !canWrite || WBS_NODES.length || _seedingSkeleton) return;
+    _seedingSkeleton = true;
+    try { await _seedSkeleton(); } finally { _seedingSkeleton = false; }
+  }
+  async function _seedSkeleton() {
     var toInsert = [], flat = [];
     (function walk(list, parentId) {
       list.forEach(function (n, i) {
@@ -8869,7 +8876,11 @@
     var codeOf = computeWbsCodes();
     for (var k = 0; k < WBS_NODES.length; k++) {
       var n = WBS_NODES[k];
-      await _insertWbsSummary({ project_id: pid, wbs_node_id: n.id, activity_type: 'WBS Summary', wbs: codeOf[n.id], activity_name: n.name, created_by: UID });
+      var sres = await _insertWbsSummary({ project_id: pid, wbs_node_id: n.id, activity_type: 'WBS Summary', wbs: codeOf[n.id], activity_name: n.name, created_by: UID });
+      // ⚠️ MUST land in `rows`. Discarding it left the in-memory schedule with no summary rows, so
+      // the _wbsEnsureSummaries() that runs straight after in load() saw every node as un-projected
+      // and inserted a SECOND row for it — the duplicated WBS rows seen after Clear + reload.
+      if (sres && !sres.error && sres.data) rows.push(sres.data);
     }
   }
   function wbsIsLocked(id) { var n = wbsById(id); return !!(n && n.is_locked); }
@@ -8877,6 +8888,26 @@
   var SOURCE_KIND_LABEL = { design_development: 'Design Development — synced from Drawing Register + Material Submittal Log', procurement: 'Procurement — synced from the Procurement (WPM) app' };
   async function _wbsEnsureSummaries() {
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
+    // ---- Heal DUPLICATE projections first -------------------------------------------------
+    // A node must have exactly ONE summary row; more than one shows the same WBS twice in the
+    // schedule while the WBS Manager still reports the correct node count. Keep the earliest row
+    // (it's the one activities were filed against) and drop the rest. Safe: activities reference
+    // the WBS by dotted CODE + wbs_node_id, never by the summary row's id.
+    var seen = {}, dupIds = [];
+    rows.forEach(function (r) {
+      if (!isWbs(r) || !r.wbs_node_id) return;
+      if (seen[r.wbs_node_id]) dupIds.push(r.id); else seen[r.wbs_node_id] = 1;
+    });
+    if (dupIds.length) {
+      for (var d = 0; d < dupIds.length; d += 100) {
+        var dres = await sb().from(TABLE).delete().in('id', dupIds.slice(d, d + 100));
+        if (dres.error) { UI.toast('Could not clean up duplicate WBS rows: ' + dres.error.message, 'error'); break; }
+      }
+      var dead = {}; dupIds.forEach(function (i2) { dead[i2] = 1; });
+      rows = rows.filter(function (r) { return !dead[r.id]; });
+      rebuild(true);   // the deleted rows are still in _sorted / the roll-up maps until we re-sort
+      UI.toast('Removed ' + dupIds.length + ' duplicate WBS row' + (dupIds.length === 1 ? '' : 's') + ' from the schedule.', 'success');
+    }
     var have = {};
     rows.forEach(function (r) { if (isWbs(r) && r.wbs_node_id) have[r.wbs_node_id] = true; });
     var missing = WBS_NODES.filter(function (n) { return !have[n.id]; });
@@ -9860,6 +9891,15 @@
     var GROUPS = ['GR', 'SW', 'ST', 'AR', 'MEPF', 'ALLIED'];
     var GLABEL = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', ALLIED: 'Allied Services' };
     var GCOLOR = { GR: '#8a5cd1', SW: '#c07f2c', ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e' };
+    // ⚠️ Structural's brand Dark Gray (#2B2C2B) is EXACTLY the dark-mode card colour, so on a dark
+    // surface the trade name rendered dark-on-dark and was unreadable (reported on the Auto-trace
+    // dialog, where the whole question read "How many ___ floors…"). The deep MEPF blue is nearly
+    // as bad. These are the dark-theme substitutes; read every colour through gc(), never GCOLOR.
+    var GCOLOR_DARK = { ST: '#a9aeb4', MEPF: '#7d9fd6' };
+    function gc(g) {
+      var dark = document.documentElement.classList.contains('pd-dark');
+      return (dark && GCOLOR_DARK[g]) || GCOLOR[g] || '#6f7276';
+    }
     var cfg = null, step = 0, dirty = false, curPid = null, curUid = null, wired = false;
     var uiTrade = 'ST';            // trade being edited/visualised in step 2
     var quickN = {};               // per-trade last-used Quick bsmt/floors/zones/units counts (UI-only, not persisted)
@@ -10130,7 +10170,7 @@
       function xOf(u) { return chartX + u * step; }
       for (var u = 0; u <= maxUnit; u++) { var gx = xOf(u); grid += '<line x1="' + gx + '" y1="' + pad + '" x2="' + gx + '" y2="' + (H - pad) + '" stroke="var(--pd-line)" stroke-width="1" opacity=".3"></line>'; }
       acts.forEach(function (a, i) {
-        var y = pad + i * rowH, x = xOf(starts[a.id] || 0), w = colW, fill = GCOLOR[a.group] || '#6f7276';
+        var y = pad + i * rowH, x = xOf(starts[a.id] || 0), w = colW, fill = gc(a.group);
         pos[a.id] = { x: x, y: y, w: w, cy: y + rowH / 2 };
         var desc = a.name || '(unnamed)', code = a.code || '—';
         bars += '<text x="3" y="' + (y + rowH / 2 - 2) + '" font-size="11.5" font-weight="700" fill="var(--pd-ink)">' + e2(desc.length > 30 ? desc.slice(0, 29) + '…' : desc) + '</text>' +
@@ -10201,7 +10241,7 @@
       head += '<line x1="' + chartX + '" y1="' + chartTop + '" x2="' + (W - 4) + '" y2="' + chartTop + '" stroke="var(--pd-line)" stroke-width="1"></line>';
       var pos = {}, bars = '', links = '';
       acts.forEach(function (a, i) {
-        var y = chartTop + i * rowH, dur = Math.max(1, pDur(a, basis)), x = xOf(startsDays[a.id] || 0), w = Math.max(barMin, dur * scale), fill = GCOLOR[a.group] || '#6f7276';
+        var y = chartTop + i * rowH, dur = Math.max(1, pDur(a, basis)), x = xOf(startsDays[a.id] || 0), w = Math.max(barMin, dur * scale), fill = gc(a.group);
         pos[a.id] = { x: x, y: y, w: w, cy: y + rowH / 2 };
         var desc = a.name || '(unnamed)', code = a.code || '—';
         bars += '<text x="3" y="' + (y + rowH / 2 - 2) + '" font-size="11.5" font-weight="700" fill="var(--pd-ink)">' + e2(desc.length > 30 ? desc.slice(0, 29) + '…' : desc) + '</text>' +
@@ -10294,7 +10334,7 @@
       var pairs = []; for (var t = 1; t < present.length; t++) pairs.push([present[t - 1], present[t]]);
       var rowsHtml = pairs.length ? pairs.map(function (p, i) {
         var key = p[0] + '>' + p[1], v = (cfg.tradeLeads[key] != null ? cfg.tradeLeads[key] : (cfg.floorLead || 4));
-        return '<div class="sbld-at-q"><label>How many <b style="color:' + GCOLOR[p[0]] + '">' + e2(GLABEL[p[0]]) + '</b> floors must be completed before <b style="color:' + GCOLOR[p[1]] + '">' + e2(GLABEL[p[1]]) + '</b> can start?</label>' +
+        return '<div class="sbld-at-q"><label>How many <b style="color:' + gc(p[0]) + '">' + e2(GLABEL[p[0]]) + '</b> floors must be completed before <b style="color:' + gc(p[1]) + '">' + e2(GLABEL[p[1]]) + '</b> can start?</label>' +
           '<input class="pd-input" type="number" min="1" max="60" data-atkey="' + e2(key) + '" value="' + v + '" style="width:70px;height:34px;"></div>';
       }).join('') : '<p class="sbld-hint">Only one trade has locations — auto-trace will just chain its floors vertically.</p>';
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
@@ -10422,7 +10462,7 @@
           '<td class="xl-rowact"><button class="sbld-del" data-del="' + r + '" title="Delete row"><span data-ico="trash" data-ico-size="14"></span></button></td></tr>';
       }).join('');
       var holdItems = cfg.catalog.map(function (a) {
-        return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" style="--zc:' + (GCOLOR[a.group] || '#6f7276') + '">' +
+        return '<button class="sbld-hold-item' + (catSel.indexOf(a.id) >= 0 ? ' sel' : '') + '" data-cat="' + a.id + '" style="--zc:' + gc(a.group) + '">' +
           '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
           '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
       }).join('');
@@ -10573,12 +10613,12 @@
       var svg = tradeView === 'gantt' ? actGanttSVG(acts, actDayStarts(tr, tradeBasis), tradeBasis) : actSchedSVG(acts, actStartsUnit(tr));
       var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
         var n = tradeActs(g).length;
-        return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + GCOLOR[g] + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
+        return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
       // Left: complete list of class codes for this trade — description emphasized, code beneath, and
       // the step-1 Interior/Exterior durations editable inline (edits feed the Gantt widths + Generate).
       var list = acts.length ? '<div class="sbld-actlist">' + acts.map(function (a) {
-        return '<div class="sbld-actrow' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + '" style="--zc:' + (GCOLOR[a.group] || '#6f7276') + '">' +
+        return '<div class="sbld-actrow' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + '" style="--zc:' + gc(a.group) + '">' +
           '<button class="sbld-actnode" data-act="' + a.id + '" title="Click to link · Ctrl/Shift-click a target to link several">' +
             '<span class="sbld-actdesc">' + e2(a.name || '(unnamed)') + '</span>' +
             '<span class="sbld-actcode">' + e2(a.code || '—') + '</span></button>' +
@@ -10655,7 +10695,7 @@
     function towerSVG(tr) {
       var floors = cfg.zoning[tr].floors;
       if (!floors.length) return '<div class="sbld-empty">No floors yet for ' + e2(GLABEL[tr]) + '. Add floors or basements on the left.</div>';
-      var W = 430, fh = 52, gap = 6, pad = 14, labelW = 40, col = GCOLOR[tr];
+      var W = 430, fh = 52, gap = 6, pad = 14, labelW = 40, col = gc(tr);
       // Display order top→bottom: superstructure (highest floor first … ground last), then a GROUND
       // line, then basements (B1 first … deepest last). Grade sits between the two blocks.
       var supers = floors.filter(function (f) { return !f.sub; }), subs = floors.filter(function (f) { return f.sub; });
@@ -10663,7 +10703,7 @@
       var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
       disp.forEach(function (f, i) {
         var y = pad + i * (fh + gap), plotW = W - labelW - pad * 2, zones = f.zones.length ? f.zones : [null], zw = plotW / zones.length;
-        svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="13" font-weight="700" fill="' + (f.sub ? GCOLOR[tr] : 'var(--pd-muted)') + '">' + e2(f.code || f.name || 'F') + '</text>';
+        svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="13" font-weight="700" fill="' + (f.sub ? gc(tr) : 'var(--pd-muted)') + '">' + e2(f.code || f.name || 'F') + '</text>';
         zones.forEach(function (z, zi) {
           var zx = pad + labelW + zi * zw, hasU = z && z.units.length;
           svg += '<rect x="' + zx + '" y="' + y + '" width="' + (zw - 3) + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (zi % 2 ? 0.4 : 0.55) : (zi % 2 ? 0.72 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '></rect>';
@@ -10695,11 +10735,11 @@
       function qv(id, def) { var v = +host.querySelector(id).value; return isNaN(v) ? def : v; }
       var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
         var n = leafCount(g);
-        return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + GCOLOR[g] + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
+        return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
       var floorsHtml = zn.floors.length ? zn.floors.map(function (f, i) {
         var zonesHtml = f.zones.length ? f.zones.map(function (z, zi) {
-          return '<div class="sbld-znrow"><span class="sbld-zntag" style="border-color:' + GCOLOR[tr] + ';color:' + GCOLOR[tr] + '">ZONE</span>' +
+          return '<div class="sbld-znrow"><span class="sbld-zntag" style="border-color:' + gc(tr) + ';color:' + gc(tr) + '">ZONE</span>' +
             '<input class="pd-input" data-zk="code" data-f="' + i + '" data-z="' + zi + '" value="' + e2(z.code) + '" placeholder="Zone" style="width:96px;" />' +
             '<span class="sbld-step2ct">Units</span>' +
             '<button class="pd-btn sbld-unminus" data-f="' + i + '" data-z="' + zi + '" title="Remove unit">−</button>' +
@@ -10726,7 +10766,7 @@
         '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
         '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
         floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
-        '<div class="sbld-tower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
+        '<div class="sbld-tower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
         '</div>';
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; render(); }; });
       host.querySelector('#b-addfloor').onclick = function () { var nf = zn.floors.filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', zones: [] }); cfg.links = []; markDirty(); render(); };
@@ -10784,7 +10824,7 @@
       var colW = Math.max(26, Math.round(seqZoom * 9)), step = colW + 26;   // uniform block width + column gap (zoomable)
       var maxUnit = 1; dispLocs.forEach(function (l) { maxUnit = Math.max(maxUnit, (starts[l.uid] || 0) + 1); });
       var rows = [{ uid: '__start__', label: 'Start', fill: 'var(--pd-ok)', s: 0, txt: 'START' }]
-        .concat(dispLocs.map(function (l) { return { uid: l.uid, label: l.trade + ' ' + locLabel(l), fill: GCOLOR[l.trade], s: starts[l.uid] || 0, txt: (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F'))) }; }))
+        .concat(dispLocs.map(function (l) { return { uid: l.uid, label: l.trade + ' ' + locLabel(l), fill: gc(l.trade), s: starts[l.uid] || 0, txt: (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F'))) }; }))
         .concat([{ uid: '__end__', label: 'End', fill: 'var(--pd-red)', s: maxUnit, txt: 'END' }]);
       var H = pad * 2 + rows.length * rowH, W = chartX + (maxUnit + 1) * step + 30;
       var pos = {}, bars = '', links = '';
@@ -10821,17 +10861,17 @@
       var dispLocs = locs.filter(function (l) { return seqTradeFilter === 'ALL' || l.trade === seqTradeFilter; });
       var tradeChips = present.length ? '<div class="sbld-tradechips">' +
         '<button class="sbld-chip' + (seqTradeFilter === 'ALL' ? ' on' : '') + '" data-seqtr="ALL">All trades</button>' +
-        present.map(function (g) { return '<button class="sbld-chip' + (seqTradeFilter === g ? ' on' : '') + '" data-seqtr="' + g + '"><span class="sbld-dot" style="background:' + GCOLOR[g] + '"></span>' + e2(GLABEL[g]) + '</button>'; }).join('') +
+        present.map(function (g) { return '<button class="sbld-chip' + (seqTradeFilter === g ? ' on' : '') + '" data-seqtr="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + '</button>'; }).join('') +
         '</div>' : '';
       // Robust node rendering: one section per (shown) trade → its floors (top floor first) → a row of
       // zone/unit node buttons. Every location in locList() becomes a clickable node here.
       var tower = !locs.length ? '<div class="sbld-empty">No zones yet — add floors/zones for a trade in <b>Step 2</b>, then their nodes appear here to connect.</div>' :
         '<div class="sbld-twr">' + showTr.map(function (tr) {
-          return '<div class="sbld-twr-tradehead" style="color:' + GCOLOR[tr] + '"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span>' + e2(GLABEL[tr]) + '</div>' +
+          return '<div class="sbld-twr-tradehead" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' +
             floorsOf(tr).slice().reverse().map(function (f) {
               return '<div class="sbld-twr-floor"><span class="sbld-twr-lab">' + e2(f.code || f.name || 'F') + '</span>' +
                 '<div class="sbld-twr-trade">' + leavesOfFloor(tr, f).map(function (l) { var uid = l.uid, lbl = (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (f.code || 'F')));
-                  return '<button class="sbld-znode' + (inPend(uid) ? ' pend' : (inDst(uid) ? ' pend-dst' : '')) + '" data-uid="' + uid + '" title="' + e2(GLABEL[tr] + ' · ' + locLabel(l)) + '" style="--zc:' + GCOLOR[tr] + '">' + e2(lbl) + '</button>'; }).join('') + '</div></div>';
+                  return '<button class="sbld-znode' + (inPend(uid) ? ' pend' : (inDst(uid) ? ' pend-dst' : '')) + '" data-uid="' + uid + '" title="' + e2(GLABEL[tr] + ' · ' + locLabel(l)) + '" style="--zc:' + gc(tr) + '">' + e2(lbl) + '</button>'; }).join('') + '</div></div>';
             }).join('');
         }).join('') + '</div>';
       host.innerHTML = '<h2>3 · Zone sequence — connect the flow</h2>' +
@@ -10924,7 +10964,7 @@
         if (!tlocs.length || !acts.length) return;
         var head = '<tr><th>' + e2(GLABEL[tr]) + '</th>' + acts.map(function (a) { return '<th title="' + e2(a.name) + '">' + e2(a.code || a.name) + '</th>'; }).join('') + '</tr>';
         var body = tocs(tlocs, acts);
-        sections += '<h3 style="font-size:13px;margin:14px 0 6px;"><span class="sbld-dot" style="background:' + GCOLOR[tr] + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
+        sections += '<h3 style="font-size:13px;margin:14px 0 6px;"><span class="sbld-dot" style="background:' + gc(tr) + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
       });
       function tocs(tlocs, acts) { return tlocs.map(function (l) { return '<tr><td>' + e2(locLabel(l)) + '</td>' + acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join(''); }
       host.innerHTML = '<h2>5 · Scope per zone</h2>' +
@@ -10941,7 +10981,7 @@
       var maxZ = g.perZone.reduce(function (m, z) { return Math.max(m, z.days); }, 0) || 1;
       function kpi(l, v) { return '<div class="sbld-kpi"><div class="sbld-kpi-l">' + l + '</div><div class="sbld-kpi-v">' + v + '</div></div>'; }
       var kpis = '<div class="sbld-kpis">' + kpi('Total duration', g.totalDays + ' d') + kpi('Start', fmtD(g.start)) + kpi('Finish', fmtD(g.finish)) + '</div>';
-      var pz = '<h4 style="font-size:12px;margin:4px 0 8px;color:var(--pd-muted);">Duration per zone</h4>' + g.perZone.map(function (z) { return '<div class="sbld-bargrp"><span class="lab">' + e2(z.loc.trade + ' · ' + locLabel(z.loc)) + '</span><div class="sbld-bar" style="width:' + Math.round(z.days / maxZ * 200) + 'px;background:' + GCOLOR[z.loc.trade] + '"></div><span>' + z.days + 'd</span></div>'; }).join('');
+      var pz = '<h4 style="font-size:12px;margin:4px 0 8px;color:var(--pd-muted);">Duration per zone</h4>' + g.perZone.map(function (z) { return '<div class="sbld-bargrp"><span class="lab">' + e2(z.loc.trade + ' · ' + locLabel(z.loc)) + '</span><div class="sbld-bar" style="width:' + Math.round(z.days / maxZ * 200) + 'px;background:' + gc(z.loc.trade) + '"></div><span>' + z.days + 'd</span></div>'; }).join('');
       var last = null, pv = '';
       g.rows.forEach(function (r) { var loc = r.loc.trade + ' · ' + locLabel(r.loc); if (loc !== last) { pv += '<tr class="grp"><td colspan="4">' + e2(loc) + '</td></tr>'; last = loc; } pv += '<tr><td>' + e2(r.act.code) + '</td><td>' + e2(r.act.name) + '</td><td class="num">' + r.dur + 'd</td><td>' + fmtD(r.start) + ' – ' + fmtD(r.finish) + '</td></tr>'; });
       return '<div class="sbld-genpanel"><div class="sbld-genh" style="border-color:' + accent + ';color:' + accent + ';">' + e2(label) + ' schedule</div>' +
