@@ -60,6 +60,9 @@
 .ms-count { color:var(--pd-muted); font-size:13px; margin-left:auto; white-space:nowrap; }
 
 /* ---- Log table ---------------------------------------------------------- */
+/* Fallback only — superseded by the `body.ms-fit` block at the end of this file
+   on any viewport above the phone breakpoint. See the comment there for why a
+   hardcoded chrome height is wrong now that the topbar wraps. */
 .ms-tablecard { padding:0; overflow:auto; max-height:calc(100vh - 250px); }
 .ms-table { border-collapse:separate; border-spacing:0; width:100%; min-width:1500px; }
 .ms-table.ms-bk-table { min-width:0; }
@@ -303,6 +306,23 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
   padding:4px 6px; line-height:1; }
 .ms-iconbtn svg { display:block; }
 .ms-iconbtn-del:hover { background:var(--pd-bad,#dc2626); border-color:var(--pd-bad,#dc2626); color:#fff; }
+
+/* ---- Registry: fill the viewport instead of GUESSING the chrome height ----
+   Same fix as drawing-register's `body.dr-fit` (see its module.css for the full
+   reasoning). `max-height:calc(100vh - 250px)` hardcodes a chrome height, but
+   the topbar wraps to 2–3 rows between 700 and 900px, so the guess overshot and
+   the log ran past the bottom of the window. Making the app a real
+   viewport-height flex column lets the card take whatever is left, at any width.
+   ⚠️ `body.ms-fit` is set by render() on the Registry view ONLY (Overview and
+   Backlog are multi-card documents that need normal page scroll), and the block
+   is gated to >700px so it can't beat the phone rule that releases the cap. */
+@media (min-width: 701px) {
+  body.ms-fit .pd-app { height:100dvh; min-height:0; overflow:hidden; }
+  body.ms-fit .pd-content { display:flex; flex-direction:column; min-height:0; }
+  body.ms-fit .pd-main { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+  body.ms-fit #ms-view { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
+  body.ms-fit .ms-tablecard { flex:1 1 auto; min-height:0; max-height:none; }
+}
 
 /* ---- Print -------------------------------------------------------------- */
 @media print {

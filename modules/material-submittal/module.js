@@ -286,9 +286,19 @@ window.MaterialSubmittal = (function () {
     var a = r.schedule_activity_id && schedById[r.schedule_activity_id];
     return a ? (a.start_date || a.actual_start || null) : null;
   }
+  // ⚠️ ALL-UTC, deliberately — same off-by-one this module's own importer notes
+  // warn about. It built a LOCAL date (`new Date(iso+'T00:00:00')` + `setDate`)
+  // and read it back with `isoUTC()`, so east of Greenwich local midnight is the
+  // previous UTC day and every result was ONE DAY EARLY: in Manila (UTC+8)
+  // `minusDays('2026-03-31', 0)` returned `2026-03-30`. That fed the Need-by
+  // column, the float chip, agingDays() and the Backlog sort. Never mix a local
+  // constructor with UTC getters.
   function minusDays(isoStr, n) {
-    var d = new Date(isoStr + 'T00:00:00'); if (isNaN(d)) return null;
-    d.setDate(d.getDate() - n); return isoUTC(d);
+    var p = String(isoStr).slice(0, 10).split('-');
+    if (p.length !== 3) return null;
+    var t = Date.UTC(+p[0], +p[1] - 1, +p[2]);
+    if (isNaN(t)) return null;
+    return isoUTC(new Date(t - n * 86400000));
   }
   function requiredApprovalOf(r) { var nb = needByOf(r); return nb ? minusDays(String(nb).slice(0, 10), leadOf(r)) : null; }
   // Aging in days, WPM-Backlog style: +N = N days past its deadline, −N = N days
@@ -1539,6 +1549,10 @@ window.MaterialSubmittal = (function () {
     // Overview is an aggregate dashboard (no filters); Registry + Backlog are both
     // submittal-level lists, so they share the filter bar.
     document.getElementById('ms-filters').style.display = view === 'dashboard' ? 'none' : '';
+    // Registry only: viewport-height flex shell so the log card fills the space
+    // left over, instead of trusting a hardcoded chrome height (see
+    // `body.ms-fit` in module.css). Overview/Backlog keep page scrolling.
+    document.body.classList.toggle('ms-fit', view === 'log');
     if (view === 'dashboard') renderDashboard();
     else if (view === 'backlog') renderBacklog();
     else renderLog();
@@ -1692,9 +1706,28 @@ window.MaterialSubmittal = (function () {
     if (!pid) { rows = []; render(); return; }
     loading = true;
     document.getElementById('ms-view').innerHTML = skeletonHTML();
-    var res = await sb().from(TABLE).select('*').eq('project_id', pid).order('sort_order', { ascending: true });
+    // ⚠️ KEYSET-PAGINATED, and it must stay that way. A single select caps at
+    // 1000 rows in Supabase, so the previous one-shot `.order('sort_order')`
+    // fetch silently TRUNCATED any project with >1000 submittals — every KPI,
+    // donut, S-curve and total would under-report with no error. Same bug the
+    // 2026-07-21 audit fixed in project_schedule / drawing_register /
+    // progress_photos; this table was missed. Paginate by `id` (a stable,
+    // indexed, non-null key — `sort_order` is neither unique nor non-null, so
+    // it cannot drive a keyset cursor), then restore the display order in
+    // memory below exactly as before.
+    var all = [], last = null, res = null;
+    while (true) {
+      var q = sb().from(TABLE).select('*').eq('project_id', pid)
+        .order('id', { ascending: true }).limit(1000);
+      if (last) q = q.gt('id', last);
+      res = await q;
+      if (res.error) break;
+      var batch = res.data || []; all = all.concat(batch);
+      if (batch.length < 1000) break;
+      last = batch[batch.length - 1].id;
+    }
     loading = false;
-    if (res.error) {
+    if (res && res.error) {
       // Offline / network failure → open from the last cached copy so the log still works
       // (bulk status changes made now queue via PDSync and sync on reconnect).
       if (window.PDSync) { var c = await PDSync.cacheGet('ms:' + pid); if (c && c.rows) { rows = c.rows.slice(); fillFilters(); render(); return; } }
@@ -1704,7 +1737,7 @@ window.MaterialSubmittal = (function () {
         esc(res.error.message) + '</p>' + (missing ? '<p class="ms-mut">Run <code>migrations/2026-07-20-material-submittal-full.sql</code> in the Supabase SQL editor, then reload.</p>' : '') + '</div>';
       return;
     }
-    rows = res.data || [];
+    rows = all;
     // Stable order: sort_order then the workbook's own NO., then item.
     rows.sort(function (a, b) {
       var d = (a.sort_order || 0) - (b.sort_order || 0); if (d) return d;

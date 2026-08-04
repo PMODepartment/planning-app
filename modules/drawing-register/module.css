@@ -159,9 +159,20 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 /* Backlog tab */
 .dr-bk-table tbody tr.dr-bk-row { cursor:pointer; }
 .dr-bk-table tbody tr.dr-bk-row:hover td { background:var(--pd-bg); }
-.dr-bk-table th.dr-sortable { cursor:pointer; user-select:none; }
-.dr-bk-table th.dr-sortable:hover { color:var(--pd-red); }
+/* Sortable headers — shared by the Backlog table and (UI review #3) the
+   Registry grid, so the same gesture reads the same way in both. */
+.dr-bk-table th.dr-sortable, .dr-grid th.dr-sortable { cursor:pointer; user-select:none; }
+.dr-bk-table th.dr-sortable:hover, .dr-grid th.dr-sortable:hover { color:var(--pd-red); }
+.dr-grid th.dr-sorted { color:var(--pd-red); }
 .dr-sortind { color:var(--pd-red); font-size:10px; }
+
+/* "Sorted by X ▲ ×" chip in the list bar — the affordance back to manual order
+   (and the explanation for why drag-reorder is currently disabled). */
+.dr-sortchip { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+  border:1px solid var(--pd-red); background:var(--pd-red); color:#fff;
+  font:inherit; font-size:12px; font-weight:600; padding:4px 9px; border-radius:999px; flex:none; }
+.dr-sortchip:hover { background:var(--pd-red-mid, var(--pd-red)); }
+.dr-sortchip svg { display:block; }
 .dr-aging-late { color:var(--pd-red); font-weight:700; }
 /* A large backlog scrolls inside its own card instead of stretching the whole
    page — the KPI row + card header stay put; only the table body scrolls. */
@@ -193,6 +204,32 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
    neighbors is what read as "clashing" (a wall of red bars with no semantic
    meaning). Red/green/amber are reserved for the .dr-warn/.dr-ok states below. */
 .dr-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--pd-muted); opacity:.35; }
+/* ---- Overview drill-through affordances [UI review #7] -------------------
+   Every aggregate that maps to a real row set is a link into the list that
+   produced it. Non-clickable aggregates (the sheet-count KPIs) intentionally
+   get NO hover state, so "looks clickable" always means "is clickable". */
+.dr-kpi-drill { cursor:pointer; }
+.dr-kpi-drill:hover { border-color:var(--pd-red); }
+.dr-kpi-drill:hover .dr-kpi-val { color:var(--pd-red); }
+.dr-kpi-drill:focus-visible { outline:2px solid var(--pd-red); outline-offset:2px; }
+
+.dr-legendrow { display:flex; align-items:center; gap:7px; font-size:12.5px;
+  margin:2px -6px; padding:2px 6px; border-radius:5px; cursor:pointer; }
+.dr-legendrow:hover { background:var(--pd-bg); color:var(--pd-red); }
+.dr-legendrow:focus-visible { outline:2px solid var(--pd-red); outline-offset:1px; }
+
+.dr-agseg { height:100%; display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:11.5px; font-weight:700; cursor:pointer; }
+.dr-agseg:hover { filter:brightness(1.12); box-shadow:inset 0 0 0 2px rgba(255,255,255,.75); }
+.dr-aglegend { display:inline-flex; align-items:center; gap:5px; font-size:12px;
+  margin:4px 14px 0 0; padding:2px 5px; border-radius:5px; cursor:pointer; }
+.dr-aglegend:hover { background:var(--pd-bg); color:var(--pd-red); }
+
+.dr-drillrow { cursor:pointer; }
+.dr-drillrow:hover > td { background:var(--pd-bg); }
+.dr-drillrow:hover > td:first-child { color:var(--pd-red); font-weight:600; }
+.dr-agchip { margin-left:10px; vertical-align:2px; }
+
 .dr-kpi-val { font-size:32px; font-weight:800; line-height:1.05; letter-spacing:-.01em; }
 .dr-kpi-label { color:var(--pd-muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; margin-top:9px; font-weight:600; }
 .dr-kpi.dr-ok .dr-kpi-val { color:var(--pd-good,#16a34a); }
@@ -269,7 +306,31 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 }
 
 /* ============ Editable tree grid (compact, one-screen) ================== */
+/* Fallback only — superseded by the `body.dr-fit` block below on any viewport
+   above the phone breakpoint. Kept so the card is still bounded if the fit
+   class somehow isn't applied (e.g. a render path that bypasses render()). */
 .dr-tablecard { max-height:calc(100vh - 205px); }
+
+/* ---- Registry: fill the viewport instead of GUESSING the chrome height ----
+   `max-height:calc(100vh - 205px)` hardcodes an assumption about how tall the
+   chrome is — but the topbar now WRAPS to 2–3 rows between 700 and 900px (the
+   2026-07-24 mobile passes), so the guess overshot there and the grid ran past
+   the bottom of the window. This measures nothing and assumes nothing: the app
+   becomes a real viewport-height flex column, so `.dr-tablecard` simply takes
+   whatever vertical space is left after the topbar, filter bar and list bar —
+   self-correcting at every width and topbar row count.
+   ⚠️ Scoped to `body.dr-fit`, which render() sets ONLY on the Registry view:
+   Overview and Backlog are multi-card documents that must keep normal page
+   scrolling. ⚠️ And gated to >700px, because the phone breakpoint deliberately
+   releases the cap (`.dr-tablecard { max-height:none }`) to let the page scroll;
+   without the media query this block's higher specificity would beat it. */
+@media (min-width: 701px) {
+  body.dr-fit .pd-app { height:100dvh; min-height:0; overflow:hidden; }
+  body.dr-fit .pd-content { display:flex; flex-direction:column; min-height:0; }
+  body.dr-fit .pd-main { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+  body.dr-fit #dr-view { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
+  body.dr-fit .dr-tablecard { flex:1 1 auto; min-height:0; max-height:none; }
+}
 .dr-grid { font-size:12px; min-width:1180px; }   /* so narrow viewports scroll (and the frozen Code+Title stay put) */
 .dr-grid thead th { padding:7px 8px; font-size:10px; }
 .dr-grid td { padding:4px 8px; }

@@ -1,5 +1,80 @@
 # Module: drawing-register
 
+## UI review pt.2: sortable Registry, drillable Overview, viewport fit — + a real date bug (2026-08-04) — fmlozano
+Items 3, 7 and 9 of the UI review, plus a genuine correctness bug found while testing them.
+
+### ⚠️ REAL BUG FIXED: `minusDays()` was one day early in Manila
+`minusDays` built a **local** date (`new Date(iso+'T00:00:00')` + `setDate`) then read it back with
+**`toISOString()`** (UTC). East of Greenwich local midnight is the *previous* UTC day, so every result
+came out **one day early** — `minusDays('2026-03-31', 0)` returned `2026-03-30`, and subtracting zero
+days must be the identity, which is what makes it unambiguous rather than a rounding argument.
+`requiredApprovalOf()` is `minusDays(needBy, lead)`, so **every schedule-linked required-approval date
+was off by a day** in PH time, and that fed the Need-by column, the float chip's colour, `agingDays()`,
+the aging bar and the Backlog urgency sort. Now pure `Date.UTC` integer arithmetic. **The same bug was
+in material-submittal's copy and is fixed there too.** Never mix a local constructor with UTC getters —
+the trap material-submittal's importer notes already warn about.
+
+### #3 Sortable Registry columns
+- `regSort {col,dir}` + `REG_SORTABLE` + `regSortVal/regSortList/regSetSort`. All 10 data columns sort;
+  click cycles **asc → desc → natural**.
+- ⚠️ **Sorting is applied INSIDE each leaf group** (`buildModel()` wraps `D.nocat` and `D.cat[c]` in
+  `regSortList`), never across the whole register — the phase → discipline → category tree is the point
+  of this view, and a flat sort would destroy it. Group membership, roll-ups and collapse state are
+  untouched.
+- ⚠️ **`reorderEnabled()` now also requires `!regSort.col`.** A sorted display is detached from
+  `sort_order`, so re-dealing sort_order to match a drop would scramble the real order. The third click
+  (→ natural) is the documented way back, and a red **"Sorted by X ▲ ×"** chip in the list bar both says
+  a sort is active and restores manual order in one click — otherwise "why can't I drag?" is a mystery.
+- **Blanks always sort last**, in both directions: an empty date/status is *unknown*, not *earliest*.
+- Persisted per project (`dr_regsort_<pid>`), and the restored column is **validated against
+  REG_SORTABLE** — a stale key would otherwise sort by a value `regSortVal()` doesn't know.
+
+### #7 Drillable Overview
+- `drillTo(view, patch)` + `drillAttr()`/`wireDrills()`: sets the filters, syncs the actual controls,
+  switches tab, and **clears `collapsed`** (a filtered Registry with everything collapsed shows group
+  headers and no rows, which reads as "found nothing").
+- Drillable: the **Drawings** KPI, **donut legend rows** (→ Registry by status), **aging bar segments +
+  legend** (→ Backlog by bucket), the **unlinked-items count**, **Progress by Phase/Trade rows**
+  (→ Registry by phase/discipline), and the Backlog's **Revise & Resubmit** KPI.
+- ⚠️ **Deliberately NOT everything.** Total sheets / Submitted / Approved / Approved % / Balance are
+  **sheet** aggregates, not sets of drawings — drilling them would land on a list whose row count
+  doesn't match the number clicked. They get no pointer and no hover, so "looks clickable" always means
+  "is clickable". Same for the `—` placeholder row in the progress tables (no filter value selects it).
+- **`agingBucketOf(r)`** is now the single source of truth for bucketing, used by both the chart and the
+  drill filter, so the two can never disagree.
+- **`bkAging`** is a Backlog-only filter (aging is schedule-derived, meaningful only for open items, and
+  the Registry has no aging column) — shown as a removable chip in the Backlog card header, and reset on
+  project switch so it can't leak.
+- ⚠️ `drillTo`'s select-setter **adds the option if missing**: a legacy status like "Approved w/o
+  comments" exists in data and appears on the donut but isn't in the filter list, and a `<select>`
+  silently ignores an unmatched value — the filter would apply while the control read "All statuses".
+
+### #9 Registry fills the viewport instead of guessing chrome height
+`max-height:calc(100vh - 205px)` hardcoded an assumption about chrome height, but the topbar now wraps
+to **5 rows at 800px** (the 2026-07-24 mobile passes). **Measured at 800×720: the old rule put the card
+bottom 24px PAST the viewport and gave the page a 40px scroll; the new one lands 16px inside with 0 page
+scroll.** `body.dr-fit` (set by `render()` on Registry only) makes the shell a real `100dvh` flex column
+so the card takes what's left. ⚠️ Gated `@media (min-width:701px)` — the phone breakpoint deliberately
+releases the cap for page scrolling, and this block's higher specificity would otherwise beat it.
+Overview/Backlog are multi-card documents and keep normal page scroll.
+
+### Verification
+- **41/41 in a Node harness** extracting the **real** functions from `module.js` (no reimplementation):
+  sort asc/desc/case-insensitivity/numeric-not-lexical/blanks-last-both-ways/no-caller-mutation, the
+  3-click cycle, unknown-column guard, all 5 aging buckets **including the 60/30/0 boundaries**, every
+  produced bucket ∈ AGING_ORDER, and 9 `minusDays` cases (identity at n=0, month/year/leap boundaries,
+  garbage → null) for **both** modules' copies.
+- **In-browser against the real `index.html` chrome + real `module.css`** (gitignored harnesses, deleted):
+  #9 measured at 375/768/1280 via **per-width iframes** (`resize_window` proved unreliable mid-session) —
+  clamped to the viewport with 0 page scroll at 768/1280, correctly **not** clamped at 375 (page scrolls
+  12,482px); sorted header red + indicator + `user-select:none`, and **frozen Code/Title columns still
+  `position:sticky`** now that they're also sort buttons; sort chip a red pill in the list bar; drill
+  affordances have `cursor:pointer` + `role=button` + `tabindex=0` while non-drillable aggregates have
+  `cursor:auto` and no role. No console errors.
+- ⚠️ **Not verified signed-in against live data**, and **screenshots remain impossible** here (stalled
+  compositor) — all UI claims are measured geometry/computed style, not observed rendering.
+- Assets `module.css?v=20260804b` / `module.js?v=20260804b`.
+
 ## UI review: debounced search, loading skeleton, clear-filters, icons (2026-08-04) — fmlozano
 Four items from a UI review of this module (items 1/2/4/5 of the review; sorting, KPI click-through
 and the Backlog Doc column were deferred).

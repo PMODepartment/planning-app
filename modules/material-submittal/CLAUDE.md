@@ -29,7 +29,34 @@ had the other two, which is worth knowing before "porting" them again:
   `min-width`). Screenshots impossible here (stalled compositor). **Not verified signed-in.**
 - Assets `module.css?v=20260804a` / `module.js?v=20260804a`.
 
-## ⚠️ Known latent bug — `load()` is NOT paginated (not fixed)
+## Pagination FIXED + viewport fit + a real date bug (2026-08-04) — fmlozano
+- **`load()` is now keyset-paginated** — closes the truncation bug flagged below (that section is kept
+  for the history but is **no longer outstanding**). ⚠️ Paginates by **`id`**, not `sort_order`:
+  `sort_order` is nullable and non-unique, so it cannot drive a keyset cursor. The in-memory
+  `sort_order` → `seq_no` → `material` sort that restores display order is unchanged.
+  Verified by simulating the loop: 2,300 rows load in 3 round-trips with no duplicates, exactly 1,000
+  terminates (no infinite loop), and an empty table terminates.
+- **⚠️ REAL BUG FIXED — `minusDays()` was one day early in Manila.** It built a **local** date
+  (`new Date(iso+'T00:00:00')` + `setDate`) and read it back with **`isoUTC()`**, so east of Greenwich
+  every result was off by a day: `minusDays('2026-03-31', 0)` returned `2026-03-30`, and subtracting
+  zero days must be the identity. Since `requiredApprovalOf()` = `minusDays(needBy, lead)`, **every
+  schedule-linked required-approval date was a day early**, feeding the Need-by column, the float chip,
+  `agingDays()` and the Backlog urgency sort. Now pure `Date.UTC` arithmetic. This is exactly the
+  local-vs-UTC trap this module's own importer notes warn about — it had just been reintroduced in the
+  schedule-link helper. **Drawing Register had the identical bug and is fixed the same way.**
+- **Registry fills the viewport** (`body.ms-fit`, set by `render()` on the log view only) instead of
+  `max-height:calc(100vh - 250px)`, which hardcoded a chrome height that the wrapping topbar invalidated.
+  ⚠️ Gated `@media (min-width:701px)` so the phone breakpoint keeps page scrolling. **Measured via
+  per-width iframes: clamped to the viewport with 0 page scroll at 768 and 1280 (card ends 16/22px
+  inside), correctly NOT clamped at 375 (page scrolls normally); `.ms-fz1` stays `position:sticky` at
+  all three widths.** The Backlog also uses `.ms-tablecard` and is deliberately untouched by the fit
+  block.
+- Sortable-column and drill-through work (Drawing Register's UI review #3/#7) was **not** ported here —
+  this module's Registry groups by trade section with its own KPI/donut/S-curve set, so it wants its own
+  pass rather than a mechanical copy.
+- Assets `module.css?v=20260804b` / `module.js?v=20260804b`.
+
+## ⚠️ Known latent bug — `load()` is NOT paginated (FIXED 2026-08-04, see above)
 `load()` does a single `.select('*').order('sort_order')` with no keyset loop, and **Supabase caps a
 select at 1000 rows** — so a project with >1000 submittals silently loads a truncated log (every KPI,
 donut, S-curve and total then under-reports with no error). This is the exact class of bug the

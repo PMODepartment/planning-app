@@ -77,6 +77,69 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — Material Submittal pagination fix + UI review #3/#7/#9 — and a one-day date bug in both modules
+Second batch off the Drawing Register UI review, plus the latent truncation bug flagged last prompt.
+
+- **⚠️ Material Submittal `load()` truncation FIXED.** It was a single `.select('*')` and Supabase caps
+  a select at **1000 rows**, so a >1000-submittal project silently loaded a partial log with every KPI,
+  donut, S-curve and total under-reporting and no error. Now keyset-paginated. ⚠️ **Paginates by `id`,
+  not `sort_order`** — `sort_order` is nullable and non-unique, so it cannot be a keyset cursor; the
+  in-memory display sort is unchanged. Verified by simulation: 2,300 rows → 3 round-trips, 0 duplicates;
+  exactly 1,000 terminates; empty terminates.
+
+- **⚠️ REAL BUG FOUND AND FIXED IN BOTH MODULES: `minusDays()` was one day early in Manila.** Found while
+  writing boundary tests for the aging buckets — two "failures" turned out to be my fixture, but chasing
+  them surfaced this. The helper built a **local** date (`new Date(iso+'T00:00:00')` + `setDate`) and read
+  it back with **UTC** (`toISOString()` / `isoUTC()`); east of Greenwich local midnight is the previous
+  UTC day, so every result was off by one. `minusDays('2026-03-31', 0)` returned `2026-03-30` — and
+  subtracting zero days must be the identity, so this isn't a rounding judgement call. Because
+  `requiredApprovalOf()` = `minusDays(needBy, lead)`, **every schedule-linked required-approval date in
+  both registers was a day early in PH time**, which fed the Need-by column, the float chip's colour,
+  `agingDays()`, the aging bar and the Backlog urgency sort. Both now use pure `Date.UTC` integer
+  arithmetic. This is the exact local-vs-UTC trap material-submittal's importer notes already warn about,
+  reintroduced in the newer schedule-link helper.
+
+- **#3 Sortable Registry columns (Drawing Register).** All 10 data columns; click cycles **asc → desc →
+  natural**. ⚠️ **Sorting is applied INSIDE each leaf group**, never across the register — the
+  phase → discipline → category tree is the point of the view. ⚠️ **`reorderEnabled()` now also requires
+  `!regSort.col`**: a sorted display is detached from `sort_order`, so re-dealing it on a drop would
+  scramble the real order. A red "Sorted by X ▲ ×" chip explains why dragging is off and restores manual
+  order in one click. Blanks sort last in **both** directions (an empty date is unknown, not earliest).
+  Persisted per project, with the restored column validated against the known-column map.
+
+- **#7 Drillable Overview (Drawing Register).** Donut legend → Registry by status; aging segments +
+  legend → Backlog by bucket; Progress by Phase/Trade rows → Registry by phase/discipline; plus the
+  Drawings KPI, the unlinked-items count and the Backlog's Revise & Resubmit KPI. Drilling also clears
+  `collapsed`, since a filtered Registry with everything collapsed shows headers and no rows.
+  ⚠️ **Deliberately not everything is clickable** — Total sheets / Submitted / Approved / Approved % /
+  Balance count **sheets**, not drawings, so drilling them would land on a list whose row count doesn't
+  match the number clicked; they get no pointer and no hover, so "looks clickable" means "is clickable".
+  New `agingBucketOf()` is the single source of truth for both the chart and the drill filter, so they
+  can't disagree. ⚠️ The select-setter **adds a missing option** — a legacy status ("Approved w/o
+  comments") appears on the donut but isn't in the filter list, and a `<select>` silently ignores an
+  unmatched value, which would leave the filter applied while the control read "All statuses".
+
+- **#9 Registry fills the viewport (both modules).** `max-height:calc(100vh - Npx)` hardcoded a chrome
+  height that the wrapping topbar invalidated. **Measured at 800×720: the old rule put the card bottom
+  24px PAST the viewport and gave the page a 40px scroll; the new `body.dr-fit` / `body.ms-fit` flex
+  column lands 16px inside with 0 page scroll.** ⚠️ Gated `@media (min-width:701px)` — the phone
+  breakpoint deliberately releases the cap, and the fit block's higher specificity would otherwise beat
+  it. Applied on the Registry/log view only; Overview and Backlog keep normal page scrolling.
+
+- **Verified: 41/41 in a Node harness** extracting the **real** functions from `module.js` (sort
+  direction/case/numeric/blanks-last/no-mutation, the 3-click cycle, the unknown-column guard, all five
+  aging buckets **including the 60/30/0 boundaries**, and 9 `minusDays` cases across both modules) plus
+  **in-browser measurement against the real `index.html` chrome and `module.css`**: #9 checked at
+  375/768/1280 using **per-width iframes** after `resize_window` proved unreliable mid-session — clamped
+  with 0 page scroll at 768/1280, correctly **not** clamped at 375; frozen Code/Title (and MS's `ms-fz1`)
+  columns **still `position:sticky`** now that headers are also sort buttons; drill targets carry
+  `cursor:pointer` + `role=button` + `tabindex=0` while non-drillable aggregates have neither. `node
+  --check` both modules, CSS braces balanced, no console errors. ⚠️ **Not verified signed-in against live
+  data**; **screenshots remain impossible** here (stalled compositor), so UI claims are measured geometry.
+- Assets: both modules `module.css/js?v=20260804b`.
+- **Still deferred:** the Backlog Doc column + bulk actions (review #8), and porting #3/#7 to Material
+  Submittal (its Registry groups by trade section and has its own KPI/chart set — wants its own pass).
+
 ### 2026-08-04 — Drawing Register UI review → debounced search, loading skeleton, clear filters, real icons
 User asked for a UI review of the Drawing Register, then to apply the agreed items (and whatever
 transfers) to Material Submittal. Reviewed the module's actual code rather than its changelog; the

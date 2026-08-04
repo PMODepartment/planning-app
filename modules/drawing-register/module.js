@@ -66,7 +66,65 @@ window.DrawingRegister = (function () {
   // Drag-reorder mirrors Project Schedule's: only meaningful when the visible
   // order IS the stored order, so it's off while a filter/search narrows the list
   // (you'd be reordering against rows you can't see).
-  function reorderEnabled(){ return canWrite && !anyFilter(); }
+  // ⚠️ Drag-to-reorder is armed only in the register's NATURAL order. A filter
+  // hides rows (so a drop lands between rows you can't see) and a column sort
+  // detaches the display order from `sort_order` (so re-dealing sort_order to
+  // match the drop would scramble the real order). `regSort.col` is therefore
+  // part of this guard, exactly like anyFilter().
+  function reorderEnabled(){ return canWrite && !anyFilter() && !regSort.col; }
+
+  // ---- Registry column sort [UI review #3] ---------------------------------
+  // ⚠️ Sorting happens INSIDE each leaf group (phase → discipline → category),
+  // never across the whole register — the tree is the point of this view, and a
+  // flat sort would destroy it. buildModel() applies this to each leaf list as
+  // it emits it, so group membership, roll-ups and collapse state are untouched.
+  // `col:null` = natural sort_order order (the default, and what drag-reorder
+  // maintains). Clicking cycles asc → desc → natural, so there is always an
+  // explicit way back to the manual order that re-arms dragging.
+  var regSort = { col:null, dir:1 };
+  var REG_SORTABLE = {
+    code:'Code', title:'Sheet Title / Description', revision:'Rev', status:'Status',
+    sheets:'Sh', appr:'Appr', latest_sub:'Latest Sub.', approval:'Approval',
+    needby:'Need-by', responsible:'Resp.'
+  };
+  function regSortVal(r, col){
+    switch (col){
+      case 'code':        return drawCode(r).toLowerCase();
+      case 'title':       return (r.title||'').toLowerCase();
+      case 'revision':    return String(r.revision==null?'':r.revision).toLowerCase();
+      case 'status':      return r.status||'';
+      case 'sheets':      return num(r.no_of_sheets)||0;
+      case 'appr':        return num(r.approved_sheets)||0;
+      case 'latest_sub':  return latestSub(r,'actual') || latestSub(r,'planned') || '';
+      case 'approval':    return r.actual_approval || r.planned_approval || '';
+      case 'needby':      return requiredApprovalOf(r) || '';
+      case 'responsible': return (r.responsible||'').toLowerCase();
+      default:            return 0;
+    }
+  }
+  // Blanks always sort LAST regardless of direction — an empty date or status is
+  // "unknown", not "earliest", and burying them under a descending sort is what
+  // you actually want when hunting for the populated extremes.
+  function regSortList(list){
+    if (!regSort.col) return list;
+    var col = regSort.col, dir = regSort.dir;
+    return list.slice().sort(function (a, b){
+      var va = regSortVal(a, col), vb = regSortVal(b, col);
+      var ea = (va === '' || va == null), eb = (vb === '' || vb == null);
+      if (ea && eb) return 0;
+      if (ea) return 1;
+      if (eb) return -1;
+      var cmp = va < vb ? -1 : (va > vb ? 1 : 0);
+      return cmp * dir;
+    });
+  }
+  function regSetSort(col){
+    if (!REG_SORTABLE[col]) return;
+    if (regSort.col !== col) { regSort.col = col; regSort.dir = 1; }
+    else if (regSort.dir === 1) { regSort.dir = -1; }
+    else { regSort.col = null; regSort.dir = 1; }   // third click → natural order
+    saveUI(); render();
+  }
 
   // A drawing's group = the phase → discipline → category bucket it renders in
   // (same keys buildModel() groups by). Reordering never crosses a group.
@@ -189,6 +247,7 @@ window.DrawingRegister = (function () {
     try {
       localStorage.setItem(uiKey('view'), view);
       localStorage.setItem(uiKey('collapsed'), JSON.stringify(collapsed));
+      localStorage.setItem(uiKey('regsort'), JSON.stringify(regSort));
     } catch (e) {}
   }
   function restoreUI(){
@@ -200,6 +259,15 @@ window.DrawingRegister = (function () {
       else if (v==='progress') view='overview';    // legacy value migration
       var c = localStorage.getItem(uiKey('collapsed'));
       if (c){ var o=JSON.parse(c); if (o && typeof o==='object'){ collapsed=o; ok=true; } }
+      // Restore the column sort, but VALIDATE the column against REG_SORTABLE —
+      // a stale key from a renamed/removed column would otherwise sort by a
+      // value regSortVal() doesn't know, silently producing arbitrary order.
+      var s = localStorage.getItem(uiKey('regsort'));
+      if (s){
+        var so = JSON.parse(s);
+        if (so && REG_SORTABLE[so.col]) regSort = { col:so.col, dir:(so.dir===-1?-1:1) };
+        else regSort = { col:null, dir:1 };
+      }
     } catch (e) {}
     return ok;
   }
@@ -370,6 +438,8 @@ window.DrawingRegister = (function () {
       // the saved per-project view + collapse state, else default to phases collapsed
       selected = {}; lastClickedId = null; selCtx = { phase:'', discipline:'', category:'', level:0 };
       collapsed = {};
+      bkAging = '';        // a drill-through aging filter must not leak across projects
+      bkShowAll = false;
       if (!restoreUI()) rows.forEach(function (r){ collapsed['P:' + (r.phase || 'Ungrouped')] = true; });
     }
     render();
@@ -407,9 +477,23 @@ window.DrawingRegister = (function () {
     var a = r.schedule_activity_id && schedById[r.schedule_activity_id];
     return a ? (a.start_date || a.actual_start || null) : null;
   }
+  // ⚠️ ALL-UTC, deliberately. The previous version built a LOCAL date
+  // (`new Date(iso+'T00:00:00')` + `setDate`) and then read it back with
+  // `toISOString()`, which is UTC — so east of Greenwich local midnight is the
+  // *previous* UTC day and every result came out ONE DAY EARLY. In Manila
+  // (UTC+8) `minusDays('2026-03-31', 0)` returned `2026-03-30`; subtracting
+  // zero days must be the identity, which is what makes this unambiguous.
+  // That one-day error propagated into every schedule-linked deadline: the
+  // Need-by column, the float chip's colour, agingDays(), the aging bar and the
+  // Backlog urgency sort. Mixing local constructors with UTC getters is the
+  // exact trap documented for the material-submittal importer — don't reopen it.
   function minusDays(iso, n){
-    var d = new Date(iso + 'T00:00:00'); if (isNaN(d)) return null;
-    d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10);
+    var p = String(iso).slice(0, 10).split('-');
+    if (p.length !== 3) return null;
+    var t = Date.UTC(+p[0], +p[1] - 1, +p[2]);
+    if (isNaN(t)) return null;
+    var d = new Date(t - n * 86400000);
+    return d.toISOString().slice(0, 10);
   }
   function requiredApprovalOf(r){                // deadline = need-by − lead
     var nb = needByOf(r); return nb ? minusDays(nb, leadOf(r)) : null;
@@ -622,6 +706,11 @@ window.DrawingRegister = (function () {
     // Overview is an aggregate dashboard, so it hides the filters.
     var fb = document.querySelector('.dr-filters');
     if (fb) fb.style.display = (view === 'overview') ? 'none' : '';
+    // Registry only: turn the shell into a viewport-height flex column so the
+    // grid card fills the leftover space rather than trusting a hardcoded
+    // chrome height (see `body.dr-fit` in module.css). Overview and Backlog are
+    // multi-card documents and keep normal page scrolling.
+    document.body.classList.toggle('dr-fit', view === 'registry');
     populateFilterSelects();
     if (view === 'overview') { renderProgress(); }
     else if (view === 'backlog') { renderBacklog(); }
@@ -633,10 +722,17 @@ window.DrawingRegister = (function () {
   // "Needing action" = not yet approved (For Review / Revise & Resubmit /
   // Approved w/ comments still carries an open loop) OR overdue against its
   // linked schedule need-by deadline. Sorted so the worst-off rows lead.
+  // `bkAging` is a Backlog-ONLY filter set by clicking a segment of the
+  // Overview's aging bar (UI review #7). It deliberately does not live in the
+  // shared filter bar: aging is derived from the schedule link, is meaningful
+  // only for open items, and the Registry has no aging column to filter on.
+  var bkAging = '';
   function backlogRows(){
     return drawingRows().filter(function (r){
       if (!matchesFilters(r, { skipDups:true })) return false;
-      return !isApprovedStatus(r.status) || r.status === 'Revise & Resubmit';
+      if (!(!isApprovedStatus(r.status) || r.status === 'Revise & Resubmit')) return false;
+      if (bkAging && agingBucketOf(r) !== bkAging) return false;
+      return true;
     });
   }
   function backlogUrgency(r){
@@ -701,11 +797,14 @@ window.DrawingRegister = (function () {
     var tight = list.filter(function (r){ var f=docFloatOf(r); return f!=null && f>=0 && f<=3; }).length;
     var revise = list.filter(function (r){ return r.status==='Revise & Resubmit'; }).length;
 
+    // "Revise & Resubmit" is a status → a real filter. Open items / late / tight
+    // are already what this view shows, so they only clear back to the full
+    // backlog rather than pretending to be their own filters.
     var kpis = kpiSection('Backlog Overview',
-      kpi(list.length, 'Open items') +
+      kpi(list.length, 'Open items', '', bkAging ? { view:'backlog', patch:{}, tip:'Clear the aging filter and show every open item' } : null) +
       kpi(late, 'Late vs need-by', late>0?'warn':'') +
       kpi(tight, 'Due ≤3 days', tight>0?'warn':'') +
-      kpi(revise, 'Revise & Resubmit'));
+      kpi(revise, 'Revise & Resubmit', '', { view:'backlog', patch:{ status:'Revise & Resubmit' }, tip:'Filter the Backlog to Revise & Resubmit' }));
 
     var shown = (bkShowAll || list.length<=BK_PAGE) ? list : list.slice(0, BK_PAGE);
 
@@ -735,10 +834,17 @@ window.DrawingRegister = (function () {
           : 'Showing '+BK_PAGE+' of '+list.length+' — <button class="dr-linklike" id="dr-bk-showall">show all</button>') +
       '</div>' : '';
 
+    // The aging filter arrives by drill-through from the Overview, so it must be
+    // visible and removable here — it is not in the shared filter bar.
+    var agChip = bkAging ?
+      '<button class="dr-sortchip dr-agchip" id="dr-agclear" title="Clear the aging filter">' +
+        Fmt.esc(bkAging) + ' ' + ico('x',12) + '</button>' : '';
+
     host.innerHTML = kpis +
       '<div class="pd-card"><h3 class="dr-h3">Open items' +
       '<span class="dr-mut" style="font-weight:400;font-size:12.5px;margin-left:8px;">'+
-      (anyFilter() ? 'Showing '+list.length+' filtered' : list.length+' total')+'</span></h3>' +
+      (anyFilter() || bkAging ? 'Showing '+list.length+' filtered' : list.length+' total')+'</span>' +
+      agChip + '</h3>' +
       '<div class="dr-bk-scroll"><table class="pd-table dr-table dr-bk-table"><thead><tr>'+head+'</tr></thead>' +
       '<tbody>'+body+'</tbody></table></div>' + moreBar + '</div>';
 
@@ -756,6 +862,9 @@ window.DrawingRegister = (function () {
         if (r) openForm(r);
       };
     });
+    var agc = document.getElementById('dr-agclear');
+    if (agc) agc.onclick = function (){ bkAging = ''; render(); };
+    wireDrills(host);   // the Backlog KPI cards
   }
 
   function populateFilterSelects() {
@@ -844,7 +953,7 @@ window.DrawingRegister = (function () {
         if (collapsed[dkey]) return;
 
         // no-category drawings sit directly under the discipline (level 3)
-        D.nocat.forEach(function(r){ disp.push({type:'drawing',level:3,row:r}); visibleIds.push(r.id); });
+        regSortList(D.nocat).forEach(function(r){ disp.push({type:'drawing',level:3,row:r}); visibleIds.push(r.id); });
 
         var catSet={}; Object.keys(cNode).forEach(function(k){var p=k.split(SEP); if(p[0]===ph&&p[1]===d)catSet[p[2]]=1;});
         (D.order||[]).forEach(function(c){catSet[c]=1;});
@@ -854,7 +963,7 @@ window.DrawingRegister = (function () {
           var ckey='C:'+ph+'|'+d+'|'+c;
           disp.push({type:'cat',level:3,key:ckey,label:c,code:nodeCode(cNode[ph+SEP+d+SEP+c]),ctx:{phase:ph,discipline:d,category:c},nodeId:node_(cNode[ph+SEP+d+SEP+c]),list:list});
           if (collapsed[ckey]) return;
-          list.forEach(function(r){ disp.push({type:'drawing',level:4,row:r}); visibleIds.push(r.id); });
+          regSortList(list).forEach(function(r){ disp.push({type:'drawing',level:4,row:r}); visibleIds.push(r.id); });
         });
       });
     });
@@ -885,10 +994,17 @@ window.DrawingRegister = (function () {
       '<button class="dr-duplegend'+(filters.dupsOnly?' dr-on':'')+'" id="dr-duplegend" ' +
         'title="A drawing code that appears more than once within the same phase. Click to '+(filters.dupsOnly?'show all':'show only duplicates')+'.">' +
         '<span class="dr-dupmark">⚠</span> '+nDup+' duplicate code'+(nDup>1?'s':'')+'</button>' : '';
+    // When a column sort is active, say so and offer one click back — otherwise
+    // "why can't I drag rows any more?" is a mystery (reorderEnabled() is off).
+    var sortChip = regSort.col ?
+      '<button class="dr-sortchip" id="dr-sortclear" title="Back to manual (drag) order">' +
+        'Sorted by ' + Fmt.esc(REG_SORTABLE[regSort.col]) + ' ' + (regSort.dir===1?'▲':'▼') +
+        ' ' + ico('x',12) + '</button>' : '';
     var toolbar = '<div class="dr-listbar">' +
       '<button class="dr-rowbtn dr-xall" id="dr-xall">' + (anyOpen ? 'Collapse all' : 'Expand all') + '</button>' +
       jump +
       dupLegend +
+      sortChip +
       '<div class="dr-listcount">Showing <strong>'+shown+'</strong> of '+draws.length+' drawings</div>' +
       '<div class="dr-selbar" id="dr-selbar" hidden>' +
         '<span id="dr-selcount"></span>' +
@@ -908,15 +1024,27 @@ window.DrawingRegister = (function () {
     }
     if (!disp.length) { host.innerHTML = toolbar + emptyMsg('Nothing matches the filters.'); return; }
 
+    // Sortable headers. `sh(col, label, cls, extraTitle)` emits the click target
+    // + direction indicator; sorting is applied per leaf group in buildModel().
+    function sh(col, cls, extra){
+      var active = regSort.col === col;
+      var tip = (extra ? extra + ' · ' : '') +
+        (active ? (regSort.dir===1 ? 'Sorted ascending — click for descending' : 'Sorted descending — click to restore manual order')
+                : 'Click to sort by this column');
+      return '<th class="'+cls+' dr-sortable'+(active?' dr-sorted':'')+'" data-scol="'+col+'" title="'+Fmt.esc(tip)+'">' +
+        Fmt.esc(REG_SORTABLE[col]) +
+        (active ? ' <span class="dr-sortind">'+(regSort.dir===1?'▲':'▼')+'</span>' : '') + '</th>';
+    }
     var head = '<tr>' +
       (CB ? '<th class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" id="dr-selall" title="Select all shown"></th>' : '') +
-      '<th class="dr-c-code dr-freeze dr-freeze-code">Code</th>' +
-      '<th class="dr-c-title dr-freeze dr-freeze-title">Sheet Title / Description</th>' +
-      '<th class="dr-c-rev">Rev</th><th class="dr-c-status">Status</th>' +
-      '<th class="dr-r dr-c-sh">Sh</th><th class="dr-r dr-c-ap">Appr</th>' +
-      '<th class="dr-c-date">Latest Sub.</th><th class="dr-c-date">Approval</th>' +
-      '<th class="dr-c-date dr-c-needby" title="Required approval = linked activity start − lead days">Need-by</th>' +
-      '<th class="dr-c-resp">Resp.</th><th class="dr-actcol"></th></tr>';
+      sh('code',  'dr-c-code dr-freeze dr-freeze-code') +
+      sh('title', 'dr-c-title dr-freeze dr-freeze-title') +
+      sh('revision', 'dr-c-rev') + sh('status', 'dr-c-status') +
+      sh('sheets', 'dr-r dr-c-sh') + sh('appr', 'dr-r dr-c-ap') +
+      sh('latest_sub', 'dr-c-date') + sh('approval', 'dr-c-date') +
+      sh('needby', 'dr-c-date dr-c-needby', 'Required approval = linked activity start − lead days') +
+      sh('responsible', 'dr-c-resp') +
+      '<th class="dr-actcol"></th></tr>';
 
     var html = toolbar + '<div class="pd-card dr-tablecard"><table class="pd-table dr-table dr-grid'+(CB?' dr-has-cb':'')+'" style="--cbw:'+(CB?'34px':'0px')+'" tabindex="0"><thead>'+head+'</thead><tbody>';
     disp.forEach(function (item) {
@@ -999,6 +1127,13 @@ window.DrawingRegister = (function () {
 
   // ------------------------------------------------------------- wiring ------
   function wireRegister(host, disp) {
+    // Column sort [UI review #3] — click a header to cycle asc → desc → manual.
+    host.querySelectorAll('th.dr-sortable[data-scol]').forEach(function (th){
+      th.onclick = function (){ regSetSort(th.dataset.scol); };
+    });
+    var sc = host.querySelector('#dr-sortclear');
+    if (sc) sc.onclick = function (){ regSort.col = null; regSort.dir = 1; saveUI(); render(); };
+
     var xall = host.querySelector('#dr-xall');
     if (xall) xall.onclick = function(){
       var pkeys = disp.filter(function(x){return x.type==='phase';}).map(function(x){return x.key;});
@@ -1443,8 +1578,10 @@ window.DrawingRegister = (function () {
     });
     var balance = totSheets - apSheets;
 
+    // Only "Drawings" is a row set — the rest count SHEETS, so drilling them
+    // would land on a list whose row count doesn't match the number clicked.
     var kpis = kpiSection('Register Overview',
-      kpi(draws.length, 'Drawings') +
+      kpi(draws.length, 'Drawings', '', { view:'registry', patch:{}, tip:'Show all drawings in the Registry' }) +
       kpi(totSheets, 'Total sheets') +
       kpi(subSheets, 'Submitted') +
       kpi(apSheets, 'Approved') +
@@ -1455,8 +1592,8 @@ window.DrawingRegister = (function () {
     var byPhase = groupAgg('phase');
     var byDisc  = groupAgg('discipline');
     var host2 = '<div class="dr-dash-grid">' +
-      progTable('Progress by Phase', byPhase, PHASES) +
-      progTable('Progress by Trade', byDisc, Object.keys(DISCIPLINES).map(disciplineName)) +
+      progTable('Progress by Phase', byPhase, PHASES, 'phase') +
+      progTable('Progress by Trade', byDisc, Object.keys(DISCIPLINES).map(disciplineName), 'discipline') +
     '</div>';
 
     var drawPeriod = function () {
@@ -1484,6 +1621,7 @@ window.DrawingRegister = (function () {
       host2;
 
     drawPeriod();
+    wireDrills(host);   // KPI card, donut legend, aging bar + legend, prog tables
     var pm = document.getElementById('dr-permode');
     if (pm) pm.querySelectorAll('.dr-seg-btn').forEach(function (b){
       b.onclick = function (){
@@ -1509,16 +1647,22 @@ window.DrawingRegister = (function () {
   var AGING_ORDER = ['>60d overdue', '30-60d overdue', '0-30d (current)', 'Future', 'No due date'];
   var AGING_COLOR = { '>60d overdue':'#EE3124', '30-60d overdue':'#d97706',
     '0-30d (current)':'#8a8f98', 'Future':'#DCDBDB', 'No due date':'#c8c8c8' };
+  // Single source of truth for which bucket a row falls in — used both to build
+  // the chart and to filter the Backlog when a segment is clicked (UI review #7),
+  // so the drill-through can never disagree with the bar it came from.
+  function agingBucketOf(r) {
+    var a = agingDays(r);
+    if (a == null) return 'No due date';
+    if (a > 60)    return '>60d overdue';
+    if (a > 30)    return '30-60d overdue';
+    if (a >= 0)    return '0-30d (current)';
+    return 'Future';
+  }
   function agingBuckets() {
     var b = {}; AGING_ORDER.forEach(function (k){ b[k]=0; });
     drawingRows().forEach(function (r){
       if (!(!isApprovedStatus(r.status) || r.status==='Revise & Resubmit')) return;
-      var a = agingDays(r);
-      if (a==null) b['No due date']++;
-      else if (a>60) b['>60d overdue']++;
-      else if (a>30) b['30-60d overdue']++;
-      else if (a>=0) b['0-30d (current)']++;
-      else b['Future']++;
+      b[agingBucketOf(r)]++;
     });
     return b;
   }
@@ -1536,20 +1680,25 @@ window.DrawingRegister = (function () {
         ? 'None of the '+noDate+' open item'+(noDate===1?'':'s')+' are linked to a schedule activity yet — link one from its edit form to see aging here.'
         : 'No open items.') + '</p>';
     }
+    // Segments + legend drill into the Backlog filtered to that bucket (#7).
     var bars = AGING_DATED.filter(function (k){ return buckets[k]>0; }).map(function (k){
       var pct = buckets[k]/datedTotal*100;
-      return '<div style="width:'+pct+'%;background:'+AGING_COLOR[k]+';height:100%;display:flex;' +
-        'align-items:center;justify-content:center;color:#fff;font-size:11.5px;font-weight:700;" title="'+k+': '+buckets[k]+'">' +
+      return '<div class="dr-agseg" style="width:'+pct+'%;background:'+AGING_COLOR[k]+';"' +
+        drillAttr('backlog', { aging:k }) +
+        ' title="'+k+': '+buckets[k]+' — click to list them in the Backlog">' +
         (pct>6?buckets[k]:'') + '</div>';
     }).join('');
     var legend = AGING_DATED.filter(function (k){ return buckets[k]>0; }).map(function (k){
-      return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;margin:4px 14px 0 0;">' +
+      return '<span class="dr-aglegend"'+drillAttr('backlog', { aging:k })+
+        ' title="Show these '+buckets[k]+' item'+(buckets[k]===1?'':'s')+' in the Backlog">' +
         '<span style="width:10px;height:10px;background:'+AGING_COLOR[k]+';display:inline-block;border-radius:2px;"></span>' +
         k+' ('+buckets[k]+')</span>';
     }).join('');
     return '<div style="height:36px;border-radius:6px;overflow:hidden;display:flex;">'+bars+'</div>' +
       '<div style="margin-top:8px;">'+legend+'</div>' +
-      (noDate ? '<p class="dr-mut" style="font-size:12px;margin:8px 0 0;">+ '+noDate+' open item'+(noDate===1?'':'s')+
+      (noDate ? '<p class="dr-mut" style="font-size:12px;margin:8px 0 0;">+ ' +
+        '<button class="dr-linklike"'+drillAttr('backlog', { aging:'No due date' })+
+        ' title="List the unlinked open items in the Backlog">'+noDate+' open item'+(noDate===1?'':'s')+'</button>' +
         ' not yet linked to a schedule activity (excluded above, no due date to measure against).</p>' : '');
   }
 
@@ -1674,9 +1823,11 @@ window.DrawingRegister = (function () {
         '" transform="rotate(-90 '+cx+' '+cy+')"></circle>';
       offset += len; return el;
     }).join('');
+    // Legend rows drill into the Registry filtered to that status (UI review #7).
     var legend = segs.map(function (s){
       var pct = total ? Math.round(s.count/total*100) : 0;
-      return '<div style="display:flex;align-items:center;gap:7px;font-size:12.5px;margin:4px 0;">' +
+      return '<div class="dr-legendrow"'+drillAttr('registry', { status:s.label })+
+        ' title="Show the '+s.count+' '+Fmt.esc(s.label)+' drawing'+(s.count===1?'':'s')+' in the Registry">' +
         '<span style="width:10px;height:10px;border-radius:2px;background:'+s.color+';flex:none;"></span>' +
         '<span style="flex:1;">'+Fmt.esc(s.label)+'</span><b>'+s.count+'</b>' +
         '<span class="dr-mut" style="width:40px;text-align:right;">'+pct+'%</span></div>';
@@ -1700,7 +1851,9 @@ window.DrawingRegister = (function () {
     return m;
   }
 
-  function progTable(title, m, order) {
+  // `drillKey` is the filter field this table groups by ('phase' | 'discipline'),
+  // so each row can jump to the Registry showing exactly its own drawings (#7).
+  function progTable(title, m, order, drillKey) {
     var keys = Object.keys(m).sort(function (a,b){
       var ia=order.indexOf(a), ib=order.indexOf(b);
       if (ia===-1) ia=99; if (ib===-1) ib=99; return ia-ib || a.localeCompare(b);
@@ -1708,7 +1861,13 @@ window.DrawingRegister = (function () {
     var body = keys.map(function (k){
       var g=m[k]; var bal=g.sheets-g.approved;
       var pct=g.sheets?Math.round(g.approved/g.sheets*100):0;
-      return '<tr><td>'+Fmt.esc(g.label)+'</td>' +
+      // '—' is the placeholder for rows with no value in this field; there is no
+      // filter value that selects them, so those rows stay non-clickable.
+      var patch = {}; var canDrill = drillKey && k !== '—';
+      if (canDrill) patch[drillKey] = k;
+      return '<tr'+(canDrill ? ' class="dr-drillrow"'+drillAttr('registry', patch) +
+          ' title="Show these '+g.dwg+' drawing'+(g.dwg===1?'':'s')+' in the Registry"' : '')+'>' +
+        '<td>'+Fmt.esc(g.label)+'</td>' +
         '<td class="dr-r">'+g.dwg+'</td><td class="dr-r">'+g.sheets+'</td>' +
         '<td class="dr-r">'+g.submitted+'</td><td class="dr-r">'+g.approved+'</td>' +
         '<td class="dr-r">'+bal+'</td><td style="min-width:120px;">'+progressBar(pct)+'</td></tr>';
@@ -1720,8 +1879,66 @@ window.DrawingRegister = (function () {
       '<tbody>'+body+'</tbody></table></div>';
   }
 
-  function kpi(val, label, cls) {
-    return '<div class="dr-kpi '+(cls?'dr-'+cls:'')+'"><div class="dr-kpi-val">'+val+'</div>' +
+  // ---- Overview drill-through [UI review #7] --------------------------------
+  // The Overview used to be a dead end: you could see that 212 drawings are
+  // "Revise & Resubmit" but had to go re-create that filter by hand. Every
+  // aggregate that corresponds to a real ROW SET is now a link into the list
+  // that produced it.
+  // ⚠️ Deliberately NOT everything is clickable. Most Overview KPIs (Total
+  // sheets / Submitted / Approved / Approved % / Balance) are SHEET aggregates,
+  // not sets of drawings — wiring them to a row filter would take you somewhere
+  // that doesn't match the number you clicked. Only genuine row sets drill.
+  function drillTo(targetView, patch) {
+    patch = patch || {};
+    filters.phase      = patch.phase      || '';
+    filters.discipline = patch.discipline || '';
+    filters.status     = patch.status     || '';
+    filters.search     = '';
+    filters.dupsOnly   = !!patch.dupsOnly;
+    bkAging            = patch.aging      || '';
+    // Reflect it in the actual controls, or the bar would lie about the view.
+    // ⚠️ A <select> silently ignores a value with no matching <option> — and a
+    // legacy status like "Approved w/o comments" can exist in the data (and so
+    // appear on the donut) without being in the status list. Add the option
+    // rather than let the filter apply while the control reads "All statuses".
+    var set = function (id, v){
+      var el = document.getElementById(id); if (!el) return;
+      v = v || '';
+      if (v && el.tagName === 'SELECT' && !Array.prototype.some.call(el.options, function (o){ return o.value === v || o.text === v; })) {
+        el.add(new Option(v, v));
+      }
+      el.value = v;
+    };
+    set('dr-f-phase', filters.phase); set('dr-f-discipline', filters.discipline);
+    set('dr-f-status', filters.status); set('dr-f-search', '');
+    // A filtered Registry with everything collapsed shows group headers and no
+    // rows, which reads as "the drill found nothing". Open the tree.
+    if (targetView === 'registry') collapsed = {};
+    view = targetView; saveUI(); render();
+    var host = document.getElementById('dr-view');
+    if (host && host.scrollIntoView) host.scrollIntoView({ block:'start' });
+  }
+  // Encodes a drill target onto any element; wireDrills() binds them after render.
+  function drillAttr(targetView, patch) {
+    return ' data-drill="'+targetView+'" data-dpatch="'+Fmt.esc(JSON.stringify(patch||{}))+'"' +
+           ' role="button" tabindex="0"';
+  }
+  function wireDrills(host) {
+    host.querySelectorAll('[data-drill]').forEach(function (el){
+      var go = function (e){
+        e.preventDefault(); e.stopPropagation();
+        var p = {}; try { p = JSON.parse(el.dataset.dpatch || '{}'); } catch (err) {}
+        drillTo(el.dataset.drill, p);
+      };
+      el.onclick = go;
+      el.onkeydown = function (e){ if (e.key==='Enter' || e.key===' ') go(e); };
+    });
+  }
+
+  function kpi(val, label, cls, drill) {
+    return '<div class="dr-kpi '+(cls?'dr-'+cls:'')+(drill?' dr-kpi-drill':'')+'"' +
+           (drill ? drillAttr(drill.view, drill.patch) + ' title="'+Fmt.esc(drill.tip||('Show these in the '+drill.view))+'"' : '') +
+           '><div class="dr-kpi-val">'+val+'</div>' +
            '<div class="dr-kpi-label">'+label+'</div></div>';
   }
   // Groups a KPI row under a small uppercase eyebrow label (WPM "Cost Overview" /
