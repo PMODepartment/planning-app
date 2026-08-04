@@ -1,5 +1,59 @@
 # Module: project-schedule
 
+## Location + Work Type as activity DATA — grouping order is now interchangeable (2026-08-04) — fmlozano
+User: activities are grouped Location > Zone > Activity, and that should be flippable to
+**Activity > Location > Zone**. Root problem: location and zone existed **only as WBS tree
+structure**, so the tree was the one and only grouping. Fix = make them activity data and let the
+grid nest by any ordered set of levels. **The WBS tree is not modified** (user's call): grouping is
+a view, so codes, cost roll-ups, EVM, exports and the document links all keep working.
+
+**Migration `../../migrations/2026-08-04-activity-location-work-type.sql` (USER MUST RUN)** — a
+`location_levels` table (ordered, per-project) + `project_schedule.location jsonb` +
+`project_schedule.work_type`. Tolerant everywhere: no table → no levels → the feature is simply
+absent and nothing else changes.
+
+- **Location levels are per-project and free-form** (user chose "generic, configurable levels" over
+  a fixed Location+Zone pair) — a tower, a viaduct and a plant don't share a vocabulary.
+  `location` is a jsonb map keyed by level id, **deliberately the same shape as `activity_codes`**,
+  so the existing dynamic-column / filter machinery applies to it unchanged.
+  ⚠️ Values are plain text per level, **not a node tree**. "Z1" under two locations is the same
+  string; they stay separate because grouping NESTS Zone under Location. Grouping by Zone alone
+  deliberately merges them ("everything in Z1") — verified as an explicit test case.
+- **`buildNodes()` generalised from single-level to N-level grouping.** `groupBy` (a string) became
+  **`groupBys` (an ordered list)**; Location>Zone>Activity and Activity>Location>Zone are now the
+  same engine with the list reversed. ⚠️ **'wbs' is a hierarchy, not a flat key** — alone it means
+  the plain WBS tree, and as the LAST entry it means "show each group's WBS path". It is forced out
+  of the middle by `normalizeGroupBys()`, which also drops levels/codes that no longer exist.
+- ⚠️ **Legacy saved views are migrated, not reinterpreted.** A stored `groupBy:'status'` used to
+  render each group's WBS path underneath; it loads as `['status','wbs']` so the user sees exactly
+  what they saved. Plain `['status']` now means "group headers → activities", which is new.
+- **Grouping picker** (replaces the `<select>`): presets for the two layouts a planner actually
+  flips between, plus an ordered add/remove/▲▼ list. Persisted **per project** (`ps_groupbys_<pid>`).
+- **Editable in the grid**: Work Type + one column per level, inline-editable via a new `xcol` type
+  in `beginEdit` (with a datalist of values already used on the project — a typo silently creates a
+  second group). Location columns default to VISIBLE (you created the level deliberately); Work Type
+  stays opt-in like codes/UDFs so it doesn't widen every existing project's grid.
+- **The Schedule Builder now stamps what it already knew.** It computes each generated activity's
+  work type and floor/zone/unit and then **threw it away**, baking it into the activity NAME and the
+  WBS nesting. `taskPayload` now carries `work_type` + `location`; `ensureLocLevels()` creates
+  Location/Zone(/Unit) on first push if the project has none.
+- **Backfill for existing schedules** (`openLocBackfill`): reads each activity's WBS ancestry and
+  copies the names onto the new fields. ⚠️ The **depth→level mapping is shown and editable, not
+  guessed** — a Phase>Location>Zone tree maps differently from Location>Zone — with a live count and
+  a sample of what will change, an overwrite toggle, and a local apply before the batched write.
+- Search now also matches work type + every location value.
+
+**Verified: 33/33 in Node against the SHIPPED `buildNodes`** (extracted, not reimplemented) — the
+WBS path unchanged, Opt 1 and Opt 2 shapes/depths/ancestry, order-swap keeping all activities, the
+same-zone-name-under-two-locations case, ancestry chains being prefix-ordered and every ancestor
+existing (collapse depends on it), missing values bucketing + sorting last, work-type falling back
+to the activity name, filters pruning empty groups, `normalizeGroupBys` invariants, and group bars
+rolling up child dates. Plus **in-browser** against the real stylesheet: the picker renders its 4
+sections, highlights the active preset, disables ▲/▼ at the ends, actually reorders on click, 16×16
+badges, 305px menu, no overflow. Existing 39/39 keyboard suite still green; script parses.
+⚠️ **Not verified signed-in** — the migration hasn't been run, so no live click-through of the
+backfill, the builder push, or a real 17k-row regroup. Screenshots impossible here.
+
 ## WBS Manager: the keyboard now works on a SELECTED ROW, not just a focused input (2026-08-04) — fmlozano
 Follow-up to the build-speed work below. Every outliner key was bound to `keydown` on the row's
 **name `<input>`**, so the moment focus left that input — click a row, arrow onto one, or select a

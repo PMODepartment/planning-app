@@ -77,6 +77,35 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — Project Schedule: location/zone become activity DATA, so grouping order is interchangeable
+User: the schedule groups Location > Zone > Activity and that should be flippable to **Activity >
+Location > Zone**. Root problem: location and zone existed **only as WBS tree structure**, so the
+tree was the one and only grouping. Now they're activity data and the grid nests by any ordered set
+of levels. **The WBS tree is untouched** (user's call) — grouping is a view, so WBS codes, cost
+roll-ups, EVM, exports and the document links keep working.
+- **Migration `2026-08-04-activity-location-work-type.sql` (USER MUST RUN):** `location_levels`
+  (ordered, per-project) + `project_schedule.location jsonb` + `.work_type`. Fully tolerant — no
+  table means the feature is simply absent and nothing else changes.
+- **Levels are per-project and free-form** (Building / Level / Zone / Unit / Station / …), since a
+  tower, a viaduct and a plant don't share a vocabulary. Stored as a jsonb map keyed by level id —
+  deliberately the same shape as `activity_codes`, so the existing dynamic-column and filter
+  machinery applies unchanged.
+- **`buildNodes()` generalised from single-level to N-level grouping**; `groupBy` (string) became
+  `groupBys` (ordered list), so the two layouts are one engine with the list reversed. A new picker
+  replaces the dropdown: presets for both layouts plus an ordered add/remove/▲▼ list, saved per
+  project. ⚠️ Legacy saved views are **migrated** (`'status'` → `['status','wbs']`) so a saved view
+  still renders exactly what the user saved.
+- **The Schedule Builder now stamps what it already knew** — it computed every generated activity's
+  work type and floor/zone/unit and then discarded it into the activity NAME and the WBS nesting.
+- **Backfill for existing schedules**: reads location/zone off each activity's WBS ancestry. The
+  depth→level mapping is shown and editable rather than guessed, with a live count and a sample.
+- Work Type + location levels are inline-editable grid columns (with value suggestions) and fields
+  in the activity form; search matches them too.
+- **Verified: 33/33 Node tests against the shipped `buildNodes`** (extracted, not reimplemented),
+  including the crux case that "Zone 1" under two different locations stays two groups; plus
+  in-browser rendering/reordering of the picker. **Not verified signed-in** — the migration isn't
+  run yet. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-04 — WBS Manager: keyboard works on a selected row, not only in a focused name field
 User: the arrow keys and shortcuts should work when a WBS is *selected*. They didn't — every key was
 bound to `keydown` on the row's name `<input>`, so clicking a row (or selecting a locked/synced

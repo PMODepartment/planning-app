@@ -991,6 +991,23 @@
     .ps-wbs-acts button { width:26px; height:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid transparent; background:none; border-radius:5px; cursor:pointer; color:var(--pd-muted); font-size:13px; }
     .ps-wbs-acts button:hover { background:var(--pd-card); border-color:var(--pd-line); color:var(--pd-ink); }
     .ps-wbs-acts button.danger:hover { color:var(--pd-red); border-color:var(--pd-red-mid); }
+    /* Grouping picker (ordered levels) */
+    .ps-group-menu { min-width:290px; max-height:78vh; overflow-y:auto; }
+    .ps-gm-sec { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted);
+      padding:8px 12px 3px; border-top:1px solid var(--pd-line); margin-top:4px; }
+    .ps-gm-sec:first-child { border-top:none; margin-top:0; }
+    .ps-group-menu button.on { color:var(--pd-red); font-weight:700; }
+    .ps-gm-hint { display:block; font-size:10.5px; color:var(--pd-muted); font-weight:400; margin-top:1px; }
+    .ps-gm-row { display:flex; align-items:center; gap:6px; padding:3px 12px; }
+    .ps-gm-n { flex:none; width:16px; height:16px; border-radius:50%; background:var(--pd-red); color:#fff;
+      font-size:10px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+    .ps-gm-lbl { flex:1; font-size:12.5px; color:var(--pd-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-gm-x { flex:none; width:22px; height:22px; padding:0; border:1px solid transparent; background:none;
+      border-radius:4px; cursor:pointer; color:var(--pd-muted); font-size:11px; }
+    .ps-gm-x:hover:not(:disabled) { background:var(--pd-bg); border-color:var(--pd-line); color:var(--pd-ink); }
+    .ps-gm-x:disabled { opacity:.3; cursor:default; }
+    .ps-gm-x.danger:hover { color:var(--pd-red); border-color:var(--pd-red-mid); }
+    .ps-gm-note { padding:4px 12px 8px; font-size:11.5px; color:var(--pd-muted); }
     .ps-wbs-empty { padding:26px 14px; text-align:center; color:var(--pd-muted); font-size:13px; }
     .ps-wbs-empty .ps-wbs-emptyacts { display:flex; gap:8px; justify-content:center; margin-top:12px; }
     /* Type-to-build keyboard legend under the card header */
@@ -1388,12 +1405,7 @@
           <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-openbtn" title="Open schedule — Current, baselines &amp; what-if scenarios"><span data-ico="calendar" data-ico-size="15"></span> Open ▾</button><div class="ps-menu" id="ps-open-menu"></div></div>
           <span class="ps-tb-div"></span>
-          <select class="pd-select" id="ps-group" title="Group activities by" style="max-width:140px;">
-            <option value="wbs">Group: WBS</option>
-            <option value="status">Group: Status</option>
-            <option value="responsible">Group: Responsible</option>
-            <option value="type">Group: Type</option>
-          </select>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-groupbtn" title="Group activities — pick the levels and their order"><span data-ico="layers" data-ico-size="15"></span> <span id="ps-groupbtn-txt">Group: WBS</span> ▾</button><div class="ps-menu ps-group-menu" id="ps-group-menu"></div></div>
           <span class="ps-tb-div"></span>
           <div class="ps-seg" id="ps-zoom" title="Timeline scale — drag a column edge in the date header, or Ctrl + scroll over the chart, to fine-tune column width">
             <button data-zoom="month" class="active">Month</button>
@@ -1809,6 +1821,8 @@
         <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
         <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
         <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
+        <div><label class="pd-label">Work Type <small>(what this activity IS, e.g. Formworks — groups the same work across locations)</small></label><input class="pd-input" id="ps-f-work" list="ps-f-work-list" autocomplete="off" /><datalist id="ps-f-work-list"></datalist></div>
+        <div class="ps-form-full" id="ps-f-loc-wrap" style="display:none;"><label class="pd-label">Location</label><div id="ps-f-loc-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full" id="ps-f-codes-wrap" style="display:none;"><label class="pd-label">Activity Codes</label><div id="ps-f-codes-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full" id="ps-f-udf-wrap" style="display:none;"><label class="pd-label">User-Defined Fields</label><div id="ps-f-udf-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full"><label class="pd-label">Predecessors <small>(Activity IDs, comma-separated; type/lag optional e.g. 1020 SS+3 — drives the critical path)</small></label><input class="pd-input" id="ps-f-pred" placeholder="e.g. 1010, 1020 SS+3" />
@@ -1945,6 +1959,7 @@
   var PROJECTS = [], WORKSPACES = [], layoutMode = 'split', activeTab = 'schedule';
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
+  var LOC_LEVELS = [];   // Location Breakdown levels (ordered: Building > Level > Zone > …) for this project
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var DOC_DRAWINGS = [], DOC_SUBMITTALS = [];   // Drawing Register + Material Submittal rows LINKED to this project's schedule activities (phase-4 document connection)
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
@@ -1970,7 +1985,7 @@
     return wsum > 0 ? Math.round((wpsum / wsum) * 100) / 100 : 0;
   }
   async function loadResourcesAssignments() {
-    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; return; }
+    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; return; }
     try {
       var r1 = await sb().from('resources').select('*').eq('project_id', pid).order('name');
       var r3 = await sb().from('calendars').select('*').eq('project_id', pid).order('name');
@@ -2000,6 +2015,12 @@
       var r7 = await sb().from('activity_udf_defs').select('*').eq('project_id', pid).order('sort_order');
       UDF_DEFS = (r7 && r7.data) || [];
     } catch (e) { UDF_DEFS = []; }
+    try {
+      // Location Breakdown levels. Tolerant of the un-run 2026-08-04 migration: no table -> no
+      // levels -> the location columns/grouping simply don't appear, everything else is unaffected.
+      var r8 = await sb().from('location_levels').select('*').eq('project_id', pid).order('sort_order');
+      LOC_LEVELS = (r8 && !r8.error && r8.data) || [];
+    } catch (e) { LOC_LEVELS = []; }
     try {
       // Keyset-paginate: a plain select caps at Supabase's 1000-row limit, which silently TRUNCATED
       // the tree on big P6 imports (>1000 WBS nodes) — children whose parent fell past row 1000
@@ -2087,13 +2108,16 @@
   var _dragRowId = null;   // activity row being drag-reordered (within its WBS)
   // Drag-reorder is only meaningful in WBS grouping with no active column sort (otherwise order is
   // derived from the grouping / column sort, so a manual sequence wouldn't stick).
-  function _reorderEnabled() { return groupBy === 'wbs' && !colSort && !window.__viewOnly && !window.__archived; }
+  function _reorderEnabled() { return groupBys.length === 1 && groupBys[0] === 'wbs' && !colSort && !window.__viewOnly && !window.__archived; }
   var filters = { status: {}, type: {}, behind: false, crit: false, look: 0, codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; crit = critical-path only; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
   var _colFilterOn = false; try { _colFilterOn = localStorage.getItem('ps_colfilter') === '1'; } catch (e) {}
   var _colfT = null;   // debounce timer for column-filter typing
   var _hideEmptyGroups = false; try { _hideEmptyGroups = localStorage.getItem('ps_hideempty') === '1'; } catch (e) {}
   var _nonEmptyCodes = {};   // WBS codes that contain at least one visible activity (for Hide empty groups)
-  var groupBy = 'wbs';   // 'wbs' | 'status' | 'responsible' | 'type'
+  // Ordered grouping levels. ['wbs'] = the plain WBS tree (default). Anything else nests a group
+  // header per entry, in order — so Location>Zone>Activity and Activity>Location>Zone differ only
+  // by the order of this list. Persisted per project; see setGroupBys/loadGroupBys.
+  var groupBys = ['wbs'];
   var _dspan = {};       // span map keyed by display code (real WBS codes in WBS mode)
   var isAdmin = false;
   // Roles that may write the schedule (matches is_planner() in the DB). Used to gate the
@@ -2631,6 +2655,7 @@
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
     if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
+    loadGroupBys();       // per-project grouping order (needs LOC_LEVELS loaded to validate against)
     populateGroupSelect();
     renderAll();
     if (isAdmin && rows.length) updateProjectSummary();
@@ -2892,32 +2917,269 @@
   // options; removes stale code options (deleted/renamed types) and falls back to WBS if the
   // currently selected group-by no longer exists.
   function populateGroupSelect() {
-    var sel = document.getElementById('ps-group'); if (!sel) return;
-    Array.prototype.slice.call(sel.querySelectorAll('option[data-code-opt]')).forEach(function (o) { o.remove(); });
-    CODE_TYPES.forEach(function (ct) {
-      var o = document.createElement('option'); o.value = 'code:' + ct.id; o.textContent = 'Group: ' + ct.name; o.setAttribute('data-code-opt', '1'); sel.appendChild(o);
-    });
-    if (groupBy.indexOf('code:') === 0 && !CODE_TYPES.some(function (ct) { return 'code:' + ct.id === groupBy; })) { groupBy = 'wbs'; }
-    sel.value = groupBy;
+    normalizeGroupBys();
+    var t = document.getElementById('ps-groupbtn-txt');
+    if (t) t.textContent = 'Group: ' + groupBys.map(dimLabel).join(' › ');
+    var m = document.getElementById('ps-group-menu');
+    if (m && m.classList.contains('open')) renderGroupMenu();
   }
-  function groupKeyOf(r) {
-    if (groupBy === 'status') return r.status || 'Not Started';
-    if (groupBy === 'responsible') return r.responsible_party || 'Unassigned';
-    if (groupBy === 'type') return r.activity_type || 'Task';
-    if (groupBy && groupBy.indexOf('code:') === 0) {
-      var typeId = groupBy.slice(5);
-      var valId = r.activity_codes && r.activity_codes[typeId];
+  function _gbKey() { return 'ps_groupbys_' + (pid || ''); }
+  function setGroupBys(list) {
+    groupBys = list.slice(); normalizeGroupBys();
+    try { localStorage.setItem(_gbKey(), JSON.stringify(groupBys)); } catch (e) {}
+    collapsed = {};
+    populateGroupSelect(); renderCollapseMenu(); renderGrid(); renderGantt();
+  }
+  function loadGroupBys() {
+    groupBys = ['wbs'];
+    try { var v = JSON.parse(localStorage.getItem(_gbKey()) || 'null'); if (Array.isArray(v) && v.length) groupBys = v; } catch (e) {}
+    normalizeGroupBys();
+  }
+  // The grouping picker: presets for the two layouts a planner actually switches between, plus a
+  // free-form ordered list. Order IS the hierarchy, so each chosen level shows its position.
+  function renderGroupMenu() {
+    var m = document.getElementById('ps-group-menu'); if (!m) return;
+    var locDims = LOC_LEVELS.map(function (l) { return 'loc:' + l.id; });
+    var presets = [
+      { name: 'WBS tree (default)', dims: ['wbs'] },
+      { name: 'Location › Activity', dims: locDims.concat(['work']) },
+      { name: 'Activity › Location', dims: ['work'].concat(locDims) }
+    ].filter(function (p) { return p.dims.length; });
+    var h = '<div class="ps-gm-sec">Presets</div>';
+    presets.forEach(function (p, i) {
+      var on = JSON.stringify(p.dims) === JSON.stringify(groupBys);
+      h += '<button data-gpreset="' + i + '"' + (on ? ' class="on"' : '') + '>' + esc(p.name) +
+        (p.dims.length > 1 ? '<span class="ps-gm-hint">' + esc(p.dims.map(dimLabel).join(' › ')) + '</span>' : '') + '</button>';
+    });
+    if (!locDims.length) h += '<div class="ps-gm-note">No location levels defined yet — add them in <strong>Location Breakdown…</strong> to group by location.</div>';
+    h += '<div class="ps-gm-sec">Levels (in order)</div>';
+    if (!groupBys.length) h += '<div class="ps-gm-note">No grouping.</div>';
+    groupBys.forEach(function (d, i) {
+      h += '<div class="ps-gm-row"><span class="ps-gm-n">' + (i + 1) + '</span><span class="ps-gm-lbl">' + esc(dimLabel(d)) + '</span>' +
+        '<button class="ps-gm-x" data-gup="' + i + '" title="Move up"' + (i === 0 ? ' disabled' : '') + '>▲</button>' +
+        '<button class="ps-gm-x" data-gdown="' + i + '" title="Move down"' + (i === groupBys.length - 1 ? ' disabled' : '') + '>▼</button>' +
+        '<button class="ps-gm-x danger" data-grm="' + i + '" title="Remove this level">✕</button></div>';
+    });
+    var avail = allDims().filter(function (d) { return groupBys.indexOf(d) === -1; });
+    if (avail.length) {
+      h += '<div class="ps-gm-sec">Add a level</div>';
+      avail.forEach(function (d) { h += '<button data-gadd="' + esc(d) + '">+ ' + esc(dimLabel(d)) + '</button>'; });
+    }
+    h += '<div class="ps-gm-sec">Location Breakdown</div>' +
+      '<button data-gact="levels"><span data-ico="layers" data-ico-size="14"></span> Location Breakdown…</button>' +
+      '<button data-gact="backfill"><span data-ico="download" data-ico-size="14"></span> Fill location from the WBS tree…</button>';
+    m.innerHTML = h;
+    if (window.Icons && Icons.hydrate) Icons.hydrate(m);
+    m.querySelectorAll('button[data-gpreset]').forEach(function (b) { b.onclick = function () { setGroupBys(presets[+b.dataset.gpreset].dims); renderGroupMenu(); }; });
+    m.querySelectorAll('button[data-gup]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.gup, l = groupBys.slice(); var t2 = l[i - 1]; l[i - 1] = l[i]; l[i] = t2; setGroupBys(l); renderGroupMenu(); }; });
+    m.querySelectorAll('button[data-gdown]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.gdown, l = groupBys.slice(); var t2 = l[i + 1]; l[i + 1] = l[i]; l[i] = t2; setGroupBys(l); renderGroupMenu(); }; });
+    m.querySelectorAll('button[data-grm]').forEach(function (b) { b.onclick = function () { var l = groupBys.slice(); l.splice(+b.dataset.grm, 1); setGroupBys(l.length ? l : ['wbs']); renderGroupMenu(); }; });
+    m.querySelectorAll('button[data-gadd]').forEach(function (b) { b.onclick = function () { setGroupBys(groupBys.concat([b.dataset.gadd])); renderGroupMenu(); }; });
+    m.querySelectorAll('button[data-gact]').forEach(function (b) { b.onclick = function () { closeMenus(); if (b.dataset.gact === 'levels') openLocLevels(); else openLocBackfill(); }; });
+  }
+  // ---- Grouping dimensions -------------------------------------------------------------------
+  // A dimension is a flat key an activity can be bucketed by. `groupBys` is an ORDERED list of
+  // them, so Location > Zone > Activity and Activity > Location > Zone are the same engine with
+  // the order swapped — which is the whole point of making location/zone activity DATA.
+  // ⚠️ 'wbs' is a hierarchy, not a flat key: alone it means the plain WBS tree, and as the LAST
+  // entry it means "show each group's WBS path". It is never valid in the middle.
+  function dimValOf(r, dim) {
+    if (dim === 'work') return r.work_type || r.activity_name || '— Unnamed —';
+    if (dim === 'status') return r.status || 'Not Started';
+    if (dim === 'responsible') return r.responsible_party || 'Unassigned';
+    if (dim === 'type') return r.activity_type || 'Task';
+    if (dim.indexOf('loc:') === 0) return locValOf(r, dim.slice(4)) || '— Unassigned —';
+    if (dim.indexOf('code:') === 0) {
+      var valId = r.activity_codes && r.activity_codes[dim.slice(5)];
       return valId ? (codeValueLabel(valId) || '— Unknown —') : '— Unassigned —';
     }
-    return null;
+    return '—';
+  }
+  function dimLabel(dim) {
+    if (dim === 'wbs') return 'WBS';
+    if (dim === 'work') return 'Activity (work type)';
+    if (dim === 'status') return 'Status';
+    if (dim === 'responsible') return 'Responsible';
+    if (dim === 'type') return 'Activity Type';
+    if (dim.indexOf('loc:') === 0) return locLevelName(dim.slice(4)) || 'Location level';
+    if (dim.indexOf('code:') === 0) { var ct = CODE_TYPES.find(function (c) { return 'code:' + c.id === dim; }); return ct ? ct.name : 'Activity code'; }
+    return dim;
+  }
+  // Every dimension available on this project, in picker order.
+  function allDims() {
+    var out = ['wbs', 'work'];
+    LOC_LEVELS.forEach(function (l) { out.push('loc:' + l.id); });
+    out.push('status', 'responsible', 'type');
+    CODE_TYPES.forEach(function (ct) { out.push('code:' + ct.id); });
+    return out;
+  }
+  // Drop dimensions that no longer exist (a deleted location level / code type) so a stale saved
+  // view or persisted order can't group by something that isn't there any more.
+  function normalizeGroupBys() {
+    var valid = allDims();
+    var out = groupBys.filter(function (d) { return valid.indexOf(d) !== -1; });
+    var w = out.indexOf('wbs');
+    if (w !== -1 && w !== out.length - 1) { out.splice(w, 1); out.push('wbs'); }   // wbs is only ever last
+    if (!out.length) out = ['wbs'];
+    groupBys = out;
+  }
+  // ---- Location Breakdown (levels) ------------------------------------------------------------
+  // The levels are per-project and free-form (Building / Level / Zone / Unit / Station / …) because
+  // a tower, a viaduct and a plant don't share a vocabulary. Order = the grouping hierarchy.
+  function openLocLevels() {
+    if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
+    var m = UI.modal('<h2 style="margin-top:0;">Location Breakdown</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">The location levels this project uses, outermost first — e.g. <em>Building › Level › Zone</em>. ' +
+      'Each becomes a column on every activity and a level you can group by.</p>' +
+      '<div id="lvl-list"></div>' +
+      '<div style="display:flex;gap:8px;margin-top:10px;"><input class="pd-input" id="lvl-new" placeholder="Add a level, e.g. Zone" style="flex:1;"><button class="pd-btn" id="lvl-add">Add</button></div>' +
+      '<div style="text-align:right;margin-top:14px;"><button class="pd-btn pd-btn-primary" id="lvl-x">Done</button></div>');
+    var listEl = m.el.querySelector('#lvl-list');
+    function paint() {
+      listEl.innerHTML = LOC_LEVELS.length
+        ? LOC_LEVELS.map(function (l, i) {
+            return '<div class="ps-gm-row" style="padding:5px 0;"><span class="ps-gm-n">' + (i + 1) + '</span>' +
+              '<input class="pd-input ps-lvl-name" data-id="' + esc(l.id) + '" value="' + esc(l.name) + '" style="flex:1;height:30px;">' +
+              '<button class="ps-gm-x" data-up="' + i + '"' + (i === 0 ? ' disabled' : '') + ' title="Move up">▲</button>' +
+              '<button class="ps-gm-x" data-down="' + i + '"' + (i === LOC_LEVELS.length - 1 ? ' disabled' : '') + ' title="Move down">▼</button>' +
+              '<button class="ps-gm-x danger" data-del="' + esc(l.id) + '" title="Delete this level">✕</button></div>';
+          }).join('')
+        : '<div style="color:var(--pd-muted);font-size:12.5px;padding:8px 0;">No levels yet. Most building projects use <em>Location</em> then <em>Zone</em>.</div>';
+      listEl.querySelectorAll('.ps-lvl-name').forEach(function (inp) {
+        inp.onchange = async function () {
+          var v = inp.value.trim(); if (!v) { paint(); return; }
+          var l = LOC_LEVELS.find(function (x) { return x.id === inp.dataset.id; }); if (!l || l.name === v) return;
+          l.name = v;
+          await sb().from('location_levels').update({ name: v }).eq('id', l.id);
+          populateGroupSelect(); renderHeader(); renderGrid();
+        };
+      });
+      listEl.querySelectorAll('[data-up],[data-down]').forEach(function (b) {
+        b.onclick = async function () {
+          var i = +(b.dataset.up !== undefined ? b.dataset.up : b.dataset.down), j = b.dataset.up !== undefined ? i - 1 : i + 1;
+          var a = LOC_LEVELS[i], c = LOC_LEVELS[j]; if (!a || !c) return;
+          LOC_LEVELS[i] = c; LOC_LEVELS[j] = a;
+          await _batchUpdate('location_levels', LOC_LEVELS.map(function (l, k) { l.sort_order = k; return { id: l.id, patch: { sort_order: k } }; }));
+          paint(); populateGroupSelect(); renderHeader(); renderGrid();
+        };
+      });
+      listEl.querySelectorAll('[data-del]').forEach(function (b) {
+        b.onclick = async function () {
+          var id = b.dataset.del, l = LOC_LEVELS.find(function (x) { return x.id === id; });
+          var used = rows.filter(function (r) { return locValOf(r, id); }).length;
+          if (!confirm('Delete the level "' + (l ? l.name : '') + '"?' + (used ? '\n\n' + used + ' activities have a value at this level. The values stay in the data but stop being shown or groupable.' : ''))) return;
+          await sb().from('location_levels').delete().eq('id', id);
+          LOC_LEVELS = LOC_LEVELS.filter(function (x) { return x.id !== id; });
+          groupBys = groupBys.filter(function (d) { return d !== 'loc:' + id; });
+          paint(); setGroupBys(groupBys); renderHeader();
+        };
+      });
+    }
+    async function addLevel() {
+      var el = m.el.querySelector('#lvl-new'), v = el.value.trim(); if (!v) return;
+      var res = await sb().from('location_levels').insert({ project_id: pid, name: v, sort_order: LOC_LEVELS.length, created_by: UID }).select().single();
+      if (res.error) { UI.toast(res.error.message + ' — run the 2026-08-04 location migration.', 'error'); return; }
+      LOC_LEVELS.push(res.data); el.value = ''; el.focus();
+      paint(); populateGroupSelect(); seedExtraHidden(); renderHeader(); renderGrid();
+    }
+    m.el.querySelector('#lvl-add').onclick = addLevel;
+    m.el.querySelector('#lvl-new').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); addLevel(); } };
+    m.el.querySelector('#lvl-x').onclick = m.close;
+    paint();
+  }
+  // ---- Backfill location from the WBS tree -----------------------------------------------------
+  // Existing schedules already encode location as WBS structure (Loc > Zone > activities), so the
+  // values are recoverable — read each activity's WBS ancestry and map a DEPTH to each level.
+  // ⚠️ Depth-to-level is shown and editable rather than guessed silently: a project whose tree is
+  // Phase > Location > Zone maps differently from one that is Location > Zone.
+  function openLocBackfill() {
+    if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
+    if (!LOC_LEVELS.length) { UI.toast('Define your location levels first (Location Breakdown…).', 'warn'); return; }
+    var acts = rows.filter(function (r) { return !isWbs(r) && r.wbs; });
+    if (!acts.length) { UI.toast('No activities with a WBS code to read from.', 'warn'); return; }
+    var nameByCode = {}; rows.forEach(function (r) { if (isWbs(r) && r.wbs) nameByCode[String(r.wbs)] = r.activity_name || ''; });
+    var maxD = 0; acts.forEach(function (a) { var d = String(a.wbs).split('.').length; if (d > maxD) maxD = d; });
+    // Sample the tree so the user can see what each depth actually contains before mapping.
+    function sampleAt(depth) {
+      var seen = {}, out = [];
+      acts.forEach(function (a) {
+        var segs2 = String(a.wbs).split('.');
+        if (segs2.length < depth) return;
+        var nm = nameByCode[segs2.slice(0, depth).join('.')];
+        if (nm && !seen[nm]) { seen[nm] = 1; out.push(nm); }
+      });
+      return out;
+    }
+    var opts = '<option value="">— skip —</option>';
+    for (var d = 1; d <= maxD; d++) { var sm = sampleAt(d).slice(0, 3).join(', '); opts += '<option value="' + d + '">WBS level ' + d + (sm ? ' — ' + esc(sm) + '…' : '') + '</option>'; }
+    var rowsHtml = LOC_LEVELS.map(function (l, i) {
+      return '<div class="pd-field"><label class="pd-label">' + esc(l.name) + '</label>' +
+        '<select class="pd-input bf-sel" data-lvl="' + esc(l.id) + '">' + opts.replace('value="' + (i + 2) + '"', 'value="' + (i + 2) + '" selected') + '</select></div>';
+    }).join('');
+    var m = UI.modal('<h2 style="margin-top:0;">Fill location from the WBS tree</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Your schedule already groups by location in the WBS. Pick which WBS level holds each location level and this copies the names onto the activities as data — the WBS tree is not modified.</p>' +
+      rowsHtml +
+      '<label style="display:block;font-size:12.5px;margin:6px 0 10px;"><input type="checkbox" id="bf-over"> Overwrite values that are already set</label>' +
+      '<div id="bf-prev" style="font-size:12.5px;color:var(--pd-muted);border-top:1px solid var(--pd-line);padding-top:10px;max-height:190px;overflow:auto;"></div>' +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="bf-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="bf-go">Apply</button></div>');
+    function plan() {
+      var map = [];
+      m.el.querySelectorAll('.bf-sel').forEach(function (s) { if (s.value) map.push({ id: s.dataset.lvl, depth: +s.value }); });
+      var over = m.el.querySelector('#bf-over').checked;
+      var ups = [], sample = [];
+      acts.forEach(function (a) {
+        var segs2 = String(a.wbs).split('.'), loc = Object.assign({}, a.location || {}), changed = false;
+        map.forEach(function (mp) {
+          if (segs2.length < mp.depth) return;
+          var nm = nameByCode[segs2.slice(0, mp.depth).join('.')];
+          if (!nm) return;
+          if (loc[mp.id] && !over) return;
+          if (loc[mp.id] === nm) return;
+          loc[mp.id] = nm; changed = true;
+        });
+        if (changed) { ups.push({ id: a.id, patch: { location: loc } }); if (sample.length < 8) sample.push({ a: a, loc: loc }); }
+      });
+      return { ups: ups, sample: sample, map: map };
+    }
+    function preview() {
+      var p = plan(), el = m.el.querySelector('#bf-prev');
+      if (!p.map.length) { el.innerHTML = 'Pick at least one WBS level above.'; return; }
+      el.innerHTML = '<strong>' + p.ups.length + '</strong> of ' + acts.length + ' activities will be updated.' +
+        (p.sample.length ? '<div style="margin-top:8px;">' + p.sample.map(function (s) {
+          return '<div style="padding:2px 0;"><code style="color:var(--pd-red);">' + esc(s.a.wbs) + '</code> ' + esc((s.a.activity_name || '').slice(0, 40)) +
+            ' → ' + esc(LOC_LEVELS.filter(function (l) { return s.loc[l.id]; }).map(function (l) { return l.name + ': ' + s.loc[l.id]; }).join(' · ')) + '</div>';
+        }).join('') + '</div>' : '');
+    }
+    m.el.querySelectorAll('.bf-sel').forEach(function (s) { s.onchange = preview; });
+    m.el.querySelector('#bf-over').onchange = preview;
+    m.el.querySelector('#bf-x').onclick = m.close;
+    m.el.querySelector('#bf-go').onclick = async function () {
+      var p = plan(); if (!p.ups.length) { UI.toast('Nothing to update.', 'info'); return; }
+      m.close(); showLoading('Filling location from the WBS…');
+      // Apply locally first so the grid is right even if a chunk fails partway.
+      p.ups.forEach(function (u) { var r = rows.find(function (x) { return x.id === u.id; }); if (r) r.location = u.patch.location; });
+      var okAll = await _batchUpdate(TABLE, p.ups);
+      hideLoading();
+      rebuild(false); renderGrid(); renderGantt();
+      if (okAll) UI.toast('Filled location on ' + p.ups.length + ' activities.', 'success');
+    };
+    preview();
+  }
+  // Natural order, so Level 2 sorts before Level 10 and "— Unassigned —" sinks to the bottom.
+  function cmpGroupName(a, b) {
+    var ua = /^—/.test(a), ub = /^—/.test(b);
+    if (ua !== ub) return ua ? 1 : -1;
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   }
   function cmpCodeStr(a, b) {
     var A = String(a).split('.'), B = String(b).split('.'), n = Math.max(A.length, B.length);
     for (var i = 0; i < n; i++) { var x = parseInt(A[i], 10), y = parseInt(B[i], 10); if (isNaN(x) && isNaN(y)) { if ((A[i]||'') !== (B[i]||'')) return (A[i]||'') < (B[i]||'') ? -1 : 1; } else { x = isNaN(x) ? -1 : x; y = isNaN(y) ? -1 : y; if (x !== y) return x - y; } }
     return 0;
   }
-  // Build the full annotated node list for the current groupBy + filters (no collapse).
+  // Build the full annotated node list for the current groupBys + filters (no collapse).
   function buildNodes() {
+    normalizeGroupBys();
+    var groupBy = groupBys.length === 1 ? groupBys[0] : '__multi';
     if (groupBy === 'wbs') {
       _dspan = _spanMap;
       var list = _sorted;
@@ -2929,30 +3191,62 @@
       list.forEach(function (r) { r._dcode = r.wbs; r._ddepth = r._depth; r._danc = r._anc; r._dkind = isWbs(r) ? 'wbs' : 'task'; r._realCode = r.wbs; });
       return list;
     }
-    // grouped: group leaf activities, then rebuild each group's pruned WBS tree
+    // Grouped: nest a group header per dimension in `groupBys` order, then at the deepest level
+    // emit either the group's pruned WBS path (when 'wbs' is the last dimension, which is how the
+    // old single-level grouping behaved) or the activities directly.
     var acts = _sorted.filter(function (r) { return !isWbs(r); });
     if (anyFilter()) acts = acts.filter(rowMatches);
-    var groups = {}; acts.forEach(function (a) { var g = groupKeyOf(a) || '—'; (groups[g] = groups[g] || []).push(a); });
-    var gnames = Object.keys(groups).sort();
+    var showWbs = groupBys[groupBys.length - 1] === 'wbs';
+    var dims = showWbs ? groupBys.slice(0, -1) : groupBys.slice();
     var realByCode = {}; rows.forEach(function (r) { if (isWbs(r)) realByCode[r.wbs] = r; });
-    var out = [], span = {}, SEP = '';
+    var out = [], span = {}, SEP = '';
     function addSpan(code, s, e) { if (!s && !e) return; if (!s) s = e; if (!e) e = s; var m = span[code]; if (!m) span[code] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
-    gnames.forEach(function (g) {
-      var gcode = '§' + g;
-      out.push({ _dkind: 'group', _dcode: gcode, _ddepth: 0, _danc: [], activity_name: g, _gcount: groups[g].length, id: 'grp:' + g });
-      var ancSet = {}; groups[g].forEach(function (a) { (a._anc || []).forEach(function (c) { ancSet[c] = true; }); });
+    // One group's contents: the pruned WBS path, or just the activities in WBS order.
+    function emitLeaf(list, base, baseAnc) {
+      var depth = baseAnc.length;
+      if (!showWbs) {
+        list.slice().sort(function (x, y) { return cmpCodeStr(x.wbs, y.wbs); }).forEach(function (a) {
+          a._dcode = base + SEP + a.wbs; a._ddepth = depth; a._danc = baseAnc; a._dkind = 'task'; a._realCode = a.wbs;
+          out.push(a);
+          var s = pd(a.start_date), e = pd(a.end_date);
+          addSpan(a._dcode, s, e); baseAnc.forEach(function (x) { addSpan(x, s, e); });
+        });
+        return;
+      }
+      var ancSet = {}; list.forEach(function (a) { (a._anc || []).forEach(function (c) { ancSet[c] = true; }); });
       var entries = [];
       Object.keys(ancSet).forEach(function (c) { entries.push({ real: c, isW: true }); });
-      groups[g].forEach(function (a) { entries.push({ real: a.wbs, isW: false, a: a }); });
+      list.forEach(function (a) { entries.push({ real: a.wbs, isW: false, a: a }); });
       entries.sort(function (x, y) { var c = cmpCodeStr(x.real, y.real); if (c !== 0) return c; return x.isW === y.isW ? 0 : (x.isW ? -1 : 1); });
       entries.forEach(function (en) {
         var rsegs = String(en.real).split('.'), rdepth = rsegs.length - 1;
-        var da = [gcode]; for (var i = 1; i < rsegs.length; i++) da.push(gcode + SEP + rsegs.slice(0, i).join('.'));
-        var dc = gcode + SEP + en.real;
-        if (en.isW) { var wr = realByCode[en.real]; var node = wr ? Object.assign({}, wr) : { wbs: en.real, activity_name: '' }; node._dkind = 'wbs'; node._dcode = dc; node._ddepth = 1 + rdepth; node._danc = da; node._realCode = en.real; out.push(node); }
-        else { var a = en.a; a._dcode = dc; a._ddepth = 1 + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; out.push(a); var s = pd(a.start_date), e = pd(a.end_date); addSpan(dc, s, e); da.forEach(function (x) { addSpan(x, s, e); }); }
+        var da = baseAnc.slice();
+        for (var i = 1; i < rsegs.length; i++) da.push(base + SEP + rsegs.slice(0, i).join('.'));
+        var dc = base + SEP + en.real;
+        if (en.isW) {
+          var wr = realByCode[en.real];
+          var node = wr ? Object.assign({}, wr) : { wbs: en.real, activity_name: '' };
+          node._dkind = 'wbs'; node._dcode = dc; node._ddepth = depth + rdepth; node._danc = da; node._realCode = en.real;
+          out.push(node);
+        } else {
+          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs;
+          out.push(a);
+          var s = pd(a.start_date), e = pd(a.end_date);
+          addSpan(dc, s, e); da.forEach(function (x) { addSpan(x, s, e); });
+        }
       });
-    });
+    }
+    (function walk(list, di, parentCode, parentAnc) {
+      if (di >= dims.length) { emitLeaf(list, parentCode, parentAnc); return; }
+      var buckets = {};
+      list.forEach(function (a) { var g = dimValOf(a, dims[di]) || '—'; (buckets[g] = buckets[g] || []).push(a); });
+      Object.keys(buckets).sort(cmpGroupName).forEach(function (g) {
+        var gcode = parentCode + '§' + g;
+        out.push({ _dkind: 'group', _dcode: gcode, _ddepth: parentAnc.length, _danc: parentAnc,
+          activity_name: g, _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
+        walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
+      });
+    })(acts, 0, '', []);
     _dspan = span;
     return out;
   }
@@ -3518,7 +3812,7 @@
   function hideLoading() { var el=document.getElementById('ps-loading'); if(el)el.style.display='none'; setProgress(null); }
 
   // ---- OPC-style "Collapse to → WBS Level N" dropdown ----
-  function maxDepth() { var m = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > m) m = d; }); return groupBy === 'wbs' ? m : m + 1; }
+  function maxDepth() { var m = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > m) m = d; }); return (groupBys.length === 1 && groupBys[0] === 'wbs') ? m : m + groupBys.length; }
   function renderCollapseMenu() {
     var menu = document.getElementById('ps-collapse-menu'); if (!menu) return;
     var mx = Math.max(1, maxDepth());
@@ -3597,7 +3891,14 @@
     return '';
   }
   function rowMatches(r) {
-    if (search.trim()) { var hay=[r.activity_id,r.activity_name,r.wbs].join(' ').toLowerCase(); if (hay.indexOf(search.trim().toLowerCase())===-1) return false; }
+    // Search also covers work type + every location value, so "Zone 3" or "Formworks" finds the
+    // right activities even when the grid isn't currently grouped by them.
+    if (search.trim()) {
+      var hay = [r.activity_id, r.activity_name, r.wbs, r.work_type].concat(
+        r.location ? Object.keys(r.location).map(function (k) { return r.location[k]; }) : []
+      ).join(' ').toLowerCase();
+      if (hay.indexOf(search.trim().toLowerCase()) === -1) return false;
+    }
     var sA = Object.keys(filters.status).some(function(k){return filters.status[k];});
     if (sA && !filters.status[r.status || 'Not Started']) return false;
     var tA = Object.keys(filters.type).some(function(k){return filters.type[k];});
@@ -5675,9 +5976,27 @@
   // resizable `c-x` class. Computed live so newly-added codes/UDFs appear without a reload.
   function extraColDefs() {
     var out = [];
+    // Work type + one column per Location Breakdown level. These are ordinary editable activity
+    // fields, so unlike codes/UDFs they carry `edit` and can be typed straight into the grid.
+    out.push(['work', 'Work Type', 'c-x', { kind: 'work', edit: true }]);
+    LOC_LEVELS.forEach(function (l) { out.push(['loc:' + l.id, l.name, 'c-x', { kind: 'loc', id: l.id, edit: true }]); });
     CODE_TYPES.forEach(function (ct) { out.push(['code:' + ct.id, ct.name, 'c-x', { kind: 'code', id: ct.id }]); });
     UDF_DEFS.forEach(function (d) { out.push(['udf:' + d.id, d.name, 'c-x', { kind: 'udf', def: d }]); });
     return out;
+  }
+  function locLevelName(id) { var l = LOC_LEVELS.find(function (x) { return x.id === id; }); return l ? l.name : null; }
+  function locValOf(r, levelId) { return (r && r.location && r.location[levelId]) || ''; }
+  // Every distinct value already used at a level — feeds the grid editor's datalist and the
+  // Add/Edit form, so a planner picks an existing "Tower A" instead of retyping (and mistyping) it.
+  function locValuesFor(levelId) {
+    var seen = {}, out = [];
+    rows.forEach(function (r) { var v = locValOf(r, levelId); if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return out.sort();
+  }
+  function workTypeValues() {
+    var seen = {}, out = [];
+    rows.forEach(function (r) { var v = r.work_type; if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return out.sort();
   }
   function gridCols() { return GRID_COLS.concat(extraColDefs()); }
   // Hide/rename key: built-ins keep their LABEL (back-compat with persisted prefs); extra columns
@@ -5685,6 +6004,8 @@
   function colKey(c) { return c[3] ? c[0] : c[1]; }
   function extraCellVal(meta, r) {
     if (!meta) return '';
+    if (meta.kind === 'work') return r.work_type || '';
+    if (meta.kind === 'loc') return locValOf(r, meta.id);
     if (meta.kind === 'code') { var vid = r.activity_codes && r.activity_codes[meta.id]; return vid ? (codeValueLabel(vid) || '') : ''; }
     var raw = r.udf && r.udf[meta.def.id]; return (raw == null || raw === '') ? '' : udfFmt(meta.def, raw);
   }
@@ -5693,7 +6014,16 @@
   function gridExtraHtml(r) {
     var ex = extraColDefs(); if (!ex.length) return '';
     var leaf = r._dkind !== 'group' && !isWbsNode(r);
-    return ex.map(function (c) { return '<div class="ps-cell c-x">' + (leaf ? esc(extraCellVal(c[3], r)) : '') + '</div>'; }).join('');
+    var ro = window.__viewOnly || window.__archived;
+    return ex.map(function (c) {
+      if (!leaf) return '<div class="ps-cell c-x"></div>';
+      // Work Type / Location levels are editable in place; codes + UDFs stay read-only here
+      // (they're assigned from the activity form / their own managers).
+      var ed = c[3] && c[3].edit && !ro;
+      return '<div class="ps-cell c-x' + (ed ? ' ps-editable' : '') + '"' +
+        (ed ? ' data-id="' + r.id + '" data-field="' + esc(c[0]) + '" data-type="xcol"' : '') +
+        '>' + esc(extraCellVal(c[3], r)) + '</div>';
+    }).join('');
   }
   var colHidden = {};   // keyed by column label
   try { colHidden = JSON.parse(localStorage.getItem('ps_colhidden') || '{}') || {}; } catch (e) { colHidden = {}; }
@@ -5707,7 +6037,15 @@
   var _colSeen = {}; try { _colSeen = JSON.parse(localStorage.getItem('ps_colseen') || '{}') || {}; } catch (e) { _colSeen = {}; }
   function seedExtraHidden() {
     var changed = false;
-    extraColDefs().forEach(function (c) { var k = colKey(c); if (!_colSeen[k]) { _colSeen[k] = 1; if (!(k in colHidden)) colHidden[k] = 1; changed = true; } });
+    extraColDefs().forEach(function (c) {
+      var k = colKey(c); if (_colSeen[k]) return;
+      _colSeen[k] = 1; changed = true;
+      // Location levels are created deliberately (you had to add the level), so show them — you
+      // need somewhere to type the values. Work Type / codes / UDFs stay opt-in via the chooser so
+      // they don't silently widen every existing project's grid.
+      var showByDefault = c[3] && c[3].kind === 'loc';
+      if (!showByDefault && !(k in colHidden)) colHidden[k] = 1;
+    });
     if (changed) { try { localStorage.setItem('ps_colseen', JSON.stringify(_colSeen)); localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} }
   }
   // Column display order (drag-to-reorder). Persisted list of colKeys. Applied via CSS flex `order`
@@ -6427,10 +6765,24 @@
     if (type === 'date') { var dv = (field === 'actual_start' || field === 'start_date') ? dispStart(r) : (field === 'actual_finish' || field === 'end_date' ? dispFin(r) : r[field]); raw = dv ? String(dv).slice(0, 10) : ''; }
     if (type === 'pdur') { var pd0 = _origDurOf(r); raw = (pd0 == null ? '' : pd0); }
     if (type === 'dpct') { raw = _durPct(r); }
+    // Work Type / Location-level columns aren't plain row fields: `field` is the column key
+    // ('work' or 'loc:<levelId>') and the location values live in the `location` jsonb map.
+    if (type === 'xcol') raw = field === 'work' ? (r.work_type || '') : locValOf(r, field.slice(4));
     var inp = document.createElement('input');
     inp.type = type === 'date' ? 'date' : (type === 'number' || type === 'money' || type === 'pdur' || type === 'dpct' ? 'number' : 'text');
     inp.value = raw;
-    cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); if (inp.select) inp.select();
+    cell.innerHTML = '';
+    // Suggest the values already used on this project, so "Tower A" is picked rather than retyped
+    // (and mistyped — a typo silently creates a second group).
+    if (type === 'xcol') {
+      var _sug = field === 'work' ? workTypeValues() : locValuesFor(field.slice(4));
+      if (_sug.length) {
+        var _dl = document.createElement('datalist'); _dl.id = 'ps-xdl';
+        _dl.innerHTML = _sug.map(function (v) { return '<option value="' + esc(v) + '"></option>'; }).join('');
+        cell.appendChild(_dl); inp.setAttribute('list', 'ps-xdl');
+      }
+    }
+    cell.appendChild(inp); inp.focus(); if (inp.select) inp.select();
     _editing = true;
     broadcastCollabSel(id, field, true);
     var done = false;
@@ -6452,6 +6804,17 @@
         if (!r.actual_start) { UI.toast('Start the activity first — enter an Actual Start before setting Duration % Complete.', 'error'); renderGrid(); return; }
         if (isComplete(r)) { UI.toast('Activity is complete — Duration % Complete is 100%.', 'info'); renderGrid(); return; }
         var _dp = val === '' ? 0 : Math.max(0, Math.min(100, parseFloat(val) || 0)); var _od = _origDurOf(r) || 0; persist(id, { remaining_duration: Math.max(0, Math.round(_od * (1 - _dp / 100))) }).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } }); return;
+      }
+      if (type === 'xcol') {
+        var _v = String(val || '').trim();
+        if (field === 'work') patch.work_type = _v || null;
+        else {                                   // rebuild the jsonb map; a blank value drops the key
+          var _lid = field.slice(4), _loc = Object.assign({}, r.location || {});
+          if (_v) _loc[_lid] = _v; else delete _loc[_lid];
+          patch.location = _loc;
+        }
+        persist(id, patch).then(function (ok) { if (ok) { rebuild(true); renderGrid(); renderGantt(); } });
+        return;
       }
       if (type === 'number') { patch[field] = val === '' ? null : Math.max(0, Math.min(100, parseFloat(val)||0)); }
       else if (type === 'money') { patch[field] = val === '' ? null : Math.max(0, parseFloat(val) || 0); }
@@ -9107,6 +9470,23 @@
         '</select></div>';
     }).join('');
   }
+  // Work type + one input per location level, each suggesting the values already on the project so
+  // a planner picks "Tower A" instead of retyping it (a typo silently makes a second group).
+  function populateLocFields(row) {
+    var wt = document.getElementById('ps-f-work'), wl = document.getElementById('ps-f-work-list');
+    if (wt) wt.value = (row && row.work_type) || '';
+    if (wl) wl.innerHTML = workTypeValues().map(function (v) { return '<option value="' + esc(v) + '"></option>'; }).join('');
+    var wrap = document.getElementById('ps-f-loc-wrap'), host = document.getElementById('ps-f-loc-fields');
+    if (!wrap || !host) return;
+    if (!LOC_LEVELS.length) { wrap.style.display = 'none'; host.innerHTML = ''; return; }
+    wrap.style.display = '';
+    host.innerHTML = LOC_LEVELS.map(function (l) {
+      var vals = locValuesFor(l.id);
+      return '<div class="ps-f-codes-row"><label class="pd-label" style="font-size:11px;">' + esc(l.name) + '</label>' +
+        '<input class="pd-input" data-loc-level="' + esc(l.id) + '" list="ps-f-loc-dl-' + esc(l.id) + '" autocomplete="off" style="min-width:150px;" value="' + esc(locValOf(row, l.id)) + '">' +
+        '<datalist id="ps-f-loc-dl-' + esc(l.id) + '">' + vals.map(function (v) { return '<option value="' + esc(v) + '"></option>'; }).join('') + '</datalist></div>';
+    }).join('');
+  }
   function openForm(row) {
     editId = row ? row.id : null;
     document.getElementById('ps-modal-title').textContent = row ? 'Edit Activity' : 'Add Activity';
@@ -9140,6 +9520,7 @@
     })();
     set('ps-f-resp', row ? row.responsible_party : '');
     populateCodesFields(row);
+    populateLocFields(row);
     populateUdfFields(row);
     set('ps-f-pred', row ? row.predecessors : '');
     set('ps-f-succ', (row && row._succObjs && row._succObjs.length) ? row._succObjs.map(function (s) { return s.id + (s.type && s.type !== 'FS' ? ' ' + s.type : '') + (s.lag ? (s.lag > 0 ? '+' : '') + s.lag : ''); }).join(', ') : '');
@@ -9274,6 +9655,11 @@
     if (savedId) {
       var roVal = num('ps-f-risk-opt'), rpVal = num('ps-f-risk-pess');
       try { var rr2 = await sb().from(TABLE).update({ risk_optimistic_pct: roVal, risk_pessimistic_pct: rpVal }).eq('id', savedId); if (!rr2.error) { var rrow = rows.find(function (x) { return x.id === savedId; }); if (rrow) { rrow.risk_optimistic_pct = roVal; rrow.risk_pessimistic_pct = rpVal; } } } catch (e) {}
+    }
+    if (savedId) {
+      var wtVal = (v('ps-f-work') || '').trim() || null, locVal = {};
+      document.querySelectorAll('#ps-f-loc-fields [data-loc-level]').forEach(function (inp) { var t = (inp.value || '').trim(); if (t) locVal[inp.dataset.locLevel] = t; });
+      try { var rr5 = await sb().from(TABLE).update({ work_type: wtVal, location: locVal }).eq('id', savedId); if (!rr5.error) { var rrow4 = rows.find(function (x) { return x.id === savedId; }); if (rrow4) { rrow4.work_type = wtVal; rrow4.location = locVal; } } } catch (e) {}
     }
     if (savedId && CODE_TYPES.length) {
       var codesVal = {};
@@ -10612,8 +10998,35 @@
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
       ov.querySelector('#sbpush-go').onclick = function () { var pc = ov.querySelector('#sbpush-wbs').value; var grp = ov.querySelector('#sbpush-grp').checked; var bs = ov.querySelector('#sbpush-basis').value; close(); pushToSchedule(pc, grp, bs); };
     }
+    // The builder already knows every generated activity's work type and its floor/zone/unit — it
+    // just used to throw that away, baking it into the activity NAME and the WBS nesting. Stamp it
+    // as DATA so the schedule can be grouped Activity > Location > Zone (or any other order).
+    // Creates the project's location levels on first push if it has none.
+    async function ensureLocLevels() {
+      var wanted = ['Location', 'Zone'];
+      if (locList().some(function (l) { return l.unit; })) wanted.push('Unit');
+      if (!LOC_LEVELS.length) {
+        for (var i = 0; i < wanted.length; i++) {
+          var res = await sb().from('location_levels').insert({ project_id: pid, name: wanted[i], sort_order: i, created_by: UID }).select().single();
+          if (res.error) return [];              // migration not run — push the schedule anyway
+          LOC_LEVELS.push(res.data);
+        }
+        populateGroupSelect(); seedExtraHidden(); renderHeader();
+      }
+      return LOC_LEVELS.map(function (l) { return l.id; });
+    }
     async function pushToSchedule(parentCode, grouped, basis) {
       var g = generate(basis || 'int'); if (!g.rows.length) return;
+      var locIds = await ensureLocLevels();
+      // floor -> level 1, zone -> level 2, unit -> level 3 (only as far as the project has levels).
+      function locMapOf(loc) {
+        var out = {}, parts = [loc.floor, loc.zone, loc.unit];
+        for (var i = 0; i < parts.length && i < locIds.length; i++) {
+          var p = parts[i]; if (!p) continue;
+          var v = p.code || p.name; if (v) out[locIds[i]] = String(v);
+        }
+        return out;
+      }
       var base = parentCode || '', idset = {};
       rows.forEach(function (r) { if (r.activity_id) idset[r.activity_id] = 1; });
       function uniqId(cand) { var id = cand, n = 2; while (idset[id]) { id = cand + '-' + n; n++; } idset[id] = 1; return id; }
@@ -10646,7 +11059,7 @@
         else if (ty === 'FF') bLast._preds.push(aLast + ' FF' + lagStr(k.lag));
         else if (ty === 'SF') bLast._preds.push(aFirst + ' SF' + lagStr(k.lag));
       });
-      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null) }; }
+      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: (r.act && r.act.name) || null, location: locMapOf(r.loc) }; }
       var payloads = [], taskN = g.rows.length, wbsMsg = '';
 
       if (!grouped) {
@@ -10854,7 +11267,7 @@
       var pane = document.querySelector('.ps-grid-pane'), cols = {};
       if (pane) ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var'].forEach(function (c) { cols[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); });
       v[n] = { zoom: zoom, search: search, filters: JSON.parse(JSON.stringify(filters)),
-        groupBy: groupBy, colHidden: JSON.parse(JSON.stringify(colHidden)),
+        groupBys: groupBys.slice(), colHidden: JSON.parse(JSON.stringify(colHidden)),
         colSort: colSort ? JSON.parse(JSON.stringify(colSort)) : null,
         colNames: JSON.parse(JSON.stringify(colNames)), cols: cols,
         charts: (function () { try { return JSON.parse(JSON.stringify(chartsList())); } catch (e) { return null; } })() };
@@ -10869,7 +11282,12 @@
     if (!filters.col) filters.col = {};
     if (filters.codes === undefined) filters.codes = {};
     // grouping (may be a code-group 'code:<id>')
-    if (v.groupBy !== undefined) { groupBy = v.groupBy; collapsed = {}; populateGroupSelect(); var gsel = document.getElementById('ps-group'); if (gsel) gsel.value = groupBy; }
+    // Legacy views stored a single `groupBy` string. 'status' etc. used to render each group's WBS
+    // path underneath, so migrate to ['status','wbs'] to reproduce exactly what the user saved.
+    if (v.groupBys !== undefined || v.groupBy !== undefined) {
+      var _gb = Array.isArray(v.groupBys) ? v.groupBys : (v.groupBy === 'wbs' ? ['wbs'] : [v.groupBy, 'wbs']);
+      groupBys = _gb; collapsed = {}; normalizeGroupBys(); populateGroupSelect();
+    }
     // full column setup — write to the same localStorage keys the renderers read, then apply
     if (v.colHidden !== undefined) { colHidden = JSON.parse(JSON.stringify(v.colHidden)); try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {} }
     if (v.colSort !== undefined) { colSort = v.colSort ? JSON.parse(JSON.stringify(v.colSort)) : null; try { localStorage.setItem('ps_colsort', JSON.stringify(colSort)); } catch (e) {} }
@@ -12194,7 +12612,12 @@
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.onclick = function () { switchTab(b.dataset.tab); }; });
     document.getElementById('ps-project').onchange = function (e) { selectProject(e.target.value); };
     document.getElementById('ps-search').oninput = function (e) { search = e.target.value; renderGrid(); renderGantt(); };
-    document.getElementById('ps-group').onchange = function (e) { groupBy = e.target.value; collapsed = {}; renderCollapseMenu(); renderGrid(); renderGantt(); };
+    document.getElementById('ps-groupbtn').onclick = function (e) {
+      e.stopPropagation(); var mn = document.getElementById('ps-group-menu');
+      var wasOpen = mn.classList.contains('open'); closeMenus();
+      if (!wasOpen) { renderGroupMenu(); mn.classList.add('open'); }
+    };
+    document.getElementById('ps-group-menu').addEventListener('click', function (e) { e.stopPropagation(); });
     document.getElementById('ps-zoom').querySelectorAll('[data-zoom]').forEach(function (b) {
       b.onclick = function () { zoom = b.dataset.zoom; document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.remove('active'); }); b.classList.add('active'); renderGantt(); };
     });
@@ -12210,7 +12633,7 @@
     var analyzeMenu = document.getElementById('ps-analyze-menu');
     var oMenu = document.getElementById('ps-open-menu');
     var colorsMenu = document.getElementById('ps-colors-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
     oMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     if (colorsMenu) colorsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     (function () { var cb = document.getElementById('ps-colorsbtn'); if (cb) cb.onclick = function (e) { e.stopPropagation(); var o = colorsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colorsMenu.classList.add('open'); } }; })();
