@@ -150,7 +150,13 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
   padding:20px 22px; position:relative; overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.05);
   transition:box-shadow .15s, transform .15s; }
 .ms-kpi:hover { box-shadow:0 4px 14px rgba(0,0,0,.09); transform:translateY(-1px); }
-.ms-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--pd-red); }
+/* Neutral by default — every metric card carrying the same red accent as its
+   neighbors read as "clashing" (a wall of red bars with no semantic meaning).
+   Red/green/amber are reserved for the .good/.warn/.bad states below. */
+.ms-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--pd-muted); opacity:.35; }
+.ms-kpi.good::before { background:#12693A; opacity:1; } html.pd-dark .ms-kpi.good::before { background:#7fd6a2; }
+.ms-kpi.bad::before  { background:var(--pd-bad,#dc2626); opacity:1; }
+.ms-kpi.warn::before { background:#b45309; opacity:1; } html.pd-dark .ms-kpi.warn::before { background:#f0c469; }
 .ms-kpi-l { color:var(--pd-muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
 .ms-kpi-v { font-size:32px; font-weight:800; margin-top:9px; line-height:1.05; letter-spacing:-.01em; }
 .ms-kpi-s { color:var(--pd-muted); font-size:11.5px; margin-top:5px; }
@@ -167,6 +173,16 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-seg-btn { border:none; background:transparent; color:var(--pd-text); padding:4px 10px; font-size:11.5px; font-family:inherit; cursor:pointer; }
 .ms-seg-btn.active { background:var(--pd-red); color:#fff; }
 .ms-seg-btn:not(.active):hover { background:var(--pd-bg); }
+
+/* Period chart (Submittals by Period) — PowerBI-style hover tooltip */
+.ms-pc-wrap { position:relative; }
+.ms-pc-svg .ms-pc-hit { cursor:crosshair; }
+.ms-pc-legend { display:flex; gap:18px; flex-wrap:wrap; margin-top:8px; justify-content:center; }
+.ms-pc-tip { position:absolute; display:none; background:var(--pd-card); border:1px solid var(--pd-line);
+  border-radius:8px; padding:9px 12px; font-size:11.5px; line-height:1.6; box-shadow:0 6px 18px rgba(0,0,0,.16);
+  pointer-events:none; z-index:5; min-width:180px; }
+.ms-pc-tip b { color:var(--pd-ink); }
+.ms-pc-tip div { color:var(--pd-muted); display:flex; justify-content:space-between; gap:12px; }
 
 /* Status summary table (mirrors the workbook's Status / No. / Wt % block) */
 .ms-stat { width:100%; border-collapse:collapse; }

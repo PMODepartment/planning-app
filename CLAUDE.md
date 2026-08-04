@@ -77,6 +77,45 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-03 — Drawing Register + Material Submittal: period chart overhaul (PowerBI-style hover, actual bars, %/# toggle) + layout fixes
+Second round of feedback on the same live Bauhinia screenshot (KPI cards, Period chart, Progress
+tables). Real fixes, not just taste:
+- **Fixed a real bug: the chart wasn't actually full width.** The SVG had `width:100%` but a fixed
+  pixel `height` with NO `preserveAspectRatio` override — the browser's default `xMidYMid meet`
+  scales the 960×h viewBox down to fit *within* the rendered box while preserving its aspect ratio,
+  which on a wide card (much wider than the chart's own aspect ratio) letterboxes it, leaving empty
+  space left/right instead of filling the card. Added `preserveAspectRatio="none"` — safe here since
+  every coordinate in the chart is already computed from the intended pixel dimensions, so non-uniform
+  scaling doesn't distort anything meaningful.
+- **PowerBI-style hover.** Replaced the plain SVG `<title>` (native browser tooltip) with a real
+  floating tooltip (`.dr-pc-tip`/`.ms-pc-tip`) + a vertical guide line, driven by transparent
+  full-height per-period hit-zones drawn last (on top) in the SVG. Shows Planned/Actual this period +
+  Cumulative Planned/Approved for whichever period the mouse is over.
+- **Actual-this-period bars added** (grouped bars: light-gray Planned beside translucent-red Actual)
+  — previously only the cumulative Actual line existed; the period chart now shows both the per-period
+  and running-total view for both planned and actual, matching the ask.
+- **Data labels on bars**, shown above each bar when there are ≤20 periods (beyond that, hover tooltips
+  carry the load instead of cluttering the chart).
+- **# / % toggle** — a `periodValueMode` toggle next to Monthly/Quarterly rescales every value (bars +
+  cumulative lines) as a percentage of the whole project, the conventional S-curve reading where the
+  curves climb toward 100%; y-axis pins to 0–100% in that mode.
+- **Legend centered** below the chart (`justify-content:center`).
+- **KPI "clashing" fixed**: the left accent bar on every card defaulted to brand red regardless of
+  what the metric meant, so a row of 6 neutral metrics read as "a wall of red bars." Default accent is
+  now a muted neutral; red/green/amber are reserved for cards actually flagged bad/good/warn.
+- **"Progress by Phase looks empty below"** — a real CSS bug: `.dr-dash-grid` (and its two-card grid
+  used elsewhere) had no `align-items`, so CSS Grid's default `stretch` forced the shorter table
+  (Phase, 4 rows) to match the height of its taller sibling (Trade, 11 rows), leaving a large blank gap
+  at the bottom. Added `align-items:start` so each card sizes to its own content.
+- **"Progress by Discipline" → "Progress by Trade"** (heading text only; the underlying `discipline`
+  field/grouping is unchanged — Material Submittal has no equivalent section, so nothing to rename
+  there).
+- Module-local only; no DB/migration change. Assets: drawing-register `module.css/js?v=20260803f/h`,
+  material-submittal `module.css/js?v=20260803f/g`. Verified `node --check` on both `module.js` +
+  brace-balance check on both `module.css`. **Not browser-verified** (auth wall) — the letterboxing
+  diagnosis and hover-wiring logic were reasoned from the SVG spec and DOM APIs, not observed directly
+  in a live render.
+
 ### 2026-08-03 — Drawing Register + Material Submittal: KPI card polish + chart readability pass
 User reviewed the live Bauhinia Overview and flagged three things: KPI cards feel cramped/close
 together and should "look professionally built" / "maximize the space"; the Period chart "doesn't

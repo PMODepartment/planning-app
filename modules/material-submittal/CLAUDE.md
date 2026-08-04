@@ -6,6 +6,21 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## Period chart overhaul: PowerBI hover, actual bars, %/# toggle (2026-08-03) — fmlozano
+Ported the same fixes made to Drawing Register:
+- **Real bug fixed:** `preserveAspectRatio="none"` added — without it the chart's fixed-aspect viewBox
+  was letterboxed inside its wider card instead of filling it (browser default `xMidYMid meet`).
+- **PowerBI-style hover** (`wirePeriodHover`) replacing the plain `<title>` tooltip.
+- **Actual-this-period bars** grouped beside the existing Planned bars.
+- **Data labels** above bars when ≤20 periods.
+- **`periodValueMode` (# / %) toggle**, `periodScaled()` rescaling to % of `rows.length`.
+- **Legend centered.**
+- **KPI accent softened** to neutral by default (`.ms-kpi.good/.warn/.bad::before` now carry the
+  color; plain cards don't).
+- No `align-items` fix needed here — `.ms-grid2` already had `align-items:start`.
+- Assets `module.css?v=20260803f` / `module.js?v=20260803g`. Verified `node --check` + CSS
+  brace-balance. **Not browser-verified.**
+
 ## KPI card polish + chart readability pass (2026-08-03) — fmlozano
 Ported the same design pass applied to Drawing Register after the user's live-review feedback:
 - **KPI cards:** `.ms-kpis` minmax floor raised 150→170px, gap 12→18px, card padding 12/14→20/22px,

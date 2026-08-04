@@ -1,5 +1,32 @@
 # Module: drawing-register
 
+## Period chart overhaul: PowerBI hover, actual bars, %/# toggle + layout fixes (2026-08-03) — fmlozano
+Second round of live-review feedback (Bauhinia). Concrete asks + real bugs found while doing them:
+- **Real bug: the chart wasn't actually full width.** `width:100%` + a fixed pixel `height` with no
+  `preserveAspectRatio` override means the browser's default `xMidYMid meet` scales the 960×h viewBox
+  down to fit *inside* the box while preserving aspect ratio — on a card much wider than the chart's
+  own ratio, that letterboxes it (empty space left/right). Fixed with `preserveAspectRatio="none"`
+  (safe: every coordinate is already computed from the target pixel dimensions).
+- **PowerBI-style hover** (`wirePeriodHover`): a real floating tooltip (`.dr-pc-tip`) + vertical guide
+  line, driven by transparent per-period hit-zone rects (`.dr-pc-hit`, drawn last = on top) instead of
+  the plain-browser `<title>` tooltip from before.
+- **Actual-this-period bars** — grouped bars per period (light-gray Planned + translucent-red Actual),
+  not just the cumulative Actual line.
+- **Data labels above bars** when ≤20 periods (`showLabels`); beyond that, hover carries the detail.
+- **`periodValueMode` (# / %) toggle** — `periodScaled()` rescales every value as a % of `draws.length`
+  when active; y-axis pins to 0–100 in % mode (the conventional S-curve reading).
+- **Legend centered** (`.dr-pc-legend { justify-content:center }`).
+- **KPI accent color** — was brand red on every card by default (six neutral metrics all "flagged red"
+  read as clashing); default is now a muted neutral, red/green/amber reserved for `.dr-warn`/`.dr-ok`.
+- **`.dr-dash-grid` `align-items:start`** — CSS Grid's default `stretch` was forcing the 4-row
+  "Progress by Phase" table to match the height of the 11-row Trade table beside it, leaving a big
+  blank gap. Real bug, not a spacing preference.
+- **"Progress by Discipline" → "Progress by Trade"** (heading text only, `groupAgg('discipline')`
+  unchanged).
+- Assets `module.css?v=20260803f` / `module.js?v=20260803h`. Verified `node --check` + CSS
+  brace-balance. **Not browser-verified** (auth wall) — reasoned from the SVG/DOM spec, not observed
+  in a live render.
+
 ## KPI card polish + chart readability pass (2026-08-03) — fmlozano
 User reviewed a live screenshot of the Bauhinia Overview and called out three things:
 - **KPI cards "too close together" / "maximize the space" / "look professionally built":** `.dr-kpis`
