@@ -976,6 +976,9 @@
     .ps-wbs-row:hover { background:var(--pd-bg); }
     .ps-wbs-row:hover .ps-wbs-acts, .ps-wbs-row.selected .ps-wbs-acts { visibility:visible; }
     .ps-wbs-row.selected { background:var(--pd-red-light); border-left-color:var(--pd-red); }
+    /* Rows are focusable so the keyboard works on a selection; focus always coincides with
+       .selected, whose tint + red rail IS the indicator — a second default ring just doubles up. */
+    .ps-wbs-row:focus { outline:none; }
     .ps-wbs-acts button.wbs-act { width:auto; padding:0 8px; font-size:11px; font-weight:700; color:var(--pd-red); }
     .ps-wbs-acts button.wbs-act:hover { background:var(--pd-red-light); border-color:var(--pd-red-mid); color:var(--pd-red); }
     .ps-wbs-code { font-weight:700; color:var(--pd-red); min-width:64px; flex:none; font-size:12.5px; }
@@ -1516,12 +1519,13 @@
           <!-- Type-to-build keyboard legend: the tree is an outliner, not a form. Without this the
                shortcuts are invisible and every node costs a mouse round-trip. -->
           <div class="ps-wbs-keys">
-            <span><b class="ps-kbd">Enter</b> next WBS</span>
+            <span><b class="ps-kbd">↑</b><b class="ps-kbd">↓</b> move</span>
+            <span><b class="ps-kbd">←</b><b class="ps-kbd">→</b> collapse / expand</span>
+            <span><b class="ps-kbd">Enter</b> rename &nbsp;·&nbsp; again = next WBS</span>
             <span><b class="ps-kbd">Shift</b>+<b class="ps-kbd">Enter</b> sub-WBS</span>
             <span><b class="ps-kbd">Tab</b> / <b class="ps-kbd">Shift</b>+<b class="ps-kbd">Tab</b> indent / outdent</span>
-            <span><b class="ps-kbd">Alt</b>+<b class="ps-kbd">↑</b><b class="ps-kbd">↓</b> move</span>
-            <span><b class="ps-kbd">↑</b><b class="ps-kbd">↓</b> next / previous</span>
-            <span><b class="ps-kbd">Enter</b> on a blank name deletes it</span>
+            <span><b class="ps-kbd">Alt</b>+<b class="ps-kbd">↑</b><b class="ps-kbd">↓</b> reorder</span>
+            <span><b class="ps-kbd">Del</b> delete &nbsp;·&nbsp; <b class="ps-kbd">Esc</b> deselect</span>
           </div>
           <div id="ps-wbs-tree" class="ps-wbs-tree"></div>
         </div>
@@ -8206,7 +8210,9 @@
            '<button data-wbs-dup="' + esc(e.id) + '" title="Duplicate this branch (repeat a typical floor / tower)">⧉</button>' +
            '<button data-wbs-code="' + esc(e.id) + '" title="Edit code">✎</button>' +
            '<button class="danger" data-wbs-del="' + esc(e.id) + '" title="Delete">✕</button>'));
-    return '<div class="ps-wbs-row' + (_wbsSel === e.id ? ' selected' : '') + '" data-wid="' + esc(e.id) + '" style="padding-left:' + (8 + e.depth * 22) + 'px;">' +
+    // tabindex makes the row a real focus target, so the outliner keys work on a SELECTED row and
+    // not only while the cursor sits in its name input (see the document keydown handler).
+    return '<div class="ps-wbs-row' + (_wbsSel === e.id ? ' selected' : '') + '" tabindex="-1" data-wid="' + esc(e.id) + '" style="padding-left:' + (8 + e.depth * 22) + 'px;">' +
       caret +
       '<span class="ps-wbs-code" title="' + (e.custom ? 'Custom code (click ✎ to change)' : 'Auto-numbered') + '">' + esc(e.code) + (e.custom ? ' *' : '') + '</span>' +
       '<span class="ps-wbs-name">' + (locked
@@ -8238,21 +8244,26 @@
   // ---- Type-to-build helpers ------------------------------------------------------------------
   // The tree is an OUTLINER: a planner should be able to type a whole WBS without touching the
   // mouse. These move focus between rows' name inputs across the virtualized window.
-  function _wbsNeighbourId(id, step) {
+  // `editableOnly` skips locked / synced rows — they render fixed text instead of an input, so the
+  // name-editing keys must jump over them. Plain row SELECTION can land on them, so it passes false.
+  function _wbsNeighbourId(id, step, editableOnly) {
     var i = -1;
     for (var k = 0; k < _wbsFlat.length; k++) if (_wbsFlat[k].id === id) { i = k; break; }
     if (i < 0) return null;
     for (var j = i + step; j >= 0 && j < _wbsFlat.length; j += step) {
+      if (!editableOnly) return _wbsFlat[j].id;
       var n = wbsById(_wbsFlat[j].id);
-      if (n && !n.is_locked && !n.source_kind) return n.id;   // locked/synced rows render fixed text, not an input
+      if (n && !n.is_locked && !n.source_kind) return n.id;
     }
     return null;
   }
-  // Re-render, bring `id` into the virtual window, and put the cursor in its name input.
-  function _wbsFocusName(id) {
+  // Select `id`, reveal it (un-collapsing its ancestors), and bring it into the virtual window.
+  // `edit` also puts the cursor in its name input; otherwise focus goes to the ROW, which is what
+  // keeps the keyboard working on a selection (and moves focus off the search box on a click).
+  function _wbsGoto(id, edit) {
     if (!id) { renderWbsManager(); return; }
     var a = (wbsById(id) || {}).parent_id;
-    while (a) { delete _wbsCollapsed[a]; a = (wbsById(a) || {}).parent_id; }   // reveal the row
+    while (a) { delete _wbsCollapsed[a]; a = (wbsById(a) || {}).parent_id; }
     _wbsSel = id;
     renderWbsManager();
     var host = document.getElementById('ps-wbs-tree'); if (!host) return;
@@ -8263,9 +8274,12 @@
     if (top < host.scrollTop) host.scrollTop = top;
     else if (top + WBS_ROWH > host.scrollTop + vh) host.scrollTop = top + WBS_ROWH - vh;
     _wbsRenderWindow();
-    var inp = host.querySelector('[data-wbs-name="' + id + '"]');
-    if (inp) { inp.focus(); inp.select(); }
+    var inp = edit && host.querySelector('[data-wbs-name="' + id + '"]');
+    if (inp) { inp.focus(); inp.select(); return; }
+    var row = host.querySelector('.ps-wbs-row[data-wid="' + id + '"]');
+    if (row) row.focus({ preventScroll: true });
   }
+  function _wbsFocusName(id) { _wbsGoto(id, true); }
   // Save a name edit WITHOUT the full _wbsCommit() recompute — a rename can't change any code, so
   // the expensive re-number/re-sync pass isn't needed and would steal focus mid-typing.
   async function _wbsCommitName(inp) {
@@ -8307,7 +8321,12 @@
         return;
       }
       if (e.target.closest('.ps-wbs-name')) return;   // clicking the name input just edits (focusin selects)
+      // Focus the row, not just paint it: without this the search box can keep DOM focus, and the
+      // document-level key handler bails whenever an INPUT is focused — so the keys would look dead
+      // on a row you just clicked.
+      var wasSel = _wbsSel === id;
       wbsSelect(id);
+      if (!wasSel) { var rw = host.querySelector('.ps-wbs-row[data-wid="' + id + '"]'); if (rw) rw.focus({ preventScroll: true }); }
     });
     // Focusing a name input selects its row without a full re-render (which would blur mid-edit).
     host.addEventListener('focusin', function (e) {
@@ -8361,7 +8380,7 @@
         var down = k === 'ArrowDown';
         _wbsCommitName(inp).then(function () {
           if (e.altKey) wbsMove(id, down ? 'down' : 'up').then(function () { _wbsFocusName(id); });
-          else _wbsFocusName(_wbsNeighbourId(id, down ? 1 : -1) || id);
+          else _wbsFocusName(_wbsNeighbourId(id, down ? 1 : -1, true) || id);
         });
         return;
       }
@@ -8629,7 +8648,7 @@
   async function _wbsDeleteBlank(id) {
     var n = wbsById(id);
     if (!n || n.is_locked || (n.name || '').trim() || wbsChildren(id).length || wbsActivityCount(id)) { _wbsFocusName(id); return; }
-    var prev = _wbsNeighbourId(id, -1);
+    var prev = _wbsNeighbourId(id, -1, true);
     await sb().from('wbs_nodes').delete().eq('id', id);
     var sr = rows.find(function (r) { return isWbs(r) && r.wbs_node_id === id; });
     if (sr) { await sb().from(TABLE).delete().eq('id', sr.id); rows = rows.filter(function (r) { return r.id !== sr.id; }); }
@@ -12369,6 +12388,64 @@
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return; // let native field undo/redo happen
       if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
       else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); redo(); }
+    });
+    // WBS Manager keyboard on a SELECTED ROW (the tree's own listener only covers a focused name
+    // input, so before this the keys did nothing on a row you'd merely clicked). Same scoping shape
+    // as the grid handler below: bail while a field has focus, while any overlay is visible, or when
+    // the WBS view isn't the visible tab.
+    document.addEventListener('keydown', function (e) {
+      var tag = document.activeElement && document.activeElement.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;   // the input handler owns these keys
+      var _ovs = document.querySelectorAll('.pd-modal-overlay, .ps-back.open, .ps-rep-back.open');
+      for (var _oi = 0; _oi < _ovs.length; _oi++) { if (_ovs[_oi].offsetParent !== null) return; }
+      var wv = document.getElementById('ps-view-wbs');
+      if (!wv || wv.offsetParent === null) return;
+      if (!_wbsFlat.length) return;
+      var k = e.key;
+      // Nothing selected (or the selection was filtered out): the first Arrow lands on the top row,
+      // so the keyboard is always a way in rather than needing a click first.
+      var onList = _wbsSel && _wbsFlat.some(function (r) { return r.id === _wbsSel; });
+      if (!onList) {
+        if (k === 'ArrowDown' || k === 'ArrowUp') { e.preventDefault(); _wbsGoto(_wbsFlat[0].id, false); }
+        return;
+      }
+      var id = _wbsSel, n = wbsById(id); if (!n) return;
+      var ro = window.__viewOnly || window.__archived;
+      var nKids = wbsChildren(id).length, open = !_wbsCollapsed[id];
+      if (k === 'ArrowDown' || k === 'ArrowUp') {
+        e.preventDefault();
+        var down = k === 'ArrowDown';
+        if (e.altKey) { if (!ro) wbsMove(id, down ? 'down' : 'up').then(function () { _wbsGoto(id, false); }); }
+        else { var t = _wbsNeighbourId(id, down ? 1 : -1); if (t) _wbsGoto(t, false); }
+        return;
+      }
+      if (k === 'ArrowRight') {                       // expand, then step into the branch
+        e.preventDefault();
+        if (nKids && !open) { delete _wbsCollapsed[id]; _wbsGoto(id, false); }
+        else if (nKids) _wbsGoto(wbsChildren(id)[0].id, false);
+        return;
+      }
+      if (k === 'ArrowLeft') {                        // collapse, then step out to the parent
+        e.preventDefault();
+        if (nKids && open) { _wbsCollapsed[id] = true; _wbsGoto(id, false); }
+        else if (n.parent_id) _wbsGoto(n.parent_id, false);
+        return;
+      }
+      if (k === 'Home' || k === 'End') { e.preventDefault(); _wbsGoto(_wbsFlat[k === 'Home' ? 0 : _wbsFlat.length - 1].id, false); return; }
+      if (k === 'Escape') { e.preventDefault(); _wbsSel = null; renderWbsManager(); return; }
+      if (ro) return;                                 // everything below mutates the tree
+      if (k === 'Enter' || k === 'F2') {
+        e.preventDefault();
+        if (e.shiftKey) wbsQuickAdd(id, null);                       // sub-WBS
+        else if (n.is_locked || n.source_kind) UI.toast('This is a fixed WBS heading and can\'t be renamed.', 'warn');
+        else _wbsGoto(id, true);                                     // enter edit mode on the name
+        return;
+      }
+      if (k === 'Insert') { e.preventDefault(); wbsQuickAdd(n.parent_id || null, id); return; }
+      // Tab is swallowed while a row is selected (it indents, matching the in-input behaviour);
+      // Escape clears the selection and hands Tab back to normal focus traversal.
+      if (k === 'Tab') { e.preventDefault(); wbsMove(id, e.shiftKey ? 'outdent' : 'indent').then(function () { _wbsGoto(id, false); }); return; }
+      if (k === 'Delete') { e.preventDefault(); wbsDelete(id); return; }
     });
     // Excel/OPC-style grid shortcuts: Insert = add, Delete = delete selection, Ctrl+C/X/V = copy/cut/
     // paste rows, Esc = clear selection. Suppressed while editing a field, over an open modal, or when

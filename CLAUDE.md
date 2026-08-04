@@ -77,6 +77,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — WBS Manager: keyboard works on a selected row, not only in a focused name field
+User: the arrow keys and shortcuts should work when a WBS is *selected*. They didn't — every key was
+bound to `keydown` on the row's name `<input>`, so clicking a row (or selecting a locked/synced
+heading, which has no input at all) left the keyboard dead. New document-level handler scoped to the
+WBS view, same shape as the grid's:
+- **↑↓** move the selection · **Alt+↑↓** reorder · **Home/End** first/last · **←→** collapse/expand,
+  then step into the first child / out to the parent (standard tree behaviour).
+- **Enter/F2** rename (a second Enter, now inside the input, adds the next WBS — the two layers
+  chain) · **Shift+Enter** sub-WBS · **Insert** sibling · **Tab/Shift+Tab** indent/outdent ·
+  **Delete** · **Esc** deselect. With nothing selected, the first ↑/↓ lands on the top row.
+- **Read-only projects:** navigation and collapse/expand still work; every mutating key is inert.
+- ⚠️ **The real bug underneath was `document.activeElement`.** The handler has to bail when a field
+  has focus (or it would hijack the search box's arrow keys) — but clicking a row didn't move focus,
+  because rows weren't focusable, so the search box kept it and the handler bailed on every keystroke.
+  Rows now carry `tabindex="-1"` and are focused on select. Verified in-browser that focus hands over
+  from `INPUT#ps-wbs-search` to `DIV.ps-wbs-row`.
+- ⚠️ **Tab is swallowed while a row is selected** (it indents, matching the in-input behaviour); Esc
+  clears the selection and hands Tab back to normal focus traversal.
+- **Verified: 39/39 Node tests against the SHIPPED handler** (extracted, not reimplemented) covering
+  every guard, every key's routing, the no-selection/filtered-selection recovery paths and the full
+  read-only matrix; plus in-browser checks of the focus handover, `tabindex`, focus ring and legend.
+  **Not verified signed-in.** Module-local, no migration, no `?v=` bump.
+  See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-04 — WBS Manager: make it fast for a planner to BUILD a WBS
 The Manager was built for *editing* a tree, not *creating* one — every node cost a modal round-trip,
 and the only bulk paths were "Adopt existing WBS" (import-only) and "Add WBS from Project", which was

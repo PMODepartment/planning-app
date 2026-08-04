@@ -1,5 +1,48 @@
 # Module: project-schedule
 
+## WBS Manager: the keyboard now works on a SELECTED ROW, not just a focused input (2026-08-04) — fmlozano
+Follow-up to the build-speed work below. Every outliner key was bound to `keydown` on the row's
+**name `<input>`**, so the moment focus left that input — click a row, arrow onto one, or select a
+locked/synced heading that has no input at all — the keyboard was dead. New **document-level handler**
+(next to the grid's, same scoping shape: bails while a field has focus, while any overlay is visible,
+or when `#ps-view-wbs` isn't the visible tab) driving the selected row:
+- **↑ ↓** move the selection · **Alt+↑↓** reorder among siblings · **Home/End** first/last.
+- **← →** collapse / expand — and, once open, **→** steps into the first child while **←** steps out
+  to the parent. Standard tree behaviour, and the reason a row selection is now genuinely navigable.
+- **Enter / F2** enters edit mode on the name (a second Enter, now inside the input, adds the next
+  WBS — so the two layers chain); **Shift+Enter** sub-WBS; **Insert** sibling after; **Tab /
+  Shift+Tab** indent/outdent; **Delete** delete; **Esc** deselect.
+- **No selection?** The first ↑/↓ lands on the top row, so the keyboard is always a way in rather
+  than needing a click first. A selection filtered out by the search box recovers the same way.
+- **Read-only** (`__viewOnly` / `__archived`): navigation and collapse/expand still work, every
+  mutating key is inert.
+
+⚠️ **The non-obvious bug this had to solve: `document.activeElement`.** The handler must bail when a
+field has focus (otherwise it would hijack the search box's own arrow keys), but clicking a row did
+**not** move focus — rows weren't focusable, so the search box kept it and the handler bailed on
+every keystroke. Rows now carry `tabindex="-1"` and are explicitly `.focus()`ed on select, which both
+fixes that and gives the tree a real focus target. `_wbsGoto(id, edit)` focuses the **row** when
+navigating and the **input** when editing. Verified in-browser: focus goes `INPUT#ps-wbs-search` →
+`DIV.ps-wbs-row`, so the guard passes. `focus({preventScroll:true})` everywhere — the function does
+its own scroll-into-view and the browser's would fight it.
+
+⚠️ **`_wbsNeighbourId` gained an `editableOnly` flag.** Name-editing navigation must *skip* locked /
+synced rows (they render fixed text, not an input), but row *selection* must be able to land on them.
+Both existing callers were updated to pass `true`; the new handler passes nothing.
+
+⚠️ **Tab is swallowed while a row is selected** (it indents, matching the in-input behaviour), so it
+no longer moves browser focus out of the tree. Escape clears the selection and hands Tab back.
+
+**Verified: 39/39 in Node against the SHIPPED handler** (extracted from `index.html`, not
+reimplemented) — all three focus guards, overlay guard, hidden-view guard, every key's routing,
+selection landing on a synced row, end-of-list no-ops, the no-selection and filtered-out-selection
+recovery paths, expand-then-step-into vs collapse-then-step-out, locked/synced Enter warning instead
+of editing, and the full read-only matrix (navigation allowed, all 5 mutating keys inert).
+**In-browser** against the real stylesheet + real `_wbsRowHTML`: `tabindex="-1"` on every row, the
+search-box→row focus handover, `outline:none` on focus, no scroll jump, legend text, no page
+h-scroll. ⚠️ **Not verified signed-in.** Screenshots remain impossible here (stalled compositor).
+Module-local, no migration, no `?v=` bump.
+
 ## WBS Manager: make it fast to BUILD a WBS (2026-08-04) — fmlozano
 The Manager was good at *editing* an existing tree and slow at *creating* one: every node cost a
 modal round-trip (`wbsAddChild` → type a name → Save → re-render), and the only bulk paths were
