@@ -6,6 +6,23 @@
 > 3. Chrome (topbar/tabs/tools/filter bar) is copied from **drawing-register** — do not re-invent it.
 > 4. Update this file as you build.
 
+## Searchable schedule-activity picker (2026-08-03) — fmlozano
+Replaced the Activity (need-by) `<input list>` + `<datalist>` with a real searchable dropdown.
+- ⚠️ **A datalist physically cannot search by name.** Browsers filter datalist options by the option's
+  **`value`**, which must be the `activity_id` we store — the activity name lived only in the display
+  text, so typing it matched nothing. This is why it had to be rebuilt rather than tweaked.
+- `schedPickerHTML()` renders a search box + hidden `#ms-f-sact` (the stored id) + a selection chip
+  (`ID — Name`, with a clear ×). `wireSchedPicker()` handles input/focus/Enter(first match)/Esc/
+  outside-click. `schedMatches()` = whitespace-separated **AND** matching over `activity_id + " " +
+  activity_name`, lowercased; capped at `SCHED_PICK_MAX` (60) rows/query because schedules reach 40k
+  activities, with a "keep typing to narrow" hint when the cap is hit.
+- **Lazy-load handling:** the schedule loads after the register, so a form opened early showed a stale
+  "not in this project's schedule" warning forever. A capped poller (60 × 500ms, cleared by a wrapped
+  `m.close`) refreshes the chip + derived date once `schedPid === pid`.
+- Verified `schedMatches()` in a Node harness (by-ID, by-name, multi-term AND, case-insensitivity,
+  no-match, cap) + `node --check` + CSS brace-balance. **Not browser-verified.**
+- Assets `module.css?v=20260803h` / `module.js?v=20260803i`.
+
 ## Chart.js adoption (2026-08-03) — fmlozano
 Ported from Drawing Register:
 - **Chart.js 4.4.1 + chartjs-plugin-datalabels (CDN)** replaces the hand-rolled SVG period chart,

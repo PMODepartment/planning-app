@@ -416,12 +416,86 @@ window.DrawingRegister = (function () {
     return '<span class="dr-needby" title="Required approval for activity '+Fmt.esc(r.schedule_activity_id)+
            '">'+Fmt.date(req)+'</span>'+chip;
   }
-  // datalist options for the Add/Edit activity picker (capped for huge schedules)
-  function schedOptions(){
-    return schedActs.slice(0, 3000).map(function (a){
-      return '<option value="'+Fmt.esc(a.activity_id)+'">'+
-             Fmt.esc((a.activity_id || '') + ' — ' + (a.activity_name || '')) + '</option>';
-    }).join('');
+  // ---- Schedule-activity picker (searchable) -------------------------------
+  // ⚠️ A native <datalist> can NOT do this: browsers filter datalist options by
+  // the option's `value`, which has to be the activity_id we store — so typing
+  // part of an activity NAME matched nothing. This is a real dropdown that
+  // searches both the ID and the name.
+  var SCHED_PICK_MAX = 60;              // rendered rows per query; schedules run to 40k activities
+  function schedMatches(q) {
+    q = (q || '').trim().toLowerCase();
+    if (!q) return schedActs.slice(0, SCHED_PICK_MAX);
+    var terms = q.split(/\s+/), out = [];
+    for (var i = 0; i < schedActs.length && out.length < SCHED_PICK_MAX; i++) {
+      var a = schedActs[i];
+      var hay = ((a.activity_id || '') + ' ' + (a.activity_name || '')).toLowerCase();
+      var ok = true;
+      for (var t = 0; t < terms.length; t++) { if (hay.indexOf(terms[t]) === -1) { ok = false; break; } }
+      if (ok) out.push(a);
+    }
+    return out;
+  }
+  function schedPickerHTML(value) {
+    return '<div class="dr-actpick" id="f-actpick">' +
+      '<input class="pd-input" id="f-sact-q" autocomplete="off" placeholder="Search activity ID or name…" value="">' +
+      '<input type="hidden" id="f-sact" value="' + Fmt.esc(value) + '">' +
+      '<div class="dr-actpick-sel" id="f-sact-sel"></div>' +
+      '<div class="dr-actpick-menu" id="f-sact-menu" hidden></div>' +
+    '</div>';
+  }
+  // Wires the picker inside `root`; onPick() fires whenever the value changes.
+  function wireSchedPicker(root, onPick) {
+    var q = root.querySelector('#f-sact-q'), hid = root.querySelector('#f-sact');
+    var menu = root.querySelector('#f-sact-menu'), sel = root.querySelector('#f-sact-sel');
+    function renderSel() {
+      var v = hid.value.trim();
+      if (!v) { sel.innerHTML = ''; return; }
+      var a = schedById[v];
+      sel.innerHTML = '<span class="dr-actpick-chip">' +
+        '<b>' + Fmt.esc(v) + '</b>' + (a && a.activity_name ? ' — ' + Fmt.esc(a.activity_name) : '') +
+        '<button type="button" class="dr-actpick-x" title="Clear">&times;</button></span>' +
+        (a ? '' : '<span class="dr-warn-t" style="margin-left:8px;">not in this project’s schedule</span>');
+      sel.querySelector('.dr-actpick-x').onclick = function () {
+        hid.value = ''; renderSel(); onPick(); q.focus();
+      };
+    }
+    function renderMenu() {
+      var list = schedMatches(q.value);
+      if (!schedActs.length) {
+        menu.innerHTML = '<div class="dr-actpick-empty">' +
+          (schedPid === pid ? 'This project has no schedule activities yet.' : 'Loading the schedule…') + '</div>';
+      } else if (!list.length) {
+        menu.innerHTML = '<div class="dr-actpick-empty">No activity matches “' + Fmt.esc(q.value) + '”.</div>';
+      } else {
+        menu.innerHTML = list.map(function (a) {
+          return '<button type="button" class="dr-actpick-item" data-aid="' + Fmt.esc(a.activity_id) + '">' +
+            '<b>' + Fmt.esc(a.activity_id) + '</b><span>' + Fmt.esc(a.activity_name || '') + '</span>' +
+            (a.start_date ? '<i>' + Fmt.date(a.start_date) + '</i>' : '') + '</button>';
+        }).join('') + (list.length >= SCHED_PICK_MAX
+          ? '<div class="dr-actpick-empty">Showing the first ' + SCHED_PICK_MAX + ' — keep typing to narrow.</div>' : '');
+        menu.querySelectorAll('.dr-actpick-item').forEach(function (b) {
+          b.onclick = function () {
+            hid.value = b.dataset.aid; q.value = ''; menu.hidden = true; renderSel(); onPick();
+          };
+        });
+      }
+      menu.hidden = false;
+    }
+    q.oninput = renderMenu;
+    q.onfocus = renderMenu;
+    q.onkeydown = function (e) {
+      if (e.key === 'Escape') { menu.hidden = true; }
+      else if (e.key === 'Enter') {                    // Enter picks the first match
+        e.preventDefault();
+        var first = menu.querySelector('.dr-actpick-item');
+        if (first && !menu.hidden) first.click();
+      }
+    };
+    document.addEventListener('mousedown', function (e) {
+      if (!root.contains(e.target)) menu.hidden = true;
+    });
+    renderSel();
+    return { refreshSel: renderSel };
   }
 
   // ---------------------------------------------------------- derivations ----
@@ -1696,8 +1770,8 @@ window.DrawingRegister = (function () {
       '</div>' +
 
       '<div class="dr-form-sec">Schedule link <span class="dr-mut" style="font-weight:400;">— the activity this drawing must be approved for</span></div>' +
-      '<div class="dr-grid3">' +
-        field('Activity (need-by)','<input class="pd-input" id="f-sact" list="f-sactlist" value="'+Fmt.esc(r.schedule_activity_id)+'" placeholder="e.g. A1010"><datalist id="f-sactlist">'+schedOptions()+'</datalist>') +
+      '<div class="dr-grid-sched">' +
+        field('Activity (need-by)', schedPickerHTML(r.schedule_activity_id)) +
         field('Lead days','<input class="pd-input" type="number" min="0" id="f-lead" value="'+(r.lead_days!=null?r.lead_days:'')+'" placeholder="'+LEAD_DEFAULT+'">') +
         field('Required approval','<input class="pd-input" id="f-req" readonly placeholder="—">') +
       '</div>' +
@@ -1796,8 +1870,23 @@ window.DrawingRegister = (function () {
         '<label style="margin-left:6px;white-space:nowrap;"><input type="checkbox" id="f-usereq"'+
         (r.planned_approval?'':' checked')+'> set as Planned approval</label>';
     }
-    ['f-sact','f-lead'].forEach(function (id){ var el=m.el.querySelector('#'+id); el.oninput=el.onchange=refreshSched; });
+    // #f-sact is a hidden input driven by the searchable picker (not typed into),
+    // so its change comes from the picker's callback rather than an input event.
+    var actPicker = wireSchedPicker(m.el.querySelector('#f-actpick'), refreshSched);
+    var leadEl = m.el.querySelector('#f-lead'); leadEl.oninput = leadEl.onchange = refreshSched;
     refreshSched();
+    // The schedule loads lazily; if it lands while this form is open, re-render
+    // the chosen activity's name and re-derive the date instead of leaving a
+    // stale "not in this project's schedule" warning.
+    // Capped so it can't poll forever if the modal is dismissed some other way
+    // (backdrop click / Esc) before the schedule resolves.
+    var schedTries = 0;
+    var schedWait = setInterval(function () {
+      if (schedPid === pid) { clearInterval(schedWait); actPicker.refreshSel(); refreshSched(); }
+      else if (++schedTries > 60) clearInterval(schedWait);
+    }, 500);
+    var _origClose = m.close;
+    m.close = function () { clearInterval(schedWait); _origClose(); };
 
     m.el.querySelector('#f-cancel').onclick = m.close;
     m.el.querySelector('#f-save').onclick = async function () {

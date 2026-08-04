@@ -77,6 +77,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-03 — Schedule-activity link: real searchable picker (searches ID *and* name)
+User: the Activity Link should be a searchable dropdown, matching on activity **name** as well as code.
+- ⚠️ **The old control physically could not do this.** It was a native `<input list=…>` + `<datalist>`,
+  and browsers filter datalist options by each option's **`value`** — which has to be the `activity_id`
+  we store. The name was only in the option's display text, so typing part of a name matched nothing.
+  No amount of tweaking the datalist fixes that; it needed a real dropdown.
+- **New picker** (`schedPickerHTML` + `wireSchedPicker`, in both modules): a search box over a rendered
+  dropdown, a hidden input holding the stored `activity_id`, and a chip showing the current selection
+  (`ID — Name`) with a clear (×). `schedMatches()` does **whitespace-separated AND matching over
+  `activity_id + activity_name`**, case-insensitively, so "rebar slab" finds *Rebar for Slab on Grade*.
+  Rows are capped at **60 per query** (schedules reach 40k activities) with a "keep typing to narrow"
+  note; Enter picks the first match, Esc / outside-click closes.
+- **Handles the lazy schedule load:** the schedule is fetched after the register, so a form opened
+  early used to sit on a stale "not in this project's schedule" warning. A capped poller (60 × 500ms,
+  cleared on close) refreshes the chip + derived date once the schedule lands.
+- Verified `schedMatches()` in Node against a fixture: by-ID, by-name, multi-term AND, case-insensitive,
+  no-match, and the result cap all behave correctly. Plus `node --check` + CSS brace-balance on both.
+  **Not browser-verified.**
+- Assets: drawing-register `module.css/js?v=20260803h/j`, material-submittal `module.css/js?v=20260803h/i`.
+
 ### 2026-08-03 — Adopt Chart.js for the period chart + per-revision drawing files
 Third round of live-review feedback. Two substantial changes:
 - **Switched the period chart from hand-rolled SVG to Chart.js 4.4.1 + chartjs-plugin-datalabels
