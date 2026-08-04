@@ -1288,6 +1288,11 @@
     @media (max-width:900px){ .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex-basis:auto; } }
     .sbld-scbtn { padding:4px 9px; font-size:11.5px; }
     .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    /* push modal — WBS structure editor */
+    .sbld-wbsrows { display:flex; flex-direction:column; gap:5px; }
+    .sbld-wbsrow { display:flex; align-items:center; gap:6px; padding:5px 8px; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card); font-size:13px; }
+    .sbld-wbslvl { display:inline-block; min-width:22px; text-align:center; font-size:10.5px; font-weight:700; color:var(--pd-red); }
+    .sbld-wbsmv { width:28px; height:26px; padding:0; font-size:13px; }
     /* step 1 — Excel-style grid */
     .sbld-xlwrap { border:1px solid var(--pd-line); border-radius:8px; overflow:auto; max-height:58vh; outline:none; }
     .sbld-xlwrap:focus { box-shadow:inset 0 0 0 2px var(--pd-red-light); }
@@ -9987,7 +9992,9 @@
     function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
     function daysBetween(a, b) { return Math.round((b.getTime() - a.getTime()) / 86400000); }
     function blankZoning() { var z = {}; GROUPS.forEach(function (g) { z[g] = { floors: [] }; }); return z; }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {} }; }
+    var WBS_DIMS = ['trade', 'floor', 'zone', 'unit'];
+    var DIM_LABEL = { trade: 'Trade', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {}, wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       var di = (a.durInt != null) ? Math.max(0, +a.durInt || 0) : legacy;
@@ -10015,6 +10022,9 @@
       d.actLinks = normLinks(c.actLinks);     // class-code-to-class-code links within a trade (step 4)
       d.scopeOff = (c.scopeOff && typeof c.scopeOff === 'object') ? c.scopeOff : {};
       d.tradeLeads = (c.tradeLeads && typeof c.tradeLeads === 'object') ? c.tradeLeads : {};  // per cross-trade transition: floors of the leading trade done before the following one starts
+      // WBS structure: ordered list of location dimensions used when pushing into the schedule
+      // (level 1 = first entry). De-duplicated; only known dims; falls back to the default order.
+      d.wbsOrder = (function () { var seen = {}, out = []; (Array.isArray(c.wbsOrder) ? c.wbsOrder : []).forEach(function (k) { if (WBS_DIMS.indexOf(k) >= 0 && !seen[k]) { seen[k] = 1; out.push(k); } }); return out.length ? out : ['trade', 'floor', 'zone', 'unit']; })();
       d.floorLead = (c.floorLead >= 1 && c.floorLead <= 40) ? c.floorLead : 4;
       return d;
     }
@@ -11050,14 +11060,45 @@
         '<select class="pd-select" id="sbpush-basis" style="width:100%;height:34px;"><option value="int">Internal (target)</option><option value="ext">External (contract)</option></select>' +
         '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Assign under WBS</label>' +
         '<select class="pd-select" id="sbpush-wbs" style="width:100%;height:34px;">' + wbsOpts + '</select>' +
-        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;"><input type="checkbox" id="sbpush-grp" checked> Organise into Trade → Floor → Zone → Unit sub-WBS</label>' +
+        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;"><input type="checkbox" id="sbpush-grp" checked> Group into a sub-WBS</label>' +
+        '<div id="sbpush-struct" style="margin-top:8px;"></div>' +
         '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbpush-go">Add to schedule</button></div></div>';
       document.body.appendChild(ov);
+      // WBS-structure editor: an ordered, on/off list of the location dimensions (level 1 = top). The
+      // order + which dims are included define how many WBS levels and what each level is.
+      var work = cfg.wbsOrder.slice(); WBS_DIMS.forEach(function (d) { if (work.indexOf(d) < 0) work.push(d); });
+      var incl = {}; WBS_DIMS.forEach(function (d) { incl[d] = cfg.wbsOrder.indexOf(d) >= 0; });
+      function renderStruct() {
+        var host = ov.querySelector('#sbpush-struct'); if (!host) return;
+        var lvl = 0;
+        host.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:4px;">WBS structure <span style="font-weight:400;color:var(--pd-muted);">(drag order with ↑/↓; tick to include)</span></div>' +
+          '<div class="sbld-wbsrows">' + work.map(function (d, i) {
+            var on = incl[d]; if (on) lvl++;
+            return '<div class="sbld-wbsrow"><label style="flex:1;display:flex;align-items:center;gap:7px;"><input type="checkbox" data-dim="' + d + '"' + (on ? ' checked' : '') + '>' +
+              '<span class="sbld-wbslvl">' + (on ? 'L' + lvl : '—') + '</span> ' + DIM_LABEL[d] + '</label>' +
+              '<button class="pd-btn sbld-wbsmv" data-up="' + i + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
+              '<button class="pd-btn sbld-wbsmv" data-down="' + i + '"' + (i === work.length - 1 ? ' disabled' : '') + '>↓</button></div>';
+          }).join('') + '</div>' +
+          '<p class="sbld-hint" style="margin:6px 0 0;">' + (lvl ? lvl + '-level WBS: ' + work.filter(function (d) { return incl[d]; }).map(function (d) { return DIM_LABEL[d]; }).join(' → ') : 'No levels selected — tick at least one dimension.') + '</p>';
+        host.querySelectorAll('[data-dim]').forEach(function (c) { c.onchange = function () { incl[c.dataset.dim] = c.checked; renderStruct(); }; });
+        host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.up; var t = work[i - 1]; work[i - 1] = work[i]; work[i] = t; renderStruct(); }; });
+        host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.down; var t = work[i + 1]; work[i + 1] = work[i]; work[i] = t; renderStruct(); }; });
+      }
+      function syncStructVisibility() { var s = ov.querySelector('#sbpush-struct'); if (s) s.style.display = ov.querySelector('#sbpush-grp').checked ? '' : 'none'; }
+      renderStruct(); syncStructVisibility();
       function close() { ov.remove(); }
       ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
-      ov.querySelector('#sbpush-go').onclick = function () { var pc = ov.querySelector('#sbpush-wbs').value; var grp = ov.querySelector('#sbpush-grp').checked; var bs = ov.querySelector('#sbpush-basis').value; close(); pushToSchedule(pc, grp, bs); };
+      ov.querySelector('#sbpush-grp').onchange = syncStructVisibility;
+      ov.querySelector('#sbpush-go').onclick = function () {
+        var order = work.filter(function (d) { return incl[d]; });
+        var grp = ov.querySelector('#sbpush-grp').checked;
+        if (grp && !order.length) { UI.toast('Tick at least one WBS dimension, or turn off grouping.', 'warn'); return; }
+        cfg.wbsOrder = order.slice(); markDirty();   // remember the chosen structure
+        var pc = ov.querySelector('#sbpush-wbs').value, bs = ov.querySelector('#sbpush-basis').value; close();
+        pushToSchedule(pc, grp, bs, order);
+      };
     }
     // The builder already knows every generated activity's work type and its floor/zone/unit — it
     // just used to throw that away, baking it into the activity NAME and the WBS nesting. Stamp it
@@ -11076,7 +11117,7 @@
       }
       return LOC_LEVELS.map(function (l) { return l.id; });
     }
-    async function pushToSchedule(parentCode, grouped, basis) {
+    async function pushToSchedule(parentCode, grouped, basis, order) {
       var g = generate(basis || 'int'); if (!g.rows.length) return;
       var locIds = await ensureLocLevels();
       // floor -> level 1, zone -> level 2, unit -> level 3 (only as far as the project has levels).
@@ -11131,29 +11172,28 @@
         // Grouped push — build a real Trade → Floor → Zone → Unit WBS tree and register it in the WBS
         // Manager (wbs_nodes), linking every summary + task by wbs_node_id. Falls back to plain dotted
         // WBS-Summary rows if the wbs-nodes table isn't available (migration not yet run).
-        function grp(list, keyFn, ordFn) { var m = {}, ord = []; list.forEach(function (r) { var k = keyFn(r); if (!m[k]) { m[k] = []; ord.push(ordFn(r)); } m[k].push(r); }); return { m: m, ord: ord }; }
-        var nodeDescs = [], nodeByKey = {}, taskAssign = [];
+        // Build the WBS tree by the chosen dimension order (level 1 = order[0], …). Each dimension
+        // groups the rows under it; a null value (e.g. a zone-less floor) is transparent — those rows
+        // skip that level and attach to the parent. This makes the structure fully user-configurable
+        // (how many levels + what each level is).
+        var nodeDescs = [], nodeByKey = {}, taskAssign = [], nodeSeq = 0;
         function ensureNode(key, parentKey, name) { if (!nodeByKey[key]) { var d = { key: key, parentKey: parentKey, name: name }; nodeByKey[key] = d; nodeDescs.push(d); } }
-        var byTrade = {}; g.rows.forEach(function (r) { (byTrade[r.loc.trade] = byTrade[r.loc.trade] || []).push(r); });
-        var ti = 1;
-        usedGroups().forEach(function (tr) {
-          var trRows = byTrade[tr]; if (!trRows || !trRows.length) return;
-          var tKey = 'T' + (ti++); ensureNode(tKey, '__base__', GLABEL[tr]);
-          var byF = grp(trRows, function (r) { return r.loc.floor.id; }, function (r) { return r.loc.floor; });
-          var fi = 1; byF.ord.forEach(function (f) {
-            var fKey = tKey + '.' + (fi++); ensureNode(fKey, tKey, f.code || f.name || 'Floor');
-            var rowsF = byF.m[f.id];
-            if (!f.zones.length) { rowsF.forEach(function (r) { taskAssign.push({ k: fKey, r: r, name: r.act.name }); }); return; }
-            var byZ = grp(rowsF, function (r) { return r.loc.zone ? r.loc.zone.id : '_'; }, function (r) { return r.loc.zone; });
-            var zi = 1; byZ.ord.forEach(function (z) {
-              var zKey = fKey + '.' + (zi++); ensureNode(zKey, fKey, z ? (z.code || z.name || 'Zone') : 'Zone');
-              var rowsZ = byZ.m[z ? z.id : '_'];
-              if (!z || !z.units.length) { rowsZ.forEach(function (r) { taskAssign.push({ k: zKey, r: r, name: r.act.name }); }); return; }
-              var byU = grp(rowsZ, function (r) { return r.loc.unit ? r.loc.unit.id : '_'; }, function (r) { return r.loc.unit; });
-              var ui = 1; byU.ord.forEach(function (u) { var uKey = zKey + '.' + (ui++); ensureNode(uKey, zKey, u ? (u.code || u.name || 'Unit') : 'Unit'); byU.m[u ? u.id : '_'].forEach(function (r) { taskAssign.push({ k: uKey, r: r, name: r.act.name }); }); });
-            });
+        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'floor') return l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : ' '; if (dim === 'unit') return l.unit ? l.unit.id : ' '; return ' '; }
+        function dimName(dim, r) { var l = r.loc; if (dim === 'trade') return GLABEL[l.trade] || l.trade; if (dim === 'floor') return l.floor.code || l.floor.name || 'Floor'; if (dim === 'zone') return l.zone ? (l.zone.code || l.zone.name || 'Zone') : null; if (dim === 'unit') return l.unit ? (l.unit.code || l.unit.name || 'Unit') : null; return null; }
+        function buildTree(rowsIn, dims, parentKey) {
+          if (!dims.length) { rowsIn.forEach(function (r) { taskAssign.push({ k: parentKey, r: r, name: r.act.name }); }); return; }
+          var dim = dims[0], rest = dims.slice(1), m = {}, ord = [];
+          rowsIn.forEach(function (r) { var k = dimKey(dim, r); if (!m[k]) { m[k] = []; ord.push(k); } m[k].push(r); });
+          // whole group has no value for this dim → skip the level entirely
+          if (ord.length === 1 && ord[0] === ' ') { buildTree(rowsIn, rest, parentKey); return; }
+          ord.forEach(function (k) {
+            var grpRows = m[k];
+            if (k === ' ') { buildTree(grpRows, rest, parentKey); return; }   // null-value rows attach to the parent
+            var nkey = 'N' + (++nodeSeq); ensureNode(nkey, parentKey, dimName(dim, grpRows[0]));
+            buildTree(grpRows, rest, nkey);
           });
-        });
+        }
+        buildTree(g.rows, (order && order.length ? order : cfg.wbsOrder).slice(), '__base__');
         // base parent = the wbs_node behind the chosen WBS row (if any)
         var baseRow = rows.filter(function (r) { return isWbs(r) && String(r.wbs) === String(base); })[0];
         var baseNodeId = baseRow ? (baseRow.wbs_node_id || null) : null;
