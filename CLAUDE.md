@@ -77,6 +77,42 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — Drawing Register: the L1 level is the DRAWING TYPE, not a phase (+ a silent data-loss fix)
+User: *"Progress by Phase is not necessarily phase given that FCD, Temp and ISD can happen
+simultaneously."* Right — and the workbook already says so: its **Coding Reference** sheet calls this
+level **"TYPE OF DRAWING"** (DRC / ECD / SD1 / SD2 / FCD / ABD), and the module's own `TYPES` map lists
+the same vocabulary. "Phase" implied a sequence that doesn't exist; those three sets are produced
+concurrently.
+- **Relabelled every user-facing string** to "drawing type": the Overview roll-up (**Progress by Drawing
+  Type**), the filter (**All drawing types**), the Backlog column, the `+ Level` item, the jump select,
+  the Add/Edit field, the group-row level name, the duplicate-code tooltips, the reorder warning and the
+  import dialog's help text.
+- ⚠️ **The stored column stays `phase`** — renaming it would mean a migration across every register plus
+  the importer, collab payloads, offline cache and the rename/delete-level queries, for no functional
+  gain. It is now purely an internal name.
+- ⚠️ **The export header is "Type of Drawing", not "Drawing Type".** The importer probes
+  `col('drawing type')` for the separate per-drawing code part and `col()` matches on **substring**, so a
+  "Drawing Type" header would make a re-import of our own export load this column into `drawing_type`.
+  "Type of drawing" doesn't contain "drawing type", so the export stays round-trippable — the property
+  the old `Phase` header had. Verified by running every importer probe against the new header row.
+
+- **⚠️ REAL BUG FIXED — the Add/Edit form silently wiped a drawing's type on Save.** The drawing-type
+  `<select>` was built from the hardcoded `PHASES` list only
+  (`Concept Design / Schematic Design 1 / Schematic Design 2 / For Construction / As-Built`). **None of
+  BAU101's three actual types were in it**, so no option matched, the select fell back to the blank "—",
+  and saving wrote `''` over the type — moving the drawing to "Ungrouped" with no warning. Reachable by
+  opening the ✎ editor on almost any BAU101 drawing and pressing Save. New `phaseOptions(cur)` builds the
+  options as **canonical ∪ types present in the project ∪ the row's own value**, so what's on screen
+  always round-trips; `PHASES` was also updated to the real vocabulary.
+- ⚠️ `PHASES` is **display-only** (sort order + default options) and is not read by the importer —
+  verified by parsing both BAU101 and the real GPR101 workbook before vs after: **byte-identical**, so
+  registers with their own naming are untouched.
+- **Verified 10/10** in a new harness (all three types now offered, arbitrary values round-trip, no
+  duplicates, canonical order preserved, two byte-identical parse comparisons; the pre-change `PHASES` is
+  asserted in the test to document the bug). Existing suites green: 41 / 68 / 29 + GPR101 backcompat.
+- Assets: drawing-register `module.js?v=20260804e`. Material Submittal not affected (it groups by trade
+  section, and has no phase concept).
+
 ### 2026-08-04 — Project Schedule: invisible "Structural" trade + duplicated WBS rows (both from a live run)
 Two bugs the user hit doing a real Schedule Builder run → push → Clear.
 - ⚠️ **"Structural" was invisible in the Auto-trace dialog — at a measured 1.00:1 contrast.**

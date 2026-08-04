@@ -31,7 +31,7 @@
           <div class="dr-menuwrap">
             <button class="pd-btn dr-tb-labeled" id="dr-addlevel" style="display:none;">+ Level <span data-ico="chevronDown" data-ico-size="13"></span></button>
             <div class="dr-menu" id="dr-addlevel-menu" hidden>
-              <button data-add="phase">Phase</button>
+              <button data-add="phase">Drawing Type</button>
               <button data-add="discipline">Discipline</button>
               <button data-add="category">Category</button>
             </div>
@@ -48,7 +48,7 @@
         <div class="dr-filters">
           <span class="dr-filt-ico" data-ico="filter" data-ico-size="15"></span>
           <input class="pd-input dr-search" id="dr-f-search" placeholder="Search code, title, description…" />
-          <select class="pd-select" id="dr-f-phase"><option value="">All phases</option></select>
+          <select class="pd-select" id="dr-f-phase"><option value="">All drawing types</option></select>
           <select class="pd-select" id="dr-f-discipline"><option value="">All disciplines</option></select>
           <select class="pd-select" id="dr-f-status">
             <option value="">All statuses</option>
@@ -83,7 +83,7 @@
   <script src="../../assets/js/icons.js?v=20260804a"></script>
   <script src="../../assets/js/offline.js?v=20260726d"></script>
   <script src="../../assets/js/collab.js?v=20260727b"></script>
-  <script src="module.js?v=20260804d"></script>
+  <script src="module.js?v=20260804e"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

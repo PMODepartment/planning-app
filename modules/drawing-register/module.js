@@ -52,11 +52,25 @@ window.DrawingRegister = (function () {
   var FLOORS = ['GEN','FD','GF','2F','3F','4F','5F','6F','7F','8F','9F','10F',
                 '11F','12F','13F','14F','15F','RDF','RORD'];
   // Design phases, in workbook order
-  var PHASES = ['Concept Design','Schematic Design 1','Schematic Design 2',
-                'For Construction','As-Built'];
+  // ---- L1 grouping = TYPE OF DRAWING, not a phase --------------------------
+  // ⚠️ This level is the drawing TYPE (the workbook's own "Coding Reference"
+  // sheet calls it "TYPE OF DRAWING": DRC / ECD / SD1 / SD2 / FCD / ABD, and the
+  // module's own TYPES map lists the same vocabulary). It is NOT a schedule
+  // phase: For Construction, Temporary Works and Individual Services drawings
+  // are produced CONCURRENTLY, so labelling the roll-up "by Phase" implied a
+  // sequence that doesn't exist. The stored column is still `phase` — renaming
+  // it would need a migration across every register for no functional gain —
+  // but every user-facing label says "drawing type".
+  // This list only supplies the DISPLAY ORDER and the default dropdown options;
+  // any value actually present in a project is picked up dynamically, so a
+  // register using its own names (GPR101's "For Construction Drawings (FCD)")
+  // still orders by first appearance via phaseOrderKey().
+  var PHASES = ['Concept Design','Schematic Design','For Construction Drawing',
+                'Temporary Works Drawing','Individual Services Drawing',
+                'Combined Services Drawing','As-Built Drawing'];
   var STATUSES = ['For Review','Revise & Resubmit','Approved w/ comments',
                   'Approved','Superseded'];
-  var NODE_LABELS = { phase:'Phase', discipline:'Discipline', category:'Category', drawing:'Drawing' };
+  var NODE_LABELS = { phase:'Drawing Type', discipline:'Discipline', category:'Category', drawing:'Drawing' };
 
   // selection ordering (display order of drawing ids) for shift-click + arrows
   var visibleIds = [];
@@ -751,7 +765,7 @@ window.DrawingRegister = (function () {
   var BK_COLS = [
     { col:'code',       label:'Code' },
     { col:'title',      label:'Title' },
-    { col:'phase',      label:'Phase' },
+    { col:'phase',      label:'Drawing Type' },
     { col:'discipline', label:'Discipline' },
     { col:'status',     label:'Status' },
     { col:'needby',     label:'Need-by' },
@@ -945,7 +959,7 @@ window.DrawingRegister = (function () {
     var phSet = {}; rows.forEach(function (r){ if (r.phase) phSet[r.phase]=1; });
     var phList = PHASES.filter(function (p){ return phSet[p]; })
       .concat(Object.keys(phSet).filter(function (p){ return PHASES.indexOf(p)===-1; }));
-    ph.innerHTML = '<option value="">All phases</option>' + phList.map(function (p){
+    ph.innerHTML = '<option value="">All drawing types</option>' + phList.map(function (p){
       return '<option'+(filters.phase===p?' selected':'')+'>'+Fmt.esc(p)+'</option>'; }).join('');
 
     var dc = document.getElementById('dr-f-discipline');
@@ -968,6 +982,23 @@ window.DrawingRegister = (function () {
   }
 
   function phaseRank(p){ var i = PHASES.indexOf(p); return i === -1 ? 99 : i; }
+
+  // ⚠️ DATA-LOSS GUARD. The Add/Edit form's drawing-type <select> used to be
+  // built from PHASES alone, so a drawing whose type wasn't in that hardcoded
+  // list had NO matching option — the select fell back to the blank "—" and
+  // saving wrote '' straight over the type, silently moving the drawing to
+  // "Ungrouped". Almost every BAU101 drawing hit this (For Construction /
+  // Temporary Works / Individual Services Drawing were all absent). The options
+  // are now the canonical list ∪ the types actually present in this project ∪
+  // the row's own current value, so the value on screen can always round-trip.
+  function phaseOptions(cur){
+    var seen = {}, list = [];
+    PHASES.concat(phaseNames()).forEach(function (p){
+      if (p && !seen[p]) { seen[p] = 1; list.push(p); }
+    });
+    if (cur && !seen[cur]) list.push(cur);
+    return list;
+  }
   var SEP = '';
 
   // First-appearance order (by sort_order) so imported design iterations read
@@ -1058,14 +1089,14 @@ window.DrawingRegister = (function () {
     var anyOpen = disp.some(function (x){ return x.type==='phase' && !collapsed[x.key]; });
     var phaseItems = disp.filter(function(x){ return x.type==='phase'; });
     var jump = phaseItems.length > 1 ?
-      '<select class="pd-select pd-btn-sm dr-jump" id="dr-jump" title="Jump to a phase">' +
-        '<option value="">Jump to phase…</option>' +
+      '<select class="pd-select pd-btn-sm dr-jump" id="dr-jump" title="Jump to a drawing type">' +
+        '<option value="">Jump to drawing type…</option>' +
         phaseItems.map(function(p){ return '<option value="'+Fmt.esc(p.key)+'">'+Fmt.esc(p.label)+'</option>'; }).join('') +
       '</select>' : '';
     var nDup = Object.keys(dupSet).length;
     var dupLegend = nDup ?
       '<button class="dr-duplegend'+(filters.dupsOnly?' dr-on':'')+'" id="dr-duplegend" ' +
-        'title="A drawing code that appears more than once within the same phase. Click to '+(filters.dupsOnly?'show all':'show only duplicates')+'.">' +
+        'title="A drawing code that appears more than once within the same drawing type. Click to '+(filters.dupsOnly?'show all':'show only duplicates')+'.">' +
         '<span class="dr-dupmark">⚠</span> '+nDup+' duplicate code'+(nDup>1?'s':'')+'</button>' : '';
     // When a column sort is active, say so and offer one click back — otherwise
     // "why can't I drag rows any more?" is a mystery (reorderEnabled() is off).
@@ -1176,7 +1207,7 @@ window.DrawingRegister = (function () {
     var cb = CB ? '<td class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" data-sel="'+r.id+'"'+(selected[r.id]?' checked':'')+'></td>' : '';
     var ed = CB ? ' dr-ed' : '';
     var isDup = !!dupSet[dupKey(r)];
-    var dupMark = isDup ? ' <span class="dr-dupmark" title="Duplicate code within this phase — reconcile">⚠</span>' : '';
+    var dupMark = isDup ? ' <span class="dr-dupmark" title="Duplicate code within this drawing type — reconcile">⚠</span>' : '';
     return '<tr class="dr-drow dr-lvl-'+(item.level||4)+(selected[r.id]?' dr-selrow':'')+(isDup?' dr-dup':'')+'" data-id="'+r.id+'"'+(reorderEnabled()?' draggable="true"':'')+'>' + cb +
       '<td class="dr-indent dr-freeze dr-freeze-code'+ed+'" data-f="code" data-t="text"><span class="dr-code">'+Fmt.esc(code)+'</span>'+dupMark+'</td>' +
       '<td class="dr-c-title dr-freeze dr-freeze-title'+ed+'" data-f="title" data-t="text">'+Fmt.esc(r.title)+(r.description?'<div class="dr-sub">'+Fmt.esc(r.description)+'</div>':'')+'</td>' +
@@ -1374,7 +1405,7 @@ window.DrawingRegister = (function () {
     var tg = rows.find(function(x){ return x.id===targetId; });
     if (!dr || !tg || dr.id===tg.id) return;
     if (groupKeyOf(dr) !== groupKeyOf(tg)) {
-      UI.toast('Drawings can only be reordered within their own phase / discipline / category.', 'warn');
+      UI.toast('Drawings can only be reordered within their own drawing type / discipline / category.', 'warn');
       return;
     }
     var key = groupKeyOf(dr);
@@ -1665,7 +1696,7 @@ window.DrawingRegister = (function () {
     var byPhase = groupAgg('phase');
     var byDisc  = groupAgg('discipline');
     var host2 = '<div class="dr-dash-grid">' +
-      progTable('Progress by Phase', byPhase, PHASES, 'phase') +
+      progTable('Progress by Drawing Type', byPhase, PHASES, 'phase') +
       progTable('Progress by Trade', byDisc, Object.keys(DISCIPLINES).map(disciplineName), 'discipline') +
     '</div>';
 
@@ -2094,7 +2125,7 @@ window.DrawingRegister = (function () {
 
       '<div class="dr-form-sec">Sheet</div>' +
       '<div class="dr-grid2">' +
-        field('Phase','<select class="pd-select" id="f-phase">'+opt(PHASES, r.phase, true)+'</select>') +
+        field('Drawing type','<select class="pd-select" id="f-phase">'+opt(phaseOptions(r.phase), r.phase, true)+'</select>') +
         field('Category','<input class="pd-input" id="f-cat" value="'+Fmt.esc(r.category)+'" placeholder="Floor Plan">') +
       '</div>' +
       field('Sheet title','<input class="pd-input" id="f-title" value="'+Fmt.esc(r.title)+'">') +
@@ -2449,7 +2480,8 @@ window.DrawingRegister = (function () {
     var m = UI.modal(
       '<h2 style="margin-top:0;">Import drawings from Excel</h2>' +
       '<p class="dr-mut">Reads a "Drawing Registry" sheet from the Megawide Drawing Register &amp; Tracker workbook. ' +
-      'Phase / discipline / category are inferred from the sheet-title indentation; each sheet row becomes a drawing.</p>' +
+      'Drawing type / discipline / category are inferred from the sheet-title indentation (or read from an ' +
+      'explicit "Row Level" column when the workbook has one); each sheet row becomes a drawing.</p>' +
       field('Workbook (.xlsx)','<input class="pd-input" type="file" id="dr-imp-file" accept=".xlsx,.xls">') +
       field('<label><input type="checkbox" id="dr-imp-replace"> Replace existing drawings for this project</label>','') +
       '<div id="dr-imp-preview" class="dr-mut" style="margin-top:8px;"></div>' +
@@ -2896,7 +2928,14 @@ window.DrawingRegister = (function () {
   // =============================================================== EXPORT =====
   function exportExcel() {
     if (!rows.length) { UI.toast('Nothing to export', 'warn'); return; }
-    var aoa = [['Drawing Code','Phase','Discipline','Category','Sheet Title','Description',
+    // ⚠️ "Type of Drawing" — the workbook's own Coding Reference wording — NOT
+    // "Drawing Type". The importer probes `col('drawing type')` for the separate
+    // per-drawing code part, and that probe matches on substring: a header of
+    // "Drawing Type" would make a re-import of our own export load this column
+    // into `drawing_type`. "Type of Drawing" does not contain "drawing type",
+    // so the export stays round-trippable. (The old header, "Phase", matched no
+    // probe at all — this preserves that property.)
+    var aoa = [['Drawing Code','Type of Drawing','Discipline','Category','Sheet Title','Description',
       'Rev','Status','No. of Sheets','Approved Sheets','Approved %',
       'Latest Planned Sub.','Latest Actual Sub.','Planned Approval','Actual Approval','Responsible','Remarks']];
     filtered().forEach(function (r) {

@@ -1,5 +1,47 @@
 # Module: drawing-register
 
+## L1 is the DRAWING TYPE, not a phase — relabel + a data-loss fix (2026-08-04) — fmlozano
+User: *"Progress by Phase is not necessarily phase given that FCD, Temp and ISD can happen
+simultaneously."* Correct, and the workbook agrees — its **Coding Reference** sheet calls this level
+**"TYPE OF DRAWING"** (DRC / ECD / SD1 / SD2 / FCD / ABD), and the module's own `TYPES` map already
+lists the same vocabulary (incl. FCD, ISD, CSD). "Phase" implied a sequence that doesn't exist:
+For Construction, Temporary Works and Individual Services drawings are produced **concurrently**.
+- **Relabelled every user-facing string** to "drawing type": the Overview roll-up
+  (`Progress by Phase` → **Progress by Drawing Type**), the filter (`All phases` → **All drawing
+  types**), the Backlog column, the `+ Level` menu item, the jump select, the Add/Edit field, the
+  group-row level name (`NODE_LABELS`), the duplicate-code tooltips, the reorder warning, and the
+  import dialog's help text.
+- ⚠️ **The stored column stays `phase`.** Renaming it means a migration across every register plus the
+  importer, the collab payloads, the offline cache and `renameGroup`/`deleteLevel`'s queries — all for
+  zero functional gain. `phase` is now purely an internal name; nothing shows it.
+- ⚠️ **Export header is "Type of Drawing", NOT "Drawing Type".** The importer probes
+  `col('drawing type')` for the separate per-drawing code part and `col()` matches on **substring**, so
+  a "Drawing Type" header would make a re-import of our own export load this column into
+  `drawing_type`. `"type of drawing"` does not contain `"drawing type"`, so the export stays
+  round-trippable — the same property the old `Phase` header had (it matched no probe). Verified by
+  running every probe against the new export header row.
+
+### ⚠️ REAL BUG FIXED: the Add/Edit form silently wiped a drawing's type on Save
+The drawing-type `<select>` was built from the hardcoded `PHASES` list alone
+(`['Concept Design','Schematic Design 1','Schematic Design 2','For Construction','As-Built']`). None of
+BAU101's three actual types were in it, so **no option matched, the select fell back to the blank "—",
+and saving wrote `''` straight over the type** — moving the drawing to "Ungrouped". Reachable by opening
+the ✎ full editor on almost any BAU101 drawing and pressing Save, with no warning.
+New `phaseOptions(cur)` builds the list as **canonical ∪ types present in this project ∪ the row's own
+current value**, so whatever is on screen can always round-trip. `PHASES` was also updated to the real
+vocabulary (Concept Design, Schematic Design, For Construction Drawing, Temporary Works Drawing,
+Individual Services Drawing, Combined Services Drawing, As-Built Drawing).
+- ⚠️ `PHASES` is **display-only** — it supplies the sort order (`phaseRank`) and the default dropdown
+  options, and is NOT used by the importer. Verified: BAU101 and the real GPR101 workbook both parse
+  **byte-identically** before vs after this change, so a register with its own names (GPR101's
+  "For Construction Drawings (FCD)") is unaffected and still orders by first appearance via
+  `phaseOrderKey()`.
+- **Verified 10/10** in a Node harness over the extracted functions: all three BAU101 types now offered,
+  an arbitrary project-specific value round-trips, no duplicate options, canonical order still leads,
+  plus the two byte-identical parse comparisons. The pre-change `PHASES` is asserted in the test to
+  document that the bug was real. Existing suites re-run green (41 / 68 / 29 + GPR101 backcompat).
+- Assets `module.js?v=20260804e`.
+
 ## Importer: explicit "Row Level" column + FIXED a one-day date shift (2026-08-04) — fmlozano
 Driven by the BAU101 re-import off the `Dwg Registry (Based on FCD)` sheet.
 
