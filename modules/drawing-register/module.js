@@ -68,7 +68,12 @@ window.DrawingRegister = (function () {
   var PHASES = ['Concept Design','Schematic Design','For Construction Drawing',
                 'Temporary Works Drawing','Individual Services Drawing',
                 'Combined Services Drawing','As-Built Drawing'];
-  var STATUSES = ['For Review','Revise & Resubmit','Approved w/ comments',
+  // ⚠️ 'Ongoing' and 'Pending' were added because the real OPS registers use them and the inline
+  // grid Status cell is a <select> built from THIS list — a value outside it silently displays as
+  // the first option while the row actually holds something else (the same trap the Overview's
+  // status filter hit). Order = lifecycle: being drawn → submitted → reviewed → approved.
+  // Neither counts as approved (see isApprovedStatus), so both stay in the Backlog.
+  var STATUSES = ['Ongoing','Pending','For Review','Revise & Resubmit','Approved w/ comments',
                   'Approved','Superseded'];
   var NODE_LABELS = { phase:'Drawing Type', discipline:'Discipline', category:'Category', drawing:'Drawing' };
 
@@ -691,6 +696,7 @@ window.DrawingRegister = (function () {
     if (s === 'Approved w/ comments') return 'dr-okc';
     if (s === 'Revise & Resubmit') return 'dr-rr';
     if (s === 'Superseded') return 'dr-old';
+    if (s === 'Ongoing') return 'dr-wip';
     return 'dr-review';
   }
 
@@ -1902,7 +1908,8 @@ window.DrawingRegister = (function () {
 
   // Status colors mirror the Registry's own pill colors (statusCls) so the chart
   // and the grid pills read as one system.
-  var STATUS_COLOR = { 'For Review':'#d97706', 'Revise & Resubmit':'#dc2626',
+  var STATUS_COLOR = { 'Ongoing':'#6366f1', 'Pending':'#d97706', 'For Review':'#d97706',
+    'Revise & Resubmit':'#dc2626',
     'Approved w/ comments':'#0891b2', 'Approved':'#16a34a', 'Superseded':'#6b7280' };
   function statusCounts() {
     var m = {}; STATUSES.forEach(function (s){ m[s]=0; });
@@ -2647,11 +2654,18 @@ window.DrawingRegister = (function () {
       approvedSh:  col('approved sheets'),
       approvedPct: col('approved %'),
       status:      col('status','approval status'),
-      papp:        col('approval date (plan','planned approval'),
+      // ⚠️ "Approval Date (BL0)" is the OPS registers' actual header for the PLANNED approval date
+      // (BL0 = the original baseline). It matched none of the old patterns, so every planned
+      // approval date in BAU101/GPR101 was silently dropped on import. Kept the older spellings.
+      papp:        col('approval date (bl','approval date (plan','planned approval','approval date (base'),
       aapp:        col('approval date (actual','actual approval'),
       rem:         col('remarks')
     };
-    // submission revision columns (planned/actual pairs), in header order
+    // submission revision columns (planned/actual pairs), in header order.
+    // ⚠️ `bl` (from a "(BL0)".."(BL4)" header) is a RE-BASELINE of the planned date for the SAME
+    // drawing revision — it is NOT a drawing revision. Without capturing it, BL0..BL4 all resolved
+    // to rev 0 planned and overwrote each other (BAU101: 119 drawings carry a BL1, 10 carry BL1-BL4),
+    // so only the last baseline column survived and the original baseline was lost.
     var subCols = [];
     for (var c=0;c<H.length;c++){
       var h=H[c];
@@ -2659,7 +2673,8 @@ window.DrawingRegister = (function () {
         var revM = h.match(/rev *(\d+)/);
         var rev = revM ? parseInt(revM[1],10) : 0;
         var kind = /actual/.test(h) ? 'actual' : 'planned';
-        subCols.push({ c:c, rev:rev, kind:kind });
+        var blM = h.match(/\bbl *(\d+)/);
+        subCols.push({ c:c, rev:rev, kind:kind, bl: blM ? parseInt(blM[1],10) : null });
       }
     }
     // the title spans several indent columns → treat any column between title and category as title-indent
@@ -2800,8 +2815,22 @@ window.DrawingRegister = (function () {
       // sheets carrying no date, no description and no sheet count.
       if (!lvl && !hasDates && !sheets && !desc && !dwgno) continue;
 
-      var subs = [];
-      subCols.forEach(function (s){ var d=dateOf(cell(row,s.c)); if (d) push(subs,s.rev,s.kind,d); });
+      var subs = [], blByRev = {};
+      subCols.forEach(function (s){
+        var d = dateOf(cell(row,s.c)); if (!d) return;
+        if (s.kind === 'planned' && s.bl != null) { (blByRev[s.rev] = blByRev[s.rev] || {})[s.bl] = d; }
+        else push(subs, s.rev, s.kind, d);
+      });
+      // The LATEST non-empty baseline is the current planned submission date (that's the point of a
+      // re-baseline); the whole BL0..BLn series is kept on the entry as `bl` so the original
+      // baseline — and therefore the slip between them — is never lost. `submissions` is jsonb,
+      // so this needs no migration.
+      Object.keys(blByRev).forEach(function (rv){
+        var m = blByRev[rv], ks = Object.keys(m).map(Number).sort(function(a,b){return a-b;});
+        push(subs, +rv, 'planned', m[ks[ks.length-1]]);
+        var e = subs.find(function(x){ return x.rev === +rv; });
+        if (e) e.bl = m;
+      });
       subs.sort(function(a,b){ return a.rev-b.rev; });
 
       recs.push({
@@ -2869,10 +2898,16 @@ window.DrawingRegister = (function () {
   function normalizeStatus(s) {
     var t = norm(s); if (!t) return '';
     if (/revise|resubmit/.test(t)) return 'Revise & Resubmit';
-    if (/with *comment/.test(t)) return 'Approved w/ comments';
+    // ⚠️ `w/ comments` (the OPS registers' own spelling) used to fall through to the bare
+    // /approved/ test below and be silently downgraded to plain "Approved" — 16 BAU101 drawings
+    // lost the "with comments" distinction. The (w/o|without) test still wins for "w/o comments"
+    // because `w\/ *comment` can't match "w/o comments" ('o' follows the slash).
+    if (/with *comment|w\/ *comment/.test(t)) return 'Approved w/ comments';
     if (/(w\/o|without) *comment/.test(t)) return 'Approved';   // merged: redundant with "Approved"
     if (/superseded/.test(t)) return 'Superseded';
     if (/approved/.test(t)) return 'Approved';
+    if (/ongoing|in *progress|wip/.test(t)) return 'Ongoing';   // being drawn, not yet submitted
+    if (/pending/.test(t)) return 'Pending';                    // submitted, awaiting review
     if (/review|submitted|for review/.test(t)) return 'For Review';
     return s;
   }

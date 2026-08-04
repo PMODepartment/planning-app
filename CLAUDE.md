@@ -4176,3 +4176,41 @@ contract package — e.g. **Work Package › Location › Activity** or **Work P
 - **Verified 11/11 in Node against the shipped functions** (value, trimming, all three blank forms
   bucketing together, `wbs` still forced last, unknown dims dropped); script parses; only those three
   sites enumerate dimensions. **Not verified signed-in.** Module-local, no migration, no `?v=` bump.
+
+### 2026-08-04 — BAU101 import was missing Status and nearly every date — 4 importer defects fixed
+User: the BAU import didn't include the Status in column AD; check everything useful that can be
+imported, specifically approval dates and submission dates BL0–BL4 (Planned) + Actual. The previously
+generated file carried only **11 columns**, so Status, all approval dates, all actual submission dates,
+BL1–BL4 and **the source's own Remarks** were silently absent. Measured through the shipped parser,
+old file → new: Status **0 → 208**, planned approval **0 → 71**, actual approval **0 → 78**, actual
+submission **0 → 204**, actual submission rev 1 **0 → 50**, re-baselined plans **0 → 88**, approved
+sheets **0 → 200**, source remarks **0 → 355** — with the structure (5 phases / 18 disciplines /
+64 categories / **424 drawings**) byte-identical to the previous delivery.
+- ⚠️ **`papp` never matched the real header.** The OPS template names the planned approval date
+  **"Approval Date (BL0)"**; the matcher only knew `approval date (plan`/`planned approval`, so on
+  BAU101 it resolved to −1 and every planned approval date was dropped. Widened.
+- ⚠️ **"Approved w/ Comments" was silently downgraded to plain "Approved"** — `normalizeStatus` tested
+  `/with *comment/`, which the slash spelling never matches, so it fell through to the bare `/approved/`
+  branch. **16 BAU101 + 3 GPR101 drawings** lost the distinction. `w/o comments` is unaffected.
+- ⚠️ **BL0–BL4 all collapsed onto rev 0 and overwrote each other** (119 BAU101 drawings carry a BL1,
+  10 carry all four). A "(BLn)" header is a **re-baseline of the planned date**, not a drawing revision;
+  each is now captured, `planned` = the latest baseline, and the full series is kept on the submission
+  entry as `bl:{…}` so the original baseline and the slip survive. jsonb → **no migration**.
+- **`Ongoing` / `Pending` are now real statuses** (59 + 10 BAU101 drawings). ⚠️ Necessary, not cosmetic:
+  the grid's inline Status cell is a `<select>` built from `STATUSES`, so an off-list value **shows the
+  first option while the row holds something else**. Neither counts as approved, so both stay in the
+  Backlog; new indigo `.dr-wip` pill for Ongoing.
+- **Data prep:** the new file **enriches** the prior one (auto-numbered codes preserved) — safe because
+  the two align **1:1, 509/509 rows, 0 mismatches**. ⚠️ The documented "stop at ≥3 blank rows" rule is
+  **wrong for this sheet** — a 14-row blank stretch sits INSIDE the data, before the last 31 rows
+  (OTHER SPECIALTIES / MEPF COMBINED); the cut is now structural (stop at the "List" legend row).
+  Placeholder junk (`'- '`, `'-'`, and two cells with "Approved" typed into a date column) is rejected,
+  not imported. **Approved % deliberately skipped** — measured 253/253 equal to sheets ÷ approved sheets,
+  which the importer already derives. **Prioritization / Planned Award / Vendor have no column**, so
+  they go into Remarks as prefixed notes (a filterable field would need a migration).
+- **Verified with the SHIPPED parser** over both files (extracted, never reimplemented): every field's
+  count matches the file's drawing-row count exactly, 0 unknown statuses, 0 blank discipline/phase/code.
+  **GPR101 regression-checked old-vs-new parser: identical on all 1,372 records except the 3 `w/ Comments`
+  drawings the fix correctly reclassifies.** `node --check` + CSS braces balanced. **Not verified
+  signed-in** — the user runs Clear all → Import. Assets `module.css/js?v=20260804e`.
+  Delivered `~/Downloads/BAU101 Drawing Register - FCD sheet (import v2 - full).xlsx`.

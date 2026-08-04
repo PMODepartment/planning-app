@@ -810,3 +810,77 @@ Project-scoped drawing register that mirrors the workbook:
 ## Pending
 - Live click-through against a real login + this project's data (module +
   UI harness-verified; importer tested against the actual workbook).
+
+## BAU101 re-import: Status + every approval/submission date the source actually holds (2026-08-04) — fmlozano
+User: "the import for BAU did not include the status of the drawings seen in Column AD… check all the
+data that are useful that can be imported", plus "check for approval dates and the submission dates
+BL0-BL4 (Planned) and Actual". The 2026-08-04 transform had emitted **only 11 columns** (No, Row Level,
+Project name, Drawing No, Sheet Title, Category, Description, Responsible, No of Sheets, Subm BL0,
+Remarks-for-auto-numbering) — so Status, every approval date, every actual submission date, BL1–BL4 and
+**the source's own Remarks** were all dropped. Measured through the shipped parser, old file → new file:
+
+| carried onto drawings | old | new |
+|---|---|---|
+| Status | **0** | **208** |
+| Planned approval (Approval Date BL0) | **0** | 71 |
+| Actual approval | **0** | 78 |
+| Actual submission (rev 0) | **0** | 204 |
+| Actual submission rev 1 | **0** | 50 |
+| Re-baselined plans (BL1–BL4) | **0** | 88 (9 with all five) |
+| Approved sheets | **0** | 200 |
+| Source remarks | 0 (251 auto-number notes only) | 355 |
+| structure (phases/disciplines/categories/drawings) | 5 / 18 / 64 / 424 | **identical** |
+
+**Four importer defects fixed (all affect any register, not just BAU101):**
+- ⚠️ **`papp` never matched the real header.** The OPS template calls the planned approval date
+  **"Approval Date (BL0)"**; the matcher only knew `approval date (plan` / `planned approval`, so on
+  BAU101 it silently resolved to −1 and every planned approval date was dropped. Added
+  `approval date (bl` + `approval date (base`. (GPR101 uses "(Plan)" and was already fine.)
+- ⚠️ **`Approved w/ Comments` was silently downgraded to plain "Approved".** `normalizeStatus` tested
+  `/with *comment/`, which the slash spelling doesn't match, so it fell through to the bare `/approved/`
+  test. 16 BAU101 drawings **and 3 GPR101 drawings** lost the distinction. The `w/o comments` branch is
+  unaffected — `w\/ *comment` can't match "w/o comments" because an `o` follows the slash.
+- ⚠️ **BL0–BL4 all collapsed onto rev 0 and overwrote each other.** A "(BLn)" header is a *re-baseline
+  of the planned date for the same revision*, not a drawing revision, but `subCols` had no concept of
+  it. Now each is captured with a `bl` index: **`planned` = the latest non-empty baseline** (that is the
+  point of a re-baseline) and the whole series is kept on the submission entry as `bl:{0:…,1:…}`, so the
+  original baseline and the slip between them survive. `submissions` is jsonb → **no migration**.
+- **`Ongoing` / `Pending` are now first-class statuses** (`STATUSES`, `statusCls` + a new `.dr-wip`
+  indigo pill, `STATUS_COLOR`, and `normalizeStatus`). ⚠️ Not cosmetic: the grid's inline Status cell is
+  a `<select>` built from `STATUSES`, so a value outside the list **displays as the first option while
+  the row holds something else** — the same silent-mismatch trap the Overview status filter hit. Neither
+  counts as approved (`isApprovedStatus` untouched), so both stay in the Backlog. 59 BAU101 drawings are
+  "Ongoing", 10 "Pending".
+
+**Data-prep notes (one-off transform, not committed app code):**
+- The new file **enriches the previously delivered one** rather than regenerating it, so the
+  auto-numbered codes and row order are byte-identical. Safe because the two align **1:1 — 509/509
+  source rows, 0 level or title mismatches** (verified before writing anything).
+- ⚠️ **The "stop at the first run of ≥3 blank rows" rule documented earlier is wrong for this sheet.**
+  There is a **14-row blank stretch INSIDE the real data** (rows 487–500) before OTHER SPECIALTIES /
+  MEPF COMBINED, which contribute the last 31 rows (2 disciplines + 5 categories + 24 drawings). The
+  cut is now structural: **stop at the row whose col A is "List"** — the status-legend block (rows
+  547–554), which is what the blank-run rule was really there to exclude.
+- Row level comes straight from which indent column holds the title (I → phase, J → discipline,
+  K → category, L → drawing) — 3/18/64/431 in the source, 431 − 7 legend titles = the 424 drawings.
+- **Placeholder junk is correctly rejected, not imported:** 3 `'- '` in BL0, 12 in BL1, 9 `'-'`/`' '` in
+  Approval BL0, and **two cells where someone typed "Approved" into the *Actual Subm. Date rev 1*
+  column** (source rows 243–244). Also the 3 "1-2/3/4 Weeks Lead Time" values in column AD are part of
+  the legend block, not statuses — excluded by the cut.
+- **Approved % (AF) is deliberately not imported** — measured 253/253 rows where it equals
+  `Approved Sheets ÷ No of Sheets`, and the importer already derives `approved_pct` itself.
+- **No column exists for Prioritization (AB, "Critical Level", 40 rows), Planned Award Date (AC, 49) or
+  Vendor (AI, 3)**, so they are appended to Remarks as `Critical: Level 3` / `Planned award: <iso>` /
+  `Vendor: …` — lossless and searchable, but not filterable. A real `criticality` column would need a
+  migration. Date Awarded / Delivery / Installation are **entirely empty** in the source (0 rows) and
+  belong to the procurement side anyway.
+
+**Verified by running the SHIPPED parser** (`findHeader` + `parseGrid` + `normalizeStatus` + the
+discipline/phase helpers, extracted from `module.js`, never reimplemented) over both files: every
+per-field count matches the new file's drawing-row count **exactly** (Status 208=208, planned approval
+71=71, actual approval 78=78, rev0 actual 204=204, rev1 actual 50=50, remarks 355=355; rev0 planned 225
+= 223 BL0 + the 2 rows that have a BL1 and no BL0), 0 unknown statuses, 0 blank discipline/phase/code,
+and the structure identical to the previous delivery. **GPR101 regression-checked through the same
+harness, old parser vs new: byte-identical on all 1,372 records except the 3 `w/ Comments` drawings that
+the status fix correctly reclassifies.** `node --check` on `module.js`, CSS braces balanced (329/329).
+⚠️ **Not verified signed-in** — the user clicks **Clear all → Import** on BAU101.

@@ -155,6 +155,7 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-okc    { background:#0891b2; }  /* Approved w/ comments */
 .dr-ok     { background:#16a34a; }  /* Approved / w/o comments */
 .dr-old    { background:#6b7280; }  /* Superseded */
+.dr-wip    { background:#6366f1; }  /* Ongoing — being drawn, not yet submitted */
 
 /* Backlog tab */
 .dr-bk-table tbody tr.dr-bk-row { cursor:pointer; }
@@ -448,6 +449,7 @@ td.dr-editing { padding:2px 4px; }
 .dr-st-dr-okc    { background:#0891b2; border-color:#0891b2; }
 .dr-st-dr-ok     { background:#16a34a; border-color:#16a34a; }
 .dr-st-dr-old    { background:#6b7280; border-color:#6b7280; }
+.dr-st-dr-wip    { background:#6366f1; border-color:#6366f1; }
 
 /* small icon action buttons */
 .dr-iconbtn { border:0; background:transparent; color:var(--pd-muted); cursor:pointer;
