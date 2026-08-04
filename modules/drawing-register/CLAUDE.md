@@ -1,5 +1,66 @@
 # Module: drawing-register
 
+## Importer: explicit "Row Level" column + FIXED a one-day date shift (2026-08-04) — fmlozano
+Driven by the BAU101 re-import off the `Dwg Registry (Based on FCD)` sheet.
+
+### ⚠️ REAL BUG FIXED: every imported date was ONE DAY EARLY
+`dateOf()` did `v.toISOString().slice(0,10)` on a Date. With `cellDates:true`, SheetJS returns the cell
+displaying **30-Sep-2024** as **`2024-09-29T15:59:17Z`** (its Excel-serial epoch lands ~43s short of
+midnight), so slicing the ISO string produced **2024-09-29**. Local getters are no better — that instant
+is 23:59 on the 29th in Manila. **Neither a UTC nor a local read is safe.**
+Fix = round the instant to the nearest whole **UTC day** (the approach material-submittal's `parseDate()`
+already used), plus integer-maths paths for ISO / `18-Mar-24` / `dd/mm/yyyy` strings and Excel serials,
+and a duck-typed Date check (`typeof v.getTime`) so a Date from another realm doesn't fall through to the
+string branch. **Measured on the real GPR101 workbook: all 895 dates move +1 day and nothing else
+changes.** ⚠️ **Every register imported before today therefore holds planned/actual dates a day early;
+re-importing corrects them.**
+
+### New: optional explicit `Row Level` column in the importer
+Values `phase` | `discipline` | `category` | `drawing`. When a workbook supplies it, it **wins** over the
+header heuristics; when absent, everything behaves exactly as before.
+⚠️ **Why it was needed:** the heuristics infer "category" from *the absence of* a date and a description,
+but a real drawing can legitimately have neither — BAU101's Temporary Works and Individual Services
+sheets are titled and counted with no date and no description, and **~250 of them were being silently
+turned into empty category groups**. Indentation can't rescue it: the title is read as "first non-empty
+column in the title range", which discards which column it came from.
+- ⚠️ Header must be **`Row Level`**, not `Level` — `col()` matches on substring and `Level` collides with
+  `Floor Levels`.
+- ⚠️ All four header branches are guarded with `!lvl`, and the "no substance" skip too. Without the
+  guards a row explicitly declared a drawing but titled e.g. *"Site Development"* would still be
+  captured as a **discipline**, and a titled sheet with no date/desc/sheets would still be dropped.
+- ⚠️ A workbook fed to this importer **must** have a header row containing both `sheet title` **and**
+  `dwg`/`drawing` — `findHeader()` rejects the sheet otherwise and imports **nothing, silently**. That
+  is why the generated file carries an (empty) `Drawing No` column.
+
+### ⚠️ PHASE_RE was widened, then REVERTED — do not re-widen it
+Adding `temporary works` / `individual services` / a digit-less `schematic design` looked harmless and
+was not: GPR101 carries those two as sub-groups under a phase, so promoting them reset `cur.discipline`
+and left **25 of its drawings with no discipline** (phases 6→8, categories 245→243). Caught by diffing
+this parser against the previous version on the real workbook. A register that needs those blocks as
+phases declares them in `Row Level` instead — per-file, and it cannot regress another project.
+
+### BAU101 re-import (data prep, not app code)
+One-off Python transform reads **only** `Dwg Registry (Based on FCD)` and emits
+`BAU101 Drawing Register - FCD sheet (import).xlsx`. Source levels are the staircase in cols 9/10/11/12
+(phase/discipline/category/drawing) — read cell-by-cell, not from the header labels.
+- Phase names mapped to the requested vocabulary: `FOR CONSTRUCTION DRAWINGS (FCD)` → **For Construction
+  Drawing**, `TEMPORARY WORKS DWG (TWG)` → **Temporary Works Drawing**, `INDIVIDUAL SERVICES DWG (ISD)`
+  → **Individual Services Drawing**.
+- ⚠️ **Concept Design and Schematic Design do not exist in this sheet** (0 matches for
+  "concept"/"schematic" anywhere in it). They are emitted as **empty phase headers** so the L1 vocabulary
+  is exactly the five requested; **no drawing is invented for them**.
+- 431 drawings / 18 disciplines / 64 categories: FCD 88, TWG 20, ISD 323.
+- ⚠️ **258 of the 431 drawings have no code in the source** (only category rows carry codes in the TWG
+  and ISD blocks). Codes are left **blank** rather than synthesised — fabricating sheet numbers in a
+  drawing register is how someone ends up citing a drawing number that doesn't exist.
+- `Responsible` holds stray numbers in places, so it is only carried when it contains a letter (2 dropped).
+- **Verified by running the module's own `parseWorkbook`/`gridOf`/`findHeader`/`parseGrid` in Node against
+  the generated file** (extracted from the shipped source, not reimplemented): 22/22 — exactly 5 phase
+  nodes with the requested titles in order, every drawing on one of the 5, no blank phase or discipline,
+  all disciplines canonical, category nesting + category codes preserved, nothing pre-marked approved,
+  and **all 223 BL0 dates reconciled against the source as multisets with 0 mismatches** (the 3 `"- "`
+  dash placeholders are correctly rejected). **Not run against the live DB** — the user imports it.
+
 ## UI review pt.3: Backlog Doc column + bulk actions (#8) — + a delete-scope bug (2026-08-04) — fmlozano
 Last item of the UI review. The Registry had a Doc column and bulk actions; the Backlog — the screen
 you actually work from when chasing an open submission — had neither.

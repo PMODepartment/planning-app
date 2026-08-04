@@ -77,6 +77,58 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — BAU101 re-import from the FCD sheet: explicit "Row Level" importer column + a one-day date-shift fix
+User asked to re-import the Bauhinia (BAU101) Drawing Register using **only** the
+`Dwg Registry (Based on FCD)` sheet, with the L1 phases restricted to five names.
+
+- **⚠️ REAL BUG FIXED — every date the Drawing Register has ever imported was ONE DAY EARLY.**
+  `dateOf()` did `v.toISOString().slice(0,10)` on a Date, and with `cellDates:true` SheetJS returns the
+  cell displaying **30-Sep-2024** as **`2024-09-29T15:59:17Z`**, so the slice gave 2024-09-29. Local
+  getters are no better (that instant is 23:59 on the 29th in Manila) — **neither a UTC nor a local read
+  is safe**. Now rounds to the nearest whole UTC day (material-submittal's proven approach) with
+  integer-maths paths for ISO / `18-Mar-24` / `dd/mm/yyyy` / Excel serials. **Measured on the real GPR101
+  workbook: all 895 dates move +1 day and nothing else changes at all.** This is the third instance of
+  the same local-vs-UTC family this session (after `minusDays` in both registers) — the pattern is
+  *never* mix a local Date with a UTC getter.
+  ⚠️ **Consequence for live data:** every register imported before today holds planned/actual dates a day
+  early. Re-importing corrects them; GPR101 in particular is affected (895 dates).
+
+- **New optional `Row Level` column in the importer** (`phase`/`discipline`/`category`/`drawing`). When a
+  workbook declares it, it wins over the header heuristics; when absent, behaviour is unchanged.
+  ⚠️ It exists because the heuristics infer "category" from *the absence of* a date and a description —
+  but a real drawing can have neither, and **~250 of BAU101's Temporary Works / Individual Services
+  sheets were being silently turned into empty category groups**. Indentation can't disambiguate: the
+  title is read as "first non-empty column in the title range", discarding which column it came from.
+  ⚠️ Named `Row Level`, not `Level`, because `col()` matches on substring and would collide with
+  `Floor Levels`.
+
+- **⚠️ `PHASE_RE` was widened and then REVERTED — a regression I caught by diffing, not by reading.**
+  Adding `temporary works` / `individual services` / a digit-less `schematic design` seemed harmless;
+  on the real GPR101 workbook it promoted two sub-groups to phases, reset `cur.discipline`, and left
+  **25 drawings with no discipline** (phases 6→8, categories 245→243). Reverted — a register needing
+  those blocks as phases declares them in `Row Level`, which is per-file and can't regress anyone else.
+  A note in the code says so, so it isn't "helpfully" re-widened later.
+
+- **The delivered file:** `~/Downloads/BAU101 Drawing Register - FCD sheet (import).xlsx`, from a one-off
+  Python transform over the FCD sheet only (data prep, not committed app code). 431 drawings / 18
+  disciplines / 64 categories — For Construction Drawing 88, Temporary Works Drawing 20, Individual
+  Services Drawing 323.
+  ⚠️ **Concept Design and Schematic Design are not in that sheet at all** (zero matches for
+  "concept"/"schematic" anywhere in it), so they are emitted as **empty phase headers** — the L1
+  vocabulary is exactly the five requested and **no drawing is invented** for them.
+  ⚠️ **258 of 431 drawings have no code in the source** (in the TWG/ISD blocks only the category rows are
+  coded). Left blank rather than synthesised — inventing sheet numbers in a drawing register is how
+  someone ends up citing a drawing that doesn't exist.
+
+- **Verified by running the module's own `parseWorkbook`/`gridOf`/`findHeader`/`parseGrid` in Node**
+  (extracted from the shipped source, never reimplemented) against the generated file: **22/22** —
+  exactly five phase nodes with the requested titles in order, every drawing on one of the five, no blank
+  phase or discipline, all disciplines canonical, category nesting and category codes preserved, nothing
+  pre-marked approved, and **all 223 BL0 dates reconciled against the source as multisets with 0
+  mismatches** (the three `"- "` dash placeholders correctly rejected). Plus the GPR101 before/after diff
+  above, and the two existing suites (41 + 68) re-run green. **Not run against the live DB** — the user
+  clicks Import.
+
 ### 2026-08-04 — UI review #8 (Backlog Doc + bulk) on both registers, Material Submittal brought to full parity — and a delete-scope bug
 Final batch of the Drawing Register UI review. Since the previous entry recorded that #3/#7 had **not**
 been ported to Material Submittal, "make sure Material Submittal has the improvements as well" was read

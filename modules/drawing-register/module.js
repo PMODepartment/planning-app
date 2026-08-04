@@ -2585,6 +2585,20 @@ window.DrawingRegister = (function () {
       return -1;
     }
     var ci = {
+      // OPTIONAL explicit row-kind column ("phase" | "discipline" | "category" |
+      // "drawing"). When a workbook supplies it, it WINS over the heuristics
+      // below; when it's absent everything behaves exactly as before, so the
+      // GPR101-style files that rely on the heuristics are unaffected.
+      // ⚠️ Why it exists: the heuristics infer "category" from *the absence of*
+      // a date and a description — but a real drawing can legitimately have
+      // neither (BAU101's Temporary Works and Individual Services sheets are
+      // titled and counted, with no date and no description). Those rows were
+      // being silently turned into empty category groups. Indentation can't
+      // rescue it either: the title is read as "first non-empty column in the
+      // title range", which discards which column it came from.
+      // ⚠️ Header must be "Row Level", NOT "Level" — `col()` matches on
+      // substring and would otherwise collide with "Floor Levels".
+      level:       col('row level'),
       no:          col('no'),        // first "no" — the outline code col
       projectName: col('project name'),
       building:    col('building ref'),
@@ -2620,11 +2634,44 @@ window.DrawingRegister = (function () {
     var titleStart = ci.title, titleEnd = (ci.category>ci.title?ci.category:ci.title+4);
 
     function cell(row, c){ return (c>=0 && c<row.length) ? row[c] : ''; }
+    // ⚠️ TIMEZONE — this was a REAL BUG and the fix is not cosmetic.
+    // The old body did `v.toISOString().slice(0,10)` on a Date. With
+    // `cellDates:true`, SheetJS returns the cell displaying 30-Sep-2024 as
+    // `2024-09-29T15:59:17Z` (its Excel-serial epoch is ~43s short of midnight),
+    // so slicing the ISO string yielded **2024-09-29 — every imported date was a
+    // day early**, and local getters are no better (that instant is 23:59 on the
+    // 29th in Manila). Neither UTC nor local reads are safe.
+    // Fix = ROUND the instant to the nearest whole UTC day, the same approach
+    // material-submittal's parseDate() already uses. Strings are parsed with
+    // integer maths and never handed to `new Date` when their shape is known.
+    var MON_ = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+    function p2(n){ return String(n).padStart(2,'0'); }
+    function p4(n){ return String(n).padStart(4,'0'); }
     function dateOf(v){
-      if (!v) return null;
-      if (v instanceof Date) return v.toISOString().slice(0,10);
-      var s=String(v).trim(); if (!s || /^0*:?0*:?0*$/.test(s)) return null;
-      var d=new Date(s); return isNaN(d) ? null : d.toISOString().slice(0,10);
+      if (v == null || v === '') return null;
+      // Duck-typed, not `instanceof Date`: a Date from another realm (a harness
+      // running this module in a vm context) fails instanceof and would fall
+      // through to the string branch, shifting the day.
+      if (v && typeof v.getTime === 'function' && !isNaN(v.getTime()))
+        return new Date(Math.round(v.getTime()/86400000)*86400000).toISOString().slice(0,10);
+      if (typeof v === 'number' && isFinite(v))            // Excel serial (1900 system)
+        return new Date(Date.UTC(1899,11,30) + Math.round(v)*86400000).toISOString().slice(0,10);
+      var s = String(v).trim();
+      if (!s || /^0*:?0*:?0*$/.test(s) || /^[-–—]+$/.test(s)) return null;
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);            // already ISO
+      var m = /^(\d{1,2})[-\/\s]([A-Za-z]{3,})[-\/\s](\d{2,4})$/.exec(s); // 18-Mar-24
+      if (m) {
+        var mo = MON_[m[2].slice(0,3).toLowerCase()];
+        if (mo == null) return null;
+        var y = +m[3]; if (y < 100) y += 2000;
+        return p4(y)+'-'+p2(mo+1)+'-'+p2(+m[1]);
+      }
+      var m2 = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(s);              // dd/mm/yyyy
+      if (m2) { var y2=+m2[3]; if (y2<100) y2+=2000; return p4(y2)+'-'+p2(+m2[2])+'-'+p2(+m2[1]); }
+      // Last resort: a locale string parses to LOCAL time, so read it back with
+      // local getters — toISOString() would shift it a day west of UTC.
+      var d2 = new Date(s);
+      return isNaN(d2.getTime()) ? null : p4(d2.getFullYear())+'-'+p2(d2.getMonth()+1)+'-'+p2(d2.getDate());
     }
     function intOf(v){ var n=parseInt(String(v).replace(/[^\d.-]/g,''),10); return isFinite(n)?n:0; }
 
@@ -2633,6 +2680,15 @@ window.DrawingRegister = (function () {
     // Anchored so only genuine phase-block titles match — NOT category/sheet
     // titles that merely contain "schematic"/"construction" (e.g. "Schematic
     // Diagrams", "Construction Notes", "Neighbor's As-Built and Crack Mapping").
+    // ⚠️ DELIBERATELY NOT WIDENED. Adding `temporary works` / `individual
+    // services` / a digit-less `schematic design` here was tried and REVERTED:
+    // GPR101 carries "Temporary Works Drawings (TWD)" and "Individual Services
+    // Drawings (ISD)" as sub-groups under a phase, so promoting them to phases
+    // reset `cur.discipline` and left **25 of its drawings with no discipline**
+    // (verified by diffing this parser against the previous version on the real
+    // GPR101 workbook). A register that needs those blocks to be phases must
+    // declare them in the explicit "Row Level" column instead, which is
+    // per-file and cannot regress anyone else.
     var PHASE_RE = /^\s*(concept design|schematic design\s*\d|design development|design analysis|detailed design|contract document|for\s+construction|construction drawing|as[- ]?built drawing|as[- ]?built\s*$|pre[- ]?engineering|tender)\b/i;
     var DISC_RE  = /^(architectural|structural|civil|electrical|auxil|plumbing|mechanical|fire|site develop|landscape)/i;
 
@@ -2655,29 +2711,50 @@ window.DrawingRegister = (function () {
       var fileRef = /\.(pdf|dwg|dxf|docx?|xlsx?|pptx?|png|jpe?g|zip|rar)\b/i.test(dwgno) ? dwgno : '';
       var cleanDwgno = fileRef ? '' : dwgno;
 
+      // ---- explicit row kind, when the workbook declares one ---------------
+      // Deterministic path: no guessing from dates/descriptions at all.
+      var lvl = norm(cell(row, ci.level));
+      if (lvl) {
+        if (lvl === 'phase') {
+          cur.phase = cleanPhase(indentText); cur.discipline=''; cur.category='';
+          recs.push(nodeRec('phase', noCode, indentText)); continue;
+        }
+        if (lvl === 'discipline') {
+          cur.discipline = disciplineHeader(indentText) || mapDiscipline(indentText); cur.category='';
+          var rpL = String(cell(row, ci.resp)).trim(); if (rpL) cur.responsible = rpL;
+          recs.push(nodeRec('discipline', noCode, indentText)); continue;
+        }
+        if (lvl === 'category') {
+          cur.category = indentText;
+          recs.push(nodeRec('category', noCode, indentText)); continue;
+        }
+        // 'drawing' → fall through to the sheet branch below, skipping the
+        // header heuristics entirely.
+      }
+
       // ---- classify the row by its title/code, NOT by whether it has dates
       // (discipline group rows carry roll-up dates yet are still headers).
       // Header rows are emitted as STRUCTURAL NODES carrying their code (A-100,
       // AR-000, …) so the tree skeleton + codes survive import. ---------------
       // PHASE header (top of the outline): keep the *exact* block name so design
       // iterations (Schematic Design 1/2/3/4, FCD, Scheme 1/2…) stay distinct.
-      if (indentText && PHASE_RE.test(indentText) && !desc && !dwgno) {
+      if (!lvl && indentText && PHASE_RE.test(indentText) && !desc && !dwgno) {
         cur.phase = cleanPhase(indentText); cur.discipline=''; cur.category='';
         recs.push(nodeRec('phase', noCode, indentText)); continue;
       }
       // DISCIPLINE header: the title *is* a discipline name (exact-ish match)
-      var discHead = disciplineHeader(indentText);
+      var discHead = !lvl ? disciplineHeader(indentText) : null;
       if (discHead && !desc) {
         cur.discipline = discHead; cur.category='';
         var rp = String(cell(row, ci.resp)).trim(); if (rp) cur.responsible = rp;
         recs.push(nodeRec('discipline', noCode, indentText)); continue;
       }
       // BUILDING / TOWER header (kept on `cur`, not a render level)
-      if (indentText && /^(tower|podium|basement|building|amenity)\b/i.test(indentText) && !desc && !dwgno) {
+      if (!lvl && indentText && /^(tower|podium|basement|building|amenity)\b/i.test(indentText) && !desc && !dwgno) {
         cur.building = indentText; continue;
       }
       // CATEGORY header: a sub-group label with no dates and no description
-      if (indentText && !hasDates && !desc) {
+      if (!lvl && indentText && !hasDates && !desc) {
         cur.category = indentText;
         recs.push(nodeRec('category', noCode, indentText)); continue;
       }
@@ -2685,7 +2762,11 @@ window.DrawingRegister = (function () {
       // ---- otherwise it's a drawing sheet ----------------------------------
       var title = indentText || desc;
       if (!title && !dwgno) continue;
-      if (!hasDates && !sheets && !desc && !dwgno) continue;
+      // ⚠️ The "no substance" guard exists to skip spacer/decoration rows the
+      // heuristics can't otherwise reject. A row the workbook has EXPLICITLY
+      // declared a drawing must never be dropped by it — BAU101 has titled
+      // sheets carrying no date, no description and no sheet count.
+      if (!lvl && !hasDates && !sheets && !desc && !dwgno) continue;
 
       var subs = [];
       subCols.forEach(function (s){ var d=dateOf(cell(row,s.c)); if (d) push(subs,s.rev,s.kind,d); });
