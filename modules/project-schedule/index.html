@@ -9017,6 +9017,23 @@
       ? 'Add WBS → next to <strong>' + esc((codeOf && codeOf[sel.id]) || '') + ' ' + esc(sel.name || '(unnamed)') + '</strong> · use ＋ on a row for a sub-WBS'
       : 'Nothing selected — Add WBS goes to the top level.';
   }
+  // ⚠️ `wbs_nodes.sort_order` is an INTEGER column, so a fractional "slot" can never be WRITTEN —
+  // it can only exist in memory long enough for _wbsNormalizeAndPersist to renumber it (which is how
+  // outdent gets away with +0.5). Anything that INSERTS mid-list must make room with integers first:
+  // bump every later sibling up by `count` and return the first free integer slot after `after`.
+  async function _wbsMakeRoom(parentId, after, count) {
+    var sibs = wbsChildren(parentId || null);
+    if (!after) return sibs.length;
+    var base = sibs.findIndex(function (s) { return s.id === after.id; });
+    if (base < 0) return sibs.length;
+    var ups = [];
+    sibs.forEach(function (s, i) {
+      var want = i <= base ? i : i + count;
+      if (s.sort_order !== want) { s.sort_order = want; ups.push({ id: s.id, patch: { sort_order: want } }); }
+    });
+    if (ups.length) await _batchUpdate('wbs_nodes', ups);
+    return base + 1;
+  }
   // Insert a blank node inline and drop the cursor in it, instead of a modal round-trip per node.
   // `afterId` places it right after that sibling (Enter continues a list); otherwise it goes last.
   async function wbsQuickAdd(parentId, afterId) {
@@ -9024,7 +9041,7 @@
     if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
     if (parentId && wbsSourceKind(parentId)) { UI.toast('This WBS is ' + SOURCE_KIND_LABEL[wbsSourceKind(parentId)] + ' — sub-items can\'t be added here.', 'warn'); return; }
     var after = afterId && wbsById(afterId);
-    var so = after ? (after.sort_order || 0) + 0.5 : wbsChildren(parentId || null).length;
+    var so = after ? await _wbsMakeRoom(parentId, after, 1) : wbsChildren(parentId || null).length;
     var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId || null, name: '', sort_order: so, created_by: UID }).select().single();
     if (res.error) { UI.toast(res.error.message + ' — run the wbs-nodes migration.', 'error'); return; }
     WBS_NODES.push(res.data);
@@ -9242,6 +9259,8 @@
       m.close();
       showLoading('Duplicating…');
       var idOf = {}, newIds = [];
+      // Integer slots right after the original (sort_order is an integer column — see _wbsMakeRoom).
+      var slot0 = await _wbsMakeRoom(n.parent_id || null, n, count);
       for (var d = 0; d <= maxD; d++) {
         var payloads = [], keys = [];
         for (var c = 1; c <= count; c++) {
@@ -9254,9 +9273,7 @@
                 ? (pattern.indexOf('#') >= 0 ? pattern.replace(/#/g, String(c)) : (count > 1 ? pattern + ' ' + c : pattern))
                 : (s.name || ''),
               code: tok, code_custom: false,
-              // fractional slots keep the copies immediately after the original, in order;
-              // _wbsNormalizeAndPersist below renumbers the whole sibling group back to integers.
-              sort_order: d === 0 ? (n.sort_order || 0) + c / 1000 : (s.sort_order || 0),
+              sort_order: d === 0 ? slot0 + (c - 1) : (s.sort_order || 0),
               created_by: UID });
           }
         }

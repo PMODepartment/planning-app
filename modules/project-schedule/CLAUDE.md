@@ -3035,3 +3035,24 @@ renderer" claim was a mis-diagnosis of a modal dialog.
   heading → its floors (top first) → a row of zone/unit node buttons — so every location in `locList()`
   is guaranteed to appear as a clickable node. (Bars on the right remain the equal-length connect targets.)
 - Verified: inline JS parses; module loads with no console errors.
+
+### 2026-08-04 — Fix: Duplicate branch failed — fractional sort_order into an integer column
+User report: "Duplicate failed: invalid input syntax for type integer: "3.001"" (and `"0.001"`).
+- **Root cause:** `wbs_nodes.sort_order` is an **integer** column, but `wbsDuplicate` inserted its
+  copies at `(n.sort_order||0) + c/1000` — a fractional "slot" meant to keep the copies immediately
+  after the original until `_wbsNormalizeAndPersist` renumbered the sibling group. That trick only
+  works **in memory** (which is why `outdent`'s `+0.5` is fine — it's overwritten with an integer
+  before any write); on an INSERT the fraction reaches Postgres and is rejected outright. Nothing was
+  created, hence "duplicate not working".
+- **Same latent bug in `wbsQuickAdd`:** a mid-list insert (Enter after an existing sibling) wrote
+  `(after.sort_order||0) + 0.5`, so it would fail identically — the docs' "mid-list insert via the
+  0.5 slot" was never exercised against the real integer column.
+- **Fix — make room with integers instead.** New `_wbsMakeRoom(parentId, after, count)`: renumbers the
+  sibling group so everything after `after` is bumped by `count` (persisting only the diff, via
+  `_batchUpdate`) and returns the first free integer slot. `wbsQuickAdd` takes one slot; `wbsDuplicate`
+  reserves `count` and places copy *c* at `slot0 + (c-1)`. `_wbsNormalizeAndPersist` still runs after
+  and compacts to 0..k-1.
+- Verified in Node against the shipped logic: duplicating 3× after the first of three siblings gives
+  order `a, a1, a2, a3, b, c` with **every** sort_order an integer (was `3.001`/`0.001`). Script
+  parses. ⚠️ Not verified signed-in — needs a live Duplicate click. Module-local, no migration, no
+  `?v=` bump.

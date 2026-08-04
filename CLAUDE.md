@@ -4111,3 +4111,18 @@ but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and t
   index.html` is a ~690KB inline file under active concurrent development, so the heavy schedule-side
   change is a separate, careful pass. The register-side float chip already surfaces the risk from the
   document side.
+
+### 2026-08-04 — WBS Manager: Duplicate branch was broken (fractional sort_order vs integer column)
+User: duplicate isn't working — *"Duplicate failed: invalid input syntax for type integer: "3.001""*.
+- ⚠️ **Root cause: `wbs_nodes.sort_order` is an INTEGER column.** `wbsDuplicate` inserted its copies at
+  `sort_order + c/1000` to hold them immediately after the original until the normalizer renumbered the
+  group. That works **in memory only** (outdent's `+0.5` survives because it's overwritten with an
+  integer before any write) — on an INSERT the fraction goes to Postgres and is rejected, so nothing
+  was created at all.
+- ⚠️ **The same bug was latent in `wbsQuickAdd`** (Enter after an existing sibling wrote `+0.5`), so
+  mid-list inline insert would have failed identically.
+- **Fix:** new `_wbsMakeRoom(parentId, after, count)` bumps the later siblings by `count` (persisting
+  only the diff) and returns the first free **integer** slot; duplicate places copy *c* at
+  `slot0 + (c-1)`. Verified in Node against the shipped logic — 3 copies after the first of three
+  siblings give `a, a1, a2, a3, b, c` with every sort_order an integer. **Not verified signed-in.**
+  Module-local, no migration, no `?v=` bump.
