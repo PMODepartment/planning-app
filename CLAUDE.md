@@ -4214,3 +4214,29 @@ sheets **0 → 200**, source remarks **0 → 355** — with the structure (5 pha
   drawings the fix correctly reclassifies.** `node --check` + CSS braces balanced. **Not verified
   signed-in** — the user runs Clear all → Import. Assets `module.css/js?v=20260804e`.
   Delivered `~/Downloads/BAU101 Drawing Register - FCD sheet (import v2 - full).xlsx`.
+
+### 2026-08-04 — Drawing Register: import picked a sheet with ZERO drawings; added a sheet chooser
+User: "the drawing registry import did not recognize the ISD and Temp Works Dwg L1s." Reproduced with
+the shipped parser over the real workbook — the register had been imported from the **raw source
+workbook**, and two things went wrong:
+- ⚠️ **Sheet selection was "most RECORDS wins" and the winner had 0 drawings.** BAU101's stale templated
+  sheet "Dwg Register (Vert)1" parses to **950 records, 0 of them drawings**, beating the live sheet's
+  371. Now ranked by **drawing count**, so both stale `(Vert)` sheets drop to the bottom.
+- ⚠️ **Ranking still can't tell which sheet is current** — the workbook has six registry-ish sheets and
+  the highest count is the *superseded* `Dwg Registry (August 2024)`. The import modal now has a
+  **sheet dropdown** listing each candidate with its drawing count, and the preview names the **L1
+  drawing types detected** + a sample, so a wrong sheet is caught before writing. Import is disabled
+  for a sheet with 0 drawings.
+- **A raw import of any sheet in that workbook yields only "For Construction Drawings (FCD)" as L1** —
+  which is exactly the reported symptom. The prepared file (with its explicit `Row Level` column) is
+  what produces all five L1s; verified again: Concept · Schematic · For Construction 88 · Temporary
+  Works 20 · Individual Services 316, 424 drawings.
+- ⚠️ **Tried and reverted (2nd time, different route):** inferring the phase level from the **indent
+  column** instead of the title text. It fixed BAU101's raw import but reproduced the old GPR101
+  damage exactly — **blank-discipline drawings 1 → 25, categories 245 → 243** — because BAU101's
+  TWG/ISD blocks contain discipline headers while GPR101's contain drawings directly. No text or
+  indent signal separates those cases; `Row Level` remains the only safe mechanism.
+- `cleanPhase` now keeps template acronyms upper (FCD/TWG/ISD/DED/BIM/CBW) — a raw import read
+  "Temporary Works Dwg (Twg)". **GPR101 re-verified byte-identical** to the pre-change parser across
+  all 1,372 records (bar the 3 `w/ Comments` rows the status fix reclassifies). `node --check` clean.
+  Assets `module.css/js?v=20260804f`.

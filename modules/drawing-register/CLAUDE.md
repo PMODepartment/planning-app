@@ -884,3 +884,39 @@ and the structure identical to the previous delivery. **GPR101 regression-checke
 harness, old parser vs new: byte-identical on all 1,372 records except the 3 `w/ Comments` drawings that
 the status fix correctly reclassifies.** `node --check` on `module.js`, CSS braces balanced (329/329).
 ⚠️ **Not verified signed-in** — the user clicks **Clear all → Import** on BAU101.
+
+## "The import did not recognize the ISD and Temp Works Dwg L1s" (2026-08-04) — fmlozano
+**Root cause: the raw source workbook was imported, not the prepared file — and the importer picked the
+wrong sheet.** Reproduced with the shipped `parseWorkbook`/`parseGrid` over the real workbook:
+- ⚠️ **Sheet selection was "most RECORDS wins", and the winner had ZERO drawings.** BAU101's stale
+  templated sheet **"Dwg Register (Vert)1" parses to 950 records of which 0 are drawings** (all group
+  rows), so it beat the live sheet's 371 drawings. An import from the raw workbook therefore produced
+  no drawings and no top-level rows at all. Now ranked by **drawing count** (ties on records), which
+  drops both `(Vert)` sheets to the bottom.
+- ⚠️ **Ranking alone still can't identify the *live* sheet** — the workbook holds six registry-ish
+  sheets and the highest drawing count is `Dwg Registry (August 2024)` (460), the **superseded**
+  snapshot, not `Dwg Registry (Based on FCD)` (371). So the import modal now shows a **sheet dropdown**
+  ("<name> — N drawings"), and the preview lists the **L1 drawing types it detected** plus a sample, so
+  a wrong sheet is visible *before* writing. Import stays disabled when a sheet yields 0 drawings.
+- **Raw parsing of ANY sheet in that workbook yields only `For Construction Drawings (FCD)` as L1** —
+  measured. That is precisely the reported symptom: TWG and ISD are invisible.
+
+⚠️ **ATTEMPTED AND REVERTED — recognising TWG/ISD from a raw sheet (second failed attempt, new route).**
+Widening `PHASE_RE` by text was tried and reverted on 2026-08-04. This time I inferred the phase level
+from the **indent column** (learn it from the PHASE_RE hit, then accept later titles in that same
+column) — text-independent, and it *did* give BAU101 all three raw L1s. It was reverted anyway because
+it reproduced the identical damage on GPR101: **blank-discipline drawings 1 → 25, categories 245 → 243.**
+The reason is structural and admits no heuristic: **BAU101's TWG/ISD blocks contain discipline headers;
+GPR101's contain drawings directly**, so promoting them there resets `cur.discipline` and strands the
+drawings underneath. Both registers use the same words at different depths. ⇒ The explicit **"Row
+Level"** column stays the answer (per-file, cannot regress another register) — and the prepared BAU101
+file uses it, yielding all five L1s.
+- **`cleanPhase` keeps template acronyms upper-case** (FCD/TWG/TWD/ISD/DED/BIM/CBW/SD/AB) — a raw
+  import used to read "Temporary Works Dwg (Twg)". Display-only; GPR101's six phase names unchanged.
+
+**Verified with the shipped parser:** prepared file → 5 L1s (Concept, Schematic, For Construction 88,
+Temporary Works 20, Individual Services 316), 424 drawings, 0 blank phase/discipline/code. **GPR101
+byte-identical to the pre-change parser** on all 1,372 records — 6 phases, 245 categories, 1 blank
+discipline, 894 planned approvals — except the 3 `w/ Comments` rows the status fix reclassifies.
+Sheet ranking re-checked on both workbooks: the 0-drawing sheets no longer win. `node --check` clean.
+⚠️ Not verified signed-in.

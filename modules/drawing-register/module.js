@@ -2510,15 +2510,35 @@ window.DrawingRegister = (function () {
             // sheetRows caps how many rows SheetJS materialises per sheet — a
             // second guard against oversized sheets.
             var wb = XLSX.read(new Uint8Array(ev.target.result), { type:'array', cellDates:true, sheetRows:8000 });
-            parsed = parseWorkbook(wb);
-            if (!parsed.length) { prev.textContent = 'No drawing rows found in the workbook.'; return; }
-            var nDraw = parsed.filter(function(p){ return (p.node_kind||'drawing')==='drawing'; }).length;
-            var nNode = parsed.length - nDraw;
-            prev.innerHTML = '<strong>'+nDraw+'</strong> drawings' + (nNode?' + '+nNode+' level rows':'') + ' found. Sample:<br>' +
-              parsed.filter(function(p){return (p.node_kind||'drawing')==='drawing';}).slice(0,6).map(function (d){
-                return '• '+Fmt.esc((d.phase||'')+' / '+(d.discipline||'')+' — '+(d.drawing_no||d.title));
-              }).join('<br>');
-            m.el.querySelector('#dr-imp-go').disabled = false;
+            // ⚠️ Show the sheet CHOICE rather than silently guessing. These workbooks hold several
+            // registry-ish sheets (BAU101 has six, some stale templates), and picking the wrong one
+            // is invisible after the fact — you just get the wrong register.
+            var cands = candidateSheets(wb);
+            if (!cands.length) { prev.textContent = 'No drawing rows found in the workbook.'; return; }
+            function showSheet(i) {
+              var c = cands[i]; parsed = c.recs;
+              var nDraw = c.drawings, nNode = c.recs.length - nDraw;
+              var phases = [];
+              c.recs.forEach(function (p){ if (p.node_kind==='phase' && p.phase && phases.indexOf(p.phase)===-1) phases.push(p.phase); });
+              m.el.querySelector('#dr-imp-info').innerHTML =
+                '<strong>'+nDraw+'</strong> drawings' + (nNode?' + '+nNode+' level rows':'') + ' found.' +
+                (phases.length ? '<br>Drawing types (L1): '+Fmt.esc(phases.join(' · ')) : '<br>No top-level drawing-type rows detected.') +
+                '<br>Sample:<br>' +
+                c.recs.filter(function(p){return (p.node_kind||'drawing')==='drawing';}).slice(0,6).map(function (d){
+                  return '• '+Fmt.esc((d.phase||'')+' / '+(d.discipline||'')+' — '+(d.drawing_no||d.title));
+                }).join('<br>');
+              m.el.querySelector('#dr-imp-go').disabled = !nDraw;
+            }
+            prev.innerHTML = (cands.length>1
+                ? '<label class="dr-mut" style="display:block;margin-bottom:6px;">Sheet to import '+
+                  '<select class="pd-select" id="dr-imp-sheet" style="max-width:340px;">' +
+                  cands.map(function (c,i){ return '<option value="'+i+'">'+Fmt.esc(c.name)+' — '+c.drawings+' drawings</option>'; }).join('') +
+                  '</select></label>'
+                : '') +
+              '<div id="dr-imp-info"></div>';
+            var sel = m.el.querySelector('#dr-imp-sheet');
+            if (sel) sel.onchange = function (){ showSheet(+sel.value); };
+            showSheet(0);
           } catch (err) { prev.textContent = 'Parse error: ' + err.message; }
         }, 30);
       };
@@ -2566,20 +2586,31 @@ window.DrawingRegister = (function () {
   }
 
   // ---- Parse the workbook's flat "Dwg Registry" layout ---------------------
-  function parseWorkbook(wb) {
-    // pick the best sheet: prefer one named like a registry with data
+  // Returns every candidate sheet with its parsed records, best first, so the import modal can
+  // show the choice instead of guessing silently.
+  // ⚠️ Ranked by DRAWING count, not record count. These workbooks carry half a dozen registry-ish
+  // sheets, several of them stale templates: BAU101's "Dwg Register (Vert)1" parses to 950 records
+  // of which **0 are drawings** (it's all group rows), so "most records wins" picked it over the
+  // live sheet's 371 drawings — the import then contained no drawings and no top-level blocks at all.
+  function candidateSheets(wb) {
     var names = wb.SheetNames.filter(function (n){ return /regist/i.test(n); });
     if (!names.length) names = wb.SheetNames.slice();
-    var best = null;
+    var out = [];
     names.forEach(function (n) {
       var g = gridOf(wb.Sheets[n]);
       var hdr = findHeader(g);
-      if (hdr >= 0) {
-        var recs = parseGrid(g, hdr);
-        if (!best || recs.length > best.recs.length) best = { recs:recs };
-      }
+      if (hdr < 0) return;
+      var recs = parseGrid(g, hdr);
+      var nd = recs.filter(function (p){ return (p.node_kind||'drawing')==='drawing'; }).length;
+      if (recs.length) out.push({ name:n, recs:recs, drawings:nd });
     });
-    return best ? best.recs : [];
+    out.sort(function (a,b){ return b.drawings - a.drawings || b.recs.length - a.recs.length; });
+    return out;
+  }
+
+  function parseWorkbook(wb) {
+    var c = candidateSheets(wb);
+    return c.length ? c[0].recs : [];
   }
 
   // Read a BOUNDED window of the sheet via direct cell refs. These workbooks
@@ -2739,6 +2770,18 @@ window.DrawingRegister = (function () {
     var PHASE_RE = /^\s*(concept design|schematic design\s*\d|design development|design analysis|detailed design|contract document|for\s+construction|construction drawing|as[- ]?built drawing|as[- ]?built\s*$|pre[- ]?engineering|tender)\b/i;
     var DISC_RE  = /^(architectural|structural|civil|electrical|auxil|plumbing|mechanical|fire|site develop|landscape)/i;
 
+    // ⚠️ ATTEMPTED AND REVERTED (second time now, by a different route): recognising the OPS
+    // template's other top-level blocks — "TEMPORARY WORKS DWG (TWG)" / "INDIVIDUAL SERVICES DWG
+    // (ISD)" — from a RAW sheet. Widening PHASE_RE by text was reverted on 2026-08-04; promoting any
+    // title sitting in the same indent column as the PHASE_RE-matched phase was tried on 2026-08-04
+    // and reverted too. Both fail the same way, and the reason is structural, not cosmetic:
+    // BAU101's TWG/ISD blocks contain discipline headers, GPR101's contain drawings DIRECTLY — so
+    // promoting them there resets `cur.discipline` and strands **25 GPR101 drawings with no
+    // discipline** (measured: blank discipline 1 → 25, categories 245 → 243). There is no
+    // text-or-indent signal that separates the two cases.
+    // ⇒ A register whose top-level blocks aren't classic design phases must declare them in the
+    //   explicit "Row Level" column (per-file, cannot regress anyone else). That is exactly what the
+    //   prepared BAU101 import file does, and it yields all five L1s.
     for (var r=hdr+1; r<g.length; r++) {
       var row = g[r]; if (!row || !row.join('').trim()) continue;
       // find which indent column holds the title text
@@ -2943,10 +2986,14 @@ window.DrawingRegister = (function () {
   }
   // Keep the workbook's exact phase-block name (title-cased) so design
   // iterations stay distinct — do NOT normalise 3/4 down to 1.
+  // Title-case a block name, but keep the template's acronyms upper — otherwise a raw import reads
+  // "Temporary Works Dwg (Twg)" / "Individual Services Dwg (Isd)".
+  var PHASE_ACRONYMS = ['FCD','TWG','TWD','ISD','DED','BIM','CBW','SD','AB'];
   function cleanPhase(s) {
-    return String(s||'').replace(/\s+/g,' ').trim()
-      .toLowerCase().replace(/\b([a-z])/g, function(m,c){ return c.toUpperCase(); })
-      .replace(/\bFcd\b/i,'FCD');
+    var out = String(s||'').replace(/\s+/g,' ').trim()
+      .toLowerCase().replace(/\b([a-z])/g, function(m,c){ return c.toUpperCase(); });
+    PHASE_ACRONYMS.forEach(function (a){ out = out.replace(new RegExp('\\b'+a+'\\b','ig'), a); });
+    return out.replace(/\bDwg\b/g,'Dwg');
   }
 
   function mapPhase(s) {
