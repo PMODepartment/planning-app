@@ -77,6 +77,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — BAU101 import file v2: auto-numbered codes, legend rows excluded; the bad import was a STALE-CACHE symptom
+User's screenshot showed the import landing as **287 drawings under only 2 phases**, everything piled
+under "For Construction Drawing", with Temporary Works and Individual Services missing.
+
+- **⚠️ ROOT CAUSE: the browser ran cached JS — not a data or transform fault.** Proved it rather than
+  guessed: ran the **pre-fix parser** (`6149c89~1`) over the same generated file and it reproduces the
+  screenshot **exactly** — 287 drawings, 2 phase nodes, all 12 discipline counts matching to the row —
+  while the current parser gives 424 across 5 phases. Also confirmed by `curl` that the deployed
+  `module.js` on GitHub Pages *does* contain the `Row Level` code and `index.html` references
+  `?v=20260804d`. So the file and the importer were already correct; the import simply executed the old
+  parser, which ignores `Row Level` and whose `PHASE_RE` doesn't match 3 of the 5 phase names.
+  **Fix is a hard refresh (Ctrl+Shift+R) before re-importing.** This is the recurring stale-asset
+  symptom already documented in Prompts 45/53/64 — the `?v=` bump only helps once the *HTML* itself is
+  re-fetched.
+- **Auto-numbered the 251 uncoded drawings**, per the user's request, using the source's **own**
+  conventions instead of an invented scheme: child of a coded category → `<catcode>.<n>` (the file's own
+  `A-100.1` style); uncoded category → a `<PREFIX>-<base>` block stepping by 100 above everything
+  already used for that prefix in that phase (ISD already does this: `S-1000`/`S-1100`/`S-1200`, so the
+  14 uncoded ISD/Architectural categories became `A-1100 … A-2400`); Temporary Works, which has no coded
+  row anywhere, → `TF-/SP-/CE-1001…` from the module's canonical 2-letter discipline codes, which cannot
+  collide with the source's 1-letter prefixes. **0 collisions, 0 drawings left without a code**, verified
+  against the module's own `(phase, code)` duplicate rule. Generated rows carry
+  `Remarks = "Auto-numbered from parent"` so our numbers stay distinguishable from the consultant's.
+- **⚠️ Found while doing it: a trailing status legend was importing as 7 junk drawings.** Source rows
+  547-554 hold `List` / Approved / Approved w/ Comments / Revise & Resubmit / Pending / Ongoing / For
+  Approval / Superseded **in the drawing-title column**, behind a 13-row gap — the same trap as
+  material-submittal's sign-off block. The transform now stops at the first run of **≥3 blank rows**
+  (structural, not a hardcoded row; the real data's longest interior blank run is 1, measured).
+  Drawing count 431 → **424**.
+- Final shape: Concept Design 0, Schematic Design 0, For Construction Drawing 88, Temporary Works
+  Drawing 20, Individual Services Drawing 316 — **424 drawings, 18 disciplines, 64 categories**, 223
+  BL0 planned dates still reconciling against the source with 0 mismatches.
+- **Verified 29/29** by running the module's own importer over the regenerated file. No app-code change
+  this round (the module was already correct) — data prep only.
+
 ### 2026-08-04 — BAU101 re-import from the FCD sheet: explicit "Row Level" importer column + a one-day date-shift fix
 User asked to re-import the Bauhinia (BAU101) Drawing Register using **only** the
 `Dwg Registry (Based on FCD)` sheet, with the L1 phases restricted to five names.

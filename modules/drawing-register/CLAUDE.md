@@ -39,6 +39,31 @@ and left **25 of its drawings with no discipline** (phases 6→8, categories 245
 this parser against the previous version on the real workbook. A register that needs those blocks as
 phases declares them in `Row Level` instead — per-file, and it cannot regress another project.
 
+### BAU101 re-import, round 2 (2026-08-04): auto-numbering + a legend-row trap
+- **Uncoded drawings are now auto-numbered**, following the source's OWN conventions rather than an
+  invented scheme (251 codes generated, **0 collisions**, 0 drawings left blank):
+  - child of a **coded** category → `<catcode>.<n>` — the file's own style (`A-100` → `A-100.1`).
+  - category with **no** code → allocate `<PREFIX>-<base>` stepping by **100** from above every number
+    already used for that prefix *in that phase*. This is exactly what ISD already does
+    (`S-1000`/`S-1100`/`S-1200`), so the 14 uncoded ISD/Architectural categories became
+    `A-1100 … A-2400` (existing ISD `A` numbers stop at 1003).
+  - drawing directly under a **discipline** with no category at all (the whole Temporary Works block,
+    which has no coded row anywhere) → `<PREFIX>-<base+n>`, using the module's canonical 2-letter
+    discipline codes: `TF-1001…`, `SP-1001…`, `CE-1001…`. Those cannot collide with the source's
+    1-letter sheet prefixes (A/E/F/M/P/S/U) or `BIM`.
+  - `PREFIX` per (phase, discipline) is the **most common prefix already used there**, not a guess.
+  - Every generated code is checked against the real codes *and* against each other; the verifier also
+    re-checks the module's own `(phase, code)` duplicate rule.
+  - Generated rows carry `Remarks = "Auto-numbered from parent"` so the audit trail survives — a
+    planner can tell our numbers from the consultant's.
+- ⚠️ **TRAP FOUND: a trailing status legend was importing as 7 junk drawings.** Source rows 547-554
+  hold a legend (`List` / Approved / Approved w/ Comments / Revise & Resubmit / Pending / Ongoing /
+  For Approval / Superseded) in the **drawing-title column**, after a 13-row gap. Same class as
+  material-submittal's sign-off block. The transform now stops at the **first run of ≥3 blank rows** —
+  structural, not a hardcoded row number, and safe because the real data's longest interior blank run
+  is **1** (measured). Belt-and-braces: a bare status word with no code/sheets/date is also skipped.
+  Drawing count 431 → **424**.
+
 ### BAU101 re-import (data prep, not app code)
 One-off Python transform reads **only** `Dwg Registry (Based on FCD)` and emits
 `BAU101 Drawing Register - FCD sheet (import).xlsx`. Source levels are the staircase in cols 9/10/11/12
