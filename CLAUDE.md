@@ -321,6 +321,34 @@ everything on a single row instead.
   ⚠️ **Not verified signed-in** and the migration is not run. Assets drawing-register
   `module.css/js?v=20260805a`. See `modules/drawing-register/CLAUDE.md`.
 
+### 2026-08-05 — Location Wizard: match the detected WBS to the location levels
+User's design: instead of describing values with keywords, let the planner match what the importer
+detected. Group menu → **Match WBS to locations…**.
+- **Matching is by WBS node NAME, not by node** — measured first: the same name recurs under every
+  tower and trade (Avesta's `9th Floor` sits under 7 towers × 3 trades), so it is one decision
+  instead of twenty-one and it survives a re-import that renumbers ids. Distinct ancestor names are
+  only 160 / 127 / 365 across the real files.
+- Each row shows the name, how many activities sit under it, its **ancestry trail**, a level
+  dropdown and an **editable value to write** — pre-classified, sorted by coverage, with search
+  (name *and* trail), filters and bulk assign.
+- ⚠️ **Two pre-fill defects caught by the real files:** Jab's `Tower A - Superstructure` naming made
+  the value split one tower in two (now pre-cleaned → **34 names, 17 clean tower values**), and
+  `Cluster 1 (…) of Superstructure` — a cluster of *towers* — was classed as a Level because it
+  contains "Superstructure" (now the level whose term appears **earliest** wins, since the head of a
+  name says what it is).
+- **Trade variation needs no per-trade config**: with one level set and deepest-wins, structural work
+  under `Superstructure › 9th Floor` resolves to 9th Floor, while `Substructure › Foundation` falls
+  back to the structure part. Three explicit test cases.
+- **Migration `2026-08-05-location-level-match.sql` (USER MUST RUN)** stores the matching on
+  `location_levels.match` so it is re-runnable and reusable by a later import. ⚠️ Tolerant — without
+  it the values still apply, only the memory is lost.
+- Coverage from the pre-fill alone: Avesta 91.8/82.4/27.7%, Jab 99.3/99.3/99.3% (⚠️ Jab's Zone figure
+  is inflated by five tower-cluster nodes the planner should unmatch — the correction the wizard is
+  for). Reuses `locMapPlan`/`locPreviewHTML`, so the spelling merge and write path are shared.
+- Verified **15/15 in Node** over the real Avesta+Jab trees and **32/32 in a browser** driving the
+  wizard end-to-end including Apply. ⚠️ Three browser assertions failed first and all three were my
+  assertion, not the code. Not verified signed-in. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-05 — Location values: merge differently-spelled duplicates automatically
 User's explicit call after the duplicates were flagged. ⚠️ **Deliberately lossy** — names that
 normalise alike WILL be merged; raised, confirmed, and every merge is named in the preview rather

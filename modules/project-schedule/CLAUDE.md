@@ -67,6 +67,57 @@ discipline activities**.
 - **Cleanup:** both test links removed (BAU101 and GPR101 back to 0 linked documents). ⚠️ The Design
   Development branch itself is **left in place on BAU101** — that is the feature working, not test data.
 
+## Location Wizard — match the detected WBS to the location levels (2026-08-05) — fmlozano
+User: rather than describing the values with keywords, let the planner **match what the importer
+detected**. Group menu → **Match WBS to locations…** (`openLocWizard`).
+- **Matching is by WBS node NAME, not by node.** Measured first: the same name recurs under every
+  tower and trade (Avesta's `9th Floor` sits under 7 towers × 3 trades), so a name is **one** decision
+  instead of twenty-one, and it survives a re-import that renumbers every node id. Distinct ancestor
+  names are only **160 (Avesta) / 127 (Jab) / 365 (Caticlan)**, and names appearing at more than one
+  depth are rare (Jab 0, Caticlan 10, Avesta 19), so a name's meaning is stable enough to key on.
+- **The planner confirms, not types.** Each row is a detected name + how many activities sit under it
+  + its ancestry trail (so you can see *where* it sits) + a level dropdown + **the value to write**,
+  which is editable. Pre-classified by `locGuessLevel`; sorted by activity coverage so the
+  high-impact names come first; search (matches the name **and** the trail, so searching a branch
+  finds everything under it), a Proposed/Not-matched/All filter, and bulk assign-all-shown.
+- ⚠️ **Two pre-fill defects found by testing against the real files, not by reading:**
+  (1) Jab's towers are `Tower A - Superstructure` etc., so the pre-filled VALUE repeated the work
+  and split one tower in two — the value is now pre-cleaned through `locTrimSeg`, giving **34 names →
+  17 clean tower values**. (2) `Cluster 1 (TD, TC, TE and TF) of Superstructure` — a cluster of
+  *towers* — was classified as a **Level** because it contains "Superstructure". `locTermHit` now
+  picks the level whose term appears **earliest** in the name: the head of a name says what the thing
+  IS, so "Cluster" at position 0 beats "Superstructure" at 24, and `Tower D - Substructure` is a
+  Tower for the same reason.
+- **Trade variation needs no per-trade config** (the user's chosen model: one level set, deepest
+  wins). Tagging `Superstructure`/`Substructure` as Levels means a structural activity under
+  `Superstructure › 9th Floor` still resolves to **9th Floor** (deepest), while one under
+  `Substructure › Foundation` falls back to the structure part. Verified as three explicit cases.
+- **Reuses the whole existing pipeline:** the wizard only builds a name→value table per level and
+  hands it to `locSrcsAssigned` → `locMapPlan` → `locPreviewHTML`. So the spelling merge, the
+  distinct-value preview and the write path are shared with the importers and the backfill — nothing
+  forked.
+- **The matching is remembered** in `location_levels.match` (migration
+  `../../migrations/2026-08-05-location-level-match.sql`, **USER MUST RUN**), so it is re-runnable
+  and editable rather than one-shot, and a re-import can reuse it. ⚠️ **Tolerant:** without the
+  migration the values are still applied and only the memory is lost — it warns rather than fails.
+- **Out-of-the-box coverage from the pre-fill alone:** Avesta **Tower 91.8% / Level 82.4% / Zone
+  27.7%** (46 of 160 names proposed); Jab **Tower 99.3% / Level 99.3% / Zone 99.3%** (61 of 127).
+  ⚠️ Jab's Zone figure is **inflated**: the five `Cluster N (…) of Superstructure` nodes are tower
+  clusters, not zones, and the planner should set them to "not a location" — exactly the correction
+  the wizard exists for.
+- **Verified 15/15 in Node** over the real Avesta + Jab trees (scan counts, review-list size, clean
+  tower values, and the three trade-variation cases) and **32/32 in a real browser** driving the
+  actual wizard end-to-end — pre-classification, the pre-cleaned value, one row for a name recurring
+  under two trades, level-change re-cleaning the value, search/filter/bulk, the debounced preview,
+  and **Apply**, asserting the exact `location` written for each activity plus the saved per-level
+  matching. ⚠️ Three browser assertions failed first and **all three were my assertion** — search
+  matching the ancestry trail is deliberate, and my bulk-assign step had cleared `9th Floor` because
+  its trail contains "Works". Other suites (24/18/33/27) and the 9-file regression still green.
+  ⚠️ Not verified signed-in.
+- **Open question the user flagged:** whether walking the WBS tree would be more practical on
+  multi-tower projects. Names-with-trail-context ships first so it can be judged against real data;
+  a tree view remains a possible addition rather than a replacement.
+
 ## Spelling merge for location values (2026-08-05) — fmlozano
 User's explicit call after the duplicates were flagged: merge differently-spelled values of the same
 location automatically. ⚠️ **Deliberately lossy** — two genuinely different names that normalise

@@ -3111,6 +3111,7 @@
     }
     h += '<div class="ps-gm-sec">Location Breakdown</div>' +
       '<button data-gact="levels"><span data-ico="layers" data-ico-size="14"></span> Location Breakdown…</button>' +
+      '<button data-gact="wizard"><span data-ico="layout" data-ico-size="14"></span> Match WBS to locations…</button>' +
       '<button data-gact="backfill"><span data-ico="download" data-ico-size="14"></span> Fill location from the WBS tree…</button>';
     m.innerHTML = h;
     if (window.Icons && Icons.hydrate) Icons.hydrate(m);
@@ -3122,7 +3123,7 @@
     // ⚠️ Close this menu directly — `closeMenus()` is declared in the init/wiring scope, NOT at
     // module scope where renderGroupMenu lives, so calling it here threw ReferenceError and both
     // of these buttons did nothing. (Node harnesses stub it, so only running the real page caught it.)
-    m.querySelectorAll('button[data-gact]').forEach(function (b) { b.onclick = function () { m.classList.remove('open'); if (b.dataset.gact === 'levels') openLocLevels(); else openLocBackfill(); }; });
+    m.querySelectorAll('button[data-gact]').forEach(function (b) { b.onclick = function () { m.classList.remove('open'); var a = b.dataset.gact; if (a === 'levels') openLocLevels(); else if (a === 'wizard') openLocWizard(); else openLocBackfill(); }; });
   }
   // ---- Grouping dimensions -------------------------------------------------------------------
   // A dimension is a flat key an activity can be bucketed by. `groupBys` is an ORDERED list of
@@ -3333,6 +3334,96 @@
         } };
       }
     }];
+  }
+  // ---- Location Wizard model ------------------------------------------------------------------
+  // The keyword source asks the planner to describe the values; the wizard instead SHOWS what is in
+  // the tree and asks them to match it. Matching is by WBS node NAME rather than by node: the same
+  // name recurs under every tower and trade (Avesta's "9th Floor" sits under 7 towers × 3 trades),
+  // so a name is one decision instead of twenty-one, and it survives a re-import that renumbers ids.
+  // Measured on the real files, distinct ancestor names are 127 (Jab) / 160 (Avesta) / 365
+  // (Caticlan) — small enough to list, and most are pre-classified or simply not a location.
+  function locScanNames(recs, getCode, nameByCode) {
+    var by = {};
+    recs.forEach(function (r) {
+      var c = getCode(r); if (!c) return;
+      var segs = String(c).split('.'), trail = [], seen = {};
+      for (var i = 1; i <= segs.length; i++) {
+        var nm = nameByCode[segs.slice(0, i).join('.')];
+        if (!nm) continue;
+        trail.push(nm);
+        if (seen[nm]) continue;   // a name repeating within one chain counts once
+        seen[nm] = 1;
+        var e = by[nm] || (by[nm] = { name: nm, n: 0, depth: i, trail: '' });
+        e.n++;
+        if (!e.trail) e.trail = trail.slice(0, -1).join(' › ');
+      }
+    });
+    // Highest coverage first: the names worth deciding about are the ones over the most work.
+    return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b.n - a.n || a.name.localeCompare(b.name); });
+  }
+  // Pre-classification, so the planner CONFIRMS rather than types 160 rows. Synonyms are the
+  // vocabularies actually seen in these schedules. ⚠️ Sub/Superstructure are offered as a Level
+  // because structural work often has no floor node — the trade-variation case: with deepest-wins,
+  // a structural activity under "Superstructure › 9th Floor" still resolves to the floor.
+  var LOC_SYN = {
+    tower: ['tower', 'building', 'block', 'bldg'],
+    level: ['floor', 'storey', 'story', 'level', 'roof deck', 'roofdeck', 'basement', 'podium', 'substructure', 'superstructure', 'ground'],
+    zone: ['zone', 'area', 'sector', 'cluster'],
+    unit: ['unit', 'room', 'apartment']
+  };
+  function locLevelTerms(l) {
+    var ln = String(l.name || '').toLowerCase().trim();
+    var terms = [ln].concat(LOC_SYN[ln] || []);
+    // A level named something bespoke ("Wing") still matches its own name; one named with a synonym
+    // ("Floor" for a level called Level) picks up the whole family.
+    Object.keys(LOC_SYN).forEach(function (k) { if (LOC_SYN[k].indexOf(ln) !== -1) terms = terms.concat(LOC_SYN[k]); });
+    return terms.filter(Boolean);
+  }
+  // Position of the earliest whole-word hit, or -1. ⚠️ Position is what disambiguates a name that
+  // mentions two levels: Jab has "Cluster 1 (TD, TC, TE and TF) of Superstructure", which is a
+  // cluster of TOWERS, not a level — but it contains "Superstructure". The head of the name says
+  // what the thing IS, so the earliest hit wins ("Cluster" at 0 beats "Superstructure" at 24), and
+  // "Tower D - Substructure" is a Tower for the same reason.
+  function locTermHit(name, terms) {
+    var best = -1;
+    terms.forEach(function (t) {
+      var re = new RegExp('(^|\\W)(' + String(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(\\W|$)', 'i');
+      var m = re.exec(name); if (!m) return;
+      var at = m.index + m[1].length;
+      if (best === -1 || at < best) best = at;
+    });
+    return best;
+  }
+  function locGuessLevel(name, levels) {
+    var best = '', bestAt = -1;
+    levels.forEach(function (l) {
+      var at = locTermHit(name, locLevelTerms(l));
+      if (at === -1) return;
+      if (bestAt === -1 || at < bestAt) { bestAt = at; best = l.id; }
+    });
+    return best;
+  }
+  // The value to write, pre-cleaned the same way the keyword source cleans it — so Jab's
+  // "Tower D - Substructure" and "Tower D - Superstructure" both arrive as "Tower D" instead of
+  // splitting one tower into two groups. The planner can still edit it.
+  function locGuessValue(name, levelId, levels) {
+    var l = levels.filter(function (x) { return x.id === levelId; })[0];
+    if (!l) return name;
+    var m = locWordMatcher(locLevelTerms(l).join(','));
+    return m ? locTrimSeg(name, m) : name;
+  }
+  // A source per level, driven by the wizard's name→value table. Deepest ancestor wins, exactly like
+  // the keyword source — which is what makes the trade variation work without per-trade config.
+  function locSrcsAssigned(getCode, nameByCode, table) {
+    return { key: 'assigned', name: 'Matched in the wizard', get: function (r) {
+      var c = getCode(r); if (!c) return null;
+      var segs = String(c).split('.'), found = null;
+      for (var i = 1; i <= segs.length; i++) {
+        var nm = nameByCode[segs.slice(0, i).join('.')];
+        if (nm && Object.prototype.hasOwnProperty.call(table, nm)) found = table[nm];
+      }
+      return found || null;
+    } };
   }
   // Spreadsheet-column sources. cols = the headers the importer's fixed detection didn't claim;
   // valOf(rec, header) reads that column's cell.
@@ -3602,6 +3693,151 @@
       LOC_LEVELS.push(res.data); mp.levelId = res.data.id; mp.key = res.data.id;
     }
     return true;
+  }
+  // ---- Location Wizard --------------------------------------------------------------------------
+  // Shows every WBS name that sits above real activities and asks the planner which location level
+  // it IS — the inverse of the keyword source, which asks them to describe the values in advance.
+  function openLocWizard() {
+    if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
+    if (!LOC_LEVELS.length) { UI.toast('Define your location levels first (Location Breakdown…).', 'warn'); return; }
+    var acts = rows.filter(function (r) { return !isWbs(r) && r.wbs; });
+    if (!acts.length) { UI.toast('No activities with a WBS code to read from.', 'warn'); return; }
+    var nameByCode = {}; rows.forEach(function (r) { if (isWbs(r) && r.wbs) nameByCode[String(r.wbs)] = r.activity_name || ''; });
+    var found = locScanNames(acts, function (r) { return r.wbs; }, nameByCode);
+
+    // Saved matching wins over the guess, so re-opening the wizard shows the planner's own decisions
+    // rather than silently re-guessing over them.
+    var saved = {};
+    LOC_LEVELS.forEach(function (l) { var m = l.match || {}; Object.keys(m).forEach(function (nm) { saved[nm] = { lvl: l.id, val: m[nm] }; }); });
+    var state = found.map(function (f) {
+      var s = saved[f.name], g = s ? s.lvl : locGuessLevel(f.name, LOC_LEVELS);
+      return { name: f.name, n: f.n, trail: f.trail, depth: f.depth, lvl: g,
+        val: s ? s.val : (g ? locGuessValue(f.name, g, LOC_LEVELS) : f.name),
+        valEdited: !!s };
+    });
+    var filter = 'sug', q = '';
+
+    function lvlOptions(sel) {
+      return '<option value="">— not a location —</option>' + LOC_LEVELS.map(function (l) {
+        return '<option value="' + esc(l.id) + '"' + (l.id === sel ? ' selected' : '') + '>' + esc(l.name) + '</option>';
+      }).join('');
+    }
+    function visible() {
+      var ql = q.toLowerCase();
+      return state.filter(function (s) {
+        if (ql && s.name.toLowerCase().indexOf(ql) === -1 && (s.trail || '').toLowerCase().indexOf(ql) === -1) return false;
+        if (filter === 'sug') return !!s.lvl;          // what the wizard proposes — the review list
+        if (filter === 'un') return !s.lvl;
+        return true;
+      });
+    }
+    function rowsHtml() {
+      var vis = visible();
+      if (!vis.length) return '<tr><td colspan="4" style="padding:10px;color:var(--pd-muted);">Nothing matches.</td></tr>';
+      return vis.map(function (s) {
+        var i = state.indexOf(s);
+        return '<tr data-i="' + i + '">' +
+          '<td style="padding:3px 6px;"><div>' + esc(s.name) + '</div>' +
+            (s.trail ? '<div style="color:var(--pd-muted);font-size:11px;">' + esc(s.trail.length > 70 ? '…' + s.trail.slice(-70) : s.trail) + '</div>' : '') + '</td>' +
+          '<td style="padding:3px 6px;text-align:right;color:var(--pd-muted);white-space:nowrap;">' + s.n.toLocaleString() + '</td>' +
+          '<td style="padding:3px 6px;"><select class="pd-input lw-lvl" style="min-width:120px;">' + lvlOptions(s.lvl) + '</select></td>' +
+          '<td style="padding:3px 6px;"><input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.lvl ? '' : ' disabled') + ' style="min-width:130px;"></td>' +
+        '</tr>';
+      }).join('');
+    }
+    function counts() {
+      var per = {}; LOC_LEVELS.forEach(function (l) { per[l.id] = 0; });
+      state.forEach(function (s) { if (s.lvl && per[s.lvl] != null) per[s.lvl]++; });
+      return LOC_LEVELS.map(function (l) { return esc(l.name) + ': <strong>' + per[l.id] + '</strong>'; }).join(' · ') +
+        ' · not a location: <strong>' + state.filter(function (s) { return !s.lvl; }).length + '</strong>';
+    }
+    var m = UI.modal('<div style="width:min(92vw,860px);">' +
+      '<h2 style="margin-top:0;">Match the WBS to your location breakdown</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 10px;">These are the WBS names sitting above real activities, most-used first. Say which location level each one <em>is</em>; leave the rest as “not a location”. The value on the right is what gets written — edit it to tidy a name (e.g. <em>Tower D - Substructure</em> → <em>Tower D</em>).</p>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">' +
+        '<input class="pd-input" id="lw-q" placeholder="Search names…" style="flex:1 1 200px;">' +
+        '<select class="pd-input" id="lw-filter" style="flex:0 0 190px;">' +
+          '<option value="sug">Proposed matches</option><option value="un">Not matched</option><option value="all">All names</option>' +
+        '</select>' +
+        '<button class="pd-btn" id="lw-bulk">Assign all shown to…</button>' +
+        '<select class="pd-input" id="lw-bulk-lvl" style="flex:0 0 130px;">' + lvlOptions('') + '</select>' +
+      '</div>' +
+      '<div id="lw-counts" style="font-size:12px;color:var(--pd-muted);margin-bottom:6px;"></div>' +
+      '<div style="max-height:38vh;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;">' +
+        '<table class="ps-table" style="min-width:0;font-size:12px;width:100%;"><thead><tr>' +
+        '<th style="text-align:left;">WBS name <span style="font-weight:400;color:var(--pd-muted);">(where it sits)</span></th>' +
+        '<th style="text-align:right;">Activities</th><th style="text-align:left;">Location level</th><th style="text-align:left;">Value to write</th>' +
+        '</tr></thead><tbody id="lw-rows">' + rowsHtml() + '</tbody></table></div>' +
+      '<div id="lw-prev" style="font-size:12.5px;color:var(--pd-muted);border-top:1px solid var(--pd-line);margin-top:10px;padding-top:10px;max-height:22vh;overflow:auto;"></div>' +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="lw-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="lw-go">Apply to activities</button></div>' +
+    '</div>');
+
+    function mapping() {
+      return LOC_LEVELS.map(function (l) {
+        var table = {};
+        state.forEach(function (s) { if (s.lvl === l.id && String(s.val || '').trim()) table[s.name] = String(s.val).trim(); });
+        return { levelId: l.id, key: l.id, name: l.name, table: table,
+          src: locSrcsAssigned(function (r) { return r.wbs; }, nameByCode, table) };
+      }).filter(function (mp) { return Object.keys(mp.table).length; });
+    }
+    var prevT = null;
+    function preview() {
+      m.el.querySelector('#lw-counts').innerHTML = counts();
+      clearTimeout(prevT);
+      // Debounced: the plan walks every activity's ancestry per level (17k+ on a real project), so
+      // running it on each keystroke would make the search box lag.
+      prevT = setTimeout(function () {
+        var map = mapping();
+        var p = locMapPlan(acts, map, function (r) { return r.location; }, true);
+        m.el.querySelector('#lw-prev').innerHTML = locPreviewHTML(map, p, acts.length);
+      }, 200);
+    }
+    function repaint() { m.el.querySelector('#lw-rows').innerHTML = rowsHtml(); preview(); }
+
+    m.el.querySelector('#lw-rows').addEventListener('change', function (e) {
+      var tr = e.target.closest('tr[data-i]'); if (!tr) return;
+      var s = state[+tr.dataset.i]; if (!s) return;
+      if (e.target.classList.contains('lw-lvl')) {
+        s.lvl = e.target.value;
+        // Re-clean the value for the newly chosen level, unless the planner typed their own.
+        if (!s.valEdited) s.val = s.lvl ? locGuessValue(s.name, s.lvl, LOC_LEVELS) : s.name;
+        var vi = tr.querySelector('.lw-val'); vi.disabled = !s.lvl; vi.value = s.val;
+        preview();
+      } else if (e.target.classList.contains('lw-val')) { s.val = e.target.value; s.valEdited = true; preview(); }
+    });
+    m.el.querySelector('#lw-q').oninput = function (e) { q = e.target.value; repaint(); };
+    m.el.querySelector('#lw-filter').onchange = function (e) { filter = e.target.value; repaint(); };
+    m.el.querySelector('#lw-bulk').onclick = function () {
+      var lvl = m.el.querySelector('#lw-bulk-lvl').value;
+      visible().forEach(function (s) { s.lvl = lvl; s.touched = true; });
+      repaint();
+    };
+    m.el.querySelector('#lw-x').onclick = m.close;
+    m.el.querySelector('#lw-go').onclick = async function () {
+      var map = mapping();
+      if (!map.length) { UI.toast('Match at least one WBS name to a level first.', 'warn'); return; }
+      var p = locMapPlan(acts, map, function (r) { return r.location; }, true);
+      if (!p.ups.length) { UI.toast('Nothing to update — the matching produces the values already stored.', 'info'); m.close(); return; }
+      m.close(); showLoading('Applying the location matching…');
+      p.ups.forEach(function (u) { u.rec.location = u.loc; });
+      var okAll = await _batchUpdate(TABLE, p.ups.map(function (u) { return { id: u.rec.id, patch: { location: u.loc } }; }));
+      // Remember the matching so a re-run (or a re-import) starts from the planner's decisions.
+      // ⚠️ Tolerant: without the 2026-08-05 migration the column is absent — the values are still
+      // applied, only the memory is lost, so the feature degrades rather than fails.
+      var savedOk = true;
+      for (var i = 0; i < LOC_LEVELS.length; i++) {
+        var l = LOC_LEVELS[i], mp = map.filter(function (x) { return x.levelId === l.id; })[0];
+        var tbl = mp ? mp.table : {};
+        try {
+          var res = await sb().from('location_levels').update({ match: tbl }).eq('id', l.id);
+          if (res.error) savedOk = false; else l.match = tbl;
+        } catch (e) { savedOk = false; }
+      }
+      hideLoading();
+      rebuild(false); renderGrid(); renderGantt();
+      if (okAll) UI.toast('Located ' + p.ups.length + ' activities.' + (savedOk ? '' : ' (The matching itself could not be saved — run the 2026-08-05 location-level-match migration.)'), savedOk ? 'success' : 'warn');
+    };
+    preview();
   }
   // Natural order, so Level 2 sorts before Level 10 and "— Unassigned —" sinks to the bottom.
   function cmpGroupName(a, b) {
