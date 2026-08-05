@@ -752,6 +752,35 @@ window.DrawingRegister = (function () {
       rows_ + '</div>';
   }
 
+  // ---- scroll preservation across re-renders -------------------------------
+  // ⚠️ The scroll container (.dr-tablecard on the Registry, .dr-bk-scroll on the
+  // Backlog) is built INSIDE the html string written to #dr-view, so every
+  // render() destroys and recreates it and the browser resets scrollTop to 0.
+  // Collapsing a group, changing a status from the dropdown or committing a cell
+  // edit therefore threw the planner back to the top of a 400-row register — the
+  // scrollbar looked like it "wouldn't stay put". Capture before the rebuild and
+  // restore immediately after, in the same frame, so there is no visible jump.
+  var SCROLLERS = '.dr-tablecard, .dr-bk-scroll';
+  var _lastRenderView = null;
+  function captureScroll() {
+    // A genuine view switch (Registry → Backlog) SHOULD start at the top —
+    // restoring a previous view's offset there would look like a broken jump.
+    if (_lastRenderView !== view) return null;
+    var el = document.querySelector(SCROLLERS);
+    return { top: el ? el.scrollTop : 0, left: el ? el.scrollLeft : 0,
+             page: window.pageYOffset || 0 };
+  }
+  function restoreScroll(s) {
+    _lastRenderView = view;
+    if (!s) return;
+    var el = document.querySelector(SCROLLERS);
+    // Overshoot is fine: collapsing a group shortens the list and the browser
+    // clamps to the new maximum, which is the correct place to land.
+    if (el) { if (s.top) el.scrollTop = s.top; if (s.left) el.scrollLeft = s.left; }
+    // Overview/Backlog are multi-card documents that scroll the page itself.
+    if (s.page) window.scrollTo(0, s.page);
+  }
+
   function render() {
     // ⚠️ Must run before anything reads the model: drawingRows() and inh() both
     // consult the parent/child index, and a stale index after an
@@ -769,9 +798,11 @@ window.DrawingRegister = (function () {
     // multi-card documents and keep normal page scrolling.
     document.body.classList.toggle('dr-fit', view === 'registry');
     populateFilterSelects();
+    var _scroll = captureScroll();
     if (view === 'overview') { renderProgress(); }
     else if (view === 'backlog') { renderBacklog(); }
     else { renderRegister(); }
+    restoreScroll(_scroll);
     paintRemote();
   }
 
