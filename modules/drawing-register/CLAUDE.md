@@ -66,8 +66,36 @@ Loaded BAU101 in the deployed app and drove the real UI:
   `actual_approval` correctly still null since not all sheets are approved).
 - **Restored**: the sheet and its parent were returned to their exact prior values. 0 test rows left
   behind, no console errors.
-⚠️ **Not exercised live:** Break out / Add sheets / merge-back (they write many rows to a real
-register), and the revision matrix in the full editor.
+### Break out / Add sheets / merge-back — full lifecycle on BAU101-TEST (signed in)
+Seeded the empty sandbox with a phase/discipline/category skeleton, a drawing **deliberately marked
+`Approved` with 100 sheets / 37 approved** (so the break-out also re-tests the stale-status path), and
+a second drawing left in aggregate mode as a control. Every step driven through the real UI:
+- **Break out** — dialog pre-filled with the drawing's own 100, created **100 sheet rows**, codes
+  **contiguous `A-101.1 … A-101.100`**, all `For Review`, each `no_of_sheets=1`. Parent showed the
+  caret, the "100 sheets" tag and `100 / 0 / 0%`. ⚠️ **The pill read `For Review`, not the stale
+  `Approved`** — the live bug's fix confirmed on a fresh break-out, not just on the healed row.
+- **Inheritance held**: **0 of 100** sheets carry their own `planned_approval` (they read the parent's
+  `2026-03-31` through `inh()`), all 100 inherited phase/discipline/category and `responsible`.
+- **Bulk status** on a 37-sheet selection → parent `In Progress`, `37 / 100 · 37%`, and the Approval
+  column still showing the **planned** date because max-actual is withheld.
+- **The min/max rule, proven both ways**: at **99/100** → `In Progress`, 99%, planned date shown; at
+  **100/100** → `Approved`, 100%, and the Approval column became **Apr 20 2026 — the MAX actual date,
+  which belonged to sheet .42, not the last row written.**
+- **Group roll-ups with both modes side by side**: phase/discipline/category rows all read
+  `103 sheets / 102 approved / 99% / min planned Mar 31 2026 / max actual —` (withheld because the
+  aggregate control drawing isn't finished). Per-sheet and aggregate roll up together correctly.
+- **Add sheets** — numbering continued from `.101` with no collision or restart, and the parent
+  correctly **reverted from `Approved` to `In Progress` 100/105 · 95%, withdrawing the actual date**.
+- **Merge-back** — confirm names the exact count, deleted all 105 sheet rows, **0 orphans left**, and
+  the drawing returned to aggregate mode (caret gone, sheet counters inline-editable again, sheet
+  total kept, approved reset to 0). The control drawing was untouched throughout.
+- **Cleanup**: sandbox emptied (0 rows, as found). Re-verified the real registers were never touched —
+  BAU101 still 540 rows / 29 sheets, GPR101 still 1,372. No console errors at any point.
+⚠️ **Still not exercised live:** the revision matrix in the full editor (per-revision outcome, approval
+date and file upload).
+⚠️ **Environment note:** the CDP `Runtime.evaluate` bridge times out at 45s and froze the renderer twice
+on the 540-row BAU101 page. Do heavy multi-query work from a light page (`projects.html`) and keep each
+eval short, or the tab has to be reloaded.
 
 ### Verification
 **68 checks green** (33 model + 35 renderer) against functions sliced verbatim from the shipped

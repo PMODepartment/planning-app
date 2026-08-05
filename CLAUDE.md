@@ -111,8 +111,19 @@ matched the actual child counts), so `syncParent` holds against live data.
   **For Review** instead of the contradictory Approved. Changing one sheet to Approved through the grid
   dropdown derived its `approved_sheets` to 1 by itself, rolled the parent to **1/15 · 7% · In
   Progress**, and a direct DB re-query confirmed both rows persisted; then restored to prior values
-  with **0 test rows left behind** and no console errors. ⚠️ Break out / merge-back and the revision
-  matrix were **not** exercised against live data.
+  with **0 test rows left behind** and no console errors.
+- **Full break-out lifecycle driven through the real UI on the BAU101-TEST sandbox**, seeded with a
+  drawing deliberately marked `Approved`/100 sheets plus an aggregate control: break out → **100 sheet
+  rows, contiguous `A-101.1…100`**, parent pill correctly `For Review` **not** the stale `Approved`,
+  and **0 of 100** sheets carrying their own planned date (all inheriting the parent's). Bulk-approving
+  37 → `In Progress 37%` with the planned date still shown; at **99/100** still `In Progress`; at
+  **100/100** → `Approved` with the Approval column becoming **the MAX actual date (Apr 20, from sheet
+  .42, not the last written)**. Group rows rolled per-sheet and aggregate drawings up together
+  (103 sheets / 102 approved / min planned / max actual withheld). **Add sheets** continued numbering
+  from `.101` and correctly reverted the parent to 95% withdrawing the actual date. **Merge-back**
+  deleted all 105 rows with **0 orphans** and restored aggregate mode. Sandbox emptied afterwards; real
+  registers verified untouched (BAU101 540/29, GPR101 1,372); no console errors.
+  ⚠️ The revision matrix in the full editor is **still** not exercised live.
 - **68 checks green** (33 model + 35 renderer) against functions sliced from the shipped module, with
   new regressions for the live bug and the whole vocabulary change. Assets drawing-register
   `module.css/js?v=20260805b`. See `modules/drawing-register/CLAUDE.md`.
