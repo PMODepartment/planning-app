@@ -93,6 +93,9 @@ drawings), so the register read **"Showing 0 of 424" for a code that is definite
 - ⚠️ **Removed `drillTo`'s `collapsed = {}`** — a workaround for this same defect that threw away the
   planner's whole tree state whenever they clicked a donut slice.
 - **14/14** in a new harness over the shipped `buildModel`, plus the 40 + 35 existing suites green.
+- **Verified live:** on BAU101 a fresh search for `U-200` now returns **"Showing 4 of 424"** where it
+  returned **0** before; and the full state cycle (manual collapse → search reveals → collapse during
+  the filter → new search re-opens → clear restores the manual tree exactly) walked through signed in.
   Assets drawing-register `module.js?v=20260805d`. See `modules/drawing-register/CLAUDE.md`.
 
 ### 2026-08-05 — Drawing Register: live check on BAU101 (1 real bug) + status vocabulary sanitised

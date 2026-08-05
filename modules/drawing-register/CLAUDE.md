@@ -29,6 +29,15 @@ from a register.
   map; a new search discards it; non-search filters (discipline) behave identically; and a filter
   reveals a matching **sheet** under a collapsed drawing. Existing suites re-run green (40 + 35).
   ⚠️ One harness failure was my own leaked state between blocks, not a product fault.
+- **Verified live, signed in.** On **BAU101** the exact reported case now works: a fresh search for
+  `U-200` returns **"Showing 4 of 424"** (the drawing + its 3 sheets) where it previously returned
+  **"Showing 0 of 424"**. The five-step state behaviour was then walked through on the sandbox:
+  manually collapse a discipline → only the other discipline's drawing shows; search a code inside it →
+  **revealed**, group painted expanded; collapse it again *during* the filter → hidden, as intended;
+  type a **new** search → the group re-opens for it; clear the filter → **the manual collapse is still
+  exactly as the planner left it**. Sandbox emptied afterwards; BAU101 540 and GPR101 1,372 untouched.
+  ⚠️ Run this kind of multi-render check on a SMALL project — driving repeated re-renders of the
+  424-drawing BAU101 grid through CDP froze the renderer twice.
 - Assets `module.js?v=20260805d`.
 
 ## Live check on BAU101 + status vocabulary sanitised (2026-08-05) — fmlozano
