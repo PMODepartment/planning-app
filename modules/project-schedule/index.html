@@ -3136,6 +3136,13 @@
       return { key: 'code:' + ct.id, kind: 'code', name: ct.name, get: function (r) { return valOf(r, ct.id) || null; } };
     });
   }
+  // Spreadsheet-column sources. cols = the headers the importer's fixed detection didn't claim;
+  // valOf(rec, header) reads that column's cell.
+  function locSrcsCols(cols, valOf) {
+    return (cols || []).map(function (h) {
+      return { key: 'col:' + h, kind: 'col', name: h, get: function (r) { return valOf(r, h) || null; } };
+    });
+  }
   // Renders one row per location level and returns { html, bind, read }. `allowNew` adds rows that
   // CREATE a level — needed by the importers, where a fresh project has no levels defined yet.
   function locMapUI(levels, sources, allowNew) {
@@ -3413,6 +3420,20 @@
     var cPred  = find([eq('predecessors'), eq('predecessor'), has('predecessor'), has('relationship')]);
     var cSucc  = find([eq('successors'), eq('successor'), has('successor')]);
     if (cId<0) cId=0;
+    // Every column the fixed detection above did NOT claim is retained per row as `extra`, keyed by
+    // the header as WRITTEN in the file. Without this a Tower/Level/Zone column (or any other
+    // project-specific coding) is silently discarded at parse time, before the location mapper —
+    // or anything else — could ever see it. Kept as raw text; the mapper only groups by value.
+    var claimed = {}; [cId,cName,cStart,cFin,cBLS,cBLF,cStat,cPct,cDur,cPCost,cACost,cEV,cPred,cSucc].forEach(function(i){ if(i>=0) claimed[i]=1; });
+    var rawH = (aoa[0]||[]).map(function(x){ return String(x==null?'':x).trim().replace(/\*/g,'').trim(); });
+    var extraCols = [], seenH = {};
+    for (var xc=0; xc<=maxC; xc++) {
+      if (claimed[xc] || !rawH[xc]) continue;
+      // Headers repeat in real OPC exports, and `extra` is keyed by header — so a duplicate would
+      // otherwise overwrite the first column's value on every row.
+      var hk = rawH[xc]; if (seenH[hk]) hk = rawH[xc] + ' (' + (++seenH[rawH[xc]]) + ')'; else seenH[hk] = 1;
+      extraCols.push({ i:xc, h:hk });
+    }
     var counters=[], recs=[];
     for (var R=1; R<=maxR; R++) {
       var row=aoa[R]||[];
@@ -3430,7 +3451,8 @@
         pct: opcPct(cPct>=0?row[cPct]:null), dur: opcDur(cDur>=0?row[cDur]:null),
         pcost: opcMoney(cPCost>=0?row[cPCost]:null), acost: opcMoney(cACost>=0?row[cACost]:null), ev: opcMoney(cEV>=0?row[cEV]:null),
         pred: (cPred>=0 && row[cPred]!=null) ? String(row[cPred]).trim() : null,
-        succ: (cSucc>=0 && row[cSucc]!=null) ? String(row[cSucc]).trim() : null });
+        succ: (cSucc>=0 && row[cSucc]!=null) ? String(row[cSucc]).trim() : null,
+        extra: (function(){ var o=null; extraCols.forEach(function(c){ var v=row[c.i]; if(v==null) return; v=String(v).trim(); if(!v) return; (o=o||{})[c.h]=v; }); return o; })() });
     }
     recs.forEach(function(r){ r.isLeaf = !recs.some(function(o){ return o!==r && o.code.indexOf(r.code+'.')===0; }); });
     // Fold the Successors column into predecessors so the imported relationship set is
@@ -3472,14 +3494,30 @@
       predecessors: r.pred || null,
       planned_cost: r.pcost, actual_cost: r.acost, earned_value: r.ev };
   }
-  async function doImport(recs, replace, fname) {
+  async function doImport(recs, replace, fname, locMap) {
     showLoading('Preparing import…');
     // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
     // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
     // _wbsEnsureSummaries. The tree is rebuilt from this import by autoAdoptAfterImport() below.
     if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } }
     var uid = UID;
-    var payloads = recs.map(recToPayload); if (uid) payloads.forEach(function(p){ p.created_by=uid; });
+    // Location breakdown — create any levels the mapping asked for, then stamp each leaf rec's
+    // `location` so it rides along in the same insert rather than needing a second pass.
+    locMap = locMap || [];
+    if (locMap.length) {
+      setLoading('Setting up the location breakdown…');
+      if (await locEnsureLevels(locMap)) {
+        locMapPlan(recs.filter(function(r){ return r.isLeaf; }), locMap, function(){ return null; }, true)
+          .ups.forEach(function(u){ u.rec.loc = u.loc; });
+        populateGroupSelect(); seedExtraHidden(); renderHeader();
+      } else locMap = [];
+    }
+    var payloads = recs.map(function(r){
+      var p = recToPayload(r);
+      if (r.loc && Object.keys(r.loc).length) p.location = r.loc;
+      return p;
+    });
+    if (uid) payloads.forEach(function(p){ p.created_by=uid; });
     var ok=0, err=null, CH=500;
     for (var i=0;i<payloads.length;i+=CH) {
       setLoading('Importing ' + Math.min(i+CH, payloads.length) + ' of ' + payloads.length + ' activities…');
@@ -3496,8 +3534,10 @@
     var wbsN = recs.filter(function(r){return !r.isLeaf;}).length, actN = recs.length - wbsN;
     var relN = recs.filter(function(r){return r.isLeaf && r.pred;}).length;
     var noDate = recs.filter(function(r){return r.isLeaf && !r.start && !r.finish;}).length;
+    var impTiles = [ {n:actN,l:'Activities'}, {n:wbsN,l:'WBS nodes'}, {n:relN,l:'With predecessors'} ];
+    if (locMap.length) impTiles.push({ n: recs.filter(function(r){return r.loc;}).length, l:'With location' });
     showImportSummary({ title:'Import complete', file:fname,
-      tiles:[ {n:actN,l:'Activities'}, {n:wbsN,l:'WBS nodes'}, {n:relN,l:'With predecessors'} ],
+      tiles: impTiles,
       warnings: noDate ? [noDate + ' activit' + (noDate===1?'y has':'ies have') + ' no start/finish date'] : [] });
   }
   function previewImport(recs, fname) {
@@ -3508,14 +3548,48 @@
         '<td>'+(r.start?Fmt.date(r.start):'—')+'</td><td>'+(r.finish?Fmt.date(r.finish):'—')+'</td>'+
         '<td style="text-align:right;">'+(r.pct!=null?r.pct+'%':'')+'</td></tr>';
     }).join('');
+    // ---- Location mapping step (same mapper as the P6 path) ----
+    // Sources here are the outline's WBS depths and any spreadsheet column the fixed header
+    // detection didn't claim — which is where an OPC export carries Tower/Level/Zone.
+    var leafRecs = recs.filter(function(r){ return r.isLeaf; });
+    var xlNameByCode = {}; recs.forEach(function(r){ if(!r.isLeaf) xlNameByCode[r.code] = r.name || ''; });
+    var xlCols = []; (function(){ var seen={}; leafRecs.forEach(function(r){ if(r.extra) Object.keys(r.extra).forEach(function(h){ if(!seen[h]){seen[h]=1; xlCols.push(h);} }); }); })();
+    var locSources = locSrcsWbs(leafRecs, function(r){ return r.code; }, xlNameByCode)
+      .concat(locSrcsCols(xlCols, function(r,h){ return r.extra && r.extra[h]; }));
+    locSources.forEach(function(s){ s._sample = locSrcSample(leafRecs, s); });
+    var locUI = locSources.length ? locMapUI(LOC_LEVELS, locSources, true) : null;
+    var locSection = locUI
+      ? '<div style="border-top:1px solid var(--pd-line);margin-top:10px;padding-top:10px;">'+
+        '<strong style="font-size:13px;">Location breakdown</strong>'+
+        '<p style="color:var(--pd-muted);font-size:12px;margin:2px 0 8px;">Map this file\'s WBS levels or spare columns onto your location levels (Tower &rsaquo; Level &rsaquo; Zone). Leave everything skipped to import without a location breakdown.</p>'+
+        locUI.html + '<div id="imp-locprev" style="font-size:12px;color:var(--pd-muted);"></div></div>'
+      : '';
     var m = UI.modal('<h2 style="margin-top:0;">Import Schedule</h2>'+
       '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">From <strong>'+esc(fname)+'</strong> — found <strong>'+recs.length+'</strong> rows ('+wbsN+' WBS, '+actN+' activities).</p>'+
       '<div style="max-height:260px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th></tr></thead><tbody>'+body+'</tbody></table></div>'+
       (recs.length>12?'<p style="font-size:12px;color:var(--pd-muted);">…and '+(recs.length-12)+' more.</p>':'')+
       '<label style="display:flex;align-items:center;gap:8px;margin:12px 0;"><input type="checkbox" id="ps-imp-rep" checked> Replace existing activities for this project</label>'+
+      locSection+
       '<div style="text-align:right;"><button class="pd-btn" id="ps-imp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-imp-go">Import '+recs.length+' rows</button></div>');
+    if (locUI) {
+      locUI.bind(m.el, function(){
+        var map = locUI.read(m.el), el = m.el.querySelector('#imp-locprev');
+        if (!map.length) { el.innerHTML = 'Pick a source for at least one level, or leave them all skipped.'; return; }
+        var p = locMapPlan(leafRecs, map, function(){ return null; }, true);
+        el.innerHTML = '<strong>'+p.ups.length+'</strong> of '+leafRecs.length+' activities will get a location.'+
+          (p.sample.length ? '<div style="margin-top:6px;">'+p.sample.slice(0,4).map(function(s){
+            return '<div style="padding:1px 0;">'+esc((s.rec.name||'').slice(0,34))+' → '+
+              esc(map.filter(function(mp){ return s.loc[mp.key]; }).map(function(mp){ return mp.name+': '+s.loc[mp.key]; }).join(' · '))+'</div>';
+          }).join('')+'</div>' : '');
+      });
+      m.el.querySelector('#imp-locprev').innerHTML = '';
+    }
     m.el.querySelector('#ps-imp-x').onclick = m.close;
-    m.el.querySelector('#ps-imp-go').onclick = function(){ var rep=m.el.querySelector('#ps-imp-rep').checked; m.close(); doImport(recs, rep, fname); };
+    m.el.querySelector('#ps-imp-go').onclick = function(){
+      var rep=m.el.querySelector('#ps-imp-rep').checked;
+      var locMap = locUI ? locUI.read(m.el) : [];
+      m.close(); doImport(recs, rep, fname, locMap);
+    };
   }
 
   // ---- IMPORT from Oracle Primavera P6 .xer export ----

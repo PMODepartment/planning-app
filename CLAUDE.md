@@ -77,6 +77,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-05 — Excel/OPC location mapping — and what the real exports actually contain
+Completes the import mapping. `parseWorkbook` now **retains the columns its fixed header detection
+doesn't claim** (`rec.extra`, keyed by the header as written, duplicates uniquified — they repeat in
+real OPC exports and would otherwise overwrite each other) and offers them to the shared mapper as a
+third source kind. That kind was ~6 lines: sources were already reduced to `{key,name,get(rec)}`, so
+the mapping UI, preview, planner and level-creation needed **no changes**.
+- **⚠️ THE IMPORTANT FINDING — this does NOT solve Avesta, and it was checked against the real files
+  rather than assumed.** Running the **shipped** parsers over the 9 xlsx + 8 xer exports on disk:
+  Avesta's xlsx spare columns are POC/IBB/Percent-Complete-Type (**no location column**); its WBS
+  rows carry **no Name at all** (only a code, so WBS-depth sources yield codes there); its .xer WBS
+  is Phase › Discipline › Trade with tower/zone at **irregular depths** as groupings
+  (`Towers 2-7`, `Zone 1` beside `Mat Footing`); and its .xer has **no usable activity codes** (one
+  type, 0 tasks). Avesta's location lives in the **activity names** ("Tower 1 Topping Off"), so the
+  remaining planned source kind — **a pattern on the activity name** — is the one that would serve
+  it. Not built yet. (Other projects DO have codes: Caticlan's `Trades` covers 2,947 tasks, so the
+  P6 code path earns its keep.)
+- **Verified 18/18 in Node** against the shipped parser + mapper, plus a **real-file regression run**:
+  all 9 OPC exports (~50k activities, incl. a 20,716-row one) parse and every record is
+  **byte-identical to the previously committed parser on every pre-existing field** — `extra` is
+  purely additive. Earlier 24/24 + 20/20 suites still green. Not verified signed-in.
+  See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-05 — P6 activity codes now import + a shared location mapper for the importers
 User added a Tower › Level › Zone location breakdown on Avesta and found the imports don't offer it.
 They couldn't: **neither importer ever wrote `location`**, so every imported activity arrived with

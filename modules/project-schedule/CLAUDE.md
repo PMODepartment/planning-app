@@ -1,5 +1,42 @@
 # Module: project-schedule
 
+## Excel/OPC location mapping — and what the REAL exports actually contain (2026-08-05) — fmlozano
+Completes the import mapping: the Excel/OPC path now retains the columns its fixed header detection
+doesn't claim and offers them to the shared mapper, so an xlsx `Tower`/`Level`/`Zone` column can be
+mapped onto the location levels. Same modal section, same planner, same preview as the P6 path.
+- **`parseWorkbook` keeps unmatched columns** as `rec.extra = { "<header as written>": value }`.
+  ⚠️ Headers repeat in real OPC exports and `extra` is keyed by header, so duplicates are
+  **uniquified** (`Zone`, `Zone (2)`) — otherwise the second column silently overwrote the first on
+  every row. Blank headers and blank cells are skipped; WBS rows get `extra: null`.
+- **Third source kind `locSrcsCols`**, ~6 lines, because sources were already reduced to
+  `{key,name,get(rec)}` — the mapper, the preview, the planner and the level-creation path needed
+  **no changes at all**. That was the point of the shape.
+- **⚠️ THE IMPORTANT FINDING — this does not help Avesta, and I checked rather than assumed.** I ran
+  the **shipped** parsers over the **real exports on disk** (9 xlsx + 8 xer):
+  - The **Avesta xlsx** has 4 spare columns and they are **Planned Value POC / At Completion IBB /
+    BL Planned IBB / Percent Complete Type** — no location column. Nothing to map.
+  - **Its WBS rows carry no Name at all** (the export writes only a code in the ID column: `AVE`,
+    `1.4`, `1.4.4`), so in the Excel path the WBS-depth sources yield **codes, not readable names**.
+  - The **Avesta .xer** WBS *does* have real names, but they are **Phase › Discipline › Trade**, and
+    tower/zone appear at irregular depths as groupings (`Tower 1 + Gen Req***`, `Towers 2-7` at
+    depth 5; `Zone 1`/`Zone 2` at depth 8, alongside `Mat Footing`/`SOG`). **No single depth maps
+    cleanly to Tower or Zone.**
+  - The **Avesta .xer has no usable activity codes** — one type (`View`) with one value, on **0**
+    tasks. (Other projects do: Caticlan has `Trades` on 2,947 tasks and `High Level Trade SMC 1` on
+    2,076 — so the P6 code path earns its keep, just not here.)
+  - Avesta's location lives in the **activity names** (`Tower 1 Topping Off`).
+  → So the remaining planned source kind — **a pattern/delimiter on the activity name** — is the one
+  that would actually serve this project. It is NOT built yet.
+- **Verified.** 18/18 in Node against the shipped `parseWorkbook` + mapper (claimed columns not
+  duplicated into extras, duplicate-header uniquifying, blank header and blank cells skipped, dates/%
+  still parsed, WBS rows null, mixing a WBS depth with a column in one mapping, and the same
+  zone-name-under-two-towers case). Plus a **real-file regression run**: all 9 OPC exports
+  (~50k activities incl. a 20,716-row one) parse, and every record is **byte-identical to the
+  previously committed parser on every pre-existing field** — `extra` is purely additive. The
+  earlier 24/24 mapper suite and 20/20 browser UI suite still pass; script parses.
+- ⚠️ Still **not verified signed-in** — no live click-through of an actual import.
+- Module-local; no migration, no `?v=` bump.
+
 ## P6 activity codes imported + a shared location mapper for imports (2026-08-05) — fmlozano
 User: with the location breakdown added (Avesta = Tower › Level › Zone), the OPC/P6 imports don't
 offer it. They couldn't: **neither importer ever wrote `location`**, so every imported activity
