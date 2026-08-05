@@ -672,8 +672,11 @@ window.DrawingRegister = (function () {
     return parts.join('-');
   }
   function pctApproved(r) {
-    var tot = num(r.no_of_sheets) || 0, ap = num(r.approved_sheets) || 0;
-    if (r.approved_pct != null && r.approved_pct !== '') return num(r.approved_pct);
+    var tot = num(r.no_of_sheets) || 0, ap = approvedOf(r);
+    // ⚠️ `approved_pct` is a stored mirror and can lag (a status change writes the
+    // count, and a legacy import wrote the pct directly). Trust it only for a
+    // multi-sheet aggregate row, where the count really is hand-typed.
+    if (tot > 1 && !hasSheets(r) && r.approved_pct != null && r.approved_pct !== '') return num(r.approved_pct);
     return tot ? ap / tot : 0;
   }
   function isApprovedStatus(s) {
@@ -737,10 +740,27 @@ window.DrawingRegister = (function () {
   // sheet lands — surfacing the max actual date earlier would read as a completion
   // date for work that is still open. `minPlanned` is the earliest commitment in the
   // set, which is the date the group must be judged against.
+  // ⚠️ THE single definition of "how many sheets of this row are approved".
+  // rollup() used to sum `approved_sheets` while syncParent() counted children by
+  // `isApprovedStatus(status)` — two definitions of one number. Found on
+  // BAU101-TEST: approving a sheet through the full editor left its
+  // `approved_sheets` at 0, so the parent STORED 1/2 (50%) while the grid
+  // DISPLAYED 0/2 (0%). Both now come through here.
+  //   • a row with sheets  → the sum over its sheets
+  //   • a single-sheet row → its STATUS is the approval state
+  //   • an aggregate row   → its hand-typed count
+  function approvedOf(r){
+    if (hasSheets(r)) {
+      return sheetsOf(r).reduce(function (n, k){ return n + approvedOf(k); }, 0);
+    }
+    if ((num(r.no_of_sheets) || 0) <= 1) return isApprovedStatus(r.status) ? 1 : 0;
+    return num(r.approved_sheets) || 0;
+  }
+
   function rollup(list){
     var tot = 0, ap = 0, minPlanned = null, maxActual = null, allAppr = list.length > 0;
     list.forEach(function (r){
-      var t = num(r.no_of_sheets) || 0, a = num(r.approved_sheets) || 0;
+      var t = num(r.no_of_sheets) || 0, a = approvedOf(r);
       tot += t; ap += a;
       var pl = inh(r, 'planned_approval');
       if (validDate(pl) && (!minPlanned || pl < minPlanned)) minPlanned = pl;
@@ -769,7 +789,7 @@ window.DrawingRegister = (function () {
   // remove, reappearing one level up. Derive it, always.
   function derivedStatus(kids){
     if (!kids.length) return null;
-    var ap = kids.filter(function (k){ return isApprovedStatus(k.status); }).length;
+    var ap = kids.reduce(function (n, k){ return n + approvedOf(k); }, 0);
     if (ap === kids.length) {
       // All approved, but "with comments" is a materially different outcome from
       // a clean approval, so it survives the roll-up rather than being rounded off.
@@ -788,7 +808,7 @@ window.DrawingRegister = (function () {
     if (!p) return;
     var kids = sheetsOf(p);
     if (!kids.length) return;                      // back in aggregate mode — leave the hand-typed counters alone
-    var ap = kids.filter(function (k){ return isApprovedStatus(k.status); }).length;
+    var ap = kids.reduce(function (n, k){ return n + approvedOf(k); }, 0);
     var r = rollup(kids);
     var patch = {
       no_of_sheets: kids.length,
@@ -2709,7 +2729,7 @@ window.DrawingRegister = (function () {
         description:  m.el.querySelector('#f-desc').value.trim(),
         no_of_sheets: sheets,
         approved_sheets: apSheets,
-        approved_pct: sheets ? apSheets/sheets : 0,
+        approved_pct: sheets ? apSheets/sheets : 0,   // both re-derived below for a single-sheet row
         responsible:  m.el.querySelector('#f-resp').value.trim(),
         revision:     m.el.querySelector('#f-rev').value.trim(),
         // submissions / issue_date / due_date are set after the uploads below,
@@ -2726,12 +2746,29 @@ window.DrawingRegister = (function () {
       // when the planner opted in (checkbox in the schedule-link preview).
       var useReq = m.el.querySelector('#f-usereq');
       if (useReq && useReq.checked && computedReq) data.planned_approval = computedReq;
+      // ⚠️ On a SINGLE-sheet row the status IS the approval state — the same rule
+      // persistCell applies to an inline edit. Without it here, approving a sheet
+      // through the full editor left `approved_sheets` at whatever the (untouched)
+      // form field held, so the sheet read Approved while contributing 0 to its
+      // drawing's POC. Found on BAU101-TEST.
+      if ((data.no_of_sheets || 0) <= 1 && !hasSheets(r)) {
+        data.no_of_sheets    = data.no_of_sheets || 1;
+        data.approved_sheets = isApprovedStatus(data.status) ? 1 : 0;
+        data.approved_pct    = data.approved_sheets;
+      }
       // build the composed code with the discipline *code* (not the long name)
-      data.drawing_code = composeCode({
-        proj_code:data.proj_code, building_ref:data.building_ref, company:data.company,
-        drawing_type:data.drawing_type, discipline:discCode, floor_level:data.floor_level,
-        dwg_number:data.dwg_number, revision:data.revision
-      });
+      // ⚠️ A SHEET keeps its `<parent>.<n>` code and is never recomposed. Found on
+      // BAU101-TEST: saving sheet `A-101.1` through the full editor rewrote its code
+      // to `BAU101-TEST-MCC-AR-A-101.1` from the code-part dropdowns, destroying the
+      // child-of-parent numbering the break-out had just created. The structured
+      // code belongs to the drawing; a sheet is identified by its position under it.
+      data.drawing_code = r.parent_id
+        ? (data.dwg_number || r.drawing_code || '')
+        : composeCode({
+            proj_code:data.proj_code, building_ref:data.building_ref, company:data.company,
+            drawing_type:data.drawing_type, discipline:discCode, floor_level:data.floor_level,
+            dwg_number:data.dwg_number, revision:data.revision
+          });
       data.drawing_no = data.drawing_code || data.dwg_number;
 
       if (!data.title && !data.dwg_number) { UI.toast('Sheet title or drawing no. required', 'warn'); return; }
