@@ -210,6 +210,32 @@ everything on a single row instead.
   ⚠️ **Not verified signed-in** and the migration is not run. Assets drawing-register
   `module.css/js?v=20260805a`. See `modules/drawing-register/CLAUDE.md`.
 
+### 2026-08-05 — Location from the WBS by KEYWORD (the source that actually works on a P6 tree)
+Built so Avesta's location breakdown can be filled from its own data. ⚠️ **The activity-name source I
+proposed last prompt was wrong and was NOT built:** measured on the real file, only **1.1%** of
+Avesta's activity names contain "Tower" and **0%** contain Zone/Level — the names are `Formworks`,
+`Rebar`, `3rd Fix`. It would have shipped a feature that fills nothing.
+- **The location is in the WBS** (`… > Tower 5 > Structural Works > Superstructure > 9th Floor >
+  Zone 2 > Vertical`) but **not at a fixed depth** — the floor is depth 6 under MEPF/Architectural and
+  depth 7 under Structural, so a depth mapping yields "Superstructure" for one trade and "Eleventh
+  Floor" for another. New source: the planner gives **words** (comma-separated, whole-word matched,
+  `-term` excludes) and the **deepest** matching ancestor wins.
+- ⚠️ Whole-word matching is load-bearing (`Ground` matched "Bac**kground** Music"), and excludes exist
+  because `Tower` also catches "Tower Handover" and `Floor` catches "Floor Finishes" — real nodes.
+- **The preview now lists distinct values per level with counts** (all three call sites), which is the
+  only way to SEE those false positives — and is how both were found.
+- **Real Avesta results:** Tower **91.4%**, Floor **79.2%**, Zone **27.7%** (exactly Zone 1/2); every
+  zoned activity also carries its tower and floor; unmatched = the Initiation/Planning work, which has
+  no location; every Construction-Phase activity resolves to a real Tower 1..7.
+- **Generality, measured across all 8 real .xer files:** Jenara 100%, Jab 99%, Strevi 97%, Avesta 92%
+  tower coverage; Caticlan (an airport) gets Zone 78%/Floor 83%; DepED 0%. **The mechanism
+  generalises, the words don't** — each project needs terms matching its vocabulary.
+- **Verified 26/26 in Node against the shipped source over the real 4,393-activity tree** + **17/17 in
+  a real browser** on the UI. ⚠️ Two assertions failed and both were MY assertion, not the code (a
+  floor node called "Roof Deck"; design-branch "Tower" nodes). Not verified signed-in — for Avesta the
+  path is **Location Breakdown… → Fill location from the WBS tree…**, no re-import needed.
+  See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-05 — Excel/OPC location mapping — and what the real exports actually contain
 Completes the import mapping. `parseWorkbook` now **retains the columns its fixed header detection
 doesn't claim** (`rec.extra`, keyed by the header as written, duplicates uniquified — they repeat in

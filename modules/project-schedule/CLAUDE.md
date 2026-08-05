@@ -1,5 +1,63 @@
 # Module: project-schedule
 
+## Location from the WBS by KEYWORD — the source that actually works on a P6 tree (2026-08-05) — fmlozano
+Built so Avesta's location breakdown can be filled from its import. ⚠️ **I first proposed a source
+that reads the ACTIVITY NAME, and that was wrong** — measured on the real file, only **1.1%** of
+Avesta's 4,393 activity names contain "Tower" (the 49 milestones) and **0%** contain Zone/Level/T1/Z1.
+The names are generic (`Formworks`, `Rebar`, `3rd Fix`). Building it would have shipped a feature that
+fills nothing.
+- **Where the location really is: the WBS tree** —
+  `Execution Phase > Construction Phase > Tower 5 > Structural Works > Superstructure > 9th Floor >
+  Zone 2 > Vertical`. ⚠️ **But NOT at a fixed depth**, which is why the existing depth mapping can't
+  express it: the floor is at depth 6 under MEPF/Architectural Works and at depth **7** under
+  Structural Works (which inserts Substructure/Superstructure). Depth 6 therefore means "Eleventh
+  Floor" for one trade and "Superstructure" for another.
+- **New source kind `locSrcsWbsWords`:** instead of a depth, the planner says **what the value looks
+  like** and the source scans the whole ancestry for it — how they read their own tree anyway. Terms
+  are comma-separated, matched as **whole words**, and a `-term` **excludes**. The **deepest**
+  matching ancestor wins (the nearest enclosing location is the most specific).
+- ⚠️ **Whole-word matching is not fussiness:** `Ground` matched "Bac**kground** Music" in the real
+  file. And the exclude term exists because `Tower` also catches "Tower Handover" and `Floor` also
+  catches "Floor Finishes" — both real nodes in this schedule.
+- **The mapper needed one new capability:** a source can declare `needsArg`, and the row then shows a
+  second input (seeded from the level's own name, so a level called Tower starts with `Tower`);
+  `read()` resolves it via `src.make(arg)` into an ordinary `{key,name,get}`, so **`locMapPlan`,
+  the importers and the backfill are unchanged**. A blank argument leaves the level unmapped rather
+  than contributing an empty column.
+- **The preview now lists the DISTINCT VALUES per level with counts**, replacing the old
+  count-plus-two-sample-rows in all three call sites. With a keyword matcher this is the only way the
+  planner can SEE that "Floor" caught "Floor Finishes" — it is what makes the exclude term
+  discoverable, and it is how both false positives above were found.
+- **Measured on the REAL Avesta .xer** (terms `Tower, -Handover` / `Floor, Storey, Roof Deck,
+  Basement, Podium, -Finishes, -Coating` / `Zone`): **Tower 91.4%, Floor 79.2%, Zone 27.7%**; Zone
+  resolves to exactly `Zone 1`/`Zone 2`; **every zoned activity also carries its tower and floor**;
+  and the 379 unmatched activities are correctly the Initiation/Planning/Design work, which has no
+  location. **Every activity under Construction Phase resolves to a real `Tower 1..7`** — the odd
+  residual values (`FCD Tower`, `BOQ Tower`, `Tower 2, 5, 6, 7`) are Planning-branch design nodes and
+  cannot contaminate construction work, since they are in a different branch.
+- ⚠️ **Two test assertions failed and BOTH were my assertion, not the code** — worth keeping because
+  each taught something: (1) some zoned activities had no floor because the floor node is
+  **"Roof Deck"**, which "Floor, Storey" simply doesn't cover; (2) the extra Tower values are design
+  nodes. Neither was visible from reading the tree.
+- **Generality (measured across all 8 real .xer files with one generic term set):** Jab **99%**,
+  Jenara **100%**, Strevi **97%**, Avesta **92%** tower coverage; Caticlan is not a tower project but
+  gets **Zone 78% / Floor 83%**; Hotel 101 **Floor 51%**; OPW101 **20%**; DepED **0%**. So **the
+  mechanism generalises, the WORDS do not** — each project needs terms matching its own vocabulary,
+  which the preview shows in seconds. DepED has activity codes instead (`Priority`, on 185 tasks).
+- **Verified 26/26 in Node against the shipped source** run over the **real 4,393-activity Avesta
+  tree** (all the numbers above, plus whole-word/exclude/case/phrase/regex-metacharacter handling,
+  deepest-wins on a synthetic nested tree, and inert behaviour before an argument is supplied), plus
+  **17/17 in a real browser** on the UI (input reveal, seeding, hint, `make()` resolution, deepest
+  floor across differing depths, the false positive appearing in the preview and an exclude term
+  removing it, per-value counts, blank-argument un-mapping). Earlier 24/24 + 18/18 + the 9-file
+  regression run all still green; script parses, 0 console errors.
+- ⚠️ **Not verified signed-in.** The intended path for Avesta is **Location Breakdown… → Fill location
+  from the WBS tree…**, which now offers this source against the already-imported schedule — no
+  re-import needed.
+- ⚠️ **Concurrent edit:** another session was editing this same file (`syncDesignDevelopment`) while
+  this landed; the changes are in disjoint regions and were committed separately.
+- Module-local; no migration, no `?v=` bump.
+
 ## Excel/OPC location mapping — and what the REAL exports actually contain (2026-08-05) — fmlozano
 Completes the import mapping: the Excel/OPC path now retains the columns its fixed header detection
 doesn't claim and offers them to the shared mapper, so an xlsx `Tower`/`Level`/`Zone` column can be

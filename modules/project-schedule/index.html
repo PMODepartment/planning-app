@@ -3136,6 +3136,50 @@
       return { key: 'code:' + ct.id, kind: 'code', name: ct.name, get: function (r) { return valOf(r, ct.id) || null; } };
     });
   }
+  // WBS-ANCESTRY-BY-KEYWORD source. ⚠️ This is the one that works on a real P6 tree, and it exists
+  // because mapping a fixed DEPTH does not: measured on Avesta, Tower sits at depth 4, but the floor
+  // is at depth 6 under MEPF/Architectural Works and depth 7 under Structural Works (which inserts
+  // Substructure/Superstructure), so depth 6 means "Eleventh Floor" for one trade and "Superstructure"
+  // for another. Instead of a depth, the user says WHAT THE VALUE LOOKS LIKE and we scan the whole
+  // ancestry for it — which is how a planner actually reads their own tree.
+  // Terms are comma-separated and matched as WHOLE WORDS (so "Ground" cannot match "Background", a
+  // real false positive in that file); a term prefixed with "-" EXCLUDES a segment, which is what
+  // separates "Tower 2" from "Tower Handover" and "Third Floor" from "Floor Finishes".
+  // The DEEPEST matching ancestor wins — the nearest enclosing location is the most specific one.
+  function locWordMatcher(arg) {
+    var inc = [], exc = [];
+    String(arg || '').split(',').forEach(function (t) {
+      t = t.trim(); if (!t) return;
+      if (t.charAt(0) === '-') { t = t.slice(1).trim(); if (t) exc.push(t); }
+      else inc.push(t);
+    });
+    if (!inc.length) return null;
+    function re(list) { return new RegExp('(^|\\W)(' + list.map(function (t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|') + ')(\\W|$)', 'i'); }
+    var incRe = re(inc), excRe = exc.length ? re(exc) : null;
+    return function (s) { return incRe.test(s) && !(excRe && excRe.test(s)); };
+  }
+  function locSrcsWbsWords(getCode, nameByCode) {
+    return [{
+      key: 'wbsword', kind: 'wbsword', name: 'WBS path — matching words…', needsArg: true,
+      argHint: 'e.g. Tower   ·   Floor, Storey, -Finishes',
+      get: function () { return null; },   // inert until make() supplies the terms
+      make: function (arg) {
+        var match = locWordMatcher(arg);
+        return { key: 'wbsword:' + arg, kind: 'wbsword', name: 'WBS path matching "' + arg + '"', get: function (r) {
+          if (!match) return null;
+          var c = getCode(r); if (!c) return null;
+          var segs = String(c).split('.');
+          // Root → leaf, keeping the last (deepest) hit.
+          var found = null;
+          for (var i = 1; i <= segs.length; i++) {
+            var nm = nameByCode[segs.slice(0, i).join('.')];
+            if (nm && match(nm)) found = nm;
+          }
+          return found;
+        } };
+      }
+    }];
+  }
   // Spreadsheet-column sources. cols = the headers the importer's fixed detection didn't claim;
   // valOf(rec, header) reads that column's cell.
   function locSrcsCols(cols, valOf) {
@@ -3168,8 +3212,25 @@
         '<div style="flex:0 0 150px;">' + (levelId
           ? '<label class="pd-label">' + esc(name) + '</label><input type="hidden" class="lm-name" value="' + esc(name) + '">'
           : '<label class="pd-label">New level</label><input class="pd-input lm-name" placeholder="Tower / Level / Zone" value="' + esc(name || '') + '">') + '</div>' +
-        '<div style="flex:1 1 auto;"><select class="pd-input lm-sel">' + optHtml(sel) + '</select></div>' +
+        '<div style="flex:1 1 auto;"><select class="pd-input lm-sel">' + optHtml(sel) + '</select>' +
+          '<input class="pd-input lm-arg" style="display:none;margin-top:5px;" placeholder="' + esc(argHintFor(sel)) + '" value="' + esc(argDefault(sel, name)) + '">' +
+        '</div>' +
         (removable ? '<button class="pd-btn lm-del" title="Remove">✕</button>' : '') + '</div>';
+    }
+    function srcByKey(k) { return sources.filter(function (s) { return s.key === k; })[0]; }
+    // A source that needs an argument (the keyword matcher) gets a second input under its select.
+    function argHintFor(k) { var s = srcByKey(k); return (s && s.argHint) || ''; }
+    function argDefault(k, levelName) { var s = srcByKey(k); return (s && s.needsArg && levelName) ? levelName : ''; }
+    function syncArgs(el) {
+      el.querySelectorAll('.lm-row').forEach(function (row) {
+        var s = srcByKey(row.querySelector('.lm-sel').value), inp = row.querySelector('.lm-arg');
+        var need = !!(s && s.needsArg);
+        inp.style.display = need ? '' : 'none';
+        // Seed from the level's own name the first time — "Tower" is the right guess for a level
+        // called Tower, and it is the whole term the matcher needs.
+        if (need && !inp.value) { inp.value = (row.querySelector('.lm-name').value || '').trim(); inp.placeholder = s.argHint || ''; }
+        if (need) inp.placeholder = s.argHint || '';
+      });
     }
     var html = '<div id="lm-rows">' + levels.map(function (l, i) { return rowHtml(l.name, l.id, guessFor(l, i), false); }).join('') + '</div>' +
       (allowNew ? '<div style="margin:6px 0 10px;"><button class="pd-btn" id="lm-add">+ Add a location level</button></div>' : '');
@@ -3177,11 +3238,13 @@
       html: html,
       bind: function (el, onChange) {
         function wire() {
-          el.querySelectorAll('.lm-sel').forEach(function (s) { s.onchange = onChange; });
+          el.querySelectorAll('.lm-sel').forEach(function (s) { s.onchange = function () { syncArgs(el); onChange(); }; });
           el.querySelectorAll('.lm-name').forEach(function (s) { s.oninput = onChange; });
+          el.querySelectorAll('.lm-arg').forEach(function (s) { s.oninput = onChange; });
           el.querySelectorAll('.lm-del').forEach(function (b) {
             b.onclick = function () { b.closest('.lm-row').remove(); onChange(); };
           });
+          syncArgs(el);
         }
         var add = el.querySelector('#lm-add');
         if (add) add.onclick = function () {
@@ -3197,7 +3260,13 @@
         var out = [];
         el.querySelectorAll('.lm-row').forEach(function (row, i) {
           var key = row.querySelector('.lm-sel').value; if (!key) return;
-          var src = sources.filter(function (s) { return s.key === key; })[0]; if (!src) return;
+          var src = srcByKey(key); if (!src) return;
+          if (src.needsArg) {
+            // An argument-less keyword source would match nothing, so the row is simply not mapped
+            // yet rather than silently contributing an empty column.
+            var arg = (row.querySelector('.lm-arg').value || '').trim(); if (!arg) return;
+            src = src.make(arg);
+          }
           var levelId = row.dataset.lvl || '';
           var name = (row.querySelector('.lm-name').value || '').trim();
           if (!levelId && !name) return;   // a new level with no name can't be created
@@ -3206,6 +3275,28 @@
         return out;
       }
     };
+  }
+  // Shared preview. ⚠️ It lists the DISTINCT VALUES each level would produce, not just a count and
+  // a couple of sample rows — with the keyword matcher that is the only way a planner can see that
+  // "Floor" also caught "Floor Finishes", or "Tower" caught "Tower Handover". Seeing the value list
+  // is what makes the exclude term ("-Finishes") discoverable.
+  function locPreviewHTML(map, p, total) {
+    if (!map.length) return 'Pick a source for at least one level.';
+    var byLvl = {};
+    map.forEach(function (mp) { byLvl[mp.key] = {}; });
+    p.ups.forEach(function (u) {
+      map.forEach(function (mp) { var v = u.loc[mp.key]; if (v) byLvl[mp.key][v] = (byLvl[mp.key][v] || 0) + 1; });
+    });
+    var html = '<strong>' + p.ups.length + '</strong> of ' + total + ' activities will get a location.';
+    map.forEach(function (mp) {
+      var vals = Object.keys(byLvl[mp.key]).sort(function (a, b) { return byLvl[mp.key][b] - byLvl[mp.key][a]; });
+      html += '<div style="margin-top:7px;"><strong>' + esc(mp.name || 'Level') + '</strong> — ' +
+        (vals.length ? vals.length + ' value' + (vals.length === 1 ? '' : 's') + ': ' +
+          vals.slice(0, 10).map(function (v) { return '<span style="display:inline-block;background:var(--pd-bg);border:1px solid var(--pd-line);border-radius:3px;padding:0 5px;margin:2px 3px 0 0;">' + esc(v) + ' <span style="color:var(--pd-muted);">×' + byLvl[mp.key][v] + '</span></span>'; }).join('') +
+          (vals.length > 10 ? ' <span style="color:var(--pd-muted);">+' + (vals.length - 10) + ' more</span>' : '')
+        : '<span style="color:var(--pd-red);">no matches</span>') + '</div>';
+    });
+    return html;
   }
   // Plans the writes for a mapping. getLoc(rec) returns the record's current location map; the
   // caller decides what to do with the result (a DB batch update, or stamping the import payloads).
@@ -3236,7 +3327,8 @@
     var nameByCode = {}; rows.forEach(function (r) { if (isWbs(r) && r.wbs) nameByCode[String(r.wbs)] = r.activity_name || ''; });
     // Both source kinds are offered here, not just the WBS: a project whose P6 activity codes carry
     // the location shouldn't have to re-import to use them.
-    var sources = locSrcsWbs(acts, function (r) { return r.wbs; }, nameByCode)
+    var sources = locSrcsWbsWords(function (r) { return r.wbs; }, nameByCode)
+      .concat(locSrcsWbs(acts, function (r) { return r.wbs; }, nameByCode))
       .concat(locSrcsCodes(CODE_TYPES, function (r, tid) {
         var vid = r.activity_codes && r.activity_codes[tid]; return vid ? codeValueLabel(vid) : null;
       }));
@@ -3254,13 +3346,8 @@
       p.map = map; return p;
     }
     function preview() {
-      var p = plan(), el = m.el.querySelector('#bf-prev');
-      if (!p.map.length) { el.innerHTML = 'Pick at least one source above.'; return; }
-      el.innerHTML = '<strong>' + p.ups.length + '</strong> of ' + acts.length + ' activities will be updated.' +
-        (p.sample.length ? '<div style="margin-top:8px;">' + p.sample.map(function (s) {
-          return '<div style="padding:2px 0;"><code style="color:var(--pd-red);">' + esc(s.rec.wbs) + '</code> ' + esc((s.rec.activity_name || '').slice(0, 40)) +
-            ' → ' + esc(LOC_LEVELS.filter(function (l) { return s.loc[l.id]; }).map(function (l) { return l.name + ': ' + s.loc[l.id]; }).join(' · ')) + '</div>';
-        }).join('') + '</div>' : '');
+      var p = plan();
+      m.el.querySelector('#bf-prev').innerHTML = locPreviewHTML(p.map, p, acts.length);
     }
     ui.bind(m.el, preview);
     m.el.querySelector('#bf-over').onchange = preview;
@@ -3554,7 +3641,8 @@
     var leafRecs = recs.filter(function(r){ return r.isLeaf; });
     var xlNameByCode = {}; recs.forEach(function(r){ if(!r.isLeaf) xlNameByCode[r.code] = r.name || ''; });
     var xlCols = []; (function(){ var seen={}; leafRecs.forEach(function(r){ if(r.extra) Object.keys(r.extra).forEach(function(h){ if(!seen[h]){seen[h]=1; xlCols.push(h);} }); }); })();
-    var locSources = locSrcsWbs(leafRecs, function(r){ return r.code; }, xlNameByCode)
+    var locSources = locSrcsWbsWords(function(r){ return r.code; }, xlNameByCode)
+      .concat(locSrcsWbs(leafRecs, function(r){ return r.code; }, xlNameByCode))
       .concat(locSrcsCols(xlCols, function(r,h){ return r.extra && r.extra[h]; }));
     locSources.forEach(function(s){ s._sample = locSrcSample(leafRecs, s); });
     var locUI = locSources.length ? locMapUI(LOC_LEVELS, locSources, true) : null;
@@ -3573,14 +3661,8 @@
       '<div style="text-align:right;"><button class="pd-btn" id="ps-imp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-imp-go">Import '+recs.length+' rows</button></div>');
     if (locUI) {
       locUI.bind(m.el, function(){
-        var map = locUI.read(m.el), el = m.el.querySelector('#imp-locprev');
-        if (!map.length) { el.innerHTML = 'Pick a source for at least one level, or leave them all skipped.'; return; }
-        var p = locMapPlan(leafRecs, map, function(){ return null; }, true);
-        el.innerHTML = '<strong>'+p.ups.length+'</strong> of '+leafRecs.length+' activities will get a location.'+
-          (p.sample.length ? '<div style="margin-top:6px;">'+p.sample.slice(0,4).map(function(s){
-            return '<div style="padding:1px 0;">'+esc((s.rec.name||'').slice(0,34))+' → '+
-              esc(map.filter(function(mp){ return s.loc[mp.key]; }).map(function(mp){ return mp.name+': '+s.loc[mp.key]; }).join(' · '))+'</div>';
-          }).join('')+'</div>' : '');
+        var map = locUI.read(m.el);
+        m.el.querySelector('#imp-locprev').innerHTML = locPreviewHTML(map, locMapPlan(leafRecs, map, function(){ return null; }, true), leafRecs.length);
       });
       m.el.querySelector('#imp-locprev').innerHTML = '';
     }
@@ -3839,7 +3921,8 @@
     var leafRecs = recs.filter(function (r) { return r.isLeaf; });
     var xerNameByCode = {}; recs.forEach(function (r) { if (!r.isLeaf) xerNameByCode[r.code] = r.name || ''; });
     var valByTmpId = {}; (parsed.codeValues || []).forEach(function (v) { valByTmpId[v.tmpId] = v.value; });
-    var locSources = locSrcsWbs(leafRecs, function (r) { return r.code; }, xerNameByCode)
+    var locSources = locSrcsWbsWords(function (r) { return r.code; }, xerNameByCode)
+      .concat(locSrcsWbs(leafRecs, function (r) { return r.code; }, xerNameByCode))
       .concat(locSrcsCodes((parsed.codeTypes || []).map(function (t) { return { id: t.tmpId, name: t.name }; }),
         function (r, tid) { var vid = r.codes && r.codes[tid]; return vid ? valByTmpId[vid] : null; }));
     locSources.forEach(function (s) { s._sample = locSrcSample(leafRecs, s); });
@@ -3860,14 +3943,8 @@
       '<div style="text-align:right;"><button class="pd-btn" id="ps-impx-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-impx-go">Import ' + recs.length + ' rows</button></div>');
     if (locUI) {
       locUI.bind(m.el, function () {
-        var map = locUI.read(m.el), el = m.el.querySelector('#impx-locprev');
-        if (!map.length) { el.innerHTML = 'Pick a source for at least one level, or leave them all skipped.'; return; }
-        var p = locMapPlan(leafRecs, map, function () { return null; }, true);
-        el.innerHTML = '<strong>' + p.ups.length + '</strong> of ' + leafRecs.length + ' activities will get a location.' +
-          (p.sample.length ? '<div style="margin-top:6px;">' + p.sample.slice(0, 4).map(function (s) {
-            return '<div style="padding:1px 0;">' + esc((s.rec.name || '').slice(0, 34)) + ' → ' +
-              esc(map.filter(function (mp) { return s.loc[mp.key]; }).map(function (mp) { return mp.name + ': ' + s.loc[mp.key]; }).join(' · ')) + '</div>';
-          }).join('') + '</div>' : '');
+        var map = locUI.read(m.el);
+        m.el.querySelector('#impx-locprev').innerHTML = locPreviewHTML(map, locMapPlan(leafRecs, map, function () { return null; }, true), leafRecs.length);
       });
       m.el.querySelector('#impx-locprev').innerHTML = '';
     }
