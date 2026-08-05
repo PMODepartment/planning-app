@@ -2097,7 +2097,7 @@
     var by = {};
     list.forEach(function (d) {
       var k = (d.discipline || '').trim() || 'Unassigned';
-      var b = by[k] || (by[k] = { tot: 0, done: 0, minPlan: null, maxAct: null, allDone: true, n: 0 });
+      var b = by[k] || (by[k] = { tot: 0, done: 0, minPlan: null, maxPlan: null, maxAct: null, allDone: true, n: 0 });
       b.n++;
       if (kind === 'dr') {
         var t = +d.no_of_sheets || 0, a = +d.approved_sheets || 0;
@@ -2110,7 +2110,10 @@
       }
       var pl = kind === 'dr' ? d.planned_approval : d.plan_approval_date;
       var ac = kind === 'dr' ? d.actual_approval  : d.date_approved;
-      if (_ddValidDate(pl) && (!b.minPlan || pl < b.minPlan)) b.minPlan = pl;
+      if (_ddValidDate(pl)) {
+        if (!b.minPlan || pl < b.minPlan) b.minPlan = pl;
+        if (!b.maxPlan || pl > b.maxPlan) b.maxPlan = pl;
+      }
       if (_ddValidDate(ac) && (!b.maxAct || ac > b.maxAct)) b.maxAct = ac;
     });
     return by;
@@ -2172,9 +2175,12 @@
           activity_type: 'Task', percent_complete: pct,
           status: pct >= 100 ? 'Completed' : (pct > 0 ? 'In Progress' : 'Not Started'),
           start_date: w.a.minPlan || null,
-          // The branch finishes when the last approval lands; until then the commitment
-          // (the latest planned approval) is the finish. Never invent a date.
-          end_date: (w.a.allDone ? w.a.maxAct : null) || w.a.minPlan || null,
+          // ⚠️ The finish is the LATEST planned approval — the commitment to have the whole
+          // discipline approved — replaced by the actual last approval once every item has
+          // landed. It used to fall back to `minPlan`, which made start === finish and drew a
+          // ZERO-DURATION bar: caught live on BAU101, where Architectural's approvals span
+          // 2025-03-18 → 2026-05-11 but the row rendered as a single day on 2025-03-18.
+          end_date: (w.a.allDone ? w.a.maxAct : null) || w.a.maxPlan || w.a.minPlan || null,
           actual_finish: w.a.allDone ? (w.a.maxAct || null) : null
         };
         var ex = rows.find(function (r) { return String(r.activity_id) === w.aid; });
