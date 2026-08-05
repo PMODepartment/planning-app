@@ -104,8 +104,20 @@ second, redundant one — and it answered a question the registers don't track.
   definitions before and after.
 - **116 checks green** (40 + 35 + 14 + 27) against functions sliced from the shipped source, including
   the new **11/10-column** grid alignment across header, drawing, sheet-parent, sheet and group rows.
-  ⚠️ Not verified signed-in. Assets drawing-register `?v=20260805f`, material-submittal `?v=20260805b`;
-  project-schedule `index.html` isn't cache-busted (hard-refresh).
+  Assets drawing-register `?v=20260805f`, material-submittal `?v=20260805c`; project-schedule
+  `index.html` isn't cache-busted (hard-refresh).
+- **Verified signed-in on the deployed site (BAU101).** Registry **11 columns**, Backlog **8**, both
+  header/row aligned, no Need-by anywhere; the Backlog KPI row reads **281 Open items · 12 Overdue ·
+  0 Due ≤3 days · 2 Revise & Resubmit** — real numbers off `planned_approval` where the need-by
+  column had shown em-dashes on every row. All three deployed modules carry **0** references to any
+  removed symbol, and Project Schedule serves no Documents tab while `syncDesignDevelopment` is intact.
+- ⚠️ **A follow-up sweep found a REAL runtime bug the removal had left in Material Submittal.** The
+  save path still had its dead "strip the schedule-link columns and retry" block; deleting the retry
+  left **`schedWarn` undefined while `if (schedWarn) UI.toast(…)` still referenced it**, so every
+  modal save would have thrown a `ReferenceError` *after* writing the row — save succeeds, UI reports
+  failure. **`node --check` passes on this** (runtime, not syntax); it surfaced only by grepping for
+  the symbol after the edit. Third time this session that a parser-clean edit hid a real defect
+  (after the dangling `async` and the duplicated 450 lines) — **grep for the symbols you delete.**
 
 ### 2026-08-05 — Module interaction sanitised: Design Development ← registers, Need-by → Execution Phase
 User: *"Design Development picks up the data from the drawing registry and the material submittal log

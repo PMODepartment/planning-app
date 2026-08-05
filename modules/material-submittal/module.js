@@ -173,11 +173,6 @@ window.MaterialSubmittal = (function () {
   }
   var filters = { q: '', section: '', disc: '', status: '', pres: '', overdue: false };
 
-  // ---- Project Schedule link -----------------------------------------------
-  // A submittal is a prerequisite for construction work: the linked activity's
-  // start is the "need-by" date; (start − lead_days) is the required approval
-  // date (procurement + delivery lead). See migrations/2026-07-25-...sql.
-
   // ---- date helpers --------------------------------------------------------
   var MON = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
   var MNAME = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1161,28 +1156,14 @@ window.MaterialSubmittal = (function () {
       saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
 
       if (!r) payload.created_by = UID;
-      // Tolerant write: if the schedule-link migration hasn't been run yet, strip
-      // those fields on a missing-column error and retry so the save still lands.
-      var schedWarn = false;
-      async function writeRow() {
-        var rr = r ? await sb().from(TABLE).update(payload).eq('id', r.id).select().single()
-                   : await sb().from(TABLE).insert(payload).select().single();
-        if (rr.error && /schedule_activity_id|lead_days|column|schema cache|PGRST204/i.test(rr.error.message || '')
-            && ('schedule_activity_id' in payload)) {
-          delete payload.schedule_activity_id; delete payload.lead_days; schedWarn = true;
-          rr = r ? await sb().from(TABLE).update(payload).eq('id', r.id).select().single()
-                 : await sb().from(TABLE).insert(payload).select().single();
-        }
-        return rr;
-      }
-      var res = await writeRow();
+      var res = r ? await sb().from(TABLE).update(payload).eq('id', r.id).select().single()
+                  : await sb().from(TABLE).insert(payload).select().single();
       if (res.error) {
         // Roll the orphan back rather than leaving it in the bucket forever.
         if (uploaded) await removeFiles([uploaded]);
         saveBtn.disabled = false; saveBtn.textContent = 'Save';
         UI.toast(res.error.message, 'error'); return;
       }
-      if (schedWarn) UI.toast('Saved — but the schedule link wasn’t stored; run the 2026-07-25 migration.', 'warn');
       // Row now points at the new object (or none) — drop the superseded one.
       if (oldPath && (uploaded || fileCleared) && oldPath !== payload.file_url) await removeFiles([oldPath]);
 
@@ -1538,7 +1519,7 @@ window.MaterialSubmittal = (function () {
   // only DONE statuses), sorted so overdue / late-vs-need-by rows lead.
   // `bkAging` is a Backlog-ONLY filter set by clicking a segment of the Overview's
   // aging bar (#7). Deliberately not in the shared filter bar: aging is derived
-  // from the schedule link, is meaningful only for open items, and the Registry
+  // from the planned approval date, is meaningful only for open items, and the Registry
   // has no aging column to filter on.
   var bkAging = '';
   function backlogRows() {

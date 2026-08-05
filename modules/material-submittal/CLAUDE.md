@@ -15,8 +15,17 @@ activity picker, and every derivation behind them (`needByCell`, `requiredApprov
   header entry re-aligned the whole table by itself — the reason this module needed no colspan edits.
 - ⚠️ DB columns left in place (0 linked submittals on any live project); dropping them would be
   destructive for no gain.
-- Verified: `node --check`, CSS braces/comments balanced, 0 leftover references, no orphan `async`.
-  ⚠️ Not verified signed-in. Assets `module.css/js?v=20260805b`.
+- ⚠️ **Follow-up cleanup (2026-08-05c) — a dead tolerant-retry left a REAL runtime bug.** The save
+  path kept its "strip the schedule-link columns and retry" block plus
+  `if (schedWarn) UI.toast(…)`. Removing the retry left **`schedWarn` undefined while the `if` still
+  referenced it**, so every modal save would have thrown a `ReferenceError` *after* the row was
+  written — the save lands, the UI reports failure. **`node --check` passes on this** (it is a
+  runtime, not a syntax, error); it was caught by grepping for the symbol after the edit, not by the
+  parser. Both are now gone, along with the stale "Project Schedule link" comment block.
+- Verified: `node --check`, CSS braces/comments balanced, 0 leftover references, no orphan `async`,
+  and the 116-check suite (40 sheets + 35 cols + 14 collapse + 27 DD) green against the shipped
+  source. Deployed build confirmed free of every removed symbol. Assets `module.js?v=20260805c`
+  (css `?v=20260805b`).
 
 ## Need-by scoped to Execution Phase (2026-08-05) — fmlozano
 Mirrors the Drawing Register change (see its CLAUDE.md for the full rationale). A material submittal

@@ -781,7 +781,7 @@ window.DrawingRegister = (function () {
   // own planned approval date. Sorted so the worst-off rows lead.
   // `bkAging` is a Backlog-ONLY filter set by clicking a segment of the
   // Overview's aging bar (UI review #7). It deliberately does not live in the
-  // shared filter bar: aging is derived from the schedule link, is meaningful
+  // shared filter bar: aging is derived from the planned approval date, is meaningful
   // only for open items, and the Registry has no aging column to filter on.
   var bkAging = '';
   function backlogRows(){

@@ -42,7 +42,12 @@ functions sliced from the shipped source. The renderer suite pins the new **11-c
 10-column (read-only)** grid: header, plain drawing, sheet-parent, sheet and group rows all agree, so
 the column removal can't have skewed the table. 0 leftover references to any removed symbol; CSS
 braces and comments balanced; no orphan `async`.
-⚠️ **Not verified signed-in** for this removal. Assets `module.css/js?v=20260805f`.
+**Verified signed-in on the deployed site (BAU101).** Registry renders **11 columns**, header and
+rows aligned, no Need-by. Backlog renders **8 columns**, aligned, no Need-by, with the KPI row now
+reading **281 Open items · 12 Overdue · 0 Due ≤3 days · 2 Revise & Resubmit** — real figures off
+`planned_approval`, where the old need-by column showed em-dashes on every row (both live projects
+had 0 linked documents). Deployed `module.js` carries 0 references to any removed symbol, and
+`index.html` serves `?v=20260805f`. Assets `module.css/js?v=20260805f`.
 
 ## Design Development ← the registers; Need-by scoped to Execution Phase (2026-08-05) — fmlozano
 User: *"Design Development picks up the data from the drawing registry and the material submittal log
