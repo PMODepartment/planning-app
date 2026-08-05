@@ -113,6 +113,14 @@ Execution Phase."* Those are **two opposite relationships** and they were sharin
   all three modules parse. ⚠️ **Not verified signed-in** — no live sync run yet. Assets
   drawing-register `?v=20260805e`, material-submittal `?v=20260805a`; project-schedule `index.html`
   isn't cache-busted (hard-refresh). See the three module CLAUDE.md files.
+- **Verified live on BAU101 — 1 real bug found and fixed.** The sync created the Drawing Register
+  branch + **11 discipline activities**; ⚠️ **they rendered as zero-duration bars** because `end_date`
+  fell back to the *minimum* planned approval, so Architectural (approvals spanning 2025-03-18 →
+  2026-05-11) drew as a single day. Finish is now the **latest** planned approval. Re-verified:
+  Architectural `2025-03-18 → 2026-05-11`. **Idempotency proven live** (second sync = 11 rows, not 22),
+  all 11 disciplines **reconcile exactly** with the register (539/1,257 sheets, 43%), the read-only
+  guard toasts instead of editing, and the Need-by scoping was proven both ways with two temporary
+  links (Execution → a real date; Design Development → "✕ Not execution"), both reverted afterwards.
 
 ### 2026-08-05 — Drawing Register: search no longer hides its own matches in collapsed groups
 Found while re-deriving BAU101's sheet-parents. Searching a drawing code whose discipline was collapsed

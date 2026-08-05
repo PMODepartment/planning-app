@@ -29,6 +29,30 @@ code didn't keep.
   `isSyncedRow` (sliced, not reimplemented). Inline script parses. ⚠️ **Not verified signed-in** — no
   live sync has run. `index.html` isn't cache-busted; hard-refresh to pick it up.
 
+### Live verification on BAU101 (2026-08-05) — 1 real bug found
+First live sync, signed in. BAU101 had the skeleton's **Design Development node at `3.2` with zero
+children** and 0 generated rows; the sync created the `Drawing Register` child node and **11
+discipline activities**.
+- ⚠️ **REAL BUG FOUND AND FIXED — zero-duration bars.** `end_date` fell back to `minPlan`, so
+  `start === finish`. Architectural's planned approvals actually span **2025-03-18 → 2026-05-11** and
+  the row rendered as a **single day on 2025-03-18**. The finish is now the **latest** planned
+  approval (the commitment to have the whole discipline approved), replaced by the last actual once
+  every item lands. Re-verified live: Architectural `2025-03-18 → 2026-05-11`, Structural
+  `2024-12-06 → 2025-02-28`.
+- **Idempotency proven on live data:** the second sync left **11 rows, not 22** — it patched in place.
+- **Reconciles exactly with the register.** All 11 disciplines match the Drawing Register's own totals
+  computed with the same `approvedOf()` rule (539 of 1,257 sheets, 43%); 0 mismatches.
+- **Read-only guard confirmed:** double-clicking a synced row's name opened no editor and toasted
+  *"This row is synced from the Drawing Register / Material Submittal Log — edit it there."*
+- **Material Submittal Log node correctly absent** — BAU101 has 0 submittals, and the sync only
+  creates a branch when there is data.
+- **Need-by scoping proven both ways** by temporarily linking two drawings and reverting: one to a
+  real Execution activity (`4.6-A1030`, start 14-Sep-26) → **"Aug 15, 2026"**; one to
+  `DD-DWG-ARCHITECTURAL` → **"✕ Not execution"** with the explanatory tooltip. The picker tagged
+  **11 of 20** offered activities as non-execution while still allowing them.
+- **Cleanup:** both test links removed (BAU101 and GPR101 back to 0 linked documents). ⚠️ The Design
+  Development branch itself is **left in place on BAU101** — that is the feature working, not test data.
+
 ## Spelling merge for location values (2026-08-05) — fmlozano
 User's explicit call after the duplicates were flagged: merge differently-spelled values of the same
 location automatically. ⚠️ **Deliberately lossy** — two genuinely different names that normalise

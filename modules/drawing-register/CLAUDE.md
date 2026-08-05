@@ -59,6 +59,16 @@ CSS braces/comments balanced.
 ⚠️ **Not verified signed-in** — no live sync run. Assets drawing-register `?v=20260805e`,
 material-submittal `?v=20260805a`; project-schedule `index.html` isn't cache-busted (hard-refresh).
 
+### Live verification on BAU101 (2026-08-05)
+BAU101 had **0 documents linked to the schedule**, so the Need-by column showed "—" everywhere and the
+warning could not fire on existing data. Proven by temporarily creating both cases and reverting:
+- `BIM-1204` → Execution activity `4.6-A1030` (start 14-Sep-26, 30d lead) → **"Aug 15, 2026"**.
+- `BIM-1203` → `DD-DWG-ARCHITECTURAL` → **"✕ Not execution"**, tooltip naming the activity and
+  explaining that Design Development is rolled up from this register automatically.
+- The activity picker tagged **11 of 20** rows as *not execution* (every generated DD row) while still
+  offering them — the "warn but allow" behaviour.
+- Both test links removed afterwards; BAU101 and GPR101 back to **0 linked documents**.
+
 ## Search no longer hides its own matches inside collapsed groups (2026-08-05) — fmlozano
 Found while re-deriving BAU101's sheet-parents: searching a drawing code whose discipline happened to
 be collapsed painted the phase and discipline headers and **nothing else** — `buildModel` returns at
