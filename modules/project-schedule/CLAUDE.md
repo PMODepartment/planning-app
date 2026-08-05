@@ -1,5 +1,34 @@
 # Module: project-schedule
 
+## Design Development is now actually populated from the two registers (2026-08-05) — fmlozano
+⚠️ **The 2026-08-03 skeleton entry's deferred item is now built.** That pass created the Design
+Development node, locked it, labelled it "synced from Drawing Register + Material Submittal Log" and
+blocked manual adds — but **nothing ever populated it. Zero writers.** The label was a promise the
+code didn't keep.
+- **`syncDesignDevelopment()`** (called from `load()` after `_wbsEnsureSummaries`, so the DD node and
+  real dotted codes exist) mirrors both registers into the branch: two locked child nodes —
+  **Drawing Register** / **Material Submittal Log** — each with one activity per discipline carrying
+  `percent_complete`, `start_date` (min planned approval) and `end_date` (max actual once every item
+  is approved, else the commitment).
+- ⚠️ **Idempotent by deterministic `activity_id`** (`DD-DWG-<slug>` / `DD-MAT-<slug>`): a re-sync
+  patches in place, writes only changed fields, and deletes rows for disciplines that vanished. This
+  is deliberately the shape that avoids the duplicate-projection bug `_wbsEnsureSummaries` had to heal.
+- ⚠️ **Drawings count SHEETS, submittals count ITEMS** — different measures, kept as separate
+  branches rather than summed. The drawing side mirrors the register's own `approvedOf()`: a
+  single-sheet drawing is approved by its **status**, not its counter.
+- ⚠️ **`.is('parent_id', null)`** excludes the register's per-sheet child rows — their counters are
+  already inside the parent drawing's, so counting both double-counts the register.
+- ⚠️ **Tolerant throughout** — any failure leaves the branch untouched rather than blocking the load.
+- **`isSyncedRow(r)`** gates `beginEdit`: a mirrored row can't be edited here, because the next sync
+  would silently overwrite it. A node's own WBS Summary row is NOT gated (it is real structure).
+- **This is the opposite direction to the Documents tab.** Design Development = the register IS the
+  work (progress flows register → schedule). Execution Phase = a document ENABLES the work (the date
+  flows schedule → register). Both registers now warn when a document is linked to a non-Execution
+  activity — see `modules/drawing-register/CLAUDE.md`.
+- **Verified 36/36** in a Node harness over the shipped `_ddAggregate`/`_ddSlug`/`_ddValidDate`/
+  `isSyncedRow` (sliced, not reimplemented). Inline script parses. ⚠️ **Not verified signed-in** — no
+  live sync has run. `index.html` isn't cache-busted; hard-refresh to pick it up.
+
 ## Spelling merge for location values (2026-08-05) — fmlozano
 User's explicit call after the duplicates were flagged: merge differently-spelled values of the same
 location automatically. ⚠️ **Deliberately lossy** — two genuinely different names that normalise

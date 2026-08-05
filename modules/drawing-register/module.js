@@ -46,6 +46,7 @@ window.DrawingRegister = (function () {
   // start is the "need-by" date; (start − lead_days) is the required approval
   // date. See migrations/2026-07-25-schedule-document-links.sql.
   var schedActs = [];        // [{id, activity_id, activity_name, start_date, actual_start}]
+  var execPrefix = '';       // dotted WBS code of the Execution Phase branch + '.' ('' = unknown)
   var schedById = {};        // activity_id -> activity
   var schedPid  = null;      // project the schedule cache was loaded for
   var LEAD_DEFAULT = 30;     // drawings approved ~30 days before the work they enable
@@ -528,10 +529,37 @@ window.DrawingRegister = (function () {
       var batch = res.data || []; all = all.concat(batch);
       if (batch.length < 1000) break; last = batch[batch.length - 1].id;
     }
+    // ⚠️ Find the Execution Phase branch BEFORE dropping the WBS Summary rows.
+    // A document is a PREREQUISITE for construction work, so the activity it points
+    // at should be an Execution Phase activity — the one whose start it gates.
+    // Design Development activities are the opposite relationship (the register IS
+    // that work, and its progress flows INTO the schedule), so a link there computes
+    // "approve this drawing 30 days before the activity that produces it starts",
+    // which is backwards. We can't stop it — a planner may legitimately gate a
+    // document on a Planning or Initiation activity — but it must be visible.
+    execPrefix = '';
+    all.forEach(function (a){
+      if (a.activity_type === 'WBS Summary' && /^execution phase$/i.test((a.activity_name||'').trim()) && a.wbs)
+        execPrefix = String(a.wbs) + '.';
+    });
     all.forEach(function (a){
       if (!a.activity_id || a.activity_type === 'WBS Summary') return;  // leaf activities only
       if (!schedById[a.activity_id]) { schedById[a.activity_id] = a; schedActs.push(a); }
     });
+  }
+  // null = can't tell (no Execution Phase node in this project's WBS, e.g. a legacy
+  // schedule that predates the skeleton) — in that case we say nothing rather than
+  // warn on every document.
+  function isExecutionAct(a){
+    if (!a || !execPrefix) return null;
+    var w = String(a.wbs || '');
+    return w === execPrefix.slice(0, -1) || w.indexOf(execPrefix) === 0;
+  }
+  function linkIsBackwards(r){
+    var aid = inh(r, 'schedule_activity_id');
+    if (!aid) return false;
+    var ex = isExecutionAct(schedById[aid]);
+    return ex === false;      // known, and NOT under Execution Phase
   }
 
   // ---- schedule-link derivations -------------------------------------------
@@ -587,11 +615,23 @@ window.DrawingRegister = (function () {
   // Need-by cell: the required-approval deadline + a float chip (green slack /
   // amber tight / red late). Blank when the drawing isn't linked to an activity.
   function needByCellHtml(r){
-    if (!r.schedule_activity_id) return '<span class="dr-mut">—</span>';
+    if (!inh(r, 'schedule_activity_id')) return '<span class="dr-mut">—</span>';
+    // ⚠️ A backwards link produces a REAL-LOOKING date that is meaningless: the
+    // required-approval it computes is "N days before the activity that PRODUCES
+    // this drawing starts". Showing that date unmarked is worse than showing
+    // nothing, so the cell says what's wrong instead.
+    if (linkIsBackwards(r)) {
+      var aidb = inh(r, 'schedule_activity_id'), ab = schedById[aidb] || {};
+      return '<span class="dr-needby-bad" title="' + Fmt.esc(aidb + ' — ' + (ab.activity_name || '')) +
+        ' is not an Execution Phase activity.\nA drawing gates CONSTRUCTION work, so its need-by comes from the activity it enables.\n' +
+        'Design Development progress flows the other way — it is rolled up from this register automatically, with no link needed.' +
+        '">' + ico('x', 12) + ' Not execution</span>';
+    }
     var req = requiredApprovalOf(r);
     if (!req) {   // linked, but the activity is missing / has no start date yet
-      return '<span class="dr-needby-unl" title="Linked activity '+Fmt.esc(r.schedule_activity_id)+
-             ' — no start date in the schedule yet">'+Fmt.esc(r.schedule_activity_id)+'</span>';
+      var aidu = inh(r, 'schedule_activity_id');
+      return '<span class="dr-needby-unl" title="Linked activity '+Fmt.esc(aidu)+
+             ' — no start date in the schedule yet">'+Fmt.esc(aidu)+'</span>';
     }
     var fl = docFloatOf(r), chip = '';
     if (fl != null) {
@@ -599,7 +639,7 @@ window.DrawingRegister = (function () {
       chip = ' <span class="dr-flchip '+cls+'" title="Float of the approval date vs the required-by deadline">'+
              (fl > 0 ? '+' : '')+fl+'d</span>';
     }
-    return '<span class="dr-needby" title="Required approval for activity '+Fmt.esc(r.schedule_activity_id)+
+    return '<span class="dr-needby" title="Required approval for activity '+Fmt.esc(inh(r,'schedule_activity_id'))+
            '">'+Fmt.date(req)+'</span>'+chip;
   }
   // ---- Schedule-activity picker (searchable) -------------------------------
@@ -654,8 +694,15 @@ window.DrawingRegister = (function () {
         menu.innerHTML = '<div class="dr-actpick-empty">No activity matches “' + Fmt.esc(q.value) + '”.</div>';
       } else {
         menu.innerHTML = list.map(function (a) {
-          return '<button type="button" class="dr-actpick-item" data-aid="' + Fmt.esc(a.activity_id) + '">' +
+          // Non-Execution activities are still offered (a planner may legitimately
+          // gate a document on Planning or Initiation work) but are marked, so the
+          // backwards Design-Development link isn't picked by accident.
+          var ex = isExecutionAct(a);
+          return '<button type="button" class="dr-actpick-item' + (ex === false ? ' dr-actpick-nonexec' : '') +
+            '" data-aid="' + Fmt.esc(a.activity_id) + '"' +
+            (ex === false ? ' title="Not an Execution Phase activity — a document gates construction work, so its need-by should come from an Execution activity."' : '') + '>' +
             '<b>' + Fmt.esc(a.activity_id) + '</b><span>' + Fmt.esc(a.activity_name || '') + '</span>' +
+            (ex === false ? '<em class="dr-actpick-tag">not execution</em>' : '') +
             (a.start_date ? '<i>' + Fmt.date(a.start_date) + '</i>' : '') + '</button>';
         }).join('') + (list.length >= SCHED_PICK_MAX
           ? '<div class="dr-actpick-empty">Showing the first ' + SCHED_PICK_MAX + ' — keep typing to narrow.</div>' : '');

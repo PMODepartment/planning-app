@@ -429,6 +429,17 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 /* ---- Schedule link: Need-by column + float chip ------------------------ */
 .dr-needby { font-weight:600; }
 .dr-needby-unl { color:var(--pd-muted); font-style:italic; }
+/* A document linked to a non-Execution activity. The date such a link computes is
+   real-looking and meaningless ("approve this before the activity that produces it
+   starts"), so the cell states the problem instead of showing it. */
+.dr-needby-bad { display:inline-flex; align-items:center; gap:4px; padding:1px 7px; border-radius:9px;
+  background:rgba(217,119,6,.15); color:#b45309; font-size:11px; font-weight:700; cursor:help; }
+.dr-needby-bad svg { display:block; }
+html.pd-dark .dr-needby-bad { color:#fbbf24; }
+.dr-actpick-nonexec { opacity:.72; }
+.dr-actpick-tag { font-style:normal; font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.03em; color:#b45309; background:rgba(217,119,6,.15); border-radius:8px; padding:1px 6px; }
+html.pd-dark .dr-actpick-tag { color:#fbbf24; }
 .dr-flchip { display:inline-block; padding:0 5px; border-radius:9px; font-size:10px; font-weight:700; line-height:15px; }
 .dr-fl-ok    { background:rgba(31,143,78,.14);  color:var(--pd-ok, #1f8f4e); }
 .dr-fl-tight { background:rgba(199,119,0,.16);  color:var(--pd-warn, #c77700); }

@@ -178,6 +178,7 @@ window.MaterialSubmittal = (function () {
   // start is the "need-by" date; (start − lead_days) is the required approval
   // date (procurement + delivery lead). See migrations/2026-07-25-...sql.
   var schedActs = [], schedById = {}, schedPid = null;
+  var execPrefix = '';       // dotted WBS code of the Execution Phase branch + '.' ('' = unknown)
   var LEAD_DEFAULT = 45;   // materials approved ~45 days before the work they enable
 
   // ---- date helpers --------------------------------------------------------
@@ -276,10 +277,33 @@ window.MaterialSubmittal = (function () {
       var batch = res.data || []; all = all.concat(batch);
       if (batch.length < 1000) break; last = batch[batch.length - 1].id;
     }
+    // ⚠️ Locate the Execution Phase branch BEFORE dropping the WBS Summary rows.
+    // A material submittal is a PREREQUISITE for construction work, so the activity
+    // it points at should be under Execution Phase — the one whose start it gates.
+    // Design Development is the OPPOSITE relationship: that branch is rolled up FROM
+    // this log automatically, so a link there computes "approve this 45 days before
+    // the activity that produces it starts", which is backwards. Mirrors the
+    // Drawing Register (see its loadSchedule note).
+    execPrefix = '';
+    all.forEach(function (a) {
+      if (a.activity_type === 'WBS Summary' && /^execution phase$/i.test((a.activity_name || '').trim()) && a.wbs)
+        execPrefix = String(a.wbs) + '.';
+    });
     all.forEach(function (a) {
       if (!a.activity_id || a.activity_type === 'WBS Summary') return;
       if (!schedById[a.activity_id]) { schedById[a.activity_id] = a; schedActs.push(a); }
     });
+  }
+  // null = can't tell (no Execution Phase node — e.g. a schedule predating the WBS
+  // skeleton); we stay silent rather than warn on every row.
+  function isExecutionAct(a) {
+    if (!a || !execPrefix) return null;
+    var w = String(a.wbs || '');
+    return w === execPrefix.slice(0, -1) || w.indexOf(execPrefix) === 0;
+  }
+  function linkIsBackwards(r) {
+    if (!r.schedule_activity_id) return false;
+    return isExecutionAct(schedById[r.schedule_activity_id]) === false;
   }
   function leadOf(r) { var l = r.lead_days; return (l == null || l === '') ? LEAD_DEFAULT : (+l || 0); }
   function needByOf(r) {
@@ -319,6 +343,15 @@ window.MaterialSubmittal = (function () {
   }
   function needByCell(r) {
     if (!r.schedule_activity_id) return '<span class="ms-mut ms-mini">—</span>';
+    // A backwards link yields a real-looking, meaningless date — say what's wrong
+    // instead of showing it.
+    if (linkIsBackwards(r)) {
+      var ab = schedById[r.schedule_activity_id] || {};
+      return '<span class="ms-needby-bad" title="' + esc(r.schedule_activity_id + ' — ' + (ab.activity_name || '')) +
+        ' is not an Execution Phase activity. A material submittal gates CONSTRUCTION work, so its need-by comes ' +
+        'from the activity it enables. Design Development progress flows the other way — it is rolled up from ' +
+        'this log automatically, with no link needed.">&#10005; Not execution</span>';
+    }
     var req = requiredApprovalOf(r);
     if (!req) return '<span class="ms-mut ms-mini" title="Linked activity ' + esc(r.schedule_activity_id) +
       ' — no start date in the schedule yet">' + esc(r.schedule_activity_id) + '</span>';
@@ -380,8 +413,15 @@ window.MaterialSubmittal = (function () {
         menu.innerHTML = '<div class="ms-actpick-empty">No activity matches “' + esc(q.value) + '”.</div>';
       } else {
         menu.innerHTML = list.map(function (a) {
-          return '<button type="button" class="ms-actpick-item" data-aid="' + esc(a.activity_id) + '">' +
+          // Non-Execution activities stay selectable (Planning/Initiation work can
+          // legitimately gate a submittal) but are marked, so the backwards
+          // Design-Development link isn't picked by accident.
+          var ex = isExecutionAct(a);
+          return '<button type="button" class="ms-actpick-item' + (ex === false ? ' ms-actpick-nonexec' : '') +
+            '" data-aid="' + esc(a.activity_id) + '"' +
+            (ex === false ? ' title="Not an Execution Phase activity — a submittal gates construction work, so its need-by should come from an Execution activity."' : '') + '>' +
             '<b>' + esc(a.activity_id) + '</b><span>' + esc(a.activity_name || '') + '</span>' +
+            (ex === false ? '<em class="ms-actpick-tag">not execution</em>' : '') +
             (a.start_date ? '<i>' + fmtDate(a.start_date) + '</i>' : '') + '</button>';
         }).join('') + (list.length >= SCHED_PICK_MAX
           ? '<div class="ms-actpick-empty">Showing the first ' + SCHED_PICK_MAX + ' — keep typing to narrow.</div>' : '');

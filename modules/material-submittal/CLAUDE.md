@@ -1,5 +1,21 @@
 # Module: material-submittal
 
+## Need-by scoped to Execution Phase (2026-08-05) — fmlozano
+Mirrors the Drawing Register change (see its CLAUDE.md for the full rationale). A material submittal
+is a **prerequisite for construction**, so the activity it points at should sit under **Execution
+Phase**; Design Development is the opposite relationship and is now rolled up FROM this log
+automatically by the Project Schedule, with no link needed.
+- `loadSchedule()` locates the Execution Phase branch before dropping the WBS Summary rows;
+  `isExecutionAct()` / `linkIsBackwards()` judge each link.
+- A submittal linked to a non-Execution activity shows an amber **"✕ Not execution"** chip instead of
+  the date — the date such a link computes is real-looking and meaningless ("approve this 45 days
+  before the activity that produces it starts").
+- The picker still offers every activity (**warn but allow**) with non-Execution rows tagged.
+- ⚠️ Boundary-safe prefix match (`4.` does not match `40.1`), and **silent when it cannot tell** — a
+  schedule with no Execution Phase node flags nothing rather than warning on every row.
+- Verified as part of the 36/36 shipped-function harness described in the Drawing Register entry.
+  ⚠️ Not verified signed-in. Assets `module.css/js?v=20260805a`.
+
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).
 > 2. This module is **Material Submittal Log**. DB table `material_submittal`.

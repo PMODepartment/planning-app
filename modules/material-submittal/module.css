@@ -173,6 +173,13 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 
 /* ---- Schedule link: Need-by column + float chip ------------------------ */
 .ms-needbycol { width:104px; }
+.ms-needby-bad { display:inline-flex; align-items:center; gap:4px; padding:1px 7px; border-radius:9px;
+  background:rgba(217,119,6,.15); color:#b45309; font-size:11px; font-weight:700; cursor:help; }
+html.pd-dark .ms-needby-bad { color:#fbbf24; }
+.ms-actpick-nonexec { opacity:.72; }
+.ms-actpick-tag { font-style:normal; font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.03em; color:#b45309; background:rgba(217,119,6,.15); border-radius:8px; padding:1px 6px; }
+html.pd-dark .ms-actpick-tag { color:#fbbf24; }
 .ms-needby { font-weight:600; }
 .ms-flchip { display:inline-block; padding:0 5px; border-radius:9px; font-size:10px; font-weight:700; line-height:15px; }
 .ms-fl-ok    { background:rgba(31,143,78,.14); color:var(--pd-ok,#1f8f4e); }

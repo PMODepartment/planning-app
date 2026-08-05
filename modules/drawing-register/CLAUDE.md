@@ -1,5 +1,64 @@
 # Module: drawing-register
 
+## Design Development ← the registers; Need-by scoped to Execution Phase (2026-08-05) — fmlozano
+User: *"Design Development picks up the data from the drawing registry and the material submittal log
+showing the POC. Therefore drawings and material approvals need to be connected for activities under
+Execution Phase."* That is **two opposite relationships** that were sharing one untyped field.
+
+|  | Design Development | Execution Phase |
+|---|---|---|
+| Direction | register **→** schedule | schedule **→** register |
+| Meaning | the register **IS** the work | the document **ENABLES** the work |
+| Carries | POC, min planned / max actual | the need-by deadline |
+| Need-by column | meaningless | the whole point |
+
+### ⚠️ Design Development was an empty promise
+The WBS skeleton created the node, locked it, labelled it *"synced from Drawing Register + Material
+Submittal Log"* and blocked manual activity adds — and **nothing populated it. Zero writers.** Now
+built: **`syncDesignDevelopment()`** mirrors both registers into that branch on every load.
+- Two locked child nodes — **Drawing Register** and **Material Submittal Log** — each with **one
+  activity per discipline**, carrying `percent_complete`, `start_date` (min planned approval) and
+  `end_date` (max actual once complete, else the commitment).
+- **Idempotent by construction:** every generated row has a deterministic `activity_id`
+  (`DD-DWG-<slug>` / `DD-MAT-<slug>`), so a re-sync **patches in place** rather than duplicating —
+  the exact trap that produced the duplicate WBS rows (see `_wbsEnsureSummaries`). Only changed
+  fields are written; a discipline that disappears from the register has its row deleted.
+- ⚠️ **Drawings count SHEETS, submittals count ITEMS.** They measure different things, so they are
+  separate branches rather than one meaningless total. The drawing side mirrors the register's own
+  `approvedOf()` rule — a single-sheet drawing is approved by its **status**, not its counter.
+- ⚠️ **Excludes structural nodes AND per-sheet child rows** (`.is('parent_id', null)`) — a sheet's
+  counters live inside its parent, so counting both double-counts the register.
+- ⚠️ **Fully tolerant**: any failure leaves the branch as it was rather than blocking the load.
+- **Read-only**: `isSyncedRow(r)` gates `beginEdit`, because an edit here would be silently
+  overwritten by the next sync — worse than not offering it.
+
+### Need-by is now scoped to Execution Phase (warn, don't block)
+`loadSchedule()` locates the **Execution Phase** WBS branch before discarding the summary rows, so
+each register knows whether a linked activity sits under construction work.
+- A document linked to a **non-Execution** activity shows an amber **"✕ Not execution"** chip in the
+  Need-by column instead of the date. ⚠️ The date such a link computes is *real-looking and
+  meaningless* — "approve this drawing 30 days before the activity that produces it starts" — so
+  stating the problem beats displaying it.
+- The activity picker still **offers everything** (Planning or Initiation work can legitimately gate
+  a document) but marks non-Execution rows with a "not execution" tag, per the "warn but allow" choice.
+- ⚠️ **Prefix matching is boundary-safe**: Execution `4` matches `4.1` and `4` itself but **not** `40.1`.
+- ⚠️ **Silent when it can't tell.** A schedule predating the WBS skeleton has no Execution Phase
+  node; `isExecutionAct` returns `null` and nothing is flagged, rather than warning on every row.
+- ⚠️ **Sheets inherit their drawing's link** (`inh`), so a sheet under a backwards-linked drawing is
+  flagged too — and every raw `r.schedule_activity_id` read in `needByCellHtml` was switched to
+  `inh()`, or a sheet would have read as unlinked.
+
+### Verification
+**36/36 in a new harness over the SHIPPED functions** (sliced from `index.html` / `module.js`, never
+reimplemented): both aggregation bases incl. the status-vs-counter rule, `Approved w/ Comments` (the
+MS spelling), blank/null disciplines sharing one bucket, sentinel dates rejected from min/max,
+deterministic + stable slugs, the read-only gate (and that a node's own WBS Summary row is *not*
+gated), the execution-scope guard incl. the `40.1` boundary, backwards-link detection, its silence
+when unknown, and sheet inheritance. Existing suites green (40 + 35 + 14). All three modules parse;
+CSS braces/comments balanced.
+⚠️ **Not verified signed-in** — no live sync run. Assets drawing-register `?v=20260805e`,
+material-submittal `?v=20260805a`; project-schedule `index.html` isn't cache-busted (hard-refresh).
+
 ## Search no longer hides its own matches inside collapsed groups (2026-08-05) — fmlozano
 Found while re-deriving BAU101's sheet-parents: searching a drawing code whose discipline happened to
 be collapsed painted the phase and discipline headers and **nothing else** — `buildModel` returns at

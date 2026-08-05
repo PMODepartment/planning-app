@@ -77,6 +77,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-05 — Module interaction sanitised: Design Development ← registers, Need-by → Execution Phase
+User: *"Design Development picks up the data from the drawing registry and the material submittal log
+showing the POC. Therefore drawings and material approvals need to be connected for activities under
+Execution Phase."* Those are **two opposite relationships** and they were sharing one untyped field
+(`schedule_activity_id`, meaning only "this document gates this activity's start").
+
+|  | Design Development | Execution Phase |
+|---|---|---|
+| Direction | register **→** schedule | schedule **→** register |
+| Meaning | the register **IS** the work | the document **ENABLES** the work |
+| Carries | POC, min planned / max actual | the need-by deadline |
+| Need-by column | meaningless | the whole point |
+
+- **⚠️ Design Development was an empty promise.** The WBS skeleton created the node, locked it,
+  labelled it *"synced from Drawing Register + Material Submittal Log"* and blocked manual activity
+  adds — but **nothing populated it. Zero writers.** Now built: **`syncDesignDevelopment()`** mirrors
+  both registers into the branch on load — two locked child nodes (Drawing Register / Material
+  Submittal Log), each with one activity per discipline carrying POC, min planned approval and max
+  actual approval.
+- ⚠️ **Idempotent by deterministic `activity_id`** (`DD-DWG-<slug>`/`DD-MAT-<slug>`) — a re-sync
+  patches in place, writes only changed fields and removes vanished disciplines. Deliberately the
+  shape that avoids the duplicate-projection bug `_wbsEnsureSummaries` had to heal.
+- ⚠️ **Drawings count SHEETS, submittals count ITEMS** (separate branches, not summed), the drawing
+  side following the register's own `approvedOf()` rule; **per-sheet child rows are excluded** or the
+  register would be double-counted. Rows are **read-only** in the schedule (`isSyncedRow` gates
+  `beginEdit`) since the next sync would overwrite an edit.
+- **Need-by is now scoped to Execution Phase — warn, don't block** (the user's choice). Both registers
+  locate the Execution Phase WBS branch and show an amber **"✕ Not execution"** chip instead of a
+  date when a document points elsewhere. ⚠️ That date is *real-looking and meaningless* — "approve
+  this drawing 30 days before the activity that produces it starts". The picker still offers every
+  activity, tagged. Boundary-safe (`4.` ≠ `40.1`) and **silent when it can't tell** (a schedule with
+  no Execution Phase node flags nothing). ⚠️ Sheets inherit their drawing's link, so they're judged too.
+- **36/36 in a new harness over the shipped functions**, plus the existing 40 + 35 + 14 suites green;
+  all three modules parse. ⚠️ **Not verified signed-in** — no live sync run yet. Assets
+  drawing-register `?v=20260805e`, material-submittal `?v=20260805a`; project-schedule `index.html`
+  isn't cache-busted (hard-refresh). See the three module CLAUDE.md files.
+
 ### 2026-08-05 — Drawing Register: search no longer hides its own matches in collapsed groups
 Found while re-deriving BAU101's sheet-parents. Searching a drawing code whose discipline was collapsed
 painted the group headers and nothing else (`buildModel` returns at the collapse check before the

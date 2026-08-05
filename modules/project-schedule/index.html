@@ -2070,6 +2070,149 @@
       .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); });
   }
   function wbsById(id) { return WBS_NODES.find(function (n) { return n.id === id; }); }
+
+  // ===================== Design Development ← the two registers =====================
+  // ⚠️ THE DIRECTION HERE IS THE OPPOSITE of the Documents tab's, and conflating the two
+  // is the defect this exists to prevent:
+  //   • Design Development (Planning Phase) — the REGISTER IS THE WORK. Producing and
+  //     getting drawings/materials approved *is* the design activity, so progress flows
+  //     register → schedule and these rows are read-only here.
+  //   • Execution Phase — a document ENABLES the work. The activity's start is the
+  //     need-by date, so the date flows schedule → register (see docsFor/docReadiness).
+  // A drawing linked to a Design Development activity computes "approve this 30 days
+  // before the activity that produces it starts", which is backwards. `_actIsExecution`
+  // below is what lets the registers warn about that.
+  var DD_PREFIX = { dr: 'DD-DWG-', ms: 'DD-MAT-' };
+  var _ddSyncing = false;
+  function _ddSlug(s) { return String(s || 'UNASSIGNED').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'UNASSIGNED'; }
+  function _ddValidDate(d) { if (!d) return false; var y = +String(d).slice(0, 4); return y >= 2015 && y <= 2100; }
+  function _ddApprovedDr(s) { s = (s || '').trim(); return s === 'Approved' || s === 'Approved w/o comments' || s === 'Approved w/ comments'; }
+  function _ddApprovedMs(s) { s = (s || '').trim(); return s === 'Approved' || s === 'Approved w/ Comments'; }
+
+  // Aggregate one register into { discipline: {tot, done, minPlan, maxAct, allDone} }.
+  // `tot`/`done` are SHEETS for drawings (the register's own POC basis) and ITEMS for
+  // material submittals — the two registers measure different things and are therefore
+  // kept as separate branches rather than summed into one meaningless total.
+  function _ddAggregate(list, kind) {
+    var by = {};
+    list.forEach(function (d) {
+      var k = (d.discipline || '').trim() || 'Unassigned';
+      var b = by[k] || (by[k] = { tot: 0, done: 0, minPlan: null, maxAct: null, allDone: true, n: 0 });
+      b.n++;
+      if (kind === 'dr') {
+        var t = +d.no_of_sheets || 0, a = +d.approved_sheets || 0;
+        if (t <= 1) { t = 1; a = _ddApprovedDr(d.status) ? 1 : 0; }   // matches the register's approvedOf()
+        b.tot += t; b.done += a;
+        if (a < t) b.allDone = false;
+      } else {
+        b.tot += 1;
+        if (_ddApprovedMs(d.status)) b.done += 1; else b.allDone = false;
+      }
+      var pl = kind === 'dr' ? d.planned_approval : d.plan_approval_date;
+      var ac = kind === 'dr' ? d.actual_approval  : d.date_approved;
+      if (_ddValidDate(pl) && (!b.minPlan || pl < b.minPlan)) b.minPlan = pl;
+      if (_ddValidDate(ac) && (!b.maxAct || ac > b.maxAct)) b.maxAct = ac;
+    });
+    return by;
+  }
+
+  // Ensure a locked child WBS node exists under Design Development, and return it.
+  async function _ddEnsureNode(parentId, name, order) {
+    var found = WBS_NODES.find(function (n) { return n.parent_id === parentId && n.name === name; });
+    if (found) return found;
+    var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId, name: name,
+      sort_order: order, created_by: UID, is_locked: true, source_kind: 'design_development' }).select().single();
+    if (res.error) return null;
+    WBS_NODES.push(res.data);
+    return res.data;
+  }
+
+  // Rebuild the Design Development branch from the registers. Idempotent: every generated
+  // activity has a deterministic `activity_id`, so a re-sync patches in place instead of
+  // duplicating (the trap that produced duplicate WBS rows before — see _wbsEnsureSummaries).
+  async function syncDesignDevelopment() {
+    if (!pid || !canWrite || _ddSyncing || window.__viewOnly || window.__archived) return;
+    var ddNode = WBS_NODES.find(function (n) { return n.source_kind === 'design_development'; });
+    if (!ddNode) return;                                   // skeleton not seeded (or migration not run)
+    _ddSyncing = true;
+    try {
+      // ⚠️ Exclude structural nodes AND per-sheet child rows: a sheet's counters are already
+      // inside its parent drawing's, so counting both double-counts the whole register.
+      // Mirrors drawing-register's own drawingRows().
+      var drRes = await sb().from('drawing_register')
+        .select('id,parent_id,node_kind,discipline,no_of_sheets,approved_sheets,status,planned_approval,actual_approval')
+        .eq('project_id', pid).is('parent_id', null);
+      if (drRes.error) return;
+      var drawings = (drRes.data || []).filter(function (d) { return !d.node_kind || d.node_kind === 'drawing'; });
+      var msRes = await sb().from('material_submittal')
+        .select('id,discipline,status,plan_approval_date,date_approved').eq('project_id', pid);
+      var submittals = msRes.error ? [] : (msRes.data || []);
+      if (!drawings.length && !submittals.length) return;   // nothing to mirror — leave the branch alone
+
+      var drNode = drawings.length   ? await _ddEnsureNode(ddNode.id, 'Drawing Register', 0)      : null;
+      var msNode = submittals.length ? await _ddEnsureNode(ddNode.id, 'Material Submittal Log', 1) : null;
+      await _wbsEnsureSummaries();                          // each new node needs its projected WBS-Summary row
+      var codeOf = computeWbsCodes();
+
+      var want = [];   // {activity_id, node, name, agg}
+      if (drNode) { var da = _ddAggregate(drawings, 'dr');
+        Object.keys(da).sort().forEach(function (k) { want.push({ aid: DD_PREFIX.dr + _ddSlug(k), node: drNode, name: k, a: da[k], unit: 'sheets' }); }); }
+      if (msNode) { var ma = _ddAggregate(submittals, 'ms');
+        Object.keys(ma).sort().forEach(function (k) { want.push({ aid: DD_PREFIX.ms + _ddSlug(k), node: msNode, name: k, a: ma[k], unit: 'items' }); }); }
+
+      var wantIds = {}; want.forEach(function (w) { wantIds[w.aid] = 1; });
+      var isDD = function (r) { return !isWbs(r) && /^DD-(DWG|MAT)-/.test(String(r.activity_id || '')); };
+
+      var inserts = [], updates = [];
+      want.forEach(function (w) {
+        var pct = w.a.tot ? Math.round(w.a.done / w.a.tot * 100) : 0;
+        var patch = {
+          activity_name: w.name + ' — ' + w.a.done + ' of ' + w.a.tot + ' ' + w.unit + ' approved',
+          wbs: codeOf[w.node.id], wbs_node_id: w.node.id,
+          activity_type: 'Task', percent_complete: pct,
+          status: pct >= 100 ? 'Completed' : (pct > 0 ? 'In Progress' : 'Not Started'),
+          start_date: w.a.minPlan || null,
+          // The branch finishes when the last approval lands; until then the commitment
+          // (the latest planned approval) is the finish. Never invent a date.
+          end_date: (w.a.allDone ? w.a.maxAct : null) || w.a.minPlan || null,
+          actual_finish: w.a.allDone ? (w.a.maxAct || null) : null
+        };
+        var ex = rows.find(function (r) { return String(r.activity_id) === w.aid; });
+        if (!ex) inserts.push(Object.assign({ project_id: pid, created_by: UID, activity_id: w.aid }, patch));
+        else {
+          var diff = {}; Object.keys(patch).forEach(function (f) { if ((ex[f] == null ? null : ex[f]) !== (patch[f] == null ? null : patch[f])) diff[f] = patch[f]; });
+          if (Object.keys(diff).length) updates.push({ id: ex.id, patch: diff });
+        }
+      });
+      // A discipline that no longer exists in the register must not linger as a stale row.
+      var stale = rows.filter(function (r) { return isDD(r) && !wantIds[String(r.activity_id)]; }).map(function (r) { return r.id; });
+
+      if (inserts.length) {
+        var ins = await sb().from(TABLE).insert(inserts).select();
+        if (!ins.error && ins.data) ins.data.forEach(function (d) { rows.push(d); });
+      }
+      for (var u = 0; u < updates.length; u++) {
+        var up = updates[u];
+        var ur = await sb().from(TABLE).update(up.patch).eq('id', up.id);
+        if (!ur.error) { var rr = rows.find(function (x) { return x.id === up.id; }); if (rr) Object.assign(rr, up.patch); }
+      }
+      if (stale.length) {
+        var dr2 = await sb().from(TABLE).delete().in('id', stale);
+        if (!dr2.error) { var kill = {}; stale.forEach(function (i) { kill[i] = 1; }); rows = rows.filter(function (r) { return !kill[r.id]; }); }
+      }
+      if (inserts.length || updates.length || stale.length) rebuild(true);
+    } catch (e) { /* the branch is a mirror — never let it break the schedule load */ }
+    finally { _ddSyncing = false; }
+  }
+
+  // A row that came FROM another module is read-only here: its numbers are a mirror and any
+  // edit would be silently overwritten by the next sync. Used to gate inline editing.
+  function isSyncedRow(r) {
+    if (!r) return false;
+    if (/^DD-(DWG|MAT)-/.test(String(r.activity_id || ''))) return true;
+    var n = r.wbs_node_id && wbsById(r.wbs_node_id);
+    return !!(n && n.source_kind && !isWbs(r));
+  }
   // Auto-numbered dotted codes from tree position; a code_custom node keeps its own code and its
   // subtree is prefixed by it. Returns { id: code }.
   function computeWbsCodes() {
@@ -2660,6 +2803,11 @@
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
     if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
+    // Mirror the two registers into the Design Development branch. Runs AFTER the WBS is
+    // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
+    // leaves the branch as it was rather than blocking the schedule.
+    await syncDesignDevelopment();
+    if (gen !== _loadGen) return;
     loadGroupBys();       // per-project grouping order (needs LOC_LEVELS loaded to validate against)
     populateGroupSelect();
     renderAll();
@@ -7229,6 +7377,12 @@
     var id = cell.dataset.id, field = cell.dataset.field, type = cell.dataset.type;
     var r = rows.find(function (x) { return x.id === id; });
     if (!r) return;
+    // ⚠️ A synced row is a MIRROR of another module. Letting it be edited here would show a
+    // number the next sync silently overwrites — worse than not offering the edit at all.
+    if (isSyncedRow(r)) {
+      UI.toast('This row is synced from the Drawing Register / Material Submittal Log — edit it there.', 'warn');
+      return;
+    }
     // Anchor the entry column on the first edit of a Tab/Enter chain (kept while chaining).
     if (_entryCol === null) { var _rw0 = cell.closest && cell.closest('.ps-grid-row');
       if (_rw0) { var _ci0 = Array.prototype.indexOf.call(_rw0.children, cell) - 1; if (_ci0 >= 0) _entryCol = _ci0; } }
