@@ -77,6 +77,38 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-05 — Drawing Register: live check on BAU101 (1 real bug) + status vocabulary sanitised
+First signed-in run of the per-sheet feature, against the real **BAU101** register (540 rows / 453
+drawings / 1,286 sheets / 45% POC). The migration was already applied and **29 sheets across 6 parents
+already existed** — it is in real use. **Counters correct on all 6** (`no_of_sheets`/`approved_sheets`
+matched the actual child counts), so `syncParent` holds against live data.
+- **⚠️ REAL BUG FOUND LIVE — a parent kept a stale "Approved" pill over 0/15 unapproved sheets.**
+  `A-1000.1` had been marked Approved as a single row, was broken out into 15 "For Review" sheets, and
+  kept the Approved pill while its own counters read 0/15. `syncParent`'s status fell back to
+  `(p.status || …)` when nothing was approved yet. New **`derivedStatus()`** is the single source and
+  **never falls back to the stored value**; the pill **renders the derived value too**, so a row already
+  wrong in the DB displays correctly on load and converges on the next write. An all-approved drawing
+  whose sheets include comments rolls up as **Approved w/ comments**, not plain Approved.
+- **Status vocabulary sanitised, measured first** across 1,506 live drawings: blank **823**, Approved
+  358, Approved w/ comments 227, Ongoing 50, For Review 34, Pending 10, Superseded 2, Revise & Resubmit
+  2, `Approved w/o comments` **0**. ⚠️ **Three names meant "not decided yet"**, all inherited from
+  BAU101's own legend block. Now two, and the surviving distinction is real: **In Progress** (we are
+  drafting) vs **For Review** (submitted, with the reviewer) — the difference between chasing ourselves
+  and chasing the consultant. `STATUSES` is 6.
+- **Blank is a labelled state now, not an em-dash** — 55% of drawings have none. Renders as
+  **"Not started"** with the quietest chip, filterable, its own donut slice. **No data written.**
+- ⚠️ **`statusCounts()` was counting all 823 blanks as "For Review"**, so the Overview donut's largest
+  slice was a fiction (612 of GPR101's 1,053 reported as awaiting review when nothing was submitted).
+- ⚠️ **`LEGACY_STATUS`/`statusOf()`** map retired spellings for display and comparison. The grid's
+  Status cell is a `<select>` built from `STATUSES`, and a value outside it **silently shows the first
+  option while the row holds something else** — so `statusSelect`, `matchesFilters` and the editor all
+  compare canonically, and the importer maps rather than importing verbatim.
+- **Live remap applied:** `Ongoing → In Progress` (50) + `Pending → For Review` (10) on BAU101; GPR101
+  had neither. Re-queried after: 0 legacy values left in either register.
+- **68 checks green** (33 model + 35 renderer) against functions sliced from the shipped module, with
+  new regressions for the live bug and the whole vocabulary change. Assets drawing-register
+  `module.css/js?v=20260805b`. See `modules/drawing-register/CLAUDE.md`.
+
 ### 2026-08-05 — Drawing Register: per-sheet tracking matrix (submissions + approval merged)
 User: a Technical Officer types "100 sheets, approved by 31-Mar" on one row and grows the approved count
 over time; they want a matrix where **each row is a sheet** with its own status and revisions, while the

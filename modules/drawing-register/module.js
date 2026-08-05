@@ -68,13 +68,32 @@ window.DrawingRegister = (function () {
   var PHASES = ['Concept Design','Schematic Design','For Construction Drawing',
                 'Temporary Works Drawing','Individual Services Drawing',
                 'Combined Services Drawing','As-Built Drawing'];
-  // ⚠️ 'Ongoing' and 'Pending' were added because the real OPS registers use them and the inline
-  // grid Status cell is a <select> built from THIS list — a value outside it silently displays as
-  // the first option while the row actually holds something else (the same trap the Overview's
-  // status filter hit). Order = lifecycle: being drawn → submitted → reviewed → approved.
-  // Neither counts as approved (see isApprovedStatus), so both stay in the Backlog.
-  var STATUSES = ['Ongoing','Pending','For Review','Revise & Resubmit','Approved w/ comments',
+  // Order = the actual lifecycle:
+  //   (blank = Not started) → In Progress → For Review → Approved w/ comments
+  //                            ↺ Revise & Resubmit     → Approved  → Superseded
+  //
+  // ⚠️ Sanitised 2026-08-05 after measuring the live registers. The list carried
+  // THREE names for "not decided yet" — Ongoing (50), Pending (10), For Review
+  // (34), all in BAU101, all inherited from that workbook's own legend block — and
+  // nobody could say which meant what. Now two, and the distinction is real and
+  // worth keeping: **In Progress** = we are still drafting it, **For Review** =
+  // it is submitted and sitting with the reviewer. That is the difference between
+  // chasing ourselves and chasing the consultant.
+  // ⚠️ A value outside THIS list silently displays as the first option of the
+  // inline grid's <select> while the row actually holds something else, so legacy
+  // values must be MIGRATED, not merely tolerated (see LEGACY_STATUS).
+  var STATUSES = ['In Progress','For Review','Revise & Resubmit','Approved w/ comments',
                   'Approved','Superseded'];
+  // Retired spellings still present in un-migrated data → what they became. Used
+  // to display a legacy row honestly and to drive the one-off remap.
+  var LEGACY_STATUS = { 'Ongoing':'In Progress', 'Pending':'For Review',
+                        'Approved w/o comments':'Approved' };
+  // Blank is a real state — 823 of 1,506 live drawings have no status — so it is
+  // LABELLED rather than left as an em-dash that reads like missing data.
+  var NOT_STARTED = 'Not started';
+  // Canonical display value for whatever is stored on a row.
+  function statusOf(s){ return (s && LEGACY_STATUS[s]) || s || ''; }
+  function statusLabel(s){ return statusOf(s) || NOT_STARTED; }
   var NODE_LABELS = { phase:'Drawing Type', discipline:'Discipline', category:'Category', drawing:'Drawing' };
 
   // selection ordering (display order of drawing ids) for shift-click + arrows
@@ -740,6 +759,28 @@ window.DrawingRegister = (function () {
     return y >= 2015 && y <= 2100;
   }
 
+  // A drawing tracked per sheet has NO status of its own — it is entirely a
+  // function of its sheets.
+  // ⚠️ It must NOT fall back to the row's previous status. Found live on BAU101:
+  // `A-1000.1` had been marked **Approved** as a single row, was then broken out
+  // into 15 sheets, and kept the stale "Approved" pill while its own counters
+  // correctly read 0/15 — the pill said done, the numbers said nothing was. That
+  // is the exact two-sources-of-truth contradiction per-sheet tracking exists to
+  // remove, reappearing one level up. Derive it, always.
+  function derivedStatus(kids){
+    if (!kids.length) return null;
+    var ap = kids.filter(function (k){ return isApprovedStatus(k.status); }).length;
+    if (ap === kids.length) {
+      // All approved, but "with comments" is a materially different outcome from
+      // a clean approval, so it survives the roll-up rather than being rounded off.
+      return kids.some(function (k){ return k.status === 'Approved w/ comments'; })
+        ? 'Approved w/ comments' : 'Approved';
+    }
+    if (ap > 0 || kids.some(function (k){ return k.status === 'Revise & Resubmit' || latestSub(k, 'actual'); }))
+      return 'In Progress';
+    return 'For Review';
+  }
+
   // Write the parent's derived counters back to the DB so every consumer that
   // reads the plain columns stays correct without knowing sheets exist.
   async function syncParent(pidRow){
@@ -755,9 +796,7 @@ window.DrawingRegister = (function () {
       approved_pct: kids.length ? ap / kids.length : 0,
       // The drawing is approved on the day its LAST sheet was approved, and not before.
       actual_approval: (ap === kids.length) ? (r.maxActual || p.actual_approval || null) : null,
-      status: ap === kids.length ? 'Approved'
-            : (ap > 0 || kids.some(function (k){ return latestSub(k, 'actual'); })) ? 'Ongoing'
-            : (p.status || 'For Review')
+      status: derivedStatus(kids)
     };
     await persistCell(p, patch);
   }
@@ -780,7 +819,13 @@ window.DrawingRegister = (function () {
     if (filters.discipline &&
         r.discipline !== filters.discipline &&
         disciplineName(r.discipline) !== filters.discipline) return false;
-    if (filters.status && r.status !== filters.status) return false;
+    // ⚠️ Compare canonical values, and treat "Not started" as the blank state —
+    // otherwise the 823 live drawings with no status are unreachable by the filter,
+    // and an un-migrated 'Ongoing' row is invisible under "In Progress".
+    if (filters.status) {
+      var rs = statusOf(r.status);
+      if (filters.status === NOT_STARTED ? !!rs : rs !== filters.status) return false;
+    }
     if (filters.search) {
       var hay = [r.drawing_no, r.drawing_code, r.title, r.description, r.discipline,
                  r.category, r.phase, r.responsible, r.revision, r.remarks].join(' ').toLowerCase();
@@ -793,7 +838,7 @@ window.DrawingRegister = (function () {
     return drawingRows().filter(function (r) {
       if (matchesFilters(r)) return true;
       // ⚠️ A parent survives when any of its SHEETS match. Its own status is a
-      // derived roll-up ("Ongoing" while 37 of 100 are approved), so filtering the
+      // derived roll-up ("In Progress" while 37 of 100 are approved), so filtering the
       // register by "Approved" or "Revise & Resubmit" would otherwise hide the
       // parent — and with it the matching sheets, which is the whole point of the
       // filter. pushDrawing() then paints only the sheets that matched.
@@ -803,12 +848,14 @@ window.DrawingRegister = (function () {
 
   // ------------------------------------------------------------- rendering ---
   function statusCls(s) {
+    s = statusOf(s);              // a legacy row colours as what it became
+    if (s === 'In Progress') return 'dr-wip';
+    if (!s) return 'dr-ns';       // Not started — deliberately the quietest chip
     if (s === 'Approved' || s === 'Approved w/o comments') return 'dr-ok';
     if (s === 'Approved w/ comments') return 'dr-okc';
     if (s === 'Revise & Resubmit') return 'dr-rr';
     if (s === 'Superseded') return 'dr-old';
-    if (s === 'Ongoing') return 'dr-wip';
-    return 'dr-review';
+    return 'dr-review';           // For Review
   }
 
   // The ghost "Clear" button is shown only when something is actually filtered
@@ -963,7 +1010,7 @@ window.DrawingRegister = (function () {
         '<td>'+Fmt.esc(r.title||'')+'</td>' +
         '<td>'+Fmt.esc(r.phase||'')+'</td>' +
         '<td>'+Fmt.esc(disciplineName(r.discipline))+'</td>' +
-        '<td>'+(r.status ? '<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status)+'</span>' : '<span class="dr-mut">—</span>')+'</td>' +
+        '<td><span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(statusLabel(r.status))+'</span></td>' +
         '<td class="dr-nowrap dr-c-needby">'+needByCellHtml(r)+'</td>' +
         '<td class="dr-r dr-nowrap'+(a!=null&&a>0?' dr-aging-late':'')+'">'+(a==null?'<span class="dr-mut">—</span>':(a>0?'+':'')+a+'d')+'</td>' +
         // Doc column — the Backlog is where you chase an open submission, so the
@@ -1206,7 +1253,7 @@ window.DrawingRegister = (function () {
       // Under an active filter, keep the parent visible when it OR any of its
       // sheets match — otherwise filtering by "Revise & Resubmit" would hide the
       // very sheets you are looking for, because the parent's derived status is
-      // "Ongoing".
+      // "In Progress".
       var skey = 'S:'+r.id;
       disp.push({type:'drawing',level:level,row:r,sheets:kids,shownSheets:shown,skey:skey});
       visibleIds.push(r.id);
@@ -1341,9 +1388,13 @@ window.DrawingRegister = (function () {
   }
 
   function statusSelect(r) {
+    // ⚠️ Compare against statusOf(), not the raw value: an un-migrated 'Ongoing'
+    // row would otherwise match no <option> and the select would silently display
+    // 'Not started' while the row still holds 'Ongoing'.
+    var cur = statusOf(r.status);
     return '<select class="dr-stsel dr-st-'+statusCls(r.status)+'" data-stat="'+r.id+'">' +
-      '<option value=""'+(!r.status?' selected':'')+'>—</option>' +
-      STATUSES.map(function(s){ return '<option'+(r.status===s?' selected':'')+'>'+s+'</option>'; }).join('') +
+      '<option value=""'+(!cur?' selected':'')+'>'+NOT_STARTED+'</option>' +
+      STATUSES.map(function(s){ return '<option'+(cur===s?' selected':'')+'>'+s+'</option>'; }).join('') +
     '</select>';
   }
 
@@ -1380,9 +1431,13 @@ window.DrawingRegister = (function () {
       '<td class="dr-indent dr-freeze dr-freeze-code'+ed+'" data-f="code" data-t="text">'+caret+'<span class="dr-code">'+Fmt.esc(code)+'</span>'+dupMark+'</td>' +
       '<td class="dr-c-title dr-freeze dr-freeze-title'+ed+'" data-f="title" data-t="text">'+Fmt.esc(r.title)+sheetTag+(r.description?'<div class="dr-sub">'+Fmt.esc(r.description)+'</div>':'')+'</td>' +
       '<td class="dr-c-rev'+ed+'" data-f="revision" data-t="text">'+Fmt.esc(r.revision)+'</td>' +
+      // ⚠️ A parent's pill shows the DERIVED status, not the stored one. A drawing
+      // broken out after it had already been marked Approved keeps that stale value
+      // in the column until the next syncParent() write; deriving it here means the
+      // screen is never allowed to contradict the sheet counts beside it.
       '<td class="dr-c-status">'+(kids
-          ? '<span class="dr-pill '+statusCls(r.status)+'" title="Rolled up from '+kids.length+' sheets">'+Fmt.esc(r.status||'—')+'</span>'
-          : (CB?statusSelect(r):'<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status||'—')+'</span>'))+'</td>' +
+          ? (function(ds){ return '<span class="dr-pill '+statusCls(ds)+'" title="Rolled up from '+kids.length+' sheets">'+Fmt.esc(statusLabel(ds))+'</span>'; })(derivedStatus(kids))
+          : (CB?statusSelect(r):'<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(statusLabel(r.status))+'</span>'))+'</td>' +
       '<td class="dr-r dr-c-sh'+edN+'" data-f="no_of_sheets" data-t="num">'+tot+'</td>' +
       '<td class="dr-r dr-c-ap'+edN+'" data-f="approved_sheets" data-t="num">'+ap+' <span class="dr-mini">'+pct+'%</span></td>' +
       '<td class="dr-nowrap dr-c-date'+ed+'" data-f="latest_sub" data-t="date">'+(sub?Fmt.date(sub):'—')+'</td>' +
@@ -2212,13 +2267,16 @@ window.DrawingRegister = (function () {
 
   // Status colors mirror the Registry's own pill colors (statusCls) so the chart
   // and the grid pills read as one system.
-  var STATUS_COLOR = { 'Ongoing':'#6366f1', 'Pending':'#d97706', 'For Review':'#d97706',
+  var STATUS_COLOR = { 'In Progress':'#6366f1', 'Not started':'#9aa0a6', 'For Review':'#d97706',
     'Revise & Resubmit':'#dc2626',
     'Approved w/ comments':'#0891b2', 'Approved':'#16a34a', 'Superseded':'#6b7280' };
   function statusCounts() {
-    var m = {}; STATUSES.forEach(function (s){ m[s]=0; });
+    // ⚠️ Blank used to be counted as 'For Review' by the `|| 'For Review'` fallback,
+    // so the donut reported 823 not-yet-started drawings as awaiting review — the
+    // single biggest slice was a fiction. Blank is now its own labelled slice.
+    var m = {}; m[NOT_STARTED] = 0; STATUSES.forEach(function (s){ m[s]=0; });
     drawingRows().forEach(function (r){
-      var s = r.status && m.hasOwnProperty(r.status) ? r.status : (r.status || 'For Review');
+      var s = statusOf(r.status) || NOT_STARTED;
       m[s] = (m[s]||0) + 1;
     });
     return Object.keys(m).filter(function (s){ return m[s]>0; }).map(function (s){
@@ -2464,7 +2522,7 @@ window.DrawingRegister = (function () {
 
       '<div class="dr-form-sec">Approval</div>' +
       '<div class="dr-grid3">' +
-        field('Status <span class="dr-mut">— latest revision</span>','<select class="pd-select" id="f-status">'+opt(STATUSES, r.status||'For Review', false)+'</select>') +
+        field('Status <span class="dr-mut">— latest revision</span>','<select class="pd-select" id="f-status">'+opt(STATUSES, statusOf(r.status)||'For Review', false)+'</select>') +
         (isSheet(r)
           ? field('Planned approval','<input class="pd-input" type="date" id="f-papp" value="'+(r.planned_approval||'')+'" placeholder="'+
               Fmt.esc(inh(r,'planned_approval')||'')+'">' +
@@ -3333,8 +3391,11 @@ window.DrawingRegister = (function () {
     if (/(w\/o|without) *comment/.test(t)) return 'Approved';   // merged: redundant with "Approved"
     if (/superseded/.test(t)) return 'Superseded';
     if (/approved/.test(t)) return 'Approved';
-    if (/ongoing|in *progress|wip/.test(t)) return 'Ongoing';   // being drawn, not yet submitted
-    if (/pending/.test(t)) return 'Pending';                    // submitted, awaiting review
+    // ⚠️ 'Ongoing'/'Pending' are the OPS workbooks' own words; they map onto the
+    // sanitised vocabulary rather than being imported verbatim, so an import can
+    // never reintroduce a value the grid's <select> doesn't offer.
+    if (/ongoing|in *progress|wip/.test(t)) return 'In Progress'; // being drawn, not yet submitted
+    if (/pending/.test(t)) return 'For Review';                   // submitted, awaiting review
     if (/review|submitted|for review/.test(t)) return 'For Review';
     return s;
   }

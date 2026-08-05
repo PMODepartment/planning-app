@@ -1,5 +1,67 @@
 # Module: drawing-register
 
+## Live check on BAU101 + status vocabulary sanitised (2026-08-05) — fmlozano
+Verified the per-sheet feature signed in on the deployed site against the real **BAU101** register
+(540 rows / 453 drawings / 1,286 sheets / 45% POC). The migration was already applied and
+**29 sheets across 6 parents already existed** — the feature is in real use.
+
+**Counters correct on all 6 parents** (`no_of_sheets` and `approved_sheets` matched the actual child
+counts exactly), so `syncParent` works against live data.
+
+### ⚠️ REAL BUG FOUND LIVE: a parent kept a stale "Approved" pill over 0/15 unapproved sheets
+`A-1000.1 "2F Wall Setting-Out"` had been marked **Approved** as a single row, was then broken out
+into 15 sheets — all "For Review" — and **kept the Approved pill while its own counters read 0/15**.
+Cause: `syncParent`'s status fell back to `(p.status || 'For Review')` when nothing was approved yet,
+preserving whatever the row held before break-out. The pill said done, the numbers beside it said
+nothing was — the exact two-sources-of-truth contradiction per-sheet tracking exists to remove,
+reappearing one level up.
+- New **`derivedStatus(kids)`** is the single source: all approved → `Approved` (or **`Approved w/
+  comments`** if any sheet carried comments — a materially different outcome that must survive the
+  roll-up); any approved / submitted / returned → `In Progress`; otherwise `For Review`. **No fallback
+  to the stored value, ever.**
+- ⚠️ **The parent's pill renders `derivedStatus()` too, not the stored column** — so a row that is
+  already wrong in the database (as `A-1000.1` was) displays correctly on load, without needing a
+  write-on-load heal, and converges the next time `syncParent` runs.
+
+### Status vocabulary sanitised
+Measured first, across both live registers (1,506 drawings): blank **823**, Approved 358, Approved w/
+comments 227, Ongoing 50, For Review 34, Pending 10, Superseded 2, Revise & Resubmit 2 — and
+`Approved w/o comments` **0**.
+- ⚠️ **Three names meant "not decided yet"** — Ongoing / Pending / For Review, all 94 rows in BAU101,
+  all inherited from that workbook's own legend block, and nobody could say which was which. Now two,
+  and the surviving distinction is real: **In Progress** = we are still drafting it, **For Review** =
+  it is submitted and sitting with the reviewer. That is the difference between chasing ourselves and
+  chasing the consultant. `STATUSES` is now 6: In Progress · For Review · Revise & Resubmit ·
+  Approved w/ comments · Approved · Superseded.
+- **Blank is now a labelled state, not an em-dash.** 55% of live drawings have no status; it renders
+  as **"Not started"** with the quietest chip in the set (`.dr-ns`), is offered in the filter, and is
+  counted as its own donut slice. **No data was written for this** — blank still means blank.
+- ⚠️ **`statusCounts()` was counting all 823 blanks as "For Review"** (`|| 'For Review'` fallback), so
+  the Overview donut's largest slice was a fiction — 612 of GPR101's 1,053 drawings were reported as
+  awaiting review when nothing had been submitted. Fixed.
+- **`LEGACY_STATUS` + `statusOf()/statusLabel()`** map retired spellings for display, so an
+  un-migrated row is shown as what it became rather than as an unmatched value. ⚠️ This matters
+  because the grid's Status cell is a `<select>` built from `STATUSES`: a value outside the list
+  **silently displays as the first option while the row holds something else**. `statusSelect`,
+  `matchesFilters` and the full editor all compare through `statusOf()` for the same reason.
+- **The importer maps rather than imports verbatim** (`ongoing|wip → In Progress`,
+  `pending → For Review`), so no future import can reintroduce an off-list value.
+- ⚠️ **`matchesFilters` treats "Not started" as the blank state** — without it the 823 blank drawings
+  are unreachable by the status filter.
+
+### Live data remap applied
+`Ongoing → In Progress` (50) and `Pending → For Review` (10) written to BAU101; GPR101 held neither.
+`Approved w/o comments` had 0 rows in either. The stale `A-1000.1` status was healed to match its
+sheets. Verified by re-querying afterwards: 0 legacy values remain in either register.
+
+### Verification
+**68 checks green** (33 model + 35 renderer) against functions sliced verbatim from the shipped
+`module.js`, including new regressions for the live bug (a stale "Approved" parent over 0/15 sheets
+must not render as Approved; all-approved-with-comments rolls up as `Approved w/ comments`) and for
+the vocabulary (blank → "Not started" with `.dr-ns`, legacy `Ongoing` → "In Progress", legacy
+`Pending` preselects "For Review", the select no longer offers the retired values).
+- Assets `module.css?v=20260805b` / `module.js?v=20260805b`.
+
 ## Per-sheet tracking matrix — submissions + approval merged into one grid (2026-08-05) — fmlozano
 User: a Technical Officer sets "100 sheets, approved by 31-Mar" on one row and grows the approved count
 over time. They asked to turn that into a matrix where **each row is a sheet**, with a status per sheet
