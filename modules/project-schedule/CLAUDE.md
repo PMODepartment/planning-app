@@ -1,5 +1,53 @@
 # Module: project-schedule
 
+## P6 activity codes imported + a shared location mapper for imports (2026-08-05) — fmlozano
+User: with the location breakdown added (Avesta = Tower › Level › Zone), the OPC/P6 imports don't
+offer it. They couldn't: **neither importer ever wrote `location`**, so every imported activity
+landed with `location = {}` and the Location group-by showed one "— Unassigned —" bucket. The XER
+path was also **dropping P6's activity codes entirely** (it read CALENDAR/PROJWBS/TASK/TASKPRED/
+RSRC/TASKRSRC/UDF but not ACTVTYPE/ACTVCODE/TASKACTV) — which is exactly where a P6 schedule keeps
+Tower/Level/Zone when it isn't in the WBS.
+- **XER activity codes now import.** `ACTVTYPE` → `activity_code_types`, `ACTVCODE` →
+  `activity_code_values`, `TASKACTV` → each activity's `activity_codes`. Worth doing on its own
+  merit: those dictionaries were previously only ever created by hand, so the existing `code:`
+  grouping/filtering columns had nothing to work with on an imported project.
+  ⚠️ **P6 nests code values** (`parent_actv_code_id`) and the app's dictionaries are flat — nesting
+  is dropped, the values stay distinct, which is all grouping needs. ⚠️ P6 allows several values of
+  one type on an activity; the app stores one per type, so **last assignment wins** (same as the
+  grid editor). Resource-scoped types (`AS_Resource`) are skipped — they aren't activity codes.
+  Values label as `SHORT - Description`, collapsing to one when they're equal.
+- **New shared location mapper** — `locSrcsWbs` / `locSrcsCodes` / `locMapUI` / `locMapPlan` /
+  `locEnsureLevels`. A **SOURCE** is anything that can yield a location value for a record and is
+  reduced to `{key, name, get(rec)}` **before the UI sees it**, so adding a source kind (a
+  spreadsheet column next) is a new builder function and nothing else. Records are plain objects
+  too — DB rows in the backfill, parsed import recs in the importer — which is what lets **one**
+  planner serve both.
+- **`openLocBackfill` was rewritten onto it** rather than duplicated: same modal, same live
+  count + sample, but it now also offers **activity codes** as sources, so a project whose codes
+  carry the location no longer has to re-import to use them.
+- **The XER import preview gained a "Location breakdown" step** listing the file's own WBS depths
+  and code types (each with a 3-value sample) mapped onto the location levels. It can **create
+  levels** — a project being imported into for the first time has none — and `location` is stamped
+  onto the payloads so it rides in the **same insert**, no second pass over 40k rows.
+  ⚠️ `locEnsureLevels` returns false if a level can't be created and the caller then skips the
+  mapping: proceeding would write values under placeholder keys that nothing reads.
+- ⚠️ **Code values are matched back by `(type,value)`, not by insert order** — PostgREST does not
+  promise returned rows come back in the order sent, and these are chunked 500 at a time.
+- **Verified 24/24 in Node against the SHIPPED functions** (sliced out of `index.html`, never
+  reimplemented) — resource-scoped types dropped, `SHORT - Description` labelling incl. the equal
+  and missing-short cases, label-less and unknown-value assignments ignored, WBS sources returning
+  null on shallower rows, mixed WBS+code mappings landing together, no mutation of the caller's
+  location map, an already-correct row planning no write, and **the crux case: the same zone name
+  under two towers keeps its own tower**. Plus **20/20 in a real browser** on `locMapUI` (jsdom
+  isn't available and `read()` drives everything): default guesses, name-match beating the depth
+  guess, skipped levels excluded, the add/remove/prefill flow, new rows reading placeholder keys, a
+  nameless new row refused, no page overflow. Script parses; 0 console errors.
+- ⚠️ **Not verified signed-in** — needs a real `.xer` imported into a scratch project. **Excel/OPC
+  is NOT covered yet**: its header detection still discards unmatched columns, so a `Tower`/`Level`/
+  `Zone` column in an xlsx is dropped before the mapper could see it. That's the remaining piece —
+  retain unmatched columns on each record and expose them as a third source kind.
+- Module-local; no migration (reuses `location_levels` / `activity_code_*`), no `?v=` bump.
+
 ## SIGNED-IN verification of the location/grouping work — migration run, 1 real bug found (2026-08-04) — fmlozano
 First live run of everything from this batch. **Migration `2026-08-04-activity-location-work-type.sql`
 was executed on the production Supabase** (`planners-app`) and verified by querying the catalog, not

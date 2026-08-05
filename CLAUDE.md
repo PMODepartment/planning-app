@@ -77,6 +77,35 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-05 — P6 activity codes now import + a shared location mapper for the importers
+User added a Tower › Level › Zone location breakdown on Avesta and found the imports don't offer it.
+They couldn't: **neither importer ever wrote `location`**, so every imported activity arrived with
+`location = {}` and the Location group-by was one "— Unassigned —" bucket. The XER path was also
+**dropping P6's activity codes entirely** — which is exactly where a P6 schedule keeps Tower/Level/
+Zone when it isn't in the WBS.
+- **XER activity codes import** (`ACTVTYPE`/`ACTVCODE`/`TASKACTV` → `activity_code_types`/`_values`/
+  `project_schedule.activity_codes`). Worth doing regardless of location: those dictionaries were
+  previously only ever created by hand, so the existing `code:` grouping/filter columns had nothing
+  to work with on an imported project. ⚠️ P6 nests code values and the app's are flat — nesting is
+  dropped (values stay distinct, which is all grouping needs); several values of one type on one
+  activity collapse to last-wins, matching the grid editor.
+- **New shared location mapper** (`locSrcsWbs`/`locSrcsCodes`/`locMapUI`/`locMapPlan`/
+  `locEnsureLevels`): a SOURCE is anything that can yield a location value, reduced to
+  `{key,name,get(rec)}` **before the UI sees it**, and records are plain objects — which is what
+  lets ONE planner serve both the post-hoc WBS backfill and the importer. The existing
+  "Fill location from the WBS tree" was **rewritten onto it rather than duplicated**, and gained
+  activity codes as sources for free.
+- **The XER import preview gained a Location breakdown step** — map the file's WBS depths or code
+  types onto your location levels (creating levels if the project has none), with a live count and
+  sample; `location` is stamped into the **same insert**, no second pass over 40k rows.
+- ⚠️ **Excel/OPC is NOT covered yet** — its header detection discards unmatched columns, so a
+  `Tower`/`Level`/`Zone` column in an xlsx is dropped before the mapper could see it. Retaining
+  those columns as a third source kind is the remaining piece.
+- **Verified 24/24 in Node against the shipped functions** (sliced out, never reimplemented) + **20/20
+  in a real browser** on the mapping UI (no jsdom available, and `read()` drives everything). Script
+  parses, 0 console errors. **Not verified signed-in** — needs a real `.xer` into a scratch project.
+  Module-local, no migration, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-04 — Signed-in verification: migration run live, 1 real bug found and fixed
 First live run of the whole location/grouping batch. **Ran `2026-08-04-activity-location-work-type.sql`
 on the production Supabase** and verified it by querying the catalog rather than trusting the success

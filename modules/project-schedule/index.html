@@ -3099,6 +3099,123 @@
     m.el.querySelector('#lvl-x').onclick = m.close;
     paint();
   }
+  // ---- Shared location mapper ------------------------------------------------------------------
+  // ONE mapping UI + planner behind every way `location` gets filled in: the post-hoc "fill from the
+  // WBS tree" backfill and the importers. A SOURCE is anything that can yield a location value for a
+  // record — a WBS depth, an imported P6 activity code type, later a spreadsheet column — and every
+  // kind is reduced to { key, name, get(rec) } BEFORE the UI sees it, so adding a source kind is a
+  // new builder function and nothing else. The records are plain objects too (DB rows in the
+  // backfill, parsed import recs in the importers), which is what lets one planner serve both.
+  function locSrcSample(recs, src, n) {
+    var seen = {}, out = [], want = n || 3;
+    // Stops as soon as it has enough distinct values — this runs over 40k-row schedules.
+    for (var i = 0; i < recs.length && out.length < want; i++) {
+      var v = src.get(recs[i]); if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+    }
+    return out;
+  }
+  // WBS-depth sources. getCode(rec) → dotted code; nameByCode maps a code to its node name.
+  function locSrcsWbs(recs, getCode, nameByCode) {
+    var maxD = 0;
+    recs.forEach(function (r) { var c = getCode(r); if (!c) return; var d = String(c).split('.').length; if (d > maxD) maxD = d; });
+    var out = [];
+    for (var d = 1; d <= maxD; d++) out.push(mk(d));
+    return out;
+    function mk(depth) {
+      return { key: 'wbs:' + depth, kind: 'wbs', name: 'WBS level ' + depth, get: function (r) {
+        var c = getCode(r); if (!c) return null;
+        var segs = String(c).split('.'); if (segs.length < depth) return null;
+        return nameByCode[segs.slice(0, depth).join('.')] || null;
+      } };
+    }
+  }
+  // Activity-code sources. types = [{id,name}] (real ids when saved, P6 tmpIds during an import);
+  // valOf(rec, typeId) resolves that record's value for the type to its display label.
+  function locSrcsCodes(types, valOf) {
+    return (types || []).map(function (ct) {
+      return { key: 'code:' + ct.id, kind: 'code', name: ct.name, get: function (r) { return valOf(r, ct.id) || null; } };
+    });
+  }
+  // Renders one row per location level and returns { html, bind, read }. `allowNew` adds rows that
+  // CREATE a level — needed by the importers, where a fresh project has no levels defined yet.
+  function locMapUI(levels, sources, allowNew) {
+    sources.forEach(function (s) { s._sample = s._sample || []; });
+    var seq = 0;
+    function optHtml(sel) {
+      return '<option value="">— skip —</option>' + sources.map(function (s) {
+        var sm = s._sample.length ? ' — ' + esc(s._sample.join(', ')) + '…' : '';
+        return '<option value="' + esc(s.key) + '"' + (s.key === sel ? ' selected' : '') + '>' + esc(s.name) + sm + '</option>';
+      }).join('');
+    }
+    // Guess: a source whose name matches the level's, else the WBS depth under the project root
+    // (level 1 is the project node itself, so the first location level is usually depth 2).
+    function guessFor(lvl, i) {
+      var byName = sources.filter(function (s) { return s.name.toLowerCase() === String(lvl.name || '').toLowerCase(); })[0];
+      if (byName) return byName.key;
+      var d = sources.filter(function (s) { return s.key === 'wbs:' + (i + 2); })[0];
+      return d ? d.key : '';
+    }
+    function rowHtml(name, levelId, sel, removable) {
+      var id = 'lm' + (++seq);
+      return '<div class="pd-field lm-row" data-row="' + id + '" data-lvl="' + esc(levelId || '') + '" style="display:flex;gap:8px;align-items:flex-end;">' +
+        '<div style="flex:0 0 150px;">' + (levelId
+          ? '<label class="pd-label">' + esc(name) + '</label><input type="hidden" class="lm-name" value="' + esc(name) + '">'
+          : '<label class="pd-label">New level</label><input class="pd-input lm-name" placeholder="Tower / Level / Zone" value="' + esc(name || '') + '">') + '</div>' +
+        '<div style="flex:1 1 auto;"><select class="pd-input lm-sel">' + optHtml(sel) + '</select></div>' +
+        (removable ? '<button class="pd-btn lm-del" title="Remove">✕</button>' : '') + '</div>';
+    }
+    var html = '<div id="lm-rows">' + levels.map(function (l, i) { return rowHtml(l.name, l.id, guessFor(l, i), false); }).join('') + '</div>' +
+      (allowNew ? '<div style="margin:6px 0 10px;"><button class="pd-btn" id="lm-add">+ Add a location level</button></div>' : '');
+    return {
+      html: html,
+      bind: function (el, onChange) {
+        function wire() {
+          el.querySelectorAll('.lm-sel').forEach(function (s) { s.onchange = onChange; });
+          el.querySelectorAll('.lm-name').forEach(function (s) { s.oninput = onChange; });
+          el.querySelectorAll('.lm-del').forEach(function (b) {
+            b.onclick = function () { b.closest('.lm-row').remove(); onChange(); };
+          });
+        }
+        var add = el.querySelector('#lm-add');
+        if (add) add.onclick = function () {
+          // Offer the first still-unmapped source, so "add a level" lands on something useful.
+          var used = {}; el.querySelectorAll('.lm-sel').forEach(function (s) { if (s.value) used[s.value] = 1; });
+          var free = sources.filter(function (s) { return !used[s.key]; })[0];
+          el.querySelector('#lm-rows').insertAdjacentHTML('beforeend', rowHtml(free ? free.name : '', '', free ? free.key : '', true));
+          wire(); onChange();
+        };
+        wire();
+      },
+      read: function (el) {
+        var out = [];
+        el.querySelectorAll('.lm-row').forEach(function (row, i) {
+          var key = row.querySelector('.lm-sel').value; if (!key) return;
+          var src = sources.filter(function (s) { return s.key === key; })[0]; if (!src) return;
+          var levelId = row.dataset.lvl || '';
+          var name = (row.querySelector('.lm-name').value || '').trim();
+          if (!levelId && !name) return;   // a new level with no name can't be created
+          out.push({ levelId: levelId, name: name, src: src, key: levelId || ('new:' + i) });
+        });
+        return out;
+      }
+    };
+  }
+  // Plans the writes for a mapping. getLoc(rec) returns the record's current location map; the
+  // caller decides what to do with the result (a DB batch update, or stamping the import payloads).
+  function locMapPlan(recs, mapping, getLoc, over) {
+    var ups = [], sample = [];
+    recs.forEach(function (r) {
+      var cur = getLoc(r) || {}, loc = Object.assign({}, cur), changed = false;
+      mapping.forEach(function (mp) {
+        var v = mp.src.get(r); if (!v) return;
+        if (loc[mp.key] && !over) return;
+        if (loc[mp.key] === v) return;
+        loc[mp.key] = v; changed = true;
+      });
+      if (changed) { ups.push({ rec: r, loc: loc }); if (sample.length < 8) sample.push({ rec: r, loc: loc }); }
+    });
+    return { ups: ups, sample: sample };
+  }
   // ---- Backfill location from the WBS tree -----------------------------------------------------
   // Existing schedules already encode location as WBS structure (Loc > Zone > activities), so the
   // values are recoverable — read each activity's WBS ancestry and map a DEPTH to each level.
@@ -3110,72 +3227,62 @@
     var acts = rows.filter(function (r) { return !isWbs(r) && r.wbs; });
     if (!acts.length) { UI.toast('No activities with a WBS code to read from.', 'warn'); return; }
     var nameByCode = {}; rows.forEach(function (r) { if (isWbs(r) && r.wbs) nameByCode[String(r.wbs)] = r.activity_name || ''; });
-    var maxD = 0; acts.forEach(function (a) { var d = String(a.wbs).split('.').length; if (d > maxD) maxD = d; });
-    // Sample the tree so the user can see what each depth actually contains before mapping.
-    function sampleAt(depth) {
-      var seen = {}, out = [];
-      acts.forEach(function (a) {
-        var segs2 = String(a.wbs).split('.');
-        if (segs2.length < depth) return;
-        var nm = nameByCode[segs2.slice(0, depth).join('.')];
-        if (nm && !seen[nm]) { seen[nm] = 1; out.push(nm); }
-      });
-      return out;
-    }
-    var opts = '<option value="">— skip —</option>';
-    for (var d = 1; d <= maxD; d++) { var sm = sampleAt(d).slice(0, 3).join(', '); opts += '<option value="' + d + '">WBS level ' + d + (sm ? ' — ' + esc(sm) + '…' : '') + '</option>'; }
-    var rowsHtml = LOC_LEVELS.map(function (l, i) {
-      return '<div class="pd-field"><label class="pd-label">' + esc(l.name) + '</label>' +
-        '<select class="pd-input bf-sel" data-lvl="' + esc(l.id) + '">' + opts.replace('value="' + (i + 2) + '"', 'value="' + (i + 2) + '" selected') + '</select></div>';
-    }).join('');
+    // Both source kinds are offered here, not just the WBS: a project whose P6 activity codes carry
+    // the location shouldn't have to re-import to use them.
+    var sources = locSrcsWbs(acts, function (r) { return r.wbs; }, nameByCode)
+      .concat(locSrcsCodes(CODE_TYPES, function (r, tid) {
+        var vid = r.activity_codes && r.activity_codes[tid]; return vid ? codeValueLabel(vid) : null;
+      }));
+    sources.forEach(function (s) { s._sample = locSrcSample(acts, s); });
+    var ui = locMapUI(LOC_LEVELS, sources, false);
     var m = UI.modal('<h2 style="margin-top:0;">Fill location from the WBS tree</h2>' +
-      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Your schedule already groups by location in the WBS. Pick which WBS level holds each location level and this copies the names onto the activities as data — the WBS tree is not modified.</p>' +
-      rowsHtml +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Your schedule already groups by location in the WBS. Pick which WBS level (or activity code) holds each location level and this copies the names onto the activities as data — the WBS tree is not modified.</p>' +
+      ui.html +
       '<label style="display:block;font-size:12.5px;margin:6px 0 10px;"><input type="checkbox" id="bf-over"> Overwrite values that are already set</label>' +
       '<div id="bf-prev" style="font-size:12.5px;color:var(--pd-muted);border-top:1px solid var(--pd-line);padding-top:10px;max-height:190px;overflow:auto;"></div>' +
       '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="bf-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="bf-go">Apply</button></div>');
     function plan() {
-      var map = [];
-      m.el.querySelectorAll('.bf-sel').forEach(function (s) { if (s.value) map.push({ id: s.dataset.lvl, depth: +s.value }); });
-      var over = m.el.querySelector('#bf-over').checked;
-      var ups = [], sample = [];
-      acts.forEach(function (a) {
-        var segs2 = String(a.wbs).split('.'), loc = Object.assign({}, a.location || {}), changed = false;
-        map.forEach(function (mp) {
-          if (segs2.length < mp.depth) return;
-          var nm = nameByCode[segs2.slice(0, mp.depth).join('.')];
-          if (!nm) return;
-          if (loc[mp.id] && !over) return;
-          if (loc[mp.id] === nm) return;
-          loc[mp.id] = nm; changed = true;
-        });
-        if (changed) { ups.push({ id: a.id, patch: { location: loc } }); if (sample.length < 8) sample.push({ a: a, loc: loc }); }
-      });
-      return { ups: ups, sample: sample, map: map };
+      var map = ui.read(m.el);
+      var p = locMapPlan(acts, map, function (r) { return r.location; }, m.el.querySelector('#bf-over').checked);
+      p.map = map; return p;
     }
     function preview() {
       var p = plan(), el = m.el.querySelector('#bf-prev');
-      if (!p.map.length) { el.innerHTML = 'Pick at least one WBS level above.'; return; }
+      if (!p.map.length) { el.innerHTML = 'Pick at least one source above.'; return; }
       el.innerHTML = '<strong>' + p.ups.length + '</strong> of ' + acts.length + ' activities will be updated.' +
         (p.sample.length ? '<div style="margin-top:8px;">' + p.sample.map(function (s) {
-          return '<div style="padding:2px 0;"><code style="color:var(--pd-red);">' + esc(s.a.wbs) + '</code> ' + esc((s.a.activity_name || '').slice(0, 40)) +
+          return '<div style="padding:2px 0;"><code style="color:var(--pd-red);">' + esc(s.rec.wbs) + '</code> ' + esc((s.rec.activity_name || '').slice(0, 40)) +
             ' → ' + esc(LOC_LEVELS.filter(function (l) { return s.loc[l.id]; }).map(function (l) { return l.name + ': ' + s.loc[l.id]; }).join(' · ')) + '</div>';
         }).join('') + '</div>' : '');
     }
-    m.el.querySelectorAll('.bf-sel').forEach(function (s) { s.onchange = preview; });
+    ui.bind(m.el, preview);
     m.el.querySelector('#bf-over').onchange = preview;
     m.el.querySelector('#bf-x').onclick = m.close;
     m.el.querySelector('#bf-go').onclick = async function () {
       var p = plan(); if (!p.ups.length) { UI.toast('Nothing to update.', 'info'); return; }
       m.close(); showLoading('Filling location from the WBS…');
       // Apply locally first so the grid is right even if a chunk fails partway.
-      p.ups.forEach(function (u) { var r = rows.find(function (x) { return x.id === u.id; }); if (r) r.location = u.patch.location; });
-      var okAll = await _batchUpdate(TABLE, p.ups);
+      p.ups.forEach(function (u) { u.rec.location = u.loc; });
+      var okAll = await _batchUpdate(TABLE, p.ups.map(function (u) { return { id: u.rec.id, patch: { location: u.loc } }; }));
       hideLoading();
       rebuild(false); renderGrid(); renderGantt();
       if (okAll) UI.toast('Filled location on ' + p.ups.length + ' activities.', 'success');
     };
     preview();
+  }
+  // Creates any levels the mapping asked for (import path) and rewrites their placeholder keys to
+  // the real level ids. Returns false if a level couldn't be created — the caller must not proceed
+  // with placeholder keys, or the values would land under a key nothing reads.
+  async function locEnsureLevels(mapping) {
+    for (var i = 0; i < mapping.length; i++) {
+      var mp = mapping[i]; if (mp.levelId) continue;
+      var existing = LOC_LEVELS.filter(function (l) { return l.name.toLowerCase() === mp.name.toLowerCase(); })[0];
+      if (existing) { mp.levelId = existing.id; mp.key = existing.id; continue; }
+      var res = await sb().from('location_levels').insert({ project_id: pid, name: mp.name, sort_order: LOC_LEVELS.length, created_by: UID }).select().single();
+      if (res.error || !res.data) { UI.toast('Could not create the location level "' + mp.name + '": ' + (res.error && res.error.message), 'error'); return false; }
+      LOC_LEVELS.push(res.data); mp.levelId = res.data.id; mp.key = res.data.id;
+    }
+    return true;
   }
   // Natural order, so Level 2 sorts before Level 10 and "— Unassigned —" sinks to the bottom.
   function cmpGroupName(a, b) {
@@ -3530,6 +3637,34 @@
       if (val === '' || val == null) return;
       (udfByTask[v.fk_id] = udfByTask[v.fk_id] || {})[v.udf_type_id] = val;
     });
+    // Activity Codes: ACTVTYPE = the code dictionaries (Tower / Level / Zone / Trade …),
+    // ACTVCODE = the values in each dictionary, TASKACTV = the per-activity assignment.
+    // This is where P6 schedules usually carry their location breakdown when it is not the WBS,
+    // so it feeds BOTH the app's activity_codes and the import's location mapping.
+    // ⚠️ P6 nests code values (a value can have a parent_actv_code_id); the app's code dictionaries
+    // are flat, so nesting is dropped — the values themselves stay distinct, which is all grouping needs.
+    var codeTypes = xerObjs(tables, 'ACTVTYPE')
+      .filter(function (a) { return !a.actv_code_type_scope || a.actv_code_type_scope !== 'AS_Resource'; })
+      .map(function (a, i) { return { tmpId: a.actv_code_type_id, name: String(a.actv_code_type || ('Activity code ' + a.actv_code_type_id)).trim(), sort: parseInt(a.seq_num, 10) || i }; });
+    var codeTypeTmpIds = {}; codeTypes.forEach(function (t) { codeTypeTmpIds[t.tmpId] = 1; });
+    var codeValues = [];
+    xerObjs(tables, 'ACTVCODE').forEach(function (v, i) {
+      if (!codeTypeTmpIds[v.actv_code_type_id]) return;
+      // P6 shows "SHORT - Description"; keep both when they differ so groups read well but stay
+      // traceable back to the code the planner typed.
+      var shortN = String(v.short_name || '').trim(), longN = String(v.actv_code_name || '').trim();
+      var label = (shortN && longN && shortN !== longN) ? (shortN + ' - ' + longN) : (shortN || longN);
+      if (!label) return;
+      codeValues.push({ tmpId: v.actv_code_id, typeTmpId: v.actv_code_type_id, value: label, sort: parseInt(v.seq_num, 10) || i });
+    });
+    var codeValTmpIds = {}; codeValues.forEach(function (v) { codeValTmpIds[v.tmpId] = v; });
+    // task_id -> { actv_code_type_id: actv_code_id }. P6 allows several values of the same type on
+    // one activity; the app stores one per type, so the last assignment wins (same as the grid editor).
+    var codesByTask = {};
+    xerObjs(tables, 'TASKACTV').forEach(function (a) {
+      var v = codeValTmpIds[a.actv_code_id]; if (!v) return;
+      (codesByTask[a.task_id] = codesByTask[a.task_id] || {})[v.typeTmpId] = a.actv_code_id;
+    });
     var PRED_TYPE = { PR_FS: 'FS', PR_SS: 'SS', PR_FF: 'FF', PR_SF: 'SF' };
     function xerPredText(taskId) {
       var list = predByTask[taskId]; if (!list || !list.length) return null;
@@ -3559,7 +3694,7 @@
         start: mile ? (s || f) : s, finish: mile ? (s || f) : f, sA: !!as, fA: !!af, as: as, af: af,
         bls: bls, blf: mile ? (bls || blf) : blf, freeFloat: ff,
         cstr: XER_CSTR[t.cstr_type] || null, cstrDate: xerDateOnly(t.cstr_date),
-        udf: udfByTask[t.task_id] || null,
+        udf: udfByTask[t.task_id] || null, codes: codesByTask[t.task_id] || null,
         status: status, pct: parseFloat(t.phys_complete_pct) || 0,
         type: mile ? (t.task_type === 'TT_FinMile' ? 'Finish Milestone' : 'Start Milestone') : 'Task', calTmpId: calByClndrId[t.clndr_id] || null,
         predText: xerPredText(t.task_id) });
@@ -3596,7 +3731,8 @@
         remaining_units: parseFloat(a.remain_qty) || 0 });
     });
 
-    return { calendars: calendars, recs: recs, resources: resources, assignments: assignments, udfDefs: udfDefs };
+    return { calendars: calendars, recs: recs, resources: resources, assignments: assignments, udfDefs: udfDefs,
+      codeTypes: codeTypes, codeValues: codeValues };
   }
   function xerRecToPayload(r, calIdMap) {
     return { project_id: pid, wbs: r.code, activity_id: r.id, activity_name: r.name,
@@ -3621,15 +3757,52 @@
         '<td>' + (r.start ? Fmt.date(r.start) : '—') + '</td><td>' + (r.finish ? Fmt.date(r.finish) : '—') + '</td>' +
         '<td style="text-align:right;">' + (r.pct != null ? r.pct + '%' : '') + '</td></tr>';
     }).join('');
+    // ---- Location mapping step ----
+    // Fills each activity's `location` during the import instead of leaving it for a manual backfill.
+    // Sources are the file's own WBS depths and its P6 activity code types — the two places a P6
+    // schedule actually carries Tower/Level/Zone. Levels can be created here, since a project being
+    // imported into for the first time has none defined yet.
+    var leafRecs = recs.filter(function (r) { return r.isLeaf; });
+    var xerNameByCode = {}; recs.forEach(function (r) { if (!r.isLeaf) xerNameByCode[r.code] = r.name || ''; });
+    var valByTmpId = {}; (parsed.codeValues || []).forEach(function (v) { valByTmpId[v.tmpId] = v.value; });
+    var locSources = locSrcsWbs(leafRecs, function (r) { return r.code; }, xerNameByCode)
+      .concat(locSrcsCodes((parsed.codeTypes || []).map(function (t) { return { id: t.tmpId, name: t.name }; }),
+        function (r, tid) { var vid = r.codes && r.codes[tid]; return vid ? valByTmpId[vid] : null; }));
+    locSources.forEach(function (s) { s._sample = locSrcSample(leafRecs, s); });
+    var locUI = locSources.length ? locMapUI(LOC_LEVELS, locSources, true) : null;
+    var locSection = locUI
+      ? '<div style="border-top:1px solid var(--pd-line);margin-top:10px;padding-top:10px;">' +
+        '<strong style="font-size:13px;">Location breakdown</strong>' +
+        '<p style="color:var(--pd-muted);font-size:12px;margin:2px 0 8px;">Map this file\'s WBS levels or P6 activity codes onto your location levels (Tower &rsaquo; Level &rsaquo; Zone). Leave everything skipped to import without a location breakdown.</p>' +
+        locUI.html + '<div id="impx-locprev" style="font-size:12px;color:var(--pd-muted);"></div></div>'
+      : '';
     var m = UI.modal('<h2 style="margin-top:0;">Import P6 Schedule (.xer)</h2>' +
       '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">From <strong>' + esc(fname) + '</strong> — found <strong>' + recs.length + '</strong> rows (' + wbsN + ' WBS, ' + actN + ' activities), <strong>' + parsed.calendars.length + '</strong> calendar(s), <strong>' + parsed.resources.length + '</strong> resource(s), <strong>' + parsed.assignments.length + '</strong> resource assignment(s).</p>' +
       '<div style="max-height:260px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
       (recs.length > 12 ? '<p style="font-size:12px;color:var(--pd-muted);">…and ' + (recs.length - 12) + ' more.</p>' : '') +
       '<label style="display:flex;align-items:center;gap:8px;margin:12px 0;"><input type="checkbox" id="ps-impx-rep" checked> Replace existing activities for this project</label>' +
-      '<p style="font-size:12px;color:var(--pd-muted);">Also imports the P6 calendar(s) and resource master into Resource &amp; Role Master (added alongside anything already there — not replaced).</p>' +
+      locSection +
+      '<p style="font-size:12px;color:var(--pd-muted);">Also imports the P6 calendar(s), activity codes and resource master into this project (added alongside anything already there — not replaced).</p>' +
       '<div style="text-align:right;"><button class="pd-btn" id="ps-impx-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-impx-go">Import ' + recs.length + ' rows</button></div>');
+    if (locUI) {
+      locUI.bind(m.el, function () {
+        var map = locUI.read(m.el), el = m.el.querySelector('#impx-locprev');
+        if (!map.length) { el.innerHTML = 'Pick a source for at least one level, or leave them all skipped.'; return; }
+        var p = locMapPlan(leafRecs, map, function () { return null; }, true);
+        el.innerHTML = '<strong>' + p.ups.length + '</strong> of ' + leafRecs.length + ' activities will get a location.' +
+          (p.sample.length ? '<div style="margin-top:6px;">' + p.sample.slice(0, 4).map(function (s) {
+            return '<div style="padding:1px 0;">' + esc((s.rec.name || '').slice(0, 34)) + ' → ' +
+              esc(map.filter(function (mp) { return s.loc[mp.key]; }).map(function (mp) { return mp.name + ': ' + s.loc[mp.key]; }).join(' · ')) + '</div>';
+          }).join('') + '</div>' : '');
+      });
+      m.el.querySelector('#impx-locprev').innerHTML = '';
+    }
     m.el.querySelector('#ps-impx-x').onclick = m.close;
-    m.el.querySelector('#ps-impx-go').onclick = function () { var rep = m.el.querySelector('#ps-impx-rep').checked; m.close(); doImportXER(parsed, rep, fname); };
+    m.el.querySelector('#ps-impx-go').onclick = function () {
+      var rep = m.el.querySelector('#ps-impx-rep').checked;
+      parsed.locMap = locUI ? locUI.read(m.el) : [];
+      m.close(); doImportXER(parsed, rep, fname);
+    };
   }
   async function doImportXER(parsed, replace, fname) {
     showLoading('Preparing import…');
@@ -3671,10 +3844,57 @@
         if (!ures.error && ures.data) { udfIdMap[d.tmpId] = ures.data.id; existingUdf[d.name.toLowerCase()] = ures.data.id; }
       }
     }
-    // 3) Activities (WBS + tasks) — remap each rec's UDF values (keyed by P6 udf_type_id) to app def ids.
+    // 2c) Activity Codes → activity_code_types / _values (reuse by name/value so a re-import doesn't
+    // duplicate the dictionaries). ctIdMap / cvIdMap: P6 tmpId → app id.
+    var ctIdMap = {}, cvIdMap = {};
+    if (parsed.codeTypes && parsed.codeTypes.length) {
+      setLoading('Importing activity codes…');
+      var exType = {}; CODE_TYPES.forEach(function (t) { exType[String(t.name).toLowerCase()] = t.id; });
+      for (var c = 0; c < parsed.codeTypes.length; c++) {
+        var ct = parsed.codeTypes[c], exc = exType[ct.name.toLowerCase()];
+        if (exc) { ctIdMap[ct.tmpId] = exc; continue; }
+        var ctres = await sb().from('activity_code_types').insert({ project_id: pid, name: ct.name, sort_order: ct.sort, created_by: uid }).select().single();
+        if (!ctres.error && ctres.data) { ctIdMap[ct.tmpId] = ctres.data.id; exType[ct.name.toLowerCase()] = ctres.data.id; CODE_TYPES.push(ctres.data); }
+      }
+      // Values are chunked, and the created rows are matched back by (type,value) rather than by
+      // insert order — PostgREST does not promise the returned rows come back in the order sent.
+      var exVal = {}; CODE_VALUES.forEach(function (v) { exVal[v.code_type_id + '|' + String(v.value).toLowerCase()] = v.id; });
+      var pend = parsed.codeValues.filter(function (v) { return ctIdMap[v.typeTmpId]; });
+      for (var vi = 0; vi < pend.length; vi += CH) {
+        var slice = pend.slice(vi, vi + CH), toIns = [];
+        slice.forEach(function (v) {
+          var real = ctIdMap[v.typeTmpId], k = real + '|' + v.value.toLowerCase();
+          if (exVal[k]) { cvIdMap[v.tmpId] = exVal[k]; return; }
+          toIns.push({ code_type_id: real, project_id: pid, value: v.value, sort_order: v.sort });
+        });
+        if (!toIns.length) continue;
+        var vres = await sb().from('activity_code_values').insert(toIns).select();
+        if (vres.error || !vres.data) continue;
+        vres.data.forEach(function (d) { exVal[d.code_type_id + '|' + String(d.value).toLowerCase()] = d.id; CODE_VALUES.push(d); });
+        slice.forEach(function (v) {
+          var k = ctIdMap[v.typeTmpId] + '|' + v.value.toLowerCase();
+          if (exVal[k]) cvIdMap[v.tmpId] = exVal[k];
+        });
+      }
+    }
+    // 2d) Location breakdown — create any levels the mapping asked for, then stamp each rec's
+    // `location` from the chosen sources so it rides along in the same insert as everything else.
+    var locMap = parsed.locMap || [];
+    if (locMap.length) {
+      setLoading('Setting up the location breakdown…');
+      if (await locEnsureLevels(locMap)) {
+        locMapPlan(parsed.recs.filter(function (r) { return r.isLeaf; }), locMap, function () { return null; }, true)
+          .ups.forEach(function (u) { u.rec.loc = u.loc; });
+        populateGroupSelect(); seedExtraHidden(); renderHeader();
+      }
+    }
+    // 3) Activities (WBS + tasks) — remap each rec's UDF + activity-code values (keyed by P6 ids) to
+    // the app ids created above.
     var payloads = parsed.recs.map(function (r) {
       var p = xerRecToPayload(r, calIdMap); p.created_by = uid;
       if (r.udf) { var uv = {}; Object.keys(r.udf).forEach(function (tid) { if (udfIdMap[tid]) uv[udfIdMap[tid]] = r.udf[tid]; }); if (Object.keys(uv).length) p.udf = uv; }
+      if (r.codes) { var cv = {}; Object.keys(r.codes).forEach(function (tid) { var rt = ctIdMap[tid], rv = cvIdMap[r.codes[tid]]; if (rt && rv) cv[rt] = rv; }); if (Object.keys(cv).length) p.activity_codes = cv; }
+      if (r.loc && Object.keys(r.loc).length) p.location = r.loc;
       return p;
     });
     var ok = 0, err = null;
@@ -3721,6 +3941,8 @@
     var tiles = [ {n:actN,l:'Activities'}, {n:wbsN,l:'WBS nodes'}, {n:relN,l:'With predecessors'},
       {n:parsed.calendars.length,l:'Calendars'}, {n:parsed.resources.length,l:'Resources'}, {n:parsed.assignments.length,l:'Assignments'} ];
     if (parsed.udfDefs && parsed.udfDefs.length) tiles.push({n:parsed.udfDefs.length,l:'User-def. fields'});
+    if (parsed.codeTypes && parsed.codeTypes.length) tiles.push({n:parsed.codeTypes.length,l:'Activity codes'});
+    if (locMap.length) tiles.push({n:parsed.recs.filter(function(r){return r.loc;}).length,l:'With location'});
     showImportSummary({ title:'P6 import complete', file:fname, tiles:tiles, warnings:warns,
       note: parsed.udfDefs && parsed.udfDefs.length ? 'Add the imported UDF columns via the “+” column chooser. P6 calendars & resources were added to Resource &amp; Role Master.' : 'P6 calendars &amp; resources were added to Resource &amp; Role Master.' });
   }
