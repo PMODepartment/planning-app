@@ -120,6 +120,20 @@ But saving through the full editor exposed three real defects, all now fixed:
 Re-ran the whole flow against the fixed build: code stayed `A-101.1`, sheet `Approved · 1 · 100%`,
 parent `In Progress · 1/2 · 50%` with stored and displayed values agreeing. Sandbox emptied afterwards
 (0 rows, storage object removed and confirmed gone); BAU101 540/29 and GPR101 1,372 untouched.
+
+### Re-derived BAU101's 6 sheet-parents after the `approvedOf()` fix — nothing had drifted
+Recomputed all 6 parents and all 29 sheets under the corrected single definition and diffed against
+what is stored: **0 parents needed a write, 0 of 29 sheets had a count disagreeing with their status.**
+The two old definitions only diverge once a sheet is approved *through the full editor*, and every
+BAU101 sheet is still `For Review` — so the drift was possible but had not actually happened.
+Confirmed in the app as well (displayed vs stored, all 6): `A-1000.1` 15/0, `U-200` 3/0, `E-400` 3/0,
+`F-200` 3/0, `E-100` 2/0, `E-500` 3/0, all `For Review`, every sheet-count tag and nested row count
+correct.
+- ⚠️ **Measurement trap:** searching for a code renders **nothing** when its discipline group is
+  collapsed — the group rows paint but `buildModel` returns at `if (collapsed[dkey]) return;` before
+  the drawings. Five of the six read as "missing" until the groups were expanded. **Pre-existing
+  behaviour unrelated to sheets** (plain search does not auto-expand; only `drillTo` clears
+  `collapsed`), but it makes a search-based check silently under-report. Expand before asserting.
 ⚠️ **Environment note:** the CDP `Runtime.evaluate` bridge times out at 45s and froze the renderer twice
 on the 540-row BAU101 page. Do heavy multi-query work from a light page (`projects.html`) and keep each
 eval short, or the tab has to be reloaded.

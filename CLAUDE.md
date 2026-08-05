@@ -135,6 +135,13 @@ matched the actual child counts), so `syncParent` holds against live data.
   (`A-101.1` → `BAU101-TEST-MCC-AR-A-101.1`), destroying the child-of-parent numbering. ⚠️ **The editor
   skipped the status→`approved_sheets` derivation** the inline path applies. Re-verified against the
   fixed build; sandbox emptied (rows + storage object), real registers untouched.
+- **Re-derived BAU101's 6 sheet-parents afterwards — nothing had drifted.** 0 parents needed a write and
+  0 of 29 sheets had a count disagreeing with their status: the two old definitions only diverge once a
+  sheet is approved *through the full editor*, and every BAU101 sheet is still `For Review`. Confirmed
+  displayed-vs-stored in the app for all six. ⚠️ **Measurement trap found doing it:** searching for a
+  code renders nothing while its discipline group is collapsed (`buildModel` returns at
+  `if (collapsed[dkey])` before the drawings), so five of six read as "missing" until expanded —
+  pre-existing, unrelated to sheets, but it makes search-based checks silently under-report.
 - **68 checks green** (33 model + 35 renderer) against functions sliced from the shipped module, with
   new regressions for the live bug and the whole vocabulary change. Assets drawing-register
   `module.css/js?v=20260805b`. See `modules/drawing-register/CLAUDE.md`.
