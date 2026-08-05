@@ -388,7 +388,7 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
   body.dr-fit #dr-view { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
   body.dr-fit .dr-tablecard { flex:1 1 auto; min-height:0; max-height:none; }
 }
-.dr-grid { font-size:12px; min-width:1180px; }   /* so narrow viewports scroll (and the frozen Code+Title stay put) */
+.dr-grid { font-size:12px; min-width:1080px; }   /* so narrow viewports scroll (and the frozen Code+Title stay put) */
 .dr-grid thead th { padding:7px 8px; font-size:10px; }
 .dr-grid td { padding:4px 8px; }
 .dr-grid:focus { outline:none; }
@@ -398,60 +398,6 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-c-code { width:130px; } .dr-c-title { width:300px; } .dr-c-rev { width:46px; text-align:center; }
 .dr-c-status { width:158px; } .dr-c-sh { width:44px; } .dr-c-ap { width:66px; }
 .dr-c-date { width:82px; } .dr-c-resp { width:90px; }
-.dr-c-needby { width:100px; }
-
-/* ---- Schedule-activity picker (searchable by ID *and* name) ------------ */
-/* The activity column needs more room than the other two, so this row isn't a
-   plain 3-equal-column grid. */
-.dr-grid-sched { display:grid; grid-template-columns:2.2fr 1fr 1fr; gap:12px; }
-@media (max-width:760px){ .dr-grid-sched { grid-template-columns:1fr; } }
-.dr-actpick { position:relative; }
-.dr-actpick-menu { position:absolute; z-index:30; left:0; right:0; top:100%; margin-top:4px;
-  background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px;
-  box-shadow:0 10px 30px rgba(0,0,0,.18); max-height:280px; overflow-y:auto; }
-.dr-actpick-item { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:baseline;
-  width:100%; text-align:left; border:none; background:transparent; font-family:inherit;
-  padding:7px 10px; cursor:pointer; border-bottom:1px solid var(--pd-line); }
-.dr-actpick-item:last-child { border-bottom:none; }
-.dr-actpick-item:hover { background:var(--pd-bg); }
-.dr-actpick-item b { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:12px; color:var(--pd-red); }
-.dr-actpick-item span { font-size:12.5px; color:var(--pd-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.dr-actpick-item i { font-size:11px; color:var(--pd-muted); font-style:normal; white-space:nowrap; }
-.dr-actpick-empty { padding:9px 11px; font-size:12px; color:var(--pd-muted); }
-.dr-actpick-sel:not(:empty) { margin-top:6px; }
-.dr-actpick-chip { display:inline-flex; align-items:center; gap:6px; font-size:12px;
-  background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:999px; padding:3px 6px 3px 10px; max-width:100%; }
-.dr-actpick-chip b { font-family:ui-monospace,Consolas,monospace; color:var(--pd-red); }
-.dr-actpick-x { border:none; background:transparent; color:var(--pd-muted); cursor:pointer;
-  font-size:15px; line-height:1; padding:0 3px; }
-.dr-actpick-x:hover { color:var(--pd-red); }
-
-/* ---- Schedule link: Need-by column + float chip ------------------------ */
-.dr-needby { font-weight:600; }
-.dr-needby-unl { color:var(--pd-muted); font-style:italic; }
-/* A document linked to a non-Execution activity. The date such a link computes is
-   real-looking and meaningless ("approve this before the activity that produces it
-   starts"), so the cell states the problem instead of showing it. */
-.dr-needby-bad { display:inline-flex; align-items:center; gap:4px; padding:1px 7px; border-radius:9px;
-  background:rgba(217,119,6,.15); color:#b45309; font-size:11px; font-weight:700; cursor:help; }
-.dr-needby-bad svg { display:block; }
-html.pd-dark .dr-needby-bad { color:#fbbf24; }
-.dr-actpick-nonexec { opacity:.72; }
-.dr-actpick-tag { font-style:normal; font-size:10px; font-weight:700; text-transform:uppercase;
-  letter-spacing:.03em; color:#b45309; background:rgba(217,119,6,.15); border-radius:8px; padding:1px 6px; }
-html.pd-dark .dr-actpick-tag { color:#fbbf24; }
-.dr-flchip { display:inline-block; padding:0 5px; border-radius:9px; font-size:10px; font-weight:700; line-height:15px; }
-.dr-fl-ok    { background:rgba(31,143,78,.14);  color:var(--pd-ok, #1f8f4e); }
-.dr-fl-tight { background:rgba(199,119,0,.16);  color:var(--pd-warn, #c77700); }
-.dr-fl-late  { background:rgba(238,49,36,.15);   color:var(--pd-red, #ee3124); }
-.dr-schedhint { margin:2px 0 4px; font-size:12px; }
-.dr-warn-t { color:var(--pd-red, #ee3124); font-weight:600; }
-.dr-grid .dr-actcol { width:78px; text-align:right; white-space:nowrap; }
-.dr-grid td.dr-c-rev { text-align:center; }
-
-/* ---- Frozen Code + Title columns (Excel-style) [feature 1] -------------- */
-/* Sticky left so the drawing identity stays visible when scrolling right.    */
-.dr-grid td.dr-freeze, .dr-grid th.dr-freeze { position:sticky; z-index:1; background:var(--pd-card); }
 .dr-grid th.dr-freeze { z-index:3; }                    /* header corner above all */
 .dr-freeze-cb    { left:0; }
 .dr-freeze-code, .dr-freeze-grp { left:var(--cbw,0px); }

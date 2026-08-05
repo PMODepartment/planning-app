@@ -41,15 +41,6 @@ window.DrawingRegister = (function () {
   var dupSet = {};                             // phasecode -> count (>1) for duplicate-code flagging
   var canWrite = false;                        // planner+ / admin / super_admin
 
-  // ---- Project Schedule link -----------------------------------------------
-  // A drawing is a prerequisite for construction work: the linked activity's
-  // start is the "need-by" date; (start − lead_days) is the required approval
-  // date. See migrations/2026-07-25-schedule-document-links.sql.
-  var schedActs = [];        // [{id, activity_id, activity_name, start_date, actual_start}]
-  var execPrefix = '';       // dotted WBS code of the Execution Phase branch + '.' ('' = unknown)
-  var schedById = {};        // activity_id -> activity
-  var schedPid  = null;      // project the schedule cache was loaded for
-  var LEAD_DEFAULT = 30;     // drawings approved ~30 days before the work they enable
 
   // ---- Coding Reference (from the workbook "Coding Reference" sheet) --------
   var BUILDINGS = ['GEN','TW1','TW2','TW3','TW4','TW5','TW6','TW7','TW8','TW9'];
@@ -141,7 +132,7 @@ window.DrawingRegister = (function () {
   var REG_SORTABLE = {
     code:'Code', title:'Sheet Title / Description', revision:'Rev', status:'Status',
     sheets:'Sh', appr:'Appr', latest_sub:'Latest Sub.', approval:'Approval',
-    needby:'Need-by', responsible:'Resp.'
+    responsible:'Resp.'
   };
   function regSortVal(r, col){
     switch (col){
@@ -153,7 +144,6 @@ window.DrawingRegister = (function () {
       case 'appr':        return num(r.approved_sheets)||0;
       case 'latest_sub':  return latestSub(r,'actual') || latestSub(r,'planned') || '';
       case 'approval':    return r.actual_approval || r.planned_approval || '';
-      case 'needby':      return requiredApprovalOf(r) || '';
       case 'responsible': return (r.responsible||'').toLowerCase();
       default:            return 0;
     }
@@ -507,230 +497,23 @@ window.DrawingRegister = (function () {
       if (!restoreUI()) rows.forEach(function (r){ collapsed['P:' + (r.phase || 'Ungrouped')] = true; });
     }
     render();
-    ensureSchedule();   // lazy — re-renders the Need-by column when it resolves
   }
-
-  // ---- Project Schedule cache (for the Need-by column + Add/Edit picker) ----
-  function ensureSchedule(){
-    if (schedPid === pid) return Promise.resolve();
-    return loadSchedule().then(function(){ schedPid = pid; if (view === 'register') render(); });
-  }
-  async function loadSchedule(){
-    schedActs = []; schedById = {};
-    if (!pid) return;
-    var all = [], last = null;
-    while (true) {
-      var q = sb().from('project_schedule')
-        .select('id,activity_id,activity_name,start_date,actual_start,activity_type,wbs')
-        .eq('project_id', pid).order('id', { ascending:true }).limit(1000);
-      if (last) q = q.gt('id', last);
-      var res = await q;
-      if (res.error) return;   // schedule link is optional — degrade quietly
-      var batch = res.data || []; all = all.concat(batch);
-      if (batch.length < 1000) break; last = batch[batch.length - 1].id;
-    }
-    // ⚠️ Find the Execution Phase branch BEFORE dropping the WBS Summary rows.
-    // A document is a PREREQUISITE for construction work, so the activity it points
-    // at should be an Execution Phase activity — the one whose start it gates.
-    // Design Development activities are the opposite relationship (the register IS
-    // that work, and its progress flows INTO the schedule), so a link there computes
-    // "approve this drawing 30 days before the activity that produces it starts",
-    // which is backwards. We can't stop it — a planner may legitimately gate a
-    // document on a Planning or Initiation activity — but it must be visible.
-    execPrefix = '';
-    all.forEach(function (a){
-      if (a.activity_type === 'WBS Summary' && /^execution phase$/i.test((a.activity_name||'').trim()) && a.wbs)
-        execPrefix = String(a.wbs) + '.';
-    });
-    all.forEach(function (a){
-      if (!a.activity_id || a.activity_type === 'WBS Summary') return;  // leaf activities only
-      if (!schedById[a.activity_id]) { schedById[a.activity_id] = a; schedActs.push(a); }
-    });
-  }
-  // null = can't tell (no Execution Phase node in this project's WBS, e.g. a legacy
-  // schedule that predates the skeleton) — in that case we say nothing rather than
-  // warn on every document.
-  function isExecutionAct(a){
-    if (!a || !execPrefix) return null;
-    var w = String(a.wbs || '');
-    return w === execPrefix.slice(0, -1) || w.indexOf(execPrefix) === 0;
-  }
-  function linkIsBackwards(r){
-    var aid = inh(r, 'schedule_activity_id');
-    if (!aid) return false;
-    var ex = isExecutionAct(schedById[aid]);
-    return ex === false;      // known, and NOT under Execution Phase
-  }
-
-  // ---- schedule-link derivations -------------------------------------------
-  // ⚠️ These read through `inh()`, not the raw field. On a per-sheet register the
-  // schedule link and the lead time belong to the WHOLE drawing (the parent), not
-  // to each of its 100 sheets — so a sheet with no link of its own answers with
-  // its parent's. Without this every sheet reads as "unlinked" and the Need-by
-  // column, float chip, aging bar and Backlog urgency sort all go blank the moment
-  // a drawing is broken out per sheet.
-  function leadOf(r){ var l = inh(r, 'lead_days'); return (l == null || l === '') ? LEAD_DEFAULT : num(l); }
-  function needByOf(r){                          // the activity start = need-on-site date
-    var aid = inh(r, 'schedule_activity_id');
-    var a = aid && schedById[aid];
-    return a ? (a.start_date || a.actual_start || null) : null;
-  }
-  // ⚠️ ALL-UTC, deliberately. The previous version built a LOCAL date
-  // (`new Date(iso+'T00:00:00')` + `setDate`) and then read it back with
-  // `toISOString()`, which is UTC — so east of Greenwich local midnight is the
-  // *previous* UTC day and every result came out ONE DAY EARLY. In Manila
-  // (UTC+8) `minusDays('2026-03-31', 0)` returned `2026-03-30`; subtracting
-  // zero days must be the identity, which is what makes this unambiguous.
-  // That one-day error propagated into every schedule-linked deadline: the
-  // Need-by column, the float chip's colour, agingDays(), the aging bar and the
-  // Backlog urgency sort. Mixing local constructors with UTC getters is the
-  // exact trap documented for the material-submittal importer — don't reopen it.
-  function minusDays(iso, n){
-    var p = String(iso).slice(0, 10).split('-');
-    if (p.length !== 3) return null;
-    var t = Date.UTC(+p[0], +p[1] - 1, +p[2]);
-    if (isNaN(t)) return null;
-    var d = new Date(t - n * 86400000);
-    return d.toISOString().slice(0, 10);
-  }
-  function requiredApprovalOf(r){                // deadline = need-by − lead
-    var nb = needByOf(r); return nb ? minusDays(nb, leadOf(r)) : null;
-  }
-  // Aging in days, WPM-Backlog style: +N = N days past its deadline, −N = N days
-  // still to go. Prefers the schedule need-by deadline; falls back to the plain
-  // planned-approval date for drawings with no schedule link yet.
+  // Days past the PLANNED approval date (+N late, −N still to go). The register
+  // tracks planned vs actual approval and nothing else — see the note on
+  // backlogUrgency about why the schedule-derived deadline was removed.
   function agingDays(r){
-    var ref = requiredApprovalOf(r) || inh(r, 'planned_approval');
+    var ref = inh(r, 'planned_approval');
     if (!ref) return null;
     var refYear = +String(ref).slice(0,4);
     if (refYear < 2015 || refYear > 2100) return null;   // sentinel/placeholder date, not real
     var today = new Date(); today.setHours(0,0,0,0);
     return Math.round((today - new Date(ref + 'T00:00:00')) / 86400000);
   }
-  function docFloatOf(r){                         // +slack / −late, days vs the deadline
-    var req = requiredApprovalOf(r); if (!req) return null;
-    var have = r.actual_approval || inh(r, 'planned_approval'); if (!have) return null;
-    return Math.round((new Date(req + 'T00:00:00') - new Date(have + 'T00:00:00')) / 86400000);
-  }
-  // Need-by cell: the required-approval deadline + a float chip (green slack /
-  // amber tight / red late). Blank when the drawing isn't linked to an activity.
-  function needByCellHtml(r){
-    if (!inh(r, 'schedule_activity_id')) return '<span class="dr-mut">—</span>';
-    // ⚠️ A backwards link produces a REAL-LOOKING date that is meaningless: the
-    // required-approval it computes is "N days before the activity that PRODUCES
-    // this drawing starts". Showing that date unmarked is worse than showing
-    // nothing, so the cell says what's wrong instead.
-    if (linkIsBackwards(r)) {
-      var aidb = inh(r, 'schedule_activity_id'), ab = schedById[aidb] || {};
-      return '<span class="dr-needby-bad" title="' + Fmt.esc(aidb + ' — ' + (ab.activity_name || '')) +
-        ' is not an Execution Phase activity.\nA drawing gates CONSTRUCTION work, so its need-by comes from the activity it enables.\n' +
-        'Design Development progress flows the other way — it is rolled up from this register automatically, with no link needed.' +
-        '">' + ico('x', 12) + ' Not execution</span>';
-    }
-    var req = requiredApprovalOf(r);
-    if (!req) {   // linked, but the activity is missing / has no start date yet
-      var aidu = inh(r, 'schedule_activity_id');
-      return '<span class="dr-needby-unl" title="Linked activity '+Fmt.esc(aidu)+
-             ' — no start date in the schedule yet">'+Fmt.esc(aidu)+'</span>';
-    }
-    var fl = docFloatOf(r), chip = '';
-    if (fl != null) {
-      var cls = fl < 0 ? 'dr-fl-late' : (fl <= 3 ? 'dr-fl-tight' : 'dr-fl-ok');
-      chip = ' <span class="dr-flchip '+cls+'" title="Float of the approval date vs the required-by deadline">'+
-             (fl > 0 ? '+' : '')+fl+'d</span>';
-    }
-    return '<span class="dr-needby" title="Required approval for activity '+Fmt.esc(inh(r,'schedule_activity_id'))+
-           '">'+Fmt.date(req)+'</span>'+chip;
-  }
   // ---- Schedule-activity picker (searchable) -------------------------------
   // ⚠️ A native <datalist> can NOT do this: browsers filter datalist options by
   // the option's `value`, which has to be the activity_id we store — so typing
   // part of an activity NAME matched nothing. This is a real dropdown that
   // searches both the ID and the name.
-  var SCHED_PICK_MAX = 60;              // rendered rows per query; schedules run to 40k activities
-  function schedMatches(q) {
-    q = (q || '').trim().toLowerCase();
-    if (!q) return schedActs.slice(0, SCHED_PICK_MAX);
-    var terms = q.split(/\s+/), out = [];
-    for (var i = 0; i < schedActs.length && out.length < SCHED_PICK_MAX; i++) {
-      var a = schedActs[i];
-      var hay = ((a.activity_id || '') + ' ' + (a.activity_name || '')).toLowerCase();
-      var ok = true;
-      for (var t = 0; t < terms.length; t++) { if (hay.indexOf(terms[t]) === -1) { ok = false; break; } }
-      if (ok) out.push(a);
-    }
-    return out;
-  }
-  function schedPickerHTML(value) {
-    return '<div class="dr-actpick" id="f-actpick">' +
-      '<input class="pd-input" id="f-sact-q" autocomplete="off" placeholder="Search activity ID or name…" value="">' +
-      '<input type="hidden" id="f-sact" value="' + Fmt.esc(value) + '">' +
-      '<div class="dr-actpick-sel" id="f-sact-sel"></div>' +
-      '<div class="dr-actpick-menu" id="f-sact-menu" hidden></div>' +
-    '</div>';
-  }
-  // Wires the picker inside `root`; onPick() fires whenever the value changes.
-  function wireSchedPicker(root, onPick) {
-    var q = root.querySelector('#f-sact-q'), hid = root.querySelector('#f-sact');
-    var menu = root.querySelector('#f-sact-menu'), sel = root.querySelector('#f-sact-sel');
-    function renderSel() {
-      var v = hid.value.trim();
-      if (!v) { sel.innerHTML = ''; return; }
-      var a = schedById[v];
-      sel.innerHTML = '<span class="dr-actpick-chip">' +
-        '<b>' + Fmt.esc(v) + '</b>' + (a && a.activity_name ? ' — ' + Fmt.esc(a.activity_name) : '') +
-        '<button type="button" class="dr-actpick-x" title="Clear">&times;</button></span>' +
-        (a ? '' : '<span class="dr-warn-t" style="margin-left:8px;">not in this project’s schedule</span>');
-      sel.querySelector('.dr-actpick-x').onclick = function () {
-        hid.value = ''; renderSel(); onPick(); q.focus();
-      };
-    }
-    function renderMenu() {
-      var list = schedMatches(q.value);
-      if (!schedActs.length) {
-        menu.innerHTML = '<div class="dr-actpick-empty">' +
-          (schedPid === pid ? 'This project has no schedule activities yet.' : 'Loading the schedule…') + '</div>';
-      } else if (!list.length) {
-        menu.innerHTML = '<div class="dr-actpick-empty">No activity matches “' + Fmt.esc(q.value) + '”.</div>';
-      } else {
-        menu.innerHTML = list.map(function (a) {
-          // Non-Execution activities are still offered (a planner may legitimately
-          // gate a document on Planning or Initiation work) but are marked, so the
-          // backwards Design-Development link isn't picked by accident.
-          var ex = isExecutionAct(a);
-          return '<button type="button" class="dr-actpick-item' + (ex === false ? ' dr-actpick-nonexec' : '') +
-            '" data-aid="' + Fmt.esc(a.activity_id) + '"' +
-            (ex === false ? ' title="Not an Execution Phase activity — a document gates construction work, so its need-by should come from an Execution activity."' : '') + '>' +
-            '<b>' + Fmt.esc(a.activity_id) + '</b><span>' + Fmt.esc(a.activity_name || '') + '</span>' +
-            (ex === false ? '<em class="dr-actpick-tag">not execution</em>' : '') +
-            (a.start_date ? '<i>' + Fmt.date(a.start_date) + '</i>' : '') + '</button>';
-        }).join('') + (list.length >= SCHED_PICK_MAX
-          ? '<div class="dr-actpick-empty">Showing the first ' + SCHED_PICK_MAX + ' — keep typing to narrow.</div>' : '');
-        menu.querySelectorAll('.dr-actpick-item').forEach(function (b) {
-          b.onclick = function () {
-            hid.value = b.dataset.aid; q.value = ''; menu.hidden = true; renderSel(); onPick();
-          };
-        });
-      }
-      menu.hidden = false;
-    }
-    q.oninput = renderMenu;
-    q.onfocus = renderMenu;
-    q.onkeydown = function (e) {
-      if (e.key === 'Escape') { menu.hidden = true; }
-      else if (e.key === 'Enter') {                    // Enter picks the first match
-        e.preventDefault();
-        var first = menu.querySelector('.dr-actpick-item');
-        if (first && !menu.hidden) first.click();
-      }
-    };
-    document.addEventListener('mousedown', function (e) {
-      if (!root.contains(e.target)) menu.hidden = true;
-    });
-    renderSel();
-    return { refreshSel: renderSel };
-  }
-
   // ---------------------------------------------------------- derivations ----
   function composeCode(r) {
     var parts = [r.proj_code, r.building_ref, r.company, r.drawing_type,
@@ -970,8 +753,8 @@ window.DrawingRegister = (function () {
   }
 
   function render() {
-    // ⚠️ Must run before anything reads the model: drawingRows(), inh(), leadOf()
-    // and needByOf() all consult the parent/child index, and a stale index after an
+    // ⚠️ Must run before anything reads the model: drawingRows() and inh() both
+    // consult the parent/child index, and a stale index after an
     // optimistic in-memory edit would show a sheet as an unparented drawing.
     indexSheets();
     syncTabs();
@@ -995,7 +778,7 @@ window.DrawingRegister = (function () {
   // ---- Backlog: drawings needing action, most urgent first -----------------
   // "Needing action" = not yet approved (For Review / Revise & Resubmit /
   // Approved w/ comments still carries an open loop) OR overdue against its
-  // linked schedule need-by deadline. Sorted so the worst-off rows lead.
+  // own planned approval date. Sorted so the worst-off rows lead.
   // `bkAging` is a Backlog-ONLY filter set by clicking a segment of the
   // Overview's aging bar (UI review #7). It deliberately does not live in the
   // shared filter bar: aging is derived from the schedule link, is meaningful
@@ -1009,10 +792,16 @@ window.DrawingRegister = (function () {
       return true;
     });
   }
+  // ⚠️ Ranked on the drawing's own PLANNED APPROVAL date, not a schedule-derived
+  // deadline. The per-document → activity link was removed: the Project Schedule
+  // already connects to this register through the Design Development POC roll-up,
+  // so a second per-row link was a redundant thing to keep in step.
+  // Smaller = more urgent; a drawing with no planned date can't be late, so it
+  // ranks after everything dated, by status.
   function backlogUrgency(r){
-    var fl = docFloatOf(r);
-    if (fl != null) return fl;                 // negative = late, smaller = worse
-    return r.status === 'Revise & Resubmit' ? 500 : 1000; // no schedule link: rank by status
+    var d = agingDays(r);
+    if (d != null) return -d;                  // most overdue first
+    return r.status === 'Revise & Resubmit' ? 500 : 1000;
   }
 
   // Sortable columns (WPM Backlog pattern: click a header to sort by it, click
@@ -1024,7 +813,6 @@ window.DrawingRegister = (function () {
     { col:'phase',      label:'Drawing Type' },
     { col:'discipline', label:'Discipline' },
     { col:'status',     label:'Status' },
-    { col:'needby',     label:'Need-by' },
     { col:'aging',      label:'Aging (d)' }
   ];
   function bkSortVal(r, col){
@@ -1034,7 +822,6 @@ window.DrawingRegister = (function () {
       case 'phase':       return r.phase||'';
       case 'discipline': return disciplineName(r.discipline);
       case 'status':      return r.status||'';
-      case 'needby':      return requiredApprovalOf(r) || '';
       case 'aging':       { var a=agingDays(r); return a==null ? -1e9 : a; }
       default:            return backlogUrgency(r);
     }
@@ -1067,8 +854,10 @@ window.DrawingRegister = (function () {
       return cmp * bkSort.dir;
     });
 
-    var late = list.filter(function (r){ var f=docFloatOf(r); return f!=null && f<0; }).length;
-    var tight = list.filter(function (r){ var f=docFloatOf(r); return f!=null && f>=0 && f<=3; }).length;
+    // Overdue / due-soon against the drawing's OWN planned approval date — the
+    // register tracks planned vs actual approval and nothing else now.
+    var late = list.filter(function (r){ var d=agingDays(r); return d!=null && d>0; }).length;
+    var tight = list.filter(function (r){ var d=agingDays(r); return d!=null && d<=0 && d>=-3; }).length;
     var revise = list.filter(function (r){ return r.status==='Revise & Resubmit'; }).length;
 
     // "Revise & Resubmit" is a status → a real filter. Open items / late / tight
@@ -1076,7 +865,7 @@ window.DrawingRegister = (function () {
     // backlog rather than pretending to be their own filters.
     var kpis = kpiSection('Backlog Overview',
       kpi(list.length, 'Open items', '', bkAging ? { view:'backlog', patch:{}, tip:'Clear the aging filter and show every open item' } : null) +
-      kpi(late, 'Late vs need-by', late>0?'warn':'') +
+      kpi(late, 'Overdue', late>0?'warn':'') +
       kpi(tight, 'Due ≤3 days', tight>0?'warn':'') +
       kpi(revise, 'Revise & Resubmit', '', { view:'backlog', patch:{ status:'Revise & Resubmit' }, tip:'Filter the Backlog to Revise & Resubmit' }));
 
@@ -1099,7 +888,6 @@ window.DrawingRegister = (function () {
         '<td>'+Fmt.esc(r.phase||'')+'</td>' +
         '<td>'+Fmt.esc(disciplineName(r.discipline))+'</td>' +
         '<td><span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(statusLabel(r.status))+'</span></td>' +
-        '<td class="dr-nowrap dr-c-needby">'+needByCellHtml(r)+'</td>' +
         '<td class="dr-r dr-nowrap'+(a!=null&&a>0?' dr-aging-late':'')+'">'+(a==null?'<span class="dr-mut">—</span>':(a>0?'+':'')+a+'d')+'</td>' +
         // Doc column — the Backlog is where you chase an open submission, so the
         // approved file needs to be reachable without opening the full editor.
@@ -1425,7 +1213,6 @@ window.DrawingRegister = (function () {
       sh('revision', 'dr-c-rev') + sh('status', 'dr-c-status') +
       sh('sheets', 'dr-r dr-c-sh') + sh('appr', 'dr-r dr-c-ap') +
       sh('latest_sub', 'dr-c-date') + sh('approval', 'dr-c-date') +
-      sh('needby', 'dr-c-date dr-c-needby', 'Required approval = linked activity start − lead days') +
       sh('responsible', 'dr-c-resp') +
       '<th class="dr-actcol"></th></tr>';
 
@@ -1465,7 +1252,6 @@ window.DrawingRegister = (function () {
       '<td class="dr-nowrap dr-c-date">'+(roll.maxActual
         ? '<span title="Last sheet approved — everything in this group is approved">'+Fmt.date(roll.maxActual)+'</span>'
         : '<span class="dr-mut" title="Not all approved yet">—</span>')+'</td>' +
-      '<td></td>' +   // Need-by
       '<td></td>' +   // Resp.
       '<td class="dr-nowrap dr-actcol">'+(canWrite?'<button class="dr-lvldel" title="Delete this level and everything under it">'+ico('trash',15)+'</button>':'')+'</td></tr>';
   }
@@ -1531,7 +1317,6 @@ window.DrawingRegister = (function () {
       '<td class="dr-nowrap dr-c-date'+ed+'" data-f="latest_sub" data-t="date">'+(sub?Fmt.date(sub):'—')+'</td>' +
       '<td class="dr-nowrap dr-c-date'+(kids?'':ed)+'" data-f="actual_approval" data-t="date">'+
         (appr?'<span class="'+(apprIsActual?'':'dr-mut')+'" title="'+(apprIsActual?'Actual approval':'Planned approval — not yet approved')+'">'+Fmt.date(appr)+'</span>':'—')+'</td>' +
-      '<td class="dr-nowrap dr-c-date dr-c-needby">'+needByCellHtml(r)+'</td>' +
       '<td class="dr-c-resp'+ed+'" data-f="responsible" data-t="text">'+Fmt.esc(r.responsible)+'</td>' +
       '<td class="dr-nowrap dr-actcol">'+(r.file_url?'<button class="dr-iconbtn" data-view="'+Fmt.esc(r.file_url)+'" title="View approved file">'+ico('eye',15)+'</button>':'')+
         (canWrite && !sheet ? '<button class="dr-iconbtn" data-sheets="'+r.id+'" title="'+(kids?'Manage sheets':'Break out into one row per sheet')+'">'+ico('columns',15)+'</button>' : '')+
@@ -2080,10 +1865,9 @@ window.DrawingRegister = (function () {
         no_of_sheets: 1, approved_sheets: 0, approved_pct: 0, submissions: [],
         dwg_number: code, drawing_no: code, drawing_code: code,
         responsible: p.responsible || null,
-        // ⚠️ planned_approval / schedule_activity_id / lead_days are deliberately
-        // NOT copied down. They belong to the whole drawing; a sheet reads them
-        // through inh(), so changing the parent's date moves every sheet with it
-        // instead of leaving 100 stale copies to reconcile.
+        // ⚠️ planned_approval is deliberately NOT copied down. It belongs to the
+        // whole drawing; a sheet reads it through inh(), so changing the parent's
+        // date moves every sheet with it instead of leaving 100 stale copies.
         sort_order: base + i
       });
     }
@@ -2626,13 +2410,6 @@ window.DrawingRegister = (function () {
         field('Actual approval','<input class="pd-input" type="date" id="f-aapp" value="'+(r.actual_approval||'')+'">') +
       '</div>' +
 
-      '<div class="dr-form-sec">Schedule link <span class="dr-mut" style="font-weight:400;">— the activity this drawing must be approved for</span></div>' +
-      '<div class="dr-grid-sched">' +
-        field('Activity (need-by)', schedPickerHTML(r.schedule_activity_id)) +
-        field('Lead days','<input class="pd-input" type="number" min="0" id="f-lead" value="'+(r.lead_days!=null?r.lead_days:'')+'" placeholder="'+LEAD_DEFAULT+'">') +
-        field('Required approval','<input class="pd-input" id="f-req" readonly placeholder="—">') +
-      '</div>' +
-      '<div class="dr-schedhint dr-mut" id="f-schedhint"></div>' +
 
       field('Remarks','<textarea class="pd-textarea" id="f-rem" rows="2">'+Fmt.esc(r.remarks)+'</textarea>') +
       field('Drawing file (PDF/DWG/image)'+(r.file_url?' — attached; choosing a new one replaces it':''),
@@ -2726,47 +2503,6 @@ window.DrawingRegister = (function () {
     });
     refreshCode();
 
-    // ---- schedule link: live "required approval" preview + auto-fill --------
-    var computedReq = null;   // last derived required-approval date (ISO)
-    function refreshSched(){
-      var aid  = m.el.querySelector('#f-sact').value.trim();
-      var lead = m.el.querySelector('#f-lead').value.trim();
-      var reqEl = m.el.querySelector('#f-req'), hint = m.el.querySelector('#f-schedhint');
-      computedReq = null; reqEl.value = '';
-      if (!aid){ hint.innerHTML = 'Link a schedule activity to auto-derive the required approval date.'; return; }
-      var a = schedById[aid];
-      if (!a){
-        hint.innerHTML = '<span class="dr-warn-t">Activity “'+Fmt.esc(aid)+'” isn’t in this project’s schedule'+
-                         (schedPid!==pid?' (schedule still loading…)':'')+'.</span>'; return;
-      }
-      var nb = a.start_date || a.actual_start;
-      if (!nb){ hint.innerHTML = 'Activity <strong>'+Fmt.esc(aid)+'</strong> has no start date in the schedule yet.'; return; }
-      var L = lead === '' ? LEAD_DEFAULT : num(lead);
-      computedReq = minusDays(nb, L);
-      reqEl.value = computedReq ? Fmt.date(computedReq) : '';
-      hint.innerHTML = 'Need-by (activity start) <strong>'+Fmt.date(nb)+'</strong> · required approval <strong>'+
-        Fmt.date(computedReq)+'</strong> ('+L+'d lead). '+
-        '<label style="margin-left:6px;white-space:nowrap;"><input type="checkbox" id="f-usereq"'+
-        (r.planned_approval?'':' checked')+'> set as Planned approval</label>';
-    }
-    // #f-sact is a hidden input driven by the searchable picker (not typed into),
-    // so its change comes from the picker's callback rather than an input event.
-    var actPicker = wireSchedPicker(m.el.querySelector('#f-actpick'), refreshSched);
-    var leadEl = m.el.querySelector('#f-lead'); leadEl.oninput = leadEl.onchange = refreshSched;
-    refreshSched();
-    // The schedule loads lazily; if it lands while this form is open, re-render
-    // the chosen activity's name and re-derive the date instead of leaving a
-    // stale "not in this project's schedule" warning.
-    // Capped so it can't poll forever if the modal is dismissed some other way
-    // (backdrop click / Esc) before the schedule resolves.
-    var schedTries = 0;
-    var schedWait = setInterval(function () {
-      if (schedPid === pid) { clearInterval(schedWait); actPicker.refreshSel(); refreshSched(); }
-      else if (++schedTries > 60) clearInterval(schedWait);
-    }, 500);
-    var _origClose = m.close;
-    m.close = function () { clearInterval(schedWait); _origClose(); };
-
     m.el.querySelector('#f-cancel').onclick = m.close;
     m.el.querySelector('#f-save').onclick = async function () {
       var btn = m.el.querySelector('#f-save');
@@ -2810,15 +2546,9 @@ window.DrawingRegister = (function () {
         status:       m.el.querySelector('#f-status').value,
         planned_approval: m.el.querySelector('#f-papp').value || null,
         actual_approval:  m.el.querySelector('#f-aapp').value || null,
-        schedule_activity_id: m.el.querySelector('#f-sact').value.trim() || null,
-        lead_days:    (m.el.querySelector('#f-lead').value.trim() === '' ? null : num(m.el.querySelector('#f-lead').value)),
         remarks:      m.el.querySelector('#f-rem').value.trim(),
         updated_at:   new Date().toISOString()
       };
-      // auto-fill Planned approval from the derived required-approval deadline
-      // when the planner opted in (checkbox in the schedule-link preview).
-      var useReq = m.el.querySelector('#f-usereq');
-      if (useReq && useReq.checked && computedReq) data.planned_approval = computedReq;
       // ⚠️ On a SINGLE-sheet row the status IS the approval state — the same rule
       // persistCell applies to an inline edit. Without it here, approving a sheet
       // through the full editor left `approved_sheets` at whatever the (untouched)
@@ -2897,24 +2627,15 @@ window.DrawingRegister = (function () {
         // Tolerant write: if the schedule-link migration hasn't been run yet, a
         // missing-column error strips those fields and retries so the save still
         // lands (matches the material-submittal tolerant-write pattern).
-        var warned = false;
         async function writeRow(){
-          var res = isNew ? await sb().from(TABLE).insert(data)
-                          : await sb().from(TABLE).update(data).eq('id', r.id);
-          if (res.error && /schedule_activity_id|lead_days|column/i.test(res.error.message||'')
-              && ('schedule_activity_id' in data)) {
-            delete data.schedule_activity_id; delete data.lead_days; warned = true;
-            res = isNew ? await sb().from(TABLE).insert(data)
-                        : await sb().from(TABLE).update(data).eq('id', r.id);
-          }
-          return res;
+          return isNew ? await sb().from(TABLE).insert(data)
+                       : await sb().from(TABLE).update(data).eq('id', r.id);
         }
         var wr = await writeRow(); if (wr.error) throw wr.error;
         // Superseded/removed objects are deleted only AFTER the row successfully
         // points away from them.
         await removeFiles(pendingRemoveFiles);
-        UI.toast(warned ? 'Saved — but the schedule link wasn’t stored; run the 2026-07-25 migration.'
-                        : 'Saved', warned ? 'warn' : 'ok');
+        UI.toast('Saved', 'ok');
         m.close();
         await load();
         // Editing a sheet moves its drawing's approved count, POC and approval date.

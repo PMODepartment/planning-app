@@ -1,5 +1,49 @@
 # Module: drawing-register
 
+## Need-by removed — the register tracks planned vs actual approval, nothing else (2026-08-05) — fmlozano
+User: *"Is the need-by column even necessary? I think this is just planned dates and actual dates only
+that should be necessary"* — and the reason: *"The project schedule module already refers to each of
+the module and derived its POC from there."* Correct. The Project Schedule connects to this register
+through the **Design Development POC roll-up**; a second, per-document link to an Execution Phase
+activity was a redundant connection to keep in step, and it answered a question this register doesn't
+track anyway.
+
+**Removed entirely** (Registry column, Backlog column, the Add/Edit "Schedule link" section, the
+searchable activity picker, and every derivation behind them): `needByCellHtml`, `requiredApprovalOf`,
+`needByOf`, `leadOf`, `docFloatOf`, `minusDays`, `isExecutionAct`, `linkIsBackwards`,
+`schedPickerHTML`, `wireSchedPicker`, `schedMatches`, `loadSchedule`, `ensureSchedule`, the
+`schedActs`/`schedById`/`schedPid`/`execPrefix` caches, `LEAD_DEFAULT`, `SCHED_PICK_MAX`, and their
+CSS. ~280 lines.
+
+- **`agingDays()` and `backlogUrgency()` now run on the drawing's own `planned_approval`.** Aging was
+  already falling back to it whenever a drawing had no link — which was every drawing on both live
+  projects — so the Backlog ordering is unchanged in practice, just honest about its basis.
+- The Backlog KPI **"Late vs need-by" → "Overdue"**, counting rows past their planned approval date.
+- ⚠️ **`schedule_activity_id` / `schedule_wbs` / `lead_days` are left in the DB.** Both live projects
+  had **0 linked documents**, so nothing is orphaned, and dropping columns is destructive for no gain.
+- ⚠️ **The register no longer reads `project_schedule` at all** — one fewer cross-module query per load.
+
+### ⚠️ Two self-inflicted traps worth remembering
+- **A dangling `async` silently made `agingDays` async — and it still parsed.** The removal helper cut
+  from `function loadSchedule(` but the declaration was `async function loadSchedule(`, orphaning the
+  keyword above the next function. `async` + comments + `function agingDays` is **valid JavaScript**,
+  so `node --check` passed while `agingDays` returned a Promise and every aging/urgency number silently
+  broke. Caught by reading the diff, not by the parser. Any function-cutting script must swallow a
+  preceding `async `.
+- **An end-anchor searched from position 0 duplicated ~450 lines.** The cut used
+  `s.index("...#f-cancel...")`, which matched an **earlier** modal (`openSheetsDialog`), so
+  `s[:i] + s[j:]` with `j < i` **duplicated** everything between — two `openForm`s, two `createSheets`,
+  and the file still parsed. Always search end anchors with `s.index(anchor, i)` and assert `j > i`.
+  Caught by counting function definitions before/after.
+
+### Verification
+**116 checks green** — 40 model + 35 renderer + 14 collapse + 27 Design Development, all against
+functions sliced from the shipped source. The renderer suite pins the new **11-column (writer) /
+10-column (read-only)** grid: header, plain drawing, sheet-parent, sheet and group rows all agree, so
+the column removal can't have skewed the table. 0 leftover references to any removed symbol; CSS
+braces and comments balanced; no orphan `async`.
+⚠️ **Not verified signed-in** for this removal. Assets `module.css/js?v=20260805f`.
+
 ## Design Development ← the registers; Need-by scoped to Execution Phase (2026-08-05) — fmlozano
 User: *"Design Development picks up the data from the drawing registry and the material submittal log
 showing the POC. Therefore drawings and material approvals need to be connected for activities under

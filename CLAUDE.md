@@ -77,6 +77,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-05 — Need-by removed: the registers track planned vs actual approval, nothing else
+User: *"Is the need-by column even necessary? I think this is just planned dates and actual dates only
+that should be necessary"* — because *"the project schedule module already refers to each of the module
+and derived its POC from there."* Right: the Design Development roll-up **is** the connection between
+the schedule and the two registers, so the per-document link to an Execution Phase activity was a
+second, redundant one — and it answered a question the registers don't track.
+- **Removed from both registers**: the Need-by column (Registry **and** Backlog), the Add/Edit
+  "Schedule link" section, the searchable activity picker, and every derivation behind them
+  (`requiredApprovalOf`, `docFloatOf`, `needByOf`, `leadOf`, `minusDays`, the execution-scope guard,
+  the schedule caches). ~280 lines in drawing-register alone.
+- **Removed from Project Schedule**: the **Documents tab** and its readiness chip. Nothing can author
+  a link any more, so it would be permanently empty — the same empty-promise trap the Design
+  Development node had before it got a writer.
+- **Aging / Backlog urgency now run on the register's own planned approval date.** They already fell
+  back to it whenever a document had no link — which was every document on both live projects — so
+  ordering is unchanged in practice, just honest about its basis. The "Late vs need-by" KPI is now
+  simply **"Overdue"**.
+- ⚠️ **DB columns left in place** (`schedule_activity_id`, `schedule_wbs`, `lead_days`). Both live
+  projects had **0 linked documents**, so nothing is orphaned, and dropping columns is destructive.
+- ⚠️ **Two self-inflicted traps, both caught by reading rather than by tooling:** a dangling `async`
+  left by a function-cutting script silently made `agingDays` **async** (`async` + comments +
+  `function` is valid JS, so `node --check` passed while every aging number became a Promise); and an
+  end-anchor searched from position 0 matched an earlier modal and **duplicated ~450 lines** (two
+  `openForm`s) — which also still parsed. Search end anchors forward and assert; count function
+  definitions before and after.
+- **116 checks green** (40 + 35 + 14 + 27) against functions sliced from the shipped source, including
+  the new **11/10-column** grid alignment across header, drawing, sheet-parent, sheet and group rows.
+  ⚠️ Not verified signed-in. Assets drawing-register `?v=20260805f`, material-submittal `?v=20260805b`;
+  project-schedule `index.html` isn't cache-busted (hard-refresh).
+
 ### 2026-08-05 — Module interaction sanitised: Design Development ← registers, Need-by → Execution Phase
 User: *"Design Development picks up the data from the drawing registry and the material submittal log
 showing the POC. Therefore drawings and material approvals need to be connected for activities under

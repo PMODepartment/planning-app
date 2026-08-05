@@ -1,5 +1,19 @@
 # Module: project-schedule
 
+## Documents tab removed (2026-08-05) — fmlozano
+Both registers dropped the per-document → activity link, so nothing can author one any more and this
+tab would be **permanently empty** — exactly the "empty promise" the Design Development node was
+before it got a real writer. Removed the tab button, its render dispatch, the `DOC_DRAWINGS` /
+`DOC_SUBMITTALS` lazy loads, and `detDocs` / `wireDocs` / `docsFor` / `docReadiness` / `_docChip` /
+`_docApprovedDr` / `_docApprovedMs` / `_docLeadDefault`.
+- **`syncDesignDevelopment()` is now the ONE connection** between this module and the two registers:
+  progress flows register → schedule, and those rows are read-only here.
+- ⚠️ Two fewer cross-module queries in `loadResourcesAssignments()` on every project load.
+- ⚠️ `project_schedule` never stored the link (it lived on the register rows), so there is nothing to
+  clean up here; the register-side columns are left in the DB unused.
+- Verified: inline script parses, 0 leftover references, the DD sync intact.
+  ⚠️ Not verified signed-in. `index.html` isn't cache-busted — hard-refresh.
+
 ## Design Development is now actually populated from the two registers (2026-08-05) — fmlozano
 ⚠️ **The 2026-08-03 skeleton entry's deferred item is now built.** That pass created the Design
 Development node, locked it, labelled it "synced from Drawing Register + Material Submittal Log" and

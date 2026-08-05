@@ -177,9 +177,6 @@ window.MaterialSubmittal = (function () {
   // A submittal is a prerequisite for construction work: the linked activity's
   // start is the "need-by" date; (start − lead_days) is the required approval
   // date (procurement + delivery lead). See migrations/2026-07-25-...sql.
-  var schedActs = [], schedById = {}, schedPid = null;
-  var execPrefix = '';       // dotted WBS code of the Execution Phase branch + '.' ('' = unknown)
-  var LEAD_DEFAULT = 45;   // materials approved ~45 days before the work they enable
 
   // ---- date helpers --------------------------------------------------------
   var MON = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
@@ -257,195 +254,23 @@ window.MaterialSubmittal = (function () {
     var got = p.filter(function (x) { return x != null && String(x).trim() !== ''; });
     return got.length >= 2 ? p.map(function (x) { return (x == null ? '' : String(x).trim()); }).filter(Boolean).join('-') : (r.submittal_no || '');
   }
-
-  // ---- Project Schedule link (Need-by column + Add/Edit picker) ------------
-  function ensureSchedule() {
-    if (schedPid === pid) return Promise.resolve();
-    return loadSchedule().then(function () { schedPid = pid; if (view === 'log' || view === 'backlog') render(); });
-  }
-  async function loadSchedule() {
-    schedActs = []; schedById = {};
-    if (!pid) return;
-    var all = [], last = null;
-    while (true) {
-      var q = sb().from('project_schedule')
-        .select('id,activity_id,activity_name,start_date,actual_start,activity_type,wbs')
-        .eq('project_id', pid).order('id', { ascending: true }).limit(1000);
-      if (last) q = q.gt('id', last);
-      var res = await q;
-      if (res.error) return;   // schedule link is optional — degrade quietly
-      var batch = res.data || []; all = all.concat(batch);
-      if (batch.length < 1000) break; last = batch[batch.length - 1].id;
-    }
-    // ⚠️ Locate the Execution Phase branch BEFORE dropping the WBS Summary rows.
-    // A material submittal is a PREREQUISITE for construction work, so the activity
-    // it points at should be under Execution Phase — the one whose start it gates.
-    // Design Development is the OPPOSITE relationship: that branch is rolled up FROM
-    // this log automatically, so a link there computes "approve this 45 days before
-    // the activity that produces it starts", which is backwards. Mirrors the
-    // Drawing Register (see its loadSchedule note).
-    execPrefix = '';
-    all.forEach(function (a) {
-      if (a.activity_type === 'WBS Summary' && /^execution phase$/i.test((a.activity_name || '').trim()) && a.wbs)
-        execPrefix = String(a.wbs) + '.';
-    });
-    all.forEach(function (a) {
-      if (!a.activity_id || a.activity_type === 'WBS Summary') return;
-      if (!schedById[a.activity_id]) { schedById[a.activity_id] = a; schedActs.push(a); }
-    });
-  }
-  // null = can't tell (no Execution Phase node — e.g. a schedule predating the WBS
-  // skeleton); we stay silent rather than warn on every row.
-  function isExecutionAct(a) {
-    if (!a || !execPrefix) return null;
-    var w = String(a.wbs || '');
-    return w === execPrefix.slice(0, -1) || w.indexOf(execPrefix) === 0;
-  }
-  function linkIsBackwards(r) {
-    if (!r.schedule_activity_id) return false;
-    return isExecutionAct(schedById[r.schedule_activity_id]) === false;
-  }
-  function leadOf(r) { var l = r.lead_days; return (l == null || l === '') ? LEAD_DEFAULT : (+l || 0); }
-  function needByOf(r) {
-    var a = r.schedule_activity_id && schedById[r.schedule_activity_id];
-    return a ? (a.start_date || a.actual_start || null) : null;
-  }
-  // ⚠️ ALL-UTC, deliberately — same off-by-one this module's own importer notes
-  // warn about. It built a LOCAL date (`new Date(iso+'T00:00:00')` + `setDate`)
-  // and read it back with `isoUTC()`, so east of Greenwich local midnight is the
-  // previous UTC day and every result was ONE DAY EARLY: in Manila (UTC+8)
-  // `minusDays('2026-03-31', 0)` returned `2026-03-30`. That fed the Need-by
-  // column, the float chip, agingDays() and the Backlog sort. Never mix a local
-  // constructor with UTC getters.
-  function minusDays(isoStr, n) {
-    var p = String(isoStr).slice(0, 10).split('-');
-    if (p.length !== 3) return null;
-    var t = Date.UTC(+p[0], +p[1] - 1, +p[2]);
-    if (isNaN(t)) return null;
-    return isoUTC(new Date(t - n * 86400000));
-  }
-  function requiredApprovalOf(r) { var nb = needByOf(r); return nb ? minusDays(String(nb).slice(0, 10), leadOf(r)) : null; }
-  // Aging in days, WPM-Backlog style: +N = N days past its deadline, −N = N days
-  // still to go. Prefers the schedule need-by deadline; falls back to the plain
-  // planned-approval date for submittals with no schedule link yet.
+  // Days past the PLANNED approval date (+N late, −N still to go). The log tracks
+  // planned vs actual approval and nothing else — the per-document schedule link
+  // was removed (the Project Schedule already connects to this log through the
+  // Design Development POC roll-up).
   function agingDays(r) {
-    var ref = requiredApprovalOf(r) || r.plan_approval_date;
+    var ref = r.plan_approval_date;
     if (!ref) return null;
     var refYear = +String(ref).slice(0, 4);
     if (refYear < 2015 || refYear > 2100) return null;   // sentinel/placeholder date, not real
     var today = new Date(); today.setHours(0, 0, 0, 0);
     return Math.round((today - new Date(String(ref).slice(0, 10) + 'T00:00:00')) / 86400000);
   }
-  function docFloatOf(r) {
-    var req = requiredApprovalOf(r); if (!req) return null;
-    var have = r.date_approved || r.plan_approval_date; if (!have) return null;
-    return Math.round((new Date(req + 'T00:00:00') - new Date(String(have).slice(0, 10) + 'T00:00:00')) / 86400000);
-  }
-  function needByCell(r) {
-    if (!r.schedule_activity_id) return '<span class="ms-mut ms-mini">—</span>';
-    // A backwards link yields a real-looking, meaningless date — say what's wrong
-    // instead of showing it.
-    if (linkIsBackwards(r)) {
-      var ab = schedById[r.schedule_activity_id] || {};
-      return '<span class="ms-needby-bad" title="' + esc(r.schedule_activity_id + ' — ' + (ab.activity_name || '')) +
-        ' is not an Execution Phase activity. A material submittal gates CONSTRUCTION work, so its need-by comes ' +
-        'from the activity it enables. Design Development progress flows the other way — it is rolled up from ' +
-        'this log automatically, with no link needed.">&#10005; Not execution</span>';
-    }
-    var req = requiredApprovalOf(r);
-    if (!req) return '<span class="ms-mut ms-mini" title="Linked activity ' + esc(r.schedule_activity_id) +
-      ' — no start date in the schedule yet">' + esc(r.schedule_activity_id) + '</span>';
-    var fl = docFloatOf(r), chip = '';
-    if (fl != null) {
-      var cls = fl < 0 ? 'ms-fl-late' : (fl <= 3 ? 'ms-fl-tight' : 'ms-fl-ok');
-      chip = ' <span class="ms-flchip ' + cls + '" title="Float of the approval date vs the required-by deadline">' +
-        (fl > 0 ? '+' : '') + fl + 'd</span>';
-    }
-    return '<span class="ms-needby" title="Required approval for activity ' + esc(r.schedule_activity_id) + '">' +
-      fmtDate(req) + '</span>' + chip;
-  }
   // ---- Schedule-activity picker (searchable) -------------------------------
   // ⚠️ A native <datalist> can NOT do this: browsers filter datalist options by
   // the option's `value`, which has to be the activity_id we store — so typing
   // part of an activity NAME matched nothing. This is a real dropdown that
   // searches both the ID and the name.
-  var SCHED_PICK_MAX = 60;              // rendered rows per query; schedules run to 40k activities
-  function schedMatches(q) {
-    q = (q || '').trim().toLowerCase();
-    if (!q) return schedActs.slice(0, SCHED_PICK_MAX);
-    var terms = q.split(/\s+/), out = [];
-    for (var i = 0; i < schedActs.length && out.length < SCHED_PICK_MAX; i++) {
-      var a = schedActs[i];
-      var hay = ((a.activity_id || '') + ' ' + (a.activity_name || '')).toLowerCase();
-      var ok = true;
-      for (var t = 0; t < terms.length; t++) { if (hay.indexOf(terms[t]) === -1) { ok = false; break; } }
-      if (ok) out.push(a);
-    }
-    return out;
-  }
-  function schedPickerHTML(value) {
-    return '<div class="ms-actpick" id="ms-actpick">' +
-      '<input class="pd-input" id="ms-f-sact-q" autocomplete="off" placeholder="Search activity ID or name…" value="">' +
-      '<input type="hidden" id="ms-f-sact" value="' + esc(value || '') + '">' +
-      '<div class="ms-actpick-sel" id="ms-f-sact-sel"></div>' +
-      '<div class="ms-actpick-menu" id="ms-f-sact-menu" hidden></div>' +
-    '</div>';
-  }
-  function wireSchedPicker(root, onPick) {
-    var q = root.querySelector('#ms-f-sact-q'), hid = root.querySelector('#ms-f-sact');
-    var menu = root.querySelector('#ms-f-sact-menu'), sel = root.querySelector('#ms-f-sact-sel');
-    function renderSel() {
-      var v = hid.value.trim();
-      if (!v) { sel.innerHTML = ''; return; }
-      var a = schedById[v];
-      sel.innerHTML = '<span class="ms-actpick-chip"><b>' + esc(v) + '</b>' +
-        (a && a.activity_name ? ' — ' + esc(a.activity_name) : '') +
-        '<button type="button" class="ms-actpick-x" title="Clear">&times;</button></span>' +
-        (a ? '' : '<span class="ms-warn-t" style="margin-left:8px;">not in this project’s schedule</span>');
-      sel.querySelector('.ms-actpick-x').onclick = function () { hid.value = ''; renderSel(); onPick(); q.focus(); };
-    }
-    function renderMenu() {
-      var list = schedMatches(q.value);
-      if (!schedActs.length) {
-        menu.innerHTML = '<div class="ms-actpick-empty">' +
-          (schedPid === pid ? 'This project has no schedule activities yet.' : 'Loading the schedule…') + '</div>';
-      } else if (!list.length) {
-        menu.innerHTML = '<div class="ms-actpick-empty">No activity matches “' + esc(q.value) + '”.</div>';
-      } else {
-        menu.innerHTML = list.map(function (a) {
-          // Non-Execution activities stay selectable (Planning/Initiation work can
-          // legitimately gate a submittal) but are marked, so the backwards
-          // Design-Development link isn't picked by accident.
-          var ex = isExecutionAct(a);
-          return '<button type="button" class="ms-actpick-item' + (ex === false ? ' ms-actpick-nonexec' : '') +
-            '" data-aid="' + esc(a.activity_id) + '"' +
-            (ex === false ? ' title="Not an Execution Phase activity — a submittal gates construction work, so its need-by should come from an Execution activity."' : '') + '>' +
-            '<b>' + esc(a.activity_id) + '</b><span>' + esc(a.activity_name || '') + '</span>' +
-            (ex === false ? '<em class="ms-actpick-tag">not execution</em>' : '') +
-            (a.start_date ? '<i>' + fmtDate(a.start_date) + '</i>' : '') + '</button>';
-        }).join('') + (list.length >= SCHED_PICK_MAX
-          ? '<div class="ms-actpick-empty">Showing the first ' + SCHED_PICK_MAX + ' — keep typing to narrow.</div>' : '');
-        menu.querySelectorAll('.ms-actpick-item').forEach(function (b) {
-          b.onclick = function () { hid.value = b.dataset.aid; q.value = ''; menu.hidden = true; renderSel(); onPick(); };
-        });
-      }
-      menu.hidden = false;
-    }
-    q.oninput = renderMenu;
-    q.onfocus = renderMenu;
-    q.onkeydown = function (e) {
-      if (e.key === 'Escape') { menu.hidden = true; }
-      else if (e.key === 'Enter') {
-        e.preventDefault();
-        var first = menu.querySelector('.ms-actpick-item');
-        if (first && !menu.hidden) first.click();
-      }
-    };
-    document.addEventListener('mousedown', function (e) { if (!root.contains(e.target)) menu.hidden = true; });
-    renderSel();
-    return { refreshSel: renderSel };
-  }
-
   // ==========================================================================
   // DASHBOARD MATHS
   // ==========================================================================
@@ -979,7 +804,7 @@ window.MaterialSubmittal = (function () {
     code: 'Submittal No.', item: 'Item', discipline: 'Disc.', location: 'Location',
     brand: 'Brand', vendor: 'Vendor', presentation: 'Presentation',
     req: 'Req. baseline', psub: 'Plan sub.', asub: 'Actual sub.',
-    pappr: 'Plan appr.', aappr: 'Actual appr.', needby: 'Need-by',
+    pappr: 'Plan appr.', aappr: 'Actual appr.',
     approver: 'Approver', rev: 'Rev', status: 'Status', mas: 'MAS ID'
   };
   function logSortVal(r, col) {
@@ -996,7 +821,6 @@ window.MaterialSubmittal = (function () {
       case 'asub':         return r.date_submitted || '';
       case 'pappr':        return r.plan_approval_date || '';
       case 'aappr':        return r.date_approved || '';
-      case 'needby':       return requiredApprovalOf(r) || '';
       case 'approver':     return [r.approver_consultant, r.approver_client].filter(Boolean).join(' / ').toLowerCase();
       case 'rev':          return String(r.revision_no || '');
       case 'status':       return statusOf(r) || '';
@@ -1064,7 +888,6 @@ window.MaterialSubmittal = (function () {
       logTh('discipline'), logTh('location'), logTh('brand'), logTh('vendor'), logTh('presentation'),
       '<th class="ms-doccol">Doc</th>',
       logTh('req'), logTh('psub'), logTh('asub'), logTh('pappr'), logTh('aappr'),
-      logTh('needby', 'ms-needbycol'),
       logTh('approver'), logTh('rev'), logTh('status'), logTh('mas')];
     if (canWrite) HEAD.push('<th class="ms-actcol"></th>');
     var SPAN = HEAD.length;
@@ -1110,7 +933,6 @@ window.MaterialSubmittal = (function () {
           '<td class="ms-nowrap">' + fmtDate(r.date_submitted) + '</td>' +
           '<td class="ms-nowrap ' + (od ? 'ms-od' : 'ms-mut') + '"' + (od ? ' title="Overdue — planned approval has passed"' : '') + '>' + fmtDate(r.plan_approval_date) + (od ? ' !' : '') + '</td>' +
           '<td class="ms-nowrap">' + fmtDate(r.date_approved) + '</td>' +
-          '<td class="ms-nowrap ms-needbycol">' + needByCell(r) + '</td>' +
           '<td class="ms-nowrap ms-mini">' + esc([r.approver_consultant, r.approver_client].filter(Boolean).join(' / ')) + '</td>' +
           '<td class="ms-r">' + esc(r.revision_no || '') + '</td>' +
           '<td>' + (st ? '<span class="ms-pill ' + (meta ? meta.cls : 's-forsub') + '">' + esc(st) + '</span>' : '<span class="ms-mut ms-mini">—</span>') + '</td>' +
@@ -1235,11 +1057,6 @@ window.MaterialSubmittal = (function () {
       f('Plan approval', 'ms-f-pappr', e.plan_approval_date, 'date') +
       f('Actual approval', 'ms-f-aappr', e.date_approved, 'date') +
 
-      '<div class="ms-sec">Schedule link <span class="ms-mut" style="font-weight:400;">— the activity this material must be approved for</span></div>' +
-      '<label style="grid-column:1/-1;">Activity (need-by)' + schedPickerHTML(e.schedule_activity_id) + '</label>' +
-      '<label>Lead days<input id="ms-f-lead" type="number" min="0" value="' + (e.lead_days == null ? '' : esc(e.lead_days)) + '" placeholder="' + LEAD_DEFAULT + '" /></label>' +
-      '<label>Required approval<input id="ms-f-req2" readonly placeholder="—" /></label>' +
-      '<div class="ms-schedhint ms-mut" id="ms-f-schedhint" style="grid-column:1/-1;"></div>' +
 
       '<div class="ms-sec">Approval</div>' +
       '<label>Approver — consultant<input id="ms-f-cons" list="ms-dl-cons" value="' + esc(e.approver_consultant || '') + '" />' +
@@ -1286,42 +1103,6 @@ window.MaterialSubmittal = (function () {
     });
     syncPrev();
 
-    // ---- schedule link: live "required approval" preview + auto-fill --------
-    var computedReq = null;
-    function refreshSched() {
-      var aid = (el('ms-f-sact').value || '').trim();
-      var lead = (el('ms-f-lead').value || '').trim();
-      var reqEl = el('ms-f-req2'), hint = el('ms-f-schedhint');
-      computedReq = null; reqEl.value = '';
-      if (!aid) { hint.innerHTML = 'Link a schedule activity to auto-derive the required approval date.'; return; }
-      var a = schedById[aid];
-      if (!a) { hint.innerHTML = '<span class="ms-warn-t">Activity “' + esc(aid) + '” isn’t in this project’s schedule' +
-        (schedPid !== pid ? ' (schedule still loading…)' : '') + '.</span>'; return; }
-      var nb = a.start_date || a.actual_start;
-      if (!nb) { hint.innerHTML = 'Activity <strong>' + esc(aid) + '</strong> has no start date in the schedule yet.'; return; }
-      var L = lead === '' ? LEAD_DEFAULT : (+lead || 0);
-      computedReq = minusDays(String(nb).slice(0, 10), L);
-      reqEl.value = computedReq ? fmtDate(computedReq) : '';
-      hint.innerHTML = 'Need-by (activity start) <strong>' + fmtDate(nb) + '</strong> · required approval <strong>' +
-        fmtDate(computedReq) + '</strong> (' + L + 'd lead). ' +
-        '<label style="display:inline;margin-left:6px;white-space:nowrap;"><input type="checkbox" id="ms-f-usereq"' +
-        (e.plan_approval_date ? '' : ' checked') + ' /> set as Plan approval</label>';
-    }
-    // #ms-f-sact is a hidden input driven by the searchable picker (not typed
-    // into), so its change comes from the picker's callback, not an input event.
-    var actPicker = wireSchedPicker(m.el.querySelector('#ms-actpick'), refreshSched);
-    ['ms-f-lead'].forEach(function (id) { el(id).addEventListener('input', refreshSched); el(id).addEventListener('change', refreshSched); });
-    refreshSched();
-    // The schedule loads lazily; if it lands while this form is open, refresh the
-    // picker + derived date rather than leaving a stale "not in schedule" warning.
-    var schedTries = 0;
-    var schedWait = setInterval(function () {
-      if (schedPid === pid) { clearInterval(schedWait); actPicker.refreshSel(); refreshSched(); }
-      else if (++schedTries > 60) clearInterval(schedWait);
-    }, 500);
-    var _origClose = m.close;
-    m.close = function () { clearInterval(schedWait); _origClose(); };
-
     if (window.Icons && Icons.hydrate) Icons.hydrate(m.el);
 
     // Attachment controls. `fileCleared` is only committed on Save, so cancelling
@@ -1351,8 +1132,6 @@ window.MaterialSubmittal = (function () {
         plan_approval_date: v('ms-f-pappr'), date_approved: v('ms-f-aappr'),
         approver_consultant: v('ms-f-cons'), approver_client: v('ms-f-client'),
         revision_no: v('ms-f-rev'), status: v('ms-f-stat2'), mas_id: v('ms-f-mas'), remarks: v('ms-f-rem'),
-        schedule_activity_id: v('ms-f-sact'),
-        lead_days: (function () { var x = (el('ms-f-lead').value || '').trim(); return x === '' ? null : (+x || 0); })(),
         updated_at: new Date().toISOString()
       };
       payload.submittal_no = [payload.code_project, payload.code_building, payload.code_company, payload.code_doctype,
@@ -1769,10 +1548,11 @@ window.MaterialSubmittal = (function () {
       return true;
     });
   }
+  // Ranked on the submittal's own planned approval date. Smaller = more urgent.
   function backlogUrgency(r) {
-    var fl = docFloatOf(r);
-    if (fl != null) return fl;                      // negative = late, smaller = worse
-    if (isOverdue(r)) return -1000;                  // overdue vs its own plan date, no schedule link
+    var d = agingDays(r);
+    if (d != null) return -d;                       // most overdue first
+    if (isOverdue(r)) return -1000;
     return statusOf(r) === 'Rejected' ? 500 : 1000;
   }
   // Sortable columns (WPM Backlog pattern: click a header to sort by it, click
@@ -1781,7 +1561,7 @@ window.MaterialSubmittal = (function () {
   var BK_COLS = [
     { col:'code', label:'Code' }, { col:'item', label:'Item' },
     { col:'section', label:'Section' }, { col:'discipline', label:'Discipline' },
-    { col:'status', label:'Status' }, { col:'needby', label:'Need-by' },
+    { col:'status', label:'Status' },
     { col:'aging', label:'Aging (d)' }
   ];
   function bkSortVal(r, col) {
@@ -1791,7 +1571,6 @@ window.MaterialSubmittal = (function () {
       case 'section':    return sectionOf(r);
       case 'discipline': return discOf(r);
       case 'status':     return statusOf(r);
-      case 'needby':     return requiredApprovalOf(r) || '';
       case 'aging':      { var a = agingDays(r); return a == null ? -1e9 : a; }
       default:           return backlogUrgency(r);
     }
@@ -1829,7 +1608,8 @@ window.MaterialSubmittal = (function () {
     });
 
     var overdue = list.filter(isOverdue).length;
-    var late = list.filter(function (r) { var f = docFloatOf(r); return f != null && f < 0; }).length;
+    // Overdue against the submittal's OWN planned approval date.
+    var late = list.filter(function (r) { var d = agingDays(r); return d != null && d > 0; }).length;
     var rejected = list.filter(function (r) { return statusOf(r) === 'Rejected'; }).length;
 
     // "Rejected" is a status → a real filter. Overdue is the existing overdue-only
@@ -1856,7 +1636,6 @@ window.MaterialSubmittal = (function () {
         '<td>' + esc(sectionOf(r)) + '</td>' +
         '<td>' + esc(discOf(r) || '—') + '</td>' +
         '<td>' + (st ? '<span class="ms-pill ' + (meta ? meta.cls : 's-forsub') + '">' + esc(st) + '</span>' : '<span class="ms-mut ms-mini">—</span>') + '</td>' +
-        '<td class="ms-nowrap">' + needByCell(r) + '</td>' +
         '<td class="ms-r ms-nowrap' + (a != null && a > 0 ? ' ms-aging-late' : '') + '">' + (a == null ? '<span class="ms-mut ms-mini">—</span>' : (a > 0 ? '+' : '') + a + 'd') + '</td>' +
         // Doc column — the Backlog is where an open submittal gets chased, so its
         // document must be reachable without opening the full editor.
@@ -2012,7 +1791,6 @@ window.MaterialSubmittal = (function () {
     if (window.PDSync) PDSync.cachePut('ms:' + pid, rows);   // refresh the offline cache
     fillFilters();
     render();
-    ensureSchedule();   // lazy — re-renders the Need-by column when it resolves
   }
 
   function switchTab(v) {

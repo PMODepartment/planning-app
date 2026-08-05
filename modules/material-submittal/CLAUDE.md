@@ -1,5 +1,23 @@
 # Module: material-submittal
 
+## Need-by removed — planned vs actual approval only (2026-08-05) — fmlozano
+Mirrors the Drawing Register (see its CLAUDE.md for the full reasoning). The Project Schedule already
+connects to this log through the **Design Development POC roll-up**, so the per-document link to an
+Execution Phase activity was a second, redundant connection.
+
+Removed the Registry (log) column, the Backlog column, the Add/Edit "Schedule link" section, the
+activity picker, and every derivation behind them (`needByCell`, `requiredApprovalOf`, `needByOf`,
+`leadOf`, `docFloatOf`, `minusDays`, `isExecutionAct`, `linkIsBackwards`, `schedPickerHTML`,
+`wireSchedPicker`, `schedMatches`, `loadSchedule`, `ensureSchedule`, the schedule caches,
+`LEAD_DEFAULT`, `SCHED_PICK_MAX`) plus their CSS.
+- **`agingDays()` / `backlogUrgency()` / the Backlog "late" KPI now use `plan_approval_date`.**
+- ⚠️ **`SPAN = HEAD.length`** already drove every group-row and empty-state colspan, so dropping the
+  header entry re-aligned the whole table by itself — the reason this module needed no colspan edits.
+- ⚠️ DB columns left in place (0 linked submittals on any live project); dropping them would be
+  destructive for no gain.
+- Verified: `node --check`, CSS braces/comments balanced, 0 leftover references, no orphan `async`.
+  ⚠️ Not verified signed-in. Assets `module.css/js?v=20260805b`.
+
 ## Need-by scoped to Execution Phase (2026-08-05) — fmlozano
 Mirrors the Drawing Register change (see its CLAUDE.md for the full rationale). A material submittal
 is a **prerequisite for construction**, so the activity it points at should sit under **Execution
