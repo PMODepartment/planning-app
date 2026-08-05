@@ -11060,7 +11060,8 @@
         '<select class="pd-select" id="sbpush-basis" style="width:100%;height:34px;"><option value="int">Internal (target)</option><option value="ext">External (contract)</option></select>' +
         '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Assign under WBS</label>' +
         '<select class="pd-select" id="sbpush-wbs" style="width:100%;height:34px;">' + wbsOpts + '</select>' +
-        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;"><input type="checkbox" id="sbpush-grp" checked> Group into a sub-WBS</label>' +
+        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;"><input type="checkbox" id="sbpush-grp"> Group into a sub-WBS</label>' +
+        '<p class="sbld-hint" id="sbpush-flathint" style="margin:6px 0 0;">Left off, activities are added <b>flat</b> and carry their <b>work type</b> and <b>location</b> as data — the schedule then shows Activity › Location › Zone (or any other order) straight from the <b>Group</b> control, and you can change your mind any time. Tick this only when the WBS codes themselves must encode location.</p>' +
         '<div id="sbpush-struct" style="margin-top:8px;"></div>' +
         '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbpush-go">Add to schedule</button></div></div>';
@@ -11085,7 +11086,11 @@
         host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.up; var t = work[i - 1]; work[i - 1] = work[i]; work[i] = t; renderStruct(); }; });
         host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.down; var t = work[i + 1]; work[i + 1] = work[i]; work[i] = t; renderStruct(); }; });
       }
-      function syncStructVisibility() { var s = ov.querySelector('#sbpush-struct'); if (s) s.style.display = ov.querySelector('#sbpush-grp').checked ? '' : 'none'; }
+      function syncStructVisibility() {
+        var on = ov.querySelector('#sbpush-grp').checked;
+        var s = ov.querySelector('#sbpush-struct'); if (s) s.style.display = on ? '' : 'none';
+        var h = ov.querySelector('#sbpush-flathint'); if (h) h.style.display = on ? 'none' : '';
+      }
       renderStruct(); syncStructVisibility();
       function close() { ov.remove(); }
       ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
@@ -11167,7 +11172,10 @@
       if (!grouped) {
         // Flat push — no sub-WBS; tasks get sequential codes under the chosen base (no WBS-Manager nodes).
         var ci = nextChildIndex(base);
-        g.rows.forEach(function (r) { var p = taskPayload(r, r.loc.trade + ' ' + locLabel(r.loc) + ' — ' + r.act.name); p.project_id = pid; p.created_by = UID; p.wbs = code(base, ci++); payloads.push(p); });
+        // Name it for the WORK, not the place. The location used to be crammed into the name
+        // ("Structural F5 · Z1 — Formworks") because it had nowhere else to live; it is now real
+        // data on the row (work_type + location) with its own columns and grouping levels.
+        g.rows.forEach(function (r) { var p = taskPayload(r, r.act.name); p.project_id = pid; p.created_by = UID; p.wbs = code(base, ci++); payloads.push(p); });
       } else {
         // Grouped push — build a real Trade → Floor → Zone → Unit WBS tree and register it in the WBS
         // Manager (wbs_nodes), linking every summary + task by wbs_node_id. Falls back to plain dotted
@@ -11224,6 +11232,12 @@
       for (var i = 0; i < payloads.length; i += CH) { var res = await sb().from(TABLE).insert(payloads.slice(i, i + CH)); if (res.error) { ok = false; msg = res.error.message; break; } }
       if (!ok) { UI.toast('Could not add to schedule: ' + msg, 'error'); return; }
       UI.toast('Added ' + taskN + ' activities with their relationships to the schedule' + (base ? ' under ' + base : '') + (wbsMsg ? ' (WBS Manager not updated — run the wbs-nodes migration)' : '') + '.', 'success');
+      // A flat push deliberately builds no WBS branch, so land the planner on the grouping that
+      // shows the structure they just designed — otherwise the schedule reads as one long list of
+      // repeated work-type names and looks like the push failed.
+      if (!grouped && typeof setGroupBys === 'function' && LOC_LEVELS.length) {
+        setGroupBys(['work'].concat(LOC_LEVELS.map(function (l) { return 'loc:' + l.id; })));
+      }
       switchTab('schedule');
       if (typeof load === 'function') load();   // module schedule reload (loadCfg no longer shadows it)
     }

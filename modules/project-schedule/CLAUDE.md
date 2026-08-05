@@ -1,5 +1,30 @@
 # Module: project-schedule
 
+## Builder push: flat by default, structure comes from grouping (2026-08-04) — fmlozano
+Follow-up to the location-as-data work; the user picked this as the real simplification. The push
+used to *materialise* the location breakdown as a Trade › Floor › Zone sub-WBS on every run. Now
+that each activity carries `work_type` + `location`, that branch is redundant for most projects —
+the same structure is a **view** you can flip, and it costs nothing to change your mind.
+- **"Group into a sub-WBS" now defaults OFF.** A flat push adds the activities under the chosen WBS
+  node and nothing else. The reason is stated in the dialog rather than left implicit, and the hint
+  and the WBS-structure editor are mutually exclusive (`syncStructVisibility` toggles both).
+- **Flat push names the activity for the WORK, not the place** — `taskPayload(r, r.act.name)`
+  instead of `"Structural F5 · Z1 — Formworks"`. The location was crammed into the name only because
+  it had nowhere else to live; it now has its own columns and grouping levels. ⚠️ This is also what
+  made grouping-by-name useless before: every instance had a unique name.
+- ⚠️ **A flat push switches the schedule to Activity › Location › Zone** (`setGroupBys`, only when
+  `!grouped` and the project has levels). Without it the planner lands on a WBS-grouped list of a
+  few hundred rows all reading "Formworks"/"Rebar" and reasonably concludes the push failed. The
+  setting is written to the per-project key *before* the `load()`, so it survives the reload.
+- **The sub-WBS path is untouched** and still the right choice when the WBS codes themselves must
+  encode location (client-mandated coding). ⚠️ Another session had meanwhile rebuilt that dialog with
+  a configurable ordered dimension list (`cfg.wbsOrder` / `renderStruct`); this change is deliberately
+  surgical around it — default, hint, naming, post-push grouping — and preserves that editor intact.
+- Verified: 9 static assertions on the shipped file (default flipped, hint wired, naming changed,
+  grouping applied only on the flat path, grouped path + structure editor preserved) plus the
+  33/39/16 suites still green and a clean parse. ⚠️ **Not verified signed-in** — the push writes to a
+  real project, so the end-to-end run is the user's.
+
 ## Two bugs from a live Builder run: invisible "Structural", duplicated WBS rows (2026-08-04) — fmlozano
 
 **1. "Structural" was unreadable in the Auto-trace dialog — measured, not guessed.**
