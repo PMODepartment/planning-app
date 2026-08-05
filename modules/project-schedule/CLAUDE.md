@@ -1,5 +1,42 @@
 # Module: project-schedule
 
+## SIGNED-IN verification of the location/grouping work — migration run, 1 real bug found (2026-08-04) — fmlozano
+First live run of everything from this batch. **Migration `2026-08-04-activity-location-work-type.sql`
+was executed on the production Supabase** (`planners-app`) and verified by querying the catalog, not
+by trusting the success message: `location_levels` table = 1, `project_schedule.location` = 1,
+`.work_type` = 1, policies = 2, indexes = 2.
+
+- ⚠️ **REAL BUG FOUND AND FIXED — both Location Breakdown menu buttons were dead.**
+  `renderGroupMenu` is module scope but called `closeMenus()`, which is declared in the **init/wiring
+  scope**, so clicking "Location Breakdown…" or "Fill location from the WBS tree…" threw
+  `ReferenceError: closeMenus is not defined` and did nothing. **The Node harness stubs `closeMenus`,
+  so it passed there** — only the real page caught it. Fixed by closing the menu directly.
+  Audited every other helper the new code calls: all module scope; this was the only one.
+- **Duplicate-WBS heal proven end-to-end.** Planted the exact reported bug on the `Test` scratch
+  project (a second projection of `Procurement` + `Execution Phase` → 9 summary rows for 7 nodes,
+  matching the user's screenshot), then loaded the app: the grid came up with **7 rows**, and a
+  follow-up SQL check confirmed the extras were **deleted from the database** (every node back to
+  exactly 1 copy). Not a render filter — a real repair.
+- **Both grouping layouts verified live** on 2 locations × 2 zones × 2 work types:
+  `Location › Zone › Activity` and `Activity › Location › Zone`, 22 rows / 14 group headers, correct
+  nesting and per-group counts, and **"Zone 1" stays a separate group under each location** — the
+  case the whole design turns on. Order persists across a reload (`ps_groupbys_<pid>`).
+- **Inline location editing verified with REAL mouse + keyboard**: double-click a Location cell, type
+  "Tower B", Enter → persisted to the DB and the grid **re-grouped live** (Loc 1 4→3, a new Tower B
+  branch appeared). Value suggestions in the datalist came from the project's existing values.
+- ⚠️ **Method note that cost time: synthetic events do NOT drive this grid editor.** Dispatching
+  `dblclick` + setting `input.value` + `blur()` / a synthetic `KeyboardEvent` opened the editor but
+  never committed, and once left the cell visually blank while the DB was untouched — which looks
+  exactly like a persistence bug and isn't. Use the real `computer` mouse/keyboard path to test it.
+- ⚠️ **Environment:** screenshots of the module time out (stalled compositor, as documented) and the
+  1MB page intermittently wedges CDP; verification is measured DOM + direct Supabase queries. One
+  fresh load showed the correct grouping label with a stale grid, but it did not reproduce across a
+  10-sample timeline (correct from the first frame), so it reads as an automation artifact rather
+  than a defect — worth an eye on a foreground tab.
+- **Left in place:** `Test` project now has 2 location levels (Location, Zone) and 8 demo activities
+  so the feature is inspectable. **`XERTEST` still holds one genuine pre-existing duplicate**
+  (`Execution Phase` ×2) that will self-heal the next time it is opened in the app.
+
 ## Builder push: flat by default, structure comes from grouping (2026-08-04) — fmlozano
 Follow-up to the location-as-data work; the user picked this as the real simplification. The push
 used to *materialise* the location breakdown as a Trade › Floor › Zone sub-WBS on every run. Now

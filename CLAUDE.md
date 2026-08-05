@@ -77,6 +77,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — Signed-in verification: migration run live, 1 real bug found and fixed
+First live run of the whole location/grouping batch. **Ran `2026-08-04-activity-location-work-type.sql`
+on the production Supabase** and verified it by querying the catalog rather than trusting the success
+message — table 1, both columns 1, policies 2, indexes 2.
+- ⚠️ **Real bug found only by running it: both Location Breakdown menu buttons were dead.**
+  `renderGroupMenu` (module scope) called `closeMenus()` (init scope) → `ReferenceError`, so the
+  buttons did nothing. **The Node harness stubs `closeMenus`, so it passed there.** Fixed; audited
+  every other helper the new code calls — this was the only cross-scope reference.
+- **Duplicate-WBS heal proven end-to-end.** Planted the exact reported bug on the `Test` scratch
+  project (9 summary rows for 7 nodes), loaded the app, and the grid came up with 7 — with SQL
+  confirming the extras were deleted from the database, not merely hidden.
+- **Both layouts verified live** on 2 locations × 2 zones × 2 work types: 22 rows / 14 group headers,
+  correct nesting and counts, "Zone 1" staying separate under each location, order persisting across
+  a reload. **Inline location editing verified with real mouse + keyboard** — persisted and the grid
+  re-grouped live.
+- ⚠️ **Synthetic events do not drive the grid editor** (they open it but never commit, and can leave
+  a cell looking blank while the DB is untouched — which mimics a persistence bug). Use real input.
+- Left in place: `Test` has 2 location levels + 8 demo activities so the feature is inspectable;
+  `XERTEST` still has one genuine pre-existing duplicate that will self-heal when next opened.
+  See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-04 — Schedule Builder push: flat by default, structure comes from grouping
 User picked this as the real simplification now that location/zone are activity data. The push used
 to materialise the location breakdown as a Trade › Floor › Zone sub-WBS every time; that branch is
