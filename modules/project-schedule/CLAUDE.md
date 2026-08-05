@@ -1,5 +1,40 @@
 # Module: project-schedule
 
+## Jab: "grouping by location returns Unassigned" — plus a real defect it exposed (2026-08-05) — fmlozano
+User created Tower/Level/Zone levels on **4PH Jab Greenwoods Dasmariñas** (17,122 activities),
+grouped by them and got three nested **"— Unassigned —(17122)"**.
+- **Not a bug in grouping.** Creating a level only DEFINES it; it writes nothing to
+  `project_schedule.location`. Jab was imported long before any mapping existed, so every activity
+  still had `location = {}`. The fix is to run **Location Breakdown… → Fill location from the WBS
+  tree…** once. ⚠️ Worth stating in the UI — "create a level" reads like it should populate it.
+- ⚠️ **REAL DEFECT the screenshot exposed: a location qualified by the work it holds split into two
+  groups.** Jab names its towers **`Tower D - Substructure`** and **`Tower D - Superstructure`**, so
+  the keyword source returned **34 tower values for 17 towers** — every tower duplicated. Avesta
+  never showed this because its nodes are plain (`Tower 3`).
+- **Fix — `locTrimSeg`:** the matched segment is trimmed to the smallest separator-delimited part
+  that STILL matches the terms (`Tower D - Substructure` → `Tower D`), while an unqualified name is
+  returned untouched. ⚠️ The separator must be **spaced** (` - `, ` – `, ` — `, ` : `, ` | `) so a
+  hyphenated code like `T1-L05` is never split; and the part kept is whichever side matches, so
+  `Substructure - Tower D` works too. If no single part matches, the whole name is kept.
+- **Measured on the real Jab .xer (17,122 activities, an exact count match with the live project):**
+  Tower **99.3% → exactly 17 values, Tower A…Q** (was 34); Level **95.4%**, 7 values; Zone
+  (`Area, Zone`) **14.9%**, Area 1/Area 2. **Avesta is byte-for-byte unchanged** — its names carry no
+  separator, so the trim is inert there.
+- **Recommended terms** — Jab: `Tower` · `Floor, Roof Deck, Roofdeck` · `Area, Zone`.
+  Avesta: `Tower, -Handover` · `Floor, Storey, Roof Deck, -Finishes, -Coating` · `Zone`.
+- ⚠️ **Data-quality issues the value list makes visible, which are the USER's to fix, not ours to
+  silently merge:** Jab has both **`Roof Deck` and `Roofdeck`** (two groups for one level); Avesta
+  has **`Ground Floor` / `Ground floor`** and worded-vs-numeric duplicates (`Eight Floor` vs
+  `8th Floor`) — 26 values for ~13 real floors. Case-folding or fuzzy-merging these automatically
+  would silently merge names that a project might legitimately distinguish; the preview shows them so
+  the planner can correct the WBS.
+- **Verified 33/33 in Node** (the 26 from the previous entry plus 7 for the trim: qualified name,
+  unqualified untouched, en/em dash, colon, the unspaced-hyphen guard, match-on-either-side, and the
+  no-part-matches fallback), run over both real trees. Script parses; the 24/18/9-file suites still
+  green. ⚠️ Not verified signed-in.
+- ⚠️ **`index.html` is NOT cache-busted** (documented) — the deployed page needs a hard refresh
+  (Ctrl+Shift+R) before this appears.
+
 ## Location from the WBS by KEYWORD — the source that actually works on a P6 tree (2026-08-05) — fmlozano
 Built so Avesta's location breakdown can be filled from its import. ⚠️ **I first proposed a source
 that reads the ACTIVITY NAME, and that was wrong** — measured on the real file, only **1.1%** of

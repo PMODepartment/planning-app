@@ -210,6 +210,26 @@ everything on a single row instead.
   ⚠️ **Not verified signed-in** and the migration is not run. Assets drawing-register
   `module.css/js?v=20260805a`. See `modules/drawing-register/CLAUDE.md`.
 
+### 2026-08-05 — Jab "grouping by location returns Unassigned" — and the real defect it exposed
+User created Tower/Level/Zone on **4PH Jab** (17,122 activities) and got three nested
+**"— Unassigned —(17122)"**. **Not a grouping bug:** creating a level only DEFINES it and writes
+nothing to `project_schedule.location`; Jab was imported long before the mapping existed, so the fix
+is to run **Location Breakdown… → Fill location from the WBS tree…** once. (⚠️ Worth surfacing in the
+UI — "create a level" reads like it populates it.)
+- ⚠️ **REAL DEFECT it exposed:** Jab names its towers `Tower D - Substructure` /
+  `Tower D - Superstructure`, so the keyword source produced **34 tower values for 17 towers**.
+  Avesta never showed it (its nodes are plain `Tower 3`). Fixed with `locTrimSeg`: the matched
+  segment is trimmed to the smallest separator-delimited part that still matches the terms. The
+  separator must be **spaced**, so a code like `T1-L05` is never split.
+- **Measured on the real Jab .xer:** Tower **99.3%, exactly 17 values (Tower A…Q)**, Level 95.4%,
+  Zone 14.9%. **Avesta unchanged** (no separators, trim inert).
+- ⚠️ **Data-quality issues the value list makes visible and that are the user's to fix:** Jab has both
+  `Roof Deck` and `Roofdeck`; Avesta has `Ground Floor`/`Ground floor` and `Eight Floor` vs
+  `8th Floor`. Merging these automatically would silently collapse names a project may distinguish.
+- Verified **33/33 in Node** over both real trees; 24/18/9-file suites still green. Not verified
+  signed-in. ⚠️ `index.html` is not cache-busted — hard-refresh the deployed page.
+  See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-05 — Location from the WBS by KEYWORD (the source that actually works on a P6 tree)
 Built so Avesta's location breakdown can be filled from its own data. ⚠️ **The activity-name source I
 proposed last prompt was wrong and was NOT built:** measured on the real file, only **1.1%** of

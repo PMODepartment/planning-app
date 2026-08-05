@@ -3158,6 +3158,21 @@
     var incRe = re(inc), excRe = exc.length ? re(exc) : null;
     return function (s) { return incRe.test(s) && !(excRe && excRe.test(s)); };
   }
+  // ⚠️ A WBS node often qualifies the location with the work it holds — Jab names its towers
+  // "Tower D - Substructure" and "Tower D - Superstructure", which would make ONE tower into TWO
+  // groups (34 values for 17 towers). So the matched segment is trimmed to the smallest
+  // separator-delimited part that STILL matches the terms: "Tower D - Substructure" → "Tower D",
+  // while a name with no separator ("Tower 3", "9th Floor") is returned untouched.
+  // The separator must be SPACED, so a hyphenated code like "T1-L05" is never split.
+  function locTrimSeg(name, match) {
+    var parts = String(name).split(/\s+[-–—:|]\s+/);
+    if (parts.length < 2) return name;
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].trim();
+      if (p && match(p)) return p;
+    }
+    return name;
+  }
   function locSrcsWbsWords(getCode, nameByCode) {
     return [{
       key: 'wbsword', kind: 'wbsword', name: 'WBS path — matching words…', needsArg: true,
@@ -3175,7 +3190,7 @@
             var nm = nameByCode[segs.slice(0, i).join('.')];
             if (nm && match(nm)) found = nm;
           }
-          return found;
+          return found == null ? null : locTrimSeg(found, match);
         } };
       }
     }];
