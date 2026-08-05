@@ -104,7 +104,15 @@ matched the actual child counts), so `syncParent` holds against live data.
   option while the row holds something else** — so `statusSelect`, `matchesFilters` and the editor all
   compare canonically, and the importer maps rather than importing verbatim.
 - **Live remap applied:** `Ongoing → In Progress` (50) + `Pending → For Review` (10) on BAU101; GPR101
-  had neither. Re-queried after: 0 legacy values left in either register.
+  had neither. Re-queried after: 0 legacy values left in either register. All 6 sheet-parents
+  re-derived; only `A-1000.1` needed healing.
+- **End-to-end proof on live BAU101, signed in:** the Registry renders `A-1000.1` as a sheet-parent
+  (caret, "15 sheets" tag, 15/0/0% rolled up, 15 sheet rows nested) with the pill now reading
+  **For Review** instead of the contradictory Approved. Changing one sheet to Approved through the grid
+  dropdown derived its `approved_sheets` to 1 by itself, rolled the parent to **1/15 · 7% · In
+  Progress**, and a direct DB re-query confirmed both rows persisted; then restored to prior values
+  with **0 test rows left behind** and no console errors. ⚠️ Break out / merge-back and the revision
+  matrix were **not** exercised against live data.
 - **68 checks green** (33 model + 35 renderer) against functions sliced from the shipped module, with
   new regressions for the live bug and the whole vocabulary change. Assets drawing-register
   `module.css/js?v=20260805b`. See `modules/drawing-register/CLAUDE.md`.

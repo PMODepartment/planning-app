@@ -51,8 +51,23 @@ comments 227, Ongoing 50, For Review 34, Pending 10, Superseded 2, Revise & Resu
 
 ### Live data remap applied
 `Ongoing → In Progress` (50) and `Pending → For Review` (10) written to BAU101; GPR101 held neither.
-`Approved w/o comments` had 0 rows in either. The stale `A-1000.1` status was healed to match its
-sheets. Verified by re-querying afterwards: 0 legacy values remain in either register.
+`Approved w/o comments` had 0 rows in either. Re-queried afterwards: **0 legacy values remain** in
+either register (BAU101 now In Progress 50 / For Review 45). All 6 sheet-parents were re-derived;
+five were already correct and only `A-1000.1` needed healing (`"Approved" → "For Review"`, 0/15).
+
+### End-to-end proof on live BAU101 data (signed in)
+Loaded BAU101 in the deployed app and drove the real UI:
+- **Registry renders the nesting**: `A-1000.1` as a sheet-parent row with the caret, the "15 sheets"
+  tag, the Manage-sheets button, `15 / 0 / 0%` rolled up, and its **15 sheet rows** underneath.
+- **The pill now reads "For Review", not the contradictory "Approved"** — the bug, fixed, on the real row.
+- **Changed one sheet's status to Approved through the grid dropdown** → its `approved_sheets` derived
+  to 1 by itself (the two-sources-of-truth fix), the parent rolled to **1/15 · 7%** and its pill became
+  **In Progress**, and a direct DB re-query confirmed both rows persisted (`approved_pct 0.0666…`,
+  `actual_approval` correctly still null since not all sheets are approved).
+- **Restored**: the sheet and its parent were returned to their exact prior values. 0 test rows left
+  behind, no console errors.
+⚠️ **Not exercised live:** Break out / Add sheets / merge-back (they write many rows to a real
+register), and the revision matrix in the full editor.
 
 ### Verification
 **68 checks green** (33 model + 35 renderer) against functions sliced verbatim from the shipped
