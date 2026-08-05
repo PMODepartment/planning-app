@@ -210,6 +210,24 @@ everything on a single row instead.
   ⚠️ **Not verified signed-in** and the migration is not run. Assets drawing-register
   `module.css/js?v=20260805a`. See `modules/drawing-register/CLAUDE.md`.
 
+### 2026-08-05 — Location values: merge differently-spelled duplicates automatically
+User's explicit call after the duplicates were flagged. ⚠️ **Deliberately lossy** — names that
+normalise alike WILL be merged; raised, confirmed, and every merge is named in the preview rather
+than applied silently. `locNormKey` folds case, spacing (`Roof Deck` = `Roofdeck`), punctuation and
+worded↔numeric ordinals including the typos actually present (`Nineth`→9, `Eight`→8); it does not
+fold different numbers, `8th` vs `18th`, or `Ground` vs `1st`.
+- **Merging lives inside `locMapPlan`**, which needs the whole value set per level, so both importers,
+  the backfill and the preview agree by construction rather than by three call sites remembering to.
+- ⚠️ **Picking the winner by frequency chose the WORST spelling on real data** — it kept Avesta's
+  `Nineth Floor`/`Eight Floor` and Jab's `Roofdeck`. The winner is now chosen on legibility: a variant
+  with a **digit** first (which also makes the grid sort 2/9/10 correctly), then word separators, then
+  Title Case, then a deterministic frequency/length/alphabetical tail.
+- **Real results:** Avesta floors **26 → 13** (`2nd … 12th Floor | Ground Floor | Roof Deck`), Jab
+  **7 → 6** keeping `Roof Deck`. Coverage unchanged — only spellings collapse.
+- Verified **27/27 in Node** over both real trees (incl. order-independence) + **9/9 in a browser** on
+  the preview note; 24/18/33 suites and the 9-file regression still green. Not verified signed-in.
+  See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-05 — Jab "grouping by location returns Unassigned" — and the real defect it exposed
 User created Tower/Level/Zone on **4PH Jab** (17,122 activities) and got three nested
 **"— Unassigned —(17122)"**. **Not a grouping bug:** creating a level only DEFINES it and writes

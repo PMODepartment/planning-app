@@ -3309,25 +3309,96 @@
         (vals.length ? vals.length + ' value' + (vals.length === 1 ? '' : 's') + ': ' +
           vals.slice(0, 10).map(function (v) { return '<span style="display:inline-block;background:var(--pd-bg);border:1px solid var(--pd-line);border-radius:3px;padding:0 5px;margin:2px 3px 0 0;">' + esc(v) + ' <span style="color:var(--pd-muted);">×' + byLvl[mp.key][v] + '</span></span>'; }).join('') +
           (vals.length > 10 ? ' <span style="color:var(--pd-muted);">+' + (vals.length - 10) + ' more</span>' : '')
-        : '<span style="color:var(--pd-red);">no matches</span>') + '</div>';
+        : '<span style="color:var(--pd-red);">no matches</span>');
+      // Name every merge — the merge is lossy, so it must never be silent.
+      var mg = (p.merge && p.merge[mp.key] && p.merge[mp.key].merged) || [];
+      if (mg.length) {
+        html += '<div style="color:var(--pd-muted);margin-top:2px;">merged ' + mg.length + ' spelling group' + (mg.length === 1 ? '' : 's') + ': ' +
+          mg.slice(0, 6).map(function (g) { return esc(g.dropped.join(', ')) + ' → <strong>' + esc(g.keep) + '</strong>'; }).join(' · ') +
+          (mg.length > 6 ? ' +' + (mg.length - 6) + ' more' : '') + '</div>';
+      }
+      html += '</div>';
     });
     return html;
+  }
+  // ---- Spelling merge -------------------------------------------------------------------------
+  // ⚠️ Real WBS trees spell ONE location several ways, and each spelling would otherwise be its own
+  // group: Jab has "Roof Deck" AND "Roofdeck"; Avesta has "Ground Floor"/"Ground floor" and worded
+  // vs numeric ordinals ("Eight Floor" beside "8th Floor", plus the typo "Nineth Floor") — 26 values
+  // for ~13 real floors. Values that normalise to the same key are merged onto ONE display spelling.
+  // ⚠️ This is deliberately lossy and was the user's explicit call (2026-08-05): two genuinely
+  // different names that happen to normalise alike WILL be merged. The preview names every merge it
+  // makes, so it is visible rather than silent. The real fix is still to correct the WBS.
+  var LOC_ORD = { first:1, second:2, third:3, fourth:4, fifth:5, sixth:6, seventh:7, eighth:8,
+    eight:8, ninth:9, nineth:9, tenth:10, eleventh:11, twelfth:12, thirteenth:13, fourteenth:14,
+    fifteenth:15, sixteenth:16, seventeenth:17, eighteenth:18, nineteenth:19, twentieth:20 };
+  function locNormKey(v) {
+    var s = String(v == null ? '' : v).toLowerCase().replace(/[‘’']/g, '');
+    s = s.replace(/[a-z]+/g, function (w) { return LOC_ORD[w] != null ? String(LOC_ORD[w]) : w; });
+    s = s.replace(/(\d+)(st|nd|rd|th)(?![a-z])/g, '$1');   // 2nd → 2, 10th → 10
+    return s.replace(/[^a-z0-9]+/g, '');                   // "Roof Deck" and "Roofdeck" → roofdeck
+  }
+  // One display spelling per normalised key. ⚠️ Frequency alone picks the WORST spelling on real
+  // data — it kept Avesta's typos ("Nineth Floor", "Eight Floor") over "9th"/"8th Floor", and Jab's
+  // "Roofdeck" over "Roof Deck". So the winner is chosen on legibility first, and every rule below
+  // is there because a real file needed it:
+  //   1. a variant containing a DIGIT (unambiguous, and the grid's natural sort orders 2/9/10
+  //      correctly where "Ninth"/"Tenth" sort alphabetically),
+  //   2. then more word separators ("Roof Deck" over "Roofdeck"),
+  //   3. then more Title-Cased words ("Ground Floor" over "Ground floor"),
+  //   4. then frequency, shortest, alphabetical — a deterministic tail, so the same schedule always
+  //      yields the same spelling regardless of row order.
+  function locSpellRank(v) {
+    return [
+      /\d/.test(v) ? 0 : 1,
+      -(String(v).split(/\s+/).length),
+      -(String(v).split(/\s+/).filter(function (w) { return /^[A-Z]/.test(w); }).length)
+    ];
+  }
+  function locMergeTable(recs, mapping) {
+    var perLevel = {};
+    mapping.forEach(function (mp) {
+      var counts = {};
+      recs.forEach(function (r) {
+        var v = mp.src.get(r); if (!v) return;
+        var k = locNormKey(v); if (!k) return;
+        (counts[k] = counts[k] || {})[v] = (counts[k][v] || 0) + 1;
+      });
+      var pick = {}, merged = [];
+      Object.keys(counts).forEach(function (k) {
+        var variants = Object.keys(counts[k]);
+        variants.sort(function (a, b) {
+          var ra = locSpellRank(a), rb = locSpellRank(b);
+          for (var i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+          return (counts[k][b] - counts[k][a]) || (a.length - b.length) || a.localeCompare(b);
+        });
+        pick[k] = variants[0];
+        if (variants.length > 1) merged.push({ keep: variants[0], dropped: variants.slice(1) });
+      });
+      perLevel[mp.key] = { pick: pick, merged: merged };
+    });
+    return perLevel;
   }
   // Plans the writes for a mapping. getLoc(rec) returns the record's current location map; the
   // caller decides what to do with the result (a DB batch update, or stamping the import payloads).
   function locMapPlan(recs, mapping, getLoc, over) {
     var ups = [], sample = [];
+    // Merging needs the whole value SET per level, so it is resolved in one pass up front; every
+    // caller (both importers, the backfill) and the preview therefore agree by construction.
+    var merge = locMergeTable(recs, mapping);
     recs.forEach(function (r) {
       var cur = getLoc(r) || {}, loc = Object.assign({}, cur), changed = false;
       mapping.forEach(function (mp) {
         var v = mp.src.get(r); if (!v) return;
+        var canon = merge[mp.key] && merge[mp.key].pick[locNormKey(v)];
+        if (canon) v = canon;
         if (loc[mp.key] && !over) return;
         if (loc[mp.key] === v) return;
         loc[mp.key] = v; changed = true;
       });
       if (changed) { ups.push({ rec: r, loc: loc }); if (sample.length < 8) sample.push({ rec: r, loc: loc }); }
     });
-    return { ups: ups, sample: sample };
+    return { ups: ups, sample: sample, merge: merge };
   }
   // ---- Backfill location from the WBS tree -----------------------------------------------------
   // Existing schedules already encode location as WBS structure (Loc > Zone > activities), so the

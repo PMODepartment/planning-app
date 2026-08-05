@@ -1,5 +1,33 @@
 # Module: project-schedule
 
+## Spelling merge for location values (2026-08-05) — fmlozano
+User's explicit call after the duplicates were flagged: merge differently-spelled values of the same
+location automatically. ⚠️ **Deliberately lossy** — two genuinely different names that normalise
+alike WILL be merged. The trade-off was raised, the user confirmed, and the preview names every merge
+so it is visible rather than silent. Correcting the WBS is still the real fix.
+- **`locNormKey`** folds case, spacing/joined words (`Roof Deck` = `Roofdeck`), punctuation, and
+  worded↔numeric ordinals incl. the typo forms actually present (`Nineth`→9, `Eight`→8). It does NOT
+  fold different numbers, different words, `8th` vs `18th`, or `Ground` vs `1st`.
+- **Merging lives inside `locMapPlan`** — it needs the whole value SET per level, so it resolves in
+  one pass up front. Both importers, the backfill and the preview therefore agree **by construction**
+  rather than by three call sites remembering to do the same thing.
+- ⚠️ **`locSpellRank` — choosing the winner by frequency picked the WORST spelling on real data.**
+  It kept Avesta's typos (`Nineth Floor`, `Eight Floor`) over `9th`/`8th Floor`, and Jab's `Roofdeck`
+  over `Roof Deck`, because the sloppy spelling happened to be commoner/shorter. The winner is now
+  chosen on legibility first — a variant containing a **digit** (also making the grid's natural sort
+  order 2/9/10 correctly, where `Ninth`/`Tenth` sort alphabetically), then more word separators, then
+  more Title-Cased words, then frequency/shortest/alphabetical as a deterministic tail.
+- **Measured on the real trees:** Avesta floors **26 → 13 values**, now reading
+  `2nd … 12th Floor | Ground Floor | Roof Deck` (was a mix of `Eight Floor`, `Nineth Floor`,
+  `Ground floor`); Jab **7 → 6**, keeping `Roof Deck`. Towers and zones were already clean and are
+  untouched, and **coverage is unchanged** — only spellings collapse, no activity gains or loses a
+  location.
+- **Verified 27/27 in Node** over both real trees (what merges, what must NOT merge, the spelling
+  choice, order-independence — reversing the row order yields the same kept spelling — and that the
+  reported `keep`/`dropped` match what is actually written), plus **9/9 in a browser** on the preview
+  note. The 24/18/33 suites and the 9-file regression run are still green; script parses.
+  ⚠️ Not verified signed-in.
+
 ## Jab: "grouping by location returns Unassigned" — plus a real defect it exposed (2026-08-05) — fmlozano
 User created Tower/Level/Zone levels on **4PH Jab Greenwoods Dasmariñas** (17,122 activities),
 grouped by them and got three nested **"— Unassigned —(17122)"**.
