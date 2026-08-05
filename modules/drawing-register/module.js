@@ -495,9 +495,16 @@ window.DrawingRegister = (function () {
   }
 
   // ---- schedule-link derivations -------------------------------------------
-  function leadOf(r){ var l = r.lead_days; return (l == null || l === '') ? LEAD_DEFAULT : num(l); }
+  // ⚠️ These read through `inh()`, not the raw field. On a per-sheet register the
+  // schedule link and the lead time belong to the WHOLE drawing (the parent), not
+  // to each of its 100 sheets — so a sheet with no link of its own answers with
+  // its parent's. Without this every sheet reads as "unlinked" and the Need-by
+  // column, float chip, aging bar and Backlog urgency sort all go blank the moment
+  // a drawing is broken out per sheet.
+  function leadOf(r){ var l = inh(r, 'lead_days'); return (l == null || l === '') ? LEAD_DEFAULT : num(l); }
   function needByOf(r){                          // the activity start = need-on-site date
-    var a = r.schedule_activity_id && schedById[r.schedule_activity_id];
+    var aid = inh(r, 'schedule_activity_id');
+    var a = aid && schedById[aid];
     return a ? (a.start_date || a.actual_start || null) : null;
   }
   // ⚠️ ALL-UTC, deliberately. The previous version built a LOCAL date
@@ -525,7 +532,7 @@ window.DrawingRegister = (function () {
   // still to go. Prefers the schedule need-by deadline; falls back to the plain
   // planned-approval date for drawings with no schedule link yet.
   function agingDays(r){
-    var ref = requiredApprovalOf(r) || r.planned_approval;
+    var ref = requiredApprovalOf(r) || inh(r, 'planned_approval');
     if (!ref) return null;
     var refYear = +String(ref).slice(0,4);
     if (refYear < 2015 || refYear > 2100) return null;   // sentinel/placeholder date, not real
@@ -534,7 +541,7 @@ window.DrawingRegister = (function () {
   }
   function docFloatOf(r){                         // +slack / −late, days vs the deadline
     var req = requiredApprovalOf(r); if (!req) return null;
-    var have = r.actual_approval || r.planned_approval; if (!have) return null;
+    var have = r.actual_approval || inh(r, 'planned_approval'); if (!have) return null;
     return Math.round((new Date(req + 'T00:00:00') - new Date(have + 'T00:00:00')) / 86400000);
   }
   // Need-by cell: the required-approval deadline + a float chip (green slack /
@@ -661,8 +668,107 @@ window.DrawingRegister = (function () {
     return which === 'actual' ? r.issue_date : (r.due_date || null);
   }
 
+  // ======================= per-sheet tracking matrix ========================
+  // A drawing can be broken out into one row PER SHEET. A sheet is an ordinary
+  // drawing row (no_of_sheets = 1) carrying `parent_id`. Which mode a drawing
+  // uses is the Technical Officer's call, per drawing:
+  //
+  //   aggregate mode  — one row, no_of_sheets=100, approved_sheets typed by hand
+  //                     (unchanged from before; still the default)
+  //   per-sheet mode  — the drawing becomes a parent; 100 sheet rows sit under it,
+  //                     each with its own status and its own revision history
+  //
+  // The two coexist in one register and roll up identically, because the parent's
+  // stored counters are kept as a DERIVED mirror of its children (`syncParent`).
+  // That is what lets every existing consumer — Overview KPIs, the progress
+  // tables, the donut, export, Backlog, the period chart — keep working with no
+  // change at all: they iterate `drawingRows()`, which excludes sheets, and read
+  // the same `no_of_sheets`/`approved_sheets` fields they always did.
+  var kidsOf = {};          // parent id -> [sheet rows], in display order
+  var rowById = {};
+  function indexSheets(){
+    kidsOf = {}; rowById = {};
+    rows.forEach(function (r){ rowById[r.id] = r; });
+    rows.forEach(function (r){
+      if (!r.parent_id || isNode(r)) return;
+      // Defensive: a child whose parent is missing (deleted out from under it, or
+      // filtered out of a partial cache) must not vanish from the register — it is
+      // re-adopted as a plain drawing by leaving it out of the index, since
+      // drawingRows() only excludes rows whose parent actually exists.
+      if (!rowById[r.parent_id]) return;
+      (kidsOf[r.parent_id] = kidsOf[r.parent_id] || []).push(r);
+    });
+  }
+  function sheetsOf(r){ return kidsOf[r.id] || []; }
+  function hasSheets(r){ return !!(kidsOf[r.id] && kidsOf[r.id].length); }
+  function isSheet(r){ return !!(r.parent_id && rowById[r.parent_id]); }
+  function parentOf(r){ return r.parent_id ? (rowById[r.parent_id] || null) : null; }
+  // Fields that belong to the WHOLE drawing, answered by the parent when a sheet
+  // doesn't carry its own. The planned approval date is the headline case: the
+  // user's rule is one planned approval date per drawing, status per sheet.
+  function inh(r, f){
+    if (r[f] != null && r[f] !== '') return r[f];
+    var p = parentOf(r);
+    return p ? (p[f] != null && p[f] !== '' ? p[f] : null) : null;
+  }
+
+  // Roll up a set of rows into the numbers the group rows and progress tables show.
+  // ⚠️ `maxActual` is only reported once EVERY row is approved. Percent complete is
+  // approved ÷ total, so a drawing is not "approved on" any date until its last
+  // sheet lands — surfacing the max actual date earlier would read as a completion
+  // date for work that is still open. `minPlanned` is the earliest commitment in the
+  // set, which is the date the group must be judged against.
+  function rollup(list){
+    var tot = 0, ap = 0, minPlanned = null, maxActual = null, allAppr = list.length > 0;
+    list.forEach(function (r){
+      var t = num(r.no_of_sheets) || 0, a = num(r.approved_sheets) || 0;
+      tot += t; ap += a;
+      var pl = inh(r, 'planned_approval');
+      if (validDate(pl) && (!minPlanned || pl < minPlanned)) minPlanned = pl;
+      var ac = r.actual_approval;
+      if (validDate(ac) && (!maxActual || ac > maxActual)) maxActual = ac;
+      if (!(t > 0 && a >= t)) allAppr = false;
+    });
+    return { tot: tot, ap: ap, pct: tot ? Math.round(ap / tot * 100) : 0,
+             minPlanned: minPlanned, maxActual: allAppr ? maxActual : null, allApproved: allAppr };
+  }
+  // Shared with agingDays()'s guard: a legacy import sentinel like "2000-01-06" is
+  // not a real date and must not win a min()/max().
+  function validDate(d){
+    if (!d) return false;
+    var y = +String(d).slice(0, 4);
+    return y >= 2015 && y <= 2100;
+  }
+
+  // Write the parent's derived counters back to the DB so every consumer that
+  // reads the plain columns stays correct without knowing sheets exist.
+  async function syncParent(pidRow){
+    var p = typeof pidRow === 'string' ? rowById[pidRow] : pidRow;
+    if (!p) return;
+    var kids = sheetsOf(p);
+    if (!kids.length) return;                      // back in aggregate mode — leave the hand-typed counters alone
+    var ap = kids.filter(function (k){ return isApprovedStatus(k.status); }).length;
+    var r = rollup(kids);
+    var patch = {
+      no_of_sheets: kids.length,
+      approved_sheets: ap,
+      approved_pct: kids.length ? ap / kids.length : 0,
+      // The drawing is approved on the day its LAST sheet was approved, and not before.
+      actual_approval: (ap === kids.length) ? (r.maxActual || p.actual_approval || null) : null,
+      status: ap === kids.length ? 'Approved'
+            : (ap > 0 || kids.some(function (k){ return latestSub(k, 'actual'); })) ? 'Ongoing'
+            : (p.status || 'For Review')
+    };
+    await persistCell(p, patch);
+  }
+
   function isNode(r){ return r.node_kind && r.node_kind !== 'drawing'; }
-  function drawingRows(){ return rows.filter(function (r){ return !isNode(r); }); }
+  // ⚠️ Excludes SHEETS. Every roll-up consumer (KPIs, progress tables, donut,
+  // export, Backlog, dup detection) counts through here, and a sheet's counters
+  // are already inside its parent's — including both would double-count the whole
+  // register. `sheetRows()` is the way to reach them.
+  function drawingRows(){ return rows.filter(function (r){ return !isNode(r) && !isSheet(r); }); }
+  function sheetRows(){ return rows.filter(function (r){ return !isNode(r) && isSheet(r); }); }
   function structuralNodes(){ return rows.filter(isNode); }
   function anyFilter(){ return !!(filters.phase || filters.discipline || filters.status || filters.search || filters.dupsOnly); }
 
@@ -685,8 +791,13 @@ window.DrawingRegister = (function () {
 
   function filtered() {
     return drawingRows().filter(function (r) {
-      if (!matchesFilters(r)) return false;
-      return true;
+      if (matchesFilters(r)) return true;
+      // ⚠️ A parent survives when any of its SHEETS match. Its own status is a
+      // derived roll-up ("Ongoing" while 37 of 100 are approved), so filtering the
+      // register by "Approved" or "Revise & Resubmit" would otherwise hide the
+      // parent — and with it the matching sheets, which is the whole point of the
+      // filter. pushDrawing() then paints only the sheets that matched.
+      return sheetsOf(r).some(function (k){ return matchesFilters(k, {skipDups:true}); });
     });
   }
 
@@ -724,6 +835,10 @@ window.DrawingRegister = (function () {
   }
 
   function render() {
+    // ⚠️ Must run before anything reads the model: drawingRows(), inh(), leadOf()
+    // and needByOf() all consult the parent/child index, and a stale index after an
+    // optimistic in-memory edit would show a sheet as an unparented drawing.
+    indexSheets();
     syncTabs();
     syncClearFilt();
     // the filter bar applies to Registry AND Backlog (both are drawing-level lists);
@@ -1063,7 +1178,7 @@ window.DrawingRegister = (function () {
         if (collapsed[dkey]) return;
 
         // no-category drawings sit directly under the discipline (level 3)
-        regSortList(D.nocat).forEach(function(r){ disp.push({type:'drawing',level:3,row:r}); visibleIds.push(r.id); });
+        regSortList(D.nocat).forEach(function(r){ pushDrawing(r, 3); });
 
         var catSet={}; Object.keys(cNode).forEach(function(k){var p=k.split(SEP); if(p[0]===ph&&p[1]===d)catSet[p[2]]=1;});
         (D.order||[]).forEach(function(c){catSet[c]=1;});
@@ -1073,11 +1188,34 @@ window.DrawingRegister = (function () {
           var ckey='C:'+ph+'|'+d+'|'+c;
           disp.push({type:'cat',level:3,key:ckey,label:c,code:nodeCode(cNode[ph+SEP+d+SEP+c]),ctx:{phase:ph,discipline:d,category:c},nodeId:node_(cNode[ph+SEP+d+SEP+c]),list:list});
           if (collapsed[ckey]) return;
-          regSortList(list).forEach(function(r){ disp.push({type:'drawing',level:4,row:r}); visibleIds.push(r.id); });
+          regSortList(list).forEach(function(r){ pushDrawing(r, 4); });
         });
       });
     });
     return disp;
+
+    // A drawing with sheets under it renders as its own collapsible level: the
+    // drawing row still shows its code/title (and stays inline-editable), but its
+    // sheet/approved/date cells become the roll-up over its children, and the
+    // sheets follow one level deeper. A drawing with no sheets is exactly what it
+    // has always been.
+    function pushDrawing(r, level){
+      var kids = sheetsOf(r);
+      if (!kids.length){ disp.push({type:'drawing',level:level,row:r}); visibleIds.push(r.id); return; }
+      var shown = kids.filter(function (k){ return matchesFilters(k, {skipDups:true}); });
+      // Under an active filter, keep the parent visible when it OR any of its
+      // sheets match — otherwise filtering by "Revise & Resubmit" would hide the
+      // very sheets you are looking for, because the parent's derived status is
+      // "Ongoing".
+      var skey = 'S:'+r.id;
+      disp.push({type:'drawing',level:level,row:r,sheets:kids,shownSheets:shown,skey:skey});
+      visibleIds.push(r.id);
+      if (collapsed[skey]) return;
+      regSortList(shown).forEach(function (k){
+        disp.push({type:'drawing',level:level+1,row:k,isSheet:true});
+        visibleIds.push(k.id);
+      });
+    }
 
     function node_(n){ return n ? n.id : null; }
     function collectDraws(P){ var a=[]; Object.keys(P.disc).forEach(function(d){ a=a.concat(collectDisc(P.disc[d])); }); return a; }
@@ -1167,9 +1305,12 @@ window.DrawingRegister = (function () {
 
   var COLSPAN_LABEL = 2;   // Code + Title under a group label (frozen block)
   function groupRowHTML(item, CB) {
-    var tot=0, ap=0;
-    item.list.forEach(function (r){ tot += num(r.no_of_sheets)||0; ap += num(r.approved_sheets)||0; });
-    var pct = tot ? Math.round(ap/tot*100) : 0;
+    // POC = approved sheets ÷ total sheets, and the group's dates are the earliest
+    // commitment (min planned) and — only once everything under it is approved —
+    // the day the last one landed (max actual). Same rule at every level, so a
+    // discipline, a category and a per-sheet drawing all read the same way.
+    var roll = rollup(item.list);
+    var tot = roll.tot, ap = roll.ap, pct = roll.pct;
     var ids = item.list.map(function(r){return r.id;}).join(',');
     var grpCb = CB ? '<td class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" data-selgrp="'+ids+'" title="Select group"></td>' : '';
     var isCol = !!collapsed[item.key];
@@ -1181,11 +1322,14 @@ window.DrawingRegister = (function () {
       '<td colspan="'+COLSPAN_LABEL+'" class="dr-indent dr-freeze dr-freeze-grp"><span class="dr-grplabel">'+caret+
         (item.code?'<span class="dr-gcode">'+Fmt.esc(item.code)+'</span> ':'')+
         '<strong class="dr-glabel">'+Fmt.esc(item.label)+'</strong> <span class="dr-count">'+item.list.length+' dwg</span></span></td>' +
-      '<td class="dr-c-rev"></td>' +  // Rev
-      '<td></td>' +                   // Status col
+      '<td colspan="2">'+progressBar(pct)+'</td>' +   // Rev + Status
       '<td class="dr-r">'+tot+'</td>' +
       '<td class="dr-r">'+ap+'</td>' +
-      '<td colspan="2">'+progressBar(pct)+'</td>' +
+      '<td class="dr-nowrap dr-c-date">'+(roll.minPlanned
+        ? '<span class="dr-mut" title="Earliest planned approval date in this group">'+Fmt.date(roll.minPlanned)+'</span>' : '—')+'</td>' +
+      '<td class="dr-nowrap dr-c-date">'+(roll.maxActual
+        ? '<span title="Last sheet approved — everything in this group is approved">'+Fmt.date(roll.maxActual)+'</span>'
+        : '<span class="dr-mut" title="Not all approved yet">—</span>')+'</td>' +
       '<td></td>' +   // Need-by
       '<td></td>' +   // Resp.
       '<td class="dr-nowrap dr-actcol">'+(canWrite?'<button class="dr-lvldel" title="Delete this level and everything under it">'+ico('trash',15)+'</button>':'')+'</td></tr>';
@@ -1205,27 +1349,49 @@ window.DrawingRegister = (function () {
 
   function drawRowHTML(item, CB) {
     var r = item.row;
+    var kids = item.sheets || null;               // set only on a drawing broken out per sheet
+    var sheet = !!item.isSheet;
+    var roll = kids ? rollup(kids) : null;
     var code = r.drawing_code || r.drawing_no || '';
-    var tot = num(r.no_of_sheets)||0, ap = num(r.approved_sheets)||0;
-    var pct = Math.round(pctApproved(r)*100);
+    var tot = roll ? roll.tot : (num(r.no_of_sheets)||0);
+    var ap  = roll ? roll.ap  : (num(r.approved_sheets)||0);
+    var pct = roll ? roll.pct : Math.round(pctApproved(r)*100);
     var sub = latestSub(r,'actual') || latestSub(r,'planned');
-    var appr = r.actual_approval || r.planned_approval;
+    // Approval column: for a parent it is the MAX actual approval across its
+    // sheets — shown only once every sheet is approved, since POC hits 100% only
+    // then — falling back to the drawing's single planned approval date.
+    var appr = roll ? (roll.maxActual || roll.minPlanned) : (r.actual_approval || inh(r,'planned_approval'));
+    var apprIsActual = roll ? !!roll.maxActual : !!r.actual_approval;
     var cb = CB ? '<td class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" data-sel="'+r.id+'"'+(selected[r.id]?' checked':'')+'></td>' : '';
     var ed = CB ? ' dr-ed' : '';
-    var isDup = !!dupSet[dupKey(r)];
+    // Derived cells must NOT be inline-editable: on a parent the sheet counters
+    // are recomputed from its children by syncParent(), so a hand-typed value
+    // would be silently overwritten on the next sheet change.
+    var edN = (CB && !kids) ? ' dr-ed' : '';
+    var isDup = !sheet && !!dupSet[dupKey(r)];
     var dupMark = isDup ? ' <span class="dr-dupmark" title="Duplicate code within this drawing type — reconcile">⚠</span>' : '';
-    return '<tr class="dr-drow dr-lvl-'+(item.level||4)+(selected[r.id]?' dr-selrow':'')+(isDup?' dr-dup':'')+'" data-id="'+r.id+'"'+(reorderEnabled()?' draggable="true"':'')+'>' + cb +
-      '<td class="dr-indent dr-freeze dr-freeze-code'+ed+'" data-f="code" data-t="text"><span class="dr-code">'+Fmt.esc(code)+'</span>'+dupMark+'</td>' +
-      '<td class="dr-c-title dr-freeze dr-freeze-title'+ed+'" data-f="title" data-t="text">'+Fmt.esc(r.title)+(r.description?'<div class="dr-sub">'+Fmt.esc(r.description)+'</div>':'')+'</td>' +
+    var caret = kids
+      ? '<span class="dr-caret dr-scaret'+(collapsed[item.skey]?' dr-caret-col':'')+'" data-sgrp="'+item.skey+'" title="Show / hide this drawing’s sheets">'+ico('chevronDown',12)+'</span>'
+      : '';
+    var sheetTag = kids ? ' <span class="dr-sheettag" title="Tracked per sheet">'+kids.length+' sheets</span>' : '';
+    return '<tr class="dr-drow dr-lvl-'+(item.level||4)+(kids?' dr-sheetparent':'')+(sheet?' dr-sheetrow':'')+
+        (selected[r.id]?' dr-selrow':'')+(isDup?' dr-dup':'')+'" data-id="'+r.id+'"'+
+        (kids?' data-sgrprow="'+item.skey+'"':'')+((reorderEnabled() && !kids)?' draggable="true"':'')+'>' + cb +
+      '<td class="dr-indent dr-freeze dr-freeze-code'+ed+'" data-f="code" data-t="text">'+caret+'<span class="dr-code">'+Fmt.esc(code)+'</span>'+dupMark+'</td>' +
+      '<td class="dr-c-title dr-freeze dr-freeze-title'+ed+'" data-f="title" data-t="text">'+Fmt.esc(r.title)+sheetTag+(r.description?'<div class="dr-sub">'+Fmt.esc(r.description)+'</div>':'')+'</td>' +
       '<td class="dr-c-rev'+ed+'" data-f="revision" data-t="text">'+Fmt.esc(r.revision)+'</td>' +
-      '<td class="dr-c-status">'+(CB?statusSelect(r):'<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status||'—')+'</span>')+'</td>' +
-      '<td class="dr-r dr-c-sh'+ed+'" data-f="no_of_sheets" data-t="num">'+tot+'</td>' +
-      '<td class="dr-r dr-c-ap'+ed+'" data-f="approved_sheets" data-t="num">'+ap+' <span class="dr-mini">'+pct+'%</span></td>' +
+      '<td class="dr-c-status">'+(kids
+          ? '<span class="dr-pill '+statusCls(r.status)+'" title="Rolled up from '+kids.length+' sheets">'+Fmt.esc(r.status||'—')+'</span>'
+          : (CB?statusSelect(r):'<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(r.status||'—')+'</span>'))+'</td>' +
+      '<td class="dr-r dr-c-sh'+edN+'" data-f="no_of_sheets" data-t="num">'+tot+'</td>' +
+      '<td class="dr-r dr-c-ap'+edN+'" data-f="approved_sheets" data-t="num">'+ap+' <span class="dr-mini">'+pct+'%</span></td>' +
       '<td class="dr-nowrap dr-c-date'+ed+'" data-f="latest_sub" data-t="date">'+(sub?Fmt.date(sub):'—')+'</td>' +
-      '<td class="dr-nowrap dr-c-date'+ed+'" data-f="actual_approval" data-t="date">'+(appr?Fmt.date(appr):'—')+'</td>' +
+      '<td class="dr-nowrap dr-c-date'+(kids?'':ed)+'" data-f="actual_approval" data-t="date">'+
+        (appr?'<span class="'+(apprIsActual?'':'dr-mut')+'" title="'+(apprIsActual?'Actual approval':'Planned approval — not yet approved')+'">'+Fmt.date(appr)+'</span>':'—')+'</td>' +
       '<td class="dr-nowrap dr-c-date dr-c-needby">'+needByCellHtml(r)+'</td>' +
       '<td class="dr-c-resp'+ed+'" data-f="responsible" data-t="text">'+Fmt.esc(r.responsible)+'</td>' +
       '<td class="dr-nowrap dr-actcol">'+(r.file_url?'<button class="dr-iconbtn" data-view="'+Fmt.esc(r.file_url)+'" title="View approved file">'+ico('eye',15)+'</button>':'')+
+        (canWrite && !sheet ? '<button class="dr-iconbtn" data-sheets="'+r.id+'" title="'+(kids?'Manage sheets':'Break out into one row per sheet')+'">'+ico('columns',15)+'</button>' : '')+
         '<button class="dr-iconbtn" data-edit="'+r.id+'" title="Full editor">'+ico('pencil',15)+'</button>' +
         '<button class="dr-iconbtn dr-rowbtn-del" data-del="'+r.id+'" title="Delete">'+ico('trash',15)+'</button></td>' +
     '</tr>';
@@ -1286,7 +1452,21 @@ window.DrawingRegister = (function () {
     host.querySelectorAll('[data-view]').forEach(function (b){ b.onclick=function(e){ e.stopPropagation(); viewFile(b.dataset.view); }; });
     host.querySelectorAll('[data-edit]').forEach(function (b){ b.onclick=function(e){ e.stopPropagation(); openForm(rows.find(function(x){return x.id===b.dataset.edit;})); }; });
     host.querySelectorAll('[data-del]').forEach(function (b){ b.onclick=function(e){ e.stopPropagation(); del(rows.find(function(x){return x.id===b.dataset.del;})); }; });
+    // Sheet caret: collapse/expand a drawing's sheet rows. ⚠️ stopPropagation —
+    // it lives inside a row whose click selects the row and whose dblclick edits
+    // the code cell, so without it toggling also starts an edit.
+    host.querySelectorAll('.dr-scaret[data-sgrp]').forEach(function (c){
+      c.onclick = function (e){
+        e.stopPropagation();
+        var k = c.dataset.sgrp;
+        if (collapsed[k]) delete collapsed[k]; else collapsed[k] = true;
+        saveUI(); render();
+      };
+    });
     if (!canWrite) { return; }
+    host.querySelectorAll('[data-sheets]').forEach(function (b){
+      b.onclick = function (e){ e.stopPropagation(); openSheetsDialog(rows.find(function(x){return x.id===b.dataset.sheets;})); };
+    });
 
     // status dropdowns (always visible)
     host.querySelectorAll('select[data-stat]').forEach(function (sel){
@@ -1295,6 +1475,10 @@ window.DrawingRegister = (function () {
         var r = rows.find(function(x){return x.id===sel.dataset.stat;}); if(!r) return;
         await persistCell(r, { status: sel.value });
         sel.className = 'dr-stsel dr-st-'+statusCls(sel.value);
+        // A sheet's status changes its drawing's approved count, POC and — once
+        // the last one lands — its actual approval date. Re-render so the parent
+        // row and every group roll-up above it move with it.
+        if (isSheet(r)) { await syncParent(r.parent_id); render(); }
       };
     });
 
@@ -1508,6 +1692,18 @@ window.DrawingRegister = (function () {
 
   // ------------------------------------------------------- inline editing ----
   async function persistCell(r, patch){
+    // ⚠️ On a SINGLE-sheet row the status IS the approval state, so approved_sheets
+    // must follow it rather than being a second thing to remember. Without this a
+    // sheet marked Approved still counts 0/1 toward its drawing's POC — two sources
+    // of truth that silently disagree, which is exactly the trap per-sheet tracking
+    // is meant to remove. Multi-sheet aggregate rows keep their hand-typed count.
+    if ('status' in patch && !('approved_sheets' in patch)) {
+      var n = ('no_of_sheets' in patch) ? num(patch.no_of_sheets) : num(r.no_of_sheets);
+      if (n <= 1 && !hasSheets(r)) {
+        patch.no_of_sheets = n || 1;
+        patch.approved_sheets = isApprovedStatus(patch.status) ? 1 : 0;
+      }
+    }
     if ('no_of_sheets' in patch || 'approved_sheets' in patch) {
       var ns = ('no_of_sheets' in patch) ? num(patch.no_of_sheets) : num(r.no_of_sheets);
       var as = ('approved_sheets' in patch) ? num(patch.approved_sheets) : num(r.approved_sheets);
@@ -1557,7 +1753,9 @@ window.DrawingRegister = (function () {
       else if (t==='num'){ patch[f]=num(val); }
       else if (t==='date'){ patch[f]=val||null; }
       else patch[f]=val;
-      persistCell(r, patch).then(function(){ render(); flushDeferredRemote(); });
+      persistCell(r, patch).then(function(){
+        return isSheet(r) ? syncParent(r.parent_id) : null;   // roll the change up to the drawing
+      }).then(function(){ render(); flushDeferredRemote(); });
     }
     input.onkeydown=function(e){ if(e.key==='Enter'){e.preventDefault();commit(true);} else if(e.key==='Escape'){e.preventDefault();commit(false);} };
     input.onblur=function(){ commit(true); };
@@ -1672,6 +1870,112 @@ window.DrawingRegister = (function () {
     // focus the newly-added row's title for immediate typing
     var added=drawingRows().filter(function(r){ return sameGroup(r) && r.dwg_number===code && !r.title; }).pop();
     if (added){ lastClickedId=added.id; var tr=document.querySelector('tr.dr-drow[data-id="'+added.id+'"]'); if(tr) tr.scrollIntoView({block:'center'}); editRowField(added.id, 'title'); }
+  }
+
+  // ------------------------------------------- per-sheet break-out / merge ---
+  // Sheet codes follow the register's OWN convention for a child of a coded
+  // parent — `A-101` → `A-101.1 … A-101.100` — the same scheme the BAU101
+  // auto-numbering used, so our numbers read like the consultant's.
+  function sheetCode(parent, n){
+    var base = parent.dwg_number || parent.drawing_no || parent.drawing_code || '';
+    return base ? base + '.' + n : 'SH-' + n;
+  }
+
+  function openSheetsDialog(p){
+    if (!p) return;
+    var kids = sheetsOf(p);
+    var have = kids.length;
+    var m = UI.modal(
+      '<h2 style="margin-top:0;">Sheets — '+Fmt.esc(p.drawing_code || p.drawing_no || p.title || 'drawing')+'</h2>' +
+      '<p class="dr-mut" style="margin-top:0;">Tracking per sheet gives every sheet its own status and its own revision history, ' +
+      'while the drawing keeps <strong>one planned approval date</strong> for the whole. Progress is approved sheets ÷ total, ' +
+      'so the drawing only reads 100% once every sheet is approved.</p>' +
+      (have
+        ? '<div class="dr-form-sec">Tracked per sheet</div>' +
+          '<p>This drawing has <strong>'+have+' sheet'+(have>1?'s':'')+'</strong>, '+
+            kids.filter(function(k){return isApprovedStatus(k.status);}).length+' approved.</p>' +
+          field('Add more sheets','<input class="pd-input" type="number" min="0" max="500" id="f-shadd" value="0">') +
+          '<p class="dr-mut">Added sheets continue the numbering from '+Fmt.esc(sheetCode(p, have+1))+'.</p>' +
+          '<div class="dr-form-sec">Stop tracking per sheet</div>' +
+          '<p class="dr-mut">Deletes all '+have+' sheet rows and their uploaded files, and returns this drawing to a single ' +
+            'row with a hand-typed approved count. This cannot be undone.</p>' +
+          '<button class="pd-btn pd-btn-danger" id="f-shmerge" type="button">Delete '+have+' sheet rows</button>'
+        : '<div class="dr-form-sec">Break out into sheets</div>' +
+          field('Number of sheets','<input class="pd-input" type="number" min="1" max="500" id="f-shadd" value="'+(Math.max(1, num(p.no_of_sheets)||1))+'">') +
+          '<p class="dr-mut">Creates that many rows, numbered '+Fmt.esc(sheetCode(p,1))+' onward, each starting at ' +
+            '<em>For Review</em>. The drawing\'s current approved count is not carried over — mark the approved sheets individually.</p>') +
+      '<div style="text-align:right;margin-top:14px;"><button class="pd-btn" id="f-cancel" type="button">Close</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="f-shgo" type="button">'+(have?'Add sheets':'Break out')+'</button></div>'
+    );
+    m.el.querySelector('#f-cancel').onclick = m.close;
+    var mg = m.el.querySelector('#f-shmerge');
+    if (mg) mg.onclick = function (){ m.close(); mergeSheets(p); };
+    m.el.querySelector('#f-shgo').onclick = async function (){
+      var n = num(m.el.querySelector('#f-shadd').value);
+      if (!(n > 0)) { UI.toast('Enter how many sheets to create', 'warn'); return; }
+      if (n > 500) { UI.toast('500 sheets is the limit for one drawing', 'warn'); return; }
+      var btn = m.el.querySelector('#f-shgo'); btn.disabled = true; btn.textContent = 'Creating…';
+      await createSheets(p, n);
+      m.close();
+    };
+  }
+
+  async function createSheets(p, n){
+    var have = sheetsOf(p).length;
+    var base = nextOrder();
+    var batch = [];
+    for (var i = 1; i <= n; i++) {
+      var code = sheetCode(p, have + i);
+      batch.push({
+        project_id: pid, created_by: uid, node_kind: 'drawing', parent_id: p.id,
+        // The sheet inherits its place in the tree so every existing grouping,
+        // filter and export keeps working on it unchanged.
+        phase: p.phase || '', discipline: p.discipline || '', category: (p.category || '').trim(),
+        title: 'Sheet ' + (have + i), status: 'For Review',
+        no_of_sheets: 1, approved_sheets: 0, approved_pct: 0, submissions: [],
+        dwg_number: code, drawing_no: code, drawing_code: code,
+        responsible: p.responsible || null,
+        // ⚠️ planned_approval / schedule_activity_id / lead_days are deliberately
+        // NOT copied down. They belong to the whole drawing; a sheet reads them
+        // through inh(), so changing the parent's date moves every sheet with it
+        // instead of leaving 100 stale copies to reconcile.
+        sort_order: base + i
+      });
+    }
+    // Chunked: a 500-sheet break-out is one action but many rows.
+    for (var s = 0; s < batch.length; s += 200) {
+      var res = await sb().from(TABLE).insert(batch.slice(s, s + 200));
+      if (res.error) {
+        UI.toast(/parent_id/i.test(res.error.message || '')
+          ? 'Run migration 2026-08-05-drawing-register-sheets.sql to enable per-sheet tracking'
+          : res.error.message, 'error');
+        return;
+      }
+    }
+    delete collapsed['S:' + p.id];
+    await load();
+    await syncParent(p.id);
+    render();
+    UI.toast(n + ' sheet row' + (n > 1 ? 's' : '') + ' created', 'ok');
+  }
+
+  async function mergeSheets(p){
+    var kids = sheetsOf(p);
+    if (!kids.length) return;
+    if (!confirm('Delete all ' + kids.length + ' sheet rows of "' +
+                 (p.drawing_code || p.drawing_no || p.title) + '" and go back to a single row?\n\n' +
+                 'Their statuses, revision history and uploaded files are lost. This cannot be undone.')) return;
+    // Capture the files BEFORE the rows leave memory — afterwards the paths are
+    // unrecoverable and the objects would be orphaned in the bucket.
+    var files = [];
+    kids.forEach(function (k){ files = files.concat(allFilesOf(k)); });
+    var res = await sb().from(TABLE).delete().in('id', kids.map(function(k){ return k.id; }));
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    await removeFiles(files);
+    // Keep the sheet total, drop the derived approved count back to a hand-typed 0.
+    await sb().from(TABLE).update({ no_of_sheets: kids.length, approved_sheets: 0, approved_pct: 0 }).eq('id', p.id);
+    await load();
+    UI.toast('Back to single-row tracking', 'ok');
   }
 
   // ----------------------------------------------------- progress dashboard --
@@ -2085,9 +2389,15 @@ window.DrawingRegister = (function () {
     try { await sb().storage.from(BUCKET).remove(list); } catch (e) {}
   }
   // Every revision's own file + the approved file, for cleanup on row delete.
-  function allFilesOf(r) {
+  function allFilesOf(r, _seen) {
     var out = r.file_url ? [r.file_url] : [];
     (Array.isArray(r.submissions) ? r.submissions : []).forEach(function (s){ if (s && s.file_url) out.push(s.file_url); });
+    // ⚠️ Deleting a drawing cascades to its sheet rows in the DB (parent_id has
+    // ON DELETE CASCADE), so their files must be collected here too — otherwise
+    // every sheet's uploaded revision is orphaned in the bucket with no row left
+    // pointing at it. `_seen` guards against a malformed self-parenting cycle.
+    _seen = _seen || {}; _seen[r.id] = true;
+    sheetsOf(r).forEach(function (k){ if (!_seen[k.id]) out = out.concat(allFilesOf(k, _seen)); });
     return out;
   }
 
@@ -2143,13 +2453,25 @@ window.DrawingRegister = (function () {
         field('Responsible','<input class="pd-input" id="f-resp" value="'+Fmt.esc(r.responsible)+'" placeholder="ECTA / In-House">') +
       '</div>' +
 
-      '<div class="dr-form-sec">Submissions <button class="pd-btn pd-btn-sm" id="f-addsub" type="button">+ revision</button></div>' +
+      // ONE revision matrix instead of a "Submissions" list and a separate
+      // "Approval" block. A revision is submitted, reviewed and either approved or
+      // sent back — splitting that across two sections meant the status you were
+      // looking at never said WHICH revision it belonged to.
+      '<div class="dr-form-sec">Revisions <button class="pd-btn pd-btn-sm" id="f-addsub" type="button">+ revision</button></div>' +
+      '<div class="dr-subhead"><span></span><span>Submitted (planned)</span><span>Submitted (actual)</span>' +
+        '<span>Outcome</span><span>Approved on</span><span>Drawing file</span><span></span></div>' +
       '<div id="f-subs"></div>' +
 
       '<div class="dr-form-sec">Approval</div>' +
       '<div class="dr-grid3">' +
-        field('Status','<select class="pd-select" id="f-status">'+opt(STATUSES, r.status||'For Review', false)+'</select>') +
-        field('Planned approval','<input class="pd-input" type="date" id="f-papp" value="'+(r.planned_approval||'')+'">') +
+        field('Status <span class="dr-mut">— latest revision</span>','<select class="pd-select" id="f-status">'+opt(STATUSES, r.status||'For Review', false)+'</select>') +
+        (isSheet(r)
+          ? field('Planned approval','<input class="pd-input" type="date" id="f-papp" value="'+(r.planned_approval||'')+'" placeholder="'+
+              Fmt.esc(inh(r,'planned_approval')||'')+'">' +
+              '<div class="dr-mut dr-fieldhint">Inherited from the drawing'+
+              (inh(r,'planned_approval')?' — <strong>'+Fmt.date(inh(r,'planned_approval'))+'</strong>':'')+
+              '. Leave blank unless this one sheet has its own deadline.</div>')
+          : field('Planned approval <span class="dr-mut">— whole drawing</span>','<input class="pd-input" type="date" id="f-papp" value="'+(r.planned_approval||'')+'">')) +
         field('Actual approval','<input class="pd-input" type="date" id="f-aapp" value="'+(r.actual_approval||'')+'">') +
       '</div>' +
 
@@ -2180,16 +2502,38 @@ window.DrawingRegister = (function () {
             '<span class="dr-subfname" title="'+Fmt.esc(s.file_url)+'">'+Fmt.esc(fileLabel(s.file_url))+'</span>' +
             '<button class="dr-iconbtn dr-rowbtn-del" type="button" data-subrmfile="'+i+'" title="Remove this file (applied on Save)">'+ico('x',14)+'</button></span>'
           : '<input class="pd-input dr-subfileinput" type="file" data-subfile="'+i+'" accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg">';
+        // Each revision carries its OWN outcome and approval date, so the history
+        // reads as "rev0 was sent back on the 3rd, rev1 was approved on the 14th"
+        // rather than one status floating free of the revisions it describes.
+        var stOpts = '<option value=""'+(!s.status?' selected':'')+'>—</option>' +
+          STATUSES.map(function(o){ return '<option'+(s.status===o?' selected':'')+'>'+o+'</option>'; }).join('');
         return '<div class="dr-subrow">' +
           '<span class="dr-subrev">Rev '+(s.rev!=null?s.rev:i)+'</span>' +
-          '<label>Planned<input class="pd-input" type="date" data-sub="'+i+'" data-k="planned" value="'+(s.planned||'')+'"></label>' +
-          '<label>Actual<input class="pd-input" type="date" data-sub="'+i+'" data-k="actual" value="'+(s.actual||'')+'"></label>' +
-          '<label class="dr-subfilelbl">Drawing file'+fileBit+'</label>' +
-          (subs.length>1?'<button class="pd-btn pd-btn-sm dr-rmsub" type="button" data-rmsub="'+i+'" title="Remove this revision">'+ico('x',14)+'</button>':'') +
+          '<label><input class="pd-input" type="date" data-sub="'+i+'" data-k="planned" value="'+(s.planned||'')+'"></label>' +
+          '<label><input class="pd-input" type="date" data-sub="'+i+'" data-k="actual" value="'+(s.actual||'')+'"></label>' +
+          // ⚠️ `dr-stsel`, not `pd-select` — the .dr-st-* classes only set a
+          // background; `color:#fff` lives on .dr-stsel. Without it a revision's
+          // outcome renders as dark text on a saturated green/red pill.
+          '<label><select class="dr-stsel dr-substat dr-st-'+statusCls(s.status)+'" data-sub="'+i+'" data-k="status">'+stOpts+'</select></label>' +
+          '<label><input class="pd-input" type="date" data-sub="'+i+'" data-k="approved" value="'+(s.approved||'')+'"></label>' +
+          '<label class="dr-subfilelbl">'+fileBit+'</label>' +
+          (subs.length>1?'<button class="pd-btn pd-btn-sm dr-rmsub" type="button" data-rmsub="'+i+'" title="Remove this revision">'+ico('x',14)+'</button>':'<span></span>') +
         '</div>';
       }).join('');
       host.querySelectorAll('[data-sub]').forEach(function (el){
-        el.onchange = function(){ subs[+el.dataset.sub][el.dataset.k] = el.value || ''; };
+        el.onchange = function(){
+          var i = +el.dataset.sub, k = el.dataset.k;
+          subs[i][k] = el.value || '';
+          if (k === 'status') el.className = 'dr-stsel dr-substat dr-st-'+statusCls(el.value);
+          // Mirror the LATEST revision up to the drawing-level fields as you type,
+          // so the Approval block below always agrees with the revision history
+          // above it instead of being a third place to remember to update.
+          if ((k === 'status' || k === 'approved') && i === subs.length - 1) {
+            var st = m.el.querySelector('#f-status'), aa = m.el.querySelector('#f-aapp');
+            if (k === 'status' && el.value && st) st.value = el.value;
+            if (k === 'approved' && el.value && aa && !aa.value) aa.value = el.value;
+          }
+        };
       });
       host.querySelectorAll('[data-subview]').forEach(function (b){
         b.onclick = function(){ viewFile(subs[+b.dataset.subview].file_url); };
@@ -2287,7 +2631,7 @@ window.DrawingRegister = (function () {
       // A revision with only a file (dates not filled in yet) is still a real
       // submission — keep it, or uploading the sheet first would silently drop it.
       // Objects are kept by reference so a pending upload lands on the right one.
-      subs = subs.filter(function (s){ return s.planned || s.actual || s.file_url ||
+      subs = subs.filter(function (s){ return s.planned || s.actual || s.status || s.approved || s.file_url ||
                                               pendingSubUploads.some(function (u){ return u.sub === s; }); });
       var sheets = num(m.el.querySelector('#f-sheets').value);
       var apSheets = num(m.el.querySelector('#f-apsheets').value);
@@ -2357,9 +2701,23 @@ window.DrawingRegister = (function () {
           up.sub.file_url = p;
         }
         // Normalize AFTER uploads so each revision carries its final file path.
+        // `status` + `approved` are new keys on the same jsonb — no migration.
+        // ⚠️ Any existing `bl:{…}` re-baseline series (from the BAU101 importer) is
+        // carried through untouched; dropping it would silently discard the
+        // original baseline and the slip against it.
         data.submissions = subs.map(function (s,i){
-          return { rev:(s.rev!=null?s.rev:i), planned:s.planned||null, actual:s.actual||null, file_url:s.file_url||null };
+          var e = { rev:(s.rev!=null?s.rev:i), planned:s.planned||null, actual:s.actual||null,
+                    status:s.status||null, approved:s.approved||null, file_url:s.file_url||null };
+          if (s.bl) e.bl = s.bl;
+          return e;
         });
+        // The drawing's approval date is the day its approving revision landed.
+        if (!data.actual_approval) {
+          for (var li = data.submissions.length - 1; li >= 0; li--) {
+            var ls = data.submissions[li];
+            if (ls.approved && isApprovedStatus(ls.status)) { data.actual_approval = ls.approved; break; }
+          }
+        }
         data.issue_date = (data.submissions[0] && data.submissions[0].actual) || null;
         data.due_date   = (data.submissions[0] && data.submissions[0].planned) || null;
         btn.textContent = 'Saving…';
@@ -2389,7 +2747,10 @@ window.DrawingRegister = (function () {
         await removeFiles(pendingRemoveFiles);
         UI.toast(warned ? 'Saved — but the schedule link wasn’t stored; run the 2026-07-25 migration.'
                         : 'Saved', warned ? 'warn' : 'ok');
-        m.close(); load();
+        m.close();
+        await load();
+        // Editing a sheet moves its drawing's approved count, POC and approval date.
+        if (!isNew && r.parent_id) { await syncParent(r.parent_id); render(); }
       } catch (e) {
         await removeFiles(uploadedNow);   // roll back this save's uploads
         UI.toast(e.message, 'error'); btn.disabled=false; btn.textContent='Save';
@@ -2406,11 +2767,16 @@ window.DrawingRegister = (function () {
   }
 
   async function del(r) {
-    if (!confirm('Delete drawing "' + (r.drawing_code || r.drawing_no || r.title) + '"?')) return;
-    await removeFiles(allFilesOf(r));   // approved file + every revision's own file
+    var nk = sheetsOf(r).length;
+    if (!confirm('Delete drawing "' + (r.drawing_code || r.drawing_no || r.title) + '"' +
+                 (nk ? ' and its ' + nk + ' sheet rows' : '') + '?')) return;
+    var up = r.parent_id;
+    await removeFiles(allFilesOf(r));   // approved file, every revision's file, and every sheet's
     var res = await sb().from(TABLE).delete().eq('id', r.id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
-    UI.toast('Deleted', 'ok'); load();
+    UI.toast('Deleted', 'ok');
+    await load();
+    if (up) { await syncParent(up); render(); }   // one fewer sheet changes the drawing's total
   }
 
   // ---- Bulk delete the currently selected drawings -------------------------
@@ -2429,26 +2795,44 @@ window.DrawingRegister = (function () {
     // `selected` — an out-of-view selected row is NOT deleted, so removing its
     // files would orphan a surviving row from its drawing.
     var kill = {}; ids.forEach(function (id){ kill[id] = true; });
-    var files = [];
-    rows.forEach(function (r){ if (kill[r.id]) files = files.concat(allFilesOf(r)); });
+    var files = [], upd = {};
+    rows.forEach(function (r){
+      if (!kill[r.id]) return;
+      files = files.concat(allFilesOf(r));
+      // Surviving parents of deleted sheets need their counters recomputed.
+      if (r.parent_id && !kill[r.parent_id]) upd[r.parent_id] = true;
+    });
     await removeFiles(files);
     // delete in chunks to keep the URL length sane
     for (var i=0; i<ids.length; i+=100) {
       var res = await sb().from(TABLE).delete().in('id', ids.slice(i, i+100));
       if (res.error) { UI.toast(res.error.message, 'error'); return; }
     }
-    UI.toast('Deleted ' + ids.length + ' drawing(s)', 'ok'); selected = {}; load();
+    UI.toast('Deleted ' + ids.length + ' drawing(s)', 'ok'); selected = {};
+    await load();
+    var ups = Object.keys(upd);
+    for (var u=0; u<ups.length; u++) await syncParent(ups[u]);
+    if (ups.length) render();
   }
 
   // ---- Set status on all selected drawings ---------------------------------
   async function setStatusSelected(status) {
     var ids = Object.keys(selected).filter(function (id){ return visibleIds.indexOf(id)!==-1; });
     if (!ids.length) return;
-    var n = 0;
+    var n = 0, touchedParents = {};
     for (var i=0; i<ids.length; i++) {
       var r = rows.find(function (x){ return x.id===ids[i]; });
-      if (r && !isNode(r)) { var ok = await persistCell(r, { status: status }); if (ok) n++; }
+      if (!r || isNode(r)) continue;
+      // A parent's status is a roll-up of its sheets — setting it directly would
+      // be overwritten by the next syncParent(), so skip it rather than pretend.
+      if (hasSheets(r)) continue;
+      var ok = await persistCell(r, { status: status });
+      if (ok) { n++; if (isSheet(r)) touchedParents[r.parent_id] = true; }
     }
+    // Roll up ONCE per affected drawing, not once per sheet — bulk-approving 100
+    // sheets of one drawing is 1 parent write, not 100.
+    var pids = Object.keys(touchedParents);
+    for (var j=0; j<pids.length; j++) await syncParent(pids[j]);
     UI.toast('Set status on ' + n + ' drawing(s)', 'ok'); render();
   }
 
@@ -3017,15 +3401,30 @@ window.DrawingRegister = (function () {
     // into `drawing_type`. "Type of Drawing" does not contain "drawing type",
     // so the export stays round-trippable. (The old header, "Phase", matched no
     // probe at all — this preserves that property.)
-    var aoa = [['Drawing Code','Type of Drawing','Discipline','Category','Sheet Title','Description',
+    // ⚠️ "Sheet Of" was checked against every importer probe before being added
+    // (see the "Type of Drawing" note above — the same substring hazard applies).
+    // It matches none of them, so the export stays round-trippable; a re-import
+    // brings the sheets back as flat drawings, since the importer has no per-sheet
+    // level of its own.
+    var aoa = [['Drawing Code','Sheet Of','Type of Drawing','Discipline','Category','Sheet Title','Description',
       'Rev','Status','No. of Sheets','Approved Sheets','Approved %',
       'Latest Planned Sub.','Latest Actual Sub.','Planned Approval','Actual Approval','Responsible','Remarks']];
-    filtered().forEach(function (r) {
-      aoa.push([r.drawing_code||r.drawing_no, r.phase, r.discipline, r.category, r.title, r.description,
+    var put = function (r, parent) {
+      aoa.push([r.drawing_code||r.drawing_no,
+        parent ? (parent.drawing_code||parent.drawing_no||'') : '',
+        r.phase, r.discipline, r.category, r.title, r.description,
         r.revision, r.status, num(r.no_of_sheets), num(r.approved_sheets),
         Math.round(pctApproved(r)*100)+'%',
         latestSub(r,'planned')||'', latestSub(r,'actual')||'',
-        r.planned_approval||'', r.actual_approval||'', r.responsible, r.remarks]);
+        // A sheet shows the drawing's planned approval date it is actually judged
+        // against, not the blank it stores.
+        inh(r,'planned_approval')||'', r.actual_approval||'', r.responsible, r.remarks]);
+    };
+    filtered().forEach(function (r) {
+      put(r, null);
+      // Sheets follow their drawing. Without this a per-sheet register exports as
+      // parent rows only and every sheet's status and approval date is lost.
+      sheetsOf(r).forEach(function (k){ put(k, r); });
     });
     var ws = XLSX.utils.aoa_to_sheet(aoa);
     var wb = XLSX.utils.book_new();

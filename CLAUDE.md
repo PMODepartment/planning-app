@@ -77,6 +77,49 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-05 — Drawing Register: per-sheet tracking matrix (submissions + approval merged)
+User: a Technical Officer types "100 sheets, approved by 31-Mar" on one row and grows the approved count
+over time; they want a matrix where **each row is a sheet** with its own status and revisions, while the
+**planned approval date stays one date for the whole drawing** — and want to keep the option of tracking
+everything on a single row instead.
+- **Most of it already existed.** A row already carried `no_of_sheets`/`approved_sheets`, a `submissions[]`
+  jsonb (rev + planned + actual + file) and both approval dates; group rows already rolled up
+  Σapproved ÷ Σtotal. This is a restructure of the editor and the roll-up rules, not a new data model.
+- **A sheet is an ordinary drawing row** (`no_of_sheets = 1`) carrying the new `parent_id` — so inline
+  editing, sorting, drag order, filters, bulk status, per-revision upload, export, collab and offline
+  edits all work on sheets for free. Tree gains a 5th level: Type › Discipline › Category › **Drawing ›
+  Sheet**. **Aggregate mode is untouched** and still the default; the mode is per drawing.
+- **Migration `2026-08-05-drawing-register-sheets.sql` (USER MUST RUN)** — `parent_id` + index. Breaking
+  out a drawing reports "run the migration" rather than failing opaquely.
+- ⚠️ **The invariant that kept everything else working: `drawingRows()` now EXCLUDES sheets, and the
+  parent's stored counters are a derived mirror of its children (`syncParent`).** Overview KPIs, progress
+  tables, donut, period chart, export, Backlog and dup detection all count through `drawingRows()` and
+  read the same plain columns as before, so **none of them needed changing** — and the register isn't
+  double-counted (harness: 103 sheets, not 206).
+- **Roll-up rules now apply at every level** via one `rollup()`: POC = Σapproved ÷ Σtotal, **min planned
+  approval**, **max actual approval**. ⚠️ maxActual is **withheld until everything in the group is
+  approved** — POC only reads 100% when the last sheet lands, so an earlier max date would read as a
+  completion date for open work. Legacy sentinel dates (`2000-01-06`) are rejected from both extremes.
+- **⚠️ REAL DEFECT FIXED — status and approved_sheets were two sources of truth.** On a single-sheet row
+  a TO had to set **both** `status=Approved` and `approved_sheets=1`; missing the second left the sheet
+  reading Approved while contributing 0 to its drawing's POC, silently. `approved_sheets` now follows the
+  status whenever `no_of_sheets <= 1` and the row has no children. Aggregate rows keep their hand-typed
+  count, an explicit value in the same patch still wins, and a parent is never touched by the rule.
+- **Editor: one revision matrix** (planned sub · actual sub · **outcome** · **approved on** · file)
+  replaces the separate Submissions and Approval sections — the old split meant the status you were
+  reading never said which revision it belonged to. `status`/`approved` are new keys on the existing
+  jsonb (**no migration**), and the BAU101 importer's `bl:{…}` re-baseline series is carried through.
+- ⚠️ **Export gained a "Sheet Of" column** and now emits sheets under their drawing (it otherwise
+  exported parents only, losing every sheet's status and date). Checked against **all 20 importer
+  probes** before adding: it collides with none and every probe still resolves exactly as before, so the
+  export stays round-trippable — the same substring hazard the "Type of Drawing" header note warns about.
+- **Verified 58/58** against functions sliced verbatim out of the shipped `module.js` (33 model + 25
+  renderer, incl. header-vs-row column counts in writer and read-only modes), plus in-browser at 1440px
+  on the real CSS: every row type aligned to the header, 5-level indent ladder, sticky parent cells
+  opaque, revision header/body sharing one grid, 0 page h-scroll, no console errors.
+  ⚠️ **Not verified signed-in** and the migration is not run. Assets drawing-register
+  `module.css/js?v=20260805a`. See `modules/drawing-register/CLAUDE.md`.
+
 ### 2026-08-05 — Excel/OPC location mapping — and what the real exports actually contain
 Completes the import mapping. `parseWorkbook` now **retains the columns its fixed header detection
 doesn't claim** (`rec.extra`, keyed by the header as written, duplicates uniquified — they repeat in

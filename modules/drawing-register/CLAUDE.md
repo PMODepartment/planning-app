@@ -1,5 +1,101 @@
 # Module: drawing-register
 
+## Per-sheet tracking matrix — submissions + approval merged into one grid (2026-08-05) — fmlozano
+User: a Technical Officer sets "100 sheets, approved by 31-Mar" on one row and grows the approved count
+over time. They asked to turn that into a matrix where **each row is a sheet**, with a status per sheet
+and revisions per sheet, while the **planned approval date stays one date for the whole drawing** — and
+crucially, to keep the option of *not* using it and tracking the whole thing on one row.
+
+**Most of this already existed.** A register row already carried `no_of_sheets`/`approved_sheets`, a
+`submissions[]` jsonb (rev + planned + actual + file), status, and planned/actual approval; group rows
+already rolled up Σapproved ÷ Σtotal. So this is a restructure, not a new data model.
+
+### The shape
+A sheet is an **ordinary drawing row** (`no_of_sheets = 1`) carrying the new `parent_id`. Tree becomes
+Type › Discipline › Category › **Drawing › Sheet**. Two modes coexist per drawing, the TO's choice:
+- **aggregate** — one row, hand-typed approved count. Byte-for-byte what it was before; still the default.
+- **per-sheet** — the drawing becomes a parent; its sheet rows each carry their own status, revisions
+  and uploaded files, while the drawing keeps the single planned approval date and the schedule link.
+
+⚠️ **Sheets are real rows, deliberately.** Everything already built works on them for free — inline
+editing, sorting, drag order, filters, bulk status, per-revision upload, export, collab, offline edits.
+A `sheets[]` jsonb would have been invisible to all of it.
+
+- **Migration `../../migrations/2026-08-05-drawing-register-sheets.sql` (USER MUST RUN)** — `parent_id`
+  + index. Break-out reports "run the migration" instead of failing opaquely if it hasn't been.
+
+### The invariant that keeps everything else working
+⚠️ **`drawingRows()` now EXCLUDES sheets, and the parent's stored counters are a derived mirror of its
+children (`syncParent`).** Every consumer — Overview KPIs, progress tables, donut, period chart, export,
+Backlog, dup detection — counts through `drawingRows()` and reads the same plain columns it always did,
+so **none of them needed changing**. Including both parent and sheets would double-count the register
+(measured in the harness: 103 sheets, not 206). `syncParent` is called after every sheet status change,
+inline edit, form save, add and delete — and **once per drawing, not once per sheet**, on bulk status.
+
+### Roll-up rules (all levels, not just sheets)
+`rollup()` is now the single source for every group row: POC = Σapproved ÷ Σtotal, **min planned
+approval**, and **max actual approval**. ⚠️ **maxActual is withheld until everything in the group is
+approved** — POC only reads 100% when the last sheet lands, so surfacing a max date earlier would read
+as a completion date for open work. Legacy sentinel dates (`2000-01-06`) are rejected from both extremes
+via the shared `validDate()`. Group rows gained the two date columns (progress bar moved to span
+Rev+Status); cell counts re-measured against the header in both writer and read-only modes.
+
+### ⚠️ REAL DEFECT FIXED: status and approved_sheets were two sources of truth
+On a single-sheet row the status *is* the approval state, but a TO had to set **both** `status=Approved`
+and `approved_sheets=1`. Miss the second and the sheet reads Approved while contributing 0 to its
+drawing's POC — silently. `persistCell` now derives `approved_sheets` from the status whenever
+`no_of_sheets <= 1` and the row has no children. Multi-sheet aggregate rows keep their hand-typed count;
+an explicit `approved_sheets` in the same patch still wins; a parent is never touched by this rule.
+
+### Editor: one revision matrix instead of two sections
+"Submissions" and "Approval" were separate blocks, so the status you were reading never said which
+revision it belonged to. Now one grid per revision: **planned sub · actual sub · outcome · approved on ·
+drawing file**. `status` + `approved` are new keys on the existing jsonb — **no migration** — and any
+`bl:{…}` re-baseline series from the BAU101 importer is carried through untouched. The latest revision's
+outcome mirrors up to the drawing-level Status/Actual approval as you type. A sheet's Planned approval
+field shows the inherited drawing date as its placeholder plus a hint, so overriding it is a deliberate act.
+
+### Inheritance
+`inh(r, field)` answers from the parent when a sheet has no value of its own. ⚠️ `leadOf`/`needByOf`/
+`agingDays`/`docFloatOf` all read through it — without that every sheet reads as "unlinked" and the
+Need-by column, float chip, aging bar and Backlog sort go blank the moment a drawing is broken out.
+Sheets deliberately do **not** get a copy of the parent's date, so changing it moves all 100 at once
+instead of leaving stale copies to reconcile.
+
+### Other traps handled
+- ⚠️ **Filtering:** a parent survives when *any of its sheets* match, and only the matching sheets paint.
+  Its own status is a roll-up ("Ongoing"), so filtering by "Revise & Resubmit" would otherwise hide the
+  very sheets you are hunting.
+- ⚠️ **`allFilesOf` recurses into sheets** — `parent_id` cascades on delete, so without this every
+  sheet's uploaded revision is orphaned in the bucket with no row pointing at it. Cycle-guarded.
+- ⚠️ **Derived cells are not inline-editable** on a parent (`syncParent` would overwrite a typed value),
+  its status is a pill not a select, and it is not draggable (reorder would break the nesting).
+- ⚠️ **Frozen Code/Title cells need an OPAQUE background** on the tinted parent row — the row tint is an
+  rgba overlay and a sticky cell would let the rows beneath show through. Flattened equivalents added
+  for light and dark; keep them in step with `.dr-sheetparent`.
+- ⚠️ **`.dr-subrow .dr-substat` must be (0,2,0)** — `.dr-stsel` is a bare class defined later in the
+  file, so a plain `.dr-substat` ties and loses on source order (18px pill beside 32px date inputs).
+  The outcome control reuses `.dr-stsel` rather than `.pd-select` because the `.dr-st-*` classes only
+  set a background; `color:#fff` lives on `.dr-stsel`.
+- **Export** now emits sheets under their drawing with a new **"Sheet Of"** column (a per-sheet register
+  otherwise exported as parents only, losing every sheet's status and date). ⚠️ Checked against **every**
+  importer probe before adding — it collides with none, and all 20 probes still resolve to exactly the
+  columns they did before, so the export stays round-trippable.
+
+### Verification
+**58 checks, all green**, against functions **sliced verbatim out of the shipped `module.js`** (never
+reimplemented): 33 on the model (index, no double-counting, inheritance, POC, min/max rules, sentinel
+rejection, the status→approved derivation incl. all four negative cases, sheet codes, orphan guard,
+empty-set) and 25 on the renderers (header vs plain/parent/sheet/group row column counts in both writer
+and read-only modes, plus the roll-up cells and affordances actually emitted). **In-browser** against
+the real `module.css` + `icons.js` at 1440px: every row type's column x-positions identical to the
+header, the 5-level indent ladder (10/30/50/70/90px), sticky parent cells opaque, revision header and
+body sharing one grid with identical x-positions, all four controls at a matching 32px, white-on-pill
+outcome, 0 page h-scroll, no console errors. `node --check` + CSS brace/comment balance.
+⚠️ **Not verified signed-in** — nobody has clicked Break out against live data, and the migration is not
+run. ⚠️ Screenshots remain impossible here (stalled compositor), so UI claims are measured geometry.
+- Assets `module.css?v=20260805a` / `module.js?v=20260805a`.
+
 ## L1 is the DRAWING TYPE, not a phase — relabel + a data-loss fix (2026-08-04) — fmlozano
 User: *"Progress by Phase is not necessarily phase given that FCD, Temp and ISD can happen
 simultaneously."* Correct, and the workbook agrees — its **Coding Reference** sheet calls this level

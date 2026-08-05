@@ -133,11 +133,26 @@ tr.dr-grp .dr-glabel { cursor:text; }      /* except the label: dblclick renames
 .dr-lvl-2 .dr-indent { padding-left:30px; }
 .dr-lvl-3 .dr-indent { padding-left:50px; }
 .dr-lvl-4 .dr-indent { padding-left:70px; }
+.dr-lvl-5 .dr-indent { padding-left:90px; }   /* individual sheets under a drawing */
 /* A coloured rail on the first cell marks the level at a glance. */
 .dr-lvl-1 .dr-indent { box-shadow:inset 4px 0 0 var(--pd-red); }
 .dr-lvl-2 .dr-indent { box-shadow:inset 4px 0 0 #2b2c2b; }
 .dr-lvl-3 .dr-indent { box-shadow:inset 4px 0 0 #9aa0a6; }
 .dr-lvl-4 .dr-indent { box-shadow:inset 4px 0 0 var(--pd-line); }
+.dr-lvl-5 .dr-indent { box-shadow:inset 4px 0 0 var(--pd-line); }
+
+/* ---- Per-sheet tracking -------------------------------------------------
+   A drawing broken out per sheet is still a drawing row (editable code/title),
+   but its counters are a roll-up over its sheets, so it reads as a header. */
+.dr-sheetparent > td { background:rgba(43,44,43,.04); font-weight:600; }
+html.pd-dark .dr-sheetparent > td { background:rgba(255,255,255,.035); }
+.dr-sheetparent .dr-code { font-weight:700; }
+.dr-scaret { cursor:pointer; margin-right:5px; }
+.dr-sheettag { display:inline-block; margin-left:7px; padding:1px 6px; border-radius:9px;
+  background:var(--pd-line); color:var(--pd-muted); font-size:10.5px; font-weight:700;
+  letter-spacing:.02em; vertical-align:middle; }
+.dr-sheetrow .dr-code { font-weight:400; color:var(--pd-muted); }
+.dr-fieldhint { font-size:11px; margin-top:3px; }
 
 /* Level backgrounds (phase darkest → drawing plain) */
 .dr-grp-phase td { background:rgba(238,49,36,.12); border-top:2px solid var(--pd-red); padding-top:11px; padding-bottom:11px; }
@@ -294,9 +309,38 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-code-preview span { font-weight:700; color:var(--pd-red); }
 
 /* Submission revision rows */
-.dr-subrow { display:flex; align-items:flex-end; gap:10px; margin-bottom:8px; flex-wrap:wrap; }
-.dr-subrow label { display:flex; flex-direction:column; font-size:11px; color:var(--pd-muted); gap:3px; }
-.dr-subrev { font-weight:700; min-width:52px; padding-bottom:8px; }
+/* ---- Revision matrix ----------------------------------------------------
+   One row per revision: submitted (planned/actual) → outcome → approved on →
+   the sheet that was submitted. Submissions and approval used to be two separate
+   sections, so the status you were reading never said which revision it belonged
+   to. Header and body share ONE grid template so the columns stay aligned —
+   change both together or they drift apart. */
+.dr-subhead, .dr-subrow {
+  display:grid; grid-template-columns:56px 1fr 1fr 1.25fr 1fr 1.6fr 30px;
+  gap:8px; align-items:center;
+}
+.dr-subhead { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--pd-muted); font-weight:700; margin-bottom:5px; }
+.dr-subrow { margin-bottom:8px; }
+.dr-subrow label { display:block; min-width:0; }
+.dr-subrow .pd-input, .dr-subrow .pd-select { width:100%; font-size:12px; padding:6px 7px; }
+.dr-subrev { font-weight:700; font-size:12px; }
+/* The outcome control reuses the grid's own .dr-stsel status pill, so a revision's
+   outcome reads exactly like the status column in the register — one visual
+   language for "what happened to this". Only the sizing is adjusted for the form.
+   ⚠️ Must be `.dr-subrow .dr-substat` (0,2,0): `.dr-stsel` is a bare class defined
+   LATER in this file, so a plain `.dr-substat` ties on specificity and loses on
+   source order — leaving an 18px pill beside 32px date inputs. */
+.dr-subrow .dr-substat { padding:0 8px; min-height:32px; font-size:11.5px; }
+@media (max-width:820px){
+  /* Seven columns don't fit a phone; stack each revision into its own block and
+     bring the labels back inline (the shared header row is hidden). */
+  .dr-subhead { display:none; }
+  .dr-subrow { grid-template-columns:1fr 1fr; gap:6px; padding:8px; margin-bottom:10px;
+    border:1px solid var(--pd-line); border-radius:6px; }
+  .dr-subrow .dr-subrev { grid-column:1 / -1; }
+  .dr-subrow .dr-subfilelbl { grid-column:1 / -1; }
+}
 /* Per-revision drawing file: each submission carries its own uploaded sheet, so
    the register keeps the actual superseded drawing, not just a note that a
    revision happened. */
@@ -405,12 +449,17 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-grid .dr-grp-phase td.dr-freeze { background:#fbe4e1; }
 .dr-grid .dr-grp-disc  td.dr-freeze { background:#ececec; }
 .dr-grid .dr-grp-cat   td.dr-freeze { background:var(--pd-bg); }
+/* ⚠️ A sheet-parent's row tint is an rgba overlay, but a frozen cell is sticky and
+   must be OPAQUE or the rows scrolling underneath show through it. These are the
+   flattened equivalents of .dr-sheetparent's overlay — keep them in step. */
+.dr-grid tr.dr-sheetparent td.dr-freeze { background:#f5f5f5; }
 .dr-grid tbody tr.dr-drow:hover td.dr-freeze { background:var(--pd-bg); }
 .dr-grid .dr-selrow td.dr-freeze { background:#f7d7d3 !important; }
 html.pd-dark .dr-grid td.dr-freeze, html.pd-dark .dr-grid th.dr-freeze { background:var(--pd-card); }
 html.pd-dark .dr-grid .dr-grp-phase td.dr-freeze { background:#3a2a29; }
 html.pd-dark .dr-grid .dr-grp-disc  td.dr-freeze { background:#343434; }
 html.pd-dark .dr-grid .dr-grp-cat   td.dr-freeze { background:var(--pd-bg); }
+html.pd-dark .dr-grid tr.dr-sheetparent td.dr-freeze { background:#333433; }
 html.pd-dark .dr-grid .dr-selrow td.dr-freeze { background:#4a2b28 !important; }
 
 /* ---- Duplicate-code flag [feature 2] ------------------------------------ */
