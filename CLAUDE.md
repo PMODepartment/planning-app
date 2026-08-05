@@ -77,6 +77,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-04 — Schedule Builder push: flat by default, structure comes from grouping
+User picked this as the real simplification now that location/zone are activity data. The push used
+to materialise the location breakdown as a Trade › Floor › Zone sub-WBS every time; that branch is
+redundant when the same structure is a view you can flip.
+- **"Group into a sub-WBS" now defaults OFF.** A flat push adds the activities under the chosen WBS
+  node and nothing else, with the reasoning stated in the dialog instead of left implicit.
+- **Flat push names the activity for the WORK, not the place** (`Formworks`, not
+  `Structural F5 · Z1 — Formworks`). The location was in the name only because it had nowhere else to
+  live — which is also what made grouping-by-name useless, since every instance had a unique name.
+- ⚠️ **A flat push switches the schedule to Activity › Location › Zone.** Without it the planner lands
+  on a WBS-grouped list of hundreds of rows all reading "Formworks" and concludes the push failed.
+- The sub-WBS path is untouched and still correct when the WBS codes must encode location.
+  ⚠️ Another session had rebuilt that dialog with a configurable ordered dimension list in the
+  meantime; this change is surgical around it and preserves that editor intact.
+- Verified: 9 static assertions on the shipped file + the 33/39/16 suites still green, clean parse.
+  **Not verified signed-in** — the push writes to a real project. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-04 — Drawing Register: the L1 level is the DRAWING TYPE, not a phase (+ a silent data-loss fix)
 User: *"Progress by Phase is not necessarily phase given that FCD, Temp and ISD can happen
 simultaneously."* Right — and the workbook already says so: its **Coding Reference** sheet calls this
