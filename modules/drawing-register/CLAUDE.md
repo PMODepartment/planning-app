@@ -91,8 +91,35 @@ a second drawing left in aggregate mode as a control. Every step driven through 
   total kept, approved reset to 0). The control drawing was untouched throughout.
 - **Cleanup**: sandbox emptied (0 rows, as found). Re-verified the real registers were never touched —
   BAU101 still 540 rows / 29 sheets, GPR101 still 1,372. No console errors at any point.
-⚠️ **Still not exercised live:** the revision matrix in the full editor (per-revision outcome, approval
-date and file upload).
+### Revision matrix on BAU101-TEST — and THREE bugs it exposed
+Tested the full editor on a sheet (`A-101.1`, under a 2-sheet parent). The matrix itself was correct
+first time: 7 columns, per-revision outcome offering the sanitised statuses, the latest revision's
+outcome mirroring into the drawing-level Status and its approval date into Actual approval, the
+inherited-date hint reading *"Inherited from the drawing — Mar 31, 2026"*, both revisions persisting to
+the `submissions` jsonb with `status`/`approved`/`file_url`, `actual_approval` derived from the
+approving revision, a real PDF uploaded and **fetched back 200 `application/pdf` through a signed
+URL**, and a **full round-trip on re-open** (every field restored; rev 1 showing its filename with view
++ remove, rev 0 showing an upload input). **Cancel-safety verified**: clicking ✕ on a revision's file
+and then cancelling left the object in storage AND still referenced by the row.
+
+But saving through the full editor exposed three real defects, all now fixed:
+- ⚠️ **`rollup()` and `syncParent()` disagreed about what "approved" means.** rollup summed
+  `approved_sheets`; syncParent counted children by `isApprovedStatus(status)`. Approving a sheet via
+  the editor (which did not derive the count) left the parent **STORING 1/2 · 50% while the grid
+  DISPLAYED 0/2 · 0%**. New **`approvedOf(r)`** is the one definition, used by both: a row with sheets
+  sums its sheets · a single-sheet row follows its **status** · an aggregate row keeps its hand-typed
+  count. `pctApproved` routes through it too, and now only trusts the stored `approved_pct` for a
+  multi-sheet aggregate row (where the count really is hand-typed).
+- ⚠️ **The editor rewrote a sheet's code.** `composeCode()` rebuilt it from the code-part dropdowns, so
+  saving `A-101.1` turned it into **`BAU101-TEST-MCC-AR-A-101.1`**, destroying the child-of-parent
+  numbering the break-out had just created. A sheet now keeps its own `<parent>.<n>` code; the
+  structured code belongs to the drawing.
+- ⚠️ **The editor's save skipped the status→`approved_sheets` derivation** that `persistCell` applies to
+  an inline edit, so a sheet could read Approved while contributing 0 to its drawing's POC. Same rule
+  now applied on the modal path.
+Re-ran the whole flow against the fixed build: code stayed `A-101.1`, sheet `Approved · 1 · 100%`,
+parent `In Progress · 1/2 · 50%` with stored and displayed values agreeing. Sandbox emptied afterwards
+(0 rows, storage object removed and confirmed gone); BAU101 540/29 and GPR101 1,372 untouched.
 ⚠️ **Environment note:** the CDP `Runtime.evaluate` bridge times out at 45s and froze the renderer twice
 on the 540-row BAU101 page. Do heavy multi-query work from a light page (`projects.html`) and keep each
 eval short, or the tab has to be reloaded.

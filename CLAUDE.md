@@ -123,7 +123,18 @@ matched the actual child counts), so `syncParent` holds against live data.
   from `.101` and correctly reverted the parent to 95% withdrawing the actual date. **Merge-back**
   deleted all 105 rows with **0 orphans** and restored aggregate mode. Sandbox emptied afterwards; real
   registers verified untouched (BAU101 540/29, GPR101 1,372); no console errors.
-  ⚠️ The revision matrix in the full editor is **still** not exercised live.
+- **Revision matrix tested on BAU101-TEST — correct first time, but it exposed three real defects.**
+  The matrix itself worked: per-revision outcome + approval date, the latest revision mirroring up to
+  the drawing's Status/Actual approval, both revisions persisted to the jsonb, a real PDF uploaded and
+  **fetched back 200 through a signed URL**, a full round-trip on re-open, and **cancel-safety** (✕ on a
+  file then Cancel left the object in storage and still referenced). The defects, all fixed:
+  ⚠️ **`rollup()` and `syncParent()` disagreed on what "approved" means** — rollup summed
+  `approved_sheets`, syncParent counted by status, so approving a sheet through the editor left the
+  parent **storing 1/2 · 50% while the grid displayed 0/2 · 0%**; new `approvedOf()` is the single
+  definition. ⚠️ **The editor rewrote a sheet's code** from the code-part dropdowns
+  (`A-101.1` → `BAU101-TEST-MCC-AR-A-101.1`), destroying the child-of-parent numbering. ⚠️ **The editor
+  skipped the status→`approved_sheets` derivation** the inline path applies. Re-verified against the
+  fixed build; sandbox emptied (rows + storage object), real registers untouched.
 - **68 checks green** (33 model + 35 renderer) against functions sliced from the shipped module, with
   new regressions for the live bug and the whole vocabulary change. Assets drawing-register
   `module.css/js?v=20260805b`. See `modules/drawing-register/CLAUDE.md`.
