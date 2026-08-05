@@ -2980,7 +2980,10 @@
     m.querySelectorAll('button[data-gdown]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.gdown, l = groupBys.slice(); var t2 = l[i + 1]; l[i + 1] = l[i]; l[i] = t2; setGroupBys(l); renderGroupMenu(); }; });
     m.querySelectorAll('button[data-grm]').forEach(function (b) { b.onclick = function () { var l = groupBys.slice(); l.splice(+b.dataset.grm, 1); setGroupBys(l.length ? l : ['wbs']); renderGroupMenu(); }; });
     m.querySelectorAll('button[data-gadd]').forEach(function (b) { b.onclick = function () { setGroupBys(groupBys.concat([b.dataset.gadd])); renderGroupMenu(); }; });
-    m.querySelectorAll('button[data-gact]').forEach(function (b) { b.onclick = function () { closeMenus(); if (b.dataset.gact === 'levels') openLocLevels(); else openLocBackfill(); }; });
+    // ⚠️ Close this menu directly — `closeMenus()` is declared in the init/wiring scope, NOT at
+    // module scope where renderGroupMenu lives, so calling it here threw ReferenceError and both
+    // of these buttons did nothing. (Node harnesses stub it, so only running the real page caught it.)
+    m.querySelectorAll('button[data-gact]').forEach(function (b) { b.onclick = function () { m.classList.remove('open'); if (b.dataset.gact === 'levels') openLocLevels(); else openLocBackfill(); }; });
   }
   // ---- Grouping dimensions -------------------------------------------------------------------
   // A dimension is a flat key an activity can be bucketed by. `groupBys` is an ORDERED list of
