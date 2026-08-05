@@ -1,5 +1,37 @@
 # Module: drawing-register
 
+## Scroll position no longer resets to the top on every re-render (2026-08-05) — fmlozano
+User: *"The scroller doesn't work properly. It resets to the top every time I move it."*
+- **Root cause, structural:** the scroll container — `.dr-tablecard` on the Registry, `.dr-bk-scroll`
+  on the Backlog — is built **inside the html string written to `#dr-view`**. Every `render()`
+  therefore destroys and recreates it, and a brand-new element starts at `scrollTop = 0`. `render()`
+  is called from ~30 places, including **collapsing/expanding a group**, changing a status from the
+  inline dropdown, and committing a cell edit — so on a 400-row register almost any interaction threw
+  the planner back to the top.
+- **Fix:** `captureScroll()` before the rebuild, `restoreScroll()` immediately after, same frame (no
+  visible jump). ⚠️ Gated on `_lastRenderView === view`, so a genuine **view switch still starts at
+  the top** — restoring another view's offset there would itself look broken. Overshoot is left to the
+  browser to clamp: collapsing a group shortens the list, and the clamped position is where you want
+  to land.
+- ⚠️ **Selection was never part of this** — `clickSelect` repaints via `refreshSel(document)`, not
+  `render()`, so clicking rows never lost the scroll. Only the `render()` callers did.
+- **Verified signed-in on the deployed build (BAU101, `?v=20260805g`).** With the card forced
+  scrollable, scrolled to 3000 then collapsed a group: the `.dr-tablecard` node **was replaced** (a
+  property tagged on the old node was gone — the exact condition that used to zero the offset), rows
+  changed 338 → 321, and **scrollTop stayed 3000**. A second run held 4000 across a 340 → 338 collapse.
+  Registry → Backlog → Registry correctly lands at **0**. 89 checks green (40 + 35 + 14).
+- ⚠️ **Could NOT reproduce the user's layout here, and I wasted a pass mis-diagnosing it.** Chrome runs
+  offscreen in this environment, so `innerWidth`/`innerHeight` report **0** and `visibilityState` is
+  `hidden`. `@media (min-width:701px)` therefore **does not match**, the whole `body.dr-fit`
+  viewport-fit block goes inert, `.dr-tablecard` grows to its full 13,448px and the page becomes one
+  giant document. I briefly read that as the bug — **it is an automation artifact.** `resize_window`
+  does not fix it; force the scroller with an injected `max-height` instead.
+- ⚠️ **SEPARATE BUG FOUND, NOT FIXED — remote collaborator cursors never paint here.** `paintRemote()`
+  guards `if (view !== 'register') return;`, but the live view value is **`'registry'`** (line 304
+  explicitly migrates the legacy `'register'` to it). The guard is always true, so the function always
+  returns early. Presence avatars still work; only the per-cell cursor is dead. One-word fix, left out
+  of this commit because switching it on is a visible behaviour change that deserves a deliberate call.
+
 ## Need-by removed — the register tracks planned vs actual approval, nothing else (2026-08-05) — fmlozano
 User: *"Is the need-by column even necessary? I think this is just planned dates and actual dates only
 that should be necessary"* — and the reason: *"The project schedule module already refers to each of

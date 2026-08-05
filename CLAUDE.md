@@ -77,6 +77,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-05 — Drawing Register: the grid no longer jumps to the top on every interaction
+User: *"The scroller doesn't work properly. It resets to the top every time I move it."*
+- **Structural root cause:** the scroll container (`.dr-tablecard` / `.dr-bk-scroll`) is built
+  **inside the html string written to `#dr-view`**, so every `render()` destroys and recreates it and
+  a new element starts at `scrollTop = 0`. `render()` runs from ~30 places — **collapsing a group**,
+  changing a status from the inline dropdown, committing a cell edit — so on a 400-row register
+  almost any interaction threw the planner back to the top.
+- **Fix:** capture the offset before the rebuild, restore it immediately after in the same frame.
+  A genuine view switch still starts at the top; overshoot is left to the browser to clamp.
+- **Verified signed-in (BAU101, `?v=20260805g`):** scrolled to 3000, collapsed a group — the card
+  node **was replaced** (proven by tagging the old node) and rows changed 338 → 321, yet scrollTop
+  stayed **3000**. Registry → Backlog → Registry correctly lands at 0. 89 checks green.
+- ⚠️ **Automation trap that cost a pass, worth knowing before diagnosing any layout here:** Chrome
+  runs offscreen, so `innerWidth`/`innerHeight` are **0** and `visibilityState` is `hidden`. That
+  makes `@media (min-width:701px)` **not match**, the entire `body.dr-fit` viewport-fit block goes
+  inert, and the table grows to its full 13,448px as one giant document. It looks exactly like a
+  broken-layout bug and is **not one**. `resize_window` does not help — inject a `max-height` to
+  force the scroller instead.
+- ⚠️ **Found, deliberately NOT fixed — remote collaborator cursors are dead in this module.**
+  `paintRemote()` guards `view !== 'register'` while the live value is **`'registry'`** (the code
+  itself migrates the legacy name one line away), so it always returns early. Presence avatars still
+  work; only the per-cell cursor never paints. One-word fix, but turning it on is a visible change
+  that shouldn't ride along with a scroll fix.
+
 ### 2026-08-05 — Need-by removed: the registers track planned vs actual approval, nothing else
 User: *"Is the need-by column even necessary? I think this is just planned dates and actual dates only
 that should be necessary"* — because *"the project schedule module already refers to each of the module
