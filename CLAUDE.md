@@ -77,6 +77,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-05 — Drawing Register: search no longer hides its own matches in collapsed groups
+Found while re-deriving BAU101's sheet-parents. Searching a drawing code whose discipline was collapsed
+painted the group headers and nothing else (`buildModel` returns at the collapse check before the
+drawings), so the register read **"Showing 0 of 424" for a code that is definitely in it** — measured,
+**5 of 6 known drawings invisible to a search for their own code**.
+- **Collapse state is split in two**: `collapsed` is the planner's manual, persisted tree; **`fCollapsed`
+  applies only while a filter is active and starts empty**, so a filter always reveals its matches.
+  `isCollapsed()`/`toggleCollapsed()` pick the live map.
+- ⚠️ **Clearing `collapsed` was the obvious fix and is wrong** — it destroys the hand-built tree as a
+  side effect of typing in a search box. Two maps means the tree is untouched when the filter clears.
+- Collapsing *during* a filter still works (writes to the transient map), and ⚠️ **`fCollapsed` is
+  discarded on every filter change**, or a group collapsed under one search would hide the next
+  search's matches — the same bug one step removed.
+- ⚠️ **Removed `drillTo`'s `collapsed = {}`** — a workaround for this same defect that threw away the
+  planner's whole tree state whenever they clicked a donut slice.
+- **14/14** in a new harness over the shipped `buildModel`, plus the 40 + 35 existing suites green.
+  Assets drawing-register `module.js?v=20260805d`. See `modules/drawing-register/CLAUDE.md`.
+
 ### 2026-08-05 — Drawing Register: live check on BAU101 (1 real bug) + status vocabulary sanitised
 First signed-in run of the per-sheet feature, against the real **BAU101** register (540 rows / 453
 drawings / 1,286 sheets / 45% POC). The migration was already applied and **29 sheets across 6 parents

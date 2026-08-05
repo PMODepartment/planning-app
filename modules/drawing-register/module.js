@@ -20,7 +20,24 @@ window.DrawingRegister = (function () {
   var view = 'overview';                       // overview | backlog | registry
   var filters = { phase: '', discipline: '', status: '', search: '', dupsOnly: false };
   var selected = {};                           // id -> true (bulk select)
-  var collapsed = {};                          // group key -> true (collapsed)
+  var collapsed = {};                          // group key -> true (collapsed). Manual, persisted.
+  // ⚠️ Collapse state while a FILTER is active is tracked separately and starts
+  // EMPTY, so a search always reveals its matches.
+  // The bug this fixes: searching a drawing code whose discipline happened to be
+  // collapsed painted the phase and discipline headers and then stopped —
+  // buildModel returns at `if (isCollapsed(dkey)) return;` before the drawings —
+  // so the register read "Showing 0 of 424" for a code that is definitely there.
+  // Measured on BAU101: 5 of 6 known drawings were invisible to a search for their
+  // own code. Clearing `collapsed` outright would have destroyed the planner's
+  // hand-built tree state, so the two are kept apart: `fCollapsed` is what a caret
+  // writes to while filtering, and it is discarded the moment the filter changes.
+  var fCollapsed = {};
+  function isCollapsed(key){ return anyFilter() ? !!fCollapsed[key] : !!collapsed[key]; }
+  function toggleCollapsed(key){
+    var m = anyFilter() ? fCollapsed : collapsed;
+    if (m[key]) delete m[key]; else m[key] = true;
+    if (!anyFilter()) saveUI();     // only the manual tree state is worth persisting
+  }
   var dupSet = {};                             // phasecode -> count (>1) for duplicate-code flagging
   var canWrite = false;                        // planner+ / admin / super_admin
 
@@ -368,6 +385,10 @@ window.DrawingRegister = (function () {
       filters.discipline = document.getElementById('dr-f-discipline').value;
       filters.status     = document.getElementById('dr-f-status').value;
       filters.search     = document.getElementById('dr-f-search').value.toLowerCase().trim();
+      // ⚠️ Discard the filter-scoped collapse state on every filter change. Without
+      // this, a group you collapsed under one search stays collapsed under the next
+      // and silently hides its matches — the very bug this mechanism exists to fix.
+      fCollapsed = {};
       syncClearFilt();
     }
     ['dr-f-phase','dr-f-discipline','dr-f-status'].forEach(function (id) {
@@ -479,7 +500,7 @@ window.DrawingRegister = (function () {
       // fresh view (project switch / import / clear): reset selection; restore
       // the saved per-project view + collapse state, else default to phases collapsed
       selected = {}; lastClickedId = null; selCtx = { phase:'', discipline:'', category:'', level:0 };
-      collapsed = {};
+      collapsed = {}; fCollapsed = {};
       bkAging = '';        // a drill-through aging filter must not leak across projects
       bkShowAll = false;
       if (!restoreUI()) rows.forEach(function (r){ collapsed['P:' + (r.phase || 'Ungrouped')] = true; });
@@ -1231,7 +1252,7 @@ window.DrawingRegister = (function () {
       if (filt && !pDraws.length) return;
       var pkey='P:'+ph;
       disp.push({type:'phase',level:1,key:pkey,label:ph,code:nodeCode(pNode[ph]),ctx:{phase:ph},nodeId:node_(pNode[ph]),list:pDraws});
-      if (collapsed[pkey]) return;
+      if (isCollapsed(pkey)) return;
 
       var discSet={}; Object.keys(dNode).forEach(function(k){var p=k.split(SEP); if(p[0]===ph)discSet[p[1]]=1;});
       (P.order||[]).forEach(function(d){discSet[d]=1;});
@@ -1242,7 +1263,7 @@ window.DrawingRegister = (function () {
         var dkey='D:'+ph+'|'+d;
         var dlabel=DISCIPLINES[d]?DISCIPLINES[d]+' ('+d+')':disciplineName(d);
         disp.push({type:'disc',level:2,key:dkey,label:dlabel,code:nodeCode(dNode[ph+SEP+d]),ctx:{phase:ph,discipline:d},nodeId:node_(dNode[ph+SEP+d]),list:dDraws});
-        if (collapsed[dkey]) return;
+        if (isCollapsed(dkey)) return;
 
         // no-category drawings sit directly under the discipline (level 3)
         regSortList(D.nocat).forEach(function(r){ pushDrawing(r, 3); });
@@ -1254,7 +1275,7 @@ window.DrawingRegister = (function () {
           if (filt && !list.length) return;
           var ckey='C:'+ph+'|'+d+'|'+c;
           disp.push({type:'cat',level:3,key:ckey,label:c,code:nodeCode(cNode[ph+SEP+d+SEP+c]),ctx:{phase:ph,discipline:d,category:c},nodeId:node_(cNode[ph+SEP+d+SEP+c]),list:list});
-          if (collapsed[ckey]) return;
+          if (isCollapsed(ckey)) return;
           regSortList(list).forEach(function(r){ pushDrawing(r, 4); });
         });
       });
@@ -1277,7 +1298,7 @@ window.DrawingRegister = (function () {
       var skey = 'S:'+r.id;
       disp.push({type:'drawing',level:level,row:r,sheets:kids,shownSheets:shown,skey:skey});
       visibleIds.push(r.id);
-      if (collapsed[skey]) return;
+      if (isCollapsed(skey)) return;
       regSortList(shown).forEach(function (k){
         disp.push({type:'drawing',level:level+1,row:k,isSheet:true});
         visibleIds.push(k.id);
@@ -1297,7 +1318,7 @@ window.DrawingRegister = (function () {
     var shown = disp.filter(function(x){return x.type==='drawing';}).length;
 
     var CB = canWrite;
-    var anyOpen = disp.some(function (x){ return x.type==='phase' && !collapsed[x.key]; });
+    var anyOpen = disp.some(function (x){ return x.type==='phase' && !isCollapsed(x.key); });
     var phaseItems = disp.filter(function(x){ return x.type==='phase'; });
     var jump = phaseItems.length > 1 ?
       '<select class="pd-select pd-btn-sm dr-jump" id="dr-jump" title="Jump to a drawing type">' +
@@ -1380,7 +1401,7 @@ window.DrawingRegister = (function () {
     var tot = roll.tot, ap = roll.ap, pct = roll.pct;
     var ids = item.list.map(function(r){return r.id;}).join(',');
     var grpCb = CB ? '<td class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" data-selgrp="'+ids+'" title="Select group"></td>' : '';
-    var isCol = !!collapsed[item.key];
+    var isCol = isCollapsed(item.key);
     var caret = '<span class="dr-caret'+(isCol?' dr-caret-col':'')+'">'+ico('chevronDown',12)+'</span>';
     return '<tr class="dr-grp dr-grp-'+item.type+' dr-lvl-'+item.level+(isCol?' dr-collapsed':'')+
         (item.key===activeGrpKey?' dr-grpactive':'')+'"'+
@@ -1442,7 +1463,7 @@ window.DrawingRegister = (function () {
     var isDup = !sheet && !!dupSet[dupKey(r)];
     var dupMark = isDup ? ' <span class="dr-dupmark" title="Duplicate code within this drawing type — reconcile">⚠</span>' : '';
     var caret = kids
-      ? '<span class="dr-caret dr-scaret'+(collapsed[item.skey]?' dr-caret-col':'')+'" data-sgrp="'+item.skey+'" title="Show / hide this drawing’s sheets">'+ico('chevronDown',12)+'</span>'
+      ? '<span class="dr-caret dr-scaret'+(isCollapsed(item.skey)?' dr-caret-col':'')+'" data-sgrp="'+item.skey+'" title="Show / hide this drawing’s sheets">'+ico('chevronDown',12)+'</span>'
       : '';
     var sheetTag = kids ? ' <span class="dr-sheettag" title="Tracked per sheet">'+kids.length+' sheets</span>' : '';
     return '<tr class="dr-drow dr-lvl-'+(item.level||4)+(kids?' dr-sheetparent':'')+(sheet?' dr-sheetrow':'')+
@@ -1488,19 +1509,21 @@ window.DrawingRegister = (function () {
     var xall = host.querySelector('#dr-xall');
     if (xall) xall.onclick = function(){
       var pkeys = disp.filter(function(x){return x.type==='phase';}).map(function(x){return x.key;});
-      var anyOpen = pkeys.some(function (k){ return !collapsed[k]; });
-      if (anyOpen) pkeys.forEach(function (k){ collapsed[k] = true; });
+      // Acts on whichever map is live, so "expand all" works during a filter too.
+      var anyOpen = pkeys.some(function (k){ return !isCollapsed(k); });
+      if (anyFilter()) { fCollapsed = {}; if (anyOpen) pkeys.forEach(function (k){ fCollapsed[k] = true; }); }
+      else if (anyOpen) pkeys.forEach(function (k){ collapsed[k] = true; });
       else collapsed = {};
       saveUI(); render();
     };
     // duplicate-code legend: click to toggle "show only duplicates"
     var dupleg = host.querySelector('#dr-duplegend');
-    if (dupleg) dupleg.onclick = function(){ filters.dupsOnly = !filters.dupsOnly; render(); };
+    if (dupleg) dupleg.onclick = function(){ filters.dupsOnly = !filters.dupsOnly; fCollapsed = {}; render(); };
     // jump to a phase [feature 6]
     var jump = host.querySelector('#dr-jump');
     if (jump) jump.onchange = function(){
       var key = jump.value; if (!key) return;
-      delete collapsed[key]; saveUI(); render();
+      delete collapsed[key]; delete fCollapsed[key]; saveUI(); render();
       var tr = document.querySelector('tr.dr-grp[data-grp="'+key.replace(/"/g,'\\"')+'"]');
       if (tr) tr.scrollIntoView({ block:'start', behavior:'smooth' });
     };
@@ -1516,7 +1539,7 @@ window.DrawingRegister = (function () {
         // their own clicks — everything else on the row toggles.
         if (e.target === glabel || e.target.closest('button,input,select,.dr-editin')) return;
         var key = tr.dataset.grp;
-        if (collapsed[key]) delete collapsed[key]; else collapsed[key] = true;
+        toggleCollapsed(key);
         saveUI(); render();
       });
       if (glabel && canWrite) glabel.ondblclick = function(e){ e.stopPropagation(); beginRenameGroup(tr, glabel); };
@@ -1534,7 +1557,7 @@ window.DrawingRegister = (function () {
       c.onclick = function (e){
         e.stopPropagation();
         var k = c.dataset.sgrp;
-        if (collapsed[k]) delete collapsed[k]; else collapsed[k] = true;
+        toggleCollapsed(k);
         saveUI(); render();
       };
     });
@@ -2404,9 +2427,12 @@ window.DrawingRegister = (function () {
     };
     set('dr-f-phase', filters.phase); set('dr-f-discipline', filters.discipline);
     set('dr-f-status', filters.status); set('dr-f-search', '');
-    // A filtered Registry with everything collapsed shows group headers and no
-    // rows, which reads as "the drill found nothing". Open the tree.
-    if (targetView === 'registry') collapsed = {};
+    // ⚠️ This used to be `collapsed = {}` — a workaround for the same defect the
+    // filter-scoped collapse map now fixes properly. It was destructive: clicking a
+    // donut slice threw away the planner's entire hand-built tree state as a side
+    // effect. A filter now reveals its matches on its own, so only the transient
+    // map needs clearing and the manual state survives the drill.
+    fCollapsed = {};
     view = targetView; saveUI(); render();
     var host = document.getElementById('dr-view');
     if (host && host.scrollIntoView) host.scrollIntoView({ block:'start' });

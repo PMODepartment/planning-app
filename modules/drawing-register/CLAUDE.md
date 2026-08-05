@@ -1,5 +1,36 @@
 # Module: drawing-register
 
+## Search no longer hides its own matches inside collapsed groups (2026-08-05) — fmlozano
+Found while re-deriving BAU101's sheet-parents: searching a drawing code whose discipline happened to
+be collapsed painted the phase and discipline headers and **nothing else** — `buildModel` returns at
+`if (isCollapsed(dkey)) return;` before reaching the drawings. The register read **"Showing 0 of 424"
+for a code that is definitely in it**; measured on BAU101, **5 of 6 known drawings were invisible to a
+search for their own code**. Reads as "not in the register", which is the worst possible wrong answer
+from a register.
+- **Collapse state is now split in two.** `collapsed` stays the planner's manual, persisted tree state;
+  **`fCollapsed` applies only while a filter is active and starts EMPTY**, so a filter always reveals
+  its matches. `isCollapsed(key)` picks the live map and `toggleCollapsed(key)` writes to it — every
+  read and every caret now goes through those two.
+- ⚠️ **Clearing `collapsed` outright was the obvious fix and is wrong** — it destroys the hand-built
+  tree the planner is working in, as a side effect of typing in a search box. Keeping the two maps
+  apart means the tree is exactly as they left it the moment the filter clears.
+- **You can still collapse a group while filtering** (a 400-match search is not useful fully expanded);
+  that just writes to the transient map. ⚠️ **`fCollapsed` is discarded on every filter change** —
+  otherwise a group collapsed under one search stays collapsed under the next and silently hides its
+  matches, reintroducing the same bug one step removed. Reset in `readFilters()`, on the dups-only
+  toggle (it counts toward `anyFilter()`), and on project switch.
+- **Expand/collapse-all acts on whichever map is live**, so it still works during a filter.
+- ⚠️ **Removed `drillTo`'s `collapsed = {}`.** That line was a workaround for this same defect and was
+  destructive: clicking a donut slice or a progress-table row threw away the planner's entire tree
+  state. A filter now reveals its own matches, so only the transient map needs clearing.
+- **Verified 14/14** in a new harness over the SHIPPED `buildModel`/`isCollapsed`/`toggleCollapsed`
+  (not reimplemented): the reported bug reproduced and fixed; the manual state survives a search and
+  is restored intact when it clears; collapsing during a filter works and writes only to the transient
+  map; a new search discards it; non-search filters (discipline) behave identically; and a filter
+  reveals a matching **sheet** under a collapsed drawing. Existing suites re-run green (40 + 35).
+  ⚠️ One harness failure was my own leaked state between blocks, not a product fault.
+- Assets `module.js?v=20260805d`.
+
 ## Live check on BAU101 + status vocabulary sanitised (2026-08-05) — fmlozano
 Verified the per-sheet feature signed in on the deployed site against the real **BAU101** register
 (540 rows / 453 drawings / 1,286 sheets / 45% POC). The migration was already applied and
