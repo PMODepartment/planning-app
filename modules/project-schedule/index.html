@@ -3739,7 +3739,7 @@
         var i = state.indexOf(s);
         return '<tr data-i="' + i + '">' +
           '<td style="padding:3px 6px;"><div>' + esc(s.name) + '</div>' +
-            (s.trail ? '<div style="color:var(--pd-muted);font-size:11px;">' + esc(s.trail.length > 70 ? '…' + s.trail.slice(-70) : s.trail) + '</div>' : '') + '</td>' +
+            (s.trail ? '<div style="color:var(--pd-muted);font-size:11px;" title="' + esc(s.trail) + '">' + esc(s.trail.length > 70 ? '…' + s.trail.slice(-70) : s.trail) + '</div>' : '') + '</td>' +
           '<td style="padding:3px 6px;text-align:right;color:var(--pd-muted);white-space:nowrap;">' + s.n.toLocaleString() + '</td>' +
           '<td style="padding:3px 6px;"><select class="pd-input lw-lvl" style="min-width:120px;">' + lvlOptions(s.lvl) + '</select></td>' +
           '<td style="padding:3px 6px;"><input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.lvl ? '' : ' disabled') + ' style="min-width:130px;"></td>' +
@@ -3752,10 +3752,11 @@
       return LOC_LEVELS.map(function (l) { return esc(l.name) + ': <strong>' + per[l.id] + '</strong>'; }).join(' · ') +
         ' · not a location: <strong>' + state.filter(function (s) { return !s.lvl; }).length + '</strong>';
     }
-    var m = UI.modal('<div style="width:min(92vw,860px);">' +
-      '<h2 style="margin-top:0;">Match the WBS to your location breakdown</h2>' +
-      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 10px;">These are the WBS names sitting above real activities, most-used first. Say which location level each one <em>is</em>; leave the rest as “not a location”. The value on the right is what gets written — edit it to tidy a name (e.g. <em>Tower D - Substructure</em> → <em>Tower D</em>).</p>' +
-      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">' +
+    var m = UI.modal('<div style="width:100%;max-height:82vh;display:flex;flex-direction:column;">' +
+      '<div style="flex:0 0 auto;">' +
+      '<h2 style="margin:0 0 4px;">Match the WBS to your location breakdown</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">These are the WBS names sitting above real activities, most-used first. Say which location level each one <em>is</em>; leave the rest as “not a location”. The value on the right is what gets written — edit it to tidy a name (e.g. <em>Tower D - Substructure</em> → <em>Tower D</em>).</p>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">' +
         '<input class="pd-input" id="lw-q" placeholder="Search names…" style="flex:1 1 200px;">' +
         '<select class="pd-input" id="lw-filter" style="flex:0 0 190px;">' +
           '<option value="sug">Proposed matches</option><option value="un">Not matched</option><option value="all">All names</option>' +
@@ -3763,15 +3764,26 @@
         '<button class="pd-btn" id="lw-bulk">Assign all shown to…</button>' +
         '<select class="pd-input" id="lw-bulk-lvl" style="flex:0 0 130px;">' + lvlOptions('') + '</select>' +
       '</div>' +
+      '<div id="lw-shown" style="font-size:11.5px;color:var(--pd-muted);margin-bottom:2px;"></div>' +
       '<div id="lw-counts" style="font-size:12px;color:var(--pd-muted);margin-bottom:6px;"></div>' +
-      '<div style="max-height:38vh;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;">' +
-        '<table class="ps-table" style="min-width:0;font-size:12px;width:100%;"><thead><tr>' +
+      '</div>' +
+      '<div style="flex:1 1 auto;min-height:120px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;">' +
+        '<table class="ps-table" style="min-width:0;font-size:12px;width:100%;"><thead style="position:sticky;top:0;z-index:1;background:var(--pd-card);"><tr>' +
         '<th style="text-align:left;">WBS name <span style="font-weight:400;color:var(--pd-muted);">(where it sits)</span></th>' +
         '<th style="text-align:right;">Activities</th><th style="text-align:left;">Location level</th><th style="text-align:left;">Value to write</th>' +
         '</tr></thead><tbody id="lw-rows">' + rowsHtml() + '</tbody></table></div>' +
-      '<div id="lw-prev" style="font-size:12.5px;color:var(--pd-muted);border-top:1px solid var(--pd-line);margin-top:10px;padding-top:10px;max-height:22vh;overflow:auto;"></div>' +
-      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="lw-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="lw-go">Apply to activities</button></div>' +
+      '<details id="lw-prev-wrap" style="flex:0 0 auto;font-size:12.5px;color:var(--pd-muted);border-top:1px solid var(--pd-line);margin-top:10px;padding-top:8px;">' +
+        '<summary style="cursor:pointer;color:var(--pd-ink);font-weight:600;">Preview what will change</summary>' +
+        '<div id="lw-prev" style="max-height:18vh;overflow:auto;margin-top:6px;"></div>' +
+      '</details>' +
+      '<div style="flex:0 0 auto;text-align:right;margin-top:12px;"><button class="pd-btn" id="lw-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="lw-go">Apply to activities</button></div>' +
     '</div>');
+    // UI.modal() always wraps content in a fixed `.pd-modal` (CSS caps it at max-width:520px, and
+    // its overflow-y:auto forces overflow-x to auto too) — a width set on OUR inner div is a child
+    // of that box, so it just overflowed it, and the whole dialog (not just the table) scrolled
+    // sideways. Overriding the real `.pd-modal` element's own width is what actually widens it.
+    var _pm = m.el.querySelector('.pd-modal');
+    if (_pm) { _pm.style.maxWidth = 'min(94vw,980px)'; _pm.style.overflowX = 'hidden'; }
 
     function mapping() {
       return LOC_LEVELS.map(function (l) {
@@ -3793,7 +3805,12 @@
         m.el.querySelector('#lw-prev').innerHTML = locPreviewHTML(map, p, acts.length);
       }, 200);
     }
-    function repaint() { m.el.querySelector('#lw-rows').innerHTML = rowsHtml(); preview(); }
+    function repaint() {
+      m.el.querySelector('#lw-rows').innerHTML = rowsHtml();
+      var n = visible().length;
+      m.el.querySelector('#lw-shown').textContent = n + ' name' + (n === 1 ? '' : 's') + ' shown — "Assign all shown to…" affects exactly these.';
+      preview();
+    }
 
     m.el.querySelector('#lw-rows').addEventListener('change', function (e) {
       var tr = e.target.closest('tr[data-i]'); if (!tr) return;
@@ -3810,7 +3827,13 @@
     m.el.querySelector('#lw-filter').onchange = function (e) { filter = e.target.value; repaint(); };
     m.el.querySelector('#lw-bulk').onclick = function () {
       var lvl = m.el.querySelector('#lw-bulk-lvl').value;
-      visible().forEach(function (s) { s.lvl = lvl; s.touched = true; });
+      // Same re-clean rule as the per-row dropdown: a value the planner hasn't hand-edited is
+      // recomputed for the newly assigned level, so bulk-assign doesn't leave a stale/uncleaned
+      // value (e.g. the raw WBS name) sitting under a level it was never cleaned for.
+      visible().forEach(function (s) {
+        s.lvl = lvl;
+        if (!s.valEdited) s.val = lvl ? locGuessValue(s.name, lvl, LOC_LEVELS) : s.name;
+      });
       repaint();
     };
     m.el.querySelector('#lw-x').onclick = m.close;

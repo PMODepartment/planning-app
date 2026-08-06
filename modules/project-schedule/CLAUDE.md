@@ -1,5 +1,32 @@
 # Module: project-schedule
 
+## Location Wizard: real fix for the modal's horizontal overflow, plus bulk-assign audit (2026-08-06) — fmlozano
+User reported the "Match the WBS to your location breakdown" wizard (`openLocWizard`) was scrollable
+and wanted the popup to show whole, then reported it was "still the same" after a first attempted fix.
+- ⚠️ **Root cause, found by reading `UI.modal()` rather than guessing again after the first fix
+  looked right but didn't help:** `UI.modal()` always wraps caller HTML in its own `<div
+  class="pd-modal">`, and the shared stylesheet caps that element at `max-width:520px`. Because that
+  same element also has `overflow-y:auto`, CSS computes its `overflow-x` to `auto` too. The wizard's
+  first attempt only set a width on an INNER div — a child of that still-520px box — so the wide
+  content overflowed it, and since the whole `.pd-modal` became one scrolling region, the header and
+  buttons scrolled sideways along with the table instead of staying put.
+- **Real fix:** after `UI.modal()` returns, grab the actual `.pd-modal` element
+  (`m.el.querySelector('.pd-modal')`) and set its `style.maxWidth`/`overflowX` directly — an inline
+  style always wins regardless of the class rule's specificity. The inner div now just fills that box
+  (`width:100%`) instead of fighting it with its own competing width.
+- ⚠️ **Why the first attempt never showed up live:** this repo (`planning-app`) is a git repo tracked
+  against `origin/main`, which is what GitHub Pages deploys from — but the first fix was only ever
+  saved to the local file, never committed or pushed. "Still the same" was accurate: the live site
+  hadn't changed at all. This prompt's fix is committed + pushed.
+- **Wizard audit (previous prompt, same session):** fixed a real inconsistency where "Assign all
+  shown to…" (bulk level-assign) skipped the value re-clean that the per-row level dropdown does,
+  leaving a stale/uncleaned value under the newly assigned level; removed a dead `s.touched` flag;
+  added a full-text `title` tooltip on the truncated ancestry trail; added a "N names shown" hint next
+  to the bulk controls so it's clear which rows a bulk action will affect.
+- Verified: inline script (`new Function`) parses clean. **Not browser-verified against a live login**
+  — this environment has no session for the deployed app; verification here is static/parse-level plus
+  reasoning through the actual `.pd-modal`/`UI.modal()` CSS cascade, not a rendered screenshot.
+
 ## Autosave added to the Add/Edit Activity modal (2026-08-06) — fmlozano
 Extended the shared autosave pass (`assets/js/autosave.js`, wired into 5 other modules the same
 prompt) to this module's Activity modal — the one place here that didn't fit the shared helper.
