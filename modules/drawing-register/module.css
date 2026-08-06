@@ -5,14 +5,14 @@
 @media (max-width:1150px){ .dr-title-txt { display:none; } }   /* icon-only title on tighter widths */
 
 .dr-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-.dr-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px;
+.dr-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:var(--dr-fs-base);
   background:transparent; border-color:transparent; }
 .dr-project:hover, .dr-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
 
 /* View tabs (segmented) */
 .dr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
 .dr-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600;
-  cursor:pointer; font-size:13px; transition:background .12s; }
+  cursor:pointer; font-size:var(--dr-fs-base); transition:background .12s; }
 .dr-tab + .dr-tab { border-left:1px solid var(--pd-line); }
 .dr-tab:hover:not(.active) { background:var(--pd-bg); }
 .dr-tab.active { background:var(--pd-red); color:#fff; }
@@ -20,7 +20,7 @@
 /* Tool cluster beside the profile */
 .dr-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
 .dr-topbar-tools .pd-btn { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
-  background:transparent; border-color:transparent; font-size:13px; }
+  background:transparent; border-color:transparent; font-size:var(--dr-fs-base); }
 .dr-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
 .dr-topbar-tools .pd-btn.dr-tb-labeled { width:auto; padding:0 12px; gap:6px; }
 .dr-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
@@ -45,14 +45,14 @@
 /* Ghost clear-filters button — same pattern as .ms-clearfilt / .pp-clear.
    Hidden unless a filter is set, so it never orphans in empty space. */
 .dr-clearfilt { display:inline-flex; align-items:center; gap:5px; border:0; background:none; cursor:pointer;
-  color:var(--pd-muted); font:inherit; font-size:13px; padding:6px 9px; border-radius:6px; flex:none; }
+  color:var(--pd-muted); font:inherit; font-size:var(--dr-fs-base); padding:6px 9px; border-radius:6px; flex:none; }
 .dr-clearfilt:hover { background:var(--pd-bg); color:var(--pd-red); }
 .dr-clearfilt[hidden] { display:none; }
 
 /* ---- Loading skeleton (fresh register load) ------------------------------ */
 .dr-skcard { padding:14px 16px; }
 .dr-sk-head { display:flex; align-items:center; gap:8px; color:var(--pd-muted);
-  font-size:13px; font-weight:600; margin-bottom:12px; }
+  font-size:var(--dr-fs-base); font-weight:600; margin-bottom:12px; }
 .dr-sk-spin { width:13px; height:13px; flex:none; border:2px solid var(--pd-line);
   border-top-color:var(--pd-red); border-radius:50%; animation:dr-spin .7s linear infinite; }
 @keyframes dr-spin { to { transform:rotate(360deg); } }
@@ -66,31 +66,36 @@
 /* ---- List bar (count + selection) --------------------------------------- */
 .dr-listbar { display:flex; align-items:center; gap:12px; margin-bottom:10px; min-height:30px; }
 .dr-xall { flex:0 0 auto; }
-.dr-listcount { color:var(--pd-muted); font-size:13px; }
+.dr-listcount { color:var(--pd-muted); font-size:var(--dr-fs-base); }
 .dr-selbar { display:flex; align-items:center; gap:10px; margin-left:auto;
   background:rgba(238,49,36,.08); border:1px solid var(--pd-red); border-radius:999px; padding:4px 6px 4px 14px; }
 .dr-selbar[hidden] { display:none; }
-.dr-selbar span { font-weight:700; font-size:13px; color:var(--pd-red); }
+.dr-selbar span { font-weight:700; font-size:var(--dr-fs-base); color:var(--pd-red); }
 
 /* ---- Table -------------------------------------------------------------- */
-.dr-tablecard { padding:0; overflow:auto; max-height:calc(100vh - 250px); }
+/* ⚠️ The max-height is a FALLBACK only — superseded by the `body.dr-fit`
+   viewport-fit block further down on any viewport above the phone
+   breakpoint. Kept so the card is still bounded if the fit class somehow
+   isn't applied. It used to be declared twice, here and again lower down
+   with a different guess (250px vs 205px); one value, one place. */
+.dr-tablecard { padding:0; overflow:auto; max-height:calc(100vh - 205px); }
 .dr-table { border-collapse:separate; border-spacing:0; width:100%; }
 .dr-table thead th { position:sticky; top:0; z-index:2; background:var(--pd-card);
-  border-bottom:2px solid var(--pd-line); font-size:11px; letter-spacing:.03em; text-transform:uppercase;
+  border-bottom:2px solid var(--pd-line); font-size:var(--dr-fs-micro); letter-spacing:.03em; text-transform:uppercase;
   color:var(--pd-muted); padding:10px 12px; white-space:nowrap; }
 .dr-table td { padding:9px 12px; vertical-align:middle; border-bottom:1px solid var(--pd-line); }
 .dr-table tbody tr:not(.dr-grp):hover td { background:var(--pd-bg); }
-.dr-table td .dr-sub { color:var(--pd-muted); font-size:12px; margin-top:2px;
+.dr-table td .dr-sub { color:var(--pd-muted); font-size:var(--dr-fs-sm); margin-top:2px;
   max-width:440px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dr-r { text-align:right; white-space:nowrap; }
 .dr-nowrap { white-space:nowrap; }
 .dr-mut, .dr-mini { color:var(--pd-muted); }
-.dr-mini { font-size:11px; }
-.dr-count { color:var(--pd-muted); font-weight:500; font-size:12px; }
+.dr-mini { font-size:var(--dr-fs-micro); }
+.dr-count { color:var(--pd-muted); font-weight:500; font-size:var(--dr-fs-sm); }
 .dr-cb { width:34px; text-align:center; }
 .dr-cb input { width:15px; height:15px; cursor:pointer; accent-color:var(--pd-red); }
 .dr-actcol { width:96px; }
-.dr-code { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:12.5px; }
+.dr-code { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:var(--dr-fs-sm); }
 .dr-selrow td { background:rgba(238,49,36,.06) !important; }
 
 /* ---- Drag-and-drop row reorder (within a group) -------------------------
@@ -117,29 +122,56 @@ tr.dr-grp .dr-glabel { cursor:text; }      /* except the label: dblclick renames
 
 /* Row action buttons */
 .dr-rowbtn { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
-  border-radius:6px; padding:3px 9px; font-size:12px; font-weight:600; cursor:pointer; }
+  border-radius:6px; padding:3px 9px; font-size:var(--dr-fs-sm); font-weight:600; cursor:pointer; }
 .dr-rowbtn:hover { background:var(--pd-bg); border-color:var(--pd-muted); }
 .dr-rowbtn-del:hover { background:var(--pd-bad,#dc2626); border-color:var(--pd-bad,#dc2626); color:#fff; }
 
 /* Group roll-up rows */
 .dr-grp td { border-bottom:1px solid var(--pd-line); }
 .dr-grplabel { display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
-.dr-caret { display:inline-block; font-size:11px; color:var(--pd-muted); transition:transform .12s; }
+.dr-caret { display:inline-block; line-height:0; font-size:var(--dr-fs-micro); color:var(--pd-muted); transition:transform .12s; }
 .dr-caret-col { transform:rotate(-90deg); }
 
-/* ---- Level indentation + colour coding ---------------------------------- */
-/* Indent grows with hierarchy depth; applied to the first content cell.      */
-.dr-lvl-1 .dr-indent { padding-left:10px; }
-.dr-lvl-2 .dr-indent { padding-left:30px; }
-.dr-lvl-3 .dr-indent { padding-left:50px; }
-.dr-lvl-4 .dr-indent { padding-left:70px; }
-.dr-lvl-5 .dr-indent { padding-left:90px; }   /* individual sheets under a drawing */
-/* A coloured rail on the first cell marks the level at a glance. */
-.dr-lvl-1 .dr-indent { box-shadow:inset 4px 0 0 var(--pd-red); }
-.dr-lvl-2 .dr-indent { box-shadow:inset 4px 0 0 #2b2c2b; }
-.dr-lvl-3 .dr-indent { box-shadow:inset 4px 0 0 #9aa0a6; }
-.dr-lvl-4 .dr-indent { box-shadow:inset 4px 0 0 var(--pd-line); }
-.dr-lvl-5 .dr-indent { box-shadow:inset 4px 0 0 var(--pd-line); }
+/* ---- Level indentation + colour coding ----------------------------------
+   ⚠️ The ladder was 10/30/50/70/90 (20px steps). Levels 1–3 are GROUP rows
+   whose first cell spans Code+Title (~430px), so they can afford it — but
+   levels 4 and 5 sit inside the 130px frozen Code column, and at 90px of
+   indent a sheet code had **59px of space for 59px of text**, i.e. it clipped
+   at 1440px and lost roughly half the code at the 1080px min-width. Measured,
+   not guessed: see _ui_test.html. 12px steps keep a legible ladder and leave
+   the deepest row 66px of code space even at the narrowest table width. */
+.dr-lvl-1 .dr-indent { padding-left:8px; }
+.dr-lvl-2 .dr-indent { padding-left:20px; }
+.dr-lvl-3 .dr-indent { padding-left:32px; }
+.dr-lvl-4 .dr-indent { padding-left:44px; }
+.dr-lvl-5 .dr-indent { padding-left:56px; }   /* individual sheets under a drawing */
+
+/* A coloured rail on the first cell marks the level at a glance.
+   ⚠️ THREE of the five rails were effectively invisible before this, each in a
+   different theme, so the ladder they were supposed to draw simply wasn't there:
+     • lvl-2 was hardcoded #2b2c2b, which IS --pd-card in dark mode — 1.13:1,
+       the same class of bug as the Project Schedule's invisible "Structural".
+     • lvl-4 and lvl-5 both used --pd-line: 1.27:1 light, 1.45:1 dark, and being
+       identical they drew no distinction between a drawing and its sheets.
+   Rails are now theme-aware tokens, all ≥3:1 against the row behind them.
+   Level 4 deliberately has NO rail: it is the baseline data row, and marking
+   every level equally is what made the ladder unreadable. The weight also
+   decreases with depth (4px → 3px → 2px), so depth reads from the rail itself. */
+:root {
+  --dr-rail-1:var(--pd-red);
+  --dr-rail-2:#2b2c2b;
+  --dr-rail-3:#7c8288;
+  --dr-rail-5:#7c8288;
+}
+html.pd-dark {
+  --dr-rail-2:#c9cdd2;
+  --dr-rail-3:#9aa0a6;
+  --dr-rail-5:#767c83;
+}
+.dr-lvl-1 .dr-indent { box-shadow:inset 4px 0 0 var(--dr-rail-1); }
+.dr-lvl-2 .dr-indent { box-shadow:inset 4px 0 0 var(--dr-rail-2); }
+.dr-lvl-3 .dr-indent { box-shadow:inset 3px 0 0 var(--dr-rail-3); }
+.dr-lvl-5 .dr-indent { box-shadow:inset 2px 0 0 var(--dr-rail-5); }
 
 /* ---- Per-sheet tracking -------------------------------------------------
    A drawing broken out per sheet is still a drawing row (editable code/title),
@@ -149,29 +181,96 @@ html.pd-dark .dr-sheetparent > td { background:rgba(255,255,255,.035); }
 .dr-sheetparent .dr-code { font-weight:700; }
 .dr-scaret { cursor:pointer; margin-right:5px; }
 .dr-sheettag { display:inline-block; margin-left:7px; padding:1px 6px; border-radius:9px;
-  background:var(--pd-line); color:var(--pd-muted); font-size:10.5px; font-weight:700;
+  background:var(--pd-line); color:var(--pd-muted); font-size:var(--dr-fs-micro); font-weight:700;
   letter-spacing:.02em; vertical-align:middle; }
 .dr-sheetrow .dr-code { font-weight:400; color:var(--pd-muted); }
-.dr-fieldhint { font-size:11px; margin-top:3px; }
+.dr-fieldhint { font-size:var(--dr-fs-micro); margin-top:3px; }
 
 /* Level backgrounds (phase darkest → drawing plain) */
 .dr-grp-phase td { background:rgba(238,49,36,.12); border-top:2px solid var(--pd-red); padding-top:11px; padding-bottom:11px; }
-.dr-grp-phase td strong { text-transform:uppercase; letter-spacing:.03em; font-size:13px; }
+.dr-grp-phase td strong { text-transform:uppercase; letter-spacing:.03em; font-size:var(--dr-fs-base); }
 .dr-grp-disc td { background:rgba(43,44,43,.07); }
-.dr-grp-disc td strong { font-size:12.5px; }
+.dr-grp-disc td strong { font-size:var(--dr-fs-sm); }
 .dr-grp-cat td { background:var(--pd-bg); }
-.dr-grp-cat td strong { font-weight:600; font-size:12px; color:var(--pd-muted); text-transform:none; }
+.dr-grp-cat td strong { font-weight:600; font-size:var(--dr-fs-sm); color:var(--pd-muted); text-transform:none; }
 html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 
-/* Status pills */
-.dr-pill { display:inline-block; padding:3px 10px; border-radius:999px; font-weight:700; font-size:11px; color:#fff; white-space:nowrap; }
-.dr-review { background:#d97706; }  /* For Review */
-.dr-rr     { background:#dc2626; }  /* Revise & Resubmit */
-.dr-okc    { background:#0891b2; }  /* Approved w/ comments */
-.dr-ok     { background:#16a34a; }  /* Approved / w/o comments */
-.dr-old    { background:#6b7280; }  /* Superseded */
-.dr-wip    { background:#6366f1; }  /* In Progress — being drawn, not yet submitted */
-.dr-ns     { background:#9aa0a6; }  /* Not started (blank status) */
+/* ============================ STATUS PALETTE ==============================
+   ⚠️ THE SINGLE SOURCE for every status colour in this module — the grid pill,
+   the inline dropdown, the Backlog pill, the revision-matrix select, the donut
+   arcs and the donut legend swatches all resolve to these variables. There used
+   to be two: these CSS classes AND a `STATUS_COLOR` map in module.js that the
+   donut read, kept in step by hand. `statusCls()` is now the only status→colour
+   decision in the codebase, and JS composes `--dr-<key>-arc` from it.
+
+   Each status carries four values:
+     -arc  saturated hue, for graphics (donut arcs, legend swatches)
+     -bg   pale tint, the pill/dropdown surface
+     -fg   dark shade of the same hue, the pill text
+     -bd   mid tint, the pill border
+
+   ⚠️ The pills were SOLID saturated fills with white 11px bold text, and 5 of
+   the 7 failed WCAG AA: Not started 2.64:1 (and it is the most common state in
+   the register), Approved 3.30:1, For Review 3.19:1, Approved w/ comments
+   3.68:1, In Progress 4.47:1. This tint treatment measures 5.18–8.77:1 in both
+   themes, matches the Material Submittal log so the two registers read as one
+   system, and is far quieter across a 400-row grid.
+   Re-measure with the harness before changing any value here. */
+/* ------------------------------- TYPE SCALE -------------------------------
+   ⚠️ Use these, never a raw px font-size. The module had grown NINE sizes in
+   ~1px steps (10, 10.5, 11, 11.5, 12, 12.5, 13, 14, 32) — differences too small
+   to read as hierarchy but big enough to look accidental, and the 10px grid
+   header was below a comfortable floor. Four steps carry the whole register:
+     micro  uppercase labels, pills, badges, table headers, sort indicators
+     sm     the dense grid body
+     base   default body text
+     lg     card headings
+   Anything below `micro` is too small for a construction register read on a
+   site laptop, so `micro` is also the floor. */
+:root {
+  --dr-fs-micro:11px;
+  --dr-fs-sm:12px;
+  --dr-fs-base:13px;
+  --dr-fs-lg:15px;
+  --dr-fs-xl:20px;
+  --dr-fs-kpi:32px;
+
+  --dr-ok-arc:#16a34a;  --dr-ok-bg:#e7f6ec;  --dr-ok-fg:#12693a;  --dr-ok-bd:#bfe4cd;   /* Approved */
+  --dr-okc-arc:#4d7c0f; --dr-okc-bg:#eef7e8; --dr-okc-fg:#3f6b21; --dr-okc-bd:#cfe6bd;  /* Approved w/ comments */
+  --dr-review-arc:#d97706; --dr-review-bg:#fff6e5; --dr-review-fg:#8a5a00; --dr-review-bd:#f3ddb0; /* For Review */
+  --dr-rr-arc:#c2410c;  --dr-rr-bg:#fdeee7;  --dr-rr-fg:#9a4a15;  --dr-rr-bd:#f5d3bf;   /* Revise & Resubmit */
+  --dr-wip-arc:#4f46e5; --dr-wip-bg:#eef0fe; --dr-wip-fg:#3730a3; --dr-wip-bd:#cdd2f7;  /* In Progress */
+  --dr-old-arc:#6b7280; --dr-old-bg:#eef1f5; --dr-old-fg:#4a5568; --dr-old-bd:#d7dde5;  /* Superseded */
+  /* Not started — the quietest chip of the set. It is the most common state
+     (823 of 1,506 live drawings), so anything louder drowns the states that
+     need action. Still 5.18:1, so "quiet" never means "unreadable". */
+  --dr-ns-arc:#9aa0a6;  --dr-ns-bg:#f4f5f7;  --dr-ns-fg:#5f6873;  --dr-ns-bd:#e3e7ec;
+}
+html.pd-dark {
+  /* Tints are translucent so they sit on whatever row background is behind them
+     (card, group tint, selected-row red) instead of punching a flat hole in it. */
+  --dr-ok-arc:#16a34a;  --dr-ok-bg:rgba(18,105,58,.24);   --dr-ok-fg:#7fd6a2;  --dr-ok-bd:rgba(18,105,58,.5);
+  --dr-okc-arc:#84cc16; --dr-okc-bg:rgba(63,107,33,.24);  --dr-okc-fg:#b3dd8c; --dr-okc-bd:rgba(63,107,33,.5);
+  --dr-review-arc:#d97706; --dr-review-bg:rgba(138,90,0,.26); --dr-review-fg:#f0c469; --dr-review-bd:rgba(138,90,0,.55);
+  --dr-rr-arc:#fb923c;  --dr-rr-bg:rgba(154,74,21,.26);   --dr-rr-fg:#f0a877;  --dr-rr-bd:rgba(154,74,21,.55);
+  --dr-wip-arc:#818cf8; --dr-wip-bg:rgba(79,70,229,.28);  --dr-wip-fg:#a9b0f5; --dr-wip-bd:rgba(79,70,229,.55);
+  --dr-old-arc:#9ca3af; --dr-old-bg:rgba(120,130,145,.24);--dr-old-fg:#c2ccd8; --dr-old-bd:rgba(120,130,145,.5);
+  --dr-ns-arc:#9aa0a6;  --dr-ns-bg:rgba(120,130,145,.14); --dr-ns-fg:#aab3bf;  --dr-ns-bd:rgba(120,130,145,.4);
+}
+/* Each status class only REMAPS the four generic slots; the pill and the
+   dropdown below consume the slots, so a new status is one line here plus one
+   branch in statusCls(). */
+.dr-ok     { --st-bg:var(--dr-ok-bg);     --st-fg:var(--dr-ok-fg);     --st-bd:var(--dr-ok-bd); }
+.dr-okc    { --st-bg:var(--dr-okc-bg);    --st-fg:var(--dr-okc-fg);    --st-bd:var(--dr-okc-bd); }
+.dr-review { --st-bg:var(--dr-review-bg); --st-fg:var(--dr-review-fg); --st-bd:var(--dr-review-bd); }
+.dr-rr     { --st-bg:var(--dr-rr-bg);     --st-fg:var(--dr-rr-fg);     --st-bd:var(--dr-rr-bd); }
+.dr-wip    { --st-bg:var(--dr-wip-bg);    --st-fg:var(--dr-wip-fg);    --st-bd:var(--dr-wip-bd); }
+.dr-old    { --st-bg:var(--dr-old-bg);    --st-fg:var(--dr-old-fg);    --st-bd:var(--dr-old-bd); }
+.dr-ns     { --st-bg:var(--dr-ns-bg);     --st-fg:var(--dr-ns-fg);     --st-bd:var(--dr-ns-bd); }
+
+.dr-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:700;
+  font-size:var(--dr-fs-micro); line-height:1.5; white-space:nowrap;
+  background:var(--st-bg); color:var(--st-fg); border:1px solid var(--st-bd); }
 
 /* Backlog tab */
 .dr-bk-table tbody tr.dr-bk-row { cursor:pointer; }
@@ -181,13 +280,13 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-bk-table th.dr-sortable, .dr-grid th.dr-sortable { cursor:pointer; user-select:none; }
 .dr-bk-table th.dr-sortable:hover, .dr-grid th.dr-sortable:hover { color:var(--pd-red); }
 .dr-grid th.dr-sorted { color:var(--pd-red); }
-.dr-sortind { color:var(--pd-red); font-size:10px; }
+.dr-sortind { color:var(--pd-red); font-size:var(--dr-fs-micro); }
 
 /* "Sorted by X ▲ ×" chip in the list bar — the affordance back to manual order
    (and the explanation for why drag-reorder is currently disabled). */
 .dr-sortchip { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
   border:1px solid var(--pd-red); background:var(--pd-red); color:#fff;
-  font:inherit; font-size:12px; font-weight:600; padding:4px 9px; border-radius:999px; flex:none; }
+  font:inherit; font-size:var(--dr-fs-sm); font-weight:600; padding:4px 9px; border-radius:999px; flex:none; }
 .dr-sortchip:hover { background:var(--pd-red-mid, var(--pd-red)); }
 .dr-sortchip svg { display:block; }
 .dr-aging-late { color:var(--pd-red); font-weight:700; }
@@ -195,7 +294,7 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
    page — the KPI row + card header stay put; only the table body scrolls. */
 .dr-bk-scroll { max-height:min(62vh, 640px); overflow-y:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius); }
 .dr-bk-scroll .dr-bk-table { border:none; }
-.dr-bk-more { margin-top:10px; font-size:12.5px; color:var(--pd-muted); text-align:center; }
+.dr-bk-more { margin-top:10px; font-size:var(--dr-fs-sm); color:var(--pd-muted); text-align:center; }
 
 /* ---- Backlog: Doc column + bulk actions [UI review #8] ------------------- */
 /* The shared .dr-selbar carries `margin-left:auto` because in the Registry it
@@ -213,12 +312,12 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 /* Progress bar */
 .dr-prog { position:relative; height:16px; background:var(--pd-line); border-radius:999px; overflow:hidden; min-width:100px; max-width:220px; }
 .dr-prog-fill { position:absolute; inset:0 auto 0 0; background:linear-gradient(90deg,var(--pd-red),#f2683f); border-radius:999px; }
-.dr-prog-txt { position:relative; display:block; text-align:center; font-size:10px; font-weight:700;
+.dr-prog-txt { position:relative; display:block; text-align:center; font-size:var(--dr-fs-micro); font-weight:700;
   line-height:16px; color:var(--pd-ink); }
 
 /* ---- KPI cards ---------------------------------------------------------- */
 .dr-kpi-section { margin-bottom:22px; }
-.dr-kpi-seclabel { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+.dr-kpi-seclabel { font-size:var(--dr-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.06em;
   color:var(--pd-muted); margin-bottom:10px; }
 /* Auto-fit instead of a fixed 6-up grid: cards claim real width on a wide screen
    (the number gets room to breathe) and wrap gracefully on a narrow one, instead
@@ -230,7 +329,7 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-kpi:hover { box-shadow:0 4px 14px rgba(0,0,0,.09); transform:translateY(-1px); }
 /* Neutral by default — every metric card carrying the same red accent as its
    neighbors is what read as "clashing" (a wall of red bars with no semantic
-   meaning). Red/green/amber are reserved for the .dr-warn/.dr-ok states below. */
+   meaning). Red/green/amber are reserved for the .dr-kpi-warn/.dr-kpi-ok tones below. */
 .dr-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--pd-muted); opacity:.35; }
 /* ---- Overview drill-through affordances [UI review #7] -------------------
    Every aggregate that maps to a real row set is a link into the list that
@@ -241,15 +340,18 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-kpi-drill:hover .dr-kpi-val { color:var(--pd-red); }
 .dr-kpi-drill:focus-visible { outline:2px solid var(--pd-red); outline-offset:2px; }
 
-.dr-legendrow { display:flex; align-items:center; gap:7px; font-size:12.5px;
+/* Donut legend swatch — the same --dr-<key>-arc variable the arc uses, so a
+   legend chip can never disagree with the segment it labels. */
+.dr-legendsw { width:10px; height:10px; border-radius:2px; flex:none; }
+.dr-legendrow { display:flex; align-items:center; gap:7px; font-size:var(--dr-fs-sm);
   margin:2px -6px; padding:2px 6px; border-radius:5px; cursor:pointer; }
 .dr-legendrow:hover { background:var(--pd-bg); color:var(--pd-red); }
 .dr-legendrow:focus-visible { outline:2px solid var(--pd-red); outline-offset:1px; }
 
 .dr-agseg { height:100%; display:flex; align-items:center; justify-content:center;
-  color:#fff; font-size:11.5px; font-weight:700; cursor:pointer; }
+  color:#fff; font-size:var(--dr-fs-sm); font-weight:700; cursor:pointer; }
 .dr-agseg:hover { filter:brightness(1.12); box-shadow:inset 0 0 0 2px rgba(255,255,255,.75); }
-.dr-aglegend { display:inline-flex; align-items:center; gap:5px; font-size:12px;
+.dr-aglegend { display:inline-flex; align-items:center; gap:5px; font-size:var(--dr-fs-sm);
   margin:4px 14px 0 0; padding:2px 5px; border-radius:5px; cursor:pointer; }
 .dr-aglegend:hover { background:var(--pd-bg); color:var(--pd-red); }
 
@@ -258,12 +360,12 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 .dr-drillrow:hover > td:first-child { color:var(--pd-red); font-weight:600; }
 .dr-agchip { margin-left:10px; vertical-align:2px; }
 
-.dr-kpi-val { font-size:32px; font-weight:800; line-height:1.05; letter-spacing:-.01em; }
-.dr-kpi-label { color:var(--pd-muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; margin-top:9px; font-weight:600; }
-.dr-kpi.dr-ok .dr-kpi-val { color:var(--pd-good,#16a34a); }
-.dr-kpi.dr-ok::before { background:var(--pd-good,#16a34a); }
-.dr-kpi.dr-warn .dr-kpi-val { color:var(--pd-warn,#d97706); }
-.dr-kpi.dr-warn::before { background:var(--pd-warn,#d97706); }
+.dr-kpi-val { font-size:var(--dr-fs-kpi); font-weight:800; line-height:1.05; letter-spacing:-.01em; }
+.dr-kpi-label { color:var(--pd-muted); font-size:var(--dr-fs-sm); text-transform:uppercase; letter-spacing:.05em; margin-top:9px; font-weight:600; }
+.dr-kpi.dr-kpi-ok .dr-kpi-val { color:var(--pd-good,#16a34a); }
+.dr-kpi.dr-kpi-ok::before { background:var(--pd-good,#16a34a); }
+.dr-kpi.dr-kpi-warn .dr-kpi-val { color:var(--pd-warn,#d97706); }
+.dr-kpi.dr-kpi-warn::before { background:var(--pd-warn,#d97706); }
 
 /* Dashboard layout */
 /* align-items:start — without it, CSS grid stretches every card in a row to
@@ -280,14 +382,14 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 #dr-view > .pd-card { margin-bottom:16px; }
 #dr-view > .dr-dash-grid:last-child,
 #dr-view > .pd-card:last-child { margin-bottom:0; }
-.dr-h3 { margin:0 0 12px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.dr-h3 { margin:0 0 12px; font-size:var(--dr-fs-lg); font-weight:700; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .dr-seg { display:inline-flex; border:1.5px solid var(--pd-line); border-radius:7px; overflow:hidden; font-weight:400; }
-.dr-seg-btn { border:none; background:transparent; color:var(--pd-text); padding:4px 10px; font-size:11.5px; font-family:inherit; cursor:pointer; }
+.dr-seg-btn { border:none; background:transparent; color:var(--pd-text); padding:4px 10px; font-size:var(--dr-fs-sm); font-family:inherit; cursor:pointer; }
 .dr-seg-btn.active { background:var(--pd-red); color:#fff; }
 .dr-seg-btn:not(.active):hover { background:var(--pd-bg); }
 
 /* Single-button switch (# ⇄ %) — one control that flips, not two radio-ish buttons */
-.dr-segswitch { min-width:34px; padding:4px 10px; font-size:11.5px; font-weight:700; font-family:inherit;
+.dr-segswitch { min-width:34px; padding:4px 10px; font-size:var(--dr-fs-sm); font-weight:700; font-family:inherit;
   color:var(--pd-red); background:transparent; cursor:pointer; }
 .dr-segswitch:hover { background:var(--pd-bg); }
 
@@ -299,13 +401,13 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 
 /* ---- Form (modal) ------------------------------------------------------- */
 .pd-modal-overlay:has(.dr-form-sec) .pd-modal { max-width:780px; width:96%; }
-.dr-form-sec { font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.04em;
+.dr-form-sec { font-weight:700; font-size:var(--dr-fs-sm); text-transform:uppercase; letter-spacing:.04em;
   color:var(--pd-red); margin:18px 0 10px; padding-bottom:5px; border-bottom:1px solid var(--pd-line);
   display:flex; align-items:center; gap:10px; }
 .dr-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .dr-grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
 .dr-grid4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; }
-.dr-code-preview { font-family:ui-monospace,Consolas,monospace; font-size:13px; background:var(--pd-bg);
+.dr-code-preview { font-family:ui-monospace,Consolas,monospace; font-size:var(--dr-fs-base); background:var(--pd-bg);
   border:1px dashed var(--pd-line); border-radius:6px; padding:8px 12px; margin-top:2px; }
 .dr-code-preview span { font-weight:700; color:var(--pd-red); }
 
@@ -320,19 +422,19 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
   display:grid; grid-template-columns:56px 1fr 1fr 1.25fr 1fr 1.6fr 30px;
   gap:8px; align-items:center;
 }
-.dr-subhead { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em;
+.dr-subhead { font-size:var(--dr-fs-micro); text-transform:uppercase; letter-spacing:.04em;
   color:var(--pd-muted); font-weight:700; margin-bottom:5px; }
 .dr-subrow { margin-bottom:8px; }
 .dr-subrow label { display:block; min-width:0; }
-.dr-subrow .pd-input, .dr-subrow .pd-select { width:100%; font-size:12px; padding:6px 7px; }
-.dr-subrev { font-weight:700; font-size:12px; }
+.dr-subrow .pd-input, .dr-subrow .pd-select { width:100%; font-size:var(--dr-fs-sm); padding:6px 7px; }
+.dr-subrev { font-weight:700; font-size:var(--dr-fs-sm); }
 /* The outcome control reuses the grid's own .dr-stsel status pill, so a revision's
    outcome reads exactly like the status column in the register — one visual
    language for "what happened to this". Only the sizing is adjusted for the form.
    ⚠️ Must be `.dr-subrow .dr-substat` (0,2,0): `.dr-stsel` is a bare class defined
    LATER in this file, so a plain `.dr-substat` ties on specificity and loses on
    source order — leaving an 18px pill beside 32px date inputs. */
-.dr-subrow .dr-substat { padding:0 8px; min-height:32px; font-size:11.5px; }
+.dr-subrow .dr-substat { padding:0 8px; min-height:32px; font-size:var(--dr-fs-sm); }
 @media (max-width:820px){
   /* Seven columns don't fit a phone; stack each revision into its own block and
      bring the labels back inline (the shared header row is hidden). */
@@ -346,9 +448,9 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
    the register keeps the actual superseded drawing, not just a note that a
    revision happened. */
 .dr-subfilelbl { flex:1 1 240px; min-width:200px; }
-.dr-subfileinput { font-size:11.5px; padding:5px 6px; }
+.dr-subfileinput { font-size:var(--dr-fs-sm); padding:5px 6px; }
 .dr-subfile { display:flex; align-items:center; gap:6px; height:32px; }
-.dr-subfname { font-size:11.5px; color:var(--pd-ink); overflow:hidden; text-overflow:ellipsis;
+.dr-subfname { font-size:var(--dr-fs-sm); color:var(--pd-ink); overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap; max-width:190px; }
 
 @media (max-width:1000px) {
@@ -359,14 +461,9 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 @media (max-width:700px) {
   .dr-kpis { grid-template-columns:repeat(2,1fr); }
   .dr-grid3, .dr-grid2 { grid-template-columns:1fr; }
-  .dr-actions { margin-left:0; }
 }
 
 /* ============ Editable tree grid (compact, one-screen) ================== */
-/* Fallback only — superseded by the `body.dr-fit` block below on any viewport
-   above the phone breakpoint. Kept so the card is still bounded if the fit
-   class somehow isn't applied (e.g. a render path that bypasses render()). */
-.dr-tablecard { max-height:calc(100vh - 205px); }
 
 /* ---- Registry: fill the viewport instead of GUESSING the chrome height ----
    `max-height:calc(100vh - 205px)` hardcodes an assumption about how tall the
@@ -388,8 +485,8 @@ html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
   body.dr-fit #dr-view { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
   body.dr-fit .dr-tablecard { flex:1 1 auto; min-height:0; max-height:none; }
 }
-.dr-grid { font-size:12px; min-width:1080px; }   /* so narrow viewports scroll (and the frozen Code+Title stay put) */
-.dr-grid thead th { padding:7px 8px; font-size:10px; }
+.dr-grid { font-size:var(--dr-fs-sm); min-width:1080px; }   /* so narrow viewports scroll (and the frozen Code+Title stay put) */
+.dr-grid thead th { padding:7px 8px; font-size:var(--dr-fs-micro); }
 .dr-grid td { padding:4px 8px; }
 .dr-grid:focus { outline:none; }
 .dr-grid:focus-within { box-shadow:none; }
@@ -424,11 +521,11 @@ html.pd-dark .dr-grid .dr-selrow td.dr-freeze { background:#4a2b28 !important; }
 /* No cell background tint (looked off / two-tone). The ⚠ badge on the code +
    the list-bar legend carry the signal. */
 .dr-dupmark { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
-  border-radius:50%; background:#d97706; color:#fff; font-size:10px; line-height:1; margin-left:5px; cursor:help; }
+  border-radius:50%; background:#d97706; color:#fff; font-size:var(--dr-fs-micro); line-height:1; margin-left:5px; cursor:help; }
 /* legend chip in the list bar (click to filter to duplicates) */
 .dr-duplegend { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; cursor:pointer;
   border:1px solid #d97706; color:#b45309; background:rgba(217,119,6,.10);
-  border-radius:999px; padding:3px 10px; font-size:12px; font-weight:600; }
+  border-radius:999px; padding:3px 10px; font-size:var(--dr-fs-sm); font-weight:600; }
 .dr-duplegend:hover { background:rgba(217,119,6,.18); }
 .dr-duplegend.dr-on { background:#d97706; color:#fff; }
 .dr-duplegend .dr-dupmark { margin-left:0; width:14px; height:14px; }
@@ -446,24 +543,19 @@ td.dr-editing { padding:2px 4px; }
 .dr-drow { cursor:default; }
 .dr-selrow td { background:rgba(238,49,36,.10) !important; }
 
-/* inline status dropdown, tinted by status */
-.dr-stsel { width:100%; box-sizing:border-box; border:1px solid var(--pd-line); border-radius:999px;
-  padding:2px 6px; font-size:11px; font-weight:700; cursor:pointer; color:#fff; -webkit-appearance:none; appearance:none;
-  text-align:center; }
+/* Inline status dropdown — the SAME chip as .dr-pill, but editable. It carries
+   the identical status class, so it inherits the same --st-* slots and the two
+   can never drift apart the way the old parallel .dr-st-dr-* rules did. */
+.dr-stsel { width:100%; box-sizing:border-box; border-radius:999px;
+  padding:2px 6px; font-size:var(--dr-fs-micro); font-weight:700; cursor:pointer;
+  -webkit-appearance:none; appearance:none; text-align:center;
+  background:var(--st-bg, var(--pd-card)); color:var(--st-fg, var(--pd-ink));
+  border:1px solid var(--st-bd, var(--pd-line)); }
 .dr-stsel option { color:var(--pd-ink); background:var(--pd-card); font-weight:600; }
-.dr-st-dr-review { background:#d97706; border-color:#d97706; }
-.dr-st-dr-rr     { background:#dc2626; border-color:#dc2626; }
-.dr-st-dr-okc    { background:#0891b2; border-color:#0891b2; }
-.dr-st-dr-ok     { background:#16a34a; border-color:#16a34a; }
-.dr-st-dr-old    { background:#6b7280; border-color:#6b7280; }
-.dr-st-dr-wip    { background:#6366f1; border-color:#6366f1; }
-/* Not started — the quietest chip of the set. It is the most common state (823 of
-   1,506 live drawings), so anything louder would drown the states that need action. */
-.dr-st-dr-ns     { background:#9aa0a6; border-color:#9aa0a6; }
 
 /* small icon action buttons */
 .dr-iconbtn { border:0; background:transparent; color:var(--pd-muted); cursor:pointer;
-  font-size:13px; padding:2px 4px; border-radius:4px; line-height:1; }
+  font-size:var(--dr-fs-base); padding:2px 4px; border-radius:4px; line-height:1; }
 .dr-iconbtn:hover { background:var(--pd-bg); color:var(--pd-ink); }
 .dr-iconbtn.dr-rowbtn-del:hover { background:var(--pd-bad,#dc2626); color:#fff; }
 
@@ -476,7 +568,6 @@ td.dr-editing { padding:2px 4px; }
 .dr-iconbtn, .dr-grp .dr-lvldel { display:inline-flex; align-items:center; justify-content:center; }
 .dr-rmsub { display:inline-flex; align-items:center; justify-content:center; }
 .dr-rmsub svg { display:block; }
-.dr-caret { line-height:0; }
 
 /* group label editable hint */
 .dr-glabel { cursor:default; }
@@ -489,15 +580,15 @@ td.dr-editing { padding:2px 4px; }
   box-shadow:0 8px 24px rgba(0,0,0,.14); padding:4px; }
 .dr-menu[hidden] { display:none; }
 .dr-menu button { display:block; width:100%; text-align:left; border:0; background:transparent;
-  color:var(--pd-ink); padding:7px 12px; border-radius:6px; cursor:pointer; font-size:13px; }
+  color:var(--pd-ink); padding:7px 12px; border-radius:6px; cursor:pointer; font-size:var(--dr-fs-base); }
 .dr-menu button:hover { background:var(--pd-bg); }
 
 /* list-bar hint */
-.dr-hint { color:var(--pd-muted); font-size:11px; margin-left:auto; }
+.dr-hint { color:var(--pd-muted); font-size:var(--dr-fs-micro); margin-left:auto; }
 @media (max-width:1100px){ .dr-hint { display:none; } }
 
 /* structural-level code chip (A-100, AR-000, …) */
-.dr-gcode { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:11px;
+.dr-gcode { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:var(--dr-fs-micro);
   color:var(--pd-red); background:rgba(238,49,36,.10); border-radius:4px; padding:1px 6px; margin-right:2px; }
 .dr-grp-disc .dr-gcode, .dr-grp-cat .dr-gcode { color:var(--pd-muted); background:var(--pd-bg); }
 
@@ -513,15 +604,15 @@ td.dr-editing { padding:2px 4px; }
 
 /* group-row delete affordance */
 .dr-grp .dr-lvldel { border:0; background:transparent; color:var(--pd-muted); cursor:pointer;
-  font-size:12px; padding:2px 6px; border-radius:4px; opacity:0; transition:opacity .12s; }
+  font-size:var(--dr-fs-sm); padding:2px 6px; border-radius:4px; opacity:0; transition:opacity .12s; }
 .dr-grp:hover .dr-lvldel { opacity:1; }
 .dr-grp .dr-lvldel:hover { background:var(--pd-bad,#dc2626); color:#fff; }
 
 /* bulk set-status dropdown in the selection bar */
-.dr-selstatus { height:26px; padding:2px 8px; font-size:12px; font-weight:600; max-width:170px; }
+.dr-selstatus { height:26px; padding:2px 8px; font-size:var(--dr-fs-sm); font-weight:600; max-width:170px; }
 
 /* jump-to-phase select in the list bar [feature 6] */
-.dr-jump { height:26px; padding:2px 8px; font-size:12px; max-width:230px; flex:0 0 auto; }
+.dr-jump { height:26px; padding:2px 8px; font-size:var(--dr-fs-sm); max-width:230px; flex:0 0 auto; }
 
 /* saved filter views [feature 5] */
 .dr-views-wrap { position:relative; flex:0 0 auto; }
@@ -529,14 +620,14 @@ td.dr-editing { padding:2px 4px; }
 .dr-views-menu { min-width:210px; }
 .dr-view-item { display:flex; align-items:center; }
 .dr-view-apply { flex:1; text-align:left; border:0; background:transparent; color:var(--pd-ink);
-  padding:7px 10px; border-radius:6px; cursor:pointer; font-size:13px; }
+  padding:7px 10px; border-radius:6px; cursor:pointer; font-size:var(--dr-fs-base); }
 .dr-view-apply:hover { background:var(--pd-bg); }
 .dr-view-del { border:0; background:transparent; color:var(--pd-muted); cursor:pointer; padding:4px 8px; border-radius:6px; }
 .dr-view-del:hover { background:var(--pd-bad,#dc2626); color:#fff; }
-.dr-view-empty { padding:8px 10px; color:var(--pd-muted); font-size:12px; }
+.dr-view-empty { padding:8px 10px; color:var(--pd-muted); font-size:var(--dr-fs-sm); }
 .dr-view-sep { height:1px; background:var(--pd-line); margin:4px 0; }
 .dr-view-save { display:flex; align-items:center; gap:6px; width:100%; text-align:left; border:0; background:transparent; color:var(--pd-red);
-  padding:7px 10px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; }
+  padding:7px 10px; border-radius:6px; cursor:pointer; font-size:var(--dr-fs-base); font-weight:600; }
 .dr-view-save:hover { background:var(--pd-bg); }
 
 /* ---- Mobile & tablet (2026-07-23) ----------------------------------------

@@ -4,6 +4,22 @@
    re-invent it here: see the 2026-07-17 "UI uniformity pass" note in the main
    CLAUDE.md for why divergence keeps getting reworked. */
 
+/* ------------------------------- TYPE SCALE -------------------------------
+   ⚠️ Use these, never a raw px font-size. THE SAME six steps as the Drawing
+   Register (see its module.css) — the two logs sit side by side in the same
+   suite, so a heading here must be the same size as a heading there. The two
+   modules had grown nine near-identical sizes between them, including a 9.5px
+   chart label that was well under a readable floor. `micro` is the floor. */
+:root {
+  --ms-fs-micro:11px;
+  --ms-fs-sm:12px;
+  --ms-fs-base:13px;
+  --ms-fs-lg:15px;
+  --ms-fs-xl:20px;
+  --ms-fs-kpi:32px;
+}
+
+
 /* ---- Shared topbar chrome (VERBATIM from drawing-register/module.css) -----
    Every uniform module carries this block. Without it the topbar inherits
    dashboard.css's `gap:14px` with no wrapping, the avatar loses its left
@@ -21,20 +37,20 @@
 .ms-modback { height:36px; width:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
 
 .ms-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-.ms-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px;
+.ms-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:var(--ms-fs-base);
   background:transparent; border-color:transparent; }
 .ms-project:hover, .ms-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
 
 .ms-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
 .ms-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600;
-  cursor:pointer; font-size:13px; transition:background .12s; white-space:nowrap; }
+  cursor:pointer; font-size:var(--ms-fs-base); transition:background .12s; white-space:nowrap; }
 .ms-tab + .ms-tab { border-left:1px solid var(--pd-line); }
 .ms-tab:hover:not(.active) { background:var(--pd-bg); }
 .ms-tab.active { background:var(--pd-red); color:#fff; }
 
 .ms-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
 .ms-topbar-tools .pd-btn { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
-  background:transparent; border-color:transparent; font-size:13px; }
+  background:transparent; border-color:transparent; font-size:var(--ms-fs-base); }
 .ms-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
 .ms-topbar-tools .pd-btn.ms-tb-labeled { width:auto; padding:0 12px; gap:6px; }
 .ms-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
@@ -49,15 +65,15 @@
 .ms-filt-ico { color:var(--pd-muted); flex:none; }
 .ms-filters .ms-search { flex:1 1 280px; min-width:170px; }
 .ms-filters .pd-select { flex:0 0 auto; max-width:190px; }
-.ms-chk { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--pd-ink); cursor:pointer; white-space:nowrap; }
+.ms-chk { display:inline-flex; align-items:center; gap:6px; font-size:var(--ms-fs-base); color:var(--pd-ink); cursor:pointer; white-space:nowrap; }
 .ms-chk input { width:15px; height:15px; accent-color:var(--pd-red); cursor:pointer; }
 /* Ghost clear — only rendered when a filter is actually set (Progress Photos lesson:
    a margin-left:auto button orphans itself onto a second line when the row wraps). */
 .ms-clearfilt { display:inline-flex; align-items:center; gap:5px; border:0; background:none; cursor:pointer;
-  color:var(--pd-muted); font-size:12.5px; font-weight:600; padding:4px 6px; border-radius:var(--pd-radius); }
+  color:var(--pd-muted); font-size:var(--ms-fs-sm); font-weight:600; padding:4px 6px; border-radius:var(--pd-radius); }
 .ms-clearfilt:hover { background:var(--pd-bg); color:var(--pd-red); }
 .ms-clearfilt[hidden] { display:none; }
-.ms-count { color:var(--pd-muted); font-size:13px; margin-left:auto; white-space:nowrap; }
+.ms-count { color:var(--pd-muted); font-size:var(--ms-fs-base); margin-left:auto; white-space:nowrap; }
 
 /* ---- Log table ---------------------------------------------------------- */
 /* Fallback only — superseded by the `body.ms-fit` block at the end of this file
@@ -72,12 +88,12 @@
 .ms-bk-table th.ms-sortable, .ms-table th.ms-sortable { cursor:pointer; user-select:none; }
 .ms-bk-table th.ms-sortable:hover, .ms-table th.ms-sortable:hover { color:var(--pd-red); }
 .ms-table th.ms-sorted { color:var(--pd-red); }
-.ms-sortind { color:var(--pd-red); font-size:10px; }
+.ms-sortind { color:var(--pd-red); font-size:var(--ms-fs-micro); }
 
 /* "Sorted by X ▲ ×" chip — the one-click way back to the natural order. */
 .ms-sortchip { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
   border:1px solid var(--pd-red); background:var(--pd-red); color:#fff;
-  font:inherit; font-size:12px; font-weight:600; padding:4px 9px; border-radius:999px; flex:none; }
+  font:inherit; font-size:var(--ms-fs-sm); font-weight:600; padding:4px 9px; border-radius:999px; flex:none; }
 .ms-sortchip:hover { filter:brightness(1.08); }
 .ms-sortchip svg { display:block; }
 .ms-agchip { margin-left:10px; vertical-align:2px; }
@@ -98,9 +114,9 @@
 .ms-legendrow:hover { background:var(--pd-bg); color:var(--pd-red); }
 .ms-legendrow:focus-visible { outline:2px solid var(--pd-red); outline-offset:1px; }
 .ms-agseg { height:100%; display:flex; align-items:center; justify-content:center;
-  color:#fff; font-size:11.5px; font-weight:700; cursor:pointer; }
+  color:#fff; font-size:var(--ms-fs-sm); font-weight:700; cursor:pointer; }
 .ms-agseg:hover { filter:brightness(1.12); box-shadow:inset 0 0 0 2px rgba(255,255,255,.75); }
-.ms-aglegend { display:inline-flex; align-items:center; gap:5px; font-size:12px;
+.ms-aglegend { display:inline-flex; align-items:center; gap:5px; font-size:var(--ms-fs-sm);
   margin:4px 14px 0 0; padding:2px 5px; border-radius:5px; cursor:pointer; }
 .ms-aglegend:hover { background:var(--pd-bg); color:var(--pd-red); }
 .ms-drillrow { cursor:pointer; }
@@ -110,21 +126,21 @@
 /* A large backlog scrolls inside its own card instead of stretching the whole
    page — the KPI row + card header stay put; only the table body scrolls. */
 .ms-bk-scroll { max-height:min(62vh, 640px); overflow-y:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius); }
-.ms-bk-more { margin-top:10px; font-size:12.5px; color:var(--pd-muted); text-align:center; }
+.ms-bk-more { margin-top:10px; font-size:var(--ms-fs-sm); color:var(--pd-muted); text-align:center; }
 .ms-linklike { background:none; border:none; padding:0; color:var(--pd-red); font-weight:600; font-size:inherit;
   font-family:inherit; cursor:pointer; text-decoration:underline; }
 .ms-table thead th { position:sticky; top:0; z-index:2; background:var(--pd-card);
-  border-bottom:2px solid var(--pd-line); font-size:11px; letter-spacing:.03em; text-transform:uppercase;
+  border-bottom:2px solid var(--pd-line); font-size:var(--ms-fs-micro); letter-spacing:.03em; text-transform:uppercase;
   color:var(--pd-muted); padding:9px 10px; white-space:nowrap; text-align:left; }
-.ms-table td { padding:8px 10px; vertical-align:middle; border-bottom:1px solid var(--pd-line); font-size:13px; }
+.ms-table td { padding:8px 10px; vertical-align:middle; border-bottom:1px solid var(--pd-line); font-size:var(--ms-fs-base); }
 .ms-table tbody tr:not(.ms-grp):hover td { background:var(--pd-bg); }
 .ms-nowrap { white-space:nowrap; }
 .ms-mut { color:var(--pd-muted); }
-.ms-mini { color:var(--pd-muted); font-size:11px; }
+.ms-mini { color:var(--pd-muted); font-size:var(--ms-fs-micro); }
 .ms-r { text-align:right; white-space:nowrap; }
-.ms-code { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:12px; white-space:nowrap; }
+.ms-code { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:var(--ms-fs-sm); white-space:nowrap; }
 .ms-item { font-weight:600; }
-.ms-sub { color:var(--pd-muted); font-size:11.5px; margin-top:2px; max-width:340px;
+.ms-sub { color:var(--pd-muted); font-size:var(--ms-fs-sm); margin-top:2px; max-width:340px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ms-actcol { width:76px; }
 .ms-cb { width:34px; text-align:center; }
@@ -139,7 +155,7 @@
 html.pd-dark .ms-table tr.ms-selrow td.ms-fz1, html.pd-dark .ms-table tr.ms-selrow td.ms-fz2 { background:#3a2a28 !important; }
 
 /* Trade-section group rows (the workbook's 23 section headers) */
-tr.ms-grp td { background:var(--pd-red-light,rgba(238,49,36,.07)); font-weight:700; font-size:12.5px;
+tr.ms-grp td { background:var(--pd-red-light,rgba(238,49,36,.07)); font-weight:700; font-size:var(--ms-fs-sm);
   letter-spacing:.02em; cursor:pointer; box-shadow:inset 3px 0 0 0 var(--pd-red); }
 tr.ms-grp td.ms-fz1, tr.ms-grp td.ms-fz2 { background:var(--pd-red-light,rgba(238,49,36,.07)); }
 html.pd-dark tr.ms-grp td, html.pd-dark tr.ms-grp td.ms-fz1, html.pd-dark tr.ms-grp td.ms-fz2 { background:rgba(238,49,36,.16); }
@@ -149,10 +165,10 @@ html.pd-dark tr.ms-grp td, html.pd-dark tr.ms-grp td.ms-fz1, html.pd-dark tr.ms-
   color:var(--pd-muted); transition:transform .12s; }
 .ms-grp-caret svg { display:block; }
 .ms-caret-col { transform:rotate(-90deg); }
-.ms-grp-count { color:var(--pd-muted); font-weight:500; font-size:11.5px; margin-left:6px; }
+.ms-grp-count { color:var(--pd-muted); font-weight:500; font-size:var(--ms-fs-sm); margin-left:6px; }
 
 /* ---- Status pills ------------------------------------------------------- */
-.ms-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700;
+.ms-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:var(--ms-fs-micro); font-weight:700;
   white-space:nowrap; border:1px solid transparent; }
 .ms-pill.s-approved   { background:#e7f6ec; color:#12693a; border-color:#bfe4cd; }
 .ms-pill.s-approvedc  { background:#eef7e8; color:#3f6b21; border-color:#cfe6bd; }
@@ -169,12 +185,11 @@ html.pd-dark .ms-pill.s-resubmit  { background:rgba(154,74,21,.26);  color:#f0a8
 html.pd-dark .ms-pill.s-rejected  { background:rgba(155,28,28,.26);  color:#f19a9a; border-color:rgba(155,28,28,.55); }
 html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbdf0; border-color:rgba(30,78,140,.55); }
 .ms-od { color:var(--pd-bad,#dc2626); font-weight:700; }
-.ms-warn { color:#b45309; font-weight:700; }
 
 /* ---- Schedule link: Need-by column + float chip ------------------------ */* ---- Schedule-activity picker (searchable by ID *and* name) ------------ */* ---- Dashboard ---------------------------------------------------------- */
 .ms-dash { display:flex; flex-direction:column; gap:14px; }
 .ms-kpi-section { margin-bottom:22px; }
-.ms-kpi-seclabel { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+.ms-kpi-seclabel { font-size:var(--ms-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.06em;
   color:var(--pd-muted); margin-bottom:10px; }
 /* Auto-fit with a wider minimum: cards claim real width on a wide screen instead
    of staying cramped at their old 150px floor, and wrap gracefully when narrow. */
@@ -191,9 +206,9 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-kpi.good::before { background:#12693A; opacity:1; } html.pd-dark .ms-kpi.good::before { background:#7fd6a2; }
 .ms-kpi.bad::before  { background:var(--pd-bad,#dc2626); opacity:1; }
 .ms-kpi.warn::before { background:#b45309; opacity:1; } html.pd-dark .ms-kpi.warn::before { background:#f0c469; }
-.ms-kpi-l { color:var(--pd-muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
-.ms-kpi-v { font-size:32px; font-weight:800; margin-top:9px; line-height:1.05; letter-spacing:-.01em; }
-.ms-kpi-s { color:var(--pd-muted); font-size:11.5px; margin-top:5px; }
+.ms-kpi-l { color:var(--pd-muted); font-size:var(--ms-fs-sm); text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
+.ms-kpi-v { font-size:var(--ms-fs-kpi); font-weight:800; margin-top:9px; line-height:1.05; letter-spacing:-.01em; }
+.ms-kpi-s { color:var(--pd-muted); font-size:var(--ms-fs-sm); margin-top:5px; }
 .ms-kpi.good .ms-kpi-v { color:#12693a; } html.pd-dark .ms-kpi.good .ms-kpi-v { color:#7fd6a2; }
 .ms-kpi.bad  .ms-kpi-v { color:var(--pd-bad,#dc2626); }
 .ms-kpi.warn .ms-kpi-v { color:#b45309; } html.pd-dark .ms-kpi.warn .ms-kpi-v { color:#f0c469; }
@@ -201,15 +216,19 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-grid2 { display:grid; grid-template-columns:minmax(320px,1fr) minmax(340px,1.25fr); gap:14px; align-items:start; }
 @media (max-width:1100px){ .ms-grid2 { grid-template-columns:1fr; } }
 .ms-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; }
-.ms-card h3 { margin:0 0 2px; font-size:14px; }
-.ms-card .ms-cardsub { color:var(--pd-muted); font-size:12px; margin:0 0 12px; }
+/* ⚠️ .ms-tablecard is included deliberately: the Backlog card emits a bare
+   <h3> inside `.pd-card ms-tablecard`, which matched neither of the other two
+   selectors and so rendered at the browser default (16.4px) while every other
+   heading in the module was 15px. Card headings are one size. */
+.ms-card h3, .ms-tablecard > h3 { margin:0 0 2px; font-size:var(--ms-fs-lg); }
+.ms-card .ms-cardsub { color:var(--pd-muted); font-size:var(--ms-fs-sm); margin:0 0 12px; }
 .ms-seg { display:inline-flex; border:1.5px solid var(--pd-line); border-radius:7px; overflow:hidden; font-weight:400; }
-.ms-seg-btn { border:none; background:transparent; color:var(--pd-text); padding:4px 10px; font-size:11.5px; font-family:inherit; cursor:pointer; }
+.ms-seg-btn { border:none; background:transparent; color:var(--pd-text); padding:4px 10px; font-size:var(--ms-fs-sm); font-family:inherit; cursor:pointer; }
 .ms-seg-btn.active { background:var(--pd-red); color:#fff; }
 .ms-seg-btn:not(.active):hover { background:var(--pd-bg); }
 
 /* Single-button switch (# ⇄ %) — one control that flips, not two radio-ish buttons */
-.ms-segswitch { min-width:34px; padding:4px 10px; font-size:11.5px; font-weight:700; font-family:inherit;
+.ms-segswitch { min-width:34px; padding:4px 10px; font-size:var(--ms-fs-sm); font-weight:700; font-family:inherit;
   color:var(--pd-red); background:transparent; cursor:pointer; }
 .ms-segswitch:hover { background:var(--pd-bg); }
 
@@ -221,10 +240,10 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 
 /* Status summary table (mirrors the workbook's Status / No. / Wt % block) */
 .ms-stat { width:100%; border-collapse:collapse; }
-.ms-stat th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em;
+.ms-stat th { text-align:left; font-size:var(--ms-fs-micro); text-transform:uppercase; letter-spacing:.03em;
   color:var(--pd-muted); padding:6px 8px; border-bottom:1px solid var(--pd-line); }
 .ms-stat th:not(:first-child), .ms-stat td:not(:first-child) { text-align:right; }
-.ms-stat td { padding:7px 8px; border-bottom:1px solid var(--pd-line); font-size:13px; }
+.ms-stat td { padding:7px 8px; border-bottom:1px solid var(--pd-line); font-size:var(--ms-fs-base); }
 .ms-stat tr:last-child td { border-bottom:0; border-top:2px solid var(--pd-line); font-weight:800; }
 .ms-stat .ms-bar { height:5px; border-radius:3px; background:var(--pd-line); overflow:hidden; margin-top:5px; }
 .ms-stat .ms-bar > i { display:block; height:100%; background:var(--pd-red); }
@@ -232,20 +251,20 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 
 /* Donut + legend */
 .ms-donutwrap { display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
-.ms-legend { display:flex; flex-direction:column; gap:6px; font-size:12.5px; min-width:170px; }
+.ms-legend { display:flex; flex-direction:column; gap:6px; font-size:var(--ms-fs-sm); min-width:170px; }
 .ms-legend div { display:flex; align-items:center; gap:8px; }
 .ms-sw { width:11px; height:11px; border-radius:3px; flex:none; }
 
 /* S-curve */
 .ms-chart { width:100%; overflow-x:auto; }
 .ms-chart svg { display:block; }
-.ms-chart text { font-size:9.5px; fill:var(--pd-muted); }
+.ms-chart text { font-size:var(--ms-fs-micro); fill:var(--pd-muted); }
 .ms-chart .ms-axis { stroke:var(--pd-line); stroke-width:1; }
 .ms-chart .ms-grid { stroke:var(--pd-line); stroke-width:1; opacity:.5; }
 
 /* Reconciliation note — explains why our totals differ from the Excel */
 .ms-note { display:flex; gap:10px; align-items:flex-start; background:rgba(180,83,9,.08);
-  border:1px solid rgba(180,83,9,.3); border-radius:var(--pd-radius); padding:10px 12px; font-size:12.5px; }
+  border:1px solid rgba(180,83,9,.3); border-radius:var(--pd-radius); padding:10px 12px; font-size:var(--ms-fs-sm); }
 .ms-note b { color:#b45309; } html.pd-dark .ms-note b { color:#f0c469; }
 .ms-note-ico { color:#b45309; flex:none; margin-top:1px; }
 .ms-note-x { margin-left:auto; border:0; background:none; cursor:pointer; color:var(--pd-muted); padding:0 2px; }
@@ -258,41 +277,41 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 /* Attachment block in the Add/Edit modal */
 .ms-filefield { grid-column:1/-1; display:flex; flex-direction:column; gap:8px; }
 .ms-filenow { display:flex; align-items:center; gap:8px; background:var(--pd-bg);
-  border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:7px 10px; font-size:12.5px; }
+  border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:7px 10px; font-size:var(--ms-fs-sm); }
 .ms-filenow > [data-ico], .ms-filenow > svg { color:var(--pd-red); flex:none; }
 .ms-filelink { border:0; background:none; cursor:pointer; color:var(--pd-red); font-weight:600;
-  font-size:12.5px; text-align:left; padding:0; flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  font-size:var(--ms-fs-sm); text-align:left; padding:0; flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ms-filelink:hover { text-decoration:underline; }
-.ms-filerm { border:0; background:none; cursor:pointer; color:var(--pd-muted); font-size:17px;
+.ms-filerm { border:0; background:none; cursor:pointer; color:var(--pd-muted); font-size:var(--ms-fs-lg);
   line-height:1; padding:0 4px; flex:none; }
 .ms-filerm:hover { color:var(--pd-bad,#dc2626); }
-.ms-filefield input[type=file] { font-size:12.5px; }
+.ms-filefield input[type=file] { font-size:var(--ms-fs-sm); }
 
 /* ---- Modal / form ------------------------------------------------------- */
 .ms-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
-.ms-form label { display:flex; flex-direction:column; gap:4px; font-size:12px; font-weight:600; color:var(--pd-muted); }
+.ms-form label { display:flex; flex-direction:column; gap:4px; font-size:var(--ms-fs-sm); font-weight:600; color:var(--pd-muted); }
 .ms-form label.ms-wide { grid-column:1/-1; }
-.ms-form input, .ms-form select, .ms-form textarea { font:inherit; font-size:13px; font-weight:400; color:var(--pd-ink);
+.ms-form input, .ms-form select, .ms-form textarea { font:inherit; font-size:var(--ms-fs-base); font-weight:400; color:var(--pd-ink);
   background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:7px 9px; }
 .ms-form textarea { resize:vertical; min-height:58px; }
-.ms-sec { grid-column:1/-1; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+.ms-sec { grid-column:1/-1; font-size:var(--ms-fs-micro); font-weight:800; text-transform:uppercase; letter-spacing:.05em;
   color:var(--pd-red); border-bottom:1px solid var(--pd-line); padding-bottom:5px; margin-top:4px; }
 .ms-sec:first-child { margin-top:0; }
 /* Live preview of the composed 7-part submittal number */
 .ms-codeprev { grid-column:1/-1; background:var(--pd-bg); border:1px dashed var(--pd-line); border-radius:var(--pd-radius);
-  padding:8px 10px; font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:13px; font-weight:700; }
-.ms-codeprev span { color:var(--pd-muted); font-weight:400; font-family:var(--pd-font); font-size:11.5px; }
+  padding:8px 10px; font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:var(--ms-fs-base); font-weight:700; }
+.ms-codeprev span { color:var(--pd-muted); font-weight:400; font-family:var(--pd-font); font-size:var(--ms-fs-sm); }
 .ms-codeparts { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; grid-column:1/-1; }
 
 /* ---- Import summary ----------------------------------------------------- */
 .ms-imp { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin:12px 0; }
 .ms-imp div { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:10px; text-align:center; }
-.ms-imp b { display:block; font-size:20px; font-weight:800; }
-.ms-imp span { color:var(--pd-muted); font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
+.ms-imp b { display:block; font-size:var(--ms-fs-xl); font-weight:800; }
+.ms-imp span { color:var(--pd-muted); font-size:var(--ms-fs-micro); text-transform:uppercase; letter-spacing:.03em; }
 
 /* ---- Empty / loading ---------------------------------------------------- */
 .ms-empty { text-align:center; padding:48px 20px; color:var(--pd-muted); }
-.ms-empty h3 { margin:0 0 6px; color:var(--pd-ink); font-size:15px; }
+.ms-empty h3 { margin:0 0 6px; color:var(--pd-ink); font-size:var(--ms-fs-lg); }
 .ms-spin { display:inline-block; width:13px; height:13px; vertical-align:-2px; margin-right:6px;
   border:2px solid var(--pd-line); border-top-color:var(--pd-red); border-radius:50%; animation:ms-spin .7s linear infinite; }
 @keyframes ms-spin { to { transform:rotate(360deg); } }
@@ -300,7 +319,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 /* ---- Loading skeleton (mirrors drawing-register's .dr-sk*) --------------- */
 .ms-skcard { padding:14px 16px; }
 .ms-sk-head { display:flex; align-items:center; gap:8px; color:var(--pd-muted);
-  font-size:13px; font-weight:600; margin-bottom:12px; }
+  font-size:var(--ms-fs-base); font-weight:600; margin-bottom:12px; }
 .ms-sk-head .ms-spin { margin-right:0; vertical-align:0; flex:none; }
 .ms-sk-row { display:flex; gap:12px; align-items:center; padding:9px 0;
   border-bottom:1px solid var(--pd-line); }
@@ -337,7 +356,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 @media print {
   .pd-topbar, .ms-filters, .ms-actcol, .ms-cb, .ms-doccol { display:none !important; }
   .ms-tablecard { max-height:none; overflow:visible; }
-  .ms-table { min-width:0; font-size:10px; }
+  .ms-table { min-width:0; font-size:var(--ms-fs-micro); }
   .ms-table th.ms-fz1, .ms-table td.ms-fz1, .ms-table th.ms-fz2, .ms-table td.ms-fz2 { position:static; }
 }
 

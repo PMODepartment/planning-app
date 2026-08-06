@@ -1297,7 +1297,7 @@ window.DrawingRegister = (function () {
     // row would otherwise match no <option> and the select would silently display
     // 'Not started' while the row still holds 'Ongoing'.
     var cur = statusOf(r.status);
-    return '<select class="dr-stsel dr-st-'+statusCls(r.status)+'" data-stat="'+r.id+'">' +
+    return '<select class="dr-stsel '+statusCls(r.status)+'" data-stat="'+r.id+'">' +
       '<option value=""'+(!cur?' selected':'')+'>'+NOT_STARTED+'</option>' +
       STATUSES.map(function(s){ return '<option'+(cur===s?' selected':'')+'>'+s+'</option>'; }).join('') +
     '</select>';
@@ -1435,7 +1435,7 @@ window.DrawingRegister = (function () {
       sel.onchange = async function(){
         var r = rows.find(function(x){return x.id===sel.dataset.stat;}); if(!r) return;
         await persistCell(r, { status: sel.value });
-        sel.className = 'dr-stsel dr-st-'+statusCls(sel.value);
+        sel.className = 'dr-stsel '+statusCls(sel.value);
         // A sheet's status changes its drawing's approved count, POC and — once
         // the last one lands — its actual approval date. Re-render so the parent
         // row and every group roll-up above it move with it.
@@ -2244,9 +2244,16 @@ window.DrawingRegister = (function () {
 
   // Status colors mirror the Registry's own pill colors (statusCls) so the chart
   // and the grid pills read as one system.
-  var STATUS_COLOR = { 'In Progress':'#6366f1', 'Not started':'#9aa0a6', 'For Review':'#d97706',
-    'Revise & Resubmit':'#dc2626',
-    'Approved w/ comments':'#0891b2', 'Approved':'#16a34a', 'Superseded':'#6b7280' };
+  // ⚠️ There is no colour map here any more. `STATUS_COLOR` used to duplicate the
+  // pill palette in module.css and the two had to be kept in step by hand. The
+  // donut now names the SAME CSS variables the pills use (see "STATUS PALETTE"),
+  // so a colour is defined exactly once — and because the arcs reference the
+  // variables rather than a resolved hex, they also re-theme on a dark-mode
+  // toggle without waiting for a re-render.
+  // NOT_STARTED is a display label, not a stored status, so it has to be mapped
+  // back to the empty string that statusCls() recognises.
+  function statusKey(label) { return statusCls(label === NOT_STARTED ? '' : label).slice(3); }
+  function statusVar(label) { return 'var(--dr-' + statusKey(label) + '-arc)'; }
   function statusCounts() {
     // ⚠️ Blank used to be counted as 'For Review' by the `|| 'For Review'` fallback,
     // so the donut reported 823 not-yet-started drawings as awaiting review — the
@@ -2257,7 +2264,7 @@ window.DrawingRegister = (function () {
       m[s] = (m[s]||0) + 1;
     });
     return Object.keys(m).filter(function (s){ return m[s]>0; }).map(function (s){
-      return { label:s, count:m[s], color: STATUS_COLOR[s] || '#8a8f98' };
+      return { label:s, count:m[s], color: statusVar(s) };
     });
   }
 
@@ -2268,7 +2275,10 @@ window.DrawingRegister = (function () {
     var r=70, cx=100, cy=100, sw=26, circ=2*Math.PI*r, offset=0;
     var arcs = segs.filter(function (s){ return s.count>0; }).map(function (s){
       var len = total ? (s.count/total)*circ : 0;
-      var el = '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+s.color+'" stroke-width="'+sw+
+      // stroke via style= so the CSS variable resolves (the presentation
+      // attribute would not accept var()), which is what lets the donut follow
+      // a theme change with no re-render.
+      var el = '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" style="stroke:'+s.color+'" stroke-width="'+sw+
         '" stroke-dasharray="'+len+' '+(circ-len)+'" stroke-dashoffset="'+(-offset)+
         '" transform="rotate(-90 '+cx+' '+cy+')"></circle>';
       offset += len; return el;
@@ -2278,7 +2288,7 @@ window.DrawingRegister = (function () {
       var pct = total ? Math.round(s.count/total*100) : 0;
       return '<div class="dr-legendrow"'+drillAttr('registry', { status:s.label })+
         ' title="Show the '+s.count+' '+Fmt.esc(s.label)+' drawing'+(s.count===1?'':'s')+' in the Registry">' +
-        '<span style="width:10px;height:10px;border-radius:2px;background:'+s.color+';flex:none;"></span>' +
+        '<span class="dr-legendsw" style="background:'+s.color+';"></span>' +
         '<span style="flex:1;">'+Fmt.esc(s.label)+'</span><b>'+s.count+'</b>' +
         '<span class="dr-mut" style="width:40px;text-align:right;">'+pct+'%</span></div>';
     }).join('') || '<span class="dr-mut">No data</span>';
@@ -2389,7 +2399,10 @@ window.DrawingRegister = (function () {
   }
 
   function kpi(val, label, cls, drill) {
-    return '<div class="dr-kpi '+(cls?'dr-'+cls:'')+(drill?' dr-kpi-drill':'')+'"' +
+    // ⚠️ `dr-kpi-`+cls, not `dr-`+cls: a bare `dr-ok` collided with the Approved
+    // STATUS class, so one KPI card was silently picking up the status colour
+    // slots as well as its own tone.
+    return '<div class="dr-kpi '+(cls?'dr-kpi-'+cls:'')+(drill?' dr-kpi-drill':'')+'"' +
            (drill ? drillAttr(drill.view, drill.patch) + ' title="'+Fmt.esc(drill.tip||('Show these in the '+drill.view))+'"' : '') +
            '><div class="dr-kpi-val">'+val+'</div>' +
            '<div class="dr-kpi-label">'+label+'</div></div>';
@@ -2545,7 +2558,7 @@ window.DrawingRegister = (function () {
           // ⚠️ `dr-stsel`, not `pd-select` — the .dr-st-* classes only set a
           // background; `color:#fff` lives on .dr-stsel. Without it a revision's
           // outcome renders as dark text on a saturated green/red pill.
-          '<label><select class="dr-stsel dr-substat dr-st-'+statusCls(s.status)+'" data-sub="'+i+'" data-k="status">'+stOpts+'</select></label>' +
+          '<label><select class="dr-stsel dr-substat '+statusCls(s.status)+'" data-sub="'+i+'" data-k="status">'+stOpts+'</select></label>' +
           '<label><input class="pd-input" type="date" data-sub="'+i+'" data-k="approved" value="'+(s.approved||'')+'"></label>' +
           '<label class="dr-subfilelbl">'+fileBit+'</label>' +
           (subs.length>1?'<button class="pd-btn pd-btn-sm dr-rmsub" type="button" data-rmsub="'+i+'" title="Remove this revision">'+ico('x',14)+'</button>':'<span></span>') +
@@ -2555,7 +2568,7 @@ window.DrawingRegister = (function () {
         el.onchange = function(){
           var i = +el.dataset.sub, k = el.dataset.k;
           subs[i][k] = el.value || '';
-          if (k === 'status') el.className = 'dr-stsel dr-substat dr-st-'+statusCls(el.value);
+          if (k === 'status') el.className = 'dr-stsel dr-substat '+statusCls(el.value);
           // Mirror the LATEST revision up to the drawing-level fields as you type,
           // so the Approval block below always agrees with the revision history
           // above it instead of being a third place to remember to update.
