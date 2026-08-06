@@ -1,6 +1,70 @@
 # Module: drawing-register
 
-## Break-out and merge no longer destroy a drawing's approval (2026-08-06) — fmlozano
+## Dedicated UI pass — accessible pills, one type scale, a hierarchy you can see (2026-08-06) — fmlozano
+User asked for a UI check and improvement across this module and the Material Submittal log. Every
+finding below was **measured**, not judged by eye, and the pill direction was the user's call (unify
+on Material Submittal's treatment rather than just darkening the failures).
+
+### The status pills were an accessibility failure and a consistency failure
+- **5 of the 7 pills failed WCAG AA.** White 11px bold on a solid saturated fill:
+  **Not started 2.64:1** (and it is the most common state in the register — 823 of 1,506 live
+  drawings), Approved 3.30:1, For Review 3.19:1, Approved w/ comments 3.68:1, In Progress 4.47:1.
+  Only Revise & Resubmit and Superseded passed, at 4.83:1.
+- They also had **no dark-mode treatment at all**, while the sibling Material Submittal log had full
+  overrides and all 7 of its pills already passed at 5.5–7.4:1. Two sibling registers, two different
+  visual languages for the same concept.
+- Now a soft tint + dark text + border, the same system as Material Submittal. **Measured live on
+  BAU101, all 7 statuses in dark mode: 5.56 / 5.71 / 5.90 / 6.35 / 6.90 / 6.99 / 7.65:1.**
+
+### The palette is now single-source
+`STATUS_COLOR` (a JS map the donut read) duplicated the pill colours in CSS and had to be kept in
+step by hand. It is gone. The donut arcs and legend swatches emit
+`style="stroke:var(--dr-<key>-arc)"`, naming the **same variables** the pills use, so a colour is
+defined exactly once. ⚠️ Two consequences worth keeping:
+- `statusCls()` is now the only status→colour decision in the module; `statusKey()`/`statusVar()`
+  derive the variable name from it. Adding a status is one `:root` line + one `statusCls` branch.
+- Because the arcs reference variables rather than a resolved hex, the donut **re-themes on a dark
+  mode toggle with no re-render** — verified live: the same DOM node went `#84cc16` → `#4d7c0f` →
+  back, and the arcs matched the legend swatches exactly.
+- ⚠️ The parallel `.dr-st-dr-*` select classes are gone; the dropdown now carries the **same** status
+  class as the pill, so the two can't drift.
+
+### Hierarchy: three of five level rails were invisible
+- ⚠️ **lvl-2 was hardcoded `#2b2c2b`, which IS `--pd-card` in dark mode — 1.13:1.** The exact bug
+  class as the Project Schedule's invisible "Structural" trade. lvl-4 and lvl-5 both used
+  `--pd-line` (1.27:1 light, 1.45:1 dark) **and were identical to each other**, so nothing
+  distinguished a drawing from its sheets. Rails are theme-aware tokens now, all ≥3:1, with weight
+  decreasing by depth (4/3/2px). **Level 4 deliberately has no rail** — marking every level equally
+  is what made the ladder unreadable.
+- ⚠️ **Sheet codes were being clipped.** Levels 1–3 are group rows whose first cell spans Code+Title,
+  but 4 and 5 sit in the 130px frozen Code column: at 90px of indent a level-5 code had **59px of
+  space for 59px of text**, losing roughly half the code at the 1080px min-width. The ladder is now
+  12px steps (8/20/32/44/56), leaving 66px at the deepest level even at the narrowest table width.
+- ⚠️ **`.dr-ok` was both the Approved status class and a KPI tone**, so one KPI card was silently
+  picking up the status colour slots. KPI tones are namespaced `dr-kpi-*`.
+
+### Type scale + dead CSS
+Nine near-identical sizes (10, 10.5, 11, 11.5, 12, 12.5, 13, 14, 32) collapse to a six-step scale
+shared with Material Submittal — differences of 0.5px read as accident, not hierarchy, and the 10px
+grid header was below a comfortable floor. Card headings went 14→15px for a real step above body.
+Removed the duplicate `.dr-tablecard` (declared twice with **different** max-height guesses, 250 vs
+205) and `.dr-caret`, plus the never-emitted `.dr-actions`.
+⚠️ **8 of the 10 "unused" classes a naive scan reports are false positives** — `dr-grp-*` and
+`dr-lvl-*` are built by concatenation (`'dr-lvl-'+item.level`). Check before deleting.
+
+### Verification
+- A gitignored `_ui_test.html` per module measured the real stylesheets in **sized iframes** at
+  1280/1440 in both themes. ⚠️ **It carries a SANITY GATE and it earned it:** the first run reported
+  16px fonts and 1.00:1 pills — the documented signature of a stylesheet that hasn't loaded yet, not
+  a real failure. The harness now inlines the CSS via `fetch` and refuses to report unless
+  `.dr-pill` resolves to 11px. Two of its own measurements were also unsound at first and were fixed
+  before being trusted: it ignored alpha when compositing translucent dark tints, and `scrollWidth`
+  is 0 for an inline span.
+- ⚠️ It also initially rendered a caret on sheet rows, which **only sheet parents have** — that
+  overstated the clipping by 16px. Corrected before sizing the ladder.
+- Final harness state: columns aligned (11) at every width/theme, all rails ≥3:1, codes fit at both
+  levels, pills 5.18–6.90:1, no h-scroll. Plus **149 JS checks** green (40 + 35 + 14 + 33 + 27) and
+  live confirmation on BAU101 and GPR101. Assets `module.css/js?v=20260806a`. no longer destroy a drawing's approval (2026-08-06) — fmlozano
 User: *"Breaking a drawing (approved) into multiple sheets resets each sheet to For Review. The
 sheets should follow the Approved status. Then when collapsing the sheets into a single drawing
 again the status resets to For Review — the Approved status is trashed."* Correct on both legs, and

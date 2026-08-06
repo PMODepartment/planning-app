@@ -77,6 +77,74 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-06 — Autosave rolled out to 5 modal-edit modules (shared, debounced)
+User asked for autosave on all applicable modules. Built a **shared, reusable** autosave layer
+instead of bespoke per-module logic, so it composes with what already exists rather than fighting it.
+- **New `assets/js/autosave.js` (`Autosave.wire`)**: debounced (1.2s) autosave for **Edit** modals that
+  **re-uses each module's own Save button handler** — the handler already knows how to build the
+  payload and write via `PDSync`/Supabase — instead of reimplementing save logic per module. On each
+  autosave tick it temporarily no-ops `modal.close` so the handler's own `m.close()` call doesn't
+  dismiss the modal mid-edit, then restores it; a small status badge (`Unsaved changes… → Saving… →
+  Saved`) sits beside the modal title. A true close (× / Cancel / Esc) still closes normally.
+  Concurrency-safe: an autosave triggered while one is in flight is coalesced into one more run after.
+- **Wired into 5 modules whose Save handler is pure data (no storage/file I/O):** **Risk Register**
+  (reference), **Contracts & Claims**, **Issues & Lessons Learned**, **Stakeholder Map**, and
+  **Progress Photos'** metadata-edit modal (description/trade/works/location/date — the image itself
+  is untouched). Autosave only applies to **editing an existing record** — creating a new record still
+  requires an explicit first Save (autosaving a half-filled new row would insert incomplete data with
+  no undo).
+- ⚠️ **Deliberately NOT wired into Drawing Register or Material Submittal.** Both modules' Save
+  handlers perform **file upload/replace/delete side effects** with carefully documented ordering
+  rules (upload before the row write, rollback on failure, delete-old-only-after-pointing-at-new).
+  Re-running that handler every debounce tick would re-upload files and could delete/replace storage
+  objects repeatedly while the planner is still typing — a correctness and cost regression, not an
+  improvement. These two keep manual Save; flagged for a follow-up that separates "save metadata" from
+  "handle the file" if autosave is wanted there too.
+- New `.pd-autosave` badge styles in `dashboard.css` (idle/busy/ok/err); `?v=` on the new script only
+  (module-local additions), no shared-asset version bump needed elsewhere.
+- Verified: `node --check` clean on `autosave.js` + all 5 edited `module.js`. **Not browser-verified**
+  — this environment has no live Supabase login (auth wall), consistent with most UI work in this repo.
+
+
+
+### 2026-08-06 — UI pass on both registers: accessible pills, one type scale, a visible hierarchy
+User asked for a dedicated UI check and improvement across the Drawing Register and the Material
+Submittal Log. Everything below was **measured**, not eyeballed; the user chose to unify on the
+Material Submittal pill treatment rather than just darken the failures.
+- ⚠️ **5 of the Drawing Register's 7 status pills failed WCAG AA.** White 11px bold on saturated
+  fills: **Not started 2.64:1** — the most common state in the register (823 of 1,506 drawings) —
+  plus Approved 3.30, For Review 3.19, Approved w/ comments 3.68, In Progress 4.47. They also had
+  **no dark-mode treatment at all**, while the sibling Material Submittal log already passed all 7
+  at 5.5–7.4:1 with full dark overrides. Two sibling registers, two visual languages for one concept.
+  Now one system: **measured live on BAU101, all 7 statuses in dark mode land 5.56–7.65:1.**
+- **The palette is single-source now.** A `STATUS_COLOR` map in JS duplicated the CSS pill colours
+  for the donut and was kept in step by hand; it's gone. Arcs and legend swatches name the same
+  `--dr-<key>-arc` variables the pills use — verified live that the arcs match the swatches exactly
+  and that the donut **re-themes on a dark-mode toggle with no re-render**.
+- ⚠️ **Three of the five level rails were invisible, each in a different theme.** lvl-2 was
+  hardcoded `#2b2c2b`, which **IS `--pd-card` in dark mode** (1.13:1) — the same bug class as the
+  Project Schedule's invisible "Structural". lvl-4 and lvl-5 both used `--pd-line` (1.27:1) **and
+  were identical**, so nothing separated a drawing from its sheets. All theme-aware and ≥3:1 now.
+- ⚠️ **Sheet codes were being clipped**: at 90px of indent a level-5 code had **59px of space for
+  59px of text**, losing about half the code at the 1080px min-width. Ladder retuned to 12px steps.
+- ⚠️ **`.dr-ok` was both the Approved status class and a KPI tone**, so a KPI card was silently
+  picking up status colour slots. KPI tones namespaced `dr-kpi-*`.
+- **Nine near-identical font sizes** across the two modules (10, 10.5, 11, 11.5, 12, 12.5, 13, 14…)
+  collapse to one shared six-step scale; the **9.5px** chart label is now 11px; Material Submittal's
+  Backlog heading matched no styled selector and was rendering at the browser default 16.4px against
+  15px everywhere else. Duplicate `.dr-tablecard` (two *different* max-height guesses) and
+  `.dr-caret` merged; dead rules removed.
+- ⚠️ **A naive "unused class" scan lies here** — 8 of the 10 it flagged are built by concatenation
+  (`'dr-lvl-'+item.level`). Verify before deleting.
+- ⚠️ **The harness needed a SANITY GATE and earned it.** Its first run reported 16px fonts and
+  1.00:1 pills across the board — the documented signature of a stylesheet that hasn't loaded in the
+  iframe, not a finding. It now inlines the CSS and refuses to report unless a known value resolves.
+  Two of its own measurements were unsound and were fixed before being trusted (alpha ignored when
+  compositing dark tints; `scrollWidth` is 0 for inline spans), and it initially drew a caret on
+  sheet rows that only sheet *parents* have, overstating the clipping by 16px.
+- **149 JS checks green** (40 + 35 + 14 + 33 + 27), harness green at 1280/1440 in both themes, and
+  live confirmation on BAU101 + GPR101. Assets both modules `module.css/js?v=20260806a`.
+
 ### 2026-08-06 — Drawing Register: break-out / merge no longer destroy a drawing's approval
 User: *"Breaking a drawing (approved) into multiple sheets resets each sheet to For Review… then
 collapsing them back trashes the Approved status."* Both legs were real, and the dialog copy

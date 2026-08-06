@@ -312,6 +312,14 @@ a:hover { text-decoration: underline; }
 .pd-modal-footer { display: flex; justify-content: flex-end; gap: 10px;
   margin: 18px -22px -22px; padding: 14px 20px; border-top: 1px solid var(--pd-line); }
 
+/* Autosave status badge (assets/js/autosave.js), placed beside an Edit modal's title. */
+.pd-autosave { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
+  white-space: nowrap; color: var(--pd-muted); background: var(--pd-bg); border: 1px solid var(--pd-line); }
+.pd-autosave-idle { opacity: .7; }
+.pd-autosave-busy { color: var(--pd-red); border-color: var(--pd-red); }
+.pd-autosave-ok { color: #1a7f37; border-color: #1a7f37; }
+.pd-autosave-err { color: var(--pd-red); background: rgba(238,49,36,.08); border-color: var(--pd-red); }
+
 /* ---- Theme toggle button (injected by theme.js) ---- */
 .pd-theme-toggle {
   width: 38px; height: 38px; border-radius: 9px; border: 1px solid var(--pd-line);

@@ -1,5 +1,25 @@
 # Module: material-submittal
 
+## Dedicated UI pass — shared type scale, heading drift fixed (2026-08-06) — fmlozano
+Part of the two-register UI pass; the Drawing Register's CLAUDE.md carries the full findings. This
+module came out of it well — **all 7 pills already passed WCAG AA** (5.52–7.37:1 light,
+5.90–7.65:1 dark, re-measured live), and its soft-tint treatment was adopted **as the standard** for
+the Drawing Register, whose solid-fill pills were failing 5 of 7.
+- **Type scale**: the two modules had grown nine near-identical sizes between them. Both now share
+  one six-step scale (`--ms-fs-micro/sm/base/lg/xl/kpi` = 11/12/13/15/20/32), with the same values as
+  the Drawing Register so a heading here is the same size as a heading there. ⚠️ The **9.5px chart
+  label** — well under a readable floor — is now 11px.
+- ⚠️ **Real drift found by measuring, not reading:** the Backlog card emits a bare `<h3>` inside
+  `.pd-card ms-tablecard`, which matched **neither** `.ms-card h3` nor `.ms-empty h3` and so rendered
+  at the browser default **16.4px** while every other heading in the module was 15px. Card headings
+  are one size now.
+- Removed the never-emitted `.ms-warn`.
+- Verified with a gitignored `_ui_test.html` measuring the real stylesheet in sized iframes at 1440
+  in both themes. ⚠️ It carries a **sanity gate** — the first run of the sibling harness reported
+  16px/1.00:1 across the board, which is an unloaded stylesheet, not a finding. Assets
+  `module.css/js?v=20260806a`.
+
+
 ## Need-by removed — planned vs actual approval only (2026-08-05) — fmlozano
 Mirrors the Drawing Register (see its CLAUDE.md for the full reasoning). The Project Schedule already
 connects to this log through the **Design Development POC roll-up**, so the per-document link to an

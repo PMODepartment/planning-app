@@ -639,6 +639,19 @@ window.ProgressPhotos = (function () {
         UI.toast('Photo updated', 'ok');
       }
     };
+
+    // Autosave (metadata only — no re-upload involved): debounced re-use of the
+    // Save button's own handler, with the modal's close suppressed meanwhile.
+    if (window.Autosave) {
+      var asInd = document.createElement('span');
+      asInd.className = 'pd-autosave pd-autosave-idle';
+      asInd.textContent = 'Autosave on';
+      var hdr = m.el.querySelector('.pd-modal-header');
+      if (hdr) hdr.insertBefore(asInd, hdr.querySelector('.pd-modal-close'));
+      var as = Autosave.wire({ root: m.el, modal: m, saveBtn: $('pp-e-save'), indicator: asInd });
+      var _ppClose = m.close;
+      m.close = function () { as.cancel(); _ppClose(); };
+    }
   }
 
   async function remove(r) {

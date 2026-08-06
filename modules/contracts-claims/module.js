@@ -416,6 +416,18 @@ window.ContractsClaims = (function () {
       var target = t === 'Contract' ? 'contract' : t === 'EOT' ? 'eot' : 'claims';
       if (target !== view) switchTab(target); else render();
     };
+
+    // Autosave (edit only): debounced re-use of the Save button's own handler.
+    if (r && window.Autosave) {
+      var asInd = document.createElement('span');
+      asInd.className = 'pd-autosave pd-autosave-idle';
+      asInd.textContent = 'Autosave on';
+      var hdr = m.el.querySelector('.pd-modal-header');
+      if (hdr) hdr.insertBefore(asInd, hdr.querySelector('.pd-modal-close'));
+      var as = Autosave.wire({ root: m.el, modal: m, saveBtn: el('cc-m-save'), indicator: asInd });
+      var _ccClose = m.close;
+      m.close = function () { as.cancel(); _ccClose(); };
+    }
   }
 
   async function delRow(id) {

@@ -353,6 +353,19 @@ window.RiskRegister = (function () {
         }
       } catch (e) { UI.toast(e.message, 'error'); }
     };
+
+    // Autosave (edit only): debounced re-use of the Save button's own handler,
+    // with the modal's close suppressed for the duration of an autosave write.
+    if (!isNew && window.Autosave) {
+      var asInd = document.createElement('span');
+      asInd.className = 'pd-autosave pd-autosave-idle';
+      asInd.textContent = 'Autosave on';
+      var h2 = m.el.querySelector('h2');
+      if (h2) { h2.style.display = 'flex'; h2.style.alignItems = 'center'; h2.style.gap = '10px'; h2.appendChild(asInd); }
+      var as = Autosave.wire({ root: m.el, modal: m, saveBtn: m.el.querySelector('#f-save'), indicator: asInd });
+      var _rrClose = m.close;
+      m.close = function () { as.cancel(); _rrClose(); };
+    }
   }
 
   async function del(id) {
