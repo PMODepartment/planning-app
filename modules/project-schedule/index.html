@@ -1807,6 +1807,7 @@
 <div class="pd-modal-overlay" id="ps-modal" style="display:none;">
   <div class="pd-modal" style="max-width:720px;width:95vw;">
     <div class="pd-modal-header"><span id="ps-modal-title">Add Activity</span>
+      <span id="ps-modal-autosave" class="pd-autosave pd-autosave-idle" style="display:none;margin-left:10px;">Autosave on</span>
       <button class="pd-modal-close" id="ps-modal-close">&#215;</button></div>
     <div class="pd-modal-body">
       <form id="ps-form" class="ps-form-grid" onsubmit="return false;">
@@ -10318,6 +10319,8 @@
   function openForm(row) {
     editId = row ? row.id : null;
     document.getElementById('ps-modal-title').textContent = row ? 'Edit Activity' : 'Add Activity';
+    var _asBadge = document.getElementById('ps-modal-autosave');
+    if (_asBadge) { _asBadge.style.display = row ? '' : 'none'; _asBadge.className = 'pd-autosave pd-autosave-idle'; _asBadge.textContent = 'Autosave on'; }
     var set = function (id, v) { document.getElementById(id).value = v != null ? v : ''; };
     set('ps-f-wbs', row ? row.wbs : ''); set('ps-f-actid', row ? row.activity_id : '');
     // WBS parent picker — placing an activity under a node auto-fills (and locks) its WBS Code.
@@ -10419,7 +10422,7 @@
     addBtn.onclick = add;
     search.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } };
   }
-  function closeModal() { document.getElementById('ps-modal').style.display = 'none'; editId = null; }
+  function closeModal() { document.getElementById('ps-modal').style.display = 'none'; editId = null; clearTimeout(_asTimer); _asDirty = false; }
   async function save() {
     var v = function (id) { return document.getElementById(id).value.trim(); };
     var wbs = v('ps-f-wbs'), name = v('ps-f-name'), start = v('ps-f-start') || null, finish = v('ps-f-finish') || null;
@@ -10505,6 +10508,41 @@
     }
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
     closeModal(); load();
+  }
+
+  // Autosave (edit only): debounced re-use of save() while the modal is open, editing an
+  // existing activity. save() unconditionally closes the modal + resets editId on success —
+  // since it's a bare module-scope call (not a UI.modal() with an overridable m.close), the
+  // autosave tick captures editId + the modal's open state first and restores both afterward,
+  // instead of the modal-close-suppression trick used elsewhere. Silences toasts during the tick.
+  var _asTimer = null, _asDirty = false, _asSaving = false, _asAgain = false;
+  function _asStatus(s) {
+    var b = document.getElementById('ps-modal-autosave'); if (!b) return;
+    b.textContent = s;
+    b.className = 'pd-autosave ' + (s === 'Saved' ? 'pd-autosave-ok' : s === 'Saving…' ? 'pd-autosave-busy' : /error/i.test(s) ? 'pd-autosave-err' : 'pd-autosave-idle');
+  }
+  function _asSchedule() {
+    if (!editId) return;   // new (not-yet-created) activities are not autosaved
+    _asDirty = true; _asStatus('Unsaved changes…');
+    clearTimeout(_asTimer); _asTimer = setTimeout(_asFlush, 1200);
+  }
+  async function _asFlush() {
+    if (!editId || !_asDirty) return;
+    if (_asSaving) { _asAgain = true; return; }
+    var id = editId; _asDirty = false; _asSaving = true; _asStatus('Saving…');
+    var modalEl = document.getElementById('ps-modal');
+    var origToast = UI.toast; UI.toast = function () {};   // save() toasts "Activity updated." — silence during autosave
+    try {
+      await save();               // save() calls closeModal() on success: hides the modal, editId=null
+      modalEl.style.display = 'flex'; editId = id;   // reopen / restore edit context
+      _asStatus('Saved');
+    } catch (e) {
+      _asStatus('Error — will retry'); _asDirty = true;
+    } finally {
+      UI.toast = origToast;
+      _asSaving = false;
+      if (_asAgain) { _asAgain = false; _asSchedule(); }
+    }
   }
   // Quick-add: create a blank activity under the SELECTED row's WBS with no modal, select it,
   // and open the (editable) General detail tab so the planner fills in the rest below. If a WBS
@@ -14059,6 +14097,8 @@
     document.getElementById('ps-modal-cancel').onclick = closeModal;
     document.getElementById('ps-modal-save').onclick = save;
     document.getElementById('ps-modal').onclick = function (e) { if (e.target === this) closeModal(); };
+    document.getElementById('ps-form').addEventListener('input', _asSchedule);
+    document.getElementById('ps-form').addEventListener('change', _asSchedule);
 
     // scroll sync (vertical grid<->gantt, horizontal head<->body)
     var gs = document.getElementById('ps-grid-scroll'), gz = document.getElementById('ps-gantt-scroll'), gh = document.getElementById('ps-gantt-head'), gHead = document.getElementById('ps-grid-head');

@@ -1,5 +1,27 @@
 # Module: project-schedule
 
+## Autosave added to the Add/Edit Activity modal (2026-08-06) — fmlozano
+Extended the shared autosave pass (`assets/js/autosave.js`, wired into 5 other modules the same
+prompt) to this module's Activity modal — the one place here that didn't fit the shared helper.
+- ⚠️ **This modal isn't `UI.modal()`-based** — it's a static `#ps-modal` overlay shown/hidden via
+  `style.display`, and `save()` is a bare module-scope function that unconditionally calls
+  `closeModal()` (hides the modal + clears `editId`) on success. The shared `Autosave.wire` trick
+  (temporarily no-op `modal.close`) doesn't apply — there's no object whose `.close` property
+  `save()` calls through. So autosave here is a **small inline implementation** instead of the
+  shared helper: a debounced (1.2s) `_asSchedule()`/`_asFlush()` pair that calls the existing
+  `save()` directly, then **reopens the modal and restores `editId`** immediately after
+  `closeModal()` ran inside it — same end effect (modal stays open, edit continues) via a different
+  mechanism suited to this modal's shape. `UI.toast` is monkey-patched to a no-op for the duration
+  of the tick so "Activity updated." doesn't fire on every autosave.
+- **Edit only** — `_asSchedule()` no-ops when `editId` is null (a new, not-yet-inserted activity).
+  `closeModal()` now also cancels the pending autosave timer, so cancelling/closing the modal can't
+  fire a stray save afterward.
+- Status badge `#ps-modal-autosave` beside the modal title (reuses the shared `.pd-autosave` CSS
+  from `dashboard.css`), shown only when editing.
+- Verified: inline script (`new Function`) parses clean. **Not browser-verified** — auth wall, same
+  as the rest of this module's recent work.
+
+
 ## Documents tab removed (2026-08-05) — fmlozano
 Both registers dropped the per-document → activity link, so nothing can author one any more and this
 tab would be **permanently empty** — exactly the "empty promise" the Design Development node was
