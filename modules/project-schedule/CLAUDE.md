@@ -1,5 +1,31 @@
 # Module: project-schedule
 
+## Location matching scoped to Execution Phase only (2026-08-06) — fmlozano
+User: location/zone describes construction, so the Location Wizard (and grouping by a location
+level) must not touch activities outside the Execution Phase WBS branch.
+- **New `execPhaseCode()` / `locCodeUnder()` / `locExecScopedActs()`.** `execPhaseCode()` locates
+  the skeleton's locked top-level "Execution Phase" WBS-Summary row and returns its dotted code;
+  `locCodeUnder(code, ancestor)` is the boundary-safe prefix test (`"4"` matches `"4.1"`, never
+  `"40.1"`). `locExecScopedActs()` is the shared entry point both write paths now call instead of
+  scanning every activity with a WBS code.
+- **Both writers scoped:** `openLocWizard()` and `openLocBackfill()` ("Fill location from the WBS
+  tree…") now only scan/match/write against Execution-Phase activities — a name like "Design
+  Review" under Planning Phase can never be offered a Tower/Level/Zone value, and Apply can never
+  write `location` onto a non-construction activity. The wizard's own description text says so.
+  When the project has no Execution Phase branch (skeleton not seeded / pre-dates it), warns and
+  falls back to the whole schedule rather than silently doing nothing.
+- **Grouping scoped too, not just writing.** Follow-up in the same prompt: grouping by a location
+  level (`Location > Zone > Activity` or `Activity > Location > Zone`) was still bucketing
+  Initiation/Planning/Milestone activities into an "— Unassigned —" location group alongside real
+  Execution-Phase work — visually mixing phases that have nothing to do with location. `buildNodes()`
+  now carves non-Execution-Phase activities out of the location-dim walk and renders them as their
+  own top-level group ("— Other phases (not location-grouped) —"), always by their own WBS path
+  regardless of the chosen dims — visible, never lost, never mixed into a location bucket. Only
+  triggers when the active `groupBys` actually include a `loc:` dimension; every other grouping
+  (Status/Type/Work Package/Activity Codes/plain WBS) is untouched.
+- Verified: inline script (`new Function`) parses clean. **Not browser-verified against a live
+  login** — same environment constraint as the rest of this session's work on this module.
+
 ## Location Wizard: real fix for the modal's horizontal overflow, plus bulk-assign audit (2026-08-06) — fmlozano
 User reported the "Match the WBS to your location breakdown" wizard (`openLocWizard`) was scrollable
 and wanted the popup to show whole, then reported it was "still the same" after a first attempted fix.

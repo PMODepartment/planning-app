@@ -3395,6 +3395,39 @@
     });
     return best;
   }
+  // ---- Execution Phase scoping ----------------------------------------------------------------
+  // Location/zone describes CONSTRUCTION — the Execution Phase WBS branch — not Initiation,
+  // Planning, or Milestones. Both location-writing tools (the Wizard and the WBS-tree backfill)
+  // scope their activity set to this branch so a name like "Design Review" under Planning Phase
+  // can never pick up a tower/floor/zone value.
+  // Boundary-safe: "4" matches "4.1" but not "40.1" — a plain substring/startsWith on the raw code
+  // would wrongly match the latter.
+  function locCodeUnder(code, ancestor) {
+    code = String(code || ''); ancestor = String(ancestor || '');
+    return code === ancestor || code.indexOf(ancestor + '.') === 0;
+  }
+  // Locate the Execution Phase WBS-Summary row (its dotted code is the scoping prefix). The
+  // skeleton seeds it as a locked top-level node named exactly "Execution Phase"; matched by name
+  // (case/space-insensitive) since a locked node can't be renamed. Returns null if the project has
+  // no such branch (e.g. the skeleton migration hasn't run, or the tree predates it).
+  function execPhaseCode() {
+    var node = WBS_NODES.find(function (n) { return !n.parent_id && String(n.name || '').trim().toLowerCase() === 'execution phase'; });
+    var row = null;
+    if (node) row = rows.find(function (r) { return isWbs(r) && r.wbs_node_id === node.id; });
+    if (!row) row = rows.find(function (r) { return isWbs(r) && !r._depth && String(r.activity_name || '').trim().toLowerCase() === 'execution phase'; });
+    return row ? String(row.wbs) : null;
+  }
+  // Activities with a WBS code, scoped to the Execution Phase branch when one exists. Warns
+  // (does not block) when it can't find the branch — matching the "silent when it can't tell"
+  // precedent from the earlier Need-by scoping work, except here we surface it since scoping is
+  // the whole point of the call.
+  function locExecScopedActs() {
+    var acts = rows.filter(function (r) { return !isWbs(r) && r.wbs; });
+    var execCode = execPhaseCode();
+    if (execCode) return acts.filter(function (r) { return locCodeUnder(r.wbs, execCode); });
+    UI.toast('No "Execution Phase" WBS branch found — matching against the whole schedule instead.', 'warn');
+    return acts;
+  }
   function locGuessLevel(name, levels) {
     var best = '', bestAt = -1;
     levels.forEach(function (l) {
@@ -3639,8 +3672,8 @@
   function openLocBackfill() {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
     if (!LOC_LEVELS.length) { UI.toast('Define your location levels first (Location Breakdown…).', 'warn'); return; }
-    var acts = rows.filter(function (r) { return !isWbs(r) && r.wbs; });
-    if (!acts.length) { UI.toast('No activities with a WBS code to read from.', 'warn'); return; }
+    var acts = locExecScopedActs();
+    if (!acts.length) { UI.toast('No Execution Phase activities with a WBS code to read from.', 'warn'); return; }
     var nameByCode = {}; rows.forEach(function (r) { if (isWbs(r) && r.wbs) nameByCode[String(r.wbs)] = r.activity_name || ''; });
     // Both source kinds are offered here, not just the WBS: a project whose P6 activity codes carry
     // the location shouldn't have to re-import to use them.
@@ -3701,8 +3734,8 @@
   function openLocWizard() {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
     if (!LOC_LEVELS.length) { UI.toast('Define your location levels first (Location Breakdown…).', 'warn'); return; }
-    var acts = rows.filter(function (r) { return !isWbs(r) && r.wbs; });
-    if (!acts.length) { UI.toast('No activities with a WBS code to read from.', 'warn'); return; }
+    var acts = locExecScopedActs();
+    if (!acts.length) { UI.toast('No Execution Phase activities with a WBS code to read from.', 'warn'); return; }
     var nameByCode = {}; rows.forEach(function (r) { if (isWbs(r) && r.wbs) nameByCode[String(r.wbs)] = r.activity_name || ''; });
     var found = locScanNames(acts, function (r) { return r.wbs; }, nameByCode);
 
@@ -3755,7 +3788,7 @@
     var m = UI.modal('<div style="width:100%;max-height:82vh;display:flex;flex-direction:column;">' +
       '<div style="flex:0 0 auto;">' +
       '<h2 style="margin:0 0 4px;">Match the WBS to your location breakdown</h2>' +
-      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">These are the WBS names sitting above real activities, most-used first. Say which location level each one <em>is</em>; leave the rest as “not a location”. The value on the right is what gets written — edit it to tidy a name (e.g. <em>Tower D - Substructure</em> → <em>Tower D</em>).</p>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">These are the WBS names sitting above real activities <strong>under Execution Phase</strong> only, most-used first — location/zone is a construction concept, so Initiation and Planning-phase work is never touched. Say which location level each one <em>is</em>; leave the rest as “not a location”. The value on the right is what gets written — edit it to tidy a name (e.g. <em>Tower D - Substructure</em> → <em>Tower D</em>).</p>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">' +
         '<input class="pd-input" id="lw-q" placeholder="Search names…" style="flex:1 1 200px;">' +
         '<select class="pd-input" id="lw-filter" style="flex:0 0 190px;">' +
@@ -3896,6 +3929,18 @@
     if (anyFilter()) acts = acts.filter(rowMatches);
     var showWbs = groupBys[groupBys.length - 1] === 'wbs';
     var dims = showWbs ? groupBys.slice(0, -1) : groupBys.slice();
+    // Location/zone describes CONSTRUCTION (Execution Phase) — grouping by a location dimension
+    // must not sweep Initiation/Planning/Milestone activities into an "Unassigned" location bucket
+    // alongside real Execution-Phase work. Carve them out and render them separately, under their
+    // own WBS path, exactly as they'd look with no location grouping at all.
+    var otherPhaseActs = [];
+    if (dims.some(function (d) { return d.indexOf('loc:') === 0; })) {
+      var execCode = execPhaseCode();
+      if (execCode) {
+        otherPhaseActs = acts.filter(function (a) { return !locCodeUnder(a.wbs, execCode); });
+        acts = acts.filter(function (a) { return locCodeUnder(a.wbs, execCode); });
+      }
+    }
     var realByCode = {}; rows.forEach(function (r) { if (isWbs(r)) realByCode[r.wbs] = r; });
     var out = [], span = {}, SEP = '';
     function addSpan(code, s, e) { if (!s && !e) return; if (!s) s = e; if (!e) e = s; var m = span[code]; if (!m) span[code] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
@@ -3945,6 +3990,16 @@
         walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
       });
     })(acts, 0, '', []);
+    // Render the carved-out non-Execution-Phase activities as their own top-level group, always by
+    // WBS path (never by the location dims they were excluded from) — visible, but never mixed in.
+    if (otherPhaseActs.length) {
+      var ogcode = '§other-phase';
+      out.push({ _dkind: 'group', _dcode: ogcode, _ddepth: 0, _danc: [],
+        activity_name: '— Other phases (not location-grouped) —', _gcount: otherPhaseActs.length, _gdim: 'other', id: 'grp:' + ogcode });
+      var savedShowWbs = showWbs; showWbs = true;
+      emitLeaf(otherPhaseActs, ogcode, [ogcode]);
+      showWbs = savedShowWbs;
+    }
     _dspan = span;
     return out;
   }
