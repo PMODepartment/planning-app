@@ -1864,10 +1864,16 @@ window.DrawingRegister = (function () {
           '<button class="pd-btn pd-btn-danger" id="f-shmerge" type="button">Delete '+have+' sheet rows</button>'
         : '<div class="dr-form-sec">Break out into sheets</div>' +
           field('Number of sheets','<input class="pd-input" type="number" min="1" max="500" id="f-shadd" value="'+(Math.max(1, num(p.no_of_sheets)||1))+'">') +
-          '<p class="dr-mut">Creates that many rows, numbered '+Fmt.esc(sheetCode(p,1))+' onward. ' +
-            'This drawing\'s <strong>'+approvedOf(p)+' approved</strong> of '+(num(p.no_of_sheets)||0)+
-            ' carries over, so the same sheets stay approved and the drawing keeps its progress — ' +
-            'the rest start at <em>'+Fmt.esc(seedApproval(p, Math.max(1, num(p.no_of_sheets)||1), 0).rest)+'</em>.</p>') +
+          (function(){
+            var dn = Math.max(1, num(p.no_of_sheets) || 1);
+            var sd = seedApproval(p, dn, 0);
+            return '<p class="dr-mut">Creates that many rows, numbered '+Fmt.esc(sheetCode(p,1))+' onward. ' +
+              (sd.count
+                ? '<strong>'+sd.count+' of '+dn+'</strong> will start as <em>'+Fmt.esc(sd.ok)+'</em>, carried over from ' +
+                  'this drawing, so it keeps its progress' + (sd.count < dn ? ' — the rest start at <em>'+Fmt.esc(sd.rest)+'</em>.' : '.')
+                : 'Nothing is approved yet, so all of them start at <em>'+Fmt.esc(sd.rest)+'</em>.') +
+              '</p>';
+          })()) +
       '<div style="text-align:right;margin-top:14px;"><button class="pd-btn" id="f-cancel" type="button">Close</button> ' +
       '<button class="pd-btn pd-btn-primary" id="f-shgo" type="button">'+(have?'Add sheets':'Break out')+'</button></div>'
     );
@@ -1896,12 +1902,23 @@ window.DrawingRegister = (function () {
     if (have > 0) return { count: 0, ok: 'For Review', rest: 'For Review' };
     var ap = approvedOf(p);
     var tot = num(p.no_of_sheets) || 0;
-    // Normally n === the declared sheet count and this is the identity. When the
-    // TO breaks out a different number, keep the RATIO rather than the raw count,
-    // so re-declaring a 100-sheet drawing as 5 sheets at 80% gives 4, not 5.
-    var count = (tot > 0 && tot !== n) ? Math.round(ap / tot * n) : ap;
-    count = Math.max(0, Math.min(n, count));
     var cur = statusOf(p.status);
+    // ⚠️ An APPROVED status wins over the sheet counter, and this is the case that
+    // actually bites on real data. Measured on BAU101: of 57 multi-sheet drawings
+    // marked approved, 11 store approved_sheets = 0 and 2 store a partial count —
+    // the importer set the status from the workbook but never filled the counter.
+    // Trusting the counter there would break an "Approved" drawing out into 0
+    // approved sheets and flip its pill to For Review: exactly the data loss this
+    // function exists to stop, just narrowed to the rows with incomplete counters.
+    // "Approved" is a statement about the WHOLE drawing, so every sheet inherits
+    // it — which also round-trips, since derivedStatus() maps all-approved back to
+    // Approved rather than the In Progress a partial count would produce.
+    // Normally n === the declared sheet count and the else-branch is the identity.
+    // When the TO breaks out a different number, keep the RATIO rather than the
+    // raw count, so re-declaring a 100-sheet drawing as 5 sheets at 80% gives 4.
+    var count = isApprovedStatus(cur) ? n
+              : ((tot > 0 && tot !== n) ? Math.round(ap / tot * n) : ap);
+    count = Math.max(0, Math.min(n, count));
     // "with comments" is a materially different outcome and survives the split,
     // exactly as derivedStatus() preserves it on the way back up.
     var ok = (cur === 'Approved w/ comments') ? 'Approved w/ comments' : 'Approved';
