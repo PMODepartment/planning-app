@@ -77,6 +77,14 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-06 — Fix: dashboard.css never got its cache-busting bump
+The autosave commits (`94dba8e`) added `.pd-autosave*` styles to shared `assets/css/dashboard.css`
+but left its `?v=` at `20260724a` everywhere it's referenced — so returning users kept serving the
+cached pre-autosave stylesheet and the new status badge rendered unstyled. Bumped to `20260806b`
+across **all 22 HTML files** that reference it (every shell page + every module `index.html`),
+per the documented cache-busting convention. Diff is exactly one line per file, the version string
+only — verified before committing. No other change.
+
 ### 2026-08-06 — Autosave rolled out to 5 modal-edit modules (shared, debounced)
 User asked for autosave on all applicable modules. Built a **shared, reusable** autosave layer
 instead of bespoke per-module logic, so it composes with what already exists rather than fighting it.
