@@ -1859,12 +1859,15 @@ window.DrawingRegister = (function () {
           '<p class="dr-mut">Added sheets continue the numbering from '+Fmt.esc(sheetCode(p, have+1))+'.</p>' +
           '<div class="dr-form-sec">Stop tracking per sheet</div>' +
           '<p class="dr-mut">Deletes all '+have+' sheet rows and their uploaded files, and returns this drawing to a single ' +
-            'row with a hand-typed approved count. This cannot be undone.</p>' +
+            'row. The approved count and status are kept as a hand-typed value; each sheet\'s own revision ' +
+            'history and files are not. This cannot be undone.</p>' +
           '<button class="pd-btn pd-btn-danger" id="f-shmerge" type="button">Delete '+have+' sheet rows</button>'
         : '<div class="dr-form-sec">Break out into sheets</div>' +
           field('Number of sheets','<input class="pd-input" type="number" min="1" max="500" id="f-shadd" value="'+(Math.max(1, num(p.no_of_sheets)||1))+'">') +
-          '<p class="dr-mut">Creates that many rows, numbered '+Fmt.esc(sheetCode(p,1))+' onward, each starting at ' +
-            '<em>For Review</em>. The drawing\'s current approved count is not carried over — mark the approved sheets individually.</p>') +
+          '<p class="dr-mut">Creates that many rows, numbered '+Fmt.esc(sheetCode(p,1))+' onward. ' +
+            'This drawing\'s <strong>'+approvedOf(p)+' approved</strong> of '+(num(p.no_of_sheets)||0)+
+            ' carries over, so the same sheets stay approved and the drawing keeps its progress — ' +
+            'the rest start at <em>'+Fmt.esc(seedApproval(p, Math.max(1, num(p.no_of_sheets)||1), 0).rest)+'</em>.</p>') +
       '<div style="text-align:right;margin-top:14px;"><button class="pd-btn" id="f-cancel" type="button">Close</button> ' +
       '<button class="pd-btn pd-btn-primary" id="f-shgo" type="button">'+(have?'Add sheets':'Break out')+'</button></div>'
     );
@@ -1881,19 +1884,52 @@ window.DrawingRegister = (function () {
     };
   }
 
+  // How much of the parent's EXISTING approval each new sheet inherits.
+  // ⚠️ Breaking out used to hardcode every sheet to 'For Review' / 0 approved, so
+  // an Approved drawing came back 0% and its approval was destroyed — the register
+  // lost real, recorded progress as a side effect of changing how it is tracked.
+  // Break-out is a change of GRANULARITY, not a reset of status.
+  // Only seeds on the FIRST break-out: once a drawing is tracked per sheet its
+  // counters are derived from its children, so sheets ADDED later are new work
+  // and start unapproved rather than re-distributing what is already there.
+  function seedApproval(p, n, have){
+    if (have > 0) return { count: 0, ok: 'For Review', rest: 'For Review' };
+    var ap = approvedOf(p);
+    var tot = num(p.no_of_sheets) || 0;
+    // Normally n === the declared sheet count and this is the identity. When the
+    // TO breaks out a different number, keep the RATIO rather than the raw count,
+    // so re-declaring a 100-sheet drawing as 5 sheets at 80% gives 4, not 5.
+    var count = (tot > 0 && tot !== n) ? Math.round(ap / tot * n) : ap;
+    count = Math.max(0, Math.min(n, count));
+    var cur = statusOf(p.status);
+    // "with comments" is a materially different outcome and survives the split,
+    // exactly as derivedStatus() preserves it on the way back up.
+    var ok = (cur === 'Approved w/ comments') ? 'Approved w/ comments' : 'Approved';
+    // The unapproved remainder keeps the drawing's own working status (Revise &
+    // Resubmit stays Revise & Resubmit). A parent marked approved while only
+    // SOME sheets are is contradictory data, so its leftovers fall back.
+    var rest = (!cur || isApprovedStatus(cur)) ? 'For Review' : cur;
+    return { count: count, ok: ok, rest: rest };
+  }
+
   async function createSheets(p, n){
     var have = sheetsOf(p).length;
     var base = nextOrder();
+    var seed = seedApproval(p, n, have);
     var batch = [];
     for (var i = 1; i <= n; i++) {
       var code = sheetCode(p, have + i);
+      var appr = i <= seed.count;
       batch.push({
         project_id: pid, created_by: uid, node_kind: 'drawing', parent_id: p.id,
         // The sheet inherits its place in the tree so every existing grouping,
         // filter and export keeps working on it unchanged.
         phase: p.phase || '', discipline: p.discipline || '', category: (p.category || '').trim(),
-        title: 'Sheet ' + (have + i), status: 'For Review',
-        no_of_sheets: 1, approved_sheets: 0, approved_pct: 0, submissions: [],
+        title: 'Sheet ' + (have + i), status: appr ? seed.ok : seed.rest,
+        no_of_sheets: 1, approved_sheets: appr ? 1 : 0, approved_pct: appr ? 1 : 0, submissions: [],
+        // The sheets shared one approval date as a single row; carrying it down
+        // keeps the drawing's max-actual roll-up landing on the day it happened.
+        actual_approval: (appr && validDate(p.actual_approval)) ? p.actual_approval : null,
         dwg_number: code, drawing_no: code, drawing_code: code,
         responsible: p.responsible || null,
         // ⚠️ planned_approval is deliberately NOT copied down. It belongs to the
@@ -1922,9 +1958,20 @@ window.DrawingRegister = (function () {
   async function mergeSheets(p){
     var kids = sheetsOf(p);
     if (!kids.length) return;
+    // Roll the sheets up BEFORE they are deleted — this is the last moment the
+    // approval actually exists. ⚠️ This used to write approved_sheets: 0, so
+    // merging back destroyed every approval the sheets had recorded: 100/100
+    // approved collapsed to 0/100 and the drawing's status fell to For Review.
+    // Merging is a change of GRANULARITY, not a reset — the aggregate row keeps
+    // the count, the status and the approval date its sheets earned.
+    var ap = kids.reduce(function (n, k){ return n + approvedOf(k); }, 0);
+    var roll = rollup(kids);
+    var keepStatus = derivedStatus(kids);
     if (!confirm('Delete all ' + kids.length + ' sheet rows of "' +
                  (p.drawing_code || p.drawing_no || p.title) + '" and go back to a single row?\n\n' +
-                 'Their statuses, revision history and uploaded files are lost. This cannot be undone.')) return;
+                 'The drawing keeps ' + ap + ' of ' + kids.length + ' approved' +
+                 (keepStatus ? ' (' + keepStatus + ')' : '') + ' as a hand-typed count, but each sheet\'s ' +
+                 'own revision history and uploaded files are lost. This cannot be undone.')) return;
     // Capture the files BEFORE the rows leave memory — afterwards the paths are
     // unrecoverable and the objects would be orphaned in the bucket.
     var files = [];
@@ -1932,10 +1979,18 @@ window.DrawingRegister = (function () {
     var res = await sb().from(TABLE).delete().in('id', kids.map(function(k){ return k.id; }));
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     await removeFiles(files);
-    // Keep the sheet total, drop the derived approved count back to a hand-typed 0.
-    await sb().from(TABLE).update({ no_of_sheets: kids.length, approved_sheets: 0, approved_pct: 0 }).eq('id', p.id);
+    // Keep the total AND everything the sheets had earned. Same actual-approval
+    // rule as syncParent(): the drawing is approved on the day its last sheet
+    // was, and carries no completion date until every sheet is in.
+    await sb().from(TABLE).update({
+      no_of_sheets: kids.length,
+      approved_sheets: ap,
+      approved_pct: kids.length ? ap / kids.length : 0,
+      status: keepStatus || p.status || 'For Review',
+      actual_approval: (ap === kids.length) ? (roll.maxActual || p.actual_approval || null) : null
+    }).eq('id', p.id);
     await load();
-    UI.toast('Back to single-row tracking', 'ok');
+    UI.toast('Back to single-row tracking — ' + ap + ' of ' + kids.length + ' approved kept', 'ok');
   }
 
   // ----------------------------------------------------- progress dashboard --
