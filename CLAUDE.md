@@ -77,6 +77,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-06 — Drawing Register: break-out / merge no longer destroy a drawing's approval
+User: *"Breaking a drawing (approved) into multiple sheets resets each sheet to For Review… then
+collapsing them back trashes the Approved status."* Both legs were real, and the dialog copy
+documented the loss as if intended.
+- **Break-out** hardcoded every sheet to `For Review` / 0 approved, so the parent derived back to
+  For Review and an Approved drawing came back at **0%**. **Merge** wrote `approved_sheets: 0` and
+  restored no status, discarding whatever the sheets had earned. Both are a change of **granularity,
+  not a reset**: break-out now distributes the drawing's existing approval, and merge rolls the sheets
+  up through the **same rule as `syncParent`** so the two directions can't drift apart again.
+- ⚠️ **An approved STATUS beats the sheet counter — the case that actually bites on real data.**
+  Measured on BAU101: of **57** multi-sheet drawings marked approved, **11 store `approved_sheets = 0`**
+  and 2 a partial count (the importer set the status but never filled the counter). Seeding from the
+  counter alone would still flip those 13 to For Review. "Approved" is a claim about the whole drawing,
+  so every sheet inherits it — and it round-trips, since `derivedStatus` maps all-approved back to
+  Approved where a partial count gives In Progress.
+- ⚠️ **Only the first break-out seeds.** Sheets added to an already-per-sheet drawing are new work, or
+  adding 5 sheets to a finished drawing would silently mark them approved.
+- **33 new checks** over the shipped functions + the existing 40/35/14/27 suites green. **Verified
+  signed-in through the real UI on BAU101-TEST** (`?v=20260805i`, sandbox empty before and after):
+  Approved 4/4 round-tripped with its approval date intact; a partial `Revise & Resubmit 2 of 5` kept
+  2 Approved + 3 Revise & Resubmit at 40% with **no false completion date**; and the contradictory
+  `Approved 0/20` shape came back **Approved 20/20** — the round trip repairs the unfilled counter.
+- ⚠️ **Pre-existing data loss found while verifying, not caused by this work.** BAU101 holds **0 sheet
+  rows** where it had 29 across 6 parents; two of those drawings carry `updated_at` of **2026-08-05
+  10:09–10:10Z**, ~15h earlier — the user's own testing that produced this report, under the old lossy
+  code. Merge deletes sheet rows by design and `drawing_register` has **no audit table**, so the prior
+  per-sheet statuses are not recoverable in-app. Raised with the user rather than repaired unilaterally.
+
 ### 2026-08-05 — Drawing Register: the grid no longer jumps to the top on every interaction
 User: *"The scroller doesn't work properly. It resets to the top every time I move it."*
 - **Structural root cause:** the scroll container (`.dr-tablecard` / `.dr-bk-scroll`) is built
