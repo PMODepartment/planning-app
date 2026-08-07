@@ -1988,28 +1988,41 @@
     list.forEach(function (s) { var w = s.weight != null ? s.weight : 1; wsum += w; wpsum += w * (s.percent_complete || 0); });
     return wsum > 0 ? Math.round((wpsum / wsum) * 100) / 100 : 0;
   }
+  // Keyset-paginate any project-scoped table past Supabase's 1000-row select cap (indexed PK range
+  // scan — same pattern the resource_assignments/wbs_nodes loads already use). ⚠️ Orders by `id`,
+  // not any display column — callers that need a specific display order must sort the returned
+  // array themselves; don't be tempted to `.order(displayCol)` here, since mixing an `.order()` with
+  // the `.gt('id', last)` keyset cursor breaks the pagination invariant (a page boundary can split
+  // or duplicate rows that tie on the display column).
+  async function selectAllPaged(table, cols, extra) {
+    var out = [], last = null;
+    while (true) {
+      var q = sb().from(table).select(cols).eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+      if (extra) q = extra(q);
+      if (last) q = q.gt('id', last);
+      var r = await q; if (r.error) throw r.error;
+      var batch = r.data || []; out = out.concat(batch);
+      if (batch.length < 1000) break; last = batch[batch.length - 1].id;
+    }
+    return out;
+  }
   async function loadResourcesAssignments() {
     if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; return; }
     try {
-      var r1 = await sb().from('resources').select('*').eq('project_id', pid).order('name');
+      // resources/resource_assignments reach tens of thousands of rows on a P6/XER import, so an
+      // unpaginated select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost
+      // roll-ups. Resources are re-sorted by name client-side (selectAllPaged orders by id).
+      var r1 = await selectAllPaged('resources', '*');
+      r1.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || '')); });
       var r3 = await sb().from('calendars').select('*').eq('project_id', pid).order('name');
-      // resource_assignments reaches tens of thousands of rows on a P6/XER import, so a single
-      // select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost roll-ups.
-      // Keyset-paginate (indexed PK range scan) — same pattern as the main activity load().
-      var asg = [], alast = null;
-      while (true) {
-        var aq = sb().from('resource_assignments').select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
-        if (alast) aq = aq.gt('id', alast);
-        var ar = await aq; if (ar.error) throw ar.error;
-        var ab = ar.data || []; asg = asg.concat(ab);
-        if (ab.length < 1000) break; alast = ab[ab.length - 1].id;
-      }
-      RESRC = (r1 && r1.data) || []; ASSIGN = asg; CALS = (r3 && r3.data) || [];
+      var asg = await selectAllPaged('resource_assignments', '*');
+      RESRC = r1; ASSIGN = asg; CALS = (r3 && r3.data) || [];
     } catch (e) { RESRC = []; ASSIGN = []; CALS = []; }
     try {
       var r4 = await sb().from('activity_code_types').select('*').eq('project_id', pid).order('sort_order');
-      var r5 = await sb().from('activity_code_values').select('*').eq('project_id', pid).order('sort_order');
-      CODE_TYPES = (r4 && r4.data) || []; CODE_VALUES = (r5 && r5.data) || [];
+      var r5 = await selectAllPaged('activity_code_values', '*');
+      r5.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+      CODE_TYPES = (r4 && r4.data) || []; CODE_VALUES = r5;
     } catch (e) { CODE_TYPES = []; CODE_VALUES = []; }
     try {
       var r6 = await sb().from('activity_steps').select('*').eq('project_id', pid);
@@ -2030,24 +2043,16 @@
       // the tree on big P6 imports (>1000 WBS nodes) — children whose parent fell past row 1000
       // dropped out of the walk and vanished from the Manager. Paginate by id; the render/index
       // re-sorts by sort_order, so load order is irrelevant.
-      var wnodes = [], wlast = null;
-      while (true) {
-        var wq = sb().from('wbs_nodes').select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
-        if (wlast) wq = wq.gt('id', wlast);
-        var wr = await wq; if (wr.error) throw wr.error;
-        var wb = wr.data || []; wnodes = wnodes.concat(wb);
-        if (wb.length < 1000) break; wlast = wb[wb.length - 1].id;
-      }
-      WBS_NODES = wnodes;
+      WBS_NODES = await selectAllPaged('wbs_nodes', '*');
     } catch (e) { WBS_NODES = []; }
     try { await ensureWbsSkeleton(); } catch (e) { /* best-effort auto-seed; never blocks load */ }
     try {
-      var r9 = await sb().from('cost_accounts').select('*').eq('project_id', pid).order('sort_order');
-      COST_ACCTS = (r9 && r9.data) || [];
+      var r9 = await selectAllPaged('cost_accounts', '*');
+      r9.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+      COST_ACCTS = r9;
     } catch (e) { COST_ACCTS = []; }
     try {
-      var r10 = await sb().from('activity_expenses').select('*').eq('project_id', pid);
-      EXPENSES = (r10 && r10.data) || [];
+      EXPENSES = await selectAllPaged('activity_expenses', '*');
     } catch (e) { EXPENSES = []; }
   }
   // ---- WBS tree algorithms (verified pure logic) ----
@@ -2106,9 +2111,20 @@
   }
 
   // Ensure a locked child WBS node exists under Design Development, and return it.
+  // ⚠️ Re-checks the DB fresh, not just the in-memory WBS_NODES, right before inserting — two
+  // overlapping loads (two tabs, or a Realtime-storm reload racing this same sync) could otherwise
+  // both pass the in-memory check and both insert a duplicate locked node. `_wbsDedupeSkeleton`
+  // would eventually merge it (it's locked), but not before this sync has already filed activities
+  // against whichever duplicate it happened to create.
   async function _ddEnsureNode(parentId, name, order) {
     var found = WBS_NODES.find(function (n) { return n.parent_id === parentId && n.name === name; });
     if (found) return found;
+    var chk = await sb().from('wbs_nodes').select('*').eq('project_id', pid).eq('parent_id', parentId).eq('name', name).limit(1);
+    if (!chk.error && chk.data && chk.data.length) {
+      var existing = chk.data[0];
+      if (!WBS_NODES.some(function (n) { return n.id === existing.id; })) WBS_NODES.push(existing);
+      return existing;
+    }
     var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId, name: name,
       sort_order: order, created_by: UID, is_locked: true, source_kind: 'design_development' }).select().single();
     if (res.error) return null;
@@ -2127,19 +2143,27 @@
     try {
       // ⚠️ Exclude structural nodes AND per-sheet child rows: a sheet's counters are already
       // inside its parent drawing's, so counting both double-counts the whole register.
-      // Mirrors drawing-register's own drawingRows().
-      var drRes = await sb().from('drawing_register')
-        .select('id,parent_id,node_kind,discipline,no_of_sheets,approved_sheets,status,planned_approval,actual_approval')
-        .eq('project_id', pid).is('parent_id', null);
-      if (drRes.error) return;
-      var drawings = (drRes.data || []).filter(function (d) { return !d.node_kind || d.node_kind === 'drawing'; });
-      var msRes = await sb().from('material_submittal')
-        .select('id,discipline,status,plan_approval_date,date_approved').eq('project_id', pid);
-      var submittals = msRes.error ? [] : (msRes.data || []);
+      // Mirrors drawing-register's own drawingRows(). Keyset-paginated — an unpaginated select
+      // silently truncates past 1000 rows (BAU101 alone has 1,506 drawings), which would mirror a
+      // wrong-but-plausible POC against the register it claims to reproduce exactly.
+      var drData;
+      try {
+        drData = await selectAllPaged('drawing_register',
+          'id,parent_id,node_kind,discipline,no_of_sheets,approved_sheets,status,planned_approval,actual_approval',
+          function (q) { return q.is('parent_id', null); });
+      } catch (e) { return; }   // can't safely mirror a partial register read
+      var drawings = drData.filter(function (d) { return !d.node_kind || d.node_kind === 'drawing'; });
+      // ⚠️ A failed submittal read must NOT be treated as "zero submittals" — that would make every
+      // EXISTING DD-MAT-* row look stale and get bulk-deleted below. Real incident risk: one timed-out
+      // query silently wipes the whole Material Submittal mirror branch. `msOk` gates both building
+      // `want` from submittals AND which prefix the stale-cleanup is allowed to touch.
+      var msOk = true, submittals = [];
+      try { submittals = await selectAllPaged('material_submittal', 'id,discipline,status,plan_approval_date,date_approved'); }
+      catch (e) { msOk = false; }
       if (!drawings.length && !submittals.length) return;   // nothing to mirror — leave the branch alone
 
       var drNode = drawings.length   ? await _ddEnsureNode(ddNode.id, 'Drawing Register', 0)      : null;
-      var msNode = submittals.length ? await _ddEnsureNode(ddNode.id, 'Material Submittal Log', 1) : null;
+      var msNode = (msOk && submittals.length) ? await _ddEnsureNode(ddNode.id, 'Material Submittal Log', 1) : null;
       await _wbsEnsureSummaries();                          // each new node needs its projected WBS-Summary row
       var codeOf = computeWbsCodes();
 
@@ -2150,7 +2174,23 @@
         Object.keys(ma).sort().forEach(function (k) { want.push({ aid: DD_PREFIX.ms + _ddSlug(k), node: msNode, name: k, a: ma[k], unit: 'items' }); }); }
 
       var wantIds = {}; want.forEach(function (w) { wantIds[w.aid] = 1; });
-      var isDD = function (r) { return !isWbs(r) && /^DD-(DWG|MAT)-/.test(String(r.activity_id || '')); };
+
+      // ⚠️ Queried FRESH from the DB, not from the in-memory `rows` — the same class of bug fixed in
+      // _wbsEnsureSummaries. `rows` can be stale relative to what the server actually has (mid
+      // Realtime-storm reload, or a second tab's sync landing first), and trusting it here means two
+      // overlapping syncs would both decide "doesn't exist yet" and both insert — duplicating the
+      // mirrored activity with no dedupe to heal it (unlike WBS-Summary rows).
+      var patchFields = 'id,activity_id,activity_name,wbs,wbs_node_id,activity_type,percent_complete,status,start_date,end_date,actual_finish';
+      var wantAidList = Object.keys(wantIds), existingByAid = {};
+      for (var ci = 0; ci < wantAidList.length; ci += 200) {
+        var eq = await sb().from(TABLE).select(patchFields).eq('project_id', pid).in('activity_id', wantAidList.slice(ci, ci + 200));
+        if (eq.error) return;   // can't safely determine insert-vs-update — bail rather than risk duplicating
+        (eq.data || []).forEach(function (r) { existingByAid[String(r.activity_id)] = r; });
+      }
+      // All CURRENT DD- rows, fresh — used to find ones no longer wanted (stale cleanup), same
+      // freshness reasoning as above.
+      var allDDRes = await sb().from(TABLE).select('id,activity_id').eq('project_id', pid).like('activity_id', 'DD-%');
+      if (allDDRes.error) return;
 
       var inserts = [], updates = [];
       want.forEach(function (w) {
@@ -2169,15 +2209,20 @@
           end_date: (w.a.allDone ? w.a.maxAct : null) || w.a.maxPlan || w.a.minPlan || null,
           actual_finish: w.a.allDone ? (w.a.maxAct || null) : null
         };
-        var ex = rows.find(function (r) { return String(r.activity_id) === w.aid; });
+        var ex = existingByAid[w.aid];
         if (!ex) inserts.push(Object.assign({ project_id: pid, created_by: UID, activity_id: w.aid }, patch));
         else {
           var diff = {}; Object.keys(patch).forEach(function (f) { if ((ex[f] == null ? null : ex[f]) !== (patch[f] == null ? null : patch[f])) diff[f] = patch[f]; });
           if (Object.keys(diff).length) updates.push({ id: ex.id, patch: diff });
         }
       });
-      // A discipline that no longer exists in the register must not linger as a stale row.
-      var stale = rows.filter(function (r) { return isDD(r) && !wantIds[String(r.activity_id)]; }).map(function (r) { return r.id; });
+      // A discipline that no longer exists in the register must not linger as a stale row — but
+      // only within a source whose read actually succeeded this pass (see msOk above).
+      var stale = (allDDRes.data || []).filter(function (r) {
+        var aid = String(r.activity_id);
+        if (aid.indexOf('DD-MAT-') === 0 && !msOk) return false;
+        return !wantIds[aid];
+      }).map(function (r) { return r.id; });
 
       if (inserts.length) {
         var ins = await sb().from(TABLE).insert(inserts).select();
@@ -3768,6 +3813,16 @@
       var mp = mapping[i]; if (mp.levelId) continue;
       var existing = LOC_LEVELS.filter(function (l) { return l.name.toLowerCase() === mp.name.toLowerCase(); })[0];
       if (existing) { mp.levelId = existing.id; mp.key = existing.id; continue; }
+      // ⚠️ Fresh DB check before inserting — two overlapping imports into the same fresh project
+      // (two tabs, or a double-click on Import) would otherwise both pass the in-memory LOC_LEVELS
+      // check and both create a "Tower" level with a different id, splitting activities across two
+      // location columns that grouping treats as unrelated dimensions.
+      var chk = await sb().from('location_levels').select('*').eq('project_id', pid).ilike('name', mp.name).limit(1);
+      if (!chk.error && chk.data && chk.data.length) {
+        var found = chk.data[0];
+        if (!LOC_LEVELS.some(function (l) { return l.id === found.id; })) LOC_LEVELS.push(found);
+        mp.levelId = found.id; mp.key = found.id; continue;
+      }
       var res = await sb().from('location_levels').insert({ project_id: pid, name: mp.name, sort_order: LOC_LEVELS.length, created_by: UID }).select().single();
       if (res.error || !res.data) { UI.toast('Could not create the location level "' + mp.name + '": ' + (res.error && res.error.message), 'error'); return false; }
       LOC_LEVELS.push(res.data); mp.levelId = res.data.id; mp.key = res.data.id;
@@ -4409,7 +4464,12 @@
     // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
     // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
     // _wbsEnsureSummaries. The tree is rebuilt from this import by autoAdoptAfterImport() below.
-    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } }
+    // ⚠️ Also drops resource_assignments — it's keyed by the TEXT activity_id, not a row uuid, and a
+    // re-import of the same file recreates the same P6/OPC activity ids. Without this, every
+    // "Replace" re-import left the PREVIOUS import's assignments in place (they still matched the
+    // new activities by id) and added a full new set on top — Resource/Role Usage, leveling and
+    // syncActivityCost cost roll-ups silently doubled, and doubled again on the next re-import.
+    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await sb().from('resource_assignments').delete().eq('project_id', pid); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
     var uid = UID;
     // Location breakdown — create any levels the mapping asked for, then stamp each leaf rec's
     // `location` so it rides along in the same insert rather than needing a second pass. Runs
@@ -4925,7 +4985,9 @@
     showLoading('Preparing import…');
     // Same as the Excel path: replacing the activities must drop the tree, or the P6 WBS is adopted
     // on top of the previous import's nodes and every level duplicates.
-    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } }
+    // ⚠️ Also drops resource_assignments — see the Excel import path for why (keyed by TEXT
+    // activity_id; a re-import recreates the same P6 ids, so a stale set otherwise doubles).
+    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await sb().from('resource_assignments').delete().eq('project_id', pid); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
     var uid = UID, CH = 500;
     // 1) Calendars first — activities/resources reference their real (DB-generated) ids.
     var calIdMap = {};
@@ -8648,19 +8710,30 @@
   async function saveBulkUpdate() {
     var ids = Object.keys(_bulkEdits); if (!ids.length) { closeBulkUpdate(); return; }
     showLoading('Saving ' + ids.length + ' activities…');
-    var ok = 0, err = null, CH = 40;
-    for (var i = 0; i < ids.length && !err; i += CH) {
+    // ⚠️ Keeps going after a chunk errors (was: abort the whole loop on the FIRST error, then
+    // unconditionally wipe `_bulkEdits` and undo regardless) — a transient failure on chunk 2 of 20
+    // used to silently discard chunks 3–20's edits with no way to know which rows landed or retry
+    // the rest. Now every chunk is attempted; only successfully-saved ids are cleared from
+    // `_bulkEdits`, so a re-click of Save retries exactly the ones that failed.
+    var ok = 0, failCount = 0, lastErr = null, CH = 40;
+    for (var i = 0; i < ids.length; i += CH) {
       var slice = ids.slice(i, i + CH);
       var res = await Promise.all(slice.map(function (id) {
         var patch = {}, e = _bulkEdits[id]; Object.keys(e).forEach(function (k) { patch[k] = e[k]; });
         patch.updated_at = new Date().toISOString();
         return sb().from(TABLE).update(patch).eq('id', id).then(function (r) { return r.error ? r.error.message : null; });
       }));
-      for (var k = 0; k < res.length; k++) { if (res[k]) { err = res[k]; break; } var id2 = slice[k], rr = rows.find(function (x) { return x.id === id2; }); if (rr) { var e2 = _bulkEdits[id2], prev2 = {}; Object.keys(e2).forEach(function (kk) { prev2[kk] = rr[kk]; }); Object.keys(e2).forEach(function (kk) { rr[kk] = e2[kk]; }); logAudit(rr, 'update', _auditChanges(prev2, e2)); } ok++; }
+      for (var k = 0; k < res.length; k++) {
+        var id2 = slice[k];
+        if (res[k]) { failCount++; lastErr = res[k]; continue; }   // leave this id's edit in _bulkEdits for retry
+        var rr = rows.find(function (x) { return x.id === id2; });
+        if (rr) { var e2 = _bulkEdits[id2], prev2 = {}; Object.keys(e2).forEach(function (kk) { prev2[kk] = rr[kk]; }); Object.keys(e2).forEach(function (kk) { rr[kk] = e2[kk]; }); logAudit(rr, 'update', _auditChanges(prev2, e2)); }
+        delete _bulkEdits[id2]; ok++;
+      }
     }
     hideLoading();
-    _bulkEdits = {}; resetUndo(); rebuild(false); ensureCPM(); renderAll();
-    if (err) UI.toast('Saved ' + ok + ', then error: ' + err, 'error');
+    resetUndo(); rebuild(false); ensureCPM(); renderAll();
+    if (failCount) { UI.toast('Saved ' + ok + ', ' + failCount + ' failed (' + lastErr + ') — still marked dirty, click Save to retry.', 'error'); renderBulkBody(); }
     else { UI.toast('Updated ' + ok + ' activit' + (ok === 1 ? 'y' : 'ies') + '.', 'success'); closeBulkUpdate(); }
   }
   // Export the current lookahead window to Excel (site-meeting handout).
