@@ -3413,11 +3413,31 @@
   // (case/space-insensitive) since a locked node can't be renamed. Returns null if the project has
   // no such branch (e.g. the skeleton migration hasn't run, or the tree predates it).
   function execPhaseCode() {
+    var cands = [];
     var node = WBS_NODES.find(function (n) { return !n.parent_id && String(n.name || '').trim().toLowerCase() === 'execution phase'; });
-    var row = null;
-    if (node) row = rows.find(function (r) { return isWbs(r) && r.wbs_node_id === node.id; });
-    if (!row) row = rows.find(function (r) { return isWbs(r) && !r._depth && String(r.activity_name || '').trim().toLowerCase() === 'execution phase'; });
-    return row ? String(row.wbs) : null;
+    if (node) {
+      var row = rows.find(function (r) { return isWbs(r) && r.wbs_node_id === node.id; });
+      if (row) cands.push(String(row.wbs));
+    }
+    // Any OTHER branch named "Execution Phase", at any depth — an imported P6/OPC file usually
+    // carries its own phase vocabulary nested under its project root (e.g. "1.4").
+    rows.forEach(function (r) {
+      if (!isWbs(r) || !r.wbs) return;
+      if (String(r.activity_name || '').trim().toLowerCase() !== 'execution phase') return;
+      var c = String(r.wbs); if (cands.indexOf(c) === -1) cands.push(c);
+    });
+    if (!cands.length) return null;
+    // ⚠️ Prefer a branch that actually CONTAINS activities. An import made before the WBS-placement
+    // step below existed ignored the seeded skeleton and inserted the file's tree as its own
+    // parallel root, so the skeleton's locked "Execution Phase" sat EMPTY at code "4" while the
+    // file's real one sat at "1.4" holding all 4,393 activities. Matching the skeleton node first
+    // and stopping there is what produced the "No Execution Phase activities with a WBS code to
+    // read from" dead end on every imported project — the branch was found, it was just the wrong,
+    // empty one. Falls back to the skeleton's code when nothing has activities yet (a fresh project).
+    var withActs = cands.filter(function (c) {
+      return rows.some(function (r) { return !isWbs(r) && r.wbs && locCodeUnder(r.wbs, c); });
+    });
+    return withActs.length ? withActs[0] : cands[0];
   }
   // Activities with a WBS code, scoped to the Execution Phase branch when one exists. Warns
   // (does not block) when it can't find the branch — matching the "silent when it can't tell"
@@ -4385,6 +4405,131 @@
       tiles: impTiles,
       warnings: noDate ? [noDate + ' activit' + (noDate===1?'y has':'ies have') + ' no start/finish date'] : [] });
   }
+  // ---- WBS placement: fit the imported tree into the seeded skeleton --------------------------
+  // Every project is auto-seeded with a locked skeleton (Milestones / Initiation Phase / Planning
+  // Phase / Execution Phase). An import used to ignore it entirely and insert the file's OWN root as
+  // a 5th top-level branch, which broke three things at once on every imported project — all three
+  // measured live on Avesta Residences (AVR101):
+  //   * the file's root took dotted code "1", COLLIDING with the skeleton's computed "1"
+  //     (Milestones), so all 4,393 activities rendered under one top-level "1" branch;
+  //   * the file carries its own phase vocabulary, so "Initiation/Planning/Execution Phase" landed
+  //     at 1.2/1.3/1.4 as duplicates while the skeleton's stayed EMPTY at 2/3/4;
+  //   * execPhaseCode() matched the empty skeleton node, so the Location Wizard, the WBS location
+  //     backfill and location grouping all saw zero activities.
+  // The import preview now asks where each of the file's top branches belongs, pre-filled by name.
+  //
+  // Skeleton codes are deterministic and are derived from the CONSTANT, not the live tree: the
+  // skeleton is fixed, always seeded first with sort_order 0..n, and locked (it cannot be renamed,
+  // moved or deleted), so its top-level nodes are always "1".."4" in WBS_SKELETON order. Reading the
+  // constant is also what makes this correct for a REPLACE import, where _clearWbsTree() wipes the
+  // tree and load() re-seeds it AFTER the activities have already been written.
+  function _wbsSkeletonTargets() {
+    return WBS_SKELETON.map(function (n, i) {
+      return { code: String(i + 1), name: n.name, kids: (n.children || []).length, source_kind: n.source_kind || null };
+    }).filter(function (t) { return !t.source_kind; });
+  }
+  // The file's top branches. A single root is the exporter's project wrapper (P6/OPC write one, e.g.
+  // "OPS. AVE. Avesta Residences - 4PH Imus") — the project is already the project, so it is
+  // unwrapped and its children become the branches; the wrapper row itself is dropped.
+  function _impTopBranches(recs) {
+    var tops = recs.filter(function (r) { return String(r.code).indexOf('.') === -1; }), drop = [];
+    if (tops.length === 1) {
+      var root = tops[0], pre = root.code + '.';
+      var kids = recs.filter(function (r) { return String(r.code).indexOf(pre) === 0 && String(r.code).slice(pre.length).indexOf('.') === -1; });
+      if (kids.length) { drop.push(String(root.code)); tops = kids; }
+    }
+    return { branches: tops, drop: drop };
+  }
+  // Pre-fill: exact name first, then a keyword hint. Deliberately conservative — an unrecognised
+  // branch defaults to its own top-level node rather than being silently swept into a phase.
+  var _IMP_PHASE_HINT = [
+    { code: '4', re: /execut|construct|implement|build/i },
+    { code: '3', re: /plan|design|procure|pre-?construct|engineer/i },
+    { code: '2', re: /initiat|mobili[sz]|award|ntp|start-?up|kick-?off/i },
+    { code: '1', re: /milestone|key date/i }
+  ];
+  function _impGuessTarget(name, targets) {
+    var n = String(name || '').trim().toLowerCase();
+    var exact = targets.find(function (t) { return t.name.toLowerCase() === n; });
+    if (exact) return exact.code;
+    for (var i = 0; i < _IMP_PHASE_HINT.length; i++) {
+      var h = _IMP_PHASE_HINT[i];
+      if (h.re.test(n) && targets.some(function (t) { return t.code === h.code; })) return h.code;
+    }
+    return '';
+  }
+  function wbsPlaceUI(recs) {
+    var targets = _wbsSkeletonTargets(), top = _impTopBranches(recs);
+    if (!targets.length || !top.branches.length) return null;
+    var rowsHtml = top.branches.map(function (b) {
+      var pre = b.code + '.';
+      var n = recs.filter(function (r) { return r.isLeaf && (r.code === b.code || String(r.code).indexOf(pre) === 0); }).length;
+      var g = _impGuessTarget(b.name, targets);
+      var opts = targets.map(function (t) { return '<option value="' + t.code + '"' + (g === t.code ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('') +
+        '<option value=""' + (g ? '' : ' selected') + '>&mdash; its own top-level branch &mdash;</option>';
+      return '<div style="display:flex;align-items:center;gap:8px;margin:5px 0;">' +
+        '<div style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(b.name || '') + '">' +
+        esc(b.name || b.code) + ' <span style="color:var(--pd-muted);">(' + n + ')</span></div>' +
+        '<select class="pd-select ps-impwbs" data-branch="' + esc(b.code) + '" style="flex:0 0 210px;">' + opts + '</select></div>';
+    }).join('');
+    return {
+      drop: top.drop,
+      html: '<div style="border-top:1px solid var(--pd-line);margin-top:10px;padding-top:10px;">' +
+        '<strong style="font-size:13px;">Where does this file\'s WBS belong?</strong>' +
+        '<p style="color:var(--pd-muted);font-size:12px;margin:2px 0 8px;">Each top-level branch of the file is filed under one of this project\'s standard phases (pre-filled by name). ' +
+        (top.drop.length ? 'The file\'s project-root wrapper is dropped &mdash; the project is already the project. ' : '') +
+        'Filing the construction work under <strong>Execution Phase</strong> is what lets the Location Wizard and location grouping find it.</p>' + rowsHtml + '</div>',
+      read: function (el) {
+        var plan = [];
+        Array.prototype.forEach.call(el.querySelectorAll('.ps-impwbs'), function (s) {
+          plan.push({ prefix: s.getAttribute('data-branch'), target: s.value });
+        });
+        return { plan: plan, drop: top.drop };
+      }
+    };
+  }
+  // Rewrite each branch's dotted-code PREFIX so it lands under its chosen skeleton phase. A prefix
+  // swap preserves the tree shape exactly, so every rec's isLeaf stays valid and no re-derivation is
+  // needed. ⚠️ Mapping onto a phase also preserves DEPTH (dropping the 1-segment root and moving
+  // "1.4" -> "4.1" is segment-for-segment), which keeps any WBS-depth location mapping chosen in the
+  // same dialog aligned. Sending a branch to its own top-level instead shortens it by one segment.
+  function applyWbsPlacement(recs, placement, replace) {
+    if (!placement || !placement.plan || !placement.plan.length) return recs;
+    var drop = {}; (placement.drop || []).forEach(function (c) { drop[c] = 1; });
+    var skel = _wbsSkeletonTargets(), kidsOf = {};
+    skel.forEach(function (t) { kidsOf[t.code] = t.kids; });
+    var nextTop = skel.length;
+    if (!replace) {
+      // Appending to an existing schedule: never land on a code a surviving row already owns.
+      rows.forEach(function (r) {
+        if (!isWbs(r) || !r.wbs) return;
+        var seg = String(r.wbs).split('.');
+        if (seg.length === 1) { var n1 = parseInt(seg[0], 10); if (n1 > nextTop) nextTop = n1; }
+        else if (seg.length === 2 && kidsOf[seg[0]] != null) { var n2 = parseInt(seg[1], 10); if (n2 > kidsOf[seg[0]]) kidsOf[seg[0]] = n2; }
+      });
+    }
+    var moves = placement.plan.map(function (p) {
+      var np;
+      if (p.target && kidsOf[p.target] != null) { kidsOf[p.target] += 1; np = p.target + '.' + kidsOf[p.target]; }
+      else { nextTop += 1; np = String(nextTop); }
+      return { from: String(p.prefix), to: np };
+    });
+    // Longest prefix first, so a nested branch can never be rewritten by an ancestor's rule.
+    moves.sort(function (a, b) { return b.from.length - a.from.length; });
+    var out = [];
+    recs.forEach(function (r) {
+      var c = String(r.code);
+      if (drop[c]) return;   // the exporter's project-root wrapper
+      for (var i = 0; i < moves.length; i++) {
+        var m = moves[i];
+        if (c === m.from) { r.code = m.to; break; }
+        if (c.indexOf(m.from + '.') === 0) { r.code = m.to + c.slice(m.from.length); break; }
+      }
+      out.push(r);
+    });
+    return out;
+  }
+
   function previewImport(recs, fname) {
     if (!recs.length) { UI.toast('No rows found in file.', 'warn'); return; }
     var wbsN = recs.filter(function(r){return !r.isLeaf;}).length, actN = recs.length - wbsN;
