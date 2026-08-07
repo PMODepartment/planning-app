@@ -3926,12 +3926,18 @@
   // ancestor wins (via locSrcsAssigned, shared with Location), which is what makes the nested
   // example work: an activity under "Architectural Works › Tiling Works" gets the more specific
   // "Tiling Works", not the broader "Architectural Works".
+  // ⚠️ 'elevator' was in this list and, measured on real live data (4PH Strevi Bacoor), it
+  // false-positively flagged "Elevator Lobby" (932 activities), "Elevator Shaft" (205), "Elevator
+  // Pit" (12) and two "Deck (Above/over) Elevator…" location names (36) as disciplines — none of
+  // them are a trade, they're rooms/voids. Elevator INSTALLATION work is covered under MEPF/
+  // Mechanical in real schedules, not its own WBS heading, so the bare term did more harm than
+  // good and is deliberately left out.
   var DISC_TERMS = ['structural', 'architectural', 'civil', 'mechanical', 'electrical', 'plumbing',
     'mepf', 'sanitary', 'fire protection', 'fire fighting', 'firefighting', 'hvac', 'tiling',
     'painting', 'waterproofing', 'masonry', 'carpentry', 'steel works', 'steelworks', 'concrete',
-    'formworks', 'rebar', 'reinforcement', 'roofing', 'landscaping', 'interior', 'finishing',
-    'excavation', 'earthworks', 'site works', 'sitework', 'substructure', 'superstructure',
-    'glazing', 'flooring', 'ceiling', 'drywall', 'partition', 'insulation', 'elevator',
+    'formwork', 'formworks', 'falsework', 'rebar', 'reinforcement', 'roofing', 'landscaping',
+    'interior', 'finishing', 'excavation', 'earthworks', 'site works', 'sitework', 'substructure',
+    'superstructure', 'glazing', 'flooring', 'ceiling', 'drywall', 'partition', 'insulation',
     'ventilation', 'ductwork', 'piping', 'wiring', 'conduit', 'fabrication', 'erection'];
   // A name is a plausible discipline/trade if it hits a known term, or simply ends in "Works"/"Work"
   // — the vocabulary construction schedules actually use for a trade heading (e.g. "Tiling Works").
