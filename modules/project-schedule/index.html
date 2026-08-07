@@ -4245,14 +4245,27 @@
         }
       });
     }
-    // Render the carved-out non-Execution-Phase activities FIRST, at the top level, by their real
-    // WBS path — same position and shape they have in the plain "by WBS" view (Milestones ›
-    // Initiation Phase › Planning Phase, in WBS order), not location-grouped and not wrapped in a
-    // synthetic bucket. The location-grouped Execution Phase content follows below.
-    if (otherPhaseActs.length) {
-      var savedShowWbs = showWbs; showWbs = true;
-      emitLeaf(otherPhaseActs, '', []);
-      showWbs = savedShowWbs;
+    // The carved-out non-Execution-Phase activities render by their real WBS path, in the same
+    // shape they have in the plain "by WBS" view — but not all of them belong BEFORE the
+    // location-grouped Execution Phase content. A branch like Closeout Phase comes AFTER execution
+    // in the actual project timeline, so it's split off by name and rendered after the dims walk;
+    // everything else (Milestones, Initiation Phase, Planning Phase — whatever isn't Closeout) goes
+    // first, matching where they sit in the plain WBS view.
+    var CLOSEOUT_RE = /close[\s-]?out/i;
+    function isUnderCloseout(a) {
+      var segs = String(a.wbs).split('.');
+      for (var i = 1; i <= segs.length; i++) {
+        var wr = realByCode[segs.slice(0, i).join('.')];
+        if (wr && CLOSEOUT_RE.test(wr.activity_name || '')) return true;
+      }
+      return false;
+    }
+    var beforeExecActs = [], afterExecActs = [];
+    otherPhaseActs.forEach(function (a) { (isUnderCloseout(a) ? afterExecActs : beforeExecActs).push(a); });
+    if (beforeExecActs.length) {
+      var savedShowWbs1 = showWbs; showWbs = true;
+      emitLeaf(beforeExecActs, '', []);
+      showWbs = savedShowWbs1;
     }
     (function walk(list, di, parentCode, parentAnc) {
       if (di >= dims.length) { emitLeaf(list, parentCode, parentAnc); return; }
@@ -4265,6 +4278,11 @@
         walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
       });
     })(acts, 0, '', []);
+    if (afterExecActs.length) {
+      var savedShowWbs2 = showWbs; showWbs = true;
+      emitLeaf(afterExecActs, '', []);
+      showWbs = savedShowWbs2;
+    }
     _dspan = span;
     return out;
   }
