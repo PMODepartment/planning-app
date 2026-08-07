@@ -4537,6 +4537,24 @@
   // unlocked (imported/custom) nodes, so the skeleton is never actually re-seeded; it's simply
   // still there, with the same ids and codes it always had.
   function _wbsSkeletonTargets() {
+    // ⚠️ Read the LIVE tree first, not the WBS_SKELETON constant. The constant is edited over time
+    // (e.g. Closeout Phase was appended to it after AVR101 and other existing projects had already
+    // been seeded with an older, shorter skeleton) — a project only ever gets the skeleton it was
+    // ACTUALLY seeded with, so assuming every project has however many top nodes the constant
+    // currently declares misnumbers new top-level codes for older projects. Live locked top-level
+    // nodes are the ground truth for what this specific project's skeleton actually is.
+    if (WBS_NODES && WBS_NODES.length) {
+      var top = WBS_NODES.filter(function (n) { return n.is_locked && !n.parent_id; });
+      if (top.length) {
+        var codeOf = computeWbsCodes();
+        return top.map(function (n) {
+          var kids = WBS_NODES.filter(function (k) { return k.parent_id === n.id; }).length;
+          return { code: codeOf[n.id], name: n.name, kids: kids, source_kind: n.source_kind || null };
+        }).filter(function (t) { return !t.source_kind && t.code; })
+          .sort(function (a, b) { return a.code.localeCompare(b.code, undefined, { numeric: true }); });
+      }
+    }
+    // Fallback (skeleton not seeded yet, or read-only): offer the constant so placement is still possible.
     return WBS_SKELETON.map(function (n, i) {
       return { code: String(i + 1), name: n.name, kids: (n.children || []).length, source_kind: n.source_kind || null };
     }).filter(function (t) { return !t.source_kind; });
@@ -4595,7 +4613,9 @@
       read: function (el) {
         var plan = [];
         Array.prototype.forEach.call(el.querySelectorAll('.ps-impwbs'), function (s) {
-          plan.push({ prefix: s.getAttribute('data-branch'), target: s.value });
+          var code = s.getAttribute('data-branch');
+          var b = top.branches.filter(function (x) { return String(x.code) === code; })[0];
+          plan.push({ prefix: code, target: s.value, name: b ? b.name : '' });
         });
         return { plan: plan, drop: top.drop };
       }
@@ -4606,11 +4626,18 @@
   // needed. ⚠️ Mapping onto a phase also preserves DEPTH (dropping the 1-segment root and moving
   // "1.4" -> "4.1" is segment-for-segment), which keeps any WBS-depth location mapping chosen in the
   // same dialog aligned. Sending a branch to its own top-level instead shortens it by one segment.
+  // ⚠️ MERGE, not nest, when the branch's own name equals the skeleton phase it's filed under. Plain
+  // prefix-rewriting always inserted the branch as a NEW CHILD of the target — filing a file's own
+  // "Initiation Phase"/"Planning Phase"/"Execution Phase"/"Project Milestones" branches under the
+  // identically-named skeleton phase produced "Milestones > Project Milestones", "Initiation Phase >
+  // Initiation Phase", … — the exact double-layering reported live on Avesta (AVR101) after reimport.
+  // A same-name branch is redundant with the skeleton node it matched; its own row is dropped and its
+  // CHILDREN are filed directly as the target's next children instead, so the extra layer disappears.
   function applyWbsPlacement(recs, placement, replace) {
     if (!placement || !placement.plan || !placement.plan.length) return recs;
     var drop = {}; (placement.drop || []).forEach(function (c) { drop[c] = 1; });
-    var skel = _wbsSkeletonTargets(), kidsOf = {};
-    skel.forEach(function (t) { kidsOf[t.code] = t.kids; });
+    var skel = _wbsSkeletonTargets(), kidsOf = {}, nameOf = {};
+    skel.forEach(function (t) { kidsOf[t.code] = t.kids; nameOf[t.code] = t.name; });
     var nextTop = skel.length;
     if (!replace) {
       // Appending to an existing schedule: never land on a code a surviving row already owns.
@@ -4621,18 +4648,35 @@
         else if (seg.length === 2 && kidsOf[seg[0]] != null) { var n2 = parseInt(seg[1], 10); if (n2 > kidsOf[seg[0]]) kidsOf[seg[0]] = n2; }
       });
     }
-    var moves = placement.plan.map(function (p) {
-      var np;
-      if (p.target && kidsOf[p.target] != null) { kidsOf[p.target] += 1; np = p.target + '.' + kidsOf[p.target]; }
-      else { nextTop += 1; np = String(nextTop); }
-      return { from: String(p.prefix), to: np };
+    var moves = [];
+    placement.plan.forEach(function (p) {
+      var from = String(p.prefix);
+      if (p.target && kidsOf[p.target] != null) {
+        var tgtName = nameOf[p.target] || '';
+        var sameName = p.name && tgtName && String(p.name).trim().toLowerCase() === tgtName.trim().toLowerCase();
+        if (sameName) {
+          drop[from] = 1;   // redundant with the skeleton node it matched — merge, don't nest
+          var pre = from + '.';
+          recs.filter(function (r) { return String(r.code).indexOf(pre) === 0 && String(r.code).slice(pre.length).indexOf('.') === -1; })
+            .forEach(function (kid) {
+              kidsOf[p.target] += 1;
+              moves.push({ from: String(kid.code), to: p.target + '.' + kidsOf[p.target] });
+            });
+        } else {
+          kidsOf[p.target] += 1;
+          moves.push({ from: from, to: p.target + '.' + kidsOf[p.target] });
+        }
+      } else {
+        nextTop += 1;
+        moves.push({ from: from, to: String(nextTop) });
+      }
     });
     // Longest prefix first, so a nested branch can never be rewritten by an ancestor's rule.
     moves.sort(function (a, b) { return b.from.length - a.from.length; });
     var out = [];
     recs.forEach(function (r) {
       var c = String(r.code);
-      if (drop[c]) return;   // the exporter's project-root wrapper
+      if (drop[c]) return;   // the exporter's project-root wrapper, or a merged same-name branch
       for (var i = 0; i < moves.length; i++) {
         var m = moves[i];
         if (c === m.from) { r.code = m.to; break; }
