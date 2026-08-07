@@ -10067,10 +10067,55 @@
   var _seedingSkeleton = false;
   async function ensureWbsSkeleton() {
     // ⚠️ Re-entrancy guard: this is fired from load(), and load() can overlap (project switch, the
-    // reload after Clear). Two runs both seeing an empty WBS_NODES would each seed a full skeleton.
+    // reload after Clear). Two runs both seeing an empty WBS_NODES would each seed a full skeleton —
+    // but that guard only protects THIS PAGE's own JS runtime. Two separate page loads / browser
+    // tabs each starting from an empty `wbs_nodes` table (e.g. right after a Clear, or on first
+    // ever open) have no shared state at all and will both pass this check, each inserting its own
+    // full 7-node skeleton a moment apart — the "14 locked nodes instead of 7" corruption seen live
+    // on Avesta (AVR101), created ~1 second apart by two independent loads. A local flag can't close
+    // that window; a fresh DB check right before writing narrows it (not eliminates it — there is no
+    // DB-level uniqueness constraint to make this atomic — but the two loads would need to race
+    // within this one query's round-trip instead of across the whole page-load lifecycle).
     if (!pid || !canWrite || WBS_NODES.length || _seedingSkeleton) return;
     _seedingSkeleton = true;
-    try { await _seedSkeleton(); } finally { _seedingSkeleton = false; }
+    try {
+      var chk = await sb().from('wbs_nodes').select('id').eq('project_id', pid).limit(1);
+      if (chk.error || (chk.data && chk.data.length)) return;   // already seeded by someone else — don't duplicate
+      await _seedSkeleton();
+    } finally { _seedingSkeleton = false; }
+  }
+  // Merge duplicate locked skeleton nodes — same name under the same parent, both locked. Real
+  // corruption seen live: two full skeletons inserted a moment apart by two racing page loads (see
+  // ensureWbsSkeleton). Keeps the EARLIEST node (by id — uuids from gen_random_uuid() aren't
+  // chronologically sortable, but `created_at` is on every row) and re-points anything filed against
+  // a dropped duplicate (summary rows via wbs_node_id, activities' wbs_node_id, child wbs_nodes'
+  // parent_id) onto the survivor before deleting it — so nothing is silently orphaned.
+  async function _wbsDedupeSkeleton() {
+    if (!pid || !canWrite || !WBS_NODES.length) return 0;
+    var byKey = {}, dupes = [];
+    WBS_NODES.filter(function (n) { return n.is_locked; })
+      .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); })
+      .forEach(function (n) {
+        var key = (n.parent_id || '') + ' ' + String(n.name || '').trim().toLowerCase();
+        if (byKey[key]) dupes.push({ keep: byKey[key], drop: n }); else byKey[key] = n;
+      });
+    if (!dupes.length) return 0;
+    for (var i = 0; i < dupes.length; i++) {
+      var keepId = dupes[i].keep.id, dropId = dupes[i].drop.id;
+      // Re-point children and activities onto the survivor, THEN delete.
+      await sb().from('wbs_nodes').update({ parent_id: keepId }).eq('parent_id', dropId);
+      // ⚠️ A summary row already exists for `keep` too — don't create a second one. Delete the
+      // dropped node's own summary row(s) rather than re-pointing them (re-pointing would recreate
+      // the exact "two rows for one wbs_node_id" duplication _wbsEnsureSummaries exists to heal).
+      await sb().from(TABLE).delete().eq('wbs_node_id', dropId).eq('activity_type', 'WBS Summary');
+      await sb().from(TABLE).update({ wbs_node_id: keepId }).eq('wbs_node_id', dropId);
+      var dres = await sb().from('wbs_nodes').delete().eq('id', dropId);
+      if (dres.error) continue;
+      WBS_NODES = WBS_NODES.filter(function (n) { return n.id !== dropId; });
+      WBS_NODES.forEach(function (n) { if (n.parent_id === dropId) n.parent_id = keepId; });
+      rows.forEach(function (r) { if (r.wbs_node_id === dropId) r.wbs_node_id = keepId; });
+    }
+    return dupes.length;
   }
   async function _seedSkeleton() {
     var toInsert = [], flat = [];
@@ -10109,17 +10154,43 @@
   function wbsIsLocked(id) { var n = wbsById(id); return !!(n && n.is_locked); }
   function wbsSourceKind(id) { var n = wbsById(id); return n ? (n.source_kind || null) : null; }
   var SOURCE_KIND_LABEL = { design_development: 'Design Development — synced from Drawing Register + Material Submittal Log', procurement: 'Procurement — synced from the Procurement (WPM) app' };
+  var _ensuringSummaries = false;
   async function _wbsEnsureSummaries() {
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
-    // ---- Heal DUPLICATE projections first -------------------------------------------------
+    // ⚠️ Re-entrancy guard. This is called from several places (load(), _wbsCommit(),
+    // syncDesignDevelopment()) and those can overlap — e.g. a Realtime storm-guard reload firing
+    // while a previous call is still mid-insert. Two overlapping runs each computing "missing" from
+    // the SAME stale snapshot would both insert a row for the same node, defeating the dedupe below
+    // and compounding it. Real incident: this is exactly how Avesta (AVR101) ran away to 2,000+
+    // duplicate WBS-Summary rows in a matter of seconds.
+    if (_ensuringSummaries) return 0;
+    _ensuringSummaries = true;
+    try { return await _wbsEnsureSummariesInner(); } finally { _ensuringSummaries = false; }
+  }
+  async function _wbsEnsureSummariesInner() {
+    // Merge duplicate locked skeleton nodes first (two racing page loads can each seed a full
+    // skeleton — see ensureWbsSkeleton) — otherwise the loop below would happily give each duplicate
+    // node its own summary row, which is corruption, not healing.
+    await _wbsDedupeSkeleton();
+    // ---- Heal DUPLICATE projections -------------------------------------------------------
     // A node must have exactly ONE summary row; more than one shows the same WBS twice in the
     // schedule while the WBS Manager still reports the correct node count. Keep the earliest row
     // (it's the one activities were filed against) and drop the rest. Safe: activities reference
     // the WBS by dotted CODE + wbs_node_id, never by the summary row's id.
-    var seen = {}, dupIds = [];
-    rows.forEach(function (r) {
-      if (!isWbs(r) || !r.wbs_node_id) return;
-      if (seen[r.wbs_node_id]) dupIds.push(r.id); else seen[r.wbs_node_id] = 1;
+    // ⚠️ Queried FRESH from the DB, not from the in-memory `rows` — `rows` can be stale relative to
+    // what's actually been written (e.g. mid-Realtime-reload, or right after another tab/session
+    // wrote), and trusting a stale snapshot here is exactly what let the Avesta incident insert
+    // thousands of "missing" rows that, on the server, already existed.
+    var have = {}, existing = [];
+    for (var ci = 0; ci < WBS_NODES.length; ci += 200) {
+      var ids = WBS_NODES.slice(ci, ci + 200).map(function (n) { return n.id; });
+      var eq = await sb().from(TABLE).select('id,wbs_node_id').eq('project_id', pid).eq('activity_type', 'WBS Summary').in('wbs_node_id', ids);
+      if (eq.error) return 0;   // can't safely determine "missing" — bail rather than risk duplicating
+      existing = existing.concat(eq.data || []);
+    }
+    var byNode = {}, dupIds = [];
+    existing.forEach(function (r) {
+      if (byNode[r.wbs_node_id]) dupIds.push(r.id); else { byNode[r.wbs_node_id] = r.id; have[r.wbs_node_id] = true; }
     });
     if (dupIds.length) {
       for (var d = 0; d < dupIds.length; d += 100) {
@@ -10131,8 +10202,6 @@
       rebuild(true);   // the deleted rows are still in _sorted / the roll-up maps until we re-sort
       UI.toast('Removed ' + dupIds.length + ' duplicate WBS row' + (dupIds.length === 1 ? '' : 's') + ' from the schedule.', 'success');
     }
-    var have = {};
-    rows.forEach(function (r) { if (isWbs(r) && r.wbs_node_id) have[r.wbs_node_id] = true; });
     var missing = WBS_NODES.filter(function (n) { return !have[n.id]; });
     if (!missing.length) return 0;
     var codeOf = computeWbsCodes(), made = 0;
@@ -10141,7 +10210,8 @@
       var res = await _insertWbsSummary({ project_id: pid, wbs_node_id: n.id, activity_type: 'WBS Summary',
         wbs: codeOf[n.id], activity_name: n.name, created_by: UID });
       if (res.error) { UI.toast('Could not restore the schedule row for WBS “' + esc(n.name || '') + '”: ' + res.error.message, 'error'); break; }
-      if (res.data) { rows.push(res.data); made++; }
+      if (res.data && !rows.some(function (r) { return r.id === res.data.id; })) rows.push(res.data);
+      if (res.data) made++;
     }
     return made;
   }
