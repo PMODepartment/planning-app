@@ -3135,7 +3135,11 @@
   // ⚠️ 'wbs' is a hierarchy, not a flat key: alone it means the plain WBS tree, and as the LAST
   // entry it means "show each group's WBS path". It is never valid in the middle.
   function dimValOf(r, dim) {
-    if (dim === 'work') return r.work_type || r.activity_name || '— Unnamed —';
+    // ⚠️ Was `r.work_type || r.activity_name || …` — an activity the Discipline/Trade wizard hasn't
+    // matched has no work_type, so it fell back to its OWN activity_name and formed a group of
+    // exactly one, flooding the grouping with hundreds of one-activity "disciplines" instead of a
+    // single "— No discipline/trade —" bucket like every other dimension here uses for its blanks.
+    if (dim === 'work') return (r.work_type || '').trim() || '— No discipline/trade —';
     if (dim === 'status') return r.status || 'Not Started';
     if (dim === 'responsible') return r.responsible_party || 'Unassigned';
     if (dim === 'type') return r.activity_type || 'Task';
