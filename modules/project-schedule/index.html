@@ -3707,12 +3707,21 @@
     m.el.querySelector('#bf-go').onclick = async function () {
       var p = plan(); if (!p.ups.length) { UI.toast('Nothing to update.', 'info'); return; }
       m.close(); showLoading('Filling location from the WBS…');
-      // Apply locally first so the grid is right even if a chunk fails partway.
+      // Apply locally first so the grid is right immediately; any row _batchUpdate reports as
+      // failed gets its local value reverted below, so the grid never claims a write that never
+      // reached the DB — a re-run of the backfill will pick those rows up again.
+      var prev = {}; p.ups.forEach(function (u) { prev[u.rec.id] = u.rec.location; });
       p.ups.forEach(function (u) { u.rec.location = u.loc; });
-      var okAll = await _batchUpdate(TABLE, p.ups.map(function (u) { return { id: u.rec.id, patch: { location: u.loc } }; }));
+      var res = await _batchUpdate(TABLE, p.ups.map(function (u) { return { id: u.rec.id, patch: { location: u.loc } }; }));
+      if (res.failedIds.length) {
+        var failedSet = {}; res.failedIds.forEach(function (id) { failedSet[id] = true; });
+        p.ups.forEach(function (u) { if (failedSet[u.rec.id]) u.rec.location = prev[u.rec.id]; });
+      }
       hideLoading();
       rebuild(false); renderGrid(); renderGantt();
-      if (okAll) UI.toast('Filled location on ' + p.ups.length + ' activities.', 'success');
+      var okCount = p.ups.length - res.failedIds.length;
+      if (res.ok) UI.toast('Filled location on ' + p.ups.length + ' activities.', 'success');
+      else UI.toast('Filled location on ' + okCount + ' of ' + p.ups.length + ' activities — run this again to retry the rest.', 'warn');
     };
     preview();
   }
@@ -3893,8 +3902,13 @@
       var p = locMapPlan(acts, map, function (r) { return r.location; }, true);
       if (!p.ups.length) { UI.toast('Nothing to update — the matching produces the values already stored.', 'info'); m.close(); return; }
       m.close(); showLoading('Applying the location matching…');
+      var prev = {}; p.ups.forEach(function (u) { prev[u.rec.id] = u.rec.location; });
       p.ups.forEach(function (u) { u.rec.location = u.loc; });
-      var okAll = await _batchUpdate(TABLE, p.ups.map(function (u) { return { id: u.rec.id, patch: { location: u.loc } }; }));
+      var wres = await _batchUpdate(TABLE, p.ups.map(function (u) { return { id: u.rec.id, patch: { location: u.loc } }; }));
+      if (wres.failedIds.length) {
+        var wfailedSet = {}; wres.failedIds.forEach(function (id) { wfailedSet[id] = true; });
+        p.ups.forEach(function (u) { if (wfailedSet[u.rec.id]) u.rec.location = prev[u.rec.id]; });
+      }
       // Remember the matching so a re-run (or a re-import) starts from the planner's decisions.
       // ⚠️ Tolerant: without the 2026-08-05 migration the column is absent — the values are still
       // applied, only the memory is lost, so the feature degrades rather than fails.
@@ -3915,7 +3929,9 @@
       var stillExcluded = state.filter(function (s) { return s.excluded && !s.lvl; }).map(function (s) { return s.name; });
       saveLocExcluded(carried.concat(stillExcluded));
       rebuild(false); renderGrid(); renderGantt();
-      if (okAll) UI.toast('Located ' + p.ups.length + ' activities.' + (savedOk ? '' : ' (The matching itself could not be saved — run the 2026-08-05 location-level-match migration.)'), savedOk ? 'success' : 'warn');
+      var wokCount = p.ups.length - wres.failedIds.length;
+      var wpartial = wres.failedIds.length ? (' Located ' + wokCount + ' of ' + p.ups.length + ' — run this again to retry the rest.') : ('Located ' + p.ups.length + ' activities.');
+      UI.toast(wpartial + (savedOk ? '' : ' (The matching itself could not be saved — run the 2026-08-05 location-level-match migration.)'), (wres.ok && savedOk) ? 'success' : 'warn');
     };
     preview();
   }
@@ -4078,8 +4094,10 @@
       var p = locMapPlan(acts, map, getWork, true);
       if (!p.ups.length) { UI.toast('Nothing to update — the matching produces the values already stored.', 'info'); m.close(); return; }
       m.close(); showLoading('Applying the discipline/trade matching…');
-      var okAll = await _batchUpdate(TABLE, p.ups.map(function (u) { return { id: u.rec.id, patch: { work_type: u.loc.work } }; }));
-      p.ups.forEach(function (u) { u.rec.work_type = u.loc.work; });
+      var dprev = {}; p.ups.forEach(function (u) { dprev[u.rec.id] = u.rec.work_type; });
+      var dres = await _batchUpdate(TABLE, p.ups.map(function (u) { return { id: u.rec.id, patch: { work_type: u.loc.work } }; }));
+      var dfailedSet = {}; dres.failedIds.forEach(function (id) { dfailedSet[id] = true; });
+      p.ups.forEach(function (u) { u.rec.work_type = dfailedSet[u.rec.id] ? dprev[u.rec.id] : u.loc.work; });
       hideLoading();
       // Remember matched + excluded names so a re-run starts from the planner's own decisions,
       // same asymmetric-memory fix as the Location Wizard's "not a location" case.
@@ -4090,7 +4108,9 @@
       var stillExcluded = state.filter(function (s) { return !s.on; }).map(function (s) { return s.name; });
       saveDiscExcluded(carried.concat(stillExcluded));
       rebuild(false); renderGrid(); renderGantt();
-      if (okAll) UI.toast('Set discipline/trade on ' + p.ups.length + ' activities.', 'success');
+      var dokCount = p.ups.length - dres.failedIds.length;
+      if (dres.ok) UI.toast('Set discipline/trade on ' + p.ups.length + ' activities.', 'success');
+      else UI.toast('Set discipline/trade on ' + dokCount + ' of ' + p.ups.length + ' activities — run this again to retry the rest.', 'warn');
     };
     preview();
   }
@@ -10008,13 +10028,25 @@
     }
     return res;
   }
+  // Returns { ok, failedIds }. ⚠️ Deliberately does NOT abort on the first errored chunk — a
+  // transient failure (e.g. a network blip) in one 40-row batch used to stop the whole write,
+  // silently leaving every later chunk un-attempted (found live: a 15,663-row apply stopped at
+  // 13,396 after one network error, with no way to tell which rows never landed). Every chunk is
+  // now attempted regardless, and the caller gets back exactly which ids failed so it can revert
+  // its own optimistic local state for those rows only — everything else stays applied.
   async function _batchUpdate(table, ups) {
+    var failed = [];
     for (var i = 0; i < ups.length; i += 40) {
       var slice = ups.slice(i, i + 40);
-      var res = await Promise.all(slice.map(function (u) { return sb().from(table).update(u.patch).eq('id', u.id).then(function (r) { return r.error ? r.error.message : null; }); }));
-      var err = res.find(Boolean); if (err) { UI.toast('Save error: ' + err, 'error'); return false; }
+      var res = await Promise.all(slice.map(function (u) {
+        return sb().from(table).update(u.patch).eq('id', u.id).then(function (r) { return { id: u.id, error: r.error ? r.error.message : null }; });
+      }));
+      res.forEach(function (r) { if (r.error) failed.push(r); });
     }
-    return true;
+    if (failed.length) {
+      UI.toast('Save error on ' + failed.length + ' of ' + ups.length + ' row' + (ups.length === 1 ? '' : 's') + (failed[0].error ? (': ' + failed[0].error) : '') + '.', 'error');
+    }
+    return { ok: failed.length === 0, failedIds: failed.map(function (f) { return f.id; }) };
   }
   // Select a WBS node (highlight); its selection preselects the parent when adding an activity.
   function wbsSelect(id) { _wbsSel = (_wbsSel === id) ? null : id; renderWbsManager(); }
