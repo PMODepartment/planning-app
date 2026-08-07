@@ -4038,17 +4038,53 @@
   // them are a trade, they're rooms/voids. Elevator INSTALLATION work is covered under MEPF/
   // Mechanical in real schedules, not its own WBS heading, so the bare term did more harm than
   // good and is deliberately left out.
-  var DISC_TERMS = ['structural', 'architectural', 'civil', 'mechanical', 'electrical', 'plumbing',
-    'mepf', 'sanitary', 'fire protection', 'fire fighting', 'firefighting', 'hvac', 'tiling',
-    'painting', 'waterproofing', 'masonry', 'carpentry', 'steel works', 'steelworks', 'concrete',
-    'formwork', 'formworks', 'falsework', 'rebar', 'reinforcement', 'roofing', 'landscaping',
-    'interior', 'finishing', 'excavation', 'earthworks', 'site works', 'sitework', 'substructure',
-    'superstructure', 'glazing', 'flooring', 'ceiling', 'drywall', 'partition', 'insulation',
-    'ventilation', 'ductwork', 'piping', 'wiring', 'conduit', 'fabrication', 'erection'];
-  // A name is a plausible discipline/trade if it hits a known term, or simply ends in "Works"/"Work"
-  // — the vocabulary construction schedules actually use for a trade heading (e.g. "Tiling Works").
-  function locGuessDiscipline(name) {
-    return locTermHit(name, DISC_TERMS) !== -1 || /\bworks?\s*$/i.test(String(name || '').trim());
+  // ⚠️ REAL DEFECT this vocabulary produced live on Avesta (AVR101): every sub-heading that merely
+  // ENDS IN "Works" — Wet Works, Fire Protection Works, Mechanical Works, Electrical Works,
+  // Plumbing Works, Electrical Works / Auxiliary Works, Architectural/Finishing Works, plus bare
+  // "Earthworks"/"Substructure"/"Superstructure" — was written as its OWN discipline value, so the
+  // Discipline/Trade grouping fragmented into a dozen buckets instead of the six trades a Megawide
+  // schedule actually uses: Structural Works, Architectural Works, MEPF Works, Site Works, Allied
+  // Services, Site Development. Those sub-headings are real WBS nodes (a schedule nests Mechanical/
+  // Electrical/Plumbing/Fire Protection under MEPF Works, and Wet Works/Finishing under
+  // Architectural Works, and Substructure/Superstructure/Earthworks under Structural Works) — they
+  // are BREAKDOWN of a trade, not a trade of their own, so they must collapse to their parent trade.
+  var WORK_CANON = [
+    { name: 'Structural Works', terms: ['structural works', 'structural', 'superstructure', 'substructure',
+      'earthworks', 'excavation', 'rebar', 'reinforcement', 'formwork', 'formworks', 'falsework',
+      'concrete works', 'concreting', 'steel works', 'steelworks', 'erection'] },
+    { name: 'Architectural Works', terms: ['architectural works', 'architectural', 'finishing works',
+      'finishing', 'wet works', 'dry works', 'tiling', 'painting', 'waterproofing', 'masonry',
+      'carpentry', 'glazing', 'flooring', 'ceiling', 'drywall', 'partition works', 'partition',
+      'roofing', 'interior'] },
+    { name: 'MEPF Works', terms: ['mepf works', 'mepf', 'mechanical works', 'mechanical',
+      'electrical works', 'electrical', 'plumbing works', 'plumbing', 'sanitary', 'fire protection',
+      'fire fighting', 'firefighting', 'hvac', 'ventilation', 'ductwork', 'piping', 'wiring',
+      'conduit', 'auxiliary works', 'auxiliary'] },
+    { name: 'Site Works', terms: ['site works', 'sitework'] },
+    { name: 'Allied Services', terms: ['allied services', 'allied'] },
+    { name: 'Site Development', terms: ['site development works', 'site development', 'landscaping'] }
+  ];
+  function _discTermMatch(s) {
+    for (var i = 0; i < WORK_CANON.length; i++) { if (locTermHit(s, WORK_CANON[i].terms) !== -1) return WORK_CANON[i].name; }
+    return null;
+  }
+  // The canonical trade for a WBS name: prefer the schedule's OWN grouping (walk the ancestry
+  // nearest-first for the enclosing trade heading — this is what correctly resolves "Fire Protection
+  // Works" nested under "MEPF Works" to "MEPF Works" rather than to a Fire-Protection bucket of its
+  // own), falling back to matching the name itself when no ancestor is a recognised trade (covers a
+  // flat/shallow WBS, and top-level headings like "Structural Works" matching themselves).
+  // ⚠️ Deliberately WBS-shape-agnostic: it doesn't matter whether Substructure/Superstructure sit as
+  // children of Structural Works or as its SIBLINGS in a given branch (both occur in real files) —
+  // either way the term itself resolves to Structural Works.
+  function discCanonOf(name, trail) {
+    var segs = trail ? String(trail).split(' › ').reverse() : [];
+    for (var i = 0; i < segs.length; i++) { var c = _discTermMatch(segs[i]); if (c) return c; }
+    return _discTermMatch(name);
+  }
+  // A name is a plausible discipline/trade if it (or its nearest enclosing WBS ancestor) resolves to
+  // one of the six canonical trades.
+  function locGuessDiscipline(name, trail) {
+    return !!discCanonOf(name, trail);
   }
   function discMatchKey() { return 'ps_discmatch_' + pid; }
   function loadDiscMatch() {
@@ -4076,9 +4112,10 @@
     var state = found.map(function (f) {
       var s = Object.prototype.hasOwnProperty.call(saved, f.name);
       var excluded = !s && !!excludedSet[f.name];
-      var on = s ? true : (excluded ? false : locGuessDiscipline(f.name));
+      var canon = discCanonOf(f.name, f.trail);
+      var on = s ? true : (excluded ? false : !!canon);
       return { name: f.name, n: f.n, trail: f.trail, depth: f.depth, on: on,
-        val: s ? saved[f.name] : f.name, valEdited: s };
+        val: s ? saved[f.name] : (canon || f.name), valEdited: s };
     });
     var filter = 'sug', q = '';
 
@@ -4168,8 +4205,9 @@
       var s = state[+tr.dataset.i]; if (!s) return;
       if (e.target.classList.contains('lw-on')) {
         s.on = e.target.checked;
-        if (!s.valEdited) s.val = s.name;
+        if (!s.valEdited) s.val = discCanonOf(s.name, s.trail) || s.name;
         var vi = tr.querySelector('.lw-val'); vi.disabled = !s.on;
+        vi.value = s.val;
         preview();
       } else if (e.target.classList.contains('lw-val')) { s.val = e.target.value; s.valEdited = true; preview(); }
     });
