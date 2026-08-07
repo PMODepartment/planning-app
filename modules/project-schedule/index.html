@@ -4144,6 +4144,19 @@
     if (ua !== ub) return ua ? 1 : -1;
     return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   }
+  // Construction-sequence order for Discipline/Trade groups (the trades a build actually proceeds
+  // through), not alphabetical. Anything not on the list falls after the known trades but still
+  // before the blank "— No discipline/trade —" bucket, which always sinks to the bottom.
+  var WORK_ORDER = ['structural works', 'architectural works', 'mepf works', 'allied services', 'site development works', 'site development'];
+  function cmpWorkName(a, b) {
+    var ua = /^—/.test(a), ub = /^—/.test(b);
+    if (ua !== ub) return ua ? 1 : -1;
+    if (ua && ub) return 0;
+    var ia = WORK_ORDER.indexOf(String(a).trim().toLowerCase()); if (ia === -1) ia = WORK_ORDER.length;
+    var ib = WORK_ORDER.indexOf(String(b).trim().toLowerCase()); if (ib === -1) ib = WORK_ORDER.length;
+    if (ia !== ib) return ia - ib;
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  }
   function cmpCodeStr(a, b) {
     var A = String(a).split('.'), B = String(b).split('.'), n = Math.max(A.length, B.length);
     for (var i = 0; i < n; i++) { var x = parseInt(A[i], 10), y = parseInt(B[i], 10); if (isNaN(x) && isNaN(y)) { if ((A[i]||'') !== (B[i]||'')) return (A[i]||'') < (B[i]||'') ? -1 : 1; } else { x = isNaN(x) ? -1 : x; y = isNaN(y) ? -1 : y; if (x !== y) return x - y; } }
@@ -4221,27 +4234,26 @@
         }
       });
     }
+    // Render the carved-out non-Execution-Phase activities FIRST, at the top level, by their real
+    // WBS path — same position and shape they have in the plain "by WBS" view (Milestones ›
+    // Initiation Phase › Planning Phase, in WBS order), not location-grouped and not wrapped in a
+    // synthetic bucket. The location-grouped Execution Phase content follows below.
+    if (otherPhaseActs.length) {
+      var savedShowWbs = showWbs; showWbs = true;
+      emitLeaf(otherPhaseActs, '', []);
+      showWbs = savedShowWbs;
+    }
     (function walk(list, di, parentCode, parentAnc) {
       if (di >= dims.length) { emitLeaf(list, parentCode, parentAnc); return; }
       var buckets = {};
       list.forEach(function (a) { var g = dimValOf(a, dims[di]) || '—'; (buckets[g] = buckets[g] || []).push(a); });
-      Object.keys(buckets).sort(cmpGroupName).forEach(function (g) {
+      Object.keys(buckets).sort(dims[di] === 'work' ? cmpWorkName : cmpGroupName).forEach(function (g) {
         var gcode = parentCode + '§' + g;
         out.push({ _dkind: 'group', _dcode: gcode, _ddepth: parentAnc.length, _danc: parentAnc,
           activity_name: g, _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
         walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
       });
     })(acts, 0, '', []);
-    // Render the carved-out non-Execution-Phase activities as their own top-level group, always by
-    // WBS path (never by the location dims they were excluded from) — visible, but never mixed in.
-    if (otherPhaseActs.length) {
-      var ogcode = '§other-phase';
-      out.push({ _dkind: 'group', _dcode: ogcode, _ddepth: 0, _danc: [],
-        activity_name: '— Other phases (not location-grouped) —', _gcount: otherPhaseActs.length, _gdim: 'other', id: 'grp:' + ogcode });
-      var savedShowWbs = showWbs; showWbs = true;
-      emitLeaf(otherPhaseActs, ogcode, [ogcode]);
-      showWbs = savedShowWbs;
-    }
     _dspan = span;
     return out;
   }
