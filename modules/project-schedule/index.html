@@ -3503,11 +3503,22 @@
         return '<option value="' + esc(s.key) + '"' + (s.key === sel ? ' selected' : '') + '>' + esc(s.name) + sm + '</option>';
       }).join('');
     }
-    // Guess: a source whose name matches the level's, else the WBS depth under the project root
-    // (level 1 is the project node itself, so the first location level is usually depth 2).
+    // Guess: a source whose name matches the level's, else the keyword-matched WBS-ancestry source
+    // (seeded with the level's own name), else a fixed WBS depth as a last resort.
+    // ⚠️ A fixed depth was the DEFAULT here until this fix, and it is exactly the mechanism
+    // documented above `locSrcsWbsWords` as broken on a real tree: a level like Zone does not sit at
+    // a consistent depth across every branch (it only exists under SOME floors, not others), so
+    // "whatever WBS node happens to sit at depth N" silently returns an unrelated ancestor — measured
+    // live on Avesta, this wrote the TOWER name into the ZONE field for 2,596 activities on the very
+    // first import that accepted the pre-filled guess. The keyword source (already proven correct —
+    // it's what "Match WBS to locations…" and "Fill location from the WBS tree…" use) scans the
+    // whole ancestry for a node whose NAME matches the level, so it degrades to "no match" instead of
+    // "wrong match" when a branch has no real subdivision at that level.
     function guessFor(lvl, i) {
       var byName = sources.filter(function (s) { return s.name.toLowerCase() === String(lvl.name || '').toLowerCase(); })[0];
       if (byName) return byName.key;
+      var kw = sources.filter(function (s) { return s.kind === 'wbsword'; })[0];
+      if (kw) return kw.key;
       var d = sources.filter(function (s) { return s.key === 'wbs:' + (i + 2); })[0];
       return d ? d.key : '';
     }
