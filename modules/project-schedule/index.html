@@ -1826,7 +1826,7 @@
         <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
         <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
         <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
-        <div><label class="pd-label">Work Type <small>(what this activity IS, e.g. Formworks — groups the same work across locations)</small></label><input class="pd-input" id="ps-f-work" list="ps-f-work-list" autocomplete="off" /><datalist id="ps-f-work-list"></datalist></div>
+        <div><label class="pd-label">Discipline / Trade <small>(what this activity IS, e.g. Structural Works, Tiling Works — groups the same trade across locations)</small></label><input class="pd-input" id="ps-f-work" list="ps-f-work-list" autocomplete="off" /><datalist id="ps-f-work-list"></datalist></div>
         <div class="ps-form-full" id="ps-f-loc-wrap" style="display:none;"><label class="pd-label">Location</label><div id="ps-f-loc-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full" id="ps-f-codes-wrap" style="display:none;"><label class="pd-label">Activity Codes</label><div id="ps-f-codes-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full" id="ps-f-udf-wrap" style="display:none;"><label class="pd-label">User-Defined Fields</label><div id="ps-f-udf-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
@@ -3087,8 +3087,8 @@
     var locDims = LOC_LEVELS.map(function (l) { return 'loc:' + l.id; });
     var presets = [
       { name: 'WBS tree (default)', dims: ['wbs'] },
-      { name: 'Location › Activity', dims: locDims.concat(['work']) },
-      { name: 'Activity › Location', dims: ['work'].concat(locDims) }
+      { name: 'Discipline › Location (recommended)', dims: ['work'].concat(locDims) },
+      { name: 'Location › Discipline', dims: locDims.concat(['work']) }
     ].filter(function (p) { return p.dims.length; });
     var h = '<div class="ps-gm-sec">Presets</div>';
     presets.forEach(function (p, i) {
@@ -3113,7 +3113,9 @@
     h += '<div class="ps-gm-sec">Location Breakdown</div>' +
       '<button data-gact="levels"><span data-ico="layers" data-ico-size="14"></span> Location Breakdown…</button>' +
       '<button data-gact="wizard"><span data-ico="layout" data-ico-size="14"></span> Match WBS to locations…</button>' +
-      '<button data-gact="backfill"><span data-ico="download" data-ico-size="14"></span> Fill location from the WBS tree…</button>';
+      '<button data-gact="backfill"><span data-ico="download" data-ico-size="14"></span> Fill location from the WBS tree…</button>' +
+      '<div class="ps-gm-sec">Discipline / Trade</div>' +
+      '<button data-gact="discwizard"><span data-ico="layout" data-ico-size="14"></span> Match WBS to Discipline/Trade…</button>';
     m.innerHTML = h;
     if (window.Icons && Icons.hydrate) Icons.hydrate(m);
     m.querySelectorAll('button[data-gpreset]').forEach(function (b) { b.onclick = function () { setGroupBys(presets[+b.dataset.gpreset].dims); renderGroupMenu(); }; });
@@ -3124,7 +3126,7 @@
     // ⚠️ Close this menu directly — `closeMenus()` is declared in the init/wiring scope, NOT at
     // module scope where renderGroupMenu lives, so calling it here threw ReferenceError and both
     // of these buttons did nothing. (Node harnesses stub it, so only running the real page caught it.)
-    m.querySelectorAll('button[data-gact]').forEach(function (b) { b.onclick = function () { m.classList.remove('open'); var a = b.dataset.gact; if (a === 'levels') openLocLevels(); else if (a === 'wizard') openLocWizard(); else openLocBackfill(); }; });
+    m.querySelectorAll('button[data-gact]').forEach(function (b) { b.onclick = function () { m.classList.remove('open'); var a = b.dataset.gact; if (a === 'levels') openLocLevels(); else if (a === 'wizard') openLocWizard(); else if (a === 'discwizard') openDiscWizard(); else openLocBackfill(); }; });
   }
   // ---- Grouping dimensions -------------------------------------------------------------------
   // A dimension is a flat key an activity can be bucketed by. `groupBys` is an ORDERED list of
@@ -3149,7 +3151,7 @@
   }
   function dimLabel(dim) {
     if (dim === 'wbs') return 'WBS';
-    if (dim === 'work') return 'Activity (work type)';
+    if (dim === 'work') return 'Discipline / Trade';
     if (dim === 'status') return 'Status';
     if (dim === 'responsible') return 'Responsible';
     if (dim === 'type') return 'Activity Type';
@@ -3731,6 +3733,16 @@
   // ---- Location Wizard --------------------------------------------------------------------------
   // Shows every WBS name that sits above real activities and asks the planner which location level
   // it IS — the inverse of the keyword source, which asks them to describe the values in advance.
+  // "Not a location" decisions are remembered per project (localStorage — no DB column, so no
+  // migration needed) so un-matching a false positive (e.g. a tower-CLUSTER node) sticks across
+  // wizard re-opens instead of being silently re-guessed back every time.
+  function locExcludedKey() { return 'ps_locexcl_' + pid; }
+  function loadLocExcluded() {
+    try { return JSON.parse(localStorage.getItem(locExcludedKey()) || '[]'); } catch (e) { return []; }
+  }
+  function saveLocExcluded(arr) {
+    try { localStorage.setItem(locExcludedKey(), JSON.stringify(arr)); } catch (e) {}
+  }
   function openLocWizard() {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
     if (!LOC_LEVELS.length) { UI.toast('Define your location levels first (Location Breakdown…).', 'warn'); return; }
@@ -3743,11 +3755,14 @@
     // rather than silently re-guessing over them.
     var saved = {};
     LOC_LEVELS.forEach(function (l) { var m = l.match || {}; Object.keys(m).forEach(function (nm) { saved[nm] = { lvl: l.id, val: m[nm] }; }); });
+    var excludedSet = {}; loadLocExcluded().forEach(function (n) { excludedSet[n] = true; });
     var state = found.map(function (f) {
-      var s = saved[f.name], g = s ? s.lvl : locGuessLevel(f.name, LOC_LEVELS);
+      var s = saved[f.name];
+      var excluded = !s && !!excludedSet[f.name];
+      var g = s ? s.lvl : (excluded ? '' : locGuessLevel(f.name, LOC_LEVELS));
       return { name: f.name, n: f.n, trail: f.trail, depth: f.depth, lvl: g,
         val: s ? s.val : (g ? locGuessValue(f.name, g, LOC_LEVELS) : f.name),
-        valEdited: !!s };
+        valEdited: !!s, excluded: excluded };
     });
     var filter = 'sug', q = '';
 
@@ -3850,6 +3865,7 @@
       var s = state[+tr.dataset.i]; if (!s) return;
       if (e.target.classList.contains('lw-lvl')) {
         s.lvl = e.target.value;
+        s.excluded = !s.lvl; // explicit "— not a location —" pick — remembered on Apply
         // Re-clean the value for the newly chosen level, unless the planner typed their own.
         if (!s.valEdited) s.val = s.lvl ? locGuessValue(s.name, s.lvl, LOC_LEVELS) : s.name;
         var vi = tr.querySelector('.lw-val'); vi.disabled = !s.lvl; vi.value = s.val;
@@ -3865,6 +3881,7 @@
       // value (e.g. the raw WBS name) sitting under a level it was never cleaned for.
       visible().forEach(function (s) {
         s.lvl = lvl;
+        s.excluded = !lvl;
         if (!s.valEdited) s.val = lvl ? locGuessValue(s.name, lvl, LOC_LEVELS) : s.name;
       });
       repaint();
@@ -3891,8 +3908,183 @@
         } catch (e) { savedOk = false; }
       }
       hideLoading();
+      // Persist "not a location" decisions too — carry forward any prior exclusions for names not
+      // seen in this session (e.g. filtered out), union with what's explicitly excluded now.
+      var stateNames = {}; state.forEach(function (s) { stateNames[s.name] = true; });
+      var carried = loadLocExcluded().filter(function (n) { return !stateNames[n]; });
+      var stillExcluded = state.filter(function (s) { return s.excluded && !s.lvl; }).map(function (s) { return s.name; });
+      saveLocExcluded(carried.concat(stillExcluded));
       rebuild(false); renderGrid(); renderGantt();
       if (okAll) UI.toast('Located ' + p.ups.length + ' activities.' + (savedOk ? '' : ' (The matching itself could not be saved — run the 2026-08-05 location-level-match migration.)'), savedOk ? 'success' : 'warn');
+    };
+    preview();
+  }
+  // ---- Discipline / Trade wizard -----------------------------------------------------------------
+  // Same shape as the Location Wizard, but there is only ONE target field (work_type, a plain
+  // string), not a set of levels — so instead of "which level is this", each row is a plain
+  // yes/no "is this a discipline name", pre-guessed against a vocabulary of trade terms. Deepest
+  // ancestor wins (via locSrcsAssigned, shared with Location), which is what makes the nested
+  // example work: an activity under "Architectural Works › Tiling Works" gets the more specific
+  // "Tiling Works", not the broader "Architectural Works".
+  var DISC_TERMS = ['structural', 'architectural', 'civil', 'mechanical', 'electrical', 'plumbing',
+    'mepf', 'sanitary', 'fire protection', 'fire fighting', 'firefighting', 'hvac', 'tiling',
+    'painting', 'waterproofing', 'masonry', 'carpentry', 'steel works', 'steelworks', 'concrete',
+    'formworks', 'rebar', 'reinforcement', 'roofing', 'landscaping', 'interior', 'finishing',
+    'excavation', 'earthworks', 'site works', 'sitework', 'substructure', 'superstructure',
+    'glazing', 'flooring', 'ceiling', 'drywall', 'partition', 'insulation', 'elevator',
+    'ventilation', 'ductwork', 'piping', 'wiring', 'conduit', 'fabrication', 'erection'];
+  // A name is a plausible discipline/trade if it hits a known term, or simply ends in "Works"/"Work"
+  // — the vocabulary construction schedules actually use for a trade heading (e.g. "Tiling Works").
+  function locGuessDiscipline(name) {
+    return locTermHit(name, DISC_TERMS) !== -1 || /\bworks?\s*$/i.test(String(name || '').trim());
+  }
+  function discMatchKey() { return 'ps_discmatch_' + pid; }
+  function loadDiscMatch() {
+    try { return JSON.parse(localStorage.getItem(discMatchKey()) || '{}'); } catch (e) { return {}; }
+  }
+  function saveDiscMatch(tbl) {
+    try { localStorage.setItem(discMatchKey(), JSON.stringify(tbl)); } catch (e) {}
+  }
+  function discExcludedKey() { return 'ps_discexcl_' + pid; }
+  function loadDiscExcluded() {
+    try { return JSON.parse(localStorage.getItem(discExcludedKey()) || '[]'); } catch (e) { return []; }
+  }
+  function saveDiscExcluded(arr) {
+    try { localStorage.setItem(discExcludedKey(), JSON.stringify(arr)); } catch (e) {}
+  }
+  function openDiscWizard() {
+    if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
+    var acts = locExecScopedActs();
+    if (!acts.length) { UI.toast('No Execution Phase activities with a WBS code to read from.', 'warn'); return; }
+    var nameByCode = {}; rows.forEach(function (r) { if (isWbs(r) && r.wbs) nameByCode[String(r.wbs)] = r.activity_name || ''; });
+    var found = locScanNames(acts, function (r) { return r.wbs; }, nameByCode);
+
+    var saved = loadDiscMatch();            // name -> value, for names the planner already matched
+    var excludedSet = {}; loadDiscExcluded().forEach(function (n) { excludedSet[n] = true; });
+    var state = found.map(function (f) {
+      var s = Object.prototype.hasOwnProperty.call(saved, f.name);
+      var excluded = !s && !!excludedSet[f.name];
+      var on = s ? true : (excluded ? false : locGuessDiscipline(f.name));
+      return { name: f.name, n: f.n, trail: f.trail, depth: f.depth, on: on,
+        val: s ? saved[f.name] : f.name, valEdited: s };
+    });
+    var filter = 'sug', q = '';
+
+    function visible() {
+      var ql = q.toLowerCase();
+      return state.filter(function (s) {
+        if (ql && s.name.toLowerCase().indexOf(ql) === -1 && (s.trail || '').toLowerCase().indexOf(ql) === -1) return false;
+        if (filter === 'sug') return s.on;
+        if (filter === 'un') return !s.on;
+        return true;
+      });
+    }
+    function rowsHtml() {
+      var vis = visible();
+      if (!vis.length) return '<tr><td colspan="4" style="padding:10px;color:var(--pd-muted);">Nothing matches.</td></tr>';
+      return vis.map(function (s) {
+        var i = state.indexOf(s);
+        return '<tr data-i="' + i + '">' +
+          '<td style="padding:3px 6px;"><div>' + esc(s.name) + '</div>' +
+            (s.trail ? '<div style="color:var(--pd-muted);font-size:11px;" title="' + esc(s.trail) + '">' + esc(s.trail.length > 70 ? '…' + s.trail.slice(-70) : s.trail) + '</div>' : '') + '</td>' +
+          '<td style="padding:3px 6px;text-align:right;color:var(--pd-muted);white-space:nowrap;">' + s.n.toLocaleString() + '</td>' +
+          '<td style="padding:3px 6px;text-align:center;"><input type="checkbox" class="lw-on"' + (s.on ? ' checked' : '') + '></td>' +
+          '<td style="padding:3px 6px;"><input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.on ? '' : ' disabled') + ' style="min-width:160px;"></td>' +
+        '</tr>';
+      }).join('');
+    }
+    function counts() {
+      var on = state.filter(function (s) { return s.on; }).length;
+      return 'Discipline/Trade: <strong>' + on + '</strong> · not a trade: <strong>' + (state.length - on) + '</strong>';
+    }
+    var m = UI.modal('<div style="width:100%;max-height:82vh;display:flex;flex-direction:column;">' +
+      '<div style="flex:0 0 auto;">' +
+      '<h2 style="margin:0 0 4px;">Match the WBS to Discipline / Trade</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">These are the WBS names sitting above real activities <strong>under Execution Phase</strong> only, most-used first — pre-checked when the name looks like a trade heading (e.g. <em>Structural Works</em>, <em>Tiling Works</em>). Tick which ones ARE a discipline/trade; the deepest matching ancestor wins, so an activity under <em>Architectural Works › Tiling Works</em> gets <em>Tiling Works</em>. The value on the right is what gets written to the activity\'s Discipline / Trade field — edit it to tidy a name.</p>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">' +
+        '<input class="pd-input" id="lw-q" placeholder="Search names…" style="flex:1 1 200px;">' +
+        '<select class="pd-input" id="lw-filter" style="flex:0 0 190px;">' +
+          '<option value="sug">Proposed matches</option><option value="un">Not matched</option><option value="all">All names</option>' +
+        '</select>' +
+        '<button class="pd-btn" id="lw-bulk-on">Check all shown</button>' +
+        '<button class="pd-btn" id="lw-bulk-off">Uncheck all shown</button>' +
+      '</div>' +
+      '<div id="lw-shown" style="font-size:11.5px;color:var(--pd-muted);margin-bottom:2px;"></div>' +
+      '<div id="lw-counts" style="font-size:12px;color:var(--pd-muted);margin-bottom:6px;"></div>' +
+      '</div>' +
+      '<div style="flex:1 1 auto;min-height:120px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;">' +
+        '<table class="ps-table" style="min-width:0;font-size:12px;width:100%;"><thead style="position:sticky;top:0;z-index:1;background:var(--pd-card);"><tr>' +
+        '<th style="text-align:left;">WBS name <span style="font-weight:400;color:var(--pd-muted);">(where it sits)</span></th>' +
+        '<th style="text-align:right;">Activities</th><th style="text-align:center;">Discipline?</th><th style="text-align:left;">Value to write</th>' +
+        '</tr></thead><tbody id="lw-rows">' + rowsHtml() + '</tbody></table></div>' +
+      '<details id="lw-prev-wrap" style="flex:0 0 auto;font-size:12.5px;color:var(--pd-muted);border-top:1px solid var(--pd-line);margin-top:10px;padding-top:8px;">' +
+        '<summary style="cursor:pointer;color:var(--pd-ink);font-weight:600;">Preview what will change</summary>' +
+        '<div id="lw-prev" style="max-height:18vh;overflow:auto;margin-top:6px;"></div>' +
+      '</details>' +
+      '<div style="flex:0 0 auto;text-align:right;margin-top:12px;"><button class="pd-btn" id="lw-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="lw-go">Apply to activities</button></div>' +
+    '</div>');
+    var _pm = m.el.querySelector('.pd-modal');
+    if (_pm) { _pm.style.maxWidth = 'min(94vw,980px)'; _pm.style.overflowX = 'hidden'; }
+
+    function mapping() {
+      var table = {};
+      state.forEach(function (s) { if (s.on && String(s.val || '').trim()) table[s.name] = String(s.val).trim(); });
+      if (!Object.keys(table).length) return [];
+      return [{ key: 'work', name: 'Discipline / Trade', table: table,
+        src: locSrcsAssigned(function (r) { return r.wbs; }, nameByCode, table) }];
+    }
+    function getWork(r) { return { work: r.work_type || '' }; }
+    var prevT = null;
+    function preview() {
+      m.el.querySelector('#lw-counts').innerHTML = counts();
+      clearTimeout(prevT);
+      prevT = setTimeout(function () {
+        var map = mapping();
+        var p = locMapPlan(acts, map, getWork, true);
+        m.el.querySelector('#lw-prev').innerHTML = locPreviewHTML(map, p, acts.length);
+      }, 200);
+    }
+    function repaint() {
+      m.el.querySelector('#lw-rows').innerHTML = rowsHtml();
+      var n = visible().length;
+      m.el.querySelector('#lw-shown').textContent = n + ' name' + (n === 1 ? '' : 's') + ' shown — the bulk buttons affect exactly these.';
+      preview();
+    }
+
+    m.el.querySelector('#lw-rows').addEventListener('change', function (e) {
+      var tr = e.target.closest('tr[data-i]'); if (!tr) return;
+      var s = state[+tr.dataset.i]; if (!s) return;
+      if (e.target.classList.contains('lw-on')) {
+        s.on = e.target.checked;
+        if (!s.valEdited) s.val = s.name;
+        var vi = tr.querySelector('.lw-val'); vi.disabled = !s.on;
+        preview();
+      } else if (e.target.classList.contains('lw-val')) { s.val = e.target.value; s.valEdited = true; preview(); }
+    });
+    m.el.querySelector('#lw-q').oninput = function (e) { q = e.target.value; repaint(); };
+    m.el.querySelector('#lw-filter').onchange = function (e) { filter = e.target.value; repaint(); };
+    m.el.querySelector('#lw-bulk-on').onclick = function () { visible().forEach(function (s) { s.on = true; }); repaint(); };
+    m.el.querySelector('#lw-bulk-off').onclick = function () { visible().forEach(function (s) { s.on = false; }); repaint(); };
+    m.el.querySelector('#lw-x').onclick = m.close;
+    m.el.querySelector('#lw-go').onclick = async function () {
+      var map = mapping();
+      if (!map.length) { UI.toast('Check at least one WBS name as a discipline/trade first.', 'warn'); return; }
+      var p = locMapPlan(acts, map, getWork, true);
+      if (!p.ups.length) { UI.toast('Nothing to update — the matching produces the values already stored.', 'info'); m.close(); return; }
+      m.close(); showLoading('Applying the discipline/trade matching…');
+      var okAll = await _batchUpdate(TABLE, p.ups.map(function (u) { return { id: u.rec.id, patch: { work_type: u.loc.work } }; }));
+      p.ups.forEach(function (u) { u.rec.work_type = u.loc.work; });
+      hideLoading();
+      // Remember matched + excluded names so a re-run starts from the planner's own decisions,
+      // same asymmetric-memory fix as the Location Wizard's "not a location" case.
+      var onTable = {}; state.forEach(function (s) { if (s.on && String(s.val || '').trim()) onTable[s.name] = String(s.val).trim(); });
+      saveDiscMatch(onTable);
+      var stateNames = {}; state.forEach(function (s) { stateNames[s.name] = true; });
+      var carried = loadDiscExcluded().filter(function (n) { return !stateNames[n]; });
+      var stillExcluded = state.filter(function (s) { return !s.on; }).map(function (s) { return s.name; });
+      saveDiscExcluded(carried.concat(stillExcluded));
+      rebuild(false); renderGrid(); renderGantt();
+      if (okAll) UI.toast('Set discipline/trade on ' + p.ups.length + ' activities.', 'success');
     };
     preview();
   }
@@ -6831,7 +7023,7 @@
     var out = [];
     // Work type + one column per Location Breakdown level. These are ordinary editable activity
     // fields, so unlike codes/UDFs they carry `edit` and can be typed straight into the grid.
-    out.push(['work', 'Work Type', 'c-x', { kind: 'work', edit: true }]);
+    out.push(['work', 'Discipline / Trade', 'c-x', { kind: 'work', edit: true }]);
     LOC_LEVELS.forEach(function (l) { out.push(['loc:' + l.id, l.name, 'c-x', { kind: 'loc', id: l.id, edit: true }]); });
     CODE_TYPES.forEach(function (ct) { out.push(['code:' + ct.id, ct.name, 'c-x', { kind: 'code', id: ct.id }]); });
     UDF_DEFS.forEach(function (d) { out.push(['udf:' + d.id, d.name, 'c-x', { kind: 'udf', def: d }]); });
