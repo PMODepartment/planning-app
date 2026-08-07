@@ -4421,8 +4421,9 @@
   // Skeleton codes are deterministic and are derived from the CONSTANT, not the live tree: the
   // skeleton is fixed, always seeded first with sort_order 0..n, and locked (it cannot be renamed,
   // moved or deleted), so its top-level nodes are always "1".."4" in WBS_SKELETON order. Reading the
-  // constant is also what makes this correct for a REPLACE import, where _clearWbsTree() wipes the
-  // tree and load() re-seeds it AFTER the activities have already been written.
+  // constant is also what makes this correct for a REPLACE import — `_clearWbsTree()` only drops
+  // unlocked (imported/custom) nodes, so the skeleton is never actually re-seeded; it's simply
+  // still there, with the same ids and codes it always had.
   function _wbsSkeletonTargets() {
     return WBS_SKELETON.map(function (n, i) {
       return { code: String(i + 1), name: n.name, kids: (n.children || []).length, source_kind: n.source_kind || null };
@@ -10656,18 +10657,24 @@
       hideLoading(); UI.toast('Copied ' + made + ' WBS node' + (made === 1 ? '' : 's') + ' from ' + (others.find(function (p) { return p.id === srcPid; }) || {}).name + '.', 'success');
     };
   }
-  // Clearing / replacing the schedule must ALSO drop the WBS tree. `wbs_nodes` is a separate table and
-  // the grid's WBS rows are only a PROJECTION of it, so deleting project_schedule alone leaves every
-  // node behind — and load()'s _wbsEnsureSummaries() then faithfully re-projects them, which is why a
-  // Clear looked like it "did nothing". The same leftovers are what a re-import adopts a SECOND time
-  // into new nodes, duplicating every WBS level. Tolerant: a DB without the wbs-nodes migration has no
-  // table to clear, which is not an error.
+  // Clearing / replacing the schedule must ALSO drop the WBS tree — but NOT the auto-seeded skeleton
+  // (Milestones / Initiation / Planning / Execution Phase, incl. its locked Design Development /
+  // Procurement children). `wbs_nodes` is a separate table and the grid's WBS rows are only a
+  // PROJECTION of it, so deleting project_schedule alone leaves every node behind — and load()'s
+  // _wbsEnsureSummaries() then faithfully re-projects them, which is why a Clear looked like it "did
+  // nothing". The same leftovers are what a re-import adopts a SECOND time into new nodes,
+  // duplicating every WBS level. ⚠️ ONLY drop `is_locked` nodes — the skeleton is auto-seeded on
+  // every load anyway (`ensureWbsSkeleton`), so wiping it just means it gets silently recreated a
+  // moment later with new ids; keeping it in place means it's simply "still there", not "back
+  // already" — same tree, same ids, and `ensureWbsSkeleton` correctly no-ops since WBS_NODES isn't
+  // empty. Everything imported/custom (unlocked) is still wiped. Tolerant: a DB without the
+  // wbs-nodes migration has no table to clear, which is not an error.
   async function _clearWbsTree() {
     try {
-      var res = await sb().from('wbs_nodes').delete().eq('project_id', pid);
+      var res = await sb().from('wbs_nodes').delete().eq('project_id', pid).eq('is_locked', false);
       if (res.error && !/wbs_nodes|does not exist|schema cache|PGRST/i.test(res.error.message || '')) return res.error;
     } catch (e) {}
-    WBS_NODES = [];
+    WBS_NODES = WBS_NODES.filter(function (n) { return n.is_locked; });
     return null;
   }
   // One-time bridge: build the tree from existing project_schedule WBS-Summary rows (import / legacy),
@@ -14497,9 +14504,9 @@
       if (!isAdmin) { UI.toast('Clearing the schedule is restricted to admins.', 'error'); return; }
       if (!pid) { UI.toast('Select a project first.', 'error'); return; }
       var m = UI.modal('<h2 style="margin-top:0;">Clear schedule</h2>' +
-        '<p style="color:var(--pd-muted);font-size:13px;">This permanently deletes <strong>all activities and the entire WBS tree</strong> for project <strong>' + esc(pid) + '</strong> and cannot be undone. To confirm, type the project code below.</p>' +
+        '<p style="color:var(--pd-muted);font-size:13px;">This permanently deletes <strong>all activities and any custom/imported WBS branches</strong> for project <strong>' + esc(pid) + '</strong> and cannot be undone. The standard Milestones / Initiation / Planning / Execution Phase skeleton is auto-seeded and stays in place. To confirm, type the project code below.</p>' +
         '<input class="pd-input" id="ps-clr-in" placeholder="Type ' + esc(pid) + ' to confirm" autocomplete="off" />' +
-        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-clr-x">Cancel</button> <button class="pd-btn pd-btn-danger" id="ps-clr-go" disabled>Delete all activities + WBS</button></div>');
+        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-clr-x">Cancel</button> <button class="pd-btn pd-btn-danger" id="ps-clr-go" disabled>Delete all activities + custom WBS</button></div>');
       var inp = m.el.querySelector('#ps-clr-in'), go = m.el.querySelector('#ps-clr-go');
       inp.oninput = function () { go.disabled = inp.value.trim() !== String(pid); };
       inp.focus();
@@ -14509,12 +14516,13 @@
         m.close(); showLoading('Clearing schedule…');
         var del = await sb().from(TABLE).delete().eq('project_id', pid);
         if (del.error) { hideLoading(); UI.toast(del.error.message, 'error'); return; }
-        // Must drop the tree too, or load()'s _wbsEnsureSummaries() re-projects every surviving node
-        // and the WBS rows come straight back — the "Clear did nothing" report.
+        // Drop custom/imported WBS branches too, or load()'s _wbsEnsureSummaries() re-projects every
+        // surviving node and the WBS rows come straight back — the "Clear did nothing" report. The
+        // locked skeleton is deliberately left alone (see _clearWbsTree).
         var werr = await _clearWbsTree();
         hideLoading();
         if (werr) { UI.toast('Activities cleared, but the WBS tree could not be: ' + werr.message, 'error'); }
-        else { UI.toast('Schedule and WBS cleared.', 'success'); }
+        else { UI.toast('Schedule cleared. The standard WBS skeleton stays in place.', 'success'); }
         collapsed = {}; _wbsSel = null; resetUndo(); load();
       };
     };
