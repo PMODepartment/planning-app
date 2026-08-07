@@ -4363,7 +4363,7 @@
       predecessors: r.pred || null,
       planned_cost: r.pcost, actual_cost: r.acost, earned_value: r.ev };
   }
-  async function doImport(recs, replace, fname, locMap) {
+  async function doImport(recs, replace, fname, locMap, placement) {
     showLoading('Preparing import…');
     // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
     // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
@@ -4371,7 +4371,9 @@
     if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } }
     var uid = UID;
     // Location breakdown — create any levels the mapping asked for, then stamp each leaf rec's
-    // `location` so it rides along in the same insert rather than needing a second pass.
+    // `location` so it rides along in the same insert rather than needing a second pass. Runs
+    // BEFORE the WBS placement rewrite below: the location sources were built against the file's
+    // ORIGINAL codes (r.code, at preview time), so placement must not touch codes until this is done.
     locMap = locMap || [];
     if (locMap.length) {
       setLoading('Setting up the location breakdown…');
@@ -4381,6 +4383,11 @@
         populateGroupSelect(); seedExtraHidden(); renderHeader();
       } else locMap = [];
     }
+    // File the import's top-level branches under the skeleton (Milestones/Initiation/Planning/
+    // Execution Phase) instead of leaving the file's own project-root wrapper as a parallel sibling
+    // branch — the "double layered Milestones" / empty-skeleton-vs-real-branch class of bug. Rewrites
+    // r.code in place; recToPayload() below reads the FINAL code.
+    if (placement) recs = applyWbsPlacement(recs, placement, replace);
     var payloads = recs.map(function(r){
       var p = recToPayload(r);
       if (r.loc && Object.keys(r.loc).length) p.location = r.loc;
@@ -4543,6 +4550,8 @@
         '<td>'+(r.start?Fmt.date(r.start):'—')+'</td><td>'+(r.finish?Fmt.date(r.finish):'—')+'</td>'+
         '<td style="text-align:right;">'+(r.pct!=null?r.pct+'%':'')+'</td></tr>';
     }).join('');
+    // ---- WBS placement step (file it under the skeleton instead of a parallel root) ----
+    var wbsPlace = wbsPlaceUI(recs);
     // ---- Location mapping step (same mapper as the P6 path) ----
     // Sources here are the outline's WBS depths and any spreadsheet column the fixed header
     // detection didn't claim — which is where an OPC export carries Tower/Level/Zone.
@@ -4565,6 +4574,7 @@
       '<div style="max-height:260px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th></tr></thead><tbody>'+body+'</tbody></table></div>'+
       (recs.length>12?'<p style="font-size:12px;color:var(--pd-muted);">…and '+(recs.length-12)+' more.</p>':'')+
       '<label style="display:flex;align-items:center;gap:8px;margin:12px 0;"><input type="checkbox" id="ps-imp-rep" checked> Replace existing activities for this project</label>'+
+      (wbsPlace ? wbsPlace.html : '')+
       locSection+
       '<div style="text-align:right;"><button class="pd-btn" id="ps-imp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-imp-go">Import '+recs.length+' rows</button></div>');
     if (locUI) {
@@ -4578,7 +4588,8 @@
     m.el.querySelector('#ps-imp-go').onclick = function(){
       var rep=m.el.querySelector('#ps-imp-rep').checked;
       var locMap = locUI ? locUI.read(m.el) : [];
-      m.close(); doImport(recs, rep, fname, locMap);
+      var placement = wbsPlace ? wbsPlace.read(m.el) : null;
+      m.close(); doImport(recs, rep, fname, locMap, placement);
     };
   }
 
@@ -4834,6 +4845,10 @@
       .concat(locSrcsCodes((parsed.codeTypes || []).map(function (t) { return { id: t.tmpId, name: t.name }; }),
         function (r, tid) { var vid = r.codes && r.codes[tid]; return vid ? valByTmpId[vid] : null; }));
     locSources.forEach(function (s) { s._sample = locSrcSample(leafRecs, s); });
+    // ---- WBS placement step — same as the Excel path; a P6 export is EXACTLY the shape that
+    // produced the "parallel root" / "double layered Milestones" corruption (its own project-root
+    // wrapper node, its own Milestones/Initiation/Planning/Execution phase branches).
+    var wbsPlace = wbsPlaceUI(recs);
     var locUI = locSources.length ? locMapUI(LOC_LEVELS, locSources, true) : null;
     var locSection = locUI
       ? '<div style="border-top:1px solid var(--pd-line);margin-top:10px;padding-top:10px;">' +
@@ -4846,6 +4861,7 @@
       '<div style="max-height:260px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
       (recs.length > 12 ? '<p style="font-size:12px;color:var(--pd-muted);">…and ' + (recs.length - 12) + ' more.</p>' : '') +
       '<label style="display:flex;align-items:center;gap:8px;margin:12px 0;"><input type="checkbox" id="ps-impx-rep" checked> Replace existing activities for this project</label>' +
+      (wbsPlace ? wbsPlace.html : '') +
       locSection +
       '<p style="font-size:12px;color:var(--pd-muted);">Also imports the P6 calendar(s), activity codes and resource master into this project (added alongside anything already there — not replaced).</p>' +
       '<div style="text-align:right;"><button class="pd-btn" id="ps-impx-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-impx-go">Import ' + recs.length + ' rows</button></div>');
@@ -4860,6 +4876,7 @@
     m.el.querySelector('#ps-impx-go').onclick = function () {
       var rep = m.el.querySelector('#ps-impx-rep').checked;
       parsed.locMap = locUI ? locUI.read(m.el) : [];
+      parsed.wbsPlacement = wbsPlace ? wbsPlace.read(m.el) : null;
       m.close(); doImportXER(parsed, rep, fname);
     };
   }
@@ -4947,6 +4964,11 @@
         populateGroupSelect(); seedExtraHidden(); renderHeader();
       }
     }
+    // 2e) WBS placement — file the .xer's own project-root wrapper + phase branches under the
+    // skeleton instead of leaving them as a parallel root (see the Excel path for the full story).
+    // Rewrites r.code in place; must run after location mapping (which keyed off the ORIGINAL codes)
+    // and before xerRecToPayload (which reads the FINAL code as `wbs`).
+    if (parsed.wbsPlacement) parsed.recs = applyWbsPlacement(parsed.recs, parsed.wbsPlacement, replace);
     // 3) Activities (WBS + tasks) — remap each rec's UDF + activity-code values (keyed by P6 ids) to
     // the app ids created above.
     var payloads = parsed.recs.map(function (r) {
