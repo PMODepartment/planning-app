@@ -10900,7 +10900,8 @@
     if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
     legacy.sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     var nodeByCode = {}, sibCount = {}, schedUp = [];
-    WBS_NODES.forEach(function (n) { if (n.code) nodeByCode[n.code] = n.id; var k = n.parent_id || ''; sibCount[k] = (sibCount[k] || 0) + 1; });   // resume from partial
+    var codeOf0 = computeWbsCodes();
+    WBS_NODES.forEach(function (n) { var c = codeOf0[n.id]; if (c) nodeByCode[c] = n.id; var k = n.parent_id || ''; sibCount[k] = (sibCount[k] || 0) + 1; });   // resume from partial
     var byDepth = {};
     legacy.forEach(function (r) { var d = String(r.wbs).split('.').length; (byDepth[d] = byDepth[d] || []).push(r); });
     var depths = Object.keys(byDepth).map(Number).sort(function (a, b) { return a - b; });
