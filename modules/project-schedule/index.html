@@ -4574,6 +4574,22 @@
   // constant is also what makes this correct for a REPLACE import — `_clearWbsTree()` only drops
   // unlocked (imported/custom) nodes, so the skeleton is never actually re-seeded; it's simply
   // still there, with the same ids and codes it always had.
+  // Normalised comparison key for "is this file branch the same thing as that skeleton node?".
+  // ⚠️ Deliberately conservative. It folds case/punctuation, drops a leading generic qualifier
+  // ("Project Milestones" == "Milestones" — the exact pair that survived the first merge fix because
+  // it was filed by keyword hint, not by exact name) and tolerates a trailing plural. It does NOT
+  // fold distinct words, so "Tower 1 Execution Phase" still nests under "Execution Phase" instead of
+  // being merged away.
+  function _wbsNameKey(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\b(the|project|overall|main|general|key)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/s$/, '');
+  }
   function _wbsSkeletonTargets() {
     // ⚠️ Read the LIVE tree first, not the WBS_SKELETON constant. The constant is edited over time
     // (e.g. Closeout Phase was appended to it after AVR101 and other existing projects had already
@@ -4586,8 +4602,12 @@
       if (top.length) {
         var codeOf = computeWbsCodes();
         return top.map(function (n) {
-          var kids = WBS_NODES.filter(function (k) { return k.parent_id === n.id; }).length;
-          return { code: codeOf[n.id], name: n.name, kids: kids, source_kind: n.source_kind || null };
+          var kids = WBS_NODES.filter(function (k) { return k.parent_id === n.id; });
+          // childCode maps a normalised child name -> that child's dotted code, so a merged branch's
+          // own children can be filed INTO the matching existing child instead of beside it.
+          var childCode = {};
+          kids.forEach(function (k) { var key = _wbsNameKey(k.name); if (key && codeOf[k.id] && !childCode[key]) childCode[key] = codeOf[k.id]; });
+          return { code: codeOf[n.id], name: n.name, kids: kids.length, childCode: childCode, source_kind: n.source_kind || null };
         }).filter(function (t) { return !t.source_kind && t.code; })
           .sort(function (a, b) { return a.code.localeCompare(b.code, undefined, { numeric: true }); });
       }
@@ -4674,8 +4694,8 @@
   function applyWbsPlacement(recs, placement, replace) {
     if (!placement || !placement.plan || !placement.plan.length) return recs;
     var drop = {}; (placement.drop || []).forEach(function (c) { drop[c] = 1; });
-    var skel = _wbsSkeletonTargets(), kidsOf = {}, nameOf = {};
-    skel.forEach(function (t) { kidsOf[t.code] = t.kids; nameOf[t.code] = t.name; });
+    var skel = _wbsSkeletonTargets(), kidsOf = {}, nameOf = {}, childCodeOf = {};
+    skel.forEach(function (t) { kidsOf[t.code] = t.kids; nameOf[t.code] = t.name; childCodeOf[t.code] = t.childCode || {}; });
     var nextTop = skel.length;
     if (!replace) {
       // Appending to an existing schedule: never land on a code a surviving row already owns.
@@ -4691,12 +4711,20 @@
       var from = String(p.prefix);
       if (p.target && kidsOf[p.target] != null) {
         var tgtName = nameOf[p.target] || '';
-        var sameName = p.name && tgtName && String(p.name).trim().toLowerCase() === tgtName.trim().toLowerCase();
+        var key = _wbsNameKey(p.name), tgtKey = _wbsNameKey(tgtName);
+        var sameName = key && tgtKey && key === tgtKey;
         if (sameName) {
           drop[from] = 1;   // redundant with the skeleton node it matched — merge, don't nest
-          var pre = from + '.';
+          var pre = from + '.', kidCodes = childCodeOf[p.target] || {};
           recs.filter(function (r) { return String(r.code).indexOf(pre) === 0 && String(r.code).slice(pre.length).indexOf('.') === -1; })
             .forEach(function (kid) {
+              // ⚠️ Merging the branch is not enough on its own: its children were then appended as NEW
+              // siblings of the target's existing children, so a file "Procurement"/"Design Development"/
+              // "Project Execution Plan" landed BESIDE the skeleton's own locked node of that name —
+              // one visible branch became two (measured live on AVR101). A child that matches an
+              // existing child by name is filed INTO it; only genuinely new children take a fresh slot.
+              var kc = kidCodes[_wbsNameKey(kid.name)];
+              if (kc) { moves.push({ from: String(kid.code), to: kc }); return; }
               kidsOf[p.target] += 1;
               moves.push({ from: String(kid.code), to: p.target + '.' + kidsOf[p.target] });
             });

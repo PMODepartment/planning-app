@@ -4769,3 +4769,26 @@ workbook**, and two things went wrong:
   "Temporary Works Dwg (Twg)". **GPR101 re-verified byte-identical** to the pre-change parser across
   all 1,372 records (bar the 3 `w/ Comments` rows the status fix reclassifies). `node --check` clean.
   Assets `module.css/js?v=20260804f`.
+
+### 2026-08-08 — Project Schedule: the last WBS double-layer, and the duplicate children the merge fix caused
+Follow-up after another Avesta (AVR101) reimport still showed double-layered main WBS. Diagnosed by
+querying the live 1,627-node tree, not by re-reading code: the earlier merge fix worked for three of
+four branches, and had introduced a second defect of its own.
+- ⚠️ **`Milestones > Project Milestones` survived** because that branch is filed by **keyword hint**,
+  not by exact name, so the strict equality merge test never fired. New `_wbsNameKey()` normalises
+  before comparing (case/punctuation, parentheticals, a leading `the|project|overall|main|general|key`,
+  trailing plural). Conservative on purpose — `Tower 1 Execution Phase` still nests under
+  `Execution Phase` instead of being merged away.
+- ⚠️ **The merge fix created duplicate children — my own regression.** Merging lifted a branch's
+  children up as NEW siblings, so Planning Phase held three name-collided pairs: the locked skeleton
+  `Procurement`/`Design Development`/`Project Execution Plan` (0 grandkids) beside the file's unlocked
+  ones (1/7/3). `_wbsDedupeSkeleton()` can't heal those — it only merges pairs where **both** are
+  locked. A moved child now files **into** the matching existing child; only genuinely new children
+  take a fresh slot.
+- ⚠️ Landing on the existing child's code is safe, not a duplicate: `_clearWbsTree()` keeps locked
+  nodes, `wbsAdopt` links every legacy row of that code to the existing node, and
+  `_wbsEnsureSummaries()` deletes the duplicate projection on the next load.
+- **Verified in Node against the shipped functions** (sliced, not reimplemented): 5/5 name-key cases
+  including the two that must NOT fold, plus a full placement run reproducing the live AVR101 shape.
+  Inline script parses. **Not verified signed-in** — `index.html` isn't cache-busted, so hard-refresh
+  (Ctrl+Shift+R) before re-importing. Module-local, no migration, no `?v=` bump.

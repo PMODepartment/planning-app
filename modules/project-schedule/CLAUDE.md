@@ -3537,3 +3537,37 @@ nothing read it. It is now a real grouping level, so the grid can nest by delive
   accepted by the normalizer, `wbs` still forced last from either order, `wp` alone surviving, an
   unknown dim still dropped. Script parses; only those 3 sites enumerate dimensions, so nothing else
   needed updating. ⚠️ Not verified signed-in. Module-local, no migration, no `?v=` bump.
+
+## WBS import: the last double-layer + the duplicate children the merge fix created (2026-08-08) — fmlozano
+After another AVR101 reimport the user reported the main WBS still double-layered. Queried the live
+tree (1,627 nodes): the previous merge fix **worked for Initiation / Planning / Execution Phase** but
+left two real defects.
+- ⚠️ **`Milestones > Project Milestones` still nested.** The merge test was exact name equality, but
+  `_impGuessTarget` files that branch under Milestones via the **keyword hint** (`/milestone|key date/`),
+  not by name — so `sameName` was false and it nested. New **`_wbsNameKey()`** normalises before
+  comparing: case/punctuation folded, parentheticals dropped, a leading generic qualifier stripped
+  (`the|project|overall|main|general|key`), trailing plural tolerated. Deliberately conservative —
+  it does **not** fold distinct words, so `Tower 1 Execution Phase` still nests under `Execution
+  Phase` rather than being merged away (asserted as a test case).
+- ⚠️ **The merge fix itself created duplicate CHILDREN — my regression, found by querying the live
+  tree rather than by re-reading the code.** Merging lifted the branch's children up as **new
+  siblings** of the target's existing children, so Planning Phase ended up with three name-collided
+  pairs — locked skeleton `Procurement` / `Design Development` / `Project Execution Plan` (0 grandkids
+  each) sitting **beside** the file's unlocked ones (1 / 7 / 3 grandkids). `_wbsDedupeSkeleton()`
+  cannot heal these: it only merges pairs where **both** nodes are `is_locked`.
+  `_wbsSkeletonTargets()` now also returns each target's `childCode` (normalised child name → dotted
+  code), and a moved child that matches an existing child is filed **into** it; only genuinely new
+  children (e.g. `Preparation and Approval of BOQ`) take a fresh slot.
+- ⚠️ **Why filing into the existing code is safe rather than a duplicate summary row:** `_clearWbsTree()`
+  only drops unlocked nodes, so the locked skeleton child survives a replace-import. The file's row
+  then lands on that node's code, `wbsAdopt` links **every** legacy row of that code to the existing
+  node (`group.forEach`, no re-insert), and `_wbsEnsureSummaries()`'s duplicate-projection heal deletes
+  the extra summary row on the next load. Self-healing, not an orphan.
+- **Verified in Node against the SHIPPED `_wbsNameKey` + `applyWbsPlacement`** (sliced out, not
+  reimplemented, with stubbed skeleton targets): 5/5 name-key cases incl. the two that must NOT fold,
+  and a full placement run reproducing the live AVR101 shape — `Project Milestones` merges (child at
+  `1.1`, no extra layer), `Procurement`→`3.3` and `Design Development`→`3.2` land on the **existing**
+  children, and the new BOQ branch takes `3.4`. Inline script parses.
+  ⚠️ **Not verified signed-in** — needs a hard refresh (`index.html` is not `?v=` cache-busted) and
+  another Avesta reimport. ⚠️ The location + discipline wizards must be re-run after any reimport;
+  a reimport wipes `work_type` and `location`.
