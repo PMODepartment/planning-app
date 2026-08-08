@@ -1,5 +1,15 @@
 # Module: risk-register
 
+## Live collaboration + offline (Phase 1 & 2) (2026-07-26) — fmlozano
+Wired PDCollab (Realtime) + PDSync (offline). Modal-edit register → **row-level cursor**: `openForm`
+calls `wireModalCursor(m, r)` which broadcasts "editing this row" (cleared on cancel/save/backdrop);
+`paintRemote()` (end of `render()`) flags that row for others; presence avatars in `#rr-presence`;
+`applyRemoteChange` patches `rows` from postgres_changes. **Offline:** the edit path routes through
+`PDSync.write` (insert stays online) + a read-cache (`rr:<pid>`). Realtime migration
+`../../migrations/2026-07-26-realtime-collab-registers.sql` (USER MUST RUN) covers the live-value stream.
+Verified `node --check`; not browser-verified. Assets `offline.js`/`collab.js` + `module.js?v=20260726a`.
+This is the reference wiring the other four registers copied.
+
 Developer change log for the **risk-register** module. This is also the
 **reference module** other developers copy. Update this every PR.
 

@@ -32,6 +32,21 @@
       var { error } = await sb().from('projects').update(p).eq('id', id);
       if (error) throw error;
     },
+    // Reversible — the everyday "retire a project" action. Sets the existing
+    // projects.status to archived/active (same flag the Edit modal exposes and
+    // portfolio-overview filters on); no data is removed. Admin-only (DB).
+    async archiveProject(id, archive) {
+      var { error } = await sb().rpc('admin_archive_project', {
+        target: id, archive: archive !== false,
+      });
+      if (error) throw error;
+    },
+    // Hard delete. The RPC refuses if ANY module row still references the
+    // project and names what's blocking — surface error.message to the admin.
+    async deleteProject(id) {
+      var { error } = await sb().rpc('admin_delete_project', { target: id });
+      if (error) throw error;
+    },
 
     // ---- Workspaces (Workspace → Program → Project tree; shared) ----
     async getWorkspaces() {
@@ -47,6 +62,12 @@
     },
     async updateWorkspace(id, w) {
       var { error } = await sb().from('workspaces').update(w).eq('id', id);
+      if (error) throw error;
+    },
+    // Hard delete. The RPC refuses while the node still has child
+    // workspaces/programs or projects — surface error.message to the admin.
+    async deleteWorkspace(id) {
+      var { error } = await sb().rpc('admin_delete_workspace', { target: id });
       if (error) throw error;
     },
 

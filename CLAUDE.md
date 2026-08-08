@@ -67,7 +67,7 @@ developer, plug into one shared shell.
 |---|---|
 | `super_admin` | full control, only role that can set super_admin |
 | `admin` | manage users/projects, all modules |
-| `planner` | auto-approve writer, all projects |
+| `planner` | auto-approve writer, assigned projects only (may create new projects) |
 | `user` | assigned projects only |
 | `viewer` | read-only |
 
@@ -76,6 +76,2429 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-08-06 — Fix: dashboard.css never got its cache-busting bump
+The autosave commits (`94dba8e`) added `.pd-autosave*` styles to shared `assets/css/dashboard.css`
+but left its `?v=` at `20260724a` everywhere it's referenced — so returning users kept serving the
+cached pre-autosave stylesheet and the new status badge rendered unstyled. Bumped to `20260806b`
+across **all 22 HTML files** that reference it (every shell page + every module `index.html`),
+per the documented cache-busting convention. Diff is exactly one line per file, the version string
+only — verified before committing. No other change.
+
+### 2026-08-06 — Autosave rolled out to 5 modal-edit modules (shared, debounced)
+User asked for autosave on all applicable modules. Built a **shared, reusable** autosave layer
+instead of bespoke per-module logic, so it composes with what already exists rather than fighting it.
+- **New `assets/js/autosave.js` (`Autosave.wire`)**: debounced (1.2s) autosave for **Edit** modals that
+  **re-uses each module's own Save button handler** — the handler already knows how to build the
+  payload and write via `PDSync`/Supabase — instead of reimplementing save logic per module. On each
+  autosave tick it temporarily no-ops `modal.close` so the handler's own `m.close()` call doesn't
+  dismiss the modal mid-edit, then restores it; a small status badge (`Unsaved changes… → Saving… →
+  Saved`) sits beside the modal title. A true close (× / Cancel / Esc) still closes normally.
+  Concurrency-safe: an autosave triggered while one is in flight is coalesced into one more run after.
+- **Wired into 5 modules whose Save handler is pure data (no storage/file I/O):** **Risk Register**
+  (reference), **Contracts & Claims**, **Issues & Lessons Learned**, **Stakeholder Map**, and
+  **Progress Photos'** metadata-edit modal (description/trade/works/location/date — the image itself
+  is untouched). Autosave only applies to **editing an existing record** — creating a new record still
+  requires an explicit first Save (autosaving a half-filled new row would insert incomplete data with
+  no undo).
+- ⚠️ **Deliberately NOT wired into Drawing Register or Material Submittal.** Both modules' Save
+  handlers perform **file upload/replace/delete side effects** with carefully documented ordering
+  rules (upload before the row write, rollback on failure, delete-old-only-after-pointing-at-new).
+  Re-running that handler every debounce tick would re-upload files and could delete/replace storage
+  objects repeatedly while the planner is still typing — a correctness and cost regression, not an
+  improvement. These two keep manual Save; flagged for a follow-up that separates "save metadata" from
+  "handle the file" if autosave is wanted there too.
+- New `.pd-autosave` badge styles in `dashboard.css` (idle/busy/ok/err); `?v=` on the new script only
+  (module-local additions), no shared-asset version bump needed elsewhere.
+- Verified: `node --check` clean on `autosave.js` + all 5 edited `module.js`. **Not browser-verified**
+  — this environment has no live Supabase login (auth wall), consistent with most UI work in this repo.
+
+
+
+### 2026-08-06 — UI pass on both registers: accessible pills, one type scale, a visible hierarchy
+User asked for a dedicated UI check and improvement across the Drawing Register and the Material
+Submittal Log. Everything below was **measured**, not eyeballed; the user chose to unify on the
+Material Submittal pill treatment rather than just darken the failures.
+- ⚠️ **5 of the Drawing Register's 7 status pills failed WCAG AA.** White 11px bold on saturated
+  fills: **Not started 2.64:1** — the most common state in the register (823 of 1,506 drawings) —
+  plus Approved 3.30, For Review 3.19, Approved w/ comments 3.68, In Progress 4.47. They also had
+  **no dark-mode treatment at all**, while the sibling Material Submittal log already passed all 7
+  at 5.5–7.4:1 with full dark overrides. Two sibling registers, two visual languages for one concept.
+  Now one system: **measured live on BAU101, all 7 statuses in dark mode land 5.56–7.65:1.**
+- **The palette is single-source now.** A `STATUS_COLOR` map in JS duplicated the CSS pill colours
+  for the donut and was kept in step by hand; it's gone. Arcs and legend swatches name the same
+  `--dr-<key>-arc` variables the pills use — verified live that the arcs match the swatches exactly
+  and that the donut **re-themes on a dark-mode toggle with no re-render**.
+- ⚠️ **Three of the five level rails were invisible, each in a different theme.** lvl-2 was
+  hardcoded `#2b2c2b`, which **IS `--pd-card` in dark mode** (1.13:1) — the same bug class as the
+  Project Schedule's invisible "Structural". lvl-4 and lvl-5 both used `--pd-line` (1.27:1) **and
+  were identical**, so nothing separated a drawing from its sheets. All theme-aware and ≥3:1 now.
+- ⚠️ **Sheet codes were being clipped**: at 90px of indent a level-5 code had **59px of space for
+  59px of text**, losing about half the code at the 1080px min-width. Ladder retuned to 12px steps.
+- ⚠️ **`.dr-ok` was both the Approved status class and a KPI tone**, so a KPI card was silently
+  picking up status colour slots. KPI tones namespaced `dr-kpi-*`.
+- **Nine near-identical font sizes** across the two modules (10, 10.5, 11, 11.5, 12, 12.5, 13, 14…)
+  collapse to one shared six-step scale; the **9.5px** chart label is now 11px; Material Submittal's
+  Backlog heading matched no styled selector and was rendering at the browser default 16.4px against
+  15px everywhere else. Duplicate `.dr-tablecard` (two *different* max-height guesses) and
+  `.dr-caret` merged; dead rules removed.
+- ⚠️ **A naive "unused class" scan lies here** — 8 of the 10 it flagged are built by concatenation
+  (`'dr-lvl-'+item.level`). Verify before deleting.
+- ⚠️ **The harness needed a SANITY GATE and earned it.** Its first run reported 16px fonts and
+  1.00:1 pills across the board — the documented signature of a stylesheet that hasn't loaded in the
+  iframe, not a finding. It now inlines the CSS and refuses to report unless a known value resolves.
+  Two of its own measurements were unsound and were fixed before being trusted (alpha ignored when
+  compositing dark tints; `scrollWidth` is 0 for inline spans), and it initially drew a caret on
+  sheet rows that only sheet *parents* have, overstating the clipping by 16px.
+- **149 JS checks green** (40 + 35 + 14 + 33 + 27), harness green at 1280/1440 in both themes, and
+  live confirmation on BAU101 + GPR101. Assets both modules `module.css/js?v=20260806a`.
+
+### 2026-08-06 — Drawing Register: break-out / merge no longer destroy a drawing's approval
+User: *"Breaking a drawing (approved) into multiple sheets resets each sheet to For Review… then
+collapsing them back trashes the Approved status."* Both legs were real, and the dialog copy
+documented the loss as if intended.
+- **Break-out** hardcoded every sheet to `For Review` / 0 approved, so the parent derived back to
+  For Review and an Approved drawing came back at **0%**. **Merge** wrote `approved_sheets: 0` and
+  restored no status, discarding whatever the sheets had earned. Both are a change of **granularity,
+  not a reset**: break-out now distributes the drawing's existing approval, and merge rolls the sheets
+  up through the **same rule as `syncParent`** so the two directions can't drift apart again.
+- ⚠️ **An approved STATUS beats the sheet counter — the case that actually bites on real data.**
+  Measured on BAU101: of **57** multi-sheet drawings marked approved, **11 store `approved_sheets = 0`**
+  and 2 a partial count (the importer set the status but never filled the counter). Seeding from the
+  counter alone would still flip those 13 to For Review. "Approved" is a claim about the whole drawing,
+  so every sheet inherits it — and it round-trips, since `derivedStatus` maps all-approved back to
+  Approved where a partial count gives In Progress.
+- ⚠️ **Only the first break-out seeds.** Sheets added to an already-per-sheet drawing are new work, or
+  adding 5 sheets to a finished drawing would silently mark them approved.
+- **33 new checks** over the shipped functions + the existing 40/35/14/27 suites green. **Verified
+  signed-in through the real UI on BAU101-TEST** (`?v=20260805i`, sandbox empty before and after):
+  Approved 4/4 round-tripped with its approval date intact; a partial `Revise & Resubmit 2 of 5` kept
+  2 Approved + 3 Revise & Resubmit at 40% with **no false completion date**; and the contradictory
+  `Approved 0/20` shape came back **Approved 20/20** — the round trip repairs the unfilled counter.
+- ⚠️ **Pre-existing data loss found while verifying, not caused by this work.** BAU101 holds **0 sheet
+  rows** where it had 29 across 6 parents; two of those drawings carry `updated_at` of **2026-08-05
+  10:09–10:10Z**, ~15h earlier — the user's own testing that produced this report, under the old lossy
+  code. Merge deletes sheet rows by design and `drawing_register` has **no audit table**, so the prior
+  per-sheet statuses are not recoverable in-app. Raised with the user rather than repaired unilaterally.
+
+### 2026-08-05 — Drawing Register: the grid no longer jumps to the top on every interaction
+User: *"The scroller doesn't work properly. It resets to the top every time I move it."*
+- **Structural root cause:** the scroll container (`.dr-tablecard` / `.dr-bk-scroll`) is built
+  **inside the html string written to `#dr-view`**, so every `render()` destroys and recreates it and
+  a new element starts at `scrollTop = 0`. `render()` runs from ~30 places — **collapsing a group**,
+  changing a status from the inline dropdown, committing a cell edit — so on a 400-row register
+  almost any interaction threw the planner back to the top.
+- **Fix:** capture the offset before the rebuild, restore it immediately after in the same frame.
+  A genuine view switch still starts at the top; overshoot is left to the browser to clamp.
+- **Verified signed-in (BAU101, `?v=20260805g`):** scrolled to 3000, collapsed a group — the card
+  node **was replaced** (proven by tagging the old node) and rows changed 338 → 321, yet scrollTop
+  stayed **3000**. Registry → Backlog → Registry correctly lands at 0. 89 checks green.
+- ⚠️ **Automation trap that cost a pass, worth knowing before diagnosing any layout here:** Chrome
+  runs offscreen, so `innerWidth`/`innerHeight` are **0** and `visibilityState` is `hidden`. That
+  makes `@media (min-width:701px)` **not match**, the entire `body.dr-fit` viewport-fit block goes
+  inert, and the table grows to its full 13,448px as one giant document. It looks exactly like a
+  broken-layout bug and is **not one**. `resize_window` does not help — inject a `max-height` to
+  force the scroller instead.
+- ⚠️ **Found, deliberately NOT fixed — remote collaborator cursors are dead in this module.**
+  `paintRemote()` guards `view !== 'register'` while the live value is **`'registry'`** (the code
+  itself migrates the legacy name one line away), so it always returns early. Presence avatars still
+  work; only the per-cell cursor never paints. One-word fix, but turning it on is a visible change
+  that shouldn't ride along with a scroll fix.
+
+### 2026-08-05 — Need-by removed: the registers track planned vs actual approval, nothing else
+User: *"Is the need-by column even necessary? I think this is just planned dates and actual dates only
+that should be necessary"* — because *"the project schedule module already refers to each of the module
+and derived its POC from there."* Right: the Design Development roll-up **is** the connection between
+the schedule and the two registers, so the per-document link to an Execution Phase activity was a
+second, redundant one — and it answered a question the registers don't track.
+- **Removed from both registers**: the Need-by column (Registry **and** Backlog), the Add/Edit
+  "Schedule link" section, the searchable activity picker, and every derivation behind them
+  (`requiredApprovalOf`, `docFloatOf`, `needByOf`, `leadOf`, `minusDays`, the execution-scope guard,
+  the schedule caches). ~280 lines in drawing-register alone.
+- **Removed from Project Schedule**: the **Documents tab** and its readiness chip. Nothing can author
+  a link any more, so it would be permanently empty — the same empty-promise trap the Design
+  Development node had before it got a writer.
+- **Aging / Backlog urgency now run on the register's own planned approval date.** They already fell
+  back to it whenever a document had no link — which was every document on both live projects — so
+  ordering is unchanged in practice, just honest about its basis. The "Late vs need-by" KPI is now
+  simply **"Overdue"**.
+- ⚠️ **DB columns left in place** (`schedule_activity_id`, `schedule_wbs`, `lead_days`). Both live
+  projects had **0 linked documents**, so nothing is orphaned, and dropping columns is destructive.
+- ⚠️ **Two self-inflicted traps, both caught by reading rather than by tooling:** a dangling `async`
+  left by a function-cutting script silently made `agingDays` **async** (`async` + comments +
+  `function` is valid JS, so `node --check` passed while every aging number became a Promise); and an
+  end-anchor searched from position 0 matched an earlier modal and **duplicated ~450 lines** (two
+  `openForm`s) — which also still parsed. Search end anchors forward and assert; count function
+  definitions before and after.
+- **116 checks green** (40 + 35 + 14 + 27) against functions sliced from the shipped source, including
+  the new **11/10-column** grid alignment across header, drawing, sheet-parent, sheet and group rows.
+  Assets drawing-register `?v=20260805f`, material-submittal `?v=20260805c`; project-schedule
+  `index.html` isn't cache-busted (hard-refresh).
+- **Verified signed-in on the deployed site (BAU101).** Registry **11 columns**, Backlog **8**, both
+  header/row aligned, no Need-by anywhere; the Backlog KPI row reads **281 Open items · 12 Overdue ·
+  0 Due ≤3 days · 2 Revise & Resubmit** — real numbers off `planned_approval` where the need-by
+  column had shown em-dashes on every row. All three deployed modules carry **0** references to any
+  removed symbol, and Project Schedule serves no Documents tab while `syncDesignDevelopment` is intact.
+- ⚠️ **A follow-up sweep found a REAL runtime bug the removal had left in Material Submittal.** The
+  save path still had its dead "strip the schedule-link columns and retry" block; deleting the retry
+  left **`schedWarn` undefined while `if (schedWarn) UI.toast(…)` still referenced it**, so every
+  modal save would have thrown a `ReferenceError` *after* writing the row — save succeeds, UI reports
+  failure. **`node --check` passes on this** (runtime, not syntax); it surfaced only by grepping for
+  the symbol after the edit. Third time this session that a parser-clean edit hid a real defect
+  (after the dangling `async` and the duplicated 450 lines) — **grep for the symbols you delete.**
+
+### 2026-08-05 — Module interaction sanitised: Design Development ← registers, Need-by → Execution Phase
+User: *"Design Development picks up the data from the drawing registry and the material submittal log
+showing the POC. Therefore drawings and material approvals need to be connected for activities under
+Execution Phase."* Those are **two opposite relationships** and they were sharing one untyped field
+(`schedule_activity_id`, meaning only "this document gates this activity's start").
+
+|  | Design Development | Execution Phase |
+|---|---|---|
+| Direction | register **→** schedule | schedule **→** register |
+| Meaning | the register **IS** the work | the document **ENABLES** the work |
+| Carries | POC, min planned / max actual | the need-by deadline |
+| Need-by column | meaningless | the whole point |
+
+- **⚠️ Design Development was an empty promise.** The WBS skeleton created the node, locked it,
+  labelled it *"synced from Drawing Register + Material Submittal Log"* and blocked manual activity
+  adds — but **nothing populated it. Zero writers.** Now built: **`syncDesignDevelopment()`** mirrors
+  both registers into the branch on load — two locked child nodes (Drawing Register / Material
+  Submittal Log), each with one activity per discipline carrying POC, min planned approval and max
+  actual approval.
+- ⚠️ **Idempotent by deterministic `activity_id`** (`DD-DWG-<slug>`/`DD-MAT-<slug>`) — a re-sync
+  patches in place, writes only changed fields and removes vanished disciplines. Deliberately the
+  shape that avoids the duplicate-projection bug `_wbsEnsureSummaries` had to heal.
+- ⚠️ **Drawings count SHEETS, submittals count ITEMS** (separate branches, not summed), the drawing
+  side following the register's own `approvedOf()` rule; **per-sheet child rows are excluded** or the
+  register would be double-counted. Rows are **read-only** in the schedule (`isSyncedRow` gates
+  `beginEdit`) since the next sync would overwrite an edit.
+- **Need-by is now scoped to Execution Phase — warn, don't block** (the user's choice). Both registers
+  locate the Execution Phase WBS branch and show an amber **"✕ Not execution"** chip instead of a
+  date when a document points elsewhere. ⚠️ That date is *real-looking and meaningless* — "approve
+  this drawing 30 days before the activity that produces it starts". The picker still offers every
+  activity, tagged. Boundary-safe (`4.` ≠ `40.1`) and **silent when it can't tell** (a schedule with
+  no Execution Phase node flags nothing). ⚠️ Sheets inherit their drawing's link, so they're judged too.
+- **36/36 in a new harness over the shipped functions**, plus the existing 40 + 35 + 14 suites green;
+  all three modules parse. ⚠️ **Not verified signed-in** — no live sync run yet. Assets
+  drawing-register `?v=20260805e`, material-submittal `?v=20260805a`; project-schedule `index.html`
+  isn't cache-busted (hard-refresh). See the three module CLAUDE.md files.
+- **Verified live on BAU101 — 1 real bug found and fixed.** The sync created the Drawing Register
+  branch + **11 discipline activities**; ⚠️ **they rendered as zero-duration bars** because `end_date`
+  fell back to the *minimum* planned approval, so Architectural (approvals spanning 2025-03-18 →
+  2026-05-11) drew as a single day. Finish is now the **latest** planned approval. Re-verified:
+  Architectural `2025-03-18 → 2026-05-11`. **Idempotency proven live** (second sync = 11 rows, not 22),
+  all 11 disciplines **reconcile exactly** with the register (539/1,257 sheets, 43%), the read-only
+  guard toasts instead of editing, and the Need-by scoping was proven both ways with two temporary
+  links (Execution → a real date; Design Development → "✕ Not execution"), both reverted afterwards.
+
+### 2026-08-05 — Drawing Register: search no longer hides its own matches in collapsed groups
+Found while re-deriving BAU101's sheet-parents. Searching a drawing code whose discipline was collapsed
+painted the group headers and nothing else (`buildModel` returns at the collapse check before the
+drawings), so the register read **"Showing 0 of 424" for a code that is definitely in it** — measured,
+**5 of 6 known drawings invisible to a search for their own code**.
+- **Collapse state is split in two**: `collapsed` is the planner's manual, persisted tree; **`fCollapsed`
+  applies only while a filter is active and starts empty**, so a filter always reveals its matches.
+  `isCollapsed()`/`toggleCollapsed()` pick the live map.
+- ⚠️ **Clearing `collapsed` was the obvious fix and is wrong** — it destroys the hand-built tree as a
+  side effect of typing in a search box. Two maps means the tree is untouched when the filter clears.
+- Collapsing *during* a filter still works (writes to the transient map), and ⚠️ **`fCollapsed` is
+  discarded on every filter change**, or a group collapsed under one search would hide the next
+  search's matches — the same bug one step removed.
+- ⚠️ **Removed `drillTo`'s `collapsed = {}`** — a workaround for this same defect that threw away the
+  planner's whole tree state whenever they clicked a donut slice.
+- **14/14** in a new harness over the shipped `buildModel`, plus the 40 + 35 existing suites green.
+- **Verified live:** on BAU101 a fresh search for `U-200` now returns **"Showing 4 of 424"** where it
+  returned **0** before; and the full state cycle (manual collapse → search reveals → collapse during
+  the filter → new search re-opens → clear restores the manual tree exactly) walked through signed in.
+  Assets drawing-register `module.js?v=20260805d`. See `modules/drawing-register/CLAUDE.md`.
+
+### 2026-08-05 — Drawing Register: live check on BAU101 (1 real bug) + status vocabulary sanitised
+First signed-in run of the per-sheet feature, against the real **BAU101** register (540 rows / 453
+drawings / 1,286 sheets / 45% POC). The migration was already applied and **29 sheets across 6 parents
+already existed** — it is in real use. **Counters correct on all 6** (`no_of_sheets`/`approved_sheets`
+matched the actual child counts), so `syncParent` holds against live data.
+- **⚠️ REAL BUG FOUND LIVE — a parent kept a stale "Approved" pill over 0/15 unapproved sheets.**
+  `A-1000.1` had been marked Approved as a single row, was broken out into 15 "For Review" sheets, and
+  kept the Approved pill while its own counters read 0/15. `syncParent`'s status fell back to
+  `(p.status || …)` when nothing was approved yet. New **`derivedStatus()`** is the single source and
+  **never falls back to the stored value**; the pill **renders the derived value too**, so a row already
+  wrong in the DB displays correctly on load and converges on the next write. An all-approved drawing
+  whose sheets include comments rolls up as **Approved w/ comments**, not plain Approved.
+- **Status vocabulary sanitised, measured first** across 1,506 live drawings: blank **823**, Approved
+  358, Approved w/ comments 227, Ongoing 50, For Review 34, Pending 10, Superseded 2, Revise & Resubmit
+  2, `Approved w/o comments` **0**. ⚠️ **Three names meant "not decided yet"**, all inherited from
+  BAU101's own legend block. Now two, and the surviving distinction is real: **In Progress** (we are
+  drafting) vs **For Review** (submitted, with the reviewer) — the difference between chasing ourselves
+  and chasing the consultant. `STATUSES` is 6.
+- **Blank is a labelled state now, not an em-dash** — 55% of drawings have none. Renders as
+  **"Not started"** with the quietest chip, filterable, its own donut slice. **No data written.**
+- ⚠️ **`statusCounts()` was counting all 823 blanks as "For Review"**, so the Overview donut's largest
+  slice was a fiction (612 of GPR101's 1,053 reported as awaiting review when nothing was submitted).
+- ⚠️ **`LEGACY_STATUS`/`statusOf()`** map retired spellings for display and comparison. The grid's
+  Status cell is a `<select>` built from `STATUSES`, and a value outside it **silently shows the first
+  option while the row holds something else** — so `statusSelect`, `matchesFilters` and the editor all
+  compare canonically, and the importer maps rather than importing verbatim.
+- **Live remap applied:** `Ongoing → In Progress` (50) + `Pending → For Review` (10) on BAU101; GPR101
+  had neither. Re-queried after: 0 legacy values left in either register. All 6 sheet-parents
+  re-derived; only `A-1000.1` needed healing.
+- **End-to-end proof on live BAU101, signed in:** the Registry renders `A-1000.1` as a sheet-parent
+  (caret, "15 sheets" tag, 15/0/0% rolled up, 15 sheet rows nested) with the pill now reading
+  **For Review** instead of the contradictory Approved. Changing one sheet to Approved through the grid
+  dropdown derived its `approved_sheets` to 1 by itself, rolled the parent to **1/15 · 7% · In
+  Progress**, and a direct DB re-query confirmed both rows persisted; then restored to prior values
+  with **0 test rows left behind** and no console errors.
+- **Full break-out lifecycle driven through the real UI on the BAU101-TEST sandbox**, seeded with a
+  drawing deliberately marked `Approved`/100 sheets plus an aggregate control: break out → **100 sheet
+  rows, contiguous `A-101.1…100`**, parent pill correctly `For Review` **not** the stale `Approved`,
+  and **0 of 100** sheets carrying their own planned date (all inheriting the parent's). Bulk-approving
+  37 → `In Progress 37%` with the planned date still shown; at **99/100** still `In Progress`; at
+  **100/100** → `Approved` with the Approval column becoming **the MAX actual date (Apr 20, from sheet
+  .42, not the last written)**. Group rows rolled per-sheet and aggregate drawings up together
+  (103 sheets / 102 approved / min planned / max actual withheld). **Add sheets** continued numbering
+  from `.101` and correctly reverted the parent to 95% withdrawing the actual date. **Merge-back**
+  deleted all 105 rows with **0 orphans** and restored aggregate mode. Sandbox emptied afterwards; real
+  registers verified untouched (BAU101 540/29, GPR101 1,372); no console errors.
+- **Revision matrix tested on BAU101-TEST — correct first time, but it exposed three real defects.**
+  The matrix itself worked: per-revision outcome + approval date, the latest revision mirroring up to
+  the drawing's Status/Actual approval, both revisions persisted to the jsonb, a real PDF uploaded and
+  **fetched back 200 through a signed URL**, a full round-trip on re-open, and **cancel-safety** (✕ on a
+  file then Cancel left the object in storage and still referenced). The defects, all fixed:
+  ⚠️ **`rollup()` and `syncParent()` disagreed on what "approved" means** — rollup summed
+  `approved_sheets`, syncParent counted by status, so approving a sheet through the editor left the
+  parent **storing 1/2 · 50% while the grid displayed 0/2 · 0%**; new `approvedOf()` is the single
+  definition. ⚠️ **The editor rewrote a sheet's code** from the code-part dropdowns
+  (`A-101.1` → `BAU101-TEST-MCC-AR-A-101.1`), destroying the child-of-parent numbering. ⚠️ **The editor
+  skipped the status→`approved_sheets` derivation** the inline path applies. Re-verified against the
+  fixed build; sandbox emptied (rows + storage object), real registers untouched.
+- **Re-derived BAU101's 6 sheet-parents afterwards — nothing had drifted.** 0 parents needed a write and
+  0 of 29 sheets had a count disagreeing with their status: the two old definitions only diverge once a
+  sheet is approved *through the full editor*, and every BAU101 sheet is still `For Review`. Confirmed
+  displayed-vs-stored in the app for all six. ⚠️ **Measurement trap found doing it:** searching for a
+  code renders nothing while its discipline group is collapsed (`buildModel` returns at
+  `if (collapsed[dkey])` before the drawings), so five of six read as "missing" until expanded —
+  pre-existing, unrelated to sheets, but it makes search-based checks silently under-report.
+- **68 checks green** (33 model + 35 renderer) against functions sliced from the shipped module, with
+  new regressions for the live bug and the whole vocabulary change. Assets drawing-register
+  `module.css/js?v=20260805b`. See `modules/drawing-register/CLAUDE.md`.
+
+### 2026-08-05 — Drawing Register: per-sheet tracking matrix (submissions + approval merged)
+User: a Technical Officer types "100 sheets, approved by 31-Mar" on one row and grows the approved count
+over time; they want a matrix where **each row is a sheet** with its own status and revisions, while the
+**planned approval date stays one date for the whole drawing** — and want to keep the option of tracking
+everything on a single row instead.
+- **Most of it already existed.** A row already carried `no_of_sheets`/`approved_sheets`, a `submissions[]`
+  jsonb (rev + planned + actual + file) and both approval dates; group rows already rolled up
+  Σapproved ÷ Σtotal. This is a restructure of the editor and the roll-up rules, not a new data model.
+- **A sheet is an ordinary drawing row** (`no_of_sheets = 1`) carrying the new `parent_id` — so inline
+  editing, sorting, drag order, filters, bulk status, per-revision upload, export, collab and offline
+  edits all work on sheets for free. Tree gains a 5th level: Type › Discipline › Category › **Drawing ›
+  Sheet**. **Aggregate mode is untouched** and still the default; the mode is per drawing.
+- **Migration `2026-08-05-drawing-register-sheets.sql` (USER MUST RUN)** — `parent_id` + index. Breaking
+  out a drawing reports "run the migration" rather than failing opaquely.
+- ⚠️ **The invariant that kept everything else working: `drawingRows()` now EXCLUDES sheets, and the
+  parent's stored counters are a derived mirror of its children (`syncParent`).** Overview KPIs, progress
+  tables, donut, period chart, export, Backlog and dup detection all count through `drawingRows()` and
+  read the same plain columns as before, so **none of them needed changing** — and the register isn't
+  double-counted (harness: 103 sheets, not 206).
+- **Roll-up rules now apply at every level** via one `rollup()`: POC = Σapproved ÷ Σtotal, **min planned
+  approval**, **max actual approval**. ⚠️ maxActual is **withheld until everything in the group is
+  approved** — POC only reads 100% when the last sheet lands, so an earlier max date would read as a
+  completion date for open work. Legacy sentinel dates (`2000-01-06`) are rejected from both extremes.
+- **⚠️ REAL DEFECT FIXED — status and approved_sheets were two sources of truth.** On a single-sheet row
+  a TO had to set **both** `status=Approved` and `approved_sheets=1`; missing the second left the sheet
+  reading Approved while contributing 0 to its drawing's POC, silently. `approved_sheets` now follows the
+  status whenever `no_of_sheets <= 1` and the row has no children. Aggregate rows keep their hand-typed
+  count, an explicit value in the same patch still wins, and a parent is never touched by the rule.
+- **Editor: one revision matrix** (planned sub · actual sub · **outcome** · **approved on** · file)
+  replaces the separate Submissions and Approval sections — the old split meant the status you were
+  reading never said which revision it belonged to. `status`/`approved` are new keys on the existing
+  jsonb (**no migration**), and the BAU101 importer's `bl:{…}` re-baseline series is carried through.
+- ⚠️ **Export gained a "Sheet Of" column** and now emits sheets under their drawing (it otherwise
+  exported parents only, losing every sheet's status and date). Checked against **all 20 importer
+  probes** before adding: it collides with none and every probe still resolves exactly as before, so the
+  export stays round-trippable — the same substring hazard the "Type of Drawing" header note warns about.
+- **Verified 58/58** against functions sliced verbatim out of the shipped `module.js` (33 model + 25
+  renderer, incl. header-vs-row column counts in writer and read-only modes), plus in-browser at 1440px
+  on the real CSS: every row type aligned to the header, 5-level indent ladder, sticky parent cells
+  opaque, revision header/body sharing one grid, 0 page h-scroll, no console errors.
+  ⚠️ **Not verified signed-in** and the migration is not run. Assets drawing-register
+  `module.css/js?v=20260805a`. See `modules/drawing-register/CLAUDE.md`.
+
+### 2026-08-05 — Location Wizard: match the detected WBS to the location levels
+User's design: instead of describing values with keywords, let the planner match what the importer
+detected. Group menu → **Match WBS to locations…**.
+- **Matching is by WBS node NAME, not by node** — measured first: the same name recurs under every
+  tower and trade (Avesta's `9th Floor` sits under 7 towers × 3 trades), so it is one decision
+  instead of twenty-one and it survives a re-import that renumbers ids. Distinct ancestor names are
+  only 160 / 127 / 365 across the real files.
+- Each row shows the name, how many activities sit under it, its **ancestry trail**, a level
+  dropdown and an **editable value to write** — pre-classified, sorted by coverage, with search
+  (name *and* trail), filters and bulk assign.
+- ⚠️ **Two pre-fill defects caught by the real files:** Jab's `Tower A - Superstructure` naming made
+  the value split one tower in two (now pre-cleaned → **34 names, 17 clean tower values**), and
+  `Cluster 1 (…) of Superstructure` — a cluster of *towers* — was classed as a Level because it
+  contains "Superstructure" (now the level whose term appears **earliest** wins, since the head of a
+  name says what it is).
+- **Trade variation needs no per-trade config**: with one level set and deepest-wins, structural work
+  under `Superstructure › 9th Floor` resolves to 9th Floor, while `Substructure › Foundation` falls
+  back to the structure part. Three explicit test cases.
+- **Migration `2026-08-05-location-level-match.sql` (USER MUST RUN)** stores the matching on
+  `location_levels.match` so it is re-runnable and reusable by a later import. ⚠️ Tolerant — without
+  it the values still apply, only the memory is lost.
+- Coverage from the pre-fill alone: Avesta 91.8/82.4/27.7%, Jab 99.3/99.3/99.3% (⚠️ Jab's Zone figure
+  is inflated by five tower-cluster nodes the planner should unmatch — the correction the wizard is
+  for). Reuses `locMapPlan`/`locPreviewHTML`, so the spelling merge and write path are shared.
+- Verified **15/15 in Node** over the real Avesta+Jab trees and **32/32 in a browser** driving the
+  wizard end-to-end including Apply. ⚠️ Three browser assertions failed first and all three were my
+  assertion, not the code. Not verified signed-in. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-05 — Location values: merge differently-spelled duplicates automatically
+User's explicit call after the duplicates were flagged. ⚠️ **Deliberately lossy** — names that
+normalise alike WILL be merged; raised, confirmed, and every merge is named in the preview rather
+than applied silently. `locNormKey` folds case, spacing (`Roof Deck` = `Roofdeck`), punctuation and
+worded↔numeric ordinals including the typos actually present (`Nineth`→9, `Eight`→8); it does not
+fold different numbers, `8th` vs `18th`, or `Ground` vs `1st`.
+- **Merging lives inside `locMapPlan`**, which needs the whole value set per level, so both importers,
+  the backfill and the preview agree by construction rather than by three call sites remembering to.
+- ⚠️ **Picking the winner by frequency chose the WORST spelling on real data** — it kept Avesta's
+  `Nineth Floor`/`Eight Floor` and Jab's `Roofdeck`. The winner is now chosen on legibility: a variant
+  with a **digit** first (which also makes the grid sort 2/9/10 correctly), then word separators, then
+  Title Case, then a deterministic frequency/length/alphabetical tail.
+- **Real results:** Avesta floors **26 → 13** (`2nd … 12th Floor | Ground Floor | Roof Deck`), Jab
+  **7 → 6** keeping `Roof Deck`. Coverage unchanged — only spellings collapse.
+- Verified **27/27 in Node** over both real trees (incl. order-independence) + **9/9 in a browser** on
+  the preview note; 24/18/33 suites and the 9-file regression still green. Not verified signed-in.
+  See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-05 — Jab "grouping by location returns Unassigned" — and the real defect it exposed
+User created Tower/Level/Zone on **4PH Jab** (17,122 activities) and got three nested
+**"— Unassigned —(17122)"**. **Not a grouping bug:** creating a level only DEFINES it and writes
+nothing to `project_schedule.location`; Jab was imported long before the mapping existed, so the fix
+is to run **Location Breakdown… → Fill location from the WBS tree…** once. (⚠️ Worth surfacing in the
+UI — "create a level" reads like it populates it.)
+- ⚠️ **REAL DEFECT it exposed:** Jab names its towers `Tower D - Substructure` /
+  `Tower D - Superstructure`, so the keyword source produced **34 tower values for 17 towers**.
+  Avesta never showed it (its nodes are plain `Tower 3`). Fixed with `locTrimSeg`: the matched
+  segment is trimmed to the smallest separator-delimited part that still matches the terms. The
+  separator must be **spaced**, so a code like `T1-L05` is never split.
+- **Measured on the real Jab .xer:** Tower **99.3%, exactly 17 values (Tower A…Q)**, Level 95.4%,
+  Zone 14.9%. **Avesta unchanged** (no separators, trim inert).
+- ⚠️ **Data-quality issues the value list makes visible and that are the user's to fix:** Jab has both
+  `Roof Deck` and `Roofdeck`; Avesta has `Ground Floor`/`Ground floor` and `Eight Floor` vs
+  `8th Floor`. Merging these automatically would silently collapse names a project may distinguish.
+- Verified **33/33 in Node** over both real trees; 24/18/9-file suites still green. Not verified
+  signed-in. ⚠️ `index.html` is not cache-busted — hard-refresh the deployed page.
+  See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-05 — Location from the WBS by KEYWORD (the source that actually works on a P6 tree)
+Built so Avesta's location breakdown can be filled from its own data. ⚠️ **The activity-name source I
+proposed last prompt was wrong and was NOT built:** measured on the real file, only **1.1%** of
+Avesta's activity names contain "Tower" and **0%** contain Zone/Level — the names are `Formworks`,
+`Rebar`, `3rd Fix`. It would have shipped a feature that fills nothing.
+- **The location is in the WBS** (`… > Tower 5 > Structural Works > Superstructure > 9th Floor >
+  Zone 2 > Vertical`) but **not at a fixed depth** — the floor is depth 6 under MEPF/Architectural and
+  depth 7 under Structural, so a depth mapping yields "Superstructure" for one trade and "Eleventh
+  Floor" for another. New source: the planner gives **words** (comma-separated, whole-word matched,
+  `-term` excludes) and the **deepest** matching ancestor wins.
+- ⚠️ Whole-word matching is load-bearing (`Ground` matched "Bac**kground** Music"), and excludes exist
+  because `Tower` also catches "Tower Handover" and `Floor` catches "Floor Finishes" — real nodes.
+- **The preview now lists distinct values per level with counts** (all three call sites), which is the
+  only way to SEE those false positives — and is how both were found.
+- **Real Avesta results:** Tower **91.4%**, Floor **79.2%**, Zone **27.7%** (exactly Zone 1/2); every
+  zoned activity also carries its tower and floor; unmatched = the Initiation/Planning work, which has
+  no location; every Construction-Phase activity resolves to a real Tower 1..7.
+- **Generality, measured across all 8 real .xer files:** Jenara 100%, Jab 99%, Strevi 97%, Avesta 92%
+  tower coverage; Caticlan (an airport) gets Zone 78%/Floor 83%; DepED 0%. **The mechanism
+  generalises, the words don't** — each project needs terms matching its vocabulary.
+- **Verified 26/26 in Node against the shipped source over the real 4,393-activity tree** + **17/17 in
+  a real browser** on the UI. ⚠️ Two assertions failed and both were MY assertion, not the code (a
+  floor node called "Roof Deck"; design-branch "Tower" nodes). Not verified signed-in — for Avesta the
+  path is **Location Breakdown… → Fill location from the WBS tree…**, no re-import needed.
+  See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-05 — Excel/OPC location mapping — and what the real exports actually contain
+Completes the import mapping. `parseWorkbook` now **retains the columns its fixed header detection
+doesn't claim** (`rec.extra`, keyed by the header as written, duplicates uniquified — they repeat in
+real OPC exports and would otherwise overwrite each other) and offers them to the shared mapper as a
+third source kind. That kind was ~6 lines: sources were already reduced to `{key,name,get(rec)}`, so
+the mapping UI, preview, planner and level-creation needed **no changes**.
+- **⚠️ THE IMPORTANT FINDING — this does NOT solve Avesta, and it was checked against the real files
+  rather than assumed.** Running the **shipped** parsers over the 9 xlsx + 8 xer exports on disk:
+  Avesta's xlsx spare columns are POC/IBB/Percent-Complete-Type (**no location column**); its WBS
+  rows carry **no Name at all** (only a code, so WBS-depth sources yield codes there); its .xer WBS
+  is Phase › Discipline › Trade with tower/zone at **irregular depths** as groupings
+  (`Towers 2-7`, `Zone 1` beside `Mat Footing`); and its .xer has **no usable activity codes** (one
+  type, 0 tasks). Avesta's location lives in the **activity names** ("Tower 1 Topping Off"), so the
+  remaining planned source kind — **a pattern on the activity name** — is the one that would serve
+  it. Not built yet. (Other projects DO have codes: Caticlan's `Trades` covers 2,947 tasks, so the
+  P6 code path earns its keep.)
+- **Verified 18/18 in Node** against the shipped parser + mapper, plus a **real-file regression run**:
+  all 9 OPC exports (~50k activities, incl. a 20,716-row one) parse and every record is
+  **byte-identical to the previously committed parser on every pre-existing field** — `extra` is
+  purely additive. Earlier 24/24 + 20/20 suites still green. Not verified signed-in.
+  See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-05 — P6 activity codes now import + a shared location mapper for the importers
+User added a Tower › Level › Zone location breakdown on Avesta and found the imports don't offer it.
+They couldn't: **neither importer ever wrote `location`**, so every imported activity arrived with
+`location = {}` and the Location group-by was one "— Unassigned —" bucket. The XER path was also
+**dropping P6's activity codes entirely** — which is exactly where a P6 schedule keeps Tower/Level/
+Zone when it isn't in the WBS.
+- **XER activity codes import** (`ACTVTYPE`/`ACTVCODE`/`TASKACTV` → `activity_code_types`/`_values`/
+  `project_schedule.activity_codes`). Worth doing regardless of location: those dictionaries were
+  previously only ever created by hand, so the existing `code:` grouping/filter columns had nothing
+  to work with on an imported project. ⚠️ P6 nests code values and the app's are flat — nesting is
+  dropped (values stay distinct, which is all grouping needs); several values of one type on one
+  activity collapse to last-wins, matching the grid editor.
+- **New shared location mapper** (`locSrcsWbs`/`locSrcsCodes`/`locMapUI`/`locMapPlan`/
+  `locEnsureLevels`): a SOURCE is anything that can yield a location value, reduced to
+  `{key,name,get(rec)}` **before the UI sees it**, and records are plain objects — which is what
+  lets ONE planner serve both the post-hoc WBS backfill and the importer. The existing
+  "Fill location from the WBS tree" was **rewritten onto it rather than duplicated**, and gained
+  activity codes as sources for free.
+- **The XER import preview gained a Location breakdown step** — map the file's WBS depths or code
+  types onto your location levels (creating levels if the project has none), with a live count and
+  sample; `location` is stamped into the **same insert**, no second pass over 40k rows.
+- ⚠️ **Excel/OPC is NOT covered yet** — its header detection discards unmatched columns, so a
+  `Tower`/`Level`/`Zone` column in an xlsx is dropped before the mapper could see it. Retaining
+  those columns as a third source kind is the remaining piece.
+- **Verified 24/24 in Node against the shipped functions** (sliced out, never reimplemented) + **20/20
+  in a real browser** on the mapping UI (no jsdom available, and `read()` drives everything). Script
+  parses, 0 console errors. **Not verified signed-in** — needs a real `.xer` into a scratch project.
+  Module-local, no migration, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-04 — Signed-in verification: migration run live, 1 real bug found and fixed
+First live run of the whole location/grouping batch. **Ran `2026-08-04-activity-location-work-type.sql`
+on the production Supabase** and verified it by querying the catalog rather than trusting the success
+message — table 1, both columns 1, policies 2, indexes 2.
+- ⚠️ **Real bug found only by running it: both Location Breakdown menu buttons were dead.**
+  `renderGroupMenu` (module scope) called `closeMenus()` (init scope) → `ReferenceError`, so the
+  buttons did nothing. **The Node harness stubs `closeMenus`, so it passed there.** Fixed; audited
+  every other helper the new code calls — this was the only cross-scope reference.
+- **Duplicate-WBS heal proven end-to-end.** Planted the exact reported bug on the `Test` scratch
+  project (9 summary rows for 7 nodes), loaded the app, and the grid came up with 7 — with SQL
+  confirming the extras were deleted from the database, not merely hidden.
+- **Both layouts verified live** on 2 locations × 2 zones × 2 work types: 22 rows / 14 group headers,
+  correct nesting and counts, "Zone 1" staying separate under each location, order persisting across
+  a reload. **Inline location editing verified with real mouse + keyboard** — persisted and the grid
+  re-grouped live.
+- ⚠️ **Synthetic events do not drive the grid editor** (they open it but never commit, and can leave
+  a cell looking blank while the DB is untouched — which mimics a persistence bug). Use real input.
+- Left in place: `Test` has 2 location levels + 8 demo activities so the feature is inspectable;
+  `XERTEST` still has one genuine pre-existing duplicate that will self-heal when next opened.
+  See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-04 — Schedule Builder push: flat by default, structure comes from grouping
+User picked this as the real simplification now that location/zone are activity data. The push used
+to materialise the location breakdown as a Trade › Floor › Zone sub-WBS every time; that branch is
+redundant when the same structure is a view you can flip.
+- **"Group into a sub-WBS" now defaults OFF.** A flat push adds the activities under the chosen WBS
+  node and nothing else, with the reasoning stated in the dialog instead of left implicit.
+- **Flat push names the activity for the WORK, not the place** (`Formworks`, not
+  `Structural F5 · Z1 — Formworks`). The location was in the name only because it had nowhere else to
+  live — which is also what made grouping-by-name useless, since every instance had a unique name.
+- ⚠️ **A flat push switches the schedule to Activity › Location › Zone.** Without it the planner lands
+  on a WBS-grouped list of hundreds of rows all reading "Formworks" and concludes the push failed.
+- The sub-WBS path is untouched and still correct when the WBS codes must encode location.
+  ⚠️ Another session had rebuilt that dialog with a configurable ordered dimension list in the
+  meantime; this change is surgical around it and preserves that editor intact.
+- Verified: 9 static assertions on the shipped file + the 33/39/16 suites still green, clean parse.
+  **Not verified signed-in** — the push writes to a real project. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-04 — Drawing Register: the L1 level is the DRAWING TYPE, not a phase (+ a silent data-loss fix)
+User: *"Progress by Phase is not necessarily phase given that FCD, Temp and ISD can happen
+simultaneously."* Right — and the workbook already says so: its **Coding Reference** sheet calls this
+level **"TYPE OF DRAWING"** (DRC / ECD / SD1 / SD2 / FCD / ABD), and the module's own `TYPES` map lists
+the same vocabulary. "Phase" implied a sequence that doesn't exist; those three sets are produced
+concurrently.
+- **Relabelled every user-facing string** to "drawing type": the Overview roll-up (**Progress by Drawing
+  Type**), the filter (**All drawing types**), the Backlog column, the `+ Level` item, the jump select,
+  the Add/Edit field, the group-row level name, the duplicate-code tooltips, the reorder warning and the
+  import dialog's help text.
+- ⚠️ **The stored column stays `phase`** — renaming it would mean a migration across every register plus
+  the importer, collab payloads, offline cache and the rename/delete-level queries, for no functional
+  gain. It is now purely an internal name.
+- ⚠️ **The export header is "Type of Drawing", not "Drawing Type".** The importer probes
+  `col('drawing type')` for the separate per-drawing code part and `col()` matches on **substring**, so a
+  "Drawing Type" header would make a re-import of our own export load this column into `drawing_type`.
+  "Type of drawing" doesn't contain "drawing type", so the export stays round-trippable — the property
+  the old `Phase` header had. Verified by running every importer probe against the new header row.
+
+- **⚠️ REAL BUG FIXED — the Add/Edit form silently wiped a drawing's type on Save.** The drawing-type
+  `<select>` was built from the hardcoded `PHASES` list only
+  (`Concept Design / Schematic Design 1 / Schematic Design 2 / For Construction / As-Built`). **None of
+  BAU101's three actual types were in it**, so no option matched, the select fell back to the blank "—",
+  and saving wrote `''` over the type — moving the drawing to "Ungrouped" with no warning. Reachable by
+  opening the ✎ editor on almost any BAU101 drawing and pressing Save. New `phaseOptions(cur)` builds the
+  options as **canonical ∪ types present in the project ∪ the row's own value**, so what's on screen
+  always round-trips; `PHASES` was also updated to the real vocabulary.
+- ⚠️ `PHASES` is **display-only** (sort order + default options) and is not read by the importer —
+  verified by parsing both BAU101 and the real GPR101 workbook before vs after: **byte-identical**, so
+  registers with their own naming are untouched.
+- **Verified 10/10** in a new harness (all three types now offered, arbitrary values round-trip, no
+  duplicates, canonical order preserved, two byte-identical parse comparisons; the pre-change `PHASES` is
+  asserted in the test to document the bug). Existing suites green: 41 / 68 / 29 + GPR101 backcompat.
+- Assets: drawing-register `module.js?v=20260804e`. Material Submittal not affected (it groups by trade
+  section, and has no phase concept).
+
+### 2026-08-04 — Project Schedule: invisible "Structural" trade + duplicated WBS rows (both from a live run)
+Two bugs the user hit doing a real Schedule Builder run → push → Clear.
+- ⚠️ **"Structural" was invisible in the Auto-trace dialog — at a measured 1.00:1 contrast.**
+  `GCOLOR.ST` was the brand Dark Gray `#2B2C2B`, which is **exactly `--pd-card` in dark mode**, so
+  the trade name was the same colour as its background and the question read *"How many ___ floors
+  must be completed before Architectural can start?"*. MEPF's deep blue was 2.21:1. Added a `gc()`
+  accessor with dark-theme substitutes (now **6.28:1** and **5.21:1**), light theme untouched; all
+  17 read sites routed through it. Also fixed the tower headings, zone tags, chips and Gantt bars,
+  which shared the same invisible colour.
+- ⚠️ **Duplicated WBS rows after Clear (9 schedule rows for 7 nodes).** `ensureWbsSkeleton()`
+  **discarded the summary rows it inserted**, so they never entered the in-memory `rows`; the
+  `_wbsEnsureSummaries()` running straight after in `load()` then saw every node as un-projected and
+  inserted a second row for it. Fixed at the root, plus a **self-heal** that removes duplicate
+  projections (keeps the earliest, deletes the rest) so already-broken projects repair themselves on
+  next load, plus a **re-entrancy guard** since seeding is fired from an overlapping `load()`.
+- ⚠️ **Trap worth remembering:** the bulk regex rewriting the colour call sites used
+  `GCOLOR\[([^\]]+)\]`, which stops at the first `]` — the nested `GCOLOR[p[0]]` became the syntax
+  error `gc(p[0)]`, on the exact line the user reported. Caught by the parse check, not by eye.
+- **Verified: 16/16 Node tests** against the shipped `_wbsEnsureSummaries` (healthy project
+  untouched, extras deleted while the first is kept, mixed dedupe+restore, legacy unlinked rows
+  never touched) plus WCAG contrast maths. 33/33 grouping + 39/39 keyboard suites still green.
+  **Not verified signed-in.** See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-04 — Project Schedule: location/zone become activity DATA, so grouping order is interchangeable
+User: the schedule groups Location > Zone > Activity and that should be flippable to **Activity >
+Location > Zone**. Root problem: location and zone existed **only as WBS tree structure**, so the
+tree was the one and only grouping. Now they're activity data and the grid nests by any ordered set
+of levels. **The WBS tree is untouched** (user's call) — grouping is a view, so WBS codes, cost
+roll-ups, EVM, exports and the document links keep working.
+- **Migration `2026-08-04-activity-location-work-type.sql` (USER MUST RUN):** `location_levels`
+  (ordered, per-project) + `project_schedule.location jsonb` + `.work_type`. Fully tolerant — no
+  table means the feature is simply absent and nothing else changes.
+- **Levels are per-project and free-form** (Building / Level / Zone / Unit / Station / …), since a
+  tower, a viaduct and a plant don't share a vocabulary. Stored as a jsonb map keyed by level id —
+  deliberately the same shape as `activity_codes`, so the existing dynamic-column and filter
+  machinery applies unchanged.
+- **`buildNodes()` generalised from single-level to N-level grouping**; `groupBy` (string) became
+  `groupBys` (ordered list), so the two layouts are one engine with the list reversed. A new picker
+  replaces the dropdown: presets for both layouts plus an ordered add/remove/▲▼ list, saved per
+  project. ⚠️ Legacy saved views are **migrated** (`'status'` → `['status','wbs']`) so a saved view
+  still renders exactly what the user saved.
+- **The Schedule Builder now stamps what it already knew** — it computed every generated activity's
+  work type and floor/zone/unit and then discarded it into the activity NAME and the WBS nesting.
+- **Backfill for existing schedules**: reads location/zone off each activity's WBS ancestry. The
+  depth→level mapping is shown and editable rather than guessed, with a live count and a sample.
+- Work Type + location levels are inline-editable grid columns (with value suggestions) and fields
+  in the activity form; search matches them too.
+- **Verified: 33/33 Node tests against the shipped `buildNodes`** (extracted, not reimplemented),
+  including the crux case that "Zone 1" under two different locations stays two groups; plus
+  in-browser rendering/reordering of the picker. **Not verified signed-in** — the migration isn't
+  run yet. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-04 — WBS Manager: keyboard works on a selected row, not only in a focused name field
+User: the arrow keys and shortcuts should work when a WBS is *selected*. They didn't — every key was
+bound to `keydown` on the row's name `<input>`, so clicking a row (or selecting a locked/synced
+heading, which has no input at all) left the keyboard dead. New document-level handler scoped to the
+WBS view, same shape as the grid's:
+- **↑↓** move the selection · **Alt+↑↓** reorder · **Home/End** first/last · **←→** collapse/expand,
+  then step into the first child / out to the parent (standard tree behaviour).
+- **Enter/F2** rename (a second Enter, now inside the input, adds the next WBS — the two layers
+  chain) · **Shift+Enter** sub-WBS · **Insert** sibling · **Tab/Shift+Tab** indent/outdent ·
+  **Delete** · **Esc** deselect. With nothing selected, the first ↑/↓ lands on the top row.
+- **Read-only projects:** navigation and collapse/expand still work; every mutating key is inert.
+- ⚠️ **The real bug underneath was `document.activeElement`.** The handler has to bail when a field
+  has focus (or it would hijack the search box's arrow keys) — but clicking a row didn't move focus,
+  because rows weren't focusable, so the search box kept it and the handler bailed on every keystroke.
+  Rows now carry `tabindex="-1"` and are focused on select. Verified in-browser that focus hands over
+  from `INPUT#ps-wbs-search` to `DIV.ps-wbs-row`.
+- ⚠️ **Tab is swallowed while a row is selected** (it indents, matching the in-input behaviour); Esc
+  clears the selection and hands Tab back to normal focus traversal.
+- **Verified: 39/39 Node tests against the SHIPPED handler** (extracted, not reimplemented) covering
+  every guard, every key's routing, the no-selection/filtered-selection recovery paths and the full
+  read-only matrix; plus in-browser checks of the focus handover, `tabindex`, focus ring and legend.
+  **Not verified signed-in.** Module-local, no migration, no `?v=` bump.
+  See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-04 — WBS Manager: make it fast for a planner to BUILD a WBS
+The Manager was built for *editing* a tree, not *creating* one — every node cost a modal round-trip,
+and the only bulk paths were "Adopt existing WBS" (import-only) and "Add WBS from Project", which was
+buried in the **grid's** right-click menu and unreachable from the WBS view itself. Four ways in:
+- **Type-to-build outliner.** `＋`/"Add WBS" inserts a **blank node inline** with the cursor already
+  in it — no modal. **Enter** = next WBS, **Shift+Enter** = sub-WBS, **Tab/Shift+Tab** = indent/
+  outdent, **Alt+↑↓** = move, **↑↓** = move the cursor, **Enter on a blank name deletes it** (the
+  outliner way to undo an over-shoot). A persistent key legend sits under the card header.
+- **Paste an outline** — paste from Excel/Word/notes, see a live preview of the tree with the codes
+  it will get, build it in one go. Levels from dotted numbering (`1.2.3 Name`) when the paste is
+  hierarchically numbered, else from indentation rank.
+- **Duplicate a branch** (row action `⧉`) — copy a node + its subtree N times with a `#` placeholder
+  in the name, so "Level #" × 20 gives Level 1…Level 20 (the typical-floor / tower case).
+- **"From project…" surfaced** in the WBS toolbar, and the empty state now offers the three starting
+  points rather than a sentence.
+- ⚠️ **Two real defects were found by the tests, not by reading the code:** an ordinary name like
+  **"2 Storey Annex"** silently lost its "2", and "100 Preliminaries" was split into code + name —
+  the leading number was being stripped before the parse mode was decided. A code is now only split
+  off when the paste demonstrably uses hierarchical numbering.
+- ⚠️ **Also fixed a pre-existing inefficiency:** `_wbsNormalizeAndPersist` persisted **every** node on
+  every indent/outdent (~200 round-trips on an 8.6k-node tree). It now writes only the diff — but a
+  re-parented node can normalize onto the *same* integer `sort_order`, so callers must name their
+  moved ids or the `parent_id` write is silently skipped. Verified.
+- **Verified:** 19/19 Node tests on the shipped outline parser + 10/10 on the sort-order normalizer,
+  plus in-browser against the module's real stylesheet and real row renderer (locked/synced rows
+  expose no editing controls, 9 row actions on editable rows, no h-scroll, 0 console errors).
+  **Not verified signed-in** — no live click-through of the insert/duplicate/paste writes.
+  Module-local, no migration, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+- ⚠️ **Repo note:** these code changes landed inside commit **`c81fe8f`** (whose message is about the
+  Drawing Register UI review) — an automated commit during the session swept the in-progress edits
+  in. Already pushed, so history was left alone rather than rewritten.
+
+### 2026-08-04 — BAU101 import file v2: auto-numbered codes, legend rows excluded; the bad import was a STALE-CACHE symptom
+User's screenshot showed the import landing as **287 drawings under only 2 phases**, everything piled
+under "For Construction Drawing", with Temporary Works and Individual Services missing.
+
+- **⚠️ ROOT CAUSE: the browser ran cached JS — not a data or transform fault.** Proved it rather than
+  guessed: ran the **pre-fix parser** (`6149c89~1`) over the same generated file and it reproduces the
+  screenshot **exactly** — 287 drawings, 2 phase nodes, all 12 discipline counts matching to the row —
+  while the current parser gives 424 across 5 phases. Also confirmed by `curl` that the deployed
+  `module.js` on GitHub Pages *does* contain the `Row Level` code and `index.html` references
+  `?v=20260804d`. So the file and the importer were already correct; the import simply executed the old
+  parser, which ignores `Row Level` and whose `PHASE_RE` doesn't match 3 of the 5 phase names.
+  **Fix is a hard refresh (Ctrl+Shift+R) before re-importing.** This is the recurring stale-asset
+  symptom already documented in Prompts 45/53/64 — the `?v=` bump only helps once the *HTML* itself is
+  re-fetched.
+- **Auto-numbered the 251 uncoded drawings**, per the user's request, using the source's **own**
+  conventions instead of an invented scheme: child of a coded category → `<catcode>.<n>` (the file's own
+  `A-100.1` style); uncoded category → a `<PREFIX>-<base>` block stepping by 100 above everything
+  already used for that prefix in that phase (ISD already does this: `S-1000`/`S-1100`/`S-1200`, so the
+  14 uncoded ISD/Architectural categories became `A-1100 … A-2400`); Temporary Works, which has no coded
+  row anywhere, → `TF-/SP-/CE-1001…` from the module's canonical 2-letter discipline codes, which cannot
+  collide with the source's 1-letter prefixes. **0 collisions, 0 drawings left without a code**, verified
+  against the module's own `(phase, code)` duplicate rule. Generated rows carry
+  `Remarks = "Auto-numbered from parent"` so our numbers stay distinguishable from the consultant's.
+- **⚠️ Found while doing it: a trailing status legend was importing as 7 junk drawings.** Source rows
+  547-554 hold `List` / Approved / Approved w/ Comments / Revise & Resubmit / Pending / Ongoing / For
+  Approval / Superseded **in the drawing-title column**, behind a 13-row gap — the same trap as
+  material-submittal's sign-off block. The transform now stops at the first run of **≥3 blank rows**
+  (structural, not a hardcoded row; the real data's longest interior blank run is 1, measured).
+  Drawing count 431 → **424**.
+- Final shape: Concept Design 0, Schematic Design 0, For Construction Drawing 88, Temporary Works
+  Drawing 20, Individual Services Drawing 316 — **424 drawings, 18 disciplines, 64 categories**, 223
+  BL0 planned dates still reconciling against the source with 0 mismatches.
+- **Verified 29/29** by running the module's own importer over the regenerated file. No app-code change
+  this round (the module was already correct) — data prep only.
+
+### 2026-08-04 — BAU101 re-import from the FCD sheet: explicit "Row Level" importer column + a one-day date-shift fix
+User asked to re-import the Bauhinia (BAU101) Drawing Register using **only** the
+`Dwg Registry (Based on FCD)` sheet, with the L1 phases restricted to five names.
+
+- **⚠️ REAL BUG FIXED — every date the Drawing Register has ever imported was ONE DAY EARLY.**
+  `dateOf()` did `v.toISOString().slice(0,10)` on a Date, and with `cellDates:true` SheetJS returns the
+  cell displaying **30-Sep-2024** as **`2024-09-29T15:59:17Z`**, so the slice gave 2024-09-29. Local
+  getters are no better (that instant is 23:59 on the 29th in Manila) — **neither a UTC nor a local read
+  is safe**. Now rounds to the nearest whole UTC day (material-submittal's proven approach) with
+  integer-maths paths for ISO / `18-Mar-24` / `dd/mm/yyyy` / Excel serials. **Measured on the real GPR101
+  workbook: all 895 dates move +1 day and nothing else changes at all.** This is the third instance of
+  the same local-vs-UTC family this session (after `minusDays` in both registers) — the pattern is
+  *never* mix a local Date with a UTC getter.
+  ⚠️ **Consequence for live data:** every register imported before today holds planned/actual dates a day
+  early. Re-importing corrects them; GPR101 in particular is affected (895 dates).
+
+- **New optional `Row Level` column in the importer** (`phase`/`discipline`/`category`/`drawing`). When a
+  workbook declares it, it wins over the header heuristics; when absent, behaviour is unchanged.
+  ⚠️ It exists because the heuristics infer "category" from *the absence of* a date and a description —
+  but a real drawing can have neither, and **~250 of BAU101's Temporary Works / Individual Services
+  sheets were being silently turned into empty category groups**. Indentation can't disambiguate: the
+  title is read as "first non-empty column in the title range", discarding which column it came from.
+  ⚠️ Named `Row Level`, not `Level`, because `col()` matches on substring and would collide with
+  `Floor Levels`.
+
+- **⚠️ `PHASE_RE` was widened and then REVERTED — a regression I caught by diffing, not by reading.**
+  Adding `temporary works` / `individual services` / a digit-less `schematic design` seemed harmless;
+  on the real GPR101 workbook it promoted two sub-groups to phases, reset `cur.discipline`, and left
+  **25 drawings with no discipline** (phases 6→8, categories 245→243). Reverted — a register needing
+  those blocks as phases declares them in `Row Level`, which is per-file and can't regress anyone else.
+  A note in the code says so, so it isn't "helpfully" re-widened later.
+
+- **The delivered file:** `~/Downloads/BAU101 Drawing Register - FCD sheet (import).xlsx`, from a one-off
+  Python transform over the FCD sheet only (data prep, not committed app code). 431 drawings / 18
+  disciplines / 64 categories — For Construction Drawing 88, Temporary Works Drawing 20, Individual
+  Services Drawing 323.
+  ⚠️ **Concept Design and Schematic Design are not in that sheet at all** (zero matches for
+  "concept"/"schematic" anywhere in it), so they are emitted as **empty phase headers** — the L1
+  vocabulary is exactly the five requested and **no drawing is invented** for them.
+  ⚠️ **258 of 431 drawings have no code in the source** (in the TWG/ISD blocks only the category rows are
+  coded). Left blank rather than synthesised — inventing sheet numbers in a drawing register is how
+  someone ends up citing a drawing that doesn't exist.
+
+- **Verified by running the module's own `parseWorkbook`/`gridOf`/`findHeader`/`parseGrid` in Node**
+  (extracted from the shipped source, never reimplemented) against the generated file: **22/22** —
+  exactly five phase nodes with the requested titles in order, every drawing on one of the five, no blank
+  phase or discipline, all disciplines canonical, category nesting and category codes preserved, nothing
+  pre-marked approved, and **all 223 BL0 dates reconciled against the source as multisets with 0
+  mismatches** (the three `"- "` dash placeholders correctly rejected). Plus the GPR101 before/after diff
+  above, and the two existing suites (41 + 68) re-run green. **Not run against the live DB** — the user
+  clicks Import.
+
+### 2026-08-04 — UI review #8 (Backlog Doc + bulk) on both registers, Material Submittal brought to full parity — and a delete-scope bug
+Final batch of the Drawing Register UI review. Since the previous entry recorded that #3/#7 had **not**
+been ported to Material Submittal, "make sure Material Submittal has the improvements as well" was read
+as bringing it to parity — so this covers #8 on both modules plus #3 and #7 on Material Submittal.
+
+- **#8 Backlog Doc column + bulk actions (both modules).** The Registry/log had both; the Backlog — the
+  screen you actually work from when chasing an open item — had neither. Added an eye → signed-URL Doc
+  cell and a checkbox column + "select all shown" + each module's existing bulk bar, reusing the same
+  element ids so `deleteSelected`/`setStatusSelected` (DR) and `bulkStatus`/`bulkDelete` (MS) are reused
+  verbatim. ⚠️ Select-all is scoped to the **painted slice**, never the full filtered list, so it can't
+  silently act on rows behind the 200-row page cap. ⚠️ The Doc button and every checkbox
+  `stopPropagation()`, because the row click opens the editor.
+
+- **⚠️ REAL BUG FIXED — `deleteSelected()` (Drawing Register) could delete more rows than the UI said.**
+  It operated on **every** key in `selected`, while the "N selected" count and `setStatusSelected()`
+  both scope by `visibleIds`. A selection made under one filter survives in `selected` while
+  `visibleIds` changes, so the bar could read "3 selected" and the delete remove 10 — on an irreversible
+  action. Now scoped like the rest. ⚠️ **The file-capture loop had to move with it**: it was keyed off
+  `selected`, so narrowing `ids` alone would have deleted the storage objects of rows that *survive*,
+  orphaning them from their files. Selection is now also cleared on tab change in both modules, since
+  Registry and Backlog are different lists. (Material Submittal's bulk paths were already
+  self-consistent — bar and action are both unfiltered — so only the tab-change reset applied there.)
+
+- **#3 Sortable Registry columns → Material Submittal.** All 17 data columns, cycling asc → desc →
+  natural, with a chip back to natural order. ⚠️ Sorting is applied **inside each trade-section group**,
+  mirroring how Drawing Register sorts inside each leaf of its phase tree — in both cases the grouping
+  is how the register is read. Blanks last in both directions.
+
+- **#7 Drillable Overview → Material Submittal.** Donut legend + status table → Registry by status;
+  S-curve discipline rows → Registry by discipline; aging segments/legend and the unlinked count →
+  Backlog by bucket; Overdue → Backlog with the overdue filter. ⚠️ **"Approved" and "Pending approval"
+  are deliberately not drillable** — `kpis()` aggregates each over several statuses, so no single filter
+  reproduces them and the destination count wouldn't match the card; zero-count rows aren't links
+  either. Same honesty rule as Drawing Register's sheet-count KPIs: no hover, no pointer, so "looks
+  clickable" always means "is clickable".
+
+- **Material Submittal group carets → SVG chevrons** (were `&#9656;`/`&#9662;`), finishing the icon pass.
+
+- **Verified: 68/68 in a new Node harness** over the real extracted source, with the earlier 41 re-run
+  green. Beyond the sort/bucket semantics it checks the things that fail *silently*: head-vs-body column
+  counts (9 = checkbox + 7 + Doc) in both Backlogs, **every `LOG_SORTABLE` key actually handled by
+  `logSortVal` AND actually rendered in `HEAD`** (a mismatch sorts by nothing), select-all scoped to the
+  painted slice, every inner control's propagation stop, `deleteSelected`'s scope *and* its file-capture
+  key, state reset on tab/project change, a CSS rule existing for every class the JS emits, and no text
+  glyph reintroduced. **In-browser** against the real `index.html` chrome and `module.css`: columns
+  aligned, Doc icons 15×15/14×14 in 51/47px columns, the selection bar's shared `margin-left:auto`
+  overridden to 0 (it would otherwise sit at the card's right edge), selected-row tints distinct, sorted
+  headers red with red indicators, **frozen columns still `position:sticky`** now that headers are also
+  buttons, group carets rotating when collapsed, drill targets carrying `cursor:pointer` + `role=button`
+  while non-drillable aggregates carry neither, 0 page h-scroll, no console errors.
+  ⚠️ **Not verified signed-in against live data**; screenshots remain impossible here (stalled
+  compositor), so UI claims are measured geometry.
+- Assets: both modules `module.css/js?v=20260804c`.
+- **The UI review list is now complete** (items 1–9). Nothing from it is outstanding.
+
+### 2026-08-04 — Material Submittal pagination fix + UI review #3/#7/#9 — and a one-day date bug in both modules
+Second batch off the Drawing Register UI review, plus the latent truncation bug flagged last prompt.
+
+- **⚠️ Material Submittal `load()` truncation FIXED.** It was a single `.select('*')` and Supabase caps
+  a select at **1000 rows**, so a >1000-submittal project silently loaded a partial log with every KPI,
+  donut, S-curve and total under-reporting and no error. Now keyset-paginated. ⚠️ **Paginates by `id`,
+  not `sort_order`** — `sort_order` is nullable and non-unique, so it cannot be a keyset cursor; the
+  in-memory display sort is unchanged. Verified by simulation: 2,300 rows → 3 round-trips, 0 duplicates;
+  exactly 1,000 terminates; empty terminates.
+
+- **⚠️ REAL BUG FOUND AND FIXED IN BOTH MODULES: `minusDays()` was one day early in Manila.** Found while
+  writing boundary tests for the aging buckets — two "failures" turned out to be my fixture, but chasing
+  them surfaced this. The helper built a **local** date (`new Date(iso+'T00:00:00')` + `setDate`) and read
+  it back with **UTC** (`toISOString()` / `isoUTC()`); east of Greenwich local midnight is the previous
+  UTC day, so every result was off by one. `minusDays('2026-03-31', 0)` returned `2026-03-30` — and
+  subtracting zero days must be the identity, so this isn't a rounding judgement call. Because
+  `requiredApprovalOf()` = `minusDays(needBy, lead)`, **every schedule-linked required-approval date in
+  both registers was a day early in PH time**, which fed the Need-by column, the float chip's colour,
+  `agingDays()`, the aging bar and the Backlog urgency sort. Both now use pure `Date.UTC` integer
+  arithmetic. This is the exact local-vs-UTC trap material-submittal's importer notes already warn about,
+  reintroduced in the newer schedule-link helper.
+
+- **#3 Sortable Registry columns (Drawing Register).** All 10 data columns; click cycles **asc → desc →
+  natural**. ⚠️ **Sorting is applied INSIDE each leaf group**, never across the register — the
+  phase → discipline → category tree is the point of the view. ⚠️ **`reorderEnabled()` now also requires
+  `!regSort.col`**: a sorted display is detached from `sort_order`, so re-dealing it on a drop would
+  scramble the real order. A red "Sorted by X ▲ ×" chip explains why dragging is off and restores manual
+  order in one click. Blanks sort last in **both** directions (an empty date is unknown, not earliest).
+  Persisted per project, with the restored column validated against the known-column map.
+
+- **#7 Drillable Overview (Drawing Register).** Donut legend → Registry by status; aging segments +
+  legend → Backlog by bucket; Progress by Phase/Trade rows → Registry by phase/discipline; plus the
+  Drawings KPI, the unlinked-items count and the Backlog's Revise & Resubmit KPI. Drilling also clears
+  `collapsed`, since a filtered Registry with everything collapsed shows headers and no rows.
+  ⚠️ **Deliberately not everything is clickable** — Total sheets / Submitted / Approved / Approved % /
+  Balance count **sheets**, not drawings, so drilling them would land on a list whose row count doesn't
+  match the number clicked; they get no pointer and no hover, so "looks clickable" means "is clickable".
+  New `agingBucketOf()` is the single source of truth for both the chart and the drill filter, so they
+  can't disagree. ⚠️ The select-setter **adds a missing option** — a legacy status ("Approved w/o
+  comments") appears on the donut but isn't in the filter list, and a `<select>` silently ignores an
+  unmatched value, which would leave the filter applied while the control read "All statuses".
+
+- **#9 Registry fills the viewport (both modules).** `max-height:calc(100vh - Npx)` hardcoded a chrome
+  height that the wrapping topbar invalidated. **Measured at 800×720: the old rule put the card bottom
+  24px PAST the viewport and gave the page a 40px scroll; the new `body.dr-fit` / `body.ms-fit` flex
+  column lands 16px inside with 0 page scroll.** ⚠️ Gated `@media (min-width:701px)` — the phone
+  breakpoint deliberately releases the cap, and the fit block's higher specificity would otherwise beat
+  it. Applied on the Registry/log view only; Overview and Backlog keep normal page scrolling.
+
+- **Verified: 41/41 in a Node harness** extracting the **real** functions from `module.js` (sort
+  direction/case/numeric/blanks-last/no-mutation, the 3-click cycle, the unknown-column guard, all five
+  aging buckets **including the 60/30/0 boundaries**, and 9 `minusDays` cases across both modules) plus
+  **in-browser measurement against the real `index.html` chrome and `module.css`**: #9 checked at
+  375/768/1280 using **per-width iframes** after `resize_window` proved unreliable mid-session — clamped
+  with 0 page scroll at 768/1280, correctly **not** clamped at 375; frozen Code/Title (and MS's `ms-fz1`)
+  columns **still `position:sticky`** now that headers are also sort buttons; drill targets carry
+  `cursor:pointer` + `role=button` + `tabindex=0` while non-drillable aggregates have neither. `node
+  --check` both modules, CSS braces balanced, no console errors. ⚠️ **Not verified signed-in against live
+  data**; **screenshots remain impossible** here (stalled compositor), so UI claims are measured geometry.
+- Assets: both modules `module.css/js?v=20260804b`.
+- **Still deferred:** the Backlog Doc column + bulk actions (review #8), and porting #3/#7 to Material
+  Submittal (its Registry groups by trade section and has its own KPI/chart set — wants its own pass).
+
+### 2026-08-04 — Drawing Register UI review → debounced search, loading skeleton, clear filters, real icons
+User asked for a UI review of the Drawing Register, then to apply the agreed items (and whatever
+transfers) to Material Submittal. Reviewed the module's actual code rather than its changelog; the
+Overview/Backlog have had several polish passes, so the gaps were in the **Registry grid**, the
+**filter bar** and **feedback/consistency**. Four items done, three deferred (below).
+- **Debounced search (160ms) — a real performance defect, not polish.** The filter handler was
+  `el.oninput = el.onchange` across all four controls, so **every keystroke ran `computeDups()` +
+  `buildModel()` + a full `innerHTML` rebuild over every row** — typing lag on a 1,000+ drawing
+  register (Bauhinia: 1,114). Selects still apply instantly; both paths share one `readFilters()`.
+  ⚠️ Material Submittal **already** had this (160ms) — Drawing Register was the one out of step.
+- **Loading skeleton** on both modules (`skeletonHTML()`, `.dr-sk*`/`.ms-sk*`: spinner + 9 shimmer
+  rows). Drawing Register had **no** loading state at all — `load()` keyset-paginates (1000 rows per
+  round-trip) and only rendered at the end, so a project switch sat on the *previous* project's grid
+  and then swapped. ⚠️ **Gated on `opts.reset`**: a bare `load()` is a post-edit refresh, and a
+  skeleton there would make every save look like a full reload. Material Submittal's bare
+  "Loading…" line was upgraded to the same skeleton.
+- **Ghost clear-filters button** on Drawing Register (`#dr-f-clear`), copied from `.ms-clearfilt` /
+  `.pp-clear` — shown only when `anyFilter()` is true (incl. the duplicates-only toggle), driven from
+  `render()` so the saved-views and dup-legend paths stay in sync. ⚠️ Material Submittal **already**
+  had one; nothing to do there.
+- **Text glyphs → inline SVG icons.** Row actions `▤ ✎ ✕` → eye/pencil/trash, level delete → trash,
+  group caret `▾` → chevronDown, saved-views `✕`/`＋` → x/plus (Drawing Register); `&#9998;`/`&times;`
+  → pencil/trash (Material Submittal). The glyphs rendered at inconsistent weights across Windows
+  font fallbacks — the most visible "not professionally built" tell left in either grid. ⚠️ Emitted
+  via **`Icons.svg` inline, not `data-ico`** — `Icons.hydrate()` only runs on DOMContentLoaded and
+  these rows re-render constantly. `⚠` (duplicate-code mark) deliberately kept: icons.js has no
+  warning glyph and it's a semantic marker, not a control.
+- **`icons.js` gained a `pencil` icon** (there was none — this is why material-submittal's 2026-07-20
+  Doc column had to reuse `eye`). Shared asset → **`icons.js?v=` bumped `20260724a` → `20260804a`
+  across all 17 referencing HTML files.** Module assets → `?v=20260804a` on both.
+- **Verified in-browser** with gitignored `_ui_test.html` harnesses against each module's **real**
+  `module.css` + `icons.js` (deleted after): skeletons (9 rows / 11px bars / 13×13 spinner); the clear
+  button `display:none` → `flex` 52×31 with a hydrated 13×13 × icon, and — measured — **it adds no row
+  to the filter bar at 1280px even with the Views button present** (57px either way); every row/level/
+  caret button emits a 15×15 SVG inheriting `currentColor` through the existing hover rules; caret
+  collapse still rotates; MS's two buttons still fit `.ms-actcol`'s 76px; new `pencil` geometry sane
+  (17×17 in the 24×24 viewBox); `node --check` on both `module.js` + `icons.js`; CSS braces balanced;
+  0 stale glyph references; no console errors. ⚠️ **Screenshots remain impossible** (stalled
+  compositor) — all checks are measured geometry. **Not verified signed-in against live data.**
+- **Deferred, with reasons:** (a) **sortable Registry columns** — the Backlog has click-to-sort
+  headers and the Registry doesn't, which is a genuine inconsistency, but sorting inside a 4-level
+  tree with drag-reorder and frozen columns is where this file gets fragile; wants its own pass.
+  (b) **Clickable Overview KPIs / donut slices / aging buckets** → set the filter and jump to
+  Registry/Backlog — highest-value remaining item, but needs a call on whether a click also switches
+  tabs. (c) **Backlog Doc column + bulk actions** (Registry has both). Also noted but not changed:
+  `.dr-tablecard`'s hardcoded `max-height:calc(100vh - 250px)` overshoots now that the topbar wraps
+  to 2–3 rows on tablets.
+- ⚠️ **Found while reading, NOT fixed — latent truncation in Material Submittal.** `load()` there is
+  a single `.select('*')` with no keyset loop, and Supabase caps a select at **1000 rows** — so a
+  >1000-submittal project would silently load a truncated log (KPIs, donut, S-curve and totals all
+  under-report, no error). Same bug class the 2026-07-21 audit fixed in `project_schedule`,
+  `drawing_register` and `progress_photos`; this table was missed. Not hit yet (largest real workbook
+  is 143 rows), so latent. Fix = copy drawing-register's keyset loop. Flagged in the module's CLAUDE.md.
+
+### 2026-08-03 — Schedule-activity link: real searchable picker (searches ID *and* name)
+User: the Activity Link should be a searchable dropdown, matching on activity **name** as well as code.
+- ⚠️ **The old control physically could not do this.** It was a native `<input list=…>` + `<datalist>`,
+  and browsers filter datalist options by each option's **`value`** — which has to be the `activity_id`
+  we store. The name was only in the option's display text, so typing part of a name matched nothing.
+  No amount of tweaking the datalist fixes that; it needed a real dropdown.
+- **New picker** (`schedPickerHTML` + `wireSchedPicker`, in both modules): a search box over a rendered
+  dropdown, a hidden input holding the stored `activity_id`, and a chip showing the current selection
+  (`ID — Name`) with a clear (×). `schedMatches()` does **whitespace-separated AND matching over
+  `activity_id + activity_name`**, case-insensitively, so "rebar slab" finds *Rebar for Slab on Grade*.
+  Rows are capped at **60 per query** (schedules reach 40k activities) with a "keep typing to narrow"
+  note; Enter picks the first match, Esc / outside-click closes.
+- **Handles the lazy schedule load:** the schedule is fetched after the register, so a form opened
+  early used to sit on a stale "not in this project's schedule" warning. A capped poller (60 × 500ms,
+  cleared on close) refreshes the chip + derived date once the schedule lands.
+- Verified `schedMatches()` in Node against a fixture: by-ID, by-name, multi-term AND, case-insensitive,
+  no-match, and the result cap all behave correctly. Plus `node --check` + CSS brace-balance on both.
+  **Not browser-verified.**
+- Assets: drawing-register `module.css/js?v=20260803h/j`, material-submittal `module.css/js?v=20260803h/i`.
+
+### 2026-08-03 — Adopt Chart.js for the period chart + per-revision drawing files
+Third round of live-review feedback. Two substantial changes:
+- **Switched the period chart from hand-rolled SVG to Chart.js 4.4.1 + chartjs-plugin-datalabels
+  (CDN), the exact stack the Procurement/WPM dashboard uses.** ⚠️ **This reverts yesterday's
+  `preserveAspectRatio="none"` "fix", which was itself the cause of the "S-curve looks stretched"
+  report** — non-uniform scaling stretches a fixed-aspect viewBox's *contents* too, so text and point
+  markers were being horizontally distorted. Chart.js's responsive canvas
+  (`maintainAspectRatio:false` in a fixed-height wrapper) is the correct way to fill a card, and it
+  brings native `interaction:{mode:'index'}` tooltips — which is why the hover "didn't work the same
+  as the prc-app": the PRC app was never hand-rolling this, it was Chart.js all along. Datalabels come
+  from the same plugin PRC uses. Net effect: the hand-rolled `periodChartSVG`/`wirePeriodHover` (~110
+  lines each) are deleted from both modules.
+- **`#` / `%` is now ONE switchable button**, not two radio-style buttons (`.dr-segswitch`/
+  `.ms-segswitch`) — the user's original "switchable toggle" ask, which I'd mis-implemented as a
+  2-button segmented control.
+- **Card-collision fix (global, not per-card):** the Overview emitted its top-level blocks (KPI
+  section, chart rows, progress tables) back-to-back with no margin, so "Drawings by Status" visually
+  collided with the chart below it. One `#dr-view > .dr-dash-grid, #dr-view > .pd-card
+  { margin-bottom:16px }` rule gives the whole view consistent vertical rhythm regardless of what
+  sections get added later.
+- **Per-revision drawing files (Drawing Register).** Previously one `file_url` per drawing, so a
+  register tracked *that* a revision happened but never kept the superseded sheet. Each entry in the
+  existing `submissions` jsonb now carries its own `file_url`, with its own upload/view/remove control
+  in the Add/Edit form's Submissions section; the row-level `file_url` is retained as the **approved**
+  version. **No migration needed** — `submissions` is already jsonb, this is an added key.
+  ⚠️ **Ordering rules preserved from the material-submittal attachment work:** uploads run before the
+  row write (a failed upload never leaves a row pointing at a missing object); this save's uploads are
+  rolled back if the row write fails (no orphans); superseded objects are deleted only *after* the row
+  points away from them; and clicking ✕ is deferred to Save, so cancelling can never delete a file.
+  Row/bulk/clear deletes now collect every revision's file via `allFilesOf()`, capturing paths before
+  the rows leave memory.
+- **Also answered (no code change needed):** the Backlog's phase/trade filters already exist — the
+  shared filter bar is wired to Backlog as of the earlier "reuse filters" change, verified live
+  (selecting Structural narrowed 200 → 177 rows).
+- Assets: drawing-register `module.css/js?v=20260803g/i`, material-submittal `module.css/js?v=20260803g/h`
+  + the two new CDN `<script>` tags in both `index.html`. Verified `node --check` on both `module.js`,
+  CSS brace-balance, and 0 stale references to the deleted SVG functions. **Not browser-verified.**
+
+### 2026-08-03 — Drawing Register + Material Submittal: period chart overhaul (PowerBI-style hover, actual bars, %/# toggle) + layout fixes
+Second round of feedback on the same live Bauhinia screenshot (KPI cards, Period chart, Progress
+tables). Real fixes, not just taste:
+- **Fixed a real bug: the chart wasn't actually full width.** The SVG had `width:100%` but a fixed
+  pixel `height` with NO `preserveAspectRatio` override — the browser's default `xMidYMid meet`
+  scales the 960×h viewBox down to fit *within* the rendered box while preserving its aspect ratio,
+  which on a wide card (much wider than the chart's own aspect ratio) letterboxes it, leaving empty
+  space left/right instead of filling the card. Added `preserveAspectRatio="none"` — safe here since
+  every coordinate in the chart is already computed from the intended pixel dimensions, so non-uniform
+  scaling doesn't distort anything meaningful.
+- **PowerBI-style hover.** Replaced the plain SVG `<title>` (native browser tooltip) with a real
+  floating tooltip (`.dr-pc-tip`/`.ms-pc-tip`) + a vertical guide line, driven by transparent
+  full-height per-period hit-zones drawn last (on top) in the SVG. Shows Planned/Actual this period +
+  Cumulative Planned/Approved for whichever period the mouse is over.
+- **Actual-this-period bars added** (grouped bars: light-gray Planned beside translucent-red Actual)
+  — previously only the cumulative Actual line existed; the period chart now shows both the per-period
+  and running-total view for both planned and actual, matching the ask.
+- **Data labels on bars**, shown above each bar when there are ≤20 periods (beyond that, hover tooltips
+  carry the load instead of cluttering the chart).
+- **# / % toggle** — a `periodValueMode` toggle next to Monthly/Quarterly rescales every value (bars +
+  cumulative lines) as a percentage of the whole project, the conventional S-curve reading where the
+  curves climb toward 100%; y-axis pins to 0–100% in that mode.
+- **Legend centered** below the chart (`justify-content:center`).
+- **KPI "clashing" fixed**: the left accent bar on every card defaulted to brand red regardless of
+  what the metric meant, so a row of 6 neutral metrics read as "a wall of red bars." Default accent is
+  now a muted neutral; red/green/amber are reserved for cards actually flagged bad/good/warn.
+- **"Progress by Phase looks empty below"** — a real CSS bug: `.dr-dash-grid` (and its two-card grid
+  used elsewhere) had no `align-items`, so CSS Grid's default `stretch` forced the shorter table
+  (Phase, 4 rows) to match the height of its taller sibling (Trade, 11 rows), leaving a large blank gap
+  at the bottom. Added `align-items:start` so each card sizes to its own content.
+- **"Progress by Discipline" → "Progress by Trade"** (heading text only; the underlying `discipline`
+  field/grouping is unchanged — Material Submittal has no equivalent section, so nothing to rename
+  there).
+- Module-local only; no DB/migration change. Assets: drawing-register `module.css/js?v=20260803f/h`,
+  material-submittal `module.css/js?v=20260803f/g`. Verified `node --check` on both `module.js` +
+  brace-balance check on both `module.css`. **Not browser-verified** (auth wall) — the letterboxing
+  diagnosis and hover-wiring logic were reasoned from the SVG spec and DOM APIs, not observed directly
+  in a live render.
+
+### 2026-08-03 — Drawing Register + Material Submittal: KPI card polish + chart readability pass
+User reviewed the live Bauhinia Overview and flagged three things: KPI cards feel cramped/close
+together and should "look professionally built" / "maximize the space"; the Period chart "doesn't
+look very nice"; and the Aging bar "doesn't look very helpful" (Bauhinia has 997 of 1,010 open items
+with no schedule link, so the bar was one giant grey blob with the real signal reduced to a sliver).
+- **KPI cards:** switched from a fixed `repeat(6,1fr)` grid to `repeat(auto-fit, minmax(170px,1fr))`
+  with an 18px gap (was 12px) so cards claim real width on a wide screen instead of being squeezed
+  into exactly six narrow slots. Bumped padding (20px 22px), value font 26→32px / 24→32px, added a
+  subtle shadow + hover lift, and a thicker 4px accent bar — reads as a proper stat card now instead
+  of a cramped strip.
+- **Aging bar redesigned to be useful on real (mostly-unlinked) data:** the proportional bar is now
+  built ONLY from items that have a due date (`AGING_DATED`); the undated count is reported as a
+  separate line below ("+N open items not yet linked to a schedule activity"), not a bar segment. On
+  data with zero dated items it now says so explicitly instead of rendering an all-grey bar.
+- **Period chart visual pass:** taller (220→280px), rounded bars, a translucent area fill under the
+  Cumulative Planned line (the "target band" the red Actual line tracks against — the classic S-curve
+  look), point markers on both cumulative lines, dashed gridlines, and the planned line recolored from
+  washed-out `currentColor` to `var(--pd-ink)` (theme-correct dark/light, but a solid, visible color
+  instead of blending into muted axis text).
+- Module-local only; no DB/migration change. Assets: drawing-register `module.css/js?v=20260803e/g`,
+  material-submittal `module.css/js?v=20260803e/f`. Verified `node --check` on both. **Not
+  browser-verified** (auth wall) — visual review was against the user's own screenshot of the live
+  deployed site, not a local render.
+
+### 2026-08-03 — Drawing Register + Material Submittal: live UI review fixes (both modules)
+Reviewed the live deployed site (drawing-register + a real project, "Bauhinia") and made several fixes:
+- **Backlog "vastness" fix (user report: Bauhinia's Backlog has a long scroll).** A backlog can run into
+  the thousands (Bauhinia: 1,010 open items) — the table now scrolls **inside its own capped-height
+  card** (`.dr-bk-scroll`/`.ms-bk-scroll`, `max-height:min(62vh,640px)`) so the KPI row + card header
+  stay put, and only the first 200 rows paint until "show all" is clicked (`BK_PAGE`/`bkShowAll`),
+  keeping the DOM light on very large backlogs. Sorting/filtering always re-slices from the full,
+  already-sorted list, so paging never hides the "worst" rows.
+- **Real bug found live: "Jan '00" on the Period chart.** GPR101 has ~9 drawings carrying
+  `actual_approval = "2000-01-06"` — a legacy-import sentinel/placeholder date, not a real approval —
+  which blew the whole chart's x-axis out to a 25-year range. `periodKeyOf()`/`agingDays()` in both
+  modules now treat any date outside a sane 2015–2100 project-planning window as "no date" rather than
+  plotting it.
+- **KPI section labels (user request: "follow how the procurement dashboard separates the KPI
+  cards").** New `kpiSection(label, cardsHtml)` helper wraps each KPI row with a small uppercase
+  eyebrow label (WPM's "Cost Overview" / "Work Package Status" pattern) — "Register Overview" / "Log
+  Overview" on Overview, "Backlog Overview" on Backlog — so a page with more than one KPI row reads as
+  separate sections instead of one undifferentiated strip.
+- Module-local only; no DB/migration change. Assets: drawing-register `module.css/js?v=20260803d/f`,
+  material-submittal `module.css/js?v=20260803d/e`. Verified `node --check` on both; the sentinel-date
+  bug and the Bauhinia row count were confirmed **live** via the deployed site (Supabase query run in
+  the browser console) before fixing.
+
+### 2026-08-03 — Drawing Register + Material Submittal: add the Aging bar + Period chart to Overview
+Continuation of the WPM look-alike pass: added the two remaining WPM Overview charts to both modules.
+- **"Open Items by Aging"** — a single stacked horizontal bar (>60d overdue / 30-60d overdue / 0-30d
+  current / Future / No due date), computed from the whole project (unfiltered — independent of
+  whatever the Registry/Backlog filter bar has selected), reusing the `agingDays()` helper added for
+  the Backlog tab's Aging column. New `agingBuckets()`/`agingBarSVG()` in each module.
+- **"Drawings/Submittals by Period — Planned vs Actual Approval"** — a bar+line chart (grey bars =
+  planned this period, dark line = cumulative planned, red line = cumulative actual/approved) with a
+  Monthly/Quarterly toggle, matching WPM's "Work Packages by Period" card. New `periodBuckets()`/
+  `periodChartSVG()` in each module, grouping by `planned_approval`/`actual_approval` (Drawing
+  Register) or `plan_approval_date`/`date_approved` (Material Submittal). Pure inline SVG, no charting
+  library — same approach as the status donut added earlier.
+- Material Submittal already had a cumulative-only "S-curve" card from its original build; the new
+  Period chart is additional (bar+cumulative-line view), not a replacement — both stay since they show
+  slightly different things (per-period volume vs pure cumulative trend).
+- Module-local only; no DB/migration change. Assets: drawing-register `module.css/js?v=20260803c/e`,
+  material-submittal `module.css/js?v=20260803c/d`. Verified `node --check` on both + no duplicate
+  helper/var names. **Not browser-verified** (auth wall).
+
+### 2026-08-03 — Drawing Register + Material Submittal: pattern the WPM (Procurement) look further
+User pointed at the live WPM project-view (Overview/Backlog/WP List) and asked to pattern its look more
+closely — specifically its sortable "Backlog" table with an **Aging (d)** column, and its donut-chart
+status breakdown on Overview.
+- **Aging (d) column on both Backlog tables** (`agingDays()` in each module): `today − required-approval
+  deadline` (positive = days overdue, negative = days still to go) — the same shape as WPM's Aging(d)
+  column, using the existing schedule-link deadline when linked, falling back to the plain planned-
+  approval date otherwise.
+- **Sortable Backlog columns** (both modules): click any header to sort by it (Code/Item/Section-or-
+  Phase/Discipline/Status/Need-by/Aging), click again to flip direction — mirrors the sort arrow on
+  WPM's Backlog table. Default stays "most urgent first."
+- **Status donut chart on Drawing Register's Overview** (`donutSVG()`, new — Material Submittal's
+  Overview already had one from its original build, so no change needed there): a WPM-style ring chart
+  + legend showing the drawing count by approval status, colored to match the existing status-pill
+  palette (`statusCls`) so the chart and the grid pills read as one system.
+- Module-local only; no DB/migration change. Assets: drawing-register `module.css/js?v=20260803b/d`,
+  material-submittal `module.css/js?v=20260803b/c`. Verified `node --check` on both. **Not
+  browser-verified** (auth wall).
+
+### 2026-08-03 — Drawing Register + Material Submittal: Backlog UI polish (filters + fixed blank-status pill)
+Follow-up to the Overview/Backlog/Registry rollout below, after seeing it live: on a real project the
+Backlog tab had ~1,000 unfiltered rows and a blank `status` rendered as a solid amber pill showing "—"
+(looked like a real status value, wasn't).
+- **Backlog now shares the existing filter bar** (search/phase/discipline/status, + Overdue-only on
+  Material Submittal) instead of hiding it — both modules extracted their filter-matching logic into a
+  reusable predicate (`matchesFilters()` in Drawing Register; Material Submittal already had one in
+  `visibleRows()`) so Backlog and Registry/Log filter identically, no duplicated logic.
+- **Fixed the blank-status pill** in Drawing Register's Backlog (`statusCls()` defaulted unset status to
+  the amber "For Review" color): now renders a plain muted "—" when `status` is empty, matching how
+  Material Submittal's Backlog already handled it.
+- Both Backlog tables now show a **"Showing N filtered" / "N total"** count in the card header.
+- Module-local only (`module.js?v=20260803c` drawing-register, `20260803b` material-submittal). Verified
+  `node --check` on both. **Not browser-verified** (auth wall).
+
+### 2026-08-03 — Drawing Register + Material Submittal: Overview/Backlog/Registry tabs (procurement-style)
+- User asked for the Procurement (WPM) project-view tab pattern (Overview / Backlog / WP List) on both
+  **Drawing Register** and **Material Submittal Log** — as two separate modules (each keeps its own
+  data/table), not merged. Each module's existing single page folds into a new **Registry** tab.
+- **Drawing Register:** topbar tabs renamed **Overview | Backlog | Registry**. Overview = the former
+  "Progress" dashboard (KPIs + phase/discipline roll-ups, `renderProgress`, unchanged). Registry = the
+  former "Register" grid (unchanged). **Backlog** (new, `renderBacklog`): drawings not yet approved,
+  sorted by schedule urgency (`docFloatOf` from the existing Need-by schedule link — late → tight →
+  open, un-linked ranked by status), with its own KPIs (open items / late / due ≤3d / Revise & Resubmit)
+  and click-a-row → opens the existing edit modal. Old `localStorage` view values (`register`/`progress`)
+  migrate transparently to `registry`/`overview` so returning users don't lose their last tab.
+- **Material Submittal Log:** same pattern — tabs **Overview | Backlog | Registry** (Overview = existing
+  Dashboard, Registry = existing Log, both unchanged). **Backlog** (new, `renderBacklog`): submittals not
+  yet approved (`!isApproved`), sorted by the same need-by float / overdue-vs-plan-date logic, reusing
+  the existing `needByCell`/`statusMeta`/`kpi` helpers and the modal editor.
+- Both Backlog tables reuse each module's existing status-pill/need-by/float-chip markup rather than
+  inventing new components. No DB/migration change (pure UI + read-derived sort). Assets bumped:
+  drawing-register `module.css/js?v=20260803a/b`; material-submittal `module.css/js?v=20260803a`
+  (module-local only, no shared-asset `?v=` bump).
+- Verified: both `module.js` pass `node --check`; confirmed every helper the new code calls
+  (`emptyMsg`, `statusCls`, `drawCode`, `needByCellHtml`, `kpi`, `codeOf`, `discOf`, `sectionOf`,
+  `statusMeta`, `isOverdue`, `docFloatOf`, `openForm`, …) actually exists in each file. **Not
+  browser-verified** — this session is auth-walled (no live login available here).
+
+### 2026-08-03 — Drawing Register: BAU101 (Bauhinia) migration prep — 5 new disciplines, import file built + verified
+- User supplied `EPC. OPS. BAU101 Drawing Register Version 01. 2025 03 14.xlsx` to migrate into the
+  live Drawing Register for project **BAU101**. The workbook turned out to hold **6 different
+  candidate drawing-list sheets**, not one — reverse-engineered all of them before importing anything:
+  - `Dwg Register (Vert)1` (user's chosen "current" pick, 1,232 rows) is actually **stale/templated**:
+    every row across all 4 design phases carries the identical two dates (23-Aug-2019 / 25-Oct-2020)
+    and generic sequential codes — not real per-drawing history.
+  - The real, actively-maintained data lives in **`Dwg Registry (Backup 08012025)`** (315 real-coded
+    drawings, richest — full Landscape & Amenities + Interior/ISD package, real statuses/remarks) and
+    **`Dwg Registry (Based on FCD)`** (223, mostly a subset but with 8 exclusive utility codes the
+    Backup sheet lacks). `Dwg Registry (August 2024)` is a smaller, fully-superseded older snapshot.
+  - Final scope (user's call): merge Backup ∪ FCD (~361 real drawings, real codes/dates/status) as the
+    **For Construction** phase, PLUS Vert1's **Concept Design / Schematic Design 1 / Schematic Design 2**
+    phase-hierarchy (titles/structure only — the fabricated Vert1 dates are dropped, not imported).
+- **5 new disciplines added to the shared importer** (`Temporary Facilities`, `Safety Protection`,
+  `Construction Equipment`, `Other Specialties`, `MEPF Combined`) — additive only, see
+  `modules/drawing-register/CLAUDE.md`.
+- Built a one-off Python transform (not committed — a data-prep step, not app code) that parses the
+  source sheets with the real column layout (verified row-by-row against the actual file, not the
+  header labels, which mismatch the real data columns in places) and emits a clean, GPR101-style flat
+  workbook the existing **unmodified** importer parses correctly.
+- **Verified by running the app's real `parseWorkbook`/`gridOf`/`findHeader`/`parseGrid` functions in
+  Node against the generated file** (extracted from the live `module.js`, not reimplemented): 1,114
+  drawings import correctly (251 per early phase × 3 + 361 For Construction), 0 land with a blank
+  discipline, 0 early-phase drawings carry a stray date. Delivered the generated `.xlsx` to the user to
+  run through the module's existing **Import Excel** button against project BAU101 — not run against
+  the live DB from here (no login session available in this environment).
+
+### 2026-07-27 — Project Schedule collab: signed-in re-verification (migration confirmed, stream delivers)
+- Re-verified Project Schedule's live collaboration on the deployed site, signed in, with a simulated
+  second user. **Presence** ✅ (avatars, 2nd member live on GPR101 + XERTEST). **Cell cursor** ✅ (Test B
+  editing an `activity_name` cell painted that cell with a "TB" flag). **Live-value stream** ✅ *proven at
+  the infrastructure level* — an isolated probe subscribing to `postgres_changes` on `project_schedule`
+  returned SUBSCRIBED and **received an INSERT event**, so the `2026-07-26-realtime-collab-project-schedule.sql`
+  migration IS applied and events deliver.
+- ⚠️ The module's own live-apply couldn't be watched end-to-end this session: on the heavy ~690KB page,
+  backgrounded during automation, the tab throttles so hard the module's channel goes CHANNEL_ERROR and
+  awaited CDP evals time out (the documented rAF/backgrounded artifact, not a defect). Needs a real
+  **foreground two-browser** test to see the grid patch itself.
+- Data integrity: all test writes on the XERTEST sandbox or one restored GPR101 field; 0 leftover rows.
+  Docs-only change (no code) — the `collab.js?v=20260727b` buildMembers fix from earlier also applies here.
+
+### 2026-07-27 — Collaboration rollout: the three analytics modules (S-Curve, Cash Flow, Portfolio)
+One pass across the derived/read modules. Each scoped to what's meaningful (no invented cursors):
+- **S-Curve** (read-only, derived from `project_schedule`): **presence + live-refresh + offline
+  read-cache**, no cursor. `joinCollab` (`scurve:<pid>`) subscribes to `project_schedule` → a
+  **debounced `load()`** (400ms) recomputes the curve when someone edits the schedule; `{agg,rows}`
+  cached under `sc:<pid>` and rendered on a failed fetch. Live stream reuses the existing
+  `project_schedule` realtime migration.
+- **Cash Flow** (derived projection, editable assumptions across 4 tables): **presence + editing
+  indicator + live recompute + offline READ-cache**. `joinCollab` (`cash_flow:<pid>`) uses the
+  multi-table `opts.tables` (`cash_flow_settings/_actuals/_dp_tranches/_trade_packages`) → **debounced
+  `loadAll(false)`** (500ms). The "cursor" is the avatar **editing dot** (Assumptions/Actuals modal
+  open). Full snapshot cached under `cf:<pid>` + restored offline. ⚠️ **Writes stay online-only** —
+  the saves are multi-table bulk delete+insert keyed by `project_id`, which don't fit the id-based
+  outbox, and are desk activities; each `save*` is `navigator.onLine`-guarded.
+- **Portfolio Overview** (cross-project read-only rollup): **presence-only + offline read-cache**.
+  `PDCollab.join({key:'portfolio'})` with no table/projectId (presence + broadcast only) shows who's
+  viewing the portfolio; `getProjects()+getWorkspaces()` cached under `po:all` and restored offline.
+- **Migration `2026-07-27-realtime-collab-cash-flow.sql` (USER MUST RUN)** enables the live stream for
+  Cash Flow's four tables. S-Curve needs the project_schedule realtime migration; Portfolio needs none.
+- Verified: all three inline modules parse (vm compile). Live verification pending. Assets:
+  `offline.js?v=20260726d` + `collab.js?v=20260727a`.
+
+### 2026-07-27 — Collaboration rollout: Productivity Rates (full: presence + cursors + live + offline)
+- Wired PDCollab + PDSync into **Productivity Rates** with the full feature set. This module spans
+  **two tables**, so I **extended the shared `collab.js`** with an additive **`opts.tables` array**
+  (backward compatible; `opts.table` still works) and subscribed to both `productivity_activities` +
+  `productivity_entries`; `applyRemoteChange` switches on `payload.table`. **`collab.js?v=` bumped
+  `20260726c → 20260727a` across all 9 referencing modules** (additive change, no behaviour change for
+  the others).
+- **Presence** avatars (`#pr-presence`); **cursor** = the activity's Data-register row (both the
+  activity form and the monthly editor broadcast "editing this activity", `paintRemote` on the Data
+  view); **live** register + monitoring updates on any activity/entry change.
+- **Offline (full):** a `persist()` helper routes activity add/edit, delete, and the monthly-editor
+  save (deletes + upserts) through `PDSync.write` (field-level LWW; optimistic when queued, `load()`
+  when it goes through online). Both tables are read-cached under `pr:<pid>` and restored on a failed
+  fetch. **Import stays online-only** (bulk; `navigator.onLine`-guarded). Offline inserts use PDSync's
+  client uuid so a new activity + its months queue and replay in order.
+- **Migration `2026-07-27-realtime-collab-productivity-rates.sql` (USER MUST RUN)** enables the
+  live-value stream for both tables (presence/cursors/offline work without it).
+- Verified: inline module + `collab.js` pass `node --check`. Live two-session verification pending.
+  Assets: `offline.js?v=20260726d` + `collab.js?v=20260727a`.
+
+### 2026-07-27 — Progress Photos collab: live two-session verification (migration confirmed)
+- User ran `2026-07-26-realtime-collab-progress-photos.sql`; verified the whole transport **live on the
+  deployed site**, signed in (Fernando Lozano) on GPR101, driving the real module via the browser. The
+  module's channel reports `state:"joined"` (migration active). A **simulated second user** (independent
+  Supabase client, distinct id, same `collab:progress_photos:GPR101` channel) proved: **presence** (both
+  avatars FL + TU rendered), **live gallery** (DB INSERT 0→1, UPDATE, DELETE all streamed live), and the
+  **row cursor** (B's "editing" painted the right photo's `.pp-thumbcell` with a "TU" flag and survived
+  subsequent live re-renders). No console errors; test row cleaned up.
+- ⚠️ **Leave-reconciliation caveat (applies to ALL collab modules):** an **abrupt** disconnect (killed
+  socket, no clean close) can leave a stale avatar on peers until they re-sync/reload; a real tab close
+  sends a clean websocket close so the bound `leave` handler fires. Confirmed a fresh join shows the
+  correct roster (only FL after B dropped).
+- ⚠️ **Offline path not exercised live** (needs a real network-down→reconnect cycle; the console harness
+  can't fake it). Online save-through-PDSync is covered since `write()` does the same direct op online.
+
+### 2026-07-26 — Collaboration rollout: Progress Photos (Phase 1 + 2, offline-limited)
+- Wired PDCollab + PDSync into **Progress Photos** — the deliberately **"presence + live,
+  offline-limited"** case: it's uploads, so photo *blobs* can't be queued offline. Scope delivered:
+  presence avatars (`#pp-presence`), a **live gallery** stream (`applyRemoteChange` patches `rows` on
+  postgres_changes and **signs a newly-arrived photo's URL** via `signOne` so the preview shows live),
+  a **row cursor** when editing a photo's metadata (`openForm` broadcasts, cleared on ×/Cancel/Save;
+  `paintRemote` flags the `.pp-thumbcell`/`.pp-cardimg` in List/Gallery), and **offline metadata
+  edits** (the Edit modal save routes through `PDSync.write` — description/trade/works/location/date,
+  field-level LWW, optimistic) + a read-cache (`pp:<pid>`; renders from cache on a failed fetch).
+- ⚠️ **Images need a connection** (by design): **upload / delete / download stay online-only** (blobs
+  can't be queued; a delete removes a storage object), and offline previews show the placeholder since
+  signed URLs can't be minted offline. Offline covers **metadata edit + read**.
+- **Migration `2026-07-26-realtime-collab-progress-photos.sql` (USER MUST RUN)** enables the live-value
+  stream (`supabase_realtime` + `replica identity full`). Presence/cursors/offline work without it.
+- Verified: `node --check` (module.js + ppr.js). NOT browser-verified (needs 2 signed-in sessions + an
+  offline cycle; auth wall + stalled compositor here). Assets: `offline.js?v=20260726d` +
+  `collab.js?v=20260726c`; progress-photos `module.js?v=20260726d`.
+
+### 2026-07-22 — Dashboard: remove redundant Program/Workspace tabs from Project Home
+- `dashboard.html` (Project Home) is scoped to ONE selected project, but the **Program** and
+  **Workspace** tabs rendered cross-project portfolio rollups (same `portfolioHtml`, different ancestor
+  node) — redundant with the far richer **Portfolio Overview module** already linked in this page's
+  sidebar (donut, budget bars, grouping, filters, S-Curve/Cash Flow), and a scope mix (one-project home
+  showing many-project tables). User chose **delete** over repurpose.
+- Removed the tab bar + both panels (Project Home is now a clean module launcher) and deleted the dead
+  code: `wireTabs`, `renderScaffolds`, `renderProgramTab`, `renderWorkspaceTab`, `portfolioHtml`,
+  `breadcrumbHtml`, `schedCell`, `statusPill`, `wirePortfolioRows`, `card`, and the tree helpers
+  (`buildChildren`/`childrenOf`/`descendantIds`/`ancestorOfType`/`projectsInSubtree`). Kept
+  `pathOf`/`groupHead`/`renderHeader`/`renderSwitcherMenu` (project switcher). 271 → 154 lines.
+- **Live-verified** (deployed, logged-in Chrome): Project Home renders no tab bar, 12 module cards, the
+  project switcher header (full workspace path + Group Head) and its dropdown (16 projects + All
+  projects link) both work, Portfolio Overview still in the sidebar; no console errors. Shell HTML/JS
+  only (no shared asset changed), so **no `?v=` bump**.
+
+### 2026-07-22 — Project Schedule: fix cell-nav horizontal autoscroll (cells hidden behind frozen columns)
+- User: Left/Right/Tab didn't autoscroll columns correctly. The #, Activity ID, Activity Name columns
+  are position:sticky and float over the viewport's left edge, so a cell could be scrolled into view yet
+  stay hidden behind them; `scrollCellVisible` ignored that (checked `left < scrollLeft`), so it never
+  uncovered left-obscured cells and scrolled pointlessly on frozen targets. Fixed to reserve the frozen
+  columns' width as the true left edge and no-op for frozen targets.
+- **Live-verified** (GPR101): all 11 visible columns revealed from every scroll position (old algo
+  failed all); ArrowRight scrolled 0→274, ArrowLeft 274→0, active cell always visible. Module-local, no
+  `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: Gantt timeline no longer starts years before the schedule
+- User: Gantt showed bars/timeline from ~2022 though the schedule starts 2025. Not stray data (verified
+  live the dates are clean) — `range()` padded the timeline **2 years before / 3 after** the schedule
+  (old deep-scroll feature) and opens scrolled to the far-left past. Tightened to ~1 month before / 1
+  quarter after; pane still scrolls. Live-verified: GPR101's Gantt header went 2024–2032 → 2026–2029,
+  opening at the project start with no empty leading years. Module-local, no `?v=` bump.
+  See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: one-call schedule_rows RPC (fast cold load)
+- Cache made *reopen* instant; this makes *cold first-open* fast. New SQL function
+  `schedule_rows(project_id) returns jsonb` returns ALL of a project's rows as one jsonb array in a
+  SINGLE round-trip (scalar jsonb return isn't row-capped), collapsing the ~8 keyset pages into 1.
+  `security invoker` so RLS still applies. Migration **`migrations/2026-07-22-schedule-rows-rpc.sql`
+  (USER MUST RUN)**; idempotent.
+- Client `load()` calls the RPC first and **falls back to keyset pagination if it's absent**, so it's
+  safe to deploy before/after the migration. **Live-verified** (migration not yet run): RPC returns 404,
+  fallback loads a 17,122-activity project fine — no regression. Speedup activates once the migration
+  runs. Module-local JS + new migration, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: cache-first load (instant reopen via IndexedDB SWR)
+- Goal: eliminate the schedule's loading time on open. **Measured first:** a 6k-activity project
+  cold-loads in ~8.9s across ~8 sequential paginated round-trips — the wait is round-trip latency ×
+  page count, **not bytes**. So "lean columns" was deliberately skipped (wouldn't cut round-trips, risks
+  dropping fields). Instead made **reopen instant** with an IndexedDB stale-while-revalidate cache: paint
+  the cached rows immediately (no overlay) + a "Cached · updating…" badge, then re-fetch and reconcile to
+  "Live". Edit-guard (`_editSeq`) prevents a mid-fetch edit from being clobbered; cached rows are cleaned
+  of computed fields; count round-trip skipped on the cached path.
+- **Live-verified:** reopening Avesta painted from cache in **~640ms vs ~8,900ms cold (~14×)**, badge
+  cycled Cached→Live, no console errors. Cold first-open unchanged — the real fix for that is a one-call
+  server RPC (follow-up, same pattern as `schedule_scurve_agg`). Module-local, no migration, no `?v=`
+  bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: inline Status dropdown in the grid (one-click change)
+- Changing an activity's status required right-click → Edit activity (tedious on 10,000+ activities).
+  The grid Status cell is now a dropdown (the coloured pill IS a `<select>`) for writers, so status
+  changes in one click in the grid; read-only users keep the static pill. Routed through `_statusPatch`
+  (same completion side-effects as the detail Status field) and the undoable `persist()`. Only ~visible
+  rows render a select (grid is virtualized), so no cost on huge schedules.
+- **Live-verified** (deployed, logged-in Chrome): renders as enabled selects on real projects; on the
+  DEMO01 sandbox a dropdown change persisted through a full DB reload, then was restored. Module-local,
+  no migration, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: fix grid keyboard shortcuts (Arrow/Tab/etc.) never firing
+- User: Arrow keys scrolled the panel instead of moving the selection; Tab traversed page buttons, not
+  grid cells. Root cause: the grid keydown handler bailed on a bare `querySelector('.pd-modal-overlay,
+  …')` presence check, but `#ps-modal` **is** `.pd-modal-overlay` and is always in the DOM
+  (`display:none`) — so it matched every keystroke and returned before any branch, killing all
+  Excel-style navigation.
+- **Fix:** bail only for overlays that are actually visible (`offsetParent !== null`); the hidden
+  `#ps-modal` no longer blocks (its open state is still covered by the display check above). Live-verified
+  on the deployed app (ArrowDown moves selection + prevents scroll; Tab sets the active cell + prevents
+  button traversal). Module-local, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: virtualize the WBS Manager tree (+ live verification)
+- Broad searches / Expand-all painted every visible row into the DOM (up to ~7,700 rows → ~1s+). The
+  tree render now flattens the visible nodes into a list and only paints the scroll-viewport window
+  (~24 rows) offset by `translateY` over a full-height spacer — same virtualization as the grid/Gantt.
+  Listeners are delegated on the persistent container so they survive per-scroll window repaints.
+- **Live-verified** on the 8,596-node project (deployed, logged-in Chrome): Expand all = **45ms with 23
+  DOM rows** (was 1,433ms / 8,596 rows); extreme search "a" = **6,671 matches / 7,691-row set → 24 DOM
+  rows, no freeze**; delegated caret/row-select work; no console errors. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: fix wbs_nodes 1000-row truncation + live-verify the WBS Manager
+- Verifying the WBS optimization **live on a large project** surfaced a pre-existing bug: `load()`
+  fetched `wbs_nodes` with a plain `select('*')` (Supabase caps at 1000), so big P6 imports loaded a
+  **truncated tree** — children past row 1000 vanished from the walk. Live symptom: a project showing
+  "1000 nodes" but only 2 connected rows. **Fixed** with keyset pagination (same as the audited
+  resource/drawing/photo loads); also fixed the copy-WBS-from-project source read. No migration, no `?v=`.
+- **Live-verified** (deployed site, logged-in Chrome): the project actually has **8,596 WBS nodes**
+  (was capped at 1000). Default load = 6 rows instant; Expand all = 8,596 rows in ~1.4s; Collapse all =
+  1 row in ~114ms; caret toggle works; search "Closeout" = 20 matches / 62 rows with correct
+  full ancestor chains (6-level-deep match revealed); no console errors. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: optimize the WBS Manager (indexed render + collapse/search)
+- `renderWbsManager` was O(N²)/O(N·rows) and rendered every node at once, freezing the tab on
+  P6-scale trees (~14k nodes / ~27k activities). Rebuilt around a **one-pass index**
+  (`_wbsBuildIndex`: byId / sorted childrenOf / activity counts / codes) so the render walk does no
+  per-node scans — benchmarked **11,171ms → 12ms** on a 14,420-node fixture. `computeWbsCodes`
+  de-nested the same way (O(N²·log N) → O(N·log N), identical output, verified).
+- Added **collapse/expand** per node (only visible rows hit the DOM; large trees default-collapse
+  below the top level), toolbar **Expand all / Collapse all**, and a **search box** that reveals
+  matches + their ancestors. Editing behavior (all row buttons, rename, select) unchanged.
+- Module-local, no migration, no `?v=` bump. Inline script parses; logic unit-verified in a Node
+  harness. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: make the merged Last Planner section collapsible
+- Follow-up to the merge below. The Last Planner block made the Planner Cockpit a long scroll on load,
+  so its section divider is now a toggle (rotating chevron) that collapses/expands the whole weekly
+  section; state persists per browser (`localStorage['ps_lp_collapsed']`, default expanded). Module-local
+  HTML/CSS/JS only → **no `?v=` bump**. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: merge Last Planner into the Planner Cockpit tab
+- User flagged the **Planner Cockpit** and **Last Planner** tabs as redundant / low-value as two
+  separate top-level views. Chose to **merge (keep all functionality), not remove**: the Last Planner
+  weekly section (week nav, PPC KPIs, weekly commitments, PPC trend, reasons-for-variance) is now a
+  section **inside the Planner Cockpit view**, under a divider, below the cockpit KPIs/forecast. The
+  separate `lastplanner` tab + `#ps-view-lastplanner` wrapper are gone; `switchTab`/`renderAll` render
+  both cockpit + Last Planner when the `planner` tab is active.
+- IDs unchanged (`ps-ck-*`/`ps-lp-*` never collided) so all handlers keep working; no DB/migration
+  change, module-local HTML/CSS/JS only → **no `?v=` bump**. Verified in-browser: no console errors,
+  Last Planner table resolves inside the cockpit view, old view removed, 0 `lastplanner` refs remain.
+  See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-21 — Project Schedule: remove dead old cost-table code (cleanup after the EVM rebuild)
+- Follow-up to the Cost/EVM rebuild below: it orphaned the old per-activity cost table, leaving
+  `COST_COLS`, `_vc`, `costW`, `costColW`, `costVisibleCols`, `startCostColResize` and the
+  `table.ps-cost-table`/`.ps-cost-th` CSS as dead code. Removed them after verifying **zero live
+  references**, and simplified `renderColsMenu` to drop its unreachable `onCost`/`COST_COLS` branch
+  (the Columns chooser is Schedule-tab-only — the toolbar is hidden on other tabs).
+- **Behavior-preserving** (removed branch was already unreachable; `startCostColResize` had no
+  callers; `applyColHidden` used only `gridCols()`). Verified: no dangling references, script parses,
+  and on the deployed page the Cost/EVM dashboard + Schedule column chooser both still work.
+  Module-only, no `?v` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-21 — Project Schedule: Cost Loading tab rebuilt into a Cost / EVM dashboard
+User flagged the Cost Loading tab as a low-value flat table that doesn't reflect how P6/OPC do cost
+loading (time-phased). It was also redundant — the Schedule grid already shows per-activity cost
+columns and the **Activity Usage** detail tab already draws the time-phased per-activity cost curves.
+Rebuilt it as a project-level **EVM dashboard** (tab relabelled **Cost / EVM**):
+- **EVM KPIs** at the data date: BAC, PV, EV, AC, SV, CV, SPI, CPI, EAC, VAC, TCPI + an over/under-budget ·
+  on/behind-schedule status chip.
+- **Cost S-curve**: cumulative Planned Value (linear spread over each activity's dates) + EV/AC points
+  at the data date + a BAC reference line.
+- **Cost variance by WBS**: `_costMap` roll-up (Budget/Actual/Earned/CV/CPI/%Spent), over-budget rows
+  flagged, + TOTAL — the "where's the money bleeding" view, distinct from Activity Usage (per-activity
+  curves) and Cash Flow (funding timing).
+- `renderCost()` guards on `activeTab==='cost'` (heavier than the old table; `renderAll` calls it every
+  render). Old flat-table helpers left as inert dead code (the cost-tab toolbar/chooser is hidden).
+- Verified: parses clean; EVM aggregation unit-tested (SV −10k/CV −15k/SPI 0.9/CPI 0.857/EAC 350k/VAC
+  −50k/TCPI 1.077); browser harness with a cost-loaded fixture rendered KPIs, the PV S-curve, status
+  chip, and the WBS variance table with no console errors. No migration, no `?v=` bump.
+
+### 2026-07-21 — Project Schedule: fix the ACTUAL "count populated, grid empty" bug (deferred render)
+- **Verified the load-race fix (below) on the deployed page with a real 17,122-activity project and
+  found the screenshot bug still reproduced** — so the race fix, though correct, addressed a different
+  failure mode. On initial load the footer showed "17122" while the grid read "Select a project." for
+  ~8s, then self-corrected.
+- **Real root cause (from live timing):** `load()` sets the footer via `rebuild()` right after
+  pagination (~2s), then `await`s `loadResourcesAssignments()` + `_wbsEnsureSummaries()` (several
+  seconds on a 17k-activity project) and **only rendered the grid AFTER those** — so the grid kept its
+  stale "Select a project." paint the whole time.
+- **Fix:** `renderAll()` immediately after `rows = all; rebuild()` (collapse block moved up too), then
+  load resources, then `renderAll()` again. The grid/Gantt need only `rows`; resources/WBS_NODES are
+  for other tabs. Closes the window from ~8s to ~0.
+- Verified live that rendering works (a user-triggered switch to the same 17k project paints
+  correctly) — only the paint *timing* was wrong. Re-verify on deploy. Module-only, no `?v` bump.
+
+### 2026-07-21 — Project Schedule: fix load race (count populated, grid empty)
+- Screenshot showed a 16,409-activity project with the footer count set but the grid reading "Select a
+  project." **Root cause: `load()` is async + paginated (~17 sequential round-trips for a 16k schedule)
+  with no re-entrancy guard** — switching/deselecting a project mid-load let the stale load commit its
+  `rows`/count/render after `pid` had already changed, so the footer and grid disagreed about the
+  selection (grid ends up empty or showing a deselected project's rows depending on timing; same bug).
+- **Fix: a monotonic `_loadGen` token** — `load()` claims `gen = ++_loadGen` and bails after every
+  await if a newer load started; the `!pid` branch also clears the overlay. Applies to every load
+  caller (switch, undo/redo, import, scenario restore).
+- **Verified in a Node harness** modeling the real load/rebuild/doRender + rAF: without the guard, 2 of
+  3 mid-load scenarios leave pid/footer/grid inconsistent; with it, all three are consistent. Parses
+  clean. Module-only, no `?v` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-21 — Project Schedule: brand icon beside the title (uniform topbar)
+- The Project Schedule title is a **view-switcher button**, so it never carried the brand-red module
+  icon every other module shows — the `calendar` icon only lived inside the switcher's dropdown items.
+  Added it before the title text (`[calendar] Project Schedule ▾`).
+- ⚠️ The existing muted-icon rule for the chevron also matched the new icon; overrode it with
+  `.ps-title-btn span.ps-title-ico` (higher specificity) so the module icon is brand-red while the
+  chevron stays muted. Verified in a harness (real markup + CSS + icons.js): SVG hydrates, brand-red
+  in light and dark, chevron unaffected. Module-only, no `?v` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-21 — Project Schedule Cost Loading: fix WBS/name overlap + duplicate ID
+- **WBS code overlapped the Activity Name** ("1.4.2.5.2.3.1Cabinetry", ghosted). Root cause: the Cost
+  Loading table is `table-layout:fixed` but `.ps-table td` had no overflow clipping, so a WBS `<code>`
+  wider than its column bled into the next cell. Fixed by clipping cells (`overflow:hidden` +
+  ellipsis + a `title` tooltip for the full value), widening WBS 90→120px, and monospacing the code.
+  Headers now **wrap** instead of clipping mid-word — via `table.ps-cost-table th` to outspecify the
+  later `.ps-table th { white-space:nowrap }`.
+- **Latent duplicate `id="ps-cost-body"`** (the Cost Loading tbody and the "Cost Accounts (CBS)" modal
+  panel) — `renderCostAccounts()` was writing into the wrong element, leaving the CBS manager blank.
+  Renamed the panel to `ps-cost-acct-body`.
+- The all-₱0 / "—" cells are **not** a bug: that schedule was imported from P6 with no cost loaded.
+- Verified in a browser harness with the module's real CSS + the screenshot's long WBS codes at the
+  actual 12-column widths: no overlap, headers all wrap without clipping. Module-only change, no `?v`
+  bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-21 — Viewer read-only: close the cash_flow_* residual
+Extended #7 to the last write surface: the 7 `cash_flow_*` assumption/derived tables
+(settings, billing_milestones, dp_tranches, actuals, rollup, trade_packages, scenarios) wrote via
+`is_approved()`, so a project-assigned viewer could edit cash-flow assumptions. Their WRITE policies
+are now **`is_writer()`** (reads stay `is_approved()` so viewers can still view cash flow). Applied in
+`supabase-setup.sql` (statement-level: only `create policy` that is `for all` AND references
+`is_approved()` — uniquely the cash_flow writes — swapped; reads and is_planner/is_admin for-all
+policies untouched) and appended to `migrations/2026-07-21-viewer-readonly.sql` (explicit name↔table
+map since the policy names are non-uniform, e.g. `cash_flow_trade_write`/`cash_flow_scen_write`).
+`persistRollup()` is already `try/catch` best-effort, so a viewer's blocked rollup write can't error
+their view. **Viewers now write nothing anywhere.** Verified: 0 for-all+is_approved policies remain,
+7 cash_flow reads intact, setup.sql still complete (0 tables missing) + balanced. Re-run the migration
+(already run once — the added block is idempotent).
+
+### 2026-07-21 — Audit Medium/Low fixes (#6 read-only guards, #7 viewer read-only, #8 portfolio fallback, #10 colors)
+- **#6 (Med) — dead read-only guards wired up** (`modules/project-schedule/index.html`).
+  `window.__archived` / `window.__viewOnly` were read in ~8 edit guards each but never assigned, so
+  archived / view-only projects were fully editable. Now: `__viewOnly = (role === 'viewer')` set at
+  login; `__archived = (project.status === 'archived')` set per-project in `load()`. Archived projects
+  and viewers are now read-only in the schedule editor. (Defaults to editable if PROJECTS hasn't
+  loaded yet, then corrects — safe.)
+- **#7 (Med) — 'viewer' is now truly read-only at the DB.** Module-table writes used `is_approved()`
+  (true for viewers). Added **`is_writer()`** (approved AND `role <> 'viewer'`) and switched the
+  module-table + calendars insert/update/delete policies to it (read unchanged). Migration
+  **`migrations/2026-07-21-viewer-readonly.sql` (USER MUST RUN)**; folded into both schema files'
+  RLS loops. Also **project-scoped the older 2026-07-07 support-table loop** in setup.sql
+  (wbs_nodes/activity_code_*/activity_udf_defs/activity_steps/weekly_commitments/schedule_scenarios/
+  _thresholds) so a *fresh* build matches the live #2 RLS fix (it was still `is_approved()` un-scoped
+  there). ⚠️ Residual: `cash_flow_*` assumption tables keep `is_approved()` writes (planner-domain;
+  a project-assigned viewer could still edit them) — flagged in the migration, tighten later if needed.
+- **#8 (Med) — portfolio schedule fallback hardened** (`modules/portfolio-overview/index.html`).
+  The non-RPC fallback fetched with parallel OFFSET `.range()` and **no `.order()`** + `select('*')`
+  across many large projects → statement-timeout risk *and* unstable paging (duplicate/skipped rows →
+  wrong totals). Now keyset-paginated (`order id.asc`, `gt(id,last)`) with the lean 8-column set
+  `scCompute` actually reads. (Only runs when `schedule_scurve_agg_multi` RPC is absent.)
+- **#10 (Low) — hardcoded `#fff` reviewed, no change.** All instances are deliberate accents, not
+  dark-mode surface bugs: the photo-lightbox white mat + caption (a dark theater), the active
+  duplicate-legend badge's inverted contrast, and the schedule drag-handle hover / loading-bar-on-dark.
+  Left as-is (changing them would regress intentional design).
+- **#9 (Low) NOT done — deliberate.** The project-schedule main `load()` `select('*')` (jsonb waste on
+  40k-row projects) is the documented "B2" deferral: the only real win is lazy-loading `activity_codes`/
+  `udf`, which the module owner already declined as poor risk/reward on the hot path (the columns are
+  used for grouping/columns/editor). No safe column-trim exists; left deferred.
+- **Verified:** both edited modules' inline scripts parse clean; all three SQL files structurally sound
+  (setup.sql 687/687 parens, `$$` paired; schema.sql balanced with comments stripped — its raw
+  imbalance is pre-existing comment text; migration balanced); `is_writer()` defined before every loop
+  that uses it; 0 module/master/calendars insert policies still on `is_approved()`. JS + SQL only, no `?v=` bump.
+
+### 2026-07-21 — Audit #5 completed: supabase-setup.sql folded to a complete one-paste build
+Finished the deferred half of audit finding #5. `supabase-setup.sql` now builds the **entire** DB on
+its own — no more "run /migrations too."
+- **Method (safe, not blind concat).** Blind date-order concatenation of all 62 migrations is unsafe:
+  same-date files sort alphabetically, which **scrambles dependencies** (`wpm-mirror-award-status`
+  before `wpm-work-packages-mirror` → ALTER-before-CREATE; `fix-rls-recursion` before
+  `project-access-rls` → the RLS-recursion fix gets clobbered by the old `can_access_project`). So I
+  wrote an **assembler** (verified) that extracts only what setup.sql was missing and emits it in
+  explicit dependency order.
+- **Folded in:** the **15 tables** that lived only in /migrations (cash_flow_* ×7, schedule_baselines/
+  _snapshots/_audit, activity_expenses, cost_accounts, wpm_work_packages, ppr_presentations/_slides)
+  + their indexes/grants/policies, and the **missing columns** on 10 existing tables (contracts_claims,
+  drawing_register, issues_lessons, material_submittal, progress_photos, project_schedule, projects,
+  resource_assignments, resources, resource_roles) — the module-full migrations had been folded into
+  schema.sql but never setup.sql. Ordering fix: tables emitted before the missing-column ALTERs
+  because `resource_assignments.cost_account_id` FKs `cost_accounts`.
+- **RLS is correct-by-construction:** support tables (cost_accounts/activity_expenses/schedule_baselines/
+  _snapshots + schedule_audit) get the **project-scoped** policies from the 2026-07-21 RLS fix; ppr via
+  the standard module loop; cash_flow/wpm keep their own (already-scoped / service-role) policies —
+  and every captured `create policy` got a preceding `drop policy if exists` so the file stays
+  **re-runnable** (`create policy` isn't idempotent on its own).
+- **Verified programmatically against the union of all sources:** 0 tables missing, 0 columns missing,
+  no duplicate `create table`, every literal policy has a matching drop, parens balanced, `$$` paired.
+- Headers updated: `supabase-setup.sql` = ✅ complete one-paste; `supabase-schema.sql` points to it as
+  the complete build. (The live DB was already complete; this is the fresh-deploy path.)
+
+### 2026-07-21 — Audit remediation: Critical + High fixes (pagination × 3, RLS scope, schema-drift notes)
+Acting on the 2026-07-21 dashboard audit; the Critical + High findings:
+- **#1 (Critical) — `resource_assignments` silent truncation in Project Schedule.**
+  `loadResourcesAssignments()` fetched assignments with a single `select('*')` (Supabase caps at
+  1000; P6/XER imports reach ~51k–55k), silently corrupting Resource/Role Usage, leveling & cost
+  roll-ups. Now **keyset-paginated** (`order id.asc, gt(id,last), limit 1000`) —
+  [modules/project-schedule/index.html](modules/project-schedule/index.html).
+- **#3 (High) — Drawing Register** and **#4 (High) — Progress Photos** loads had the same
+  unpaginated `select('*')` (Drawing Register *already* truncated — GPR101 = 1,032 drawings). Both now
+  keyset-paginate then restore their display order in memory (drawing: sort_order↑ NULLS-LAST →
+  drawing_no; photos: taken_at↓ blank-last → sort_order↑). [modules/drawing-register/module.js](modules/drawing-register/module.js),
+  [modules/progress-photos/module.js](modules/progress-photos/module.js).
+- **#2 (High) — cross-project RLS exposure.** 12 project-scoped support tables + `schedule_audit`
+  (2026-07-07 schedule batch + 2026-07-11 resource-cost-parity) had `read using (is_approved())` and
+  `write for all using (is_planner())` — no `can_access_project`, so any approved user could read
+  every project's schedule/WBS and **cost** data (activity_expenses, schedule_baselines,
+  cost_accounts), and any planner could write across projects. New migration
+  **`migrations/2026-07-21-rls-project-scope-fix.sql` (USER MUST RUN)**: read = `can_access_project(project_id)`
+  (helper already allows admins + requires approved), write = `is_planner() and can_access_project(project_id)`;
+  `schedule_audit` keeps INSERT-ONLY. Idempotent + existence-guarded.
+- **#5 (High) — schema drift.** Neither canonical file is standalone-complete (23 tables missing from
+  `supabase-schema.sql`, 15 from `supabase-setup.sql`; only `/migrations` is complete), and
+  setup.sql falsely claimed to "supersede" the migrations. **Corrected both files' headers** to state
+  they're not complete and that a fresh build must run `/migrations` in date order (all idempotent).
+  The **full fold** (make setup.sql alone build a complete DB) is deliberately deferred to its own
+  verified pass rather than hand-transcribing 15 deploy-critical tables inside this multi-fix change —
+  the **live DB is already complete**, so this is fresh-deploy/documentation risk only, now mitigated.
+- **Verified:** all three edited modules parse clean (inline + module.js); Node unit tests confirm the
+  keyset loop loads all 2,500/2,500 rows (no truncation) and terminates, and both custom re-sorts
+  reproduce the prior DB ordering exactly. RLS migration reviewed against `can_access_project`
+  (admin-safe). Only module-local JS + SQL changed → **no `?v=` bump**.
+- **Deferred to follow-up passes (Medium/Low from the audit):** #6 dead `window.__archived`/`__viewOnly`
+  read-only guards, #7 viewer-write role gap, #8 portfolio OFFSET fallback, #9 jsonb `select('*')`
+  waste, #10 minor hardcoded `#fff` accents, and the #5 full canonical fold.
+
+### 2026-07-21 — Resource Loading view: live end-to-end verification + assignments pagination fix
+- **Verified the Loading view live** (in the owner's logged-in browser) end-to-end: assigned QA
+  Engineer → Excavation through the **real Project Schedule → Resource Assignments** form (cost
+  auto-derived ₱6,400 = 8 × ₱800), added 3 more assignments via the app's data layer, then opened
+  the Resource & Role Master **Loading** tab in the **QADEMO sandbox** — the time-phased utilization
+  matrix rendered correctly: Carpentry Crew **120% (OVER, red)** in Aug, Rebar Crew 77%/92%, QA
+  Engineer 32%/17%/20%, KPIs 3 resources / 103 units / **₱129,900** / 1 over-allocated. The
+  ₱129,900 total confirms the **cost fallback** (Project Schedule's derived-cost assignments store
+  `budgeted_cost = null`, so the view falls back to units × resource rate). Demo data left in the
+  QADEMO sandbox (2 resources CARP/REBAR + 4 assignments).
+- **Fix (assignments pagination):** `loadLoading()` fetched assignments with a single `select`,
+  which Supabase caps at 1000 rows — so projects with many assignments (**GPR101 ~51k, XERTEST
+  ~55k** from P6/XER imports) would have **silently shown partial data**. Now **keyset-paginated**
+  (`order id.asc`, `gt(id, last)`, 1000/page) — the same pattern the S-Curve/schedule loaders use.
+  (Heads-up for later: transferring ~50k assignment rows to the browser to aggregate is heavy; a
+  server-side monthly aggregate RPC — like `cashflow_schedule_agg` — would be the scalable follow-up
+  if the big projects' Loading view feels slow.)
+- Harness-regression-checked (matrix still renders, no console errors); module-local only, **no
+  `?v=` bump**.
+
+### 2026-07-21 — Resource & Role Master: Loading view + usability polish + cost roll-up
+- User asked to improve the module; chose **Loading view + usability polish + cost roll-up**
+  (declined Excel import). All in `modules/resource-loading/index.html`; **no DB change, no `?v=`
+  bump** (module-local only).
+- **Resource Loading view (new 4th tab — the module's namesake).** Reads `resource_assignments`
+  (lazy) + the assigned activities' `project_schedule` dates → a **resources × months utilization
+  matrix**. Budgeted units/cost are **time-phased** across each activity's dates weighted by the
+  resource's working calendar (`PDCal`); **utilization = allocated ÷ (Max Units/Time% × working
+  capacity)**, cells colored green ≤85 / amber ≤100 / **red >100** with an OVER tag per
+  over-allocated resource. Modes **Utilization % / Units / Cost** + totals row, over-allocated-only
+  filter, empty state → Project Schedule's Resource Assignments. This finally makes the
+  "resource-loading" module show actual loading.
+- **Usability polish.** Per-tab **KPI cards**; **filter bar** (funnel pattern) Type+Role on
+  Resources / Discipline on Roles; **"# Resources"** count on Roles & Calendars; **delete guards**
+  (FKs have no ON DELETE) — calendar-in-use and resource-with-assignments are **blocked** (the
+  latter via a server-side `count` head query), role-in-use warns; **duplicate resource-code**
+  blocked on save.
+- **Cost roll-up.** Role Price/Unit **cascades** to a resource's rate when empty; total budgeted
+  cost KPI + Cost matrix mode (`budgeted_cost` → units × rate fallback).
+- **Verified in a stubbed harness** (real module + real ui.js/PDCal, in-memory Supabase seeded
+  with resources/roles/calendar/assignments/schedule): matrix spread hand-checked exact (Carpenter
+  Mar 2,449/Apr 2,845.1/May 305.9 = 5,600; totals 6,000 units / ₱2.98M; OVER flags + utilization %
+  correct), all 3 modes + totals + over-only, KPIs (avg availability 75%), Type filter, role→rate
+  cascade (→550), dup-code blocked (no insert), calendar delete blocked before confirm. No console
+  errors. (Screenshots impossible in this env — DOM/JS checks.)
+
+### 2026-07-21 — Productivity Rates: filter/control bar consistency (user: "filters in the top bar are clashing")
+- Diagnosed against the live site in the user's browser (logged in) + a stubbed harness measuring
+  element geometry: **no pixel overlap** at 1280/1568/1920 — the "clash" was a **consistency**
+  defect. The Monitoring control row had bare inline labels plus the **data-table toggle floating
+  far-right in empty space** (`margin-left:auto`), which read as unbalanced next to the suite's clean
+  funnel-icon filter bars (risk-register / stakeholder-map, both confirmed clean live).
+- **Fix:** moved the table toggle out of the control row into the **topbar tool cluster** (beside
+  Import/Refresh, matching S-Curve; hidden on the Data tab), and restyled `.pr-controls` to the
+  suite filter-bar pattern — leading **funnel icon** + contiguous left-aligned controls, same card /
+  padding / 34px control height as `.rr-filters`. No stray floating element.
+- Verified in the harness (real module code, in-memory backend): funnel icon present, control row
+  contiguous (no gap), toggle now in topbar tools and still works (shows table + active fill +
+  renders the transposed table), hidden on Data / visible on Monitoring. No console errors.
+  Module-local only → **no `?v=` bump**.
+
+### 2026-07-20 — Productivity Rates module built (Productivity Monitoring from the QHL706 workbook)
+- **Built `modules/productivity-rates/`** (single-file `index.html`, s-curve/cash-flow inline
+  pattern), flipped `enabled: true`. Reverse-engineered the OPS workbook *"QHL706. OPS. Productivity
+  Monitoring … (BL02)"* — one sheet per trade, each a monthly **Planned / Actual / Baseline (BL0)**
+  monitoring graph tracking manpower loading, output quantity and the **productivity rate**
+  (output per man-day), plus a cumulative-output curve with variance.
+- **Model = two tables** (`migrations/2026-07-20-productivity-rates-full.sql`, **USER MUST RUN**;
+  idempotent, folded into `supabase-schema.sql` + `supabase-setup.sql` + the RLS loop):
+  `productivity_activities` (one row per trade) + `productivity_entries` (one row per activity·month:
+  `work_days`, `mp_bl0/planned/actual`, `qty_bl0/planned/actual`; unique on (activity_id,period),
+  FK `on delete cascade`). The flat Phase-1 `productivity_rates` starter is **superseded** (left
+  untouched). **Rate / cumulative / variance are DERIVED in the app** (`rate = output ÷ (resource ×
+  work_days)`), never stored — same rule as risk-register's rating.
+- **Two views** (uniform sidebar-less topbar, project selector, tabs): **Monitoring** (activity +
+  metric picker → SVG BL0/Planned/Actual chart with a "this month" line, 5 KPIs, toggleable
+  transposed data table with a Variance row) and **Data** (activities register + a **monthly editor**
+  grid with live-derived rate cells and "+ Add month" defaulting `work_days` to the Philippine 6-day
+  working calendar via `PDCal`).
+- **Excel importer** for the workbook family: detects the four labelled blocks (Manpower/Equipment
+  loading · Output · Average Productivity Rate · Cumulative) + the month/year header + the
+  subcontractor sub-block. ⚠️ **Block detection invariant:** a *main* block has an empty col-C in the
+  row above; a *subcontractor* sub-block (AFCSC/JM2/CEC/GeoExpert) does not — this stopped Excavation
+  grabbing its "No. of Backhoe" sub-row as the output block. On import `work_days` is set to
+  **reproduce the workbook's own rate** (`qty÷(mp×rate)`), falling back to PDCal for rate-less months.
+- **Data sourcing = manual entry + import, not derived from other modules** (deliberate): the
+  actuals (crew deployed, quantity installed) are site-reported and have no upstream in the suite —
+  so this is a data-entry/monitoring tool like material-submittal, unlike cash-flow (schedule+WPM).
+- **Verified across all layers.** Parser in Node+SheetJS against the real file (13 trade sheets,
+  correct units/resource types/subcontractors, 307 entries; scratch/Assumptions tabs excluded) and
+  re-verified in-browser. Import reconciliation (Node): 187/192 rate-bearing months reproduce the
+  workbook's stored rate within 0.5% (≤9% on a few integer-rounded tiny values), 115 rate-less months
+  fall back to PDCal. UI/behaviour in a browser harness (real module code, in-memory Supabase stub):
+  Monitoring KPIs (cum 870.78, latest 0.717, avg mp 25.7 — hand-checked), chart lines+dots, metric
+  switch, transposed table+variance, empty states; Data register; monthly editor live-derive
+  (95→190 doubles the rate) + add-month (Sep-2024, PDCal work_days 25) + save/persist (cum 1370.78);
+  add-activity modal. **No console errors.** Screenshots still impossible in this env (stalled
+  compositor) — checks are DOM/JS-based.
+- Only module-local files + the `config.js` enabled flag changed, so **no global `?v=` bump**
+  (suite convention).
+
+### 2026-07-20 — Stakeholder Map rebuilt to the real corporate-BD methodology
+- The owner supplied the actual **"CORP. BD TCD. Stakeholder Map 2026.xlsx"** (BD Map · TCD Map ·
+  Analysis Guide). Reverse-engineered it and **rebuilt `modules/stakeholder-map/`** from the generic
+  Power–Interest version to match the workbook. **Kept project-scoped** (owner's call) — the file's
+  corporate/SBU grouping (BD/TCD) is out of scope; this is one map per project.
+- **Two derivation chains, both DERIVED never stored** (pure functions of the stored 1–4 ratings,
+  same principle as risk-register's rating / issues-lessons' aging):
+  1. **Impact (1–4) × Interest (1–4) → Importance (1st–4th) → Engagement Approach**
+     (Manage Closely / Keep Satisfied / Keep Informed / Monitor). `IMP_GRID` transcribed verbatim
+     from the Guide's Table 3.
+  2. **Gap = Target − Current relationship → Engagement Strategy → Min Frequency**
+     (gap 2–3=Catch up, 1=Enhance, 0=Maintain).
+- ⚠️ **Workbook self-discrepancy** (same class as material-submittal's): the *Guide* sheet says
+  `Maintain=Semi-annually / Enhance=Quarterly`, but the *live cell formula* the data actually
+  reflects says `Catch up=Monthly, Enhance=Every two months, Maintain=Quarterly`. Followed the
+  **live formula** (source of truth); documented in the module CLAUDE.md.
+- Register view (identity + contact + both analyses + Primary Responsible), a **4×4 Impact×Interest
+  grid** colored by Importance rank (click a cell to filter), filters (Sector/Group/Importance/
+  search), and a sectioned Add/Edit modal whose Importance+Approach and Strategy+Frequency update
+  **live** as the ratings change.
+- **Migration `2026-07-20-stakeholder-map-full.sql` (USER MUST RUN)** — add-only/idempotent, folded
+  into `supabase-schema.sql` + `supabase-setup.sql`. Reuses starter columns for natural matches
+  (`category`=Sector, `organization`=Institution, `role_title`=Position, `influence`=Impact,
+  `interest`=Interest, `engagement`=notes) and adds `stakeholder_group, title, nickname, birthday,
+  email, current_rel, target_rel, primary_responsible, alternate, gift_tier` + a `(project_id,name)`
+  index. Load/save toast a "run the migration" message until applied. **Starts empty** (no importer,
+  owner's choice). No shared asset changed → **no `?v` bump**.
+- **Browser-verified** (stubbed harness, real module.js/css, DOM inspection): both chains exact for
+  all rating combos (incl. unrated→blank), KPIs, 4×4 grid placement, importance + cell-click filters,
+  live in-form derivation, add/save (`created_by` stamped, derived fields NOT persisted), wide table
+  scrolls inside its card (no page h-scroll), dark-mode tokens with fixed semantic rank colors. No
+  console errors.
+
+### 2026-07-20 — Stakeholder Map built (Register + Power–Interest grid)
+- **Built `modules/stakeholder-map/`** (index.html + module.css + module.js), flipped
+  `enabled: true`. No external app to mirror ("base it on the suite") — built from the suite
+  conventions with **risk-register as the reference**, since a stakeholder Power–Interest grid is
+  the direct analog of risk-register's 5×5 matrix.
+- Two topbar views: **Register** (filterable table + KPIs + engagement-strategy pill) and
+  **Influence / Interest** (a 3×3 Power–Interest grid, rows = Influence High→Low, cols = Interest
+  Low→High, each cell colored by its engagement quadrant and holding the stakeholders that fall in
+  it; click a cell to jump to the filtered register). Add/Edit modal derives the **Strategy** live.
+- **Strategy is DERIVED, never stored** (pure function of influence × interest) — same pattern as
+  risk-register's rating / issues-lessons' aging, minus the storage. The `engagement` column stays
+  free-text notes. **Documented threshold:** "high side" = the **High** band only (Medium is
+  not-high), so only genuinely high-power/high-interest stakeholders land in the demanding
+  quadrants. Manage Closely (High·High) · Keep Satisfied (High infl.) · Keep Informed (High int.) ·
+  Monitor.
+- **No migration** — uses the `stakeholder_map` starter columns as-is (name, organization,
+  role_title, category, influence, interest, contact, engagement). No storage bucket. No shared
+  asset changed (module-local files + the `config.js` enabled flag), so **no `?v` bump**.
+- **Browser-verified** with a stubbed harness (real module.js + module.css, mutable in-memory
+  store, DOM inspection — screenshots still stall in this env): KPIs (7 / Manage 2 / Satisfy 1 /
+  High-infl 3), strategy derivation, all 7 seed stakeholders placed in the correct grid cells
+  (sum = 7), cell-click→filter (High·High → 2 rows), search, Clear-toggle, add/save round-trip
+  (`created_by` stamped, strategy NOT persisted as a column), no page h-scroll in either view, and
+  dark-mode card surfaces on tokens with semantic strategy colors held fixed. No console errors.
+
+### 2026-07-20 — Fix: the two new modules' top bars weren't uniform (missing shared chrome)
+- User reported the Material Submittal and Contracts & Claims top bars didn't match the rest of the
+  suite, specifically the buttons beside the profile icon. **Same defect as the 2026-07-17 Progress
+  Photos pass**: both modules were missing the three shared topbar rules that every uniform module
+  carries, so they inherited `dashboard.css`'s `.pd-topbar { gap:14px }` with **no `flex-wrap`**, the
+  avatar had **no left divider**, and theme.js's injected toggle kept its default size instead of
+  matching the 34×34 tool buttons.
+- Copied the block **verbatim** from `drawing-register/module.css` into both, with a comment naming
+  what breaks without it so it isn't dropped again when this module gets copied:
+  `.pd-topbar{gap:10px;flex-wrap:wrap;row-gap:8px}` · `#user-bar{margin-left/padding-left/border-left}`
+  · `#pd-theme-toggle{34×34}`.
+- **Verified by computed-style diff against the real drawing-register** (its stylesheet + its actual
+  topbar markup inlined into an iframe, theme toggle injected to match runtime) — with a **sanity
+  assertion first** that the reference CSS actually loaded, the trap that invalidated the first
+  Progress Photos attempt. Every chrome element (topbar, user-bar, theme toggle, back button,
+  separator, tabs, project select, primary button) reports **zero differences**.
+- **Stronger evidence than the property diff: the geometry is pixel-identical.** Tool cluster right
+  edge **1179px**, theme toggle left **1193px**, profile divider left **1247px** — the same in all
+  three modules. The only residual property diffs were selector artifacts (drawing-register has a
+  *labeled* "+ Level" button the new modules don't) and `margin-left:auto` resolving differently
+  because the left-hand content widths differ — the right edge, which is what "beside the profile
+  icon" means, matches exactly.
+- Re-checked at 1280/1100/900/700/420px: **no horizontal overflow at any width** and the profile +
+  theme controls stay visible throughout. Below 900px the new modules wrap to more rows than
+  drawing-register simply because they carry more tabs — graceful wrapping, not breakage.
+- CSS-only, module-local; no shared asset touched, so **no `?v` bump**. Both test suites still green
+  (43/43 contracts-claims, 54/54 material-submittal).
+
+### 2026-07-20 — Contracts & Claims Register built (Contract · Claims/CO · Extension of Time)
+- **Built `modules/contracts-claims/`** (index.html + module.css + module.js), flipped
+  `enabled: true`, from the Power Apps "Contracts & Claims Register" screenshots. Three tabs as
+  specified.
+- **Key insight: two of the three screens are the same screen.** Claims/CO and EOT are both a
+  four-stage pipeline (*Estimated → Submitted → Evaluated → Client Approved*) with a status, a
+  derived aging figure and a project roll-up banner — differing only in **unit** (money vs calendar
+  days). Both run off one `VIEWS` config and one renderer. Contract is the odd one out: a flat
+  description + amount list, no pipeline, no status.
+- **Migration `migrations/2026-07-20-contracts-claims-full.sql` (user must run).** ⚠️ Money and days
+  are **separate column sets**, not one generic value + unit discriminator — they're never mixed in a
+  view, and separate columns make it impossible to sum pesos and calendar days into one total. Saving
+  nulls the pipeline that doesn't belong to the chosen type, so re-typing a record can't leave stale
+  pesos on an EOT.
+- **Aging and recovery are derived, never stored.** Aging = today − date_submitted, shown only while
+  Pending (a stored aging is wrong the next day); UTC maths so DST can't shift it. ⚠️ **Recovery rate
+  is measured over DECIDED records only** (Approved + Disapproved) — dividing by everything submitted
+  counts still-pending claims as failures, which on the real fixture read as a catastrophic **0.2%**
+  where the honest figure is **85.0% of 1 decided record**. Caught during browser verification.
+- **Verified 43/43 against the screenshots' own printed roll-ups**, loading the shipped module:
+  Hotel 101's EOT banner matches **exactly** (1,048 / 1,095 / 882 / 314) and three of Avesta's four
+  claim totals match exactly. Avesta's *estimated* is 387,716,248 vs their printed 387,716,249 — a
+  1-peso **display-rounding artefact in their sheet** (cents stored, rounded per cell, then summed),
+  asserted explicitly in the test so nobody later "fixes" our arithmetic to match it.
+- Browser-verified: app-matching headers, roll-up banner, aging showing **17** on the one Pending EOT
+  exactly as the screenshot, type-adaptive Add form (money↔days↔contract), a saved record following
+  its type to the right tab instead of vanishing, filters/bulk, dark mode on tokens, and the wide
+  table scrolling inside its card with no page h-scroll. No console errors.
+- Scoped to the topbar project per contract §6 — the app's cross-project "Overview" screen belongs in
+  `portfolio-overview`, not here. No shared asset changed, so **no `?v` bump**.
+
+### 2026-07-20 — Storage: widen DELETE to planners on the remaining two buckets
+- `migrations/2026-07-20-storage-planner-delete-all-buckets.sql` (**user must run**) applies the same
+  widening already done for material-submittal to **`drawing-register`** and **`progress-photos`**.
+  All three module buckets now share one delete rule: `owner = auth.uid() or is_planner()`.
+- A **new file** rather than editing the earlier migration — that one has already been run, and
+  applied migrations should stay immutable so "what ran" is unambiguous.
+- Same reasoning as before: the `owner` branch is kept because both buckets' INSERT policy is
+  `is_approved()`, so any approved user can upload; dropping it would remove their ability to delete
+  their own file. `supabase-setup.sql`'s override now covers all three buckets in one loop (still
+  placed **after** `is_planner()` is defined — a policy's USING expression is parsed at creation).
+
+### 2026-07-20 — Storage: widen the material-submittal bucket's DELETE policy to planners
+- Migration `migrations/2026-07-20-material-submittal-storage-delete.sql` (**user must run**).
+  The 2026-06-18 storage migration gave all three buckets
+  `delete using (owner = auth.uid() or is_admin())`, so a **planner** deleting a submittal they
+  didn't upload removed the row but its object delete silently no-opped, orphaning the file.
+  Now `owner = auth.uid() or is_planner()`.
+- ⚠️ **The `owner` branch is kept deliberately** — this is a widening, not a swap. The bucket's
+  INSERT policy is `is_approved()`, so **any** approved user can upload, including the `user`/
+  `viewer` roles; replacing the owner check with `is_planner()` alone would take away those users'
+  ability to delete their *own* uploads. `is_planner()` is
+  `approved AND role in (super_admin, admin, planner)`, so it already subsumes the old `is_admin()`
+  branch. Net effect: nobody loses access, planners gain it.
+- ⚠️ **Ordering trap when folding into `supabase-setup.sql`:** the override CANNOT live in the
+  storage section (~line 278) because `is_planner()` isn't defined until ~line 342, and a policy's
+  USING expression is parsed at creation — it would fail on a fresh run. It sits after the function
+  definition, with a forward-pointing note left at the storage loop. The migration also guards with
+  `to_regprocedure('public.is_planner()')` so a missing dependency raises a readable error instead of
+  a bare "function does not exist".
+- `supabase-schema.sql` has **no storage section at all** (pre-existing drift, documented 2026-07-16),
+  so there was nothing to fold there.
+- **Scope: material-submittal only, as asked.** `drawing-register` and `progress-photos` still carry
+  the original owner-or-admin rule and have the same orphaning behaviour — the migration widens them
+  by adding them to its one array.
+
+### 2026-07-20 — Material Submittal Log: document attachments wired up
+- Uses the existing **private** `material-submittal` bucket + `file_url` column — **no migration**.
+  Follows drawing-register's pattern: `file_url` stores the object **path**, and the URL is signed
+  on demand (60 s) rather than stored (a stored URL would expire and be useless).
+- **One document per submittal, deliberately** — the log already carries a single *Type of
+  Presentation* per row, and a submittal needing two document types is two rows in the workbook.
+- **Ordering is the whole game here, and each case was verified against injected failures:** upload
+  runs **before** the row write (a failed upload never leaves a row pointing at a missing object);
+  if the row write then fails the uploaded object is **rolled back** (no orphans); on replace the old
+  object is deleted only **after** the row points at the new one; and clicking × is **deferred to
+  Save**, so cancelling can never delete a document. Row delete / bulk delete / Clear all /
+  import-with-Replace all clean up, capturing paths **before** the rows leave memory.
+- Grid gained a **Doc** column. `icons.js` has no `paperclip` and is a shared asset the contract
+  forbids editing, so it reuses `eye` — **no global `?v=` bump**. ⚠️ The header array is now the
+  single source of truth for the column count; the previous hardcoded `COLS + 3` would have silently
+  skewed the table the moment a column was added, which is exactly what adding "Doc" did.
+- **Browser-verified with a storage stub + failure injection** (all pass, no console errors); the
+  54-check workbook suite still passes. **Note:** a first run reported the rollback failing — that was
+  the *stub* returning a bare Promise from `insert()` so `.select()` threw. Model supabase-js's
+  chaining accurately in harnesses or you'll chase phantom bugs.
+- **Known limitation:** the bucket's delete policy is `owner or is_admin()`, so a planner deleting
+  someone else's submittal removes the row but its object delete silently no-ops (orphan, not data
+  loss). Widen to `is_planner()` if that matters.
+
+### 2026-07-20 — Material Submittal Log built (Dashboard + Log) from the PMO workbook
+- **Built `modules/material-submittal/`** (index.html + module.css + module.js), flipped
+  `enabled: true`. Two screens as specified: **Dashboard** and **Material Submittal Log**, built
+  against `EPC. PMO. Material Submittal List Dashboard. 2025 01 25.xlsx` (all 14 sheets surveyed;
+  `Material submittal log` / `Dashboard` / `Library` / `Coding Reference` define behaviour).
+- **The workbook's own formulas were treated as the spec** (read off its cells, not guessed): the
+  status block is a `COUNTIF` over the Status column (**blank status isn't counted** — which is why
+  its total is 107, not 146), and the S-curve is `COUNTIFS` over the **APPROVAL** date pair, *not*
+  submission, despite the sheet labelling its own summary rows "Planned/Actual Submission".
+- **Found and fixed two defects in that dashboard** (owner chose "fix it, show both"):
+  its S-curve grouped by a redundant **"Trades"** column left blank on **40** submittals (silently
+  dropped from the chart), and its OVERALL row summed eight discipline rows but listed **"ST"
+  twice**, double-counting Structural. At the workbook's own Jan-2025 cutoff the legacy
+  reproduction lands **exactly** on its printed **97 / 29**, while the corrected maths gives
+  **128 / 27** — so the old chart *under*-reported planned by 31 despite the double count. The
+  module groups by `discipline` (always populated), counts each discipline once, and shows an
+  amber reconciliation note explaining the difference. `legacyScurve()` exists **only** to render
+  that note.
+- **Excel importer** for the real layout: 3-tier merged header (read by column index — several
+  headers repeat), 23 trade-section rows, an explicit **stop at the sign-off block** (otherwise
+  "Project Manager" imports as a submittal), and a row counts as a submittal when it has
+  *substance*, not merely an Item (sheet row 33 has a code/dates/status but no Item; requiring one
+  put the status total under the workbook's own COUNTIF). ⚠️ **Dates are timezone-hardened** —
+  SheetJS returns the cell displaying `18-Mar-24` as `2024-03-17T15:59:17Z`, so local getters give
+  the wrong day in some zones; cells are read as **formatted text** and parsed with integer maths.
+- **Migration `migrations/2026-07-20-material-submittal-full.sql`** (idempotent). **User must run
+  it** — load/import fail with an explicit "run the migration" message until then. Existing starter
+  columns are reused for their natural match, so there are no dead duplicate columns.
+- **Verified 54/54 automated checks against the real workbook**, loading the shipped `module.js`
+  itself (no reimplementation) — including the status table matching its COUNTIF block exactly
+  (9/11/2/3/0/14/68, total 107) and the legacy curve reproducing its printed 97/29. Then
+  **browser-verified** with that data imported: dashboard weights match the sheet's printed
+  percentages to the decimal, 143 rows across 21 populated sections, sticky frozen columns, dark
+  mode on tokens, every filter/collapse/selection/modal interaction, no console errors.
+- ⚠️ **Verification caveat recorded for this environment:** the compositor is stalled (screenshots
+  time out) and **computed styles are stale after a dynamic class change** — flipping `.active`
+  reads back the pre-change value even after forcing layout, which looks like inverted tab colours.
+  Confirmed the CSS is correct by measuring a **freshly created** element. Measure fresh nodes only.
+- No shared asset changed (module-local files + `config.js` enabled flag), so **no `?v` bump**.
+
+### 2026-07-20 — Schedule load speed: server-side S-curve aggregate (A1–A3 + B1)
+Consumers of `project_schedule` were pulling every leaf activity (16k–40k rows) to the browser
+just to draw ~dozens of monthly points. Fixed by generalizing the existing
+`cashflow_schedule_agg` RPC into a shared aggregate and pointing the S-curve consumers at it.
+- **A1 — migration `2026-07-20-schedule-scurve-agg.sql` (USER MUST RUN):** adds
+  `schedule_scurve_agg_multi(text[])` (core; aggregates the given projects into ONE combined
+  monthly curve) + `schedule_scurve_agg(text)` (single project) + rewrites `cashflow_schedule_agg`
+  as a thin wrapper (so Cash Flow keeps working before/after). All `security invoker` → caller's
+  RLS applies. **B1:** also adds index `project_schedule(project_id, id)` for the editor's keyset
+  pages (previously only `wbs_node_id` was indexed).
+- **A2 — S-Curve** now calls `schedule_scurve_agg` and derives the curve from the returned
+  monthly buckets + totals; refactored `compute()` onto a source-agnostic `baseSeries()` that is
+  fed by the RPC when present, else by a **lean, keyset-paginated** full-row fetch (only the 8
+  columns the curve needs — replaces the old `select('*')` parallel-OFFSET fetch that risked the
+  statement timeout on big projects).
+- **A3 — Portfolio S-Curve tab** now calls `schedule_scurve_agg_multi(ids)` (one combined
+  aggregate across the scoped projects) via a new `scComputeFromAgg`, falling back to the old
+  row fetch + `scCompute` when the RPC is absent.
+- **Result:** the heavy modules transfer dozens of rows instead of tens of thousands. Cash Flow
+  already used this pattern (unchanged; now backed by the shared function).
+- No shared JS/CSS changed (only inline module scripts + a new migration), so **no `?v` bump**.
+- Harness-verified S-Curve through BOTH paths on one fixture: RPC path and row-fallback produce
+  **identical** KPIs (53.2 / 55.4 / 53.2 / −2.2pp), forecast-row cells, SPI, and forecast finish
+  — confirming the refactor is behavior-preserving and the aggregate matches the per-activity
+  math. (The real Postgres RPC couldn't be run here; its body is the deployed
+  `cashflow_schedule_agg` formula with `= any(p_ids)`.) **Deferred: B2** (lean columns + lazy
+  jsonb in the Project Schedule editor's own load) — separate pass.
+
+### 2026-07-17 — Global: project picker is now Project Schedule's OPC folder browser
+User: "the project selector dropdown in the project schedule is good — globally apply it."
+- **Rewrote the shared `UI.enhanceProjectSelect` (`ui.js`)** to render Project Schedule's
+  **OPC folder browser** instead of the flat searchable list: drill Workspace → Program →
+  Group one level at a time (folder rows with node-type badge + descendant project count),
+  a breadcrumb (`All › … `) to jump back up, and a search box that flattens to matching
+  projects across the whole tree. Ported faithfully from `renderProjectSelector`
+  (`.ps-pss-*` → shared `.pd-pss-*` in `dashboard.css`).
+- **Builds the tree from `PDb.getProjects` + `PDb.getWorkspaces`** (cached per page), but
+  **filters projects to the ids present in the module's `<select>` options** — so any
+  access filtering a module already applied (e.g. Progress Photos' `canAccessProject`) is
+  respected. The `<select>` stays the source of truth (value + `change` still fire), so no
+  module code changed — all seven that call `enhanceProjectSelect` upgrade automatically.
+  Project Schedule keeps its own (identical) in-module browser.
+- Shared assets changed (`ui.js`, `dashboard.css`) → **`?v=` bumped `20260720a` → `20260720b`
+  across all 21 HTML files.**
+- Harness-verified (gitignored, deleted) against a Workspace→Program→Group fixture: opens
+  into the current project's folder with the right breadcrumb; root shows "Production ·3"
+  with a workspace badge; drilling shows the program folder (·2) + a directly-parented
+  project; search "portwood" flattens to 1 match with the breadcrumb hidden; selecting fires
+  exactly one `change` and updates the button label; dark-mode popup on tokens.
+
+### 2026-07-17 — Global: deeper top-bar structural uniformity (all modules)
+Completed the follow-up deferred last prompt — every enabled per-project module now shares
+the same sidebar-less top bar: **back button · brand-red module icon + title · searchable
+project selector (in the topbar) · tool cluster · user-bar divider · theme toggle.**
+- **risk-register** — removed the sidebar; the Register/Risk-Matrix view switch moved from
+  sidebar nav links to a **segmented tab strip in the topbar** (`.rr-tabs`, module.js view-switch
+  selectors repointed `.pd-sidebar [data-view]` → `.rr-tabs [data-view]`, incl. the matrix-cell→
+  list jump); project selector + "+ Add risk" moved into the topbar; status/category/search became
+  a filter-bar card. Uniform chrome added to `module.css`; `module.css`/`module.js` links now
+  cache-busted (`?v=20260720a`).
+- **resource-loading** — removed the sidebar; project selector + search + "+ Add" moved into the
+  topbar tool cluster; content tabs (Resources/Roles/Calendars) stay in the body. Uniform chrome
+  added to the inline `<style>`.
+- **cash-flow** — already sidebar-less; moved the project selector out of the body control strip
+  into the topbar (`.cf-projctx`); the data-date + S-curve-basis controls stay in the body strip.
+- Progress Photos / Issues / Drawing Register / S-Curve were already uniform; **Project Schedule**
+  keeps its bespoke Workspace→Program→Group searchable browser (equivalent). No shared-asset change
+  this prompt, so **no global `?v` bump** (only risk-register's own module files were re-stamped).
+- Harness-verified each (real markup+styles+script, stubbed auth/DB; gitignored `_ui_test.html`,
+  deleted): risk-register topbar order back·title·projctx·tabs·tools·user-bar, tab switch +
+  matrix-cell→list works, searchable psel built; resource-loading psel shows "Hotel 101", tab
+  switch + Add-label update work; cash-flow psel in topbar, removed from viewbar, data-date kept,
+  no eval errors. (One "null onclick" scare was a harness bug — the modals live outside `.pd-app`
+  and the first harness only injected `.pd-app`; fixed to inject the whole body. Screenshots still
+  impossible — compositor stalled.)
+
+### 2026-07-17 — Global: searchable project selector + uniform top-bar icons
+Standing workflow set this prompt: **every prompt now logs to CLAUDE.md + commits + pushes**
+(saved to memory `commit-log-workflow`).
+- **Searchable project selector (shared).** New **`UI.enhanceProjectSelect(sel)`** in `ui.js`
+  (+ `.pd-psel*` styles in `dashboard.css`): upgrades a native project `<select>` into a
+  searchable combobox that scales to 100+ projects, **without changing module logic** — the
+  `<select>` stays the source of truth (value + `change` events still fire), and the trigger
+  button copies the select's classes/inline style so each module's per-topbar look carries.
+  Wired into **progress-photos, issues-lessons, drawing-register, risk-register, s-curve,
+  resource-loading, cash-flow** (one call after each populates its options). **Project Schedule
+  already had its own searchable Workspace→Program→Group browser — left as-is.**
+- **Uniform top bar — module icon beside the title.** Added the brand-red module icon before
+  the `<h1>` title in the three enabled modules that lacked it (**risk-register** = risk,
+  **cash-flow** = cash, **resource-loading** = users); Progress Photos / Issues / Drawing
+  Register / S-Curve already had theirs. `MODULE_CONTRACT.md` boilerplate updated so new modules
+  inherit both the icon-title rule and `enhanceProjectSelect`.
+- **Deferred (noted, not done):** deeper structural convergence — moving risk-register/cash-flow/
+  resource-loading's project selector out of their body rows into the topbar, and converting
+  risk-register's sidebar shell to sidebar-less — was left for a focused pass to avoid regressions
+  in those working modules. Disabled placeholder modules (contracts-claims, stakeholder-map,
+  material-submittal, productivity-rates) will adopt the pattern when built (contract updated).
+- **Shared assets changed** (`ui.js`, `dashboard.css`, `icons.js` earlier), so **`?v=` bumped to
+  `20260720a` across all 21 HTML files.**
+- Harness-verified the shared selector (gitignored `_ui_test.html`, deleted): native hidden,
+  100-project list, live search ("project 7" → 11), selection fires exactly one `change` event,
+  per-module button class + max-width carried, dark-mode popup on tokens, Esc closes. Screenshots
+  still impossible (compositor stalled).
+
+### 2026-07-17 — S-Curve: Forecast % row in the data table
+- The data table (Planned % / Actual %) now also shows a **Forecast %** row — the same
+  forecast the chart's red dashed line draws, sampled per month. Computed once in `compute()`
+  as `forecastC` (shared by chart + table): follows the remaining plan's shape, time-stretched
+  to the forecast finish (SPI-based or pinned), from the actual point up to 100%. Rendered as a
+  brand-red italic `<tr>` **only when a forecast exists** (guarded); months before the data date
+  show "—". Last cell may read ~99.9% (month-end sampling vs the finish date a few days later).
+- Harness-verified (real markup/styles/inline script from index.html, stubbed auth/DB with a
+  data-date-straddling schedule): rows Planned/Actual/Forecast %, dashes then monotonic
+  53.2%→99.9% one-per-month, red italic, row absent when no forecast. Pure render change — no
+  shared assets, no `?v=` bump.
+
+### 2026-07-17 — S-Curve: uniform toolbar / top bar
+- Brought the **S-Curve** module's chrome in line with the suite (Progress Photos / Drawing
+  Register / Cash Flow / Project Schedule). The separate body `.sc-controls` row is gone —
+  everything now lives in the topbar: 36×36 back button · title with the `trendingUp` brand-red
+  icon · **project selector in the topbar** (borderless-until-hover) · a tool cluster beside the
+  profile (Forecast-finish control + divider + **34×34 icon-only** Show-table & Refresh) ·
+  `#user-bar` left-divider · 34×34 theme toggle.
+- Show-table is now **icon-only** (toggles `.is-active` red fill + `title` instead of a text
+  relabel). Title collapses < 820px; no page h-scroll. **Pure chrome — compute/render untouched;
+  no shared-asset change, so no `?v=` bump.**
+- Harness-verified (real markup+styles+inline script pulled from `index.html`, stubbed
+  auth/DB/schedule; gitignored `_ui_test.html`, deleted): topbar order back·title·project·tools·
+  user-bar, 36/34px sizing, brand-red title icon, borderless→hover project select, user-bar
+  divider, table toggle reveals the 2-row table with active fill and stays icon-only, KPIs+chart
+  render, dark mode, no h-scroll. Also updated the memory guardrail on the exposed service-role
+  key (rotation is a user-only dashboard action; new key system decouples secret from publishable).
+
+### 2026-07-17 — Issues, Concerns & Lessons Learned built + Photos filter polish
+- **Built `modules/issues-lessons/`** (flipped `enabled: true`) from the Power Apps
+  "Issues & Concerns" app, adding a **Lessons Learned** capability the app lacks. Two
+  segmented topbar screens:
+  - **Issues & Concerns** — the app's log row-for-row: No. · Department · Issue · Caused
+    By · Corrective Action · Champion · Status · Date Presented · **Days Aging (derived)**
+    · Date Resolved. Filters (search / Status / Department / Champion / aging bucket),
+    KPIs, and an Add/Edit modal grouped Details · Issue · Lessons Learned. Statuses are
+    **Open | On Hold | Closed** (the app's, not the starter table's "In Progress").
+  - **Lessons Learned** — a card library collecting every lesson captured on an issue so
+    management/ops can reference them later. It's a filtered view of `issues_lessons`
+    (rows with a non-empty `lesson_learned`), **not a separate table** — a lesson is never
+    divorced from the issue that produced it. Filters by search / department / category.
+- **Days Aging is derived, never stored:** 0 when Closed (matches the app), else
+  today − date_presented; > 90 days open renders red.
+- **Migration `migrations/2026-07-17-issues-lessons.sql`** — adds `department`,
+  `champion`, `caused_by`, `corrective_action`, `date_presented`, `date_resolved`,
+  `lesson_learned`, `lesson_category`, `recommendation` + a `(project_id, date_presented
+  desc)` index. Idempotent; folded into `supabase-schema.sql`. **User must run it** — the
+  new fields render blank until then. (`ISSUE`→`description`, `STATUS`→`status` reuse
+  existing columns.)
+- **Progress Photos filter polish (user report — "Clear filters seems out of place"):**
+  the button used `margin-left:auto`, so on a wrapped filter row it orphaned alone on a
+  second line at the far right (visible even on the empty state). Replaced with a subtle
+  borderless **`.pp-clear`** ghost (× icon) that sits inline and **only appears when a
+  filter is actually set**; applied to both the Photos and PPR screens. Removed the now-
+  unused `.pp-filt-right`.
+- **Shared assets touched** (`icons.js` gained `x` + `bulb`; `config.js` enabled flag), so
+  **`?v=` bumped `20260717g` → `20260717h` across all 20 HTML files.**
+- Harness-verified both modules against a mutable in-memory store (real `Fmt`/`UI`/`Icons`,
+  gitignored `_ui_test.html`, deleted after use; screenshots still impossible — compositor
+  stalled): issues table/KPIs/derived aging (0 on closed, red > 90d), lesson tag, every
+  filter + clear-toggle, screen switch hiding the primary tool, add/save round-trip
+  (`type='Issue'` + `created_by` stamped + lesson persisted), lessons library counts +
+  category filter, dark-mode card surfaces on tokens. No console errors.
+
+### 2026-07-17 — Drawing Register: Project-Schedule-style row interaction (drag reorder + fixes)
+- Asked to bring Project Schedule's grid feel to the Drawing Register. **Most of it was already
+  there** (inline cell editing, click-to-select + Shift/Ctrl range, keyboard shortcuts, group
+  collapse). Four genuine gaps, now fixed:
+- **Drag-to-reorder — was missing entirely.** Rows now reorder within their group with PS's
+  affordances (dimmed drag row, red insertion line top/bottom, grab cursor). ⚠️ **`sort_order` is
+  re-dealt from the group's own pool of values, never renumbered** — phase order is derived from
+  each phase's *minimum* sort_order (`phaseOrderKey`), so free renumbering would silently reshuffle
+  the phases; re-dealing the same multiset pins every phase's min. Armed only when no filter/search
+  is active (mirrors PS's `_reorderEnabled()`), and refused across groups/phases. **No migration** —
+  `sort_order` already exists.
+- **Collapse only fired on the small label span** — clicking the rest of a group row did nothing,
+  which is exactly why collapsing "felt unnatural" next to PS. The **whole group row now toggles**;
+  the label keeps dblclick-to-rename.
+- **The add target was invisible** — selecting a group set `selCtx` with no visual state. Group rows
+  now carry a red left rail (`.dr-grpactive`) that survives re-render.
+- **Real bug: Add filed rows under the wrong level.** `selCtx` was only set by *group* clicks, so
+  selecting a **drawing** and hitting "+ Add" filed the new row under the last-touched group (or
+  ungrouped). Clicking a drawing now sets the context from it, so Add/Enter inserts a sibling —
+  verified: click A-201 → Add → `A-202` under AR/Elevation, title editor open.
+- **Bug found in my own work while verifying:** `buildModel()` walks `rows` in array order (only
+  sorted because `load()` fetches `.order('sort_order')`), so an in-memory `sort_order` change
+  persisted but **didn't move the row on screen until reload**. Added `sortRows()` (NULLs last)
+  before the optimistic render.
+- **Not ported** (deliberate): PS's row virtualization, cell clipboard (TSV copy/paste), column
+  chooser/menu, undo/redo — so **reorder is not undoable**; this module has no undo stack.
+- Harness-verified with real `DragEvent`s against a mutable store (reorder display+store, cross-
+  group/phase refusal, phase order preserved, filter disarms the drag, group-body collapse 6→2,
+  active group survives re-render, no regressions in edit/status/select). Assets `?v=20260717g`.
+
+### 2026-07-17 — Progress Photos: UI uniformity pass (chrome now matches the suite)
+- The module had shipped with **invented chrome**. Realigned it to Drawing Register / Cash Flow /
+  Project Schedule. The real defects, found by comparing against the reference stylesheet rather
+  than by eye: the **shared topbar rules were missing entirely** (`.pd-topbar`, `#user-bar`'s
+  `margin-left/padding-left/border-left`, the 34×34 `#pd-theme-toggle`) so the avatar had no
+  divider; the **filter bar wasn't a card** (the others are `--pd-card` + border + radius +
+  `8px 12px`) which is what made it look unfinished; tools were ad-hoc padding instead of the
+  uniform **34×34 transparent icon buttons** + `.pp-tb-sep` dividers + one labelled primary; the
+  back button wasn't the 36×36 square; the project select was plainly bordered instead of
+  borderless-until-hover.
+- **Stopped inventing components.** The Photos|PPRs switch is now a **segmented tab strip**
+  identical to Register/Progress, and List/Gallery uses the **shared `.pd-viewtoggle`** from
+  `dashboard.css` (as `projects.html` does) instead of a third bespoke style. Count + toggle moved
+  into a static list bar (`.dr-listbar` pattern). Added Clear-filters + a count to the PPR screen
+  for parity. ⚠️ `.pp-tab` now means the *screen* tabs — the view wiring selects `.pd-vt[data-view]`.
+- **Verified by computed-style diff against the real `drawing-register/module.css`** (both
+  stylesheets inlined into an iframe at matching viewport/theme): all 10 chrome elements report
+  **zero differences**. Behaviour re-verified after the restructure; light/dark flip on tokens with
+  brand red fixed; icon-only title ≤1150px; no page h-scroll at 375px. Assets bumped `?v=20260717f`.
+- Note: a first comparison attempt was **invalid** — the reference stylesheet hadn't loaded in the
+  iframe, so it reported unstyled browser defaults (16px text, auto widths) as "differences".
+  Inline the CSS and assert a sanity value before trusting such a diff.
+
+### 2026-07-17 — Progress Photos: PPR Presentations + offline export
+- **Built the "View PPRs" half** (`modules/progress-photos/ppr.js` + `ppr_presentations` /
+  `ppr_slides`): the PPR Presentations Database (PPR Date · Description · No. of Slides, PPR
+  date-range filters, numbered **Preview** pane) and the slides viewer/editor (PPR Project /
+  Meeting Date / Description / `‹ n › of N`, Trade / Works / Location, before-and-after photos
+  with capture dates + italic captions, **Key Plan overlay** toggling on both photos). The module
+  now has two top-level screens — **Photos | PPRs** — mirroring the app's home; they share one
+  project selector via `ProgressPhotos.onProject()`.
+- **Slides reference the Photos Database rather than re-uploading** (owner's decision): a slide's
+  before/after are FKs into `progress_photos`, so the library is the single source of truth and
+  picking a photo pre-fills the slide's trade/works/location/caption. FKs are `on delete set null`
+  **on purpose** — deleting a photo must not silently delete the slide citing it.
+- **Download = a self-contained offline copy, not a deck** (owner's requirement: PPRs are opened
+  in meetings where the photo library may load slowly or connectivity is poor). It writes a
+  **standalone `.html`** — every image inlined as a downscaled data URI, inline CSS, no scripts,
+  **zero external references** — that opens with no network and prints one slide per page.
+  ⚠️ Photos are fetched to a **blob first**, then drawn via an object URL: drawing a signed
+  Supabase URL straight into a canvas taints it cross-origin and makes `toDataURL()` throw. Don't
+  "simplify" that round-trip away.
+- **Migration `migrations/2026-07-17-ppr-presentations.sql`** (idempotent, standalone-runnable,
+  folded into `supabase-schema.sql` incl. its RLS loop). **User must run it** — the PPRs screen is
+  empty until then. No new bucket (key plans go to `<project>/keyplans/` in `progress-photos`).
+- Harness-verified (list ordering, filters, preview, slides fields, key-plan toggle, PPR + slide
+  CRUD, cascade delete, dark mode, 2-col split at 1440px, no console errors). **The export was
+  verified as a real artifact**: captured, rendered in a sandboxed no-network iframe — 5/5 images
+  decoded, 0 broken, 0 external refs. Screenshots still impossible (stalled compositor).
+- **Note:** both false alarms during testing came from the harness, not the module — a global
+  `URL.createObjectURL` stub silently breaks image embedding, and a no-op `order()` stub makes
+  ordering assertions meaningless. Recorded in the module's CLAUDE.md.
+
+### 2026-07-17 — Progress Photos: Photos Database built (from the Power Apps app)
+- **Built `modules/progress-photos/`** against the original Power Apps "Progress Photos |
+  Photos Database" screen; flipped `enabled: true`. The Power Apps row is reproduced exactly
+  (PHOTO · DESCRIPTION · TRADE · WORKS · LOCATION · CAPTURE DATE + download / view-full-size),
+  along with its **List View / Gallery View toggle**, its **filter set** (capture start, capture
+  end, Trade, Works, Location — plus a search the original lacked), and its **fullscreen expand**
+  as a keyboard-navigable lightbox (←/→/Esc).
+- **Two deliberate departures from the app.** (1) The app's "My Projects" selector grouped rows
+  by *project*; this module is project-scoped by contract (§6), so the project is the topbar
+  selector and **List View groups by Trade** instead (collapsible, counts, persisted). (2) Upload
+  is **batched** — one modal takes many files against one set of shared fields and writes a row
+  per file (the app uploads one at a time), with per-file progress and per-file failure isolation.
+- **Trade vocabulary mirrors WPM's** (Site Works / Structural / Mechanical / Electrical and
+  Auxiliary / …) so photos, procurement work packages and Cash Flow's cash-out group by the same
+  names. **Works** is free text + a datalist of values already used on the project (the app's
+  Works values are project-specific, e.g. "Temporary Facilities", so a fixed enum would fight
+  real usage).
+- **Migration `migrations/2026-07-17-progress-photos.sql`** — adds `trade`, `works`, `sort_order`
+  to `progress_photos` + a `(project_id, taken_at desc)` index (idempotent; folded into
+  `supabase-schema.sql`). **User must run it** — Trade/Works render blank until then.
+  `description`/`location`/`photo_url`/`taken_at` already existed. Uses the private
+  `progress-photos` bucket from the 2026-06-18 storage migration; previews come from **one batched
+  `createSignedUrls` per load**, not one signing call per row.
+- **Note for the app owner:** `UI.modal()` takes no width and doesn't wire close buttons, so this
+  module carries a local `openModal()` helper rather than editing the shared `ui.js` (§1). Worth
+  promoting into `ui.js` if other modules want it.
+- Harness-verified against a mutable in-memory store (filters, grouping, gallery, lightbox, edit,
+  delete, batch upload, dark-mode tokens; no console errors). **Screenshots impossible** — the
+  compositor is stalled in this env (`visibilityState` hidden, `screenshot` times out), so
+  verification used DOM/computed values; image decode confirmed via `naturalWidth`.
+- **Next: the View PPRs screen** (the app's other half).
+
+### 2026-07-17 — Drawing Register: import filename fix, Add fix, frozen columns, dup flag, +features
+- **Import fix:** the workbook's "DWG No" column sometimes holds a submitted *filename* (e.g.
+  `…SDP v 2.0 02-27-26.pdf`), which was being used as the drawing code. Now the code comes from the
+  outline "No" column and the filename is kept as a `File:` note in remarks. Verified on the real
+  file (0 codes contain a filename; SDP rows read `A-001`). **Re-import to apply.**
+- **"+ Add drawing" fix:** with no row selected it added an ungrouped row under a collapsed group
+  (looked like nothing happened); now it expands the target, scrolls to the new row, and starts
+  inline editing.
+- **Frozen Code + Title columns** (sticky-left, opaque per-state backgrounds; grid `min-width:1080`
+  so narrow screens scroll) and **duplicate-code flag** (amber ⚠ when a code repeats within a phase).
+- **Progress tab** no longer shows the (irrelevant) filter bar.
+- **Persist per-project view + collapse**, **inline date editing** (Latest Sub. / Approval),
+  **saved filter views**, and **jump-to-phase**.
+- Assets bumped `?v=20260717a`. Harness-verified (dup flag, inline dates, saved views, jump,
+  progress-filter hide, opaque frozen backgrounds); frozen-column sticky couldn't be observed under
+  the headless stalled compositor but uses the same proven pattern as Project Schedule.
+
+### 2026-07-16 — Drawing Register: topbar consolidation + bulk status
+- **Toolbar moved into the topbar** (Project Schedule pattern): project selector + Register/Progress
+  tabs on the left; **+ Add / + Level / Import / Export / Clear** as a flat tool cluster beside the
+  profile picture. Body keeps only a slim filter bar. Title goes icon-only under 1150px. Dropped the
+  leftover "Approved w/o comments" status-filter option.
+- **Bulk status change** on the selection bar ("Set status…" → applies to all selected drawings).
+- Harness-verified (topbar layout + no overflow at desktop width, tab switch, Add-from-topbar, Level
+  menu, bulk-status all work; no console errors). Assets bumped `?v=20260716j`. No migration.
+
+### 2026-07-16 — Drawing Register: sidebar-less shell + level delete + audit
+- **Sidebar removed** to match Project Schedule / Cash Flow — `.dr-modback` back button + title
+  in the topbar, full-width content (verified: content spans the full window, user-bar right).
+- **Delete a level:** group rows get a hover ✕ (planner+) that deletes the phase/discipline/
+  category and everything under it (`deleteLevel`, confirm shows the affected drawing count),
+  completing level CRUD.
+- **Audit** (harness-verified with a mutable in-memory store, no console errors): code chips
+  (A-100/A-200/AR-000) render; level delete cascades (group row + node + child drawings);
+  discipline rename cascades to drawings + node; add-level / add-drawing / auto-number / inline
+  edit / status dropdown / shift-select / delete / keyboard shortcuts all intact.
+- Assets bumped `?v=20260716i`. No migration.
+
+### 2026-07-16 — Drawing Register: editable tree grid + faithful-phase import fix
+- **Planner workflow (like Project Schedule's WBS):** new **"+ Level"** menu builds the
+  phase/discipline/category skeleton as real rows (`node_kind` column, migration
+  `2026-07-16-drawing-register-nodes.sql` — **user must run it**; text-keyed so existing
+  imports still group and it's backward compatible). **+ Add drawing / Enter** inserts a
+  drawing under the selected row, auto-numbers its code, and opens inline title editing.
+- **Excel-like inline editing** (double-click cells; **Status = always-on dropdown**, saves
+  immediately); full modal kept per-row (✎). **Selection + keyboard:** click / Shift-click
+  range / Ctrl-click toggle / ↑↓ (Shift extends) / Ctrl+A / Delete / Esc / Enter. Compact
+  one-screen grid.
+- **Removed redundant status** "Approved w/o comments" (merged into "Approved").
+- **Import fix — false duplicates + missing A-100/A-200 codes:** the workbook has design
+  iterations (Schematic Design 1/2/3/4 Schemes, FCD) that the old `mapPhase` collapsed into
+  one "Schematic Design 1", so the same A-101/A-102/A-103 from different iterations piled
+  into one group and looked duplicated. Phases are now kept **verbatim** (anchored
+  `PHASE_RE` + `cleanPhase`, ordered by workbook appearance), and header rows import as
+  **structural nodes carrying their codes** (A-100 Floor Plan, AR-000 Architectural), shown
+  as code chips. Verified on the real file (SD1 Floor Plan = A-101, A-102 only; phases
+  SD1(S1)=96 / SD2(S1)=178 / SD2(S2)=131 / FCD=646). ⚠️ **Re-import (Clear all → Import) to
+  apply.** Assets bumped `?v=20260716h`. Harness-verified (build levels, add-under-select +
+  auto-number, inline edit, status dropdown, shift-select, delete, node codes, phase split).
+
+### 2026-07-16 — Drawing Register: category as level-3 group + per-level indent/colour
+- **Register is now a 4-level tree** — phase → discipline → **category** → drawing. Category was
+  previously only a column, so the workbook's level-3 rows (A-100 Floor Plan, A-200 Elevation,
+  A-300 Section, …) were "ignored" (never shown as groups); they're now derived from each
+  drawing's `category` field and rendered as collapsible L3 roll-ups (category-less drawings sit
+  directly under the discipline).
+- **Rows indented + colour-coded by level**: left padding grows with depth (10/30/50/70px) and a
+  coloured inset rail marks each level (phase=red, discipline=dark gray, category=gray, drawing=
+  line) with graded backgrounds. Assets bumped to `?v=20260716f`. Harness-verified (4-level tree,
+  indentation, rails); confirmed 688/1032 drawings in the real file carry a category.
+
+### 2026-07-16 — Drawing Register: level-1 accordion (phases collapsed by default + Expand/Collapse all)
+- Level-1 **phase** roll-up rows now start **collapsed on load**, so the register opens as a tidy
+  list of phase headers you expand into. Added an **Expand all / Collapse all** toggle in the list
+  bar (Collapse all folds every phase; Expand all clears all collapse state incl. disciplines).
+  Per-row phase/discipline collapse still works. Assets bumped to `?v=20260716e`. Harness-verified
+  (default collapsed → 2 phase rows/0 drawings; expand one phase → its disciplines+drawings; toggle
+  round-trips). See `modules/drawing-register/CLAUDE.md`.
+
+### 2026-07-16 — Drawing Register: fix import hang + toolbar/table refinement
+- **Import hang fixed (root cause):** `gridOf` ran `sheet_to_json(defval:'')` over the workbook's
+  bloated dimension — its "Dwg Registry" sheet declares **16,383 columns**, so it allocated ~100M
+  empty cells and froze the tab. Rewrote `gridOf` to read a **bounded window via direct cell refs**
+  (cols capped at 60, real row range) + `sheetRows:8000` on `XLSX.read`; parse deferred a tick so
+  the "Reading…" spinner paints; insert chunks yield (0-ms `await`) so progress repaints. Verified
+  on the real file: ~1s read + ~0.4s parse (was hanging), same 1032 drawings.
+- **Toolbar** rebuilt into two rows in one card: project · tabs · action cluster (+ Add drawing
+  primary, divider, Import/Export, subtle Clear all) / search (grows) + filters.
+- **Collapsible phase & discipline groups** (click the roll-up row; caret indicator).
+- Module assets bumped to `?v=20260716d`. Harness-verified (toolbar layout, collapse/expand,
+  parse perf). See `modules/drawing-register/CLAUDE.md`.
+
+### 2026-07-16 — Drawing Register: planner delete tools + professional UI pass
+- **Clear all** (planner/admin/super_admin only): a type-the-project-id confirm modal that
+  deletes every drawing for the current project (storage files first) — for fixing a
+  wrong-project import (user hit this). **Bulk select**: checkbox column + per-group/select-all
+  + "N selected · Delete selected" bar (chunked 100/req). Per-row delete + RLS unchanged.
+- **UI pass:** toolbar in a card; sticky table header with zebra hover; monospace drawing codes;
+  tinted phase roll-up rows + gradient progress bars; "Showing N of M" count bar; KPI accent bars.
+- **Importer hardened:** `canonDiscipline()` drops a non-canonical discipline value (e.g. a stray
+  "A-013" from a mis-detected column on a different workbook) so it can't form a bogus group;
+  fixed a latent phase-sort comparator bug.
+- Module-local assets bumped to `?v=20260716c`. Verified render + selection + Progress KPIs in a
+  stubbed harness (screenshot compositor stalls in this env — checked via DOM/read_page + JS).
+  See `modules/drawing-register/CLAUDE.md`.
+
+### 2026-07-16 — Drawing Register rebuilt to full fidelity (matches the GPR101 workbook)
+- **Replaced the flat 8-field Drawing Register** with a full rebuild mirroring the Megawide
+  "Drawing Register & Tracker" workbook (`GPR101. TEC. Drawing Register`). Now:
+  - **Structured drawing code** built from the workbook "Coding Reference" tables
+    (`<proj>-<building>-<company>-<type>-<discipline>-<floor>-<number>-<rev>`) via dropdowns +
+    a live preview in the Add/Edit modal.
+  - **Register view** grouped **phase → discipline** with per-group roll-ups (sheets / approved /
+    % bar); filters for phase, discipline, status, search.
+  - **Multi-revision submission tracking** (`submissions` jsonb `[{rev,planned,actual}]`), planned/
+    actual approval dates, and workbook approval statuses (For Review · Revise & Resubmit ·
+    Approved w/ comments · Approved w/o comments · Approved · Superseded). Sheet counts + approved %.
+  - **Progress dashboard** tab (KPI tiles + Progress-by-Phase and Progress-by-Discipline tables).
+  - **Excel importer** (SheetJS) that reads the workbook's flat "Dwg Registry" layout — infers
+    phase/discipline/category from sheet-title indentation + code prefix, pulls every revision's
+    planned/actual dates, normalises status. Plus filtered **Export** to `.xlsx`. File upload kept.
+- **DB migration `migrations/2026-07-16-drawing-register-full.sql`** (idempotent; folded into
+  `supabase-schema.sql`) extends `drawing_register` with code parts, phase/category/description/
+  responsible, sheet counts + approved %, `submissions` jsonb, planned/actual approval, `sort_order`.
+  **User must run this migration.**
+- **Verified** the importer offline with Node+SheetJS against the real workbook: 1032 drawings,
+  correct phase/discipline split, per-revision planned/actual dates, sheet counts, normalised
+  status (~26/1032 edge codes unclassified). Page loads with no console errors; live click-through
+  against a real login still pending. See `modules/drawing-register/CLAUDE.md`.
+
+### 2026-07-16 — ONE migration to run + schema-drift audit (collapse NOT yet safe)
+- **`migrations/2026-07-16-consolidated.sql`** replaces the two separate 2026-07-16 files
+  (planner-project-visibility + admin-archive-delete, both deleted — recoverable via git). Fully
+  idempotent; **this is the only migration outstanding**. Also re-asserts the wbs-nodes table +
+  `project_schedule.wbs_node_id` as a safety net.
+- **AUDIT FINDING — neither "canonical" schema file is complete.** `supabase-setup.sql` and
+  `supabase-schema.sql` have **drifted in opposite directions**, and several tables exist ONLY in
+  `migrations/`:
+  | object | in setup.sql | in schema.sql |
+  |---|---|---|
+  | `cash_flow_settings` | ✗ | ✓ |
+  | `wbs_nodes` | ✓ | ✗ |
+  | `schedule_baselines`, `wpm_work_packages`, `cost_accounts`, `schedule_audit` | ✗ | ✗ |
+  Measured against `supabase-setup.sql`: **13 tables, 40 columns, 5 functions missing.** So the
+  documented "every migration is folded into setup + schema" convention has NOT been holding, and
+  **`migrations/` cannot be deleted yet** — it is currently the only definition of several tables.
+- **Replay-safety verified:** all 48 migrations are idempotent/replayable in filename order (checked
+  for `create table`/`create index`/`add column` without IF NOT EXISTS, `create policy` without a
+  preceding drop, and `create function` without OR REPLACE). The only hazards found were in the
+  now-superseded planner file and are fixed. So a true single-file consolidation **is** achievable.
+- **ORDERING TRAP for whoever does the collapse:** `supabase-setup.sql` already contains the *fixed*
+  per-command `projects` policies, while `2026-06-30-workspaces-project-selector.sql` recreates
+  `projects_write` **`for all`**. Naive concatenation (setup + migrations) would silently **reopen
+  the planner visibility hole**. The 2026-07-16 fix must be applied LAST.
+- **Recommended next step:** build one canonical file as `base schema → migrations in date order →
+  2026-07-16 fixes last`, verify with the audit (0 missing objects), diff against the live DB, and
+  only then delete `migrations/` and reduce `supabase-schema.sql` to a pointer.
+
+### 2026-07-16 — Workspace edit/delete affordance + view-toggle clipping fix
+- **`workspaceModal` was unreachable for EXISTING nodes.** It was only ever called as
+  `workspaceModal(null)` (Add menu + `#add-ws`), so once a workspace/program was created there was
+  **no way to rename, move, or delete it** — and the `Delete…` button added earlier the same day was
+  dead code. Tree nodes now carry a **gear** (`.pd-tree-edit`, `canWrite` only) that opens
+  `workspaceModal(w)`. It `stopPropagation()`s — the gear sits inside the `[data-ws]` row whose click
+  selects the node. Hidden until hover/selection via **opacity** (not `display`) so it stays
+  keyboard-reachable; `:focus-visible` reveals it.
+- **Card/list view toggle was clipping its second button.** Root cause (reproduced + measured in a
+  throwaway `_ui_test.html` harness against the real CSS): `.pd-toolbar-right` gets 272px, but
+  search (202) + gap (10) + toggle (80) needs 292. A text input's flex `min-width` defaults to
+  `auto` = its intrinsic width, so **the input refused to shrink and the toggle absorbed the whole
+  22px squeeze** — and since `.pd-viewtoggle` sets `overflow:hidden`, it silently **clipped its own
+  button** instead of overflowing visibly. Measured: original `clientW 58 / scrollW 80` (clipped);
+  fixed `80 / 80` (intact). **Fix:** `.pd-viewtoggle{flex:0 0 auto}` (never shrinks) +
+  `.pd-toolbar-right .pd-input-sm{flex:0 1 220px;min-width:0}` (input absorbs the shrink) +
+  `min-width:0`/`flex-wrap:wrap` on both toolbar halves.
+- `dashboard.css` changed → **`dashboard.css?v=` bumped to `20260716` across all 21 HTML files.**
+- **WBS root cause CONFIRMED (see the module's own CLAUDE.md).** The `wbs_node_id`-missing theory was
+  right: the wbs-nodes migration hadn't been run when those nodes were created, so their projected
+  WBS-Summary rows failed. Checking `information_schema` *after* running the migration shows the
+  column present — that is post-migration state, not a disproof. The damage (orphan nodes with no
+  schedule row) is now self-healed by `_wbsEnsureSummaries()` in the project-schedule module.
+  (Naga exists as **both** a `workspaces` program node **and** a project of the same name — the WBS
+  work was on the project; the program is the empty node being deleted.)
+
+### 2026-07-16 — Admin: archive / delete for projects & workspaces
+- **Why it isn't a plain DELETE:** ~20 module tables carry `project_id text references
+  projects(id)` and most predate `on delete cascade`, so deleting a project that has ever
+  been used dies on an FK violation. Cascade-wiping construction records was rejected;
+  **archive is the primary action, hard delete is the empty-only escape hatch.**
+- **No new archive column.** `projects.status` (`active | archived`) already meant this and
+  was already wired — portfolio-overview filters on it, dashboard/projects render a muted
+  pill, both Edit Project modals expose it. `admin_archive_project(id, bool)` just flips it
+  behind an admin guard. `getProjects()` still returns archived projects (they're meant to
+  be visible-but-muted, not hidden).
+- **New RPCs** (admin-only, `security definer`, mirroring `admin_delete_user`):
+  `admin_archive_project(text, boolean)`, `admin_delete_project(text)`,
+  `admin_delete_workspace(text)`. `admin_delete_project` discovers referencing tables from
+  the **pg catalog** (any `public` table with a `project_id` column) rather than a hardcoded
+  list, so modules added later are covered automatically; it refuses with a message naming
+  each blocking table + row count, and strips the id from `users.projects` (text[], no FK)
+  before deleting. `admin_delete_workspace` refuses while child workspaces/projects exist.
+- **UI:** Archive/Restore + `Delete…` in the Edit Project modal (`projects.html` +
+  `admin.html`) and `Delete…` in the Edit Workspace modal. Delete opens a **type-the-id-to-
+  confirm** dialog; the DB's refusal message is surfaced verbatim via `UI.toast`.
+- `db.js`: `PDb.archiveProject/deleteProject/deleteWorkspace`. **`db.js?v=` bumped to
+  `20260716` across all 18 HTML files.**
+- Migration `migrations/2026-07-16-admin-archive-delete.sql`. **User must run this migration**
+  — the UI calls RPCs that don't exist until then.
+- **Known pre-existing bug (not fixed here):** `window.__archived` is read in 8 guards in
+  `modules/project-schedule/index.html` but **never assigned anywhere**, so the intended
+  "archived projects are read-only" behaviour does not currently work. Archiving therefore
+  mutes/filters a project but does not yet make the schedule read-only.
+
+### 2026-07-16 — Fix: planners could see unassigned projects (RLS leak)
+- **Bug:** `projects_write` was created `for all`, which covers **SELECT**. Postgres ORs
+  permissive policies, so `using (is_planner())` handed every approved planner read access
+  to every project row — silently defeating the assignment filter in `projects_read`. The
+  name said "write"; the grant was all four commands. Introduced by the 2026-06-30 change
+  that widened project writes to planners (see below).
+- **Fix:** split into per-command `projects_ins` / `projects_upd` / `projects_del`, leaving
+  `projects_read` as the only SELECT gate. Update/delete are now also assignment-scoped
+  (`is_admin() or can_access_project(id)`) — a planner could previously edit a project they
+  couldn't see. **Insert stays `is_planner()`-only**: a new project isn't in anyone's
+  `users.projects` array yet, so planners keep **Add Project**.
+- Roles table corrected: `planner` is **assigned projects only**, matching
+  `canAccessProject()` in `auth.js` (which always filtered planners — the JS and the DB had
+  disagreed since 2026-06-30, which is why the leak went unnoticed in the UI).
+- Migration `migrations/2026-07-16-planner-project-visibility.sql` (folded into
+  `supabase-setup.sql` + `supabase-schema.sql`). **User must run this migration.**
+- Not changed: `workspaces_write` and the activity-codes/steps/last-planner policies use the
+  same `for all` + `is_planner()` shape, but leak nothing — their reads are `is_approved()`,
+  so every approved user sees those rows regardless.
 
 ### 2026-07-14 — Prompt 66: Cash Flow rebuilt as a schedule + WPM-driven projection
 - **Replaced the manual Cash Flow CRUD** (period/category/planned/actual entries) with a
@@ -265,6 +2688,60 @@ developer, plug into one shared shell.
   win still available later: a server-side monthly S-curve RPC so the browser fetches ~dozens of
   monthly buckets instead of every activity.
 - Verified: both modules parse; live run pending.
+
+### 2026-07-14 — Prompt 78: Cash Flow — drill-down symmetry, per-trade cash-out, assumptions nudge, chart polish
+- **Server-side S-curve aggregate** was already built (`cashflow_schedule_agg` RPC +
+  `2026-07-14-cashflow-schedule-agg-rpc.sql` + client fast-path/fallback); user just runs that
+  migration to activate it (else the keyset client aggregate runs). Deleted a duplicate migration.
+- **Cash-in drill-down symmetry:** cash-IN matrix cells are now clickable too (was cash-out only).
+  `rowDrill(label,arr,comp,dir)` replaces `rowOut`; `renderDrill(dir,comp,mi)` reads `model.inBreak`
+  (DP tranches / trades / milestones / progress billing) or `model.outBreak` (work packages).
+- **Per-trade cash-out (auto-detect):** the cash-out drill-down groups work packages by **trade**
+  with WPM-style collapsible headers (trade · WP count · subtotal). New `trade` column on the
+  `wpm_work_packages` mirror (`2026-07-14-wpm-mirror-trade.sql`); `sync-wpm` now selects `*` and
+  auto-detects the trade (first present of trade / cost_code_category / category / discipline / …).
+  Client `loadWPM` requests `trade` tolerantly (retries without it pre-migration). **Deploy: run the
+  migration, redeploy `sync-wpm`, re-Sync.**
+- **Assumptions completeness nudge:** a gentle amber card lists unset/zero assumptions (BCB,
+  retention, downpayment, EWT, WPM cash-out source) with an "Open Assumptions" button.
+- **Narrowed WPM fetch** (explicit columns, not `select('*')`) kept. **Chart polish:** uniform
+  9.5px axis/data labels, wider left pad so negative ₱ y-labels don't clip, light vertical
+  gridlines at each labelled period to line bars up with the x-axis.
+- Verified: full inline script parses; live run pending.
+
+### 2026-07-14 — Prompt 79: Cash Flow — tabbed Assumptions, loading skeleton, confirmed WPM trade
+- **Tabbed Assumptions modal:** the long form is split into 5 tabs — Contract · Tax & Retention ·
+  Terms & Funding · Downpayment · Billing (all field ids unchanged, so `saveSettings` is untouched).
+- **Loading skeleton:** the bare "Loading projection…" line is replaced with shimmering KPI-tile +
+  chart placeholders (`skeletonHTML()`).
+- **WPM trade auto-detect confirmed:** checked the WPM app schema on disk — `work_packages.trade`
+  is the real column (Site Works / Mechanical Works / Electrical and Auxiliary Works …), and the
+  WPM app itself groups "by Trade". `sync-wpm` already leads with `w.trade`, so **"Uncategorized"
+  only appears until the deploy is done**: run `2026-07-14-wpm-mirror-trade.sql`, redeploy
+  `sync-wpm`, re-Sync. Also made the `sync-wpm` upsert **self-healing** (drops a missing mirror
+  column like `trade` and retries, reporting `dropped`) so a partial deploy can't fail the whole sync.
+- Verified: script parses; all 19 assumption field ids intact.
+
+### 2026-07-14 — Prompt 80: Cash Flow — trade fallback classifier (no more "Uncategorized")
+- Cash-out WPs still showed **Uncategorized** because the mirror's `trade` is empty until the
+  `sync-wpm` redeploy + re-sync (WPM's `trade` is set from import group headers, authoritative).
+  Added a client `tradeOf(w)` / `classifyTrade(desc)` fallback: uses the synced `w.trade` when
+  present, else classifies from the description (mirrors WPM's trade keywords + a **General
+  Requirements** bucket for overhead — admin/fuel/security/garbage/permits/…). Verified the four
+  visible overhead WPs (Admin Workers, Fuel and Oil, Security Services, Garbage Disposal) now group
+  under General Requirements. Real WPM trade still wins once synced.
+
+### 2026-07-14 — Prompt 82: Cash Flow — incomplete-terms tracker + drill-down Chart/Table views
+- **Incomplete-terms tracker:** WPs whose WPM DP% / Retention% / Terms are blank (so their
+  cash-out is un-shaped) are flagged. Engine collects `model.wpIncomplete`; a collapsible card
+  ("N work packages with incomplete WPM terms") lists WP / description / trade / missing fields /
+  budget, and each such WP gets an amber ⚠ badge in the drill-downs. Behavior unchanged (still
+  0-when-blank), just made visible.
+- **Better drill-down presentation:** the cash-in / cash-out drill-down now has a **Chart** view
+  (ranked horizontal bars sized by share, grouped by trade with subtotals, actual/forecast tags)
+  and keeps **Table** as a toggle option (persisted `cf_drillview`; Chart default). `renderDrill`
+  remembers `lastDrill` so the toggle re-renders in place.
+- Verified: script parses.
 
 ### 2026-07-11 — Live DB verification (first real-login check of the schema)
 - **Ran the first live audit** of the production Supabase (`planners-app`, project `bgupuqnkqhixpuctyder`)
@@ -1519,3 +3996,825 @@ Project") work that has since landed on `main`.
   buckets via the migration; branch protection on `main`; live end-to-end test;
   remaining modules (issues-lessons, contracts-claims, stakeholder-map,
   material-submittal, progress-photos) — or hand to developers.
+
+### 2026-07-22 — Merge module/project-schedule PR into main
+
+Merged branch `module/project-schedule` (chart builder in Activity Progress) into
+`main` (merge commit 7b9fc4e; clean auto-merge, no conflicts despite the branch being
+74 commits behind). Verified locally: module loads and runs with no console errors,
+inline JS passes `node --check`, no conflict markers. See
+`modules/project-schedule/CLAUDE.md` for detail.
+
+### 2026-07-22 — Project Schedule: arrow-key row selection + Excel-like autoscroll
+
+Added keyboard row navigation to the Schedule grid: ↑/↓ move the row selection, PageUp/PageDown
+jump a screen, Home/End go to first/last, Shift extends the multi-row selection. The grid
+autoscrolls minimally to keep the active row visible (pins to the top/bottom edge, Excel-style),
+working with the virtualized renderer. New `moveRowSel`/`scrollRowVisible`/`_gridPageRows` helpers
+wired into the existing grid keydown handler; documented in the shortcuts modal. Verified: inline JS
+passes `node --check`, module loads with no console errors. Module-only, no `?v=` bump. See
+`modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: horizontal active-cell navigation (arrows / Tab / Enter)
+
+Extended the arrow-key row selection into a full Excel-style active-cell cursor: ←/→ move the active
+cell across columns, Tab/Shift+Tab move next/previous cell wrapping across rows, Shift+←/→ extend the
+cell range, and Enter/F2 edit the active cell. ↑/↓ now preserve the active-cell column so vertical +
+horizontal navigation share one cursor. New `moveCell`/`scrollCellVisible`/`_nextRowIdx`/`editActiveCell`
+helpers; horizontal autoscroll reveals the target column. Verified: inline JS passes `node --check`,
+no console errors on load. Module-only, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: Enter/Tab commit-and-advance in the cell editor
+
+While editing a cell inline, Enter now commits and moves the active cell down a row (Shift+Enter up),
+and Tab commits and moves to the next cell (Shift+Tab previous, wrapping rows) — Excel-style, keeping
+the column and landing in ready mode. Escape still cancels. Wired in `beginEdit` via the existing
+`moveRowSel`/`moveCell` cursor. Verified: inline JS passes `node --check`, no console errors on load.
+Module-only, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: Excel type-down-a-column entry anchor + type-to-edit
+
+Added the classic Excel data-entry flow to the Schedule grid: an entry-column anchor (`_entryCol`) so
+Tab walks across columns and Enter drops a row and returns to the column the entry began in; plus
+type-to-edit (typing on a selected cell begins editing seeded with the character). Ready-mode Enter now
+moves down at the entry column; F2/double-click/typing edit. The anchor resets on plain navigation
+(arrows/click/Escape) and persists across Tab/Enter. Verified: inline JS passes `node --check`, no
+console errors on load. Module-only, no `?v=` bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: render guard fixes the type-to-edit keystroke race
+
+Fixed the documented race where an in-flight async save re-render could wipe a just-opened inline
+editor during fast type-down entry. New `_editing` flag (set in `beginEdit`, cleared at the top of
+`commit`) makes `doRender`/`renderWindow` defer repaints while an editor is open and flush the
+deferred paint when it closes. The edited value is read synchronously before any repaint, so no data
+is lost. Verified: inline JS passes `node --check`, no console errors on load. Module-only, no `?v=`
+bump. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: live keyboard verification + hidden-column navigation fix
+
+First signed-in verification of the new grid keyboard navigation, on the real 17,122-activity project.
+Confirmed working live: click-to-set active cell, ↓×3 (rows advance, column persists), →×3, Tab×6.
+**Found and fixed a real bug** — navigation stepped the active cell into hidden (`display:none`,
+zero-width) columns, so the cursor appeared to vanish; `moveCell`/`moveRowSel` now skip hidden columns
+via `_colShown`/`_nextVisCol` using the same `colHidden` source of truth as the Columns chooser.
+Remaining edit-path checks are blocked by Chrome being backgrounded (rAF suspended, renderer throttled)
+and need a scratch project rather than real data. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-22 — Project Schedule: signed-in verification on XERTEST (3 bugs found + fixed)
+
+Ran the full keyboard/data-entry verification signed in, on the XERTEST sandbox. Found and fixed three
+real bugs: (1) navigation stepped into hidden columns, (2) in-edit Enter/Tab moved twice because
+`blur()` let the keystroke bubble to the document handler past its INPUT guard, (3) a closing editor
+could leave an orphaned `<input>` when the commits conditional render was skipped. After fixes,
+confirmed live: hidden-column skip, horizontal autoscroll, render guard (input survived forced
+repaints), entry-column anchor, single-step Enter/Tab, type-to-edit, and Escape-cancels-without-write.
+Data integrity confirmed by direct Supabase query — no test data written, edited row unchanged, and
+nothing touched in the real project. See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-23 — Merge module/project-schedule (per-chart activity label) into main
+
+Merged `origin/module/project-schedule` into `main` (merge commit `c6bf04c`). **Divergence was much
+smaller than the branch age suggested:** the merge base `a1292e1` is itself on the branch (it was
+merged into main on 2026-07-22 as `7b9fc4e`), so main already contained everything except **one new
+branch commit** — `0683da1` "per-chart activity label field (ID / Name / both)" by ethanrobles10
+(2 files, +17/−2). Main meanwhile had 100 commits, 39 of them touching
+`modules/project-schedule/index.html`.
+- **One conflict, docs only** — `modules/project-schedule/CLAUDE.md`: both sides appended a new
+  section at EOF. Resolved by **keeping both**, with the branch's "Chart cards — activity label
+  field" note placed next to the surrounding chart docs and main's "Merge to main + verification
+  (2026-07-22)" section after it.
+- **`index.html` auto-merged clean, and the auto-merge is safe on inspection, not just textually:**
+  the branch change is confined to the chart builder (`_chartBuckets` label fn, chart config
+  normalization, the `.ps-cset` settings panel), while every main-side change this window was in the
+  grid/keyboard/loading paths (cell navigation, cache-first load, `schedule_rows` RPC, Gantt range,
+  WBS virtualization, Cost/EVM) — no overlapping regions, no shared state.
+- **Verified:** no conflict markers anywhere in the repo, `catField` present in all 3 expected places
+  in `index.html`, and the module's 690KB inline script parses clean (`new Function`). **Not**
+  browser-verified — no signed-in click-through of the chart settings panel this pass. Module-local
+  files only → **no `?v=` bump**.
+
+### 2026-07-23 — Mobile & tablet, part 1: the shared responsive layer
+
+Start of making the dashboard usable on phones and tablets. This pass does the **shared layer only**
+(`assets/css/dashboard.css` + `assets/js/ui.js`), which every one of the 21 pages inherits — so all
+shell pages and all 13 modules get the baseline without touching module code.
+- **New "MOBILE & TABLET" section in `dashboard.css`** with four breakpoints — 1024 tablet · 820
+  drawer · 700 phone · 420 small. Covers: off-canvas sidebar drawer + scrim, scrolling tab strips,
+  stacked toolbars, tables that scroll inside their card instead of widening the page, sheet-style
+  modals, viewport-anchored dropdowns, 44px touch targets, and safe-area insets for notched phones.
+  New `.pd-tablewrap` utility for wide tables.
+- **Two traps documented in the CSS itself** because both are easy to "fix" back into bugs:
+  1. **iOS Safari zooms the page when a focused input is under 16px** — all form controls go to 16px
+     at phone width. Do not restore 13/14px to match the desktop look.
+  2. **`initShell` adds `.pd-collapsed` by DEFAULT.** Left alone that made the mobile drawer open as
+     a **useless 64px icon rail with no labels** — the drawer width/labels are re-asserted at ≤820px.
+- **`ui.js` drawer behaviour.** The hamburger previously just toggled a class: no scrim, no dismiss,
+  no scroll lock. Now it injects a scrim, locks background scroll, sets `aria-expanded`/`aria-controls`,
+  and dismisses on scrim tap / nav tap / Escape. A `resize` past 820px closes the drawer so a tablet
+  rotation can't leave a scrim + scroll lock stranded. Mobile open/closed state is deliberately **not**
+  persisted (a drawer that reopens itself each page load would cover the content every time).
+- **`body { overflow-x: clip }`, not `hidden`** — `hidden` on body breaks `position:sticky`
+  descendants, and the topbar plus every sticky table header depends on sticky working.
+- **Verified in-browser** (real CSS + real `ui.js`, gitignored `_ui_test.html` harness with stubbed
+  auth/DB) at 375 / 768 / 1200: no page-level horizontal scroll at any width; drawer opens to the
+  full 290px with labels (not the 64px rail) and sits above the scrim; 44px nav rows; scrim/Escape/
+  nav-tap all dismiss; modal is a true bottom sheet (full width, flush to viewport bottom, top-only
+  radius); inputs 16px. Also verified on the **real login page**: card fits 375px, 44px targets, no
+  errors. ⚠️ Two **measurement artifacts, not defects**, cost time — worth knowing: CSS transitions
+  never advance in this environment (backgrounded tab → stalled compositor), so a settled drawer reads
+  as still-closed until you inject `transition:none`; and `resize_window` doesn't dispatch a `resize`
+  event, so the breakpoint-crossing handler looks dead until you dispatch one manually. Screenshots
+  remain impossible here.
+- Shared assets changed → **`?v=` bumped `20260720b` → `20260723a` across all 21 HTML files** (154 refs).
+- **NOT done — module interiors.** The shared layer fixes chrome, tables, modals and dropdowns
+  everywhere, but each module's own dense UI still needs a pass. Hazard scan (fixed min-widths /
+  nowrap / fixed grids): `project-schedule` is by far the heaviest (27 min-widths, 39 nowraps — Gantt
+  + virtualized 18-column grid + keyboard nav, genuinely a desktop tool); `drawing-register`,
+  `material-submittal`, `cash-flow`, `contracts-claims`, `stakeholder-map` are moderate; `s-curve`,
+  `resource-loading`, `portfolio-overview` are light.
+
+### 2026-07-23 — Mobile & tablet, part 2: the four field-use modules
+
+Owner chose to prioritise **what people actually open on-site**. Each module got the treatment its
+interaction model allows — the deciding question was *"can this be card-stacked without breaking how
+it's used?"*, and the answer differed:
+- **Progress Photos — restacked (list view).** The list was a 7-column grid at `min-width:980px`.
+  Below 700px the header row is dropped and each row becomes a card: thumbnail pinned in a 104px left
+  column spanning the stack, every other cell forced into column 2 so they stack and wrap. Cells are
+  labelled from a new `data-l` attribute (added in `module.js`) via `::before`. ⚠️ The stacked cells
+  must also drop `white-space:nowrap` — inherited from the desktop grid, it ellipsizes them to nothing.
+  Lightbox photo gets the screen (96vw) with 44px controls.
+- **Issues & Lessons — card-stacked (real `<table>`).** 11 columns at `min-width:980px`. Below 700px
+  `thead` is hidden and each `<tr>` becomes a bordered card with labelled cells; the issue text is the
+  unlabelled headline. ⚠️ **Selector trap:** the element is `class="pd-table il-table"`, and the shared
+  phone rule turns `.pd-table` into a nowrap horizontal scroller — the overrides are deliberately
+  written `.pd-table.il-table` / `.il-table td` to outrank it. Dropping the `.pd-table` qualifier
+  silently restores side-scrolling.
+- **Drawing Register + Material Submittal — kept as scrollers, fixed the FREEZE.** Both are *editable*
+  registers (inline cell editing, drag-reorder, range selection, bulk actions), so card-stacking would
+  break the interaction model — they stay horizontal scrollers. The actual phone bug was the sticky
+  columns: Drawing Register froze checkbox + Code (130px) + Title (300px), and Material Submittal froze
+  190px + 230px — **420–430px of frozen columns on a 375px viewport**, so whatever you scrolled to had
+  nowhere to land. Below 700px only the identity column (Code) stays frozen; Title / `ms-fz2` release.
+- **Verified in-browser** at 375 and 1280 with gitignored harnesses carrying the **row markup copied
+  verbatim from each module.js**: at 375 no page- or table-level horizontal scroll, header hidden,
+  cells stacked at a single x with labels rendering, 40–42px row buttons, KPIs at 2 columns; at 1280
+  **desktop is byte-for-byte unchanged** — 7/11 distinct column x-positions, header visible, `::before`
+  labels resolve to `none`, `min-width:980px` intact. For the two scroller modules (whose editable
+  grids are impractical to harness faithfully) the change was confirmed by verifying the targeted
+  classes are actually emitted by `module.js`, so no rule is a silent no-op.
+- Module-local files only; the `?v=20260723a` bump from part 1 already covers their `module.css`/
+  `module.js` links, so **no further bump**.
+- **Still to do:** Project Schedule's read-only phone view (owner's choice), then the analysis modules
+  (S-Curve, Cash Flow, Portfolio Overview) and the remaining registers.
+
+### 2026-07-23 — Mobile & tablet, part 3: Project Schedule read-only phone view
+
+Owner's choice for the heaviest module: **a read-only mobile view**, not pan-and-zoom and not a
+"use a bigger screen" notice. Below **700px** the grid+Gantt split is hidden and replaced by a
+condensed read-only activity list (`#ps-mobile` / `renderMobile()`); above 700px nothing changes.
+- **Same data path, different presentation** — `renderMobile()` reads `displayList()`, so search,
+  filters, grouping and collapse state all carry over. Cards show Activity ID, a status pill derived
+  exactly as the grid derives it, name, Start/Finish/%/Float and a progress bar; critical-path
+  activities get a red left rail. WBS summary rows are skipped. No edit/drag/link/keyboard handlers
+  are wired — editing stays desktop/tablet only.
+- ⚠️ **`PS_M_CAP = 300` is load-bearing.** The phone list is **not** virtualized (the desktop grid is)
+  and real projects here hit 17k+ activities, so painting every card would lock up a phone. Over the
+  cap it shows the first 300 and says to narrow with search/filters. Raise it only with virtualization.
+- **Verified** at 375px against the module's real stylesheet (cards 351px, no page h-scroll, 4-column
+  meta with no overflow, correct status colours, red rail on critical only, 45% fill exact) and at
+  1280px **desktop unchanged** (split `flex`, grid 660 + Gantt 588, toolbar/divider visible).
+- ⚠️ **Verification gap:** `renderMobile()` was not exercised end-to-end against loaded rows — the
+  harness stubs couldn't satisfy this module's `load()` (RPC → keyset fallback), so it rendered its
+  real empty state and the card branch was verified by injecting the function's exact template against
+  the real CSS. Data binding rests on `node --check` + confirming every helper it calls exists.
+  **Worth a signed-in pass on a real project.** See `modules/project-schedule/CLAUDE.md`.
+- Module-local only; `?v=20260723a` from part 1 already covers it.
+
+### 2026-07-23 — Mobile & tablet, part 4: the remaining eight modules (suite complete)
+
+Finished the sweep — all 13 modules now have a phone/tablet pass. Same deciding question as part 2
+(*can this be card-stacked without breaking how it's used?*), which sorted them into three treatments:
+- **Card-stacked (read-mostly registers):** **Risk Register** (10 cols) and **Stakeholder Map**
+  (14 cols, `min-width:1180px` ≈ 3 screens of side-scrolling). Both edit via a modal, so nothing is
+  lost by stacking. `data-l` labels added in each `module.js`; overrides written `.pd-table.rr-table` /
+  `.pd-table.sm-table` to outrank the shared `.pd-table` phone scroller. On Stakeholder Map the
+  `.sm-num` right-alignment is reset to left — in a stacked card there is no column to align to, so it
+  reads as a stray indent.
+- **Kept as scrollers (structure would be destroyed):** **Contracts & Claims** — its columns *are* the
+  pipeline stages and are built dynamically per view, it carries a **totals row** that only means
+  anything column-aligned, and money is read by comparing down a column. **Resource Loading** — the
+  Loading matrix compares resources *across months*. Both got chrome/filter/KPI polish only.
+- **Charts (S-Curve, Cash Flow, Portfolio Overview, Productivity Rates).** ⚠️ **The charts were the
+  non-obvious problem.** Every SVG already uses `viewBox` + `width:100%`, so they *scale* — which
+  looks fine until you check the type: scaling a 900-unit chart into ~351px is a 0.39 factor, rendering
+  its 9.5px labels at **3.7px**. Below 700px each chart now keeps a legible minimum width and its card
+  scrolls instead of shrinking further — **measured 5.91px** on screen at 375px. Don't "simplify" the
+  min-width away; that restores the unreadable version. Cash Flow additionally narrows its sticky
+  matrix label column 200px → 118px (200px was 53% of a 375px screen, leaving the months nowhere to land).
+- ⚠️ **Method note worth keeping:** every selector was checked against the module's markup *before*
+  writing the rule — a first pass had invented ~10 wrapper classes (`sc-controls`, `po-tablewrap`,
+  `rl-card`, …) that don't exist. Those would have been **silent no-ops**, not errors, and the modules
+  would have looked "done" while nothing applied.
+- **Verified in-browser** at 375 and 1280 on the two new patterns: Risk Register card-stack (no page
+  or table h-scroll, thead hidden, all cells at one x, labels rendering, title unlabelled) and the
+  S-Curve chart (svg pinned at 560px, card scrolls, page does not, label 5.91px). **Desktop unchanged
+  at 1280** for both — table `display:table`, 10 distinct column x-positions, `::before` labels `none`,
+  chart back to 1202px with all phone min-widths resolving to `0px`. The other six share these two
+  verified patterns plus chrome-only changes.
+- Module-local only; `?v=20260723a` from part 1 already covers every module's assets.
+
+### 2026-07-23 — Schedule Builder folded INTO Project Schedule (not a standalone module)
+
+Built the bottom-up / location-based **Schedule Builder** (reverse-engineered from the planning
+team's whiteboard) as a **view inside the Project Schedule & Cost Loading module** — per the owner,
+not a separate module. It's a fourth entry in the title-switcher ("Schedule Builder", between
+Project Schedule and Cost / EVM), a 5-step wizard: Activities (class-code list + duration) → Floors
+& Zones (location breakdown) → Zone sequence → Scope-per-zone matrix → **Generate** (sequential FS
+chain through locations → KPIs, duration-per-zone bars, grouped preview, CSV export).
+- Implemented as a self-contained `ScheduleBuilder` closure inside `modules/project-schedule/
+  index.html` (own helpers, no collision with the module's `esc`/`pd`/`render`/`load`/`save`/
+  `generate`); reads the module's current `pid`/`UID`; `switchTab('builder')` + `renderAll` drive it.
+- Table **`schedule_builder`** (project_id PK, config jsonb) — migration
+  `migrations/2026-07-23-schedule-builder.sql` (**USER MUST RUN**); project-scoped RLS.
+- The earlier standalone `modules/schedule-builder/` + its `config.js` registry entry were
+  **removed** (this supersedes them). Generated preview stays in the builder; pushing it into the
+  live schedule is the next milestone (whiteboard steps 8–10 also deferred).
+- Verified: module + config parse (`node --check`); loads on the local server with no console
+  errors (auth gate blocks click-through). See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-24 — Mobile & tablet, part 5: the module topbar (the last full-screen offender)
+
+Owner sent phone screenshots of nine modules. Parts 1–4 had fixed drawers, tables, modals and charts,
+but **every screenshot showed the same remaining defect**: the topbar. It is one flat flex row
+(back · title · project select · view tabs · tool cluster · theme · avatar), so `flex-wrap` on a
+375px screen broke it into four or five full-width rows — the avatar stranded alone on its own line —
+consuming most of the viewport before any content appeared.
+- **Fixed once in the shared layer, not in 14 modules.** New `UI.initModuleTopbar()` (`ui.js`) wraps
+  the topbar's existing children into two groups — `.pd-tb-main` (back · title · theme · avatar) and
+  `.pd-tb-tools` (project select · tabs · buttons) — without changing any module's markup. Both are
+  **`display:contents`** by default, so desktop layout is untouched; only below **900px** do they
+  become real rows: identity on one line (title truncates so the avatar can never be pushed off),
+  controls collapsed into ONE horizontally-scrolling strip. Topbar at 375px: **117px, two rows.**
+- ⚠️ **Three traps, all found by measuring rather than by reading the code:**
+  1. **`display:contents` hides the wrappers from layout but the DOM regrouping is still real** — the
+     account controls now precede the tool cluster in source order, which on desktop moved the avatar
+     from x=1211 into the **middle of the bar (x=284)**. Fixed with `order` on the two groups. Verified
+     the desktop sequence is byte-for-byte back→title→project→tabs→tools→theme→avatar on one 61px row.
+  2. **Every `module.css` re-declares `.pd-topbar { display:flex; flex-wrap:wrap }` and loads AFTER
+     `dashboard.css`** — a media query adds no specificity, so a bare `.pd-topbar` rule here loses on
+     source order and the fix would silently no-op in all 12 modules. Rules are qualified `.pd-app
+     .pd-topbar` / `.pd-topbar .pd-tb-main` purely to outrank that. Do not "simplify" the selectors.
+  3. The tools strip's edge-bleed negative margin didn't match the topbar's *responsive* padding and
+     pushed `documentElement.scrollWidth` 4px past the viewport (invisible only because `body` is
+     `overflow-x:clip`). Removed — `scrollWidth` now equals the viewport exactly.
+- **Filter bars**: module filter controls pin themselves to desktop widths with **inline**
+  `max-width:150px`-style attributes, leaving each select at half width with dead space beside it.
+  Overridden at ≤700px (needs `!important` — they are inline styles, not rules), excluding controls
+  inside tables/segmented toggles, which are sized by their container.
+- **Scope guard:** the enhancer only runs on topbars containing a back-to-modules link
+  (`a[class*="modback"]`), so the four shell pages (dashboard/projects/admin/portfolio-overview) keep
+  their existing chrome and drawer.
+- **Verified against all 12 modules' real markup** (harness fetching each `index.html`, injecting its
+  actual topbar, running the shipped `initModuleTopbar`): every module puts back+title+theme+avatar in
+  the identity row and its controls in the strip, with **`nothingLost: true`** (element counts and
+  identities reconcile exactly — no child dropped). ⚠️ Project Schedule's title is a `<button>`
+  view-switcher, **not an `<h1>`**, so title detection matches the class name too; without that its
+  title scrolled away leaving a back arrow and an avatar. `portfolio-overview` correctly skipped.
+  Screenshots remain impossible in this environment (stalled compositor) — all checks are measured
+  geometry.
+- Shared assets changed → **`?v=` bumped `20260723a` → `20260724a` across all 21 HTML files.**
+
+### 2026-07-24 — Mobile & tablet, part 6: fix the part-5 shell regression + three real defects
+
+Owner sent a second batch of phone screenshots. The module topbars from part 5 were working, but the
+shots surfaced **a regression I had just introduced** plus three defects the earlier passes missed.
+- ⚠️ **REGRESSION (mine, part 5): the shell pages were destroyed.** `projects.html` / `dashboard.html`
+  rendered a **~660px** topbar — hamburger, two giant distorted red bars, title, theme toggle and
+  avatar each on its own full-width row. Cause: part 5 gated the *JS* restructure to module topbars
+  (`a[class*="modback"]`) but the *CSS* `flex-direction:column; align-items:stretch` matched **every**
+  `.pd-topbar` at ≤900px. On an unrestructured topbar that turns each child into a full-width row and
+  stretches `.pd-topbar-mark` (`width:auto`) into those red bars. **Fix:** the JS now stamps
+  `.pd-tb-split` on topbars it actually restructures and **all** mobile column rules key off that
+  class, never off `.pd-topbar` alone. Belt-and-braces `flex:none; width:auto` on the mark.
+  **Measured after: projects 71px, dashboard 101px, admin 63px** (from ~660px), logo 29×24 undistorted,
+  avatar back on the identity row. Shell pages are now restructured too (they were the worst
+  offenders), with the mark treated as identity.
+- ⚠️ **The scrolling tools strip from part 5 was the wrong call — replaced with wrapping.** The
+  screenshots showed Progress Photos' leading **"Photos" tab pushed half off the left edge**, i.e.
+  unreachable unless you guessed a hidden horizontal scroll existed. Worse, `overflow-x:auto`
+  establishes a **clipping context that would cut off every dropdown opened from inside it** (project
+  switcher, add menus, module tool menus) — a latent bug in the 700–900px band where the shared
+  "popovers go position:fixed" rules don't yet apply. The controls row now **wraps**; the project
+  selector takes its own full-width line. Costs ~40px of height (117px → 157px on Progress Photos)
+  and buys every control visible and every popover unclipped. Verified `allTabsOnScreen: true`.
+- **Module titles were showing as a bare unlabelled icon.** Every module hides its own `.xx-title-txt`
+  at 820–1250px to buy room in the one-row topbar; with two rows there is space, so the text is
+  restored at ≤900px via `.pd-tb-main [class$="-title-txt"]` (0,2,0, to outrank the modules' 0,1,0).
+- **Filter selects were clipping their own text** ("All categories", "Filter by Works" lost their
+  descenders). Modules pin `.xx-filters .pd-select { height:34px }` while the phone layer raises the
+  font to 16px + 10px padding ≈ 42px of content in a 34px box. Height is now free to grow
+  (`min-height:44px`). Measured 44px box vs 36px needed.
+- ⚠️ **Found while verifying: the part-1 iOS zoom guard has been silently defeated since it shipped.**
+  The guard is `.pd-input { font-size:16px }` (0,1,0); every module's `.xx-filters .pd-input {
+  font-size:13px }` is (0,2,0) and loads later — so tapping a filter search box **still zoomed the
+  page on iPhone** in at least 6 modules. Measured 13px on Progress Photos. Re-asserted at (0,3,0).
+  This is the second time this exact specificity trap has bitten (see part 5's `.pd-topbar` note) —
+  **module CSS loads after `dashboard.css`, so any shared mobile rule targeting a single class will
+  lose.** Qualify shared overrides.
+- **Verified** at 375px (shell topbars via harness injecting the real `projects/dashboard/admin`
+  markup with the runtime-injected hamburger + toggle; module title/filters against the real
+  `progress-photos/module.css`) and at 1280px: **desktop byte-for-byte unchanged** — 61px single row,
+  wrappers `display:contents`, filters back to the module's own 34px/13px/180px. No page h-scroll at
+  either width. Screenshots still impossible here (stalled compositor); ⚠️ note `requestAnimationFrame`
+  never fires in this environment, so harnesses must force layout synchronously instead of awaiting a
+  frame — an awaited rAF hangs the harness at "running…".
+- Shared assets only; `?v=20260724a` from part 5 already covers them.
+
+### 2026-07-24 — Mobile & tablet, part 7: make the wrapped topbar rows look designed
+
+Owner: *"the top bar for mobiles are showing 2 rows. Doesn't look very nice."* The screenshot showed
+four rows, and the ugliness was **alignment, not row count**: modules push their tool cluster right
+with `margin-left:auto`, which on its own wrapped row leaves it floating half-centred and misaligned
+with the left-aligned tabs above it. Tabs plus three actions genuinely cannot fit one 351px line, so
+the fix is to make the rows look deliberate and to spend as few as possible.
+- **Each control group now claims a row and divides it evenly** — auto margins neutralised, tab strips
+  become equal segments like a native segmented control, action buttons share their row proportionally
+  (measured 3 × 113px filling 351px exactly, 44px tall). The vertical `-tb-sep` rules are hidden on
+  phones: they divided a horizontal cluster and read as noise between full-width buttons.
+- ⚠️ **First attempt made it WORSE and the measurement caught it.** Giving every group `flex: 1 1 100%`
+  forced each onto its own row — **197px**, taller than what the owner complained about. The groups now
+  use a real basis (`flex: 1 1 190px` on the project selector, `1 1 auto` on tabs) so they **pair up
+  when they fit and only claim their own row when they don't**, while still growing to fill the row
+  when alone. Progress Photos: **197 → 157px, 3 rows** (project + tabs share a line). Do not "tidy"
+  these back to `100%`.
+- **Trade-off accepted:** sharing that line truncates the project name to "Megaworld Projects DP T…"
+  (needs 211px, has ~153px). Kept because the truncated form is already the norm on the wider modules
+  in the owner's own screenshots, and the control is still a tappable dropdown — whereas a full extra
+  row costs 40px on every module.
+- **Adaptive, not hard-coded:** verified on Contracts & Claims, the densest topbar (3 long tab labels
+  + a 4-action cluster) — it takes 4 rows / 196px but **every tab label stays intact**, everything is
+  on screen, and the tab strip stretches to the full 351px when it wraps alone. Nothing is hidden or
+  clipped at either extreme.
+- **Desktop re-verified at 1280:** single 65px row, wrappers `display:contents`, correct left-to-right
+  order, separators visible again, buttons not stretched (`flex-grow: 0`).
+- Shared CSS only; `?v=20260724a` already covers it.
+
+### 2026-07-24 — Mobile & tablet, part 8: `dev-mobile.html` simulator + topbar audit across all 12 modules
+
+Owner reported the multi-row topbar on Issues, Claims, Stakeholder Map, Drawing Register, Material
+Submittal, Productivity Rates and Cash Flow, and asked for **an iPhone-resolution simulator to make
+testing easier**. Built the tool, then used it to audit every module — which surfaced defects the
+per-module spot checks had missed.
+- **NEW `dev-mobile.html`** (committed, deployed, not linked from the app). Renders any of the 15
+  pages in an iframe at an exact iPhone **CSS** viewport — SE 375×667, 13 mini 375×812, 15/14 Pro
+  393×852, 15 Pro Max 430×932, iPad mini/Pro — with rotate, an optional device frame, a side-by-side
+  compare slot, and a cache-busted reload. **It works because it is same-origin:** the iframe inherits
+  the real Supabase session and the `pd_project` sessionStorage key, so it shows the actual logged-in
+  module rather than a login redirect. Sign in first, then open it.
+- **Built an all-module audit harness** that measures each module's real topbar in **its own iframe**
+  (all 12 stylesheets define `.pd-topbar` and would otherwise contaminate each other) at 393px.
+  Findings, none of which were visible from testing one module:
+  1. **The named modules were at 195–200px in 4 rows** — worse than Progress Photos' 157px. Their tab
+     labels are too wide to share a line with the project selector, so both claimed their own row.
+  2. ⚠️ **Tap targets far below the 44px minimum: tab buttons were 28px and every project selector
+     34px** — the two things you hit most often in the bar were the hardest to hit.
+  3. ⚠️ **Contracts & Claims was silently CLIPPING a tab.** Its labels ("Contract" / "Claims / Change
+     Order" / "Extension of Time") measured **416px inside a 393px viewport**, and because the strip
+     is `overflow:hidden` the third tab was cut off rather than visibly overflowing. A flex item will
+     not shrink below its text width, so `flex:1 1 0` alone could not save it.
+- **Fixes.** The project selector now rides in the **identity row** (`initModuleTopbar` classifies
+  `-projctx` as identity): which project you are editing must never be ambiguous, and it stops the
+  selector fighting a wide tab strip for a shared line. Tab buttons and the selector get
+  `min-height:44px`; tab labels get `min-width:0` + **wrapping to two lines** (ellipsis would hide
+  which tab you are on). On phones the module's *title text* hides again — reverting part 6 **for
+  ≤700px only**, keeping it on tablets — because the icon plus the project name is the more useful
+  pairing when only one fits. Desktop order is preserved by giving `-projctx` the same `order` band
+  as the tools.
+- **Result across all 12 modules at 393px:** the seven named ones **195 → 169px, 4 → 3 rows**;
+  Cash Flow and S-Curve **157 → 115px (2 rows)**; Resource Master 197 → 155px. Every control on
+  screen, **zero tap targets under 44px**, no h-scroll anywhere. (Remaining zero-height controls were
+  verified to be items inside *closed dropdown menus*, not layout faults.)
+- **Desktop re-verified at 1280** on three modules: single 61px row, wrappers `display:contents`,
+  order still back → title → project → tabs → tools → theme → avatar, title text shown.
+- Shared assets only; `?v=20260724a` already covers them.
+
+### 2026-07-24 — Mobile & tablet, part 9: title text kept on phones + full audit (2 real overflows fixed)
+
+Owner: keep the module title text on phones, let the project name truncate instead. Then audit
+mobile/tablet and suggest improvements.
+- **Title restored at every width.** The ≤700px `display:none` on `.xx-title-txt` is gone and must not
+  come back (noted in the CSS). ⚠️ The project selector could NOT simply move up beside it — back +
+  icon + title + theme + avatar already consume ~295px of a 375px line, leaving the selector ~56px,
+  enough to read "Meg…" and nothing else. It therefore went back to the controls group, where it pairs
+  with a narrow tab strip (truncating, as the owner accepted) or takes a full row.
+- ⚠️ **`flex-basis: 120px` on the project selector is measured, not taste.** It is the largest value at
+  which Material Submittal's selector still pairs with its tabs instead of taking a 4th row (130px →
+  221px vs 169px). Issues and Contracts have tab labels too long to pair at ANY basis, even 110px, so
+  they keep 4 rows / 221px — the honest cost of long tab labels plus a visible title.
+- **Tablet topbar 163 → 99px.** The action cluster claimed a full row at every width; it now only does
+  so below 700px and shares the line on tablets, which have the width.
+- **Audit method:** every module measured in **its own iframe** (12 stylesheets all define `.pd-topbar`)
+  at **393px and 768px**, checking page overflow, off-screen controls, sub-40px tap targets and
+  sub-12px text. Two REAL defects found, both module-local and both now fixed:
+  1. ⚠️ **Cash Flow's action buttons were UNREACHABLE on a phone.** `.cf-controls` is
+     `flex-wrap:nowrap; overflow-x:auto` (fine on desktop), which put the whole cluster — Refresh,
+     Sync, Export, Actuals, Assumptions — **354px past the right edge**, and since `body` is
+     `overflow-x:clip` the page cannot scroll to them. `margin-left:auto` had also pushed them out of
+     the strip's own start. Now wraps. **Measured 354px overflow / 4 off-screen buttons → 0.**
+  2. ⚠️ **Project Schedule gave the whole page a horizontal scroll on tablet.** Its `.ps-tb-row` is
+     `flex-wrap:nowrap` (deliberate — single-row OPC toolbar with escaping popovers), overflowing
+     **~126px at 768px**. Now wraps in the 701–900px band only; phones drop the toolbar entirely.
+- **Result at 393px and 768px:** no page h-scroll anywhere, no off-screen controls, no sub-12px text
+  except Cash Flow's deliberately dense matrix (11.5px, documented).
+- **⚠️ KNOWN GAP — not fixed, needs an owner decision.** The 44px touch minimums apply **only below
+  700px**, but iPads (768–1024px) are touch devices. Measured at 768px: **tab strips 28px, selects and
+  buttons 34–36px** — 7 to 43 undersized controls per module (Project Schedule 43, Progress
+  Photos/Contracts/Material 16). Body-level tab strips (e.g. `.rl-tab`) are 34px even on phones, since
+  the 44px rule targets topbar strips only. Fixing means extending the touch sizing to ~900px, which
+  visibly loosens iPad density — a design call, so it was left for the owner rather than applied
+  unilaterally.
+- Shared CSS + two module-local files; `?v=20260724a` already covers them.
+
+### 2026-07-25 — Signed-in check of the Project Schedule phone view (gap closed, 1 bug fixed)
+
+Closed the verification gap flagged when the phone list shipped — `renderMobile()` had never run
+against real loaded rows. Checked signed in on the deployed site against **GPR101** (17k+ activities)
+and **OPW101** (698 leaf activities).
+- **Works against real data.** 112 cards on GPR101's default outline, 0 blank IDs / names / dates,
+  status derivation matching the rows (20 Completed / 39 In Progress / 53 Not Started), 38 critical-path
+  rails, progress bars matching `percent_complete`. **`PS_M_CAP` verified live** on OPW101: expand-all
+  gave *"300 of 698 activities"*, exactly 300 cards, plus the *"398 more not shown"* note.
+- **Bug found and fixed — date overflow.** The real `Fmt.date` renders **"Feb 15, 2027"** = **80px** at
+  the card's 12.5px meta font, but a meta column is only **~77px on a 375px phone**. It fit at 390px by
+  one pixel, so it looked fine at a glance. Now uses the module's own `fmtOPCDate` (DD-Mon-YY, 65px) plus
+  a 2×2 meta fallback below 380px; re-verified live at 66px. ⚠️ **The local harness stubbed `Fmt.date`
+  with a short form — this class of bug is invisible to harness testing.**
+- ⚠️ **Performance finding, NOT fixed — needs a decision.** The phone view hides the desktop UI in CSS
+  but **doesn't stop it being built**: `renderAll()` still runs `renderGrid`/`renderGantt`/`renderCost`/
+  `renderDetails` at phone width and then `renderMobile` on top. Measured on OPW101 (desktop CPU),
+  `renderMobile` alone is **~865ms median**; on GPR101 an Expand-all **froze the renderer** (that test
+  also drove the desktop rebuild, so not attributable to `renderMobile` alone — but the combined cost is
+  not phone-safe). Cost is `displayList()`/`buildNodes()` traversing every row; `PS_M_CAP` caps cards
+  painted, not the traversal. **Recommended:** gate `renderGrid`/`renderGantt` on `!psIsPhone()` and
+  repaint when crossing back above 700px. Not done here because `index.html` is under active concurrent
+  development (Schedule Builder landed mid-session) and restructuring `renderAll()` risks the desktop path.
+- **Scope note:** the phone block hides `.ps-toolbar`, a **shared** element outside `#ps-view-schedule`,
+  so it is hidden on the Cost/EVM, Planner, WBS and new Schedule Builder views too. Coherent with
+  "read-only on a phone", but not a considered decision for Builder, which arrived later.
+- ⚠️ **Method:** the Chrome window would not resize below ~1432px, so the phone path was driven by
+  patching `window.matchMedia` (read at call time by `psIsPhone()`) and firing the module's own debounced
+  resize handler. That verifies **data binding + the cap against live data** — the open gap. **CSS
+  presentation at a true 375px viewport is still only harness-verified.**
+  See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-25 — Project Schedule: render-pipeline fix (phone no longer builds the desktop grid)
+
+Closed the performance finding from the signed-in check. At phone width the desktop UI was hidden in CSS
+but still built — `renderAll()` ran the grid/Gantt/cost/details pipeline and then `renderMobile()` on top.
+- **Fix:** `renderAll()` returns after `renderMobile()` when `psIsPhone()`; `doRender()` (the choke point
+  every build funnels through) bails to the list too as a safety net; the debounced `resize` handler
+  tracks `_psWasPhone` so crossing phone→desktop runs a full `renderAll()` to build what was skipped.
+- **Verified live, signed in:** GPR101 (17,122 activities) in phone mode, Expand-all → no freeze (~83ms),
+  grid stays unbuilt, list shows "300 of 17122", cap holds. OPW101 (698) same. Round-trip desktop→phone→
+  desktop rebuilds the 380-cell grid; clean desktop reload renders normally; no console errors.
+- ⚠️ **Correction to the entry above.** The prior check said GPR101 Expand-all "froze the renderer" from
+  render cost. **Mis-diagnosis:** with the grid build now skipped the freeze reproduced identically — the
+  real cause is the Expand-all handler's blocking `window.confirm()` (shown when `rows.length > 4000`),
+  which hangs an automated tab with no one to dismiss it. Never a render cost. The pipeline fix is still a
+  genuine win (a phone no longer builds the desktop DOM), but the "17k froze the renderer" claim was wrong.
+  See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-07-26 — Collaboration rollout: the five modal-edit registers (Phase 1 + 2)
+- Applied the "◑ register" recipe (from Material Submittal) to **Risk Register, Issues & Lessons,
+  Contracts & Claims, Stakeholder Map, and Resource & Role Master** in one batch. Each got a small,
+  near-identical collab block (presence avatars via `#<x>-presence`, a **row-level cursor** — opening a
+  row's Edit modal broadcasts "editing this row" and flags it for others via `wireModalCursor`/
+  `paintRemote`, cleared on cancel/save/backdrop — and `applyRemoteChange` patching `rows` from
+  postgres_changes). A generic `_collabRow(id)` finds the row by `tr[data-id]` or `[data-edit]`, so it
+  works across the four modules' differing row markup.
+- **Phase 2 (offline):** the modal **update** path routes through `PDSync.write` (insert/delete stay
+  online), plus a per-module read-cache (`load` caches on success, renders from cache on an offline
+  fetch, and the save refreshes it). Contracts & Claims' **bulk status** is also offline-capable.
+  Online behaviour is byte-identical (the outbox only diverges offline/on failure).
+- **Resource & Role Master** is the reduced case: multi-table master data (resources/roles/calendars),
+  so it gets **presence + row cursor + offline updates + read-cache but NO live-value stream** (a
+  3-table subscription isn't worth it for low-traffic master data) — hence no realtime migration for it.
+- **Migration `2026-07-26-realtime-collab-registers.sql` (USER MUST RUN)** enables the live-value stream
+  for the four register tables (`risk_register`, `issues_lessons`, `contracts_claims`, `stakeholder_map`).
+  Presence/cursors/offline work without it.
+- Verified: all five pass `node --check` (4 module.js + resource-loading inline). NOT browser-verified
+  (needs 2 signed-in sessions + an offline cycle). Assets per module: `offline.js?v=20260726d` +
+  `collab.js?v=20260726c`; the four `module.js` bumped to `?v=20260726a` (resource-loading is inline).
+
+### 2026-07-26 — Collaboration rollout: Material Submittal Log (Phase 1 + 2)
+- Wired PDCollab + PDSync into **Material Submittal**. It's **modal-edit** (no inline cells), so this is
+  the "◑ register" pattern: presence avatars (`#ms-presence`), live row updates via postgres_changes, and
+  a **row-level cursor** — `openForm(r)` broadcasts "editing this submittal" (cleared on every close),
+  `paintRemote` flags that row. **Phase 2:** `bulkStatus` is offline-capable (one `PDSync.write` per id,
+  field-level LWW) + a read-cache (`load` renders from cache offline). ⚠️ **Modal Add/Edit stays
+  online-only** (file upload + tolerant schema-strip retry the outbox can't replicate), as do delete/
+  import/clear — offline covers **bulk status + read**.
+- **Migration `2026-07-26-realtime-collab-material-submittal.sql` (USER MUST RUN)** for the live stream
+  (presence/cursors/offline work without it). Verified: `node --check`. NOT browser-verified. Assets:
+  `offline.js?v=20260726d` + `collab.js?v=20260726c`; `module.js?v=20260726a`.
+
+### 2026-07-26 — Project Schedule: mobile Gantt view (read-only, touch-scroll)
+- The phone view (`#ps-mobile`, <700px) gained a **List | Gantt** toggle (persisted `ps_mview`).
+  `renderMobileGanttBody()` is a self-contained compact Gantt on the same `displayList()` data (capped at
+  300 rows): frozen sticky-left labels + horizontally-scrollable timeline, month header, task bars with
+  red %-fill, WBS-summary roll-up bars, milestone diamonds, red data-date line, critical outline. Auto-fit
+  scale `dayw = clamp(1600/totalDays, 1.2, 6)`. Read-only; the desktop virtualized Gantt pane stays hidden
+  on phones. Verified: `node --check` + geometry harness (month cells sum exactly to timeline width; 1-day
+  bars get a 3px min). NOT browser-verified at 375px (auth wall). Module-local, no `?v=` bump.
+
+### 2026-07-26 — Phase 2: offline editing + sync (Drawing Register + Project Schedule)
+- Second collaboration capability: **edit with no connection, sync on reconnect.** New shared
+  **`assets/js/offline.js` (`PDSync`)** — an IndexedDB write outbox + read cache, generic like PDCollab.
+- **Model = field-level last-write-wins** (a grid of discrete cells, not rich text): each queued op
+  carries only the changed fields, so replaying it sets just those; two people touching different fields
+  of one row both survive, only a same-field clash resolves to whoever syncs last. No CRDT/OT.
+- **`PDSync.write({table,op,id,patch})`** — optimistic apply stays the caller's job. **Online behaviour
+  is byte-identical to before**: with a live connection + empty queue it does the SAME direct Supabase op.
+  It only diverges to the IndexedDB queue when offline, on a network-failed write, or when a backlog
+  exists (preserving order). `flush()` on reconnect drains FIFO, **coalescing** per (table,id) into one
+  op (merged patches; insert+delete collapses to nothing); permanent errors (RLS/constraint) are dropped
+  with a warning, network errors stop and retry the whole backlog later.
+- **Wired the inline-edit choke points:** DR `persistCell` + PS `persist` route through `PDSync.write`.
+  **Read-offline:** PS already had its IndexedDB cache; added a light one to DR (`load()` caches on
+  success, renders from cache on an offline fetch, and `persistCell` refreshes the cache so an offline
+  reload shows pending edits). PS's own `_cacheSaveSoon` already covers it.
+- **UX:** `theme.js` offline badge is now PDSync-aware — *"Offline — your edits are saved on this device
+  (N pending) and will sync when you reconnect"* and *"Syncing N changes…"* on reconnect (was the
+  inaccurate "changes won't save"). Composes with Phase 1: a flushed offline edit is just a deferred
+  write → Realtime streams it to others, no extra plumbing.
+- ⚠️ **Scope boundary (deliberate, documented):** offline covers **UPDATES** (the on-site "update the
+  register/schedule" workflow). **New-row creation, deletes, the modal editor, and bulk import/global-
+  change/clear stay online-only** — those are desk activities and involve id-threading/reload/40k-row
+  queueing that isn't a field scenario. A follow-up can extend to offline inserts (the outbox already
+  supports them via client uuid).
+- No migration (client-side only). Verified: all four files `node --check`; the outbox
+  write/queue/flush/coalesce/LWW/insert+delete/permanent-error logic validated in a Node harness (offline
+  edits queue in order → reconnect merges to final server state; someone-else's field preserved; insert+
+  delete = no-op; RLS-rejected op dropped, rest continue). **NOT browser-verified** — needs a real
+  offline→online cycle signed in. Assets: new `offline.js?v=20260726d`; `theme.js?v=` bumped
+  20260724a→20260726d across all 21 pages (shared asset changed).
+
+### 2026-07-26 — Live collaboration: reliability fixes (live-value stream + echo + presence)
+- User tested two sessions: avatars + cursors showed, but **live value updates were flaky ("sometimes
+  need to refresh")** and **presence looked one-directional**. Root cause of the flaky live values:
+  `postgres_changes` is RLS-protected, so the Realtime socket must carry the user's JWT or the DB change
+  events are silently dropped — while presence/broadcast work without it (exactly the observed "cursors
+  work, updates lag" split). supabase-js sets the token automatically but can race the channel subscribe.
+- **Fixes in `collab.js` (`?v=20260726c`):** (1) explicitly `client.realtime.setAuth(access_token)` from
+  the current session **before** `subscribe()`, and re-set it on `onAuthStateChange` so the stream
+  survives hourly JWT refreshes; (2) added presence **`join`/`leave`** listeners (re-render the roster on
+  those, not only the full `sync` diff) so presence can't go stale one-way.
+- **Content-aware echo suppression (PS):** `_myWrites` now stores the patch, and `_applyRemoteRow` skips
+  the echo **only if the incoming record still matches what I wrote** — so two users editing the *same
+  row* no longer drop each other's change for 4s (verified in a Node harness).
+- ⚠️ **Testing notes for the user:** (a) confirm **both** realtime migrations ran (`...realtime-collab.sql`
+  + `...realtime-collab-project-schedule.sql`) — without them the live-value stream never fires; (b)
+  **hard-reload both tabs** to pick up `?v=c`; (c) test with **two different accounts** — presence is
+  keyed by user id, so the same account in two windows shows as one person by design (and Edge InPrivate
+  windows share one session/login). Verified: `node --check` + echo-logic harness. Still needs the real
+  two-user live re-test.
+
+### 2026-07-26 — Live collaboration: wire Project Schedule (phase-1 rollout)
+- Dropped the shared PDCollab layer into **Project Schedule** (the flagship). Topbar presence avatars
+  (`#ps-presence`); colored outline + initials flag on the `.ps-grid-row[data-rowid] .ps-cell[data-field]`
+  cell each remote user is editing (`paintRemoteCollab`, re-applied from `highlightCells` after every
+  virtualized repaint); my selection broadcast from `_setCellFromClick` (cell → field via `_CELL_META`)
+  and on `beginEdit`/commit. Channel (re)joins in `load()` (`maybeJoinCollab`, guarded on pid change),
+  leaves when no project.
+- **Two schedule-specific hardenings** the register didn't need: (1) **remote changes are COALESCED**
+  (`_onRemoteChange`→180ms `_flushCollab`) so a burst applies in one `rebuild()`+`renderAll()`, and a
+  **bulk storm** (import/global-change/clear = thousands of events) past 300 buffered falls back to ONE
+  `load()` instead of per-row patching; (2) **my own write echo is suppressed** (`_myWrites` stamped in
+  `persist`) so an inline edit doesn't trigger a redundant rebuild ~180ms later. Remote changes are
+  **deferred while an inline editor is open** (`_editing`) so they can't wipe my input.
+- **Migration `2026-07-26-realtime-collab-project-schedule.sql` (USER MUST RUN):** adds `project_schedule`
+  to the `supabase_realtime` publication + `replica identity full`. Presence/cursors work without it;
+  only the live-value stream needs it. RLS still applies.
+- Verified: PS inline script + `collab.js` pass `node --check`; the coalesce / storm-guard / echo-
+  suppression / delete / edit-defer logic validated in a Node harness (1 render for a 3-change burst,
+  0 for my own echo, 1 reload for a 400-event storm, deferred-then-applied while editing). **NOT
+  browser-verified** — needs the deployed site + two signed-in sessions. `collab.js?v=20260726b` (paint
+  flag now unclips the cell; bumped on both referencing pages); PS `index.html` inline only.
+
+### 2026-07-26 — Live collaboration phase 1: shared PDCollab layer + Drawing Register (presence + live cells)
+- User wants Google-Sheets/Teams-style **live collaboration** (who's viewing a project + which cell each
+  person is editing) and **offline editing with sync**, across applicable modules. Decided scope with the
+  user: **phase 1 = presence + live cells** (offline-writes deferred as a separate, larger phase), proven
+  on **Drawing Register first**, then dropped into Project Schedule.
+- **Key insight:** a register/schedule is a grid of DISCRETE cells, not a rich-text doc — no OT/CRDT
+  merge; conflicting cell edits are last-write-wins like Sheets. That's why the transport is small.
+- **New shared `assets/js/collab.js` (`PDCollab`)** on Supabase Realtime (`window.__sb`; no build step;
+  websocket to Supabase, works on GitHub Pages). Three primitives: **Presence** (topbar avatars),
+  **Broadcast 'sel'** (ephemeral "editing row R field F" cursor), **Postgres Changes** (another user
+  saved → my grid patches live). API `PDCollab.join({key,table,projectId,self,onPresence,onSelection,
+  onRemoteChange})` + `avatarsHTML`/`paintCell`/`clearCells`/`colorFor`/`initials`; injects its own
+  `.pd-collab-*` CSS (no per-module CSS edits). Built generic so every module reuses it — each supplies
+  only "serialize my selection" + "apply a remote row change".
+- **Drawing Register wired** (`modules/drawing-register/`): topbar presence avatars (`#dr-presence`),
+  colored outline + initials flag on the cell each remote user is editing (`paintRemote`), live row
+  updates via `applyRemoteChange` (INSERT/UPDATE/DELETE patched into `rows`; **deferred while I have an
+  inline editor open** so it can't wipe my input, flushed on commit). My selection is broadcast on cell
+  click + on `beginEdit`. Channel (re)joins on load + project switch.
+- **Migration `2026-07-26-realtime-collab.sql` (USER MUST RUN):** adds `drawing_register` to the
+  `supabase_realtime` publication + `replica identity full` (so filtered UPDATE/DELETE payloads carry
+  `project_id`). Presence/broadcast need NO server change; only the live-value stream does. RLS still
+  applies to Realtime. Other tables added per-module as wired (not preemptively — replica-identity-full
+  adds WAL; project_schedule is 40k-row/high-write).
+- Verified: `collab.js` + `module.js` pass `node --check`; presence rendering (avatars, +N overflow,
+  editing/me classes, stable colors, empty case) unit-checked in a Node DOM shim. **NOT browser-verified**
+  — presence/cursors need the deployed site + **two signed-in sessions**, which a single auth-walled
+  session here can't exercise. Assets: `collab.js?v=20260726a` + drawing-register `module.js?v=20260726a`
+  (new script, not referenced elsewhere → no global `?v=` bump).
+- **Next:** live-verify with 2 users → wire Project Schedule → scope the offline-writes phase.
+
+### 2026-07-26 — Schedule↔document link phase 4: Project Schedule "Documents" tab
+- Reciprocal of the register-side Need-by work below: the **Project Schedule** side of the connection.
+  New **"Documents" detail tab** on each activity (`detDocs` in `modules/project-schedule/index.html`,
+  between Expenses and Relationships) lists every Drawing Register + Material Submittal row linked to
+  that activity (`schedule_activity_id` = the activity's `activity_id`), each with approval status, lead
+  days, and an **"Approve by"** date (need-by − lead). A **document-readiness chip** (`docReadiness`:
+  ready / pending / at-risk / late) summarises whether the enabling docs will be approved before the
+  activity's start.
+- Docs are lazy-loaded in `loadResourcesAssignments` into `DOC_DRAWINGS`/`DOC_SUBMITTALS` — an explicit
+  column list filtered to `schedule_activity_id NOT NULL` (only the linked subset), **tolerant** of the
+  un-run `2026-07-25-schedule-document-links.sql` migration (query errors → empty caches → tab shows a
+  hint). Read-only (linking is done from the register side). No migration, **no `?v=` bump** (module-local).
+- Verified: inline script parses clean. **Not browser-verified** (auth wall + needs a real project with
+  linked documents). **Deferred (deliberate):** a schedule-GRID readiness column + filter — the
+  per-activity chip already surfaces the risk; a grid column across the virtualized 3-branch render is
+  the risky part in this ~690KB concurrently-edited file. Phase 4 of the connection is otherwise complete.
+
+### 2026-07-25 — Connect Drawing Register + Material Submittal Log to the Project Schedule (phase 1–3 of 4)
+- User asked to connect both registers to the Project Schedule. Design: each drawing / material submittal
+  is a **prerequisite** for construction work, so it links to the schedule **activity** whose start it
+  gates. The activity's start = **need-by** date; (start − `lead_days`) = the **required approval** date.
+  This drives the register's planned-approval field automatically AND surfaces schedule risk (a **float
+  chip** on each row: green slack / amber tight / red late vs the deadline).
+- **Migration `migrations/2026-07-25-schedule-document-links.sql` (USER MUST RUN)** — adds
+  `schedule_activity_id`, `schedule_wbs`, `lead_days` to **both** `drawing_register` and
+  `material_submittal`. ⚠️ Links to `project_schedule.activity_id` (the P6/business key, stable across
+  re-imports), NOT the row uuid (which changes every P6/XER "Replace"). No FK (schedule row may not exist
+  at link time); plain text scoped by `project_id`, indexed.
+- **Drawing Register + Material Submittal** each got: a lazy schedule cache (keyset-loaded leaf
+  activities), a **"Need-by" column** (required-approval date + float chip), and a **"Schedule link"**
+  section in the Add/Edit form (activity datalist + lead days + live required-approval preview + a
+  "set as planned approval" checkbox). Both use a **tolerant write** so saves still work before the
+  migration is run (they just warn). Lead default 30d (drawings) / 45d (materials). Module assets
+  `?v=20260725a`.
+- Verified: both `module.js` pass `node --check`; grid cell-count alignment (header ↔ group rows)
+  re-checked. **Not browser-verified** — the registers need a signed-in session with a real project +
+  schedule (documented environment constraint).
+- **Phase 4 NOT done (deferred): the Project Schedule side** — a per-activity "Documents" detail tab
+  listing linked drawings/submittals + their status, and a schedule-level **document-readiness flag**
+  (activities blocked by un-approved enabling docs). Deliberately deferred: `modules/project-schedule/
+  index.html` is a ~690KB inline file under active concurrent development, so the heavy schedule-side
+  change is a separate, careful pass. The register-side float chip already surfaces the risk from the
+  document side.
+
+### 2026-08-04 — WBS Manager: Duplicate branch was broken (fractional sort_order vs integer column)
+User: duplicate isn't working — *"Duplicate failed: invalid input syntax for type integer: "3.001""*.
+- ⚠️ **Root cause: `wbs_nodes.sort_order` is an INTEGER column.** `wbsDuplicate` inserted its copies at
+  `sort_order + c/1000` to hold them immediately after the original until the normalizer renumbered the
+  group. That works **in memory only** (outdent's `+0.5` survives because it's overwritten with an
+  integer before any write) — on an INSERT the fraction goes to Postgres and is rejected, so nothing
+  was created at all.
+- ⚠️ **The same bug was latent in `wbsQuickAdd`** (Enter after an existing sibling wrote `+0.5`), so
+  mid-list inline insert would have failed identically.
+- **Fix:** new `_wbsMakeRoom(parentId, after, count)` bumps the later siblings by `count` (persisting
+  only the diff) and returns the first free **integer** slot; duplicate places copy *c* at
+  `slot0 + (c-1)`. Verified in Node against the shipped logic — 3 copies after the first of three
+  siblings give `a, a1, a2, a3, b, c` with every sort_order an integer. **Not verified signed-in.**
+  Module-local, no migration, no `?v=` bump.
+
+### 2026-08-04 — Project Schedule: Work Package as a grouping level
+`project_schedule.work_package` (an OPC parity field from the 2026-07-01 migration) was stored and
+displayed but read by nothing. It's now a grouping dimension, so the grid can nest by deliverable /
+contract package — e.g. **Work Package › Location › Activity** or **Work Package › WBS**.
+- Three one-line additions (`dimValOf` / `dimLabel` / `allDims`) — the N-level grouping engine from
+  the location/work-type work is dimension-agnostic, so `buildNodes`, `normalizeGroupBys`, collapse,
+  group roll-up bars and per-project persistence all applied unchanged. Blank values bucket into
+  "— No work package —"; search now matches `work_package` too.
+- ⚠️ **Not a grid column** — the value is set in the Add/Edit form or in bulk via Actions ▸ Global
+  Change. An inline-editable column needs a cell in all three row branches; deferred (not asked for).
+- **Verified 11/11 in Node against the shipped functions** (value, trimming, all three blank forms
+  bucketing together, `wbs` still forced last, unknown dims dropped); script parses; only those three
+  sites enumerate dimensions. **Not verified signed-in.** Module-local, no migration, no `?v=` bump.
+
+### 2026-08-04 — BAU101 import was missing Status and nearly every date — 4 importer defects fixed
+User: the BAU import didn't include the Status in column AD; check everything useful that can be
+imported, specifically approval dates and submission dates BL0–BL4 (Planned) + Actual. The previously
+generated file carried only **11 columns**, so Status, all approval dates, all actual submission dates,
+BL1–BL4 and **the source's own Remarks** were silently absent. Measured through the shipped parser,
+old file → new: Status **0 → 208**, planned approval **0 → 71**, actual approval **0 → 78**, actual
+submission **0 → 204**, actual submission rev 1 **0 → 50**, re-baselined plans **0 → 88**, approved
+sheets **0 → 200**, source remarks **0 → 355** — with the structure (5 phases / 18 disciplines /
+64 categories / **424 drawings**) byte-identical to the previous delivery.
+- ⚠️ **`papp` never matched the real header.** The OPS template names the planned approval date
+  **"Approval Date (BL0)"**; the matcher only knew `approval date (plan`/`planned approval`, so on
+  BAU101 it resolved to −1 and every planned approval date was dropped. Widened.
+- ⚠️ **"Approved w/ Comments" was silently downgraded to plain "Approved"** — `normalizeStatus` tested
+  `/with *comment/`, which the slash spelling never matches, so it fell through to the bare `/approved/`
+  branch. **16 BAU101 + 3 GPR101 drawings** lost the distinction. `w/o comments` is unaffected.
+- ⚠️ **BL0–BL4 all collapsed onto rev 0 and overwrote each other** (119 BAU101 drawings carry a BL1,
+  10 carry all four). A "(BLn)" header is a **re-baseline of the planned date**, not a drawing revision;
+  each is now captured, `planned` = the latest baseline, and the full series is kept on the submission
+  entry as `bl:{…}` so the original baseline and the slip survive. jsonb → **no migration**.
+- **`Ongoing` / `Pending` are now real statuses** (59 + 10 BAU101 drawings). ⚠️ Necessary, not cosmetic:
+  the grid's inline Status cell is a `<select>` built from `STATUSES`, so an off-list value **shows the
+  first option while the row holds something else**. Neither counts as approved, so both stay in the
+  Backlog; new indigo `.dr-wip` pill for Ongoing.
+- **Data prep:** the new file **enriches** the prior one (auto-numbered codes preserved) — safe because
+  the two align **1:1, 509/509 rows, 0 mismatches**. ⚠️ The documented "stop at ≥3 blank rows" rule is
+  **wrong for this sheet** — a 14-row blank stretch sits INSIDE the data, before the last 31 rows
+  (OTHER SPECIALTIES / MEPF COMBINED); the cut is now structural (stop at the "List" legend row).
+  Placeholder junk (`'- '`, `'-'`, and two cells with "Approved" typed into a date column) is rejected,
+  not imported. **Approved % deliberately skipped** — measured 253/253 equal to sheets ÷ approved sheets,
+  which the importer already derives. **Prioritization / Planned Award / Vendor have no column**, so
+  they go into Remarks as prefixed notes (a filterable field would need a migration).
+- **Verified with the SHIPPED parser** over both files (extracted, never reimplemented): every field's
+  count matches the file's drawing-row count exactly, 0 unknown statuses, 0 blank discipline/phase/code.
+  **GPR101 regression-checked old-vs-new parser: identical on all 1,372 records except the 3 `w/ Comments`
+  drawings the fix correctly reclassifies.** `node --check` + CSS braces balanced. **Not verified
+  signed-in** — the user runs Clear all → Import. Assets `module.css/js?v=20260804e`.
+  Delivered `~/Downloads/BAU101 Drawing Register - FCD sheet (import v2 - full).xlsx`.
+
+### 2026-08-04 — Drawing Register: import picked a sheet with ZERO drawings; added a sheet chooser
+User: "the drawing registry import did not recognize the ISD and Temp Works Dwg L1s." Reproduced with
+the shipped parser over the real workbook — the register had been imported from the **raw source
+workbook**, and two things went wrong:
+- ⚠️ **Sheet selection was "most RECORDS wins" and the winner had 0 drawings.** BAU101's stale templated
+  sheet "Dwg Register (Vert)1" parses to **950 records, 0 of them drawings**, beating the live sheet's
+  371. Now ranked by **drawing count**, so both stale `(Vert)` sheets drop to the bottom.
+- ⚠️ **Ranking still can't tell which sheet is current** — the workbook has six registry-ish sheets and
+  the highest count is the *superseded* `Dwg Registry (August 2024)`. The import modal now has a
+  **sheet dropdown** listing each candidate with its drawing count, and the preview names the **L1
+  drawing types detected** + a sample, so a wrong sheet is caught before writing. Import is disabled
+  for a sheet with 0 drawings.
+- **A raw import of any sheet in that workbook yields only "For Construction Drawings (FCD)" as L1** —
+  which is exactly the reported symptom. The prepared file (with its explicit `Row Level` column) is
+  what produces all five L1s; verified again: Concept · Schematic · For Construction 88 · Temporary
+  Works 20 · Individual Services 316, 424 drawings.
+- ⚠️ **Tried and reverted (2nd time, different route):** inferring the phase level from the **indent
+  column** instead of the title text. It fixed BAU101's raw import but reproduced the old GPR101
+  damage exactly — **blank-discipline drawings 1 → 25, categories 245 → 243** — because BAU101's
+  TWG/ISD blocks contain discipline headers while GPR101's contain drawings directly. No text or
+  indent signal separates those cases; `Row Level` remains the only safe mechanism.
+- `cleanPhase` now keeps template acronyms upper (FCD/TWG/ISD/DED/BIM/CBW) — a raw import read
+  "Temporary Works Dwg (Twg)". **GPR101 re-verified byte-identical** to the pre-change parser across
+  all 1,372 records (bar the 3 `w/ Comments` rows the status fix reclassifies). `node --check` clean.
+  Assets `module.css/js?v=20260804f`.
+
+### 2026-08-08 — Project Schedule: the last WBS double-layer, and the duplicate children the merge fix caused
+Follow-up after another Avesta (AVR101) reimport still showed double-layered main WBS. Diagnosed by
+querying the live 1,627-node tree, not by re-reading code: the earlier merge fix worked for three of
+four branches, and had introduced a second defect of its own.
+- ⚠️ **`Milestones > Project Milestones` survived** because that branch is filed by **keyword hint**,
+  not by exact name, so the strict equality merge test never fired. New `_wbsNameKey()` normalises
+  before comparing (case/punctuation, parentheticals, a leading `the|project|overall|main|general|key`,
+  trailing plural). Conservative on purpose — `Tower 1 Execution Phase` still nests under
+  `Execution Phase` instead of being merged away.
+- ⚠️ **The merge fix created duplicate children — my own regression.** Merging lifted a branch's
+  children up as NEW siblings, so Planning Phase held three name-collided pairs: the locked skeleton
+  `Procurement`/`Design Development`/`Project Execution Plan` (0 grandkids) beside the file's unlocked
+  ones (1/7/3). `_wbsDedupeSkeleton()` can't heal those — it only merges pairs where **both** are
+  locked. A moved child now files **into** the matching existing child; only genuinely new children
+  take a fresh slot.
+- ⚠️ Landing on the existing child's code is safe, not a duplicate: `_clearWbsTree()` keeps locked
+  nodes, `wbsAdopt` links every legacy row of that code to the existing node, and
+  `_wbsEnsureSummaries()` deletes the duplicate projection on the next load.
+- **Verified in Node against the shipped functions** (sliced, not reimplemented): 5/5 name-key cases
+  including the two that must NOT fold, plus a full placement run reproducing the live AVR101 shape.
+  Inline script parses. **Not verified signed-in** — `index.html` isn't cache-busted, so hard-refresh
+  (Ctrl+Shift+R) before re-importing. Module-local, no migration, no `?v=` bump.
+
+### 2026-08-08 — Project Schedule import: reuse the saved location matching + stamp Discipline/Trade
+User reimported Avesta and reported Discipline/Trade and Level both unrecognised. Diagnosed by
+querying the live project — two independent root causes, both measured, neither guessed.
+- ⚠️ **Level written on 0 activities, Tower on 4,021, Zone on 1,218.** The importer only offered the
+  keyword matcher, whose argument is seeded from **the level's own name** — a coincidence that works
+  for levels called Tower/Zone and fails completely for one called "Level": **0 of 1,623** WBS node
+  names contain that word (Avesta says "Nineth Floor"/"Roof Deck"). The project already held a
+  planner-confirmed 29-name match table for Level, **all 29 keys still present in the tree**, which
+  the importer never offered. The import's Location breakdown now exposes each level's saved
+  `location_levels.match` as a source and defaults to it; levels without one keep the keyword
+  fallback, so a first-ever import is unchanged.
+- ⚠️ **`work_type` blank on all 4,393 activities.** Imports write `location` but never wrote
+  `work_type`, and a reimport wipes it — so the trade grouping reads "— No discipline/trade —" after
+  every reimport, and the wizard's matching is localStorage-only so it doesn't survive a browser
+  change. Both import dialogs now carry a default-on **"Set Discipline / Trade from the WBS"** step
+  built on the existing canonical-trade resolver, which needs no saved state and shows the real
+  coverage + the exact trades found in the file before you import.
+- **Verified against the shipped functions** (sliced, not reimplemented): the stamp yields exactly the
+  six canonical trades on Avesta's WBS shape (Fire Protection/Electrical/Plumbing → MEPF, Wet/
+  Finishing → Architectural, Superstructure/Substructure/Earthworks → Structural) while Planning and
+  milestone work correctly gets none; the saved-match source resolves deep codes to Tower 5 / 9th
+  Floor / Zone 2 and each level defaults to its own table. Inline script parses.
+- ⚠️ Live-probe note: the schedule module page is ~1MB and a full 6,400-row scan froze then killed the
+  tab — query from `projects.html`, which carries the same session. A climbing row count means an
+  import is in flight and any measurement then is of a half-written table.

@@ -1,5 +1,1280 @@
 # Module: project-schedule
 
+## Location matching scoped to Execution Phase only (2026-08-06) — fmlozano
+User: location/zone describes construction, so the Location Wizard (and grouping by a location
+level) must not touch activities outside the Execution Phase WBS branch.
+- **New `execPhaseCode()` / `locCodeUnder()` / `locExecScopedActs()`.** `execPhaseCode()` locates
+  the skeleton's locked top-level "Execution Phase" WBS-Summary row and returns its dotted code;
+  `locCodeUnder(code, ancestor)` is the boundary-safe prefix test (`"4"` matches `"4.1"`, never
+  `"40.1"`). `locExecScopedActs()` is the shared entry point both write paths now call instead of
+  scanning every activity with a WBS code.
+- **Both writers scoped:** `openLocWizard()` and `openLocBackfill()` ("Fill location from the WBS
+  tree…") now only scan/match/write against Execution-Phase activities — a name like "Design
+  Review" under Planning Phase can never be offered a Tower/Level/Zone value, and Apply can never
+  write `location` onto a non-construction activity. The wizard's own description text says so.
+  When the project has no Execution Phase branch (skeleton not seeded / pre-dates it), warns and
+  falls back to the whole schedule rather than silently doing nothing.
+- **Grouping scoped too, not just writing.** Follow-up in the same prompt: grouping by a location
+  level (`Location > Zone > Activity` or `Activity > Location > Zone`) was still bucketing
+  Initiation/Planning/Milestone activities into an "— Unassigned —" location group alongside real
+  Execution-Phase work — visually mixing phases that have nothing to do with location. `buildNodes()`
+  now carves non-Execution-Phase activities out of the location-dim walk and renders them as their
+  own top-level group ("— Other phases (not location-grouped) —"), always by their own WBS path
+  regardless of the chosen dims — visible, never lost, never mixed into a location bucket. Only
+  triggers when the active `groupBys` actually include a `loc:` dimension; every other grouping
+  (Status/Type/Work Package/Activity Codes/plain WBS) is untouched.
+- Verified: inline script (`new Function`) parses clean. **Not browser-verified against a live
+  login** — same environment constraint as the rest of this session's work on this module.
+
+## Location Wizard: real fix for the modal's horizontal overflow, plus bulk-assign audit (2026-08-06) — fmlozano
+User reported the "Match the WBS to your location breakdown" wizard (`openLocWizard`) was scrollable
+and wanted the popup to show whole, then reported it was "still the same" after a first attempted fix.
+- ⚠️ **Root cause, found by reading `UI.modal()` rather than guessing again after the first fix
+  looked right but didn't help:** `UI.modal()` always wraps caller HTML in its own `<div
+  class="pd-modal">`, and the shared stylesheet caps that element at `max-width:520px`. Because that
+  same element also has `overflow-y:auto`, CSS computes its `overflow-x` to `auto` too. The wizard's
+  first attempt only set a width on an INNER div — a child of that still-520px box — so the wide
+  content overflowed it, and since the whole `.pd-modal` became one scrolling region, the header and
+  buttons scrolled sideways along with the table instead of staying put.
+- **Real fix:** after `UI.modal()` returns, grab the actual `.pd-modal` element
+  (`m.el.querySelector('.pd-modal')`) and set its `style.maxWidth`/`overflowX` directly — an inline
+  style always wins regardless of the class rule's specificity. The inner div now just fills that box
+  (`width:100%`) instead of fighting it with its own competing width.
+- ⚠️ **Why the first attempt never showed up live:** this repo (`planning-app`) is a git repo tracked
+  against `origin/main`, which is what GitHub Pages deploys from — but the first fix was only ever
+  saved to the local file, never committed or pushed. "Still the same" was accurate: the live site
+  hadn't changed at all. This prompt's fix is committed + pushed.
+- **Wizard audit (previous prompt, same session):** fixed a real inconsistency where "Assign all
+  shown to…" (bulk level-assign) skipped the value re-clean that the per-row level dropdown does,
+  leaving a stale/uncleaned value under the newly assigned level; removed a dead `s.touched` flag;
+  added a full-text `title` tooltip on the truncated ancestry trail; added a "N names shown" hint next
+  to the bulk controls so it's clear which rows a bulk action will affect.
+- Verified: inline script (`new Function`) parses clean. **Not browser-verified against a live login**
+  — this environment has no session for the deployed app; verification here is static/parse-level plus
+  reasoning through the actual `.pd-modal`/`UI.modal()` CSS cascade, not a rendered screenshot.
+
+## Autosave added to the Add/Edit Activity modal (2026-08-06) — fmlozano
+Extended the shared autosave pass (`assets/js/autosave.js`, wired into 5 other modules the same
+prompt) to this module's Activity modal — the one place here that didn't fit the shared helper.
+- ⚠️ **This modal isn't `UI.modal()`-based** — it's a static `#ps-modal` overlay shown/hidden via
+  `style.display`, and `save()` is a bare module-scope function that unconditionally calls
+  `closeModal()` (hides the modal + clears `editId`) on success. The shared `Autosave.wire` trick
+  (temporarily no-op `modal.close`) doesn't apply — there's no object whose `.close` property
+  `save()` calls through. So autosave here is a **small inline implementation** instead of the
+  shared helper: a debounced (1.2s) `_asSchedule()`/`_asFlush()` pair that calls the existing
+  `save()` directly, then **reopens the modal and restores `editId`** immediately after
+  `closeModal()` ran inside it — same end effect (modal stays open, edit continues) via a different
+  mechanism suited to this modal's shape. `UI.toast` is monkey-patched to a no-op for the duration
+  of the tick so "Activity updated." doesn't fire on every autosave.
+- **Edit only** — `_asSchedule()` no-ops when `editId` is null (a new, not-yet-inserted activity).
+  `closeModal()` now also cancels the pending autosave timer, so cancelling/closing the modal can't
+  fire a stray save afterward.
+- Status badge `#ps-modal-autosave` beside the modal title (reuses the shared `.pd-autosave` CSS
+  from `dashboard.css`), shown only when editing.
+- Verified: inline script (`new Function`) parses clean. **Not browser-verified** — auth wall, same
+  as the rest of this module's recent work.
+
+
+## Documents tab removed (2026-08-05) — fmlozano
+Both registers dropped the per-document → activity link, so nothing can author one any more and this
+tab would be **permanently empty** — exactly the "empty promise" the Design Development node was
+before it got a real writer. Removed the tab button, its render dispatch, the `DOC_DRAWINGS` /
+`DOC_SUBMITTALS` lazy loads, and `detDocs` / `wireDocs` / `docsFor` / `docReadiness` / `_docChip` /
+`_docApprovedDr` / `_docApprovedMs` / `_docLeadDefault`.
+- **`syncDesignDevelopment()` is now the ONE connection** between this module and the two registers:
+  progress flows register → schedule, and those rows are read-only here.
+- ⚠️ Two fewer cross-module queries in `loadResourcesAssignments()` on every project load.
+- ⚠️ `project_schedule` never stored the link (it lived on the register rows), so there is nothing to
+  clean up here; the register-side columns are left in the DB unused.
+- Verified: inline script parses, 0 leftover references, the DD sync intact.
+  ⚠️ Not verified signed-in. `index.html` isn't cache-busted — hard-refresh.
+
+## Design Development is now actually populated from the two registers (2026-08-05) — fmlozano
+⚠️ **The 2026-08-03 skeleton entry's deferred item is now built.** That pass created the Design
+Development node, locked it, labelled it "synced from Drawing Register + Material Submittal Log" and
+blocked manual adds — but **nothing ever populated it. Zero writers.** The label was a promise the
+code didn't keep.
+- **`syncDesignDevelopment()`** (called from `load()` after `_wbsEnsureSummaries`, so the DD node and
+  real dotted codes exist) mirrors both registers into the branch: two locked child nodes —
+  **Drawing Register** / **Material Submittal Log** — each with one activity per discipline carrying
+  `percent_complete`, `start_date` (min planned approval) and `end_date` (max actual once every item
+  is approved, else the commitment).
+- ⚠️ **Idempotent by deterministic `activity_id`** (`DD-DWG-<slug>` / `DD-MAT-<slug>`): a re-sync
+  patches in place, writes only changed fields, and deletes rows for disciplines that vanished. This
+  is deliberately the shape that avoids the duplicate-projection bug `_wbsEnsureSummaries` had to heal.
+- ⚠️ **Drawings count SHEETS, submittals count ITEMS** — different measures, kept as separate
+  branches rather than summed. The drawing side mirrors the register's own `approvedOf()`: a
+  single-sheet drawing is approved by its **status**, not its counter.
+- ⚠️ **`.is('parent_id', null)`** excludes the register's per-sheet child rows — their counters are
+  already inside the parent drawing's, so counting both double-counts the register.
+- ⚠️ **Tolerant throughout** — any failure leaves the branch untouched rather than blocking the load.
+- **`isSyncedRow(r)`** gates `beginEdit`: a mirrored row can't be edited here, because the next sync
+  would silently overwrite it. A node's own WBS Summary row is NOT gated (it is real structure).
+- **This is the opposite direction to the Documents tab.** Design Development = the register IS the
+  work (progress flows register → schedule). Execution Phase = a document ENABLES the work (the date
+  flows schedule → register). Both registers now warn when a document is linked to a non-Execution
+  activity — see `modules/drawing-register/CLAUDE.md`.
+- **Verified 36/36** in a Node harness over the shipped `_ddAggregate`/`_ddSlug`/`_ddValidDate`/
+  `isSyncedRow` (sliced, not reimplemented). Inline script parses. ⚠️ **Not verified signed-in** — no
+  live sync has run. `index.html` isn't cache-busted; hard-refresh to pick it up.
+
+### Live verification on BAU101 (2026-08-05) — 1 real bug found
+First live sync, signed in. BAU101 had the skeleton's **Design Development node at `3.2` with zero
+children** and 0 generated rows; the sync created the `Drawing Register` child node and **11
+discipline activities**.
+- ⚠️ **REAL BUG FOUND AND FIXED — zero-duration bars.** `end_date` fell back to `minPlan`, so
+  `start === finish`. Architectural's planned approvals actually span **2025-03-18 → 2026-05-11** and
+  the row rendered as a **single day on 2025-03-18**. The finish is now the **latest** planned
+  approval (the commitment to have the whole discipline approved), replaced by the last actual once
+  every item lands. Re-verified live: Architectural `2025-03-18 → 2026-05-11`, Structural
+  `2024-12-06 → 2025-02-28`.
+- **Idempotency proven on live data:** the second sync left **11 rows, not 22** — it patched in place.
+- **Reconciles exactly with the register.** All 11 disciplines match the Drawing Register's own totals
+  computed with the same `approvedOf()` rule (539 of 1,257 sheets, 43%); 0 mismatches.
+- **Read-only guard confirmed:** double-clicking a synced row's name opened no editor and toasted
+  *"This row is synced from the Drawing Register / Material Submittal Log — edit it there."*
+- **Material Submittal Log node correctly absent** — BAU101 has 0 submittals, and the sync only
+  creates a branch when there is data.
+- **Need-by scoping proven both ways** by temporarily linking two drawings and reverting: one to a
+  real Execution activity (`4.6-A1030`, start 14-Sep-26) → **"Aug 15, 2026"**; one to
+  `DD-DWG-ARCHITECTURAL` → **"✕ Not execution"** with the explanatory tooltip. The picker tagged
+  **11 of 20** offered activities as non-execution while still allowing them.
+- **Cleanup:** both test links removed (BAU101 and GPR101 back to 0 linked documents). ⚠️ The Design
+  Development branch itself is **left in place on BAU101** — that is the feature working, not test data.
+
+## Location Wizard — match the detected WBS to the location levels (2026-08-05) — fmlozano
+User: rather than describing the values with keywords, let the planner **match what the importer
+detected**. Group menu → **Match WBS to locations…** (`openLocWizard`).
+- **Matching is by WBS node NAME, not by node.** Measured first: the same name recurs under every
+  tower and trade (Avesta's `9th Floor` sits under 7 towers × 3 trades), so a name is **one** decision
+  instead of twenty-one, and it survives a re-import that renumbers every node id. Distinct ancestor
+  names are only **160 (Avesta) / 127 (Jab) / 365 (Caticlan)**, and names appearing at more than one
+  depth are rare (Jab 0, Caticlan 10, Avesta 19), so a name's meaning is stable enough to key on.
+- **The planner confirms, not types.** Each row is a detected name + how many activities sit under it
+  + its ancestry trail (so you can see *where* it sits) + a level dropdown + **the value to write**,
+  which is editable. Pre-classified by `locGuessLevel`; sorted by activity coverage so the
+  high-impact names come first; search (matches the name **and** the trail, so searching a branch
+  finds everything under it), a Proposed/Not-matched/All filter, and bulk assign-all-shown.
+- ⚠️ **Two pre-fill defects found by testing against the real files, not by reading:**
+  (1) Jab's towers are `Tower A - Superstructure` etc., so the pre-filled VALUE repeated the work
+  and split one tower in two — the value is now pre-cleaned through `locTrimSeg`, giving **34 names →
+  17 clean tower values**. (2) `Cluster 1 (TD, TC, TE and TF) of Superstructure` — a cluster of
+  *towers* — was classified as a **Level** because it contains "Superstructure". `locTermHit` now
+  picks the level whose term appears **earliest** in the name: the head of a name says what the thing
+  IS, so "Cluster" at position 0 beats "Superstructure" at 24, and `Tower D - Substructure` is a
+  Tower for the same reason.
+- **Trade variation needs no per-trade config** (the user's chosen model: one level set, deepest
+  wins). Tagging `Superstructure`/`Substructure` as Levels means a structural activity under
+  `Superstructure › 9th Floor` still resolves to **9th Floor** (deepest), while one under
+  `Substructure › Foundation` falls back to the structure part. Verified as three explicit cases.
+- **Reuses the whole existing pipeline:** the wizard only builds a name→value table per level and
+  hands it to `locSrcsAssigned` → `locMapPlan` → `locPreviewHTML`. So the spelling merge, the
+  distinct-value preview and the write path are shared with the importers and the backfill — nothing
+  forked.
+- **The matching is remembered** in `location_levels.match` (migration
+  `../../migrations/2026-08-05-location-level-match.sql`, **USER MUST RUN**), so it is re-runnable
+  and editable rather than one-shot, and a re-import can reuse it. ⚠️ **Tolerant:** without the
+  migration the values are still applied and only the memory is lost — it warns rather than fails.
+- **Out-of-the-box coverage from the pre-fill alone:** Avesta **Tower 91.8% / Level 82.4% / Zone
+  27.7%** (46 of 160 names proposed); Jab **Tower 99.3% / Level 99.3% / Zone 99.3%** (61 of 127).
+  ⚠️ Jab's Zone figure is **inflated**: the five `Cluster N (…) of Superstructure` nodes are tower
+  clusters, not zones, and the planner should set them to "not a location" — exactly the correction
+  the wizard exists for.
+- **Verified 15/15 in Node** over the real Avesta + Jab trees (scan counts, review-list size, clean
+  tower values, and the three trade-variation cases) and **32/32 in a real browser** driving the
+  actual wizard end-to-end — pre-classification, the pre-cleaned value, one row for a name recurring
+  under two trades, level-change re-cleaning the value, search/filter/bulk, the debounced preview,
+  and **Apply**, asserting the exact `location` written for each activity plus the saved per-level
+  matching. ⚠️ Three browser assertions failed first and **all three were my assertion** — search
+  matching the ancestry trail is deliberate, and my bulk-assign step had cleared `9th Floor` because
+  its trail contains "Works". Other suites (24/18/33/27) and the 9-file regression still green.
+  ⚠️ Not verified signed-in.
+- **Open question the user flagged:** whether walking the WBS tree would be more practical on
+  multi-tower projects. Names-with-trail-context ships first so it can be judged against real data;
+  a tree view remains a possible addition rather than a replacement.
+
+## Spelling merge for location values (2026-08-05) — fmlozano
+User's explicit call after the duplicates were flagged: merge differently-spelled values of the same
+location automatically. ⚠️ **Deliberately lossy** — two genuinely different names that normalise
+alike WILL be merged. The trade-off was raised, the user confirmed, and the preview names every merge
+so it is visible rather than silent. Correcting the WBS is still the real fix.
+- **`locNormKey`** folds case, spacing/joined words (`Roof Deck` = `Roofdeck`), punctuation, and
+  worded↔numeric ordinals incl. the typo forms actually present (`Nineth`→9, `Eight`→8). It does NOT
+  fold different numbers, different words, `8th` vs `18th`, or `Ground` vs `1st`.
+- **Merging lives inside `locMapPlan`** — it needs the whole value SET per level, so it resolves in
+  one pass up front. Both importers, the backfill and the preview therefore agree **by construction**
+  rather than by three call sites remembering to do the same thing.
+- ⚠️ **`locSpellRank` — choosing the winner by frequency picked the WORST spelling on real data.**
+  It kept Avesta's typos (`Nineth Floor`, `Eight Floor`) over `9th`/`8th Floor`, and Jab's `Roofdeck`
+  over `Roof Deck`, because the sloppy spelling happened to be commoner/shorter. The winner is now
+  chosen on legibility first — a variant containing a **digit** (also making the grid's natural sort
+  order 2/9/10 correctly, where `Ninth`/`Tenth` sort alphabetically), then more word separators, then
+  more Title-Cased words, then frequency/shortest/alphabetical as a deterministic tail.
+- **Measured on the real trees:** Avesta floors **26 → 13 values**, now reading
+  `2nd … 12th Floor | Ground Floor | Roof Deck` (was a mix of `Eight Floor`, `Nineth Floor`,
+  `Ground floor`); Jab **7 → 6**, keeping `Roof Deck`. Towers and zones were already clean and are
+  untouched, and **coverage is unchanged** — only spellings collapse, no activity gains or loses a
+  location.
+- **Verified 27/27 in Node** over both real trees (what merges, what must NOT merge, the spelling
+  choice, order-independence — reversing the row order yields the same kept spelling — and that the
+  reported `keep`/`dropped` match what is actually written), plus **9/9 in a browser** on the preview
+  note. The 24/18/33 suites and the 9-file regression run are still green; script parses.
+  ⚠️ Not verified signed-in.
+
+## Jab: "grouping by location returns Unassigned" — plus a real defect it exposed (2026-08-05) — fmlozano
+User created Tower/Level/Zone levels on **4PH Jab Greenwoods Dasmariñas** (17,122 activities),
+grouped by them and got three nested **"— Unassigned —(17122)"**.
+- **Not a bug in grouping.** Creating a level only DEFINES it; it writes nothing to
+  `project_schedule.location`. Jab was imported long before any mapping existed, so every activity
+  still had `location = {}`. The fix is to run **Location Breakdown… → Fill location from the WBS
+  tree…** once. ⚠️ Worth stating in the UI — "create a level" reads like it should populate it.
+- ⚠️ **REAL DEFECT the screenshot exposed: a location qualified by the work it holds split into two
+  groups.** Jab names its towers **`Tower D - Substructure`** and **`Tower D - Superstructure`**, so
+  the keyword source returned **34 tower values for 17 towers** — every tower duplicated. Avesta
+  never showed this because its nodes are plain (`Tower 3`).
+- **Fix — `locTrimSeg`:** the matched segment is trimmed to the smallest separator-delimited part
+  that STILL matches the terms (`Tower D - Substructure` → `Tower D`), while an unqualified name is
+  returned untouched. ⚠️ The separator must be **spaced** (` - `, ` – `, ` — `, ` : `, ` | `) so a
+  hyphenated code like `T1-L05` is never split; and the part kept is whichever side matches, so
+  `Substructure - Tower D` works too. If no single part matches, the whole name is kept.
+- **Measured on the real Jab .xer (17,122 activities, an exact count match with the live project):**
+  Tower **99.3% → exactly 17 values, Tower A…Q** (was 34); Level **95.4%**, 7 values; Zone
+  (`Area, Zone`) **14.9%**, Area 1/Area 2. **Avesta is byte-for-byte unchanged** — its names carry no
+  separator, so the trim is inert there.
+- **Recommended terms** — Jab: `Tower` · `Floor, Roof Deck, Roofdeck` · `Area, Zone`.
+  Avesta: `Tower, -Handover` · `Floor, Storey, Roof Deck, -Finishes, -Coating` · `Zone`.
+- ⚠️ **Data-quality issues the value list makes visible, which are the USER's to fix, not ours to
+  silently merge:** Jab has both **`Roof Deck` and `Roofdeck`** (two groups for one level); Avesta
+  has **`Ground Floor` / `Ground floor`** and worded-vs-numeric duplicates (`Eight Floor` vs
+  `8th Floor`) — 26 values for ~13 real floors. Case-folding or fuzzy-merging these automatically
+  would silently merge names that a project might legitimately distinguish; the preview shows them so
+  the planner can correct the WBS.
+- **Verified 33/33 in Node** (the 26 from the previous entry plus 7 for the trim: qualified name,
+  unqualified untouched, en/em dash, colon, the unspaced-hyphen guard, match-on-either-side, and the
+  no-part-matches fallback), run over both real trees. Script parses; the 24/18/9-file suites still
+  green. ⚠️ Not verified signed-in.
+- ⚠️ **`index.html` is NOT cache-busted** (documented) — the deployed page needs a hard refresh
+  (Ctrl+Shift+R) before this appears.
+
+## Location from the WBS by KEYWORD — the source that actually works on a P6 tree (2026-08-05) — fmlozano
+Built so Avesta's location breakdown can be filled from its import. ⚠️ **I first proposed a source
+that reads the ACTIVITY NAME, and that was wrong** — measured on the real file, only **1.1%** of
+Avesta's 4,393 activity names contain "Tower" (the 49 milestones) and **0%** contain Zone/Level/T1/Z1.
+The names are generic (`Formworks`, `Rebar`, `3rd Fix`). Building it would have shipped a feature that
+fills nothing.
+- **Where the location really is: the WBS tree** —
+  `Execution Phase > Construction Phase > Tower 5 > Structural Works > Superstructure > 9th Floor >
+  Zone 2 > Vertical`. ⚠️ **But NOT at a fixed depth**, which is why the existing depth mapping can't
+  express it: the floor is at depth 6 under MEPF/Architectural Works and at depth **7** under
+  Structural Works (which inserts Substructure/Superstructure). Depth 6 therefore means "Eleventh
+  Floor" for one trade and "Superstructure" for another.
+- **New source kind `locSrcsWbsWords`:** instead of a depth, the planner says **what the value looks
+  like** and the source scans the whole ancestry for it — how they read their own tree anyway. Terms
+  are comma-separated, matched as **whole words**, and a `-term` **excludes**. The **deepest**
+  matching ancestor wins (the nearest enclosing location is the most specific).
+- ⚠️ **Whole-word matching is not fussiness:** `Ground` matched "Bac**kground** Music" in the real
+  file. And the exclude term exists because `Tower` also catches "Tower Handover" and `Floor` also
+  catches "Floor Finishes" — both real nodes in this schedule.
+- **The mapper needed one new capability:** a source can declare `needsArg`, and the row then shows a
+  second input (seeded from the level's own name, so a level called Tower starts with `Tower`);
+  `read()` resolves it via `src.make(arg)` into an ordinary `{key,name,get}`, so **`locMapPlan`,
+  the importers and the backfill are unchanged**. A blank argument leaves the level unmapped rather
+  than contributing an empty column.
+- **The preview now lists the DISTINCT VALUES per level with counts**, replacing the old
+  count-plus-two-sample-rows in all three call sites. With a keyword matcher this is the only way the
+  planner can SEE that "Floor" caught "Floor Finishes" — it is what makes the exclude term
+  discoverable, and it is how both false positives above were found.
+- **Measured on the REAL Avesta .xer** (terms `Tower, -Handover` / `Floor, Storey, Roof Deck,
+  Basement, Podium, -Finishes, -Coating` / `Zone`): **Tower 91.4%, Floor 79.2%, Zone 27.7%**; Zone
+  resolves to exactly `Zone 1`/`Zone 2`; **every zoned activity also carries its tower and floor**;
+  and the 379 unmatched activities are correctly the Initiation/Planning/Design work, which has no
+  location. **Every activity under Construction Phase resolves to a real `Tower 1..7`** — the odd
+  residual values (`FCD Tower`, `BOQ Tower`, `Tower 2, 5, 6, 7`) are Planning-branch design nodes and
+  cannot contaminate construction work, since they are in a different branch.
+- ⚠️ **Two test assertions failed and BOTH were my assertion, not the code** — worth keeping because
+  each taught something: (1) some zoned activities had no floor because the floor node is
+  **"Roof Deck"**, which "Floor, Storey" simply doesn't cover; (2) the extra Tower values are design
+  nodes. Neither was visible from reading the tree.
+- **Generality (measured across all 8 real .xer files with one generic term set):** Jab **99%**,
+  Jenara **100%**, Strevi **97%**, Avesta **92%** tower coverage; Caticlan is not a tower project but
+  gets **Zone 78% / Floor 83%**; Hotel 101 **Floor 51%**; OPW101 **20%**; DepED **0%**. So **the
+  mechanism generalises, the WORDS do not** — each project needs terms matching its own vocabulary,
+  which the preview shows in seconds. DepED has activity codes instead (`Priority`, on 185 tasks).
+- **Verified 26/26 in Node against the shipped source** run over the **real 4,393-activity Avesta
+  tree** (all the numbers above, plus whole-word/exclude/case/phrase/regex-metacharacter handling,
+  deepest-wins on a synthetic nested tree, and inert behaviour before an argument is supplied), plus
+  **17/17 in a real browser** on the UI (input reveal, seeding, hint, `make()` resolution, deepest
+  floor across differing depths, the false positive appearing in the preview and an exclude term
+  removing it, per-value counts, blank-argument un-mapping). Earlier 24/24 + 18/18 + the 9-file
+  regression run all still green; script parses, 0 console errors.
+- ⚠️ **Not verified signed-in.** The intended path for Avesta is **Location Breakdown… → Fill location
+  from the WBS tree…**, which now offers this source against the already-imported schedule — no
+  re-import needed.
+- ⚠️ **Concurrent edit:** another session was editing this same file (`syncDesignDevelopment`) while
+  this landed; the changes are in disjoint regions and were committed separately.
+- Module-local; no migration, no `?v=` bump.
+
+## Excel/OPC location mapping — and what the REAL exports actually contain (2026-08-05) — fmlozano
+Completes the import mapping: the Excel/OPC path now retains the columns its fixed header detection
+doesn't claim and offers them to the shared mapper, so an xlsx `Tower`/`Level`/`Zone` column can be
+mapped onto the location levels. Same modal section, same planner, same preview as the P6 path.
+- **`parseWorkbook` keeps unmatched columns** as `rec.extra = { "<header as written>": value }`.
+  ⚠️ Headers repeat in real OPC exports and `extra` is keyed by header, so duplicates are
+  **uniquified** (`Zone`, `Zone (2)`) — otherwise the second column silently overwrote the first on
+  every row. Blank headers and blank cells are skipped; WBS rows get `extra: null`.
+- **Third source kind `locSrcsCols`**, ~6 lines, because sources were already reduced to
+  `{key,name,get(rec)}` — the mapper, the preview, the planner and the level-creation path needed
+  **no changes at all**. That was the point of the shape.
+- **⚠️ THE IMPORTANT FINDING — this does not help Avesta, and I checked rather than assumed.** I ran
+  the **shipped** parsers over the **real exports on disk** (9 xlsx + 8 xer):
+  - The **Avesta xlsx** has 4 spare columns and they are **Planned Value POC / At Completion IBB /
+    BL Planned IBB / Percent Complete Type** — no location column. Nothing to map.
+  - **Its WBS rows carry no Name at all** (the export writes only a code in the ID column: `AVE`,
+    `1.4`, `1.4.4`), so in the Excel path the WBS-depth sources yield **codes, not readable names**.
+  - The **Avesta .xer** WBS *does* have real names, but they are **Phase › Discipline › Trade**, and
+    tower/zone appear at irregular depths as groupings (`Tower 1 + Gen Req***`, `Towers 2-7` at
+    depth 5; `Zone 1`/`Zone 2` at depth 8, alongside `Mat Footing`/`SOG`). **No single depth maps
+    cleanly to Tower or Zone.**
+  - The **Avesta .xer has no usable activity codes** — one type (`View`) with one value, on **0**
+    tasks. (Other projects do: Caticlan has `Trades` on 2,947 tasks and `High Level Trade SMC 1` on
+    2,076 — so the P6 code path earns its keep, just not here.)
+  - Avesta's location lives in the **activity names** (`Tower 1 Topping Off`).
+  → So the remaining planned source kind — **a pattern/delimiter on the activity name** — is the one
+  that would actually serve this project. It is NOT built yet.
+- **Verified.** 18/18 in Node against the shipped `parseWorkbook` + mapper (claimed columns not
+  duplicated into extras, duplicate-header uniquifying, blank header and blank cells skipped, dates/%
+  still parsed, WBS rows null, mixing a WBS depth with a column in one mapping, and the same
+  zone-name-under-two-towers case). Plus a **real-file regression run**: all 9 OPC exports
+  (~50k activities incl. a 20,716-row one) parse, and every record is **byte-identical to the
+  previously committed parser on every pre-existing field** — `extra` is purely additive. The
+  earlier 24/24 mapper suite and 20/20 browser UI suite still pass; script parses.
+- ⚠️ Still **not verified signed-in** — no live click-through of an actual import.
+- Module-local; no migration, no `?v=` bump.
+
+## P6 activity codes imported + a shared location mapper for imports (2026-08-05) — fmlozano
+User: with the location breakdown added (Avesta = Tower › Level › Zone), the OPC/P6 imports don't
+offer it. They couldn't: **neither importer ever wrote `location`**, so every imported activity
+landed with `location = {}` and the Location group-by showed one "— Unassigned —" bucket. The XER
+path was also **dropping P6's activity codes entirely** (it read CALENDAR/PROJWBS/TASK/TASKPRED/
+RSRC/TASKRSRC/UDF but not ACTVTYPE/ACTVCODE/TASKACTV) — which is exactly where a P6 schedule keeps
+Tower/Level/Zone when it isn't in the WBS.
+- **XER activity codes now import.** `ACTVTYPE` → `activity_code_types`, `ACTVCODE` →
+  `activity_code_values`, `TASKACTV` → each activity's `activity_codes`. Worth doing on its own
+  merit: those dictionaries were previously only ever created by hand, so the existing `code:`
+  grouping/filtering columns had nothing to work with on an imported project.
+  ⚠️ **P6 nests code values** (`parent_actv_code_id`) and the app's dictionaries are flat — nesting
+  is dropped, the values stay distinct, which is all grouping needs. ⚠️ P6 allows several values of
+  one type on an activity; the app stores one per type, so **last assignment wins** (same as the
+  grid editor). Resource-scoped types (`AS_Resource`) are skipped — they aren't activity codes.
+  Values label as `SHORT - Description`, collapsing to one when they're equal.
+- **New shared location mapper** — `locSrcsWbs` / `locSrcsCodes` / `locMapUI` / `locMapPlan` /
+  `locEnsureLevels`. A **SOURCE** is anything that can yield a location value for a record and is
+  reduced to `{key, name, get(rec)}` **before the UI sees it**, so adding a source kind (a
+  spreadsheet column next) is a new builder function and nothing else. Records are plain objects
+  too — DB rows in the backfill, parsed import recs in the importer — which is what lets **one**
+  planner serve both.
+- **`openLocBackfill` was rewritten onto it** rather than duplicated: same modal, same live
+  count + sample, but it now also offers **activity codes** as sources, so a project whose codes
+  carry the location no longer has to re-import to use them.
+- **The XER import preview gained a "Location breakdown" step** listing the file's own WBS depths
+  and code types (each with a 3-value sample) mapped onto the location levels. It can **create
+  levels** — a project being imported into for the first time has none — and `location` is stamped
+  onto the payloads so it rides in the **same insert**, no second pass over 40k rows.
+  ⚠️ `locEnsureLevels` returns false if a level can't be created and the caller then skips the
+  mapping: proceeding would write values under placeholder keys that nothing reads.
+- ⚠️ **Code values are matched back by `(type,value)`, not by insert order** — PostgREST does not
+  promise returned rows come back in the order sent, and these are chunked 500 at a time.
+- **Verified 24/24 in Node against the SHIPPED functions** (sliced out of `index.html`, never
+  reimplemented) — resource-scoped types dropped, `SHORT - Description` labelling incl. the equal
+  and missing-short cases, label-less and unknown-value assignments ignored, WBS sources returning
+  null on shallower rows, mixed WBS+code mappings landing together, no mutation of the caller's
+  location map, an already-correct row planning no write, and **the crux case: the same zone name
+  under two towers keeps its own tower**. Plus **20/20 in a real browser** on `locMapUI` (jsdom
+  isn't available and `read()` drives everything): default guesses, name-match beating the depth
+  guess, skipped levels excluded, the add/remove/prefill flow, new rows reading placeholder keys, a
+  nameless new row refused, no page overflow. Script parses; 0 console errors.
+- ⚠️ **Not verified signed-in** — needs a real `.xer` imported into a scratch project. **Excel/OPC
+  is NOT covered yet**: its header detection still discards unmatched columns, so a `Tower`/`Level`/
+  `Zone` column in an xlsx is dropped before the mapper could see it. That's the remaining piece —
+  retain unmatched columns on each record and expose them as a third source kind.
+- Module-local; no migration (reuses `location_levels` / `activity_code_*`), no `?v=` bump.
+
+## SIGNED-IN verification of the location/grouping work — migration run, 1 real bug found (2026-08-04) — fmlozano
+First live run of everything from this batch. **Migration `2026-08-04-activity-location-work-type.sql`
+was executed on the production Supabase** (`planners-app`) and verified by querying the catalog, not
+by trusting the success message: `location_levels` table = 1, `project_schedule.location` = 1,
+`.work_type` = 1, policies = 2, indexes = 2.
+
+- ⚠️ **REAL BUG FOUND AND FIXED — both Location Breakdown menu buttons were dead.**
+  `renderGroupMenu` is module scope but called `closeMenus()`, which is declared in the **init/wiring
+  scope**, so clicking "Location Breakdown…" or "Fill location from the WBS tree…" threw
+  `ReferenceError: closeMenus is not defined` and did nothing. **The Node harness stubs `closeMenus`,
+  so it passed there** — only the real page caught it. Fixed by closing the menu directly.
+  Audited every other helper the new code calls: all module scope; this was the only one.
+- **Duplicate-WBS heal proven end-to-end.** Planted the exact reported bug on the `Test` scratch
+  project (a second projection of `Procurement` + `Execution Phase` → 9 summary rows for 7 nodes,
+  matching the user's screenshot), then loaded the app: the grid came up with **7 rows**, and a
+  follow-up SQL check confirmed the extras were **deleted from the database** (every node back to
+  exactly 1 copy). Not a render filter — a real repair.
+- **Both grouping layouts verified live** on 2 locations × 2 zones × 2 work types:
+  `Location › Zone › Activity` and `Activity › Location › Zone`, 22 rows / 14 group headers, correct
+  nesting and per-group counts, and **"Zone 1" stays a separate group under each location** — the
+  case the whole design turns on. Order persists across a reload (`ps_groupbys_<pid>`).
+- **Inline location editing verified with REAL mouse + keyboard**: double-click a Location cell, type
+  "Tower B", Enter → persisted to the DB and the grid **re-grouped live** (Loc 1 4→3, a new Tower B
+  branch appeared). Value suggestions in the datalist came from the project's existing values.
+- ⚠️ **Method note that cost time: synthetic events do NOT drive this grid editor.** Dispatching
+  `dblclick` + setting `input.value` + `blur()` / a synthetic `KeyboardEvent` opened the editor but
+  never committed, and once left the cell visually blank while the DB was untouched — which looks
+  exactly like a persistence bug and isn't. Use the real `computer` mouse/keyboard path to test it.
+- ⚠️ **Environment:** screenshots of the module time out (stalled compositor, as documented) and the
+  1MB page intermittently wedges CDP; verification is measured DOM + direct Supabase queries. One
+  fresh load showed the correct grouping label with a stale grid, but it did not reproduce across a
+  10-sample timeline (correct from the first frame), so it reads as an automation artifact rather
+  than a defect — worth an eye on a foreground tab.
+- **Left in place:** `Test` project now has 2 location levels (Location, Zone) and 8 demo activities
+  so the feature is inspectable. **`XERTEST` still holds one genuine pre-existing duplicate**
+  (`Execution Phase` ×2) that will self-heal the next time it is opened in the app.
+
+## Builder push: flat by default, structure comes from grouping (2026-08-04) — fmlozano
+Follow-up to the location-as-data work; the user picked this as the real simplification. The push
+used to *materialise* the location breakdown as a Trade › Floor › Zone sub-WBS on every run. Now
+that each activity carries `work_type` + `location`, that branch is redundant for most projects —
+the same structure is a **view** you can flip, and it costs nothing to change your mind.
+- **"Group into a sub-WBS" now defaults OFF.** A flat push adds the activities under the chosen WBS
+  node and nothing else. The reason is stated in the dialog rather than left implicit, and the hint
+  and the WBS-structure editor are mutually exclusive (`syncStructVisibility` toggles both).
+- **Flat push names the activity for the WORK, not the place** — `taskPayload(r, r.act.name)`
+  instead of `"Structural F5 · Z1 — Formworks"`. The location was crammed into the name only because
+  it had nowhere else to live; it now has its own columns and grouping levels. ⚠️ This is also what
+  made grouping-by-name useless before: every instance had a unique name.
+- ⚠️ **A flat push switches the schedule to Activity › Location › Zone** (`setGroupBys`, only when
+  `!grouped` and the project has levels). Without it the planner lands on a WBS-grouped list of a
+  few hundred rows all reading "Formworks"/"Rebar" and reasonably concludes the push failed. The
+  setting is written to the per-project key *before* the `load()`, so it survives the reload.
+- **The sub-WBS path is untouched** and still the right choice when the WBS codes themselves must
+  encode location (client-mandated coding). ⚠️ Another session had meanwhile rebuilt that dialog with
+  a configurable ordered dimension list (`cfg.wbsOrder` / `renderStruct`); this change is deliberately
+  surgical around it — default, hint, naming, post-push grouping — and preserves that editor intact.
+- Verified: 9 static assertions on the shipped file (default flipped, hint wired, naming changed,
+  grouping applied only on the flat path, grouped path + structure editor preserved) plus the
+  33/39/16 suites still green and a clean parse. ⚠️ **Not verified signed-in** — the push writes to a
+  real project, so the end-to-end run is the user's.
+
+## Two bugs from a live Builder run: invisible "Structural", duplicated WBS rows (2026-08-04) — fmlozano
+
+**1. "Structural" was unreadable in the Auto-trace dialog — measured, not guessed.**
+`GCOLOR.ST` was the brand Dark Gray `#2B2C2B`, which is **exactly `--pd-card` in dark mode**, so the
+trade name rendered at a **1.00:1 contrast ratio** — the same colour as its background. The dialog
+literally read *"How many ___ floors must be completed before Architectural can start?"*. MEPF's deep
+blue `#3a6098` was nearly as bad at 2.21:1.
+- Fix: a `gc(trade)` accessor with dark-theme substitutes (`ST #a9aeb4`, `MEPF #7d9fd6`) — **6.28:1
+  and 5.21:1** on the dark card, with the light-theme colours untouched (both still ≥3:1 on white).
+  All **17** read sites now go through `gc()`; never read `GCOLOR` directly.
+- This affected far more than the dialog: the tower trade headings, zone tags, trade chips, Gantt
+  bars and the per-zone duration bars all used the same invisible colour on dark.
+- ⚠️ Colours are baked into `innerHTML` at render time, so a *live* theme toggle leaves stale colours
+  until the next builder re-render (step change / reopen). Acceptable; noted rather than hidden.
+- ⚠️ **Self-inflicted trap worth remembering:** the bulk regex that rewrote the call sites used
+  `GCOLOR\[([^\]]+)\]`, which stops at the FIRST `]` — so the nested `GCOLOR[p[0]]` became the
+  syntax error `gc(p[0)]`, and it landed on the exact line the user reported. Caught by the parse
+  check, not by eye. Don't bulk-rewrite bracket expressions without re-parsing.
+
+**2. Duplicated WBS rows after a Builder push + Clear (screenshot: 9 schedule rows, 7 nodes).**
+Root cause found by reading, then proven by test: **`ensureWbsSkeleton()` discarded the summary rows
+it inserted** — `await _insertWbsSummary(...)` with the result thrown away, so the freshly created
+rows never entered the in-memory `rows`. The `_wbsEnsureSummaries()` that runs immediately after in
+`load()` then saw every skeleton node as un-projected and inserted a **second** row for it.
+- Fix: push the inserted row into `rows` (the one-line root cause).
+- **Self-heal**, so the user's already-broken project repairs itself on next load:
+  `_wbsEnsureSummaries()` now removes duplicate projections first — one node must have exactly ONE
+  summary row; it keeps the **earliest** and deletes the rest, then rebuilds (the deleted rows are
+  still in `_sorted` and the roll-up maps until a re-sort) and reports what it removed.
+  ⚠️ Safe because activities reference a WBS by dotted **code + `wbs_node_id`**, never by the summary
+  row's id. ⚠️ Legacy rows with no `wbs_node_id` are deliberately left alone (they're the un-adopted
+  import case that "Adopt existing WBS" owns).
+- **Re-entrancy guard** (`_seedingSkeleton`): seeding is fired from `load()`, and `load()` overlaps
+  on a project switch or the reload after Clear — two runs both seeing an empty `WBS_NODES` would
+  each seed a whole skeleton. `ensureWbsSkeleton` is now a guarded wrapper around `_seedSkeleton`.
+
+**Verified: 16/16 in Node against the shipped `_wbsEnsureSummaries`** — healthy project untouched,
+the reported duplicate case deleting exactly the extras while keeping the first, no re-insert after
+cleaning, a mixed dedupe-and-restore pass, legacy unlinked rows never touched, plus the WCAG contrast
+maths above. Existing 33/33 grouping + 39/39 keyboard suites still green; script parses.
+⚠️ **Not verified signed-in** — needs a real Builder push + Clear cycle to confirm end-to-end.
+
+## Location + Work Type as activity DATA — grouping order is now interchangeable (2026-08-04) — fmlozano
+User: activities are grouped Location > Zone > Activity, and that should be flippable to
+**Activity > Location > Zone**. Root problem: location and zone existed **only as WBS tree
+structure**, so the tree was the one and only grouping. Fix = make them activity data and let the
+grid nest by any ordered set of levels. **The WBS tree is not modified** (user's call): grouping is
+a view, so codes, cost roll-ups, EVM, exports and the document links all keep working.
+
+**Migration `../../migrations/2026-08-04-activity-location-work-type.sql` (USER MUST RUN)** — a
+`location_levels` table (ordered, per-project) + `project_schedule.location jsonb` +
+`project_schedule.work_type`. Tolerant everywhere: no table → no levels → the feature is simply
+absent and nothing else changes.
+
+- **Location levels are per-project and free-form** (user chose "generic, configurable levels" over
+  a fixed Location+Zone pair) — a tower, a viaduct and a plant don't share a vocabulary.
+  `location` is a jsonb map keyed by level id, **deliberately the same shape as `activity_codes`**,
+  so the existing dynamic-column / filter machinery applies to it unchanged.
+  ⚠️ Values are plain text per level, **not a node tree**. "Z1" under two locations is the same
+  string; they stay separate because grouping NESTS Zone under Location. Grouping by Zone alone
+  deliberately merges them ("everything in Z1") — verified as an explicit test case.
+- **`buildNodes()` generalised from single-level to N-level grouping.** `groupBy` (a string) became
+  **`groupBys` (an ordered list)**; Location>Zone>Activity and Activity>Location>Zone are now the
+  same engine with the list reversed. ⚠️ **'wbs' is a hierarchy, not a flat key** — alone it means
+  the plain WBS tree, and as the LAST entry it means "show each group's WBS path". It is forced out
+  of the middle by `normalizeGroupBys()`, which also drops levels/codes that no longer exist.
+- ⚠️ **Legacy saved views are migrated, not reinterpreted.** A stored `groupBy:'status'` used to
+  render each group's WBS path underneath; it loads as `['status','wbs']` so the user sees exactly
+  what they saved. Plain `['status']` now means "group headers → activities", which is new.
+- **Grouping picker** (replaces the `<select>`): presets for the two layouts a planner actually
+  flips between, plus an ordered add/remove/▲▼ list. Persisted **per project** (`ps_groupbys_<pid>`).
+- **Editable in the grid**: Work Type + one column per level, inline-editable via a new `xcol` type
+  in `beginEdit` (with a datalist of values already used on the project — a typo silently creates a
+  second group). Location columns default to VISIBLE (you created the level deliberately); Work Type
+  stays opt-in like codes/UDFs so it doesn't widen every existing project's grid.
+- **The Schedule Builder now stamps what it already knew.** It computes each generated activity's
+  work type and floor/zone/unit and then **threw it away**, baking it into the activity NAME and the
+  WBS nesting. `taskPayload` now carries `work_type` + `location`; `ensureLocLevels()` creates
+  Location/Zone(/Unit) on first push if the project has none.
+- **Backfill for existing schedules** (`openLocBackfill`): reads each activity's WBS ancestry and
+  copies the names onto the new fields. ⚠️ The **depth→level mapping is shown and editable, not
+  guessed** — a Phase>Location>Zone tree maps differently from Location>Zone — with a live count and
+  a sample of what will change, an overwrite toggle, and a local apply before the batched write.
+- Search now also matches work type + every location value.
+
+**Verified: 33/33 in Node against the SHIPPED `buildNodes`** (extracted, not reimplemented) — the
+WBS path unchanged, Opt 1 and Opt 2 shapes/depths/ancestry, order-swap keeping all activities, the
+same-zone-name-under-two-locations case, ancestry chains being prefix-ordered and every ancestor
+existing (collapse depends on it), missing values bucketing + sorting last, work-type falling back
+to the activity name, filters pruning empty groups, `normalizeGroupBys` invariants, and group bars
+rolling up child dates. Plus **in-browser** against the real stylesheet: the picker renders its 4
+sections, highlights the active preset, disables ▲/▼ at the ends, actually reorders on click, 16×16
+badges, 305px menu, no overflow. Existing 39/39 keyboard suite still green; script parses.
+⚠️ **Not verified signed-in** — the migration hasn't been run, so no live click-through of the
+backfill, the builder push, or a real 17k-row regroup. Screenshots impossible here.
+
+## WBS Manager: the keyboard now works on a SELECTED ROW, not just a focused input (2026-08-04) — fmlozano
+Follow-up to the build-speed work below. Every outliner key was bound to `keydown` on the row's
+**name `<input>`**, so the moment focus left that input — click a row, arrow onto one, or select a
+locked/synced heading that has no input at all — the keyboard was dead. New **document-level handler**
+(next to the grid's, same scoping shape: bails while a field has focus, while any overlay is visible,
+or when `#ps-view-wbs` isn't the visible tab) driving the selected row:
+- **↑ ↓** move the selection · **Alt+↑↓** reorder among siblings · **Home/End** first/last.
+- **← →** collapse / expand — and, once open, **→** steps into the first child while **←** steps out
+  to the parent. Standard tree behaviour, and the reason a row selection is now genuinely navigable.
+- **Enter / F2** enters edit mode on the name (a second Enter, now inside the input, adds the next
+  WBS — so the two layers chain); **Shift+Enter** sub-WBS; **Insert** sibling after; **Tab /
+  Shift+Tab** indent/outdent; **Delete** delete; **Esc** deselect.
+- **No selection?** The first ↑/↓ lands on the top row, so the keyboard is always a way in rather
+  than needing a click first. A selection filtered out by the search box recovers the same way.
+- **Read-only** (`__viewOnly` / `__archived`): navigation and collapse/expand still work, every
+  mutating key is inert.
+
+⚠️ **The non-obvious bug this had to solve: `document.activeElement`.** The handler must bail when a
+field has focus (otherwise it would hijack the search box's own arrow keys), but clicking a row did
+**not** move focus — rows weren't focusable, so the search box kept it and the handler bailed on
+every keystroke. Rows now carry `tabindex="-1"` and are explicitly `.focus()`ed on select, which both
+fixes that and gives the tree a real focus target. `_wbsGoto(id, edit)` focuses the **row** when
+navigating and the **input** when editing. Verified in-browser: focus goes `INPUT#ps-wbs-search` →
+`DIV.ps-wbs-row`, so the guard passes. `focus({preventScroll:true})` everywhere — the function does
+its own scroll-into-view and the browser's would fight it.
+
+⚠️ **`_wbsNeighbourId` gained an `editableOnly` flag.** Name-editing navigation must *skip* locked /
+synced rows (they render fixed text, not an input), but row *selection* must be able to land on them.
+Both existing callers were updated to pass `true`; the new handler passes nothing.
+
+⚠️ **Tab is swallowed while a row is selected** (it indents, matching the in-input behaviour), so it
+no longer moves browser focus out of the tree. Escape clears the selection and hands Tab back.
+
+**Verified: 39/39 in Node against the SHIPPED handler** (extracted from `index.html`, not
+reimplemented) — all three focus guards, overlay guard, hidden-view guard, every key's routing,
+selection landing on a synced row, end-of-list no-ops, the no-selection and filtered-out-selection
+recovery paths, expand-then-step-into vs collapse-then-step-out, locked/synced Enter warning instead
+of editing, and the full read-only matrix (navigation allowed, all 5 mutating keys inert).
+**In-browser** against the real stylesheet + real `_wbsRowHTML`: `tabindex="-1"` on every row, the
+search-box→row focus handover, `outline:none` on focus, no scroll jump, legend text, no page
+h-scroll. ⚠️ **Not verified signed-in.** Screenshots remain impossible here (stalled compositor).
+Module-local, no migration, no `?v=` bump.
+
+## WBS Manager: make it fast to BUILD a WBS (2026-08-04) — fmlozano
+The Manager was good at *editing* an existing tree and slow at *creating* one: every node cost a
+modal round-trip (`wbsAddChild` → type a name → Save → re-render), and the only bulk paths were
+"Adopt existing WBS" (import-only) and "Add WBS from Project", which was buried in the **grid's**
+right-click menu and unreachable from the WBS view. Four ways in, aimed at how a planner actually
+starts a WBS:
+
+- **Type-to-build outliner (the main one).** `＋`/"Add WBS" now inserts a **blank node inline** and
+  puts the cursor in it (`wbsQuickAdd` + `_wbsFocusName`) — no modal. From there the keyboard does
+  the rest: **Enter** = next WBS at the same level, **Shift+Enter** = sub-WBS, **Tab/Shift+Tab** =
+  indent/outdent, **Alt+↑↓** = move among siblings, **↑↓** = move the cursor, **Esc** = revert the
+  field. **Enter on a still-blank name deletes that node** (`_wbsDeleteBlank`, guarded to leaf +
+  0 activities + not locked) — the standard outliner way to undo an over-shoot. A persistent legend
+  under the card header spells the keys out; without it they're invisible.
+- **Paste an outline** (`openWbsOutline` + `parseWbsOutline`): paste from Excel/Word/notes, get a
+  live preview of the tree with the codes it will receive, then build it in one go. Levels come from
+  **dotted numbering** (`1.2.3 Name`) when the paste is demonstrably hierarchically numbered, else
+  from **indentation rank** (tabs or any consistent spacing). Bullets are stripped; a paste can never
+  skip a level. Optional "keep the pasted numbers as custom codes".
+- **Duplicate a branch** (`wbsDuplicate`), row action `⧉`: copies a node + its whole subtree as
+  siblings, N times, with a `#` placeholder in the name → "Level #" × 20 gives Level 1…Level 20.
+  This is the typical-floor / tower / building case that otherwise means retyping the same subtree.
+- **"From project…" surfaced** in the WBS toolbar (`wbsFromProject` already existed but was only
+  reachable from the grid's context menu), and the empty state now offers the three starting points
+  instead of a sentence.
+
+**Behaviour notes / traps:**
+- ⚠️ **`_wbsRenderWindow` now skips a repaint when the same slice is already painted.** Scrolling a
+  row into view to focus its input fires `scroll`, whose rAF repaint would replace the window's
+  `innerHTML` and **destroy the input mid-typing**. `renderWbsManager` always empties `.ps-wbs-win`
+  when it rebuilds the skeleton, so a genuine re-render still paints. Don't "simplify" the guard away.
+- ⚠️ **`_wbsNormalizeAndPersist(forceIds)` — `forceIds` is load-bearing.** It used to persist
+  `parent_id`+`sort_order` for **every** node on every move (200 round-trips on an 8.6k-node tree);
+  it now persists only the diff. But normalization can land a re-parented node on the **same integer
+  `sort_order` it already had**, so the diff alone would silently skip its `parent_id` write —
+  callers that re-parent MUST pass their moved ids. Verified in Node: a re-parent that keeps
+  sort_order 0 is still persisted.
+- **Renames during keyboard nav don't run the full `_wbsCommit`** (`_wbsCommitName`): a rename can't
+  change any code, so the re-number/re-sync pass isn't needed and would steal focus. A `wbsDone` flag
+  on the input stops the browser's change-on-blur firing a second (full) rename.
+- ⚠️ **Batch builders don't rely on PostgREST insert ordering.** `_wbsInsertNodes` stashes a unique
+  throwaway token in `code` (inert — `code_custom` stays false, so `computeWbsCodes` ignores it) and
+  maps created ids back by token; `_wbsCommit` overwrites `code` with the real dotted code straight
+  after. Both builders insert **one depth level per round-trip** (the `wbsAdopt` pattern).
+- Indent now refuses to move a node under a `source_kind` (synced) parent and un-collapses the new
+  parent, so an indented node can't vanish into a collapsed branch.
+- New nodes are created with a **blank name** (placeholder-guided) rather than "New WBS", which is
+  what makes Enter-on-blank a safe delete.
+
+**Verified.** 19/19 in Node on the **shipped** `parseWbsOutline`/`_wbsOutlineCodes` (tab-indented,
+dotted-code with no indentation at all, bullets + blank lines, uneven indent widths, first-line
+over-indent, empty input, and the preview codes both at top level and under an existing parent).
+⚠️ **Two real defects came out of those tests, not out of reading the code:** an ordinary name like
+**"2 Storey Annex"** silently lost its "2", and "100 Preliminaries" was split into code+name — both
+because the leading number was stripped before the mode was decided. Fixed by only splitting a code
+in hierarchical-numbering mode. Plus 10/10 in Node on `_wbsNormalizeAndPersist` (re-parent at equal
+sort_order, mid-list insert via the 0.5 slot, no-op writes nothing, duplicate-copy ordering).
+**In-browser** against the module's real `<style>` + real `_wbsRowHTML`: 34px rows, locked headings
+render fixed text with only ＋Act/＋, `source_kind` rows show the synced badge and **zero** buttons,
+editable rows carry all 9 (incl. the new ⧉), no row or page h-scroll, name field 668px at 1280px
+(the 9th button costs nothing), hint text correct, 0 console errors.
+⚠️ **Not verified signed-in** — no live click-through of the actual insert/duplicate/paste writes.
+Module-local, **no migration**, no `?v=` bump.
+
+## Auto-generated WBS skeleton (2026-08-03) — fmlozano
+Every project's WBS Manager now auto-seeds a **fixed 7-node outline** on first load (when
+`WBS_NODES` is empty for that project, `ensureWbsSkeleton()` in `load()`'s resource-loading step):
+- **L1** Milestones · Initiation Phase · Planning Phase · Execution Phase
+- **L2** (under Planning Phase) Project Execution Plan · **Design Development** · **Procurement**
+
+**Two new `wbs_nodes` columns** (migration `migrations/2026-08-03-wbs-skeleton.sql`, **USER MUST
+RUN** — tolerant/no-op until then, just skips seeding):
+- `is_locked` — every seeded node; blocks rename/recode/move/delete (`wbsRename`/`wbsMove`/
+  `wbsEditCode`/`wbsDelete` all guard on it and toast). Add-activity/Add-child stay allowed so the
+  L1 headings + Project Execution Plan remain normal, usable WBS nodes.
+- `source_kind` — only **Design Development** (`'design_development'`) and **Procurement**
+  (`'procurement'`): blocks **+Add activity** and **+Add child WBS** entirely (their data is meant to
+  come from another module, not manual entry) and shows a "🔒 synced" badge instead of the usual
+  action buttons in the WBS Manager row.
+- `SOURCE_KIND_LABEL` names the intended source in every toast/tooltip: Design Development →
+  "Drawing Register + Material Submittal Log"; Procurement → "the Procurement (WPM) app" (the
+  existing `wpm_work_packages` mirror already used by Cash Flow — see [[cashflow-module-model]]).
+- **Deliberately NOT built this pass:** the actual data pipe populating those two nodes' rollups
+  from `drawing_register`/`material_submittal`/`wpm_work_packages` — this change only builds the
+  skeleton + the "can't add activities here" guardrails. A follow-up can add a rollup summary (counts/
+  status) read into each locked node's row, the same pattern as the Documents tab or the WPM mirror.
+- Existing projects (already-nonempty `WBS_NODES`) are **untouched** — the skeleton only seeds a
+  brand-new tree, it never merges into or reshapes an existing WBS.
+- Verified: inline JS passes `node --check`. **Not browser-verified** (auth wall) — needs a signed-in
+  check that a new/scratch project seeds the 7 nodes correctly and the locked/synced guards actually
+  block the UI actions.
+
+## Fix: "Critical path only" filter had zero effect (2026-07-30) — fmlozano
+User asked for critical-path activities to be isolated (hide the rest, with an easy way to show them
+again) — this feature **already existed** as Filter → Schedule → "Critical path only" (`filters.crit`,
+added 2026-07-14), but testing it live on **Bauhinia (BAU101)** found it did **nothing**: toggling the
+checkbox on/off left the grid showing all 246 activities regardless.
+- **Root cause: `anyFilter()` never checked `filters.crit`.** `buildNodes()`'s WBS-mode branch only
+  runs `rowMatches` filtering when `anyFilter()` returns true; that gate function ORs together search/
+  behind/look/status/type/codes/col/adv but **omitted `filters.crit` entirely**, so toggling Critical-
+  path-only **alone** (no other filter active) left `anyFilter()` false and the whole filter pass never
+  ran — `rowMatches`'s own `if (filters.crit && !isWbs(r) && !r._critical) return false;` line was
+  correct and simply never got invoked. Same bug hit the non-WBS grouped-mode branch (same `anyFilter()`
+  gate). Confirmed via direct DOM inspection on the live site: checkbox toggled to `checked=true`,
+  `filters.crit` verified true, grid still rendered all 246 rows (Cabinets Handles/Solid Wood Riser
+  Detail/etc., all with 100+ day float, still visible) — not a UI-interaction miss, a real logic gap.
+- **Fix:** one-token addition — `anyFilter()` now includes `filters.crit` in its OR chain.
+- **Verified live on the deployed site** (BAU101, post-deploy hard-reload): checking "Critical path
+  only" narrowed 246 → 4 critical activities + their WBS ancestors (Landscape/Bath House/Fence PC -
+  Modularize under Designs, ACCU/Chiller under Construction → Mechanical — matching the Critical Path
+  Report exactly); combined with the existing **"Hide empty groups"** toggle, childless ancestor
+  branches (Milestones, Procurement) drop out too, leaving just the critical chain with real WBS
+  context. Unchecking the filter instantly restores all 246 — the "show again" half the user asked
+  for was already there, just inert until this fix. Module-local, no migration, no `?v=` bump.
+
+## Mobile Gantt view (read-only, touch-scroll) (2026-07-26) — fmlozano
+The phone view (`#ps-mobile`, <700px) was a card list only; added a **List | Gantt** segmented toggle
+(persisted `ps_mview`). `renderMobile()` now dispatches to `renderMobileList(acts)` (the old cards) or
+**`renderMobileGanttBody(nodes)`** — a self-contained compact Gantt (NOT the desktop virtualized pane,
+which stays hidden on phones):
+- Same `displayList()` data (respects search/filters/grouping/collapse), capped at `PS_M_CAP` (300) rows.
+- Frozen sticky-left label column (`position:sticky;left:0`) + horizontally-scrollable timeline; month
+  header (sticky-top); task bars with red %-fill, WBS-summary roll-up bars (`wbsSpan`), milestone
+  diamonds (`isFinishMile` anchors on finish), a red data-date line, critical outline.
+- Auto-fit scale: `dayw = clamp(1600/totalDays, 1.2, 6)` so the timeline is ~1600px then scrolls.
+- Verified: `node --check`; geometry harness confirms month-cell widths **sum exactly to the timeline
+  width** (header aligns with bars, diff 0), 1-day bars get a 3px min, data-date maps in range. Read-only
+  (no edit/drag). **NOT browser-verified at 375px** (auth wall) — worth an eyeball on a real phone. CSS
+  `.ps-mg-*` in the `@media (max-width:700px)` block; module-local, no `?v=` bump.
+
+## Live collaboration — signed-in re-verification (2026-07-27) — fmlozano
+Re-verified the PDCollab wiring on the deployed site, signed in, with a simulated second user
+(independent Supabase client on the same channel). **Migration `2026-07-26-realtime-collab-project-schedule.sql`
+is confirmed APPLIED.**
+- ✅ **Presence** — GPR101 + XERTEST both show the topbar avatars; a 2nd member (Test B) appeared live.
+- ✅ **Cell cursor** — Test B broadcasting `sel:{rowId,field:'activity_name'}` painted that exact grid
+  cell with B's colour + "TB" flag (`paintRemoteCollab`), on the real row `92fa6007…`.
+- ✅ **Live-value stream — infrastructure proven.** An isolated probe channel (light page, fresh client)
+  subscribing to `postgres_changes` on `project_schedule` returned **SUBSCRIBED** and **received the
+  INSERT event** for a test row (filter `project_id=eq.XERTEST`). So the table IS in the
+  `supabase_realtime` publication, RLS/JWT allow the stream, and events deliver.
+- ⚠️ **The module's own live-apply could NOT be confirmed end-to-end in-session.** On the heavy ~690KB
+  Project Schedule page, while Chrome sits **behind** the Claude app (backgrounded), the tab throttles
+  hard: the module's realtime channel goes to **CHANNEL_ERROR** (heartbeat starved) and CDP `evaluate`
+  calls that `await` across a rAF-gated render **time out at 45s**. A test insert therefore did not visibly
+  patch the grid *in that throttled state*. This is the **same documented automation artifact** as the
+  rAF/screenshot caveats above — NOT a product defect: the probe proves the stream delivers, and the
+  lightweight page (progress-photos) streamed fine in the same session. **Needs a real foreground
+  two-session test** to watch the grid patch itself (open two browsers on the same project, edit in one).
+- **Two-tab foreground attempt (2026-07-27, same session) — blocked by the environment, not the code.**
+  Opened Project Schedule on **XERTEST** in two Chrome tabs; **both channels reported `joined`** (the
+  lighter page kept its sockets alive, unlike the 25k GPR101 page). Fired a DB insert from tab A and
+  sync-read tab B's grid — but tab B showed **0 painted rows**: its grid render is **rAF-gated**, and a
+  Chrome tab that is not the OS-foreground window (Chrome sits behind the Claude app during automation)
+  throttles rAF to a standstill, so the observer DOM never repaints even though the realtime event is
+  delivered. Async fetch callbacks on the backgrounded heavy page also stall. **Conclusion: the visual
+  grid-patch cannot be observed from automation** — it requires two real on-screen browser windows.
+  Everything that does not need a live repaint is green (migration applied, stream delivers, presence,
+  cursor) and the apply→rebuild→render logic is Node-harness-verified. Test insert cleaned up (0 leftover).
+- **Data integrity:** all writes were on the XERTEST sandbox or a single restored GPR101 field
+  (`percent_complete` 0→42→0, confirmed back to 0); every test row deleted (0 leftover, exact
+  `activity_id` match). Nothing left in any real project.
+- The `collab.js` **buildMembers sel-ref fix** (`?v=20260727b`, prior turn) applies here too — the avatar
+  editing dot no longer masked by a stale presence ref when a user has multiple tabs.
+
+## UI batch: collab cursor on all columns + keyboard, data-date line, network, L1/L2 IDs (2026-07-27) — fmlozano
+Verified live on **Test Project** (id `Test`, 80 activities) throughout.
+- **Collab cursor on every column, not just Activity Name.** `_setCellFromClick` broadcast the field via
+  the stale `_CELL_META[ci]` (legacy built-in column order, out of sync with the live grid), so most
+  columns sent the wrong field or null (null → painted the name cell). Now it reads the **clicked cell's
+  own `data-field`**. Also added `data-field="status"` to the status cell (both pill + dropdown branches)
+  so the cursor lands there too.
+- **Cursor follows keyboard navigation.** New `broadcastActiveCell()` (reads the painted
+  `.ps-cell-active` `data-field`) called from `moveRowSel` + `moveCell`, so arrow / Tab / Enter movement
+  broadcasts, not only clicks.
+- **Data-date line: label removed + drawn above the row highlight.** Removed the Gantt "Data date …"
+  text label and the topbar "Data Date:" badge. The line lived in the static layer (z1) while the
+  highlight band (`.ps-gantt-selband`) is in the bars layer (z3) → band drew over it ("broken"). Moved
+  the line to a **top-level child of `.ps-tl`** (sibling of both layers) so its z6 wins — verified with
+  `elementFromPoint` that the line is the topmost element over a highlighted row.
+- **Activity Network never blank.** When no activity has links it showed only a hint. Now it renders
+  **every activity as a node** (edgeless network) with a note; once links exist, behaviour is unchanged
+  (linked set by default, toggle for the rest). Verified: 80 nodes render on the link-less Test Project.
+- **Grid-only / Gantt-only confirmed working** (not a code change) — grid-only hides the gantt + grid
+  full-width; gantt-only narrows the grid to 300px (OPC-style, intentional) + gantt fills. Both render
+  visible content live; the only broken-looking view was the Network empty state (fixed above).
+- **Hide Activity ID (WBS code) on WBS L1 + L2** (depth 0/1) in the grid — cleaner summary rows; L3+
+  unchanged. Verified: Structure/F1/F2 blank, Z1/Z2 show `1.1.1`/`1.1.2`.
+- Module-local (index.html inline), no migration, no `?v=` (index.html isn't cache-busted — hard-refresh
+  to pick up).
+
+## Offline editing + sync — Phase 2 (2026-07-26) — fmlozano
+Wired the shared **PDSync** outbox (`assets/js/offline.js`): inline-edit the schedule offline, sync on
+reconnect.
+- **`persist()`** routes its `update` through `PDSync.write` (falls back to a direct write if PDSync is
+  absent). The local apply (`r[k]=patch[k]`), `_myWrites` echo-stamp, undo, audit and `rebuild()` all run
+  as before — a queued offline write returns ok and flows through the same optimistic path.
+- **Read-offline** already existed (the IndexedDB stale-while-revalidate cache + `_cacheSaveSoon`, so an
+  offline edit persists to the read cache too).
+- **Field-level LWW**; online behaviour byte-identical to before. Composes with Phase-1 Realtime: a
+  flushed offline edit streams to other viewers like any save.
+- ⚠️ **Scope:** offline covers the **inline-edit `persist()` path only.** Bulk paths (import / global
+  change / clear / leveling / bulk progress) and activity **delete/insert** stay **online-only** — not
+  field scenarios, and queueing 40k offline rows is impractical. No migration. Verified: `node --check` +
+  the shared outbox Node harness. NOT browser-verified (needs a real offline→online cycle). Assets: new
+  `offline.js?v=20260726d`.
+
+## Live collaboration — presence + live cell editing (2026-07-26) — fmlozano
+Wired the shared **PDCollab** layer (`assets/js/collab.js`, Supabase Realtime) into the schedule grid —
+same pattern proven on Drawing Register, plus two schedule-specific hardenings.
+- **Wiring:** `maybeJoinCollab()` (re)joins a per-project channel in `load()` (guarded on pid change;
+  `leaveCollab()` when no project); `key = project_schedule:<pid>`. `renderCollabPresence` → `#ps-presence`
+  avatars. `broadcastCollabSel` fires from `_setCellFromClick` (column index → field via `_CELL_META`)
+  and on `beginEdit`/commit. `paintRemoteCollab()` outlines each remote user's `.ps-grid-row[data-rowid]
+  .ps-cell[data-field]` cell — called from the end of `highlightCells()`, so it re-applies after every
+  virtualized `renderWindow` repaint. Only paints on the schedule tab (only it has cells).
+- **Hardening 1 — coalesced remote changes + storm guard.** `_onRemoteChange` buffers postgres_changes
+  and `_flushCollab` (180ms) applies the batch in ONE `rebuild()`+`renderAll()`. A **bulk storm**
+  (import/global-change/clear fans out thousands of events) past **300** buffered → ONE `load()` reload
+  instead of per-row patching. Essential: this is a 40k-row virtualized grid, not a small register.
+- **Hardening 2 — echo suppression.** `persist()` stamps `_myWrites[id]`; `_applyRemoteRow` skips the
+  Realtime echo of my own write for 4s (my optimistic local state is already correct), so an inline edit
+  doesn't cause a redundant rebuild+render ~180ms later. Remote changes are also **deferred while an
+  inline editor is open** (`_editing`).
+- **Conflict model:** last-write-wins per cell (grid, not rich text); different fields of one row both
+  win, same-cell clashes converge via each write's echo.
+- **Migration `../../migrations/2026-07-26-realtime-collab-project-schedule.sql` (USER MUST RUN)** — adds
+  `project_schedule` to `supabase_realtime` + `replica identity full`. Presence/cursors work WITHOUT it;
+  only the live-value stream needs it.
+- Verified: `node --check` + a Node harness for the coalesce/storm/echo/delete/defer logic (1 render for
+  a 3-change burst, 0 for my own echo, 1 reload for 400 events, deferred-then-applied while editing).
+  **NOT browser-verified** — needs two signed-in sessions. Assets `collab.js?v=20260726b`.
+
+## Documents tab — schedule↔document link, phase 4 (2026-07-26) — fmlozano
+Reciprocal of the Drawing Register / Material Submittal "Need-by" work: the schedule side of the
+document connection. A drawing / submittal gates an activity's start, so each activity can now show
+its enabling documents + whether they're approved in time.
+- **New "Documents" detail tab** (`detDocs`/`wireDocs`, between Expenses and Relationships): lists every
+  Drawing Register + Material Submittal row whose `schedule_activity_id` = this activity's `activity_id`,
+  with type (DWG/MAT), name/desc, approval status (✓ when approved), lead days, and an **"Approve by"**
+  date (need-by − lead). Header shows the activity's need-by (= its start) + a **readiness chip**.
+- **`docReadiness(r)`** → ready / pending / at-risk (≤14d to need-by) / late (need-by passed) / null
+  (nothing linked). Approved = drawing `Approved[ w/(o) comments]`, submittal `Approved[ w/ Comments]`
+  (mirrors each register's own rule).
+- **Lazy load** in `loadResourcesAssignments`: `DOC_DRAWINGS`/`DOC_SUBMITTALS` fetched with an explicit
+  column list filtered to `schedule_activity_id NOT NULL` (only the linked subset — a handful/project,
+  so one read, no pagination). **Tolerant** — if `migrations/2026-07-25-schedule-document-links.sql`
+  hasn't run the column is absent, the query errors, caches stay empty, and the tab shows a hint.
+- **Read-only** — linking is done from the register side (each document points at the activity it gates).
+- Verified: inline script parses (`new Function`, 1 block, 0 fail). **Not browser-verified** (auth wall +
+  needs a real project with linked documents + the migration run).
+- **Deferred (deliberate):** a schedule-GRID document-readiness column + filter. The per-activity chip
+  already surfaces the risk; a grid column across the virtualized 3-branch render (cell-count alignment +
+  nth-child hide) is the risky change in this ~690KB concurrently-edited file — same call the register
+  side made about grid changes. No `?v=` bump (module-local, no shared asset).
+
+## Cell-nav horizontal autoscroll fixed (cells hidden behind frozen columns) (2026-07-22) — fmlozano
+User: Left/Right/Tab cell navigation didn't autoscroll the columns correctly. Root cause in
+`scrollCellVisible(r, c)`: the leading **#, Activity ID, Activity Name** columns are `position:sticky`
+and float OVER the left edge of the scroll viewport, so a non-frozen cell can be scrolled *into* the
+viewport yet stay **hidden behind those sticky columns**. The old check `if (left < sc.scrollLeft)`
+ignored the frozen overlay entirely, so it never scrolled to uncover a left-obscured cell — and it
+also scrolled pointlessly when the target itself was a frozen column.
+- **Fix:** treat the frozen columns' combined width as the true left edge — reveal a left-obscured
+  cell to `left − frozen − 4` (just past them), keep the right-edge case, and **no-op for frozen target
+  columns** (they're always on-screen). `frozen` is summed from the row's first 3 children's live
+  `offsetWidth` (hidden columns measure 0, so it's correct when columns are hidden/reordered off).
+- **Verified live** (deployed, GPR101): deterministic replay of the exact math against real cell
+  geometry — **all 11 visible columns are revealed from every scroll position (0 failures)** where the
+  OLD algorithm failed all 21 in the tucked-behind-frozen case; the "failures" in a first pass were all
+  hidden (width-0) cost columns, not real. End-to-end with real key events: ArrowRight scrolled 0→274
+  (active cell revealed past the frozen columns), ArrowLeft scrolled 274→0 (active cell walked back,
+  always visible). Module-local, no `?v=` bump.
+
+## Gantt timeline no longer starts years before the schedule (2026-07-22) — fmlozano
+User: the Gantt showed bars/timeline "all the way from 2022" though the schedule starts 2025.
+**Not stray data** — verified live that the project's dates are clean (GPR101: all dates 2025–2029,
+zero rows before 2024). Root cause: `range()` padded the scrollable timeline **2 YEARS before the
+earliest activity and 3 after the latest** (`_min − 730` / `_max + 1095` days — the old "deep past/
+future scroll" feature), and the Gantt opens at `scrollLeft 0`, so a 2025 schedule opened showing
+empty years back to ~2023 (2024 for a project whose earliest start is late-2025; ~2022 for one
+starting 2024). Confirmed live: GPR101's header spanned **2024–2032** for work that's really 2026–2027.
+- **Fix:** padding tightened to a small margin — `_min − 31` days (≈1 month before) / `_max + 92`
+  (≈1 quarter after; `_max` already extends +2 months). The pane still scrolls horizontally.
+- **Verified live** (deployed): GPR101's header went **2024–2032 → 2026–2029**, opening at Nov/Dec 2025
+  (the project starts Dec 22 2025) with summary bars at the left edge, no empty leading years; no
+  console errors. Module-local, no `?v=` bump.
+
+## One-call schedule_rows RPC — fast cold load (2026-07-22) — fmlozano
+Follow-up to the cache-first work: cache makes *reopen* instant, but *cold first-open* was still ~8
+sequential keyset round-trips (PostgREST caps table reads at 1000 rows). New SQL function
+**`schedule_rows(p_project_id text) returns jsonb`** (migration
+**`migrations/2026-07-22-schedule-rows-rpc.sql` — USER MUST RUN**) returns ALL of a project's rows as
+a **single jsonb array in ONE round-trip** — a scalar jsonb return isn't subject to the max-rows cap.
+`jsonb_agg(to_jsonb(t))` auto-includes every column (future-proof). **`security invoker`** so the
+caller's RLS on `project_schedule` still applies (⚠️ never make it `security definer` — that would leak
+cross-project rows). `grant execute … to authenticated`. Idempotent (create-or-replace + grant); lives
+only in the migration, matching the sibling `schedule_scurve_agg` precedent (not in setup/schema).
+- **Client:** `load()` calls `sb().rpc('schedule_rows', {p_project_id})` **first**; if it errors / isn't
+  deployed, it **falls back to the keyset pagination loop** — so the app works before AND after the
+  migration. Composes with the IndexedDB cache (RPC = fast cold/first open; cache = instant reopen).
+- **Verified live** (deployed, migration NOT yet run): the RPC endpoint returns **404**, the client
+  falls back to keyset, and a **17,122-activity project (Naga) loaded correctly** with no regression.
+  The RPC *speedup* itself can't be verified until the migration runs (DDL needs DB privileges the
+  in-browser anon client doesn't have) — after running it, the ~8 round-trips collapse to 1 automatically.
+
+## Cache-first load — instant reopen (IndexedDB stale-while-revalidate) (2026-07-22) — fmlozano
+User: "eliminate the loading time when the schedule is opened." **Measured the real bottleneck live**
+first: Avesta (6,017 activities) cold-loaded in **~8.9s across ~8 sequential paginated round-trips** —
+the wait is **round-trip latency × page count, NOT bytes**. So column-trimming ("lean columns") was
+**deliberately not done** — it wouldn't cut the round-trips and risks silently dropping fields; the
+real cold-load lever is a one-call server RPC (follow-up). Instead made **reopen instant**:
+- **IndexedDB SWR** (`ps_schedule_cache`, store `rows`, keyed by project id). On open: if a cached row
+  set exists (and its `uid` matches the logged-in user), paint it immediately with **no loading
+  overlay** (`rebuild()` + `renderAll()` from cache), show a **"Cached · updating…"** badge, then
+  re-fetch from the DB in the background and reconcile → **"Live"** (badge auto-hides), or
+  **"Cached (offline)"** if the refresh fails. First open per project is unchanged (normal overlay).
+- **Cached value is cleaned** — `_cachePut` strips `_`-prefixed fields `rebuild()`/CPM attach (some
+  reference other rows → would bloat / break structured-clone); `rebuild()` recomputes them on load.
+- **Edit-guard:** `_editSeq` bumps on every inline `persist()`; the background reconcile skips the
+  `rows =` replace if an edit happened mid-fetch (that edit already hit the DB) so it never clobbers a
+  live edit. `persist()` also debounce-recaches (`_cacheSaveSoon`).
+- The cosmetic **count round-trip is skipped** on the cached path.
+- **Verified live** (deployed, logged-in Chrome): reopening Avesta painted from cache in **~640ms vs
+  ~8,900ms cold (~14×)** — the "Cached · updating…" badge fired (proving cache paint before network),
+  then reconciled to "Live" and auto-hid; no console errors. The residual ~0.6s is local `rebuild()`
+  (CPM/rollups), not network. Module-local, no migration, no `?v=` bump.
+- **Follow-up for cold first-load:** a server-side RPC returning the whole schedule in one call (same
+  pattern as `schedule_scurve_agg`) to collapse the ~8 round-trips into 1; and optional cross-project
+  cache warming from the picker.
+
+## Inline Status dropdown in the grid — one-click change (2026-07-22) — fmlozano
+Changing an activity's status meant right-click → Edit activity → change the Status field — tedious on
+10,000+ activity projects. The grid Status cell is now a **`<select>` styled as the coloured pill**
+(`statusCellHtml`), so a writer changes status in one click directly in the grid. Read-only users
+(`!canWrite` / `window.__viewOnly` / `__archived`) still get the static `<span>` pill.
+- `change` is wired via re-attachment in `renderWindow` (rows are virtualized/windowed, like the
+  `.ps-editable` dblclick wiring) and routed through **`_statusPatch`** (Completed → Actual Finish +
+  100% + 0 remaining; In Progress → clear finish, reseed remaining; Not Started → clear actuals) and the
+  undoable **`persist()`** — identical write path to the other inline cell edits, so it's undoable and
+  has the same side-effect semantics as the detail-panel Status field. `mousedown`/`click`
+  `stopPropagation` so opening the dropdown doesn't trigger row-select / cell-nav.
+- WBS-summary / group rows keep an empty status cell (unchanged). Only ~visible rows render a select
+  (grid virtualization), so no cost on huge schedules. Module-local, no migration, no `?v=` bump.
+- **Verified live** (deployed, logged-in Chrome): on Avesta (real) the cells render as enabled selects
+  with correct values; on the DEMO01 sandbox, changing M2003 Not Started → In Progress via the dropdown
+  **persisted through a full DB reload** (searched it back, read "In Progress"), then restored to
+  "Not Started". Screenshot shows every task row's Status as a "· ⌄" dropdown pill; WBS rows blank.
+
+## Grid keyboard shortcuts never fired — hidden overlay tripped the guard (2026-07-22) — fmlozano
+User: Arrow keys scrolled the panel instead of moving the selection; Tab traversed page buttons
+instead of grid cells (not Excel-like). Root cause: the grid-shortcut `keydown` handler bailed on
+`if (document.querySelector('.pd-modal-overlay, .ps-back.open, .ps-rep-back.open')) return;` — a
+**bare presence** check. But `#ps-modal` **is** `.pd-modal-overlay` and is always in the DOM
+(`display:none`), so the selector always matched and the handler returned before ANY branch
+(Arrow/Tab/Enter/PageUp-Down/Home/End/F2/type-to-edit/Delete/Esc/Ctrl-C-X-V-D) — every key fell
+through to the browser default (panel scroll / focus traversal). The line above already gates
+`#ps-modal` via a `display` check, so this term was both redundant and wrong.
+- **Fix:** iterate the overlay matches and bail only when one is actually **visible** (`offsetParent
+  !== null`), so the always-present hidden `#ps-modal` no longer blocks; real open modals / `.ps-back.open`
+  still block. Module-local, no `?v=` bump.
+- **Verified live** (deployed app, logged-in Chrome) by reproducing the exact condition (temporarily
+  removing the `.pd-modal-overlay` class from the hidden `#ps-modal`, which is what the visibility guard
+  achieves): ArrowDown then prevents default (no scroll) and moves the selection across rows; Tab
+  prevents default (focus stays in the grid, no button traversal) and sets the active grid cell.
+
+## WBS Manager tree virtualized + verified live (2026-07-22) — fmlozano
+Broad searches / Expand-all painted every visible row into the DOM (7,691 rows for a broad search on
+the 8,596-node project → ~1s+). Now the render flattens the visible tree into `_wbsFlat` and only the
+scroll-viewport window (+8-row buffer, ~24 rows) is in the DOM at once, offset by `translateY` over a
+spacer that reserves the full scroll height — mirrors the grid/Gantt virtualization (`WBS_ROWH=34`).
+- **Event delegation** on the persistent `#ps-wbs-tree` (attached once via `_wbsWire`) replaces per-row
+  `onclick` — the window's rows are recreated on every scroll, so per-row handlers couldn't survive.
+  Buttons dispatch by `data-*` key; focusing a name input selects its row via a class toggle (no full
+  re-render → no blur mid-edit); scroll position is preserved across full re-renders (searches reset to
+  top). Row height is fixed (34px) to match `WBS_ROWH`.
+- **Verified live** on the 8,596-node project (deployed, logged-in Chrome): default 6 rows instant;
+  **Expand all = 45ms with only 23 DOM rows** (was 1,433ms / 8,596 rows); search "Tower" = 34 matches /
+  48-row set → 24 DOM rows; **extreme search "a" = 6,671 matches / 7,691-row set → 24 DOM rows, no
+  freeze** (~400ms); delegated caret-collapse (→1 row) and row-select both work; screenshot shows the
+  tree rendering correctly (hierarchy/codes/badges/carets/scrollbar). Window-slicing math unit-verified
+  (~30 rows constant across 8,596). No console errors.
+- ⚠️ **Caveat:** scroll-driven window repaint is gated behind `requestAnimationFrame` (same as the
+  grid/Gantt). rAF is throttled when the tab isn't the OS-foreground window, so in the automated session
+  programmatic `scrollTop` changes didn't repaint the window; in normal interactive use rAF fires and the
+  window follows the scrollbar. The synchronous paths (expand/collapse/search) were verified directly.
+
+## wbs_nodes load truncated at 1000 (fixed) + WBS Manager verified live (2026-07-22) — fmlozano
+Found while verifying the WBS optimization **live on a large project** (deployed GitHub Pages, in the
+user's logged-in Chrome). `load()` fetched `wbs_nodes` with a plain `select('*')` — Supabase caps at
+1000 rows, so a big P6 import loaded a **truncated** tree; nodes whose parent fell past row 1000
+dropped out of the walk. Live symptom: project **“4PH Jab Greenwoods Dasmariñas”** reported "1000
+nodes" but rendered only 2 connected rows. **Fix:** keyset-paginate by `id` (the render/index re-sorts
+by `sort_order`, so load order is irrelevant); same fix applied to the copy-WBS-from-project source
+read. Same bug class as the audited resource_assignments/drawing/photos loads. No migration, no `?v=`.
+- **After the fix, verified live** the project actually has **8,596 WBS nodes** (was capped at 1000):
+  default load renders **6 rows** (large-tree collapse) instantly; **Expand all** → all 8,596 rows in
+  ~1.4s (worst case); **Collapse all** → 1 row in ~114ms; caret toggle collapses/expands correctly;
+  **Search** "Closeout" → 20 matches / 62 rows revealing each match **plus its full ancestor chain**
+  (verified a 6-level-deep node: 1 → 1.4 Execution → 1.4.3 Superstructure → … → Closeout) in ~1s; clearing
+  search restores the collapsed default. No console errors. (Very broad search terms render
+  proportionally many rows — expected, same cost as Expand all.)
+
+## WBS Manager optimized: indexed render + collapse/expand + search (2026-07-22) — fmlozano
+`renderWbsManager` was O(N²)/O(N·rows) and painted **every** node at once — on a P6-scale tree
+(~14k nodes / ~27k activities) it froze the tab. Per node it called `wbsActivityCount` (a full
+`rows.filter` — ~378M iterations total), `wbsChildren` (filter+sort of all nodes), and `wbsDepthOf`
+(linear `wbsById` walk). Fixes:
+- **New `_wbsBuildIndex()`** builds `byId` / `childrenOf` (sorted) / `actCount` / `codeOf` in **one
+  pass** at the top of the render; the walk uses those (no per-node scans). Benchmarked on a
+  14,420-node / 27,600-activity fixture: the per-node-scan render cost dropped **11,171ms → 12ms**.
+- **`computeWbsCodes` de-nested** the same way (was calling `wbsChildren` per level → O(N²·log N),
+  now O(N·log N)). **Pure, identical output** (custom `code_custom` codes preserved, same sibling
+  numbering + comparator) — verified against the old algorithm on a mixed fixture.
+- **Collapse/expand** per node via a caret glyph (`_wbsCollapsed` set); only visible (expanded) rows
+  are emitted, so the DOM stays small. Large trees (>300 nodes) **default-collapse** below the top
+  level on load (`_wbsCollapseInit`, reset in `load()` + `selectProject`). Toolbar **Expand all /
+  Collapse all** buttons. Adding a child auto-expands its parent so the new node is visible.
+- **Search box** (`_wbsSearch`, 180ms debounce): reveals nodes whose code/name matches **plus their
+  ancestors** (so matches are reachable), ignoring collapse on the matched path; shows a match count.
+- Editing behavior unchanged — all existing row buttons (＋Act/＋/▲▼/→←/✎/✕), row-click select, and
+  name-input rename are untouched. State (`_wbsCollapsed`/`_wbsSearch`/`_wbsCollapseInit`) resets on
+  project switch + Clear. Module-local, no migration, no `?v=` bump. Inline script parses; index /
+  codes / activity counts / search-visibility unit-verified in a Node harness.
+
+## Last Planner section made collapsible (2026-07-22) — fmlozano
+Follow-up to the merge below: the merged Last Planner block made the cockpit a long scroll on load,
+so the `.ps-ck-secdiv` divider is now a **toggle button** (`#ps-lp-toggle`, a `<button>` styled as the
+divider) with a rotating chevron; it collapses `#ps-lp-section` (all LP content wrapped in it) via a
+`.collapsed` class → `display:none`. State persists in `localStorage['ps_lp_collapsed']`, applied on
+init (default expanded). Wired next to the title-menu handler (same proven pattern). ⚠️ The chevron
+`.ps-ck-secdiv-chev` needs `display:inline-flex` for the `rotate(-90deg)` to apply (an un-hydrated
+inline icon span isn't transformable). Verified in a browser snapshot: only the `.collapsed` rule sets
+the chevron transform, section toggles block↔none, no console errors. (Computed-transform readout is
+unreliable in the static-snapshot renderer after a dynamic class change — the known quirk — so the
+rotation was confirmed via the selector engine + the collapsed-state matrix, not the stale post-toggle
+read.) Module-local, no `?v=` bump.
+
+## Merged Last Planner into the Planner Cockpit tab (2026-07-22) — fmlozano
+User felt the separate **Planner Cockpit** and **Last Planner** tabs were redundant / low-value as
+two top-level views. Chose to **merge, not remove** (kept all functionality). The Last Planner
+weekly section (week nav toolbar, PPC KPIs, weekly commitments table, PPC trend, reasons-for-variance)
+now lives **inside `#ps-view-planner`**, below the cockpit KPIs/forecast, under a new
+`.ps-ck-secdiv` divider ("Weekly Work Plan · Last Planner"). The `#ps-view-lastplanner` wrapper and
+the `lastplanner` title-menu item are gone; `switchTab`/`renderAll` now call **both** `renderPlanner()`
+and `openLastPlanner()` when the `planner` tab is active. All element IDs unchanged
+(`ps-ck-*` vs `ps-lp-*` never collided), so every existing event handler keeps working; no DB change,
+no `weekly_commitments` migration touched, no `?v=` bump (module-local HTML/CSS/JS only). Verified in
+the browser: no console errors, `#ps-lp-table` resolves inside `#ps-view-planner`, `ps-view-lastplanner`
+removed, menu down to planner/wbs/schedule/cost. Zero `lastplanner` references remain in the file.
+
+## Cleanup: remove the dead old cost-TABLE code (2026-07-21)
+Follows the Cost/EVM rebuild below, which orphaned the old per-activity cost table. Removed the
+now-inert cluster (verified zero live refs first): `COST_COLS`, `_vc`, `costW`, `costColW`,
+`costVisibleCols`, `startCostColResize`, and the now-dead `table.ps-cost-table` / `.ps-cost-th` CSS
+(my WBS-overlap fix from `a109ae3` — that table no longer exists). Also simplified `renderColsMenu` to
+drop its `onCost`/`COST_COLS` branch: the Columns chooser is only reachable on the Schedule tab (the
+whole toolbar is `display:none` on other tabs, per `switchTab`), and the rebuilt Cost tab has no
+hideable columns. **Behavior-preserving** — the removed branch was already unreachable,
+`startCostColResize` had no callers, `applyColHidden` only ever used `gridCols()`. Verified: zero
+remaining references to any removed symbol, script parses, and on the deployed page the Cost/EVM
+dashboard renders and the Schedule column chooser still works.
+
+## Cost Loading rebuilt → Cost / EVM dashboard (2026-07-21)
+The old "Cost Loading" tab was a flat per-activity cost table — redundant (the Schedule grid already
+shows per-activity Planned/Actual/EV/At-Completion IBB columns; the **Activity Usage** detail tab
+already draws the time-phased per-activity cost curves) and low-value. Rebuilt into a **project-level
+EVM dashboard** (tab relabelled **Cost / EVM**):
+- **EVM KPI cards** at the data date: BAC, PV, EV, AC, SV, CV, SPI, CPI, EAC, VAC, TCPI + an over/under-
+  budget · on/behind-schedule status chip. Math: PV = Σ budget × plannedPOC (planned % by data date);
+  EV = Σ earned_value (fallback planned_cost × %); AC = Σ actual_cost; EAC = AC + (BAC−EV)/CPI;
+  TCPI = (BAC−EV)/(BAC−AC).
+- **Cost S-curve**: cumulative PV spread linearly across each activity's planned dates, with EV/AC
+  plotted as points at the data date (no cost history is stored) + a BAC reference line.
+- **Cost variance by WBS**: `_costMap` roll-up (Budget/Actual/Earned/CV/CPI/%Spent per branch),
+  over-budget rows flagged red, + a project TOTAL row.
+- `renderCost()` early-returns unless `activeTab==='cost'` (the EVM compute is heavier than the old
+  table and `renderAll()` calls it every render). New DOM ids: `#ps-cost-status/-kpis/-curve/-note/-wbs`.
+- The old flat-table helpers (`COST_COLS`, `startCostColResize`, `costColW/costVisibleCols`) are now
+  dead code — left in place (inert; the cost-tab toolbar/column-chooser is hidden anyway). Minor cleanup TODO.
+- Verified: inline script parses; EVM aggregation unit-tested (SV −10k/CV −15k/SPI 0.9/CPI 0.857/EAC
+  350k/VAC −50k/TCPI 1.077 on a fixture); browser harness with a cost-loaded fixture rendered the KPIs
+  (BAC 300k/EV 90k/AC 105k…), PV S-curve (13 months), status chip, and WBS table with no console errors.
+  No migration, no `?v=` bump.
+
+## THE ACTUAL "count populated, grid empty" bug: deferred render (2026-07-21)
+**Verified on the deployed page** with a real 17,122-activity project (GPR101), driving the user's
+logged-in Chrome. The screenshot bug reproduces on initial load: for ~8 seconds the footer reads
+"Total: 17122 activities" while the grid still shows **"Select a project."**, then it self-corrects
+at ~t=10s. **This is NOT the switch race fixed just below — that fix was correct but addressed a
+different failure mode.** Root cause, from the live timing (footer set at t≈2s, grid painted at
+t≈10s, overlay already hidden in between):
+- `load()` finishes pagination (~2s), `hideLoading()`, `rows = all; rebuild()` → **footer count set
+  immediately**.
+- It then `await`s `loadResourcesAssignments()` + `_wbsEnsureSummaries()` — several seconds for a 17k
+  activity project (many resource/assignment rows) — and **only called `renderAll()` AFTER those**.
+- So the grid kept the stale pid=null "Select a project." paint for the whole resource-load window
+  while the footer already showed the count.
+- **Fix:** call `renderAll()` right after `rows = all; rebuild()` (and moved the large-schedule
+  collapse block up before it), *then* load resources, *then* `renderAll()` again. The grid/Gantt
+  only need `rows`; resources + WBS_NODES are for the Resource-Usage tab and WBS Manager, so painting
+  before them is safe. Window drops from ~8s to ~0 (pagination is covered by the loading overlay).
+- Verified live that the render itself works (a user-triggered switch to the same 17k project paints
+  correctly — footer + grid consistent); the only defect was the *timing* of the paint. Re-verify on
+  the deployed page after this ships. Module-only, no `?v` bump.
+
+## Load race: footer count populated while grid shows "Select a project." (2026-07-21)
+Reported from a screenshot: a big schedule (16,409 activities) with the footer reading
+"Total: 16409 activities" but the grid showing "Select a project." — the count and the grid
+disagreeing about whether a project was even selected.
+- **Root cause: `load()` was async + keyset-paginated (up to ~17 sequential round-trips for a 16k-row
+  project) with NO re-entrancy guard.** Switching or deselecting a project mid-load left the STALE
+  load to run its terminal `rows = all; rebuild(); … renderAll()` after `pid` had already changed —
+  clobbering `rows`, the footer count, and the rendered grid with the wrong project's state. The exact
+  visible symptom depends on the precise rAF/await interleaving (grid can end up empty *or* showing a
+  deselected project's rows); both are the same bug.
+- **Fix: a monotonic load token `_loadGen`.** `load()` does `var gen = ++_loadGen` at entry and, after
+  **every await** (each pagination page, the catch, before the commit `rows = all`, after
+  `loadResourcesAssignments`, after `_wbsEnsureSummaries`), bails with `if (gen !== _loadGen) return`
+  if a newer load has started. The `!pid` early-return branch now also `hideLoading()`s, since a stale
+  load aborts silently and never touches the overlay (the newest/terminal load owns it). Covers every
+  `load()` caller (project switch, undo/redo, import, scenario restore) uniformly.
+- **Verified in a Node harness** modeling the real `load()`/`rebuild()`/`doRender()` + rAF deferral:
+  WITHOUT the guard, deselecting or switching mid-load leaves pid/footer/grid inconsistent in 2 of 3
+  scenarios; WITH the guard all three are consistent (deselect → "Select a project." + count 0;
+  re-select same project → loads normally). Full inline script still parses. No shared asset, no `?v`
+  bump. (Live click-through needs a real 16k-row project + a mid-load switch — the harness stands in.)
+
+## Brand icon beside the title (2026-07-21)
+The title is a **view-switcher button** (`.ps-title-btn`), so unlike every other module it never had
+the brand-red module icon before its text — the `calendar` icon (the module's `config.js` icon) only
+appeared inside the dropdown menu items. Added `<span class="ps-title-ico" data-ico="calendar">` before
+`#ps-title-txt` inside the button, so it's `[calendar] Project Schedule ▾` matching the suite.
+- ⚠️ Existing `.ps-title-btn [data-ico] { color:var(--pd-muted) }` (for the chevron) also matches the
+  new icon. Override with **`.ps-title-btn span.ps-title-ico`** (0,2,1) which outspecifies it (0,2,0)
+  regardless of source order. Verified the icon is brand-red (`#EE3124`) while the **chevron stays
+  muted** — the override is scoped, not bleeding to the chevron.
+- Kept it inside the switcher button on purpose: clicking the icon still opens the view switcher.
+- Verified in a harness (real title markup + module CSS + icons.js): icon hydrates to SVG, brand-red
+  via `currentColor`, 20×20, left of the text, chevron muted, order ICON→TEXT→chevron, and stays
+  brand-red in dark mode. Screenshot still impossible (compositor stall) — measured via
+  getComputedStyle. Module-only, no shared asset, no `?v` bump.
+
+## Cost Loading tab: WBS/name overlap + duplicate-ID fixes (2026-07-21)
+Reported: the Cost Loading table's WBS code visually overlapped the Activity Name (e.g.
+"1.4.2.5.2.3.1Cabinetry" with ghosted text). Two real bugs found:
+- **Overlap (visible).** `.ps-cost-table` is `table-layout:fixed`, but `.ps-table td` had **no
+  overflow clipping** — so a WBS `<code>` wider than its 90px column bled straight into the next
+  cell. Fixed with `table.ps-cost-table td { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }`
+  (full value now on hover via a `title` attr set in `renderCost`), widened the WBS column 90→120,
+  and monospaced the code. ⚠️ **Specificity gotcha:** headers wrap via `table.ps-cost-table th` (0,1,2)
+  because plain `.ps-cost-th`/`.ps-cost-table th` (0,1,1) is *outspecified* by `.ps-table th`'s
+  `white-space:nowrap` which appears later in the sheet — so headers now WRAP ("Planned % (POC)"
+  instead of clipping to "(PC") instead of being cut mid-word.
+- **Duplicate `id="ps-cost-body"` (latent).** The Cost Loading `<tbody>` AND the "Cost Accounts (CBS)"
+  modal panel both used it. `renderCostAccounts()` grabbed the first match (the hidden cost tbody),
+  so the CBS manager wrote into the wrong element and appeared empty. Renamed the panel to
+  `ps-cost-acct-body` + its one reader.
+- Scope is safe: the new rules match `table.ps-cost-table` only — the two import-preview `.ps-table`
+  tables lack that class and the Schedule grid uses `.ps-grid-*`, so neither is touched.
+- **NOT a bug: the ₱0 / "—" cells.** That project's schedule was imported from P6/OPC with no cost
+  loaded, so planned/actual/EV are genuinely 0 and baseline/CPI are null (—). Nothing to "fix" there.
+- Verified in a browser harness using the module's real `<style>` + long screenshot WBS codes at the
+  actual 12-column widths (sanity-asserting the CSS loaded first): WBS cell clips with no overlap into
+  Activity Name, title tooltip present, and all 12 headers wrap to 2 lines with **none clipped**.
+  Screenshot still impossible (compositor stall) — measured via `getBoundingClientRect` /
+  `getComputedStyle`. Module-only change (project-schedule/index.html), no shared asset, no `?v` bump.
+
+## Audit fix: paginate resource_assignments (2026-07-21)
+`loadResourcesAssignments()` fetched `resource_assignments` with a single `select('*')` — Supabase
+caps at 1000 rows, so P6/XER projects (~51k–55k assignments) silently loaded only the first 1000,
+corrupting Resource/Role Usage, resource leveling and cost roll-ups. Now **keyset-paginated**
+(`order id.asc`, `gt(id,last)`, `limit 1000`), matching the main activity `load()`. Assignment order
+is irrelevant (aggregated by activity). Verified: parses clean; Node test confirms the loop loads all
+rows (2500/2500) and terminates. No migration, no `?v=` bump. (Also see the RLS project-scope fix
+migration `2026-07-21-rls-project-scope-fix.sql` — the schedule support tables' reads/writes are now
+project-scoped.)
+
+## Clear didn't clear, and re-import duplicated every WBS level (2026-07-17) — fmlozano
+Two reports, **one root cause**: `wbs_nodes` was never deleted by any destructive path. Clear schedule
+and both importers' "Replace existing" only ever ran `delete().eq('project_id', pid)` on `TABLE`
+(`project_schedule`). The tree is a **separate table**, and the grid's WBS rows are only a *projection*
+of it — so the nodes always survived, and the two symptoms fall straight out of that:
+- **"Clear did nothing."** Clear deleted the summary rows, then `load()` → **`_wbsEnsureSummaries()`**
+  (the orphan self-heal added 2026-07-16) faithfully re-projected a summary row for every surviving
+  node. The rows were genuinely deleted and then immediately recreated — working as designed, on a
+  tree that should no longer have existed. ⚠️ **These two features are only correct together**: the
+  self-heal makes any path that drops schedule rows *without* dropping nodes look like a no-op.
+- **Re-import duplicated the WBS levels.** "Replace" wiped `project_schedule`, so the importer's fresh
+  summary rows all arrived with `wbs_node_id = null` → `autoAdoptAfterImport()` → `wbsAdopt()` mapped
+  **every** legacy row to a new node payload with no check against the codes already in `WBS_NODES`
+  (`nodeByCode` was seeded from them, but only ever *read* for parent lookup). One extra node per code
+  per import, each then re-projected by the self-heal into another summary row.
+- **Fixes.** (1) New **`_clearWbsTree()`** — deletes the project's `wbs_nodes` and resets the in-memory
+  `WBS_NODES`; tolerant of a DB without the wbs-nodes migration (nothing to clear is not an error).
+  Called by the Clear handler (which now also resets `_wbsSel`, and says "activities **and the entire
+  WBS tree**" — it always destroyed more than the old copy admitted) and by the `replace` branch of
+  **both** `doImport` and `doImportXER`; the tree is rebuilt from the incoming file by the existing
+  `autoAdoptAfterImport()`. (2) `wbsAdopt` now builds node payloads only for codes **not already in
+  `nodeByCode`** — the link loop below it already resolves each code through `nodeByCode`, so an
+  existing node is **adopted and linked** rather than re-inserted. Belt-and-braces: it makes adopt
+  idempotent on its own, so a re-run can't duplicate even if a tree survives some other way.
+  ⚠️ Do **not** "simplify" this by filtering the `legacy` list instead — skipping those rows leaves
+  them with `wbs_node_id = null`, and the self-heal then duplicates the *summary rows* instead.
+- **Verified in a node simulation** of the real cycle (import → re-import ×3 → load) against a mutable
+  store, mirroring `wbsAdopt` + `_wbsEnsureSummaries`. Reproduced the bug from the **shipped** code
+  exactly — 4 codes → `1 x4, 1.1 x4, 1.2 x4, 1.1.1 x4`, self-heal adding 12 rows (matching the
+  reported screenshot's repeated "1.1 Project Milestones") — and confirmed the fix holds at 4 nodes /
+  4 summary rows / 0 duplicates / 0 unlinked across 3 re-imports; Clear+load now leaves **0** rows
+  (was 4 resurrected). Not yet clicked through on a live login (needs a session + a project).
+- **Existing duplicated data is not migrated** — the fix stops new duplicates, it doesn't clean up the
+  ones already in the DB. Remediation is now possible for the first time: **Clear schedule → re-import**.
+- **No migration.** `project_schedule.wbs_node_id` is a plain uuid with **no FK** to `wbs_nodes`, so
+  deleting nodes first can't raise a constraint error and the delete order doesn't matter.
+
+## Column chooser clipped by the details panel (2026-07-16) — fmlozano
+The `+` column chooser (`#ps-cols-menu`) was cut off mid-list — worse the further up the details
+panel was dragged.
+- **Root cause:** `.ps-split` sets **`overflow:hidden`** (line ~243, for its border-radius + pane
+  clipping), and `.ps-cols-corner`/`.ps-cols-menu` are absolutely positioned **inside**
+  `.ps-grid-pane` within it. So the menu was clipped at the split's bottom edge — i.e. wherever the
+  details panel happened to push it. The chooser's own `max-height:340px; overflow-y:auto` was
+  useless here: the **ancestor** did the clipping, so the scrollable remainder was unreachable (this
+  is a *different* bug from the 2026-07-14 cascade fix below, which made it scroll at its own cap).
+- **Fix:** `positionColsMenu()` pins the menu to the **viewport** (`position:fixed`, re-anchored to
+  the button's rect on every open) — which escapes every ancestor's overflow — and caps
+  `max-height` to the real space below the button (`innerHeight − r.bottom − 16`, floor 180). Same
+  approach `openRowMenu` already uses. Re-anchored on `resize` + `scroll` (capture phase, so it also
+  catches ancestor scrolls) while open, since fixed positioning is viewport-relative.
+- **Verified in a browser harness** against the module's real CSS, using `elementFromPoint` (CSS
+  overflow clipping doesn't shrink `getBoundingClientRect`, so a rect check would have missed it):
+  with a 280px split — before: content 726px, capped to 340px, **103px of that clipped away**, bottom
+  not hittable (`bottomOfMenuActuallyVisible:false`); after: fully visible. At a 600px-tall viewport:
+  menu bottom 588 ≤ 600 (fits), scrolls internally (517px box / 707px content), scrolls to the end,
+  right edge still aligned to the button.
+
+## WBS added in the Manager didn't appear in the Schedule (2026-07-16) — fmlozano
+Reported on **Naga City Integrated Terminal**: adding a WBS Level 1 in the WBS Manager showed the node
+in the tree but **nothing in the Project Schedule**; an activity added under it *did* appear.
+- **Mechanism (explains both halves).** The tree lives in `wbs_nodes`; the grid only ever renders
+  **projected `project_schedule` WBS-Summary rows**. Two writers, inconsistent treatment of
+  `wbs_node_id`: the activity `save()` deliberately keeps it **out** of the main payload and writes it
+  after in its own try/catch ("so a not-yet-migrated DB never breaks the main save"), but
+  `wbsAddChild`'s projection insert put `wbs_node_id` **in** the payload — so on a DB missing that
+  column the activity insert survives and the summary insert fails. And the failure was **silent**:
+  `if (!sres.error && sres.data) rows.push(...)` dropped the error on the floor. Node in the tree, no
+  schedule row, no message.
+- **Fix:** new **`_insertWbsSummary(payload)`** — retries without `wbs_node_id` when the error names
+  that column (warn toast: "Saved without the WBS link — run the wbs-nodes migration"), and **surfaces
+  any other error** instead of swallowing it. Used by `wbsAddChild` and the copy-from-another-project
+  path (which had the identical swallow).
+- **CONFIRMED (2026-07-16):** the column really was missing — the user ran
+  `migrations/2026-07-07-wbs-nodes.sql` only after hitting this, so every node created before that ran
+  lost its projection. (An `information_schema` check *after* the migration shows the column present,
+  which briefly looked like a disproof — it isn't; it's just post-migration state.)
+- **Orphan nodes + `_wbsEnsureSummaries()` (the actual repair).** The failure left Naga with 3 nodes in
+  `wbs_nodes` and **zero** WBS-Summary rows: visible in the WBS Manager, absent from the Schedule, and
+  **unrepairable** — "Adopt existing WBS" only runs the other direction (summary rows → nodes), and its
+  button is hidden precisely when there are no summary rows to adopt. New `_wbsEnsureSummaries()`
+  re-projects any node lacking a summary row; it is **additive + idempotent** (keyed on
+  `wbs_node_id`, so a reload can't duplicate) and gated on the new module-scope **`canWrite`**
+  (super_admin/admin/planner — mirrors `is_planner()`) so a read-only user never triggers a write on
+  load. Called from `load()` (after `loadResourcesAssignments`, which populates `WBS_NODES`) and at the
+  top of `_wbsCommit()`. No-op on healthy projects. Verified in a node harness against Naga's exact
+  state: 3 nodes → codes 1/2/3, second pass finds 0 missing, activities at `wbs "1"` nest under the
+  restored Pre-Development row.
+- **Related inconsistency (not fixed):** `2026-07-07-wbs-nodes.sql` was folded into `supabase-setup.sql`
+  but **NOT into `supabase-schema.sql`** (0 mentions of `wbs_nodes`/`wbs_node_id` there), so any DB
+  built from `supabase-schema.sql` lacks both the table and the column — i.e. this bug is still
+  reproducible from a fresh schema build. Worth reconciling.
+- **Dead read-only guards (pre-existing, NOT fixed):** neither `window.__viewOnly` nor
+  `window.__archived` is **ever assigned** anywhere in the repo — both are read in ~8 guards each and
+  are permanently `undefined`, so the intended "read-only / archived project" protections do nothing.
+  This is why `canWrite` above had to be introduced rather than reusing `__viewOnly`.
+
 > **Claude / developer: read this first.**
 > 1. Read `../../MODULE_CONTRACT.md` and `../../CONTRIBUTING.md` (NOT auto-loaded).
 > 2. This module is **Project Schedule & Cost Loading** (Phase 2). Your DB table is `project_schedule`
@@ -1648,8 +2923,6 @@ labelled everywhere the chart shows them — axis category labels, pie/donut sli
 data labels. Default `both` = "ID  Name"; `id` = Activity ID only; `name` = Activity name only
 (each falls back to the other when its field is blank). Applied in `_chartBuckets` for the
 Activity X-axis; wired via the generic `.ps-cset-f` handler. Persisted per chart in `ps_charts`.
-<<<<<<< Updated upstream
-=======
 
 ## Merge to main + verification (2026-07-22)
 
@@ -1985,4 +3258,370 @@ pan-and-zoom.
 - Zone **nodes now flex** to fill their (resizable) trade cell (`flex:1 1 22px; min 20 / max 72px`),
   so they grow when the tower pane is widened and shrink when narrowed — no longer a fixed tiny size.
 - Verified: inline JS parses; loads with no console errors.
->>>>>>> Stashed changes
+
+### 2026-07-24 — Fix: "Gantt only" layout did nothing when clicked
+
+Owner: the Gantt-only layout view isn't working when clicked. **Reproduced and root-caused, not guessed.**
+- **Cause: an inline style silently beat the stylesheet.** Gantt-only narrows the activities grid purely
+  via `.ps-split.ps-gantt-only .ps-grid-pane { flex:0 0 300px }`. But the divider drag handler — and the
+  `ps_grid_w` width it restores on every load — writes **`gridPane.style.flexBasis` inline**, and an
+  inline declaration outranks any normal stylesheet rule. So the class was applied, the CSS was correct,
+  and nothing moved.
+- **Measured, with the module's real stylesheet:** fresh browser (never dragged, empty localStorage)
+  660px → **300px**, works; after a drag (inline basis set) 660px → **660px**, dead. That's why it would
+  have looked fine on a clean profile — every real user who had ever touched the divider had it broken.
+- **Fix:** the width is now applied **imperatively** in `_applyGridPaneWidth()`, called from
+  `applyLayout()`, and only on the **mode transition** — so a divider drag *while in* Gantt-only isn't
+  snapped back on the next render. Leaving Gantt-only restores the user's saved `ps_grid_w`, or clears
+  the inline value so the 660px stylesheet default returns when there is none.
+- ⚠️ **Second, load-order half of the bug:** the divider's saved-width restore block runs **after**
+  `applyLayout()` during init, so it re-clobbered the 300px for anyone whose persisted `ps_layout` was
+  already `gantt` — Gantt-only would have been broken on page load even with the fix above. That restore
+  now skips while `layoutMode === 'gantt'`.
+- ⚠️ **Why not `!important`:** it would also win against the inline style, but it would then block the
+  divider drag in Gantt-only mode — and that pane is deliberately meant to stay resizable there (the
+  whole point of the 2026-07-07 "Gantt-only keeps the columns" change).
+- **Verified in-browser** by extracting the **shipped** `_applyGridPaneWidth` out of `index.html` and
+  running it against the module's real CSS — 5/5: Gantt-only narrows to 300px with a dragged width
+  present; returning to Split restores the user's 660px; Grid-only still hides the Gantt pane; a drag to
+  420px inside Gantt-only survives a re-render; with no saved width, leaving Gantt-only falls back to the
+  660px CSS default. Inline script parses; module loads with no console errors (auth-gated here, so no
+  signed-in click-through). Module-local, no migration, no `?v=` bump.
+
+## Signed-in verification of the phone view (2026-07-25)
+
+Closed the verification gap left when the phone list shipped: `renderMobile()` had never run against
+real loaded rows. Checked on the deployed site, signed in, against **GPR101** (4PH Jab Greenwoods,
+17k+ activities) and **OPW101** (One Portwood, 862 rows / 698 leaf activities).
+
+**Confirmed working.** `renderMobile()` renders real rows correctly: 112 cards on GPR101's default
+(collapsed) outline with 0 blank IDs, 0 blank names and 0 missing dates; status derivation matched the
+data (20 Completed / 39 In Progress / 53 Not Started); 38 critical-path cards carried the red rail;
+progress bars matched `percent_complete`. **`PS_M_CAP` verified live on OPW101** — expanding all gave
+*"300 of 698 activities"*, exactly 300 cards, and the *"398 more activities not shown"* note.
+
+**BUG FOUND AND FIXED — date overflow.** The real `Fmt.date` renders **"Feb 15, 2027"**, which measures
+**80px** at the card's 12.5px meta font, but a meta column is only **~77px on a 375px phone** — it
+overflowed. It fit at 390px by a single pixel, which is why nothing looked wrong at first glance. The
+local harness had stubbed `Fmt.date` with a short form, so **this was invisible to harness testing and
+could only surface against real data.** Fixed by using this module's own `fmtOPCDate` (DD-Mon-YY, 65px),
+plus a 2×2 meta fallback below 380px. Re-verified live: max date width now 66px vs 77px available.
+
+⚠️ **PERFORMANCE FINDING — not fixed, needs a decision.** The phone view hides the desktop UI with CSS
+but **does not stop it being built**: `renderAll()` still runs `renderGrid()`, `renderGantt()`,
+`renderCost()` and `renderDetails()` at phone width, and then `renderMobile()` on top — so a phone pays
+for the desktop pipeline *plus* the card list. Measured on OPW101 (698 activities, desktop CPU):
+`renderMobile()` alone is **~865ms median** (3 runs: 172 / 865 / 868), isolated by confirming a resize
+with phone mode off leaves `#ps-mobile` untouched. On GPR101, clicking **Expand all** (17k activities)
+**froze the renderer** — that test drove the desktop grid+Gantt rebuild simultaneously so the freeze is
+not attributable to `renderMobile` alone, but it does show the combined cost is not phone-safe.
+The cost is `displayList()`/`buildNodes()`, which sorts and filters every row — `PS_M_CAP` caps the
+*cards painted*, not that traversal. **Recommended fix:** gate `renderGrid()`/`renderGantt()` on
+`!psIsPhone()` inside `renderAll()` and repaint them when crossing back above 700px. Deliberately NOT
+done here — `index.html` is under active concurrent development (the Schedule Builder view landed
+mid-session) and restructuring `renderAll()` risks regressing the desktop path.
+
+**Note on scope:** the phone block hides `.ps-toolbar`, which is a **shared** element sitting outside
+`#ps-view-schedule` — so it is hidden for the Cost/EVM, Planner, WBS Manager and the new Schedule
+Builder views too, not just the schedule. That is coherent with "read-only on a phone" (the toolbar is
+all authoring controls), but it was not a considered decision for Builder, which arrived later.
+`#ps-mobile` itself is correctly nested inside `#ps-view-schedule`, so it only appears on that view.
+
+⚠️ **Method note:** the Chrome window could not be resized below ~1432px in this environment, so the
+phone path was exercised by patching `window.matchMedia` (which `psIsPhone()` reads at call time) and
+firing the module's own debounced resize handler. That verifies the **data binding and the cap against
+live data**, which was the open gap; the **CSS presentation at a true 375px viewport** remains verified
+only in the local harness.
+
+## Render-pipeline fix for the phone view (2026-07-25)
+
+Closed the performance finding from the signed-in check. The phone view hid the desktop UI in CSS but
+still BUILT it: `renderAll()` ran `renderGrid`/`renderGantt`/`renderCost`/`renderDetails` at phone width
+and then `renderMobile()` on top, so a phone paid for the full desktop pipeline plus the card list.
+- **Fix (three coordinated changes):** `renderAll()` now returns after `renderMobile()` when
+  `psIsPhone()`; `doRender()` (the single choke point every grid+Gantt build funnels through, also poked
+  by scroll/edit/load-reconcile) bails to `renderMobile()` on phone as a safety net; and the debounced
+  `resize` handler tracks `_psWasPhone` so crossing phone→desktop runs a full `renderAll()` to build the
+  grid/Gantt that were skipped while phone.
+- **Verified live, signed in** (deployed):
+  - OPW101 (698 activities), phone mode, Expand-all: grid DOM stays unbuilt, list updates to "300 of 698",
+    cap holds, no freeze.
+  - **GPR101 (17,122 activities), phone mode, Expand-all: no freeze (~83ms to rAF), grid unbuilt, list
+    "300 of 17122", cap holds.** This is the operation that appeared to freeze before.
+  - Round-trip: desktop 380 grid cells → phone 112 cards → back to desktop **380 cells rebuilt**, split
+    visible. Clean desktop reload renders normally (380 cells, 44 Gantt bars, real data). No console errors.
+
+⚠️ **CORRECTION to the 2026-07-25 check entry above.** That entry said GPR101 Expand-all "froze the
+renderer" and attributed it to the desktop render cost. **That was wrong.** Re-testing with the fix
+deployed, the freeze reproduced *identically even with the grid build now skipped* — the actual cause is
+the Expand-all handler's **blocking `window.confirm()`** (shown when `rows.length > 4000`): with no user
+to dismiss it, the main thread blocks and CDP times out at 45s. It was never a render cost. The
+`renderMobile`-alone ~865ms measurement on OPW101 stands (OPW is < 4000, no dialog), and the pipeline fix
+is still a real improvement — a phone no longer builds the desktop grid at all — but the "17k froze the
+renderer" claim was a mis-diagnosis of a modal dialog.
+
+### 2026-07-24 — Schedule Builder step 2: optional Zone → Unit hierarchy (Trade → Floor → Zone? → Unit?)
+- Recovered from a stray git stash-pop that left conflict markers on the stale `module/project-schedule`
+  branch; re-applied this work cleanly on `main` (which already had the builder + typed links + resize).
+- **Model:** each zone now has `units[]`. Leaves (`leavesOfFloor`/`locList`): a floor with no zones is a
+  leaf; a zone with no units is a leaf; else each unit is a leaf. `locLabel` joins present codes;
+  `cellKey`=zone#unit code for cross-trade matching; `floorIndexOf` for the takt index.
+- **Step 2 editor** rebuilt as a nested per-floor card: floor code/name + **+ Zone**; each zone row has a
+  **Units ± stepper** (0 = none) + delete; "Quick" now floors × zones × units. Tower visual nests
+  floors → zones → units.
+- **autoTrace** reworked to index leaves by (trade, floorIdx, cellKey) so the vertical climb + cross-trade
+  floor-lead match by zone+unit. **Step 3 tower** nodes, **scope** matrix, and **Push-to-Schedule**
+  grouping (Trade → Floor → Zone → Unit sub-WBS, each level optional) all leaf-aware.
+- Verified: inline JS parses; leaves/cellKey unit-checked (2 floors × 1 zone × 2 units = 8 leaves,
+  keys Z1#U1/Z1#U2); loads with no console errors. Change Order incorporation still pending (next).
+
+### 2026-07-24 — Schedule Builder: bigger tower, centered steppers, relationships carried on push
+- **Tower visual enlarged** (W 320→430, floor height 40→52, bigger fonts) and its column widened
+  (minmax(400px,460px)); floor/zone/unit labels are more legible.
+- **± steppers centered** (`display:inline-flex; align-items:center; justify-content:center`) and
+  slightly larger; count font bumped.
+- **Relationships carried into the pushed schedule.** `pushToSchedule` now assigns clean sequential
+  activity ids (`SB1`, `SB2`… — dotted WBS codes would break the predecessor parser), chains each
+  location's activities FS internally, and maps every zone→zone link (FS/SS/FF/SF + lag) onto the
+  correct end-activities as `predecessors` tokens (e.g. `SB5+3`, `SB2 SS+2`, `SB9 FF-1`) — matching
+  the module's `predRels` format. Start/End markers are skipped. So the generated CPM logic lands in
+  the live schedule, not just the dates.
+- Verified: inline JS parses; predecessor-token + leaves/cellKey logic unit-checked; loads with no
+  console errors.
+
+### 2026-07-24 — Data date badge restored, actual-duration fix, Activity-Progress collapse, per-project saved views
+- **Data Date badge back in the header.** `renderDataDateBadge` targeted `#ps-datadate-badge`, but the
+  element had been dropped from the topbar (only the CSS class remained) so it silently no-op'd. Re-added
+  a clickable badge next to the tools cluster; clicking it opens the Schedule dialog to change the date.
+- **Duration now updates on actualised finish.** The grid **Dur** column showed `_origDurOf` (planned/
+  baseline span via `end_date`), so changing an actualised activity's finish never moved it. For a
+  completed activity (has `actual_finish`) the Dur cell now shows the **actual span** (`actualDurLive` =
+  actual finish − actual start + 1), read-only, updating live when the finish changes.
+- **Activity Progress table: WBS collapsible** like the Gantt. Added ▼/► carets on WBS rows (toggle the
+  shared `collapsed` map → `renderProgressView`) + **Expand/Collapse all** buttons in the table control bar.
+  It already respected `hiddenRow`, so it inherits the schedule's default-collapsed depth too.
+- **Saved layouts are now PER PROJECT and include the chart template.** `ps_views` re-keyed to
+  `{ <pid>: { name: view } }` (`loadViews`/`saveViews`); a saved layout also captures the
+  Activity-Progress **charts** (`chartsList()`) and `applyView` restores them (`setCharts`). Columns
+  (hidden/order/widths/renames) + filters + grouping + zoom were already in a view. Tooltip updated.
+- Verified: inline JS parses; module loads with no console errors. Change Order incorporation still pending.
+
+### 2026-07-24 — Activity Progress chart: fix scroll reset when picking activities
+- Ticking an activity in a chart card's Data checklist called `_redrawCard` (full card rebuild), so the
+  checklist re-rendered and its scroll snapped to the top after every click. The `.ps-cchk` handler now
+  updates only the chart body (`.ps-chart-pan` innerHTML = `_chartSVG(cfg)`) and the "Data (N)" count in
+  place — the checklist DOM + scroll position are preserved, so you can tick multiple activities in a row.
+
+### 2026-07-24 — Activity Progress chart: "Full labels" option (untruncated, scale with resize)
+- Category/pie labels were truncated to ~14–16 chars with an ellipsis, so long activity/WBS names were
+  cut off. Added a **Full labels** toggle to each chart's ⚙ settings (`cfg.fullLabels`). When on,
+  `_pieLabel` and `_barsSVG` render the whole text; `_barsSVG` also reserves margin for it (horizontal:
+  wider left margin `max(92, lblPx+10)`; column: extra bottom margin `lblPx*0.36`, `lblPx ≈ maxLabelLen
+  × tickFont × 0.58, capped 280). Since chart SVGs scale to the card via viewBox, resizing the card
+  bigger enlarges the full labels so the whole text is readable. Combine with the Data-label / Axis-label
+  font-size controls already in the panel.
+
+### 2026-07-24 — Planning logic: consistent duration recompute + contradiction errors on actual dates
+- `_dateEditPatch` hardened so actualising / re-actualising dates keeps every duration field consistent
+  and blocks contradictions with clear toasts:
+  - **Actual Finish requires an Actual Start** ("an activity can't finish before it has started").
+  - Actual Finish before Actual Start / after Data Date → error (kept, message improved).
+  - **Actual Start can't be after an existing Actual Finish**, and you can't clear an Actual Start while
+    an Actual Finish is set (reopen the finish first).
+  - Re-actualising the finish recomputes Actual = finish−start+1, Remaining = 0, %=100, Completed;
+    Planned + At-Completion are derived from these so they update on render. Clearing the finish reopens
+    to In Progress, reseeds Remaining, and drops % below 100.
+- Verified: inline JS parses; module loads with no console errors.
+
+### 2026-07-24 — Schedule Builder: Internal vs External durations (per activity, generate both)
+- Each activity now carries **two durations** — `durInt` (internal / target) and `durExt` (external /
+  contract). Step 1's editor has Int./Ext. columns (legacy single `duration` auto-migrates into both).
+- `nodeDays(loc, basis)` + `generate(basis)` take a basis (`'int'`|`'ext'`); `actDur(a, basis)` picks the
+  field. Step 3's link canvas uses internal for its bar lengths (relationships are basis-independent).
+- **Step 5 shows BOTH schedules side by side** (`_genPanel` × Internal/External): each with total
+  duration, start, finish, duration-per-zone bars, and the grouped activity table — so you can compare
+  the target vs contract finish dates. Separate CSV per basis.
+- **Push** modal gained a "Schedule to push" select (Internal / External); `pushToSchedule(pc, grp, basis)`
+  generates that basis before writing (relationships still carried).
+- Verified: inline JS parses; module loads with no console errors.
+
+### 2026-07-24 — WBS status pills, WBS selection highlight, dark-mode highlight, push relationships confirmed
+- **WBS/summary rows now show a rolled-up status pill** (Completed / In Progress / Not Started). Counters
+  (`done`/`prog`/`total`) added to the `_costMap` roll-up in `rebuild`; `_wbsStatusPill(code)` renders the
+  pill in the WBS row's status cell (all done → Completed, any started/done → In Progress, else Not Started).
+- **Clicking a WBS now highlights it.** Root cause: the WBS row's `--wl` shade on its frozen cells has
+  higher CSS specificity than `.ps-row-sel`, so the selection tint was hidden. Added
+  `.ps-grid-pane .ps-wbs-row.ps-row-sel > .c-num/.c-id/.c-name { background:var(--pd-red-light) }` (selId was
+  already being set on WBS click).
+- **Dark-mode highlight fixed.** `--pd-red-light` is a near-black maroon in dark mode, so the selection/
+  spotlight barely read. Added `html.pd-dark` overrides using translucent red (`rgba(238,49,36,.22)`) for
+  the selected row + frozen cells + Gantt sel-band, and a theme-neutral translucent blue
+  (`rgba(37,99,235,.12)`) for `.ps-spotrow` (works in both light and dark).
+- **Push relationships confirmed migrating.** `pushToSchedule` already maps each zone link (FS/SS/FF/SF +
+  lag) onto the pushed activities' `predecessors` (SB-ids) and chains each location FS internally — verified
+  the block is intact after the earlier git recovery. (Arrows show once Critical Path / relationship lines
+  are toggled on.)
+- Verified: inline JS parses; module loads with no console errors.
+
+### 2026-07-24 — Schedule Builder: renamed trades + basements (substructure)
+- **Trades** are now **Structural · Architectural · MEPF · Allied Services** (GLABEL/GROUPS updated;
+  dropped the old 'Other'; ST/AR relabelled). Existing 'OTHER' zoning/activities normalise away
+  (activities fall back to ST).
+- **Basements / substructure.** Floors carry an optional `sub:true`. Step 2 gains a **+ Basement**
+  button (inserts at index 0 = deepest, so takt builds bottom-up) and a **basements** field in Quick
+  (`B bsmt + F flr × Z zn × U un`). Basement rows show a **BSMT** badge (dashed card, red header).
+  The **tower** now splits at a **grade line**: superstructure above, basements below (dashed, lower
+  opacity, labelled B1…deepest) with a "grade" marker.
+- Verified: inline JS parses; module loads with no console errors. (Internal/External durations were
+  already served — confirmed via curl; the "not reflected" was a stale browser cache → hard-refresh.)
+
+### 2026-07-24 — Schedule Builder step 3 equal bars + step 1 row layout
+- **Step 3 schedule bars are now equal-length, laid out by dependency rank** (`computeRanks` =
+  topological depth) instead of day-length. Uniform 44px+ bars spaced by rank → always visible and
+  easy to hit when connecting (previously 0-duration zones collapsed to tiny/overlapping bars). Zoom
+  scales the bar width. Arrows/anchors unchanged.
+- **Step 1 row rebalanced**: Activity Name shortened (`.sbld-actname`, flex 1 130 / max 220) and more
+  room given to Trade (170px, now showing the full trade label) and Interior/Exterior durations (90px
+  each). Header labels updated to Interior/Exterior.
+- Verified: inline JS parses; module loads with no console errors.
+
+### 2026-07-24 — Schedule Builder: activity template download/upload + robust step-3 nodes
+- **Step 1 template import/export.** New **Download template** (CSV: Code, Activity Name, Trade,
+  Interior Duration, Exterior Duration + examples) and **Upload CSV/Excel** buttons. `importActivities`
+  maps columns case-insensitively, resolves the Trade by label or code (Structural/ST → ST, etc.),
+  reads Interior→durInt / Exterior→durExt, and asks replace-vs-append when activities already exist.
+  CSV parsed inline (`parseCsv`), .xlsx via the already-loaded SheetJS (`XLSX`).
+- **Step 3 "no nodes" fixed.** The tower was a floor×trade MATRIX keyed off `floorAxis()` code-matching,
+  which could render empty cells (no visible nodes). Rebuilt as **per-trade sections** — each trade
+  heading → its floors (top first) → a row of zone/unit node buttons — so every location in `locList()`
+  is guaranteed to appear as a clickable node. (Bars on the right remain the equal-length connect targets.)
+- Verified: inline JS parses; module loads with no console errors.
+
+### 2026-08-04 — Fix: Duplicate branch failed — fractional sort_order into an integer column
+User report: "Duplicate failed: invalid input syntax for type integer: "3.001"" (and `"0.001"`).
+- **Root cause:** `wbs_nodes.sort_order` is an **integer** column, but `wbsDuplicate` inserted its
+  copies at `(n.sort_order||0) + c/1000` — a fractional "slot" meant to keep the copies immediately
+  after the original until `_wbsNormalizeAndPersist` renumbered the sibling group. That trick only
+  works **in memory** (which is why `outdent`'s `+0.5` is fine — it's overwritten with an integer
+  before any write); on an INSERT the fraction reaches Postgres and is rejected outright. Nothing was
+  created, hence "duplicate not working".
+- **Same latent bug in `wbsQuickAdd`:** a mid-list insert (Enter after an existing sibling) wrote
+  `(after.sort_order||0) + 0.5`, so it would fail identically — the docs' "mid-list insert via the
+  0.5 slot" was never exercised against the real integer column.
+- **Fix — make room with integers instead.** New `_wbsMakeRoom(parentId, after, count)`: renumbers the
+  sibling group so everything after `after` is bumped by `count` (persisting only the diff, via
+  `_batchUpdate`) and returns the first free integer slot. `wbsQuickAdd` takes one slot; `wbsDuplicate`
+  reserves `count` and places copy *c* at `slot0 + (c-1)`. `_wbsNormalizeAndPersist` still runs after
+  and compacts to 0..k-1.
+- Verified in Node against the shipped logic: duplicating 3× after the first of three siblings gives
+  order `a, a1, a2, a3, b, c` with **every** sort_order an integer (was `3.001`/`0.001`). Script
+  parses. ⚠️ Not verified signed-in — needs a live Duplicate click. Module-local, no migration, no
+  `?v=` bump.
+
+### 2026-08-04 — Work Package is now a grouping dimension
+`work_package` was a stored-only OPC parity field (form + General tab + row copy + Global Change);
+nothing read it. It is now a real grouping level, so the grid can nest by deliverable/contract package.
+- Three sites, matching how every other flat dimension is wired: `dimValOf` (`'wp'` → trimmed
+  `work_package`, blank → `— No work package —`), `dimLabel` (`'Work Package'`), `allDims` (after
+  `type`, so it appears in the picker's "Add a level" list). Nothing else needed — `buildNodes`,
+  `normalizeGroupBys`, collapse, group bars and the per-project `ps_groupbys_<pid>` persistence are
+  all dimension-agnostic.
+- Composes with the existing levels, e.g. **Work Package › Location › Activity** or
+  **Work Package › WBS** (wbs stays forced-last by `normalizeGroupBys`).
+- Search now also matches `work_package`, consistent with work type + location values.
+- ⚠️ **No grid column** — the value is only settable in the Add/Edit form (or in bulk via Actions ▸
+  Global Change, which already lists Work Package). An inline-editable column would need a 4th
+  `costCellsHtml` cell across all three row branches; deferred as it wasn't asked for.
+- **Verified: 11/11 in Node against the shipped `dimValOf`/`dimLabel`/`allDims`/`normalizeGroupBys`**
+  (extracted, not reimplemented) — value, trimming, all three blank forms bucketing together, `wp`
+  accepted by the normalizer, `wbs` still forced last from either order, `wp` alone surviving, an
+  unknown dim still dropped. Script parses; only those 3 sites enumerate dimensions, so nothing else
+  needed updating. ⚠️ Not verified signed-in. Module-local, no migration, no `?v=` bump.
+
+## WBS import: the last double-layer + the duplicate children the merge fix created (2026-08-08) — fmlozano
+After another AVR101 reimport the user reported the main WBS still double-layered. Queried the live
+tree (1,627 nodes): the previous merge fix **worked for Initiation / Planning / Execution Phase** but
+left two real defects.
+- ⚠️ **`Milestones > Project Milestones` still nested.** The merge test was exact name equality, but
+  `_impGuessTarget` files that branch under Milestones via the **keyword hint** (`/milestone|key date/`),
+  not by name — so `sameName` was false and it nested. New **`_wbsNameKey()`** normalises before
+  comparing: case/punctuation folded, parentheticals dropped, a leading generic qualifier stripped
+  (`the|project|overall|main|general|key`), trailing plural tolerated. Deliberately conservative —
+  it does **not** fold distinct words, so `Tower 1 Execution Phase` still nests under `Execution
+  Phase` rather than being merged away (asserted as a test case).
+- ⚠️ **The merge fix itself created duplicate CHILDREN — my regression, found by querying the live
+  tree rather than by re-reading the code.** Merging lifted the branch's children up as **new
+  siblings** of the target's existing children, so Planning Phase ended up with three name-collided
+  pairs — locked skeleton `Procurement` / `Design Development` / `Project Execution Plan` (0 grandkids
+  each) sitting **beside** the file's unlocked ones (1 / 7 / 3 grandkids). `_wbsDedupeSkeleton()`
+  cannot heal these: it only merges pairs where **both** nodes are `is_locked`.
+  `_wbsSkeletonTargets()` now also returns each target's `childCode` (normalised child name → dotted
+  code), and a moved child that matches an existing child is filed **into** it; only genuinely new
+  children (e.g. `Preparation and Approval of BOQ`) take a fresh slot.
+- ⚠️ **Why filing into the existing code is safe rather than a duplicate summary row:** `_clearWbsTree()`
+  only drops unlocked nodes, so the locked skeleton child survives a replace-import. The file's row
+  then lands on that node's code, `wbsAdopt` links **every** legacy row of that code to the existing
+  node (`group.forEach`, no re-insert), and `_wbsEnsureSummaries()`'s duplicate-projection heal deletes
+  the extra summary row on the next load. Self-healing, not an orphan.
+- **Verified in Node against the SHIPPED `_wbsNameKey` + `applyWbsPlacement`** (sliced out, not
+  reimplemented, with stubbed skeleton targets): 5/5 name-key cases incl. the two that must NOT fold,
+  and a full placement run reproducing the live AVR101 shape — `Project Milestones` merges (child at
+  `1.1`, no extra layer), `Procurement`→`3.3` and `Design Development`→`3.2` land on the **existing**
+  children, and the new BOQ branch takes `3.4`. Inline script parses.
+  ⚠️ **Not verified signed-in** — needs a hard refresh (`index.html` is not `?v=` cache-busted) and
+  another Avesta reimport. ⚠️ The location + discipline wizards must be re-run after any reimport;
+  a reimport wipes `work_type` and `location`.
+
+## Import WBS-placement picker was missing Closeout Phase (2026-08-08) — fmlozano
+Screenshot: AVR101's import placement dialog offered Milestones / Initiation / Planning / Execution
+Phase but no Closeout Phase, even though the file carries 70 leaf activities under it and Closeout
+Phase exists live as a top-level branch.
+- ⚠️ **Root cause is the documented AVR101 quirk, now actually biting.** `_wbsSkeletonTargets()`
+  only offers **locked** top-level nodes. Closeout Phase was added to `WBS_SKELETON` after AVR101 was
+  already seeded, so on AVR101 it was never auto-seeded/locked — a previous reimport instead created
+  it as an ordinary **unlocked** top-level branch ("its own top-level branch"). The locked-only filter
+  silently drops it, so the picker can never route the file's own Closeout Phase branch there — every
+  reimport re-creates it as a fresh unlocked top-level sibling instead of filing into the one that
+  already exists, i.e. the exact duplicate-top-level symptom this whole placement feature exists to
+  prevent, just for one branch the locked filter can't see.
+- **Fix:** after the locked pass, also fold in any **unlocked** top-level node whose name matches (via
+  the existing `_wbsNameKey()`) an entry in the `WBS_SKELETON` constant — i.e. a phase the constant
+  knows about but this project's tree never got to lock. Deduplicated by name key so a project that
+  *does* have a locked match isn't given a second target.
+- Verified in Node against the shipped `_wbsSkeletonTargets`/`_wbsNameKey` (sliced, not reimplemented)
+  with a fixture mirroring AVR101 exactly (4 locked + 1 unlocked Closeout Phase): all 5 phases now
+  returned as targets. Inline script parses. ⚠️ Not verified signed-in — hard-refresh then reimport.
+
+## Import now reuses the saved location matching + stamps Discipline/Trade (2026-08-08) — fmlozano
+User reimported AVR101 and reported Discipline/Trade and Level both unrecognised. **Diagnosed by
+querying the live project, not by reading code** — two independent root causes, both measured:
+- ⚠️ **Level written on ZERO activities while Tower got 4,021 and Zone 1,218.** The importer's
+  Location breakdown offers only the keyword matcher, whose argument `locMapUI` seeds from **the
+  level's own name**. That works by pure coincidence for levels called Tower/Zone (Avesta's nodes
+  really are "Tower 5"/"Zone 2") and matches nothing for a level called **Level**: measured
+  **0 of 1,623** WBS node names contain the word "level" — they read "Nineth Floor"/"Roof Deck".
+  Meanwhile the project already held a **planner-confirmed 29-name match table** for Level whose
+  **every key still exists in the tree** (verified 29/29) — the importer simply never offered it.
+  **Fix: `locSrcsSavedMatch()`** exposes each level's saved `location_levels.match` as a source and
+  `guessFor()` prefers it, per level. A level with no saved match still falls back to the keyword
+  source, so a first-ever import is unchanged.
+- ⚠️ **`work_type` blank on ALL 4,393 activities.** The import writes `location` but has never
+  written `work_type`, and a reimport **wipes** the column — so the trade grouping reads
+  "— No discipline/trade —" after every reimport until someone remembers the wizard. The wizard's
+  matching is `localStorage`-only, so it doesn't even survive a browser change. **Fix:
+  `discStampFromWbs()`** derives the trade from the WBS ancestry via the existing `discCanonOf()`.
+  Deterministic — no saved state — so it works on a first-ever import too. Both import dialogs gained
+  a default-on checkbox (`discImportRowHTML`) that shows the **real coverage and the exact trades
+  found in this file** before importing, and disables itself when the WBS has no recognisable trade
+  headings. The wizard remains the way to refine/exclude.
+- **Verified against the shipped functions** (sliced, not reimplemented): on Avesta's documented WBS
+  shape the stamp yields exactly the canonical trades — Fire Protection/Electrical/Plumbing → **MEPF
+  Works**, Wet/Finishing → **Architectural Works**, Superstructure/Substructure/Earthworks →
+  **Structural Works** — while Planning-branch and milestone activities correctly get **none**. The
+  saved-match source resolves a deep code to `Tower 5` / `9th Floor` / `Zone 2` (including the
+  spelling merge "Nineth Floor" → "9th Floor"), and each level defaults to **its own** saved match,
+  falling back to the keyword source when it has none. Inline script parses.
+- ⚠️ **Live-probe caveat:** the module page is ~1MB and a full 6,400-row scan **froze and then killed
+  the tab**; the lighter `projects.html` carries the same session and is the better place to query
+  from. A row count that climbs between two reads means an import is in flight — measurements taken
+  then are of a half-written table (one read returned 500 rows mid-insert).
