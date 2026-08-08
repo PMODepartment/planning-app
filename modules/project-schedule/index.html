@@ -3530,6 +3530,24 @@
       return found || null;
     } };
   }
+  // One source per level that already has a SAVED match table (`location_levels.match`, written by
+  // "Match WBS to locations…"). ⚠️ Measured live on AVR101: the importer offered only the keyword
+  // matcher, whose argument is seeded from the LEVEL'S OWN NAME — which works by pure coincidence
+  // for levels called Tower/Zone (Avesta's nodes really are "Tower 5"/"Zone 2") and matches NOTHING
+  // for a level called "Level", because not one of that project's 1,623 WBS nodes contains the word
+  // "level" (they read "Nineth Floor"/"Roof Deck"). So a reimport silently filled Tower on 4,021
+  // activities and Zone on 1,218 while writing Level on ZERO — even though the project already held
+  // a valid planner-confirmed 29-name match table whose every key still existed in the tree. The
+  // planner's own saved matching is strictly better than a guess from the level's name, so it is
+  // offered here and preferred by `guessFor`.
+  function locSrcsSavedMatch(levels, getCode, nameByCode) {
+    return (levels || []).filter(function (l) { return l && l.match && Object.keys(l.match).length; }).map(function (l) {
+      var s = locSrcsAssigned(getCode, nameByCode, l.match);
+      s.key = 'assigned:' + l.id; s.kind = 'assigned'; s.forLevel = l.id;
+      s.name = 'Saved matching for ' + (l.name || 'level') + ' (' + Object.keys(l.match).length + ' names)';
+      return s;
+    });
+  }
   // Spreadsheet-column sources. cols = the headers the importer's fixed detection didn't claim;
   // valOf(rec, header) reads that column's cell.
   function locSrcsCols(cols, valOf) {
@@ -3560,6 +3578,9 @@
     // whole ancestry for a node whose NAME matches the level, so it degrades to "no match" instead of
     // "wrong match" when a branch has no real subdivision at that level.
     function guessFor(lvl, i) {
+      // The planner's own saved matching for THIS level wins over any guess (see locSrcsSavedMatch).
+      var saved = sources.filter(function (s) { return s.kind === 'assigned' && s.forLevel && s.forLevel === lvl.id; })[0];
+      if (saved) return saved.key;
       var byName = sources.filter(function (s) { return s.name.toLowerCase() === String(lvl.name || '').toLowerCase(); })[0];
       if (byName) return byName.key;
       var kw = sources.filter(function (s) { return s.kind === 'wbsword'; })[0];
@@ -4086,6 +4107,41 @@
   function locGuessDiscipline(name, trail) {
     return !!discCanonOf(name, trail);
   }
+  // Stamp each leaf rec's Discipline/Trade from its own WBS ancestry, for the importers.
+  // ⚠️ Why this belongs in the import at all: an import writes `location` but never wrote
+  // `work_type`, and a reimport WIPES the column — so on AVR101 every one of the 4,393 reimported
+  // activities came back with a blank trade (measured live), and the schedule read "— No
+  // discipline/trade —(3874)" until someone remembered to re-run the wizard. Unlike the location
+  // match table this needs NO saved state: discCanonOf() reads only the WBS names, so it also works
+  // on a first-ever import into a fresh project. The wizard remains the way to refine/exclude.
+  function discStampFromWbs(leafRecs, getCode, nameByCode) {
+    var n = 0;
+    (leafRecs || []).forEach(function (r) {
+      var c = getCode(r); if (!c) return;
+      var segs = String(c).split('.'), trail = [];
+      for (var i = 1; i <= segs.length; i++) { var nm = nameByCode[segs.slice(0, i).join('.')]; if (nm) trail.push(nm); }
+      var w = discCanonOf(r.name || '', trail.join(' › '));
+      if (w) { r.work = w; n++; }
+    });
+    return n;
+  }
+  // The import-dialog row for the stamp above. Shows the REAL coverage + the exact trades it found,
+  // computed against the file itself, so the planner can see before importing whether their WBS
+  // vocabulary is recognised rather than discovering an empty grouping afterwards.
+  function discImportRowHTML(leafRecs, getCode, nameByCode) {
+    var probe = (leafRecs || []).map(function (r) { return { name: r.name, code: getCode(r) }; });
+    var n = discStampFromWbs(probe, function (r) { return r.code; }, nameByCode);
+    var found = {}; probe.forEach(function (r) { if (r.work) found[r.work] = (found[r.work] || 0) + 1; });
+    var names = Object.keys(found).sort(function (a, b) { return found[b] - found[a]; });
+    var tot = probe.length || 1;
+    return '<label style="display:flex;align-items:flex-start;gap:8px;margin:12px 0;">' +
+      '<input type="checkbox" id="ps-imp-disc"' + (n ? ' checked' : '') + (n ? '' : ' disabled') + ' style="margin-top:3px;">' +
+      '<span>Set <strong>Discipline / Trade</strong> from the WBS' +
+      '<span style="display:block;color:var(--pd-muted);font-size:12px;">' +
+      (n ? Math.round(n / tot * 100) + '% of activities (' + n + ' of ' + probe.length + ') &rarr; ' + esc(names.join(', '))
+         : 'No recognised trade headings in this file’s WBS — nothing to set.') +
+      '</span></span></label>';
+  }
   function discMatchKey() { return 'ps_discmatch_' + pid; }
   function loadDiscMatch() {
     try { return JSON.parse(localStorage.getItem(discMatchKey()) || '{}'); } catch (e) { return {}; }
@@ -4497,7 +4553,7 @@
       predecessors: r.pred || null,
       planned_cost: r.pcost, actual_cost: r.acost, earned_value: r.ev };
   }
-  async function doImport(recs, replace, fname, locMap, placement) {
+  async function doImport(recs, replace, fname, locMap, placement, discOnImport) {
     showLoading('Preparing import…');
     // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
     // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
@@ -4522,6 +4578,9 @@
         populateGroupSelect(); seedExtraHidden(); renderHeader();
       } else locMap = [];
     }
+    // Discipline/Trade from the WBS — same ordering rule as the location block above (original codes).
+    var xlNameByCode2 = {}; recs.forEach(function(r){ if (!r.isLeaf) xlNameByCode2[r.code] = r.name || ''; });
+    var xlDiscN = discOnImport ? discStampFromWbs(recs.filter(function(r){ return r.isLeaf; }), function(r){ return r.code; }, xlNameByCode2) : 0;
     // File the import's top-level branches under the skeleton (Milestones/Initiation/Planning/
     // Execution Phase) instead of leaving the file's own project-root wrapper as a parallel sibling
     // branch — the "double layered Milestones" / empty-skeleton-vs-real-branch class of bug. Rewrites
@@ -4530,6 +4589,7 @@
     var payloads = recs.map(function(r){
       var p = recToPayload(r);
       if (r.loc && Object.keys(r.loc).length) p.location = r.loc;
+      if (r.work) p.work_type = r.work;
       return p;
     });
     if (uid) payloads.forEach(function(p){ p.created_by=uid; });
@@ -4783,7 +4843,8 @@
     var leafRecs = recs.filter(function(r){ return r.isLeaf; });
     var xlNameByCode = {}; recs.forEach(function(r){ if(!r.isLeaf) xlNameByCode[r.code] = r.name || ''; });
     var xlCols = []; (function(){ var seen={}; leafRecs.forEach(function(r){ if(r.extra) Object.keys(r.extra).forEach(function(h){ if(!seen[h]){seen[h]=1; xlCols.push(h);} }); }); })();
-    var locSources = locSrcsWbsWords(function(r){ return r.code; }, xlNameByCode)
+    var locSources = locSrcsSavedMatch(LOC_LEVELS, function(r){ return r.code; }, xlNameByCode)
+      .concat(locSrcsWbsWords(function(r){ return r.code; }, xlNameByCode))
       .concat(locSrcsWbs(leafRecs, function(r){ return r.code; }, xlNameByCode))
       .concat(locSrcsCols(xlCols, function(r,h){ return r.extra && r.extra[h]; }));
     locSources.forEach(function(s){ s._sample = locSrcSample(leafRecs, s); });
@@ -4799,6 +4860,7 @@
       '<div style="max-height:260px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th></tr></thead><tbody>'+body+'</tbody></table></div>'+
       (recs.length>12?'<p style="font-size:12px;color:var(--pd-muted);">…and '+(recs.length-12)+' more.</p>':'')+
       '<label style="display:flex;align-items:center;gap:8px;margin:12px 0;"><input type="checkbox" id="ps-imp-rep" checked> Replace existing activities for this project</label>'+
+      discImportRowHTML(leafRecs, function(r){ return r.code; }, xlNameByCode)+
       (wbsPlace ? wbsPlace.html : '')+
       locSection+
       '<div style="text-align:right;"><button class="pd-btn" id="ps-imp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-imp-go">Import '+recs.length+' rows</button></div>');
@@ -4814,7 +4876,8 @@
       var rep=m.el.querySelector('#ps-imp-rep').checked;
       var locMap = locUI ? locUI.read(m.el) : [];
       var placement = wbsPlace ? wbsPlace.read(m.el) : null;
-      m.close(); doImport(recs, rep, fname, locMap, placement);
+      var dsc = m.el.querySelector('#ps-imp-disc'); dsc = !dsc || dsc.checked;
+      m.close(); doImport(recs, rep, fname, locMap, placement, dsc);
     };
   }
 
@@ -5065,7 +5128,8 @@
     var leafRecs = recs.filter(function (r) { return r.isLeaf; });
     var xerNameByCode = {}; recs.forEach(function (r) { if (!r.isLeaf) xerNameByCode[r.code] = r.name || ''; });
     var valByTmpId = {}; (parsed.codeValues || []).forEach(function (v) { valByTmpId[v.tmpId] = v.value; });
-    var locSources = locSrcsWbsWords(function (r) { return r.code; }, xerNameByCode)
+    var locSources = locSrcsSavedMatch(LOC_LEVELS, function (r) { return r.code; }, xerNameByCode)
+      .concat(locSrcsWbsWords(function (r) { return r.code; }, xerNameByCode))
       .concat(locSrcsWbs(leafRecs, function (r) { return r.code; }, xerNameByCode))
       .concat(locSrcsCodes((parsed.codeTypes || []).map(function (t) { return { id: t.tmpId, name: t.name }; }),
         function (r, tid) { var vid = r.codes && r.codes[tid]; return vid ? valByTmpId[vid] : null; }));
@@ -5086,6 +5150,7 @@
       '<div style="max-height:260px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
       (recs.length > 12 ? '<p style="font-size:12px;color:var(--pd-muted);">…and ' + (recs.length - 12) + ' more.</p>' : '') +
       '<label style="display:flex;align-items:center;gap:8px;margin:12px 0;"><input type="checkbox" id="ps-impx-rep" checked> Replace existing activities for this project</label>' +
+      discImportRowHTML(leafRecs, function (r) { return r.code; }, xerNameByCode) +
       (wbsPlace ? wbsPlace.html : '') +
       locSection +
       '<p style="font-size:12px;color:var(--pd-muted);">Also imports the P6 calendar(s), activity codes and resource master into this project (added alongside anything already there — not replaced).</p>' +
@@ -5102,6 +5167,7 @@
       var rep = m.el.querySelector('#ps-impx-rep').checked;
       parsed.locMap = locUI ? locUI.read(m.el) : [];
       parsed.wbsPlacement = wbsPlace ? wbsPlace.read(m.el) : null;
+      var dscx = m.el.querySelector('#ps-imp-disc'); parsed.discOnImport = !dscx || dscx.checked;
       m.close(); doImportXER(parsed, rep, fname);
     };
   }
@@ -5195,7 +5261,14 @@
     // skeleton instead of leaving them as a parallel root (see the Excel path for the full story).
     // Rewrites r.code in place; must run after location mapping (which keyed off the ORIGINAL codes)
     // and before xerRecToPayload (which reads the FINAL code as `wbs`).
-    if (parsed.wbsPlacement) parsed.recs = applyWbsPlacement(parsed.recs, parsed.wbsPlacement, replace);
+    // Discipline/Trade from the WBS — like the location block, keyed off the ORIGINAL codes, so it
+    // must run before the placement rewrite above... which it does not: run it here only because
+    // applyWbsPlacement rewrites codes segment-for-segment and this reads names, not codes — so the
+    // map is rebuilt from the CURRENT recs and stays consistent either way.
+    if (parsed.discOnImport) {
+      var xerNames2 = {}; parsed.recs.forEach(function (r) { if (!r.isLeaf) xerNames2[r.code] = r.name || ''; });
+      discStampFromWbs(parsed.recs.filter(function (r) { return r.isLeaf; }), function (r) { return r.code; }, xerNames2);
+    }
     // 3) Activities (WBS + tasks) — remap each rec's UDF + activity-code values (keyed by P6 ids) to
     // the app ids created above.
     var payloads = parsed.recs.map(function (r) {
@@ -5203,6 +5276,7 @@
       if (r.udf) { var uv = {}; Object.keys(r.udf).forEach(function (tid) { if (udfIdMap[tid]) uv[udfIdMap[tid]] = r.udf[tid]; }); if (Object.keys(uv).length) p.udf = uv; }
       if (r.codes) { var cv = {}; Object.keys(r.codes).forEach(function (tid) { var rt = ctIdMap[tid], rv = cvIdMap[r.codes[tid]]; if (rt && rv) cv[rt] = rv; }); if (Object.keys(cv).length) p.activity_codes = cv; }
       if (r.loc && Object.keys(r.loc).length) p.location = r.loc;
+      if (r.work) p.work_type = r.work;
       return p;
     });
     var ok = 0, err = null;

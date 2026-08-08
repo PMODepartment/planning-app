@@ -3591,3 +3591,37 @@ Phase exists live as a top-level branch.
 - Verified in Node against the shipped `_wbsSkeletonTargets`/`_wbsNameKey` (sliced, not reimplemented)
   with a fixture mirroring AVR101 exactly (4 locked + 1 unlocked Closeout Phase): all 5 phases now
   returned as targets. Inline script parses. ⚠️ Not verified signed-in — hard-refresh then reimport.
+
+## Import now reuses the saved location matching + stamps Discipline/Trade (2026-08-08) — fmlozano
+User reimported AVR101 and reported Discipline/Trade and Level both unrecognised. **Diagnosed by
+querying the live project, not by reading code** — two independent root causes, both measured:
+- ⚠️ **Level written on ZERO activities while Tower got 4,021 and Zone 1,218.** The importer's
+  Location breakdown offers only the keyword matcher, whose argument `locMapUI` seeds from **the
+  level's own name**. That works by pure coincidence for levels called Tower/Zone (Avesta's nodes
+  really are "Tower 5"/"Zone 2") and matches nothing for a level called **Level**: measured
+  **0 of 1,623** WBS node names contain the word "level" — they read "Nineth Floor"/"Roof Deck".
+  Meanwhile the project already held a **planner-confirmed 29-name match table** for Level whose
+  **every key still exists in the tree** (verified 29/29) — the importer simply never offered it.
+  **Fix: `locSrcsSavedMatch()`** exposes each level's saved `location_levels.match` as a source and
+  `guessFor()` prefers it, per level. A level with no saved match still falls back to the keyword
+  source, so a first-ever import is unchanged.
+- ⚠️ **`work_type` blank on ALL 4,393 activities.** The import writes `location` but has never
+  written `work_type`, and a reimport **wipes** the column — so the trade grouping reads
+  "— No discipline/trade —" after every reimport until someone remembers the wizard. The wizard's
+  matching is `localStorage`-only, so it doesn't even survive a browser change. **Fix:
+  `discStampFromWbs()`** derives the trade from the WBS ancestry via the existing `discCanonOf()`.
+  Deterministic — no saved state — so it works on a first-ever import too. Both import dialogs gained
+  a default-on checkbox (`discImportRowHTML`) that shows the **real coverage and the exact trades
+  found in this file** before importing, and disables itself when the WBS has no recognisable trade
+  headings. The wizard remains the way to refine/exclude.
+- **Verified against the shipped functions** (sliced, not reimplemented): on Avesta's documented WBS
+  shape the stamp yields exactly the canonical trades — Fire Protection/Electrical/Plumbing → **MEPF
+  Works**, Wet/Finishing → **Architectural Works**, Superstructure/Substructure/Earthworks →
+  **Structural Works** — while Planning-branch and milestone activities correctly get **none**. The
+  saved-match source resolves a deep code to `Tower 5` / `9th Floor` / `Zone 2` (including the
+  spelling merge "Nineth Floor" → "9th Floor"), and each level defaults to **its own** saved match,
+  falling back to the keyword source when it has none. Inline script parses.
+- ⚠️ **Live-probe caveat:** the module page is ~1MB and a full 6,400-row scan **froze and then killed
+  the tab**; the lighter `projects.html` carries the same session and is the better place to query
+  from. A row count that climbs between two reads means an import is in flight — measurements taken
+  then are of a half-written table (one read returned 500 rows mid-insert).

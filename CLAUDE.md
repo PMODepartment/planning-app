@@ -4792,3 +4792,29 @@ four branches, and had introduced a second defect of its own.
   including the two that must NOT fold, plus a full placement run reproducing the live AVR101 shape.
   Inline script parses. **Not verified signed-in** — `index.html` isn't cache-busted, so hard-refresh
   (Ctrl+Shift+R) before re-importing. Module-local, no migration, no `?v=` bump.
+
+### 2026-08-08 — Project Schedule import: reuse the saved location matching + stamp Discipline/Trade
+User reimported Avesta and reported Discipline/Trade and Level both unrecognised. Diagnosed by
+querying the live project — two independent root causes, both measured, neither guessed.
+- ⚠️ **Level written on 0 activities, Tower on 4,021, Zone on 1,218.** The importer only offered the
+  keyword matcher, whose argument is seeded from **the level's own name** — a coincidence that works
+  for levels called Tower/Zone and fails completely for one called "Level": **0 of 1,623** WBS node
+  names contain that word (Avesta says "Nineth Floor"/"Roof Deck"). The project already held a
+  planner-confirmed 29-name match table for Level, **all 29 keys still present in the tree**, which
+  the importer never offered. The import's Location breakdown now exposes each level's saved
+  `location_levels.match` as a source and defaults to it; levels without one keep the keyword
+  fallback, so a first-ever import is unchanged.
+- ⚠️ **`work_type` blank on all 4,393 activities.** Imports write `location` but never wrote
+  `work_type`, and a reimport wipes it — so the trade grouping reads "— No discipline/trade —" after
+  every reimport, and the wizard's matching is localStorage-only so it doesn't survive a browser
+  change. Both import dialogs now carry a default-on **"Set Discipline / Trade from the WBS"** step
+  built on the existing canonical-trade resolver, which needs no saved state and shows the real
+  coverage + the exact trades found in the file before you import.
+- **Verified against the shipped functions** (sliced, not reimplemented): the stamp yields exactly the
+  six canonical trades on Avesta's WBS shape (Fire Protection/Electrical/Plumbing → MEPF, Wet/
+  Finishing → Architectural, Superstructure/Substructure/Earthworks → Structural) while Planning and
+  milestone work correctly gets none; the saved-match source resolves deep codes to Tower 5 / 9th
+  Floor / Zone 2 and each level defaults to its own table. Inline script parses.
+- ⚠️ Live-probe note: the schedule module page is ~1MB and a full 6,400-row scan froze then killed the
+  tab — query from `projects.html`, which carries the same session. A climbing row count means an
+  import is in flight and any measurement then is of a half-written table.
