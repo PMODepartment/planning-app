@@ -3571,3 +3571,23 @@ left two real defects.
   ⚠️ **Not verified signed-in** — needs a hard refresh (`index.html` is not `?v=` cache-busted) and
   another Avesta reimport. ⚠️ The location + discipline wizards must be re-run after any reimport;
   a reimport wipes `work_type` and `location`.
+
+## Import WBS-placement picker was missing Closeout Phase (2026-08-08) — fmlozano
+Screenshot: AVR101's import placement dialog offered Milestones / Initiation / Planning / Execution
+Phase but no Closeout Phase, even though the file carries 70 leaf activities under it and Closeout
+Phase exists live as a top-level branch.
+- ⚠️ **Root cause is the documented AVR101 quirk, now actually biting.** `_wbsSkeletonTargets()`
+  only offers **locked** top-level nodes. Closeout Phase was added to `WBS_SKELETON` after AVR101 was
+  already seeded, so on AVR101 it was never auto-seeded/locked — a previous reimport instead created
+  it as an ordinary **unlocked** top-level branch ("its own top-level branch"). The locked-only filter
+  silently drops it, so the picker can never route the file's own Closeout Phase branch there — every
+  reimport re-creates it as a fresh unlocked top-level sibling instead of filing into the one that
+  already exists, i.e. the exact duplicate-top-level symptom this whole placement feature exists to
+  prevent, just for one branch the locked filter can't see.
+- **Fix:** after the locked pass, also fold in any **unlocked** top-level node whose name matches (via
+  the existing `_wbsNameKey()`) an entry in the `WBS_SKELETON` constant — i.e. a phase the constant
+  knows about but this project's tree never got to lock. Deduplicated by name key so a project that
+  *does* have a locked match isn't given a second target.
+- Verified in Node against the shipped `_wbsSkeletonTargets`/`_wbsNameKey` (sliced, not reimplemented)
+  with a fixture mirroring AVR101 exactly (4 locked + 1 unlocked Closeout Phase): all 5 phases now
+  returned as targets. Inline script parses. ⚠️ Not verified signed-in — hard-refresh then reimport.

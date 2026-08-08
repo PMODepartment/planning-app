@@ -4599,6 +4599,20 @@
     // nodes are the ground truth for what this specific project's skeleton actually is.
     if (WBS_NODES && WBS_NODES.length) {
       var top = WBS_NODES.filter(function (n) { return n.is_locked && !n.parent_id; });
+      // ⚠️ A skeleton phase added to WBS_SKELETON after this project was first seeded (e.g. Closeout
+      // Phase, appended after some projects already existed) never got locked — it was instead
+      // created as an ordinary unlocked top-level branch by an earlier import ("its own top-level
+      // branch"). Without this, the picker silently drops it as a target, so the user can never file
+      // the file's own like-named branch there and it keeps re-appearing as a duplicate top level.
+      // Any unlocked top-level node whose name matches a WBS_SKELETON entry is offered too.
+      if (top.length) {
+        var lockedKeys = {}; top.forEach(function (n) { lockedKeys[_wbsNameKey(n.name)] = 1; });
+        var skelKeys = {}; WBS_SKELETON.forEach(function (n) { skelKeys[_wbsNameKey(n.name)] = 1; });
+        WBS_NODES.filter(function (n) { return !n.is_locked && !n.parent_id; }).forEach(function (n) {
+          var k = _wbsNameKey(n.name);
+          if (k && skelKeys[k] && !lockedKeys[k]) { lockedKeys[k] = 1; top.push(n); }
+        });
+      }
       if (top.length) {
         var codeOf = computeWbsCodes();
         return top.map(function (n) {
