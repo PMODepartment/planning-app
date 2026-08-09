@@ -3654,3 +3654,35 @@ main default WBS."* Diagnosed by **querying the live tree**, which showed AVR101
 - ⚠️ **Not verified signed-in** — `index.html` is not `?v=` cache-busted, so **hard-refresh
   (Ctrl+Shift+R) before reimporting**; the phase appears on the next project load, then the import
   picker offers it.
+
+## Two location levels that are really ONE dimension — merge levels (2026-08-08) — fmlozano
+User: *"There are location breakdown that are the same levels which are horizontal and vertical. This
+shows unassigned"*, with the intended shape drawn as `Tower > Level > Zone > {Vertical, Horizontal}` —
+note Vertical and Horizontal at the **same depth**, i.e. siblings, i.e. two **values**, not two levels.
+- **Measured live on AVR101 before changing anything.** The project has 5 `location_levels`:
+  Tower(0) / Level(1) / Zone(2) / **Vertical(3)** / **Horizontal(4)**. The Vertical level holds exactly
+  one distinct value — `"Vertical"`, on 720 activities; Horizontal holds exactly `"Horizontal"`, on 498.
+  **`haveBOTH: 0`** — no activity carries a value at both. So the "— Unassigned —" rows are not a
+  grouping bug: grouping by two mutually-exclusive levels *must* leave each blank under the other.
+- ⚠️ **The keyword matcher leads straight into this.** Name a level "Vertical", let `locMapUI` seed its
+  own name as the search term, and every matching WBS node yields the value `"Vertical"` — a degenerate
+  level whose only value is its own name. Both of these levels have `match: {}` (0 saved keys), i.e.
+  they were filled by keyword, never through the wizard.
+- **`_locMergePlan(srcId, tgtId)` + `openLocMergeLevel()`** — a **Merge into another level** (`⤵`)
+  action on each row of the Location Breakdown editor. Plans first and shows the counts, the values
+  being carried over, and any conflicts before writing.
+  ⚠️ **A conflict never overwrites.** An activity that already holds a value at the target keeps it;
+  only its source value is dropped. Silently discarding a real location value to satisfy a merge would
+  be data loss.
+  ⚠️ **The source key is deleted from `location` on conflict rows too**, not just moved rows — otherwise
+  the deleted level would leave orphaned keys behind in the jsonb.
+  The saved WBS `match` tables are folded together (target's entries win), the merged level can be
+  renamed in the same dialog (Vertical+Horizontal → e.g. "Orientation"), and the source level is deleted.
+- **Verified 7/7 in Node against the SHIPPED `_locMergePlan`/`locValOf`/`isWbs`** (sliced, not
+  reimplemented) over a fixture built from AVR101's exact live shape: 498 activities move, **0
+  conflicts** (matching the measured `haveBOTH: 0`), WBS-summary rows excluded, a planted both-values
+  row is classed a conflict that keeps the **target** value, and merged coverage lands on **1,218** —
+  exactly the live `Vertical 720 + Horizontal 498`. Inline script parses; every helper the new code
+  calls confirmed to exist.
+- ⚠️ **Not verified signed-in** — `index.html` is not `?v=` cache-busted, so hard-refresh before using
+  Group menu → **Location Breakdown…** → `⤵` on Horizontal → merge into Vertical → rename.

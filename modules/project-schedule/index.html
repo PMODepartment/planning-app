@@ -3230,6 +3230,102 @@
   // ---- Location Breakdown (levels) ------------------------------------------------------------
   // The levels are per-project and free-form (Building / Level / Zone / Unit / Station / …) because
   // a tower, a viaduct and a plant don't share a vocabulary. Order = the grouping hierarchy.
+  // ⚠️ Two levels that are really ONE dimension. Measured live on Avesta (AVR101): a "Vertical" level
+  // holding the single value "Vertical" (720 activities) beside a "Horizontal" level holding the single
+  // value "Horizontal" (498) — and they NEVER co-occur (0 activities carry both). Grouping by both then
+  // *must* render "— Unassigned —" under each, because a vertical activity has nothing at the horizontal
+  // level and vice versa. They are two VALUES of one dimension, not two levels.
+  // The keyword matcher leads straight into this: name a level "Vertical", seed its own name as the
+  // term, and every matching WBS node yields the value "Vertical" — a degenerate level whose only value
+  // is its own name. Merging is the repair.
+  // Plans a merge WITHOUT writing: which activities move, and which already hold a value at the target
+  // (those are never overwritten — a real value is not something a merge may silently discard).
+  function _locMergePlan(srcId, tgtId) {
+    var moves = [], conflicts = [], srcVals = {};
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      var sv = locValOf(r, srcId); if (!sv) return;
+      srcVals[sv] = (srcVals[sv] || 0) + 1;
+      var tv = locValOf(r, tgtId);
+      if (tv) conflicts.push({ r: r, from: sv, keep: tv }); else moves.push({ r: r, v: sv });
+    });
+    return { moves: moves, conflicts: conflicts, srcVals: srcVals };
+  }
+  function openLocMergeLevel(srcId, onDone) {
+    var src = LOC_LEVELS.filter(function (l) { return l.id === srcId; })[0];
+    var others = LOC_LEVELS.filter(function (l) { return l.id !== srcId; });
+    if (!src || !others.length) { UI.toast('Add a second level before merging.', 'warn'); return; }
+    var m = UI.modal('<h2 style="margin-top:0;">Merge &ldquo;' + esc(src.name) + '&rdquo; into another level</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Use this when two levels are really the same dimension &mdash; e.g. <em>Vertical</em> and <em>Horizontal</em> are two <strong>values</strong> of one level, not two levels. ' +
+      'Splitting them across two levels is what makes each show &ldquo;&mdash; Unassigned &mdash;&rdquo; under the other.</p>' +
+      '<label class="ps-f-lbl">Merge into</label><select class="pd-select" id="lmg-tgt" style="width:100%;">' +
+      others.map(function (l) { return '<option value="' + esc(l.id) + '">' + esc(l.name) + '</option>'; }).join('') + '</select>' +
+      '<label class="ps-f-lbl" style="margin-top:10px;">Name for the merged level</label>' +
+      '<input class="pd-input" id="lmg-name" style="width:100%;">' +
+      '<div id="lmg-prev" style="margin-top:12px;font-size:12.5px;"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">' +
+      '<button class="pd-btn" id="lmg-c">Cancel</button><button class="pd-btn pd-btn-primary" id="lmg-go">Merge</button></div>');
+    var selEl = m.el.querySelector('#lmg-tgt'), nameEl = m.el.querySelector('#lmg-name'), prev = m.el.querySelector('#lmg-prev');
+    function tgt() { return LOC_LEVELS.filter(function (l) { return l.id === selEl.value; })[0]; }
+    function paintPrev() {
+      var t = tgt(); if (!t) return;
+      if (!nameEl.dataset.touched) nameEl.value = t.name;
+      var p = _locMergePlan(srcId, t.id);
+      var vals = Object.keys(p.srcVals).sort(function (a, b) { return p.srcVals[b] - p.srcVals[a]; });
+      prev.innerHTML =
+        '<div><strong>' + p.moves.length + '</strong> activit' + (p.moves.length === 1 ? 'y moves' : 'ies move') +
+        ' from &ldquo;' + esc(src.name) + '&rdquo; into &ldquo;' + esc(t.name) + '&rdquo;.</div>' +
+        (vals.length ? '<div style="color:var(--pd-muted);margin-top:4px;">Values carried over: ' +
+          vals.slice(0, 6).map(function (v) { return esc(v) + ' (' + p.srcVals[v] + ')'; }).join(' &middot; ') +
+          (vals.length > 6 ? ' &middot; +' + (vals.length - 6) + ' more' : '') + '</div>' : '') +
+        (p.conflicts.length
+          ? '<div style="color:var(--pd-warn,#b26a00);margin-top:6px;">&#9888; ' + p.conflicts.length +
+            ' activit' + (p.conflicts.length === 1 ? 'y already has' : 'ies already have') + ' a value at &ldquo;' + esc(t.name) +
+            '&rdquo;. Those keep the value they have &mdash; nothing is overwritten &mdash; and their &ldquo;' + esc(src.name) + '&rdquo; value is dropped.</div>'
+          : '<div style="color:var(--pd-muted);margin-top:6px;">No activity holds a value at both levels, so nothing is overwritten.</div>') +
+        '<div style="color:var(--pd-muted);margin-top:6px;">&ldquo;' + esc(src.name) + '&rdquo; is then deleted and its saved WBS matching folded into the merged level.</div>';
+    }
+    selEl.onchange = paintPrev;
+    nameEl.oninput = function () { nameEl.dataset.touched = '1'; };
+    m.el.querySelector('#lmg-c').onclick = m.close;
+    m.el.querySelector('#lmg-go').onclick = async function () {
+      var t = tgt(); if (!t) return;
+      var p = _locMergePlan(srcId, t.id), nm = nameEl.value.trim() || t.name;
+      var btn = this; btn.disabled = true; btn.textContent = 'Merging…';
+      try {
+        // Move values, then clear the source key on EVERY row that had one (conflicts included, or the
+        // dropped level would leave orphaned keys behind in the jsonb).
+        var ups = [];
+        p.moves.forEach(function (mv) {
+          var loc = Object.assign({}, mv.r.location || {});
+          loc[t.id] = mv.v; delete loc[srcId];
+          mv.r.location = loc; ups.push({ id: mv.r.id, patch: { location: loc } });
+        });
+        p.conflicts.forEach(function (cf) {
+          var loc = Object.assign({}, cf.r.location || {});
+          delete loc[srcId];
+          cf.r.location = loc; ups.push({ id: cf.r.id, patch: { location: loc } });
+        });
+        if (ups.length) await _batchUpdate(TABLE, ups);
+        // Fold the saved WBS matching in — the target's own entries win.
+        var merged = Object.assign({}, src.match || {}, t.match || {});
+        t.match = merged; t.name = nm;
+        try { await sb().from('location_levels').update({ name: nm, match: merged }).eq('id', t.id); }
+        catch (e) { await sb().from('location_levels').update({ name: nm }).eq('id', t.id); }
+        await sb().from('location_levels').delete().eq('id', srcId);
+        LOC_LEVELS = LOC_LEVELS.filter(function (l) { return l.id !== srcId; });
+        groupBys = groupBys.filter(function (d) { return d !== 'loc:' + srcId; });
+        setGroupBys(groupBys);
+        populateGroupSelect(); seedExtraHidden(); renderHeader(); rebuild(false); renderAll();
+        UI.toast('Merged into "' + nm + '" — ' + p.moves.length + ' activities moved.', 'ok');
+        m.close(); if (onDone) onDone();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Merge';
+        UI.toast('Merge failed: ' + (e && e.message ? e.message : e), 'error');
+      }
+    };
+    paintPrev();
+  }
   function openLocLevels() {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
     var m = UI.modal('<h2 style="margin-top:0;">Location Breakdown</h2>' +
@@ -3246,6 +3342,8 @@
               '<input class="pd-input ps-lvl-name" data-id="' + esc(l.id) + '" value="' + esc(l.name) + '" style="flex:1;height:30px;">' +
               '<button class="ps-gm-x" data-up="' + i + '"' + (i === 0 ? ' disabled' : '') + ' title="Move up">▲</button>' +
               '<button class="ps-gm-x" data-down="' + i + '"' + (i === LOC_LEVELS.length - 1 ? ' disabled' : '') + ' title="Move down">▼</button>' +
+              '<button class="ps-gm-x" data-merge="' + esc(l.id) + '"' + (LOC_LEVELS.length < 2 ? ' disabled' : '') +
+              ' title="Merge into another level — use when two levels are really one dimension (e.g. Vertical + Horizontal)">⤵</button>' +
               '<button class="ps-gm-x danger" data-del="' + esc(l.id) + '" title="Delete this level">✕</button></div>';
           }).join('')
         : '<div style="color:var(--pd-muted);font-size:12.5px;padding:8px 0;">No levels yet. Most building projects use <em>Location</em> then <em>Zone</em>.</div>';
@@ -3277,6 +3375,9 @@
           groupBys = groupBys.filter(function (d) { return d !== 'loc:' + id; });
           paint(); setGroupBys(groupBys); renderHeader();
         };
+      });
+      listEl.querySelectorAll('[data-merge]').forEach(function (b) {
+        b.onclick = function () { openLocMergeLevel(b.dataset.merge, paint); };
       });
     }
     async function addLevel() {
