@@ -3625,3 +3625,32 @@ querying the live project, not by reading code** — two independent root causes
   the tab**; the lighter `projects.html` carries the same session and is the better place to query
   from. A row count that climbs between two reads means an import is in flight — measurements taken
   then are of a half-written table (one read returned 500 rows mid-insert).
+
+## Existing projects never received newly-added skeleton phases — Closeout Phase backfill (2026-08-08) — fmlozano
+User: *"Closeout phase is not recognized in the import wizard. We added closeout phase as one of the
+main default WBS."* Diagnosed by **querying the live tree**, which showed AVR101 sitting at **7 nodes
+— four top-level phases and no Closeout Phase at all.**
+- ⚠️ **Root cause: `ensureWbsSkeleton()` only ever seeded an EMPTY tree** (`if (WBS_NODES.length) return`),
+  so a phase appended to `WBS_SKELETON` after a project was first seeded could never reach it. AVR101
+  predates Closeout Phase, so it was never seeded/locked there. This was noted as an aside in an earlier
+  session and is the actual defect.
+- ⚠️ **The previous fix (`b13bd86`) could not cover it.** That one widened the import picker to also
+  offer *unlocked* top-level nodes whose name matches `WBS_SKELETON` — which worked only while a prior
+  import's unlocked "Closeout Phase" branch happened to exist. **`_clearWbsTree()` drops unlocked
+  nodes**, so Clear schedule deleted it and the picker was empty again. Compensating for a missing node
+  only works while the node exists; the fix has to create it.
+- **`_wbsBackfillSkeleton()`** now runs when the tree is non-empty: inserts any missing top-level
+  skeleton phase **locked**, in its constant position, with its skeleton children. Matched by
+  `_wbsNameKey`, so an existing **locked or unlocked** node of that name is **adopted, never
+  duplicated**. Sort order prefers the constant's own index and falls past the end if something already
+  occupies it, so a user's own top-level branch is never renumbered underneath them. Summary-row
+  projection is left to `_wbsEnsureSummaries()` (runs straight after in `load()`) rather than duplicating
+  the projector. Tolerant: an insert error just means no backfill.
+- **Verified 12/12 in Node against the SHIPPED `_wbsNameKey`/`_wbsBackfillSkeleton`** (sliced out, not
+  reimplemented) using AVR101's exact live shape: exactly one phase added, locked, top-level, at
+  sort_order 4 (after Execution Phase); **second run is a no-op**; an unlocked same-name node is adopted
+  rather than duplicated; and a tree holding only Milestones gets the other four phases + Planning's
+  three children with no duplicate sort_order and no re-created Milestones. Inline script parses.
+- ⚠️ **Not verified signed-in** — `index.html` is not `?v=` cache-busted, so **hard-refresh
+  (Ctrl+Shift+R) before reimporting**; the phase appears on the next project load, then the import
+  picker offers it.

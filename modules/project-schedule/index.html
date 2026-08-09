@@ -10415,13 +10415,58 @@
     // that window; a fresh DB check right before writing narrows it (not eliminates it — there is no
     // DB-level uniqueness constraint to make this atomic — but the two loads would need to race
     // within this one query's round-trip instead of across the whole page-load lifecycle).
-    if (!pid || !canWrite || WBS_NODES.length || _seedingSkeleton) return;
+    if (!pid || !canWrite || _seedingSkeleton) return;
     _seedingSkeleton = true;
     try {
+      // A tree that already exists still needs the phases added to WBS_SKELETON since it was seeded.
+      if (WBS_NODES.length) { await _wbsBackfillSkeleton(); return; }
       var chk = await sb().from('wbs_nodes').select('id').eq('project_id', pid).limit(1);
       if (chk.error || (chk.data && chk.data.length)) return;   // already seeded by someone else — don't duplicate
       await _seedSkeleton();
     } finally { _seedingSkeleton = false; }
+  }
+  // ⚠️ A phase appended to WBS_SKELETON AFTER a project was first seeded never reached that project:
+  // ensureWbsSkeleton() only seeded an EMPTY tree. AVR101 was seeded before Closeout Phase existed, so
+  // it has four locked phases and NO Closeout Phase node — the import placement picker then has nowhere
+  // to file the file's own Closeout branch and it lands as a fresh top-level sibling on every reimport.
+  // (An earlier import DID leave an unlocked "Closeout Phase" behind, but `_clearWbsTree()` drops
+  // unlocked nodes, so Clear schedule deleted it again — which is why offering unlocked skeleton-named
+  // nodes as targets wasn't enough on its own.)
+  // Backfills any missing top-level skeleton phase, LOCKED, in its constant position.
+  // ⚠️ Additive + idempotent: matched by `_wbsNameKey`, so an existing locked OR unlocked node of that
+  // name is adopted, never duplicated. Summary-row projection is left to `_wbsEnsureSummaries()`,
+  // which runs straight after this in `load()` and is already the one idempotent projector.
+  async function _wbsBackfillSkeleton() {
+    var tops = WBS_NODES.filter(function (n) { return !n.parent_id; });
+    var have = {}, used = {}, maxSo = -1;
+    tops.forEach(function (n) {
+      var k = _wbsNameKey(n.name); if (k) have[k] = n;
+      var so = n.sort_order || 0; used[so] = 1; if (so > maxSo) maxSo = so;
+    });
+    var added = 0;
+    for (var i = 0; i < WBS_SKELETON.length; i++) {
+      var spec = WBS_SKELETON[i], key = _wbsNameKey(spec.name);
+      if (!key || have[key]) continue;
+      // Prefer the constant's own position; fall back past the end if something already sits there,
+      // so a user's own top-level branch is never renumbered out from under them.
+      var so = used[i] ? (++maxSo) : i;
+      var res = await sb().from('wbs_nodes').insert({
+        project_id: pid, parent_id: null, name: spec.name, sort_order: so,
+        created_by: UID, is_locked: true, source_kind: spec.source_kind || null
+      }).select().single();
+      if (res.error) continue;   // tolerant — a DB without the skeleton migration simply gets no backfill
+      WBS_NODES.push(res.data); have[key] = res.data; used[so] = 1; if (so > maxSo) maxSo = so;
+      added++;
+      var kids = spec.children || [];
+      for (var j = 0; j < kids.length; j++) {
+        var kres = await sb().from('wbs_nodes').insert({
+          project_id: pid, parent_id: res.data.id, name: kids[j].name, sort_order: j,
+          created_by: UID, is_locked: true, source_kind: kids[j].source_kind || null
+        }).select().single();
+        if (!kres.error) WBS_NODES.push(kres.data);
+      }
+    }
+    return added;
   }
   // Merge duplicate locked skeleton nodes — same name under the same parent, both locked. Real
   // corruption seen live: two full skeletons inserted a moment apart by two racing page loads (see
