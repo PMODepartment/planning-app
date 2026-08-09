@@ -10539,6 +10539,18 @@
   // which runs straight after this in `load()` and is already the one idempotent projector.
   async function _wbsBackfillSkeleton() {
     var tops = WBS_NODES.filter(function (n) { return !n.parent_id; });
+    // ⚠️ ONLY complete a skeleton this project already has — never impose one.
+    // Measured across all 19 live projects: 8 of them (CDP101, CP104, GPR101, LCIT, MWD101, OPW101,
+    // PSP101, SLN101) carry a real hand-built/imported WBS with NO skeleton at all, because they
+    // predate the feature. Without this guard the backfill injected five empty locked phases as new
+    // top-level branches into every one of them — on GPR101 that is five empty headings dropped into
+    // an 8,596-node P6 tree. A project that has a tree and no skeleton has opted out; leave it alone.
+    // The signal is a LOCKED top-level node bearing a skeleton name, i.e. one this code actually
+    // seeded. Only 4 projects (BAU101, BAU101-TEST, Test, XERTEST) genuinely want the Closeout backfill.
+    var skelKeys = {};
+    WBS_SKELETON.forEach(function (n) { var k = _wbsNameKey(n.name); if (k) skelKeys[k] = 1; });
+    var seeded = tops.some(function (n) { return n.is_locked && skelKeys[_wbsNameKey(n.name)]; });
+    if (!seeded) return 0;
     var have = {}, used = {}, maxSo = -1;
     tops.forEach(function (n) {
       var k = _wbsNameKey(n.name); if (k) have[k] = n;

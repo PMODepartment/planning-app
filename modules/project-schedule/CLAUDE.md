@@ -3686,3 +3686,24 @@ note Vertical and Horizontal at the **same depth**, i.e. siblings, i.e. two **va
   calls confirmed to exist.
 - ⚠️ **Not verified signed-in** — `index.html` is not `?v=` cache-busted, so hard-refresh before using
   Group menu → **Location Breakdown…** → `⤵` on Horizontal → merge into Vertical → rename.
+
+### ⚠️ Live audit caught a regression in that backfill — it must COMPLETE a skeleton, never impose one
+Auditing the backfill across **all 19 live projects** (top-level nodes only, per project — a single
+cross-project `.is('parent_id',null)` scan froze the tab) showed the first cut was **wrong for 8 of
+them**:
+- **8 projects carry a real hand-built/imported WBS with NO skeleton** — CDP101, CP104, **GPR101**,
+  LCIT, MWD101, OPW101, PSP101, SLN101. They predate the skeleton feature, so `lockedSkeletonPhases`
+  is 0 and the backfill would have injected **five empty locked phases as new top-level branches into
+  every one of them** — on GPR101 that is five empty headings dropped into an 8,596-node P6 tree.
+- Only **4** genuinely wanted it (BAU101, BAU101-TEST, Test, XERTEST → Closeout Phase). AVR101 was
+  already repaired by the live run. 6 empty-tree projects seed normally and are unaffected.
+- **Guard:** backfill now runs only when the project already has a **locked top-level node bearing a
+  skeleton name** — the signal that `ensureWbsSkeleton()` actually seeded it. A project with a tree and
+  no skeleton has opted out; leave it alone.
+- **Verified 6/6 in Node against the shipped function** over each real shape: a legacy imported root and
+  a hand-built two-branch tree are both **untouched**; a seeded 4-phase project gets exactly Closeout
+  Phase, locked; a complete skeleton is a no-op; and a seeded tree that also holds imported branches
+  gets its missing phases without colliding sort_order or touching "Tower 1".
+- ⚠️ **Lesson:** "additive and idempotent" is not the same as "safe" — this was both, and still wrong
+  for 42% of projects, because it changed *which* projects the feature applies to. Measure the blast
+  radius across real data before shipping anything that runs on every project load.
