@@ -4818,3 +4818,30 @@ querying the live project — two independent root causes, both measured, neithe
 - ⚠️ Live-probe note: the schedule module page is ~1MB and a full 6,400-row scan froze then killed the
   tab — query from `projects.html`, which carries the same session. A climbing row count means an
   import is in flight and any measurement then is of a half-written table.
+
+### 2026-08-09 — Project Schedule: the .xer importer silently discarded the WBS placement step
+AVR101 kept mis-filing its whole WBS under `Milestones` after every reimport. **Root cause:
+`parsed.wbsPlacement` was assigned once and read nowhere — `doImportXER` carried the full comment
+for the placement step but no `applyWbsPlacement` call, so every `.xer` import ignored the
+planner's placement choices.** The Excel path was always correct; only XER was missing the call.
+- ⚠️ **Silent, and worse than a parallel branch.** Dotted WBS codes are computed from position and
+  locked skeleton nodes store `code=null`, so `Milestones` computes to code `"1"` — exactly a
+  .xer's project-root code. `wbsAdopt` resolves the file's root onto that node and the entire file
+  becomes its children, with no error. Measured live: **379 of 382 imported nodes under Milestones,
+  the locked Execution Phase holding 0 of its 3,874 activities.**
+- ⚠️ **Two wrong hypotheses, both disproved by running the SHIPPED code rather than reading it** —
+  a code-collision bug in `applyWbsPlacement` (it distributes correctly in both skeleton
+  configurations), and a stale cached build (the reimport reproduced it). **When a function tests
+  clean against real data, check whether it is called at all.**
+- ⚠️ **Measurement discipline that mattered:** the first reading was taken mid-import (row count
+  climbing 6,412 → 6,441 in 4s) and would have been of a half-written table; waited for it to
+  settle at 6,606 before concluding. Query from `admin.html`, not the ~1.2 MB module page, which
+  freezes on large scans.
+- Also confirmed this pass: all three prior fixes are **live on GitHub Pages** (the earlier
+  "guard marker: 0" reading was my own bad curl against the wrong host — a 9 KB 404 page), and the
+  merge/dedupe fixes are holding on the reimported tree (0 duplicate top-level names, 0 orphans).
+- Verified: inline script parses; ordering `locMapping < placement < discStamp < payloads`; a
+  simulation over AVR101's exact measured shape redistributes to `Milestones 5 / Initiation 9 /
+  Planning 89 / Execution 272` with 0 stray top-level nodes. ⚠️ **Not verified signed-in** — needs
+  one more Clear schedule + reimport. Module-local, no migration, no `?v=` bump (`index.html` is
+  not cache-busted — hard-refresh first).

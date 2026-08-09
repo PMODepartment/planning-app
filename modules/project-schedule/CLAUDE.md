@@ -3707,3 +3707,38 @@ them**:
 - ⚠️ **Lesson:** "additive and idempotent" is not the same as "safe" — this was both, and still wrong
   for 42% of projects, because it changed *which* projects the feature applies to. Measure the blast
   radius across real data before shipping anything that runs on every project load.
+
+## The .xer importer silently discarded the WBS placement step (2026-08-09) — fmlozano
+User cleared + reimported AVR101 and it mis-filed again. **Root cause found by grep, not by theory:
+`parsed.wbsPlacement` was written once (line ~5270) and READ NOWHERE.** The XER preview dialog
+collected the planner's per-branch placement choices and threw them away — `doImportXER` had the
+full explanatory comment for the placement step but **no `applyWbsPlacement` call**. Every `.xer`
+import ever run ignored placement. Avesta is a `.xer`.
+- ⚠️ **The failure is silent and worse than "branches sit beside the skeleton".** Dotted codes are
+  COMPUTED from position (locked skeleton nodes store `code=null` — confirmed live), so Milestones
+  computes to code `"1"` — exactly a .xer's own project-root code. `wbsAdopt` then resolves the
+  file's root ONTO the Milestones node and the entire file lands as its children. Nothing errors.
+- **Measured live after the user's reimport** (waited for the row count to settle first — 6,606
+  rows / 387 nodes): `Milestones desc=379`, and its children were the file's own branches
+  `Project Milestones(5) · Initiation Phase(9) · Planning Phase(89) · Execution Phase(272)`, all
+  unlocked, while the locked `Execution Phase` held **0**. `nodesWithStoredCode: 379` vs the
+  skeleton's null codes is the fingerprint of the adopt path.
+- ⚠️ **My first two hypotheses were both WRONG and were disproved by testing the SHIPPED code, not
+  by reading it.** (a) A code-collision + `moves.sort`-by-string-length bug in `applyWbsPlacement`:
+  disproved — run against the real file shape it distributes correctly in BOTH skeleton
+  configurations (5 targets, and the 4-target pre-backfill state from the user's screenshot, where
+  Closeout correctly becomes top-level `5`). (b) A stale cached build (this file is not `?v=`
+  cache-busted, so it was the plausible suspect): disproved by the reimport reproducing it, and
+  finally by the grep. **When a function tests clean against real data, check whether it is being
+  called at all.**
+- **Fix:** one line in `doImportXER`, placed to satisfy both surrounding comments' stated
+  invariants — after location mapping (which keys off ORIGINAL codes), before the disc stamp and
+  `xerRecToPayload` (which reads the FINAL code as `wbs`). Verified by index: `locMapping <
+  placement < discStamp < payloads`.
+- **Verified:** inline block parses (1,039,020 chars); `applyWbsPlacement` declared in the same
+  block as the new call; and a simulation of the shipped functions over AVR101's exact measured
+  shape turns `Milestones 379 / Initiation 0 / Planning 3 / Execution 0` into
+  `Milestones 5 / Initiation 9 / Planning 89 / Execution 272`, root wrapper dropped, **0 stray
+  top-level nodes**. ⚠️ **Not verified signed-in** — needs one more Clear + reimport.
+- ⚠️ **The Excel path was always correct** (line ~4689) — only the XER path was missing the call.
+  Worth checking whether both import paths consume every option the shared dialog collects.

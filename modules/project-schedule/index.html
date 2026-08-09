@@ -5362,6 +5362,14 @@
     // skeleton instead of leaving them as a parallel root (see the Excel path for the full story).
     // Rewrites r.code in place; must run after location mapping (which keyed off the ORIGINAL codes)
     // and before xerRecToPayload (which reads the FINAL code as `wbs`).
+    // ⚠️ THIS CALL WAS MISSING. The dialog collected the planner's choices into parsed.wbsPlacement
+    // and nothing ever read them, so EVERY .xer import silently ignored the placement step. The
+    // damage is not "the branches sit beside the skeleton" — it is worse and silent: dotted codes
+    // are COMPUTED from position, so the skeleton's Milestones node computes to code "1", which is
+    // exactly a .xer's own project-root code. wbsAdopt then resolves the file's root ONTO Milestones
+    // and the whole file lands as its children. Measured live on AVR101: 379 of 382 imported nodes
+    // under Milestones, Execution Phase holding 0 of its 3,874 activities. Do not remove this line.
+    if (parsed.wbsPlacement) parsed.recs = applyWbsPlacement(parsed.recs, parsed.wbsPlacement, replace);
     // Discipline/Trade from the WBS — like the location block, keyed off the ORIGINAL codes, so it
     // must run before the placement rewrite above... which it does not: run it here only because
     // applyWbsPlacement rewrites codes segment-for-segment and this reads names, not codes — so the
