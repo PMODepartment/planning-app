@@ -3825,3 +3825,42 @@ as a static snapshot without executing scripts, so every check above is static a
 that **execute functions sliced from the shipped file**. Smoke-test after deploy.
 ⚠️ **Deferred: splitting the file.** One inbound entry point (`ScheduleBuilder.open`) but heavy outbound
 coupling to module helpers — it needs an explicit shared-state object first, and a boundary I can prove.
+
+## Stage 1 of the file split: explicit shared-state surface (`PS` / `window.__PS`) (2026-08-10) — fmlozano
+Groundwork for splitting the 1.2 MB file, done **without moving a single line of code**.
+- ⚠️ **What actually blocks a split is not size, it is implicit sharing.** All **684** module-scope
+  functions freely read and write **174** mutable bindings in one closure; code moved to another
+  `<script>` loses the closure and the state with it. The scaffold exposes that surface explicitly:
+  `Object.defineProperties` accessors that **close over the real bindings**, so `PS.state.rows` **is**
+  `rows` — reads and writes both hit the live variable, no copy, no synchronisation.
+- **Curated call-back surface, not all 684.** `PS.fn` exposes **29** functions an extracted module would
+  realistically call back into (load/rebuild/renderAll/persist/switchTab/displayList/buildNodes/…).
+  Functions move with their code; shared mutable state does not — so state gets full coverage and
+  functions get a deliberate subset. `PS.meta` records the real counts so the scale is measured by the
+  code rather than by a regex over it.
+- ⚠️ **Wrapped in try/catch by design** — a refactor scaffold must never be able to break the module. If
+  any accessor fails to build, `PS` is simply `null` and everything runs exactly as before. A startup
+  self-check reads every accessor once so a mis-generated name fails loudly instead of latently.
+- **Generated, not hand-written.** The 174 names came from a scanner that parses multi-declarator lists
+  (`var a = 1, b, c;` — the shape that produced false positives earlier), then were **cross-checked by a
+  second, independently-written test**: 174/174 confirmed declared, 0 rejected, 0 referenced-only-once,
+  and a sanity gate requiring 9 known-real names to survive.
+- **Verified additive by diff: 0 lines removed or changed, 250 added.** `PS` and `_psBad` collide with
+  nothing (0 prior occurrences; `PS_M_CAP` is a distinct identifier). `window.__PS` follows this module's
+  existing `window.__archived` / `window.__viewOnly` precedent.
+- ⚠️ **Cost: +23,634 chars (~2%) on a file whose problem is size.** Accepted only because it is the
+  enabler for removing far more later; it should shrink as code actually moves out.
+
+**⚠️ The bigger win: this module can now be EXECUTED locally.** `run-scaffold.js` runs the real 1 MB IIFE
+in a Node `vm` sandbox with stubbed DOM/Supabase/AppAuth (`requireLogin` never fires its callback, so
+only module-scope code runs). **12/12**, including proof that a write through `PS.state` reaches the
+live binding. That lifts the "cannot verify without deploying" constraint this module has carried all
+session — future changes here can be executed before they ship, not just parsed.
+⚠️ One test failed first and it was **my stub, not the code**: `esc()` is `return Fmt.esc(s)`, and my
+`Fmt` proxy returned the input unchanged, so the assertion was testing the stub. Stub the real
+behaviour or the test proves nothing.
+
+**Stage 2 (not started):** move one subsystem out (Schedule Builder is the best candidate — a single
+inbound entry point) so it reads state through `PS` instead of the closure, with a verifiable step
+between each move. ⚠️ Still blocked on a trustworthy closure boundary: a naive brace-matcher cannot
+tokenise this file and there is no parser available (no `package.json`).

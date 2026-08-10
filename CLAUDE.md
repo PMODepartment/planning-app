@@ -4880,3 +4880,24 @@ step**. Functions themselves are fine (median 7 lines, none over 200) — the ri
 - Verified: 15/15 seeding + 12/12 collapse against sliced shipped functions; both files parse.
   ⚠️ **Not verified signed-in** — the deployed site serves the old build and a local `file://` load
   doesn't execute scripts. **Smoke-test after deploy.** See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-10 — Project Schedule stage 1 of the file split: explicit shared-state surface
+Groundwork for splitting the 1.2 MB module, **without moving a single line of code**.
+- ⚠️ **What blocks a split is implicit sharing, not size.** All **684** module-scope functions freely
+  read/write **174** mutable bindings in one closure; code moved to another `<script>` loses the
+  closure and the state with it. New `PS` object exposes that surface via accessors that **close over
+  the real bindings** — `PS.state.rows` **is** `rows`, no copy. `PS.fn` exposes a curated **29**
+  functions an extracted module would call back into (functions move with their code; shared state
+  cannot). `PS.meta` records the real counts, measured by the code rather than by a regex over it.
+- ⚠️ **try/catch-wrapped by design** — a scaffold must never break the module; on any failure `PS` is
+  null and everything runs as before. Generated from a scanner, then **cross-checked by a second
+  independently-written test** (174/174 confirmed, 0 rejected) with a 9-name sanity gate.
+- **Verified additive by diff: 0 lines removed or changed, 250 added.** No identifier collisions.
+- **⚠️ Bigger win: the module can now be EXECUTED locally.** `run-scaffold.js` runs the real 1 MB IIFE
+  in a Node `vm` sandbox (stubbed DOM/Supabase; `requireLogin` never fires) — **12/12**, including
+  proof that a write through `PS.state` reaches the live binding. **This lifts the "cannot verify
+  without deploying" constraint this module has carried for months.** ⚠️ One test failed first and it
+  was **my stub, not the code** (`esc()` delegates to `Fmt.esc`, which my proxy made an identity
+  function) — stub real behaviour or the test proves nothing.
+- Cost: +23,634 chars (~2%) on a file whose problem is size — accepted as the enabler, and it should
+  shrink as code moves out. **Stage 2 not started.** See `modules/project-schedule/CLAUDE.md`.

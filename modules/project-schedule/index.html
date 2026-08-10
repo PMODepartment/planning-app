@@ -15145,6 +15145,256 @@
 
     loadProjects();
   });
+
+  // ===================== REFACTOR SCAFFOLD — explicit shared-state surface =====================
+  // Stage 1 of splitting this file. ⚠️ ADDITIVE ONLY: this block declares no new behaviour, changes
+  // no existing line, and nothing in the module reads it. Deleting it restores the file exactly.
+  //
+  // WHY. Every one of the 684 module-scope functions can freely read and write the
+  // 174 mutable bindings in this closure. That implicit sharing — not file size — is what
+  // makes the file unsplittable: code moved to another <script> loses the closure and the shared
+  // state with it. Accessors close over the real bindings, so `PS.state.rows` IS `rows`: reads and
+  // writes both hit the live variable, with no copy and no synchronisation.
+  //
+  // ⚠️ This does NOT make the file splittable by itself. It makes the coupling addressable and
+  // measurable, and gives stage 2 something to talk to. `PS.meta` records the real scale so the
+  // numbers come from the code rather than from a regex over it (three separate scans of this file
+  // produced confidently wrong figures during the audit — see CLAUDE.md).
+  //
+  // ⚠️ Wrapped in try/catch on purpose: a scaffold must never be able to break the module. If any
+  // accessor fails to build, PS is simply absent and everything else runs exactly as before.
+  var PS = null;
+  try {
+    PS = { state: {}, fn: {}, meta: {} };
+    Object.defineProperties(PS.state, {
+      TABLE: { get: function () { return TABLE; }, set: function (v) { TABLE = v; }, enumerable: true },
+      _collab: { get: function () { return _collab; }, set: function (v) { _collab = v; }, enumerable: true },
+      _collabPid: { get: function () { return _collabPid; }, set: function (v) { _collabPid = v; }, enumerable: true },
+      _remoteSel: { get: function () { return _remoteSel; }, set: function (v) { _remoteSel = v; }, enumerable: true },
+      _profName: { get: function () { return _profName; }, set: function (v) { _profName = v; }, enumerable: true },
+      _collabBuf: { get: function () { return _collabBuf; }, set: function (v) { _collabBuf = v; }, enumerable: true },
+      _collabTimer: { get: function () { return _collabTimer; }, set: function (v) { _collabTimer = v; }, enumerable: true },
+      _collabReloading: { get: function () { return _collabReloading; }, set: function (v) { _collabReloading = v; }, enumerable: true },
+      _myWrites: { get: function () { return _myWrites; }, set: function (v) { _myWrites = v; }, enumerable: true },
+      pid: { get: function () { return pid; }, set: function (v) { pid = v; }, enumerable: true },
+      rows: { get: function () { return rows; }, set: function (v) { rows = v; }, enumerable: true },
+      editId: { get: function () { return editId; }, set: function (v) { editId = v; }, enumerable: true },
+      UID: { get: function () { return UID; }, set: function (v) { UID = v; }, enumerable: true },
+      _loadGen: { get: function () { return _loadGen; }, set: function (v) { _loadGen = v; }, enumerable: true },
+      PROJECTS: { get: function () { return PROJECTS; }, set: function (v) { PROJECTS = v; }, enumerable: true },
+      WORKSPACES: { get: function () { return WORKSPACES; }, set: function (v) { WORKSPACES = v; }, enumerable: true },
+      layoutMode: { get: function () { return layoutMode; }, set: function (v) { layoutMode = v; }, enumerable: true },
+      activeTab: { get: function () { return activeTab; }, set: function (v) { activeTab = v; }, enumerable: true },
+      RESRC: { get: function () { return RESRC; }, set: function (v) { RESRC = v; }, enumerable: true },
+      ASSIGN: { get: function () { return ASSIGN; }, set: function (v) { ASSIGN = v; }, enumerable: true },
+      CALS: { get: function () { return CALS; }, set: function (v) { CALS = v; }, enumerable: true },
+      WBS_NODES: { get: function () { return WBS_NODES; }, set: function (v) { WBS_NODES = v; }, enumerable: true },
+      WBS_ROWH: { get: function () { return WBS_ROWH; }, set: function (v) { WBS_ROWH = v; }, enumerable: true },
+      _wbsSel: { get: function () { return _wbsSel; }, set: function (v) { _wbsSel = v; }, enumerable: true },
+      DD_PREFIX: { get: function () { return DD_PREFIX; }, set: function (v) { DD_PREFIX = v; }, enumerable: true },
+      _ddSyncing: { get: function () { return _ddSyncing; }, set: function (v) { _ddSyncing = v; }, enumerable: true },
+      zoom: { get: function () { return zoom; }, set: function (v) { zoom = v; }, enumerable: true },
+      collapsed: { get: function () { return collapsed; }, set: function (v) { collapsed = v; }, enumerable: true },
+      selId: { get: function () { return selId; }, set: function (v) { selId = v; }, enumerable: true },
+      search: { get: function () { return search; }, set: function (v) { search = v; }, enumerable: true },
+      _selSet: { get: function () { return _selSet; }, set: function (v) { _selSet = v; }, enumerable: true },
+      _selAnchor: { get: function () { return _selAnchor; }, set: function (v) { _selAnchor = v; }, enumerable: true },
+      _clip: { get: function () { return _clip; }, set: function (v) { _clip = v; }, enumerable: true },
+      _cellSel: { get: function () { return _cellSel; }, set: function (v) { _cellSel = v; }, enumerable: true },
+      _cellAnchor: { get: function () { return _cellAnchor; }, set: function (v) { _cellAnchor = v; }, enumerable: true },
+      _cellClip: { get: function () { return _cellClip; }, set: function (v) { _cellClip = v; }, enumerable: true },
+      _entryCol: { get: function () { return _entryCol; }, set: function (v) { _entryCol = v; }, enumerable: true },
+      _dragRowId: { get: function () { return _dragRowId; }, set: function (v) { _dragRowId = v; }, enumerable: true },
+      filters: { get: function () { return filters; }, set: function (v) { filters = v; }, enumerable: true },
+      _nonEmptyCodes: { get: function () { return _nonEmptyCodes; }, set: function (v) { _nonEmptyCodes = v; }, enumerable: true },
+      groupBys: { get: function () { return groupBys; }, set: function (v) { groupBys = v; }, enumerable: true },
+      _dspan: { get: function () { return _dspan; }, set: function (v) { _dspan = v; }, enumerable: true },
+      canWrite: { get: function () { return canWrite; }, set: function (v) { canWrite = v; }, enumerable: true },
+      DAYW: { get: function () { return DAYW; }, set: function (v) { DAYW = v; }, enumerable: true },
+      ganttScale: { get: function () { return ganttScale; }, set: function (v) { ganttScale = v; }, enumerable: true },
+      dataDate: { get: function () { return dataDate; }, set: function (v) { dataDate = v; }, enumerable: true },
+      MON3: { get: function () { return MON3; }, set: function (v) { MON3 = v; }, enumerable: true },
+      _pssPath: { get: function () { return _pssPath; }, set: function (v) { _pssPath = v; }, enumerable: true },
+      _pssSearch: { get: function () { return _pssSearch; }, set: function (v) { _pssSearch = v; }, enumerable: true },
+      _cacheDbP: { get: function () { return _cacheDbP; }, set: function (v) { _cacheDbP = v; }, enumerable: true },
+      _cacheSaveT: { get: function () { return _cacheSaveT; }, set: function (v) { _cacheSaveT = v; }, enumerable: true },
+      _editSeq: { get: function () { return _editSeq; }, set: function (v) { _editSeq = v; }, enumerable: true },
+      _RECOMPUTE_FIELDS: { get: function () { return _RECOMPUTE_FIELDS; }, set: function (v) { _RECOMPUTE_FIELDS = v; }, enumerable: true },
+      undoStack: { get: function () { return undoStack; }, set: function (v) { undoStack = v; }, enumerable: true },
+      redoStack: { get: function () { return redoStack; }, set: function (v) { redoStack = v; }, enumerable: true },
+      UNDO_MAX: { get: function () { return UNDO_MAX; }, set: function (v) { UNDO_MAX = v; }, enumerable: true },
+      _sorted: { get: function () { return _sorted; }, set: function (v) { _sorted = v; }, enumerable: true },
+      _min: { get: function () { return _min; }, set: function (v) { _min = v; }, enumerable: true },
+      _max: { get: function () { return _max; }, set: function (v) { _max = v; }, enumerable: true },
+      _spanMap: { get: function () { return _spanMap; }, set: function (v) { _spanMap = v; }, enumerable: true },
+      _blSpanMap: { get: function () { return _blSpanMap; }, set: function (v) { _blSpanMap = v; }, enumerable: true },
+      _costMap: { get: function () { return _costMap; }, set: function (v) { _costMap = v; }, enumerable: true },
+      _seqByCode: { get: function () { return _seqByCode; }, set: function (v) { _seqByCode = v; }, enumerable: true },
+      collapsedStore: { get: function () { return collapsedStore; }, set: function (v) { collapsedStore = v; }, enumerable: true },
+      _colStorePid: { get: function () { return _colStorePid; }, set: function (v) { _colStorePid = v; }, enumerable: true },
+      _colSaveT: { get: function () { return _colSaveT; }, set: function (v) { _colSaveT = v; }, enumerable: true },
+      LOC_SYN: { get: function () { return LOC_SYN; }, set: function (v) { LOC_SYN = v; }, enumerable: true },
+      LOC_ORD: { get: function () { return LOC_ORD; }, set: function (v) { LOC_ORD = v; }, enumerable: true },
+      WORK_CANON: { get: function () { return WORK_CANON; }, set: function (v) { WORK_CANON = v; }, enumerable: true },
+      WORK_ORDER: { get: function () { return WORK_ORDER; }, set: function (v) { WORK_ORDER = v; }, enumerable: true },
+      MON: { get: function () { return MON; }, set: function (v) { MON = v; }, enumerable: true },
+      _IMP_PHASE_HINT: { get: function () { return _IMP_PHASE_HINT; }, set: function (v) { _IMP_PHASE_HINT = v; }, enumerable: true },
+      XER_EPOCH: { get: function () { return XER_EPOCH; }, set: function (v) { XER_EPOCH = v; }, enumerable: true },
+      XER_CSTR: { get: function () { return XER_CSTR; }, set: function (v) { XER_CSTR = v; }, enumerable: true },
+      XER_DOW: { get: function () { return XER_DOW; }, set: function (v) { XER_DOW = v; }, enumerable: true },
+      ADV_OPS: { get: function () { return ADV_OPS; }, set: function (v) { ADV_OPS = v; }, enumerable: true },
+      PS_M_CAP: { get: function () { return PS_M_CAP; }, set: function (v) { PS_M_CAP = v; }, enumerable: true },
+      _psMView: { get: function () { return _psMView; }, set: function (v) { _psMView = v; }, enumerable: true },
+      _psMTimer: { get: function () { return _psMTimer; }, set: function (v) { _psMTimer = v; }, enumerable: true },
+      _psWasPhone: { get: function () { return _psWasPhone; }, set: function (v) { _psWasPhone = v; }, enumerable: true },
+      netShowAll: { get: function () { return netShowAll; }, set: function (v) { netShowAll = v; }, enumerable: true },
+      PROG_DEFAULT: { get: function () { return PROG_DEFAULT; }, set: function (v) { PROG_DEFAULT = v; }, enumerable: true },
+      PROG_DEF: { get: function () { return PROG_DEF; }, set: function (v) { PROG_DEF = v; }, enumerable: true },
+      CHART_TYPES: { get: function () { return CHART_TYPES; }, set: function (v) { CHART_TYPES = v; }, enumerable: true },
+      CHART_CATS: { get: function () { return CHART_CATS; }, set: function (v) { CHART_CATS = v; }, enumerable: true },
+      CHART_METRICS: { get: function () { return CHART_METRICS; }, set: function (v) { CHART_METRICS = v; }, enumerable: true },
+      PROG_PAL: { get: function () { return PROG_PAL; }, set: function (v) { PROG_PAL = v; }, enumerable: true },
+      _openData: { get: function () { return _openData; }, set: function (v) { _openData = v; }, enumerable: true },
+      _openSet: { get: function () { return _openSet; }, set: function (v) { _openSet = v; }, enumerable: true },
+      _dragCard: { get: function () { return _dragCard; }, set: function (v) { _dragCard = v; }, enumerable: true },
+      detailTab: { get: function () { return detailTab; }, set: function (v) { detailTab = v; }, enumerable: true },
+      _openDetail: { get: function () { return _openDetail; }, set: function (v) { _openDetail = v; }, enumerable: true },
+      _traceLevels: { get: function () { return _traceLevels; }, set: function (v) { _traceLevels = v; }, enumerable: true },
+      USAGE_SERIES: { get: function () { return USAGE_SERIES; }, set: function (v) { USAGE_SERIES = v; }, enumerable: true },
+      usageCfg: { get: function () { return usageCfg; }, set: function (v) { usageCfg = v; }, enumerable: true },
+      usageScope: { get: function () { return usageScope; }, set: function (v) { usageScope = v; }, enumerable: true },
+      fteOn: { get: function () { return fteOn; }, set: function (v) { fteOn = v; }, enumerable: true },
+      HPD: { get: function () { return HPD; }, set: function (v) { HPD = v; }, enumerable: true },
+      RES_SERIES: { get: function () { return RES_SERIES; }, set: function (v) { RES_SERIES = v; }, enumerable: true },
+      usageKind: { get: function () { return usageKind; }, set: function (v) { usageKind = v; }, enumerable: true },
+      GRID_COLS: { get: function () { return GRID_COLS; }, set: function (v) { GRID_COLS = v; }, enumerable: true },
+      colHidden: { get: function () { return colHidden; }, set: function (v) { colHidden = v; }, enumerable: true },
+      colSort: { get: function () { return colSort; }, set: function (v) { colSort = v; }, enumerable: true },
+      _colSeen: { get: function () { return _colSeen; }, set: function (v) { _colSeen = v; }, enumerable: true },
+      colOrder: { get: function () { return colOrder; }, set: function (v) { colOrder = v; }, enumerable: true },
+      _density: { get: function () { return _density; }, set: function (v) { _density = v; }, enumerable: true },
+      _editing: { get: function () { return _editing; }, set: function (v) { _editing = v; }, enumerable: true },
+      _pendingWin: { get: function () { return _pendingWin; }, set: function (v) { _pendingWin = v; }, enumerable: true },
+      _gset: { get: function () { return _gset; }, set: function (v) { _gset = v; }, enumerable: true },
+      STATUS_OPTS: { get: function () { return STATUS_OPTS; }, set: function (v) { STATUS_OPTS = v; }, enumerable: true },
+      FMT_CONDS: { get: function () { return FMT_CONDS; }, set: function (v) { FMT_CONDS = v; }, enumerable: true },
+      _fmtRules: { get: function () { return _fmtRules; }, set: function (v) { _fmtRules = v; }, enumerable: true },
+      _FMT_DEFBG: { get: function () { return _FMT_DEFBG; }, set: function (v) { _FMT_DEFBG = v; }, enumerable: true },
+      _ckLookWeeks: { get: function () { return _ckLookWeeks; }, set: function (v) { _ckLookWeeks = v; }, enumerable: true },
+      _bulkEdits: { get: function () { return _bulkEdits; }, set: function (v) { _bulkEdits = v; }, enumerable: true },
+      _snaps: { get: function () { return _snaps; }, set: function (v) { _snaps = v; }, enumerable: true },
+      _AUDIT_LBL: { get: function () { return _AUDIT_LBL; }, set: function (v) { _AUDIT_LBL = v; }, enumerable: true },
+      _bls: { get: function () { return _bls; }, set: function (v) { _bls = v; }, enumerable: true },
+      _scns: { get: function () { return _scns; }, set: function (v) { _scns = v; }, enumerable: true },
+      _scnSel: { get: function () { return _scnSel; }, set: function (v) { _scnSel = v; }, enumerable: true },
+      _THR_METRICS: { get: function () { return _THR_METRICS; }, set: function (v) { _THR_METRICS = v; }, enumerable: true },
+      _thresholds: { get: function () { return _thresholds; }, set: function (v) { _thresholds = v; }, enumerable: true },
+      _LMON: { get: function () { return _LMON; }, set: function (v) { _LMON = v; }, enumerable: true },
+      GC_FIELDS: { get: function () { return GC_FIELDS; }, set: function (v) { GC_FIELDS = v; }, enumerable: true },
+      GC_WHERE_OPS: { get: function () { return GC_WHERE_OPS; }, set: function (v) { GC_WHERE_OPS = v; }, enumerable: true },
+      GC_THEN_OPS: { get: function () { return GC_THEN_OPS; }, set: function (v) { GC_THEN_OPS = v; }, enumerable: true },
+      _gcWhere: { get: function () { return _gcWhere; }, set: function (v) { _gcWhere = v; }, enumerable: true },
+      _gcThen: { get: function () { return _gcThen; }, set: function (v) { _gcThen = v; }, enumerable: true },
+      _codesSelType: { get: function () { return _codesSelType; }, set: function (v) { _codesSelType = v; }, enumerable: true },
+      _UDF_TYPES: { get: function () { return _UDF_TYPES; }, set: function (v) { _UDF_TYPES = v; }, enumerable: true },
+      LP_REASONS: { get: function () { return LP_REASONS; }, set: function (v) { LP_REASONS = v; }, enumerable: true },
+      LP_ALL: { get: function () { return LP_ALL; }, set: function (v) { LP_ALL = v; }, enumerable: true },
+      _lpLoadedFor: { get: function () { return _lpLoadedFor; }, set: function (v) { _lpLoadedFor = v; }, enumerable: true },
+      _lpWeek: { get: function () { return _lpWeek; }, set: function (v) { _lpWeek = v; }, enumerable: true },
+      WBS_SKELETON: { get: function () { return WBS_SKELETON; }, set: function (v) { WBS_SKELETON = v; }, enumerable: true },
+      _seedingSkeleton: { get: function () { return _seedingSkeleton; }, set: function (v) { _seedingSkeleton = v; }, enumerable: true },
+      SOURCE_KIND_LABEL: { get: function () { return SOURCE_KIND_LABEL; }, set: function (v) { SOURCE_KIND_LABEL = v; }, enumerable: true },
+      _ensuringSummaries: { get: function () { return _ensuringSummaries; }, set: function (v) { _ensuringSummaries = v; }, enumerable: true },
+      _wbsTokSeq: { get: function () { return _wbsTokSeq; }, set: function (v) { _wbsTokSeq = v; }, enumerable: true },
+      _asTimer: { get: function () { return _asTimer; }, set: function (v) { _asTimer = v; }, enumerable: true },
+      _asDirty: { get: function () { return _asDirty; }, set: function (v) { _asDirty = v; }, enumerable: true },
+      _asSaving: { get: function () { return _asSaving; }, set: function (v) { _asSaving = v; }, enumerable: true },
+      _asAgain: { get: function () { return _asAgain; }, set: function (v) { _asAgain = v; }, enumerable: true },
+      ScheduleBuilder: { get: function () { return ScheduleBuilder; }, set: function (v) { ScheduleBuilder = v; }, enumerable: true },
+      EXP_TO_GRID: { get: function () { return EXP_TO_GRID; }, set: function (v) { EXP_TO_GRID = v; }, enumerable: true },
+      critMode: { get: function () { return critMode; }, set: function (v) { critMode = v; }, enumerable: true },
+      _spotlight: { get: function () { return _spotlight; }, set: function (v) { _spotlight = v; }, enumerable: true },
+      depsOn: { get: function () { return depsOn; }, set: function (v) { depsOn = v; }, enumerable: true },
+      _cpmBase: { get: function () { return _cpmBase; }, set: function (v) { _cpmBase = v; }, enumerable: true },
+      _cpmDirty: { get: function () { return _cpmDirty; }, set: function (v) { _cpmDirty = v; }, enumerable: true },
+      reschedOn: { get: function () { return reschedOn; }, set: function (v) { reschedOn = v; }, enumerable: true },
+      NEARDAYS: { get: function () { return NEARDAYS; }, set: function (v) { NEARDAYS = v; }, enumerable: true },
+      mfpOn: { get: function () { return mfpOn; }, set: function (v) { mfpOn = v; }, enumerable: true },
+      schedMode: { get: function () { return schedMode; }, set: function (v) { schedMode = v; }, enumerable: true },
+      useActuals: { get: function () { return useActuals; }, set: function (v) { useActuals = v; }, enumerable: true },
+      progressDriven: { get: function () { return progressDriven; }, set: function (v) { progressDriven = v; }, enumerable: true },
+      ddRetainOn: { get: function () { return ddRetainOn; }, set: function (v) { ddRetainOn = v; }, enumerable: true },
+      HEALTH_LARGE_FLOAT: { get: function () { return HEALTH_LARGE_FLOAT; }, set: function (v) { HEALTH_LARGE_FLOAT = v; }, enumerable: true },
+      HEALTH_LARGE_DUR: { get: function () { return HEALTH_LARGE_DUR; }, set: function (v) { HEALTH_LARGE_DUR = v; }, enumerable: true },
+      REPORT_TEMPLATES: { get: function () { return REPORT_TEMPLATES; }, set: function (v) { REPORT_TEMPLATES = v; }, enumerable: true },
+      repSel: { get: function () { return repSel; }, set: function (v) { repSel = v; }, enumerable: true },
+      repMode: { get: function () { return repMode; }, set: function (v) { repMode = v; }, enumerable: true },
+      repSearch: { get: function () { return repSearch; }, set: function (v) { repSearch = v; }, enumerable: true },
+      repViewFilter: { get: function () { return repViewFilter; }, set: function (v) { repViewFilter = v; }, enumerable: true },
+      schedTab: { get: function () { return schedTab; }, set: function (v) { schedTab = v; }, enumerable: true },
+      schedShowLog: { get: function () { return schedShowLog; }, set: function (v) { schedShowLog = v; }, enumerable: true },
+      schedLastLog: { get: function () { return schedLastLog; }, set: function (v) { schedLastLog = v; }, enumerable: true },
+      COLORDEFS: { get: function () { return COLORDEFS; }, set: function (v) { COLORDEFS = v; }, enumerable: true },
+      _wcCache: { get: function () { return _wcCache; }, set: function (v) { _wcCache = v; }, enumerable: true },
+      _wcCacheKey: { get: function () { return _wcCacheKey; }, set: function (v) { _wcCacheKey = v; }, enumerable: true },
+      _CLIP_FIELDS: { get: function () { return _CLIP_FIELDS; }, set: function (v) { _CLIP_FIELDS = v; }, enumerable: true },
+      _FIELD_LABELS: { get: function () { return _FIELD_LABELS; }, set: function (v) { _FIELD_LABELS = v; }, enumerable: true },
+      _CELL_META: { get: function () { return _CELL_META; }, set: function (v) { _CELL_META = v; }, enumerable: true },
+      linkMode: { get: function () { return linkMode; }, set: function (v) { linkMode = v; }, enumerable: true }
+    });
+    PS.fn = {
+      load: load,
+      rebuild: rebuild,
+      renderAll: renderAll,
+      scheduleRender: scheduleRender,
+      doRender: doRender,
+      renderWindow: renderWindow,
+      persist: persist,
+      selectAllPaged: selectAllPaged,
+      switchTab: switchTab,
+      selectProject: selectProject,
+      renderGrid: renderGrid,
+      renderGantt: renderGantt,
+      renderDetails: renderDetails,
+      displayList: displayList,
+      buildNodes: buildNodes,
+      setGroupBys: setGroupBys,
+      loadGroupBys: loadGroupBys,
+      saveCollapsedState: saveCollapsedState,
+      restoreCollapsedFor: restoreCollapsedFor,
+      computeWbsCodes: computeWbsCodes,
+      _wbsCommit: _wbsCommit,
+      _wbsEnsureSummaries: _wbsEnsureSummaries,
+      esc: esc,
+      sb: sb,
+      today: today,
+      isWbs: isWbs,
+      isMile: isMile,
+      ensureCPM: ensureCPM,
+      computeCPM: computeCPM
+    };
+    // Self-check: read every accessor once so a mis-generated name fails LOUDLY here rather than
+    // silently at some later access. Reading a binding has no side effects.
+    var _psBad = [];
+    Object.keys(PS.state).forEach(function (k) {
+      try { void PS.state[k]; } catch (e) { _psBad.push(k); }
+    });
+    PS.meta = {
+      stateCount: Object.keys(PS.state).length,
+      moduleFnCount: 684,
+      exposedFnCount: Object.keys(PS.fn).length,
+      unreadable: _psBad,
+      ok: _psBad.length === 0
+    };
+    if (_psBad.length) console.warn('[PS] ' + _psBad.length + ' unreadable binding(s):', _psBad);
+    // Same precedent as this module's existing window.__archived / window.__viewOnly handles.
+    window.__PS = PS;
+  } catch (e) {
+    PS = null;
+    console.warn('[PS] shared-state scaffold disabled:', e && e.message);
+  }
+  // =================== end refactor scaffold ===================
+
 })();
 </script>
 </body>
