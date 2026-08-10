@@ -1008,6 +1008,8 @@
     .ps-gm-x:disabled { opacity:.3; cursor:default; }
     .ps-gm-x.danger:hover { color:var(--pd-red); border-color:var(--pd-red-mid); }
     .ps-gm-note { padding:4px 12px 8px; font-size:11.5px; color:var(--pd-muted); }
+    .ps-gm-check { display:flex; align-items:center; gap:7px; padding:6px 12px; font-size:12.5px; color:var(--pd-ink); cursor:pointer; }
+    .ps-gm-check input { margin:0; }
     .ps-wbs-empty { padding:26px 14px; text-align:center; color:var(--pd-muted); font-size:13px; }
     .ps-wbs-empty .ps-wbs-emptyacts { display:flex; gap:8px; justify-content:center; margin-top:12px; }
     /* Type-to-build keyboard legend under the card header */
@@ -2307,6 +2309,9 @@
   var _colfT = null;   // debounce timer for column-filter typing
   var _hideEmptyGroups = false; try { _hideEmptyGroups = localStorage.getItem('ps_hideempty') === '1'; } catch (e) {}
   var _nonEmptyCodes = {};   // WBS codes that contain at least one visible activity (for Hide empty groups)
+  // "Execution Phase only" view toggle (Group menu) — narrows every grouping mode (incl. the plain
+  // WBS tree) down to the Execution Phase branch, hiding Milestones/Initiation/Planning/Closeout.
+  var _execOnly = false; try { _execOnly = localStorage.getItem('ps_execonly') === '1'; } catch (e) {}
   // Ordered grouping levels. ['wbs'] = the plain WBS tree (default). Anything else nests a group
   // header per entry, in order — so Location>Zone>Activity and Activity>Location>Zone differ only
   // by the order of this list. Persisted per project; see setGroupBys/loadGroupBys.
@@ -2783,6 +2788,23 @@
     // project's saved trees. This also stamps _colStorePid, which is what makes saveCollapsedState
     // refuse to write another project's map under this project's key.
     loadCollapsedStore();
+    // Paint with THIS project's saved grouping order from the very first frame. `groupBys` is a
+    // shared module var that otherwise still holds whatever the PREVIOUS project (or the bare
+    // ['wbs'] default, on first load) left it at — the two renders below run before the full
+    // loadGroupBys() validation pass near the end of this function (which needs LOC_LEVELS, loaded
+    // much later by loadResourcesAssignments()), so without this, every project open/switch flashes
+    // the wrong grouping — default WBS, or the previous project's Discipline/Location breakdown —
+    // for as long as those slower loads take, before snapping to the correct one.
+    // ⚠️ Deliberately UN-VALIDATED here (no normalizeGroupBys/allDims — LOC_LEVELS isn't loaded
+    // yet, so a saved `loc:` dim would look invalid and get silently dropped). loadGroupBys() below
+    // still re-reads and normalizes properly once LOC_LEVELS is available; this only makes the two
+    // earlier renders already show the right thing, so that later call is normally a no-op repaint.
+    try {
+      var gv0 = JSON.parse(localStorage.getItem(_gbKey()) || 'null');
+      groupBys = (Array.isArray(gv0) && gv0.length) ? gv0 : ['wbs'];
+    } catch (e) { groupBys = ['wbs']; }
+    restoreCollapsedFor(_gbSig(), true);
+    populateGroupSelect();
     maybeJoinCollab();   // connect presence/cursors as soon as a project is selected (needs only pid)
     // CACHE-FIRST: paint the last-known rows instantly (no overlay), then revalidate below.
     var painted = false;
@@ -3216,6 +3238,8 @@
         (p.dims.length > 1 ? '<span class="ps-gm-hint">' + esc(p.dims.map(dimLabel).join(' › ')) + '</span>' : '') + '</button>';
     });
     if (!locDims.length) h += '<div class="ps-gm-note">No location levels defined yet — add them in <strong>Location Breakdown…</strong> to group by location.</div>';
+    h += '<div class="ps-gm-sec">View</div>' +
+      '<label class="ps-gm-check"><input type="checkbox" id="ps-gm-execonly"' + (_execOnly ? ' checked' : '') + '> Execution Phase only</label>';
     h += '<div class="ps-gm-sec">Levels (in order)</div>';
     if (!groupBys.length) h += '<div class="ps-gm-note">No grouping.</div>';
     groupBys.forEach(function (d, i) {
@@ -3242,6 +3266,12 @@
     m.querySelectorAll('button[data-gdown]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.gdown, l = groupBys.slice(); var t2 = l[i + 1]; l[i + 1] = l[i]; l[i] = t2; setGroupBys(l); renderGroupMenu(); }; });
     m.querySelectorAll('button[data-grm]').forEach(function (b) { b.onclick = function () { var l = groupBys.slice(); l.splice(+b.dataset.grm, 1); setGroupBys(l.length ? l : ['wbs']); renderGroupMenu(); }; });
     m.querySelectorAll('button[data-gadd]').forEach(function (b) { b.onclick = function () { setGroupBys(groupBys.concat([b.dataset.gadd])); renderGroupMenu(); }; });
+    var execOnlyChk = m.querySelector('#ps-gm-execonly');
+    if (execOnlyChk) execOnlyChk.onchange = function (e) {
+      _execOnly = e.target.checked;
+      try { localStorage.setItem('ps_execonly', _execOnly ? '1' : '0'); } catch (ex) {}
+      renderGrid(); renderGantt();
+    };
     // ⚠️ Close this menu directly — `closeMenus()` is declared in the init/wiring scope, NOT at
     // module scope where renderGroupMenu lives, so calling it here threw ReferenceError and both
     // of these buttons did nothing. (Node harnesses stub it, so only running the real page caught it.)
@@ -4518,6 +4548,12 @@
     if (groupBy === 'wbs') {
       _dspan = _spanMap;
       var list = _sorted;
+      // "Execution Phase only": keep the branch's own WBS-summary row + everything under it. No
+      // synthetic wrapper needed here — the real "Execution Phase" row IS the top-level heading.
+      if (_execOnly) {
+        var ecW = execPhaseCode();
+        if (ecW) list = list.filter(function (r) { return r.wbs === ecW || locCodeUnder(r.wbs, ecW); });
+      }
       if (anyFilter()) {
         var keep = {};
         list.forEach(function (r) { if (rowMatches(r)) { keep[r.wbs] = true; for (var i = 0; i < r._anc.length; i++) keep[r._anc[i]] = true; } });
@@ -4537,12 +4573,21 @@
     // must not sweep Initiation/Planning/Milestone activities into an "Unassigned" location bucket
     // alongside real Execution-Phase work. Carve them out and render them separately, under their
     // own WBS path, exactly as they'd look with no location grouping at all.
+    // "Execution Phase only" (the Group menu toggle) reuses this same scoping to drop the other
+    // phases entirely instead of rendering them before/after — see below.
     var otherPhaseActs = [];
-    if (dims.some(function (d) { return d.indexOf('loc:') === 0; })) {
-      var execCode = execPhaseCode();
+    var hasLocDim = dims.some(function (d) { return d.indexOf('loc:') === 0; });
+    var execCode = null, execWrap = false;
+    if (hasLocDim || _execOnly) {
+      execCode = execPhaseCode();
       if (execCode) {
         otherPhaseActs = acts.filter(function (a) { return !locCodeUnder(a.wbs, execCode); });
         acts = acts.filter(function (a) { return locCodeUnder(a.wbs, execCode); });
+        // The synthetic "Execution Phase" wrapper heading only matters when Execution's own content
+        // is broken into a Discipline/Location group tree — without a location dimension its
+        // activities would already show under their real WBS path, headed by the real WBS row.
+        execWrap = hasLocDim;
+        if (_execOnly) otherPhaseActs = [];   // the toggle means ONLY Execution Phase — drop the rest
       }
     }
     var realByCode = {}; rows.forEach(function (r) { if (isWbs(r)) realByCode[r.wbs] = r; });
@@ -4605,6 +4650,16 @@
       emitLeaf(beforeExecActs, '', []);
       showWbs = savedShowWbs1;
     }
+    // Wrap Execution's Discipline/Location breakdown in its own "Execution Phase" heading — purely
+    // visual consistency with Milestones/Initiation/Planning above, which already show as headings.
+    var execHeadCode = '';
+    if (execWrap) {
+      var execRow = realByCode[execCode];
+      var execName = (execRow && execRow.activity_name) || 'Execution Phase';
+      execHeadCode = '§EXEC§' + execCode;
+      out.push({ _dkind: 'group', _dcode: execHeadCode, _ddepth: 0, _danc: [],
+        activity_name: execName, _gcount: acts.length, _gdim: 'exec', id: 'grp:' + execHeadCode });
+    }
     (function walk(list, di, parentCode, parentAnc) {
       if (di >= dims.length) { emitLeaf(list, parentCode, parentAnc); return; }
       var buckets = {};
@@ -4615,7 +4670,7 @@
           activity_name: g, _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
         walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
       });
-    })(acts, 0, '', []);
+    })(acts, 0, execHeadCode, execWrap ? [execHeadCode] : []);
     if (afterExecActs.length) {
       var savedShowWbs2 = showWbs; showWbs = true;
       emitLeaf(afterExecActs, '', []);

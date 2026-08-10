@@ -3864,3 +3864,46 @@ behaviour or the test proves nothing.
 inbound entry point) so it reads state through `PS` instead of the closure, with a verifiable step
 between each move. ⚠️ Still blocked on a trustworthy closure boundary: a naive brace-matcher cannot
 tokenise this file and there is no parser available (no `package.json`).
+
+### 2026-08-10 — Execution Phase wrapper + "Execution Phase only" toggle, and a load-order grouping flash fixed
+User: with location grouping on, Execution Phase's content (grouped by Discipline/Location) has no
+"Execution Phase" heading above it — unlike Milestones/Initiation/Planning, which do show as headings
+(they render by real WBS path, since they're carved out of the location walk). Confirmed as **by
+design**, not a bug — 3,874 of 4,393 activities are under Execution Phase, so wrapping it would be a
+container holding 88% of the schedule with no filtering value. User asked for the wrapper anyway (for
+visual consistency with the other phases) plus a toggle to isolate just Execution Phase.
+- **Synthetic "Execution Phase" wrapper heading.** When a location dimension is grouped, a
+  `_dkind:'group'` node (named from the real WBS row, falling back to "Execution Phase") is pushed
+  before the Discipline/Location walk, and the walk's `parentCode`/`parentAnc` are seeded from it —
+  so Structural Works / Tower 1 / … now nest one level deeper, under the heading. Purely cosmetic;
+  the underlying carve-out (`otherPhaseActs` vs `acts`) is unchanged.
+- **"Execution Phase only" toggle** (Group menu → new **View** section, checkbox `#ps-gm-execonly`,
+  persisted `localStorage.ps_execonly`). Drops Milestones/Initiation/Planning/Closeout entirely
+  instead of rendering them before/after — reuses the same `execPhaseCode()`/`locCodeUnder()` scoping
+  the carve-out already does, extended to also scope when **no** location dimension is active (the
+  plain WBS-tree view): the project's own Execution Phase WBS-summary row + everything under it is
+  kept, with no synthetic wrapper needed there since the real row already is the top-level heading.
+- ⚠️ **REAL BUG FOUND AND FIXED while investigating a separate report: `groupBys` flashes the wrong
+  value on every project open/switch.** User showed two screenshots — one glitchy (blank grid rows,
+  "Group: WBS") that "reverts back to being okay" (correct grouping, real data) a moment later.
+  Traced to `load()`: `groupBys` is a shared module var never reset per-project, and the per-project
+  saved grouping isn't read from storage (`loadGroupBys()`) until **near the very end** of `load()` —
+  after the schedule rows, WBS tree and resource assignments have all loaded (several seconds on a
+  large project). But the grid **renders twice before that** (once from the IndexedDB cache, once
+  from the fresh DB fetch), both painting with whatever `groupBys` was left over — the bare `['wbs']`
+  default on a fresh load, or literally the **previous project's** grouping on a project switch.
+  `loadGroupBys()`'s later, fully-validated read then flips it to correct — the visible "revert."
+- **Fix:** `load()` now reads the saved grouping from `localStorage` **immediately**, before either
+  of the two early renders, so they already paint correctly. Deliberately **un-validated** at this
+  point (`normalizeGroupBys()`/`allDims()` need `LOC_LEVELS`, which isn't loaded yet — validating
+  early would silently drop a saved `loc:` dimension) — the existing `loadGroupBys()` call still runs
+  its full validated read+normalize later, now normally a no-op repaint instead of a visible flip.
+  Also restores this grouping's collapse tree at the same early point (`restoreCollapsedFor`), which
+  composes cleanly with the existing `_applyBigCollapse()` large-tree default (guarded on
+  `collapsed` being empty — verified no conflict).
+- Verified: inline script parses; the exact added read/fallback logic unit-tested in isolation
+  (picks up a saved grouping, falls back to `['wbs']` for a project with none, fails safe — no throw —
+  on a corrupted saved value). ⚠️ **Not verified signed-in for the flash fix** — needs a project with a
+  non-default saved grouping reopened a few times to confirm the flash is gone; the wrapper/toggle
+  feature's implementation predates this entry (built in the same session) and is likewise unverified
+  signed-in. Module-local, no migration, no `?v=` bump (`index.html` isn't cache-busted — hard-refresh).
