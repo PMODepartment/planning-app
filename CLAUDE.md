@@ -4845,3 +4845,38 @@ planner's placement choices.** The Excel path was always correct; only XER was m
   Planning 89 / Execution 272` with 0 stray top-level nodes. ⚠️ **Not verified signed-in** — needs
   one more Clear schedule + reimport. Module-local, no migration, no `?v=` bump (`index.html` is
   not cache-busted — hard-refresh first).
+
+### 2026-08-10 — Project Schedule code audit + 4 fixes (+ a latent 1000-row truncation)
+User asked for an architecture audit of `modules/project-schedule/index.html`, then for the fixes.
+**Verdict: the code works.** 0 duplicate module-scope function names, 0 duplicate DOM ids, 0 genuine
+undeclared references, clean parse. The problem is scale: **1.21 MB / 15,198 lines in one file**, one
+~1.03 M-char inline script, **683 module-scope functions in a single IIFE sharing ~144 mutable vars**,
+334 `.onclick=` rebinds against a virtualized grid, 156 scattered `.from()` calls, **no tests, no build
+step**. Functions themselves are fine (median 7 lines, none over 200) — the risk is change-safety.
+- **Location-wizard seeding fixed** — the keyword matcher was seeded with the level's own NAME, which
+  only works when that name is the tree's vocabulary. Measured on AVR101: a level called "Level"
+  matched **0 of 159** WBS node names, so Level imported blank on all 4,393 activities. Now seeds the
+  synonym family; **0 → 30 of 159** on the live tree, and re-running the full deepest-wins resolution
+  over 3,874 Execution-Phase activities showed **3,814 Tower values before and after, 0 changed**.
+- **Module pages are now cache-busted** (`dashboard.html`, `MODULE_V`) — every shared asset carried
+  `?v=` but each module's own `index.html` did not, which has been mis-diagnosed as a code bug more
+  than once in this file. Covers all 13 modules. ⚠️ **Bump `MODULE_V` on any module deploy.**
+- **21 dead functions + a dead `var` removed** (−162 lines). ⚠️ Verified against the RAW source
+  including strings, which caught 2 false positives; `mergeSuccessors` is a named IIFE that IS invoked
+  and was skipped by luck, not design.
+- **Collapse state now remembered per grouping** (user request) — switching WBS ↔ Discipline/Tower/Level
+  no longer wipes the tree. ⚠️ **Adversarial review found 3 real defects in my first cut** (2 blockers:
+  the debounced save fired before the store was read, destroying saved trees; and a project switch wrote
+  project A's map under project B's key) — all confirmed against the code and fixed, with a regression
+  test each.
+- ⚠️ **Latent bug found and fixed:** `activity_steps` used a bare `.select('*')` (1000-row cap) while
+  every growable neighbour paginated. It holds one row per step per activity and feeds `physicalPct()`
+  → `syncPhysicalPct()`, which **writes `percent_complete`** — so truncation silently corrupts EVM, the
+  S-curve and every roll-up. Routed through `selectAllPaged`.
+- ⚠️ **Three of my own analysis tools produced confidently wrong numbers** (a Bash heredoc collapsing
+  `\b` to a backspace → "all 826 functions are dead"; a comment stripper leaving brace balance 4 not 0;
+  line numbers drifting so a coupling measurement disagreed with itself, 1,325 vs 2,712). **Sanity-gate
+  any scan of this file**, and prefer harnesses that execute functions sliced from the shipped source.
+- Verified: 15/15 seeding + 12/12 collapse against sliced shipped functions; both files parse.
+  ⚠️ **Not verified signed-in** — the deployed site serves the old build and a local `file://` load
+  doesn't execute scripts. **Smoke-test after deploy.** See `modules/project-schedule/CLAUDE.md`.

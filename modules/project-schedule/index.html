@@ -2025,8 +2025,17 @@
       CODE_TYPES = (r4 && r4.data) || []; CODE_VALUES = r5;
     } catch (e) { CODE_TYPES = []; CODE_VALUES = []; }
     try {
-      var r6 = await sb().from('activity_steps').select('*').eq('project_id', pid);
-      STEPS = (r6 && r6.data) || [];
+      // ⚠️ Was a bare .select('*'), which Supabase caps at 1000 rows — the same silent-truncation
+      // bug already fixed on resource_assignments / drawing_register / progress_photos / wbs_nodes,
+      // missed here. activity_steps holds one row PER STEP PER ACTIVITY, so a schedule that uses
+      // Weighted Steps passes 1000 quickly (4,393 activities × 3 steps ≈ 13k). Truncation is
+      // invisible and expensive: physicalPct() then averages a partial step list and
+      // syncPhysicalPct() WRITES that wrong number into project_schedule.percent_complete, which
+      // feeds EVM, the S-curve, the cockpit and every progress roll-up.
+      // Exactly equivalent to the old query: this call had no .order(), and selectAllPaged applies
+      // the same project_id filter (its id ordering is not relied on — STEPS is looked up by
+      // activity, never by position).
+      STEPS = await selectAllPaged('activity_steps', '*');
     } catch (e) { STEPS = []; }
     try {
       var r7 = await sb().from('activity_udf_defs').select('*').eq('project_id', pid).order('sort_order');
@@ -2274,7 +2283,6 @@
     })(null, '');
     return codeOf;
   }
-  function wbsDepthOf(id) { var d = 0, n = wbsById(id); while (n && n.parent_id) { d++; n = wbsById(n.parent_id); } return d; }
   function wbsActivityCount(nodeId) { return rows.filter(function (r) { return !isWbs(r) && r.wbs_node_id === nodeId; }).length; }
   var zoom = 'month', collapsed = {}, selId = null, search = '';
   // Multi-row selection + row clipboard (Excel/OPC-style). selId stays the "active"/anchor row;
@@ -2545,6 +2553,9 @@
     var sel = document.getElementById('ps-project'); if (sel) sel.value = pid || '';
     if (pid) sessionStorage.setItem('pd_project', pid);
     updateProjSelLabel(); updateWorkspaceCaption();
+    // ⚠️ Kill any pending collapse save BEFORE pid changes — otherwise a toggle made <500ms ago
+    // fires after the switch and writes the OUTGOING project's map under the INCOMING project's key.
+    _cancelCollapseSave();
     collapsed = {}; _wbsSel = null; _wbsCollapsed = {}; _wbsSearch = ''; _wbsCollapseInit = false;
     var wsi = document.getElementById('ps-wbs-search'); if (wsi) wsi.value = '';
     resetUndo(); load();
@@ -2766,6 +2777,12 @@
     // hideLoading here clears any overlay a now-superseded load left showing (a stale
     // load aborts silently and never hides it — this branch owns the terminal state).
     if (!pid) { hideLoading(); _setFresh('hide'); rows = []; rebuild(); renderAll(); leaveCollab(); return; }
+    // ⚠️ Read the collapse store HERE, before the first paint. doRender() arms a debounced save, and
+    // loadGroupBys() (which restores the map) does not run until after the paginated resource fetches
+    // — so a store read down there loses the race and the empty init object gets written over the
+    // project's saved trees. This also stamps _colStorePid, which is what makes saveCollapsedState
+    // refuse to write another project's map under this project's key.
+    loadCollapsedStore();
     maybeJoinCollab();   // connect presence/cursors as soon as a project is selected (needs only pid)
     // CACHE-FIRST: paint the last-known rows instantly (no overlay), then revalidate below.
     var painted = false;
@@ -3114,16 +3131,73 @@
     if (m && m.classList.contains('open')) renderGroupMenu();
   }
   function _gbKey() { return 'ps_groupbys_' + (pid || ''); }
+  // ---- collapse state, remembered PER GROUPING -------------------------------------------------
+  // ⚠️ The collapse map is keyed by _dcode, and _dcode is generated from the ACTIVE groupBys — the
+  // same branch is "1.4.2" under WBS grouping and "Structural Works|Tower 1|..." under
+  // Discipline › Tower › Level. So one shared map cannot serve two groupings, which is why
+  // setGroupBys used to just wipe it (collapsed = {}) — and why flipping grouping meant
+  // re-collapsing the whole tree by hand every time, on a 1,623-node schedule.
+  // Keep one map PER grouping signature instead, per project, persisted so it survives a reload.
+  var collapsedStore = {}, _colStorePid = null;
+  function _colKey() { return 'ps_collapsed_' + (pid || ''); }
+  function _gbSig(list) { return (list || groupBys).join('>'); }
+  function loadCollapsedStore() {
+    collapsedStore = {}; _colStorePid = pid;
+    try {
+      var v = JSON.parse(localStorage.getItem(_colKey()) || 'null');
+      if (v && typeof v === 'object' && !Array.isArray(v)) collapsedStore = v;
+    } catch (e) {}
+  }
+  function saveCollapsedState() {
+    // ⚠️ Never persist a store that does not belong to the CURRENT project. Two ways this bites
+    // without the _colStorePid guard, both found in review:
+    //  1. doRender() arms a 500ms debounced save on load()'s FIRST paint, but the store is not read
+    //     from localStorage until later in load() (after the paginated resource fetches). The timer
+    //     wins, and the empty module-init object is written over the project's saved maps —
+    //     destroying the very state this feature exists to keep.
+    //  2. On a project switch _colKey() already returns the NEW pid while collapsedStore still holds
+    //     the OLD project's maps, so A's tree lands under B's key. _dcode keys collide freely across
+    //     projects, so B would then open with unrelated branches collapsed.
+    if (!pid || _colStorePid !== pid) return;
+    // Store only the collapsed (true) keys — an expanded node is the default, so writing it would
+    // grow the payload without meaning anything.
+    var m = {}, n = 0;
+    Object.keys(collapsed).forEach(function (k) { if (collapsed[k]) { m[k] = 1; n++; } });
+    if (n) collapsedStore[_gbSig()] = m; else delete collapsedStore[_gbSig()];
+    try { localStorage.setItem(_colKey(), JSON.stringify(collapsedStore)); }
+    catch (e) { /* quota — the feature is a convenience, never block the render */ }
+  }
+  var _colSaveT = null;
+  function _collapseSaveSoon() { clearTimeout(_colSaveT); _colSaveT = setTimeout(saveCollapsedState, 500); }
+  function _cancelCollapseSave() { clearTimeout(_colSaveT); _colSaveT = null; }
+  // ⚠️ `keepIfMissing` matters, and the two callers need opposite behaviour:
+  //  * LOAD time (keepIfMissing = true): an absent entry must leave `collapsed` ALONE, because
+  //    _applyBigCollapse() has already seeded the large-schedule default (collapse below level 3)
+  //    and this runs after it — blowing it away opens a 17,000-row schedule fully expanded.
+  //  * GROUPING SWITCH (keepIfMissing = false): an absent entry must reset to {}, because the
+  //    outgoing map's keys are _dcode values generated from the OLD grouping and mean nothing
+  //    under the new one.
+  function restoreCollapsedFor(sig, keepIfMissing) {
+    var m = collapsedStore[sig];
+    if (!m || typeof m !== 'object') { if (!keepIfMissing) collapsed = {}; return; }
+    var out = {}; Object.keys(m).forEach(function (k) { out[k] = true; });
+    collapsed = out;
+  }
   function setGroupBys(list) {
+    saveCollapsedState();                 // remember the OUTGOING grouping's tree before switching
     groupBys = list.slice(); normalizeGroupBys();
     try { localStorage.setItem(_gbKey(), JSON.stringify(groupBys)); } catch (e) {}
-    collapsed = {};
+    restoreCollapsedFor(_gbSig(), false); // was: collapsed = {} — now restores this grouping's tree
     populateGroupSelect(); renderCollapseMenu(); renderGrid(); renderGantt();
   }
   function loadGroupBys() {
     groupBys = ['wbs'];
     try { var v = JSON.parse(localStorage.getItem(_gbKey()) || 'null'); if (Array.isArray(v) && v.length) groupBys = v; } catch (e) {}
     normalizeGroupBys();
+    // Runs late in load(), AFTER _applyBigCollapse() has seeded the large-schedule default — so
+    // keepIfMissing=true: only a genuinely saved tree may replace it. The store itself is read at
+    // the TOP of load() (not here), so the debounced save can never fire against an unpopulated one.
+    restoreCollapsedFor(_gbSig(), true);
   }
   // The grouping picker: presets for the two layouts a planner actually switches between, plus a
   // free-form ordered list. Order IS the hierarchy, so each chosen level shows its position.
@@ -3530,8 +3604,25 @@
     // A level named something bespoke ("Wing") still matches its own name; one named with a synonym
     // ("Floor" for a level called Level) picks up the whole family.
     Object.keys(LOC_SYN).forEach(function (k) { if (LOC_SYN[k].indexOf(ln) !== -1) terms = terms.concat(LOC_SYN[k]); });
-    return terms.filter(Boolean);
+    // Deduped: a level named with a synonym concatenates its family twice ("level" is both the name
+    // and a member of LOC_SYN.level). Matching is order- and duplicate-independent (locTermHit takes
+    // the earliest hit across ALL terms), so this changes no classification — it only makes the list
+    // fit to show a planner, which locSeedTerms below now does.
+    var seen = {}, out = [];
+    terms.forEach(function (t) { t = String(t || '').trim(); if (t && !seen[t]) { seen[t] = 1; out.push(t); } });
+    return out;
   }
+  // Default argument for the keyword matcher.
+  // ⚠️ This was seeded with the level's own NAME, which only works when that name happens to be the
+  // vocabulary the WBS actually uses. Measured on Avesta (AVR101): a level called "Level" matched
+  // 0 of 1,623 WBS node names, because that tree says "Nineth Floor" / "Roof Deck" / "Ground Floor"
+  // and never the bare word "level" — so Level imported blank on ALL 4,393 activities, while Tower
+  // and Zone (whose level names DO appear verbatim in the tree) filled at 88% and 28%. The level
+  // name being a usable search term was a coincidence of those two names, not a rule.
+  // Seeding the synonym family instead reuses the exact list locGuessLevel already pre-classifies
+  // with, so the wizard's suggestion and the importer's default now agree by construction rather
+  // than by two call sites happening to guess the same thing.
+  function locSeedTerms(levelName) { return locLevelTerms({ name: levelName }).join(', '); }
   // Position of the earliest whole-word hit, or -1. ⚠️ Position is what disambiguates a name that
   // mentions two levels: Jab has "Cluster 1 (TD, TC, TE and TF) of Superstructure", which is a
   // cluster of TOWERS, not a level — but it contains "Superstructure". The head of the name says
@@ -3703,15 +3794,15 @@
     function srcByKey(k) { return sources.filter(function (s) { return s.key === k; })[0]; }
     // A source that needs an argument (the keyword matcher) gets a second input under its select.
     function argHintFor(k) { var s = srcByKey(k); return (s && s.argHint) || ''; }
-    function argDefault(k, levelName) { var s = srcByKey(k); return (s && s.needsArg && levelName) ? levelName : ''; }
+    function argDefault(k, levelName) { var s = srcByKey(k); return (s && s.needsArg && levelName) ? locSeedTerms(levelName) : ''; }
     function syncArgs(el) {
       el.querySelectorAll('.lm-row').forEach(function (row) {
         var s = srcByKey(row.querySelector('.lm-sel').value), inp = row.querySelector('.lm-arg');
         var need = !!(s && s.needsArg);
         inp.style.display = need ? '' : 'none';
-        // Seed from the level's own name the first time — "Tower" is the right guess for a level
-        // called Tower, and it is the whole term the matcher needs.
-        if (need && !inp.value) { inp.value = (row.querySelector('.lm-name').value || '').trim(); inp.placeholder = s.argHint || ''; }
+        // Seed from the level's synonym family the first time (see locSeedTerms) — NOT the bare
+        // level name, which matches nothing on a tree that spells the level differently.
+        if (need && !inp.value) { inp.value = locSeedTerms((row.querySelector('.lm-name').value || '').trim()); inp.placeholder = s.argHint || ''; }
         if (need) inp.placeholder = s.argHint || '';
       });
     }
@@ -4205,9 +4296,6 @@
   }
   // A name is a plausible discipline/trade if it (or its nearest enclosing WBS ancestor) resolves to
   // one of the six canonical trades.
-  function locGuessDiscipline(name, trail) {
-    return !!discCanonOf(name, trail);
-  }
   // Stamp each leaf rec's Discipline/Trade from its own WBS ancestry, for the importers.
   // ⚠️ Why this belongs in the import at all: an import writes `location` but never wrote
   // `work_type`, and a reimport WIPES the column — so on AVR101 every one of the 4,393 reimported
@@ -5914,7 +6002,6 @@
   // Presentation controls for the Activity Progress view: Table vs Pie, the pie metric, and which
   // activities are included (data selection — null = all leaf activities). All persisted per project.
   function progPres() { try { var v = localStorage.getItem('ps_progpres'); return (v === 'chart' || v === 'pie') ? 'chart' : 'table'; } catch (e) { return 'table'; } }
-  function progMetric() { try { return localStorage.getItem('ps_progmetric') === 'plan' ? 'plan' : 'phys'; } catch (e) { return 'phys'; } }
   // Chart builder config, persisted per project: chart type, X-axis category, and the Y-axis metric
   // series to plot (multiple = planned vs actual vs duration). type ∈ pie|donut|column|bar|scolumn|sbar.
   var CHART_TYPES = [
@@ -5983,8 +6070,6 @@
   function updateChart(id, patch) { setCharts(chartsList().map(function (c) { if (c.id === id) Object.keys(patch).forEach(function (k) { c[k] = patch[k]; }); return c; })); }
   function addChart() { var arr = chartsList(); arr.push({ id: 'c' + Date.now().toString(36), type: 'column', cat: 'activity', series: ['plan', 'phys'], sel: null, labels: 'pct', ox: 0, oy: 0, w: 480, h: 380 }); setCharts(arr); }
   function removeChart(id) { setCharts(chartsList().filter(function (c) { return c.id !== id; })); }
-  function progSelSet() { try { var a = JSON.parse(localStorage.getItem('ps_progsel') || 'null'); if (a && a[pid]) return new Set(a[pid]); } catch (e) {} return null; }
-  function setProgSel(set) { var a = {}; try { a = JSON.parse(localStorage.getItem('ps_progsel') || '{}') || {}; } catch (e) {} if (set === null) delete a[pid]; else a[pid] = Array.from(set); try { localStorage.setItem('ps_progsel', JSON.stringify(a)); } catch (e) {} }
   var PROG_PAL = ['#EE3124', '#2B2C2B', '#6f7276', '#C42127', '#3a6098', '#8aa9d6', '#a7abae', '#5b86c4', '#231F20', '#c9cdd0'];
   function _pieArc(cx, cy, r, a0, a1) { var x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0), x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1); var large = (a1 - a0) > Math.PI ? 1 : 0; return 'M' + cx + ' ' + cy + ' L' + x0.toFixed(2) + ' ' + y0.toFixed(2) + ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + x1.toFixed(2) + ' ' + y1.toFixed(2) + ' Z'; }
   // Build category buckets for the chart from the selected leaf activities. Each bucket has a label and,
@@ -6473,19 +6558,6 @@
   function actName(id) { if (!id) return ''; var r = rows.find(function (x) { return String(x.activity_id) === String(id); }); return r ? (r.activity_name || '') : ''; }
   function dlHtml(pairs) { return '<dl class="ps-dl">' + pairs.map(function (p) { var v = (p[1] == null || p[1] === '') ? '—' : p[1]; return '<dt>' + p[0] + '</dt><dd>' + v + '</dd>'; }).join('') + '</dl>'; }
   function detSection(title, pairs) { return '<div class="ps-det-group"><h5>' + esc(title) + '</h5>' + dlHtml(pairs) + '</div>'; }
-  function detGeneral(r) {
-    // Activity Codes + User-Defined Fields (project-defined) shown when the project has any.
-    var codeRows = CODE_TYPES.map(function (ct) { var vid = r.activity_codes && r.activity_codes[ct.id]; return [esc(ct.name), esc(vid ? (codeValueLabel(vid) || '—') : '—')]; });
-    var udfRows = UDF_DEFS.map(function (d) { return [esc(d.name), esc(udfFmt(d, r.udf && r.udf[d.id]))]; });
-    return '<div class="ps-det-groups">' +
-      detSection('Identification', [['WBS', esc(r.wbs || '')], ['Activity ID', esc(r.activity_id || '')], ['Activity Name', esc(r.activity_name || '')], ['Work Package', esc(r.work_package || '')]]) +
-      detSection('Classification', [['Type', esc(r.activity_type || 'Task')], ['Duration Type', esc(r.duration_type || '—')], ['% Complete Type', esc(r.percent_complete_type || '—')], ['Program Milestone', r.program_milestone ? 'Yes' : 'No']]) +
-      detSection('Assignment', [['Status', esc(r.status || '')], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'], ['Responsible', esc(r.responsible_party || '')], ['Owner', esc(r.owner || '')], ['Calendar', esc(calName(r.calendar_id, r.calendar))], ['Predecessors', esc(r.predecessors || '—')]]) +
-      (codeRows.length ? detSection('Activity Codes', codeRows) : '') +
-      (udfRows.length ? detSection('User-Defined Fields', udfRows) : '') +
-      detSection('Notes', [['Remarks', esc(r.remarks || '')]]) +
-    '</div>';
-  }
   // Editable General tab — an OPC-style live editor for the selected activity's core fields.
   // Each control persists on change via persist() (undoable + audited + rebuild/CPM), so a planner
   // can fill in a freshly-added activity right here in the panel below instead of the modal.
@@ -6595,39 +6667,6 @@
     });
     if (window.Icons) Icons.hydrate(root);
   }
-  function detStatus(r) {
-    var fv = finVar(r);
-    var started  = r.actual_start  ? 'Started ' + Fmt.date(r.actual_start)  : 'Not started';
-    var finished = r.actual_finish ? 'Finished ' + Fmt.date(r.actual_finish) : 'Not finished';
-    function dd(x) { return x != null ? x + 'd' : '—'; }
-    function nz(x) { return x != null ? (Math.round(x * 100) / 100) : '—'; }
-    var atDur = (r.actual_duration != null || r.remaining_duration != null) ? ((r.actual_duration || 0) + (r.remaining_duration || 0)) : r.duration_days;
-    var atLU  = (r.actual_labor_units != null || r.remaining_labor_units != null) ? ((r.actual_labor_units || 0) + (r.remaining_labor_units || 0)) : r.planned_labor_units;
-    function con(c, dt) { return (c ? esc(c) : 'None') + (dt ? ' (' + Fmt.date(dt) + ')' : ''); }
-    return '<div class="ps-det-groups">' +
-      detSection('Activity Status', [
-        ['Status', esc(r.status || '')], ['% Complete', r.percent_complete != null ? r.percent_complete + '%' : '—'],
-        ['Start', started], ['Finish', finished], ['Expected Finish', r.expected_finish ? Fmt.date(r.expected_finish) : '—']
-      ]) +
-      detSection('Dates', [
-        ['Baseline Start', r.bl_start ? Fmt.date(r.bl_start) : '—'], ['Baseline Finish', r.bl_finish ? Fmt.date(r.bl_finish) : '—'],
-        ['Start', dispStart(r) ? Fmt.date(dispStart(r)) : '—'], ['Finish', (function () { var f = dispFin(r); return f ? (Fmt.date(f) + (!r.actual_finish && forecastFin(r) ? ' (forecast)' : '')) : '—'; })()]
-      ]) +
-      detSection('Duration & Float', [
-        ['Planned Duration', dd(_origDurOf(r)) + (_durLocked(r) ? ' (baseline)' : '')], ['Actual Duration', dd(actualDurLive(r))], ['Remaining Duration', dd(r.remaining_duration)],
-        ['At Completion', dd(_atCompletion(r))], ['Total Float', dd(r._float)], ['Free Float', dd(r.free_float)],
-        ['Critical', r._critical ? 'Yes' : 'No'], ['Finish Variance (BL)', fv != null ? (fv > 0 ? '+' : '') + fv + 'd' : '—']
-      ]) +
-      detSection('Labor Units', [
-        ['Planned', nz(r.planned_labor_units)], ['Actual', nz(r.actual_labor_units)],
-        ['Remaining', nz(r.remaining_labor_units)], ['At Completion', nz(atLU)]
-      ]) +
-      detSection('Constraints', [
-        ['Primary', con(r.primary_constraint, r.primary_constraint_date)],
-        ['Secondary', con(r.secondary_constraint, r.secondary_constraint_date)]
-      ]) +
-    '</div>';
-  }
   // Editable Status tab — same live-editor pattern as detGeneralEdit (persists on change via
   // wireEditFields). Computed fields (Planned/At-Completion duration, Total Float, Critical,
   // Finish Variance) stay read-only via _gro.
@@ -6635,7 +6674,6 @@
     var fv = finVar(r);
     function dd(x) { return x != null ? x + 'd' : '—'; }
     function nz(x) { return x != null ? (Math.round(x * 100) / 100) : '—'; }
-    var atDur = (r.actual_duration != null || r.remaining_duration != null) ? ((r.actual_duration || 0) + (r.remaining_duration || 0)) : r.duration_days;
     var atLU  = (r.actual_labor_units != null || r.remaining_labor_units != null) ? ((r.actual_labor_units || 0) + (r.remaining_labor_units || 0)) : r.planned_labor_units;
     var pcon = ['', 'Start On', 'Start On or After', 'Start On or Before', 'Finish On', 'Finish On or After', 'Finish On or Before', 'Mandatory Start', 'Mandatory Finish', 'As Late As Possible'];
     var scon = ['', 'Start On', 'Start On or After', 'Start On or Before', 'Finish On', 'Finish On or After', 'Finish On or Before'];
@@ -6677,19 +6715,6 @@
   }
   function relRowHtml(o) { return '<tr><td>' + esc(o.id || '') + '</td><td>' + esc(actName(o.id)) + '</td><td>' + esc(o.type || 'FS') + '</td><td style="text-align:right;">' + (o.lag ? (o.lag > 0 ? '+' : '') + o.lag + 'd' : '0d') + '</td></tr>'; }
   function relPreds(r) { return (r._relObjs && r._relObjs.length) ? r._relObjs.map(function (x) { return { id: x.p.activity_id, type: x.type, lag: x.lag }; }) : predRels(r.predecessors); }
-  function detRels(r) {
-    var preds = relPreds(r), succs = r._succObjs || [];
-    function tbl(title, arr) {
-      return '<div><h5>' + title + ' (' + arr.length + ')</h5>' + (arr.length
-        ? '<table class="ps-mini"><thead><tr><th>ID</th><th>Name</th><th>Type</th><th style="text-align:right;">Lag</th></tr></thead><tbody>' + arr.map(relRowHtml).join('') + '</tbody></table>'
-        : '<p style="color:var(--pd-muted);font-size:12px;margin:4px 0;">None.</p>') + '</div>';
-    }
-    return '<div class="ps-vsplit" data-split="rels">' +
-      '<div class="ps-vs-a">' + tbl('Predecessors', preds) + '</div>' +
-      '<div class="ps-gutter" title="Drag to resize · double-click to reset"></div>' +
-      '<div class="ps-vs-b">' + tbl('Successors', succs) + '</div>' +
-    '</div>';
-  }
   // Editable Relationships tab — predecessors are add/remove (successors stay derived/read-only).
   // Serializes back to the same predecessor token text the CPM parser (predRels) reads.
   function serializeRels(list) { return list.map(function (o) { var t = o.type || 'FS', lag = o.lag || 0; return o.id + ((t !== 'FS' || lag) ? ' ' + t : '') + (lag ? (lag > 0 ? '+' : '') + lag : ''); }).join(', '); }
@@ -6813,7 +6838,6 @@
   }
   // Resource rate (Price/Unit) for cost derivation; null when the resource has none set.
   function resRate(resId) { var rr = RESRC.find(function (x) { return x.id === resId; }); return (rr && rr.price_per_unit != null) ? +rr.price_per_unit : null; }
-  function assignCost(a) { return (a.budgeted_cost || 0); }
   // Bottom-up cost roll-up: when an activity has cost_rollup on, derive its planned/actual cost from
   // Σ assignment cost + Σ expense cost and persist (undoable). No-op when the flag is off (default),
   // so manually-costed activities are never touched. Mirrors syncPhysicalPct.
@@ -7056,10 +7080,6 @@
       renderDetails();
     }
     if (p) p.onchange = upd; if (s) s.onchange = upd;
-  }
-  function detNoResource(kind) {
-    return '<div class="ps-empty-detail">No ' + kind + ' data yet.<br><span style="font-size:12px;">' +
-      kind.charAt(0).toUpperCase() + kind.slice(1) + ' definitions are owned by the separate Resource Loading module (not yet enabled).</span></div>';
   }
 
   // ---- Project Usage (OPC-style time-phased charts) ----
@@ -7560,53 +7580,7 @@
     } catch (e) { UI.toast('Could not save.', 'error'); return false; }
   }
   // ---- Notebook (P6-style multi-topic notes) ----
-  function detNotebook(r) {
-    var nb = Array.isArray(r.notebook) ? r.notebook : [];
-    var rows = nb.map(function (n, i) {
-      return '<div class="ps-nb-item" data-i="' + i + '" style="border:1px solid var(--pd-line);border-radius:8px;padding:8px 10px;margin-bottom:8px;">' +
-        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;"><input class="pd-input ps-nb-topic" value="' + esc(n.topic || '') + '" placeholder="Topic (e.g. Constraints, RFI)" style="flex:1;font-weight:600;"><button class="pd-btn ps-nb-del" title="Delete topic" style="padding:0 8px;">✕</button></div>' +
-        '<textarea class="pd-input ps-nb-text" rows="3" placeholder="Note…" style="resize:vertical;width:100%;box-sizing:border-box;">' + esc(n.text || '') + '</textarea></div>';
-    }).join('');
-    return '<div style="max-width:720px;">' + (rows || '<div style="color:var(--pd-muted);font-size:12.5px;padding:4px 0 8px;">No notes yet. Add a topic below.</div>') +
-      '<button class="pd-btn" id="ps-nb-add"><span data-ico="plus" data-ico-size="14"></span> Add topic</button></div>';
-  }
-  function wireNotebook(root, r) {
-    var nb = Array.isArray(r.notebook) ? r.notebook.slice() : [];
-    var save = function () { _saveActField(r, 'notebook', nb); };
-    var _t;
-    root.querySelectorAll('.ps-nb-item').forEach(function (it) {
-      var i = parseInt(it.dataset.i, 10);
-      it.querySelector('.ps-nb-topic').oninput = function () { nb[i].topic = this.value; clearTimeout(_t); _t = setTimeout(save, 400); };
-      it.querySelector('.ps-nb-text').oninput = function () { nb[i].text = this.value; clearTimeout(_t); _t = setTimeout(save, 400); };
-      it.querySelector('.ps-nb-del').onclick = function () { nb.splice(i, 1); r.notebook = nb; _saveActField(r, 'notebook', nb); renderDetails(); };
-    });
-    var add = root.querySelector('#ps-nb-add');
-    if (add) add.onclick = function () { nb.push({ topic: '', text: '' }); r.notebook = nb; renderDetails(); };
-    if (window.Icons) Icons.hydrate(root);
-  }
   // ---- Files (linked documents — paste a URL to a SharePoint/Drive/etc. document) ----
-  function detFiles(r) {
-    var fs = Array.isArray(r.files) ? r.files : [];
-    var rows = fs.map(function (f, i) {
-      return '<div class="ps-file-item" data-i="' + i + '" style="display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--pd-line);padding:6px 0;">' +
-        '<span data-ico="download" data-ico-size="14" style="color:var(--pd-muted);flex:none;"></span>' +
-        '<a href="' + esc(f.url || '#') + '" target="_blank" rel="noopener" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--pd-red);">' + esc(f.name || f.url || '(unnamed)') + '</a>' +
-        '<button class="pd-btn ps-file-del" title="Remove" style="padding:0 8px;">✕</button></div>';
-    }).join('');
-    return '<div style="max-width:720px;">' + (rows || '<div style="color:var(--pd-muted);font-size:12.5px;padding:4px 0 8px;">No files linked. Paste a document link below.</div>') +
-      '<div style="display:flex;gap:8px;margin-top:10px;"><input class="pd-input" id="ps-file-name" placeholder="Label (e.g. Approved drawing)" style="flex:1;"><input class="pd-input" id="ps-file-url" placeholder="https://…" style="flex:2;"><button class="pd-btn pd-btn-primary" id="ps-file-add">Add link</button></div></div>';
-  }
-  function wireFiles(root, r) {
-    var fs = Array.isArray(r.files) ? r.files.slice() : [];
-    root.querySelectorAll('.ps-file-del').forEach(function (b) { b.onclick = function () { var i = parseInt(b.closest('.ps-file-item').dataset.i, 10); fs.splice(i, 1); r.files = fs; _saveActField(r, 'files', fs); renderDetails(); }; });
-    var add = root.querySelector('#ps-file-add');
-    if (add) add.onclick = function () {
-      var url = (root.querySelector('#ps-file-url').value || '').trim(); if (!url) { UI.toast('Paste a URL first.', 'warn'); return; }
-      if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-      fs.push({ name: (root.querySelector('#ps-file-name').value || '').trim() || url, url: url }); r.files = fs; _saveActField(r, 'files', fs); renderDetails();
-    };
-    if (window.Icons) Icons.hydrate(root);
-  }
 
   // ----- COLUMN HEADER (static, resizable) -----
   // Column set + order mirrors OPC's Activities view (Avesta "Edit Cost Load" layout):
@@ -8143,6 +8117,9 @@
     // read-only list is shown, so never build the (17k-row) desktop DOM here —
     // repaint the list instead. renderAll rebuilds the grid when crossing back up.
     if (psIsPhone()) { renderMobile(); return; }
+    // Every collapse/expand routes through renderGrid -> scheduleRender -> here, so this one
+    // debounced hook persists the tree without touching the ~8 individual toggle handlers.
+    _collapseSaveSoon();
     DL = displayList();
     var rg = range(), min = rg.min, max = rg.max, dayw = DAYW[zoom] * ganttScale;
     _rMin = min; _rDayw = dayw;
@@ -10079,7 +10056,6 @@
     renderLPPpcTrend();
     renderLPReasons();
   }
-  function _lpStatusBadgeClass(st) { return st === 'Complete' ? 'ok' : (st === 'Not Complete' ? '' : 'warn'); }
   function renderLPTable(weekRows) {
     var host = document.getElementById('ps-lp-table'); if (!host) return;
     if (!weekRows.length) { host.innerHTML = '<div class="ps-ck-empty">No commitments for this week yet. Use “Add commitment”.</div>'; return; }
@@ -10656,7 +10632,6 @@
       if (sres && !sres.error && sres.data) rows.push(sres.data);
     }
   }
-  function wbsIsLocked(id) { var n = wbsById(id); return !!(n && n.is_locked); }
   function wbsSourceKind(id) { var n = wbsById(id); return n ? (n.source_kind || null) : null; }
   var SOURCE_KIND_LABEL = { design_development: 'Design Development — synced from Drawing Register + Material Submittal Log', procurement: 'Procurement — synced from the Procurement (WPM) app' };
   var _ensuringSummaries = false;
@@ -12162,9 +12137,7 @@
     }
     // would from→to create a cycle? (does `to` already reach `from`?)
     function reaches(a, b) { var seen = {}, stack = [a]; while (stack.length) { var x = stack.pop(); if (x === b) return true; if (seen[x]) continue; seen[x] = 1; cfg.links.forEach(function (k) { if (k.from === x) stack.push(k.to); }); } return false; }
-    function locByUid(uid) { return locList().find(function (l) { return l.uid === uid; }); }
     function START() { return '__start__'; } function END() { return '__end__'; }
-    function isMarker(uid) { return uid === '__start__' || uid === '__end__'; }
     function tryLink(a, b, type, lag) { if (!a || !b || a === b) return false; if (cfg.links.some(function (k) { return k.from === a && k.to === b; })) return false; if (reaches(b, a)) return false; cfg.links.push({ from: a, to: b, type: type || 'FS', lag: lag || 0 }); return true; }
     function linkOf(from, to) { return cfg.links.find(function (k) { return k.from === from && k.to === to; }); }
     function removeLink(from, to) { cfg.links = cfg.links.filter(function (k) { return !(k.from === from && k.to === to); }); markDirty(); render(); }
@@ -12267,14 +12240,6 @@
     // Move activity `from`→`to` WITHIN a trade's own ordered list, then write the new order back into
     // cfg.activities in place (other trades keep their positions). This trade order = the sequence the
     // activities run in within every zone of that trade (consumed by generate()).
-    function reorderWithinTrade(tr, from, to) {
-      var sub = tradeActs(tr);
-      if (from < 0 || to < 0 || from >= sub.length || to >= sub.length) return;
-      var it = sub.splice(from, 1)[0]; sub.splice(to, 0, it);
-      var q = sub.slice();
-      cfg.activities = cfg.activities.map(function (a) { return a.group === tr ? q.shift() : a; });
-      markDirty(); render();
-    }
 
     var STEPS = [
       { t: 'Activities', s: 'Class-code list + duration', fn: stActivities },
@@ -12670,21 +12635,9 @@
 
     var NS = 'http://www.w3.org/2000/svg';
     // Ordered union of floor codes across all trades (index 0 = lowest / ground).
-    function floorAxis() {
-      var seen = {}, order = [];
-      GROUPS.forEach(function (tr) { floorsOf(tr).forEach(function (f) { var c = f.code || f.name || f.id; if (!seen[c]) { seen[c] = 1; order.push(c); } }); });
-      return order;
-    }
     // ---- schedule (right pane): bars from the links, Start/End + labelled arrows; bars/arrows editable ----
     // Dependency rank (topological depth) — 0 for nodes with no predecessor, else max(pred rank)+1.
     // Used to lay out the step-3 bars EVENLY (equal length, spaced by rank) so connecting is easy.
-    function computeRanks(uids) {
-      var incoming = {}; uids.forEach(function (u) { incoming[u] = []; });
-      cfg.links.forEach(function (k) { if (incoming[k.to]) incoming[k.to].push(k.from); });
-      var memo = {}, stk = {};
-      function r(u) { if (memo[u] != null) return memo[u]; if (stk[u]) return 0; stk[u] = 1; var m = 0; (incoming[u] || []).forEach(function (f) { m = Math.max(m, r(f) + 1); }); stk[u] = 0; return (memo[u] = m); }
-      var out = {}; uids.forEach(function (u) { out[u] = r(u); }); return out;
-    }
     // Time-scaled schedule: each bar is placed at its COMPUTED START (in days) and sized by its
     // duration, so relationships read truthfully — an SS link with lag 0 lines both bars up at the
     // same x, FS puts the successor after the predecessor's finish, etc. `dispLocs` is the (possibly

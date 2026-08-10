@@ -132,11 +132,19 @@
       document.addEventListener('click', function (e) { if (!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove('open'); });
     }
 
+    // ⚠️ Cache-busting for the MODULE PAGES themselves. Every shared asset carries a ?v=, but each
+    // module's own index.html did not — so a returning user kept serving the cached page and none of
+    // that module's fixes reached them until a hard refresh. That has been mis-diagnosed as a code
+    // bug more than once (a "broken import" that was simply an old parser still executing).
+    // Bump MODULE_V on any deploy that changes a module's index.html. It is defined here, not in
+    // config.js, deliberately: config.js is itself cache-busted from 22 HTML files, so versioning it
+    // there would mean a 22-file bump to make a one-module change visible.
+    var MODULE_V = '20260810a';
     function renderModules() {
       var grid = document.getElementById('module-grid');
       grid.innerHTML = (APP_CONFIG.MODULES || []).map(function (m) {
         if (m.enabled) {
-          return '<a class="pd-module-card" href="' + m.path + '">' +
+          return '<a class="pd-module-card" href="' + m.path + (m.path.indexOf('?') === -1 ? '?v=' : '&v=') + MODULE_V + '">' +
             '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
             '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
             '<div class="pd-module-sub">Open module ' + Icons.svg('arrowRight', 14) + '</div></div></a>';

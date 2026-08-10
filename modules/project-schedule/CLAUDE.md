@@ -3742,3 +3742,86 @@ import ever run ignored placement. Avesta is a `.xer`.
   top-level nodes**. ⚠️ **Not verified signed-in** — needs one more Clear + reimport.
 - ⚠️ **The Excel path was always correct** (line ~4689) — only the XER path was missing the call.
   Worth checking whether both import paths consume every option the shared dialog collects.
+
+## Code audit + 4 fixes: seeding, cache-busting, dead code, collapse memory (2026-08-10) — fmlozano
+User asked for an architecture audit ("does the code work or not"), then for the fixes it surfaced.
+
+**Audit verdict: it works.** Static scan found **0** duplicate module-scope function names, **0**
+duplicate static DOM ids (294), **0** genuine undeclared references, and a clean parse. The problem is
+scale, not correctness: **1.21 MB / 15,198 lines in ONE file**, a single ~1.03 M-char inline `<script>`,
+**683 module-scope functions in one IIFE sharing ~144 mutable vars**, 334 `.onclick=` rebinds against a
+virtualized grid, 156 scattered `.from()` calls, **0 committed tests, no build step**. Function-level
+decomposition is fine (median 7 lines, largest 183, none over 200) — the risk is change-safety.
+
+⚠️ **THREE of my own analysis tools produced confidently wrong numbers before I caught them. Any scan
+of this file needs a sanity gate.**
+1. A Bash **heredoc silently collapsed `\\b` into a backspace character**, so every `new RegExp('\\b…')`
+   matched nothing and the dead-code scan reported **all 826 functions as dead**. Caught only because
+   "rebuild is never called" is obviously false. Write analysis scripts with the file tool, not heredocs.
+2. My comment/string **stripper is broken** — stripped brace balance is **4, must be 0** (it mis-tokenises
+   regex literals and apostrophes in comments). Every statistic derived from it is unreliable; the
+   headline counts above were re-derived from the RAW file with a sanity gate.
+3. The same stripper deleted newlines inside block comments, so line numbers drifted and two runs of the
+   `ScheduleBuilder` coupling measurement disagreed (**1,325 vs 2,712 lines**). Fixed by preserving
+   newlines — but a naive brace-matcher still can't tokenise this file, so **there is no trustworthy way
+   to find a closure boundary here without a real parser** (none available: no `package.json`).
+
+**Fix 1 — location-wizard keyword seeding (`locSeedTerms`).** The matcher's default argument was the
+level's **own name**, which only works when that name happens to be the tree's vocabulary. Measured on
+AVR101: a level called **"Level" matched 0 of 159 distinct WBS node names** (the tree says "Nineth
+Floor"/"Roof Deck"), so Level imported blank on all 4,393 activities while Tower and Zone filled at 88%
+and 28%. Now seeds the **synonym family** via `locLevelTerms()` — the same list `locGuessLevel` already
+pre-classifies with, so wizard suggestion and importer default agree by construction.
+- **Measured on the live tree: Level 0 → 30 of 159 names.** ⚠️ Tower gains 2 false-positive *names*
+  (`Building Management Systems`, `Building Watertightness`), so I re-ran the full deepest-wins
+  resolution over all **3,874 Execution-Phase activities**: **3,814 Tower values before and after,
+  0 activities changed.** Safe. `locLevelTerms` also deduped (order/duplicate-independent, so no
+  classification change).
+- ⚠️ Known-visible false positives remain by design — "Floor Finishes"/"Ground Reservoir" match the
+  Level family and appear in the wizard's distinct-value preview for the planner to exclude.
+- **15/15 against sliced shipped functions**, including the two cases that must NOT fold.
+
+**Fix 2 — module pages are now cache-busted** (`dashboard.html`). Every shared asset carried `?v=` but
+each module's own `index.html` did not, so returning users kept serving a cached page — mis-diagnosed as
+a code bug more than once in this changelog. `MODULE_V` lives in dashboard.html, **not** config.js:
+config.js is itself cache-busted from 22 HTML files, so versioning it there would mean a 22-file bump
+for a one-module change. Covers all 13 modules. **Bump `MODULE_V` on any deploy that changes a module.**
+
+**Fix 3 — 21 dead functions + one dead `var atDur` removed** (−162 lines). ⚠️ Every candidate was
+re-verified against the **RAW** source including strings, which caught **2 false positives**
+(`isDirty`, `drivingPath` ARE referenced). ⚠️ `mergeSuccessors` is `(function mergeSuccessors(){…})()`
+— a named IIFE that IS invoked; my remover's line-start anchor skipped it **by luck, not design**.
+Verified after: 0 of the removed names appear anywhere, `renderDetails()` dispatches only to surviving
+functions, and `detStatusEdit` has its own `dd`/`nz` helpers so nothing was orphaned.
+
+**Fix 4 — collapse state remembered per grouping** (user request). `setGroupBys` did `collapsed = {}`,
+so flipping WBS ↔ Discipline/Tower/Level meant re-collapsing a 1,623-node tree by hand every time.
+⚠️ The map is keyed by `_dcode`, which is **generated from the active groupBys** — one shared map cannot
+serve two groupings, which is why it was wiped. Now one map **per grouping signature**, per project,
+persisted (`ps_collapsed_<pid>`).
+- ⚠️ **Adversarial review found 3 real defects in my first cut — all confirmed against the code and
+  fixed before shipping:**
+  1. **BLOCKER:** `doRender()` arms a 500 ms debounced save on load's first paint (line 2784/2841), but
+     the store wasn't read until `loadGroupBys()` at 2856 — behind three awaits including the paginated
+     resource fetches. The timer won, writing the **empty init object over the project's saved trees**.
+     Fixed with a `_colStorePid` guard + reading the store at the TOP of `load()`.
+  2. **BLOCKER:** `selectProject()` changes `pid` without cancelling the pending save, so `_colKey()`
+     returned the NEW project while `collapsedStore` still held the OLD one — project A's trees written
+     under project B's key. `_dcode` keys collide across projects, so B would open with unrelated
+     branches hidden. Fixed by the same guard + `_cancelCollapseSave()` in `selectProject`.
+  3. **MAJOR:** `restoreCollapsedFor` overwrote `collapsed` unconditionally and runs *after*
+     `_applyBigCollapse()`, discarding the large-schedule default — a 17k-activity schedule would open
+     fully expanded. Fixed with `keepIfMissing`: load-time keeps the default, grouping-switch resets.
+- **12/12 against sliced shipped functions**, including a regression test for each of the three.
+
+**Bonus real bug found while scoping the data layer:** `activity_steps` used a bare `.select('*')`
+(capped at 1000 rows) while every growable neighbour already paginated. It holds one row **per step per
+activity**, and truncation feeds `physicalPct()` → `syncPhysicalPct()` → **writes a wrong
+`percent_complete`** into the schedule, corrupting EVM, the S-curve and every roll-up. Now routed
+through `selectAllPaged` (exactly equivalent — the call had no `.order()`).
+
+⚠️ **NOT verified signed-in.** The deployed site serves the old build and a local `file://` load renders
+as a static snapshot without executing scripts, so every check above is static analysis plus harnesses
+that **execute functions sliced from the shipped file**. Smoke-test after deploy.
+⚠️ **Deferred: splitting the file.** One inbound entry point (`ScheduleBuilder.open`) but heavy outbound
+coupling to module helpers — it needs an explicit shared-state object first, and a boundary I can prove.
