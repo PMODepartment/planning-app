@@ -1,5 +1,37 @@
 # Module: drawing-register
 
+## Print / PDF export with a transmittal cover sheet + friendlier empty state (2026-08-10) — fmlozano
+Picked up as **uncommitted local work already sitting in the working tree** (not authored this
+session) and reviewed before committing, per the standing rule that nothing goes to `main` unverified.
+- **Print / PDF export.** New toolbar **Print** button (`dr-print`) builds a **"Drawing Register —
+  Transmittal for Approval"** cover sheet (`topSheetHTML()`) — project, date generated, prepared-by,
+  active filter scope, total drawing count, a status-count table, and Prepared/Reviewed/Approved-by
+  sign-off blocks — injected into `#dr-topsheet` and forced onto its own page ahead of the register via
+  `page-break-after:always`. A `@media print` block hides the on-screen-only chrome (topbar, filter bar,
+  checkboxes, row-actions column).
+- **Friendlier empty state.** When a project has no drawings *and* no levels built yet, Registry and
+  Overview/Progress now show a proper "No drawings yet" card with Import/Add-drawing buttons instead of
+  a bare one-line message.
+- **Code review (background agent) found the diff mostly solid** — every referenced function/CSS
+  var/icon/class name checked out real, `render()` is synchronous with no race against the injected
+  topsheet, and `Fmt.esc()` wraps the full assembled scope string so there's no injection risk. One
+  initial worry — that the true-empty state's `emptyHTML()` dropped the action toolbar entirely — was a
+  **false alarm**: the Add/Import/Export/Print buttons live in the page-level topbar (`index.html`),
+  entirely outside `#dr-view`, so they're unaffected by what the empty-state branch renders.
+- ⚠️ **REAL BUG FOUND AND FIXED: printing would have silently clipped the register to one page's worth
+  of content.** The Print button forces `view = 'registry'`, which sets `body.dr-fit` — the pre-existing
+  viewport-fit clamp (`height:100dvh; overflow:hidden` on `.pd-app`/`.pd-main`, gated `@media
+  (min-width:701px)`, added 2026-08-04 for on-screen scrolling) — and a printed page's box is almost
+  always over 701px CSS-wide, so that clamp **stays active during print**. The new print stylesheet reset
+  `.dr-tablecard`'s own `overflow`/`max-height` but never touched the ANCESTORS that actually do the
+  clipping, so any register longer than one page-height would print truncated rather than paginating.
+  Fixed by explicitly undoing the `body.dr-fit` chain (`height:auto`/`overflow:visible`/`display:block`,
+  `!important`, matching the original rule's selectors + specificity) inside `@media print`.
+- Verified: CSS braces balanced (337/337); the fix's selectors were checked to match the original
+  `body.dr-fit .pd-app` etc. rules exactly, so the override wins by both specificity and `!important`.
+  ⚠️ **Not verified against an actual print render** — this environment can't drive a browser print
+  preview, so the fix is verified by CSS-cascade/specificity analysis, not by observing paginated output.
+
 ## Dedicated UI pass — accessible pills, one type scale, a hierarchy you can see (2026-08-06) — fmlozano
 User asked for a UI check and improvement across this module and the Material Submittal log. Every
 finding below was **measured**, not judged by eye, and the pill direction was the user's call (unify

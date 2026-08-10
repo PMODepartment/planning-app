@@ -332,6 +332,12 @@ window.DrawingRegister = (function () {
     document.getElementById('dr-add').onclick = function () { addDrawing(); };
     document.getElementById('dr-import').onclick = function () { openImport(); };
     document.getElementById('dr-export').onclick = function () { exportExcel(); };
+    document.getElementById('dr-print').onclick = function () {
+      var ts = document.getElementById('dr-topsheet');
+      if (ts) ts.innerHTML = topSheetHTML();
+      if (view !== 'registry') { view = 'registry'; saveUI(); render(); }
+      setTimeout(function () { window.print(); }, 60);
+    };
     var clearBtn = document.getElementById('dr-clear');
     if (clearBtn) { clearBtn.style.display = canWrite ? '' : 'none'; clearBtn.onclick = clearAll; }
     // "+ Level" menu: build the phase/discipline/category skeleton
@@ -1221,7 +1227,8 @@ window.DrawingRegister = (function () {
     '</div>';
 
     if (!draws.length && !structuralNodes().length) {
-      host.innerHTML = toolbar + emptyMsg('No drawings yet. Build levels with “+ Level”, add rows with “+ Add drawing”, or “Import Excel”.');
+      host.innerHTML = emptyHTML();
+      wireEmpty();
       return;
     }
     if (!disp.length) { host.innerHTML = toolbar + emptyMsg('Nothing matches the filters.'); return; }
@@ -1358,6 +1365,21 @@ window.DrawingRegister = (function () {
 
   function emptyMsg(msg) {
     return '<div class="pd-card dr-empty">'+Fmt.esc(msg)+'</div>';
+  }
+
+  // Truly-empty-project state (no drawings AND no levels built yet) — shown from
+  // both Overview (the default landing tab) and Registry, so a brand-new project
+  // never opens on a bare "no drawings to summarise" sentence with nothing to do
+  // about it. Mirrors material-submittal's emptyHTML()/wireEmpty() pattern.
+  function emptyHTML() {
+    return '<div class="pd-card dr-empty"><h3>No drawings yet</h3>' +
+      '<p>Import the Drawing Register &amp; Tracker workbook to load your existing register, or add drawings one at a time.</p>' +
+      (canWrite ? '<p style="margin-top:14px;"><button class="pd-btn pd-btn-primary" id="dr-e-import">Import from Excel</button> ' +
+        '<button class="pd-btn" id="dr-e-add">Add a drawing</button></p>' : '') + '</div>';
+  }
+  function wireEmpty() {
+    var a = document.getElementById('dr-e-import'); if (a) a.onclick = openImport;
+    var b = document.getElementById('dr-e-add'); if (b) b.onclick = function () { openForm(null); };
   }
 
   // ------------------------------------------------------------- wiring ------
@@ -2014,7 +2036,7 @@ window.DrawingRegister = (function () {
   function renderProgress() {
     var host = document.getElementById('dr-view');
     var draws = drawingRows();
-    if (!draws.length) { host.innerHTML = emptyMsg('No drawings to summarise yet.'); return; }
+    if (!draws.length) { host.innerHTML = emptyHTML(); wireEmpty(); return; }
 
     var totSheets=0, subSheets=0, apSheets=0;
     draws.forEach(function (r){
@@ -3397,6 +3419,54 @@ window.DrawingRegister = (function () {
     if (/as.?built/.test(t)) return 'As-Built';
     if (/contract/.test(t)) return 'For Construction';
     return s.replace(/\b\w/g,function(m){return m.toUpperCase();});
+  }
+
+  // ========================================================== PRINT TOP SHEET =
+  // A cover page for the printed/PDF-exported register — construction document
+  // control expects a transmittal sheet ahead of a set submitted for approval,
+  // not a bare table. Built fresh on every Print click (never stored) so it
+  // always reflects the current project, filters and status mix; injected into
+  // #dr-topsheet, which is hidden on screen and shown only under @media print
+  // with `page-break-after:always`, so it prints as page 1 ahead of the grid.
+  function topSheetSignBlock(label) {
+    return '<div class="dr-ts-signbox">' +
+      '<div class="dr-ts-signline"></div>' +
+      '<div class="dr-ts-signlabel">' + Fmt.esc(label) + ' — Name &amp; Signature</div>' +
+      '<div class="dr-ts-signdate">Date: _______________</div>' +
+    '</div>';
+  }
+  function topSheetHTML() {
+    var draws = drawingRows();
+    var sc = statusCounts();
+    var scopeParts = [];
+    if (filters.phase) scopeParts.push('Drawing type: ' + filters.phase);
+    if (filters.discipline) scopeParts.push('Discipline: ' + disciplineName(filters.discipline));
+    if (filters.status) scopeParts.push('Status: ' + filters.status);
+    if (filters.search) scopeParts.push('Search: "' + filters.search + '"');
+    var scopeLine = scopeParts.length ? scopeParts.join(' · ') : 'All drawings';
+
+    return (
+      '<div class="dr-ts-brand">Megawide Construction Corporation</div>' +
+      '<h1 class="dr-ts-title">Drawing Register — Transmittal for Approval</h1>' +
+      '<table class="dr-ts-meta">' +
+        '<tr><th>Project</th><td>' + Fmt.esc(projName || pid || '—') + '</td></tr>' +
+        '<tr><th>Date generated</th><td>' + Fmt.date(new Date().toISOString().slice(0,10)) + '</td></tr>' +
+        '<tr><th>Prepared by</th><td>' + Fmt.esc(selfName()) + '</td></tr>' +
+        '<tr><th>Scope</th><td>' + Fmt.esc(scopeLine) + '</td></tr>' +
+        '<tr><th>Total drawings</th><td>' + draws.length + '</td></tr>' +
+      '</table>' +
+      '<table class="dr-ts-status">' +
+        '<thead><tr><th>Status</th><th>Count</th></tr></thead>' +
+        '<tbody>' + sc.map(function (s) {
+          return '<tr><td>' + Fmt.esc(s.label) + '</td><td>' + s.count + '</td></tr>';
+        }).join('') + '</tbody>' +
+      '</table>' +
+      '<div class="dr-ts-sign">' +
+        topSheetSignBlock('Prepared by') +
+        topSheetSignBlock('Reviewed by') +
+        topSheetSignBlock('Approved by') +
+      '</div>'
+    );
   }
 
   // =============================================================== EXPORT =====

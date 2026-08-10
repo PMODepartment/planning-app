@@ -119,6 +119,7 @@ tr.dr-grp.dr-grpactive td { box-shadow:inset 3px 0 0 0 var(--pd-red); }
 tr.dr-grp { cursor:pointer; }              /* the whole row toggles collapse */
 tr.dr-grp .dr-glabel { cursor:text; }      /* except the label: dblclick renames */
 .dr-empty { padding:40px 24px; color:var(--pd-muted); text-align:center; }
+.dr-empty h3 { margin:0 0 6px; color:var(--pd-ink); font-size:var(--dr-fs-lg); }
 
 /* Row action buttons */
 .dr-rowbtn { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
@@ -629,6 +630,47 @@ td.dr-editing { padding:2px 4px; }
 .dr-view-save { display:flex; align-items:center; gap:6px; width:100%; text-align:left; border:0; background:transparent; color:var(--pd-red);
   padding:7px 10px; border-radius:6px; cursor:pointer; font-size:var(--dr-fs-base); font-weight:600; }
 .dr-view-save:hover { background:var(--pd-bg); }
+
+/* ---- Print / PDF export ---------------------------------------------------
+   The register itself is the printable content; the topbar, filter bar and
+   list-bar toolbar (collapse-all, jump, dup legend, sort chip, keyboard hint)
+   are on-screen-only controls with nothing to print. Checkbox + actions
+   columns are interaction affordances, not register data.
+   `.dr-topsheet` is a construction-document-control transmittal cover sheet,
+   built fresh per print in module.js (topSheetHTML()) and injected ahead of
+   the grid in the DOM — hidden here, shown only when actually printing, with
+   a forced page break so it lands alone on page 1. ------------------------- */
+.dr-topsheet { display:none; }
+@media print {
+  .pd-topbar, .dr-filters, .dr-listbar, .dr-cb, .dr-actcol { display:none !important; }
+  /* ⚠️ The print button forces view='registry' before printing, and Registry sets
+     `body.dr-fit` (see the "min-width:701px" block above) — a printed page's box is
+     almost always over 701px CSS-wide, so that block's `height:100dvh; overflow:hidden`
+     on `.pd-app`/`.pd-main` is STILL ACTIVE during print. Without undoing it here, any
+     register longer than one page-height is silently clipped instead of paginating —
+     `.dr-tablecard { overflow:visible }` alone does nothing, because it's the ANCESTORS
+     that clip, not the table card itself. Selectors + specificity must match the
+     originals exactly (`body.dr-fit .pd-app` etc.) or this loses the cascade. */
+  body.dr-fit .pd-app, body.dr-fit .pd-content, body.dr-fit .pd-main, body.dr-fit #dr-view {
+    height:auto !important; min-height:0 !important; overflow:visible !important; display:block !important; }
+  .dr-tablecard { max-height:none; overflow:visible; }
+  .dr-grid { min-width:0; font-size:var(--dr-fs-micro); }
+  .dr-grid td.dr-freeze, .dr-grid th.dr-freeze { position:static; }
+
+  .dr-topsheet { display:block; page-break-after:always; padding:24px 4px; }
+  .dr-ts-brand { font-size:var(--dr-fs-sm); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+  .dr-ts-title { margin:4px 0 18px; font-size:var(--dr-fs-xl); }
+  .dr-ts-meta, .dr-ts-status { border-collapse:collapse; width:100%; margin-bottom:18px; }
+  .dr-ts-meta th, .dr-ts-meta td, .dr-ts-status th, .dr-ts-status td {
+    border:1px solid #999; padding:6px 10px; font-size:var(--dr-fs-base); text-align:left; }
+  .dr-ts-meta th { width:180px; background:#f2f2f2; font-weight:700; }
+  .dr-ts-status th { background:#f2f2f2; font-weight:700; }
+  .dr-ts-sign { display:flex; gap:24px; margin-top:36px; }
+  .dr-ts-signbox { flex:1 1 0; }
+  .dr-ts-signline { border-bottom:1px solid #333; height:44px; }
+  .dr-ts-signlabel { font-size:var(--dr-fs-sm); margin-top:4px; }
+  .dr-ts-signdate { font-size:var(--dr-fs-sm); margin-top:10px; }
+}
 
 /* ---- Mobile & tablet (2026-07-23) ----------------------------------------
    Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets) comes

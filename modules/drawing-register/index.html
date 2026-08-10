@@ -39,6 +39,7 @@
           <span class="dr-tb-sep"></span>
           <button class="pd-btn" id="dr-import" title="Import from Excel"><span data-ico="upload" data-ico-size="16"></span></button>
           <button class="pd-btn" id="dr-export" title="Export to Excel"><span data-ico="download" data-ico-size="16"></span></button>
+          <button class="pd-btn" id="dr-print" title="Print / PDF (with an approval top sheet)"><span data-ico="printer" data-ico-size="16"></span></button>
           <button class="pd-btn dr-clearbtn" id="dr-clear" title="Clear all drawings for this project" style="display:none;"><span data-ico="trash" data-ico-size="16"></span></button>
         </div>
         <div id="dr-presence" title="People viewing this project"></div>
@@ -66,6 +67,10 @@
           <button class="dr-clearfilt" id="dr-f-clear" title="Clear all filters" hidden><span data-ico="x" data-ico-size="13"></span> Clear</button>
         </div>
 
+        <!-- Print-only approval top sheet, generated fresh each Print click and
+             injected here so it prints as page 1, ahead of the register table
+             below (see the "@media print" block in module.css). -->
+        <div id="dr-topsheet" class="dr-topsheet"></div>
         <div id="dr-view"></div>
       </div>
     </div>
