@@ -2,6 +2,110 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Schedule App integration + streamlined capture — Phase 1 of the 6-phase 360°/BIM/drone
+## roadmap (2026-08-11)
+
+Owner's brief specced a 6-phase roadmap (schedule integration → reporting → 360° panoramas →
+3D/measurements → BIM overlay → drone). Explicit instruction: audit the existing app and confirm
+the schedule integration path **before** writing code, and don't start a phase until the previous
+one ships. This entry is Phase 1 only — Phase 2 (report templates), Phase 3+ are NOT started.
+
+- **Audit finding:** `location` was free text with no link to anything; "+ Add photos" was a
+  batch-metadata upload (good primitive) but had no walkthrough/checklist UX. The PPR module
+  (already built) is most of Phase 2 already; the gap there is a *template* concept, not slide
+  assembly itself.
+- **"Schedule app" = the `project-schedule` module in this same repo/Supabase project** — not an
+  external system. Integration is a plain cross-module table read (same pattern Cash Flow/
+  Portfolio Overview already use for `project_schedule`), not a new API.
+- **Data model decision (owner's call): WBS nodes are the primary location source, Activity Codes
+  are an optional overlay.** `progress_photos` gained `wbs_node_id` (FK → `wbs_nodes`, `on delete
+  set null` — deleting a schedule zone must not delete photos captured there), `activity_id` /
+  `activity_name` (a SNAPSHOT of the schedule's "current" activity for that zone at capture time —
+  deliberately not a live join, so reports don't change retroactively when the schedule updates;
+  same convention as `bl_cost`). Migration
+  `../../migrations/2026-08-10-progress-photos-schedule-integration.sql`, folded into
+  `supabase-schema.sql`. **User must run it** — until then the module tolerates the missing
+  columns (see below) but zones aren't recorded.
+- **`location` (existing free-text column) is kept as the display cache**, auto-filled from the
+  picked zone's breadcrumb but still editable/typeable — a photo not tied to any WBS zone (site-
+  wide shots, signage) can still be tagged, per contract §6 ("reference the schedule, don't force
+  everything to be tracked"). This also means every existing filter/group/report code path
+  (List View's Trade grouping, the Location filter dropdown, PPR slides) needed **zero changes** —
+  they all just keep reading `location` text.
+- **Activity Code overlay reuses the existing, previously-unused `tags text[]` column** — no new
+  column needed. If a project has Activity Code Types defined in Project Schedule, the Add/Edit
+  modal shows one optional checkbox group per type; ticked values save as `"<Type>: <Value>"`
+  strings in `tags`.
+- **"Current activity" resolution (`resolveActivity`)**: among `project_schedule` Task rows sharing
+  the picked zone's `wbs_node_id`, prefer In Progress (earliest start), else the next Not Started,
+  else whatever's there. Shown as a read-only context line in the capture/edit modals and on each
+  Rounds row (e.g. "Rebar Installation").
+- **Today's Rounds** (new third top-level screen, `Photos | Rounds | PPRs`): every WBS leaf node
+  for the project, split into **Recent rounds** (has a prior capture here, newest first) and
+  **Other schedule zones** (never captured, alphabetical) — so the usual walkthrough locations
+  surface first without hiding zones nobody's shot yet. Each row shows the last photo + date +
+  resolved activity, a checkbox, and a one-tap **Capture** button.
+- **One-tap repeat capture**: opening Capture on a zone that already has a photo shows that photo
+  inline ("Last captured here <date> — frame a similar shot for comparison") right in the upload
+  modal, next to the resolved activity line.
+- **Batch walkthrough**: check several Rounds rows → **Start walkthrough** opens the capture modal
+  for the first ("Capture — 1 of N"), and on Upload/Skip it auto-advances to the next selected zone
+  without returning to the Rounds screen; **End walkthrough** stops the chain early. Uses the same
+  `openUpload(preset)` as the plain "+ Add photos" button — just pre-filled and chained.
+- **Reconciled with the collaboration/offline-editing work already on `main`** (this branch was
+  originally built against an older snapshot — see below): rather than inventing a second, competing
+  offline system, new-capture uploads now go through a **narrow addition on top of the existing
+  `PDSync` outbox**, not around it —
+  - `PDSync` (offline.js) already queues DB row **writes**, but has no concept of a Storage
+    **upload**; it can't hold an unsent image blob. So a capture that can't even *start* uploading
+    (offline, or the upload call itself throws) is queued in a small **IndexedDB blob queue**
+    (`pp_offline_v1`) — file + metadata — retried (upload, then the row write) on reconnect or a
+    topbar **"N pending — Sync now"** button (auto-flushes on the browser's `online` event).
+  - Once a file's bytes are actually on Storage, the row write **always** goes through the same
+    `tolerantWrite()` → `PDSync.write()` path every other insert/update in this module now uses — a
+    transient network hiccup on just the row write is PDSync's problem to queue and retry, not a
+    second queue of mine. (If that write comes back permanently, `tolerantWrite` retries once
+    without the schedule-link columns for a not-yet-migrated DB; if it's still not `ok`, the file's
+    already uploaded, so it's re-queued as a row-write-only retry rather than re-uploading.)
+  - This **revises the "Upload (file) stays online-only" scope note** below (2026-07-26) — that was
+    the right call before schedule integration needed captures to survive going offline mid-
+    walkthrough (brief §4 requires it); it's superseded, not contradicted.
+- **Rounds stays live-consistent** with collaboration: hooked into the same `render()` that
+  `paintRemote()` already runs at the end of — so a teammate's capture (via `applyRemoteChange`) or
+  this device's own `load()` both refresh the visible Rounds list, not just the Photos grid.
+- **Deliberately not built this round**: Report Templates (brief §5/Phase 2), 360° capture (Phase
+  3+). Rounds' "Recent vs Other" ranking is capture-history + WBS only — no separate "usual
+  locations" list to hand-maintain, which was the actual ask in §4.
+
+### Verified (2026-08-11)
+Harness-verified (stubbed `AppAuth`/`PDb`/a hand-rolled Supabase-query-builder stub + `storage` +
+minimal `PDSync`/`PDCollab`/`Autosave` stubs, mutable in-memory store seeded with a 2-level WBS
+tree, two schedule activities, one Activity Code type, one pre-existing photo; no real
+credentials/backend touched; harness deleted after use). Confirmed **end-to-end, by driving the
+actual DOM**: Rounds correctly splits Recent/Other and resolves the right activity per zone; the
+capture modal preselects the right WBS node, auto-fills the location label, shows the resolved
+activity, and shows the "last captured here" reference with thumbnail; a real upload (via a
+`DataTransfer`-injected `File`, no OS file dialog) saves through `tolerantWrite`/`PDSync.write` and
+the Rounds list's "Last captured" date updates live; the walkthrough chain advances 1-of-2 → 2-of-2
+on Skip and stops cleanly on End; the offline blob queue catches a simulated upload failure, shows
+the pending badge, and Sync now flushes it through the same write path; the migration-tolerant
+retry fires and still saves the photo when the new columns are simulated as missing; the Edit-photo
+modal preselects the existing zone/location correctly and still routes through `broadcastCollabSel`
++ Autosave unchanged; the pre-existing Photos screen (filters, grouping, live collaboration
+presence/row-cursor, edit) is unaffected.
+Screenshots weren't attempted (this session's Preview tool file:// pages don't reliably reload —
+confirmed via a page-global marker that a second navigate/`location.reload()` to the same file://
+URL doesn't re-execute JS); DOM/text verification was used instead, same as this module's prior
+compositor-stall workaround.
+
+### Pending
+- Migration must be run on the live DB (see above).
+- Live click-through against a real login + a real project with a WBS built in Project Schedule.
+- The offline **blob** queue (new-capture path) hasn't been exercised through a real DevTools-
+  offline cycle against live Supabase — same caveat the 2026-07-26 entry already notes for the
+  metadata-edit path.
+- Phase 2 (Report Templates) — not started.
+
 ## Live collaboration + offline metadata edits (Phase 1 & 2) (2026-07-26) — fmlozano
 Wired the shared **PDCollab** (Realtime) + **PDSync** (offline outbox) layers. Progress Photos is the
 **"presence + live, offline-limited"** case: it's uploads, so photo *blobs* can't be queued offline —
@@ -221,7 +325,8 @@ signing round-trip per row — cached in `urlCache` and refreshed on reload.
   `sort_order` to `progress_photos` + a `(project_id, taken_at desc)` index. Idempotent;
   folded into `supabase-schema.sql`. **The module shows blank Trade/Works until it runs.**
 - `description` / `location` / `photo_url` / `taken_at` (capture date) already existed on
-  the starter table. `tags` is unused so far.
+  the starter table. `tags` (text[]) is now used by the 2026-08-11 Activity Code overlay
+  (`"<code type>: <value>"` strings) — see that entry.
 
 ## Notes / decisions
 - `UI.modal()` takes no width and does **not** wire close buttons, so the module has a

@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260726d"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260806b" />
-  <link rel="stylesheet" href="module.css?v=20260727b" />
+  <link rel="stylesheet" href="module.css?v=20260811a" />
 </head>
 <body>
   <div class="pd-app">
@@ -28,6 +28,7 @@
         <!-- Top-level screens (the Power Apps home: View Photos / View PPRs) -->
         <div class="pp-tabs" role="tablist">
           <button class="pp-tab active" data-screen="photos">Photos</button>
+          <button class="pp-tab" data-screen="rounds">Rounds</button>
           <button class="pp-tab" data-screen="ppr">PPRs</button>
         </div>
 
@@ -44,6 +45,9 @@
           <button class="pd-btn pp-tb-labeled" id="ppr-back" title="Back to the PPR list" style="display:none;">
             <span data-ico="arrowLeft" data-ico-size="16"></span> PPR list</button>
         </div>
+        <!-- Offline capture queue — visible on every screen (Rounds captures queue too) -->
+        <button class="pd-btn pp-syncbtn" id="pp-sync" title="Sync photos captured while offline" hidden>
+          <span data-ico="refresh" data-ico-size="14"></span> <span id="pp-sync-n">0</span> pending — Sync now</button>
         <div id="pp-presence" title="People viewing this project"></div>
         <div id="user-bar"></div>
       </div>
@@ -75,6 +79,16 @@
             </div>
           </div>
           <div id="pp-view"></div>
+        </div>
+
+        <!-- ================= Today's Rounds (streamlined repeat capture) ================= -->
+        <div id="pp-screen-rounds" hidden>
+          <div class="pp-filters">
+            <span class="pp-filt-ico" data-ico="filter" data-ico-size="15"></span>
+            <input class="pd-input pp-search" id="pp-rounds-search" placeholder="Search schedule zones…" />
+            <span class="pp-hint">Locations come from Project Schedule's WBS — build it there to populate this list.</span>
+          </div>
+          <div id="pp-rounds-view"></div>
         </div>
 
         <!-- ================= PPR Presentations ================= -->
@@ -118,7 +132,7 @@
   <script src="../../assets/js/offline.js?v=20260726d"></script>
   <script src="../../assets/js/collab.js?v=20260727b"></script>
   <script src="../../assets/js/autosave.js?v=20260806a"></script>
-  <script src="module.js?v=20260726d"></script>
+  <script src="module.js?v=20260811a"></script>
   <script src="ppr.js?v=20260724a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
@@ -139,15 +153,17 @@
         });
       }
       function setScreen(s) {
-        var isPpr = s === 'ppr';
-        document.getElementById('pp-screen-photos').hidden = isPpr;
+        var isPpr = s === 'ppr', isRounds = s === 'rounds', isPhotos = !isPpr && !isRounds;
+        document.getElementById('pp-screen-photos').hidden = !isPhotos;
+        document.getElementById('pp-screen-rounds').hidden = !isRounds;
         document.getElementById('pp-screen-ppr').hidden = !isPpr;
         document.getElementById('pp-screen-title').textContent =
-          isPpr ? 'PPR Presentations' : 'Photos Database';
-        show(PHOTO_TOOLS, !isPpr);
+          isPpr ? 'PPR Presentations' : isRounds ? "Today's Rounds" : 'Photos Database';
+        show(PHOTO_TOOLS, isPhotos);
         // Each module re-asserts its own tools' visibility (role + inner screen).
         PPR._syncTools(isPpr);
-        if (!isPpr) ProgressPhotos._syncChrome();
+        if (isPhotos) ProgressPhotos._syncChrome();
+        if (isRounds) ProgressPhotos.renderRounds();
         Array.prototype.forEach.call(document.querySelectorAll('.pp-tab[data-screen]'), function (b) {
           b.classList.toggle('active', b.dataset.screen === s);
         });
@@ -158,7 +174,7 @@
       });
       var saved = 'photos';
       try { saved = localStorage.getItem('pp_screen') || 'photos'; } catch (e) {}
-      setScreen(saved === 'ppr' ? 'ppr' : 'photos');
+      setScreen(saved === 'ppr' ? 'ppr' : (saved === 'rounds' ? 'rounds' : 'photos'));
     });
   </script>
 </body>

@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "planning-app",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "5173"],
+      "runtimeExecutable": "powershell.exe",
+      "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".claude/tools/static-server.ps1", "-Port", "5173"],
       "port": 5173
     }
   ]

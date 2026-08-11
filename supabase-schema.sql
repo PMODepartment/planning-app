@@ -61,7 +61,12 @@ create table if not exists progress_photos (
   trade       text,                  -- e.g. Site Works, Mechanical Works
   works       text,                  -- work item within the trade
   sort_order  integer,
-  tags        text[],
+  tags        text[],                -- optional Activity Code overlay, "<code type>: <value>"
+  wbs_node_id uuid,                   -- references wbs_nodes(id) (see migrations/2026-08-10-*.sql — wbs_nodes
+                                       -- isn't in this base file yet, a pre-existing schema-drift gap; the FK
+                                       -- constraint is added there once wbs_nodes exists on the target DB)
+  activity_id text,                   -- snapshot of the schedule's "current" activity for that zone at capture time
+  activity_name text,
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
