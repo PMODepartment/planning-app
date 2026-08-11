@@ -2,6 +2,56 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Location picker rebuilt as a generic N-level WBS cascade: Discipline/Trade > Tower >
+## Level > Zone > Orientation (2026-08-11c)
+Owner's explicit second follow-up: the preset flips again — Discipline/Trade is now the **top**
+tier (not a separate Activity-Code lookup layered on last, per the entry below), followed by
+**Tower > Level > Zone > Orientation**, five tiers total.
+- **Why this isn't an Activity Code any more:** a real schedule commonly puts discipline ABOVE the
+  spatial breakdown — `Structural Works > Tower A > Level 5 > Zone 2` and `Architectural Works >
+  Tower A > Level 5 > Zone 2` are two *different* WBS branches for the same physical space, not one
+  branch with a discipline tag. So Discipline/Trade is now **WBS depth 0**, read the exact same way
+  as Tower/Level/Zone/Orientation — no more `activity_code_types` name-matching, no more `discTag`/
+  `existingDiscId` round-trip. `DISC_TYPE`/`DISC_VALUES`/`WBS_LOCATIONS`/`zonesInLocation` are gone;
+  the generic Activity-Code overlay (for whatever *other*, unrelated code types a project has) is
+  back to iterating every type with no exclusion, since there's no special one to skip anymore.
+- **The picker is a fully generic N-level cascade**, not hardcoded to 3 or 5 selects:
+  `wbsCascadeHTML()` walks `wbsChildren()` one depth at a time, rendering one `<select>` per depth
+  up to wherever the real tree stops, labelled via `WBS_LEVEL_LABELS = ['Discipline/Trade', 'Tower',
+  'Level', 'Zone', 'Orientation']` (a depth beyond those five falls back to "Level N"; a shallower
+  branch — verified live: the Mechanical Works branch in the harness is only 4 deep — just doesn't
+  render a 5th select, it doesn't fabricate an empty "Orientation" nobody can pick). Picking a level
+  rebuilds every select from that depth down (`wireCascade` regenerates `#…-cascade`'s innerHTML and
+  rewires it) — the simplest robust way to keep n cascading `<select>`s in sync without a framework.
+- **A capture can stop at any depth** — "just this Tower" is a valid, deliberate choice, not an
+  error state. `currentCascadeNodeId()` reads the deepest select that actually has a value.
+  `resolveActivity()` correspondingly matches the picked node **or any of its descendants**
+  (`isNodeUnder`), so stopping at "Level 5" still surfaces whichever activity is happening somewhere
+  under it, instead of requiring the full 5-deep pick to find anything.
+- **`breadcrumbOf()`/`wbsLeaf()` now work for ANY node id**, not only registered leaves — needed
+  because a capture can legitimately target an intermediate depth. `WBS_LEAVES` (finest-grain nodes
+  only) is still what Rounds enumerates, unchanged.
+- ⚠️ **Labelling is positional (by depth), not by matching the node's real meaning** — if a
+  project's actual WBS doesn't follow this exact 5-tier order on some branch, a node still gets
+  whatever label its depth implies (e.g. a depth-1 node would read "Tower" even if it's actually
+  something else). This is cosmetic, not a data-integrity problem: the stored value is always the
+  real `wbs_node_id` the user actually clicked through to, correctly representing the tree — only
+  the on-screen label for that step could read oddly on an irregular branch. Noted rather than
+  solved: Project Schedule's own tooling (the "match WBS to locations" wizard) had to build
+  keyword-based matching for exactly this irregularity in a different context (bulk classification);
+  here the user is driving the cascade live and always sees the tree's real structure at each step,
+  so it doesn't need the same fix.
+- **Harness-verified against a 5-level tree built specifically to test the discipline-first
+  design**: two disciplines (Structural Works / Mechanical Works) each with their OWN `Tower A >
+  Level 5 > Zone 2` branch and a concurrent activity at each. Confirmed: the Edit modal reopens all
+  5 levels correctly pre-selected for a 5-deep photo; switching Discipline/Trade at depth 0 correctly
+  collapses and repopulates every deeper select; drilling through the Mechanical Works branch (only
+  4 deep) resolves to "MEP Rough-in" and correctly does **not** render a 5th "Orientation" select;
+  the Structural Works branch at the same Tower/Level/Zone names resolves to "Rebar Installation" —
+  proving the two same-named physical branches never cross-resolve; a full save persists
+  `location`/`wbs_node_id`/`activity_id`/`activity_name` correctly; Rounds still enumerates all 3
+  real leaves with distinguishing full breadcrumbs. No console errors.
+
 ## Location picker restructured to the Location > Zone > Discipline/Trade preset (2026-08-11b)
 Owner's explicit follow-up to the Phase 1 entry below: pull location/zone/area/activity from
 Project Schedule on a **fixed 3-tier preset** rather than one flat WBS-leaf dropdown.

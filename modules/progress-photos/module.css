@@ -268,6 +268,10 @@
 .pp-syncbtn:hover { background: var(--pd-red); color: #fff; }
 
 /* ---- Schedule-zone picker (Add/Edit modals) ------------------------------- */
+/* One <select> per WBS depth (Discipline/Trade > Tower > Level > Zone >
+   Orientation); wraps as needed since a full 5-deep tree won't fit one row. */
+.pp-wbscascade { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.pp-wbslevel { flex: 1 1 140px; min-width: 120px; margin-bottom: 0; }
 .pp-actctx { font-size: 12.5px; color: var(--pd-muted); margin-top: -2px; }
 .pp-actline { margin-top: 4px; }
 .pp-actline strong { color: var(--pd-ink); }

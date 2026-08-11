@@ -28,19 +28,24 @@ window.ProgressPhotos = (function () {
   var projectListeners = [];         // PPR screen subscribes; both share one selector
 
   // ---- Schedule App integration (Phase 1) ----------------------------------
-  // Zones/locations are read live from Project Schedule's wbs_nodes tree —
-  // same Supabase project, no separate API — on the preset Location > Zone >
-  // Discipline/Trade hierarchy: WBS_LOCATIONS = top-level (spatial) nodes,
-  // WBS_LEAVES = pickable zones (each carrying its parent Location), DISC_TYPE/
-  // DISC_VALUES = whichever Activity Code type is named like Discipline/Trade
-  // (planner-defined per project — disciplines cut across zones, so they come
-  // from Activity Codes, not another WBS depth). SCHED_ACTS = schedule
-  // activities tied to a zone (+ optionally a discipline/trade code), used to
-  // surface "the current activity here" alongside the location tag.
-  var WBS = [], WBS_BY_ID = {}, WBS_LEAVES = [], WBS_LOCATIONS = [];
+  // Zones/locations/activities are read live from Project Schedule's
+  // wbs_nodes tree — same Supabase project, no separate API — as a fully
+  // generic N-level cascade, labelled on the preset Discipline/Trade > Tower >
+  // Level > Zone > Orientation (WBS_LEVEL_LABELS): depth 0 of a project's WBS
+  // is presented as "Discipline/Trade", depth 1 as "Tower", and so on: a real
+  // schedule commonly puts discipline ABOVE the spatial breakdown (e.g.
+  // "Structural Works > Tower A > Level 5 > Zone 2" and "Architectural Works
+  // > Tower A > Level 5 > Zone 2" are different WBS branches for the same
+  // physical space), so this is not another Activity-Code lookup — it's WBS
+  // depth, same as Tower/Level/Zone. Depths beyond the 5 named ones fall back
+  // to "Level N"; a shallower tree just doesn't render the deeper selects.
+  // WBS_LEAVES = the finest-grain nodes (used for Rounds' checklist); a
+  // capture can stop at ANY depth though, not only a leaf (e.g. "just this
+  // Tower" is valid) — see resolveActivity's descendant matching below.
+  var WBS_LEVEL_LABELS = ['Discipline/Trade', 'Tower', 'Level', 'Zone', 'Orientation'];
+  var WBS = [], WBS_BY_ID = {}, WBS_LEAVES = [];
   var SCHED_ACTS = [];
-  var CODE_TYPES = [], CODE_VALUES = [];   // optional Activity-Code overlay
-  var DISC_TYPE = null, DISC_VALUES = [];  // the Discipline/Trade code type, if the project has one
+  var CODE_TYPES = [], CODE_VALUES = [];   // optional Activity-Code overlay (unrelated code types)
   var migrationWarned = false;             // warn once per session, not per save
   var roundsFilter = '';
   var roundsSelected = {};                 // wbs node id -> true (walkthrough queue)
@@ -166,21 +171,11 @@ window.ProgressPhotos = (function () {
 
   // --------------------------------------------------------- schedule read ---
   // Reads wbs_nodes / project_schedule / activity codes for the current
-  // project, on the preset Location > Zone > Discipline/Trade hierarchy:
-  //   - Location = a top-level WBS node (the physical/spatial root — building,
-  //     site, tower). Zone = a WBS node under that Location (Area/Zone are the
-  //     same tier here — a project's wbs_nodes are the one spatial hierarchy).
-  //   - Discipline/Trade is NOT a WBS depth — disciplines cut ACROSS zones, so
-  //     it's pulled from the schedule's own Activity Codes: whichever code type
-  //     is named like "Discipline"/"Trade" (planner-defined per project, same
-  //     mechanism Project Schedule itself uses for grouping/filtering). If a
-  //     project hasn't set one up, that tier is simply not offered — the
-  //     picker still works as Location > Zone only.
-  // Tolerant of the tables not existing yet (pre-migration DB) — the module
-  // just falls back to free-text-only locations.
+  // project. Tolerant of the tables not existing yet (pre-migration DB) —
+  // the module just falls back to free-text-only locations.
   async function loadSchedule() {
-    WBS = []; WBS_BY_ID = {}; WBS_LEAVES = []; WBS_LOCATIONS = []; SCHED_ACTS = [];
-    CODE_TYPES = []; CODE_VALUES = []; DISC_TYPE = null; DISC_VALUES = [];
+    WBS = []; WBS_BY_ID = {}; WBS_LEAVES = []; SCHED_ACTS = [];
+    CODE_TYPES = []; CODE_VALUES = [];
     if (!pid) return;
     try {
       var wres = await sb().from('wbs_nodes')
@@ -192,25 +187,13 @@ window.ProgressPhotos = (function () {
 
     var childCount = {};
     WBS.forEach(function (n) { if (n.parent_id) childCount[n.parent_id] = (childCount[n.parent_id] || 0) + 1; });
-    // Full breadcrumb (Location › … › Zone) AND the top ancestor (= Location).
-    function chain(n) {
-      var parts = [n.name], p = n.parent_id ? WBS_BY_ID[n.parent_id] : null, top = n, guard = 0;
-      while (p && guard++ < 25) { parts.unshift(p.name); top = p; p = p.parent_id ? WBS_BY_ID[p.parent_id] : null; }
-      return { label: parts.join(' › '), locationId: top.id, locationName: top.name, zoneLabel: parts.slice(1).join(' › ') || parts[0] };
-    }
     WBS_LEAVES = WBS.filter(function (n) { return !childCount[n.id]; })
-      .map(function (n) {
-        var c = chain(n);
-        return { id: n.id, label: c.label, locationId: c.locationId, locationName: c.locationName, zoneLabel: c.zoneLabel };
-      })
+      .map(function (n) { return { id: n.id, label: breadcrumbOf(n.id) }; })
       .sort(function (a, b) { return a.label.localeCompare(b.label); });
-    WBS_LOCATIONS = WBS.filter(function (n) { return !n.parent_id; })
-      .map(function (n) { return { id: n.id, name: n.name }; })
-      .sort(function (a, b) { return a.name.localeCompare(b.name); });
 
     try {
       var ares = await sb().from('project_schedule')
-        .select('id,activity_id,activity_name,wbs_node_id,activity_type,status,start_date,end_date,activity_codes')
+        .select('id,activity_id,activity_name,wbs_node_id,activity_type,status,start_date,end_date')
         .eq('project_id', pid).not('wbs_node_id', 'is', null)
         .neq('activity_type', 'WBS Summary')
         .limit(5000);
@@ -226,24 +209,48 @@ window.ProgressPhotos = (function () {
         if (!vres.error) CODE_VALUES = vres.data || [];
       }
     } catch (e) {}
-    DISC_TYPE = CODE_TYPES.filter(function (t) { return /disciplin|trade/i.test(t.name || ''); })[0] || null;
-    DISC_VALUES = DISC_TYPE ? CODE_VALUES.filter(function (v) { return v.code_type_id === DISC_TYPE.id; }) : [];
   }
 
-  function zonesInLocation(locationId) {
-    return WBS_LEAVES.filter(function (n) { return n.locationId === locationId; });
+  // Full "›"-joined ancestry label for ANY node (not just leaves) — a capture
+  // can stop at an intermediate depth (e.g. "just this Tower"), so the label
+  // has to work there too, not only at the finest-grain zone.
+  function breadcrumbOf(nodeId) {
+    var n = nodeId ? WBS_BY_ID[nodeId] : null;
+    if (!n) return '';
+    var parts = [n.name], p = n.parent_id ? WBS_BY_ID[n.parent_id] : null, guard = 0;
+    while (p && guard++ < 25) { parts.unshift(p.name); p = p.parent_id ? WBS_BY_ID[p.parent_id] : null; }
+    return parts.join(' › ');
   }
-
-  // The schedule activity that's "current" for a zone: prefer In Progress
-  // (earliest start), else the next Not Started, else whatever's there.
-  // discValueId narrows to activities tagged with that Discipline/Trade code
-  // value — disambiguates a zone where several disciplines work concurrently.
-  function resolveActivity(nodeId, discValueId) {
-    if (!nodeId) return null;
-    var cands = SCHED_ACTS.filter(function (a) { return a.wbs_node_id === nodeId; });
-    if (discValueId && DISC_TYPE) {
-      cands = cands.filter(function (a) { return a.activity_codes && a.activity_codes[DISC_TYPE.id] === discValueId; });
+  // Sorted children of a WBS node (parentId null/'' = the root level).
+  function wbsChildren(parentId) {
+    return WBS.filter(function (n) { return (n.parent_id || '') === (parentId || ''); })
+      .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name); });
+  }
+  // The full ancestor chain, root-first, ending at nodeId itself — lets the
+  // cascade UI pre-select every level when re-opening on an already-picked node.
+  function wbsPathTo(nodeId) {
+    var path = [], n = nodeId ? WBS_BY_ID[nodeId] : null, guard = 0;
+    while (n && guard++ < 25) { path.unshift(n.id); n = n.parent_id ? WBS_BY_ID[n.parent_id] : null; }
+    return path;
+  }
+  function isNodeUnder(nodeId, ancestorId) {
+    if (nodeId === ancestorId) return true;
+    var n = WBS_BY_ID[nodeId], guard = 0;
+    while (n && n.parent_id && guard++ < 25) {
+      if (n.parent_id === ancestorId) return true;
+      n = WBS_BY_ID[n.parent_id];
     }
+    return false;
+  }
+
+  // The schedule activity that's "current" for a picked WBS node: prefer
+  // In Progress (earliest start), else the next Not Started, else whatever's
+  // there. Matches the node itself OR any of its descendants, so stopping the
+  // cascade at an intermediate depth (e.g. "just this Level", no Zone chosen)
+  // still surfaces an activity happening somewhere underneath it.
+  function resolveActivity(nodeId) {
+    if (!nodeId) return null;
+    var cands = SCHED_ACTS.filter(function (a) { return a.wbs_node_id && isNodeUnder(a.wbs_node_id, nodeId); });
     if (!cands.length) return null;
     var pick = cands.filter(function (a) { return (a.status || '') === 'In Progress'; })
       .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
@@ -254,7 +261,8 @@ window.ProgressPhotos = (function () {
   }
 
   function wbsLeaf(nodeId) {
-    return WBS_LEAVES.filter(function (n) { return n.id === nodeId; })[0] || null;
+    if (!nodeId || !WBS_BY_ID[nodeId]) return null;
+    return { id: nodeId, label: breadcrumbOf(nodeId) };
   }
 
   function lastCaptureAt(nodeId) {
@@ -634,44 +642,73 @@ window.ProgressPhotos = (function () {
   }
 
   // ------------------------------------------------- schedule-zone picker ----
-  // Cascading Location > Zone > Discipline/Trade, sourced live from the
-  // schedule (§ loadSchedule): pick a Location (top WBS node), Zone narrows to
-  // that Location's leaves, Discipline/Trade (only shown if the project has
-  // that Activity Code type) narrows which concurrent activity is "current".
-  // A free-text label (auto-filled from the picked zone, still editable) is
-  // kept so photos that aren't tied to any zone can still be tagged. Any
-  // OTHER Activity Code types the project has get their own generic overlay
-  // checkboxes (Discipline/Trade excluded — it already has its dedicated select).
-  function zoneOptionsHTML(locId, selZoneId) {
-    if (!locId) return '<option value="">— choose a location first —</option>';
-    return '<option value="">— Not tracked —</option>' + zonesInLocation(locId).map(function (n) {
-      return '<option value="' + n.id + '"' + (n.id === selZoneId ? ' selected' : '') + '>' +
-             Fmt.esc(n.zoneLabel) + '</option>';
-    }).join('');
-  }
-  function wbsFieldHTML(idPrefix, selZoneId, locText, selDiscId) {
-    var zoneNode = selZoneId ? wbsLeaf(selZoneId) : null;
-    var locId = zoneNode ? zoneNode.locationId : '';
-    var locOpts = '<option value="">— Not tracked (type a label below) —</option>' +
-      WBS_LOCATIONS.map(function (l) {
-        return '<option value="' + l.id + '"' + (l.id === locId ? ' selected' : '') + '>' + Fmt.esc(l.name) + '</option>';
+  // Cascading N-level WBS picker on the preset Discipline/Trade > Tower >
+  // Level > Zone > Orientation (WBS_LEVEL_LABELS): each depth is a <select>;
+  // picking one repopulates the next with its children. A capture can stop
+  // at any depth — "just this Tower" is valid, not only a full 5-deep pick.
+  // A free-text label (auto-filled from the deepest pick, still editable) is
+  // kept so photos that aren't tied to any WBS node can still be tagged.
+  // Any Activity Code types the project has (a separate, unrelated
+  // mechanism) get their own generic overlay checkboxes.
+  function levelSelectHTML(idPrefix, depth, kids, selId) {
+    var label = WBS_LEVEL_LABELS[depth] || ('Level ' + (depth + 1));
+    var opts = '<option value="">— ' + (depth === 0 ? 'Not tracked' : 'None') + ' —</option>' +
+      kids.map(function (n) {
+        return '<option value="' + n.id + '"' + (n.id === selId ? ' selected' : '') + '>' + Fmt.esc(n.name) + '</option>';
       }).join('');
-    var discField = '';
-    if (DISC_TYPE) {
-      var discOpts = '<option value="">— Any / not specified —</option>' +
-        DISC_VALUES.map(function (v) {
-          return '<option value="' + v.id + '"' + (v.id === selDiscId ? ' selected' : '') + '>' + Fmt.esc(v.value) + '</option>';
-        }).join('');
-      discField = '<div class="pd-field"><label>' + Fmt.esc(DISC_TYPE.name) + '</label>' +
-        '<select class="pd-select" id="' + idPrefix + '-disc">' + discOpts + '</select></div>';
+    return '<div class="pd-field pp-wbslevel"><label>' + Fmt.esc(label) + '</label>' +
+      '<select class="pd-select" data-lvl="' + depth + '" id="' + idPrefix + '-lvl' + depth + '">' + opts + '</select></div>';
+  }
+  // Renders one select per depth, seeded from `path` (root-first ids) so a
+  // preset/existing pick reopens fully expanded; stops one level past the
+  // last selection (so there's always a next choice available, never guesses
+  // deeper than the tree or the user's picks actually go).
+  function wbsCascadeHTML(idPrefix, path) {
+    path = path || [];
+    var html = '', parentId = '', depth = 0;
+    while (depth < 10) {
+      var kids = wbsChildren(parentId);
+      if (!kids.length) break;
+      var selId = path[depth] || '';
+      html += levelSelectHTML(idPrefix, depth, kids, selId);
+      if (!selId) break;
+      parentId = selId;
+      depth++;
     }
+    return html || '<p class="pp-hint">No schedule WBS found for this project yet.</p>';
+  }
+  // The deepest level actually selected (a capture can stop early) — this is
+  // the wbs_node_id that gets stored on the photo.
+  function currentCascadeNodeId(idPrefix) {
+    var cascade = $(idPrefix + '-cascade');
+    if (!cascade) return '';
+    var sels = cascade.querySelectorAll('select'), last = '';
+    for (var i = 0; i < sels.length; i++) {
+      if (!sels[i].value) return last;
+      last = sels[i].value;
+    }
+    return last;
+  }
+  function wireCascade(idPrefix) {
+    var cascade = $(idPrefix + '-cascade');
+    if (!cascade) return;
+    Array.prototype.forEach.call(cascade.querySelectorAll('select'), function (sel) {
+      sel.onchange = function () {
+        var depth = parseInt(sel.dataset.lvl, 10);
+        var sels = cascade.querySelectorAll('select'), path = [];
+        for (var i = 0; i <= depth; i++) path.push(sels[i].value);
+        cascade.innerHTML = wbsCascadeHTML(idPrefix, path);
+        wireCascade(idPrefix);
+        var loctxt = $(idPrefix + '-loctxt');
+        if (loctxt) loctxt.dataset.userEdited = '';
+        paintActCtx(idPrefix);
+      };
+    });
+  }
+  function wbsFieldHTML(idPrefix, selNodeId, locText) {
+    var path = wbsPathTo(selNodeId);
     return (
-      '<div class="pd-field"><label>Location</label>' +
-        '<select class="pd-select" id="' + idPrefix + '-loc">' + locOpts + '</select></div>' +
-      '<div class="pd-field"><label>Zone / Area</label>' +
-        '<select class="pd-select" id="' + idPrefix + '-zone"' + (locId ? '' : ' disabled') + '>' +
-        zoneOptionsHTML(locId, selZoneId) + '</select></div>' +
-      discField +
+      '<div class="pp-span2 pp-wbscascade" id="' + idPrefix + '-cascade">' + wbsCascadeHTML(idPrefix, path) + '</div>' +
       '<div class="pd-field pp-span2"><label>Location label</label>' +
         '<input class="pd-input" id="' + idPrefix + '-loctxt" value="' + Fmt.esc(locText || '') +
         '" placeholder="e.g. Model Unit Entrance" /></div>' +
@@ -680,10 +717,9 @@ window.ProgressPhotos = (function () {
     );
   }
   function codeOverlayHTML(idPrefix, existingTags) {
-    var types = CODE_TYPES.filter(function (t) { return !DISC_TYPE || t.id !== DISC_TYPE.id; });
-    if (!types.length) return '';
+    if (!CODE_TYPES.length) return '';
     existingTags = existingTags || [];
-    var groups = types.map(function (t) {
+    var groups = CODE_TYPES.map(function (t) {
       var vals = CODE_VALUES.filter(function (v) { return v.code_type_id === t.id; });
       if (!vals.length) return '';
       return '<div class="pp-codegroup"><span class="pp-codegroup-name">' + Fmt.esc(t.name) + ':</span>' +
@@ -694,67 +730,35 @@ window.ProgressPhotos = (function () {
         }).join('') + '</div>';
     }).join('');
     if (!groups) return '';
-    return '<div class="pd-field pp-span2"><label>Other schedule code tags (optional)</label>' +
+    return '<div class="pd-field pp-span2"><label>Schedule code tags (optional)</label>' +
       '<div class="pp-codetags" id="' + idPrefix + '-codes">' + groups + '</div></div>';
   }
   function readCodeTags(idPrefix) {
     var wrap = $(idPrefix + '-codes'); if (!wrap) return [];
     return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
   }
-  // The Discipline/Trade pick, if any, is itself recorded as a tag (same
-  // "<type>: <value>" shape as the generic overlay) so it's visible on the
-  // row/report even though it has its own dedicated select, not a checkbox.
-  function discTag(idPrefix) {
-    var sel = $(idPrefix + '-disc');
-    if (!sel || !sel.value || !DISC_TYPE) return null;
-    var v = CODE_VALUES.filter(function (x) { return x.id === sel.value; })[0];
-    return v ? (DISC_TYPE.name + ': ' + v.value) : null;
-  }
-  // Reverse of discTag: a photo's own tags may already carry "<DiscType>: <value>"
-  // (recorded at capture time) — resolve it back to a code_value id so the Edit
-  // modal's Discipline/Trade select opens pre-picked instead of blank.
-  function existingDiscId(r) {
-    if (!DISC_TYPE || !r || !r.tags || !r.tags.length) return '';
-    var prefix = DISC_TYPE.name + ': ';
-    var tag = r.tags.filter(function (t) { return t.indexOf(prefix) === 0; })[0];
-    if (!tag) return '';
-    var val = tag.slice(prefix.length);
-    var v = DISC_VALUES.filter(function (x) { return x.value === val; })[0];
-    return v ? v.id : '';
-  }
   // skipInitialFill: true when opening on an already-saved location label
   // (edit modal) — the first paint should leave it alone; a subsequent
-  // manual re-pick of the zone should still refresh it.
+  // manual re-pick of the WBS cascade should still refresh it.
   function wireWbsField(idPrefix, skipInitialFill) {
-    var locSel = $(idPrefix + '-loc'), zoneSel = $(idPrefix + '-zone'), loctxt = $(idPrefix + '-loctxt');
-    if (!locSel || !zoneSel || !loctxt) return;
+    var loctxt = $(idPrefix + '-loctxt');
+    if (!loctxt) return;
     loctxt.oninput = function () { loctxt.dataset.userEdited = '1'; };
-    locSel.onchange = function () {
-      var locId = locSel.value;
-      zoneSel.innerHTML = zoneOptionsHTML(locId, '');
-      zoneSel.disabled = !locId;
-      loctxt.dataset.userEdited = '';
-      paintActCtx(idPrefix);
-    };
-    zoneSel.onchange = function () { loctxt.dataset.userEdited = ''; paintActCtx(idPrefix); };
-    var discSel = $(idPrefix + '-disc');
-    if (discSel) discSel.onchange = function () { paintActCtx(idPrefix); };
+    wireCascade(idPrefix);
     if (skipInitialFill) loctxt.dataset.userEdited = '1';
     paintActCtx(idPrefix);
   }
   function paintActCtx(idPrefix) {
-    var zoneSel = $(idPrefix + '-zone'), loctxt = $(idPrefix + '-loctxt'), ctx = $(idPrefix + '-actctx');
-    if (!zoneSel || !ctx) return;
-    var nodeId = zoneSel.value;
+    var loctxt = $(idPrefix + '-loctxt'), ctx = $(idPrefix + '-actctx');
+    if (!ctx) return;
+    var nodeId = currentCascadeNodeId(idPrefix);
     if (!nodeId) { ctx.innerHTML = ''; return; }
     var node = wbsLeaf(nodeId);
-    if (node && !loctxt.dataset.userEdited) loctxt.value = node.label;
-    var discSel = $(idPrefix + '-disc');
-    var discId = discSel ? (discSel.value || null) : null;
-    var act = resolveActivity(nodeId, discId), last = lastCaptureAt(nodeId);
+    if (node && loctxt && !loctxt.dataset.userEdited) loctxt.value = node.label;
+    var act = resolveActivity(nodeId), last = lastCaptureAt(nodeId);
     var html = '';
     if (act) html += '<div class="pp-actline">Current activity: <strong>' + Fmt.esc(act.name || act.id) + '</strong></div>';
-    else html += '<div class="pp-actline pp-muted">No active schedule activity found' + (discId ? ' for this zone + ' + Fmt.esc(DISC_TYPE.name) + '.' : ' for this zone.') + '</div>';
+    else html += '<div class="pp-actline pp-muted">No active schedule activity found under here.</div>';
     if (last) {
       var u = urlOf(last);
       html += '<div class="pp-actline pp-lastref">' +
@@ -805,11 +809,8 @@ window.ProgressPhotos = (function () {
     $('pp-save').onclick = async function () {
       var files = $('pp-files').files;
       if (!files || !files.length) { UI.toast('Choose at least one photo', 'warn'); return; }
-      var wbsNodeId = $('pp-zone').value || null;
-      var discSel = $('pp-disc');
-      var act = wbsNodeId ? resolveActivity(wbsNodeId, discSel ? (discSel.value || null) : null) : null;
-      var tags = readCodeTags('pp');
-      var dt = discTag('pp'); if (dt) tags.push(dt);
+      var wbsNodeId = currentCascadeNodeId('pp') || null;
+      var act = wbsNodeId ? resolveActivity(wbsNodeId) : null;
       var shared = {
         description: $('pp-desc').value.trim(),
         taken_at: $('pp-date').value || null,
@@ -819,7 +820,7 @@ window.ProgressPhotos = (function () {
         wbs_node_id: wbsNodeId,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
-        tags: tags
+        tags: readCodeTags('pp')
       };
       this.disabled = true;
       var prog = $('pp-prog'); prog.hidden = false;
@@ -1026,7 +1027,7 @@ window.ProgressPhotos = (function () {
             '<select class="pd-select" id="pp-e-trade">' + tradeOptions(r.trade || '') + '</select></div>' +
           '<div class="pd-field"><label>Works</label>' +
             '<input class="pd-input" id="pp-e-works" list="pp-works-list" value="' + Fmt.esc(r.works || '') + '" /></div>' +
-          wbsFieldHTML('pp-e', r.wbs_node_id || '', r.location || '', existingDiscId(r)) +
+          wbsFieldHTML('pp-e', r.wbs_node_id || '', r.location || '') +
         '</div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
@@ -1046,11 +1047,8 @@ window.ProgressPhotos = (function () {
     });
     $('pp-e-save').onclick = async function () {
       this.disabled = true;
-      var wbsNodeId = $('pp-e-zone').value || null;
-      var discSel = $('pp-e-disc');
-      var act = wbsNodeId ? resolveActivity(wbsNodeId, discSel ? (discSel.value || null) : null) : null;
-      var tags = readCodeTags('pp-e');
-      var dt = discTag('pp-e'); if (dt) tags.push(dt);
+      var wbsNodeId = currentCascadeNodeId('pp-e') || null;
+      var act = wbsNodeId ? resolveActivity(wbsNodeId) : null;
       var patch = {
         description: $('pp-e-desc').value.trim(),
         taken_at: $('pp-e-date').value || null,
@@ -1060,7 +1058,7 @@ window.ProgressPhotos = (function () {
         wbs_node_id: wbsNodeId,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
-        tags: tags,
+        tags: readCodeTags('pp-e'),
         updated_at: new Date().toISOString()
       };
       // Offline-capable metadata edit: apply optimistically, then route through
