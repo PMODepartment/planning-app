@@ -2,6 +2,50 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Location picker restructured to the Location > Zone > Discipline/Trade preset (2026-08-11b)
+Owner's explicit follow-up to the Phase 1 entry below: pull location/zone/area/activity from
+Project Schedule on a **fixed 3-tier preset** rather than one flat WBS-leaf dropdown.
+- **Location = a top-level WBS node** (`WBS_LOCATIONS`, depth-0 — the physical/spatial root: a
+  building, site, tower). **Zone/Area = a WBS node under that Location** (`zonesInLocation()`) —
+  Zone and Area are treated as the same tier, since a project's `wbs_nodes` is the one spatial
+  hierarchy Project Schedule maintains; there's no separate "Area" table to pull from.
+- **Discipline/Trade is deliberately NOT a WBS depth** — disciplines cut *across* zones (structural
+  and MEP crews both work the same column grid), so it comes from the schedule's **Activity Codes**
+  instead: whichever code type is named like `/disciplin|trade/i` (planner-defined per project, the
+  same mechanism Project Schedule's own grouping/filtering already uses). If a project hasn't set
+  one up, that tier simply isn't offered — the picker still works as Location > Zone.
+- **Capture/Edit modals are now a real cascade**: pick Location → Zone options repopulate to that
+  Location's leaves (`zoneOptionsHTML`) → optional Discipline/Trade select. `resolveActivity(zoneId,
+  discValueId)` now also matches the activity's own `activity_codes[disciplineTypeId]`, so a zone
+  with two concurrent activities (e.g. Structural doing rebar, Mechanical doing rough-in at the same
+  column grid) resolves to the *right* one once a discipline is picked — verified in harness: without
+  a discipline both activities are candidates and the earliest-start In-Progress one wins; picking
+  "Mechanical" switches the resolved activity to the Mechanical one specifically.
+  `project_schedule` select now also pulls `activity_codes` (added to `loadSchedule()`).
+- **The Discipline/Trade pick is recorded as a tag** (`"<code type name>: <value>"`, e.g.
+  `"Discipline: Mechanical"`) via `discTag()`/`existingDiscId()` — same `"<type>: <value>"` shape as
+  the generic Activity-Code overlay, but it has its own dedicated select rather than a checkbox
+  since it's a required-feeling tier of the hierarchy, not an optional extra. The **generic overlay
+  now excludes** whichever code type resolved as Discipline/Trade, so it isn't offered twice.
+  Verified the full round-trip: save with Location=Site Grounds/Zone=Perimeter Fence/
+  Discipline=Mechanical → tag `"Discipline: Mechanical"` lands on the row → re-opening Edit
+  pre-selects Location/Zone/Discipline correctly (the reverse lookup).
+- **Existing progress-photos' own `trade` field is untouched** — deliberately did not let arbitrary
+  schedule discipline text overwrite it. `trade` mirrors the fixed WPM vocabulary shared with
+  Cash Flow/work-packages (a documented decision below); a schedule's Activity Code values are
+  planner-typed free text and could easily not match that vocabulary. Discipline/Trade from the
+  schedule is a separate, additional signal (tag + activity narrowing), not a replacement.
+- **Rounds screen unchanged in granularity** (still one row per Zone, not per Zone×Discipline) —
+  enumerating every zone/discipline combination would blow up the list for a modest UX gain: the
+  Discipline/Trade tier is still available inside the Capture modal opened from a Rounds row.
+  Flagged as a possible follow-up, not done here.
+- Harness-verified (two Locations, a real "Discipline" Activity Code type, two concurrent
+  activities at one zone tagged to different discipline values): Location→Zone cascade repopulates
+  correctly on Location change, Zone's own location auto-derived for pre-selection (Capture-from-
+  Rounds and Edit both preselect the right Location), discipline-narrowed activity resolution,
+  discipline auto-tag save + reverse-lookup on Edit, generic overlay correctly empty when Discipline
+  is the project's only code type, walkthrough chain unaffected. No console errors.
+
 ## Schedule App integration + streamlined capture — Phase 1 of the 6-phase 360°/BIM/drone
 ## roadmap (2026-08-11)
 
