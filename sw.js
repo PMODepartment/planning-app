@@ -12,14 +12,21 @@
 // Because it tries the network first, this can only ADD an offline fallback —
 // it cannot serve stale content while online. Bump CACHE to force a purge.
 // ============================================================================
-var CACHE = 'pd-shell-v2';
+// ⚠️ CACHE NAME AND PURGE SCOPE — both the Planners Dashboard and the
+// Engineering App are served from the SAME ORIGIN (pmodepartment.github.io), and
+// Cache Storage is per-ORIGIN, not per service-worker scope. The original
+// activate handler deleted every cache key that was not its own, so each app's
+// service worker would wipe the OTHER app's offline cache every time it
+// activated. Purging is therefore scoped to this app's own PREFIX.
+var PREFIX = 'pd-shell-';
+var CACHE = PREFIX + 'v2';
 
 self.addEventListener('install', function () { self.skipWaiting(); });
 
 self.addEventListener('activate', function (e) {
   e.waitUntil((async function () {
     var keys = await caches.keys();
-    await Promise.all(keys.filter(function (k) { return k !== CACHE; }).map(function (k) { return caches.delete(k); }));
+    await Promise.all(keys.filter(function (k) { return k.indexOf(PREFIX) === 0 && k !== CACHE; }).map(function (k) { return caches.delete(k); }));
     await self.clients.claim();
   })());
 });
