@@ -6,101 +6,90 @@
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260726d"></script>
-  <title>Drawing Register · Planners Dashboard</title>
+  <title>Drawing Register has moved · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260806b" />
-  <link rel="stylesheet" href="module.css?v=20260811c" />
 </head>
-<body>
-  <div class="pd-app">
-    <!-- Sidebar removed (matches Project Schedule / Cash Flow): the back button returns to the module selector. -->
-    <div class="pd-content">
-      <div class="pd-topbar">
-        <a class="pd-btn dr-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
-        <h1 class="dr-title" style="margin:0;"><span class="dr-title-ico" data-ico="ruler" data-ico-size="20"></span> <span class="dr-title-txt">Drawing Register</span></h1>
-        <div class="dr-projctx">
-          <select class="pd-select dr-project" id="dr-project" title="Project"></select>
-        </div>
-        <div class="dr-tabs" role="tablist">
-          <button class="dr-tab active" data-view="overview">Overview</button>
-          <button class="dr-tab" data-view="backlog">Backlog</button>
-          <button class="dr-tab" data-view="registry">Registry</button>
-        </div>
-        <!-- Global tools sit beside the profile (theme.js injects the dark-mode toggle before #user-bar) -->
-        <div class="dr-topbar-tools" id="dr-topbar-tools">
-          <button class="pd-btn dr-tb-labeled pd-btn-primary" id="dr-add" title="Add a drawing under the selected level (Enter)">+ Add</button>
-          <div class="dr-menuwrap">
-            <button class="pd-btn dr-tb-labeled" id="dr-addlevel" style="display:none;">+ Level <span data-ico="chevronDown" data-ico-size="13"></span></button>
-            <div class="dr-menu" id="dr-addlevel-menu" hidden>
-              <button data-add="phase">Drawing Type</button>
-              <button data-add="discipline">Discipline</button>
-              <button data-add="category">Category</button>
-            </div>
-          </div>
-          <span class="dr-tb-sep"></span>
-          <button class="pd-btn" id="dr-import" title="Import from Excel"><span data-ico="upload" data-ico-size="16"></span></button>
-          <button class="pd-btn" id="dr-export" title="Export to Excel"><span data-ico="download" data-ico-size="16"></span></button>
-          <button class="pd-btn" id="dr-print" title="Print / PDF (with an approval top sheet)"><span data-ico="printer" data-ico-size="16"></span></button>
-          <button class="pd-btn dr-clearbtn" id="dr-clear" title="Clear all drawings for this project" style="display:none;"><span data-ico="trash" data-ico-size="16"></span></button>
-        </div>
-        <div id="dr-presence" title="People viewing this project"></div>
-        <div id="user-bar"></div>
-      </div>
-      <div class="pd-main">
-        <div class="dr-filters">
-          <span class="dr-filt-ico" data-ico="filter" data-ico-size="15"></span>
-          <input class="pd-input dr-search" id="dr-f-search" placeholder="Search code, title, description…" />
-          <select class="pd-select" id="dr-f-phase"><option value="">All drawing types</option></select>
-          <select class="pd-select" id="dr-f-discipline"><option value="">All disciplines</option></select>
-          <select class="pd-select" id="dr-f-scope">
-            <option value="">All scopes</option>
-            <option>Main Contract</option>
-            <option>Change Order</option>
-          </select>
-          <select class="pd-select" id="dr-f-status">
-            <option value="">All statuses</option>
-            <option>Not Started</option><option>In Progress</option>
-            <option>Submitted</option><option>Resubmit</option>
-            <option>Approved w/ comments</option>
-            <option>Approved</option><option>Cancelled</option>
-          </select>
-          <div class="dr-menuwrap dr-views-wrap">
-            <button class="pd-btn dr-views-btn" id="dr-viewsbtn" title="Saved filter views">Views <span data-ico="chevronDown" data-ico-size="12"></span></button>
-            <div class="dr-menu dr-views-menu" id="dr-views-menu" hidden></div>
-          </div>
-          <!-- Ghost clear-filters button (matches Material Submittal / Progress Photos):
-               only visible when a filter is actually set, so it never sits in dead space. -->
-          <button class="dr-clearfilt" id="dr-f-clear" title="Clear all filters" hidden><span data-ico="x" data-ico-size="13"></span> Clear</button>
-        </div>
+<!--
+  ============================================================================
+  MOVED — the Drawing Register now lives in the Engineering App.
+  ----------------------------------------------------------------------------
+  This page is a redirect stub, deliberately kept at the original path so any
+  bookmark, or a stale cached dashboard.html still listing this module, lands
+  somewhere that explains itself instead of 404ing.
 
-        <!-- Print-only approval top sheet, generated fresh each Print click and
-             injected here so it prints as page 1, ahead of the register table
-             below (see the "@media print" block in module.css). -->
-        <div id="dr-topsheet" class="dr-topsheet"></div>
-        <div id="dr-view"></div>
+  ⚠️ The Engineering App runs on its OWN Supabase project, so it has a SEPARATE
+  login — a Planners Dashboard account does not work there until an Engineering
+  App admin approves it. That is why this interstitial exists rather than a bare
+  HTTP redirect: a silent bounce to a login screen reads as "the app logged me
+  out" and generates support calls.
+
+  `module.js` / `module.css` are intentionally still on disk beside this file,
+  unreferenced. They are the rollback path — restoring this module is reverting
+  one file. Delete them only once the Engineering App is validated in production.
+  ============================================================================
+-->
+<body>
+  <div class="pd-auth-wrap">
+    <div class="pd-auth-card" style="max-width:520px;">
+      <div class="pd-auth-logo">
+        <img class="pd-auth-mark" src="../../assets/img/favicon.png" alt="Megawide">
+        <div class="pd-brand">Drawing Register</div>
+        <small>has moved to the Engineering App</small>
+      </div>
+      <div class="pd-card" style="text-align:center;">
+        <p style="margin:0 0 14px;font-size:13.5px;line-height:1.6;">
+          The <strong>Drawing Register</strong> is now part of the
+          <strong>Megawide Engineering App</strong>, together with the Material
+          Submittal Log. Your project selection carries over.
+        </p>
+        <p style="margin:0 0 18px;font-size:12.5px;color:var(--pd-muted);line-height:1.6;">
+          The Engineering App has its own sign-in. If this is your first visit,
+          request access there and an administrator will approve your account.
+        </p>
+        <a class="pd-btn pd-btn-primary" id="go" href="#"
+           style="width:100%;justify-content:center;">Open the Engineering App</a>
+        <p style="margin:14px 0 0;font-size:12px;color:var(--pd-muted);">
+          Redirecting in <span id="count">5</span>s…
+          <a href="#" id="stay">Stay here</a>
+        </p>
+        <p style="margin:12px 0 0;font-size:12.5px;">
+          <a href="../../dashboard.html">← Back to Planners Dashboard</a>
+        </p>
       </div>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <!-- Charting: same stack the Procurement (WPM) dashboard uses, so the period
-       chart's sizing, tooltips and data labels behave identically there and here. -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
-  <script src="../../assets/js/config.js?v=20260724a"></script>
-  <script src="../../assets/js/auth.js?v=20260724a"></script>
-  <script src="../../assets/js/db.js?v=20260724a"></script>
-  <script src="../../assets/js/ui.js?v=20260724a"></script>
-  <script src="../../assets/js/icons.js?v=20260804a"></script>
-  <script src="../../assets/js/offline.js?v=20260726d"></script>
-  <script src="../../assets/js/collab.js?v=20260727b"></script>
-  <script src="../../assets/js/autosave.js?v=20260806a"></script>
-  <script src="module.js?v=20260811c"></script>
   <script>
-    AppAuth.requireLogin(function (user, profile) {
-      UI.renderUserBar(profile);
-      DrawingRegister.init(user, profile);
-    });
+  (function () {
+    // Single place to change if the Engineering App moves.
+    var ENGINEERING_APP = 'https://pmodepartment.github.io/engineering-app/';
+    var MODULE_PATH = 'modules/drawing-register/index.html';
+
+    // Carry the project context across. Both apps are served from the same
+    // origin (pmodepartment.github.io), so sessionStorage is genuinely shared
+    // and the Engineering App will already see `pd_project`. The query string
+    // is a belt-and-braces fallback for a different host or a fresh tab.
+    var pid = '';
+    try { pid = sessionStorage.getItem('pd_project') || ''; } catch (e) {}
+    var url = ENGINEERING_APP + MODULE_PATH + (pid ? '?project=' + encodeURIComponent(pid) : '');
+
+    document.getElementById('go').href = url;
+
+    var left = 5, timer = setInterval(function () {
+      left--;
+      var el = document.getElementById('count');
+      if (el) el.textContent = left;
+      if (left <= 0) { clearInterval(timer); location.href = url; }
+    }, 1000);
+
+    // An auto-redirect a user cannot stop is hostile when they arrived by
+    // mistake, or want to copy the link rather than follow it.
+    document.getElementById('stay').onclick = function (e) {
+      e.preventDefault();
+      clearInterval(timer);
+      this.parentNode.innerHTML = 'Redirect cancelled — use the button above when ready.';
+    };
+  })();
   </script>
 </body>
 </html>

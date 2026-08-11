@@ -6,79 +6,90 @@
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260726d"></script>
-  <title>Material Submittal Log · Planners Dashboard</title>
+  <title>Material Submittal Log has moved · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260806b" />
-  <link rel="stylesheet" href="module.css?v=20260806a" />
 </head>
+<!--
+  ============================================================================
+  MOVED — the Material Submittal Log now lives in the Engineering App.
+  ----------------------------------------------------------------------------
+  This page is a redirect stub, deliberately kept at the original path so any
+  bookmark, or a stale cached dashboard.html still listing this module, lands
+  somewhere that explains itself instead of 404ing.
+
+  ⚠️ The Engineering App runs on its OWN Supabase project, so it has a SEPARATE
+  login — a Planners Dashboard account does not work there until an Engineering
+  App admin approves it. That is why this interstitial exists rather than a bare
+  HTTP redirect: a silent bounce to a login screen reads as "the app logged me
+  out" and generates support calls.
+
+  `module.js` / `module.css` are intentionally still on disk beside this file,
+  unreferenced. They are the rollback path — restoring this module is reverting
+  one file. Delete them only once the Engineering App is validated in production.
+  ============================================================================
+-->
 <body>
-  <div class="pd-app">
-    <!-- Sidebar-less shell (matches Drawing Register / Cash Flow / Project Schedule). -->
-    <div class="pd-content">
-      <div class="pd-topbar">
-        <a class="pd-btn ms-modback" href="../../dashboard.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
-        <h1 class="ms-title" style="margin:0;"><span class="ms-title-ico" data-ico="box" data-ico-size="20"></span> <span class="ms-title-txt">Material Submittal Log</span></h1>
-        <div class="ms-projctx">
-          <select class="pd-select ms-project" id="ms-project" title="Project"></select>
-        </div>
-        <div class="ms-tabs" role="tablist">
-          <button class="ms-tab active" data-view="dashboard">Overview</button>
-          <button class="ms-tab" data-view="backlog">Backlog</button>
-          <button class="ms-tab" data-view="log">Registry</button>
-        </div>
-        <!-- Global tools sit beside the profile (theme.js injects the dark-mode toggle before #user-bar) -->
-        <div class="ms-topbar-tools" id="ms-topbar-tools">
-          <button class="pd-btn ms-tb-labeled pd-btn-primary" id="ms-add" title="Add a material submittal">+ Add</button>
-          <span class="ms-tb-sep"></span>
-          <button class="pd-btn" id="ms-import" title="Import from the PMO Excel workbook"><span data-ico="upload" data-ico-size="16"></span></button>
-          <button class="pd-btn" id="ms-export" title="Export to Excel"><span data-ico="download" data-ico-size="16"></span></button>
-          <button class="pd-btn" id="ms-print" title="Print / PDF"><span data-ico="printer" data-ico-size="16"></span></button>
-          <button class="pd-btn ms-clearbtn" id="ms-clear" title="Clear all submittals for this project" style="display:none;"><span data-ico="trash" data-ico-size="16"></span></button>
-        </div>
-        <div id="ms-presence" title="People viewing this project"></div>
-        <div id="user-bar"></div>
+  <div class="pd-auth-wrap">
+    <div class="pd-auth-card" style="max-width:520px;">
+      <div class="pd-auth-logo">
+        <img class="pd-auth-mark" src="../../assets/img/favicon.png" alt="Megawide">
+        <div class="pd-brand">Material Submittal Log</div>
+        <small>has moved to the Engineering App</small>
       </div>
-
-      <div class="pd-main">
-        <!-- Filter bar — log view only (hidden on the dashboard, like Drawing Register's Progress tab) -->
-        <div class="ms-filters" id="ms-filters">
-          <span class="ms-filt-ico" data-ico="filter" data-ico-size="15"></span>
-          <input class="pd-input ms-search" id="ms-f-search" placeholder="Search item, spec, brand, vendor, code…" />
-          <select class="pd-select" id="ms-f-section"><option value="">All trade sections</option></select>
-          <select class="pd-select" id="ms-f-discipline"><option value="">All disciplines</option></select>
-          <select class="pd-select" id="ms-f-status"><option value="">All statuses</option></select>
-          <select class="pd-select" id="ms-f-pres"><option value="">All presentation types</option></select>
-          <label class="ms-chk" title="Planned approval date has passed and the item is not yet approved"><input type="checkbox" id="ms-f-overdue" /> Overdue only</label>
-          <button class="ms-clearfilt" id="ms-f-clear" title="Clear all filters" hidden><span data-ico="x" data-ico-size="13"></span> Clear</button>
-          <span class="ms-count" id="ms-count"></span>
-        </div>
-
-        <div id="ms-view"></div>
+      <div class="pd-card" style="text-align:center;">
+        <p style="margin:0 0 14px;font-size:13.5px;line-height:1.6;">
+          The <strong>Material Submittal Log</strong> is now part of the
+          <strong>Megawide Engineering App</strong>, together with the Drawing
+          Register. Your project selection carries over.
+        </p>
+        <p style="margin:0 0 18px;font-size:12.5px;color:var(--pd-muted);line-height:1.6;">
+          The Engineering App has its own sign-in. If this is your first visit,
+          request access there and an administrator will approve your account.
+        </p>
+        <a class="pd-btn pd-btn-primary" id="go" href="#"
+           style="width:100%;justify-content:center;">Open the Engineering App</a>
+        <p style="margin:14px 0 0;font-size:12px;color:var(--pd-muted);">
+          Redirecting in <span id="count">5</span>s…
+          <a href="#" id="stay">Stay here</a>
+        </p>
+        <p style="margin:12px 0 0;font-size:12.5px;">
+          <a href="../../dashboard.html">← Back to Planners Dashboard</a>
+        </p>
       </div>
     </div>
   </div>
 
-  <input type="file" id="ms-file" accept=".xlsx,.xls" style="display:none;" />
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <!-- Charting: same stack the Procurement (WPM) dashboard uses, so the period
-       chart's sizing, tooltips and data labels behave identically there and here. -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
-  <script src="../../assets/js/config.js?v=20260724a"></script>
-  <script src="../../assets/js/auth.js?v=20260724a"></script>
-  <script src="../../assets/js/db.js?v=20260724a"></script>
-  <script src="../../assets/js/ui.js?v=20260724a"></script>
-  <script src="../../assets/js/icons.js?v=20260804a"></script>
-  <script src="../../assets/js/offline.js?v=20260726d"></script>
-  <script src="../../assets/js/collab.js?v=20260727b"></script>
-  <script src="../../assets/js/autosave.js?v=20260806a"></script>
-  <script src="module.js?v=20260806a"></script>
   <script>
-    AppAuth.requireLogin(function (user, profile) {
-      UI.renderUserBar(profile);
-      MaterialSubmittal.init(user, profile);
-    });
+  (function () {
+    // Single place to change if the Engineering App moves.
+    var ENGINEERING_APP = 'https://pmodepartment.github.io/engineering-app/';
+    var MODULE_PATH = 'modules/material-submittal/index.html';
+
+    // Carry the project context across. Both apps are served from the same
+    // origin (pmodepartment.github.io), so sessionStorage is genuinely shared
+    // and the Engineering App will already see `pd_project`. The query string
+    // is a belt-and-braces fallback for a different host or a fresh tab.
+    var pid = '';
+    try { pid = sessionStorage.getItem('pd_project') || ''; } catch (e) {}
+    var url = ENGINEERING_APP + MODULE_PATH + (pid ? '?project=' + encodeURIComponent(pid) : '');
+
+    document.getElementById('go').href = url;
+
+    var left = 5, timer = setInterval(function () {
+      left--;
+      var el = document.getElementById('count');
+      if (el) el.textContent = left;
+      if (left <= 0) { clearInterval(timer); location.href = url; }
+    }, 1000);
+
+    // An auto-redirect a user cannot stop is hostile when they arrived by
+    // mistake, or want to copy the link rather than follow it.
+    document.getElementById('stay').onclick = function (e) {
+      e.preventDefault();
+      clearInterval(timer);
+      this.parentNode.innerHTML = 'Redirect cancelled — use the button above when ready.';
+    };
+  })();
   </script>
 </body>
 </html>
