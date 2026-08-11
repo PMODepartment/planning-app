@@ -18,7 +18,8 @@ window.DrawingRegister = (function () {
   var profile = null, uid = null, pid = null, projName = '';
   var rows = [];
   var view = 'overview';                       // overview | backlog | registry
-  var filters = { phase: '', discipline: '', status: '', search: '', dupsOnly: false };
+  var filters = { phase: '', discipline: '', scope: '', status: '', search: '', dupsOnly: false };
+  var SCOPES = ['Main Contract', 'Change Order'];
   var selected = {};                           // id -> true (bulk select)
   var collapsed = {};                          // group key -> true (collapsed). Manual, persisted.
   // ⚠️ Collapse state while a FILTER is active is tracked separately and starts
@@ -132,7 +133,7 @@ window.DrawingRegister = (function () {
   var REG_SORTABLE = {
     code:'Code', title:'Sheet Title / Description', revision:'Rev', status:'Status',
     sheets:'Sh', appr:'Appr', latest_sub:'Latest Sub.', approval:'Approval',
-    responsible:'Resp.'
+    responsible:'Resp.', scope:'Scope'
   };
   function regSortVal(r, col){
     switch (col){
@@ -145,6 +146,7 @@ window.DrawingRegister = (function () {
       case 'latest_sub':  return latestSub(r,'actual') || latestSub(r,'planned') || '';
       case 'approval':    return r.actual_approval || r.planned_approval || '';
       case 'responsible': return (r.responsible||'').toLowerCase();
+      case 'scope':       return (r.scope||SCOPES[0]).toLowerCase();
       default:            return 0;
     }
   }
@@ -380,6 +382,7 @@ window.DrawingRegister = (function () {
     function readFilters() {
       filters.phase      = document.getElementById('dr-f-phase').value;
       filters.discipline = document.getElementById('dr-f-discipline').value;
+      filters.scope      = document.getElementById('dr-f-scope').value;
       filters.status     = document.getElementById('dr-f-status').value;
       filters.search     = document.getElementById('dr-f-search').value.toLowerCase().trim();
       // ⚠️ Discard the filter-scoped collapse state on every filter change. Without
@@ -388,7 +391,7 @@ window.DrawingRegister = (function () {
       fCollapsed = {};
       syncClearFilt();
     }
-    ['dr-f-phase','dr-f-discipline','dr-f-status'].forEach(function (id) {
+    ['dr-f-phase','dr-f-discipline','dr-f-scope','dr-f-status'].forEach(function (id) {
       document.getElementById(id).onchange = function () { readFilters(); render(); };
     });
     var sEl = document.getElementById('dr-f-search'), sT = null;
@@ -400,7 +403,7 @@ window.DrawingRegister = (function () {
     if (cf) cf.onclick = function () {
       clearTimeout(sT);
       filters.dupsOnly = false;
-      ['dr-f-phase','dr-f-discipline','dr-f-status','dr-f-search'].forEach(function (id) {
+      ['dr-f-phase','dr-f-discipline','dr-f-scope','dr-f-status','dr-f-search'].forEach(function (id) {
         document.getElementById(id).value = '';
       });
       readFilters(); render();
@@ -422,9 +425,10 @@ window.DrawingRegister = (function () {
   function applyFilterValues(f){
     document.getElementById('dr-f-phase').value = f.phase||'';
     document.getElementById('dr-f-discipline').value = f.discipline||'';
+    document.getElementById('dr-f-scope').value = f.scope||'';
     document.getElementById('dr-f-status').value = f.status||'';
     document.getElementById('dr-f-search').value = f.search||'';
-    filters.phase=f.phase||''; filters.discipline=f.discipline||''; filters.status=f.status||''; filters.search=(f.search||'').toLowerCase().trim();
+    filters.phase=f.phase||''; filters.discipline=f.discipline||''; filters.scope=f.scope||''; filters.status=f.status||''; filters.search=(f.search||'').toLowerCase().trim();
     render();
   }
   function renderViewsMenu(){
@@ -686,13 +690,14 @@ window.DrawingRegister = (function () {
   function drawingRows(){ return rows.filter(function (r){ return !isNode(r) && !isSheet(r); }); }
   function sheetRows(){ return rows.filter(function (r){ return !isNode(r) && isSheet(r); }); }
   function structuralNodes(){ return rows.filter(isNode); }
-  function anyFilter(){ return !!(filters.phase || filters.discipline || filters.status || filters.search || filters.dupsOnly); }
+  function anyFilter(){ return !!(filters.phase || filters.discipline || filters.scope || filters.status || filters.search || filters.dupsOnly); }
 
   // Shared by the Registry filter bar AND the Backlog tab (dupsOnly is Registry-only).
   function matchesFilters(r, opts) {
     opts = opts || {};
     if (!opts.skipDups && filters.dupsOnly && !dupSet[dupKey(r)]) return false;
     if (filters.phase && r.phase !== filters.phase) return false;
+    if (filters.scope && (r.scope || SCOPES[0]) !== filters.scope) return false;
     if (filters.discipline &&
         r.discipline !== filters.discipline &&
         disciplineName(r.discipline) !== filters.discipline) return false;
@@ -1251,7 +1256,7 @@ window.DrawingRegister = (function () {
       sh('revision', 'dr-c-rev') + sh('status', 'dr-c-status') +
       sh('sheets', 'dr-r dr-c-sh') + sh('appr', 'dr-r dr-c-ap') +
       sh('latest_sub', 'dr-c-date') + sh('approval', 'dr-c-date') +
-      sh('responsible', 'dr-c-resp') +
+      sh('responsible', 'dr-c-resp') + sh('scope', 'dr-c-scope') +
       '<th class="dr-actcol"></th></tr>';
 
     var html = toolbar + '<div class="pd-card dr-tablecard"><table class="pd-table dr-table dr-grid'+(CB?' dr-has-cb':'')+'" style="--cbw:'+(CB?'34px':'0px')+'" tabindex="0"><thead>'+head+'</thead><tbody>';
@@ -1291,6 +1296,7 @@ window.DrawingRegister = (function () {
         ? '<span title="Last sheet approved — everything in this group is approved">'+Fmt.date(roll.maxActual)+'</span>'
         : '<span class="dr-mut" title="Not all approved yet">—</span>')+'</td>' +
       '<td></td>' +   // Resp.
+      '<td></td>' +   // Scope
       '<td class="dr-nowrap dr-actcol">'+(canWrite?'<button class="dr-lvldel" title="Delete this level and everything under it">'+ico('trash',15)+'</button>':'')+'</td></tr>';
   }
 
@@ -1356,6 +1362,8 @@ window.DrawingRegister = (function () {
       '<td class="dr-nowrap dr-c-date'+(kids?'':ed)+'" data-f="actual_approval" data-t="date">'+
         (appr?'<span class="'+(apprIsActual?'':'dr-mut')+'" title="'+(apprIsActual?'Actual approval':'Planned approval — not yet approved')+'">'+Fmt.date(appr)+'</span>':'—')+'</td>' +
       '<td class="dr-c-resp'+ed+'" data-f="responsible" data-t="text">'+Fmt.esc(r.responsible)+'</td>' +
+      '<td class="dr-c-scope'+(kids?'':ed)+'" data-f="scope" data-t="text">'+
+        '<span class="dr-scopetag'+((r.scope||SCOPES[0])==='Change Order'?' dr-co':'')+'">'+Fmt.esc(r.scope||SCOPES[0])+'</span></td>' +
       '<td class="dr-nowrap dr-actcol">'+(r.file_url?'<button class="dr-iconbtn" data-view="'+Fmt.esc(r.file_url)+'" title="View approved file">'+ico('eye',15)+'</button>':'')+
         (canWrite && !sheet ? '<button class="dr-iconbtn" data-sheets="'+r.id+'" title="'+(kids?'Manage sheets':'Break out into one row per sheet')+'">'+ico('columns',15)+'</button>' : '')+
         '<button class="dr-iconbtn" data-edit="'+r.id+'" title="Full editor">'+ico('pencil',15)+'</button>' +
@@ -1964,6 +1972,7 @@ window.DrawingRegister = (function () {
         // The sheet inherits its place in the tree so every existing grouping,
         // filter and export keeps working on it unchanged.
         phase: p.phase || '', discipline: p.discipline || '', category: (p.category || '').trim(),
+        scope: p.scope || SCOPES[0],
         title: 'Sheet ' + (have + i), status: appr ? seed.ok : seed.rest,
         no_of_sheets: 1, approved_sheets: appr ? 1 : 0, approved_pct: appr ? 1 : 0, submissions: [],
         // The sheets shared one approval date as a single row; carrying it down
@@ -2392,6 +2401,7 @@ window.DrawingRegister = (function () {
       el.value = v;
     };
     set('dr-f-phase', filters.phase); set('dr-f-discipline', filters.discipline);
+    set('dr-f-scope', filters.scope);
     set('dr-f-status', filters.status); set('dr-f-search', '');
     // ⚠️ This used to be `collapsed = {}` — a workaround for the same defect the
     // filter-scoped collapse map now fixes properly. It was destructive: clicking a
@@ -2514,9 +2524,10 @@ window.DrawingRegister = (function () {
       '<div class="dr-code-preview">Code: <span id="f-codeprev"></span></div>' +
 
       '<div class="dr-form-sec">Sheet</div>' +
-      '<div class="dr-grid2">' +
+      '<div class="dr-grid3">' +
         field('Drawing type','<select class="pd-select" id="f-phase">'+opt(phaseOptions(r.phase), r.phase, true)+'</select>') +
         field('Category','<input class="pd-input" id="f-cat" value="'+Fmt.esc(r.category)+'" placeholder="Floor Plan">') +
+        field('Scope','<select class="pd-select" id="f-scope">'+opt(SCOPES, r.scope||SCOPES[0])+'</select>') +
       '</div>' +
       field('Sheet title','<input class="pd-input" id="f-title" value="'+Fmt.esc(r.title)+'">') +
       field('Description','<textarea class="pd-textarea" id="f-desc" rows="2">'+Fmt.esc(r.description)+'</textarea>') +
@@ -2672,6 +2683,7 @@ window.DrawingRegister = (function () {
         dwg_number:   m.el.querySelector('#f-num').value.trim(),
         phase:        m.el.querySelector('#f-phase').value,
         category:     m.el.querySelector('#f-cat').value.trim(),
+        scope:        m.el.querySelector('#f-scope').value || SCOPES[0],
         title:        m.el.querySelector('#f-title').value.trim(),
         description:  m.el.querySelector('#f-desc').value.trim(),
         no_of_sheets: sheets,
@@ -3484,13 +3496,13 @@ window.DrawingRegister = (function () {
     // It matches none of them, so the export stays round-trippable; a re-import
     // brings the sheets back as flat drawings, since the importer has no per-sheet
     // level of its own.
-    var aoa = [['Drawing Code','Sheet Of','Type of Drawing','Discipline','Category','Sheet Title','Description',
+    var aoa = [['Drawing Code','Sheet Of','Type of Drawing','Discipline','Category','Scope','Sheet Title','Description',
       'Rev','Status','No. of Sheets','Approved Sheets','Approved %',
       'Latest Planned Sub.','Latest Actual Sub.','Planned Approval','Actual Approval','Responsible','Remarks']];
     var put = function (r, parent) {
       aoa.push([r.drawing_code||r.drawing_no,
         parent ? (parent.drawing_code||parent.drawing_no||'') : '',
-        r.phase, r.discipline, r.category, r.title, r.description,
+        r.phase, r.discipline, r.category, r.scope||SCOPES[0], r.title, r.description,
         r.revision, r.status, num(r.no_of_sheets), num(r.approved_sheets),
         Math.round(pctApproved(r)*100)+'%',
         latestSub(r,'planned')||'', latestSub(r,'actual')||'',

@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260726d"></script>
   <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260806b" />
-  <link rel="stylesheet" href="module.css?v=20260806a" />
+  <link rel="stylesheet" href="module.css?v=20260811a" />
 </head>
 <body>
   <div class="pd-app">
@@ -51,6 +51,11 @@
           <input class="pd-input dr-search" id="dr-f-search" placeholder="Search code, title, description…" />
           <select class="pd-select" id="dr-f-phase"><option value="">All drawing types</option></select>
           <select class="pd-select" id="dr-f-discipline"><option value="">All disciplines</option></select>
+          <select class="pd-select" id="dr-f-scope">
+            <option value="">All scopes</option>
+            <option>Main Contract</option>
+            <option>Change Order</option>
+          </select>
           <select class="pd-select" id="dr-f-status">
             <option value="">All statuses</option>
             <option>Not started</option><option>In Progress</option>
@@ -90,7 +95,7 @@
   <script src="../../assets/js/offline.js?v=20260726d"></script>
   <script src="../../assets/js/collab.js?v=20260727b"></script>
   <script src="../../assets/js/autosave.js?v=20260806a"></script>
-  <script src="module.js?v=20260806a"></script>
+  <script src="module.js?v=20260811a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

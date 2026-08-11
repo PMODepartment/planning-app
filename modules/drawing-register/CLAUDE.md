@@ -1,5 +1,34 @@
 # Module: drawing-register
 
+## Scope column — Main Contract / Change Order (2026-08-11) — fmlozano
+User asked to distinguish which drawings belong to the base contract vs a Change Order, and
+clarified what the Approval column and the two file uploads in the Add/Edit form mean.
+- **New `scope` field** (`'Main Contract'` | `'Change Order'`, default Main Contract) — a select in
+  the "Sheet" section of the Add/Edit form, a **Scope filter** in the topbar filter bar, a sortable
+  **Scope column** in the Registry grid (pill, amber for Change Order), and a column in the Excel
+  export. Sheets created via **Break out** inherit their parent drawing's scope.
+- **Migration `migrations/2026-08-11-drawing-register-scope.sql` (USER MUST RUN)** — adds
+  `scope text not null default 'Main Contract'`, idempotent.
+- ⚠️ **Not added to the Backlog table or the importer** — out of scope for this pass. A workbook
+  import always lands as Main Contract; retag Change Order drawings after import, or via bulk edit.
+- Assets `module.css/js?v=20260811a`. Verified: `node --check` clean, CSS braces balanced
+  (341/341). **Not verified signed-in** — no live login available in this environment.
+
+## What the Approval section and the two file uploads mean (answered, no code change)
+- **"Status — latest revision"** mirrors the outcome of the newest row in the Revisions matrix
+  above it (For Review / Revise & Resubmit / Approved w/ comments / Approved / Superseded) — it is
+  not independently editable data, it is a readout of the latest revision.
+  **Planned approval — whole drawing** is the ONE commitment date for the drawing (or, on a
+  per-sheet drawing, the date sheets are judged against via `inh()`). **Actual approval** is set
+  once approved, and drives the grid's Approval column and the max-actual roll-up.
+- **The per-revision "Drawing file" (inside each Rev row)** is that submission's own file — the
+  as-submitted sheet for THAT revision, kept even after it's superseded, so the register can show
+  what was actually sent at Rev 0 vs Rev 1.
+- **The bottom "Drawing file (PDF/DWG/image)"** is the drawing's row-level `file_url` — the
+  **currently approved** version, shown by the ▤ (eye) icon in the grid's action column. It is
+  intentionally separate from the per-revision files so "what is approved right now" and "what was
+  submitted at each revision" don't collapse into one slot.
+
 ## Print / PDF export with a transmittal cover sheet + friendlier empty state (2026-08-10) — fmlozano
 Picked up as **uncommitted local work already sitting in the working tree** (not authored this
 session) and reviewed before committing, per the standing rule that nothing goes to `main` unverified.

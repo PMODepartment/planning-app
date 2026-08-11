@@ -496,6 +496,11 @@ html.pd-dark {
 .dr-c-code { width:130px; } .dr-c-title { width:300px; } .dr-c-rev { width:46px; text-align:center; }
 .dr-c-status { width:158px; } .dr-c-sh { width:44px; } .dr-c-ap { width:66px; }
 .dr-c-date { width:82px; } .dr-c-resp { width:90px; }
+.dr-c-scope { width:100px; }
+.dr-scopetag { display:inline-block; padding:2px 8px; border-radius:999px; font-size:var(--dr-fs-micro);
+  font-weight:700; background:var(--pd-line); color:var(--pd-ink); }
+.dr-scopetag.dr-co { background:#fde3c8; color:#7a3e00; }
+html.pd-dark .dr-scopetag.dr-co { background:#5a3a12; color:#ffcf9e; }
 .dr-grid th.dr-freeze { z-index:3; }                    /* header corner above all */
 .dr-freeze-cb    { left:0; }
 .dr-freeze-code, .dr-freeze-grp { left:var(--cbw,0px); }
