@@ -1,5 +1,31 @@
 # Module: drawing-register
 
+## Sheet count is an estimate — added "Remove sheets" (2026-08-11) — fmlozano
+User: the Technical Officer's sheet count is an intellectual guess made up front, so the real count
+may come in higher or lower once work starts — the register needs to be equally easy to correct in
+either direction.
+- **Already flexible in aggregate mode** (before break-out): `no_of_sheets` is a plain inline-editable
+  grid cell, so raising or lowering the estimate is just typing a new number — no change needed there.
+- **The gap was per-sheet tracking.** `openSheetsDialog` ("Manage sheets") only ever offered **Add more
+  sheets**; correcting an over-estimate meant either deleting rows one at a time or the all-or-nothing
+  "Stop tracking" merge (which also discards every sheet's own revision history). New **"Remove
+  sheets"** field (shown once ≥2 sheets exist) deletes the requested count in one action via new
+  `removeSheets(p, n)`.
+- **Removes the HIGHEST-numbered sheets first**, not the first N — an over-count is corrected by
+  cutting from the end, so the remaining sheets keep the numbering/meaning they already had (renumbering
+  from the front would silently relabel every surviving sheet). To drop one specific sheet in the
+  middle instead, its own row delete still works exactly as before — this is only for "remove N of the
+  trailing estimate."
+- **At least one sheet must remain** (capped `max` on the input + a JS guard) — going to zero is the
+  existing "Stop tracking per sheet" button, which has its own explicit warning about losing revision
+  history; folding that case into Remove would silently duplicate/blur that warning.
+- **Warns before deleting an approved sheet** — the confirm names which sheets are being removed and,
+  if any are already approved, says so explicitly (approval + any uploaded revision files are lost with
+  that row). Files are captured via `allFilesOf()` and removed from storage same as every other delete
+  path here; `syncParent()` re-rolls the drawing's counters afterward.
+- Assets `module.css/js?v=20260811c`. Verified: `node --check` clean. **Not verified signed-in** — no
+  live login available in this environment.
+
 ## Resizable Registry columns + clearer "approved file" upload + new status vocabulary (2026-08-11) — fmlozano
 Three follow-up asks in one prompt.
 - **Resizable columns, double-click to auto-fit.** Every Registry column (Code, Sheet Title, Rev,

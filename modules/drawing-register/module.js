@@ -1952,8 +1952,18 @@ window.DrawingRegister = (function () {
         ? '<div class="dr-form-sec">Tracked per sheet</div>' +
           '<p>This drawing has <strong>'+have+' sheet'+(have>1?'s':'')+'</strong>, '+
             kids.filter(function(k){return isApprovedStatus(k.status);}).length+' approved.</p>' +
+          '<p class="dr-mut" style="margin-top:0;">The sheet count is an estimate the Technical Officer ' +
+            'makes up front, so it should be easy to correct once the real count is known — add more ' +
+            'if there turn out to be extra sheets, or remove some if the estimate ran high.</p>' +
           field('Add more sheets','<input class="pd-input" type="number" min="0" max="500" id="f-shadd" value="0">') +
           '<p class="dr-mut">Added sheets continue the numbering from '+Fmt.esc(sheetCode(p, have+1))+'.</p>' +
+          (have > 1 ?
+            field('Remove sheets','<input class="pd-input" type="number" min="0" max="'+(have-1)+'" id="f-shrem" value="0">') +
+            '<p class="dr-mut">Removes the highest-numbered sheet'+(have>2?'s':'')+' first (the ones most likely to be ' +
+              'the over-estimate) — pick a specific sheet to delete instead by removing its own row below. ' +
+              'At least one sheet must remain; use "Stop tracking" to go back to a single row.</p>' +
+            '<div style="margin:-4px 0 14px;"><button class="pd-btn" id="f-shremgo" type="button">Remove</button></div>'
+          : '') +
           '<div class="dr-form-sec">Stop tracking per sheet</div>' +
           '<p class="dr-mut">Deletes all '+have+' sheet rows and their uploaded files, and returns this drawing to a single ' +
             'row. The approved count and status are kept as a hand-typed value; each sheet\'s own revision ' +
@@ -1977,6 +1987,15 @@ window.DrawingRegister = (function () {
     m.el.querySelector('#f-cancel').onclick = m.close;
     var mg = m.el.querySelector('#f-shmerge');
     if (mg) mg.onclick = function (){ m.close(); mergeSheets(p); };
+    var rg = m.el.querySelector('#f-shremgo');
+    if (rg) rg.onclick = async function (){
+      var n = num(m.el.querySelector('#f-shrem').value);
+      if (!(n > 0)) { UI.toast('Enter how many sheets to remove', 'warn'); return; }
+      if (n > have - 1) { UI.toast('At least one sheet must remain — use "Stop tracking" to remove them all', 'warn'); return; }
+      rg.disabled = true; rg.textContent = 'Removing…';
+      var ok = await removeSheets(p, n);
+      if (ok) m.close(); else { rg.disabled = false; rg.textContent = 'Remove'; }
+    };
     m.el.querySelector('#f-shgo').onclick = async function (){
       var n = num(m.el.querySelector('#f-shadd').value);
       if (!(n > 0)) { UI.toast('Enter how many sheets to create', 'warn'); return; }
@@ -1985,6 +2004,33 @@ window.DrawingRegister = (function () {
       await createSheets(p, n);
       m.close();
     };
+  }
+
+  // Corrects an over-estimate: deletes the N HIGHEST-numbered sheets (sort_order
+  // desc) — the ones a Technical Officer's initial guess most likely over-counted
+  // — rather than the first N, which would renumber every remaining sheet's
+  // meaning out from under it. Removing a SPECIFIC sheet instead of the trailing
+  // ones is still just its own row delete (data-del), same as any other row.
+  async function removeSheets(p, n){
+    var kids = sheetsOf(p).slice().sort(function (a, b){ return (num(a.sort_order)||0) - (num(b.sort_order)||0); });
+    var toRemove = kids.slice(kids.length - n);
+    var approvedCount = toRemove.filter(function (k){ return approvedOf(k) > 0; }).length;
+    var msg = 'Remove ' + n + ' sheet' + (n>1?'s':'') + ' (' +
+      toRemove.map(function (k){ return k.drawing_code||k.drawing_no||k.title; }).join(', ') + ')?' +
+      (approvedCount ? '\n\n' + approvedCount + ' of them ' + (approvedCount>1?'are':'is') + ' already approved — ' +
+        'removing ' + (approvedCount>1?'them':'it') + ' discards that approval and any uploaded revisions.' : '') +
+      '\n\nThis cannot be undone.';
+    if (!confirm(msg)) return false;
+    var files = [];
+    toRemove.forEach(function (k){ files = files.concat(allFilesOf(k)); });
+    var res = await sb().from(TABLE).delete().in('id', toRemove.map(function (k){ return k.id; }));
+    if (res.error) { UI.toast(res.error.message, 'error'); return false; }
+    await removeFiles(files);
+    await load();
+    await syncParent(p.id);
+    render();
+    UI.toast('Removed ' + n + ' sheet' + (n>1?'s':''), 'ok');
+    return true;
   }
 
   // How much of the parent's EXISTING approval each new sheet inherits.
