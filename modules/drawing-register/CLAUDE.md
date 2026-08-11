@@ -1,5 +1,44 @@
 # Module: drawing-register
 
+## Resizable Registry columns + clearer "approved file" upload + new status vocabulary (2026-08-11) — fmlozano
+Three follow-up asks in one prompt.
+- **Resizable columns, double-click to auto-fit.** Every Registry column (Code, Sheet Title, Rev,
+  Status, Sh, Appr, Latest Sub., Approval, Resp., Scope) now has a drag grip on its header —
+  `.dr-colgrip`, drag to resize, double-click to fit the widest currently-rendered cell in that
+  column. Widths are CSS custom properties (`--c-<key>`) set on the persistent `#dr-view` host
+  (survives the innerHTML rebuild every render does) and persisted per project in `localStorage`
+  (`dr_colw_<pid>`). ⚠️ The two date columns shared one `dr-c-date` class before this — split into
+  `dr-c-lsub`/`dr-c-apprd` so they resize independently; `dr-c-date` stays as their shared base
+  style. The frozen Title column's sticky offset now reads the Code column's *live* width
+  (`calc(var(--cbw) + var(--c-code))`) instead of a hardcoded 130px, so resizing Code doesn't
+  desync the frozen boundary.
+- **The two drawing-file uploads were genuinely ambiguous — relabelled, not just re-worded.** The
+  per-revision upload already said "View this revision's file"; the bottom one now sits under a new
+  section heading **"Approved drawing file — the current, approved version"** with an explanatory
+  line distinguishing it from the per-revision files above (each revision keeps what was submitted
+  at that stage; this one slot is the file that either is, or will become, the approved version).
+  Field label itself: "Approved file (PDF/DWG/image)".
+- **Status vocabulary changed to the user's requested 7-item list**: Not Started · In Progress ·
+  Submitted · Resubmit · Approved w/ comments · Approved · Cancelled. ⚠️ **"Not Started" is now a
+  real, explicitly selectable status**, not only the blank-row fallback label — `statusCls`/the
+  inline `<select>` treat blank and the literal string identically (both render the same quiet
+  chip), so nothing already blank needs migrating. Old spellings (`For Review`→Submitted,
+  `Revise & Resubmit`→Resubmit, `Superseded`→Cancelled, plus the pre-existing `Ongoing`/`Pending`/
+  `Approved w/o comments` legacy remaps) are honoured via `LEGACY_STATUS`/`statusOf()` — **no
+  migration, no data rewrite**; a legacy row displays under its new name and re-canonicalises the
+  next time it's saved, same pattern as the 2026-08-05 vocabulary cleanup.
+  - ⚠️ **Fixed a real bug introduced by making "Not Started" selectable**: the status filter's
+    `filters.status === NOT_STARTED ? !!rs : …` test would have matched *any* truthy status once
+    `NOT_STARTED` became a real string instead of always-falsy — replaced with a single
+    `statusLabel(r.status) !== filters.status` comparison, correct for every value including the
+    blank/explicit "Not Started" pair.
+  - Filter dropdown ([index.html](index.html)) and the inline grid `<select>` (now built purely
+    from `STATUSES`, since "Not Started" is in that list — the separate blank `<option>` it used to
+    prepend was removed to avoid a duplicate).
+- Assets `module.css/js?v=20260811b`. Verified: `node --check` clean, CSS braces balanced
+  (345/345). **Not verified signed-in** — no live login available in this environment; the drag/
+  dblclick handlers and the status-filter fix were traced through by hand rather than clicked.
+
 ## Scope column — Main Contract / Change Order (2026-08-11) — fmlozano
 User asked to distinguish which drawings belong to the base contract vs a Change Order, and
 clarified what the Approval column and the two file uploads in the Add/Edit form mean.

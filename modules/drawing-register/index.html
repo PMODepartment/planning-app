@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260726d"></script>
   <title>Drawing Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260806b" />
-  <link rel="stylesheet" href="module.css?v=20260811a" />
+  <link rel="stylesheet" href="module.css?v=20260811b" />
 </head>
 <body>
   <div class="pd-app">
@@ -58,10 +58,10 @@
           </select>
           <select class="pd-select" id="dr-f-status">
             <option value="">All statuses</option>
-            <option>Not started</option><option>In Progress</option>
-            <option>For Review</option><option>Revise &amp; Resubmit</option>
+            <option>Not Started</option><option>In Progress</option>
+            <option>Submitted</option><option>Resubmit</option>
             <option>Approved w/ comments</option>
-            <option>Approved</option><option>Superseded</option>
+            <option>Approved</option><option>Cancelled</option>
           </select>
           <div class="dr-menuwrap dr-views-wrap">
             <button class="pd-btn dr-views-btn" id="dr-viewsbtn" title="Saved filter views">Views <span data-ico="chevronDown" data-ico-size="12"></span></button>
@@ -95,7 +95,7 @@
   <script src="../../assets/js/offline.js?v=20260726d"></script>
   <script src="../../assets/js/collab.js?v=20260727b"></script>
   <script src="../../assets/js/autosave.js?v=20260806a"></script>
-  <script src="module.js?v=20260811a"></script>
+  <script src="module.js?v=20260811b"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

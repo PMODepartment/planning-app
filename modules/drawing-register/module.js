@@ -20,6 +20,72 @@ window.DrawingRegister = (function () {
   var view = 'overview';                       // overview | backlog | registry
   var filters = { phase: '', discipline: '', scope: '', status: '', search: '', dupsOnly: false };
   var SCOPES = ['Main Contract', 'Change Order'];
+
+  // ---- Registry column widths [drag-resize + double-click auto-fit] --------
+  // Widths live as CSS custom properties (--c-<key>) set on the persistent
+  // #dr-view host — that element's innerHTML is rebuilt on every render, but
+  // the element itself isn't, so a var set here survives the next render.
+  var COL_DEFAULTS = { code:130, title:300, rev:46, status:158, sh:44, ap:66, lsub:82, apprd:82, resp:90, scope:100 };
+  var COL_MIN      = { code:70,  title:120, rev:36, status:100, sh:30, ap:40, lsub:60, apprd:60, resp:60, scope:70 };
+  var colWidths = {}, colWidthsPid = null;
+  function colWKey(){ return 'dr_colw_' + pid; }
+  function loadColWidths(){
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(colWKey())||'{}') || {}; } catch(e){ saved = {}; }
+    colWidths = {};
+    Object.keys(COL_DEFAULTS).forEach(function (k){ colWidths[k] = num(saved[k]) || COL_DEFAULTS[k]; });
+  }
+  function saveColWidths(){ try { localStorage.setItem(colWKey(), JSON.stringify(colWidths)); } catch(e){} }
+  function applyColWidths(){
+    var host = document.getElementById('dr-view'); if (!host) return;
+    Object.keys(colWidths).forEach(function (k){ host.style.setProperty('--c-'+k, colWidths[k]+'px'); });
+  }
+  // Reloads only on a project switch — a plain re-render keeps whatever's live.
+  function ensureColWidths(){
+    if (colWidthsPid === pid) { applyColWidths(); return; }
+    colWidthsPid = pid;
+    loadColWidths();
+    applyColWidths();
+  }
+  // Drag-to-resize + double-click-to-fit on every `.dr-colgrip` in the header.
+  function wireColResize(host){
+    host.querySelectorAll('.dr-colgrip').forEach(function (grip){
+      var key = grip.dataset.colw;
+      grip.onmousedown = function (e){
+        e.preventDefault(); e.stopPropagation();
+        var startX = e.clientX, startW = colWidths[key] || COL_DEFAULTS[key];
+        grip.classList.add('dr-gripping');
+        function move(ev){
+          var w = Math.max(COL_MIN[key] || 40, startW + (ev.clientX - startX));
+          colWidths[key] = w;
+          host.style.setProperty('--c-'+key, w+'px');
+        }
+        function up(){
+          grip.classList.remove('dr-gripping');
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+          saveColWidths();
+        }
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      };
+      grip.ondblclick = function (e){
+        e.preventDefault(); e.stopPropagation();
+        // Fit to the widest currently-rendered cell in this column (drawing/sheet
+        // rows only — group rows don't carry the per-column class), plus a little
+        // breathing room so text doesn't immediately re-wrap against the edge.
+        var cells = host.querySelectorAll('tbody .dr-c-'+key);
+        var widest = 0;
+        cells.forEach(function (c){ widest = Math.max(widest, c.scrollWidth); });
+        var headTxt = grip.parentElement;
+        widest = Math.max(widest, headTxt ? headTxt.scrollWidth - 14 /* minus the grip itself */ : 0);
+        var w = Math.max(COL_MIN[key] || 40, widest + 16);
+        colWidths[key] = w;
+        host.style.setProperty('--c-'+key, w+'px');
+        saveColWidths();
+      };
+    });
+  }
   var selected = {};                           // id -> true (bulk select)
   var collapsed = {};                          // group key -> true (collapsed). Manual, persisted.
   // ⚠️ Collapse state while a FILTER is active is tracked separately and starts
@@ -79,28 +145,25 @@ window.DrawingRegister = (function () {
                 'Temporary Works Drawing','Individual Services Drawing',
                 'Combined Services Drawing','As-Built Drawing'];
   // Order = the actual lifecycle:
-  //   (blank = Not started) → In Progress → For Review → Approved w/ comments
-  //                            ↺ Revise & Resubmit     → Approved  → Superseded
+  //   Not Started → In Progress → Submitted → Approved w/ comments
+  //                     ↺ Resubmit          → Approved  → Cancelled
   //
-  // ⚠️ Sanitised 2026-08-05 after measuring the live registers. The list carried
-  // THREE names for "not decided yet" — Ongoing (50), Pending (10), For Review
-  // (34), all in BAU101, all inherited from that workbook's own legend block — and
-  // nobody could say which meant what. Now two, and the distinction is real and
-  // worth keeping: **In Progress** = we are still drafting it, **For Review** =
-  // it is submitted and sitting with the reviewer. That is the difference between
-  // chasing ourselves and chasing the consultant.
+  // ⚠️ 2026-08-11: relabelled per the user's requested vocabulary — "Not Started"
+  // is now a real, selectable status (not only the blank fallback), "For Review" →
+  // "Submitted", "Revise & Resubmit" → "Resubmit", "Superseded" → "Cancelled".
   // ⚠️ A value outside THIS list silently displays as the first option of the
   // inline grid's <select> while the row actually holds something else, so legacy
   // values must be MIGRATED, not merely tolerated (see LEGACY_STATUS).
-  var STATUSES = ['In Progress','For Review','Revise & Resubmit','Approved w/ comments',
-                  'Approved','Superseded'];
+  var STATUSES = ['Not Started','In Progress','Submitted','Resubmit','Approved w/ comments',
+                  'Approved','Cancelled'];
   // Retired spellings still present in un-migrated data → what they became. Used
   // to display a legacy row honestly and to drive the one-off remap.
-  var LEGACY_STATUS = { 'Ongoing':'In Progress', 'Pending':'For Review',
-                        'Approved w/o comments':'Approved' };
-  // Blank is a real state — 823 of 1,506 live drawings have no status — so it is
-  // LABELLED rather than left as an em-dash that reads like missing data.
-  var NOT_STARTED = 'Not started';
+  var LEGACY_STATUS = { 'Ongoing':'In Progress', 'Pending':'Submitted',
+                        'Submitted':'Submitted', 'Resubmit':'Resubmit',
+                        'Cancelled':'Cancelled', 'Approved w/o comments':'Approved' };
+  // Blank is a real state — the same state as the explicit "Not Started" option —
+  // so it is LABELLED rather than left as an em-dash that reads like missing data.
+  var NOT_STARTED = 'Not Started';
   // Canonical display value for whatever is stored on a row.
   function statusOf(s){ return (s && LEGACY_STATUS[s]) || s || ''; }
   function statusLabel(s){ return statusOf(s) || NOT_STARTED; }
@@ -657,9 +720,9 @@ window.DrawingRegister = (function () {
       return kids.some(function (k){ return k.status === 'Approved w/ comments'; })
         ? 'Approved w/ comments' : 'Approved';
     }
-    if (ap > 0 || kids.some(function (k){ return k.status === 'Revise & Resubmit' || latestSub(k, 'actual'); }))
+    if (ap > 0 || kids.some(function (k){ return k.status === 'Resubmit' || latestSub(k, 'actual'); }))
       return 'In Progress';
-    return 'For Review';
+    return 'Submitted';
   }
 
   // Write the parent's derived counters back to the DB so every consumer that
@@ -701,12 +764,12 @@ window.DrawingRegister = (function () {
     if (filters.discipline &&
         r.discipline !== filters.discipline &&
         disciplineName(r.discipline) !== filters.discipline) return false;
-    // ⚠️ Compare canonical values, and treat "Not started" as the blank state —
-    // otherwise the 823 live drawings with no status are unreachable by the filter,
-    // and an un-migrated 'Ongoing' row is invisible under "In Progress".
+    // ⚠️ Compare canonical values via statusLabel() (blank AND the explicit
+    // "Not Started" option both read as NOT_STARTED) — otherwise the many live
+    // drawings with no status are unreachable by the filter, and an un-migrated
+    // 'Ongoing' row is invisible under "In Progress".
     if (filters.status) {
-      var rs = statusOf(r.status);
-      if (filters.status === NOT_STARTED ? !!rs : rs !== filters.status) return false;
+      if (statusLabel(r.status) !== filters.status) return false;
     }
     if (filters.search) {
       var hay = [r.drawing_no, r.drawing_code, r.title, r.description, r.discipline,
@@ -732,12 +795,12 @@ window.DrawingRegister = (function () {
   function statusCls(s) {
     s = statusOf(s);              // a legacy row colours as what it became
     if (s === 'In Progress') return 'dr-wip';
-    if (!s) return 'dr-ns';       // Not started — deliberately the quietest chip
+    if (!s || s === NOT_STARTED) return 'dr-ns';   // Not Started — deliberately the quietest chip
     if (s === 'Approved' || s === 'Approved w/o comments') return 'dr-ok';
     if (s === 'Approved w/ comments') return 'dr-okc';
-    if (s === 'Revise & Resubmit') return 'dr-rr';
-    if (s === 'Superseded') return 'dr-old';
-    return 'dr-review';           // For Review
+    if (s === 'Resubmit') return 'dr-rr';
+    if (s === 'Cancelled') return 'dr-old';
+    return 'dr-review';           // Submitted
   }
 
   // The ghost "Clear" button is shown only when something is actually filtered
@@ -829,7 +892,7 @@ window.DrawingRegister = (function () {
   function backlogRows(){
     return drawingRows().filter(function (r){
       if (!matchesFilters(r, { skipDups:true })) return false;
-      if (!(!isApprovedStatus(r.status) || r.status === 'Revise & Resubmit')) return false;
+      if (!(!isApprovedStatus(r.status) || r.status === 'Resubmit')) return false;
       if (bkAging && agingBucketOf(r) !== bkAging) return false;
       return true;
     });
@@ -843,7 +906,7 @@ window.DrawingRegister = (function () {
   function backlogUrgency(r){
     var d = agingDays(r);
     if (d != null) return -d;                  // most overdue first
-    return r.status === 'Revise & Resubmit' ? 500 : 1000;
+    return r.status === 'Resubmit' ? 500 : 1000;
   }
 
   // Sortable columns (WPM Backlog pattern: click a header to sort by it, click
@@ -900,7 +963,7 @@ window.DrawingRegister = (function () {
     // register tracks planned vs actual approval and nothing else now.
     var late = list.filter(function (r){ var d=agingDays(r); return d!=null && d>0; }).length;
     var tight = list.filter(function (r){ var d=agingDays(r); return d!=null && d<=0 && d>=-3; }).length;
-    var revise = list.filter(function (r){ return r.status==='Revise & Resubmit'; }).length;
+    var revise = list.filter(function (r){ return r.status==='Resubmit'; }).length;
 
     // "Revise & Resubmit" is a status → a real filter. Open items / late / tight
     // are already what this view shows, so they only clear back to the full
@@ -909,7 +972,7 @@ window.DrawingRegister = (function () {
       kpi(list.length, 'Open items', '', bkAging ? { view:'backlog', patch:{}, tip:'Clear the aging filter and show every open item' } : null) +
       kpi(late, 'Overdue', late>0?'warn':'') +
       kpi(tight, 'Due ≤3 days', tight>0?'warn':'') +
-      kpi(revise, 'Revise & Resubmit', '', { view:'backlog', patch:{ status:'Revise & Resubmit' }, tip:'Filter the Backlog to Revise & Resubmit' }));
+      kpi(revise, 'Resubmit', '', { view:'backlog', patch:{ status:'Resubmit' }, tip:'Filter the Backlog to Resubmit' }));
 
     var shown = (bkShowAll || list.length<=BK_PAGE) ? list : list.slice(0, BK_PAGE);
     // Bulk actions operate on `selected` filtered by `visibleIds` (shared with
@@ -1238,25 +1301,28 @@ window.DrawingRegister = (function () {
     }
     if (!disp.length) { host.innerHTML = toolbar + emptyMsg('Nothing matches the filters.'); return; }
 
-    // Sortable headers. `sh(col, label, cls, extraTitle)` emits the click target
-    // + direction indicator; sorting is applied per leaf group in buildModel().
-    function sh(col, cls, extra){
+    // Sortable headers. `sh(col, label, cls, extraTitle, colKey)` emits the click
+    // target + direction indicator; sorting is applied per leaf group in
+    // buildModel(). `colKey` (when given) adds a drag-to-resize grip — see
+    // COL_DEFAULTS/wireColResize below.
+    function sh(col, cls, extra, colKey){
       var active = regSort.col === col;
       var tip = (extra ? extra + ' · ' : '') +
         (active ? (regSort.dir===1 ? 'Sorted ascending — click for descending' : 'Sorted descending — click to restore manual order')
                 : 'Click to sort by this column');
+      var grip = colKey ? '<span class="dr-colgrip" data-colw="'+colKey+'" title="Drag to resize · double-click to fit content" onclick="event.stopPropagation()"></span>' : '';
       return '<th class="'+cls+' dr-sortable'+(active?' dr-sorted':'')+'" data-scol="'+col+'" title="'+Fmt.esc(tip)+'">' +
         Fmt.esc(REG_SORTABLE[col]) +
-        (active ? ' <span class="dr-sortind">'+(regSort.dir===1?'▲':'▼')+'</span>' : '') + '</th>';
+        (active ? ' <span class="dr-sortind">'+(regSort.dir===1?'▲':'▼')+'</span>' : '') + grip + '</th>';
     }
     var head = '<tr>' +
       (CB ? '<th class="dr-cb dr-freeze dr-freeze-cb"><input type="checkbox" id="dr-selall" title="Select all shown"></th>' : '') +
-      sh('code',  'dr-c-code dr-freeze dr-freeze-code') +
-      sh('title', 'dr-c-title dr-freeze dr-freeze-title') +
-      sh('revision', 'dr-c-rev') + sh('status', 'dr-c-status') +
-      sh('sheets', 'dr-r dr-c-sh') + sh('appr', 'dr-r dr-c-ap') +
-      sh('latest_sub', 'dr-c-date') + sh('approval', 'dr-c-date') +
-      sh('responsible', 'dr-c-resp') + sh('scope', 'dr-c-scope') +
+      sh('code',  'dr-c-code dr-freeze dr-freeze-code', '', 'code') +
+      sh('title', 'dr-c-title dr-freeze dr-freeze-title', '', 'title') +
+      sh('revision', 'dr-c-rev', '', 'rev') + sh('status', 'dr-c-status', '', 'status') +
+      sh('sheets', 'dr-r dr-c-sh', '', 'sh') + sh('appr', 'dr-r dr-c-ap', '', 'ap') +
+      sh('latest_sub', 'dr-c-date dr-c-lsub', '', 'lsub') + sh('approval', 'dr-c-date dr-c-apprd', '', 'apprd') +
+      sh('responsible', 'dr-c-resp', '', 'resp') + sh('scope', 'dr-c-scope', '', 'scope') +
       '<th class="dr-actcol"></th></tr>';
 
     var html = toolbar + '<div class="pd-card dr-tablecard"><table class="pd-table dr-table dr-grid'+(CB?' dr-has-cb':'')+'" style="--cbw:'+(CB?'34px':'0px')+'" tabindex="0"><thead>'+head+'</thead><tbody>';
@@ -1265,7 +1331,9 @@ window.DrawingRegister = (function () {
     });
     html += '</tbody></table></div>';
     host.innerHTML = html;
+    ensureColWidths();
     wireRegister(host, disp);
+    wireColResize(host);
   }
 
   var COLSPAN_LABEL = 2;   // Code + Title under a group label (frozen block)
@@ -1290,9 +1358,9 @@ window.DrawingRegister = (function () {
       '<td colspan="2">'+progressBar(pct)+'</td>' +   // Rev + Status
       '<td class="dr-r">'+tot+'</td>' +
       '<td class="dr-r">'+ap+'</td>' +
-      '<td class="dr-nowrap dr-c-date">'+(roll.minPlanned
+      '<td class="dr-nowrap dr-c-date dr-c-lsub">'+(roll.minPlanned
         ? '<span class="dr-mut" title="Earliest planned approval date in this group">'+Fmt.date(roll.minPlanned)+'</span>' : '—')+'</td>' +
-      '<td class="dr-nowrap dr-c-date">'+(roll.maxActual
+      '<td class="dr-nowrap dr-c-date dr-c-apprd">'+(roll.maxActual
         ? '<span title="Last sheet approved — everything in this group is approved">'+Fmt.date(roll.maxActual)+'</span>'
         : '<span class="dr-mut" title="Not all approved yet">—</span>')+'</td>' +
       '<td></td>' +   // Resp.
@@ -1309,9 +1377,8 @@ window.DrawingRegister = (function () {
     // ⚠️ Compare against statusOf(), not the raw value: an un-migrated 'Ongoing'
     // row would otherwise match no <option> and the select would silently display
     // 'Not started' while the row still holds 'Ongoing'.
-    var cur = statusOf(r.status);
+    var cur = statusOf(r.status) || NOT_STARTED;
     return '<select class="dr-stsel '+statusCls(r.status)+'" data-stat="'+r.id+'">' +
-      '<option value=""'+(!cur?' selected':'')+'>'+NOT_STARTED+'</option>' +
       STATUSES.map(function(s){ return '<option'+(cur===s?' selected':'')+'>'+s+'</option>'; }).join('') +
     '</select>';
   }
@@ -1358,8 +1425,8 @@ window.DrawingRegister = (function () {
           : (CB?statusSelect(r):'<span class="dr-pill '+statusCls(r.status)+'">'+Fmt.esc(statusLabel(r.status))+'</span>'))+'</td>' +
       '<td class="dr-r dr-c-sh'+edN+'" data-f="no_of_sheets" data-t="num">'+tot+'</td>' +
       '<td class="dr-r dr-c-ap'+edN+'" data-f="approved_sheets" data-t="num">'+ap+' <span class="dr-mini">'+pct+'%</span></td>' +
-      '<td class="dr-nowrap dr-c-date'+ed+'" data-f="latest_sub" data-t="date">'+(sub?Fmt.date(sub):'—')+'</td>' +
-      '<td class="dr-nowrap dr-c-date'+(kids?'':ed)+'" data-f="actual_approval" data-t="date">'+
+      '<td class="dr-nowrap dr-c-date dr-c-lsub'+ed+'" data-f="latest_sub" data-t="date">'+(sub?Fmt.date(sub):'—')+'</td>' +
+      '<td class="dr-nowrap dr-c-date dr-c-apprd'+(kids?'':ed)+'" data-f="actual_approval" data-t="date">'+
         (appr?'<span class="'+(apprIsActual?'':'dr-mut')+'" title="'+(apprIsActual?'Actual approval':'Planned approval — not yet approved')+'">'+Fmt.date(appr)+'</span>':'—')+'</td>' +
       '<td class="dr-c-resp'+ed+'" data-f="responsible" data-t="text">'+Fmt.esc(r.responsible)+'</td>' +
       '<td class="dr-c-scope'+(kids?'':ed)+'" data-f="scope" data-t="text">'+
@@ -1848,7 +1915,7 @@ window.DrawingRegister = (function () {
     var code=autoNumber(group, ctx);
     var data={ project_id:pid, created_by:uid, node_kind:'drawing',
       phase:ctx.phase||'', discipline:ctx.discipline||'', category:ctx.category||'',
-      title:'', status:'For Review', no_of_sheets:1, approved_sheets:0, approved_pct:0,
+      title:'', status:'Submitted', no_of_sheets:1, approved_sheets:0, approved_pct:0,
       submissions:[], dwg_number:code, drawing_no:code, drawing_code:code, sort_order:nextOrder() };
     var res=await sb().from(TABLE).insert(data); if(res.error){ UI.toast(res.error.message,'error'); return; }
     // expand the target group so the new row is visible (buildModel keys the
@@ -1921,7 +1988,7 @@ window.DrawingRegister = (function () {
   }
 
   // How much of the parent's EXISTING approval each new sheet inherits.
-  // ⚠️ Breaking out used to hardcode every sheet to 'For Review' / 0 approved, so
+  // ⚠️ Breaking out used to hardcode every sheet to 'Submitted' / 0 approved, so
   // an Approved drawing came back 0% and its approval was destroyed — the register
   // lost real, recorded progress as a side effect of changing how it is tracked.
   // Break-out is a change of GRANULARITY, not a reset of status.
@@ -1929,7 +1996,7 @@ window.DrawingRegister = (function () {
   // counters are derived from its children, so sheets ADDED later are new work
   // and start unapproved rather than re-distributing what is already there.
   function seedApproval(p, n, have){
-    if (have > 0) return { count: 0, ok: 'For Review', rest: 'For Review' };
+    if (have > 0) return { count: 0, ok: 'Submitted', rest: 'Submitted' };
     var ap = approvedOf(p);
     var tot = num(p.no_of_sheets) || 0;
     var cur = statusOf(p.status);
@@ -1955,7 +2022,7 @@ window.DrawingRegister = (function () {
     // The unapproved remainder keeps the drawing's own working status (Revise &
     // Resubmit stays Revise & Resubmit). A parent marked approved while only
     // SOME sheets are is contradictory data, so its leftovers fall back.
-    var rest = (!cur || isApprovedStatus(cur)) ? 'For Review' : cur;
+    var rest = (!cur || isApprovedStatus(cur)) ? 'Submitted' : cur;
     return { count: count, ok: ok, rest: rest };
   }
 
@@ -2034,7 +2101,7 @@ window.DrawingRegister = (function () {
       no_of_sheets: kids.length,
       approved_sheets: ap,
       approved_pct: kids.length ? ap / kids.length : 0,
-      status: keepStatus || p.status || 'For Review',
+      status: keepStatus || p.status || 'Submitted',
       actual_approval: (ap === kids.length) ? (roll.maxActual || p.actual_approval || null) : null
     }).eq('id', p.id);
     await load();
@@ -2138,7 +2205,7 @@ window.DrawingRegister = (function () {
   function agingBuckets() {
     var b = {}; AGING_ORDER.forEach(function (k){ b[k]=0; });
     drawingRows().forEach(function (r){
-      if (!(!isApprovedStatus(r.status) || r.status==='Revise & Resubmit')) return;
+      if (!(!isApprovedStatus(r.status) || r.status==='Resubmit')) return;
       b[agingBucketOf(r)]++;
     });
     return b;
@@ -2286,7 +2353,7 @@ window.DrawingRegister = (function () {
   function statusKey(label) { return statusCls(label === NOT_STARTED ? '' : label).slice(3); }
   function statusVar(label) { return 'var(--dr-' + statusKey(label) + '-arc)'; }
   function statusCounts() {
-    // ⚠️ Blank used to be counted as 'For Review' by the `|| 'For Review'` fallback,
+    // ⚠️ Blank used to be counted as 'Submitted' by the `|| 'Submitted'` fallback,
     // so the donut reported 823 not-yet-started drawings as awaiting review — the
     // single biggest slice was a fiction. Blank is now its own labelled slice.
     var m = {}; m[NOT_STARTED] = 0; STATUSES.forEach(function (s){ m[s]=0; });
@@ -2548,7 +2615,7 @@ window.DrawingRegister = (function () {
 
       '<div class="dr-form-sec">Approval</div>' +
       '<div class="dr-grid3">' +
-        field('Status <span class="dr-mut">— latest revision</span>','<select class="pd-select" id="f-status">'+opt(STATUSES, statusOf(r.status)||'For Review', false)+'</select>') +
+        field('Status <span class="dr-mut">— latest revision</span>','<select class="pd-select" id="f-status">'+opt(STATUSES, statusOf(r.status)||'Submitted', false)+'</select>') +
         (isSheet(r)
           ? field('Planned approval','<input class="pd-input" type="date" id="f-papp" value="'+(r.planned_approval||'')+'" placeholder="'+
               Fmt.esc(inh(r,'planned_approval')||'')+'">' +
@@ -2561,7 +2628,11 @@ window.DrawingRegister = (function () {
 
 
       field('Remarks','<textarea class="pd-textarea" id="f-rem" rows="2">'+Fmt.esc(r.remarks)+'</textarea>') +
-      field('Drawing file (PDF/DWG/image)'+(r.file_url?' — attached; choosing a new one replaces it':''),
+      '<div class="dr-form-sec">Approved drawing file <span class="dr-mut">— the current, approved version</span></div>' +
+      '<div class="dr-mut dr-fieldhint" style="margin:-4px 0 8px;">This is separate from the per-revision files above: each revision keeps ' +
+        'the sheet as it was submitted at that stage, while this slot holds the one file that is currently ' +
+        (isApprovedStatus(r.status)?'<strong>approved</strong>':'expected to be the approved version once this drawing is approved') + '.</div>' +
+      field('Approved file (PDF/DWG/image)'+(r.file_url?' — attached; choosing a new one replaces it':''),
             '<input class="pd-input" type="file" id="f-file" accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg">') +
       '<div style="text-align:right;margin-top:10px;"><button class="pd-btn" id="f-cancel" type="button">Cancel</button> ' +
       '<button class="pd-btn pd-btn-primary" id="f-save" type="button">Save</button></div>',
@@ -3363,21 +3434,21 @@ window.DrawingRegister = (function () {
   // Normalise workbook approval-status text to the module's canonical values.
   function normalizeStatus(s) {
     var t = norm(s); if (!t) return '';
-    if (/revise|resubmit/.test(t)) return 'Revise & Resubmit';
+    if (/revise|resubmit/.test(t)) return 'Resubmit';
     // ⚠️ `w/ comments` (the OPS registers' own spelling) used to fall through to the bare
     // /approved/ test below and be silently downgraded to plain "Approved" — 16 BAU101 drawings
     // lost the "with comments" distinction. The (w/o|without) test still wins for "w/o comments"
     // because `w\/ *comment` can't match "w/o comments" ('o' follows the slash).
     if (/with *comment|w\/ *comment/.test(t)) return 'Approved w/ comments';
     if (/(w\/o|without) *comment/.test(t)) return 'Approved';   // merged: redundant with "Approved"
-    if (/superseded/.test(t)) return 'Superseded';
+    if (/superseded/.test(t)) return 'Cancelled';
     if (/approved/.test(t)) return 'Approved';
     // ⚠️ 'Ongoing'/'Pending' are the OPS workbooks' own words; they map onto the
     // sanitised vocabulary rather than being imported verbatim, so an import can
     // never reintroduce a value the grid's <select> doesn't offer.
     if (/ongoing|in *progress|wip/.test(t)) return 'In Progress'; // being drawn, not yet submitted
-    if (/pending/.test(t)) return 'For Review';                   // submitted, awaiting review
-    if (/review|submitted|for review/.test(t)) return 'For Review';
+    if (/pending/.test(t)) return 'Submitted';                   // submitted, awaiting review
+    if (/review|submitted|for review/.test(t)) return 'Submitted';
     return s;
   }
 

@@ -492,11 +492,15 @@ html.pd-dark {
 .dr-grid:focus { outline:none; }
 .dr-grid:focus-within { box-shadow:none; }
 
-/* fixed column widths (needed so the frozen columns have deterministic offsets) */
-.dr-c-code { width:130px; } .dr-c-title { width:300px; } .dr-c-rev { width:46px; text-align:center; }
-.dr-c-status { width:158px; } .dr-c-sh { width:44px; } .dr-c-ap { width:66px; }
-.dr-c-date { width:82px; } .dr-c-resp { width:90px; }
-.dr-c-scope { width:100px; }
+/* Column widths — user-adjustable (drag the header grip, or double-click it to
+   fit content) via CSS custom properties set on #dr-view; the px fallback here
+   is only what a fresh browser sees before JS applies a saved/default width. */
+.dr-c-code { width:var(--c-code,130px); } .dr-c-title { width:var(--c-title,300px); }
+.dr-c-rev { width:var(--c-rev,46px); text-align:center; }
+.dr-c-status { width:var(--c-status,158px); } .dr-c-sh { width:var(--c-sh,44px); } .dr-c-ap { width:var(--c-ap,66px); }
+.dr-c-lsub { width:var(--c-lsub,82px); } .dr-c-apprd { width:var(--c-apprd,82px); }
+.dr-c-resp { width:var(--c-resp,90px); }
+.dr-c-scope { width:var(--c-scope,100px); }
 .dr-scopetag { display:inline-block; padding:2px 8px; border-radius:999px; font-size:var(--dr-fs-micro);
   font-weight:700; background:var(--pd-line); color:var(--pd-ink); }
 .dr-scopetag.dr-co { background:#fde3c8; color:#7a3e00; }
@@ -504,7 +508,13 @@ html.pd-dark .dr-scopetag.dr-co { background:#5a3a12; color:#ffcf9e; }
 .dr-grid th.dr-freeze { z-index:3; }                    /* header corner above all */
 .dr-freeze-cb    { left:0; }
 .dr-freeze-code, .dr-freeze-grp { left:var(--cbw,0px); }
-.dr-freeze-title { left:calc(var(--cbw,0px) + 130px); }
+.dr-freeze-title { left:calc(var(--cbw,0px) + var(--c-code,130px)); }
+/* Resize grip — sits over the header cell's right edge; thead th is already
+   position:sticky, which (like relative) is a positioning context for this. */
+.dr-grid th { position:relative; }
+.dr-colgrip { position:absolute; top:0; right:-4px; bottom:0; width:8px; cursor:col-resize;
+  z-index:4; touch-action:none; }
+.dr-colgrip:hover, .dr-colgrip.dr-gripping { background:var(--pd-red); opacity:.45; }
 .dr-freeze-title, .dr-freeze-grp { border-right:1px solid var(--pd-line); }
 /* opaque state backgrounds so nothing bleeds through while scrolling */
 .dr-grid .dr-grp-phase td.dr-freeze { background:#fbe4e1; }
