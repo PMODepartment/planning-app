@@ -27,6 +27,19 @@ window.ProgressPhotos = (function () {
   var lightboxIds = [], lightboxAt = 0;
   var projectListeners = [];         // PPR screen subscribes; both share one selector
 
+  // ---- Schedule App integration (Phase 1) ----------------------------------
+  // Zones/locations are read live from Project Schedule's wbs_nodes tree —
+  // same Supabase project, no separate API. WBS_LEAVES = pickable locations;
+  // SCHED_ACTS = schedule activities tied to a zone, used to surface "the
+  // current activity here" alongside the location tag.
+  var WBS = [], WBS_BY_ID = {}, WBS_LEAVES = [];
+  var SCHED_ACTS = [];
+  var CODE_TYPES = [], CODE_VALUES = [];   // optional Activity-Code overlay
+  var migrationWarned = false;             // warn once per session, not per save
+  var roundsFilter = '';
+  var roundsSelected = {};                 // wbs node id -> true (walkthrough queue)
+  var walkState = null;                    // {queue:[nodeId,...], at:0} while a walkthrough modal chain is open
+
   // Trades mirror the WPM (procurement) trade vocabulary so photos, work
   // packages and cash-out all speak the same language.
   var TRADES = [
@@ -79,6 +92,82 @@ window.ProgressPhotos = (function () {
     wire();
     syncChrome();
     await load();
+    await loadSchedule();
+    await refreshQueueBadge();
+    var roundsHost = document.getElementById('pp-screen-rounds');
+    if (roundsHost && !roundsHost.hidden) renderRounds();
+    window.addEventListener('online', function () { if (pid) flushQueue(); });
+  }
+
+  // --------------------------------------------------------- schedule read ---
+  // Reads wbs_nodes / project_schedule / activity codes for the current
+  // project. Tolerant of the tables not existing yet (pre-migration DB) —
+  // the module just falls back to free-text-only locations.
+  async function loadSchedule() {
+    WBS = []; WBS_BY_ID = {}; WBS_LEAVES = []; SCHED_ACTS = [];
+    CODE_TYPES = []; CODE_VALUES = [];
+    if (!pid) return;
+    try {
+      var wres = await sb().from('wbs_nodes')
+        .select('id,parent_id,code,name,sort_order')
+        .eq('project_id', pid).order('sort_order', { ascending: true });
+      if (!wres.error) WBS = wres.data || [];
+    } catch (e) {}
+    WBS.forEach(function (n) { WBS_BY_ID[n.id] = n; });
+
+    var childCount = {};
+    WBS.forEach(function (n) { if (n.parent_id) childCount[n.parent_id] = (childCount[n.parent_id] || 0) + 1; });
+    function breadcrumb(n) {
+      var parts = [n.name], p = n.parent_id ? WBS_BY_ID[n.parent_id] : null, guard = 0;
+      while (p && guard++ < 25) { parts.unshift(p.name); p = p.parent_id ? WBS_BY_ID[p.parent_id] : null; }
+      return parts.join(' › ');
+    }
+    WBS_LEAVES = WBS.filter(function (n) { return !childCount[n.id]; })
+      .map(function (n) { return { id: n.id, label: breadcrumb(n) }; })
+      .sort(function (a, b) { return a.label.localeCompare(b.label); });
+
+    try {
+      var ares = await sb().from('project_schedule')
+        .select('id,activity_id,activity_name,wbs_node_id,activity_type,status,start_date,end_date')
+        .eq('project_id', pid).not('wbs_node_id', 'is', null)
+        .neq('activity_type', 'WBS Summary')
+        .limit(5000);
+      if (!ares.error) SCHED_ACTS = ares.data || [];
+    } catch (e) {}
+
+    try {
+      var tres = await sb().from('activity_code_types').select('id,name').eq('project_id', pid);
+      if (!tres.error) CODE_TYPES = tres.data || [];
+      if (CODE_TYPES.length) {
+        var vres = await sb().from('activity_code_values').select('id,code_type_id,value')
+          .in('code_type_id', CODE_TYPES.map(function (t) { return t.id; }));
+        if (!vres.error) CODE_VALUES = vres.data || [];
+      }
+    } catch (e) {}
+  }
+
+  // The schedule activity that's "current" for a zone: prefer In Progress
+  // (earliest start), else the next Not Started, else whatever's there.
+  function resolveActivity(nodeId) {
+    if (!nodeId) return null;
+    var cands = SCHED_ACTS.filter(function (a) { return a.wbs_node_id === nodeId; });
+    if (!cands.length) return null;
+    var pick = cands.filter(function (a) { return (a.status || '') === 'In Progress'; })
+      .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
+    if (!pick) pick = cands.filter(function (a) { return (a.status || '') === 'Not Started'; })
+      .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
+    if (!pick) pick = cands[0];
+    return { id: pick.activity_id, name: pick.activity_name };
+  }
+
+  function wbsLeaf(nodeId) {
+    return WBS_LEAVES.filter(function (n) { return n.id === nodeId; })[0] || null;
+  }
+
+  function lastCaptureAt(nodeId) {
+    var list = rows.filter(function (r) { return r.wbs_node_id === nodeId; })
+      .sort(function (a, b) { return (b.taken_at || '').localeCompare(a.taken_at || ''); });
+    return list[0] || null;
   }
 
   async function fillProjects() {
@@ -113,6 +202,9 @@ window.ProgressPhotos = (function () {
       sessionStorage.setItem('pd_project_name', projName);
       restoreUI(); syncChrome(); notifyProject();
       await load();
+      await loadSchedule();
+      await refreshQueueBadge();
+      if (document.getElementById('pp-screen-rounds') && !document.getElementById('pp-screen-rounds').hidden) renderRounds();
     };
     Array.prototype.forEach.call(document.querySelectorAll('.pp-tab'), function (b) {
       b.onclick = function () { view = b.dataset.view; saveUI(); syncChrome(); render(); };
@@ -131,6 +223,8 @@ window.ProgressPhotos = (function () {
     };
     $('pp-add').onclick = function () { openUpload(); };
     $('pp-refresh').onclick = function () { load(); };
+    if ($('pp-sync')) $('pp-sync').onclick = function () { flushQueue(); };
+    if ($('pp-rounds-search')) $('pp-rounds-search').oninput = function () { roundsFilter = this.value; renderRounds(); };
 
     document.addEventListener('keydown', function (e) {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
@@ -163,6 +257,8 @@ window.ProgressPhotos = (function () {
     await signAll();
     fillFilterOptions();
     render();
+    var roundsHost = document.getElementById('pp-screen-rounds');
+    if (roundsHost && !roundsHost.hidden) renderRounds();
   }
 
   // Batch-sign every photo path in one request rather than one call per row.
@@ -395,17 +491,93 @@ window.ProgressPhotos = (function () {
     }).join('');
   }
 
-  function openUpload() {
+  // ------------------------------------------------- schedule-zone picker ----
+  // Location select sourced live from the schedule's WBS tree, plus a free-
+  // text label (auto-filled from the picked zone, still editable) so photos
+  // that aren't tied to any zone can still be tagged. Optional Activity-Code
+  // overlay checkboxes (only shown if the project has code types defined).
+  function wbsFieldHTML(idPrefix, selNodeId, locText) {
+    var opts = '<option value="">— Not tracked (type a label below) —</option>' +
+      WBS_LEAVES.map(function (n) {
+        return '<option value="' + n.id + '"' + (n.id === selNodeId ? ' selected' : '') + '>' +
+               Fmt.esc(n.label) + '</option>';
+      }).join('');
+    return (
+      '<div class="pd-field pp-span2"><label>Location — schedule zone</label>' +
+        '<select class="pd-select" id="' + idPrefix + '-wbs">' + opts + '</select></div>' +
+      '<div class="pd-field pp-span2"><label>Location label</label>' +
+        '<input class="pd-input" id="' + idPrefix + '-loc" value="' + Fmt.esc(locText || '') +
+        '" placeholder="e.g. Model Unit Entrance" /></div>' +
+      '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>' +
+      codeOverlayHTML(idPrefix, [])
+    );
+  }
+  function codeOverlayHTML(idPrefix, existingTags) {
+    if (!CODE_TYPES.length) return '';
+    existingTags = existingTags || [];
+    var groups = CODE_TYPES.map(function (t) {
+      var vals = CODE_VALUES.filter(function (v) { return v.code_type_id === t.id; });
+      if (!vals.length) return '';
+      return '<div class="pp-codegroup"><span class="pp-codegroup-name">' + Fmt.esc(t.name) + ':</span>' +
+        vals.map(function (v) {
+          var tag = t.name + ': ' + v.value;
+          return '<label class="pp-codechk"><input type="checkbox" value="' + Fmt.esc(tag) + '"' +
+                 (existingTags.indexOf(tag) >= 0 ? ' checked' : '') + '/> ' + Fmt.esc(v.value) + '</label>';
+        }).join('') + '</div>';
+    }).join('');
+    if (!groups) return '';
+    return '<div class="pd-field pp-span2"><label>Schedule code tags (optional)</label>' +
+      '<div class="pp-codetags" id="' + idPrefix + '-codes">' + groups + '</div></div>';
+  }
+  function readCodeTags(idPrefix) {
+    var wrap = $(idPrefix + '-codes'); if (!wrap) return [];
+    return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
+  }
+  // skipInitialFill: true when opening on an already-saved location label
+  // (edit modal) — the first paint should leave it alone; a subsequent
+  // manual re-pick of the zone should still refresh it.
+  function wireWbsField(idPrefix, skipInitialFill) {
+    var sel = $(idPrefix + '-wbs'), loc = $(idPrefix + '-loc');
+    if (!sel || !loc) return;
+    loc.oninput = function () { loc.dataset.userEdited = '1'; };
+    sel.onchange = function () { loc.dataset.userEdited = ''; paintActCtx(idPrefix); };
+    if (skipInitialFill) loc.dataset.userEdited = '1';
+    paintActCtx(idPrefix);
+  }
+  function paintActCtx(idPrefix) {
+    var sel = $(idPrefix + '-wbs'), loc = $(idPrefix + '-loc'), ctx = $(idPrefix + '-actctx');
+    if (!sel || !ctx) return;
+    var nodeId = sel.value;
+    if (!nodeId) { ctx.innerHTML = ''; return; }
+    var node = wbsLeaf(nodeId);
+    if (node && !loc.dataset.userEdited) loc.value = node.label;
+    var act = resolveActivity(nodeId), last = lastCaptureAt(nodeId);
+    var html = '';
+    if (act) html += '<div class="pp-actline">Current activity: <strong>' + Fmt.esc(act.name || act.id) + '</strong></div>';
+    else html += '<div class="pp-actline pp-muted">No active schedule activity found for this zone.</div>';
+    if (last) {
+      var u = urlOf(last);
+      html += '<div class="pp-actline pp-lastref">' +
+        (u ? '<img src="' + Fmt.esc(u) + '" class="pp-refthumb" alt="Last photo here" />' : '') +
+        '<span>Last captured here ' + (last.taken_at ? Fmt.date(last.taken_at) : '') +
+        ' — frame a similar shot for comparison.</span></div>';
+    }
+    ctx.innerHTML = html;
+    hydrate(ctx);
+  }
+
+  function openUpload(preset) {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    preset = preset || {};
     var today = new Date().toISOString().slice(0, 10);
     var html =
-      '<div class="pd-modal-header"><h3>Add photos</h3>' +
+      '<div class="pd-modal-header"><h3>' + (preset.walk ? 'Capture — ' + preset.walk.at + ' of ' + preset.walk.total : 'Add photos') + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
         '<p class="pp-hint">Fields below apply to every photo in this batch — edit any ' +
           'individual photo afterwards.</p>' +
         '<div class="pd-field"><label>Photos</label>' +
-          '<input class="pd-input" type="file" id="pp-files" accept="image/*" multiple /></div>' +
+          '<input class="pd-input" type="file" id="pp-files" accept="image/*" capture="environment" multiple /></div>' +
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
             '<input class="pd-input" id="pp-desc" placeholder="e.g. Model Unit" /></div>' +
@@ -415,41 +587,46 @@ window.ProgressPhotos = (function () {
             '<select class="pd-select" id="pp-trade">' + tradeOptions('') + '</select></div>' +
           '<div class="pd-field"><label>Works</label>' +
             '<input class="pd-input" id="pp-works" list="pp-works-list" placeholder="e.g. Temporary Facilities" /></div>' +
-          '<div class="pd-field pp-span2"><label>Location</label>' +
-            '<input class="pd-input" id="pp-loc" placeholder="e.g. Model Unit Entrance" /></div>' +
+          wbsFieldHTML('pp', preset.wbsNodeId || '', preset.location || '') +
         '</div>' +
         '<div class="pp-progress" id="pp-prog" hidden></div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
-        '<button class="pd-btn" data-close>Cancel</button>' +
+        (preset.walk ? '<button class="pd-btn" id="pp-skip">Skip this location</button>' +
+          '<button class="pd-btn" id="pp-endwalk">End walkthrough</button>' : '<button class="pd-btn" data-close>Cancel</button>') +
         '<button class="pd-btn pd-btn-primary" id="pp-save">Upload</button></div>';
 
-    var m = openModal(html, 620);
+    var m = openModal(html, 640);
+    wireWbsField('pp');
+    hydrate(m.el);
+    if (preset.walk && $('pp-skip')) $('pp-skip').onclick = function () { m.close(); advanceWalkthrough(); };
+    if (preset.walk && $('pp-endwalk')) $('pp-endwalk').onclick = function () { m.close(); walkState = null; };
+
     $('pp-save').onclick = async function () {
       var files = $('pp-files').files;
       if (!files || !files.length) { UI.toast('Choose at least one photo', 'warn'); return; }
+      var wbsNodeId = $('pp-wbs').value || null;
+      var act = wbsNodeId ? resolveActivity(wbsNodeId) : null;
       var shared = {
         description: $('pp-desc').value.trim(),
         taken_at: $('pp-date').value || null,
         trade: $('pp-trade').value || null,
         works: $('pp-works').value.trim() || null,
-        location: $('pp-loc').value.trim() || null
+        location: $('pp-loc').value.trim() || null,
+        wbs_node_id: wbsNodeId,
+        activity_id: act ? act.id : null,
+        activity_name: act ? act.name : null,
+        tags: readCodeTags('pp')
       };
       this.disabled = true;
       var prog = $('pp-prog'); prog.hidden = false;
-      var done = 0, failed = [];
+      var done = 0, queued = 0, failed = [];
 
       for (var i = 0; i < files.length; i++) {
-        prog.textContent = 'Uploading ' + (i + 1) + ' of ' + files.length + '…';
+        prog.textContent = 'Saving ' + (i + 1) + ' of ' + files.length + '…';
         try {
-          var path = await uploadFile(files[i]);
-          var row = Object.assign({}, shared, {
-            project_id: pid, created_by: uid, photo_url: path, sort_order: i,
-            title: files[i].name
-          });
-          var ins = await sb().from(TABLE).insert(row);
-          if (ins.error) throw ins.error;
-          done++;
+          var r = await saveCapture(files[i], Object.assign({ sort_order: i }, shared));
+          if (r.queued) queued++; else if (r.ok) done++; else failed.push(files[i].name);
         } catch (err) {
           failed.push(files[i].name + ': ' + (err.message || err));
         }
@@ -458,8 +635,10 @@ window.ProgressPhotos = (function () {
 
       m.close();
       if (done) UI.toast(done + ' photo' + (done === 1 ? '' : 's') + ' uploaded', 'ok');
+      if (queued) UI.toast(queued + ' photo' + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
       if (failed.length) UI.toast(failed.length + ' failed — ' + failed[0], 'error');
       await load();
+      if (preset.walk) advanceWalkthrough();
     };
   }
 
@@ -469,6 +648,132 @@ window.ProgressPhotos = (function () {
     var res = await sb().storage.from(BUCKET).upload(path, file, { upsert: false });
     if (res.error) throw res.error;
     return path;
+  }
+
+  // Insert tolerant of the 2026-08-10 migration not having run yet: retry
+  // once without the new schedule-linkage columns rather than losing the
+  // whole capture (same convention Cash Flow uses for its own new columns).
+  async function tolerantInsertPhoto(row) {
+    var res = await sb().from(TABLE).insert(row);
+    if (res.error && /column .* does not exist|schema cache/i.test(res.error.message || '') &&
+        ('wbs_node_id' in row || 'activity_id' in row || 'activity_name' in row)) {
+      var stripped = Object.assign({}, row);
+      delete stripped.wbs_node_id; delete stripped.activity_id; delete stripped.activity_name;
+      if (!migrationWarned) {
+        migrationWarned = true;
+        UI.toast('Saved without the schedule-zone link — run the pending migration', 'warn');
+      }
+      return await sb().from(TABLE).insert(stripped);
+    }
+    return res;
+  }
+
+  // ------------------------------------------------------- offline queue -----
+  // Site connectivity is unreliable, so a capture that can't upload right
+  // away is queued in IndexedDB (file blob + metadata) and retried when back
+  // online or on demand ("Sync now"). Plain indexedDB — no library, per the
+  // budget-conscious constraint.
+  var OfflineQueue = (function () {
+    var DB_NAME = 'pp_offline_v1', STORE = 'queue', dbp = null;
+    function open() {
+      if (dbp) return dbp;
+      dbp = new Promise(function (resolve, reject) {
+        var req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = function () {
+          var d = req.result;
+          if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'qid', autoIncrement: true });
+        };
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      });
+      return dbp;
+    }
+    function add(record) {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var tx = d.transaction(STORE, 'readwrite');
+        var req = tx.objectStore(STORE).add(record);
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      }); });
+    }
+    function all() {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var out = [];
+        var req = d.transaction(STORE, 'readonly').objectStore(STORE).openCursor();
+        req.onsuccess = function (e) {
+          var cur = e.target.result;
+          if (cur) { out.push(cur.value); cur.continue(); } else resolve(out);
+        };
+        req.onerror = function () { reject(req.error); };
+      }); });
+    }
+    function remove(qid) {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var tx = d.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(qid);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      }); });
+    }
+    return { add: add, all: all, remove: remove };
+  })();
+
+  async function queuedCountFor(pidVal) {
+    try {
+      var list = await OfflineQueue.all();
+      return list.filter(function (r) { return r.project_id === pidVal; }).length;
+    } catch (e) { return 0; }
+  }
+
+  async function refreshQueueBadge() {
+    var n = await queuedCountFor(pid);
+    var btn = $('pp-sync');
+    if (!btn) return;
+    btn.hidden = !n;
+    var lbl = $('pp-sync-n'); if (lbl) lbl.textContent = n;
+  }
+
+  // Captures try to save immediately; a network failure (or being visibly
+  // offline) queues the file+metadata instead of losing the shot.
+  async function saveCapture(file, meta) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, blob: file, meta: meta, queued_at: new Date().toISOString() });
+      await refreshQueueBadge();
+      return { queued: true };
+    }
+    try {
+      var path = await uploadFile(file);
+      var row = Object.assign({}, meta, { project_id: pid, created_by: uid, photo_url: path, title: file.name });
+      var ins = await tolerantInsertPhoto(row);
+      if (ins.error) throw ins.error;
+      return { queued: false, ok: true };
+    } catch (err) {
+      await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, blob: file, meta: meta, queued_at: new Date().toISOString() });
+      await refreshQueueBadge();
+      return { queued: true };
+    }
+  }
+
+  async function flushQueue() {
+    var list = [];
+    try { list = await OfflineQueue.all(); } catch (e) { UI.toast('Could not read the offline queue', 'error'); return; }
+    var mine = list.filter(function (r) { return r.project_id === pid; });
+    if (!mine.length) { UI.toast('Nothing to sync', 'ok'); return; }
+    var ok = 0, fail = 0;
+    for (var i = 0; i < mine.length; i++) {
+      var item = mine[i];
+      try {
+        var path = await uploadFile(item.blob);
+        var row = Object.assign({}, item.meta, { project_id: item.project_id, created_by: item.created_by, photo_url: path, title: item.fileName });
+        var ins = await tolerantInsertPhoto(row);
+        if (ins.error) throw ins.error;
+        await OfflineQueue.remove(item.qid);
+        ok++;
+      } catch (e) { fail++; }
+    }
+    await refreshQueueBadge();
+    if (ok) await load();
+    UI.toast(ok + ' synced' + (fail ? (', ' + fail + ' still pending') : ''), fail ? 'warn' : 'ok');
   }
 
   // ----------------------------------------------------------- edit/delete ---
@@ -487,8 +792,7 @@ window.ProgressPhotos = (function () {
             '<select class="pd-select" id="pp-e-trade">' + tradeOptions(r.trade || '') + '</select></div>' +
           '<div class="pd-field"><label>Works</label>' +
             '<input class="pd-input" id="pp-e-works" list="pp-works-list" value="' + Fmt.esc(r.works || '') + '" /></div>' +
-          '<div class="pd-field pp-span2"><label>Location</label>' +
-            '<input class="pd-input" id="pp-e-loc" value="' + Fmt.esc(r.location || '') + '" /></div>' +
+          wbsFieldHTML('pp-e', r.wbs_node_id || '', r.location || '') +
         '</div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
@@ -496,17 +800,35 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn pd-btn-primary" id="pp-e-save">Save</button></div>';
 
     var m = openModal(html, 560);
+    var codeWrap = $('pp-e-codes');
+    if (codeWrap) Array.prototype.forEach.call(codeWrap.querySelectorAll('input[type=checkbox]'), function (c) {
+      c.checked = (r.tags || []).indexOf(c.value) >= 0;
+    });
+    wireWbsField('pp-e', true);   // existing label wins initially; only clears on a fresh zone pick
+    hydrate(m.el);
     $('pp-e-save').onclick = async function () {
       this.disabled = true;
+      var wbsNodeId = $('pp-e-wbs').value || null;
+      var act = wbsNodeId ? resolveActivity(wbsNodeId) : null;
       var patch = {
         description: $('pp-e-desc').value.trim(),
         taken_at: $('pp-e-date').value || null,
         trade: $('pp-e-trade').value || null,
         works: $('pp-e-works').value.trim() || null,
         location: $('pp-e-loc').value.trim() || null,
+        wbs_node_id: wbsNodeId,
+        activity_id: act ? act.id : null,
+        activity_name: act ? act.name : null,
+        tags: readCodeTags('pp-e'),
         updated_at: new Date().toISOString()
       };
       var res = await sb().from(TABLE).update(patch).eq('id', r.id);
+      if (res.error && /column .* does not exist|schema cache/i.test(res.error.message || '')) {
+        var stripped = Object.assign({}, patch);
+        delete stripped.wbs_node_id; delete stripped.activity_id; delete stripped.activity_name;
+        if (!migrationWarned) { migrationWarned = true; UI.toast('Saved without the schedule-zone link — run the pending migration', 'warn'); }
+        res = await sb().from(TABLE).update(stripped).eq('id', r.id);
+      }
       if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
       m.close(); UI.toast('Photo updated', 'ok');
       await load();
@@ -533,11 +855,106 @@ window.ProgressPhotos = (function () {
     };
   }
 
+  // ------------------------------------------------------- Today's Rounds ---
+  // The streamlined repeat-visit capture flow (brief §4): a checklist of the
+  // project's schedule zones, ranked by recent capture history, each showing
+  // its last photo + current activity, single-tap capture or multi-select
+  // into a sequential walkthrough.
+  function renderRounds() {
+    var host = $('pp-rounds-view');
+    if (!host) return;
+    if (!pid) { host.innerHTML = '<div class="pp-empty">Select a project.</div>'; return; }
+    if (!WBS_LEAVES.length) {
+      host.innerHTML = '<div class="pp-empty"><p>No schedule zones found for this project yet.</p>' +
+        '<p class="pp-hint">Build the WBS in Project Schedule, or use <strong>+ Add photos</strong> on the ' +
+        'Photos tab for an untracked location in the meantime.</p></div>';
+      return;
+    }
+    var q = roundsFilter.trim().toLowerCase();
+    var items = WBS_LEAVES.map(function (n) {
+      return { node: n, last: lastCaptureAt(n.id), act: resolveActivity(n.id) };
+    });
+    if (q) items = items.filter(function (it) { return it.node.label.toLowerCase().indexOf(q) >= 0; });
+
+    var visited = items.filter(function (it) { return it.last; })
+      .sort(function (a, b) { return (b.last.taken_at || '').localeCompare(a.last.taken_at || ''); });
+    var unvisited = items.filter(function (it) { return !it.last; })
+      .sort(function (a, b) { return a.node.label.localeCompare(b.node.label); });
+
+    var selCount = Object.keys(roundsSelected).filter(function (k) { return roundsSelected[k]; }).length;
+    var bar = selCount ? ('<div class="pp-selbar">' + selCount + ' location' + (selCount === 1 ? '' : 's') +
+      ' selected <button class="pd-btn pd-btn-primary" id="pp-startwalk">Start walkthrough</button>' +
+      '<button class="pd-btn" id="pp-clearsel">Clear</button></div>') : '';
+
+    function row(it) {
+      var u = it.last ? urlOf(it.last) : '';
+      return '<div class="pp-round-row">' +
+        '<input type="checkbox" class="pp-round-chk" data-id="' + it.node.id + '"' +
+          (roundsSelected[it.node.id] ? ' checked' : '') + ' />' +
+        (u ? '<img class="pp-round-thumb" src="' + Fmt.esc(u) + '" alt="" />' :
+             '<div class="pp-round-thumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
+        '<div class="pp-round-info">' +
+          '<div class="pp-round-loc">' + Fmt.esc(it.node.label) + '</div>' +
+          (it.act ? '<div class="pp-round-act">' + Fmt.esc(it.act.name || it.act.id) + '</div>' : '') +
+          (it.last ? '<div class="pp-round-last">Last captured ' + Fmt.date(it.last.taken_at) + '</div>' :
+                     '<div class="pp-round-last pp-muted">Not yet captured</div>') +
+        '</div>' +
+        '<button class="pd-btn" data-cap="' + it.node.id + '">Capture</button>' +
+        '</div>';
+    }
+
+    var html = bar;
+    if (visited.length) html += '<div class="pp-round-sec">Recent rounds</div>' + visited.map(row).join('');
+    if (unvisited.length) html += '<div class="pp-round-sec">Other schedule zones</div>' + unvisited.map(row).join('');
+    if (!visited.length && !unvisited.length) html += '<div class="pp-empty"><p>No zones match this search.</p></div>';
+    host.innerHTML = html;
+    hydrate(host);
+    wireRounds(host);
+  }
+
+  function wireRounds(host) {
+    if ($('pp-startwalk')) $('pp-startwalk').onclick = startWalkthrough;
+    if ($('pp-clearsel')) $('pp-clearsel').onclick = function () { roundsSelected = {}; renderRounds(); };
+    Array.prototype.forEach.call(host.querySelectorAll('.pp-round-chk'), function (c) {
+      c.onchange = function () { roundsSelected[this.dataset.id] = this.checked; renderRounds(); };
+    });
+    Array.prototype.forEach.call(host.querySelectorAll('[data-cap]'), function (b) {
+      b.onclick = function () {
+        var node = wbsLeaf(this.dataset.cap);
+        openUpload({ wbsNodeId: this.dataset.cap, location: node ? node.label : '' });
+      };
+    });
+  }
+
+  function startWalkthrough() {
+    var ids = Object.keys(roundsSelected).filter(function (k) { return roundsSelected[k]; });
+    if (!ids.length) { UI.toast('Select at least one location first', 'warn'); return; }
+    walkState = { queue: ids, at: 0, total: ids.length };
+    openWalkStep();
+  }
+  function advanceWalkthrough() {
+    if (!walkState) return;
+    walkState.at++;
+    openWalkStep();
+  }
+  function openWalkStep() {
+    if (!walkState || walkState.at >= walkState.queue.length) {
+      if (walkState) UI.toast('Walkthrough complete', 'ok');
+      walkState = null; roundsSelected = {}; renderRounds();
+      return;
+    }
+    var nodeId = walkState.queue[walkState.at];
+    var node = wbsLeaf(nodeId);
+    openUpload({ wbsNodeId: nodeId, location: node ? node.label : '',
+      walk: { at: walkState.at + 1, total: walkState.total } });
+  }
+
   return {
     init: init,
     // The PPR screen shares this module's project selector + trade vocabulary.
     onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid, projName); },
     trades: function () { return TRADES.slice(); },
+    renderRounds: renderRounds,
     _syncChrome: syncChrome,
     _closeLightbox: closeLightbox,
     _stepLightbox: stepLightbox

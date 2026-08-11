@@ -201,6 +201,57 @@
   margin-top: 10px; font-size: 13px; color: var(--pd-muted);
 }
 
+/* ---- Offline queue button ------------------------------------------------- */
+.pp-syncbtn {
+  border-color: var(--pd-red); color: var(--pd-red);
+  display: flex; align-items: center; gap: 5px; margin-left: 6px;
+}
+.pp-syncbtn:hover { background: var(--pd-red); color: #fff; }
+
+/* ---- Schedule-zone picker (Add/Edit modals) ------------------------------- */
+.pp-actctx { font-size: 12.5px; color: var(--pd-muted); margin-top: -2px; }
+.pp-actline { margin-top: 4px; }
+.pp-actline strong { color: var(--pd-ink); }
+.pp-lastref { display: flex; align-items: center; gap: 8px; }
+.pp-refthumb {
+  width: 54px; height: 36px; object-fit: cover; border-radius: 3px;
+  border: 1px solid var(--pd-line); flex: none;
+}
+.pp-codetags { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.pp-codegroup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.pp-codegroup-name { font-weight: 700; color: var(--pd-muted); min-width: 70px; }
+.pp-codechk { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; }
+
+/* ============================================================================
+   Today's Rounds (streamlined repeat-visit capture — Phase 1)
+   ============================================================================ */
+.pp-round-sec {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--pd-muted); margin: 16px 4px 8px;
+}
+.pp-round-sec:first-child { margin-top: 4px; }
+.pp-selbar {
+  display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600;
+  color: var(--pd-ink); padding: 10px 12px; margin-bottom: 10px;
+  background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card));
+  border: 1px solid var(--pd-red); border-radius: var(--pd-radius);
+}
+.pp-round-row {
+  display: flex; align-items: center; gap: 12px; padding: 9px 10px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  background: var(--pd-card); margin-bottom: 6px;
+}
+.pp-round-chk { width: 16px; height: 16px; flex: none; }
+.pp-round-thumb {
+  width: 62px; height: 44px; object-fit: cover; border-radius: 3px; flex: none;
+  border: 1px solid var(--pd-line); background: var(--pd-bg);
+  display: flex; align-items: center; justify-content: center; color: var(--pd-muted);
+}
+.pp-round-info { flex: 1 1 auto; min-width: 0; }
+.pp-round-loc { font-size: 13.5px; font-weight: 600; color: var(--pd-ink); }
+.pp-round-act { font-size: 12px; color: var(--pd-red); margin-top: 1px; }
+.pp-round-last { font-size: 12px; color: var(--pd-muted); margin-top: 1px; }
+
 /* ============================================================================
    PPR Presentations (the "View PPRs" screens)
    ============================================================================ */
