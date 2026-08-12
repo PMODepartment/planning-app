@@ -48,26 +48,31 @@
       if (error) throw error;
     },
 
-    // ---- Workspaces (Workspace → Program → Project tree; shared) ----
-    async getWorkspaces() {
+    // ---- Group Heads (the flat tag that replaced the workspace tree) ----
+    // A project carries exactly one group_head_id. This is a lookup table, not
+    // a tree: sort/filter/group by group head is the only structure needed, and
+    // a lookup (rather than free text) is what keeps the grouping from
+    // fragmenting on typos.
+    async getGroupHeads() {
       var { data, error } = await sb()
-        .from('workspaces').select('*').order('sort_order').order('name');
+        .from('group_heads').select('*').order('sort_order').order('name');
       if (error) throw error;
       return data || [];
     },
-    async createWorkspace(w) {
-      var { data, error } = await sb().from('workspaces').insert(w).select().single();
+    async createGroupHead(g) {
+      var { data, error } = await sb().from('group_heads').insert(g).select().single();
       if (error) throw error;
       return data;
     },
-    async updateWorkspace(id, w) {
-      var { error } = await sb().from('workspaces').update(w).eq('id', id);
+    async updateGroupHead(id, g) {
+      var { error } = await sb().from('group_heads').update(g).eq('id', id);
       if (error) throw error;
     },
-    // Hard delete. The RPC refuses while the node still has child
-    // workspaces/programs or projects — surface error.message to the admin.
-    async deleteWorkspace(id) {
-      var { error } = await sb().rpc('admin_delete_workspace', { target: id });
+    // Hard delete. The RPC refuses while projects are still assigned and says
+    // how many — surface error.message to the admin. Setting `active = false`
+    // is the non-destructive way to retire one.
+    async deleteGroupHead(id) {
+      var { error } = await sb().rpc('admin_delete_group_head', { target: id });
       if (error) throw error;
     },
 

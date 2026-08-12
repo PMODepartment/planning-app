@@ -27,6 +27,41 @@ window.RiskRegister = (function () {
 
   function sb() { return AppAuth.getSB(); }
 
+  // ===== live collaboration (presence + who's-editing row cursor) + offline =====
+  // Shared PDCollab (Realtime) + PDSync (offline outbox). Modal-edit register, so
+  // the cursor is row-level: opening a row's Edit modal flags that row for others.
+  var _collab = null, _remoteSel = {}, _collabSelf = {}, PKEY = 'risk_register', PID_PFX = 'rr';
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    _remoteSel = {};
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: PKEY + ':' + pid, table: TABLE, projectId: pid, self: _collabSelf,
+      onPresence: function (ms) { renderPresence(ms); _remoteSel = {}; ms.forEach(function (m) { if (!m.self && m.sel) _remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; }); paintRemote(); },
+      onSelection: function (d) { if (d.sel) _remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel }; else delete _remoteSel[d.id]; paintRemote(); },
+      onRemoteChange: applyRemoteChange
+    });
+  }
+  function renderPresence(ms) { var el = document.getElementById(PID_PFX + '-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(ms || []) : ''; }
+  function broadcastCollabSel(id, editing) { if (_collab) _collab.setSelection(id ? { rowId: id, editing: !!editing } : null); }
+  function _collabRow(id) { var rid = (window.CSS && CSS.escape) ? CSS.escape(String(id)) : id; return document.querySelector('tr[data-id="' + rid + '"]') || (function () { var b = document.querySelector('[data-edit="' + rid + '"]'); return b ? b.closest('tr') : null; })(); }
+  function paintRemote() { if (!window.PDCollab) return; PDCollab.clearCells(document); Object.keys(_remoteSel).forEach(function (k) { var m = _remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return; var tr = _collabRow(m.sel.rowId); if (!tr) return; var td = tr.querySelector('td'); if (td) PDCollab.paintCell(td, m); }); }
+  function applyRemoteChange(payload) {
+    var evt = payload.eventType || payload.event, rec = payload['new'] || payload.record || null, old = payload['old'] || payload.old_record || null;
+    if (evt === 'DELETE') { var did = old && old.id; if (did == null) return; rows = rows.filter(function (x) { return String(x.id) !== String(did); }); }
+    else if (rec) { var j = -1; for (var i = 0; i < rows.length; i++) { if (String(rows[i].id) === String(rec.id)) { j = i; break; } } if (j < 0) rows.push(rec); else rows[j] = rec; }
+    else return;
+    render();
+  }
+  // Attach editing-cursor broadcast to an Edit modal (row-level). Clears on cancel/save/backdrop.
+  function wireModalCursor(m, r) {
+    if (!r || !r.id) return;
+    var oc = m.close; m.close = function () { broadcastCollabSel(null); oc(); };
+    broadcastCollabSel(r.id, true);
+    m.el.addEventListener('click', function (e) { if (e.target === m.el) broadcastCollabSel(null); });
+  }
+
   // ---- Rating bands (1..25) ----
   function ratingBand(r) {
     if (r >= 15) return { label: 'High',   cls: 'rr-high' };
@@ -38,6 +73,7 @@ window.RiskRegister = (function () {
   // ========================================================================
   async function init(user, prof) {
     profile = prof;
+    _collabSelf = { id: (user && user.id) || (prof && prof.id), name: (prof && (prof.name || prof.email)) || 'Someone' };
     await loadProjects();
 
     document.getElementById('rr-add').onclick = function () { openForm(null); };
@@ -45,6 +81,7 @@ window.RiskRegister = (function () {
       pid = e.target.value;
       sessionStorage.setItem('pd_project', pid);
       load();
+      joinCollab();
     };
     ['rr-f-status','rr-f-category','rr-f-search'].forEach(function (id) {
       var el = document.getElementById(id);
@@ -56,11 +93,12 @@ window.RiskRegister = (function () {
       };
     });
     // sidebar view switch
-    document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) {
+    document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a) {
       a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); };
     });
 
     if (pid) load();
+    joinCollab();
   }
 
   async function loadProjects() {
@@ -72,6 +110,7 @@ window.RiskRegister = (function () {
         return '<option value="' + p.id + '"' + (p.id === pid ? ' selected' : '') + '>' +
           Fmt.esc(p.name) + '</option>';
       }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker
     if (!projects.length) {
       document.getElementById('rr-table').innerHTML =
         '<tr><td style="padding:24px;color:var(--pd-muted);">No projects yet. Ask an admin to create one.</td></tr>';
@@ -82,8 +121,12 @@ window.RiskRegister = (function () {
     if (!pid) return;
     var res = await sb().from(TABLE).select('*')
       .eq('project_id', pid).order('rating', { ascending: false, nullsFirst: false });
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (res.error) {
+      if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); render(); return; } }
+      UI.toast(res.error.message, 'error'); return;
+    }
     rows = res.data || [];
+    if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
     // populate category filter from data
     var cats = {};
     rows.forEach(function (r) { if (r.category) cats[r.category] = 1; });
@@ -114,6 +157,7 @@ window.RiskRegister = (function () {
     renderKpis();
     renderTable();
     renderMatrix();
+    paintRemote();
   }
 
   function renderKpis() {
@@ -145,18 +189,21 @@ window.RiskRegister = (function () {
       '</tr></thead>';
     var body = data.map(function (r) {
       var band = ratingBand(r.rating);
+      // data-l = the column heading. Unused on desktop (the <thead> supplies it);
+      // below 700px module.css hides the head and stacks each row into a card,
+      // where every value needs its own inline label (.rr-table td::before).
       return '<tr>' +
-        '<td>' + Fmt.esc(r.risk_code) + '</td>' +
-        '<td><strong>' + Fmt.esc(r.title) + '</strong>' +
+        '<td class="rr-c-code" data-l="Code">' + Fmt.esc(r.risk_code) + '</td>' +
+        '<td class="rr-c-title"><strong>' + Fmt.esc(r.title) + '</strong>' +
           (r.description ? '<div class="rr-sub">' + Fmt.esc(r.description) + '</div>' : '') + '</td>' +
-        '<td>' + Fmt.esc(r.category) + '</td>' +
-        '<td>' + (r.likelihood || '—') + '</td>' +
-        '<td>' + (r.impact || '—') + '</td>' +
-        '<td><span class="rr-pill ' + band.cls + '">' + (r.rating || '—') + ' · ' + band.label + '</span></td>' +
-        '<td>' + Fmt.esc(r.response) + '</td>' +
-        '<td>' + Fmt.esc(r.owner) + '</td>' +
-        '<td>' + Fmt.esc(r.status) + '</td>' +
-        '<td style="white-space:nowrap;">' +
+        '<td data-l="Category">' + Fmt.esc(r.category) + '</td>' +
+        '<td data-l="Likelihood">' + (r.likelihood || '—') + '</td>' +
+        '<td data-l="Impact">' + (r.impact || '—') + '</td>' +
+        '<td data-l="Rating"><span class="rr-pill ' + band.cls + '">' + (r.rating || '—') + ' · ' + band.label + '</span></td>' +
+        '<td data-l="Response">' + Fmt.esc(r.response) + '</td>' +
+        '<td data-l="Owner">' + Fmt.esc(r.owner) + '</td>' +
+        '<td data-l="Status">' + Fmt.esc(r.status) + '</td>' +
+        '<td class="rr-rowacts" style="white-space:nowrap;">' +
           '<button class="pd-btn" data-edit="' + r.id + '">Edit</button> ' +
           '<button class="pd-btn" data-del="' + r.id + '">Delete</button></td>' +
       '</tr>';
@@ -205,8 +252,8 @@ window.RiskRegister = (function () {
         if (filters.cell && filters.cell.l === l && filters.cell.i === i) filters.cell = null;
         else filters.cell = { l: l, i: i };
         switchView('list');
-        document.querySelector('.pd-sidebar [data-view="list"]').classList.add('active');
-        document.querySelector('.pd-sidebar [data-view="matrix"]').classList.remove('active');
+        document.querySelector('.rr-tabs [data-view="list"]').classList.add('active');
+        document.querySelector('.rr-tabs [data-view="matrix"]').classList.remove('active');
         render();
       };
     });
@@ -216,7 +263,7 @@ window.RiskRegister = (function () {
     document.getElementById('rr-view-list').style.display   = view === 'list'   ? '' : 'none';
     document.getElementById('rr-view-matrix').style.display = view === 'matrix' ? '' : 'none';
     if (link) {
-      document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a){ a.classList.remove('active'); });
+      document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a){ a.classList.remove('active'); });
       link.classList.add('active');
     }
   }
@@ -257,6 +304,7 @@ window.RiskRegister = (function () {
       '<button class="pd-btn pd-btn-primary" id="f-save">Save</button></div>'
     );
 
+    wireModalCursor(m, isNew ? null : r);
     function recalc() {
       var l = +m.el.querySelector('#f-like').value || 0;
       var i = +m.el.querySelector('#f-imp').value || 0;
@@ -290,13 +338,34 @@ window.RiskRegister = (function () {
           data.created_by = profile.id;        // REQUIRED for RLS
           var ins = await sb().from(TABLE).insert(data);
           if (ins.error) throw ins.error;
+          UI.toast('Saved', 'ok'); m.close(); load();
         } else {
-          var upd = await sb().from(TABLE).update(data).eq('id', r.id);
-          if (upd.error) throw upd.error;
+          Object.assign(r, data);   // optimistic — applies whether online or queued offline
+          if (window.PDSync) {
+            var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: data });
+            if (!w.ok) throw (w.error || new Error('Save failed'));
+            PDSync.cachePut(PID_PFX + ':' + pid, rows);
+          } else {
+            var upd = await sb().from(TABLE).update(data).eq('id', r.id);
+            if (upd.error) throw upd.error;
+          }
+          UI.toast('Saved', 'ok'); m.close(); render();
         }
-        UI.toast('Saved', 'ok'); m.close(); load();
       } catch (e) { UI.toast(e.message, 'error'); }
     };
+
+    // Autosave (edit only): debounced re-use of the Save button's own handler,
+    // with the modal's close suppressed for the duration of an autosave write.
+    if (!isNew && window.Autosave) {
+      var asInd = document.createElement('span');
+      asInd.className = 'pd-autosave pd-autosave-idle';
+      asInd.textContent = 'Autosave on';
+      var h2 = m.el.querySelector('h2');
+      if (h2) { h2.style.display = 'flex'; h2.style.alignItems = 'center'; h2.style.gap = '10px'; h2.appendChild(asInd); }
+      var as = Autosave.wire({ root: m.el, modal: m, saveBtn: m.el.querySelector('#f-save'), indicator: asInd });
+      var _rrClose = m.close;
+      m.close = function () { as.cancel(); _rrClose(); };
+    }
   }
 
   async function del(id) {

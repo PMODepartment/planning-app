@@ -83,6 +83,19 @@ the S-Curve/Cash-Flow tabs. **Tolerant:** if the RPC isn't installed, shows a "r
 nudge (verified live 2026-07-11 — tab opens, nudge shows). RPC is `security invoker` so the caller's
 RLS (`resource_assignments` read = `is_approved`) applies.
 
+## Live collaboration (presence) + offline read (2026-07-27) — fmlozano
+Portfolio spans **all** projects and is a **read-only rollup**, so it gets **presence-only + offline
+read-cache** — no per-project live stream (cross-project unfiltered would be broad) and no editing cursor.
+- **Presence:** `PDCollab.join({ key:'portfolio', … })` with **no `tables`/`projectId`** (presence +
+  broadcast only, no postgres_changes) — shows who else is viewing the portfolio right now, avatars in
+  `#po-presence`. Live per-project data still arrives via the per-tab **Refresh** + the modules that
+  write the rollups.
+- **Offline:** the `PDb.getProjects()` + `getWorkspaces()` load is cached under `po:all`; on a failed
+  fetch the last-cached portfolio renders so the dashboard still opens offline (the lazy S-Curve/Cash
+  Flow/Resources tabs still need a connection).
+- No migration (presence needs no server change). Verified: inline script parses. Live verification
+  pending. Assets: `offline.js?v=20260726d` + `collab.js?v=20260727a`.
+
 ## Cash Flow module now real (2026-07-06)
 Cash Flow was flipped to `enabled: true` in `config.js` because it stopped being a placeholder
 — see `modules/cash-flow/CLAUDE.md`. This tab reads its `cash_flow` table.

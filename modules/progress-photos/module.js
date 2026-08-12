@@ -20,7 +20,7 @@ window.ProgressPhotos = (function () {
   var profile = null, uid = null, pid = null, projName = '';
   var rows = [];
   var view = 'list';                 // list | gallery
-  var filters = { from: '', to: '', trade: '', works: '', location: '', search: '' };
+  var filters = { from: '', to: '', trade: '', works: '', wbsNode: '', search: '' };
   var collapsed = {};                // trade -> true
   var urlCache = {};                 // storage path -> signed URL
   var canWrite = false;              // planner+ / admin / super_admin
@@ -28,17 +28,87 @@ window.ProgressPhotos = (function () {
   var projectListeners = [];         // PPR screen subscribes; both share one selector
 
   // ---- Schedule App integration (Phase 1) ----------------------------------
-  // Zones/locations are read live from Project Schedule's wbs_nodes tree —
-  // same Supabase project, no separate API. WBS_LEAVES = pickable locations;
-  // SCHED_ACTS = schedule activities tied to a zone, used to surface "the
-  // current activity here" alongside the location tag.
+  // Zones/locations/activities are read live from Project Schedule's
+  // wbs_nodes tree — same Supabase project, no separate API. The WBS has NO
+  // universal shape across projects (depth, terminology, and node count vary
+  // per project — confirmed against Project Schedule's own data model: a
+  // wbs_nodes row is just {id, parent_id, code, name, sort_order}, with no
+  // "node type" column distinguishing a location from a phase from a
+  // discipline). So the picker below is a fully generic N-level cascade with
+  // NO hardcoded per-level labels or assumed depth — each <select> shows only
+  // the real children of whatever was picked above it, using the project's
+  // own WBS code + name (same "<code>  <name>" convention Project Schedule's
+  // own Add-Activity WBS dropdown uses), and stops wherever the real tree
+  // stops. WBS_LEAVES = the finest-grain nodes (used for Rounds' checklist);
+  // a capture can stop at ANY depth though, not only a leaf (e.g. "just this
+  // Tower" is valid) — see resolveActivity's descendant matching below.
   var WBS = [], WBS_BY_ID = {}, WBS_LEAVES = [];
   var SCHED_ACTS = [];
-  var CODE_TYPES = [], CODE_VALUES = [];   // optional Activity-Code overlay
+  var CODE_TYPES = [], CODE_VALUES = [];   // optional Activity-Code overlay (unrelated code types)
   var migrationWarned = false;             // warn once per session, not per save
   var roundsFilter = '';
   var roundsSelected = {};                 // wbs node id -> true (walkthrough queue)
   var walkState = null;                    // {queue:[nodeId,...], at:0} while a walkthrough modal chain is open
+
+  // ===== live collaboration (presence + "who's editing this photo") =========
+  // Shared PDCollab layer (Supabase Realtime): topbar avatars, a colored flag on
+  // the photo row/card a teammate has open in the Edit modal, and live gallery
+  // updates when someone saves/uploads/deletes. Images themselves still need a
+  // connection (the signed-URL preview is fetched on the remote change), but the
+  // gallery structure + metadata stream live.
+  var _collab = null, _remoteSel = {};
+  function _selfName() { return (profile && (profile.name || profile.email)) || 'Someone'; }
+  function joinCollab() {
+    if (!window.PDCollab) return;
+    if (_collab) { _collab.leave(); _collab = null; }
+    _remoteSel = {};
+    if (!pid) { renderPresence([]); return; }
+    _collab = PDCollab.join({
+      key: 'progress_photos:' + pid, table: TABLE, projectId: pid,
+      self: { id: uid, name: _selfName() },
+      onPresence: function (members) {
+        renderPresence(members);
+        _remoteSel = {}; members.forEach(function (m) { if (!m.self && m.sel) _remoteSel[m.id] = { id: m.id, name: m.name, color: m.color, sel: m.sel }; });
+        paintRemote();
+      },
+      onSelection: function (d) { if (d.sel) _remoteSel[d.id] = { id: d.id, name: d.name, color: d.color, sel: d.sel }; else delete _remoteSel[d.id]; paintRemote(); },
+      onRemoteChange: applyRemoteChange
+    });
+  }
+  function renderPresence(members) { var el = $('pp-presence'); if (el) el.innerHTML = window.PDCollab ? PDCollab.avatarsHTML(members || []) : ''; }
+  function broadcastCollabSel(photoId, editing) { if (_collab) _collab.setSelection(photoId ? { rowId: photoId, editing: !!editing } : null); }
+  function paintRemote() {
+    if (!window.PDCollab) return;
+    var host = $('pp-view'); if (!host) return;
+    PDCollab.clearCells(host);
+    Object.keys(_remoteSel).forEach(function (k) {
+      var m = _remoteSel[k]; if (!m || !m.sel || !m.sel.rowId) return;
+      var rid = (window.CSS && CSS.escape) ? CSS.escape(String(m.sel.rowId)) : m.sel.rowId;
+      var node = host.querySelector('.pp-row[data-id="' + rid + '"] .pp-thumbcell') ||
+                 host.querySelector('.pp-card[data-id="' + rid + '"] .pp-cardimg') ||
+                 host.querySelector('[data-id="' + rid + '"]');
+      if (node) PDCollab.paintCell(node, m);
+    });
+  }
+  async function applyRemoteChange(payload) {
+    var evt = payload.eventType || payload.event;
+    var rec = payload['new'] || payload.record || null, old = payload['old'] || payload.old_record || null;
+    if (evt === 'DELETE') { var did = old && old.id; if (did == null) return; rows = rows.filter(function (x) { return String(x.id) !== String(did); }); }
+    else if (rec) {
+      var j = -1; for (var i = 0; i < rows.length; i++) { if (String(rows[i].id) === String(rec.id)) { j = i; break; } }
+      if (j < 0) rows.push(rec); else rows[j] = rec;
+      // A newly-inserted / re-pathed photo has no signed URL yet — sign it so the
+      // preview shows live (needs a connection; falls back to the placeholder).
+      if (rec.photo_url && !urlCache[rec.photo_url]) { try { await signOne(rec.photo_url); } catch (e) {} }
+    } else return;
+    if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);
+    fillFilterOptions();
+    render();
+  }
+  async function signOne(path) {
+    var res = await sb().storage.from(BUCKET).createSignedUrl(path, SIGN_TTL);
+    if (res && res.data && res.data.signedUrl) urlCache[path] = res.data.signedUrl;
+  }
 
   // Trades mirror the WPM (procurement) trade vocabulary so photos, work
   // packages and cash-out all speak the same language.
@@ -93,10 +163,10 @@ window.ProgressPhotos = (function () {
     syncChrome();
     await load();
     await loadSchedule();
+    fillWbsFilterOptions();   // load() ran before the WBS tree existed — refresh once it's here
     await refreshQueueBadge();
-    var roundsHost = document.getElementById('pp-screen-rounds');
-    if (roundsHost && !roundsHost.hidden) renderRounds();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
+    joinCollab();
   }
 
   // --------------------------------------------------------- schedule read ---
@@ -117,13 +187,8 @@ window.ProgressPhotos = (function () {
 
     var childCount = {};
     WBS.forEach(function (n) { if (n.parent_id) childCount[n.parent_id] = (childCount[n.parent_id] || 0) + 1; });
-    function breadcrumb(n) {
-      var parts = [n.name], p = n.parent_id ? WBS_BY_ID[n.parent_id] : null, guard = 0;
-      while (p && guard++ < 25) { parts.unshift(p.name); p = p.parent_id ? WBS_BY_ID[p.parent_id] : null; }
-      return parts.join(' › ');
-    }
     WBS_LEAVES = WBS.filter(function (n) { return !childCount[n.id]; })
-      .map(function (n) { return { id: n.id, label: breadcrumb(n) }; })
+      .map(function (n) { return { id: n.id, label: breadcrumbOf(n.id) }; })
       .sort(function (a, b) { return a.label.localeCompare(b.label); });
 
     try {
@@ -146,11 +211,46 @@ window.ProgressPhotos = (function () {
     } catch (e) {}
   }
 
-  // The schedule activity that's "current" for a zone: prefer In Progress
-  // (earliest start), else the next Not Started, else whatever's there.
+  // Full "›"-joined ancestry label for ANY node (not just leaves) — a capture
+  // can stop at an intermediate depth (e.g. "just this Tower"), so the label
+  // has to work there too, not only at the finest-grain zone.
+  function breadcrumbOf(nodeId) {
+    var n = nodeId ? WBS_BY_ID[nodeId] : null;
+    if (!n) return '';
+    var parts = [n.name], p = n.parent_id ? WBS_BY_ID[n.parent_id] : null, guard = 0;
+    while (p && guard++ < 25) { parts.unshift(p.name); p = p.parent_id ? WBS_BY_ID[p.parent_id] : null; }
+    return parts.join(' › ');
+  }
+  // Sorted children of a WBS node (parentId null/'' = the root level).
+  function wbsChildren(parentId) {
+    return WBS.filter(function (n) { return (n.parent_id || '') === (parentId || ''); })
+      .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name); });
+  }
+  // The full ancestor chain, root-first, ending at nodeId itself — lets the
+  // cascade UI pre-select every level when re-opening on an already-picked node.
+  function wbsPathTo(nodeId) {
+    var path = [], n = nodeId ? WBS_BY_ID[nodeId] : null, guard = 0;
+    while (n && guard++ < 25) { path.unshift(n.id); n = n.parent_id ? WBS_BY_ID[n.parent_id] : null; }
+    return path;
+  }
+  function isNodeUnder(nodeId, ancestorId) {
+    if (nodeId === ancestorId) return true;
+    var n = WBS_BY_ID[nodeId], guard = 0;
+    while (n && n.parent_id && guard++ < 25) {
+      if (n.parent_id === ancestorId) return true;
+      n = WBS_BY_ID[n.parent_id];
+    }
+    return false;
+  }
+
+  // The schedule activity that's "current" for a picked WBS node: prefer
+  // In Progress (earliest start), else the next Not Started, else whatever's
+  // there. Matches the node itself OR any of its descendants, so stopping the
+  // cascade at an intermediate depth (e.g. "just this Level", no Zone chosen)
+  // still surfaces an activity happening somewhere underneath it.
   function resolveActivity(nodeId) {
     if (!nodeId) return null;
-    var cands = SCHED_ACTS.filter(function (a) { return a.wbs_node_id === nodeId; });
+    var cands = SCHED_ACTS.filter(function (a) { return a.wbs_node_id && isNodeUnder(a.wbs_node_id, nodeId); });
     if (!cands.length) return null;
     var pick = cands.filter(function (a) { return (a.status || '') === 'In Progress'; })
       .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
@@ -161,7 +261,8 @@ window.ProgressPhotos = (function () {
   }
 
   function wbsLeaf(nodeId) {
-    return WBS_LEAVES.filter(function (n) { return n.id === nodeId; })[0] || null;
+    if (!nodeId || !WBS_BY_ID[nodeId]) return null;
+    return { id: nodeId, label: breadcrumbOf(nodeId) };
   }
 
   function lastCaptureAt(nodeId) {
@@ -180,6 +281,7 @@ window.ProgressPhotos = (function () {
       return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' +
              Fmt.esc(p.name || p.id) + '</option>';
     }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable project picker
     var cur = projects.filter(function (p) { return p.id === pid; })[0];
     projName = cur ? (cur.name || cur.id) : pid;
     sessionStorage.setItem('pd_project', pid);
@@ -203,19 +305,26 @@ window.ProgressPhotos = (function () {
       restoreUI(); syncChrome(); notifyProject();
       await load();
       await loadSchedule();
+      fillWbsFilterOptions();
       await refreshQueueBadge();
-      if (document.getElementById('pp-screen-rounds') && !document.getElementById('pp-screen-rounds').hidden) renderRounds();
+      refreshRoundsIfVisible();
+      joinCollab();
     };
-    Array.prototype.forEach.call(document.querySelectorAll('.pp-tab'), function (b) {
+    // List/Gallery is the shared .pd-viewtoggle. NB: `.pp-tab` now means the
+    // topbar's Photos|PPRs screen tabs — don't select on it here.
+    Array.prototype.forEach.call(document.querySelectorAll('.pd-vt[data-view]'), function (b) {
       b.onclick = function () { view = b.dataset.view; saveUI(); syncChrome(); render(); };
     });
+    // "location" maps the #pp-f-location element to the filters.wbsNode key —
+    // that element is now a flattened WBS-node picker, not a free-text list.
     ['from', 'to', 'trade', 'works', 'location', 'search'].forEach(function (k) {
       var el = $('pp-f-' + k);
       if (!el) return;
-      el.oninput = el.onchange = function () { filters[k] = this.value; render(); };
+      var key = k === 'location' ? 'wbsNode' : k;
+      el.oninput = el.onchange = function () { filters[key] = this.value; render(); };
     });
     $('pp-clearfilters').onclick = function () {
-      filters = { from: '', to: '', trade: '', works: '', location: '', search: '' };
+      filters = { from: '', to: '', trade: '', works: '', wbsNode: '', search: '' };
       ['from', 'to', 'trade', 'works', 'location', 'search'].forEach(function (k) {
         var el = $('pp-f-' + k); if (el) el.value = '';
       });
@@ -235,10 +344,13 @@ window.ProgressPhotos = (function () {
   }
 
   function syncChrome() {
-    Array.prototype.forEach.call(document.querySelectorAll('.pp-tab'), function (b) {
+    Array.prototype.forEach.call(document.querySelectorAll('.pd-vt[data-view]'), function (b) {
       b.classList.toggle('active', b.dataset.view === view);
     });
-    $('pp-add').style.display = canWrite ? '' : 'none';
+    // The upload action + its divider are planner+ only.
+    ['pp-add', 'pp-sep-photos'].forEach(function (id) {
+      var el = $(id); if (el) el.style.display = canWrite ? '' : 'none';
+    });
   }
 
   // ------------------------------------------------------------------ load ---
@@ -247,18 +359,41 @@ window.ProgressPhotos = (function () {
     host.innerHTML = '<div class="pp-empty">Loading photos…</div>';
     if (!pid) { host.innerHTML = '<div class="pp-empty">Select a project to see its photos.</div>'; return; }
 
-    var res = await sb().from(TABLE).select('*')
-      .eq('project_id', pid)
-      .order('taken_at', { ascending: false })
-      .order('sort_order', { ascending: true, nullsFirst: false });
-    if (res.error) { host.innerHTML = ''; UI.toast(res.error.message, 'error'); return; }
-    rows = res.data || [];
+    // Keyset-paginate (a single select caps at 1000; a project's photo library can exceed
+    // that, silently hiding photos from the grid, PPR picker and bulk actions), then restore
+    // the taken_at-desc / sort_order ordering.
+    var all = [], last = null;
+    while (true) {
+      var q = sb().from(TABLE).select('*').eq('project_id', pid).order('id', { ascending: true }).limit(1000);
+      if (last) q = q.gt('id', last);
+      var res = await q;
+      if (res.error) {
+        // Offline / fetch failed: fall back to the read-cache so the gallery still
+        // opens (metadata edits made offline queue via PDSync and sync on reconnect).
+        // Signed image URLs can't be minted offline → previews show the placeholder.
+        if (window.PDSync) {
+          var c = await PDSync.cacheGet('pp:' + pid);
+          if (c && c.rows) { rows = c.rows.slice(); fillFilterOptions(); render(); return; }
+        }
+        host.innerHTML = ''; UI.toast(res.error.message, 'error'); return;
+      }
+      var batch = res.data || []; all = all.concat(batch);
+      if (batch.length < 1000) break; last = batch[batch.length - 1].id;
+    }
+    all.sort(function (a, b) {
+      var ta = a.taken_at || '', tb = b.taken_at || '';   // taken_at DESC (blank last)
+      if (ta !== tb) return ta < tb ? 1 : -1;
+      var sa = a.sort_order, sb2 = b.sort_order;           // then sort_order ASC, NULLS LAST
+      if (sa == null && sb2 == null) return 0;
+      if (sa == null) return 1; if (sb2 == null) return -1;
+      return sa - sb2;
+    });
+    rows = all;
+    if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);   // keep the offline cache current
 
     await signAll();
     fillFilterOptions();
     render();
-    var roundsHost = document.getElementById('pp-screen-rounds');
-    if (roundsHost && !roundsHost.hidden) renderRounds();
   }
 
   // Batch-sign every photo path in one request rather than one call per row.
@@ -294,10 +429,32 @@ window.ProgressPhotos = (function () {
     }
     fill('pp-f-trade', distinct('trade'), 'Filter by Trade');
     fill('pp-f-works', distinct('works'), 'Filter by Works');
-    fill('pp-f-location', distinct('location'), 'Filter by Location');
+    fillWbsFilterOptions();
     var dl = $('pp-works-list');
     if (dl) dl.innerHTML = distinct('works').map(function (v) {
       return '<option value="' + Fmt.esc(v) + '"></option>'; }).join('');
+  }
+  // Flattened, indented "<code>  <name>" options over the WHOLE tree (Project
+  // Schedule's own wbsPickerOptions() convention) — a project's location
+  // concepts have no fixed shape, so filtering must be "pick any WBS node",
+  // not a set of fixed dropdowns (Level/Area/Zone).
+  function wbsFlatOptionsHTML(selId) {
+    var html = '<option value="">Filter by WBS Location</option>';
+    (function walk(parentId, depth) {
+      wbsChildren(parentId).forEach(function (n) {
+        var pad = new Array(depth + 1).join('   ');
+        var label = (n.code ? n.code + '  ' : '') + n.name;
+        html += '<option value="' + n.id + '"' + (n.id === selId ? ' selected' : '') + '>' + pad + Fmt.esc(label) + '</option>';
+        walk(n.id, depth + 1);
+      });
+    })('', 0);
+    return html;
+  }
+  function fillWbsFilterOptions() {
+    var el = $('pp-f-location'); if (!el) return;
+    var keep = filters.wbsNode || '';
+    el.innerHTML = wbsFlatOptionsHTML(keep);
+    el.value = WBS_BY_ID[keep] ? keep : '';
   }
 
   // --------------------------------------------------------------- filter ---
@@ -306,7 +463,10 @@ window.ProgressPhotos = (function () {
     return rows.filter(function (r) {
       if (filters.trade && r.trade !== filters.trade) return false;
       if (filters.works && r.works !== filters.works) return false;
-      if (filters.location && r.location !== filters.location) return false;
+      // Descendant-inclusive: picking a parent WBS node (e.g. "Ground Floor")
+      // also matches everything captured underneath it (Zone 1, Vertical, …) —
+      // the more useful default for project review (brief §13).
+      if (filters.wbsNode && (!r.wbs_node_id || !isNodeUnder(r.wbs_node_id, filters.wbsNode))) return false;
       if (filters.from && (!r.taken_at || r.taken_at < filters.from)) return false;
       if (filters.to && (!r.taken_at || r.taken_at > filters.to)) return false;
       if (q) {
@@ -320,13 +480,27 @@ window.ProgressPhotos = (function () {
 
   // --------------------------------------------------------------- render ---
   function render() {
+    refreshRoundsIfVisible();   // keep Rounds live-consistent with load()/remote changes too
     var host = $('pp-view');
     var list = visible();
     lightboxIds = list.map(function (r) { return r.id; });
 
-    var bar = '<div class="pp-countbar">Showing <strong>' + list.length + '</strong> of ' +
-              rows.length + ' photo' + (rows.length === 1 ? '' : 's') +
-              (projName ? ' · ' + Fmt.esc(projName) : '') + '</div>';
+    // The count + view toggle live in the static list bar (Drawing Register's
+    // .dr-listbar pattern), so they don't get rebuilt on every render.
+    var count = $('pp-count');
+    if (count) {
+      count.textContent = rows.length
+        ? 'Showing ' + list.length + ' of ' + rows.length + ' photo' + (rows.length === 1 ? '' : 's')
+        : '';
+    }
+    var listbar = document.querySelector('.pp-listbar');
+    if (listbar) listbar.style.visibility = rows.length ? '' : 'hidden';
+
+    // Clear-filters only shows when a filter is actually set (no orphan button).
+    var anyFilter = ['from', 'to', 'trade', 'works', 'wbsNode', 'search']
+      .some(function (k) { return filters[k]; });
+    var clr = $('pp-clearfilters');
+    if (clr) clr.hidden = !anyFilter;
 
     if (!rows.length) {
       host.innerHTML = '<div class="pp-empty">' +
@@ -337,13 +511,14 @@ window.ProgressPhotos = (function () {
       hydrate(host); return;
     }
     if (!list.length) {
-      host.innerHTML = bar + '<div class="pp-empty"><p>No photos match these filters.</p></div>';
+      host.innerHTML = '<div class="pp-empty"><p>No photos match these filters.</p></div>';
       return;
     }
 
-    host.innerHTML = bar + (view === 'gallery' ? galleryHTML(list) : listHTML(list));
+    host.innerHTML = (view === 'gallery' ? galleryHTML(list) : listHTML(list));
     hydrate(host);
     wireRows(host);
+    paintRemote();
   }
 
   function hydrate(host) { if (window.Icons && Icons.hydrate) Icons.hydrate(host); }
@@ -392,14 +567,18 @@ window.ProgressPhotos = (function () {
         '<span class="pp-groupcount">' + g.items.length + '</span></div>';
       if (isCol) return header;
       return header + g.items.map(function (r) {
+        // data-l = the column's label. Unused on desktop (the sticky .pp-grid-head
+        // supplies the headings); at phone width the head is hidden and the row
+        // restacks under the thumbnail, where each value needs its own label —
+        // module.css renders these via .pp-cell[data-l]::before.
         return '<div class="pp-row" data-id="' + r.id + '">' +
           '<div class="pp-cell pp-thumbcell">' + thumb(r, 'pp-thumb') + '</div>' +
-          '<div class="pp-cell">' + Fmt.esc(r.description || '—') + '</div>' +
-          '<div class="pp-cell">' + Fmt.esc(r.trade || '—') + '</div>' +
-          '<div class="pp-cell">' + Fmt.esc(r.works || '—') + '</div>' +
-          '<div class="pp-cell">' + Fmt.esc(r.location || '—') + '</div>' +
-          '<div class="pp-cell pp-date">' + (r.taken_at ? Fmt.date(r.taken_at) : '—') + '</div>' +
-          '<div class="pp-cell">' + rowActions(r) + '</div>' +
+          '<div class="pp-cell pp-desc">' + Fmt.esc(r.description || '—') + '</div>' +
+          '<div class="pp-cell" data-l="Trade">' + Fmt.esc(r.trade || '—') + '</div>' +
+          '<div class="pp-cell" data-l="Works">' + Fmt.esc(r.works || '—') + '</div>' +
+          '<div class="pp-cell" data-l="Location">' + Fmt.esc(r.location || '—') + '</div>' +
+          '<div class="pp-cell pp-date" data-l="Captured">' + (r.taken_at ? Fmt.date(r.taken_at) : '—') + '</div>' +
+          '<div class="pp-cell pp-actcell">' + rowActions(r) + '</div>' +
           '</div>';
       }).join('');
     }).join('');
@@ -492,21 +671,78 @@ window.ProgressPhotos = (function () {
   }
 
   // ------------------------------------------------- schedule-zone picker ----
-  // Location select sourced live from the schedule's WBS tree, plus a free-
-  // text label (auto-filled from the picked zone, still editable) so photos
-  // that aren't tied to any zone can still be tagged. Optional Activity-Code
-  // overlay checkboxes (only shown if the project has code types defined).
-  function wbsFieldHTML(idPrefix, selNodeId, locText) {
-    var opts = '<option value="">— Not tracked (type a label below) —</option>' +
-      WBS_LEAVES.map(function (n) {
-        return '<option value="' + n.id + '"' + (n.id === selNodeId ? ' selected' : '') + '>' +
-               Fmt.esc(n.label) + '</option>';
+  // Cascading N-level WBS picker with NO hardcoded per-level labels: each
+  // depth is a bare <select> showing that node's real children as
+  // "<code>  <name>" (Project Schedule's own convention for its Add-Activity
+  // WBS dropdown — reused verbatim, not reinvented). Picking one repopulates
+  // the next with its children; a capture can stop at any depth — "just this
+  // Tower" is valid, not only a full pick to the deepest leaf. The resolved
+  // path is shown as its own read-only breadcrumb (paintActCtx) — never
+  // written into the separate, purely-optional free-text "Location label".
+  // Any Activity Code types the project has (a separate, unrelated
+  // mechanism) get their own generic overlay checkboxes.
+  function levelSelectHTML(idPrefix, depth, kids, selId) {
+    var opts = '<option value="">— ' + (depth === 0 ? 'Select…' : 'None') + ' —</option>' +
+      kids.map(function (n) {
+        var label = (n.code ? n.code + '  ' : '') + n.name;
+        return '<option value="' + n.id + '"' + (n.id === selId ? ' selected' : '') + '>' + Fmt.esc(label) + '</option>';
       }).join('');
+    return '<select class="pd-select pp-wbslevel" data-lvl="' + depth + '" id="' + idPrefix + '-lvl' + depth + '">' + opts + '</select>';
+  }
+  // Renders one select per depth, seeded from `path` (root-first ids) so a
+  // preset/existing pick reopens fully expanded; stops one level past the
+  // last selection (so there's always a next choice available, never guesses
+  // deeper than the tree or the user's picks actually go).
+  function wbsCascadeHTML(idPrefix, path) {
+    path = path || [];
+    var html = '', parentId = '', depth = 0;
+    while (depth < 20) {
+      var kids = wbsChildren(parentId);
+      if (!kids.length) break;
+      var selId = path[depth] || '';
+      html += levelSelectHTML(idPrefix, depth, kids, selId);
+      if (!selId) break;
+      parentId = selId;
+      depth++;
+    }
+    return html || '<p class="pp-hint">No schedule WBS found for this project yet — build it in Project Schedule.</p>';
+  }
+  // The deepest level actually selected (a capture can stop early) — this is
+  // the wbs_node_id that gets stored on the photo.
+  function currentCascadeNodeId(idPrefix) {
+    var cascade = $(idPrefix + '-cascade');
+    if (!cascade) return '';
+    var sels = cascade.querySelectorAll('select'), last = '';
+    for (var i = 0; i < sels.length; i++) {
+      if (!sels[i].value) return last;
+      last = sels[i].value;
+    }
+    return last;
+  }
+  function wireCascade(idPrefix) {
+    var cascade = $(idPrefix + '-cascade');
+    if (!cascade) return;
+    Array.prototype.forEach.call(cascade.querySelectorAll('select'), function (sel) {
+      sel.onchange = function () {
+        var depth = parseInt(sel.dataset.lvl, 10);
+        var sels = cascade.querySelectorAll('select'), path = [];
+        for (var i = 0; i <= depth; i++) path.push(sels[i].value);
+        cascade.innerHTML = wbsCascadeHTML(idPrefix, path);
+        wireCascade(idPrefix);
+        paintActCtx(idPrefix);
+      };
+    });
+  }
+  function wbsFieldHTML(idPrefix, selNodeId, locText) {
+    var path = wbsPathTo(selNodeId);
     return (
-      '<div class="pd-field pp-span2"><label>Location — schedule zone</label>' +
-        '<select class="pd-select" id="' + idPrefix + '-wbs">' + opts + '</select></div>' +
-      '<div class="pd-field pp-span2"><label>Location label</label>' +
-        '<input class="pd-input" id="' + idPrefix + '-loc" value="' + Fmt.esc(locText || '') +
+      '<div class="pp-span2 pp-wbssection"><label>WBS Location</label>' +
+        '<div class="pp-wbscascade" id="' + idPrefix + '-cascade">' + wbsCascadeHTML(idPrefix, path) + '</div>' +
+        '<div class="pp-wbscrumb" id="' + idPrefix + '-crumb"></div>' +
+      '</div>' +
+      '<div class="pd-field pp-span2"><label>Location label ' +
+        '<span class="pp-optnote">(optional — does not replace the WBS location above)</span></label>' +
+        '<input class="pd-input" id="' + idPrefix + '-loctxt" value="' + Fmt.esc(locText || '') +
         '" placeholder="e.g. Model Unit Entrance" /></div>' +
       '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>' +
       codeOverlayHTML(idPrefix, [])
@@ -533,28 +769,28 @@ window.ProgressPhotos = (function () {
     var wrap = $(idPrefix + '-codes'); if (!wrap) return [];
     return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
   }
-  // skipInitialFill: true when opening on an already-saved location label
-  // (edit modal) — the first paint should leave it alone; a subsequent
-  // manual re-pick of the zone should still refresh it.
+  // Location label is fully independent of the WBS pick now — never
+  // auto-filled/overwritten by it (the breadcrumb below is the one place the
+  // resolved WBS path is shown). The `skipInitialFill` param is kept as a
+  // harmless no-op so existing call sites don't need to change.
   function wireWbsField(idPrefix, skipInitialFill) {
-    var sel = $(idPrefix + '-wbs'), loc = $(idPrefix + '-loc');
-    if (!sel || !loc) return;
-    loc.oninput = function () { loc.dataset.userEdited = '1'; };
-    sel.onchange = function () { loc.dataset.userEdited = ''; paintActCtx(idPrefix); };
-    if (skipInitialFill) loc.dataset.userEdited = '1';
+    wireCascade(idPrefix);
     paintActCtx(idPrefix);
   }
   function paintActCtx(idPrefix) {
-    var sel = $(idPrefix + '-wbs'), loc = $(idPrefix + '-loc'), ctx = $(idPrefix + '-actctx');
-    if (!sel || !ctx) return;
-    var nodeId = sel.value;
+    var ctx = $(idPrefix + '-actctx'), crumb = $(idPrefix + '-crumb');
+    var nodeId = currentCascadeNodeId(idPrefix);
+    if (crumb) {
+      crumb.innerHTML = nodeId
+        ? Fmt.esc(breadcrumbOf(nodeId))
+        : '<span class="pp-muted">No WBS location selected yet.</span>';
+    }
+    if (!ctx) return;
     if (!nodeId) { ctx.innerHTML = ''; return; }
-    var node = wbsLeaf(nodeId);
-    if (node && !loc.dataset.userEdited) loc.value = node.label;
     var act = resolveActivity(nodeId), last = lastCaptureAt(nodeId);
     var html = '';
     if (act) html += '<div class="pp-actline">Current activity: <strong>' + Fmt.esc(act.name || act.id) + '</strong></div>';
-    else html += '<div class="pp-actline pp-muted">No active schedule activity found for this zone.</div>';
+    else html += '<div class="pp-actline pp-muted">No active schedule activity found under here.</div>';
     if (last) {
       var u = urlOf(last);
       html += '<div class="pp-actline pp-lastref">' +
@@ -605,14 +841,14 @@ window.ProgressPhotos = (function () {
     $('pp-save').onclick = async function () {
       var files = $('pp-files').files;
       if (!files || !files.length) { UI.toast('Choose at least one photo', 'warn'); return; }
-      var wbsNodeId = $('pp-wbs').value || null;
+      var wbsNodeId = currentCascadeNodeId('pp') || null;
       var act = wbsNodeId ? resolveActivity(wbsNodeId) : null;
       var shared = {
         description: $('pp-desc').value.trim(),
         taken_at: $('pp-date').value || null,
         trade: $('pp-trade').value || null,
         works: $('pp-works').value.trim() || null,
-        location: $('pp-loc').value.trim() || null,
+        location: $('pp-loctxt').value.trim() || breadcrumbOf(wbsNodeId) || null,
         wbs_node_id: wbsNodeId,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
@@ -650,29 +886,50 @@ window.ProgressPhotos = (function () {
     return path;
   }
 
-  // Insert tolerant of the 2026-08-10 migration not having run yet: retry
-  // once without the new schedule-linkage columns rather than losing the
-  // whole capture (same convention Cash Flow uses for its own new columns).
-  async function tolerantInsertPhoto(row) {
-    var res = await sb().from(TABLE).insert(row);
-    if (res.error && /column .* does not exist|schema cache/i.test(res.error.message || '') &&
-        ('wbs_node_id' in row || 'activity_id' in row || 'activity_name' in row)) {
-      var stripped = Object.assign({}, row);
+  // ------------------------------------------------------------ tolerant write
+  // Every DB write that might carry the new schedule-linkage columns goes
+  // through here: routes through the shared PDSync outbox when present (same
+  // offline/LWW mechanism openForm's metadata edits already use), and retries
+  // once without wbs_node_id/activity_id/activity_name on a "column does not
+  // exist" error so a not-yet-migrated DB never loses the whole write.
+  async function doWrite(job) {
+    if (window.PDSync) return PDSync.write(job);
+    if (job.op === 'insert') {
+      var ires = await sb().from(job.table).insert(job.patch);
+      return ires.error ? { ok: false, error: ires.error }
+        : { ok: true, queued: false, id: ires.data && ires.data[0] && ires.data[0].id };
+    }
+    if (job.op === 'update') {
+      var ures = await sb().from(job.table).update(job.patch).eq('id', job.id);
+      return ures.error ? { ok: false, error: ures.error } : { ok: true, queued: false };
+    }
+    return { ok: false, error: { message: 'unsupported op ' + job.op } };
+  }
+  async function tolerantWrite(job) {
+    var w = await doWrite(job);
+    if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
+        job.patch && ('wbs_node_id' in job.patch || 'activity_id' in job.patch || 'activity_name' in job.patch)) {
+      var stripped = Object.assign({}, job.patch);
       delete stripped.wbs_node_id; delete stripped.activity_id; delete stripped.activity_name;
       if (!migrationWarned) {
         migrationWarned = true;
         UI.toast('Saved without the schedule-zone link — run the pending migration', 'warn');
       }
-      return await sb().from(TABLE).insert(stripped);
+      return await doWrite(Object.assign({}, job, { patch: stripped }));
     }
-    return res;
+    return w;
   }
 
   // ------------------------------------------------------- offline queue -----
-  // Site connectivity is unreliable, so a capture that can't upload right
-  // away is queued in IndexedDB (file blob + metadata) and retried when back
-  // online or on demand ("Sync now"). Plain indexedDB — no library, per the
-  // budget-conscious constraint.
+  // PDSync (offline.js) already queues DB row writes offline, but it has no
+  // concept of a Storage upload — it can't hold onto an unsent image blob. So
+  // a capture that can't even START uploading (offline, or the upload itself
+  // throws) is queued here instead: the file blob + metadata in IndexedDB,
+  // retried (upload THEN the row write via tolerantWrite) on reconnect or
+  // "Sync now". This is a deliberate, narrow addition on top of PDSync, not a
+  // competing offline system — once a file's bytes are on Storage, the row
+  // write always goes through the same tolerantWrite/PDSync path as any
+  // other insert.
   var OfflineQueue = (function () {
     var DB_NAME = 'pp_offline_v1', STORE = 'queue', dbp = null;
     function open() {
@@ -734,24 +991,33 @@ window.ProgressPhotos = (function () {
   }
 
   // Captures try to save immediately; a network failure (or being visibly
-  // offline) queues the file+metadata instead of losing the shot.
+  // offline) queues the file+metadata instead of losing the shot. Once the
+  // file is uploaded, the row write goes through tolerantWrite (PDSync) —
+  // which handles a network hiccup on JUST the row write on its own.
   async function saveCapture(file, meta) {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, blob: file, meta: meta, queued_at: new Date().toISOString() });
       await refreshQueueBadge();
       return { queued: true };
     }
+    var path;
     try {
-      var path = await uploadFile(file);
-      var row = Object.assign({}, meta, { project_id: pid, created_by: uid, photo_url: path, title: file.name });
-      var ins = await tolerantInsertPhoto(row);
-      if (ins.error) throw ins.error;
-      return { queued: false, ok: true };
+      path = await uploadFile(file);
     } catch (err) {
       await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, blob: file, meta: meta, queued_at: new Date().toISOString() });
       await refreshQueueBadge();
       return { queued: true };
     }
+    var row = Object.assign({}, meta, { project_id: pid, created_by: uid, photo_url: path, title: file.name });
+    var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
+    if (!w.ok) {
+      // The file IS already uploaded — queue just the row write (skips a
+      // redundant re-upload on retry) rather than losing the capture.
+      await OfflineQueue.add({ project_id: pid, created_by: uid, fileName: file.name, uploadedPath: path, meta: meta, queued_at: new Date().toISOString() });
+      await refreshQueueBadge();
+      return { queued: true, ok: false, error: w.error };
+    }
+    return { queued: !!w.queued, ok: true, id: w.id };
   }
 
   async function flushQueue() {
@@ -763,10 +1029,10 @@ window.ProgressPhotos = (function () {
     for (var i = 0; i < mine.length; i++) {
       var item = mine[i];
       try {
-        var path = await uploadFile(item.blob);
+        var path = item.uploadedPath || await uploadFile(item.blob);
         var row = Object.assign({}, item.meta, { project_id: item.project_id, created_by: item.created_by, photo_url: path, title: item.fileName });
-        var ins = await tolerantInsertPhoto(row);
-        if (ins.error) throw ins.error;
+        var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
+        if (!w.ok) throw (w.error || new Error('write failed'));
         await OfflineQueue.remove(item.qid);
         ok++;
       } catch (e) { fail++; }
@@ -778,6 +1044,7 @@ window.ProgressPhotos = (function () {
 
   // ----------------------------------------------------------- edit/delete ---
   function openForm(r) {
+    broadcastCollabSel(r.id, true);   // tell other viewers I'm editing this photo
     var html =
       '<div class="pd-modal-header"><h3>Edit photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
@@ -806,33 +1073,51 @@ window.ProgressPhotos = (function () {
     });
     wireWbsField('pp-e', true);   // existing label wins initially; only clears on a fresh zone pick
     hydrate(m.el);
+    // Clear the "editing this photo" cursor on every close path (× / Cancel).
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
+      b.onclick = function () { broadcastCollabSel(null); m.close(); };
+    });
     $('pp-e-save').onclick = async function () {
       this.disabled = true;
-      var wbsNodeId = $('pp-e-wbs').value || null;
+      var wbsNodeId = currentCascadeNodeId('pp-e') || null;
       var act = wbsNodeId ? resolveActivity(wbsNodeId) : null;
       var patch = {
         description: $('pp-e-desc').value.trim(),
         taken_at: $('pp-e-date').value || null,
         trade: $('pp-e-trade').value || null,
         works: $('pp-e-works').value.trim() || null,
-        location: $('pp-e-loc').value.trim() || null,
+        location: $('pp-e-loctxt').value.trim() || breadcrumbOf(wbsNodeId) || null,
         wbs_node_id: wbsNodeId,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp-e'),
         updated_at: new Date().toISOString()
       };
-      var res = await sb().from(TABLE).update(patch).eq('id', r.id);
-      if (res.error && /column .* does not exist|schema cache/i.test(res.error.message || '')) {
-        var stripped = Object.assign({}, patch);
-        delete stripped.wbs_node_id; delete stripped.activity_id; delete stripped.activity_name;
-        if (!migrationWarned) { migrationWarned = true; UI.toast('Saved without the schedule-zone link — run the pending migration', 'warn'); }
-        res = await sb().from(TABLE).update(stripped).eq('id', r.id);
-      }
-      if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
-      m.close(); UI.toast('Photo updated', 'ok');
-      await load();
+      // Offline-capable metadata edit: apply optimistically, then route through
+      // tolerantWrite (PDSync's field-level LWW outbox; queues offline and syncs
+      // on reconnect, and retries once without the schedule-link columns if the
+      // migration hasn't run). Only metadata changes here — the image is untouched.
+      Object.assign(r, patch);
+      broadcastCollabSel(null); m.close();
+      fillFilterOptions(); render();
+      var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: patch });
+      if (!w.ok) { UI.toast(w.error ? w.error.message : 'Save failed', 'error'); return; }
+      UI.toast(w.queued ? 'Saved on this device — will sync when you reconnect' : 'Photo updated', 'ok');
+      if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);
     };
+
+    // Autosave (metadata only — no re-upload involved): debounced re-use of the
+    // Save button's own handler, with the modal's close suppressed meanwhile.
+    if (window.Autosave) {
+      var asInd = document.createElement('span');
+      asInd.className = 'pd-autosave pd-autosave-idle';
+      asInd.textContent = 'Autosave on';
+      var hdr = m.el.querySelector('.pd-modal-header');
+      if (hdr) hdr.insertBefore(asInd, hdr.querySelector('.pd-modal-close'));
+      var as = Autosave.wire({ root: m.el, modal: m, saveBtn: $('pp-e-save'), indicator: asInd });
+      var _ppClose = m.close;
+      m.close = function () { as.cancel(); _ppClose(); };
+    }
   }
 
   async function remove(r) {
@@ -860,6 +1145,11 @@ window.ProgressPhotos = (function () {
   // project's schedule zones, ranked by recent capture history, each showing
   // its last photo + current activity, single-tap capture or multi-select
   // into a sequential walkthrough.
+  function refreshRoundsIfVisible() {
+    var h = document.getElementById('pp-screen-rounds');
+    if (h && !h.hidden) renderRounds();
+  }
+
   function renderRounds() {
     var host = $('pp-rounds-view');
     if (!host) return;

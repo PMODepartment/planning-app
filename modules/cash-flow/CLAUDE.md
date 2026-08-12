@@ -127,6 +127,28 @@ optional `val` weight fn; `scurveWeight()` picks it.
 - **Sidebar removed** (matches Project Schedule): `.cf-modback` back button in the topbar,
   full-width content; `UI.initShell()` no-ops with no sidebar.
 
+## Live collaboration + offline read (2026-07-27) — fmlozano
+Wired PDCollab + PDSync. Cash Flow is a **derived projection**, so the scope is **presence + editing
+indicator + live recompute + offline READ-cache** (writes stay online-only — see below).
+- **Presence + editing indicator:** `joinCollab()` (`key = cash_flow:<pid>`) with the multi-table
+  `opts.tables` = `cash_flow_settings` + `cash_flow_actuals` + `cash_flow_dp_tranches` +
+  `cash_flow_trade_packages`. Avatars in `#cf-presence`. There's no tabular row to flag, so the
+  "cursor" is the avatar **editing dot** — `openSettings`/`openActuals` broadcast `editing:true`
+  (`broadcastCollabSel`), cleared on every close path + on save.
+- **Live recompute:** any change to those four tables → a **debounced `loadAll(false)`** (500ms
+  coalesce, since `saveSettings` is a multi-row delete+insert → a burst of change events).
+- **Offline READ:** `loadAll()` caches a full snapshot (`cfSnapshot`) under `cf:<pid>` and, when
+  offline, restores it (`cfRestore`) + recomputes so the projection opens with no connection.
+- ⚠️ **Writes stay ONLINE-ONLY (deliberate):** `saveSettings` / `saveActuals` / `saveScenario` are
+  multi-table **bulk delete+insert keyed by `project_id`** (not `id`), so they don't fit PDSync's
+  id-based field-level LWW outbox — and assumptions are a desk activity, not field data entry. Each is
+  guarded on `navigator.onLine` with a clear toast. (WPM sync is already online + role-gated.)
+- **Migration `../../migrations/2026-07-27-realtime-collab-cash-flow.sql` (USER MUST RUN)** — adds the
+  four tables to `supabase_realtime` + `replica identity full`. Presence/editing/offline-read work
+  without it; only the live recompute stream needs it.
+- Verified: inline script parses. Live verification pending. Assets: `offline.js?v=20260726d` +
+  `collab.js?v=20260727a`.
+
 ## Verified
 - JS parses (`node --check`). Engine math hand-checked on a synthetic fixture:
   DP/billing-net/retention/terms lag land in the correct months and totals

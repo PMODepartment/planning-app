@@ -3,6 +3,12 @@
 -- Run this in the Supabase SQL Editor of the NEW planning project.
 -- All statements are idempotent (IF NOT EXISTS) and safe to re-run.
 --
+-- ⚠️ NOT the complete DB (audit 2026-07-21). This file is the Phase-1 base; many
+-- Phase-2 tables live only in /migrations (schedule/cash-flow/resource/PPR/WPM
+-- support tables). **For a complete one-paste build, use `supabase-setup.sql`** —
+-- it now folds in every Phase-2 table/column with project-scoped RLS. Otherwise
+-- run /migrations in date order after this file.
+--
 -- Conventions for module developers (see MODULE_CONTRACT.md):
 --   * Every module owns its own table(s), prefixed with the module key,
 --     e.g. risk_register, drawing_register, material_submittal.
@@ -109,18 +115,31 @@ create table if not exists issues_lessons (
   project_id  text references projects(id),
   type        text,                  -- Issue | Concern | Lesson Learned
   title       text,
-  description text,
+  description text,                  -- the ISSUE text (Power Apps "Issue:")
   category    text,
   severity    text,                  -- Low | Medium | High | Critical
-  status      text default 'Open',   -- Open | In Progress | Closed
+  status      text default 'Open',   -- Open | On Hold | Closed
   raised_by   text,
   date_raised date,
   resolution  text,
   date_closed date,
+  -- Power Apps "Issues & Concerns" fields (2026-07-17-issues-lessons.sql):
+  department        text,
+  champion          text,
+  caused_by         text,
+  corrective_action text,
+  date_presented    date,
+  date_resolved     date,
+  -- Lessons Learned (this module's addition) — captured on the issue itself:
+  lesson_learned    text,
+  lesson_category   text,
+  recommendation    text,
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
+create index if not exists issues_lessons_proj_date_idx
+  on issues_lessons (project_id, date_presented desc);
 
 -- 3) Contracts & Claims Register ---------------------------------------------
 create table if not exists contracts_claims (
@@ -167,13 +186,26 @@ create table if not exists stakeholder_map (
   id            uuid primary key default gen_random_uuid(),
   project_id    text references projects(id),
   name          text,
-  organization  text,
-  role_title    text,
-  category       text,               -- Internal | Client | Regulator | Vendor | Community
-  influence     text,                -- Low | Medium | High
-  interest      text,                -- Low | Medium | High
+  organization  text,                -- Institution (agency / company)
+  role_title    text,                -- Position (e.g. City Mayor)
+  category      text,                -- Sector: Government | Private
+  influence     text,                -- Impact rating 1-4 (capability to disrupt business)
+  interest      text,                -- Interest rating 1-4
   contact       text,
-  engagement    text,                -- engagement strategy / notes
+  engagement    text,                -- free-text engagement notes (optional)
+  -- corporate-BD methodology (2026-07-20-stakeholder-map-full.sql).
+  -- DERIVED, never stored: Importance(1st-4th)+Approach from Impact×Interest;
+  -- Engagement Strategy+Frequency from (target_rel - current_rel) gap.
+  stakeholder_group   text,          -- LGU | NGA | GOCC | Partners | Consultants | ...
+  title               text,          -- honorific / formal title
+  nickname            text,
+  birthday            date,
+  email               text,
+  current_rel         smallint,      -- Current Relationship 1-4
+  target_rel          smallint,      -- Target Relationship 1-4
+  primary_responsible text,
+  alternate           text,
+  gift_tier           text,
   created_by    uuid references users(id),
   created_at    timestamptz default now(),
   updated_at    timestamptz default now()
@@ -323,6 +355,41 @@ create table if not exists productivity_rates (
   created_at        timestamptz default now(),
   updated_at        timestamptz default now()
 );
+-- Productivity Monitoring (full module — supersedes the flat productivity_rates
+-- starter above). One row per trade + monthly Planned/Actual/BL0 manpower &
+-- output; rate/cumulative/variance are DERIVED in the app. See
+-- migrations/2026-07-20-productivity-rates-full.sql.
+create table if not exists productivity_activities (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     text references projects(id),
+  name           text not null,
+  category       text,
+  unit           text,
+  resource_type  text default 'Manpower',
+  resource_unit  text default 'pax',
+  subcontractor  text,
+  sort_order     numeric,
+  remarks        text,
+  created_by     uuid references users(id),
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now()
+);
+create table if not exists productivity_entries (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     text references projects(id),
+  activity_id    uuid references productivity_activities(id) on delete cascade,
+  period         date not null,
+  work_days      numeric,
+  mp_bl0 numeric, mp_planned numeric, mp_actual numeric,
+  qty_bl0 numeric, qty_planned numeric, qty_actual numeric,
+  remarks        text,
+  created_by     uuid references users(id),
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now()
+);
+create unique index if not exists productivity_entries_uq  on productivity_entries(activity_id, period);
+create index        if not exists productivity_entries_prj on productivity_entries(project_id, period);
+create index        if not exists productivity_act_prj     on productivity_activities(project_id, sort_order);
 
 -- Cash Flow ------------------------------------------------------------------
 create table if not exists cash_flow (
@@ -439,6 +506,14 @@ create or replace function is_approved() returns boolean
   select exists (select 1 from users u where u.id = auth.uid() and u.status = 'approved');
 $$;
 
+-- Helper: may the current user WRITE? Approved and NOT a 'viewer' (viewer is
+-- read-only per the roles model). Gates module-table insert/update/delete so a
+-- viewer can read every accessible project but change nothing.
+create or replace function is_writer() returns boolean
+  language sql stable security definer set search_path = public as $$
+  select exists (select 1 from users u where u.id = auth.uid() and u.status = 'approved' and u.role <> 'viewer');
+$$;
+
 -- Helper: may the current user access this project? Admins: all. Others: only
 -- projects listed in their users.projects array. This enforces the admin
 -- "Assign projects" feature at the database level.
@@ -498,17 +573,18 @@ begin
     'progress_photos','ppr_presentations','ppr_slides',
     'issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
-    'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve'
+    'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve',
+    'productivity_activities','productivity_entries'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I on %I', t||'_read', t);
     execute format('create policy %I on %I for select using (can_access_project(project_id))', t||'_read', t);
     execute format('drop policy if exists %I on %I', t||'_ins', t);
-    execute format('create policy %I on %I for insert with check (is_approved() and created_by = auth.uid() and can_access_project(project_id))', t||'_ins', t);
+    execute format('create policy %I on %I for insert with check (is_writer() and created_by = auth.uid() and can_access_project(project_id))', t||'_ins', t);
     execute format('drop policy if exists %I on %I', t||'_upd', t);
-    execute format('create policy %I on %I for update using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_upd', t);
+    execute format('create policy %I on %I for update using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin())) with check (is_writer() and can_access_project(project_id))', t||'_upd', t);
     execute format('drop policy if exists %I on %I', t||'_del', t);
-    execute format('create policy %I on %I for delete using (can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_del', t);
+    execute format('create policy %I on %I for delete using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()))', t||'_del', t);
   end loop;
 end $$;
 

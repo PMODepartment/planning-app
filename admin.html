@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
-  <script src="assets/js/theme.js?v=20260712"></script>
+  <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Admin · Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260716" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260812b" />
   <style>
     .pd-tabs { display:flex; gap:4px; border-bottom:1px solid var(--pd-line); margin-bottom:18px; }
     .pd-tab { padding:10px 16px; cursor:pointer; border-bottom:2px solid transparent; color:var(--pd-muted); font-weight:600; }
@@ -58,11 +58,11 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260712"></script>
-  <script src="assets/js/auth.js?v=20260712"></script>
-  <script src="assets/js/db.js?v=20260716"></script>
-  <script src="assets/js/ui.js?v=20260712"></script>
-  <script src="assets/js/icons.js?v=20260712"></script>
+  <script src="assets/js/config.js?v=20260812b"></script>
+  <script src="assets/js/auth.js?v=20260812b"></script>
+  <script src="assets/js/db.js?v=20260812b"></script>
+  <script src="assets/js/ui.js?v=20260812b"></script>
+  <script src="assets/js/icons.js?v=20260812b"></script>
   <script>
     var ME = null, ALL_PROJECTS = [];
 
@@ -181,9 +181,11 @@
     function confirmDeleteProject(p, parent) {
       var m = UI.modal(
         '<h2 style="margin-top:0;">Delete project '+Fmt.esc(p.id)+'?</h2>' +
-        '<p style="color:var(--pd-muted);">This cannot be undone. It only works if the project has ' +
-        '<b>no module data at all</b> — if any schedule, risk, cash-flow or other record exists the ' +
-        'delete is refused, and you should <b>Archive</b> instead (keeps the history).</p>' +
+        '<p style="color:var(--pd-muted);">This cannot be undone. It is refused while the project still ' +
+        'holds <b>real work</b> — a schedule, baseline, register, risk or cash-flow record — and the ' +
+        'error names what is blocking. Working calendars, audit history and derived data (S-curve, ' +
+        'roll-ups) are cleared automatically and never block. To keep the history instead, ' +
+        '<b>Archive</b>.</p>' +
         '<div class="pd-field"><label>Type <b>'+Fmt.esc(p.id)+'</b> to confirm</label>' +
         '<input class="pd-input" id="d-echo" autocomplete="off"></div>' +
         '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="d-cancel">Cancel</button> ' +

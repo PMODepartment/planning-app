@@ -2,8 +2,151 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Phase 1 correction: no preset hierarchy at all — pure dynamic WBS, code-inspected
+## first (2026-08-12)
+Owner's explicit correction after reviewing the real Schedule/WBS Manager: **every** preset tried so
+far (Location>Zone>Discipline/Trade, then Discipline/Trade>Tower>Level>Zone>Orientation) was still
+assuming a shape. A WBS has none — confirmed by inspecting Project Schedule's actual code before
+touching anything (not assumed): `wbs_nodes` is `{id, parent_id, code, name, sort_order}` with **no
+node-type/category column whatsoever** — nothing distinguishes "this node is a location" from "this
+node is a discipline" or a phase. Per-project depth and terminology are genuinely arbitrary.
+- **Removed `WBS_LEVEL_LABELS` entirely** — no more hardcoded per-level names, in either direction.
+  Each cascade `<select>` is now bare (no label above it) and shows real WBS data — the option text
+  is `"<code>  <name>"`, reusing **Project Schedule's own convention verbatim** (its Add-Activity WBS
+  dropdown, `wbsPickerOptions()`, formats options identically) rather than inventing a new one.
+- **The resolved path is now its own dedicated, read-only breadcrumb** (`.pp-wbscrumb`, painted by
+  `paintActCtx`) — e.g. `Construction › Construction Phase › Tower 1 › Structural Works ›
+  Superstructure › Ground Floor › Zone 1 › Vertical`, matching the exact 8-level Avesta example in
+  the brief. **The free-text "Location label" is no longer auto-filled from it** — it's a fully
+  independent, purely optional caption now, so it can never be mistaken for or silently replace the
+  structured WBS path (the breadcrumb is always visible regardless of what's typed there).
+- ⚠️ **The stored `location` text column still gets the breadcrumb as a fallback when Location
+  label is left blank** (`location: $('...-loctxt').value.trim() || breadcrumbOf(wbsNodeId) || null`)
+  — this is a deliberate, narrow exception to "never auto-fill the label the user sees": it keeps
+  search/List-View-Location/PPR display meaningful for the common case (no custom caption typed)
+  without ever touching what's shown in the editable input itself.
+- **Photos-page location filtering is now WBS-based, descendant-inclusive, per brief §13** —
+  `pp-f-location` is populated by `wbsFlatOptionsHTML()` (a full flattened, indented, code+name walk
+  of the whole tree, same convention as the cascade) instead of a distinct-text-values list. Picking
+  a node matches that node **or any descendant** (`isNodeUnder`, already built for `resolveActivity`)
+  — picking "Ground Floor" correctly returned photos captured at "Zone 1 › Vertical" several levels
+  under it in the harness, and correctly returned 0 for an unrelated sibling branch.
+- **No other behavior changed** — `resolveActivity`'s descendant matching, the offline blob queue,
+  `tolerantWrite`/PDSync routing, Rounds (still WBS-leaf + capture-history driven, no separate
+  location list), and the single `wbs_node_id` storage model were already correct per the brief's
+  core requirement (§19: `Photo → wbs_node_id`, no `level_id`/`area_id`/`zone_id`) — confirmed by
+  inspection, not rebuilt.
+- **No data migration** — every existing `wbs_node_id` value was already a valid FK reference; only
+  the picker's *display* logic changed, never what gets stored.
+- **Harness-verified against the brief's own 8-level Avesta example** (`Construction ›
+  Construction Phase › Tower 1 › Structural Works › Superstructure › Ground Floor › Zone 1 ›
+  Vertical/Horizontal`, plus a sibling `General Requirements` branch and a second `Zone 2` to prove
+  siblings/unrelated branches behave correctly): the cascade renders exactly 8 selects (no phantom
+  9th level) with codes matching `4.2.1.1.2.1.1.1`-style dotted numbers; each depth's options are
+  strictly that node's own children (verified depth 1 shows only `General Requirements`/`Construction
+  Phase`, depth 6 shows only `Zone 1`/`Zone 2`); the breadcrumb matches the brief's example
+  character-for-character; Location label stays empty through the whole drill-down; save persists
+  the breadcrumb into `location` as a fallback + `wbs_node_id`/`activity_id`/`activity_name`
+  correctly; the WBS filter is descendant-inclusive (Ground Floor → 2/2 photos) and correctly
+  excludes an unrelated branch (General Requirements → 0/2); Rounds lists all leaves with
+  unambiguous full paths. No console errors.
+
+## Location picker rebuilt as a generic N-level WBS cascade: Discipline/Trade > Tower >
+## Level > Zone > Orientation (2026-08-11c)
+Owner's explicit second follow-up: the preset flips again — Discipline/Trade is now the **top**
+tier (not a separate Activity-Code lookup layered on last, per the entry below), followed by
+**Tower > Level > Zone > Orientation**, five tiers total.
+- **Why this isn't an Activity Code any more:** a real schedule commonly puts discipline ABOVE the
+  spatial breakdown — `Structural Works > Tower A > Level 5 > Zone 2` and `Architectural Works >
+  Tower A > Level 5 > Zone 2` are two *different* WBS branches for the same physical space, not one
+  branch with a discipline tag. So Discipline/Trade is now **WBS depth 0**, read the exact same way
+  as Tower/Level/Zone/Orientation — no more `activity_code_types` name-matching, no more `discTag`/
+  `existingDiscId` round-trip. `DISC_TYPE`/`DISC_VALUES`/`WBS_LOCATIONS`/`zonesInLocation` are gone;
+  the generic Activity-Code overlay (for whatever *other*, unrelated code types a project has) is
+  back to iterating every type with no exclusion, since there's no special one to skip anymore.
+- **The picker is a fully generic N-level cascade**, not hardcoded to 3 or 5 selects:
+  `wbsCascadeHTML()` walks `wbsChildren()` one depth at a time, rendering one `<select>` per depth
+  up to wherever the real tree stops, labelled via `WBS_LEVEL_LABELS = ['Discipline/Trade', 'Tower',
+  'Level', 'Zone', 'Orientation']` (a depth beyond those five falls back to "Level N"; a shallower
+  branch — verified live: the Mechanical Works branch in the harness is only 4 deep — just doesn't
+  render a 5th select, it doesn't fabricate an empty "Orientation" nobody can pick). Picking a level
+  rebuilds every select from that depth down (`wireCascade` regenerates `#…-cascade`'s innerHTML and
+  rewires it) — the simplest robust way to keep n cascading `<select>`s in sync without a framework.
+- **A capture can stop at any depth** — "just this Tower" is a valid, deliberate choice, not an
+  error state. `currentCascadeNodeId()` reads the deepest select that actually has a value.
+  `resolveActivity()` correspondingly matches the picked node **or any of its descendants**
+  (`isNodeUnder`), so stopping at "Level 5" still surfaces whichever activity is happening somewhere
+  under it, instead of requiring the full 5-deep pick to find anything.
+- **`breadcrumbOf()`/`wbsLeaf()` now work for ANY node id**, not only registered leaves — needed
+  because a capture can legitimately target an intermediate depth. `WBS_LEAVES` (finest-grain nodes
+  only) is still what Rounds enumerates, unchanged.
+- ⚠️ **Labelling is positional (by depth), not by matching the node's real meaning** — if a
+  project's actual WBS doesn't follow this exact 5-tier order on some branch, a node still gets
+  whatever label its depth implies (e.g. a depth-1 node would read "Tower" even if it's actually
+  something else). This is cosmetic, not a data-integrity problem: the stored value is always the
+  real `wbs_node_id` the user actually clicked through to, correctly representing the tree — only
+  the on-screen label for that step could read oddly on an irregular branch. Noted rather than
+  solved: Project Schedule's own tooling (the "match WBS to locations" wizard) had to build
+  keyword-based matching for exactly this irregularity in a different context (bulk classification);
+  here the user is driving the cascade live and always sees the tree's real structure at each step,
+  so it doesn't need the same fix.
+- **Harness-verified against a 5-level tree built specifically to test the discipline-first
+  design**: two disciplines (Structural Works / Mechanical Works) each with their OWN `Tower A >
+  Level 5 > Zone 2` branch and a concurrent activity at each. Confirmed: the Edit modal reopens all
+  5 levels correctly pre-selected for a 5-deep photo; switching Discipline/Trade at depth 0 correctly
+  collapses and repopulates every deeper select; drilling through the Mechanical Works branch (only
+  4 deep) resolves to "MEP Rough-in" and correctly does **not** render a 5th "Orientation" select;
+  the Structural Works branch at the same Tower/Level/Zone names resolves to "Rebar Installation" —
+  proving the two same-named physical branches never cross-resolve; a full save persists
+  `location`/`wbs_node_id`/`activity_id`/`activity_name` correctly; Rounds still enumerates all 3
+  real leaves with distinguishing full breadcrumbs. No console errors.
+
+## Location picker restructured to the Location > Zone > Discipline/Trade preset (2026-08-11b)
+Owner's explicit follow-up to the Phase 1 entry below: pull location/zone/area/activity from
+Project Schedule on a **fixed 3-tier preset** rather than one flat WBS-leaf dropdown.
+- **Location = a top-level WBS node** (`WBS_LOCATIONS`, depth-0 — the physical/spatial root: a
+  building, site, tower). **Zone/Area = a WBS node under that Location** (`zonesInLocation()`) —
+  Zone and Area are treated as the same tier, since a project's `wbs_nodes` is the one spatial
+  hierarchy Project Schedule maintains; there's no separate "Area" table to pull from.
+- **Discipline/Trade is deliberately NOT a WBS depth** — disciplines cut *across* zones (structural
+  and MEP crews both work the same column grid), so it comes from the schedule's **Activity Codes**
+  instead: whichever code type is named like `/disciplin|trade/i` (planner-defined per project, the
+  same mechanism Project Schedule's own grouping/filtering already uses). If a project hasn't set
+  one up, that tier simply isn't offered — the picker still works as Location > Zone.
+- **Capture/Edit modals are now a real cascade**: pick Location → Zone options repopulate to that
+  Location's leaves (`zoneOptionsHTML`) → optional Discipline/Trade select. `resolveActivity(zoneId,
+  discValueId)` now also matches the activity's own `activity_codes[disciplineTypeId]`, so a zone
+  with two concurrent activities (e.g. Structural doing rebar, Mechanical doing rough-in at the same
+  column grid) resolves to the *right* one once a discipline is picked — verified in harness: without
+  a discipline both activities are candidates and the earliest-start In-Progress one wins; picking
+  "Mechanical" switches the resolved activity to the Mechanical one specifically.
+  `project_schedule` select now also pulls `activity_codes` (added to `loadSchedule()`).
+- **The Discipline/Trade pick is recorded as a tag** (`"<code type name>: <value>"`, e.g.
+  `"Discipline: Mechanical"`) via `discTag()`/`existingDiscId()` — same `"<type>: <value>"` shape as
+  the generic Activity-Code overlay, but it has its own dedicated select rather than a checkbox
+  since it's a required-feeling tier of the hierarchy, not an optional extra. The **generic overlay
+  now excludes** whichever code type resolved as Discipline/Trade, so it isn't offered twice.
+  Verified the full round-trip: save with Location=Site Grounds/Zone=Perimeter Fence/
+  Discipline=Mechanical → tag `"Discipline: Mechanical"` lands on the row → re-opening Edit
+  pre-selects Location/Zone/Discipline correctly (the reverse lookup).
+- **Existing progress-photos' own `trade` field is untouched** — deliberately did not let arbitrary
+  schedule discipline text overwrite it. `trade` mirrors the fixed WPM vocabulary shared with
+  Cash Flow/work-packages (a documented decision below); a schedule's Activity Code values are
+  planner-typed free text and could easily not match that vocabulary. Discipline/Trade from the
+  schedule is a separate, additional signal (tag + activity narrowing), not a replacement.
+- **Rounds screen unchanged in granularity** (still one row per Zone, not per Zone×Discipline) —
+  enumerating every zone/discipline combination would blow up the list for a modest UX gain: the
+  Discipline/Trade tier is still available inside the Capture modal opened from a Rounds row.
+  Flagged as a possible follow-up, not done here.
+- Harness-verified (two Locations, a real "Discipline" Activity Code type, two concurrent
+  activities at one zone tagged to different discipline values): Location→Zone cascade repopulates
+  correctly on Location change, Zone's own location auto-derived for pre-selection (Capture-from-
+  Rounds and Edit both preselect the right Location), discipline-narrowed activity resolution,
+  discipline auto-tag save + reverse-lookup on Edit, generic overlay correctly empty when Discipline
+  is the project's only code type, walkthrough chain unaffected. No console errors.
+
 ## Schedule App integration + streamlined capture — Phase 1 of the 6-phase 360°/BIM/drone
-## roadmap (2026-08-10)
+## roadmap (2026-08-11)
 
 Owner's brief specced a 6-phase roadmap (schedule integration → reporting → 360° panoramas →
 3D/measurements → BIM overlay → drone). Explicit instruction: audit the existing app and confirm
@@ -62,35 +205,105 @@ one ships. This entry is Phase 1 only — Phase 2 (report templates), Phase 3+ a
   warning once per session rather than losing the capture. Verified this path explicitly (forced a
   simulated missing-column error) — the photo still saves, just without the zone link, until the
   migration runs.
+- **Reconciled with the collaboration/offline-editing work already on `main`** (this branch was
+  originally built against an older snapshot — see below): rather than inventing a second, competing
+  offline system, new-capture uploads now go through a **narrow addition on top of the existing
+  `PDSync` outbox**, not around it —
+  - `PDSync` (offline.js) already queues DB row **writes**, but has no concept of a Storage
+    **upload**; it can't hold an unsent image blob. So a capture that can't even *start* uploading
+    (offline, or the upload call itself throws) is queued in a small **IndexedDB blob queue**
+    (`pp_offline_v1`) — file + metadata — retried (upload, then the row write) on reconnect or a
+    topbar **"N pending — Sync now"** button (auto-flushes on the browser's `online` event).
+  - Once a file's bytes are actually on Storage, the row write **always** goes through the same
+    `tolerantWrite()` → `PDSync.write()` path every other insert/update in this module now uses — a
+    transient network hiccup on just the row write is PDSync's problem to queue and retry, not a
+    second queue of mine. (If that write comes back permanently, `tolerantWrite` retries once
+    without the schedule-link columns for a not-yet-migrated DB; if it's still not `ok`, the file's
+    already uploaded, so it's re-queued as a row-write-only retry rather than re-uploading.)
+  - This **revises the "Upload (file) stays online-only" scope note** below (2026-07-26) — that was
+    the right call before schedule integration needed captures to survive going offline mid-
+    walkthrough (brief §4 requires it); it's superseded, not contradicted.
+- **Rounds stays live-consistent** with collaboration: hooked into the same `render()` that
+  `paintRemote()` already runs at the end of — so a teammate's capture (via `applyRemoteChange`) or
+  this device's own `load()` both refresh the visible Rounds list, not just the Photos grid.
 - **Deliberately not built this round**: Report Templates (brief §5/Phase 2), 360° capture (Phase
   3+). Rounds' "Recent vs Other" ranking is capture-history + WBS only — no separate "usual
   locations" list to hand-maintain, which was the actual ask in §4.
 
-### Verified (2026-08-10)
-Harness-verified (stubbed `AppAuth`/`PDb`/a hand-rolled Supabase-query-builder stub + `storage`,
-mutable in-memory store seeded with a 2-level WBS tree, two schedule activities, one Activity Code
-type, one pre-existing photo; no real credentials/backend touched; harness deleted after use).
-Confirmed **end-to-end, by driving the actual DOM** (not just reading the code): Rounds correctly
-splits Recent/Other and resolves the right activity per zone; the capture modal preselects the
-right WBS node, auto-fills the location label, shows the resolved activity, and shows the "last
-captured here" reference with thumbnail; a real upload (via a `DataTransfer`-injected `File`, no
-OS file dialog) saves and the Rounds list's "Last captured" date updates; the walkthrough chain
-advances 1-of-2 → 2-of-2 on Skip and stops cleanly on End; the offline queue catches a simulated
-upload failure, shows the pending badge, and Sync now flushes it; the migration-tolerant retry
-fires and still saves the photo when the new columns are simulated as missing; the Edit-photo
-modal preselects the existing zone/location correctly; the pre-existing Photos screen (filters,
-grouping, edit) is unaffected. **Bug caught and fixed by this testing** (not just code review): the
-Rounds list didn't refresh after a capture made while Rounds was the visible screen — `load()` now
-re-renders Rounds too when it's on screen, not just Photos.
+### Verified (2026-08-11)
+Harness-verified (stubbed `AppAuth`/`PDb`/a hand-rolled Supabase-query-builder stub + `storage` +
+minimal `PDSync`/`PDCollab`/`Autosave` stubs, mutable in-memory store seeded with a 2-level WBS
+tree, two schedule activities, one Activity Code type, one pre-existing photo; no real
+credentials/backend touched; harness deleted after use). Confirmed **end-to-end, by driving the
+actual DOM**: Rounds correctly splits Recent/Other and resolves the right activity per zone; the
+capture modal preselects the right WBS node, auto-fills the location label, shows the resolved
+activity, and shows the "last captured here" reference with thumbnail; a real upload (via a
+`DataTransfer`-injected `File`, no OS file dialog) saves through `tolerantWrite`/`PDSync.write` and
+the Rounds list's "Last captured" date updates live; the walkthrough chain advances 1-of-2 → 2-of-2
+on Skip and stops cleanly on End; the offline blob queue catches a simulated upload failure, shows
+the pending badge, and Sync now flushes it through the same write path; the migration-tolerant
+retry fires and still saves the photo when the new columns are simulated as missing; the Edit-photo
+modal preselects the existing zone/location correctly and still routes through `broadcastCollabSel`
++ Autosave unchanged; the pre-existing Photos screen (filters, grouping, live collaboration
+presence/row-cursor, edit) is unaffected.
 Screenshots weren't attempted (this session's Preview tool file:// pages don't reliably reload —
-tested and confirmed via a page-global marker that a second `navigate`/`location.reload()` to the
-same file:// URL doesn't re-execute JS); DOM/text verification was used instead, same as prior
-sessions' documented compositor-stall workaround.
+confirmed via a page-global marker that a second navigate/`location.reload()` to the same file://
+URL doesn't re-execute JS); DOM/text verification was used instead, same as this module's prior
+compositor-stall workaround.
 
 ### Pending
 - Migration must be run on the live DB (see above).
 - Live click-through against a real login + a real project with a WBS built in Project Schedule.
+- The offline **blob** queue (new-capture path) hasn't been exercised through a real DevTools-
+  offline cycle against live Supabase — same caveat the 2026-07-26 entry already notes for the
+  metadata-edit path.
 - Phase 2 (Report Templates) — not started.
+
+## Live collaboration + offline metadata edits (Phase 1 & 2) (2026-07-26) — fmlozano
+Wired the shared **PDCollab** (Realtime) + **PDSync** (offline outbox) layers. Progress Photos is the
+**"presence + live, offline-limited"** case: it's uploads, so photo *blobs* can't be queued offline —
+but presence, the live gallery stream, the row cursor and **metadata** edits all work.
+- **Phase 1 (presence + live gallery + row cursor):** `joinCollab()` on load / project switch
+  (`key = progress_photos:<pid>`). Topbar avatars (`#pp-presence`). `openForm(r)` broadcasts "editing
+  this photo"; every close path (×/Cancel/Save) clears it. `paintRemote()` (called at the end of
+  `render()`) flags the photo's `.pp-row .pp-thumbcell` (List) or `.pp-card .pp-cardimg` (Gallery) of
+  whoever has it open. `applyRemoteChange` patches `rows` from postgres_changes (INSERT/UPDATE/DELETE)
+  and re-renders — and **signs a newly-arrived photo's URL** (`signOne`) so the preview shows live.
+- **Phase 2 (offline, metadata only):** the **Edit modal save** routes through `PDSync.write`
+  (field-level LWW: description / trade / works / location / capture date), applied optimistically so
+  it survives offline and syncs on reconnect. **Read-offline:** `load()` caches rows (`pp:<pid>`) and
+  renders from cache on a failed fetch — but **signed image URLs can't be minted offline, so previews
+  show the placeholder**. ⚠️ **Scope:** **Upload (file), delete and download stay online-only** — image
+  blobs can't be queued and a delete removes a storage object. Offline covers **metadata edit + read**.
+- **Migration `../../migrations/2026-07-26-realtime-collab-progress-photos.sql` (USER MUST RUN)** —
+  adds `progress_photos` to `supabase_realtime` + `replica identity full`. Presence/cursors/offline
+  work without it; only the live-value stream needs it.
+- Verified: `node --check` (module.js + ppr.js). Assets: new `offline.js?v=20260726d` +
+  `collab.js?v=20260726c`; `module.js?v=20260726d`.
+- **LIVE-VERIFIED two-session (2026-07-27, deployed site, signed in as Fernando Lozano on GPR101).**
+  Migration confirmed applied — the module's channel reports `state:"joined"`. A simulated second user
+  (independent Supabase client, distinct id, same `collab:progress_photos:GPR101` channel) proved every
+  path against the real deployed module: **presence** roster rendered both avatars (FL + TU);
+  **live gallery** streamed a DB INSERT (0→1 live), UPDATE (description/trade patched live) and DELETE
+  (row removed live, 0); **row cursor** — user B's "editing this photo" painted the correct photo's
+  `.pp-thumbcell` with B's colour + "TU" flag, and it **survives subsequent live re-renders** (verified
+  by a follow-up UPDATE). No console errors; test row cleaned up (0 leftover).
+- ⚠️ **Leave-reconciliation caveat (all collab modules, not PP-specific):** a peer that disconnects
+  **abruptly** (killed socket, no clean websocket close) may leave a **stale avatar** on other clients
+  until they re-sync/reload — a fresh join shows the correct roster. A real browser-tab close sends a
+  clean close, so `collab.js`'s bound `leave` handler fires normally. Confirmed: after B's abrupt
+  disconnect, reloading tab A showed only FL server-side.
+- ⚠️ **Not exercised live:** the **offline** path (queue an edit with the network down → reconnect →
+  sync) — that needs a real offline cycle, which the console-driven harness can't fake convincingly.
+  The online metadata-save-through-PDSync path is exercised implicitly (write() does the same direct op
+  online). Worth a manual DevTools-offline pass.
+
+## Audit fix: paginate the photo load (2026-07-21)
+`load()` used a single `select('*')` (Supabase caps at 1000), so once a project's library exceeds
+1000 photos the excess were invisible in List/Gallery, unavailable to the PPR slide picker, and
+missed by bulk/Clear actions. Now **keyset-paginated** by `id`, then re-sorted in memory to the
+previous order (`taken_at` DESC blank-last → `sort_order` ASC NULLS-LAST). `signAll()` still batch-signs
+in one call. Verified: parses clean; Node test confirms the re-sort + full load. No migration, no `?v=` bump.
 
 ## Status
 - [x] Read MODULE_CONTRACT.md + CONTRIBUTING.md
@@ -102,6 +315,52 @@ sessions' documented compositor-stall workaround.
 - [x] `enabled: true` set in `assets/js/config.js`
 - [ ] PR opened into `main`
 - [x] **View PPRs** — PPR Presentations Database + slides viewer/editor + offline export
+
+## Clear-filters polish (2026-07-17)
+The app owner reported "Clear filters seems out of place." Root cause: the button lived in
+a `.pp-filt-right` wrapper with `margin-left:auto`, so when the filter row wrapped it was
+pushed onto a second line, orphaned at the far right — and it showed even on the empty
+state. Replaced with a subtle borderless **`.pp-clear`** ghost (× icon, muted, fills on
+hover) that sits **inline** after the filters and is **`hidden` unless a filter is
+actually set** (toggled in `render()` for Photos and `renderList()` for PPRs). Removed
+`.pp-filt-right`. Uses the new shared `x` icon in `icons.js`. Assets bumped `?v=20260717h`.
+
+## UI uniformity pass (2026-07-17)
+
+The module had been built with its own invented chrome. Realigned it to the suite's
+existing patterns (Drawing Register / Cash Flow / Project Schedule). **These rules are a
+copy of Drawing Register's — keep them in sync; don't re-invent.**
+
+What was actually wrong (each verified against the reference stylesheet, not eyeballed):
+- **The shared topbar rules were missing entirely.** `.pd-topbar`, `#user-bar`
+  (`margin-left:10px; padding-left:10px; border-left`) and `#pd-theme-toggle` (34×34) are
+  declared by all three reference modules; this one declared none of them, so the avatar
+  had no divider and the theme toggle was unsized.
+- **The filter bar wasn't a card** — the others are `--pd-card` + border + radius +
+  `8px 12px`. Ours was a bare flex row, which is what made it look unfinished.
+- **Tools were ad-hoc** (`padding:6px 9px`) instead of the uniform 34×34 transparent icon
+  buttons that fill on hover, with `.pp-tb-sep` dividers and one labelled primary action.
+- **Back button** was padding-based, not the 36×36 square.
+- **Project select** was a plain bordered select; the convention is borderless until
+  hover/focus (`.dr-project`), so the title area reads as one unit.
+- **Two invented tab styles.** Replaced: the Photos|PPRs switch is now a **segmented
+  `.pp-tabs`** (identical to Register/Progress), and List/Gallery now uses the **shared
+  `.pd-viewtoggle`/`.pd-vt`** component from `dashboard.css` (as `projects.html` does)
+  rather than a third bespoke style. `.pp-tab` therefore now means the *screen* tabs —
+  the view wiring selects `.pd-vt[data-view]`, not `.pp-tab`.
+- Count + view toggle moved into a static `.pp-listbar` (Drawing Register's `.dr-listbar`)
+  so they aren't rebuilt on every render; destructive actions use `--pd-bad`.
+- Added a **Clear filters** + **count** to the PPR screen for parity with Photos.
+
+**Verified by diffing computed styles against the real `drawing-register/module.css`**
+(both stylesheets inlined into an iframe at the same viewport/theme): all 10 chrome
+elements — back button, icon tool, primary button, active tab, project select, filter bar,
+user-bar divider, theme toggle, separator, count text — report **zero differences**.
+Behaviour re-verified after the restructure (view toggle, screen tabs not hijacked, live
+counts, per-screen tools, slides view hiding filters+count); light/dark surfaces flip on
+tokens while brand red stays fixed; title collapses to icon-only at ≤1150px; no page
+h-scroll at 375px (the photo table scrolls inside its own container: 341 visible / 998
+content).
 
 ## PPR Presentations built (2026-07-17)
 
@@ -219,7 +478,8 @@ signing round-trip per row — cached in `urlCache` and refreshed on reload.
   `sort_order` to `progress_photos` + a `(project_id, taken_at desc)` index. Idempotent;
   folded into `supabase-schema.sql`. **The module shows blank Trade/Works until it runs.**
 - `description` / `location` / `photo_url` / `taken_at` (capture date) already existed on
-  the starter table. `tags` is unused so far.
+  the starter table. `tags` (text[]) is now used by the 2026-08-11 Activity Code overlay
+  (`"<code type>: <value>"` strings) — see that entry.
 
 ## Notes / decisions
 - `UI.modal()` takes no width and does **not** wire close buttons, so the module has a

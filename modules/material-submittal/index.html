@@ -5,33 +5,91 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260712"></script>
-  <title>material-submittal · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260716" />
+  <script src="../../assets/js/theme.js?v=20260812b"></script>
+  <title>Material Submittal Log has moved · Planners Dashboard</title>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260812b" />
 </head>
+<!--
+  ============================================================================
+  MOVED — the Material Submittal Log now lives in the Engineering App.
+  ----------------------------------------------------------------------------
+  This page is a redirect stub, deliberately kept at the original path so any
+  bookmark, or a stale cached dashboard.html still listing this module, lands
+  somewhere that explains itself instead of 404ing.
+
+  ⚠️ The Engineering App runs on its OWN Supabase project, so it has a SEPARATE
+  login — a Planners Dashboard account does not work there until an Engineering
+  App admin approves it. That is why this interstitial exists rather than a bare
+  HTTP redirect: a silent bounce to a login screen reads as "the app logged me
+  out" and generates support calls.
+
+  `module.js` / `module.css` are intentionally still on disk beside this file,
+  unreferenced. They are the rollback path — restoring this module is reverting
+  one file. Delete them only once the Engineering App is validated in production.
+  ============================================================================
+-->
 <body>
-  <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Module</small></div>
-      <nav><a href="../../dashboard.html"><span class="pd-navico" data-ico="arrowLeft"></span>All modules</a></nav>
-    </aside>
-    <div class="pd-content">
-      <div class="pd-topbar"><h1>material-submittal</h1><div id="user-bar"></div></div>
-      <div class="pd-main">
-        <div class="pd-card">
-          <h2 style="margin-top:0;">Module in development</h2>
-          <p style="color:var(--pd-muted);">This module ("<strong>material-submittal</strong>") is assigned to a developer.
-          Build it here following <a href="../../MODULE_CONTRACT.md">MODULE_CONTRACT.md</a>.
-          Start by copying <code>modules/_template/</code>.</p>
-        </div>
+  <div class="pd-auth-wrap">
+    <div class="pd-auth-card" style="max-width:520px;">
+      <div class="pd-auth-logo">
+        <img class="pd-auth-mark" src="../../assets/img/favicon.png" alt="Megawide">
+        <div class="pd-brand">Material Submittal Log</div>
+        <small>has moved to the Engineering App</small>
+      </div>
+      <div class="pd-card" style="text-align:center;">
+        <p style="margin:0 0 14px;font-size:13.5px;line-height:1.6;">
+          The <strong>Material Submittal Log</strong> is now part of the
+          <strong>Megawide Engineering App</strong>, together with the Drawing
+          Register. Your project selection carries over.
+        </p>
+        <p style="margin:0 0 18px;font-size:12.5px;color:var(--pd-muted);line-height:1.6;">
+          The Engineering App has its own sign-in. If this is your first visit,
+          request access there and an administrator will approve your account.
+        </p>
+        <a class="pd-btn pd-btn-primary" id="go" href="#"
+           style="width:100%;justify-content:center;">Open the Engineering App</a>
+        <p style="margin:14px 0 0;font-size:12px;color:var(--pd-muted);">
+          Redirecting in <span id="count">5</span>s…
+          <a href="#" id="stay">Stay here</a>
+        </p>
+        <p style="margin:12px 0 0;font-size:12.5px;">
+          <a href="../../dashboard.html">← Back to Planners Dashboard</a>
+        </p>
       </div>
     </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js?v=20260712"></script>
-  <script src="../../assets/js/auth.js?v=20260712"></script>
-  <script src="../../assets/js/db.js?v=20260716"></script>
-  <script src="../../assets/js/ui.js?v=20260712"></script>
-  <script>AppAuth.requireLogin(function (u, p) { UI.renderUserBar(p); });</script>
+
+  <script>
+  (function () {
+    // Single place to change if the Engineering App moves.
+    var ENGINEERING_APP = 'https://pmodepartment.github.io/engineering-app/';
+    var MODULE_PATH = 'modules/material-submittal/index.html';
+
+    // Carry the project context across. Both apps are served from the same
+    // origin (pmodepartment.github.io), so sessionStorage is genuinely shared
+    // and the Engineering App will already see `pd_project`. The query string
+    // is a belt-and-braces fallback for a different host or a fresh tab.
+    var pid = '';
+    try { pid = sessionStorage.getItem('pd_project') || ''; } catch (e) {}
+    var url = ENGINEERING_APP + MODULE_PATH + (pid ? '?project=' + encodeURIComponent(pid) : '');
+
+    document.getElementById('go').href = url;
+
+    var left = 5, timer = setInterval(function () {
+      left--;
+      var el = document.getElementById('count');
+      if (el) el.textContent = left;
+      if (left <= 0) { clearInterval(timer); location.href = url; }
+    }, 1000);
+
+    // An auto-redirect a user cannot stop is hostile when they arrived by
+    // mistake, or want to copy the link rather than follow it.
+    document.getElementById('stay').onclick = function (e) {
+      e.preventDefault();
+      clearInterval(timer);
+      this.parentNode.innerHTML = 'Redirect cancelled — use the button above when ready.';
+    };
+  })();
+  </script>
 </body>
 </html>

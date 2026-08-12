@@ -93,20 +93,32 @@
 
   // ---- Connectivity indicator (pure UI; no caching risk) ----
   function offlineBadge() {
-    var ID = 'pd-offline-badge';
-    function upd() {
+    var ID = 'pd-offline-badge', _pdFlush = false;
+    function render(msg, color) {
       var el = document.getElementById(ID);
-      if (!navigator.onLine) {
-        if (!el) {
-          el = document.createElement('div'); el.id = ID;
-          el.textContent = 'Offline — showing last-loaded data; changes won’t save until you reconnect.';
-          el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:99999;background:#B45309;color:#fff;padding:7px 14px;border-radius:999px;font:600 12px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:92vw;text-align:center;';
-          document.body.appendChild(el);
-        }
-        el.style.display = 'block';
-      } else if (el) { el.style.display = 'none'; }
+      if (!msg) { if (el) el.style.display = 'none'; return; }
+      if (!el) {
+        el = document.createElement('div'); el.id = ID;
+        el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:99999;color:#fff;padding:7px 14px;border-radius:999px;font:600 12px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:92vw;text-align:center;';
+        document.body.appendChild(el);
+      }
+      el.textContent = msg; el.style.background = color; el.style.display = 'block';
     }
-    window.addEventListener('online', upd); window.addEventListener('offline', upd); upd();
+    function upd() {
+      // On modules that opted into offline editing (PDSync present), the message is accurate:
+      // edits are queued locally and synced on reconnect. Elsewhere, keep the conservative text.
+      var sync = window.PDSync, pending = sync ? sync.pendingCount() : 0;
+      if (!navigator.onLine) {
+        render(sync
+          ? ('Offline — your edits are saved on this device' + (pending ? ' (' + pending + ' pending)' : '') + ' and will sync when you reconnect.')
+          : 'Offline — showing last-loaded data; changes won’t save until you reconnect.', '#B45309');
+      } else if (sync && (pending > 0 || _pdFlush)) {
+        render('Syncing ' + pending + ' change' + (pending === 1 ? '' : 's') + '…', '#1a73e8');
+      } else { render(null); }
+    }
+    window.addEventListener('online', upd); window.addEventListener('offline', upd);
+    if (window.PDSync && window.PDSync.onStatus) window.PDSync.onStatus(function (st) { _pdFlush = st.flushing; upd(); });
+    upd();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', offlineBadge);
   else offlineBadge();

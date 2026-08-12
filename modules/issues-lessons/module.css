@@ -1,0 +1,240 @@
+/* ============================================================================
+   Issues, Concerns & Lessons Learned — module styles
+   All surfaces/text/borders use the shared --pd-* tokens so dark mode adapts
+   automatically (module contract §4). Only semantic accents are fixed colours.
+   Chrome rules mirror Progress Photos / Drawing Register / Cash Flow so the
+   module chrome is uniform across the suite — keep them in sync.
+   ============================================================================ */
+
+.pd-content { width: 100%; }
+
+/* ---- Shell / topbar ------------------------------------------------------ */
+.pd-topbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 8px; }
+.pd-topbar #user-bar {
+  margin-left: 10px; padding-left: 10px;
+  border-left: 1px solid var(--pd-line); flex: none;
+}
+.pd-topbar #pd-theme-toggle {
+  width: 34px; height: 34px; padding: 0; margin-left: 4px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.il-modback {
+  width: 36px; height: 36px; padding: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.il-title { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; overflow: hidden; }
+.il-title .il-title-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.il-title-ico { color: var(--pd-red); vertical-align: -3px; margin-right: 2px; }
+
+/* Project context — borderless until hover */
+.il-projctx { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
+.il-project {
+  max-width: 230px; min-width: 120px; height: 34px; font-weight: 600; font-size: 13px;
+  background: transparent; border-color: transparent;
+}
+.il-project:hover, .il-project:focus { background: var(--pd-card); border-color: var(--pd-line); }
+
+/* Screen tabs — segmented */
+.il-tabs {
+  display: inline-flex; border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); overflow: hidden; flex: none;
+}
+.il-tab {
+  border: 0; background: var(--pd-card); color: var(--pd-ink);
+  padding: 6px 14px; font-weight: 600; font-size: 13px; cursor: pointer;
+  font-family: var(--pd-font); transition: background .12s; white-space: nowrap;
+}
+.il-tab + .il-tab { border-left: 1px solid var(--pd-line); }
+.il-tab:hover:not(.active) { background: var(--pd-bg); }
+.il-tab.active { background: var(--pd-red); color: #fff; }
+
+/* Tool cluster */
+.il-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.il-topbar-tools .pd-btn {
+  height: 34px; width: 34px; padding: 0; font-size: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border-color: transparent;
+}
+.il-topbar-tools .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
+.il-topbar-tools .pd-btn.il-tb-labeled { width: auto; padding: 0 12px; gap: 6px; }
+.il-topbar-tools .pd-btn.pd-btn-primary {
+  background: var(--pd-red); border-color: var(--pd-red); color: #fff;
+}
+.il-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
+.il-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
+
+/* ---- Filter bar ---------------------------------------------------------- */
+.il-filters {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px;
+  background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); padding: 8px 12px;
+}
+.il-filt-ico { color: var(--pd-muted); flex: none; }
+.il-filters .pd-input, .il-filters .pd-select { height: 34px; font-size: 13px; }
+.il-filters .il-search { flex: 1 1 280px; min-width: 180px; }
+.il-filters .pd-select { flex: 0 0 auto; max-width: 190px; }
+/* Clear filters: subtle borderless ghost, only shown when a filter is active */
+.il-clear {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  height: 34px; padding: 0 10px; font-size: 12px; font-weight: 500;
+  color: var(--pd-muted); background: transparent;
+  border: 0; border-radius: var(--pd-radius); cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.il-clear:hover { background: var(--pd-bg); color: var(--pd-ink); }
+.il-clear[hidden] { display: none; }
+
+/* ---- KPIs ---------------------------------------------------------------- */
+.il-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
+.il-kpis-2 { grid-template-columns: repeat(3, 1fr); }
+.il-kpi {
+  background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); padding: 14px 16px;
+}
+.il-kpi-val { font-size: 26px; font-weight: 800; line-height: 1; }
+.il-kpi-label { color: var(--pd-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; margin-top: 6px; }
+.il-kpi.is-open .il-kpi-val { color: var(--pd-bad); }
+.il-kpi.is-hold .il-kpi-val { color: var(--pd-warn); }
+.il-kpi.is-closed .il-kpi-val { color: #16a34a; }
+
+/* ---- Issues table -------------------------------------------------------- */
+.il-table { min-width: 980px; }
+.il-table th { white-space: nowrap; }
+.il-table td { vertical-align: top; }
+.il-cell-wrap { max-width: 320px; white-space: normal; }
+.il-cell-num { color: var(--pd-muted); font-variant-numeric: tabular-nums; }
+.il-clip {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.il-champ { font-size: 13px; white-space: normal; max-width: 150px; }
+.il-lessontag {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 6px;
+  font-size: 11px; font-weight: 600; color: var(--pd-red);
+}
+.il-lessontag .pd-ico { color: var(--pd-red); }
+
+/* Status pill */
+.il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: 12px; color: #fff; white-space: nowrap; }
+.il-pill.is-open   { background: #dc2626; }
+.il-pill.is-hold   { background: #d97706; }
+.il-pill.is-closed { background: #16a34a; }
+
+/* Aging emphasis */
+.il-aging { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.il-aging.is-hot { color: var(--pd-bad); font-weight: 700; }
+
+.il-rowacts { white-space: nowrap; }
+.il-iconbtn {
+  width: 30px; height: 30px; padding: 0; border: 1px solid var(--pd-line);
+  background: var(--pd-card); border-radius: var(--pd-radius); cursor: pointer;
+  color: var(--pd-ink); font-size: 14px; line-height: 1;
+}
+.il-iconbtn:hover { background: var(--pd-bg); }
+.il-iconbtn.is-danger:hover { color: var(--pd-bad); border-color: var(--pd-bad); }
+
+/* ---- Lessons library ----------------------------------------------------- */
+.il-lead {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; margin-bottom: 14px;
+}
+.il-lead-ico { color: var(--pd-red); flex: none; margin-top: 2px; }
+.il-lead-sub { color: var(--pd-muted); font-size: 13px; display: block; margin-top: 3px; }
+
+.il-lessons { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.il-lcard {
+  background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); box-shadow: var(--pd-shadow);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+}
+.il-lcard-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.il-chip {
+  font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+  padding: 2px 9px; border-radius: 999px; background: var(--pd-bg);
+  color: var(--pd-muted); border: 1px solid var(--pd-line);
+}
+.il-chip.is-cat { background: var(--pd-red); color: #fff; border-color: var(--pd-red); }
+.il-lcard-date { margin-left: auto; color: var(--pd-muted); font-size: 12px; }
+.il-lcard-lesson { font-size: 14px; line-height: 1.45; }
+.il-lcard-rec {
+  font-size: 13px; color: var(--pd-ink); background: var(--pd-bg);
+  border-left: 3px solid var(--pd-red); border-radius: 4px; padding: 8px 10px;
+}
+.il-lcard-rec b { color: var(--pd-red); }
+.il-lcard-src {
+  border-top: 1px dashed var(--pd-line); padding-top: 8px; margin-top: 2px;
+  font-size: 12px; color: var(--pd-muted);
+}
+.il-lcard-src .il-src-issue { color: var(--pd-ink); }
+.il-lcard-open {
+  align-self: flex-start; margin-top: 2px; background: transparent; border: 0;
+  color: var(--pd-red); font-weight: 600; font-size: 12px; cursor: pointer; padding: 0;
+}
+.il-lcard-open:hover { text-decoration: underline; }
+
+/* ---- Empty states -------------------------------------------------------- */
+.il-empty { padding: 40px 24px; text-align: center; color: var(--pd-muted); }
+.il-empty .pd-ico { color: var(--pd-line); }
+.il-empty-title { margin-top: 10px; font-size: 15px; color: var(--pd-ink); }
+
+/* ---- Modal form ---------------------------------------------------------- */
+.il-form-sec {
+  margin: 14px 0 4px; font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--pd-muted);
+  border-bottom: 1px solid var(--pd-line); padding-bottom: 4px;
+}
+.il-form-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.il-form-row > .pd-field { flex: 1 1 160px; }
+
+@media (max-width: 1000px) { .il-kpis { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 820px) {
+  .il-kpis, .il-kpis-2 { grid-template-columns: repeat(2, 1fr); }
+  .il-filters .il-search { flex: 1 1 100%; }
+  .il-title-txt { display: none; }
+}
+
+/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
+   Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets) comes
+   from dashboard.css. The issues register is an 11-column table with
+   min-width:980px — side-scrolling a table that wide on a phone is unusable,
+   so below 700px each ROW BECOMES A CARD: thead hidden, cells stacked and
+   labelled from data-l (set in module.js).
+
+   NOTE: the table also carries the shared `.pd-table` class, whose phone rule
+   makes it a nowrap horizontal scroller. These selectors are deliberately
+   written as `.pd-table.il-table` / `.il-table td` so they outrank it —
+   dropping the `.pd-table` qualifier here silently restores side-scrolling.
+   -------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  .pd-table.il-table { display: block; min-width: 0; overflow-x: visible; white-space: normal; background: none; }
+  .il-table thead { display: none; }
+  .il-table tbody { display: block; }
+  .il-table tr {
+    display: block; margin-bottom: 10px; padding: 12px;
+    background: var(--pd-card); border: 1px solid var(--pd-line);
+    border-radius: var(--pd-radius); box-shadow: var(--pd-shadow);
+  }
+  .il-table tr:hover td { background: none; }
+  .il-table td {
+    display: block; border: 0; padding: 3px 0;
+    white-space: normal; max-width: none; font-size: 13px;
+  }
+  .il-table td[data-l]::before {
+    content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: 12px;
+  }
+  /* The issue text is the headline of the card, not a labelled field. */
+  .il-table td.il-cell-issue { font-size: 14px; font-weight: 600; padding-bottom: 6px; }
+  .il-table td.il-cell-issue::before { content: none; }
+  .il-table td.il-cell-issue .il-clip { -webkit-line-clamp: 4; }
+  /* Row number reads as a card index, kept small and unlabelled. */
+  .il-table td.il-cell-num { font-size: 11px; color: var(--pd-muted); }
+  .il-table td.il-cell-num::before { content: "#"; }
+  .il-table td.il-rowacts { display: flex; gap: 8px; margin-top: 8px; }
+  .il-iconbtn { width: 42px; height: 42px; font-size: 16px; }
+  /* An empty-state row spans the card, not a phantom column. */
+  .il-table td[colspan] { text-align: center; }
+
+  .il-filters { flex-wrap: wrap; gap: 8px; }
+  .il-filters > * { flex: 1 1 100%; min-width: 0; }
+  .il-kpis, .il-kpis-2 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .il-lessons { grid-template-columns: 1fr; }
+}
