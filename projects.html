@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
-  <script src="assets/js/theme.js?v=20260726d"></script>
+  <script src="assets/js/theme.js?v=20260812a"></script>
   <title>Projects — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260806b" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260812a" />
 </head>
 <body>
   <div class="pd-app">
@@ -28,22 +28,23 @@
       <div class="pd-topbar">
         <img class="pd-topbar-mark" src="assets/img/favicon.png" alt="Megawide" />
         <h1>Projects</h1>
-        <button class="pd-ws-context" id="ws-context" type="button" title="Current workspace scope">
-          <span class="pd-ws-context-ic" data-ico="org" data-ico-size="18"></span>
-          <span class="pd-ws-context-txt"><strong id="ws-context-name">Corporate Root</strong><small id="ws-context-sub">All workspaces</small></span>
+        <button class="pd-ws-context" id="gh-context" type="button" title="Current group head filter">
+          <span class="pd-ws-context-ic" data-ico="group" data-ico-size="18"></span>
+          <span class="pd-ws-context-txt"><strong id="gh-context-name">All Projects</strong><small id="gh-context-sub">Every group head</small></span>
         </button>
         <div id="user-bar"></div>
       </div>
 
       <div class="pd-main pd-proj-shell">
-        <!-- Left: workspace tree -->
+        <!-- Left: group heads. Flat by design — a group head is a TAG, not a
+             tree node, so this list is a filter, not a hierarchy to drill. -->
         <aside class="pd-tree-pane">
           <div class="pd-tree-head">
-            <span>Workspaces</span>
-            <button class="pd-icon-btn" id="add-ws" title="Add workspace / program" style="display:none;"><span data-ico="plus" data-ico-size="18"></span></button>
+            <span>Group Heads</span>
+            <button class="pd-icon-btn" id="add-gh" title="Add group head" style="display:none;"><span data-ico="plus" data-ico-size="18"></span></button>
           </div>
-          <div class="pd-tree-search"><input class="pd-input pd-input-sm" id="tree-search" placeholder="Search workspaces…" /></div>
-          <div class="pd-tree" id="ws-tree"></div>
+          <div class="pd-tree-search"><input class="pd-input pd-input-sm" id="gh-search" placeholder="Search group heads…" /></div>
+          <div class="pd-tree" id="gh-list"></div>
         </aside>
 
         <!-- Right: projects -->
@@ -54,12 +55,24 @@
                 <button class="pd-btn pd-btn-primary" id="add-btn"><span data-ico="plus" data-ico-size="16"></span> Add <span data-ico="chevronDown" data-ico-size="14"></span></button>
                 <div class="pd-add-menu" id="add-menu">
                   <button data-add="project">New Project</button>
-                  <button data-add="workspace">New Workspace / Program</button>
+                  <button data-add="grouphead">New Group Head</button>
                 </div>
               </div>
               <span class="pd-proj-count" id="proj-count"></span>
             </div>
             <div class="pd-toolbar-right">
+              <select class="pd-select pd-input-sm" id="group-by" title="Group projects by">
+                <option value="grouphead">Group by: Group Head</option>
+                <option value="status">Group by: Status</option>
+                <option value="none">Group by: None</option>
+              </select>
+              <select class="pd-select pd-input-sm" id="sort-by" title="Sort projects by">
+                <option value="name">Sort: Name</option>
+                <option value="grouphead">Sort: Group Head</option>
+                <option value="id">Sort: ID</option>
+                <option value="finish">Sort: Forecast Finish</option>
+                <option value="budget">Sort: Original Budget</option>
+              </select>
               <input class="pd-input pd-input-sm" id="proj-search" placeholder="Search projects…" />
               <div class="pd-viewtoggle" role="group" aria-label="View">
                 <button class="pd-vt active" id="vt-list" title="List view"><span data-ico="listView" data-ico-size="16"></span></button>
@@ -74,16 +87,20 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260724a"></script>
-  <script src="assets/js/auth.js?v=20260724a"></script>
-  <script src="assets/js/db.js?v=20260724a"></script>
-  <script src="assets/js/ui.js?v=20260724a"></script>
-  <script src="assets/js/icons.js?v=20260804a"></script>
+  <script src="assets/js/config.js?v=20260812a"></script>
+  <script src="assets/js/auth.js?v=20260812a"></script>
+  <script src="assets/js/db.js?v=20260812a"></script>
+  <script src="assets/js/ui.js?v=20260812a"></script>
+  <script src="assets/js/icons.js?v=20260812a"></script>
   <script>
   (function () {
-    var WS = [], PROJ = [], wsById = {}, childrenMap = {};
-    var selectedWs = null;          // current workspace scope (null = all)
-    var view = 'list';
+    // A project carries ONE group_head_id. There is no tree: sorting, filtering
+    // and grouping by group head is the whole structure. `NONE` is a real
+    // bucket, not a hidden state — an unassigned project must stay reachable.
+    var NONE = '__nogh__';
+    var GH = [], PROJ = [], ghById = {};
+    var selectedGh = null;          // null = all group heads
+    var view = 'list', groupBy = 'grouphead', sortBy = 'name';
     var canWrite = false;
     var IS_ADMIN = false;           // archive/delete are admin-only (also enforced in DB)
 
@@ -97,145 +114,187 @@
       }
       if (canWrite) {
         document.getElementById('add-wrap').style.display = '';
-        document.getElementById('add-ws').style.display = '';
+        document.getElementById('add-gh').style.display = '';
       }
       boot();
     });
 
     async function boot() {
       try {
-        var res = await Promise.all([PDb.getWorkspaces(), PDb.getProjects()]);
-        WS = res[0]; PROJ = res[1];
+        var res = await Promise.all([PDb.getGroupHeads(), PDb.getProjects()]);
+        GH = res[0]; PROJ = res[1];
       } catch (e) { UI.toast('Load failed: ' + e.message, 'error'); return; }
-      WS.forEach(function (w) {
-        wsById[w.id] = w;
-        (childrenMap[w.parent_id] = childrenMap[w.parent_id] || []).push(w);
-      });
-      renderTree();
+      indexGh();
+      renderGhList();
       render();
       wireToolbar();
     }
 
-    // ---- Workspace tree helpers ----
-    function rootNodes() { return childrenMap['null'] || childrenMap[null] || WS.filter(function (w) { return !w.parent_id; }); }
-    function childrenOf(id) { return childrenMap[id] || []; }
-    function descendantIds(id) {
-      var out = [id], stack = [id];
-      while (stack.length) {
-        var cur = stack.pop();
-        childrenOf(cur).forEach(function (c) { out.push(c.id); stack.push(c.id); });
-      }
-      return out;
+    function indexGh() { ghById = {}; GH.forEach(function (g) { ghById[g.id] = g; }); }
+
+    // The one resolver every view uses. A project's group head is its own tag —
+    // there is no ancestry to walk any more.
+    function ghIdOf(p) { return p.group_head_id || NONE; }
+    function ghNameOf(p) {
+      var g = ghById[p.group_head_id];
+      return g ? g.name : (p.group_head_id ? p.group_head_id : null);
     }
-    function pathOf(id) {
-      var names = [], cur = wsById[id];
-      while (cur) { names.unshift(cur.name); cur = cur.parent_id ? wsById[cur.parent_id] : null; }
-      return names;
+    function ghLabel(id) {
+      if (id === NONE) return '— No group head —';
+      var g = ghById[id]; return g ? g.name : id;
     }
-    function resolveGroupHead(p) {
-      if (p.group_head) return p.group_head;
-      var cur = p.workspace_id ? wsById[p.workspace_id] : null;
-      while (cur) { if (cur.group_head) return cur.group_head; cur = cur.parent_id ? wsById[cur.parent_id] : null; }
-      return null;
+    function countFor(id) {
+      return PROJ.filter(function (p) { return ghIdOf(p) === id; }).length;
     }
 
-    function renderTree() {
-      var q = (document.getElementById('tree-search').value || '').toLowerCase();
-      var host = document.getElementById('ws-tree');
-      function nodeHtml(w, depth) {
-        var kids = childrenOf(w.id);
-        var typeIc = Icons.svg(w.node_type === 'group' ? 'group' : (w.node_type === 'program' ? 'program' : 'workspace'), 15);
-        var match = !q || w.name.toLowerCase().indexOf(q) !== -1;
-        var kidHtml = kids.map(function (k) { return nodeHtml(k, depth + 1); }).join('');
-        if (q && !match && kidHtml.indexOf('pd-tree-node') === -1) return '';
-        var cls = 'pd-tree-node' + (selectedWs === w.id ? ' active' : '') + (match ? '' : ' dim');
-        return '<div class="' + cls + '" data-ws="' + w.id + '" style="padding-left:' + (8 + depth * 14) + 'px;">' +
-          '<span class="pd-tree-ic">' + typeIc + '</span>' +
-          '<span class="pd-tree-name">' + Fmt.esc(w.name) + '</span>' +
-          // Until now nothing opened workspaceModal with an existing node, so there was no way to
-          // edit — or delete — a workspace/program once created. Gear reveals on hover/selection.
-          (canWrite ? '<button class="pd-tree-edit" data-wsedit="' + Fmt.esc(w.id) + '" title="Edit ' + Fmt.esc(w.node_type || 'workspace') + ' (rename, move, delete)">' + Icons.svg('settings', 13) + '</button>' : '') +
-          '<span class="pd-tree-count">' + countInScope(w.id) + '</span></div>' + kidHtml;
+    // ---- Group-head list (left pane) ----
+    function renderGhList() {
+      var q = (document.getElementById('gh-search').value || '').toLowerCase();
+      var host = document.getElementById('gh-list');
+      function row(id, label, count, extraCls) {
+        var cls = 'pd-tree-node' + (selectedGh === id ? ' active' : '') + (extraCls || '');
+        return '<div class="' + cls + '" data-gh="' + Fmt.esc(id) + '" style="padding-left:8px;">' +
+          '<span class="pd-tree-ic">' + Icons.svg(id === '__all__' ? 'org' : 'group', 15) + '</span>' +
+          '<span class="pd-tree-name">' + Fmt.esc(label) + '</span>' +
+          // Inactive group heads are retired, not deleted — projects assigned to
+          // one keep working and stay visible, so the row must still render.
+          (canWrite && id !== '__all__' && id !== NONE
+            ? '<button class="pd-tree-edit" data-ghedit="' + Fmt.esc(id) + '" title="Edit group head (rename, retire, delete)">' + Icons.svg('settings', 13) + '</button>' : '') +
+          '<span class="pd-tree-count">' + count + '</span></div>';
       }
-      var html = '<div class="pd-tree-node' + (selectedWs === null ? ' active' : '') + '" data-ws="__all__" style="padding-left:8px;">' +
-        '<span class="pd-tree-ic">' + Icons.svg('org', 15) + '</span><span class="pd-tree-name">All Projects</span>' +
-        '<span class="pd-tree-count">' + PROJ.length + '</span></div>';
-      html += rootNodes().map(function (w) { return nodeHtml(w, 0); }).join('');
+      var html = row('__all__', 'All Projects', PROJ.length);
+      GH.slice().sort(function (a, b) {
+        return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name));
+      }).forEach(function (g) {
+        if (q && g.name.toLowerCase().indexOf(q) === -1) return;
+        html += row(g.id, g.name + (g.active === false ? ' (inactive)' : ''), countFor(g.id), g.active === false ? ' dim' : '');
+      });
+      var nUn = countFor(NONE);
+      if (nUn && !q) html += row(NONE, '— No group head —', nUn);
       host.innerHTML = html;
-      host.querySelectorAll('[data-ws]').forEach(function (el) {
+
+      host.querySelectorAll('[data-gh]').forEach(function (el) {
         el.onclick = function () {
-          var id = el.dataset.ws;
-          selectedWs = (id === '__all__') ? null : id;
-          updateContext();
-          renderTree(); render();
+          var id = el.dataset.gh;
+          selectedGh = (id === '__all__') ? null : id;
+          updateContext(); renderGhList(); render();
         };
       });
-      // Must stop propagation — the gear sits inside the [data-ws] row, whose click selects.
-      host.querySelectorAll('[data-wsedit]').forEach(function (b) {
-        b.onclick = function (e) { e.stopPropagation(); workspaceModal(wsById[b.dataset.wsedit]); };
+      // Must stop propagation — the gear sits inside the [data-gh] row, whose click filters.
+      host.querySelectorAll('[data-ghedit]').forEach(function (b) {
+        b.onclick = function (e) { e.stopPropagation(); groupHeadModal(ghById[b.dataset.ghedit]); };
       });
     }
-    function countInScope(wsId) {
-      var ids = descendantIds(wsId);
-      return PROJ.filter(function (p) { return ids.indexOf(p.workspace_id) !== -1; }).length;
-    }
+
     function updateContext() {
-      var n = document.getElementById('ws-context-name'), s = document.getElementById('ws-context-sub');
-      if (selectedWs === null) { n.textContent = 'Corporate Root'; s.textContent = 'All workspaces'; }
-      else { var w = wsById[selectedWs]; n.textContent = w.name; s.textContent = pathOf(w.id).slice(0, -1).join(' › ') || w.node_type; }
+      var n = document.getElementById('gh-context-name'), s = document.getElementById('gh-context-sub');
+      if (selectedGh === null) { n.textContent = 'All Projects'; s.textContent = 'Every group head'; }
+      else { n.textContent = ghLabel(selectedGh); s.textContent = countFor(selectedGh) + ' project' + (countFor(selectedGh) === 1 ? '' : 's'); }
     }
 
-    // ---- Projects in current scope + search ----
+    // ---- Projects in scope + search + sort ----
     function projectsInScope() {
       var q = (document.getElementById('proj-search').value || '').toLowerCase();
       var list = PROJ.slice();
-      if (selectedWs !== null) {
-        var ids = descendantIds(selectedWs);
-        list = list.filter(function (p) { return ids.indexOf(p.workspace_id) !== -1; });
-      }
+      if (selectedGh !== null) list = list.filter(function (p) { return ghIdOf(p) === selectedGh; });
       if (q) list = list.filter(function (p) {
         return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1;
       });
-      return list;
+      return sortList(list);
     }
 
-    function statusPill(s) {
-      s = (s || 'active').toLowerCase();
-      var cls = s === 'archived' ? 'pd-pill-muted' : 'pd-pill-ok';
-      return '<span class="pd-pill ' + cls + '">' + Fmt.esc(s.charAt(0).toUpperCase() + s.slice(1)) + '</span>';
+    function sortList(list) {
+      // Blanks sort last in every mode — an empty budget or finish date is
+      // unknown, not zero/earliest.
+      function s(v) { return (v == null || v === '') ? null : v; }
+      var cmp = {
+        name: function (a, b) { return String(a.name || a.id).localeCompare(String(b.name || b.id)); },
+        id: function (a, b) { return String(a.id).localeCompare(String(b.id)); },
+        grouphead: function (a, b) {
+          var x = ghNameOf(a), y = ghNameOf(b);
+          if (!x && !y) return cmp.name(a, b);
+          if (!x) return 1; if (!y) return -1;
+          return x.localeCompare(y) || cmp.name(a, b);
+        },
+        finish: function (a, b) {
+          var x = s(a.forecast_finish || a.end_date), y = s(b.forecast_finish || b.end_date);
+          if (!x && !y) return cmp.name(a, b);
+          if (!x) return 1; if (!y) return -1;
+          return String(x).localeCompare(String(y));
+        },
+        budget: function (a, b) {
+          var x = s(a.original_budget), y = s(b.original_budget);
+          if (x == null && y == null) return cmp.name(a, b);
+          if (x == null) return 1; if (y == null) return -1;
+          return Number(y) - Number(x);   // largest first
+        },
+      }[sortBy] || cmp.name;
+      return list.sort(cmp);
+    }
+
+    function statusPill(st) {
+      st = (st || 'active').toLowerCase();
+      var cls = st === 'archived' ? 'pd-pill-muted' : 'pd-pill-ok';
+      return '<span class="pd-pill ' + cls + '">' + Fmt.esc(st.charAt(0).toUpperCase() + st.slice(1)) + '</span>';
     }
 
     function render() {
       var list = projectsInScope();
       document.getElementById('proj-count').textContent = list.length + (list.length === 1 ? ' project' : ' projects');
       var area = document.getElementById('proj-area');
-      if (!list.length) { area.innerHTML = '<div class="pd-empty">No projects in this workspace yet.' + (canWrite ? ' Use <strong>+ Add</strong> to create one.' : '') + '</div>'; return; }
+      if (!list.length) {
+        area.innerHTML = '<div class="pd-empty">No projects' + (selectedGh !== null ? ' for this group head' : '') + ' yet.' +
+          (canWrite ? ' Use <strong>+ Add</strong> to create one.' : '') + '</div>';
+        return;
+      }
       view === 'cards' ? renderCards(area, list) : renderList(area, list);
       area.querySelectorAll('[data-open]').forEach(function (el) {
         el.onclick = function () { openProject(el.dataset.open); };
       });
     }
 
+    // Grouping key + label share one function per mode so a group's header can
+    // never disagree with the rows filed under it.
+    function groupKeyOf(p) {
+      if (groupBy === 'status') return (p.status || 'active').toLowerCase();
+      if (groupBy === 'none') return '__all__';
+      return ghIdOf(p);
+    }
+    function groupLabelOf(k) {
+      if (groupBy === 'status') return k.charAt(0).toUpperCase() + k.slice(1);
+      if (groupBy === 'none') return 'All Projects';
+      return ghLabel(k);
+    }
+
     function renderList(area, list) {
-      // group by workspace
-      var groups = {};
-      list.forEach(function (p) { (groups[p.workspace_id || '__none__'] = groups[p.workspace_id || '__none__'] || []).push(p); });
-      var keys = Object.keys(groups).sort(function (a, b) {
-        return (pathOf(a).join('/') || 'zzz').localeCompare(pathOf(b).join('/') || 'zzz');
+      var groups = {}, order = [];
+      list.forEach(function (p) {
+        var k = groupKeyOf(p);
+        if (!groups[k]) { groups[k] = []; order.push(k); }
+        groups[k].push(p);
       });
+      // The unassigned bucket always sits last; everything else keeps the sort's
+      // own order of first appearance.
+      order.sort(function (a, b) {
+        if (a === NONE) return 1; if (b === NONE) return -1;
+        return groupLabelOf(a).localeCompare(groupLabelOf(b));
+      });
+
+      var cols = canWrite ? 8 : 7;
       var rows = '<table class="pd-table pd-proj-table"><thead><tr>' +
         '<th>Name</th><th>ID</th><th>Status</th><th>Group Head</th><th>Forecast Start</th><th>Forecast Finish</th><th class="num">Original Budget</th>' +
         (canWrite ? '<th></th>' : '') + '</tr></thead><tbody>';
-      keys.forEach(function (k) {
-        var w = wsById[k];
-        var label = w ? ((w.code ? w.code + ' - ' : '') + w.name) : 'Unassigned';
-        rows += '<tr class="pd-group-row"><td colspan="' + (canWrite ? 8 : 7) + '">' + Fmt.esc(label) + '</td></tr>';
+      order.forEach(function (k) {
+        if (groupBy !== 'none') {
+          rows += '<tr class="pd-group-row"><td colspan="' + cols + '">' + Fmt.esc(groupLabelOf(k)) +
+            ' <span class="pd-tree-count">' + groups[k].length + '</span></td></tr>';
+        }
         groups[k].forEach(function (p) {
           rows += '<tr class="pd-proj-row" data-open="' + Fmt.esc(p.id) + '">' +
             '<td class="pd-proj-name"><span class="pd-proj-ic">' + Icons.svg('project', 16) + '</span>' + Fmt.esc(p.name) + '</td>' +
             '<td><code>' + Fmt.esc(p.id) + '</code></td>' +
             '<td>' + statusPill(p.status) + '</td>' +
-            '<td>' + Fmt.esc(resolveGroupHead(p) || '—') + '</td>' +
+            '<td>' + Fmt.esc(ghNameOf(p) || '—') + '</td>' +
             '<td>' + Fmt.date(p.forecast_start || p.start_date) + '</td>' +
             '<td>' + Fmt.date(p.forecast_finish || p.end_date) + '</td>' +
             '<td class="num">' + (p.original_budget != null ? Fmt.moneyShort(p.original_budget) : '—') + '</td>' +
@@ -252,15 +311,13 @@
 
     function renderCards(area, list) {
       area.innerHTML = '<div class="pd-proj-cards">' + list.map(function (p) {
-        var gh = resolveGroupHead(p);
-        var w = p.workspace_id ? wsById[p.workspace_id] : null;
         return '<div class="pd-proj-card" data-open="' + Fmt.esc(p.id) + '">' +
           '<div class="pd-proj-card-top"><span class="pd-proj-ic">' + Icons.svg('project', 22) + '</span>' + statusPill(p.status) + '</div>' +
           '<div class="pd-proj-card-title">' + Fmt.esc(p.name) + '</div>' +
           '<div class="pd-proj-card-id"><code>' + Fmt.esc(p.id) + '</code></div>' +
           '<div class="pd-proj-card-meta">' +
-            '<div><span>Group Head</span>' + Fmt.esc(gh || '—') + '</div>' +
-            '<div><span>Workspace</span>' + Fmt.esc(w ? w.name : '—') + '</div>' +
+            '<div><span>Group Head</span>' + Fmt.esc(ghNameOf(p) || '—') + '</div>' +
+            '<div><span>Forecast Finish</span>' + Fmt.date(p.forecast_finish || p.end_date) + '</div>' +
           '</div>' +
           (p.location ? '<div class="pd-proj-card-loc">' + Icons.svg('mapPin', 13) + ' ' + Fmt.esc(p.location) + '</div>' : '') +
         '</div>';
@@ -272,14 +329,16 @@
       if (!p) return;
       sessionStorage.setItem('pd_project', p.id);
       sessionStorage.setItem('pd_project_name', p.name || p.id);
-      sessionStorage.setItem('pd_workspace', p.workspace_id || '');
+      sessionStorage.setItem('pd_group_head', p.group_head_id || '');
       location.href = 'dashboard.html';
     }
 
     // ---- Toolbar wiring ----
     function wireToolbar() {
       document.getElementById('proj-search').oninput = render;
-      document.getElementById('tree-search').oninput = renderTree;
+      document.getElementById('gh-search').oninput = renderGhList;
+      document.getElementById('group-by').onchange = function () { groupBy = this.value; render(); };
+      document.getElementById('sort-by').onchange = function () { sortBy = this.value; render(); };
       document.getElementById('vt-list').onclick = function () { view = 'list'; setVt(); render(); };
       document.getElementById('vt-cards').onclick = function () { view = 'cards'; setVt(); render(); };
       if (canWrite) {
@@ -287,9 +346,9 @@
         btn.onclick = function (e) { e.stopPropagation(); menu.classList.toggle('open'); };
         document.addEventListener('click', function (e) { if (!menu.contains(e.target) && e.target !== btn) menu.classList.remove('open'); });
         menu.querySelectorAll('[data-add]').forEach(function (b) {
-          b.onclick = function () { menu.classList.remove('open'); b.dataset.add === 'project' ? projectModal(null) : workspaceModal(null); };
+          b.onclick = function () { menu.classList.remove('open'); b.dataset.add === 'project' ? projectModal(null) : groupHeadModal(null); };
         });
-        document.getElementById('add-ws').onclick = function () { workspaceModal(null); };
+        document.getElementById('add-gh').onclick = function () { groupHeadModal(null); };
       }
     }
     function setVt() {
@@ -298,22 +357,33 @@
     }
 
     // ---- Add / edit Project ----
-    function wsOptions(sel) {
-      return WS.map(function (w) {
-        var indent = pathOf(w.id).length - 1;
-        return '<option value="' + Fmt.esc(w.id) + '"' + (sel === w.id ? ' selected' : '') + '>' +
-          (Array(indent + 1).join('— ')) + Fmt.esc(w.name) + (w.node_type !== 'workspace' ? ' (' + w.node_type + ')' : '') + '</option>';
-      }).join('');
+    // An inactive group head still appears when it is the project's CURRENT
+    // value — otherwise the select would silently fall back to the first option
+    // and saving would reassign the project without anyone asking for it.
+    function ghOptions(cur) {
+      var seen = {};
+      var opts = GH.filter(function (g) { return g.active !== false || g.id === cur; })
+        .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)); })
+        .map(function (g) {
+          seen[g.id] = 1;
+          return '<option value="' + Fmt.esc(g.id) + '"' + (cur === g.id ? ' selected' : '') + '>' +
+            Fmt.esc(g.name) + (g.active === false ? ' (inactive)' : '') + '</option>';
+        });
+      if (cur && !seen[cur]) opts.unshift('<option value="' + Fmt.esc(cur) + '" selected>' + Fmt.esc(cur) + '</option>');
+      return opts.join('');
     }
+
     function projectModal(p) {
       var isNew = !p; p = p || {};
+      // A new project defaults to whichever group head is currently filtered —
+      // the common case is "add another project to the group I'm looking at".
+      var ghCur = p.group_head_id || (selectedGh && selectedGh !== NONE ? selectedGh : '');
       var m = UI.modal(
         '<h2 style="margin-top:0;">' + (isNew ? 'New Project' : 'Edit Project') + '</h2>' +
         '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Project ID' + (isNew ? ' (e.g. AVR101)' : '') + '</label><input class="pd-input" id="p-id" value="' + Fmt.esc(p.id) + '"' + (isNew ? '' : ' disabled') + '></div>' +
         '<div class="pd-field" style="flex:1;"><label>Status</label><select class="pd-select" id="p-status">' + ['active', 'archived'].map(function (s) { return '<option' + (p.status === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div></div>' +
         '<div class="pd-field"><label>Name</label><input class="pd-input" id="p-name" value="' + Fmt.esc(p.name) + '"></div>' +
-        '<div class="pd-field"><label>Workspace / Program</label><select class="pd-select" id="p-ws"><option value="">— Unassigned —</option>' + wsOptions(p.workspace_id || selectedWs) + '</select></div>' +
-        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Group Head <small>(blank = inherit from workspace)</small></label><input class="pd-input" id="p-gh" value="' + Fmt.esc(p.group_head) + '"></div>' +
+        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Group Head</label><select class="pd-select" id="p-gh"><option value="">— Unassigned —</option>' + ghOptions(ghCur) + '</select></div>' +
         '<div class="pd-field" style="flex:1;"><label>Location</label><input class="pd-input" id="p-loc" value="' + Fmt.esc(p.location) + '"></div></div>' +
         '<div class="pd-field"><label>Description</label><input class="pd-input" id="p-desc" value="' + Fmt.esc(p.description) + '"></div>' +
         '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Forecast Start</label><input class="pd-input" type="date" id="p-fs" value="' + (p.forecast_start || '') + '"></div>' +
@@ -344,8 +414,7 @@
         var data = {
           name: m.el.querySelector('#p-name').value.trim(),
           status: m.el.querySelector('#p-status').value,
-          workspace_id: m.el.querySelector('#p-ws').value || null,
-          group_head: m.el.querySelector('#p-gh').value.trim() || null,
+          group_head_id: m.el.querySelector('#p-gh').value || null,
           location: m.el.querySelector('#p-loc').value.trim() || null,
           description: m.el.querySelector('#p-desc').value.trim() || null,
           forecast_start: m.el.querySelector('#p-fs').value || null,
@@ -366,8 +435,8 @@
 
     // ---- Delete confirmations (admin) ----
     // Both deletes are hard and unguarded by any undo, so the id must be typed
-    // to arm the button. The DB refuses a non-empty project / non-leaf workspace
-    // and returns a message naming what's blocking — shown verbatim.
+    // to arm the button. The DB refuses a non-empty project / an in-use group
+    // head and returns a message naming what's blocking — shown verbatim.
     function confirmDelete(opts) {
       var m = UI.modal(
         '<h2 style="margin-top:0;">' + Fmt.esc(opts.title) + '</h2>' +
@@ -401,60 +470,58 @@
       });
     }
 
-    function deleteWorkspaceModal(w, parent) {
+    function deleteGroupHeadModal(g, parent) {
       confirmDelete({
-        id: w.id, parent: parent, title: 'Delete ' + Fmt.esc(w.node_type || 'workspace') + ' ' + Fmt.esc(w.id) + '?',
-        body: 'This cannot be undone. It only works if nothing hangs off this node — any child ' +
-              'workspace, program or project must be moved or removed first.',
-        ok: 'Workspace deleted',
-        run: function () { return PDb.deleteWorkspace(w.id); },
+        id: g.id, parent: parent, title: 'Delete group head ' + Fmt.esc(g.id) + '?',
+        body: 'This cannot be undone. It only works if <b>no project is still assigned</b> to this ' +
+              'group head. To retire one that has history, untick <b>Active</b> instead — it stops ' +
+              'appearing as a choice on new projects but keeps every existing assignment readable.',
+        ok: 'Group head deleted',
+        run: function () { return PDb.deleteGroupHead(g.id); },
       });
     }
 
-    // ---- Add / edit Workspace ----
-    function workspaceModal(w) {
-      var isNew = !w; w = w || {};
+    // ---- Add / edit Group Head ----
+    function groupHeadModal(g) {
+      var isNew = !g; g = g || {};
       var m = UI.modal(
-        '<h2 style="margin-top:0;">' + (isNew ? 'New Workspace / Program' : 'Edit Workspace') + '</h2>' +
-        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>ID' + (isNew ? ' (e.g. OPS)' : '') + '</label><input class="pd-input" id="w-id" value="' + Fmt.esc(w.id) + '"' + (isNew ? '' : ' disabled') + '></div>' +
-        '<div class="pd-field" style="flex:1;"><label>Code</label><input class="pd-input" id="w-code" value="' + Fmt.esc(w.code) + '"></div></div>' +
-        '<div class="pd-field"><label>Name</label><input class="pd-input" id="w-name" value="' + Fmt.esc(w.name) + '"></div>' +
-        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Type</label><select class="pd-select" id="w-type">' + ['workspace', 'program', 'group'].map(function (t) { return '<option' + (w.node_type === t ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></div>' +
-        '<div class="pd-field" style="flex:1;"><label>Parent</label><select class="pd-select" id="w-parent"><option value="">— Root —</option>' + wsOptions(w.parent_id) + '</select></div></div>' +
-        '<div class="pd-field"><label>Group Head <small>(for group nodes — the assignment basis)</small></label><input class="pd-input" id="w-gh" value="' + Fmt.esc(w.group_head) + '"></div>' +
+        '<h2 style="margin-top:0;">' + (isNew ? 'New Group Head' : 'Edit Group Head') + '</h2>' +
+        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>ID' + (isNew ? ' (e.g. CALIMAG)' : '') + '</label><input class="pd-input" id="g-id" value="' + Fmt.esc(g.id) + '"' + (isNew ? '' : ' disabled') + '></div>' +
+        '<div class="pd-field" style="flex:1;"><label>Sort order</label><input class="pd-input" type="number" id="g-sort" value="' + (g.sort_order != null ? g.sort_order : 0) + '"></div></div>' +
+        '<div class="pd-field"><label>Name</label><input class="pd-input" id="g-name" value="' + Fmt.esc(g.name) + '"></div>' +
+        '<div class="pd-field"><label><input type="checkbox" id="g-active"' + (g.active === false ? '' : ' checked') + '> Active <small>(uncheck to retire — existing projects keep their assignment)</small></label></div>' +
         '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">' +
         (isNew || !IS_ADMIN ? '<div style="flex:1;"></div>' :
-          '<button class="pd-btn pd-btn-danger" id="w-del">Delete…</button><div style="flex:1;"></div>') +
-        '<button class="pd-btn" id="w-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="w-save">Save</button></div>');
-      m.el.querySelector('#w-cancel').onclick = m.close;
+          '<button class="pd-btn pd-btn-danger" id="g-del">Delete…</button><div style="flex:1;"></div>') +
+        '<button class="pd-btn" id="g-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="g-save">Save</button></div>');
+      m.el.querySelector('#g-cancel').onclick = m.close;
       if (!isNew && IS_ADMIN) {
-        m.el.querySelector('#w-del').onclick = function () { deleteWorkspaceModal(w, m); };
+        m.el.querySelector('#g-del').onclick = function () { deleteGroupHeadModal(g, m); };
       }
-      m.el.querySelector('#w-save').onclick = async function () {
+      m.el.querySelector('#g-save').onclick = async function () {
         var data = {
-          name: m.el.querySelector('#w-name').value.trim(),
-          code: m.el.querySelector('#w-code').value.trim() || null,
-          node_type: m.el.querySelector('#w-type').value,
-          parent_id: m.el.querySelector('#w-parent').value || null,
-          group_head: m.el.querySelector('#w-gh').value.trim() || null,
+          name: m.el.querySelector('#g-name').value.trim(),
+          sort_order: Number(m.el.querySelector('#g-sort').value || 0),
+          active: m.el.querySelector('#g-active').checked,
         };
         if (!data.name) { UI.toast('Name required', 'warn'); return; }
         try {
           if (isNew) {
-            var id = m.el.querySelector('#w-id').value.trim();
+            var id = m.el.querySelector('#g-id').value.trim().toUpperCase();
             if (!id) { UI.toast('ID required', 'warn'); return; }
-            data.id = id; await PDb.createWorkspace(data);
-          } else { await PDb.updateWorkspace(w.id, data); }
+            data.id = id; await PDb.createGroupHead(data);
+          } else { await PDb.updateGroupHead(g.id, data); }
           UI.toast('Saved', 'ok'); m.close(); await reloadData();
         } catch (e) { UI.toast(e.message, 'error'); }
       };
     }
 
     async function reloadData() {
-      WS = await PDb.getWorkspaces(); PROJ = await PDb.getProjects();
-      wsById = {}; childrenMap = {};
-      WS.forEach(function (w) { wsById[w.id] = w; (childrenMap[w.parent_id] = childrenMap[w.parent_id] || []).push(w); });
-      renderTree(); render();
+      GH = await PDb.getGroupHeads(); PROJ = await PDb.getProjects();
+      indexGh();
+      // A group head that was just deleted must not stay as a dangling filter.
+      if (selectedGh && selectedGh !== NONE && !ghById[selectedGh]) selectedGh = null;
+      updateContext(); renderGhList(); render();
     }
   })();
   </script>
