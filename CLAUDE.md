@@ -77,6 +77,59 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-12 — Projects page UI pass: 4 real bugs (2 of them mine) + grouped card view
+User: improve the group-head side panel, the card view "is not working as well", and clearing the
+search doesn't refresh the list — and keep both apps consistent. **Reproduced every claim in a
+harness before changing anything**, which is what turned three vague complaints into four specific
+defects and disproved one of my own guesses.
+
+**Harness.** Rebuilt the gitignored `_ui_test.html` pattern: a generator inlines the REAL
+`projects.html` markup/script + the real `dashboard.css` + `icons.js`, stubbing only the backend
+(`AppAuth`/`PDb`/`UI`/`Fmt`/`Perm`/`Nav`) against a 19-project fixture mirroring live data. So the
+logic under test is the shipped logic. ⚠️ It only executes **inside the project folder** — the
+preview pane renders files outside it as static snapshots with no JS.
+
+**The four defects:**
+1. ⚠️ **Clearing the search left the list filtered.** Only `oninput` was wired, but the native clear
+   (×) and Esc fire **`search`/`change`, not `input`**. Measured: 19 → 1 on typing, and **still 1**
+   after a native clear. Now binds all three events, and the inputs are `type="search"` so the
+   native affordance exists at all.
+2. ⚠️ **Card view silently discarded the Group-by selection** — it rendered one flat run of 19 cards
+   while the list view grouped. Not a wiring fault (the toggle worked: 19 cards rendered), which is
+   why "not working" needed reproducing rather than believing. Both views now build from **one**
+   `groupProjects()`, so they cannot disagree; asserted by comparing the two group sequences —
+   `groupsAgree: true`.
+3. ⚠️ **"All Projects" was NEVER highlighted — my regression from the workspace rewrite.** Its row id
+   is `'__all__'` while the scope variable is `null`, so `selectedGh === id` never matched and the
+   default scope had no visual state at all. Fixed by normalising the two spellings of "nothing
+   selected" before comparing.
+4. ⚠️ **`.pd-tree-node.active .pd-tree-count { background:#fff }`** — a hardcoded white chip that
+   reads as a glaring blob on the dark active row. **Defect 3 was hiding it**: there was never an
+   active row to measure, and my first contrast probe crashed on a null element because of it.
+
+**UI work:** uppercase eyebrow + group-head total on the pane header; separators marking "All
+Projects" (a scope reset) and "— No group head —" (a different kind of row) off from the real group
+heads; zero-count pills dimmed without dimming the row (an *inactive* group head dims the whole row —
+the two states must not look alike); an empty state for a non-matching pane search; grouped card
+sections with a header + rule; cards given a budget/finish meta row that wraps instead of colliding.
+
+**Verified by measurement at 1440 / 375, both themes, both apps** (screenshots are unusable here —
+the documented stalled compositor): no page h-scroll; 270px sticky pane with a 16px gutter; 3 card
+columns desktop / 1 phone; **0** clipped meta values; active-row contrast **13.45 dark / 14.25
+light**, pill **12.22 / 16.3**; planning keeps its edit gear on the 6 group-head rows and **not** on
+All / No-group-head; the engineering build stays read-only.
+- ⚠️ **Caught a regression I introduced during that pass**: `position:sticky` on the pane is right on
+  desktop but pins a **355px block** to the top of a phone, where the shell stacks to a column. Now
+  gated `min-width: 861px` to match the existing stack breakpoint. Scope rows also went 34px → the
+  suite's 44px touch minimum below 700px.
+- ⚠️ **Viewport emulation desyncs after a navigate** — one run reported `innerWidth 1306` while the
+  ≤700px media queries were applying, and `pageHScroll 931` was an artifact of that, not a defect.
+  **Gate every responsive measurement on innerWidth agreeing with the matched media query**, and
+  re-assert the viewport (or reload) before trusting a number.
+- Shared `dashboard.css` is **byte-identical across the two apps** after the change (asserted), and
+  both `projects.html` parse. `?v=` bumped to `20260812b` across all 32 HTML files in both apps.
+
+
 ### 2026-08-12 — Migrations run: live schema verified, and a production outage window closed
 User ran all three migrations. Verified against the live databases and the deployed sites rather than
 trusting the success messages.
