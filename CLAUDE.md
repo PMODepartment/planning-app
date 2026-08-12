@@ -77,6 +77,52 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-12 — Migrations run: live schema verified, and a production outage window closed
+User ran all three migrations. Verified against the live databases and the deployed sites rather than
+trusting the success messages.
+
+⚠️ **The migrations opened a real outage on the deployed Planners Dashboard, now closed.** GitHub Pages
+serves `main`, but this change had been pushed to `fix-privilege-escalation` — so production was still
+running the OLD build (`getWorkspaces`, `projects.workspace_id`) against a database where the migration
+had just **dropped both**. Confirmed by curl, not assumed: the deployed `db.js` contained
+`getWorkspaces` and no `getGroupHeads`. **Lesson: a destructive migration and the code that depends on
+it must reach production together — check which branch Pages actually deploys BEFORE telling anyone to
+run the SQL.** The Engineering App was unaffected (it had gone to `main` normally).
+- **Resolved by merging to `main`.** The blocker from last session was gone — the security commit had
+  already landed on main via **PR #11** — so the only thing on main that this branch lacked was a newer
+  progress-photos commit. ⚠️ Its one conflict, in `modules/progress-photos/index.html`, was **purely
+  version strings**: main bumped the module-local `module.css/js` to `20260811c`, this branch bumped the
+  shared `assets/**` to `20260812a`. Resolved by keeping **both** — they version different files and
+  neither supersedes the other. Re-verified after resolving: 0 conflict markers repo-wide, 0 remaining
+  workspace references **including in main's new progress-photos code**, `module.js` parses, and the
+  project-schedule sandbox harness still **34/34**. Pages redeployed in ~45s; the deployed `db.js` now
+  carries `getGroupHeads` and **0** occurrences of `getWorkspaces`.
+
+**Live schema verified on BOTH Supabase projects** via unauthenticated PostgREST probes — which work as
+a schema oracle because a missing table returns `PGRST205` and a missing column `42703`, while an
+existing-but-RLS-protected one returns `42501`/`[]`.
+- ⚠️ **Every probe run was gated on a known-good control first**, and the gate earned its keep twice:
+  a first pass reported "No API key found" on all seven probes (my key regex matched the legacy `eyJ…`
+  JWT comment, not the current `sb_publishable_…` value), and the Engineering App pass reported
+  "Invalid API key" on all four. **Both would have read as "table missing" to a careless eye.** Neither
+  result meant anything until the control passed.
+- **Planners DB:** `group_heads` exists · `workspaces` **gone** (`PGRST205`) · `projects.group_head_id`
+  exists · `projects.workspace_id` **gone** (`42703`) · `projects.group_head` text **gone** (PostgREST
+  even suggests `group_head_id`) · `project_schedule.phase` and `wbs_nodes.phase` both exist.
+- **Engineering DB:** `group_heads` exists · `workspaces` **gone** · `projects.group_head_id` exists ·
+  `projects.workspace_id` **gone**.
+
+⚠️ **NOT yet verified, and both need a signed-in session — flagged to the user, not silently skipped:**
+1. **The backfill's row-level result.** Anon can't read rows, so nothing here proves a single project
+   actually *got* a group head. The migration's step-9 guard only aborts on a project whose own
+   `group_head` **text** failed to migrate — a project that carried no text and relied on the workspace
+   ancestry (step 5) could have ended up NULL **without tripping the guard**. Worth one query.
+2. **The Engineering App's group heads are empty until the sync runs.** Migration 0011 only prepares
+   the schema; `migrate-data.mjs --only=group_heads,projects` moves the data, and it runs on a **daily
+   `0 22 * * *` cron** (or `workflow_dispatch`). Until then every project there reads
+   "— No group head —". Not a defect — the documented deploy order — but it is a visible gap.
+
+
 ### 2026-08-12 — Workspaces removed: one Group Head tag; + project Phase on the schedule
 Two asks: (1) remove Workspace, keep a Group Head tag with sort/filter/group, reflected in the
 Engineering App too; (2) separate Initiation / Planning / Construction / Close-out per project.
