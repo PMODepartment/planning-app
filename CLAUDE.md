@@ -77,6 +77,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-12 — Hard delete was unwinnable by design: residue vs substantive data
+User couldn't delete project NCIT — blocked on `calendars (1), schedule_audit (45),
+schedule_baselines (1)` despite the schedule being empty. **Not a UI bug.**
+`admin_delete_project()` discovers every `public` table with a `project_id` from the catalog and
+refuses if ANY has a row, so an auto-created default calendar counts the same as a full drawing
+register. ⚠️ **`schedule_audit` made the gate mathematically unwinnable: clearing a schedule WRITES
+audit rows, so emptying a project can never make it deletable.**
+- New `project_residue_tables()` splits the discovered tables in two. **Residue** (purged as part of
+  the delete): `calendars`, `schedule_audit`, `schedule_snapshots`, `schedule_thresholds`, `s_curve`,
+  `cash_flow_rollup` — auto-provisioned defaults, append-only logs, or DERIVED from the schedule.
+  **Substantive** (still blocks): everything else, including all hand-entered cash-flow INPUT tables.
+- ⚠️ **`schedule_baselines` stays a blocker by user decision** — a baseline is a deliberate act of
+  record-keeping, so it should never vanish as a side effect of pressing Delete. **NCIT therefore
+  still blocks on its 1 baseline until that baseline is cleared in the module.** That is the intended
+  outcome, not an incomplete fix.
+- Still fail-closed: anything not *named* in the residue list blocks, so a module table added later
+  is covered automatically without editing the function.
+- New `admin_project_delete_preview(project)` answers "why can't I delete this?" without attempting
+  the delete, classing each non-empty table `residue` | `blocking`.
+- ⚠️ **Not yet run against the live DB** — `migrations/2026-08-12-delete-project-residue.sql` must be
+  pasted into the Supabase SQL editor. Verify with `select * from admin_project_delete_preview('NCIT');`
+  **before** deleting anything.
+
 ### 2026-08-12 — Projects page UI pass: 4 real bugs (2 of them mine) + grouped card view
 User: improve the group-head side panel, the card view "is not working as well", and clearing the
 search doesn't refresh the list — and keep both apps consistent. **Reproduced every claim in a
