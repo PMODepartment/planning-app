@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
-  <script src="assets/js/theme.js?v=20260726d"></script>
+  <script src="assets/js/theme.js?v=20260812a"></script>
   <title>Project Home — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260806b" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260812a" />
 </head>
 <body>
   <div class="pd-app">
@@ -53,18 +53,18 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260724a"></script>
-  <script src="assets/js/auth.js?v=20260724a"></script>
-  <script src="assets/js/db.js?v=20260724a"></script>
-  <script src="assets/js/ui.js?v=20260724a"></script>
-  <script src="assets/js/icons.js?v=20260804a"></script>
+  <script src="assets/js/config.js?v=20260812a"></script>
+  <script src="assets/js/auth.js?v=20260812a"></script>
+  <script src="assets/js/db.js?v=20260812a"></script>
+  <script src="assets/js/ui.js?v=20260812a"></script>
+  <script src="assets/js/icons.js?v=20260812a"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
     // No project chosen yet → go pick one first (Primavera-style entry).
     if (!pid) { location.replace('projects.html'); return; }
 
-    var PROJ = [], WS = [], wsById = {}, curProj = null, curWs = null;
+    var PROJ = [], GH = [], ghById = {}, curProj = null;
 
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
@@ -80,41 +80,35 @@
 
     async function boot() {
       try {
-        var res = await Promise.all([PDb.getProjects(), PDb.getWorkspaces()]);
-        PROJ = res[0]; WS = res[1];
+        var res = await Promise.all([PDb.getProjects(), PDb.getGroupHeads()]);
+        PROJ = res[0]; GH = res[1];
       } catch (e) { /* still show cached header */ }
-      WS.forEach(function (w) { wsById[w.id] = w; });
+      GH.forEach(function (g) { ghById[g.id] = g; });
       curProj = PROJ.find(function (p) { return p.id === pid; }) || { id: pid, name: sessionStorage.getItem('pd_project_name') || pid };
-      curWs = curProj.workspace_id ? wsById[curProj.workspace_id] : (sessionStorage.getItem('pd_workspace') ? wsById[sessionStorage.getItem('pd_workspace')] : null);
       renderHeader();
       renderSwitcherMenu();
     }
 
-    function pathOf(id) {
-      var names = [], cur = wsById[id];
-      while (cur) { names.unshift(cur.name); cur = cur.parent_id ? wsById[cur.parent_id] : null; }
-      return names;
-    }
+    // The project's own tag — there is no workspace ancestry to walk any more.
+    // Falls back to the raw id so a group head that failed to load still reads
+    // as something, rather than silently blanking the caption.
     function groupHead(p) {
-      if (!p) return null;
-      if (p.group_head) return p.group_head;
-      var cur = p.workspace_id ? wsById[p.workspace_id] : null;
-      while (cur) { if (cur.group_head) return cur.group_head; cur = cur.parent_id ? wsById[cur.parent_id] : null; }
-      return null;
+      if (!p || !p.group_head_id) return null;
+      var g = ghById[p.group_head_id];
+      return g ? g.name : p.group_head_id;
     }
     function renderHeader() {
       document.getElementById('projsw-name').textContent = (curProj.name || curProj.id) + ' (' + curProj.id + ')';
-      var path = curWs ? pathOf(curWs.id).join(' › ') : '';
       var gh = groupHead(curProj);
-      document.getElementById('projsw-path').textContent = (path || '') + (gh ? '  •  Group Head: ' + gh : '');
+      document.getElementById('projsw-path').textContent = gh ? ('Group Head: ' + gh) : '';
     }
 
     function renderSwitcherMenu() {
       var menu = document.getElementById('projsw-menu');
       var items = PROJ.map(function (p) {
-        var w = p.workspace_id ? wsById[p.workspace_id] : null;
+        var gh = groupHead(p);
         return '<button data-pick="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' class="cur"' : '') + '>' +
-          '<strong>' + Fmt.esc(p.name || p.id) + '</strong><small>' + Fmt.esc(p.id) + (w ? ' · ' + Fmt.esc(w.name) : '') + '</small></button>';
+          '<strong>' + Fmt.esc(p.name || p.id) + '</strong><small>' + Fmt.esc(p.id) + (gh ? ' · ' + Fmt.esc(gh) : '') + '</small></button>';
       }).join('');
       menu.innerHTML = '<div class="pd-projsw-menu-head">Switch project</div>' + items +
         '<a class="pd-projsw-all" href="projects.html">' + Icons.svg('arrowRight', 15) + ' All projects / selector</a>';
@@ -123,7 +117,7 @@
           var np = PROJ.find(function (x) { return x.id === b.dataset.pick; });
           sessionStorage.setItem('pd_project', np.id);
           sessionStorage.setItem('pd_project_name', np.name || np.id);
-          sessionStorage.setItem('pd_workspace', np.workspace_id || '');
+          sessionStorage.setItem('pd_group_head', np.group_head_id || '');
           location.reload();
         };
       });
@@ -139,7 +133,7 @@
     // Bump MODULE_V on any deploy that changes a module's index.html. It is defined here, not in
     // config.js, deliberately: config.js is itself cache-busted from 22 HTML files, so versioning it
     // there would mean a 22-file bump to make a one-module change visible.
-    var MODULE_V = '20260810a';
+    var MODULE_V = '20260812a';
     function renderModules() {
       var grid = document.getElementById('module-grid');
       grid.innerHTML = (APP_CONFIG.MODULES || []).map(function (m) {

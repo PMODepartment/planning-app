@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260726d"></script>
+  <script src="../../assets/js/theme.js?v=20260812a"></script>
   <title>Portfolio Overview · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260806b" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260812a" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -153,8 +153,6 @@
         <div class="po-toolbar">
           <label class="po-chk" style="gap:6px;">Group by
             <select class="pd-select" id="po-group" style="max-width:170px;">
-              <option value="workspace">Workspace</option>
-              <option value="program">Program</option>
               <option value="grouphead">Group Head</option>
               <option value="status">Status</option>
               <option value="none">None (flat)</option>
@@ -220,19 +218,19 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260724a"></script>
-<script src="../../assets/js/auth.js?v=20260724a"></script>
-<script src="../../assets/js/db.js?v=20260724a"></script>
-<script src="../../assets/js/ui.js?v=20260724a"></script>
-<script src="../../assets/js/icons.js?v=20260804a"></script>
-<script src="../../assets/js/offline.js?v=20260726d"></script>
-<script src="../../assets/js/collab.js?v=20260727b"></script>
+<script src="../../assets/js/config.js?v=20260812a"></script>
+<script src="../../assets/js/auth.js?v=20260812a"></script>
+<script src="../../assets/js/db.js?v=20260812a"></script>
+<script src="../../assets/js/ui.js?v=20260812a"></script>
+<script src="../../assets/js/icons.js?v=20260812a"></script>
+<script src="../../assets/js/offline.js?v=20260812a"></script>
+<script src="../../assets/js/collab.js?v=20260812a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
   'use strict';
-  var PROJ = [], WS = [], wsById = {}, childrenMap = {};
-  var groupMode = 'workspace', statusFilter = '', behindOnly = false, query = '';
+  var PROJ = [], GH = [], ghById = {};
+  var groupMode = 'grouphead', statusFilter = '', behindOnly = false, query = '';
   var projSel = {};   // {projectId: true} for checked projects — empty object = no filter (all projects)
   var sortCol = 'name', sortDir = 1, collapsed = {};
   var view = 'overview';   // 'overview' | 'scurve' | 'cashflow'
@@ -243,11 +241,15 @@
   function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; }
   function today() { var t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); }
 
-  // ---- workspace tree helpers (same model as dashboard.html) ----
-  function buildChildren() { childrenMap = {}; WS.forEach(function (w) { (childrenMap[w.parent_id] = childrenMap[w.parent_id] || []).push(w); }); }
-  function pathOf(id) { var n = [], c = wsById[id]; while (c) { n.unshift(c.name); c = c.parent_id ? wsById[c.parent_id] : null; } return n; }
-  function ancestorOfType(startId, type) { var c = startId ? wsById[startId] : null; while (c) { if (c.node_type === type) return c; c = c.parent_id ? wsById[c.parent_id] : null; } return null; }
-  function groupHead(p) { if (!p) return null; if (p.group_head) return p.group_head; var c = p.workspace_id ? wsById[p.workspace_id] : null; while (c) { if (c.group_head) return c.group_head; c = c.parent_id ? wsById[c.parent_id] : null; } return null; }
+  // ---- group head (the flat tag that replaced the workspace tree) ----
+  // Same resolver as dashboard.html and projects.html. No ancestry to walk:
+  // Workspace and Program grouping are gone because those levels no longer
+  // exist — group head IS the portfolio's structure now.
+  function groupHead(p) {
+    if (!p || !p.group_head_id) return null;
+    var g = ghById[p.group_head_id];
+    return g ? g.name : p.group_head_id;
+  }
 
   // ---- derived per-project fields ----
   function progressOf(p) { return p.schedule_progress != null ? Math.max(0, Math.min(100, num(p.schedule_progress))) : null; }
@@ -263,8 +265,6 @@
   function variance(p) { return num(p.estimated_cost) - num(p.original_budget); }
 
   function groupKeyOf(p) {
-    if (groupMode === 'workspace') { var w = wsById[p.workspace_id]; return w ? w.name : '(Unassigned)'; }
-    if (groupMode === 'program') { var pr = ancestorOfType(p.workspace_id, 'program'); return pr ? pr.name : '(No program)'; }
     if (groupMode === 'grouphead') { return groupHead(p) || '(No group head)'; }
     if (groupMode === 'status') { return (p.status || 'active'); }
     return 'All Projects';
@@ -354,7 +354,7 @@
     host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + (H + 12) + '" preserveAspectRatio="xMinYMin meet">' + out + '</svg>';
   }
 
-  function groupLabel() { return { workspace: 'Workspace', program: 'Program', grouphead: 'Group Head', status: 'Status', none: 'Portfolio' }[groupMode]; }
+  function groupLabel() { return { grouphead: 'Group Head', status: 'Status', none: 'Portfolio' }[groupMode] || 'Group Head'; }
 
   // ---- grouped, sortable portfolio table ----
   var COLS = [
@@ -437,7 +437,7 @@
     var p = PROJ.find(function (x) { return x.id === id; }); if (!p) return;
     sessionStorage.setItem('pd_project', p.id);
     sessionStorage.setItem('pd_project_name', p.name || p.id);
-    sessionStorage.setItem('pd_workspace', p.workspace_id || '');
+    sessionStorage.setItem('pd_group_head', p.group_head_id || '');
     location.href = '../../dashboard.html';
   }
 
@@ -814,7 +814,6 @@
     var data = list.map(function (p) {
       return {
         'Project': p.name || p.id, 'ID': p.id, 'Status': p.status || 'active',
-        'Workspace': (wsById[p.workspace_id] || {}).name || '', 'Program': ((ancestorOfType(p.workspace_id, 'program') || {}).name) || '',
         'Group Head': groupHead(p) || '', 'Schedule %': progressOf(p) != null ? progressOf(p) : '',
         'Health': HEALTH[health(p)].label,
         'Forecast Start': p.forecast_start || p.start_date || '', 'Forecast Finish': p.forecast_finish || p.end_date || '',
@@ -842,20 +841,19 @@
     document.getElementById('po-rs-refresh').onclick = function () { loadResources(true); };
     document.getElementById('po-cf-refresh').onclick = function () { loadCashflow(true); };
     try {
-      var res = await Promise.all([PDb.getProjects(), PDb.getWorkspaces()]);
-      PROJ = res[0]; WS = res[1];
-      if (window.PDSync) PDSync.cachePut('po:all', { PROJ: PROJ, WS: WS });   // offline read-cache
+      var res = await Promise.all([PDb.getProjects(), PDb.getGroupHeads()]);
+      PROJ = res[0]; GH = res[1];
+      if (window.PDSync) PDSync.cachePut('po:all', { PROJ: PROJ, GH: GH });   // offline read-cache
     } catch (e) {
       // Offline / fetch failed: render the last-cached portfolio so it still opens.
       var restored = false;
       if (window.PDSync) {
         var c = await PDSync.cacheGet('po:all');
-        if (c && c.rows) { PROJ = c.rows.PROJ || []; WS = c.rows.WS || []; restored = true; }
+        if (c && c.rows) { PROJ = c.rows.PROJ || []; GH = c.rows.GH || []; restored = true; }
       }
       if (!restored) UI.toast('Could not load portfolio: ' + (e.message || e), 'error');
     }
-    WS.forEach(function (w) { wsById[w.id] = w; });
-    buildChildren();
+    GH.forEach(function (g) { ghById[g.id] = g; });
     renderAll();
 
     // Presence only: the portfolio spans ALL projects, so there's no single-project

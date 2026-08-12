@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
-  <script src="../../assets/js/theme.js?v=20260726d"></script>
+  <script src="../../assets/js/theme.js?v=20260812a"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260806b" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260812a" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -986,6 +986,11 @@
     .ps-wbs-name input { width:100%; font:inherit; padding:3px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
     .ps-wbs-badge { font-size:11px; color:var(--pd-muted); flex:none; white-space:nowrap; }
     .ps-wbs-synced { color:var(--pd-red); font-weight:600; }
+    /* Phase chip. Tokens only (never a hardcoded surface) so it survives the
+       dark theme; inherited reads quieter than a phase set on this node itself. */
+    .ps-wbs-phase { padding:1px 7px; border-radius:9px; border:1px solid var(--pd-line);
+                    background:var(--pd-bg); color:var(--pd-ink); font-weight:600; }
+    .ps-wbs-phase.inherited { font-weight:400; color:var(--pd-muted); border-style:dashed; }
     .ps-wbs-namefixed { font-weight:600; color:var(--pd-ink); padding:2px 4px; }
     .ps-wbs-acts { display:flex; gap:2px; flex:none; visibility:hidden; }
     .ps-wbs-acts button { width:26px; height:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid transparent; background:none; border-radius:5px; cursor:pointer; color:var(--pd-muted); font-size:13px; }
@@ -1939,14 +1944,14 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260724a"></script>
-<script src="../../assets/js/auth.js?v=20260724a"></script>
-<script src="../../assets/js/db.js?v=20260724a"></script>
-<script src="../../assets/js/ui.js?v=20260724a"></script>
-<script src="../../assets/js/icons.js?v=20260804a"></script>
-<script src="../../assets/js/calendar.js?v=20260724a"></script>
-<script src="../../assets/js/offline.js?v=20260726d"></script>
-<script src="../../assets/js/collab.js?v=20260727b"></script>
+<script src="../../assets/js/config.js?v=20260812a"></script>
+<script src="../../assets/js/auth.js?v=20260812a"></script>
+<script src="../../assets/js/db.js?v=20260812a"></script>
+<script src="../../assets/js/ui.js?v=20260812a"></script>
+<script src="../../assets/js/icons.js?v=20260812a"></script>
+<script src="../../assets/js/calendar.js?v=20260812a"></script>
+<script src="../../assets/js/offline.js?v=20260812a"></script>
+<script src="../../assets/js/collab.js?v=20260812a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -1963,12 +1968,42 @@
   // project is selected. Every await in load() re-checks this against its own gen and
   // bails if a newer load has started.
   var _loadGen = 0;
-  var PROJECTS = [], WORKSPACES = [], layoutMode = 'split', activeTab = 'schedule';
+  var PROJECTS = [], GROUPHEADS = [], layoutMode = 'split', activeTab = 'schedule';
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
   var LOC_LEVELS = [];   // Location Breakdown levels (ordered: Building > Level > Zone > …) for this project
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
+
+  // ---- Project phase (Initiation / Planning / Construction / Close-out) -----
+  // Stored as a fixed code, displayed as a label. Fixed, not free text: unlike
+  // work_package this drives roll-ups, so a typo would silently split a
+  // project's phase S-curve in two. The DB carries the same 4-value CHECK.
+  var PHASES = [
+    { v: 'initiation',   l: 'Initiation' },
+    { v: 'planning',     l: 'Planning' },
+    { v: 'construction', l: 'Construction' },
+    { v: 'closeout',     l: 'Close-out' },
+  ];
+  var PHASE_OPTS = [{ v: '', l: '—' }].concat(PHASES);
+  function phaseLabel(v) { var p = PHASES.find(function (x) { return x.v === v; }); return p ? p.l : ''; }
+
+  // An activity's OWN phase wins; otherwise it inherits the nearest tagged WBS
+  // ancestor. Resolved at read time (not denormalized onto every row) so
+  // re-parenting a branch re-phases its work immediately, with no data fix-up.
+  // Memoized per node id and cleared whenever the tree or a phase changes.
+  var _phaseMemo = {};
+  function _clearPhaseMemo() { _phaseMemo = {}; }
+  function _nodePhase(nodeId) {
+    if (!nodeId) return null;
+    if (_phaseMemo[nodeId] !== undefined) return _phaseMemo[nodeId];
+    _phaseMemo[nodeId] = null;                       // cycle guard (a malformed tree must not hang)
+    var n = WBS_NODES.find(function (x) { return x.id === nodeId; });
+    var out = n ? (n.phase || _nodePhase(n.parent_id)) : null;
+    _phaseMemo[nodeId] = out || null;
+    return _phaseMemo[nodeId];
+  }
+  function phaseOf(r) { return (r && r.phase) || _nodePhase(r && r.wbs_node_id) || null; }
   var _wbsCollapsed = {};   // WBS Manager: node id -> true means its children are hidden
   var _wbsSearch = '';      // WBS Manager: current search filter (code / name)
   var _wbsCollapseInit = false;   // have we applied the large-tree default-collapse once?
@@ -2056,6 +2091,7 @@
       // re-sorts by sort_order, so load order is irrelevant.
       WBS_NODES = await selectAllPaged('wbs_nodes', '*');
     } catch (e) { WBS_NODES = []; }
+    _clearPhaseMemo();   // the inherited-phase cache is keyed by node id — stale after a reload
     try { await ensureWbsSkeleton(); } catch (e) { /* best-effort auto-seed; never blocks load */ }
     try {
       var r9 = await selectAllPaged('cost_accounts', '*');
@@ -2528,22 +2564,24 @@
   async function loadProjects() {
     var projects = await PDb.getProjects();
     PROJECTS = projects;
-    try { WORKSPACES = await PDb.getWorkspaces(); } catch (e) { WORKSPACES = []; }
+    try { GROUPHEADS = await PDb.getGroupHeads(); } catch (e) { GROUPHEADS = []; }
     var sel = document.getElementById('ps-project');
     pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
     updateProjSelLabel();
-    updateWorkspaceCaption();
+    updateGroupHeadCaption();
     if (pid) load();
   }
-  // OPC-style: show the project's workspace/program under the project name.
-  function updateWorkspaceCaption() {
+  // OPC-style: show the project's group head under the project name. (Was the
+  // workspace/program path; those levels no longer exist -- the group head is
+  // the whole of a project's org context now.)
+  function updateGroupHeadCaption() {
     var el = document.getElementById('ps-workspace'); if (!el) return;
     var p = PROJECTS.find(function (x) { return x.id === pid; });
-    var ws = p && p.workspace_id ? WORKSPACES.find(function (w) { return w.id === p.workspace_id; }) : null;
-    el.textContent = ws ? ws.name : (p && p.group_head ? p.group_head : '');
+    var g = p && p.group_head_id ? GROUPHEADS.find(function (x) { return x.id === p.group_head_id; }) : null;
+    el.textContent = g ? g.name : (p && p.group_head_id ? p.group_head_id : '');
     el.title = el.textContent;
   }
   function updateProjSelLabel() {
@@ -2557,7 +2595,7 @@
     pid = id || null;
     var sel = document.getElementById('ps-project'); if (sel) sel.value = pid || '';
     if (pid) sessionStorage.setItem('pd_project', pid);
-    updateProjSelLabel(); updateWorkspaceCaption();
+    updateProjSelLabel(); updateGroupHeadCaption();
     // ⚠️ Kill any pending collapse save BEFORE pid changes — otherwise a toggle made <500ms ago
     // fires after the switch and writes the OUTGOING project's map under the INCOMING project's key.
     _cancelCollapseSave();
@@ -2565,19 +2603,25 @@
     var wsi = document.getElementById('ps-wbs-search'); if (wsi) wsi.value = '';
     resetUndo(); load();
   }
-  // OPC-style project browser — a FOLDER navigator (one level at a time) so it scales to
-  // hundreds of schedules. `_pssPath` = current folder (workspace id; '' = root). Drill into a
-  // folder to see its sub-folders + projects; breadcrumb navigates back up; the search box
-  // flattens to matching projects across the whole tree.
+  // OPC-style project browser — a FOLDER navigator so it scales to hundreds of schedules.
+  // `_pssPath` = current folder (group-head id; '' = root, `_PSS_NONE` = the unassigned bucket).
+  // ⚠️ This was a recursive Workspace → Program → Group walk; the depth is fixed at ONE now, so
+  // there is no ancestor chain and no descendant count to memoize — a group head's count IS the
+  // number of projects tagged with it. Breadcrumb navigates back up; the search box flattens to
+  // matching projects across every group.
+  var _PSS_NONE = '__nogh__';
   var _pssPath = '', _pssSearch = '';
-  function _pssNode(id) { return WORKSPACES.find(function (w) { return w.id === id; }); }
-  function _pssCrumbs(id) { var a = [], c = _pssNode(id); while (c) { a.unshift(c); c = c.parent_id ? _pssNode(c.parent_id) : null; } return a; }
+  function _pssNode(id) { return GROUPHEADS.find(function (g) { return g.id === id; }); }
+  function _pssLabel(id) { var g = _pssNode(id); return g ? g.name : (id === _PSS_NONE ? '— No group head —' : id); }
+  // Which folder the browser opens into: the current project's group (so it is
+  // visible immediately), or the root when nothing is selected.
+  function _pssOpenPath() {
+    var p = PROJECTS.find(function (x) { return x.id === pid; });
+    return p ? (p.group_head_id || _PSS_NONE) : '';
+  }
   function renderProjectSelector() {
     var m = document.getElementById('ps-projsel-menu'); if (!m) return;
-    var cm = {}; WORKSPACES.forEach(function (w) { var k = w.parent_id || ''; (cm[k] = cm[k] || []).push(w); });
-    var pm = {}; PROJECTS.forEach(function (p) { var k = p.workspace_id || ''; (pm[k] = pm[k] || []).push(p); });
-    var memo = {};
-    function descCount(id) { if (memo[id] != null) return memo[id]; var c = (pm[id] || []).length; (cm[id] || []).forEach(function (w) { c += descCount(w.id); }); return (memo[id] = c); }
+    var pm = {}; PROJECTS.forEach(function (p) { var k = p.group_head_id || _PSS_NONE; (pm[k] = pm[k] || []).push(p); });
     function projRow(p) { return '<div class="ps-pss-proj' + (p.id === pid ? ' sel' : '') + '" data-proj="' + esc(p.id) + '">' + Icons.svg('calendar', 14) + '<span>' + esc(p.name || p.id) + '</span></div>'; }
     var q = _pssSearch.trim().toLowerCase(), body = '';
     if (q) {
@@ -2586,18 +2630,33 @@
       body = matches.length ? matches.map(projRow).join('') : '<div class="ps-pss-empty">No projects match “' + esc(_pssSearch) + '”.</div>';
       m.innerHTML = pssHead('') + '<div class="ps-pss-tree">' + body + '</div>';
     } else {
-      var folders = (cm[_pssPath] || []).slice().sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)); });
-      var projs = (pm[_pssPath] || []).slice().sort(function (a, b) { return String(a.name || a.id).localeCompare(String(b.name || b.id)); });
-      body += folders.map(function (w) {
-        var nt = w.node_type || 'workspace', n = descCount(w.id);
-        return '<div class="ps-pss-folder" data-open="' + esc(w.id) + '">' + Icons.svg('folder', 15) +
-          '<span class="ps-pss-name">' + esc(w.name) + '</span>' +
-          '<span class="ps-pss-badge ps-pss-' + nt + '">' + nt + '</span>' +
-          '<span class="ps-pss-count" title="' + n + ' project' + (n === 1 ? '' : 's') + '">' + n + '</span>' +
-          '<span class="ps-pss-chev">›</span></div>';
-      }).join('');
-      body += projs.map(projRow).join('');
-      if (!body) body = '<div class="ps-pss-empty">This folder is empty.</div>';
+      if (!_pssPath) {
+        // Root: one folder per group head that has projects, unassigned last. An
+        // empty group head is not listed — it would be a dead end.
+        var folders = GROUPHEADS.slice().sort(function (a, b) {
+          return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name));
+        }).filter(function (g) { return (pm[g.id] || []).length; });
+        body += folders.map(function (g) {
+          var n = (pm[g.id] || []).length;
+          return '<div class="ps-pss-folder" data-open="' + esc(g.id) + '">' + Icons.svg('folder', 15) +
+            '<span class="ps-pss-name">' + esc(g.name) + '</span>' +
+            '<span class="ps-pss-badge ps-pss-group">group head</span>' +
+            '<span class="ps-pss-count" title="' + n + ' project' + (n === 1 ? '' : 's') + '">' + n + '</span>' +
+            '<span class="ps-pss-chev">›</span></div>';
+        }).join('');
+        if ((pm[_PSS_NONE] || []).length) {
+          body += '<div class="ps-pss-folder" data-open="' + _PSS_NONE + '">' + Icons.svg('folder', 15) +
+            '<span class="ps-pss-name">— No group head —</span>' +
+            '<span class="ps-pss-count">' + pm[_PSS_NONE].length + '</span>' +
+            '<span class="ps-pss-chev">›</span></div>';
+        }
+        if (!body) body = '<div class="ps-pss-empty">No projects available.</div>';
+      } else {
+        body += (pm[_pssPath] || []).slice()
+          .sort(function (a, b) { return String(a.name || a.id).localeCompare(String(b.name || b.id)); })
+          .map(projRow).join('');
+        if (!body) body = '<div class="ps-pss-empty">No projects in this group.</div>';
+      }
       m.innerHTML = pssHead(_pssPath) + '<div class="ps-pss-tree">' + body + '</div>';
     }
     var qi = m.querySelector('#ps-pss-q');
@@ -2607,9 +2666,9 @@
     m.querySelectorAll('.ps-pss-proj').forEach(function (r) { r.onclick = function (e) { e.stopPropagation(); m.classList.remove('open'); selectProject(r.dataset.proj); }; });
     // Build the sticky header: search box + breadcrumb (hidden while searching).
     function pssHead(pathId) {
-      var crumbs = _pssCrumbs(pathId);
+      // One level deep, so the trail is at most All › <group head>.
       var bc = q ? '' : '<div class="ps-pss-crumbs"><span class="ps-pss-crumb" data-crumb="">All</span>' +
-        crumbs.map(function (w) { return '<span class="ps-pss-sep">›</span><span class="ps-pss-crumb" data-crumb="' + esc(w.id) + '">' + esc(w.name) + '</span>'; }).join('') + '</div>';
+        (pathId ? '<span class="ps-pss-sep">›</span><span class="ps-pss-crumb" data-crumb="' + esc(pathId) + '">' + esc(_pssLabel(pathId)) + '</span>' : '') + '</div>';
       return '<div class="ps-pss-search"><input type="text" id="ps-pss-q" placeholder="Search all projects…" value="' + esc(_pssSearch) + '">' + bc + '</div>';
     }
   }
@@ -3295,6 +3354,9 @@
     // Work Package is free text (an OPC field), so it buckets like any other flat key. A typo silently
     // makes a second group — same trade-off as work_type / location values.
     if (dim === 'wp') return (r.work_package || '').trim() || '— No work package —';
+    // Phase resolves through the WBS, so an untagged activity under a tagged
+    // branch groups with its branch rather than falling into "— No phase —".
+    if (dim === 'phase') return phaseLabel(phaseOf(r)) || '— No phase —';
     if (dim.indexOf('loc:') === 0) return locValOf(r, dim.slice(4)) || '— Unassigned —';
     if (dim.indexOf('code:') === 0) {
       var valId = r.activity_codes && r.activity_codes[dim.slice(5)];
@@ -3309,6 +3371,7 @@
     if (dim === 'responsible') return 'Responsible';
     if (dim === 'type') return 'Activity Type';
     if (dim === 'wp') return 'Work Package';
+    if (dim === 'phase') return 'Phase';
     if (dim.indexOf('loc:') === 0) return locLevelName(dim.slice(4)) || 'Location level';
     if (dim.indexOf('code:') === 0) { var ct = CODE_TYPES.find(function (c) { return 'code:' + c.id === dim; }); return ct ? ct.name : 'Activity code'; }
     return dim;
@@ -3317,7 +3380,7 @@
   function allDims() {
     var out = ['wbs', 'work'];
     LOC_LEVELS.forEach(function (l) { out.push('loc:' + l.id); });
-    out.push('status', 'responsible', 'type', 'wp');
+    out.push('phase', 'status', 'responsible', 'type', 'wp');
     CODE_TYPES.forEach(function (ct) { out.push('code:' + ct.id); });
     return out;
   }
@@ -5762,7 +5825,7 @@
     // Search also covers work type, work package + every location value, so "Zone 3" or "Formworks"
     // finds the right activities even when the grid isn't currently grouped by them.
     if (search.trim()) {
-      var hay = [r.activity_id, r.activity_name, r.wbs, r.work_type, r.work_package].concat(
+      var hay = [r.activity_id, r.activity_name, r.wbs, r.work_type, r.work_package, phaseLabel(phaseOf(r))].concat(
         r.location ? Object.keys(r.location).map(function (k) { return r.location[k]; }) : []
       ).join(' ').toLowerCase();
       if (hay.indexOf(search.trim().toLowerCase()) === -1) return false;
@@ -6616,8 +6679,14 @@
   // Editable General tab — an OPC-style live editor for the selected activity's core fields.
   // Each control persists on change via persist() (undoable + audited + rebuild/CPM), so a planner
   // can fill in a freshly-added activity right here in the panel below instead of the modal.
+  // Options are plain strings (value === label) OR {v,l} pairs, for fields whose
+  // stored code differs from what a planner should read (e.g. phase).
   function _genOpts(list, cur) {
-    return list.map(function (o) { var lbl = (o === '' ? '—' : o); return '<option value="' + esc(o) + '"' + (o === (cur || '') ? ' selected' : '') + '>' + esc(lbl) + '</option>'; }).join('');
+    return list.map(function (o) {
+      var v = (o && typeof o === 'object') ? o.v : o;
+      var lbl = (o && typeof o === 'object') ? o.l : (o === '' ? '—' : o);
+      return '<option value="' + esc(v) + '"' + (v === (cur || '') ? ' selected' : '') + '>' + esc(lbl) + '</option>';
+    }).join('');
   }
   function _gf(label, field, type, r, opts, full) {
     var val = r[field]; if (val == null) val = '';
@@ -6671,6 +6740,10 @@
         _gf('Activity Name', 'activity_name', 'text', r, null, true) +
         _gf('Work Package', 'work_package', 'text', r)) +
       _gGroup('Classification',
+        // Blank does NOT mean "no phase" — it means "inherit from the WBS
+        // branch", which is what the label says so nobody reads an inherited
+        // Construction activity as untagged.
+        _gf('Phase' + (!r.phase && phaseOf(r) ? ' (inherited: ' + phaseLabel(phaseOf(r)) + ')' : ''), 'phase', 'select', r, PHASE_OPTS) +
         _gf('Type', 'activity_type', 'select', r, ['Task', 'WBS Summary', 'Start Milestone', 'Finish Milestone']) +
         _gf('Duration Type', 'duration_type', 'select', r, ['', 'Fixed Duration & Units/Time', 'Fixed Units/Time', 'Fixed Duration & Units', 'Fixed Work']) +
         _gf('% Complete Type', 'percent_complete_type', 'select', r, ['', 'Duration', 'Physical', 'Units'])) +
@@ -10266,6 +10339,7 @@
       ? '<span class="ps-wbs-badge ps-wbs-synced" title="' + esc(SOURCE_KIND_LABEL[sk] || '') + '">🔒 synced</span>'
       : ('<button class="wbs-act" data-wbs-act="' + esc(e.id) + '" title="Add an activity under this WBS">＋Act</button>' +
          '<button data-wbs-add="' + esc(e.id) + '" title="Add sub-WBS (Shift+Enter in the name)">＋</button>' +
+         '<button data-wbs-phase="' + esc(e.id) + '" title="Set project phase for this branch">◐</button>' +
          (locked ? '' :
            '<button data-wbs-up="' + esc(e.id) + '" title="Move up (Alt+↑)">▲</button>' +
            '<button data-wbs-down="' + esc(e.id) + '" title="Move down (Alt+↓)">▼</button>' +
@@ -10279,6 +10353,15 @@
     return '<div class="ps-wbs-row' + (_wbsSel === e.id ? ' selected' : '') + '" tabindex="-1" data-wid="' + esc(e.id) + '" style="padding-left:' + (8 + e.depth * 22) + 'px;">' +
       caret +
       '<span class="ps-wbs-code" title="' + (e.custom ? 'Custom code (click ✎ to change)' : 'Auto-numbered') + '">' + esc(e.code) + (e.custom ? ' *' : '') + '</span>' +
+      (function () {
+        // Show the EFFECTIVE phase, marking inherited ones — otherwise a branch
+        // that is already correctly phased by its parent reads as untagged and
+        // gets tagged again node by node.
+        var own = n && n.phase, eff = own || _nodePhase(n && n.parent_id);
+        if (!eff) return '';
+        return '<span class="ps-wbs-badge ps-wbs-phase' + (own ? '' : ' inherited') + '" title="Project phase' +
+          (own ? '' : ' (inherited from the parent branch)') + '">' + esc(phaseLabel(eff)) + '</span>';
+      })() +
       '<span class="ps-wbs-name">' + (locked
         ? '<span class="ps-wbs-namefixed" title="Fixed WBS heading">' + esc(n.name || '') + '</span>'
         : '<input data-wbs-name="' + esc(e.id) + '" value="' + esc(e.name || '') + '" placeholder="WBS name…">') + '</span>' +
@@ -10380,6 +10463,7 @@
         else if (d.wbsDown != null) wbsMove(id, 'down');
         else if (d.wbsIndent != null) wbsMove(id, 'indent');
         else if (d.wbsOutdent != null) wbsMove(id, 'outdent');
+        else if (d.wbsPhase != null) wbsEditPhase(id);
         else if (d.wbsCode != null) wbsEditCode(id);
         else if (d.wbsDel != null) wbsDelete(id);
         return;
@@ -11203,6 +11287,31 @@
     m.el.querySelector('#wbscode-save').onclick = doSave;
     m.el.querySelector('#wbscode-x').onclick = m.close;
     inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); doSave(); } };
+  }
+  // Set / clear a branch's project phase. Writes ONLY this node — descendants
+  // inherit at read time via _nodePhase, so one write re-phases a whole branch
+  // and a child that needs to differ can still override it locally.
+  function wbsEditPhase(id) {
+    var n = wbsById(id); if (!n) return;
+    var inherited = _nodePhase(n.parent_id);
+    var m = UI.modal('<h2 style="margin-top:0;">Project phase — ' + esc(n.name || '') + '</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Everything under this branch inherits this phase unless it sets its own.' +
+      (inherited ? ' Leaving it blank inherits <strong>' + esc(phaseLabel(inherited)) + '</strong> from the parent.' : ' Leaving it blank leaves the branch unphased.') + '</p>' +
+      '<div class="pd-field"><label class="pd-label">Phase</label>' +
+      '<select class="pd-select" id="wbsph-in">' + _genOpts(PHASE_OPTS, n.phase || '') + '</select></div>' +
+      '<div style="text-align:right;margin-top:8px;"><button class="pd-btn" id="wbsph-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="wbsph-save">Save</button></div>');
+    var inp = m.el.querySelector('#wbsph-in'); inp.focus();
+    m.el.querySelector('#wbsph-x').onclick = m.close;
+    m.el.querySelector('#wbsph-save').onclick = async function () {
+      var v = inp.value || null; m.close();
+      n.phase = v;
+      _clearPhaseMemo();   // ⚠️ every descendant's cached answer just changed
+      try {
+        await sb().from('wbs_nodes').update({ phase: v }).eq('id', id);
+      } catch (e) { UI.toast('Could not save the phase: ' + e.message, 'error'); }
+      await _wbsCommit();
+      renderAll();         // the grid may be grouped by Phase — repaint it too
+    };
   }
   async function wbsDelete(id) {
     var n = wbsById(id); if (!n) return;
@@ -14617,7 +14726,7 @@
     analyzeMenu.addEventListener('click', function (e) { e.stopPropagation(); setTimeout(_syncAnalyzeBtn, 0); });
     analyzeMenu.querySelectorAll('[data-spot]').forEach(function (b) { b.onclick = function () { analyzeMenu.classList.remove('open'); if (b.dataset.spot === 'clear') clearSpotlight(); else advanceSpotlight(b.dataset.spot); }; });
     pssMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.getElementById('ps-projsel-btn').onclick = function (e) { e.stopPropagation(); var o = pssMenu.classList.contains('open'); closeMenus(); if (!o) { _pssSearch = ''; _pssPath = (PROJECTS.find(function (p) { return p.id === pid; }) || {}).workspace_id || ''; renderProjectSelector(); pssMenu.classList.add('open'); var qi = pssMenu.querySelector('#ps-pss-q'); if (qi) qi.focus(); } };
+    document.getElementById('ps-projsel-btn').onclick = function (e) { e.stopPropagation(); var o = pssMenu.classList.contains('open'); closeMenus(); if (!o) { _pssSearch = ''; _pssPath = _pssOpenPath(); renderProjectSelector(); pssMenu.classList.add('open'); var qi = pssMenu.querySelector('#ps-pss-q'); if (qi) qi.focus(); } };
     // Title dropdown → switch Project Schedule / Cost Loading
     document.getElementById('ps-title-btn').onclick = function (e) { e.stopPropagation(); var o = tMenu.classList.contains('open'); closeMenus(); if (!o) tMenu.classList.add('open'); };
     tMenu.addEventListener('click', function (e) { e.stopPropagation(); });
@@ -15237,7 +15346,7 @@
       UID: { get: function () { return UID; }, set: function (v) { UID = v; }, enumerable: true },
       _loadGen: { get: function () { return _loadGen; }, set: function (v) { _loadGen = v; }, enumerable: true },
       PROJECTS: { get: function () { return PROJECTS; }, set: function (v) { PROJECTS = v; }, enumerable: true },
-      WORKSPACES: { get: function () { return WORKSPACES; }, set: function (v) { WORKSPACES = v; }, enumerable: true },
+      GROUPHEADS: { get: function () { return GROUPHEADS; }, set: function (v) { GROUPHEADS = v; }, enumerable: true },
       layoutMode: { get: function () { return layoutMode; }, set: function (v) { layoutMode = v; }, enumerable: true },
       activeTab: { get: function () { return activeTab; }, set: function (v) { activeTab = v; }, enumerable: true },
       RESRC: { get: function () { return RESRC; }, set: function (v) { RESRC = v; }, enumerable: true },

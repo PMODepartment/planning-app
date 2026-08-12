@@ -77,6 +77,70 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-12 — Workspaces removed: one Group Head tag; + project Phase on the schedule
+Two asks: (1) remove Workspace, keep a Group Head tag with sort/filter/group, reflected in the
+Engineering App too; (2) separate Initiation / Planning / Construction / Close-out per project.
+
+**1. The Workspace → Program → Group tree is gone.** ⚠️ It was three levels deep to express **one
+fact** — which group head owns the project — and every consumer (dashboard caption, portfolio
+grouping, both project selectors) already collapsed it back down to `group_head`. Replaced by a
+`group_heads` **lookup table** + `projects.group_head_id` (the user's call over free text: a typo in a
+free-text field silently fragments the grouping, and this drives portfolio roll-ups).
+- **Migration `2026-08-12-group-heads-replace-workspaces.sql` (USER MUST RUN)** — seeds the five
+  group heads, backfills `group_head_id` from the project's own `group_head` text **first**, then from
+  the workspace ancestry (recursive CTE, same nearest-ancestor rule the app used), then **adopts any
+  leftover name** rather than dropping it. ⚠️ **Step 9 refuses to drop** if any project would lose its
+  group head, so the destructive half can't run on an incomplete backfill. New
+  `admin_delete_group_head()` refuses while projects are assigned and says how many — `active=false`
+  is the non-destructive way to retire one.
+- **`projects.html` rebuilt**: the tree pane is a flat **Group Heads** filter list (All / each / a real
+  "— No group head —" bucket — an unassigned project must stay reachable), plus **Group by**
+  (Group Head / Status / None) and **Sort by** (Name / Group Head / ID / Forecast Finish / Budget,
+  blanks last in every mode). Workspace modal → Group Head modal (rename / sort order / Active /
+  delete). ⚠️ The Group Head select keeps an **inactive** value when it is the project's current one —
+  otherwise the select falls back to its first option and Save silently reassigns the project.
+- **Shared project selector (`ui.js`)** went from a recursive folder walk to a fixed one-level
+  group-head browser; **Project Schedule's own browser** likewise (its `descCount` memo is gone — at
+  depth 1 a group head's count *is* its project count). **Portfolio Overview** lost its Workspace and
+  Program grouping modes (those levels no longer exist); Group Head is now the default.
+- **Engineering App updated in the same pass**: `getGroupHeads()` is **read-only** there (projects and
+  org structure are sourced from this app, per `perm.js`/0009), its `projects.html` + `dashboard.html`
+  rebuilt on the same group-head model, `migrate-data.mjs` + the sync workflow now sync
+  `--only=group_heads,projects` (⚠️ group_heads must stay FIRST — `projects.group_head_id` is an FK
+  into it), and **migration `0011-group-heads-replace-workspaces.sql`** mirrors the schema read-only.
+  ⚠️ Run the Planners migration, then 0011, then re-sync — 0011 only prepares the destination.
+
+**2. Project phase as a TAG on activities + WBS nodes**, not four seeded WBS roots (the user's call).
+- **Migration `2026-08-12-schedule-project-phase.sql` (USER MUST RUN)** — `phase` on
+  `project_schedule` + `wbs_nodes`, **CHECK-constrained to four values** (a free-text phase would
+  split a project's phase S-curve in two on a typo), seeded from the locked skeleton's own branch
+  names (Initiation / Planning / Execution→construction / Close-out) and cascaded once to activities.
+- ⚠️ **Inheritance resolves at READ time** (`phaseOf` → `_nodePhase`, memoized, cycle-guarded), not
+  denormalized onto every row — so re-parenting a branch re-phases its work with no data fix-up, and
+  tagging one WBS node phases everything under it in a single write. The blank field reads
+  "Phase (inherited: Construction)" so an inherited activity isn't mistaken for an untagged one.
+- Phase is a full **grouping dimension** (three lines — the N-level engine is dimension-agnostic, same
+  as Work Package), searchable by label, editable per-activity in the detail form and per-branch from
+  the WBS Manager (`◐` button, offered on **locked** headings too — those are exactly the branches
+  worth tagging). Untagged work buckets into "— No phase —", never silently called Construction.
+
+**Verified by EXECUTING the shipped module, not just parsing it.** Rebuilt the `vm` sandbox harness
+(the earlier `run-scaffold.js` was never committed) and ran the real 1 MB inline IIFE, then sliced the
+new functions out of the shipped source: **34/34**, covering the phase vocabulary, all six inheritance
+cases (own-beats-inherited, nearest-ancestor-wins, untagged→null, **cyclic tree returns null instead
+of hanging**), the grouping dimension incl. `wbs`-forced-last, and value/label select options.
+- ⚠️ **The sandbox found two real bugs a parse check could not.** The PS scaffold still exported the
+  renamed `WORKSPACES` binding (it warned `1 unreadable binding`), and the project-selector's open
+  handler still read `.workspace_id`, so the browser silently stopped opening in the current project's
+  folder. Both fixed; a repo-wide sweep now shows **0** `workspace_id` / `getWorkspaces` / `wsById` /
+  `pd_workspace` references in either app.
+- All 6 edited pages parse; the 3 SQL files are paren-balanced, `$$`-paired, and every `create policy`
+  has a preceding drop (re-runnable).
+- ⚠️ **Not verified signed-in** — the migrations are not run, so no live click-through of the group-head
+  filter, the phase grouping or the WBS phase button. Shared assets changed → **`?v=` bumped to
+  `20260812a` across all 30 HTML files in both apps**, and `MODULE_V` → `20260812a`.
+
+
 ### 2026-08-06 — Fix: dashboard.css never got its cache-busting bump
 The autosave commits (`94dba8e`) added `.pd-autosave*` styles to shared `assets/css/dashboard.css`
 but left its `?v=` at `20260724a` everywhere it's referenced — so returning users kept serving the
