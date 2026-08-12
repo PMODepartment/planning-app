@@ -268,10 +268,23 @@
 .pp-syncbtn:hover { background: var(--pd-red); color: #fff; }
 
 /* ---- Schedule-zone picker (Add/Edit modals) ------------------------------- */
-/* One <select> per WBS depth (Discipline/Trade > Tower > Level > Zone >
-   Orientation); wraps as needed since a full 5-deep tree won't fit one row. */
-.pp-wbscascade { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
-.pp-wbslevel { flex: 1 1 140px; min-width: 120px; margin-bottom: 0; }
+/* One bare <select> per WBS depth — however many the project's own tree
+   actually has, no fixed count or per-level label (a project's WBS has no
+   universal shape). Wraps as needed since a deep tree won't fit one row. */
+.pp-wbssection {
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  background: var(--pd-card); padding: 10px 12px; margin-top: 4px;
+}
+.pp-wbssection > label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.pp-wbscascade { display: flex; flex-wrap: wrap; gap: 8px; }
+.pp-wbslevel { flex: 1 1 150px; min-width: 130px; }
+/* The resolved path — the one place the structured WBS location is shown;
+   the free-text Location label below is never auto-filled from this. */
+.pp-wbscrumb {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--pd-line);
+  font-size: 13px; color: var(--pd-ink); font-weight: 600;
+}
+.pp-optnote { font-weight: 400; color: var(--pd-muted); font-size: 11.5px; }
 .pp-actctx { font-size: 12.5px; color: var(--pd-muted); margin-top: -2px; }
 .pp-actline { margin-top: 4px; }
 .pp-actline strong { color: var(--pd-ink); }

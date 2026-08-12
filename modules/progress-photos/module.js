@@ -20,7 +20,7 @@ window.ProgressPhotos = (function () {
   var profile = null, uid = null, pid = null, projName = '';
   var rows = [];
   var view = 'list';                 // list | gallery
-  var filters = { from: '', to: '', trade: '', works: '', location: '', search: '' };
+  var filters = { from: '', to: '', trade: '', works: '', wbsNode: '', search: '' };
   var collapsed = {};                // trade -> true
   var urlCache = {};                 // storage path -> signed URL
   var canWrite = false;              // planner+ / admin / super_admin
@@ -29,20 +29,19 @@ window.ProgressPhotos = (function () {
 
   // ---- Schedule App integration (Phase 1) ----------------------------------
   // Zones/locations/activities are read live from Project Schedule's
-  // wbs_nodes tree — same Supabase project, no separate API — as a fully
-  // generic N-level cascade, labelled on the preset Discipline/Trade > Tower >
-  // Level > Zone > Orientation (WBS_LEVEL_LABELS): depth 0 of a project's WBS
-  // is presented as "Discipline/Trade", depth 1 as "Tower", and so on: a real
-  // schedule commonly puts discipline ABOVE the spatial breakdown (e.g.
-  // "Structural Works > Tower A > Level 5 > Zone 2" and "Architectural Works
-  // > Tower A > Level 5 > Zone 2" are different WBS branches for the same
-  // physical space), so this is not another Activity-Code lookup — it's WBS
-  // depth, same as Tower/Level/Zone. Depths beyond the 5 named ones fall back
-  // to "Level N"; a shallower tree just doesn't render the deeper selects.
-  // WBS_LEAVES = the finest-grain nodes (used for Rounds' checklist); a
-  // capture can stop at ANY depth though, not only a leaf (e.g. "just this
+  // wbs_nodes tree — same Supabase project, no separate API. The WBS has NO
+  // universal shape across projects (depth, terminology, and node count vary
+  // per project — confirmed against Project Schedule's own data model: a
+  // wbs_nodes row is just {id, parent_id, code, name, sort_order}, with no
+  // "node type" column distinguishing a location from a phase from a
+  // discipline). So the picker below is a fully generic N-level cascade with
+  // NO hardcoded per-level labels or assumed depth — each <select> shows only
+  // the real children of whatever was picked above it, using the project's
+  // own WBS code + name (same "<code>  <name>" convention Project Schedule's
+  // own Add-Activity WBS dropdown uses), and stops wherever the real tree
+  // stops. WBS_LEAVES = the finest-grain nodes (used for Rounds' checklist);
+  // a capture can stop at ANY depth though, not only a leaf (e.g. "just this
   // Tower" is valid) — see resolveActivity's descendant matching below.
-  var WBS_LEVEL_LABELS = ['Discipline/Trade', 'Tower', 'Level', 'Zone', 'Orientation'];
   var WBS = [], WBS_BY_ID = {}, WBS_LEAVES = [];
   var SCHED_ACTS = [];
   var CODE_TYPES = [], CODE_VALUES = [];   // optional Activity-Code overlay (unrelated code types)
@@ -164,6 +163,7 @@ window.ProgressPhotos = (function () {
     syncChrome();
     await load();
     await loadSchedule();
+    fillWbsFilterOptions();   // load() ran before the WBS tree existed — refresh once it's here
     await refreshQueueBadge();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
     joinCollab();
@@ -305,6 +305,7 @@ window.ProgressPhotos = (function () {
       restoreUI(); syncChrome(); notifyProject();
       await load();
       await loadSchedule();
+      fillWbsFilterOptions();
       await refreshQueueBadge();
       refreshRoundsIfVisible();
       joinCollab();
@@ -314,13 +315,16 @@ window.ProgressPhotos = (function () {
     Array.prototype.forEach.call(document.querySelectorAll('.pd-vt[data-view]'), function (b) {
       b.onclick = function () { view = b.dataset.view; saveUI(); syncChrome(); render(); };
     });
+    // "location" maps the #pp-f-location element to the filters.wbsNode key —
+    // that element is now a flattened WBS-node picker, not a free-text list.
     ['from', 'to', 'trade', 'works', 'location', 'search'].forEach(function (k) {
       var el = $('pp-f-' + k);
       if (!el) return;
-      el.oninput = el.onchange = function () { filters[k] = this.value; render(); };
+      var key = k === 'location' ? 'wbsNode' : k;
+      el.oninput = el.onchange = function () { filters[key] = this.value; render(); };
     });
     $('pp-clearfilters').onclick = function () {
-      filters = { from: '', to: '', trade: '', works: '', location: '', search: '' };
+      filters = { from: '', to: '', trade: '', works: '', wbsNode: '', search: '' };
       ['from', 'to', 'trade', 'works', 'location', 'search'].forEach(function (k) {
         var el = $('pp-f-' + k); if (el) el.value = '';
       });
@@ -425,10 +429,32 @@ window.ProgressPhotos = (function () {
     }
     fill('pp-f-trade', distinct('trade'), 'Filter by Trade');
     fill('pp-f-works', distinct('works'), 'Filter by Works');
-    fill('pp-f-location', distinct('location'), 'Filter by Location');
+    fillWbsFilterOptions();
     var dl = $('pp-works-list');
     if (dl) dl.innerHTML = distinct('works').map(function (v) {
       return '<option value="' + Fmt.esc(v) + '"></option>'; }).join('');
+  }
+  // Flattened, indented "<code>  <name>" options over the WHOLE tree (Project
+  // Schedule's own wbsPickerOptions() convention) — a project's location
+  // concepts have no fixed shape, so filtering must be "pick any WBS node",
+  // not a set of fixed dropdowns (Level/Area/Zone).
+  function wbsFlatOptionsHTML(selId) {
+    var html = '<option value="">Filter by WBS Location</option>';
+    (function walk(parentId, depth) {
+      wbsChildren(parentId).forEach(function (n) {
+        var pad = new Array(depth + 1).join('   ');
+        var label = (n.code ? n.code + '  ' : '') + n.name;
+        html += '<option value="' + n.id + '"' + (n.id === selId ? ' selected' : '') + '>' + pad + Fmt.esc(label) + '</option>';
+        walk(n.id, depth + 1);
+      });
+    })('', 0);
+    return html;
+  }
+  function fillWbsFilterOptions() {
+    var el = $('pp-f-location'); if (!el) return;
+    var keep = filters.wbsNode || '';
+    el.innerHTML = wbsFlatOptionsHTML(keep);
+    el.value = WBS_BY_ID[keep] ? keep : '';
   }
 
   // --------------------------------------------------------------- filter ---
@@ -437,7 +463,10 @@ window.ProgressPhotos = (function () {
     return rows.filter(function (r) {
       if (filters.trade && r.trade !== filters.trade) return false;
       if (filters.works && r.works !== filters.works) return false;
-      if (filters.location && r.location !== filters.location) return false;
+      // Descendant-inclusive: picking a parent WBS node (e.g. "Ground Floor")
+      // also matches everything captured underneath it (Zone 1, Vertical, …) —
+      // the more useful default for project review (brief §13).
+      if (filters.wbsNode && (!r.wbs_node_id || !isNodeUnder(r.wbs_node_id, filters.wbsNode))) return false;
       if (filters.from && (!r.taken_at || r.taken_at < filters.from)) return false;
       if (filters.to && (!r.taken_at || r.taken_at > filters.to)) return false;
       if (q) {
@@ -468,7 +497,7 @@ window.ProgressPhotos = (function () {
     if (listbar) listbar.style.visibility = rows.length ? '' : 'hidden';
 
     // Clear-filters only shows when a filter is actually set (no orphan button).
-    var anyFilter = ['from', 'to', 'trade', 'works', 'location', 'search']
+    var anyFilter = ['from', 'to', 'trade', 'works', 'wbsNode', 'search']
       .some(function (k) { return filters[k]; });
     var clr = $('pp-clearfilters');
     if (clr) clr.hidden = !anyFilter;
@@ -642,22 +671,23 @@ window.ProgressPhotos = (function () {
   }
 
   // ------------------------------------------------- schedule-zone picker ----
-  // Cascading N-level WBS picker on the preset Discipline/Trade > Tower >
-  // Level > Zone > Orientation (WBS_LEVEL_LABELS): each depth is a <select>;
-  // picking one repopulates the next with its children. A capture can stop
-  // at any depth — "just this Tower" is valid, not only a full 5-deep pick.
-  // A free-text label (auto-filled from the deepest pick, still editable) is
-  // kept so photos that aren't tied to any WBS node can still be tagged.
+  // Cascading N-level WBS picker with NO hardcoded per-level labels: each
+  // depth is a bare <select> showing that node's real children as
+  // "<code>  <name>" (Project Schedule's own convention for its Add-Activity
+  // WBS dropdown — reused verbatim, not reinvented). Picking one repopulates
+  // the next with its children; a capture can stop at any depth — "just this
+  // Tower" is valid, not only a full pick to the deepest leaf. The resolved
+  // path is shown as its own read-only breadcrumb (paintActCtx) — never
+  // written into the separate, purely-optional free-text "Location label".
   // Any Activity Code types the project has (a separate, unrelated
   // mechanism) get their own generic overlay checkboxes.
   function levelSelectHTML(idPrefix, depth, kids, selId) {
-    var label = WBS_LEVEL_LABELS[depth] || ('Level ' + (depth + 1));
-    var opts = '<option value="">— ' + (depth === 0 ? 'Not tracked' : 'None') + ' —</option>' +
+    var opts = '<option value="">— ' + (depth === 0 ? 'Select…' : 'None') + ' —</option>' +
       kids.map(function (n) {
-        return '<option value="' + n.id + '"' + (n.id === selId ? ' selected' : '') + '>' + Fmt.esc(n.name) + '</option>';
+        var label = (n.code ? n.code + '  ' : '') + n.name;
+        return '<option value="' + n.id + '"' + (n.id === selId ? ' selected' : '') + '>' + Fmt.esc(label) + '</option>';
       }).join('');
-    return '<div class="pd-field pp-wbslevel"><label>' + Fmt.esc(label) + '</label>' +
-      '<select class="pd-select" data-lvl="' + depth + '" id="' + idPrefix + '-lvl' + depth + '">' + opts + '</select></div>';
+    return '<select class="pd-select pp-wbslevel" data-lvl="' + depth + '" id="' + idPrefix + '-lvl' + depth + '">' + opts + '</select>';
   }
   // Renders one select per depth, seeded from `path` (root-first ids) so a
   // preset/existing pick reopens fully expanded; stops one level past the
@@ -666,7 +696,7 @@ window.ProgressPhotos = (function () {
   function wbsCascadeHTML(idPrefix, path) {
     path = path || [];
     var html = '', parentId = '', depth = 0;
-    while (depth < 10) {
+    while (depth < 20) {
       var kids = wbsChildren(parentId);
       if (!kids.length) break;
       var selId = path[depth] || '';
@@ -675,7 +705,7 @@ window.ProgressPhotos = (function () {
       parentId = selId;
       depth++;
     }
-    return html || '<p class="pp-hint">No schedule WBS found for this project yet.</p>';
+    return html || '<p class="pp-hint">No schedule WBS found for this project yet — build it in Project Schedule.</p>';
   }
   // The deepest level actually selected (a capture can stop early) — this is
   // the wbs_node_id that gets stored on the photo.
@@ -699,8 +729,6 @@ window.ProgressPhotos = (function () {
         for (var i = 0; i <= depth; i++) path.push(sels[i].value);
         cascade.innerHTML = wbsCascadeHTML(idPrefix, path);
         wireCascade(idPrefix);
-        var loctxt = $(idPrefix + '-loctxt');
-        if (loctxt) loctxt.dataset.userEdited = '';
         paintActCtx(idPrefix);
       };
     });
@@ -708,8 +736,12 @@ window.ProgressPhotos = (function () {
   function wbsFieldHTML(idPrefix, selNodeId, locText) {
     var path = wbsPathTo(selNodeId);
     return (
-      '<div class="pp-span2 pp-wbscascade" id="' + idPrefix + '-cascade">' + wbsCascadeHTML(idPrefix, path) + '</div>' +
-      '<div class="pd-field pp-span2"><label>Location label</label>' +
+      '<div class="pp-span2 pp-wbssection"><label>WBS Location</label>' +
+        '<div class="pp-wbscascade" id="' + idPrefix + '-cascade">' + wbsCascadeHTML(idPrefix, path) + '</div>' +
+        '<div class="pp-wbscrumb" id="' + idPrefix + '-crumb"></div>' +
+      '</div>' +
+      '<div class="pd-field pp-span2"><label>Location label ' +
+        '<span class="pp-optnote">(optional — does not replace the WBS location above)</span></label>' +
         '<input class="pd-input" id="' + idPrefix + '-loctxt" value="' + Fmt.esc(locText || '') +
         '" placeholder="e.g. Model Unit Entrance" /></div>' +
       '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>' +
@@ -737,24 +769,24 @@ window.ProgressPhotos = (function () {
     var wrap = $(idPrefix + '-codes'); if (!wrap) return [];
     return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
   }
-  // skipInitialFill: true when opening on an already-saved location label
-  // (edit modal) — the first paint should leave it alone; a subsequent
-  // manual re-pick of the WBS cascade should still refresh it.
+  // Location label is fully independent of the WBS pick now — never
+  // auto-filled/overwritten by it (the breadcrumb below is the one place the
+  // resolved WBS path is shown). The `skipInitialFill` param is kept as a
+  // harmless no-op so existing call sites don't need to change.
   function wireWbsField(idPrefix, skipInitialFill) {
-    var loctxt = $(idPrefix + '-loctxt');
-    if (!loctxt) return;
-    loctxt.oninput = function () { loctxt.dataset.userEdited = '1'; };
     wireCascade(idPrefix);
-    if (skipInitialFill) loctxt.dataset.userEdited = '1';
     paintActCtx(idPrefix);
   }
   function paintActCtx(idPrefix) {
-    var loctxt = $(idPrefix + '-loctxt'), ctx = $(idPrefix + '-actctx');
-    if (!ctx) return;
+    var ctx = $(idPrefix + '-actctx'), crumb = $(idPrefix + '-crumb');
     var nodeId = currentCascadeNodeId(idPrefix);
+    if (crumb) {
+      crumb.innerHTML = nodeId
+        ? Fmt.esc(breadcrumbOf(nodeId))
+        : '<span class="pp-muted">No WBS location selected yet.</span>';
+    }
+    if (!ctx) return;
     if (!nodeId) { ctx.innerHTML = ''; return; }
-    var node = wbsLeaf(nodeId);
-    if (node && loctxt && !loctxt.dataset.userEdited) loctxt.value = node.label;
     var act = resolveActivity(nodeId), last = lastCaptureAt(nodeId);
     var html = '';
     if (act) html += '<div class="pp-actline">Current activity: <strong>' + Fmt.esc(act.name || act.id) + '</strong></div>';
@@ -816,7 +848,7 @@ window.ProgressPhotos = (function () {
         taken_at: $('pp-date').value || null,
         trade: $('pp-trade').value || null,
         works: $('pp-works').value.trim() || null,
-        location: $('pp-loctxt').value.trim() || null,
+        location: $('pp-loctxt').value.trim() || breadcrumbOf(wbsNodeId) || null,
         wbs_node_id: wbsNodeId,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
@@ -1054,7 +1086,7 @@ window.ProgressPhotos = (function () {
         taken_at: $('pp-e-date').value || null,
         trade: $('pp-e-trade').value || null,
         works: $('pp-e-works').value.trim() || null,
-        location: $('pp-e-loctxt').value.trim() || null,
+        location: $('pp-e-loctxt').value.trim() || breadcrumbOf(wbsNodeId) || null,
         wbs_node_id: wbsNodeId,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,

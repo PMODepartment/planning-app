@@ -2,6 +2,55 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Phase 1 correction: no preset hierarchy at all — pure dynamic WBS, code-inspected
+## first (2026-08-12)
+Owner's explicit correction after reviewing the real Schedule/WBS Manager: **every** preset tried so
+far (Location>Zone>Discipline/Trade, then Discipline/Trade>Tower>Level>Zone>Orientation) was still
+assuming a shape. A WBS has none — confirmed by inspecting Project Schedule's actual code before
+touching anything (not assumed): `wbs_nodes` is `{id, parent_id, code, name, sort_order}` with **no
+node-type/category column whatsoever** — nothing distinguishes "this node is a location" from "this
+node is a discipline" or a phase. Per-project depth and terminology are genuinely arbitrary.
+- **Removed `WBS_LEVEL_LABELS` entirely** — no more hardcoded per-level names, in either direction.
+  Each cascade `<select>` is now bare (no label above it) and shows real WBS data — the option text
+  is `"<code>  <name>"`, reusing **Project Schedule's own convention verbatim** (its Add-Activity WBS
+  dropdown, `wbsPickerOptions()`, formats options identically) rather than inventing a new one.
+- **The resolved path is now its own dedicated, read-only breadcrumb** (`.pp-wbscrumb`, painted by
+  `paintActCtx`) — e.g. `Construction › Construction Phase › Tower 1 › Structural Works ›
+  Superstructure › Ground Floor › Zone 1 › Vertical`, matching the exact 8-level Avesta example in
+  the brief. **The free-text "Location label" is no longer auto-filled from it** — it's a fully
+  independent, purely optional caption now, so it can never be mistaken for or silently replace the
+  structured WBS path (the breadcrumb is always visible regardless of what's typed there).
+- ⚠️ **The stored `location` text column still gets the breadcrumb as a fallback when Location
+  label is left blank** (`location: $('...-loctxt').value.trim() || breadcrumbOf(wbsNodeId) || null`)
+  — this is a deliberate, narrow exception to "never auto-fill the label the user sees": it keeps
+  search/List-View-Location/PPR display meaningful for the common case (no custom caption typed)
+  without ever touching what's shown in the editable input itself.
+- **Photos-page location filtering is now WBS-based, descendant-inclusive, per brief §13** —
+  `pp-f-location` is populated by `wbsFlatOptionsHTML()` (a full flattened, indented, code+name walk
+  of the whole tree, same convention as the cascade) instead of a distinct-text-values list. Picking
+  a node matches that node **or any descendant** (`isNodeUnder`, already built for `resolveActivity`)
+  — picking "Ground Floor" correctly returned photos captured at "Zone 1 › Vertical" several levels
+  under it in the harness, and correctly returned 0 for an unrelated sibling branch.
+- **No other behavior changed** — `resolveActivity`'s descendant matching, the offline blob queue,
+  `tolerantWrite`/PDSync routing, Rounds (still WBS-leaf + capture-history driven, no separate
+  location list), and the single `wbs_node_id` storage model were already correct per the brief's
+  core requirement (§19: `Photo → wbs_node_id`, no `level_id`/`area_id`/`zone_id`) — confirmed by
+  inspection, not rebuilt.
+- **No data migration** — every existing `wbs_node_id` value was already a valid FK reference; only
+  the picker's *display* logic changed, never what gets stored.
+- **Harness-verified against the brief's own 8-level Avesta example** (`Construction ›
+  Construction Phase › Tower 1 › Structural Works › Superstructure › Ground Floor › Zone 1 ›
+  Vertical/Horizontal`, plus a sibling `General Requirements` branch and a second `Zone 2` to prove
+  siblings/unrelated branches behave correctly): the cascade renders exactly 8 selects (no phantom
+  9th level) with codes matching `4.2.1.1.2.1.1.1`-style dotted numbers; each depth's options are
+  strictly that node's own children (verified depth 1 shows only `General Requirements`/`Construction
+  Phase`, depth 6 shows only `Zone 1`/`Zone 2`); the breadcrumb matches the brief's example
+  character-for-character; Location label stays empty through the whole drill-down; save persists
+  the breadcrumb into `location` as a fallback + `wbs_node_id`/`activity_id`/`activity_name`
+  correctly; the WBS filter is descendant-inclusive (Ground Floor → 2/2 photos) and correctly
+  excludes an unrelated branch (General Requirements → 0/2); Rounds lists all leaves with
+  unambiguous full paths. No console errors.
+
 ## Location picker rebuilt as a generic N-level WBS cascade: Discipline/Trade > Tower >
 ## Level > Zone > Orientation (2026-08-11c)
 Owner's explicit second follow-up: the preset flips again — Discipline/Trade is now the **top**
