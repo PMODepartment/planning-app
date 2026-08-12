@@ -96,9 +96,19 @@ audit rows, so emptying a project can never make it deletable.**
   is covered automatically without editing the function.
 - New `admin_project_delete_preview(project)` answers "why can't I delete this?" without attempting
   the delete, classing each non-empty table `residue` | `blocking`.
-- ⚠️ **Not yet run against the live DB** — `migrations/2026-08-12-delete-project-residue.sql` must be
-  pasted into the Supabase SQL editor. Verify with `select * from admin_project_delete_preview('NCIT');`
-  **before** deleting anything.
+- **Applied to the live DB and confirmed end-to-end.** NCIT's blocker toast went from
+  `calendars (1), schedule_audit (45), schedule_baselines (1)` to `schedule_baselines (1)` alone.
+- ⚠️ **`admin_*` functions cannot be tested from the Supabase SQL editor** — `is_admin()` reads
+  `auth.uid()`, which is NULL for the `postgres` role, so every call raises `Not authorized`. That
+  error means the function installed, not that your account lacks rights. Verify via plain catalog
+  queries (which bypass RLS) or by exercising the real UI signed in.
+- ⚠️ **NCIT's baseline held 9 activities, not 0** — with the live schedule already cleared, that
+  baseline's `activities` jsonb was the last copy of that schedule. Flagged before deleting; user
+  chose to drop it. **Check `activity_count` before clearing any baseline** — an "empty" project can
+  still have its only history in one.
+- Modal body text in **both** `projects.html` and `admin.html` reworded: the old "no module data at
+  all" became false the moment residue stopped blocking. Now names what actually blocks and states
+  that calendars/audit/derived data clear automatically.
 
 ### 2026-08-12 — Projects page UI pass: 4 real bugs (2 of them mine) + grouped card view
 User: improve the group-head side panel, the card view "is not working as well", and clearing the

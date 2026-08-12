@@ -181,9 +181,11 @@
     function confirmDeleteProject(p, parent) {
       var m = UI.modal(
         '<h2 style="margin-top:0;">Delete project '+Fmt.esc(p.id)+'?</h2>' +
-        '<p style="color:var(--pd-muted);">This cannot be undone. It only works if the project has ' +
-        '<b>no module data at all</b> — if any schedule, risk, cash-flow or other record exists the ' +
-        'delete is refused, and you should <b>Archive</b> instead (keeps the history).</p>' +
+        '<p style="color:var(--pd-muted);">This cannot be undone. It is refused while the project still ' +
+        'holds <b>real work</b> — a schedule, baseline, register, risk or cash-flow record — and the ' +
+        'error names what is blocking. Working calendars, audit history and derived data (S-curve, ' +
+        'roll-ups) are cleared automatically and never block. To keep the history instead, ' +
+        '<b>Archive</b>.</p>' +
         '<div class="pd-field"><label>Type <b>'+Fmt.esc(p.id)+'</b> to confirm</label>' +
         '<input class="pd-input" id="d-echo" autocomplete="off"></div>' +
         '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="d-cancel">Cancel</button> ' +

@@ -495,9 +495,11 @@
     function deleteProjectModal(p, parent) {
       confirmDelete({
         id: p.id, parent: parent, title: 'Delete project ' + Fmt.esc(p.id) + '?',
-        body: 'This cannot be undone. It only works if the project has <b>no module data at all</b> — ' +
-              'if any schedule, risk, cash-flow or other record exists, the delete is refused and you ' +
-              'should <b>Archive</b> instead (keeps the history, hides it from active use).',
+        body: 'This cannot be undone. It is refused while the project still holds <b>real work</b> — a ' +
+              'schedule, baseline, register, risk or cash-flow record — and the error names what is ' +
+              'blocking. Working calendars, audit history and derived data (S-curve, roll-ups) are ' +
+              'cleared automatically and never block. To keep the history instead, <b>Archive</b> ' +
+              '(hides it from active use).',
         ok: 'Project deleted',
         run: function () { return PDb.deleteProject(p.id); },
       });
