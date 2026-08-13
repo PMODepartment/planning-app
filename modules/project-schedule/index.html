@@ -479,6 +479,26 @@
     .ps-legend { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:8px 2px; font-size:12px; color:var(--pd-muted); }
     .ps-legend .lg { display:inline-flex; align-items:center; gap:6px; }
     .lg-swatch { display:inline-block; width:22px; height:11px; border-radius:2px; }
+    /* Activity legend (LSM-style): one swatch per activity CATEGORY, colouring the bars.
+       Separate from .ps-legend above, which explains the bar SHAPES (task/summary/baseline/…). */
+    .ps-actlegend { border-top:1px dashed var(--pd-line); padding:8px 2px 10px; font-size:12px; color:var(--pd-muted); }
+    .ps-actlegend-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:6px; }
+    .ps-actlegend-head label { display:inline-flex; align-items:center; gap:6px; }
+    .ps-actlegend-items { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+    .ps-alg { display:inline-flex; align-items:center; gap:6px; max-width:230px; }
+    .ps-alg span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-alg input[type=color] { width:22px; height:14px; padding:0; border:1px solid var(--pd-line); border-radius:2px; background:none; cursor:pointer; flex:none; }
+    /* Vertical stacking (status-as-of-a-month) */
+    .ps-stk-body { padding:12px 14px 16px; overflow:auto; max-height:74vh; }
+    .ps-stk-ctrls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:10px; font-size:12px; color:var(--pd-muted); }
+    .ps-stk-row { display:grid; grid-template-columns:70px 1fr auto; align-items:center; gap:10px; margin-bottom:2px; }
+    .ps-stk-lvl { font-size:12px; font-weight:700; text-align:right; color:var(--pd-ink); }
+    .ps-stk-band { height:22px; border:1px solid var(--pd-line); border-radius:2px; position:relative; background:var(--pd-bg); overflow:hidden; }
+    .ps-stk-band i { position:absolute; left:0; top:0; bottom:0; display:block; }
+    .ps-stk-txt { font-size:11.5px; color:var(--pd-ink); white-space:nowrap; }
+    .ps-stk-txt.none { color:var(--pd-muted); }
+    .ps-stk-grade { border-top:2px solid var(--pd-red); margin:6px 0; font-size:10.5px; color:var(--pd-red); }
+    .ps-mo { cursor:pointer; }
     .lg-task { background:var(--ps-bar,#2B2C2B); position:relative; overflow:hidden; }
     .lg-task::after { content:""; position:absolute; left:0; top:0; bottom:0; width:55%; background:var(--pd-red); }
     .lg-sum { background:var(--ps-sum,#231F20); height:7px; }
@@ -1502,6 +1522,10 @@
           <span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>
         </div>
 
+        <!-- Activity legend: colours the Gantt bars by activity CATEGORY (LSM-style).
+             Rendered by renderActLegend(); hidden until the project has categories. -->
+        <div class="ps-actlegend" id="ps-actlegend" style="display:none;"></div>
+
         <!-- OPC-style Activity Details / Project Usage panel (driven by selected activity) -->
         <div class="ps-details" id="ps-details">
           <div class="ps-details-grip" id="ps-details-grip" title="Drag to resize the details panel"></div>
@@ -1809,6 +1833,14 @@
       <div class="ps-snap-list" id="ps-snap-list"></div>
       <div class="ps-snap-detail" id="ps-snap-detail"><div class="ps-ck-empty">Select a snapshot to compare its milestones against today.</div></div>
     </div>
+  </div>
+</div>
+
+<!-- Vertical stacking: project status by location level as of a period (click a month in the Gantt header) -->
+<div class="ps-bulk-back" id="ps-stack-back">
+  <div class="ps-bulk-panel" style="width:820px;">
+    <div class="ps-bulk-head"><strong id="ps-stk-title">Planned status</strong><span class="ps-bulk-count" id="ps-stk-count"></span><button class="ps-bulk-x" id="ps-stk-x">&#215;</button></div>
+    <div class="ps-stk-body" id="ps-stk-body"></div>
   </div>
 </div>
 
@@ -3096,6 +3128,7 @@
   // (`_sorted` holds live row references, so field edits show without re-sorting.)
   function rebuild(structural) {
     if (structural === undefined) structural = true;
+    _catCache = null;   // category legend is derived from the rows; recompute after any data change
     // WBS-derived fields are cached per row (`_segsWbs`) and recomputed only when `wbs` changes.
     rows.forEach(function (r) {
       if (r._segsWbs === r.wbs && r._segs) return;
@@ -6095,7 +6128,7 @@
     // Paint only the list. The desktop pipeline is (re)built by renderAll when a
     // resize crosses back above 700px (see the resize handler above).
     if (psIsPhone()) { renderMobile(); return; }
-    renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderCost(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); }
+    renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderActLegend(); renderCost(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
@@ -8272,14 +8305,24 @@
     if (zoom === 'quarter') {
       var q = new Date(min.getFullYear(), Math.floor(min.getMonth()/3)*3, 1);
       while (q <= max) { var qx = dayDiff(min, q) * dayw, qn = new Date(q.getFullYear(), q.getMonth()+3, 1), qw = dayDiff(q, qn) * dayw;
-        mos += '<div class="ps-mo" style="left:' + qx + 'px;width:' + qw + 'px;">Q' + (Math.floor(q.getMonth()/3)+1) + ' ’' + String(q.getFullYear()).slice(2) + '<span class="ps-ts-grip" data-days="' + dayDiff(q, qn) + '" title="Drag to resize the timeline"></span></div>'; q = qn; }
+        var qlab = 'Q' + (Math.floor(q.getMonth()/3)+1) + ' ’' + String(q.getFullYear()).slice(2);
+        mos += '<div class="ps-mo" data-pstart="' + dstr(q) + '" data-pend="' + dstr(addDays(qn, -1)) + '" data-plabel="' + esc(qlab) + '" title="Click for the vertical stacking view at the end of this quarter" style="left:' + qx + 'px;width:' + qw + 'px;">' + qlab + '<span class="ps-ts-grip" data-days="' + dayDiff(q, qn) + '" title="Drag to resize the timeline"></span></div>'; q = qn; }
     } else if (zoom === 'month') {
       var mm = new Date(min.getFullYear(), min.getMonth(), 1);
       while (mm <= max) { var mx = dayDiff(min, mm) * dayw, mn = new Date(mm.getFullYear(), mm.getMonth()+1, 1), mw = dayDiff(mm, mn) * dayw;
-        mos += '<div class="ps-mo" style="left:' + mx + 'px;width:' + mw + 'px;">' + MABBR[mm.getMonth()] + '<span class="ps-ts-grip" data-days="' + dayDiff(mm, mn) + '" title="Drag to resize the timeline"></span></div>'; mm = mn; }
+        var mlab = MABBR[mm.getMonth()] + ' ' + mm.getFullYear();
+        mos += '<div class="ps-mo" data-pstart="' + dstr(mm) + '" data-pend="' + dstr(addDays(mn, -1)) + '" data-plabel="' + esc(mlab) + '" title="Click for the vertical stacking view at the end of this month" style="left:' + mx + 'px;width:' + mw + 'px;">' + MABBR[mm.getMonth()] + '<span class="ps-ts-grip" data-days="' + dayDiff(mm, mn) + '" title="Drag to resize the timeline"></span></div>'; mm = mn; }
     }
     head.innerHTML = '<div style="position:relative;width:' + W + 'px;height:38px;">' + yrs + mos + '</div>';
     head.querySelectorAll('.ps-ts-grip').forEach(function (g) { g.addEventListener('mousedown', function (e) { startTsResize(e, parseFloat(g.dataset.days)); }); });
+    // Click a period cell -> vertical stacking view at the END of that period. The resize grip
+    // lives inside the same cell, so ignore clicks that land on it (it is a drag, not a click).
+    head.querySelectorAll('.ps-mo[data-pstart]').forEach(function (c) {
+      c.addEventListener('click', function (e) {
+        if (e.target.classList.contains('ps-ts-grip')) return;
+        openStackView(pd(c.dataset.pstart), pd(c.dataset.pend), c.dataset.plabel);
+      });
+    });
     // gantt static layer (grid lines + data-date) + windowed bars container
     var tl = document.getElementById('ps-tl'); tl.style.width = W + 'px'; tl.style.height = H + 'px';
     var stat = '', g = new Date(min.getFullYear(), min.getMonth(), 1);
@@ -8647,7 +8690,8 @@
     var s = pd(dispStart(r)), e = pd(dispFin(r));   // actual when set, else planned
     var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && mfpOn && r._near) ? ' ps-near' : '');
     if (spotlightRow(r)) crit += ' ps-spot';
-    var wc = actColor(r) || effWbsColor(r);
+    // Per-activity override wins, then the category legend colour (LSM), then the WBS branch colour.
+    var wc = actColor(r) || catColor(r) || effWbsColor(r);
     var lbl = _barLabel(r);
     if (isMile(r)) {
       var md = isFinishMile(r) ? (e || s) : s; if (!md) return out;   // Finish Milestone anchors on the finish
@@ -14140,6 +14184,231 @@
     try { localStorage.setItem('ps_actcolors', JSON.stringify(all)); } catch (e) {}
   }
   function actColor(r) { if (!pid || !r) return null; var m = actColorMap(); return m[r.id] || null; }
+
+  // ---- Activity CATEGORY colours + legend (LSM-style) ----------------------------------------
+  // An LSM legend maps one colour to a repeating work TYPE (Structural Works, MEPF 1st Fix,
+  // Plastering, …), not to one row — the same activity recurs on every floor. So the key is a
+  // category FIELD (activity name / discipline / activity code), and every row sharing that
+  // value shares the colour. Stored per project in localStorage (like the other colour overrides):
+  //   ps_catcolors = { "<pid>": { on:bool, field:'name'|'work'|'type'|'code:<typeId>', colors:{value:hex} } }
+  var CAT_PALETTE = ['#6E6E6E','#00B050','#375623','#7C6FCB','#00B0F0','#0070C0','#1F4E79',
+                     '#C00000','#8B0000','#B4B4B4','#BFBF00','#5A3A1B','#A0522D','#FF9900',
+                     '#FF66A3','#E5007E','#2F6FB0','#7F3F00'];
+  function catCfg() {
+    var d = { on:false, field:'name', colors:{} };
+    try { var all = JSON.parse(localStorage.getItem('ps_catcolors') || '{}'); var c = all[pid];
+      if (!c) return d;
+      return { on: !!c.on, field: c.field || 'name', colors: c.colors || {} };
+    } catch (e) { return d; }
+  }
+  function saveCatCfg(cfg) {
+    var all = {}; try { all = JSON.parse(localStorage.getItem('ps_catcolors') || '{}'); } catch (e) {}
+    all[pid] = cfg; try { localStorage.setItem('ps_catcolors', JSON.stringify(all)); } catch (e) {}
+    _catCache = null;
+  }
+  // The category VALUE for a row. WBS/summary rows have none (they roll up several categories).
+  function catValOf(r, field) {
+    if (!r || isWbsNode(r)) return '';
+    if (field === 'work') return (r.work_type || '').trim();
+    if (field === 'type') return (r.activity_type || '').trim();
+    if (field && field.indexOf('code:') === 0) {
+      var v = (r.activity_codes || {})[field.slice(5)];
+      return (v && codeValueLabel(v)) || '';
+    }
+    return (r.activity_name || '').trim();
+  }
+  function catFieldOptions() {
+    var out = [['name','Activity name'], ['work','Discipline / Trade'], ['type','Activity type']];
+    CODE_TYPES.forEach(function (t) { out.push(['code:' + t.id, t.name]); });
+    return out;
+  }
+  // Distinct categories, ordered the way an LSM legend reads: by when the work first starts
+  // (so Structural → Masonry → Plastering → Finishes falls out of the schedule itself), blanks last.
+  var _catCache = null;
+  function catList() {
+    var cfg = catCfg(), key = pid + '|' + cfg.field + '|' + rows.length;
+    if (_catCache && _catCache.key === key) return _catCache.list;
+    var by = {};
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      var v = catValOf(r, cfg.field); if (!v) return;
+      var s = pd(dispStart(r)) || pd(r.bl_start);
+      var b = by[v] || (by[v] = { value: v, n: 0, first: null });
+      b.n++; if (s && (!b.first || s < b.first)) b.first = s;
+    });
+    var list = Object.keys(by).map(function (k) { return by[k]; });
+    list.sort(function (a, b2) {
+      if (a.first && b2.first && +a.first !== +b2.first) return a.first - b2.first;
+      if (a.first && !b2.first) return -1;
+      if (!a.first && b2.first) return 1;
+      return a.value.localeCompare(b2.value);
+    });
+    list.forEach(function (c, i) { c.color = cfg.colors[c.value] || CAT_PALETTE[i % CAT_PALETTE.length]; });
+    _catCache = { key: key, list: list, map: list.reduce(function (m, c) { m[c.value] = c.color; return m; }, {}) };
+    return list;
+  }
+  function catColorMapNow() { catList(); return (_catCache && _catCache.map) || {}; }
+  function catColor(r) {
+    var cfg = catCfg(); if (!cfg.on || !pid) return null;
+    var v = catValOf(r, cfg.field); if (!v) return null;
+    return catColorMapNow()[v] || null;
+  }
+  function renderActLegend() {
+    var host = document.getElementById('ps-actlegend'); if (!host) return;
+    if (!pid || !rows.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    var cfg = catCfg(), list = catList(), MAXL = 40;
+    host.style.display = '';
+    var opts = catFieldOptions().map(function (o) {
+      return '<option value="' + esc(o[0]) + '"' + (o[0] === cfg.field ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+    }).join('');
+    var items = cfg.on
+      ? (list.length
+          ? list.slice(0, MAXL).map(function (c) {
+              return '<label class="ps-alg" title="' + esc(c.value) + ' — ' + c.n + ' activit' + (c.n === 1 ? 'y' : 'ies') + '">' +
+                '<input type="color" class="ps-catclr" data-v="' + esc(c.value) + '" value="' + c.color + '">' +
+                '<span>' + esc(c.value) + '</span></label>';
+            }).join('') + (list.length > MAXL ? '<span>+' + (list.length - MAXL) + ' more</span>' : '')
+          : '<span>No values on this field yet — pick another, or set Discipline / Trade on the activities.</span>')
+      : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
+    host.innerHTML =
+      '<div class="ps-actlegend-head">' +
+        '<label><input type="checkbox" id="ps-alg-on"' + (cfg.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
+        '<select class="pd-select" id="ps-alg-field" style="height:28px;font-size:12px;max-width:200px;">' + opts + '</select>' +
+        (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="height:28px;font-size:12px;">Reset colours</button>' : '') +
+        '<span style="margin-left:auto;">Tip: click a <strong>month</strong> in the Gantt header for the vertical stacking view.</span>' +
+      '</div>' +
+      '<div class="ps-actlegend-items">' + items + '</div>';
+    host.querySelector('#ps-alg-on').onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    host.querySelector('#ps-alg-field').onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    var rst = host.querySelector('#ps-alg-reset');
+    if (rst) rst.onclick = function () { var c = catCfg(); c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    host.querySelectorAll('.ps-catclr').forEach(function (inp) {
+      inp.onchange = function () { var c = catCfg(); c.colors[inp.dataset.v] = inp.value; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    });
+  }
+
+  // ---- Vertical stacking: status by location level as of a period ------------------------------
+  // Clicking a month/quarter in the Gantt header answers "what does the building look like at the
+  // end of this period?" — one band per floor/level, coloured by the activity category that is
+  // running (or last completed) there, using the SAME legend colours as the bars.
+  var _stkFrom = null, _stkTo = null, _stkLabel = '', _stkLevel = null;
+  function stkDefaultLevel() {
+    if (_stkLevel && LOC_LEVELS.some(function (l) { return l.id === _stkLevel; })) return _stkLevel;
+    var m = LOC_LEVELS.filter(function (l) { return /floor|level|storey|story/i.test(l.name || ''); })[0];
+    return (m && m.id) || (LOC_LEVELS.length ? LOC_LEVELS[LOC_LEVELS.length - 1].id : null);
+  }
+  function openStackView(from, to, label) {
+    _stkFrom = from; _stkTo = to; _stkLabel = label;
+    _stkLevel = stkDefaultLevel();
+    var back = document.getElementById('ps-stack-back'); if (!back) return;
+    back.classList.add('open');
+    document.getElementById('ps-stk-x').onclick = closeStackView;
+    back.onclick = function (e) { if (e.target === back) closeStackView(); };
+    renderStackView();
+  }
+  function closeStackView() { var b = document.getElementById('ps-stack-back'); if (b) b.classList.remove('open'); }
+  // State of one (location, category) bucket at the cut-off date.
+  function _stkState(acts, D) {
+    var any = false, allDone = true, started = false;
+    for (var i = 0; i < acts.length; i++) {
+      var s = pd(dispStart(acts[i])), e = pd(dispFin(acts[i]));
+      if (!s || !e) continue;
+      any = true;
+      if (s <= D) started = true;
+      if (e > D) allDone = false;
+    }
+    if (!any) return 'none';
+    if (allDone) return 'done';
+    return started ? 'wip' : 'none';
+  }
+  function renderStackView() {
+    var body = document.getElementById('ps-stk-body'),
+        ttl = document.getElementById('ps-stk-title'),
+        cnt = document.getElementById('ps-stk-count');
+    if (!body) return;
+    ttl.textContent = 'Planned status as of ' + _stkLabel;
+    var cfg = catCfg(), cats = catList(), colors = catColorMapNow();
+    var lvlSel = '<select class="pd-select" id="ps-stk-level" style="height:28px;font-size:12px;max-width:180px;">' +
+      LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === _stkLevel ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
+      '</select>';
+    if (!LOC_LEVELS.length) {
+      cnt.textContent = '';
+      body.innerHTML = '<div class="ps-ck-empty">This project has no Location Breakdown yet. Open the <strong>Group</strong> menu → <strong>Location Breakdown…</strong> to define levels (Tower / Level / Zone), then fill them from the WBS.</div>';
+      return;
+    }
+    if (!cats.length) {
+      cnt.textContent = '';
+      body.innerHTML = '<div class="ps-ck-empty">No activity categories on the <strong>' +
+        esc((catFieldOptions().filter(function (o) { return o[0] === cfg.field; })[0] || ['', cfg.field])[1]) +
+        '</strong> field — pick another field in the activity legend under the Gantt.</div>';
+      return;
+    }
+    var D = _stkTo;
+    // Bucket the leaf activities by location value, then by category.
+    var by = {}, catIdx = {};
+    cats.forEach(function (c, i) { catIdx[c.value] = i; });
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      var loc = locValOf(r, _stkLevel); if (!loc) return;
+      var v = catValOf(r, cfg.field); if (!v || !(v in catIdx)) return;
+      var b = by[loc] || (by[loc] = { loc: loc, first: null, cats: {} });
+      (b.cats[v] || (b.cats[v] = [])).push(r);
+      var s = pd(dispStart(r)) || pd(r.bl_start);
+      if (s && (!b.first || s < b.first)) b.first = s;
+    });
+    var locs = Object.keys(by).map(function (k) { return by[k]; });
+    if (!locs.length) {
+      cnt.textContent = '';
+      body.innerHTML = '<div class="ps-ck-empty">No activities carry a <strong>' + esc((LOC_LEVELS.filter(function (l) { return l.id === _stkLevel; })[0] || {}).name || '') +
+        '</strong> value. Run <strong>Group ▸ Match WBS to locations…</strong> first.</div>';
+      body.innerHTML = '<div class="ps-stk-ctrls">Stack by ' + lvlSel + '</div>' + body.innerHTML;
+      wireStackCtrls(lvlSel, body);
+      return;
+    }
+    // Bottom-up build order: earliest start first = lowest level. Displayed top-down (top level first).
+    locs.sort(function (a, b2) {
+      if (a.first && b2.first && +a.first !== +b2.first) return a.first - b2.first;
+      return String(a.loc).localeCompare(String(b2.loc), undefined, { numeric: true });
+    });
+    locs.reverse();
+    var nDone = 0;
+    var rowsHtml = locs.map(function (b) {
+      var wip = null, lastDone = null, doneCount = 0;
+      cats.forEach(function (c) {
+        var acts = b.cats[c.value]; if (!acts || !acts.length) return;
+        var st = _stkState(acts, D);
+        if (st === 'done') { lastDone = c; doneCount++; }
+        else if (st === 'wip' && !wip) wip = c;
+      });
+      var total = Object.keys(b.cats).length;
+      var pct = total ? Math.round((doneCount / total) * 100) : 0;
+      if (pct === 100) nDone++;
+      var col = wip ? (colors[wip.value] || '#999') : (lastDone ? (colors[lastDone.value] || '#999') : null);
+      var txt = wip ? ('On-going ' + wip.value) : (lastDone ? (lastDone.value + ' complete') : 'Not started');
+      return '<div class="ps-stk-row">' +
+          '<div class="ps-stk-lvl">' + esc(b.loc) + '</div>' +
+          '<div class="ps-stk-band" title="' + esc(b.loc + ' — ' + txt + ' (' + doneCount + ' of ' + total + ' categories complete)') + '">' +
+            (col ? '<i style="width:' + Math.max(pct, wip ? 6 : 0) + '%;background:' + col + ';"></i>' : '') +
+          '</div>' +
+          '<div class="ps-stk-txt' + (col ? '' : ' none') + '">' + esc(txt) + '</div>' +
+        '</div>';
+    }).join('');
+    cnt.textContent = locs.length + ' location' + (locs.length === 1 ? '' : 's') + ' · ' + nDone + ' complete';
+    var leg = cats.map(function (c) {
+      return '<span class="ps-alg"><span class="lg-swatch" style="background:' + (colors[c.value] || '#999') + ';"></span><span>' + esc(c.value) + '</span></span>';
+    }).join('');
+    body.innerHTML =
+      '<div class="ps-stk-ctrls">Stack by ' + lvlSel +
+        '<span>Cut-off: <strong>' + esc(Fmt.date(dstr(D))) + '</strong></span>' +
+        '<span style="margin-left:auto;">Based on the displayed dates (actual where recorded, else planned).</span></div>' +
+      rowsHtml +
+      '<div class="ps-actlegend-items" style="margin-top:12px;border-top:1px dashed var(--pd-line);padding-top:10px;">' + leg + '</div>';
+    wireStackCtrls(lvlSel, body);
+  }
+  function wireStackCtrls(lvlSel, body) {
+    var sel = body.querySelector('#ps-stk-level');
+    if (sel) sel.onchange = function () { _stkLevel = this.value; renderStackView(); };
+  }
   // Right-click color picker on a Gantt bar / milestone / WBS summary. Replaces the old Colors button:
   // an activity bar sets its own override; a WBS summary sets a branch color (cascades to descendants).
   function closeBarColorMenu() { var m = document.getElementById('ps-barctx'); if (m) m.remove(); document.removeEventListener('click', closeBarColorMenu); }

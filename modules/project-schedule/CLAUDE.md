@@ -3943,3 +3943,46 @@ visual consistency with the other phases) plus a toggle to isolate just Executio
   non-default saved grouping reopened a few times to confirm the flash is gone; the wrapper/toggle
   feature's implementation predates this entry (built in the same session) and is likewise unverified
   signed-in. Module-local, no migration, no `?v=` bump (`index.html` isn't cache-busted — hard-refresh).
+
+## Activity legend (LSM-style) + vertical stacking view on a month click (2026-08-13) — fmlozano
+User asked for the two LSM features from the OPW101 deck: a **legend for the activities in the Gantt**,
+and **clicking a month to show progress as a vertical stack** of floors.
+- ⚠️ **The existing `.ps-legend` is not that legend.** It explains bar SHAPES (task / summary /
+  baseline / milestone / data date) — one entry per bar KIND. An LSM legend maps a colour to a
+  repeating work TYPE (Structural Works · MEPF 1st Fix · Plastering …), which recurs on every floor.
+  So the new legend is a second strip (`#ps-actlegend`) keyed by a category FIELD, not by row.
+- **Category colour engine** (`ps_catcolors` per project, alongside the existing `ps_wbscolors` /
+  `ps_actcolors`): `catCfg` / `catValOf` / `catList` / `catColor`. The field is selectable —
+  **Activity name · Discipline/Trade (`work_type`) · Activity type · any Activity Code type** —
+  because a P6 import may carry the trade in any of them. Colours auto-assign from an 18-colour
+  palette and every swatch in the legend is an editable `<input type=color>`.
+- ⚠️ **Categories are ordered by when the work first starts, not alphabetically** — that is what makes
+  the legend read like an LSM one (Structural → Masonry → Plastering → Finishes falls out of the
+  schedule itself). Dateless categories sort last; WBS/summary rows and blank values are excluded (a
+  summary rolls up several categories, so it has no single colour).
+- **Bar colour precedence is now `actColor(r) || catColor(r) || effWbsColor(r)`** — a per-activity
+  override still wins, and the legend is **off by default**, so no existing project's Gantt changes
+  colour until the planner turns it on.
+- **Vertical stacking view** (`#ps-stack-back`, `openStackView`/`renderStackView`): every month (or
+  quarter) cell in the Gantt header is clickable and opens *"Planned status as of &lt;period&gt;"* —
+  one band per location value, top level first, coloured with the same legend colours. Per band:
+  fill = % of that location's categories complete at the cut-off, text = *"On-going X"* / *"X
+  complete"* / *"Not started"*.
+  - ⚠️ **The grip inside the same header cell is a DRAG, not a click** — the handler ignores clicks
+    landing on `.ps-ts-grip`, or resizing the timescale would pop the panel open every time.
+  - ⚠️ Rows are sorted by **earliest start** and then reversed, not by name — floor names are text
+    ("Nineth Floor", "Roof Deck") and sort meaninglessly; build order is the honest vertical order.
+    Falls back to a numeric-aware name sort when starts are missing.
+  - Level is chosen from `LOC_LEVELS` (defaults to the one whose name matches /floor|level|storey/),
+    switchable in the panel. Uses `dispStart`/`dispFin`, so it reads actuals where recorded.
+  - Honest empty states rather than a blank panel: no Location Breakdown → points at
+    **Group ▸ Location Breakdown…**; levels defined but unfilled → points at
+    **Group ▸ Match WBS to locations…**; no categories on the chosen field → points back at the legend.
+- ⚠️ Only Month and Quarter zoom produce clickable period cells (Year zoom renders `.ps-yr` only).
+- **Verified 12/12 in Node against the SHIPPED `_stkState`/`catList`/`catValOf`/`catCfg`** (sliced out
+  of index.html, not reimplemented): all five state cases incl. finish-exactly-on-the-cut-off counting
+  as done and started-but-unfinished beating a later done; category ordering by first start, dateless
+  last, WBS + blank excluded, counts aggregated, palette cycling. Inline script parses (1 block, 0
+  fail); the module page loads with no console errors.
+  ⚠️ **Not verified signed-in** — needs a project with a location breakdown to eyeball the stack.
+  `MODULE_V` bumped to `20260813a` (module `index.html` is cache-busted from dashboard.html).

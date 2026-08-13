@@ -77,6 +77,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-13 — Project Schedule: LSM activity legend + click-a-month vertical stacking
+User asked for the two LSM features from the OPW101 deck: a **legend for the activities in the Gantt**
+and **clicking a month to show progress as a vertical stack** of floors. Both landed in
+`modules/project-schedule/index.html` (module-local, no migration).
+- ⚠️ **The Gantt already had a legend, but it explains bar SHAPES** (task / summary / baseline /
+  milestone / data date), not activity types. An LSM legend maps one colour to a repeating work TYPE
+  that recurs on every floor — so a second legend strip was added, keyed by a category FIELD
+  (Activity name · Discipline/Trade · Activity type · any Activity Code type), with editable colour
+  swatches. **Off by default**, so no existing project's Gantt changes colour unasked.
+- ⚠️ **Categories order by when the work first starts, not alphabetically** — that is what makes the
+  legend read like an LSM one (Structural → Masonry → Plastering → Finishes falls out of the schedule).
+- **Clicking a month/quarter in the Gantt header** opens *"Planned status as of …"* — one band per
+  location value, top level first, coloured with the same legend colours, each labelled *"On-going X"*
+  / *"X complete"* / *"Not started"*. Reads `location_levels` + `dispStart`/`dispFin` (actuals where
+  recorded). ⚠️ The timescale resize grip lives in the same header cell, so grip clicks are ignored —
+  otherwise resizing would pop the panel open every time.
+- Verified **12/12 in Node against the shipped functions** (sliced, not reimplemented); inline script
+  parses; module page loads with no console errors. ⚠️ **Not verified signed-in.** `MODULE_V` bumped to
+  `20260813a`. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-13 — Sidebar link to the Engineering App
 User asked for a link to the (separate) Engineering App in the side panel, mirroring the one it
 already carries back to this app. This app has **no shared `nav.js`** — unlike the Engineering App,
