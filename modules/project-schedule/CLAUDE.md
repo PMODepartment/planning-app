@@ -1,5 +1,31 @@
 # Module: project-schedule
 
+## Schedule Builder: library trades + "Others", resizable step-1, step-3 scroll + level-detail fix (2026-08-13g) — eprobles
+Follow-ups on the class-code library + linking UX.
+- **Library items now carry their real trade.** Re-parsed the mapping workbook's **"Excel Temp"**
+  sheet, which has a trade column (**Description 1** — General Requirement / Site Works / Rebar /
+  Concrete / … / Electrical / Plumbing / Fire Protection / …), keyed by the same base code. Mapped
+  each of the 197 Level-3 items to an app trade group and stored it as the 3rd tuple field; the
+  loader files them under that group instead of defaulting all to ST. Counts: GR 17 · SW 15 · ST 5 ·
+  AR 101 · MEPF 46 · ALLIED 5 · **OT 8**.
+- **New trade "Others" (OT).** Added to `GROUPS`/`GLABEL`/`GCOLOR` (teal `#0d9488`) + `parseTrade`,
+  used for the misc/financial codes (DLP, rectification, change order, contingency, buyback, …).
+- **Step 1: resizable grid columns** — the grid is now `table-layout:fixed` with a `<colgroup>`;
+  each header has a drag grip (`.xl-colgrip`) writing per-column widths into `xColW` (persist across
+  re-renders). **Resizable library pane** — a drag grip on the "All class codes" pane's left edge
+  (`holdW`, 180–720px, default widened 260→320) fixes the cramped-on-the-right complaint.
+- **Step 3: long linking is scrollable** — `.sbld-canvaswrap` capped at `max-height:62vh` with visible
+  scrollbars, so a tall/wide zone diagram scrolls inside its pane instead of growing the page.
+- **Level-3/4 detail bug fixed** — when the **Activity level** is Floor or Zone, the deeper controls
+  (unit +/- at Zone, zones+units at Floor) and the tower's unit/zone splits are now **hidden**
+  (`showZones`/`showUnits` gates in `stLevels` + `towerSVG`), matching `leavesOfFloor`. Previously
+  level-4 (unit) controls showed even when scheduling at level 3, which read as a bug.
+- **Linking bug fixed** — clicking a schedule **bar** now only **inspects** (highlights preds/succs);
+  it no longer also toggles the bar into the pending link selection. Linking is done from the tower
+  nodes (step 3) / class-code list (step 4) on the left.
+- `MODULE_V` → `20260813c`. Verified: inline script parses; all symbols present; trade mapping
+  produced 0 unmatched. ⚠️ NOT browser-verified (auth wall).
+
 ## Schedule Builder: class-code library + predecessor/successor inspection + bigger duration fields (2026-08-13f) — eprobles
 Three asks against the Schedule Builder (`ScheduleBuilder` closure in `index.html`), all additive:
 - **Class-code library (right side of step 1).** Extracted **197 codes** from *EPC. FIN. Class Code

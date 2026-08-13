@@ -1250,7 +1250,11 @@
     .sbld-tower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); position:sticky; top:12px; }
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; margin-bottom:8px; }
     /* step 3 — link canvas */
-    .sbld-canvaswrap { overflow:auto; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); }
+    .sbld-canvaswrap { overflow:auto; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); max-height:62vh; }
+    /* obvious scrollbars so a long/wide linking diagram is clearly scrollable */
+    .sbld-canvaswrap::-webkit-scrollbar { width:12px; height:12px; }
+    .sbld-canvaswrap::-webkit-scrollbar-thumb { background:var(--pd-line); border-radius:6px; border:3px solid var(--pd-bg); }
+    .sbld-canvaswrap::-webkit-scrollbar-thumb:hover { background:var(--pd-muted); }
     svg.sbld-canvas { display:block; }
     .sbld-handle { fill:var(--pd-card); stroke:var(--pd-dark); stroke-width:1.5; cursor:crosshair; }
     html.pd-dark .sbld-handle { stroke:#c7ccd1; }
@@ -1335,7 +1339,7 @@
     .sbld-hold-item.sel { outline:2px solid var(--pd-red); outline-offset:1px; background:var(--pd-red-light,rgba(238,49,36,.08)); }
     .sbld-hold-desc { font-size:12px; font-weight:700; line-height:1.2; }
     .sbld-hold-code { font-size:10px; color:var(--pd-muted); }
-    @media (max-width:900px){ .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex-basis:auto; } }
+    @media (max-width:900px){ .sbld-actsplit { flex-direction:column; } .sbld-shuttle { flex-direction:row; justify-content:center; padding:8px 0; } .sbld-hold { flex:1 1 auto !important; } .sbld-holdgrip { display:none; } }
     .sbld-scbtn { padding:4px 9px; font-size:11.5px; }
     .sbld-scbtn.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     /* push modal — WBS structure editor */
@@ -1349,6 +1353,11 @@
     table.sbld-xl { border-collapse:collapse; font-size:12.5px; width:100%; }
     table.sbld-xl th, table.sbld-xl td { border:1px solid var(--pd-line); padding:5px 8px; text-align:left; white-space:nowrap; }
     table.sbld-xl thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-weight:700; }
+    table.sbld-xl thead th[data-ci] { position:sticky; overflow:visible; }
+    .xl-colgrip { position:absolute; top:0; right:-4px; width:9px; height:100%; cursor:col-resize; z-index:4; }
+    .xl-colgrip:hover, .xl-colgrip.drag { background:var(--pd-red); opacity:.55; }
+    .sbld-holdgrip { flex:0 0 8px; align-self:stretch; cursor:col-resize; border-radius:3px; margin:0 2px; }
+    .sbld-holdgrip:hover, .sbld-holdgrip.drag { background:var(--pd-red); opacity:.5; }
     table.sbld-xl td.xl-rn { background:var(--pd-bg); color:var(--pd-muted); text-align:center; width:36px; user-select:none; font-variant-numeric:tabular-nums; }
     table.sbld-xl td.xl-cell { cursor:cell; user-select:none; min-width:70px; overflow:hidden; text-overflow:ellipsis; max-width:340px; }
     table.sbld-xl td.xl-cell.xl-sel { background:rgba(47,111,237,.14); }
@@ -11971,9 +11980,9 @@
   //  Generated preview stays here; pushing into project_schedule is a later step.
   // ======================================================================
   var ScheduleBuilder = (function () {
-    var GROUPS = ['GR', 'SW', 'ST', 'AR', 'MEPF', 'ALLIED'];
-    var GLABEL = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', ALLIED: 'Allied Services' };
-    var GCOLOR = { GR: '#8a5cd1', SW: '#c07f2c', ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e' };
+    var GROUPS = ['GR', 'SW', 'ST', 'AR', 'MEPF', 'ALLIED', 'OT'];
+    var GLABEL = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', ALLIED: 'Allied Services', OT: 'Others' };
+    var GCOLOR = { GR: '#8a5cd1', SW: '#c07f2c', ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e', OT: '#0d9488' };
     // ⚠️ Structural's brand Dark Gray (#2B2C2B) is EXACTLY the dark-mode card colour, so on a dark
     // surface the trade name rendered dark-on-dark and was unreadable (reported on the Auto-trace
     // dialog, where the whole question read "How many ___ floors…"). The deep MEPF blue is nearly
@@ -12003,209 +12012,211 @@
     // step-1 Excel-style grid state (anchor/focus cell, edit flag, focus-restore across re-renders)
     var xa = { r: 0, c: 0 }, xf = { r: 0, c: 0 }, xEditing = false, xWantFocus = false;
     var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
+    var xColW = {};     // step-1 grid: per-column pixel width overrides (drag the header edge to resize)
+    var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
     var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Scope', w: 118, scope: true }, { k: 'durInt', label: 'Interior (d)', w: 90, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 90, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
     // Master class-code library (EPC. FIN. Class Code Mapping — Level 3 code + Description 3).
     // Loaded into the step-1 holding list on demand so a planner can pick from the standard
     // codes instead of retyping them; saved with the build once loaded + shuttled in.
     var CLASS_CODE_DB = [
-      ['1050','Mobilization / Demobilization'],
-      ['1100','Temp. Facil. - Site Devt., Offices & Utilities'],
-      ['1150','Temp. Facil. - Utilities Installed in Bldg'],
-      ['1200','Office Equip & Supplies'],
-      ['1250','Site Management Organization (HR) (No. of Staffs)'],
-      ['1300','Support Crew -Admin workers'],
-      ['1350','Utilities (Power/ Water/ Comm)'],
-      ['1400','Security Services'],
-      ['1450','Housekeeping & Sanitation Services'],
-      ['1500','Support Equipment'],
-      ['1550','Fuel and Oil'],
-      ['1600','Safety Provisions, Safety Measures, and First Aid Support '],
-      ['1650','Drawing Services'],
-      ['1700','Bonds, Insurances, & Permits'],
-      ['1750','Material Testing'],
-      ['1800','Property Damage'],
-      ['1850','Project, Owner, and Consultant Details'],
-      ['2050','Excavation & Backfilling'],
-      ['2100','Piling Works'],
-      ['2150','Soil Protection'],
-      ['2200','Chemical Treatment'],
-      ['3050','Rebar'],
-      ['4050','Formworks'],
-      ['5050','Concrete'],
-      ['6050','Precast Works'],
-      ['7050','Structural Steel '],
-      ['8050','Block Works'],
-      ['8100','Spraycrete Wall'],
-      ['8150','PC Exterior Walls'],
-      ['8200','PC Interior Walls'],
-      ['8250','Sealant Works - Backer Rod and Sealant '],
-      ['8300','Straight To Finish w/ Concrete Hardener and Sealer '],
-      ['8350','Concrete Topping '],
-      ['8400','Plastering Window and Door Opening'],
-      ['8450','Skimcoating Works '],
-      ['8500','Grinding, Sanding and Mortar Jointing to Slab Soffit for Cast in Situ (Termination Only)'],
-      ['8550','Mortar Jointing to Exposed PC Half Slab Soffit (Termination Only)'],
-      ['8600','Masonry Concrete'],
-      ['8650','Masonry Consumables '],
-      ['8700','PC Toilet '],
-      ['9050','Marble Stone'],
-      ['9100','Granite Stone'],
-      ['9150','Stone Works Consumables '],
-      ['10050','Homogenous Tiles'],
-      ['10100','Ceramic Tiles'],
-      ['10150','Rustic Tiles'],
-      ['10200','Paver Tiles'],
-      ['10250','Urra Tiles'],
-      ['10300','Porcelain Tiles'],
-      ['10350','Vinyl Tiles'],
-      ['10400','Carpet Tiles'],
-      ['10450','Rubber Tiles'],
-      ['10500','Non-skid Concrete Tiles'],
-      ['10550','Tile Works Consumables '],
-      ['11050','Drywall Partition'],
-      ['11100','Board Ceiling'],
-      ['11150','Special Ceiling'],
-      ['12050','Damproofing and Waterproofing'],
-      ['12100','Cementitious Waterproof'],
-      ['12150','Epoxy Tank Lining'],
-      ['12200','Flexible Cementitious '],
-      ['12250','PU Waterproof'],
-      ['12300','Floor Hardener'],
-      ['12350','HDPE Geotextile Dimple Sheet Membrane'],
-      ['12400','Waterstop (Structural Joint)'],
-      ['12450','Integral Waterproofing Works '],
-      ['13050','Fire Rated Metal Doors w/ Jamb'],
-      ['13100','Metal Doors & Jamb'],
-      ['13150','Wooden Panel Door & Jamb '],
-      ['13200','PVC Door'],
-      ['13250','Laminated Fire Rated Door & Jamb'],
-      ['13300','Laminated Door & Jamb'],
-      ['13350','Wooden Flush Door & Jamb'],
-      ['13400','Doors and Jamb Consumables '],
-      ['14050','Metal Door Hardware'],
-      ['14100','Wooden Door Hardware'],
-      ['14150','PVC Door Hardware'],
-      ['15050','Railings'],
-      ['15060','Steel Grilles '],
-      ['15100','Ladder Rung'],
-      ['15150','ACU Cover/ Ledge'],
-      ['15200','Manhole Cover'],
-      ['15250','Trench Drain'],
-      ['15300','Column Guard'],
-      ['15350','Bollard'],
-      ['15400','Water Tank'],
-      ['15450','Elevator Separator Beam '],
-      ['15500','Stair Nosing '],
-      ['15550','Steel Skirting '],
-      ['15600','Metal Sheet'],
-      ['15650','Steel Hoisting Beam '],
-      ['16050','Latex Paint'],
-      ['16100','Elastomeric Paint'],
-      ['16150','Epoxy  Paint'],
-      ['16200','Acrytex Paint'],
-      ['16250','QDE'],
-      ['16300','Automotive Paint '],
-      ['16350','Varnish'],
-      ['16400','Painting Works Miscellaneous '],
-      ['17050','Curtain Wall'],
-      ['17100','Aluminum Punch Windows'],
-      ['17150','Aluminum Swing Windows'],
-      ['17200','Aluminum Sliding Windows'],
-      ['17250','Aluminum Doors'],
-      ['17300','Louvers & Vents'],
-      ['17350','Aluminum Cladding Panel'],
-      ['17400','Glass Door and Window'],
-      ['17450','Glass Railing'],
-      ['17500','Wall Glass/ Mirror Finish'],
-      ['18050','Kitchen Cabinet'],
-      ['18100','Kitchen Countertop'],
-      ['18150','Bedroom Closet'],
-      ['18200','Reception Counter '],
-      ['19050','Hardscape'],
-      ['19100','Softscape'],
-      ['19150','Swimming Pool'],
-      ['19200','Water Features '],
-      ['20050','Signage'],
-      ['20100','Cubicle Partition'],
-      ['20150','Equipment and Appliances '],
-      ['20200','Wall Paper Finishes '],
-      ['20250','Lockers and Mailbox '],
-      ['20300','Prefabricated Toilet '],
-      ['21050','Laminates & Plastic Finishes'],
-      ['22050','Roof Sheeting & Insulation'],
-      ['23050','Architectural Miscellaneous Works '],
-      ['24050','Mill Works'],
-      ['25050','Mechanical Equipment '],
-      ['25100','Refrigerant Pipe Works'],
-      ['25150','Chilled Water AC Works'],
-      ['25200','Fresh Air Ducting Works '],
-      ['25210','Smoke Extraction Ducting Works '],
-      ['25250','Exhaust Air Ducting Works '],
-      ['25300','Toilet Exhaust Air Ducting Works '],
-      ['25350','Air Cooled Ducting Works'],
-      ['25400','Return Air Ducting Works'],
-      ['25450','Pre Cooled Ducting Works '],
-      ['25500','Stair Pressurization Ducting Works '],
-      ['25550','Kitchen Exhaust Ducting Works '],
-      ['25600','Generator and Fuel Piping Works '],
-      ['25610','LPG System '],
-      ['25650','Mechanical Works Miscellaneous '],
-      ['26050','Power System Works'],
-      ['26100','Power System Utilities, Hallways, Lobby, Wiring, Wiring Devices, Lighting Works '],
-      ['26150','Power System Switchboard and Panel board'],
-      ['26200','Power System Meter Center '],
-      ['26250','Power System Bus Duct'],
-      ['26300','Small Power Roughing-ins, Wires, Wiring Devices, Panel Board, ECB, Lighting Works '],
-      ['26350','Lighting System Outdoor Works'],
-      ['26400','Telephone System Works'],
-      ['26450','Cable Antenna Television System (CATV)'],
-      ['26500','Closed Circuit Television System (CCTV)'],
-      ['26550','Intercommunication System '],
-      ['26600','Entry Phone System '],
-      ['26650','Internet Systems '],
-      ['26700','Public Address and Background Music (PABGM)'],
-      ['26750','Fire Detection and Alarm System (FDAS)'],
-      ['26800','Building Management Systems (BMS)'],
-      ['26850','Electrical Works Miscellaneous '],
-      ['27050','Plumbing Fixtures'],
-      ['27100','Waterline Distribution System '],
-      ['27150','Sanitary Drainage System '],
-      ['27200','Storm Drainage System '],
-      ['27250','Pipe Vents System '],
-      ['27300','Plumbing Miscellaneous Works '],
-      ['27350','Sewer Treatment Plant (STP)'],
-      ['27400','Plumbing Pumps and Equipment '],
-      ['28050','Fire Protection Wet Stand Pipe Works'],
-      ['28100','Fire Protection Main Fire Line Works'],
-      ['28150','Fire Protection Drain Pipe Works '],
-      ['28200','Fire Protection Dry Stand Pipe Works '],
-      ['28250','Fire Protection Equiptment and Accessories Works '],
-      ['28300','Fire Protection Miscellaneous Works '],
-      ['29050','Elevators'],
-      ['29100','Building Management Unit '],
-      ['29150','Transformer'],
-      ['29200','Escalator '],
-      ['29250','Other Allied Miscellaneous Works '],
-      ['30050','Site Development Works - Outside the Building '],
-      ['31050','Defect Liability Period '],
-      ['32050','Structural Rectification'],
-      ['32100','Architectural Rectification '],
-      ['32150','MEPF Rectification'],
-      ['33050','Change Order'],
-      ['34050','Contingency '],
-      ['35050','Buyback '],
-      ['36050','Advances '],
-      ['37050','Solar Energy Infrastructure '],
-      ['38050','Horizontal Housing '],
-      ['39050','LD Roadworks '],
-      ['39100','LD Drainage Works '],
-      ['39150','LD Potable Waterline Works  '],
-      ['39200','LD Sewerline Works  '],
-      ['39250','LD Underground Distribution System '],
-      ['39300','LD Telecom Works '],
-      ['39350','LD Exterior Lighting Works '],
-      ['39400','LD Sewer Pumps Works ']
+      ['1050','Mobilization / Demobilization','GR'],
+      ['1100','Temp. Facil. - Site Devt., Offices & Utilities','GR'],
+      ['1150','Temp. Facil. - Utilities Installed in Bldg','GR'],
+      ['1200','Office Equip & Supplies','GR'],
+      ['1250','Site Management Organization (HR) (No. of Staffs)','GR'],
+      ['1300','Support Crew -Admin workers','GR'],
+      ['1350','Utilities (Power/ Water/ Comm)','GR'],
+      ['1400','Security Services','GR'],
+      ['1450','Housekeeping & Sanitation Services','GR'],
+      ['1500','Support Equipment','GR'],
+      ['1550','Fuel and Oil','GR'],
+      ['1600','Safety Provisions, Safety Measures, and First Aid Support','GR'],
+      ['1650','Drawing Services','GR'],
+      ['1700','Bonds, Insurances, & Permits','GR'],
+      ['1750','Material Testing','GR'],
+      ['1800','Property Damage','GR'],
+      ['1850','Project, Owner, and Consultant Details','GR'],
+      ['2050','Excavation & Backfilling','SW'],
+      ['2100','Piling Works','SW'],
+      ['2150','Soil Protection','SW'],
+      ['2200','Chemical Treatment','SW'],
+      ['3050','Rebar','ST'],
+      ['4050','Formworks','ST'],
+      ['5050','Concrete','ST'],
+      ['6050','Precast Works','ST'],
+      ['7050','Structural Steel','ST'],
+      ['8050','Block Works','AR'],
+      ['8100','Spraycrete Wall','AR'],
+      ['8150','PC Exterior Walls','AR'],
+      ['8200','PC Interior Walls','AR'],
+      ['8250','Sealant Works - Backer Rod and Sealant','AR'],
+      ['8300','Straight To Finish w/ Concrete Hardener and Sealer','AR'],
+      ['8350','Concrete Topping','AR'],
+      ['8400','Plastering Window and Door Opening','AR'],
+      ['8450','Skimcoating Works','AR'],
+      ['8500','Grinding, Sanding and Mortar Jointing to Slab Soffit for Cast in Situ (Termination Only)','AR'],
+      ['8550','Mortar Jointing to Exposed PC Half Slab Soffit (Termination Only)','AR'],
+      ['8600','Masonry Concrete','AR'],
+      ['8650','Masonry Consumables','AR'],
+      ['8700','PC Toilet','AR'],
+      ['9050','Marble Stone','AR'],
+      ['9100','Granite Stone','AR'],
+      ['9150','Stone Works Consumables','AR'],
+      ['10050','Homogenous Tiles','AR'],
+      ['10100','Ceramic Tiles','AR'],
+      ['10150','Rustic Tiles','AR'],
+      ['10200','Paver Tiles','AR'],
+      ['10250','Urra Tiles','AR'],
+      ['10300','Porcelain Tiles','AR'],
+      ['10350','Vinyl Tiles','AR'],
+      ['10400','Carpet Tiles','AR'],
+      ['10450','Rubber Tiles','AR'],
+      ['10500','Non-skid Concrete Tiles','AR'],
+      ['10550','Tile Works Consumables','AR'],
+      ['11050','Drywall Partition','AR'],
+      ['11100','Board Ceiling','AR'],
+      ['11150','Special Ceiling','AR'],
+      ['12050','Damproofing and Waterproofing','AR'],
+      ['12100','Cementitious Waterproof','AR'],
+      ['12150','Epoxy Tank Lining','AR'],
+      ['12200','Flexible Cementitious','AR'],
+      ['12250','PU Waterproof','AR'],
+      ['12300','Floor Hardener','AR'],
+      ['12350','HDPE Geotextile Dimple Sheet Membrane','AR'],
+      ['12400','Waterstop (Structural Joint)','AR'],
+      ['12450','Integral Waterproofing Works','AR'],
+      ['13050','Fire Rated Metal Doors w/ Jamb','AR'],
+      ['13100','Metal Doors & Jamb','AR'],
+      ['13150','Wooden Panel Door & Jamb','AR'],
+      ['13200','PVC Door','AR'],
+      ['13250','Laminated Fire Rated Door & Jamb','AR'],
+      ['13300','Laminated Door & Jamb','AR'],
+      ['13350','Wooden Flush Door & Jamb','AR'],
+      ['13400','Doors and Jamb Consumables','AR'],
+      ['14050','Metal Door Hardware','AR'],
+      ['14100','Wooden Door Hardware','AR'],
+      ['14150','PVC Door Hardware','AR'],
+      ['15050','Railings','AR'],
+      ['15060','Steel Grilles','AR'],
+      ['15100','Ladder Rung','AR'],
+      ['15150','ACU Cover/ Ledge','AR'],
+      ['15200','Manhole Cover','AR'],
+      ['15250','Trench Drain','AR'],
+      ['15300','Column Guard','AR'],
+      ['15350','Bollard','AR'],
+      ['15400','Water Tank','AR'],
+      ['15450','Elevator Separator Beam','AR'],
+      ['15500','Stair Nosing','AR'],
+      ['15550','Steel Skirting','AR'],
+      ['15600','Metal Sheet','AR'],
+      ['15650','Steel Hoisting Beam','AR'],
+      ['16050','Latex Paint','AR'],
+      ['16100','Elastomeric Paint','AR'],
+      ['16150','Epoxy  Paint','AR'],
+      ['16200','Acrytex Paint','AR'],
+      ['16250','QDE','AR'],
+      ['16300','Automotive Paint','AR'],
+      ['16350','Varnish','AR'],
+      ['16400','Painting Works Miscellaneous','AR'],
+      ['17050','Curtain Wall','AR'],
+      ['17100','Aluminum Punch Windows','AR'],
+      ['17150','Aluminum Swing Windows','AR'],
+      ['17200','Aluminum Sliding Windows','AR'],
+      ['17250','Aluminum Doors','AR'],
+      ['17300','Louvers & Vents','AR'],
+      ['17350','Aluminum Cladding Panel','AR'],
+      ['17400','Glass Door and Window','AR'],
+      ['17450','Glass Railing','AR'],
+      ['17500','Wall Glass/ Mirror Finish','AR'],
+      ['18050','Kitchen Cabinet','AR'],
+      ['18100','Kitchen Countertop','AR'],
+      ['18150','Bedroom Closet','AR'],
+      ['18200','Reception Counter','AR'],
+      ['19050','Hardscape','AR'],
+      ['19100','Softscape','AR'],
+      ['19150','Swimming Pool','AR'],
+      ['19200','Water Features','AR'],
+      ['20050','Signage','AR'],
+      ['20100','Cubicle Partition','AR'],
+      ['20150','Equipment and Appliances','AR'],
+      ['20200','Wall Paper Finishes','AR'],
+      ['20250','Lockers and Mailbox','AR'],
+      ['20300','Prefabricated Toilet','AR'],
+      ['21050','Laminates & Plastic Finishes','AR'],
+      ['22050','Roof Sheeting & Insulation','AR'],
+      ['23050','Architectural Miscellaneous Works','AR'],
+      ['24050','Mill Works','AR'],
+      ['25050','Mechanical Equipment','MEPF'],
+      ['25100','Refrigerant Pipe Works','MEPF'],
+      ['25150','Chilled Water AC Works','MEPF'],
+      ['25200','Fresh Air Ducting Works','MEPF'],
+      ['25210','Smoke Extraction Ducting Works','MEPF'],
+      ['25250','Exhaust Air Ducting Works','MEPF'],
+      ['25300','Toilet Exhaust Air Ducting Works','MEPF'],
+      ['25350','Air Cooled Ducting Works','MEPF'],
+      ['25400','Return Air Ducting Works','MEPF'],
+      ['25450','Pre Cooled Ducting Works','MEPF'],
+      ['25500','Stair Pressurization Ducting Works','MEPF'],
+      ['25550','Kitchen Exhaust Ducting Works','MEPF'],
+      ['25600','Generator and Fuel Piping Works','MEPF'],
+      ['25610','LPG System','MEPF'],
+      ['25650','Mechanical Works Miscellaneous','MEPF'],
+      ['26050','Power System Works','MEPF'],
+      ['26100','Power System Utilities, Hallways, Lobby, Wiring, Wiring Devices, Lighting Works','MEPF'],
+      ['26150','Power System Switchboard and Panel board','MEPF'],
+      ['26200','Power System Meter Center','MEPF'],
+      ['26250','Power System Bus Duct','MEPF'],
+      ['26300','Small Power Roughing-ins, Wires, Wiring Devices, Panel Board, ECB, Lighting Works','MEPF'],
+      ['26350','Lighting System Outdoor Works','MEPF'],
+      ['26400','Telephone System Works','MEPF'],
+      ['26450','Cable Antenna Television System (CATV)','MEPF'],
+      ['26500','Closed Circuit Television System (CCTV)','MEPF'],
+      ['26550','Intercommunication System','MEPF'],
+      ['26600','Entry Phone System','MEPF'],
+      ['26650','Internet Systems','MEPF'],
+      ['26700','Public Address and Background Music (PABGM)','MEPF'],
+      ['26750','Fire Detection and Alarm System (FDAS)','MEPF'],
+      ['26800','Building Management Systems (BMS)','MEPF'],
+      ['26850','Electrical Works Miscellaneous','MEPF'],
+      ['27050','Plumbing Fixtures','MEPF'],
+      ['27100','Waterline Distribution System','MEPF'],
+      ['27150','Sanitary Drainage System','MEPF'],
+      ['27200','Storm Drainage System','MEPF'],
+      ['27250','Pipe Vents System','MEPF'],
+      ['27300','Plumbing Miscellaneous Works','MEPF'],
+      ['27350','Sewer Treatment Plant (STP)','MEPF'],
+      ['27400','Plumbing Pumps and Equipment','MEPF'],
+      ['28050','Fire Protection Wet Stand Pipe Works','MEPF'],
+      ['28100','Fire Protection Main Fire Line Works','MEPF'],
+      ['28150','Fire Protection Drain Pipe Works','MEPF'],
+      ['28200','Fire Protection Dry Stand Pipe Works','MEPF'],
+      ['28250','Fire Protection Equiptment and Accessories Works','MEPF'],
+      ['28300','Fire Protection Miscellaneous Works','MEPF'],
+      ['29050','Elevators','ALLIED'],
+      ['29100','Building Management Unit','ALLIED'],
+      ['29150','Transformer','ALLIED'],
+      ['29200','Escalator','ALLIED'],
+      ['29250','Other Allied Miscellaneous Works','ALLIED'],
+      ['30050','Site Development Works - Outside the Building','SW'],
+      ['31050','Defect Liability Period','OT'],
+      ['32050','Structural Rectification','OT'],
+      ['32100','Architectural Rectification','OT'],
+      ['32150','MEPF Rectification','OT'],
+      ['33050','Change Order','OT'],
+      ['34050','Contingency','OT'],
+      ['35050','Buyback','OT'],
+      ['36050','Advances','OT'],
+      ['37050','Solar Energy Infrastructure','SW'],
+      ['38050','Horizontal Housing','SW'],
+      ['39050','LD Roadworks','SW'],
+      ['39100','LD Drainage Works','SW'],
+      ['39150','LD Potable Waterline Works','SW'],
+      ['39200','LD Sewerline Works','SW'],
+      ['39250','LD Underground Distribution System','SW'],
+      ['39300','LD Telecom Works','SW'],
+      ['39350','LD Exterior Lighting Works','SW'],
+      ['39400','LD Sewer Pumps Works','SW']
     ];
     // Seed cfg.catalog (the step-1 holding list on the right) from the master library.
     // Skips codes already present in the build or the list so re-loading never duplicates.
@@ -12216,7 +12227,7 @@
       CLASS_CODE_DB.forEach(function (r) {
         var code = r[0], name = r[1].trim();
         if (have[code]) return;
-        cfg.catalog.push({ id: uidv(), code: code, name: name, group: 'ST', durInt: 0, durExt: 0, scope: 'zone' });
+        cfg.catalog.push({ id: uidv(), code: code, name: name, group: r[2] || 'OT', durInt: 0, durExt: 0, scope: 'zone' });
         have[code] = 1; added++;
       });
       if (added) { markDirty(); UI.toast('Loaded ' + added + ' class code(s) into the list. Tick codes and press ← to add them to the build, then Save.', 'success'); }
@@ -12233,7 +12244,7 @@
     }
     function parseTrade(text) {
       var t = String(text == null ? '' : text).trim().toLowerCase();
-      var map = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'allied services': 'ALLIED', 'allied': 'ALLIED' };
+      var map = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'allied services': 'ALLIED', 'allied': 'ALLIED', 'others': 'OT', 'other': 'OT', 'ot': 'OT' };
       if (map[t]) return map[t];
       var up = t.toUpperCase(); return GROUPS.indexOf(up) >= 0 ? up : null;
     }
@@ -12879,7 +12890,10 @@
     }
     function stActivities(host) {
       var cols = XL_COLS;
-      var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c) { return '<th' + (c.w ? ' style="width:' + c.w + 'px"' : '') + '>' + e2(c.label) + '</th>'; }).join('') + '<th class="xl-rowact"></th></tr>';
+      var CW = function (c) { return xColW[c.k] || (c.w || (c.k === 'name' ? 260 : 110)); };
+      var totalW = 40 + cols.reduce(function (t, c) { return t + CW(c); }, 0) + 40;
+      var colgroup = '<colgroup><col style="width:40px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '<col style="width:40px" /></colgroup>';
+      var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c, ci) { return '<th data-ci="' + ci + '">' + e2(c.label) + '<span class="xl-colgrip" data-ci="' + ci + '" title="Drag to resize this column"></span></th>'; }).join('') + '<th class="xl-rowact"></th></tr>';
       var body = cfg.activities.map(function (a, r) {
         return '<tr>' + '<td class="xl-rn" data-r="' + r + '">' + (r + 1) + '</td>' +
           cols.map(function (c, ci) { return '<td class="xl-cell" data-r="' + r + '" data-c="' + ci + '">' + e2(xlGet(a, c.k)) + '</td>'; }).join('') +
@@ -12890,7 +12904,8 @@
           '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
           '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
       }).join('');
-      var holdPane = '<div class="sbld-hold"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') + '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
+      var holdPane = '<div class="sbld-holdgrip" id="b-holdgrip" title="Drag to resize the library"></div>' +
+        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') + '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
         '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty" style="padding:10px;font-size:11.5px;">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       host.innerHTML = '<h2>1 · Activities &amp; required duration</h2>' +
@@ -12901,8 +12916,8 @@
         '<button class="pd-btn" id="b-upl"><span data-ico="box" data-ico-size="14"></span> Upload CSV / Excel</button>' +
         '<input type="file" id="b-uplfile" accept=".csv,.xlsx,.xls" style="display:none" /></div>' +
         (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — <b>Add row</b>, <b>Load typical set</b>, load from the list with <b>&larr;</b>, or paste rows from Excel into the grid.</div>') +
-        '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
-        '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED). Row order here is the fallback sequence; fine-tune links in step 4.</p>';
+        '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
+        '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT). Row order here is the fallback sequence; fine-tune links in step 4.</p>';
       // toolbar
       host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: 0, durExt: 0 }); xf = { r: cfg.activities.length - 1, c: 0 }; xa = { r: xf.r, c: 0 }; xWantFocus = true; markDirty(); render(); };
       host.querySelector('#b-tmpl').onclick = actTemplateCsv;
@@ -12914,6 +12929,31 @@
         markDirty(); render();
       };
       var libBtn = host.querySelector('#b-lib'); if (libBtn) libBtn.onclick = loadClassCodeLibrary;
+      // resizable grid columns — drag a header's right edge; widths persist in xColW across re-renders
+      host.querySelectorAll('.xl-colgrip').forEach(function (g) {
+        g.addEventListener('mousedown', function (ev) {
+          ev.preventDefault(); ev.stopPropagation();
+          var ci = +g.dataset.ci, key = cols[ci].k, startX = ev.clientX, startW = CW(cols[ci]);
+          var tbl = host.querySelector('table.sbld-xl'), colEls = host.querySelectorAll('table.sbld-xl > colgroup > col');
+          g.classList.add('drag');
+          function mm(e) {
+            var w = Math.max(60, startW + (e.clientX - startX)); xColW[key] = w;
+            var tot = 40; cols.forEach(function (c, i) { var cw = CW(c); if (colEls[i + 1]) colEls[i + 1].style.width = cw + 'px'; tot += cw; });
+            if (tbl) tbl.style.width = (tot + 40) + 'px';
+          }
+          function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); g.classList.remove('drag'); }
+          document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+        });
+      });
+      // resizable library pane — drag its left grip; width persists in holdW
+      var hg = host.querySelector('#b-holdgrip');
+      if (hg) hg.addEventListener('mousedown', function (ev) {
+        ev.preventDefault(); hg.classList.add('drag');
+        var startX = ev.clientX, startW = holdW, pane = host.querySelector('.sbld-hold');
+        function mm(e) { var w = Math.max(180, Math.min(720, startW - (e.clientX - startX))); holdW = Math.round(w); if (pane) pane.style.flex = '0 0 ' + holdW + 'px'; }
+        function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); hg.classList.remove('drag'); }
+        document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+      });
       // holding-area shuttle
       host.querySelectorAll('[data-cat]').forEach(function (b) { b.onclick = function () { var id = b.dataset.cat, i = catSel.indexOf(id); if (i >= 0) catSel.splice(i, 1); else catSel.push(id); render(); }; });
       host.querySelector('#b-load').onclick = function () {
@@ -13116,7 +13156,9 @@
           ? (pendActSet.length ? (pendActSet.length + ' source(s) selected — right-click to confirm, then pick destinations.') : 'Step 1: click one or more source codes (then right-click to confirm).')
           : (pendActDst.length ? (pendActDst.length + ' destination(s) selected — right-click to choose the relationship.') : 'Step 3: click one or more destination codes (then right-click to confirm).'));
       host.querySelectorAll('.sbld-actnode').forEach(function (b) { b.onclick = function () { actFocus = b.dataset.act; actSelect(b.dataset.act); }; });
-      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { actFocus = b.getAttribute('data-act'); actSelect(b.getAttribute('data-act')); }); });
+      // schedule bars INSPECT only; link from the class-code list on the left (was a linking bug —
+      // clicking a bar both focused it and toggled it into the pending link selection).
+      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { actFocus = b.getAttribute('data-act'); render(); }); });
       var afclr = host.querySelector('#b-afocusclear'); if (afclr) afclr.onclick = function () { actFocus = null; render(); };
       var aseq2 = host.querySelector('.sbld-seq2'); if (aseq2) aseq2.addEventListener('contextmenu', actConfirm);
       host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
@@ -13135,12 +13177,14 @@
       // line, then basements (B1 first … deepest last). Grade sits between the two blocks.
       var supers = floors.filter(function (f) { return !f.sub; }), subs = floors.filter(function (f) { return f.sub; });
       var disp = supers.slice().reverse().concat(subs.slice().reverse()), groundAt = supers.length;
+      // Draw only the detail the current Activity level uses (matches the editor + leavesOfFloor).
+      var lvl = (cfg && cfg.locLevel) || 'auto', showZones = lvl !== 'floor', showUnits = (lvl === 'auto' || lvl === 'unit');
       var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
       disp.forEach(function (f, i) {
-        var y = pad + i * (fh + gap), plotW = W - labelW - pad * 2, zones = f.zones.length ? f.zones : [null], zw = plotW / zones.length;
+        var y = pad + i * (fh + gap), plotW = W - labelW - pad * 2, zones = (showZones && f.zones.length) ? f.zones : [null], zw = plotW / zones.length;
         svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="13" font-weight="700" fill="' + (f.sub ? gc(tr) : 'var(--pd-muted)') + '">' + e2(f.code || f.name || 'F') + '</text>';
         zones.forEach(function (z, zi) {
-          var zx = pad + labelW + zi * zw, hasU = z && z.units.length;
+          var zx = pad + labelW + zi * zw, hasU = showUnits && z && z.units.length;
           svg += '<rect x="' + zx + '" y="' + y + '" width="' + (zw - 3) + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (zi % 2 ? 0.4 : 0.55) : (zi % 2 ? 0.72 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '></rect>';
           var units = hasU ? z.units : [null], uw = (zw - 3) / units.length;
           units.forEach(function (u, ui) {
@@ -13167,6 +13211,10 @@
       }
       if (used.indexOf(uiTrade) < 0) uiTrade = used[0];
       var tr = uiTrade, zn = cfg.zoning[tr];
+      // Only show the level of detail the chosen Activity level actually uses: Floor level ignores
+      // zones + units, Zone level ignores units. Otherwise the editor shows level-4 (unit) controls
+      // that have no effect, which reads as a bug when scheduling at level 3.
+      var lvl = cfg.locLevel || 'auto', showZones = lvl !== 'floor', showUnits = (lvl === 'auto' || lvl === 'unit');
       function qv(id, def) { var v = +host.querySelector(id).value; return isNaN(v) ? def : v; }
       var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
         var n = leafCount(g);
@@ -13176,10 +13224,10 @@
         var zonesHtml = f.zones.length ? f.zones.map(function (z, zi) {
           return '<div class="sbld-znrow"><span class="sbld-zntag" style="border-color:' + gc(tr) + ';color:' + gc(tr) + '">ZONE</span>' +
             '<input class="pd-input" data-zk="code" data-f="' + i + '" data-z="' + zi + '" value="' + e2(z.code) + '" placeholder="Zone" style="width:96px;" />' +
-            '<span class="sbld-step2ct">Units</span>' +
-            '<button class="pd-btn sbld-unminus" data-f="' + i + '" data-z="' + zi + '" title="Remove unit">−</button>' +
-            '<span class="sbld-zncount">' + z.units.length + '</span>' +
-            '<button class="pd-btn sbld-unplus" data-f="' + i + '" data-z="' + zi + '" title="Add unit">+</button>' +
+            (showUnits ? '<span class="sbld-step2ct">Units</span>' +
+              '<button class="pd-btn sbld-unminus" data-f="' + i + '" data-z="' + zi + '" title="Remove unit">−</button>' +
+              '<span class="sbld-zncount">' + z.units.length + '</span>' +
+              '<button class="pd-btn sbld-unplus" data-f="' + i + '" data-z="' + zi + '" title="Add unit">+</button>' : '') +
             '<button class="pd-btn sbld-del sbld-delzone" data-f="' + i + '" data-z="' + zi + '" title="Remove zone"><span data-ico="trash" data-ico-size="13"></span></button></div>';
         }).join('') : '<div class="sbld-znhint">Floor-level — no zones (one location). Add zones if this floor is split.</div>';
         return '<div class="sbld-flr' + (f.sub ? ' sbld-flr-sub' : '') + '" data-i="' + i + '" draggable="true">' +
@@ -13187,9 +13235,9 @@
           (f.sub ? '<span class="sbld-subtag" title="Basement / substructure">BSMT</span>' : '') +
           '<input class="pd-input" data-fk="code" data-f="' + i + '" value="' + e2(f.code) + '" placeholder="' + (f.sub ? 'B1' : 'Floor') + '" style="width:88px;" />' +
           '<input class="pd-input grow" data-fk="name" data-f="' + i + '" value="' + e2(f.name) + '" placeholder="Floor name" />' +
-          '<button class="pd-btn sbld-addzone" data-f="' + i + '">+ Zone</button>' +
+          (showZones ? '<button class="pd-btn sbld-addzone" data-f="' + i + '">+ Zone</button>' : '') +
           '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
-          '<div class="sbld-znwrap">' + zonesHtml + '</div></div>';
+          (showZones ? '<div class="sbld-znwrap">' + zonesHtml + '</div>' : '<div class="sbld-znwrap"><div class="sbld-znhint">Floor level — zones &amp; units are ignored. Switch <b>Activity level</b> to Zone/Unit to split this floor.</div></div>') + '</div>';
       }).join('') : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' yet.</div>';
       // Quick-generate inputs keep the counts the planner last generated with for THIS trade, so a
       // value they just typed (e.g. units) stays put instead of snapping back to 0 on re-render.
@@ -13347,7 +13395,9 @@
           ? (pendSet.length ? (pendSet.length + ' source(s) selected — right-click to confirm, then pick destinations.') : 'Step 1: click one or more source zones (then right-click to confirm).')
           : (pendDst.length ? (pendDst.length + ' destination(s) selected — right-click to choose the relationship.') : 'Step 3: click one or more destination zones (then right-click to confirm).'));
       host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { var uids = (b.dataset.uids || '').split(' ').filter(Boolean); setFocus(uids); nodeSelectMany(uids); }; });
-      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { var u = b.getAttribute('data-uid'); setFocus([u]); nodeSelect(u); }); });
+      // schedule bars INSPECT only (highlight predecessors/successors); linking is done from the tower
+      // nodes on the left, so clicking a bar never adds it to a pending link (was a linking bug).
+      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { setFocus([b.getAttribute('data-uid')]); render(); }); });
       var fclr = host.querySelector('#b-focusclear'); if (fclr) fclr.onclick = function () { setFocus([]); render(); };
       // right-click anywhere in the linking area confirms the current phase (source → destination → dialog)
       var seq2 = host.querySelector('.sbld-seq2'); if (seq2) seq2.addEventListener('contextmenu', nodeConfirm);
