@@ -20,7 +20,7 @@ window.ProgressPhotos = (function () {
   var profile = null, uid = null, pid = null, projName = '';
   var rows = [];
   var view = 'list';                 // list | gallery
-  var filters = { from: '', to: '', trade: '', works: '', wbsNode: '', search: '' };
+  var filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '' };
   var collapsed = {};                // trade -> true
   var urlCache = {};                 // storage path -> signed URL
   var canWrite = false;              // planner+ / admin / super_admin
@@ -28,27 +28,28 @@ window.ProgressPhotos = (function () {
   var projectListeners = [];         // PPR screen subscribes; both share one selector
 
   // ---- Schedule App integration (Phase 1) ----------------------------------
-  // Zones/locations/activities are read live from Project Schedule's
-  // wbs_nodes tree — same Supabase project, no separate API. The WBS has NO
-  // universal shape across projects (depth, terminology, and node count vary
-  // per project — confirmed against Project Schedule's own data model: a
-  // wbs_nodes row is just {id, parent_id, code, name, sort_order}, with no
-  // "node type" column distinguishing a location from a phase from a
-  // discipline). So the picker below is a fully generic N-level cascade with
-  // NO hardcoded per-level labels or assumed depth — each <select> shows only
-  // the real children of whatever was picked above it, using the project's
-  // own WBS code + name (same "<code>  <name>" convention Project Schedule's
-  // own Add-Activity WBS dropdown uses), and stops wherever the real tree
-  // stops. WBS_LEAVES = the finest-grain nodes (used for Rounds' checklist);
-  // a capture can stop at ANY depth though, not only a leaf (e.g. "just this
-  // Tower" is valid) — see resolveActivity's descendant matching below.
-  var WBS = [], WBS_BY_ID = {}, WBS_LEAVES = [];
-  var SCHED_ACTS = [];
+  // Locations are read from Project Schedule's real "Location Breakdown" —
+  // NOT the wbs_nodes tree (an earlier cut of this integration used wbs_nodes;
+  // corrected after inspecting Project Schedule's actual code). The real
+  // system is `location_levels` (a per-project, ORDERED, free-form list of
+  // level names — e.g. Tower/Level/Zone, but genuinely different per project)
+  // plus a `location` jsonb on each project_schedule activity, keyed by level
+  // id, always a plain string value. Project Schedule itself deliberately
+  // stopped using wbs_nodes for this (its own CLAUDE.md, 2026-08-04: "location
+  // and zone existed only as WBS tree structure... Fix = make them activity
+  // data") — conflating the two was the exact mistake being corrected here.
+  // There is NO cascading constraint in the data, and Schedule's own UI for
+  // this is free-text + datalist suggestions, not a <select> — the "cascade"
+  // below is a soft one (later levels' suggestions are filtered by earlier
+  // picks) purely for convenience, not enforced by any parent-child link.
+  var LOC_LEVELS = [];                     // [{id, name, sort_order}], sort_order ascending
+  var SCHED_ACTS = [];                     // project_schedule rows: {id, activity_id, activity_name, location, activity_type, status, start_date, end_date}
   var CODE_TYPES = [], CODE_VALUES = [];   // optional Activity-Code overlay (unrelated code types)
   var migrationWarned = false;             // warn once per session, not per save
   var roundsFilter = '';
-  var roundsSelected = {};                 // wbs node id -> true (walkthrough queue)
-  var walkState = null;                    // {queue:[nodeId,...], at:0} while a walkthrough modal chain is open
+  var roundsSelected = {};                 // location-combo key -> true (walkthrough queue)
+  var walkState = null;                    // {queue:[comboKey,...], at:0} while a walkthrough modal chain is open
+  var _roundsComboByKey = {};              // comboKey -> {key, values, label}, refreshed each renderRounds()
 
   // ===== live collaboration (presence + "who's editing this photo") =========
   // Shared PDCollab layer (Supabase Realtime): topbar avatars, a colored flag on
@@ -163,24 +164,24 @@ window.ProgressPhotos = (function () {
     syncChrome();
     await load();
     await loadSchedule();
-    fillWbsFilterOptions();   // load() ran before the WBS tree existed — refresh once it's here
+    renderLocFilterSelects();   // load() ran before location_levels existed — refresh once it's here
     await refreshQueueBadge();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
     joinCollab();
   }
 
   // --------------------------------------------------------- schedule read ---
-  // Reads wbs_nodes / project_schedule / activity codes for the current
+  // Reads location_levels / project_schedule / activity codes for the current
   // project. Tolerant of the tables not existing yet (pre-migration DB) —
   // the module just falls back to free-text-only locations.
   // Keyset-paginate (a single select caps at 1000 rows server-side, regardless
-  // of any client .limit()) — a real project's wbs_nodes/project_schedule can
-  // exceed that (P6/Excel imports routinely create thousands), which was
-  // silently truncating the WBS tree to whatever fell in the first page by
-  // sort_order — e.g. only an early "Milestones" root showing, with the
-  // project's real structure (added later / higher sort_order) cut off
-  // entirely. Same fix Project Schedule's own load() already needed for the
-  // identical reason.
+  // of any client .limit()) — a real project's project_schedule can exceed
+  // that (P6/Excel imports routinely create thousands), which would silently
+  // truncate the activity set to whatever fell in the first page by id order.
+  // Same fix Project Schedule's own load() already needed for the identical
+  // reason. location_levels itself is a short, curated per-project list (a
+  // handful of rows) — not paginated, matching how Project Schedule's own
+  // openLocLevels() loads it.
   async function fetchAllPages(table, selectCols, extraFilter) {
     var all = [], last = null;
     while (true) {
@@ -199,25 +200,19 @@ window.ProgressPhotos = (function () {
   }
 
   async function loadSchedule() {
-    WBS = []; WBS_BY_ID = {}; WBS_LEAVES = []; SCHED_ACTS = [];
+    LOC_LEVELS = []; SCHED_ACTS = [];
     CODE_TYPES = []; CODE_VALUES = [];
     if (!pid) return;
     try {
-      var wres = await fetchAllPages('wbs_nodes', 'id,parent_id,code,name,sort_order');
-      if (!wres.error) WBS = wres.data || [];
+      var lres = await sb().from('location_levels').select('id,name,sort_order')
+        .eq('project_id', pid).order('sort_order', { ascending: true });
+      if (!lres.error) LOC_LEVELS = lres.data || [];
     } catch (e) {}
-    WBS.forEach(function (n) { WBS_BY_ID[n.id] = n; });
-
-    var childCount = {};
-    WBS.forEach(function (n) { if (n.parent_id) childCount[n.parent_id] = (childCount[n.parent_id] || 0) + 1; });
-    WBS_LEAVES = WBS.filter(function (n) { return !childCount[n.id]; })
-      .map(function (n) { return { id: n.id, label: breadcrumbOf(n.id) }; })
-      .sort(function (a, b) { return a.label.localeCompare(b.label); });
 
     try {
       var ares = await fetchAllPages('project_schedule',
-        'id,activity_id,activity_name,wbs_node_id,activity_type,status,start_date,end_date',
-        function (q) { return q.not('wbs_node_id', 'is', null).neq('activity_type', 'WBS Summary'); });
+        'id,activity_id,activity_name,location,activity_type,status,start_date,end_date',
+        function (q) { return q.neq('activity_type', 'WBS Summary'); });
       if (!ares.error) SCHED_ACTS = ares.data || [];
     } catch (e) {}
 
@@ -232,46 +227,45 @@ window.ProgressPhotos = (function () {
     } catch (e) {}
   }
 
-  // Full "›"-joined ancestry label for ANY node (not just leaves) — a capture
-  // can stop at an intermediate depth (e.g. "just this Tower"), so the label
-  // has to work there too, not only at the finest-grain zone.
-  function breadcrumbOf(nodeId) {
-    var n = nodeId ? WBS_BY_ID[nodeId] : null;
-    if (!n) return '';
-    var parts = [n.name], p = n.parent_id ? WBS_BY_ID[n.parent_id] : null, guard = 0;
-    while (p && guard++ < 25) { parts.unshift(p.name); p = p.parent_id ? WBS_BY_ID[p.parent_id] : null; }
-    return parts.join(' › ');
-  }
-  // Sorted children of a WBS node (parentId null/'' = the root level).
-  function wbsChildren(parentId) {
-    return WBS.filter(function (n) { return (n.parent_id || '') === (parentId || ''); })
-      .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name); });
-  }
-  // The full ancestor chain, root-first, ending at nodeId itself — lets the
-  // cascade UI pre-select every level when re-opening on an already-picked node.
-  function wbsPathTo(nodeId) {
-    var path = [], n = nodeId ? WBS_BY_ID[nodeId] : null, guard = 0;
-    while (n && guard++ < 25) { path.unshift(n.id); n = n.parent_id ? WBS_BY_ID[n.parent_id] : null; }
-    return path;
-  }
-  function isNodeUnder(nodeId, ancestorId) {
-    if (nodeId === ancestorId) return true;
-    var n = WBS_BY_ID[nodeId], guard = 0;
-    while (n && n.parent_id && guard++ < 25) {
-      if (n.parent_id === ancestorId) return true;
-      n = WBS_BY_ID[n.parent_id];
-    }
-    return false;
+  // Value of one level for any {location: {...}} bearing record (an activity
+  // or, once saved, a photo's own location_values).
+  function locValOf(obj, levelId) { return (obj && obj[levelId]) || ''; }
+
+  // Every distinct value already used at this level among schedule
+  // activities — feeds the datalist suggestions. `priorVals` (a
+  // {levelId: value} map of levels picked so far, earlier in level order)
+  // narrows the scan to activities that agree on those — a SOFT cascade for
+  // convenience only; the data has no enforced parent-child link, and typing
+  // an unlisted value is always allowed (matches Schedule's own datalist UX).
+  function distinctLocValues(levelId, priorVals) {
+    var seen = {}, out = [];
+    SCHED_ACTS.forEach(function (a) {
+      var loc = a.location || {};
+      for (var lid in priorVals) { if (priorVals[lid] && (loc[lid] || '') !== priorVals[lid]) return; }
+      var v = loc[levelId];
+      if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out.sort();
   }
 
-  // The schedule activity that's "current" for a picked WBS node: prefer
-  // In Progress (earliest start), else the next Not Started, else whatever's
-  // there. Matches the node itself OR any of its descendants, so stopping the
-  // cascade at an intermediate depth (e.g. "just this Level", no Zone chosen)
-  // still surfaces an activity happening somewhere underneath it.
-  function resolveActivity(nodeId) {
-    if (!nodeId) return null;
-    var cands = SCHED_ACTS.filter(function (a) { return a.wbs_node_id && isNodeUnder(a.wbs_node_id, nodeId); });
+  // "›"-joined path across every level that has a value, in level order.
+  function locBreadcrumb(values) {
+    return LOC_LEVELS.map(function (l) { return values[l.id]; }).filter(Boolean).join(' › ');
+  }
+
+  // The schedule activity that's "current" for a set of picked location
+  // values: prefer In Progress (earliest start), else the next Not Started,
+  // else whatever's there. Matches any activity whose OWN location agrees on
+  // every level actually specified in `values` — an activity with additional
+  // levels set (more specific) still matches, so stopping the picker early
+  // (e.g. just Tower + Level, no Zone) still surfaces something.
+  function resolveActivity(values) {
+    var keys = Object.keys(values || {}).filter(function (k) { return values[k]; });
+    if (!keys.length) return null;
+    var cands = SCHED_ACTS.filter(function (a) {
+      var loc = a.location || {};
+      return keys.every(function (k) { return (loc[k] || '') === values[k]; });
+    });
     if (!cands.length) return null;
     var pick = cands.filter(function (a) { return (a.status || '') === 'In Progress'; })
       .sort(function (a, b) { return (a.start_date || '').localeCompare(b.start_date || ''); })[0];
@@ -281,14 +275,14 @@ window.ProgressPhotos = (function () {
     return { id: pick.activity_id, name: pick.activity_name };
   }
 
-  function wbsLeaf(nodeId) {
-    if (!nodeId || !WBS_BY_ID[nodeId]) return null;
-    return { id: nodeId, label: breadcrumbOf(nodeId) };
-  }
-
-  function lastCaptureAt(nodeId) {
-    var list = rows.filter(function (r) { return r.wbs_node_id === nodeId; })
-      .sort(function (a, b) { return (b.taken_at || '').localeCompare(a.taken_at || ''); });
+  // Most recent photo captured at (a superset of) this set of location values.
+  function lastCaptureAt(values) {
+    var keys = Object.keys(values || {}).filter(function (k) { return values[k]; });
+    if (!keys.length) return null;
+    var list = rows.filter(function (r) {
+      var lv = r.location_values || {};
+      return keys.every(function (k) { return (lv[k] || '') === values[k]; });
+    }).sort(function (a, b) { return (b.taken_at || '').localeCompare(a.taken_at || ''); });
     return list[0] || null;
   }
 
@@ -326,7 +320,7 @@ window.ProgressPhotos = (function () {
       restoreUI(); syncChrome(); notifyProject();
       await load();
       await loadSchedule();
-      fillWbsFilterOptions();
+      renderLocFilterSelects();
       await refreshQueueBadge();
       refreshRoundsIfVisible();
       joinCollab();
@@ -336,19 +330,20 @@ window.ProgressPhotos = (function () {
     Array.prototype.forEach.call(document.querySelectorAll('.pd-vt[data-view]'), function (b) {
       b.onclick = function () { view = b.dataset.view; saveUI(); syncChrome(); render(); };
     });
-    // "location" maps the #pp-f-location element to the filters.wbsNode key —
-    // that element is now a flattened WBS-node picker, not a free-text list.
-    ['from', 'to', 'trade', 'works', 'location', 'search'].forEach(function (k) {
+    // Location filtering is handled separately by renderLocFilterSelects()
+    // (one <select> per Location Breakdown level, dynamically built — there's
+    // no fixed "location" field to bind generically here).
+    ['from', 'to', 'trade', 'works', 'search'].forEach(function (k) {
       var el = $('pp-f-' + k);
       if (!el) return;
-      var key = k === 'location' ? 'wbsNode' : k;
-      el.oninput = el.onchange = function () { filters[key] = this.value; render(); };
+      el.oninput = el.onchange = function () { filters[k] = this.value; render(); };
     });
     $('pp-clearfilters').onclick = function () {
-      filters = { from: '', to: '', trade: '', works: '', wbsNode: '', search: '' };
-      ['from', 'to', 'trade', 'works', 'location', 'search'].forEach(function (k) {
+      filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '' };
+      ['from', 'to', 'trade', 'works', 'search'].forEach(function (k) {
         var el = $('pp-f-' + k); if (el) el.value = '';
       });
+      renderLocFilterSelects();
       render();
     };
     $('pp-add').onclick = function () { openUpload(); };
@@ -450,32 +445,35 @@ window.ProgressPhotos = (function () {
     }
     fill('pp-f-trade', distinct('trade'), 'Filter by Trade');
     fill('pp-f-works', distinct('works'), 'Filter by Works');
-    fillWbsFilterOptions();
+    renderLocFilterSelects();
     var dl = $('pp-works-list');
     if (dl) dl.innerHTML = distinct('works').map(function (v) {
       return '<option value="' + Fmt.esc(v) + '"></option>'; }).join('');
   }
-  // Flattened, indented "<code>  <name>" options over the WHOLE tree (Project
-  // Schedule's own wbsPickerOptions() convention) — a project's location
-  // concepts have no fixed shape, so filtering must be "pick any WBS node",
-  // not a set of fixed dropdowns (Level/Area/Zone).
-  function wbsFlatOptionsHTML(selId) {
-    var html = '<option value="">Filter by WBS Location</option>';
-    (function walk(parentId, depth) {
-      wbsChildren(parentId).forEach(function (n) {
-        var pad = new Array(depth + 1).join('   ');
-        var label = (n.code ? n.code + '  ' : '') + n.name;
-        html += '<option value="' + n.id + '"' + (n.id === selId ? ' selected' : '') + '>' + pad + Fmt.esc(label) + '</option>';
-        walk(n.id, depth + 1);
-      });
-    })('', 0);
-    return html;
+  // Distinct values already captured at this level, across this project's
+  // own photos.
+  function distinctPhotoLocValues(levelId) {
+    var seen = {}, out = [];
+    rows.forEach(function (r) {
+      var v = (r.location_values && r.location_values[levelId]) || '';
+      if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out.sort();
   }
-  function fillWbsFilterOptions() {
-    var el = $('pp-f-location'); if (!el) return;
-    var keep = filters.wbsNode || '';
-    el.innerHTML = wbsFlatOptionsHTML(keep);
-    el.value = WBS_BY_ID[keep] ? keep : '';
+  function renderLocFilterSelects() {
+    var host = $('pp-f-loclevels'); if (!host) return;
+    if (!LOC_LEVELS.length) { host.innerHTML = ''; return; }
+    host.innerHTML = LOC_LEVELS.map(function (l) {
+      var cur = filters.locValues[l.id] || '';
+      var vals = distinctPhotoLocValues(l.id);
+      return '<select class="pd-select" data-lvl="' + l.id + '" title="Filter by ' + Fmt.esc(l.name) + '">' +
+        '<option value="">' + Fmt.esc(l.name) + '</option>' +
+        vals.map(function (v) { return '<option' + (v === cur ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>'; }).join('') +
+        '</select>';
+    }).join('');
+    Array.prototype.forEach.call(host.querySelectorAll('select'), function (sel) {
+      sel.onchange = function () { filters.locValues[sel.dataset.lvl] = sel.value; render(); };
+    });
   }
 
   // --------------------------------------------------------------- filter ---
@@ -484,10 +482,14 @@ window.ProgressPhotos = (function () {
     return rows.filter(function (r) {
       if (filters.trade && r.trade !== filters.trade) return false;
       if (filters.works && r.works !== filters.works) return false;
-      // Descendant-inclusive: picking a parent WBS node (e.g. "Ground Floor")
-      // also matches everything captured underneath it (Zone 1, Vertical, …) —
-      // the more useful default for project review (brief §13).
-      if (filters.wbsNode && (!r.wbs_node_id || !isNodeUnder(r.wbs_node_id, filters.wbsNode))) return false;
+      // A location filter is satisfied when every ACTIVE level filter matches
+      // the photo's own recorded value at that level (AND across levels).
+      var lv = r.location_values || {};
+      var locOk = Object.keys(filters.locValues || {}).every(function (lid) {
+        var want = filters.locValues[lid];
+        return !want || (lv[lid] || '') === want;
+      });
+      if (!locOk) return false;
       if (filters.from && (!r.taken_at || r.taken_at < filters.from)) return false;
       if (filters.to && (!r.taken_at || r.taken_at > filters.to)) return false;
       if (q) {
@@ -518,8 +520,8 @@ window.ProgressPhotos = (function () {
     if (listbar) listbar.style.visibility = rows.length ? '' : 'hidden';
 
     // Clear-filters only shows when a filter is actually set (no orphan button).
-    var anyFilter = ['from', 'to', 'trade', 'works', 'wbsNode', 'search']
-      .some(function (k) { return filters[k]; });
+    var anyFilter = ['from', 'to', 'trade', 'works', 'search'].some(function (k) { return filters[k]; }) ||
+      Object.keys(filters.locValues || {}).some(function (k) { return filters.locValues[k]; });
     var clr = $('pp-clearfilters');
     if (clr) clr.hidden = !anyFilter;
 
@@ -691,78 +693,76 @@ window.ProgressPhotos = (function () {
     }).join('');
   }
 
-  // ------------------------------------------------- schedule-zone picker ----
-  // Cascading N-level WBS picker with NO hardcoded per-level labels: each
-  // depth is a bare <select> showing that node's real children as
-  // "<code>  <name>" (Project Schedule's own convention for its Add-Activity
-  // WBS dropdown — reused verbatim, not reinvented). Picking one repopulates
-  // the next with its children; a capture can stop at any depth — "just this
-  // Tower" is valid, not only a full pick to the deepest leaf. The resolved
-  // path is shown as its own read-only breadcrumb (paintActCtx) — never
-  // written into the separate, purely-optional free-text "Location label".
-  // Any Activity Code types the project has (a separate, unrelated
-  // mechanism) get their own generic overlay checkboxes.
-  function levelSelectHTML(idPrefix, depth, kids, selId) {
-    var opts = '<option value="">— ' + (depth === 0 ? 'Select…' : 'None') + ' —</option>' +
-      kids.map(function (n) {
-        var label = (n.code ? n.code + '  ' : '') + n.name;
-        return '<option value="' + n.id + '"' + (n.id === selId ? ' selected' : '') + '>' + Fmt.esc(label) + '</option>';
-      }).join('');
-    return '<select class="pd-select pp-wbslevel" data-lvl="' + depth + '" id="' + idPrefix + '-lvl' + depth + '">' + opts + '</select>';
+  // ------------------------------------------------- Location Breakdown picker
+  // One free-text input + datalist per location_levels row (Project
+  // Schedule's own convention for this exact feature -- an <input>+<datalist>,
+  // not a <select>, since values are project-specific free text with no
+  // enforced tree). Suggestions soft-cascade: later levels' datalists are
+  // recomputed from only the activities matching everything picked so far,
+  // but typing an unlisted value is always allowed. The resolved path is
+  // shown as its own read-only breadcrumb -- never written into the
+  // separate, purely-optional free-text "Location label". Any Activity Code
+  // types the project has (a separate, unrelated mechanism) get their own
+  // generic overlay checkboxes.
+  function locOptionsHTML(levelId, priorVals) {
+    return distinctLocValues(levelId, priorVals).map(function (v) {
+      return '<option value="' + Fmt.esc(v) + '"></option>';
+    }).join('');
   }
-  // Renders one select per depth, seeded from `path` (root-first ids) so a
-  // preset/existing pick reopens fully expanded; stops one level past the
-  // last selection (so there's always a next choice available, never guesses
-  // deeper than the tree or the user's picks actually go).
-  function wbsCascadeHTML(idPrefix, path) {
-    path = path || [];
-    var html = '', parentId = '', depth = 0;
-    while (depth < 20) {
-      var kids = wbsChildren(parentId);
-      if (!kids.length) break;
-      var selId = path[depth] || '';
-      html += levelSelectHTML(idPrefix, depth, kids, selId);
-      if (!selId) break;
-      parentId = selId;
-      depth++;
-    }
-    return html || '<p class="pp-hint">No schedule WBS found for this project yet — build it in Project Schedule.</p>';
+  function locLevelFieldHTML(idPrefix, level, priorVals, curVal) {
+    var dlid = idPrefix + '-loclvl-' + level.id + '-dl';
+    return '<div class="pd-field pp-wbslevel"><label>' + Fmt.esc(level.name) + '</label>' +
+      '<input class="pd-input" id="' + idPrefix + '-loclvl-' + level.id + '" list="' + dlid + '" ' +
+      'data-lvl="' + level.id + '" value="' + Fmt.esc(curVal || '') + '" placeholder="e.g. ..." />' +
+      '<datalist id="' + dlid + '">' + locOptionsHTML(level.id, priorVals) + '</datalist>' +
+      '</div>';
   }
-  // The deepest level actually selected (a capture can stop early) — this is
-  // the wbs_node_id that gets stored on the photo.
-  function currentCascadeNodeId(idPrefix) {
-    var cascade = $(idPrefix + '-cascade');
-    if (!cascade) return '';
-    var sels = cascade.querySelectorAll('select'), last = '';
-    for (var i = 0; i < sels.length; i++) {
-      if (!sels[i].value) return last;
-      last = sels[i].value;
-    }
-    return last;
+  function locFieldsHTML(idPrefix, existingValues) {
+    existingValues = existingValues || {};
+    if (!LOC_LEVELS.length) return '<p class="pp-hint">No Location Breakdown set up for this project yet -- build it in Project Schedule (Group menu &rarr; Location Breakdown...).</p>';
+    var prior = {};
+    return LOC_LEVELS.map(function (l) {
+      var html = locLevelFieldHTML(idPrefix, l, prior, existingValues[l.id]);
+      if (existingValues[l.id]) prior[l.id] = existingValues[l.id];
+      return html;
+    }).join('');
   }
-  function wireCascade(idPrefix) {
-    var cascade = $(idPrefix + '-cascade');
-    if (!cascade) return;
-    Array.prototype.forEach.call(cascade.querySelectorAll('select'), function (sel) {
-      sel.onchange = function () {
-        var depth = parseInt(sel.dataset.lvl, 10);
-        var sels = cascade.querySelectorAll('select'), path = [];
-        for (var i = 0; i <= depth; i++) path.push(sels[i].value);
-        cascade.innerHTML = wbsCascadeHTML(idPrefix, path);
-        wireCascade(idPrefix);
-        paintActCtx(idPrefix);
+  function currentLocValues(idPrefix) {
+    var values = {};
+    LOC_LEVELS.forEach(function (l) {
+      var el = $(idPrefix + '-loclvl-' + l.id);
+      var v = el ? el.value.trim() : '';
+      if (v) values[l.id] = v;
+    });
+    return values;
+  }
+  function wireLocFields(idPrefix) {
+    LOC_LEVELS.forEach(function (l, i) {
+      var el = $(idPrefix + '-loclvl-' + l.id);
+      if (!el) return;
+      el.oninput = el.onchange = function () {
+        var prior = {};
+        for (var j = 0; j <= i; j++) {
+          var pel = $(idPrefix + '-loclvl-' + LOC_LEVELS[j].id);
+          if (pel && pel.value.trim()) prior[LOC_LEVELS[j].id] = pel.value.trim();
+        }
+        for (var k = i + 1; k < LOC_LEVELS.length; k++) {
+          var nl = LOC_LEVELS[k];
+          var dl = $(idPrefix + '-loclvl-' + nl.id + '-dl');
+          if (dl) dl.innerHTML = locOptionsHTML(nl.id, prior);
+        }
+        paintLocCtx(idPrefix);
       };
     });
   }
-  function wbsFieldHTML(idPrefix, selNodeId, locText) {
-    var path = wbsPathTo(selNodeId);
+  function locationFieldHTML(idPrefix, existingValues, locText) {
     return (
-      '<div class="pp-span2 pp-wbssection"><label>WBS Location</label>' +
-        '<div class="pp-wbscascade" id="' + idPrefix + '-cascade">' + wbsCascadeHTML(idPrefix, path) + '</div>' +
+      '<div class="pp-span2 pp-wbssection"><label>Location Breakdown</label>' +
+        '<div class="pp-wbscascade" id="' + idPrefix + '-loclevels">' + locFieldsHTML(idPrefix, existingValues) + '</div>' +
         '<div class="pp-wbscrumb" id="' + idPrefix + '-crumb"></div>' +
       '</div>' +
       '<div class="pd-field pp-span2"><label>Location label ' +
-        '<span class="pp-optnote">(optional — does not replace the WBS location above)</span></label>' +
+        '<span class="pp-optnote">(optional -- does not replace the Location Breakdown above)</span></label>' +
         '<input class="pd-input" id="' + idPrefix + '-loctxt" value="' + Fmt.esc(locText || '') +
         '" placeholder="e.g. Model Unit Entrance" /></div>' +
       '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>' +
@@ -790,34 +790,35 @@ window.ProgressPhotos = (function () {
     var wrap = $(idPrefix + '-codes'); if (!wrap) return [];
     return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
   }
-  // Location label is fully independent of the WBS pick now — never
-  // auto-filled/overwritten by it (the breadcrumb below is the one place the
-  // resolved WBS path is shown). The `skipInitialFill` param is kept as a
-  // harmless no-op so existing call sites don't need to change.
-  function wireWbsField(idPrefix, skipInitialFill) {
-    wireCascade(idPrefix);
-    paintActCtx(idPrefix);
+  // The `skipInitialFill` param is kept as a harmless no-op so existing call
+  // sites don't need to change -- Location label is fully independent now,
+  // never auto-filled from the picker (the breadcrumb is the one place the
+  // resolved Location Breakdown path is shown).
+  function wireLocationField(idPrefix, skipInitialFill) {
+    wireLocFields(idPrefix);
+    paintLocCtx(idPrefix);
   }
-  function paintActCtx(idPrefix) {
+  function paintLocCtx(idPrefix) {
     var ctx = $(idPrefix + '-actctx'), crumb = $(idPrefix + '-crumb');
-    var nodeId = currentCascadeNodeId(idPrefix);
+    var values = currentLocValues(idPrefix);
+    var hasAny = Object.keys(values).length > 0;
     if (crumb) {
-      crumb.innerHTML = nodeId
-        ? Fmt.esc(breadcrumbOf(nodeId))
-        : '<span class="pp-muted">No WBS location selected yet.</span>';
+      crumb.innerHTML = hasAny
+        ? Fmt.esc(locBreadcrumb(values))
+        : '<span class="pp-muted">No Location Breakdown value selected yet.</span>';
     }
     if (!ctx) return;
-    if (!nodeId) { ctx.innerHTML = ''; return; }
-    var act = resolveActivity(nodeId), last = lastCaptureAt(nodeId);
+    if (!hasAny) { ctx.innerHTML = ''; return; }
+    var act = resolveActivity(values), last = lastCaptureAt(values);
     var html = '';
     if (act) html += '<div class="pp-actline">Current activity: <strong>' + Fmt.esc(act.name || act.id) + '</strong></div>';
-    else html += '<div class="pp-actline pp-muted">No active schedule activity found under here.</div>';
+    else html += '<div class="pp-actline pp-muted">No active schedule activity found for this location.</div>';
     if (last) {
       var u = urlOf(last);
       html += '<div class="pp-actline pp-lastref">' +
         (u ? '<img src="' + Fmt.esc(u) + '" class="pp-refthumb" alt="Last photo here" />' : '') +
         '<span>Last captured here ' + (last.taken_at ? Fmt.date(last.taken_at) : '') +
-        ' — frame a similar shot for comparison.</span></div>';
+        ' -- frame a similar shot for comparison.</span></div>';
     }
     ctx.innerHTML = html;
     hydrate(ctx);
@@ -844,7 +845,7 @@ window.ProgressPhotos = (function () {
             '<select class="pd-select" id="pp-trade">' + tradeOptions('') + '</select></div>' +
           '<div class="pd-field"><label>Works</label>' +
             '<input class="pd-input" id="pp-works" list="pp-works-list" placeholder="e.g. Temporary Facilities" /></div>' +
-          wbsFieldHTML('pp', preset.wbsNodeId || '', preset.location || '') +
+          locationFieldHTML('pp', preset.locationValues || {}, preset.location || '') +
         '</div>' +
         '<div class="pp-progress" id="pp-prog" hidden></div>' +
       '</div>' +
@@ -854,23 +855,25 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn pd-btn-primary" id="pp-save">Upload</button></div>';
 
     var m = openModal(html, 640);
-    wireWbsField('pp');
+    wireLocationField('pp');
     hydrate(m.el);
     if (preset.walk && $('pp-skip')) $('pp-skip').onclick = function () { m.close(); advanceWalkthrough(); };
-    if (preset.walk && $('pp-endwalk')) $('pp-endwalk').onclick = function () { m.close(); walkState = null; };
+    if (preset.walk && $('pp-endwalk')) $('pp-endwalk').onclick = function () {
+      m.close(); walkState = null; roundsSelected = {}; renderRounds();
+    };
 
     $('pp-save').onclick = async function () {
       var files = $('pp-files').files;
       if (!files || !files.length) { UI.toast('Choose at least one photo', 'warn'); return; }
-      var wbsNodeId = currentCascadeNodeId('pp') || null;
-      var act = wbsNodeId ? resolveActivity(wbsNodeId) : null;
+      var locVals = currentLocValues('pp');
+      var act = resolveActivity(locVals);
       var shared = {
         description: $('pp-desc').value.trim(),
         taken_at: $('pp-date').value || null,
         trade: $('pp-trade').value || null,
         works: $('pp-works').value.trim() || null,
-        location: $('pp-loctxt').value.trim() || breadcrumbOf(wbsNodeId) || null,
-        wbs_node_id: wbsNodeId,
+        location: $('pp-loctxt').value.trim() || locBreadcrumb(locVals) || null,
+        location_values: locVals,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp')
@@ -929,9 +932,9 @@ window.ProgressPhotos = (function () {
   async function tolerantWrite(job) {
     var w = await doWrite(job);
     if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
-        job.patch && ('wbs_node_id' in job.patch || 'activity_id' in job.patch || 'activity_name' in job.patch)) {
+        job.patch && ('location_values' in job.patch || 'activity_id' in job.patch || 'activity_name' in job.patch)) {
       var stripped = Object.assign({}, job.patch);
-      delete stripped.wbs_node_id; delete stripped.activity_id; delete stripped.activity_name;
+      delete stripped.location_values; delete stripped.activity_id; delete stripped.activity_name;
       if (!migrationWarned) {
         migrationWarned = true;
         UI.toast('Saved without the schedule-zone link — run the pending migration', 'warn');
@@ -1080,7 +1083,7 @@ window.ProgressPhotos = (function () {
             '<select class="pd-select" id="pp-e-trade">' + tradeOptions(r.trade || '') + '</select></div>' +
           '<div class="pd-field"><label>Works</label>' +
             '<input class="pd-input" id="pp-e-works" list="pp-works-list" value="' + Fmt.esc(r.works || '') + '" /></div>' +
-          wbsFieldHTML('pp-e', r.wbs_node_id || '', r.location || '') +
+          locationFieldHTML('pp-e', r.location_values || {}, r.location || '') +
         '</div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
@@ -1092,7 +1095,7 @@ window.ProgressPhotos = (function () {
     if (codeWrap) Array.prototype.forEach.call(codeWrap.querySelectorAll('input[type=checkbox]'), function (c) {
       c.checked = (r.tags || []).indexOf(c.value) >= 0;
     });
-    wireWbsField('pp-e', true);   // existing label wins initially; only clears on a fresh zone pick
+    wireLocationField('pp-e', true);
     hydrate(m.el);
     // Clear the "editing this photo" cursor on every close path (× / Cancel).
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
@@ -1100,15 +1103,15 @@ window.ProgressPhotos = (function () {
     });
     $('pp-e-save').onclick = async function () {
       this.disabled = true;
-      var wbsNodeId = currentCascadeNodeId('pp-e') || null;
-      var act = wbsNodeId ? resolveActivity(wbsNodeId) : null;
+      var locVals = currentLocValues('pp-e');
+      var act = resolveActivity(locVals);
       var patch = {
         description: $('pp-e-desc').value.trim(),
         taken_at: $('pp-e-date').value || null,
         trade: $('pp-e-trade').value || null,
         works: $('pp-e-works').value.trim() || null,
-        location: $('pp-e-loctxt').value.trim() || breadcrumbOf(wbsNodeId) || null,
-        wbs_node_id: wbsNodeId,
+        location: $('pp-e-loctxt').value.trim() || locBreadcrumb(locVals) || null,
+        location_values: locVals,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp-e'),
@@ -1162,35 +1165,58 @@ window.ProgressPhotos = (function () {
   }
 
   // ------------------------------------------------------- Today's Rounds ---
-  // The streamlined repeat-visit capture flow (brief §4): a checklist of the
-  // project's schedule zones, ranked by recent capture history, each showing
-  // its last photo + current activity, single-tap capture or multi-select
-  // into a sequential walkthrough.
+  // The streamlined repeat-visit capture flow: a checklist of distinct
+  // location-value COMBINATIONS drawn from the schedule's own activities
+  // (not a separate location list), ranked by recent capture history, each
+  // showing its last photo + current activity, single-tap capture or
+  // multi-select into a sequential walkthrough.
   function refreshRoundsIfVisible() {
     var h = document.getElementById('pp-screen-rounds');
     if (h && !h.hidden) renderRounds();
+  }
+
+  // Every distinct combination of location values that appears on at least
+  // one schedule activity -- these are the "places to visit", the same
+  // generalization WBS leaves used to be, now over Location Breakdown values.
+  function locCombos() {
+    var seen = {}, out = [];
+    SCHED_ACTS.forEach(function (a) {
+      var loc = a.location || {}, values = {}, any = false;
+      LOC_LEVELS.forEach(function (l) { var v = loc[l.id]; if (v) { values[l.id] = v; any = true; } });
+      if (!any) return;
+      var key = LOC_LEVELS.map(function (l) { return values[l.id] || ''; }).join('␟');
+      if (seen[key]) return;
+      seen[key] = 1;
+      out.push({ key: key, values: values, label: locBreadcrumb(values) });
+    });
+    return out;
   }
 
   function renderRounds() {
     var host = $('pp-rounds-view');
     if (!host) return;
     if (!pid) { host.innerHTML = '<div class="pp-empty">Select a project.</div>'; return; }
-    if (!WBS_LEAVES.length) {
-      host.innerHTML = '<div class="pp-empty"><p>No schedule zones found for this project yet.</p>' +
-        '<p class="pp-hint">Build the WBS in Project Schedule, or use <strong>+ Add photos</strong> on the ' +
-        'Photos tab for an untracked location in the meantime.</p></div>';
+    if (!LOC_LEVELS.length) {
+      host.innerHTML = '<div class="pp-empty"><p>No Location Breakdown set up for this project yet.</p>' +
+        '<p class="pp-hint">Build it in Project Schedule (Group menu &rarr; Location Breakdown&hellip;), or use ' +
+        '<strong>+ Add photos</strong> on the Photos tab for an untracked location in the meantime.</p></div>';
+      return;
+    }
+    var combos = locCombos();
+    _roundsComboByKey = {};
+    combos.forEach(function (c) { _roundsComboByKey[c.key] = c; });
+    if (!combos.length) {
+      host.innerHTML = '<div class="pp-empty"><p>No activities have a Location Breakdown value assigned yet in Project Schedule.</p></div>';
       return;
     }
     var q = roundsFilter.trim().toLowerCase();
-    var items = WBS_LEAVES.map(function (n) {
-      return { node: n, last: lastCaptureAt(n.id), act: resolveActivity(n.id) };
-    });
-    if (q) items = items.filter(function (it) { return it.node.label.toLowerCase().indexOf(q) >= 0; });
+    var items = combos.map(function (c) { return { combo: c, last: lastCaptureAt(c.values), act: resolveActivity(c.values) }; });
+    if (q) items = items.filter(function (it) { return it.combo.label.toLowerCase().indexOf(q) >= 0; });
 
     var visited = items.filter(function (it) { return it.last; })
       .sort(function (a, b) { return (b.last.taken_at || '').localeCompare(a.last.taken_at || ''); });
     var unvisited = items.filter(function (it) { return !it.last; })
-      .sort(function (a, b) { return a.node.label.localeCompare(b.node.label); });
+      .sort(function (a, b) { return a.combo.label.localeCompare(b.combo.label); });
 
     var selCount = Object.keys(roundsSelected).filter(function (k) { return roundsSelected[k]; }).length;
     var bar = selCount ? ('<div class="pp-selbar">' + selCount + ' location' + (selCount === 1 ? '' : 's') +
@@ -1200,24 +1226,24 @@ window.ProgressPhotos = (function () {
     function row(it) {
       var u = it.last ? urlOf(it.last) : '';
       return '<div class="pp-round-row">' +
-        '<input type="checkbox" class="pp-round-chk" data-id="' + it.node.id + '"' +
-          (roundsSelected[it.node.id] ? ' checked' : '') + ' />' +
+        '<input type="checkbox" class="pp-round-chk" data-key="' + Fmt.esc(it.combo.key) + '"' +
+          (roundsSelected[it.combo.key] ? ' checked' : '') + ' />' +
         (u ? '<img class="pp-round-thumb" src="' + Fmt.esc(u) + '" alt="" />' :
              '<div class="pp-round-thumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
         '<div class="pp-round-info">' +
-          '<div class="pp-round-loc">' + Fmt.esc(it.node.label) + '</div>' +
+          '<div class="pp-round-loc">' + Fmt.esc(it.combo.label) + '</div>' +
           (it.act ? '<div class="pp-round-act">' + Fmt.esc(it.act.name || it.act.id) + '</div>' : '') +
           (it.last ? '<div class="pp-round-last">Last captured ' + Fmt.date(it.last.taken_at) + '</div>' :
                      '<div class="pp-round-last pp-muted">Not yet captured</div>') +
         '</div>' +
-        '<button class="pd-btn" data-cap="' + it.node.id + '">Capture</button>' +
+        '<button class="pd-btn" data-cap="' + Fmt.esc(it.combo.key) + '">Capture</button>' +
         '</div>';
     }
 
     var html = bar;
     if (visited.length) html += '<div class="pp-round-sec">Recent rounds</div>' + visited.map(row).join('');
-    if (unvisited.length) html += '<div class="pp-round-sec">Other schedule zones</div>' + unvisited.map(row).join('');
-    if (!visited.length && !unvisited.length) html += '<div class="pp-empty"><p>No zones match this search.</p></div>';
+    if (unvisited.length) html += '<div class="pp-round-sec">Other schedule locations</div>' + unvisited.map(row).join('');
+    if (!visited.length && !unvisited.length) html += '<div class="pp-empty"><p>No locations match this search.</p></div>';
     host.innerHTML = html;
     hydrate(host);
     wireRounds(host);
@@ -1227,20 +1253,20 @@ window.ProgressPhotos = (function () {
     if ($('pp-startwalk')) $('pp-startwalk').onclick = startWalkthrough;
     if ($('pp-clearsel')) $('pp-clearsel').onclick = function () { roundsSelected = {}; renderRounds(); };
     Array.prototype.forEach.call(host.querySelectorAll('.pp-round-chk'), function (c) {
-      c.onchange = function () { roundsSelected[this.dataset.id] = this.checked; renderRounds(); };
+      c.onchange = function () { roundsSelected[this.dataset.key] = this.checked; renderRounds(); };
     });
     Array.prototype.forEach.call(host.querySelectorAll('[data-cap]'), function (b) {
       b.onclick = function () {
-        var node = wbsLeaf(this.dataset.cap);
-        openUpload({ wbsNodeId: this.dataset.cap, location: node ? node.label : '' });
+        var combo = _roundsComboByKey[this.dataset.cap];
+        openUpload({ locationValues: combo ? combo.values : {}, location: combo ? combo.label : '' });
       };
     });
   }
 
   function startWalkthrough() {
-    var ids = Object.keys(roundsSelected).filter(function (k) { return roundsSelected[k]; });
-    if (!ids.length) { UI.toast('Select at least one location first', 'warn'); return; }
-    walkState = { queue: ids, at: 0, total: ids.length };
+    var keys = Object.keys(roundsSelected).filter(function (k) { return roundsSelected[k]; });
+    if (!keys.length) { UI.toast('Select at least one location first', 'warn'); return; }
+    walkState = { queue: keys, at: 0, total: keys.length };
     openWalkStep();
   }
   function advanceWalkthrough() {
@@ -1254,9 +1280,9 @@ window.ProgressPhotos = (function () {
       walkState = null; roundsSelected = {}; renderRounds();
       return;
     }
-    var nodeId = walkState.queue[walkState.at];
-    var node = wbsLeaf(nodeId);
-    openUpload({ wbsNodeId: nodeId, location: node ? node.label : '',
+    var key = walkState.queue[walkState.at];
+    var combo = _roundsComboByKey[key];
+    openUpload({ locationValues: combo ? combo.values : {}, location: combo ? combo.label : '',
       walk: { at: walkState.at + 1, total: walkState.total } });
   }
 

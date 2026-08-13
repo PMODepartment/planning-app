@@ -62,11 +62,13 @@ create table if not exists progress_photos (
   works       text,                  -- work item within the trade
   sort_order  integer,
   tags        text[],                -- optional Activity Code overlay, "<code type>: <value>"
-  wbs_node_id uuid,                   -- references wbs_nodes(id) (see migrations/2026-08-10-*.sql — wbs_nodes
-                                       -- isn't in this base file yet, a pre-existing schema-drift gap; the FK
-                                       -- constraint is added there once wbs_nodes exists on the target DB)
-  activity_id text,                   -- snapshot of the schedule's "current" activity for that zone at capture time
+  wbs_node_id uuid,                   -- legacy (Phase 1 first cut); references wbs_nodes(id) if ever set,
+                                       -- no longer written by new captures — see location_values below
+  activity_id text,                   -- snapshot of the schedule's "current" activity at capture time
   activity_name text,
+  location_values jsonb default '{}'::jsonb,   -- { "<location_level_id>": "value string" } — mirrors
+                                       -- project_schedule.location's shape exactly (migrations/2026-08-12-*.sql);
+                                       -- Project Schedule's real "Location Breakdown", NOT the wbs_nodes tree
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()

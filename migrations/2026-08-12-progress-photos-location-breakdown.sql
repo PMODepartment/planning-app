@@ -1,0 +1,33 @@
+-- ============================================================================
+-- Progress Photos — switch from wbs_nodes to Project Schedule's real
+-- "Location Breakdown" (location_levels + project_schedule.location)
+-- ----------------------------------------------------------------------------
+-- Correction: wbs_nodes is the general WBS tree (phases, disciplines, work
+-- packages, …) — Project Schedule itself deliberately does NOT use it for
+-- physical location, precisely because conflating the two was a past mistake
+-- (see modules/project-schedule/CLAUDE.md's 2026-08-04 entry: "location and
+-- zone existed only as WBS tree structure... Fix = make them activity data").
+-- The real location system is `location_levels` (per-project, ordered,
+-- free-form level names like Tower/Level/Zone — migrations/2026-08-04-*.sql)
+-- plus a `location` jsonb on each `project_schedule` row, keyed by level id,
+-- always a plain string value — NOT a node tree.
+--
+-- progress_photos mirrors that exact shape rather than inventing a new one:
+--   location_values jsonb = { "<location_level_id>": "value string", ... }
+-- (same convention as project_schedule.location and activity_codes).
+--
+-- wbs_node_id / activity_id / activity_name are UNCHANGED and NOT migrated —
+-- wbs_node_id simply stops being written by new captures (kept nullable for
+-- any already-saved rows); activity_id/activity_name keep meaning exactly
+-- what they always did (a snapshot of the "current" activity at capture
+-- time), just resolved by matching location_values instead of a WBS node.
+--
+-- Idempotent / safe to re-run.
+-- ============================================================================
+
+alter table progress_photos add column if not exists location_values jsonb default '{}'::jsonb;
+
+-- No RLS change needed: progress_photos' existing per-project policies already
+-- cover the new column, and location_levels is already readable by any
+-- approved user with project access (can_access_project()) per its own
+-- policy — same cross-module read pattern already used for wbs_nodes.

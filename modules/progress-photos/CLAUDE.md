@@ -2,6 +2,76 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Rebuilt the location picker onto Project Schedule's real "Location Breakdown" system, not
+## wbs_nodes (2026-08-13)
+Owner's correction after confirming the full WBS tree now renders (previous entry): **"it should
+show the Location Breakdown options not the WBS."** Project Schedule has a second, purpose-built
+location system, entirely separate from the generic `wbs_nodes` tree this module had been reading —
+confirmed by code inspection (research agent) before touching anything, per the standing "inspect
+before coding" instruction.
+- **The real data model**: `location_levels` (`{id, project_id, name, sort_order, match}` — a
+  per-project, **ordered list of free-form level names**, e.g. Tower/Level/Zone, no fixed count or
+  labels) + `project_schedule.location` (jsonb `{"<location_level_id>": "value string"}` — one plain
+  string per level, **not a node tree**: two activities with the same string under the same level are
+  literally the same value, there's no parent-child FK to walk). This is architecturally distinct
+  from `wbs_nodes`/the WBS Manager tree, which Project Schedule keeps for structural breakdown only —
+  conflating the two was the exact mistake being corrected.
+- **Project Schedule's own UI for this is `<input>` + `<datalist>` free text, not `<select>`, and NOT
+  hard-cascading** (`locValuesFor(levelId)` just scans loaded rows for distinct values with no
+  cross-level filtering) — this module now matches that convention exactly rather than inventing a
+  stricter one, so a value schedule planners already typed is always pickable and a not-yet-typed
+  one can still be entered fresh.
+- **Replaced the entire WBS cascade with a Location Breakdown cascade**: `LOC_LEVELS` (was
+  `WBS`/`WBS_BY_ID`/`WBS_LEAVES`) loads `location_levels` ordered by `sort_order`; one `<input
+  list=…>` + `<datalist>` per level (`locFieldsHTML`/`locLevelFieldHTML`), each level's datalist
+  built by `distinctLocValues(levelId, priorVals)` — a **soft cascade**: prior levels' current values
+  narrow the datalist suggestions (UX convenience only, verified: picking "Tower B" narrows Level to
+  just "Ground Floor" and empties Zone), but typing an unlisted value is never blocked, since the
+  underlying data has no enforced parent-child link to block against.
+- **`wbs_node_id` is no longer written by new captures.** New `progress_photos.location_values` jsonb
+  column mirrors `project_schedule.location`'s shape exactly (migration
+  `../../migrations/2026-08-12-progress-photos-location-breakdown.sql`, folded into
+  `supabase-schema.sql`. **User must run it** — until then the column is missing and
+  `tolerantWrite`'s missing-column retry silently drops it, same tolerance pattern as
+  `activity_id`/`activity_name`). `wbs_node_id` itself is untouched/not migrated — it just stops
+  being written; existing rows keep whatever they had.
+- **Activity resolution + "last captured here" now match by subset-equality on `location_values`**
+  (`resolveActivity`/`lastCaptureAt`) — a pick matches any schedule row/photo whose `location` (or
+  `location_values`) agrees on every **non-empty** key in the current pick, so stopping at "Tower B ›
+  Ground Floor" with no Zone still resolves correctly (verified: resolves "Site Grading" with no Zone
+  needed), and two same-Tower/Level-different-Zone activities correctly disambiguate once Zone is
+  picked (verified: Zone 1 → "Rebar Installation", Zone 2 → "MEP Rough-in").
+- **Photos-page filtering** is now one `<select>` per location level (`renderLocFilterSelects`,
+  replacing the old descendant-inclusive WBS-node filter — there's no node tree to be descendant-
+  inclusive over now), each populated from **distinct values actually present on captured photos**
+  (`distinctPhotoLocValues`), narrowing `visible()` by exact per-level match.
+- **Today's Rounds now enumerates distinct location-value combinations** (`locCombos()`) across
+  schedule activities, keyed by joining each level's value with U+241F (`␟`, an internal dedup key
+  only — never shown) since there's no single node id to key off anymore. Recent/Other split,
+  walkthrough chain (Skip/End), and Capture-from-Rounds all carry `{key, values, label}` combos
+  through `_roundsComboByKey` instead of node ids.
+- **Bug found + fixed during this pass**: "End walkthrough" (early exit) only closed the modal and
+  nulled `walkState`, unlike natural completion which also clears `roundsSelected` and re-renders —
+  so ending early left the selection bar showing stale "N selected" with boxes still checked. Now
+  matches natural completion (`m.close(); walkState = null; roundsSelected = {}; renderRounds();`).
+- Harness-verified end-to-end against a fresh v7 fixture (3 `location_levels` Tower/Level/Zone, 3
+  schedule activities incl. two sharing Tower A/5th Floor with different Zones for disambiguation +
+  one Tower B/Ground Floor with no Zone for stop-early matching, one seeded photo): per-level filter
+  selects, Add-photos picker (input+datalist, soft cascade, breadcrumb, activity resolution,
+  disambiguation), a real save persisting `location`/`location_values`/`activity_id`/`activity_name`
+  with **no `wbs_node_id`**, Photos-page filter narrowing 2→1, Rounds enumerating 3 combos split
+  Recent/Other, walkthrough Start → pre-filled modal (breadcrumb + resolved activity + "last
+  captured here" reference photo) → Skip advances "1 of 2" → "2 of 2" with the correct disambiguated
+  combo → natural completion clears selection, **and the End-walkthrough bug above, both before and
+  after the fix**, Edit-modal pre-fill (existing `location_values` correctly populates all three
+  inputs) with the "Location label" field proven independent (changing Zone recomputes the breadcrumb
+  + resolved activity live but never touches the typed label), and the save round-trip. No console
+  errors beyond expected `file://` favicon 404s (noted as harmless in every prior round).
+- **Not re-verified this round** (unchanged plumbing, not touched by this rewrite): the offline blob
+  queue's failure/retry/Sync-now cycle — it treats the whole row as opaque metadata and was already
+  confirmed to not care about field shape in the 2026-08-11 entry; re-deriving that generic result
+  wasn't repeated in the interest of not gold-plating what didn't change.
+
 ## Bug fix: live "WBS Location" only showed one root node (2026-08-12b)
 Reported live on Avesta Residences (real screenshot: the depth-0 select showed only
 "Milestones" instead of the project's real Construction/Tower/… tree) — the previous entry's

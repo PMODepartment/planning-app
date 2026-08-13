@@ -267,10 +267,16 @@
 }
 .pp-syncbtn:hover { background: var(--pd-red); color: #fff; }
 
-/* ---- Schedule-zone picker (Add/Edit modals) ------------------------------- */
-/* One bare <select> per WBS depth — however many the project's own tree
-   actually has, no fixed count or per-level label (a project's WBS has no
-   universal shape). Wraps as needed since a deep tree won't fit one row. */
+/* ---- Photos-page Location Breakdown filter (one select per level) -------- */
+/* display:contents so the injected <select>s flow as if they were direct
+   children of .pp-filters (already flex-wrap), picking up its .pd-select
+   sizing rules for free instead of needing their own layout. */
+.pp-locfilters { display: contents; }
+
+/* ---- Location Breakdown picker (Add/Edit modals) -------------------------- */
+/* One input+datalist per Location Breakdown level — however many the
+   project's own location_levels has, no fixed count or assumed names (a
+   project's levels have no universal shape). Wraps as needed for a long list. */
 .pp-wbssection {
   border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
   background: var(--pd-card); padding: 10px 12px; margin-top: 4px;
