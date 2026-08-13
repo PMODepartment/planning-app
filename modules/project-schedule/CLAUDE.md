@@ -1,5 +1,23 @@
 # Module: project-schedule
 
+## Schedule Builder: level-link cascade to units + push start = data date (2026-08-13d) — eprobles
+- **Zone-sequence collapsed-group linking now cascades to the unit level.** Linking two collapsed nodes
+  (Level 1–3) previously created a full cross-product of every source leaf × every destination leaf.
+  New `linkMapped(srcs, dsts, type, lag)` (used by `nodeConfirm`) instead maps each source unit-leaf to
+  the destination unit-leaf that shares its **sub-location** (`cellKey` = zone#unit) — so linking Floor 5
+  → Floor 6 establishes Z1U1→Z1U1, Z1U2→Z1U2, … (unit-to-unit relationships "followed" down the level).
+  Falls back to the every-source×every-destination link only when no sub-locations match (e.g. a genuine
+  cross-zone single pick). Unit-checked (group→group = clean 1:1; cross-zone single = 1 link).
+- **Trade sequence → per-unit activities (already worked, confirmed):** `generate` iterates `locList()`
+  (per-leaf = per-unit at unit level) and `pushToSchedule` applies each trade's `cfg.actLinks` WITHIN
+  every location — so the class-code sequence is established per unit and replicated to all unit-level
+  locations from step 2. No change needed.
+- **Push start date = project Data Date.** `openPushModal` now shows a Start date: when the project's
+  `dataDate` is set the schedule builds from it (read-only, with a note); when NO data date is defined
+  the user is prompted to pick a start date (required). `generate(basis, startOverride)` +
+  `pushToSchedule(..., startISO)` thread it through. (Preview panel still uses `cfg.startDate`.)
+- Verified: inline JS parses; `linkMapped` + start logic unit-checked. **NOT browser-verified** (auth-gated).
+
 ## Schedule Builder: step-3/4 viewing — stacked layout, cross-highlight, L1–L4 collapse (2026-08-13c) — eprobles
 Viewing/UX features for the Zone-sequence (step 3) and Trade-sequence (step 4) screens. UI-only, no
 config/model change.
