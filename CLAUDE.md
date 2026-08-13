@@ -77,6 +77,38 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-14 — Sign in with Microsoft (Azure AD via Supabase OAuth)
+User asked to add Microsoft login. Added the client side only — this needs a matching **Azure AD app
+registration + enabling the "azure" provider in the Supabase Auth dashboard**, both owner-only actions
+this environment can't perform.
+- **`assets/js/auth.js`**: new `AppAuth.loginWithMicrosoft()` → `getSB().auth.signInWithOAuth({provider:
+  'azure', options:{redirectTo: …/projects.html, scopes:'email'}})`. ⚠️ **No new profile-creation path
+  needed** — the redirect lands on `projects.html`, whose `AppAuth.requireLogin()` already calls
+  `ensureProfile()` for any session with no `users` row, so a first-time Microsoft sign-in self-heals a
+  `pending` profile exactly like a first-time email sign-up does. Same auto-approve/role/project-
+  assignment rules apply afterwards — Microsoft is just a second way to establish the Supabase session,
+  not a separate identity/authorization system.
+- **`index.html`**: added an "OR" divider + a **"Sign in with Microsoft"** button (4-colour MS glyph,
+  inline SVG, no external asset) below the email/password form. On click, the browser navigates to
+  Microsoft immediately; the click handler only ever reports an error if `signInWithOAuth` itself fails
+  before the redirect (e.g. the provider isn't enabled yet in Supabase).
+- Shared asset changed → **`auth.js?v=` bumped `20260812b` → `20260814a` across all 19 referencing HTML
+  files** (root + every module, `../../` paths included).
+- **⚠️ OWNER ACTION REQUIRED before this works — nothing will happen on click until both are done:**
+  1. **Azure AD app registration** (Entra ID admin, e.g. Megawide's tenant): register an app, add a
+     **Web** redirect URI of `https://<supabase-project-ref>.supabase.co/auth/v1/callback`, note the
+     **Application (client) ID** and create a **client secret**.
+  2. **Supabase dashboard → Authentication → Providers → Azure**: enable it, paste the client id/secret,
+     set the **Azure Tenant URL/ID** (use the org's tenant, not `common`, unless external accounts should
+     be allowed), and add `https://pmodepartment.github.io/planning-app/projects.html` to **Redirect URLs**
+     under Authentication → URL Configuration (same allowlist the password-reset flow already needed).
+  3. First Microsoft sign-in per person lands in `pending.html` (role `user`) exactly like a fresh
+     email registration — an admin still approves it in `admin.html`. No auto-approve for SSO alone.
+- **Not verified end-to-end** — the Azure app + Supabase provider aren't configured yet, so a live click
+  currently redirects to Microsoft and fails at the Supabase callback with "provider not enabled" until
+  the owner completes the two steps above. Verified only: `node --check` on `auth.js`, and that the
+  button/handler wiring matches the existing email-login pattern.
+
 ### 2026-08-13 — Project Schedule: LSM activity legend + click-a-month vertical stacking
 User asked for the two LSM features from the OPW101 deck: a **legend for the activities in the Gantt**
 and **clicking a month to show progress as a vertical stack** of floors. Both landed in
