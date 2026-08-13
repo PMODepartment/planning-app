@@ -1267,6 +1267,17 @@
     .sbld-seq2-right { flex:1 1 0; min-width:0; }
     .sbld-seq2-h { font-size:12px; font-weight:700; color:var(--pd-muted); margin-bottom:6px; }
     .sbld-twr { display:flex; flex-direction:column; gap:4px; flex:1 1 auto; min-height:0; }
+    /* Stacked layout — building view on top, gantt on the bottom; trades laid out side-by-side up top */
+    .sbld-seqstack { display:flex; flex-direction:column; gap:10px; }
+    .sbld-seqstack-top { border:1px solid var(--pd-line); border-radius:8px; padding:10px; background:var(--pd-bg); overflow:auto; max-height:52vh; }
+    .sbld-seqstack-bot { min-width:0; }
+    .sbld-twr-hz { flex-direction:row; align-items:flex-start; gap:14px; flex-wrap:wrap; }
+    .sbld-twr-hz .sbld-twr-col { flex:1 1 200px; min-width:170px; }
+    .sbld-twr-col { display:flex; flex-direction:column; gap:4px; }
+    /* Cross-highlight: a clicked zone/unit lights up in BOTH the building view and the gantt */
+    .sbld-znode.sbld-focus { outline:3px solid #f5a623; outline-offset:1px; box-shadow:0 0 0 2px rgba(245,166,35,.35); z-index:1; }
+    .sbld-schedbar.sbld-focus { stroke:#f5a623; stroke-width:3; }
+    .sbld-actrow.sbld-focus { outline:2px solid #f5a623; outline-offset:1px; border-radius:6px; }
     .sbld-twr-floor { display:flex; align-items:stretch; gap:4px; flex:1 1 0; min-height:40px; }
     .sbld-twr-legend { flex:0 0 auto; }
     .sbld-twr-tradehead { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; margin:8px 0 4px; padding-top:6px; border-top:1px solid var(--pd-line); }
@@ -12010,6 +12021,43 @@
     var seqZoom = 3;      // Zone-sequence flow diagram: block size / column spacing (zoom +/-)
     var seqLeftW = 300;   // step-3 tower pane width (px) — draggable divider
     var seqTradeFilter = 'ALL';   // Zone-sequence: which trade's bars/nodes are shown ('ALL' = every trade)
+    var seqLayout = 'split';  // step 3/4 layout: 'split' (tower left / gantt right) | 'stack' (building top / gantt bottom)
+    var seqLevel = 4;         // step-3 tower collapse depth: 1=Trade, 2=Floor, 3=Zone, 4=Unit (full)
+    var seqFocus = [];        // uids currently highlighted (cross-highlight between tower nodes & gantt bars)
+    function isFocus(uids) { return seqFocus.length && uids.some(function (u) { return seqFocus.indexOf(u) >= 0; }); }
+    function setFocus(uids) { seqFocus = (uids || []).slice(); }
+    var actFocus = null;      // step-4: class-code id highlighted across the list & chart
+    function isActFocus(id) { return actFocus && actFocus === id; }
+    // Tower display nodes for one floor at the current collapse level. Each node carries ALL its
+    // descendant leaf uids (so a collapsed node links/highlights its whole group). L1 is handled at
+    // the trade level (whole-trade node), so this covers L2–L4.
+    function towerNodesFor(tr, f) {
+      var leaves = leavesOfFloor(tr, f);
+      if (seqLevel <= 2) return leaves.length ? [{ label: (f.code || f.name || 'F'), uids: leaves.map(function (l) { return l.uid; }) }] : [];
+      if (seqLevel === 3) {
+        var order = [], byZone = {};
+        leaves.forEach(function (l) { var zk = l.zone ? (l.zone.code || l.zone.id) : '_'; if (!(zk in byZone)) { byZone[zk] = order.length; order.push({ label: (l.zone ? (l.zone.code || 'Z') : (f.code || 'F')), uids: [] }); } order[byZone[zk]].uids.push(l.uid); });
+        return order;
+      }
+      return leaves.map(function (l) { return { label: (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (f.code || 'F'))), uids: [l.uid] }; });
+    }
+    function towerNode(tr, n) {
+      var pend = n.uids.every(function (u) { return inPend(u); }), pdst = n.uids.every(function (u) { return inDst(u); });
+      return '<button class="sbld-znode' + (pend ? ' pend' : (pdst ? ' pend-dst' : '')) + (isFocus(n.uids) ? ' sbld-focus' : '') + '" data-uids="' + e2(n.uids.join(' ')) + '" title="' + e2(GLABEL[tr] + ' · ' + n.label + (n.uids.length > 1 ? ' (' + n.uids.length + ' locations)' : '')) + '" style="--zc:' + gc(tr) + '">' + e2(n.label) + '</button>';
+    }
+    // One trade's tower column: header + floors (top floor first), each floor a row of level nodes.
+    function seqTowerCol(tr) {
+      if (seqLevel <= 1) {   // Trade level — a single node for the whole trade
+        var all = []; floorsOf(tr).forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { all.push(l.uid); }); });
+        return '<div class="sbld-twr-col"><div class="sbld-twr-tradehead" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' +
+          '<div class="sbld-twr-floor"><div class="sbld-twr-trade">' + (all.length ? towerNode(tr, { label: GLABEL[tr], uids: all }) : '') + '</div></div></div>';
+      }
+      return '<div class="sbld-twr-col"><div class="sbld-twr-tradehead" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' +
+        floorsOf(tr).slice().reverse().map(function (f) {
+          var nodes = towerNodesFor(tr, f);
+          return '<div class="sbld-twr-floor"><span class="sbld-twr-lab">' + e2(f.code || f.name || 'F') + '</span><div class="sbld-twr-trade">' + nodes.map(function (n) { return towerNode(tr, n); }).join('') + '</div></div>';
+        }).join('') + '</div>';
+    }
     function sbc() { return AppAuth.getSB(); }
     function e2(s) { return Fmt.esc(String(s == null ? '' : s)); }
     function uidv() { return 'x' + Math.random().toString(36).slice(2, 9); }
@@ -12245,7 +12293,7 @@
         var desc = a.name || '(unnamed)', code = a.code || '—';
         bars += '<text x="3" y="' + (y + rowH / 2 - 2) + '" font-size="11.5" font-weight="700" fill="var(--pd-ink)">' + e2(desc.length > 30 ? desc.slice(0, 29) + '…' : desc) + '</text>' +
           '<text x="3" y="' + (y + rowH / 2 + 11) + '" font-size="9" fill="var(--pd-muted)">' + e2(code) + '</text>' +
-          '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
+          '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '') + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
           '<text x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 3) + '" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">' + e2(code) + '</text>';
       });
       cfg.actLinks.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
@@ -12316,7 +12364,7 @@
         var desc = a.name || '(unnamed)', code = a.code || '—';
         bars += '<text x="3" y="' + (y + rowH / 2 - 2) + '" font-size="11.5" font-weight="700" fill="var(--pd-ink)">' + e2(desc.length > 30 ? desc.slice(0, 29) + '…' : desc) + '</text>' +
           '<text x="3" y="' + (y + rowH / 2 + 11) + '" font-size="9" fill="var(--pd-muted)">' + e2(code) + '</text>' +
-          '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
+          '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '') + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
           '<text x="' + (x + w + 4) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="var(--pd-muted)" pointer-events="none">' + actDur(a, basis) + 'd</text>';
       });
       cfg.actLinks.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
@@ -12715,7 +12763,7 @@
       // Left: complete list of class codes for this trade — description emphasized, code beneath, and
       // the step-1 Interior/Exterior durations editable inline (edits feed the Gantt widths + Generate).
       var list = acts.length ? '<div class="sbld-actlist">' + acts.map(function (a) {
-        return '<div class="sbld-actrow' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + '" style="--zc:' + gc(a.group) + '">' +
+        return '<div class="sbld-actrow' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '') + '" style="--zc:' + gc(a.group) + '">' +
           '<button class="sbld-actnode" data-act="' + a.id + '" title="Click to link · Ctrl/Shift-click a target to link several">' +
             '<span class="sbld-actdesc">' + e2(a.name || '(unnamed)') + '</span>' +
             '<span class="sbld-actcode">' + e2(a.code || '—') + '</span></button>' +
@@ -12739,12 +12787,21 @@
         (tradeView === 'gantt' ?
           '<span class="sbld-quick">' + ['day', 'week', 'month', 'year'].map(function (sc) { return '<button class="pd-btn sbld-scbtn' + (tradeScale === sc ? ' on' : '') + '" data-tscale="' + sc + '">' + sc.charAt(0).toUpperCase() + sc.slice(1) + '</button>'; }).join('') + '</span>' +
           '<span class="sbld-quick">Dur ' + [['int', 'Interior'], ['ext', 'Exterior']].map(function (b) { return '<button class="pd-btn sbld-scbtn' + (tradeBasis === b[0] ? ' on' : '') + '" data-tbasis="' + b[0] + '">' + b[1] + '</button>'; }).join('') + '</span>' : '') +
+        '<span class="sbld-quick">Layout ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
         '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-azout">−</button><button class="pd-btn sbld-zbtn" id="b-azin">+</button></span>' +
         '<span class="sbld-hint" id="b-apend"></span></div>' +
-        '<div class="sbld-seq2"><div class="sbld-seq2-left" style="width:' + seqLeftW + 'px;"><div class="sbld-seq2-h">Class codes — ' + e2(GLABEL[tr]) + '</div>' + list + '</div>' +
-        '<div class="sbld-seq2-grip" id="b-agrip" title="Drag to resize the list / chart"></div>' +
-        '<div class="sbld-seq2-right"><div class="sbld-seq2-h">Trade ' + (tradeView === 'gantt' ? 'Gantt' : 'flow') + ' (' + countTradeLinks(tr) + ' link' + (countTradeLinks(tr) === 1 ? '' : 's') + ')</div><div class="sbld-canvaswrap">' + svg + '</div></div></div>';
+        (function () {
+          var listH = '<div class="sbld-seq2-h">Class codes — ' + e2(GLABEL[tr]) + '</div>';
+          var chartH = '<div class="sbld-seq2-h">Trade ' + (tradeView === 'gantt' ? 'Gantt' : 'flow') + ' (' + countTradeLinks(tr) + ' link' + (countTradeLinks(tr) === 1 ? '' : 's') + ')</div>';
+          var chartBody = '<div class="sbld-canvaswrap">' + svg + '</div>';
+          return seqLayout === 'stack'
+            ? '<div class="sbld-seqstack"><div class="sbld-seqstack-top">' + listH + list + '</div><div class="sbld-seqstack-bot">' + chartH + chartBody + '</div></div>'
+            : '<div class="sbld-seq2"><div class="sbld-seq2-left" style="width:' + seqLeftW + 'px;">' + listH + list + '</div>' +
+              '<div class="sbld-seq2-grip" id="b-agrip" title="Drag to resize the list / chart"></div>' +
+              '<div class="sbld-seq2-right">' + chartH + chartBody + '</div></div>';
+        })();
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; actReset(); }; });
+      host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
       var atSel = host.querySelector('#b-autotype'); if (atSel) atSel.onchange = function () { autoChainType = atSel.value; };
       host.querySelector('#b-autochain').onclick = function () { autoChainTrade(tr, atSel ? atSel.value : autoChainType); };
       host.querySelector('#b-aclear').onclick = function () { clearTradeLinks(tr); actReset(); render(); };
@@ -12778,8 +12835,8 @@
         (actLinkPhase === 'src'
           ? (pendActSet.length ? (pendActSet.length + ' source(s) selected — right-click to confirm, then pick destinations.') : 'Step 1: click one or more source codes (then right-click to confirm).')
           : (pendActDst.length ? (pendActDst.length + ' destination(s) selected — right-click to choose the relationship.') : 'Step 3: click one or more destination codes (then right-click to confirm).'));
-      host.querySelectorAll('.sbld-actnode').forEach(function (b) { b.onclick = function () { actSelect(b.dataset.act); }; });
-      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { actSelect(b.getAttribute('data-act')); }); });
+      host.querySelectorAll('.sbld-actnode').forEach(function (b) { b.onclick = function () { actFocus = b.dataset.act; actSelect(b.dataset.act); }; });
+      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { actFocus = b.getAttribute('data-act'); actSelect(b.getAttribute('data-act')); }); });
       var aseq2 = host.querySelector('.sbld-seq2'); if (aseq2) aseq2.addEventListener('contextmenu', actConfirm);
       host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
         var fk = (p.getAttribute('data-fk') || '').split('~'), ex = actLinkOf(fk[0], fk[1]); if (!ex) return;
@@ -12926,7 +12983,7 @@
         var y = pad + i * rowH, x = xOf(r.s), w = colW;
         pos[r.uid] = { x: x, y: y, w: w, cy: y + rowH / 2 };
         bars += '<text x="3" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="var(--pd-ink)">' + e2(r.label) + '</text>' +
-          '<rect class="sbld-schedbar' + (inPend(r.uid) ? ' pend' : (inDst(r.uid) ? ' pend-dst' : '')) + '" data-uid="' + r.uid + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
+          '<rect class="sbld-schedbar' + (inPend(r.uid) ? ' pend' : (inDst(r.uid) ? ' pend-dst' : '')) + (isFocus([r.uid]) ? ' sbld-focus' : '') + '" data-uid="' + r.uid + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
           '<text x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 3) + '" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">' + e2(r.txt) + '</text>';
       });
       cfg.links.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
@@ -12954,31 +13011,35 @@
         '<button class="sbld-chip' + (seqTradeFilter === 'ALL' ? ' on' : '') + '" data-seqtr="ALL">All trades</button>' +
         present.map(function (g) { return '<button class="sbld-chip' + (seqTradeFilter === g ? ' on' : '') + '" data-seqtr="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + '</button>'; }).join('') +
         '</div>' : '';
-      // Robust node rendering: one section per (shown) trade → its floors (top floor first) → a row of
-      // zone/unit node buttons. Every location in locList() becomes a clickable node here.
-      var tower = !locs.length ? '<div class="sbld-empty">No zones yet — add floors/zones for a trade in <b>Step 2</b>, then their nodes appear here to connect.</div>' :
-        '<div class="sbld-twr">' + showTr.map(function (tr) {
-          return '<div class="sbld-twr-tradehead" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' +
-            floorsOf(tr).slice().reverse().map(function (f) {
-              return '<div class="sbld-twr-floor"><span class="sbld-twr-lab">' + e2(f.code || f.name || 'F') + '</span>' +
-                '<div class="sbld-twr-trade">' + leavesOfFloor(tr, f).map(function (l) { var uid = l.uid, lbl = (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (f.code || 'F')));
-                  return '<button class="sbld-znode' + (inPend(uid) ? ' pend' : (inDst(uid) ? ' pend-dst' : '')) + '" data-uid="' + uid + '" title="' + e2(GLABEL[tr] + ' · ' + locLabel(l)) + '" style="--zc:' + gc(tr) + '">' + e2(lbl) + '</button>'; }).join('') + '</div></div>';
-            }).join('');
-        }).join('') + '</div>';
+      // Building/tower view — collapse-level aware (L1 Trade … L4 Unit). Split layout stacks the trade
+      // columns vertically; stack layout lays them side-by-side across the top.
+      var towerEmpty = !locs.length;
+      var towerBody = towerEmpty ? '<div class="sbld-empty">No zones yet — add floors/zones for a trade in <b>Step 2</b>, then their nodes appear here to connect.</div>' :
+        '<div class="sbld-twr' + (seqLayout === 'stack' ? ' sbld-twr-hz' : '') + '">' + showTr.map(seqTowerCol).join('') + '</div>';
+      var schedH = '<div class="sbld-seq2-h">Resulting schedule (' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's') + (seqTradeFilter === 'ALL' ? '' : ' · ' + e2(GLABEL[seqTradeFilter]) + ' only') + ')</div>';
+      var schedBody = '<div class="sbld-canvaswrap">' + scheduleSVG(dispLocs, starts) + '</div>';
+      var LEVELS = [[1, 'Trade'], [2, 'Floor'], [3, 'Zone'], [4, 'Unit']];
+      var body = seqLayout === 'stack'
+        ? '<div class="sbld-seqstack"><div class="sbld-seqstack-top"><div class="sbld-seq2-h">Building view — click a zone/unit to highlight it below</div>' + towerBody + '</div>' +
+          '<div class="sbld-seqstack-bot">' + schedH + schedBody + '</div></div>'
+        : '<div class="sbld-seq2"><div class="sbld-seq2-left" style="width:' + seqLeftW + 'px;"><div class="sbld-seq2-h">Tower — building view</div>' + towerBody + '</div>' +
+          '<div class="sbld-seq2-grip" id="b-grip" title="Drag to resize the tower / schedule"></div>' +
+          '<div class="sbld-seq2-right">' + schedH + schedBody + '</div></div>';
       host.innerHTML = '<h2>3 · Zone sequence — connect the flow</h2>' +
-        '<p class="sbld-lede">This step <b>connects the zones</b>. Linking is a pick-then-confirm flow: <b>1)</b> click one or more <b>source</b> zones, <b>2)</b> <b>right-click</b> to confirm the sources, <b>3)</b> click one or more <b>destination</b> zones, <b>4)</b> <b>right-click</b> to confirm, <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Every source is linked to every destination. Click an arrow to edit or unlink; <b>Auto-trace logic</b> builds the takt flow for you.</p>' +
+        '<p class="sbld-lede">This step <b>connects the zones</b>. Linking is a pick-then-confirm flow: <b>1)</b> click one or more <b>source</b> zones, <b>2)</b> <b>right-click</b> to confirm the sources, <b>3)</b> click one or more <b>destination</b> zones, <b>4)</b> <b>right-click</b> to confirm, <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Every source is linked to every destination. Click a zone/unit to <b>highlight</b> it in both views; click an arrow to edit/unlink; <b>Auto-trace logic</b> builds the takt flow for you.</p>' +
         tradeChips +
         '<div class="sbld-sec-actions">' +
         '<button class="pd-btn pd-btn-primary" id="b-autotrace">Auto-trace logic</button>' +
         '<label class="sbld-quick">Structure leads by <input class="pd-input" id="b-lead" type="number" min="1" max="40" value="' + (cfg.floorLead || 4) + '" style="width:52px;height:30px;"> floor(s)</label>' +
         ((pendSet.length || pendDst.length || linkPhase === 'dst') ? '<button class="pd-btn" id="b-done">Reset selection</button>' : '') +
         '<button class="pd-btn" id="b-clear">Clear links</button>' +
+        '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Detail ' + LEVELS.map(function (l) { return '<button class="pd-btn sbld-scbtn' + (seqLevel === l[0] ? ' on' : '') + '" data-seqlvl="' + l[0] + '" title="Collapse the building view to ' + l[1] + ' level">' + l[0] + '</button>'; }).join('') + '</span>' +
+        '<span class="sbld-quick">View ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
         '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-zout">−</button><button class="pd-btn sbld-zbtn" id="b-zin">+</button></span>' +
-        '<span class="sbld-hint" id="b-pend"></span></div>' +
-        '<div class="sbld-seq2"><div class="sbld-seq2-left" style="width:' + seqLeftW + 'px;"><div class="sbld-seq2-h">Tower — zone nodes</div>' + tower + '</div>' +
-        '<div class="sbld-seq2-grip" id="b-grip" title="Drag to resize the tower / schedule"></div>' +
-        '<div class="sbld-seq2-right"><div class="sbld-seq2-h">Resulting schedule (' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's') + (seqTradeFilter === 'ALL' ? '' : ' · ' + e2(GLABEL[seqTradeFilter]) + ' only') + ')</div><div class="sbld-canvaswrap">' + scheduleSVG(dispLocs, starts) + '</div></div></div>';
+        '<span class="sbld-hint" id="b-pend"></span></div>' + body;
       host.querySelectorAll('[data-seqtr]').forEach(function (b) { b.onclick = function () { seqTradeFilter = b.dataset.seqtr; nodeReset(); }; });
+      host.querySelectorAll('[data-seqlvl]').forEach(function (b) { b.onclick = function () { seqLevel = +b.dataset.seqlvl; render(); }; });
+      host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
       host.querySelector('#b-autotrace').onclick = openAutoTraceDialog;
       host.querySelector('#b-clear').onclick = function () { cfg.links = []; nodeReset(); markDirty(); render(); };
       var doneb = host.querySelector('#b-done'); if (doneb) doneb.onclick = nodeReset;
@@ -12998,8 +13059,8 @@
         (linkPhase === 'src'
           ? (pendSet.length ? (pendSet.length + ' source(s) selected — right-click to confirm, then pick destinations.') : 'Step 1: click one or more source zones (then right-click to confirm).')
           : (pendDst.length ? (pendDst.length + ' destination(s) selected — right-click to choose the relationship.') : 'Step 3: click one or more destination zones (then right-click to confirm).'));
-      host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { nodeSelect(b.dataset.uid); }; });
-      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { nodeSelect(b.getAttribute('data-uid')); }); });
+      host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { var uids = (b.dataset.uids || '').split(' ').filter(Boolean); setFocus(uids); nodeSelectMany(uids); }; });
+      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { var u = b.getAttribute('data-uid'); setFocus([u]); nodeSelect(u); }); });
       // right-click anywhere in the linking area confirms the current phase (source → destination → dialog)
       var seq2 = host.querySelector('.sbld-seq2'); if (seq2) seq2.addEventListener('contextmenu', nodeConfirm);
       host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
@@ -13013,6 +13074,14 @@
       if (linkPhase === 'dst' && pendSet.indexOf(uid) >= 0) return;   // a source can't also be a destination
       var set = linkPhase === 'src' ? pendSet : pendDst, i = set.indexOf(uid);
       if (i >= 0) set.splice(i, 1); else set.push(uid);
+      render();
+    }
+    // toggle a whole collapsed group (all its leaf uids) as one — add all if any is missing, else remove all
+    function nodeSelectMany(uids) {
+      uids = (uids || []).filter(function (u) { return !(linkPhase === 'dst' && pendSet.indexOf(u) >= 0); });
+      if (!uids.length) { render(); return; }
+      var set = linkPhase === 'src' ? pendSet : pendDst, allIn = uids.every(function (u) { return set.indexOf(u) >= 0; });
+      uids.forEach(function (u) { var i = set.indexOf(u); if (allIn) { if (i >= 0) set.splice(i, 1); } else if (i < 0) set.push(u); });
       render();
     }
     // right-click anywhere in the linking pane → confirm the current phase
