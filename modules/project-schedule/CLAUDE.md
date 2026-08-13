@@ -1,5 +1,25 @@
 # Module: project-schedule
 
+## Schedule Builder: per-trade takt batch + global activity-level remap (2026-08-13) — eprobles
+Three additive changes to the `ScheduleBuilder` closure in `index.html` (⚠️ re-applied directly onto
+main — the session's original edits were made on the stale `module/schedule-builder` branch, which is
+97 commits behind main and has a divergent, older Schedule Builder; that branch was NOT merged):
+- **Auto-trace reworked to a per-TRADE "floors at a time" question** (was per cross-trade pair).
+  `openAutoTraceDialog` now asks, for each leading trade, *"How many floors at a time does <trade> do
+  before <next> follows?"* → new `cfg.tradeBatch[<trade>]`. `autoTrace`'s cross-trade lead reads
+  `cfg.tradeBatch[prev]` (falls back to legacy per-pair `cfg.tradeLeads`, then `floorLead`).
+- **Global activity-level remap** — new `cfg.locLevel` (`auto`|`floor`|`zone`|`unit`), chosen from a
+  selector in **step 2**. `leavesOfFloor` honours it: `floor` = one leaf per floor, `zone` = one per
+  zone (units ignored), `unit`/`auto` = deepest defined. Because `locList`/`cellKey`/`locLabel`/
+  auto-trace/scope/`generate`/`pushToSchedule` all key off these leaves, one setting remaps the whole
+  builder. Changing it clears `cfg.links` (leaf uids change). This is the "switch floors/zones to
+  activity level" ask.
+- Push-to-schedule already retains relationships (FS/SS/FF/SF + lag as predecessors) + files under the
+  picked WBS with optional Trade→Floor→Zone→Unit grouping — unchanged, confirmed.
+- Additive `jsonb` keys (`tradeBatch`/`locLevel`), tolerated by `normalize`; no migration. Verified:
+  inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
+  is auth-gated; local server redirects to sign-in).
+
 ## Location matching scoped to Execution Phase only (2026-08-06) — fmlozano
 User: location/zone describes construction, so the Location Wizard (and grouping by a location
 level) must not touch activities outside the Execution Phase WBS branch.

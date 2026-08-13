@@ -11978,7 +11978,7 @@
     function blankZoning() { var z = {}; GROUPS.forEach(function (g) { z[g] = { floors: [] }; }); return z; }
     var WBS_DIMS = ['trade', 'floor', 'zone', 'unit'];
     var DIM_LABEL = { trade: 'Trade', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {}, wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       var di = (a.durInt != null) ? Math.max(0, +a.durInt || 0) : legacy;
@@ -12010,6 +12010,8 @@
       // (level 1 = first entry). De-duplicated; only known dims; falls back to the default order.
       d.wbsOrder = (function () { var seen = {}, out = []; (Array.isArray(c.wbsOrder) ? c.wbsOrder : []).forEach(function (k) { if (WBS_DIMS.indexOf(k) >= 0 && !seen[k]) { seen[k] = 1; out.push(k); } }); return out.length ? out : ['trade', 'floor', 'zone', 'unit']; })();
       d.floorLead = (c.floorLead >= 1 && c.floorLead <= 40) ? c.floorLead : 4;
+      d.tradeBatch = (c.tradeBatch && typeof c.tradeBatch === 'object') ? c.tradeBatch : {};  // per-trade: floors done at a time before the next trade follows
+      d.locLevel = (['auto', 'floor', 'zone', 'unit'].indexOf(c.locLevel) >= 0) ? c.locLevel : 'auto';  // global activity/takt leaf level
       return d;
     }
     function setState(t) { var el = document.getElementById('ps-bld-savestate'); if (el) el.textContent = t || ''; }
@@ -12057,7 +12059,7 @@
         '<li><b>Right-click</b> again to confirm.</li>' +
         '<li>A dialog asks the <b>relationship (FS / SS / FF / SF)</b> and <b>lag</b> — every source is linked to every destination.</li>' +
         '</ol><p><b>Reset selection</b> cancels; <b>click an arrow</b> to edit its type/lag or unlink. <b>SS</b> lines two bars up at the same start; <b>FS</b> steps the next bar over.</p>' +
-        '<h4>Auto-trace (step 3)</h4><p><b>Auto-trace logic</b> asks how many floors each trade leads the next (e.g. how many Structural floors finish before Architectural starts), then builds the whole takt flow for you. It replaces the current links.</p>' +
+        '<h4>Auto-trace (step 3)</h4><p><b>Auto-trace logic</b> asks, for each trade, <b>how many floors it does at a time</b> before the next trade follows behind it (its takt batch), then builds the whole takt flow for you. It replaces the current links.</p>' +
         '<h4>Auto-chain (step 4)</h4><p><b>Auto-chain</b> links a trade\'s class codes back-to-back using the relationship picked in the dropdown beside it (FS / SS / FF / SF).</p>' +
         '</div><div class="pd-modal-footer"><button class="pd-btn pd-btn-primary" data-x>Got it</button></div></div>';
       document.body.appendChild(ov);
@@ -12074,11 +12076,16 @@
     // ---- location model (per-trade, per-floor zones) --------------------
     // Leaf locations: Trade → Floor → Zone (optional) → Unit (optional). A floor with no zones is
     // itself a leaf; a zone with no units is a leaf; otherwise each unit is a leaf.
+    // Global location-level remap (cfg.locLevel): which level is the ACTIVITY/takt leaf across the
+    // whole project. 'auto' = deepest level actually defined (original behaviour); 'floor' = one leaf
+    // per floor (zones/units ignored); 'zone' = one leaf per zone (units ignored); 'unit' = deepest.
+    // Everything downstream (locList, cellKey, locLabel, auto-trace, scope, generate, push) keys off
+    // these leaves, so one setting remaps the whole builder.
     function leavesOfFloor(tr, f) {
-      var out = [];
-      if (!f.zones.length) { out.push({ uid: tr + '/' + f.id, trade: tr, floor: f, zone: null, unit: null }); return out; }
+      var out = [], lvl = (cfg && cfg.locLevel) || 'auto';
+      if (lvl === 'floor' || !f.zones.length) { out.push({ uid: tr + '/' + f.id, trade: tr, floor: f, zone: null, unit: null }); return out; }
       f.zones.forEach(function (z) {
-        if (!z.units.length) { out.push({ uid: tr + '/' + f.id + '/' + z.id, trade: tr, floor: f, zone: z, unit: null }); }
+        if (lvl === 'zone' || !z.units.length) { out.push({ uid: tr + '/' + f.id + '/' + z.id, trade: tr, floor: f, zone: z, unit: null }); }
         else z.units.forEach(function (u) { out.push({ uid: tr + '/' + f.id + '/' + z.id + '/' + u.id, trade: tr, floor: f, zone: z, unit: u }); });
       });
       return out;
@@ -12325,10 +12332,11 @@
       function firstOf(o) { var k = Object.keys(o); return k.length ? o[k[0]] : null; }
       // 1) vertical progression within each trade
       present.forEach(function (tr) { var fl = floorsOf(tr); for (var i = 1; i < fl.length; i++) Object.keys(idx[tr][i]).forEach(function (ck) { var p = idx[tr][i - 1][ck]; if (p) tryLink(p, idx[tr][i][ck]); }); });
-      // 2) cross-trade lead — each transition uses its own answered lead (how many floors of the
-      //    leading trade must finish before the following trade starts), from cfg.tradeLeads.
+      // 2) cross-trade lead — each transition uses the LEADING trade's own "floors at a time" batch
+      //    (cfg.tradeBatch[prev]); falls back to a legacy per-pair lead, then the global floorLead.
       for (var t = 1; t < present.length; t++) {
-        var prev = present[t - 1], next = present[t], L = Math.max(1, +(cfg.tradeLeads[prev + '>' + next]) || lead), fpN = floorsOf(prev).length;
+        var prev = present[t - 1], next = present[t],
+          L = Math.max(1, +(cfg.tradeBatch[prev]) || +(cfg.tradeLeads[prev + '>' + next]) || lead), fpN = floorsOf(prev).length;
         floorsOf(next).forEach(function (nf, j) {
           var si = Math.min(j + L - 1, fpN - 1); if (si < 0) si = 0;
           Object.keys(idx[next][j]).forEach(function (ck) { var pf = idx[prev][si][ck] || firstOf(idx[prev][si]); if (pf) tryLink(pf, idx[next][j][ck]); });
@@ -12339,20 +12347,21 @@
       leaves.forEach(function (l) { if (!hasIn[l.uid]) tryLink(START(), l.uid); if (!hasOut[l.uid]) tryLink(l.uid, END()); });
       markDirty(); render();
     }
-    // Ask the questions the takt logic needs, THEN auto-trace. One question per cross-trade hand-off:
-    // "How many <leading> floors must be complete before <following> can start?"
+    // Ask the questions the takt logic needs, THEN auto-trace. One question PER TRADE:
+    // "How many floors at a time does <trade> do before the next trade follows?" (its takt batch).
     function openAutoTraceDialog() {
       var present = GROUPS.filter(function (tr) { return floorsOf(tr).length && tradeActs(tr).length; });
       if (present.length < 1) { UI.toast('Add activities (step 1) and floors/zones (step 2) first.', 'warn'); return; }
-      var pairs = []; for (var t = 1; t < present.length; t++) pairs.push([present[t - 1], present[t]]);
-      var rowsHtml = pairs.length ? pairs.map(function (p, i) {
-        var key = p[0] + '>' + p[1], v = (cfg.tradeLeads[key] != null ? cfg.tradeLeads[key] : (cfg.floorLead || 4));
-        return '<div class="sbld-at-q"><label>How many <b style="color:' + gc(p[0]) + '">' + e2(GLABEL[p[0]]) + '</b> floors must be completed before <b style="color:' + gc(p[1]) + '">' + e2(GLABEL[p[1]]) + '</b> can start?</label>' +
-          '<input class="pd-input" type="number" min="1" max="60" data-atkey="' + e2(key) + '" value="' + v + '" style="width:70px;height:34px;"></div>';
+      var leading = present.slice(0, Math.max(0, present.length - 1));  // last trade has nobody following it
+      var rowsHtml = leading.length ? leading.map(function (tr) {
+        var next = present[present.indexOf(tr) + 1];
+        var v = (cfg.tradeBatch[tr] != null ? cfg.tradeBatch[tr] : (cfg.floorLead || 4));
+        return '<div class="sbld-at-q"><label>How many floors at a time does <b style="color:' + gc(tr) + '">' + e2(GLABEL[tr]) + '</b> do before <b style="color:' + gc(next) + '">' + e2(GLABEL[next]) + '</b> follows?</label>' +
+          '<input class="pd-input" type="number" min="1" max="60" data-atbatch="' + e2(tr) + '" value="' + v + '" style="width:70px;height:34px;"></div>';
       }).join('') : '<p class="sbld-hint">Only one trade has locations — auto-trace will just chain its floors vertically.</p>';
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
       ov.innerHTML = '<div class="pd-modal" style="max-width:560px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Auto-trace logic</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
-        '<div style="padding:16px;"><p class="sbld-hint" style="margin:0 0 14px;">Answer how far each trade leads the next. Auto-trace then builds the takt flow: each trade climbs its own floors zone-by-zone, and every following trade stays the answered number of floors behind. <b>This replaces the current links.</b></p>' +
+        '<div style="padding:16px;"><p class="sbld-hint" style="margin:0 0 14px;">For each trade, say <b>how many floors it works at a time</b> before the next trade starts behind it. Auto-trace then builds the takt flow: each trade climbs its own floors zone-by-zone, and every following trade stays that many floors behind. <b>This replaces the current links.</b></p>' +
         rowsHtml + '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbld-at-go">Generate logic</button></div></div>';
       document.body.appendChild(ov);
@@ -12360,7 +12369,7 @@
       ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
       ov.querySelector('#sbld-at-go').onclick = function () {
-        ov.querySelectorAll('[data-atkey]').forEach(function (inp) { cfg.tradeLeads[inp.dataset.atkey] = Math.max(1, Math.min(60, +inp.value || 4)); });
+        ov.querySelectorAll('[data-atbatch]').forEach(function (inp) { cfg.tradeBatch[inp.dataset.atbatch] = Math.max(1, Math.min(60, +inp.value || 4)); });
         close(); autoTrace();
       };
     }
@@ -12766,6 +12775,11 @@
       var qd = quickN[tr] || { B: 0, F: 5, Z: 2, U: 0 };
       host.innerHTML = '<h2>2 · Substructure &amp; Superstructure — per trade</h2>' +
         '<p class="sbld-lede">Pick a trade, add its <b>floors</b> (superstructure) and any <b>basements</b> (substructure), then optionally split each into <b>zones</b> and <b>units</b>. Zones/units are optional. The tower on the right shows superstructure above the grade line and basements below.</p>' +
+        '<div class="sbld-sec-actions" style="margin-bottom:8px;"><label class="sbld-tag" style="padding:6px 10px;">Activity level (whole project)&nbsp; ' +
+        '<select class="pd-select sbld-mini" id="b-loclevel" title="Which location level activities are scheduled at across the whole project. Auto = deepest level you define per floor.">' +
+        [['auto', 'Auto (deepest defined)'], ['floor', 'Floor level'], ['zone', 'Zone level'], ['unit', 'Unit level']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.locLevel || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+        '</select></label>' +
+        '<span class="sbld-hint">Remaps the whole builder — e.g. <b>Floor level</b> schedules activities per floor (zones/units ignored); <b>Zone level</b> per zone.</span></div>' +
         chips +
         '<div class="sbld-lvlgrid">' +
         '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
@@ -12774,6 +12788,7 @@
         '<div class="sbld-tower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
         '</div>';
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; render(); }; });
+      var lvlSel = host.querySelector('#b-loclevel'); if (lvlSel) lvlSel.onchange = function () { cfg.locLevel = lvlSel.value; cfg.links = []; markDirty(); render(); };  // leaf uids change → old zone links no longer resolve
       host.querySelector('#b-addfloor').onclick = function () { var nf = zn.floors.filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', zones: [] }); cfg.links = []; markDirty(); render(); };
       // Basements build bottom-up (deepest first), so a new basement is INSERTED at index 0 (deepest).
       host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, zones: [] }); cfg.links = []; markDirty(); render(); };
