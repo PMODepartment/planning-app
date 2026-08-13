@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Projects — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260812b" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260813a" />
 </head>
 <body>
   <div class="pd-app">
@@ -22,6 +22,13 @@
         <div class="pd-navsec" id="nav-sys" style="display:none;">System</div>
         <a href="admin.html" id="nav-admin" style="display:none;" title="Admin"><span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>
       </nav>
+      <!-- Cross-app link to the Engineering App. Separate Supabase project /
+           separate login — opens in a new tab rather than navigating away. -->
+      <div class="pd-nav-foot">
+        <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
+          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
+        </a>
+      </div>
     </aside>
 
     <div class="pd-content">
@@ -94,7 +101,7 @@
   <script src="assets/js/auth.js?v=20260812b"></script>
   <script src="assets/js/db.js?v=20260812b"></script>
   <script src="assets/js/ui.js?v=20260812b"></script>
-  <script src="assets/js/icons.js?v=20260812b"></script>
+  <script src="assets/js/icons.js?v=20260813a"></script>
   <script>
   (function () {
     // A project carries ONE group_head_id. There is no tree: sorting, filtering

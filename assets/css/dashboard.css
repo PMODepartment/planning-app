@@ -88,13 +88,25 @@ a:hover { text-decoration: underline; }
 .pd-sidebar .pd-nav-sub { font-size: 10.5px; font-weight: 400; color: #96a0b0; margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
 .pd-sidebar nav a.active .pd-nav-sub { color: rgba(255,255,255,.82); }
+/* Sidebar footer: cross-app link to the Engineering App. Sidebar markup is
+   repeated per page here (no shared nav.js), so this block is repeated
+   verbatim in every page that carries .pd-sidebar — see CLAUDE.md. */
+.pd-nav-foot { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.12); }
+.pd-nav-sibling {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-radius: 8px; font-size: 12.5px; color: #96a0b0;
+}
+.pd-nav-sibling:hover { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
+.pd-nav-sibling .pd-navico { opacity: .75; }
+.pd-nav-sibling:hover .pd-navico { opacity: 1; }
 
 /* Collapsible sidebar (desktop): the toggle adds .pd-collapsed on .pd-app, which
    shrinks the sidebar to a slim ICON RAIL (labels/sections hide; hover title = tooltip)
    instead of hiding it entirely. font-size:0 collapses the bare-text labels while the
    fixed-size SVG icons stay, so it works whether or not a label is wrapped in a span. */
 .pd-app.pd-collapsed .pd-sidebar { width: 64px; flex-basis: 64px; padding-left: 8px; padding-right: 8px; }
-.pd-app.pd-collapsed .pd-sidebar nav a { justify-content: center; padding: 11px 0; gap: 0; font-size: 0; }
+.pd-app.pd-collapsed .pd-sidebar nav a,
+.pd-app.pd-collapsed .pd-nav-sibling { justify-content: center; padding: 11px 0; gap: 0; font-size: 0; }
 .pd-app.pd-collapsed .pd-navtxt { display: none; }   /* wrapped labels (with sub-captions whose own font-size ignores the font-size:0 trick) */
 .pd-app.pd-collapsed .pd-navico { margin-right: 0; }
 .pd-app.pd-collapsed .pd-navsec { display: none; }
@@ -636,7 +648,8 @@ body { overflow-x: clip; }
   /* Re-assert the FULL drawer even when .pd-collapsed is set (see note 2 above).
      On mobile the hamburger opens/closes the drawer; it never icon-rails. */
   .pd-app.pd-collapsed .pd-sidebar { width: var(--pd-drawer-w); flex-basis: var(--pd-drawer-w); padding-left: 16px; padding-right: 16px; }
-  .pd-app.pd-collapsed .pd-sidebar nav a { justify-content: flex-start; padding: 12px; gap: 10px; font-size: 13.5px; }
+  .pd-app.pd-collapsed .pd-sidebar nav a,
+  .pd-app.pd-collapsed .pd-nav-sibling { justify-content: flex-start; padding: 12px; gap: 10px; font-size: 13.5px; }
   .pd-app.pd-collapsed .pd-navtxt { display: flex; }
   .pd-app.pd-collapsed .pd-navsec { display: block; }
   .pd-app.pd-collapsed .pd-navico { margin-right: 11px; }

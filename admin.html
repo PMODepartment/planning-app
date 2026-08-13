@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Admin · Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260812b" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260813a" />
   <style>
     .pd-tabs { display:flex; gap:4px; border-bottom:1px solid var(--pd-line); margin-bottom:18px; }
     .pd-tab { padding:10px 16px; cursor:pointer; border-bottom:2px solid transparent; color:var(--pd-muted); font-weight:600; }
@@ -32,6 +32,13 @@
         <div class="pd-navsec">System</div>
         <a href="admin.html" class="active" title="Admin"><span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>
       </nav>
+      <!-- Cross-app link to the Engineering App. Separate Supabase project /
+           separate login — opens in a new tab rather than navigating away. -->
+      <div class="pd-nav-foot">
+        <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
+          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
+        </a>
+      </div>
     </aside>
     <div class="pd-content">
       <div class="pd-topbar"><h1>Admin</h1><div id="user-bar"></div></div>
@@ -62,7 +69,7 @@
   <script src="assets/js/auth.js?v=20260812b"></script>
   <script src="assets/js/db.js?v=20260812b"></script>
   <script src="assets/js/ui.js?v=20260812b"></script>
-  <script src="assets/js/icons.js?v=20260812b"></script>
+  <script src="assets/js/icons.js?v=20260813a"></script>
   <script>
     var ME = null, ALL_PROJECTS = [];
 

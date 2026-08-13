@@ -77,6 +77,33 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-13 — Sidebar link to the Engineering App
+User asked for a link to the (separate) Engineering App in the side panel, mirroring the one it
+already carries back to this app. This app has **no shared `nav.js`** — unlike the Engineering App,
+the `.pd-sidebar` markup is repeated per page — so the link is added by hand to every page that
+actually renders one: `admin.html`, `dashboard.html`, `projects.html`,
+`modules/portfolio-overview/index.html`. `modules/project-schedule/index.html` matched a `pd-sidebar`
+grep hit but has no `<aside>` in its DOM (a leftover print-media selector referencing a class that
+isn't rendered there) — skipped, nothing to attach to. `modules/_template/index.html` also skipped:
+it's a scaffold stub with placeholder nav links, not a page anyone visits.
+- **`.pd-nav-foot` / `.pd-nav-sibling` CSS and the `externalLink` icon didn't exist here** — both
+  copied verbatim from the Engineering App's `dashboard.css`/`icons.js`, including the collapsed-rail
+  and mobile-drawer selectors that already handle `.pd-sidebar nav a` there (`.pd-nav-sibling` added
+  alongside on both).
+- ⚠️ **The href is a plain hardcoded URL**, not a config constant. The Engineering App's own sibling
+  link reads `APP_CONFIG.PLANNING_APP_URL` because `nav.js` renders it dynamically once, everywhere.
+  This app has no equivalent renderer — every other sidebar link here is already a static relative
+  href — so introducing a config-driven URL for just this one link would be a one-off pattern nothing
+  else follows. Considered and reverted (`ENGINEERING_APP_URL` was briefly added to `config.js`, then
+  removed as dead weight once the static-href approach was chosen).
+  `https://pmodepartment.github.io/engineering-app/`, opens in a new tab (`target="_blank"
+  rel="noopener"`) — separate Supabase project, separate login, so this is a plain link, not SSO.
+- `dashboard.css`/`icons.js` are shared shell assets loaded on every page, so their `?v=` bumped to
+  `20260813a` across all 22 HTML files that reference them, per the cache-busting rule — not just the
+  four that were actually edited.
+- Not browser-verified (no live login this session); `<aside>` open/close tag counts and CSS
+  brace/comment balance checked structurally instead.
+
 ### 2026-08-12 — Hard delete was unwinnable by design: residue vs substantive data
 User couldn't delete project NCIT — blocked on `calendars (1), schedule_audit (45),
 schedule_baselines (1)` despite the schedule being empty. **Not a UI bug.**
