@@ -1306,10 +1306,22 @@
     .sbld-actrow.pend { outline:2px solid var(--pd-red); outline-offset:1px; }
     .sbld-actrow .sbld-actnode { border:none; border-radius:0; width:100%; }
     .sbld-actrow .sbld-actnode:hover { background:var(--pd-bg); }
-    .sbld-actdur { display:flex; gap:10px; padding:4px 9px 6px; border-top:1px dashed var(--pd-line); }
-    .sbld-actdur label { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; color:var(--pd-muted); font-weight:600; }
-    .sbld-actdur input { width:48px; height:24px; padding:2px 5px; font-size:11px; border:1px solid var(--pd-line); border-radius:4px; background:var(--pd-bg); color:var(--pd-ink); }
-    .sbld-scopetag { font-size:9.5px; color:var(--pd-muted); font-style:italic; align-self:center; }
+    .sbld-actdur { display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:8px 10px 10px; border-top:1px dashed var(--pd-line); }
+    .sbld-actdur label { display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--pd-ink); font-weight:700; }
+    .sbld-actdur input { width:82px; height:38px; padding:4px 10px; font-size:16px; font-weight:700; text-align:center; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-bg); color:var(--pd-ink); font-variant-numeric:tabular-nums; }
+    .sbld-actdur input:focus { outline:none; border-color:var(--pd-red); box-shadow:0 0 0 2px var(--pd-red-light,rgba(238,49,36,.14)); }
+    .sbld-scopetag { font-size:10.5px; color:var(--pd-muted); font-style:italic; align-self:center; }
+    .sbld-libbtn { padding:3px 10px; font-size:11.5px; font-weight:700; }
+    /* predecessor / successor inspection (steps 3 & 4): click a bar to see what drives it / what it drives */
+    .sbld-schedbar.prednode { stroke:#1f8f4e; stroke-width:3.5; }
+    .sbld-schedbar.succnode { stroke:#e08a1e; stroke-width:3.5; }
+    .sbld-schedbar.dimnode { opacity:.28; }
+    .sbld-link.hotpred { stroke:#1f8f4e !important; stroke-width:2.4; opacity:1; }
+    .sbld-link.hotsucc { stroke:#e08a1e !important; stroke-width:2.4; opacity:1; }
+    .sbld-link.dimlink { opacity:.12; }
+    .sbld-focuslegend { display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin:6px 0 2px; font-size:11.5px; color:var(--pd-muted); }
+    .sbld-focuslegend b { color:var(--pd-ink); }
+    .sbld-focuslegend .sw { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:5px; }
     /* step 1 — activities grid ⇄ holding-area shuttle */
     .sbld-actsplit { display:flex; gap:0; align-items:stretch; }
     .sbld-actsplit .sbld-xlwrap { flex:1 1 auto; min-width:0; }
@@ -11993,6 +12005,224 @@
     var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
     var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Scope', w: 118, scope: true }, { k: 'durInt', label: 'Interior (d)', w: 90, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 90, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
+    // Master class-code library (EPC. FIN. Class Code Mapping — Level 3 code + Description 3).
+    // Loaded into the step-1 holding list on demand so a planner can pick from the standard
+    // codes instead of retyping them; saved with the build once loaded + shuttled in.
+    var CLASS_CODE_DB = [
+      ['1050','Mobilization / Demobilization'],
+      ['1100','Temp. Facil. - Site Devt., Offices & Utilities'],
+      ['1150','Temp. Facil. - Utilities Installed in Bldg'],
+      ['1200','Office Equip & Supplies'],
+      ['1250','Site Management Organization (HR) (No. of Staffs)'],
+      ['1300','Support Crew -Admin workers'],
+      ['1350','Utilities (Power/ Water/ Comm)'],
+      ['1400','Security Services'],
+      ['1450','Housekeeping & Sanitation Services'],
+      ['1500','Support Equipment'],
+      ['1550','Fuel and Oil'],
+      ['1600','Safety Provisions, Safety Measures, and First Aid Support '],
+      ['1650','Drawing Services'],
+      ['1700','Bonds, Insurances, & Permits'],
+      ['1750','Material Testing'],
+      ['1800','Property Damage'],
+      ['1850','Project, Owner, and Consultant Details'],
+      ['2050','Excavation & Backfilling'],
+      ['2100','Piling Works'],
+      ['2150','Soil Protection'],
+      ['2200','Chemical Treatment'],
+      ['3050','Rebar'],
+      ['4050','Formworks'],
+      ['5050','Concrete'],
+      ['6050','Precast Works'],
+      ['7050','Structural Steel '],
+      ['8050','Block Works'],
+      ['8100','Spraycrete Wall'],
+      ['8150','PC Exterior Walls'],
+      ['8200','PC Interior Walls'],
+      ['8250','Sealant Works - Backer Rod and Sealant '],
+      ['8300','Straight To Finish w/ Concrete Hardener and Sealer '],
+      ['8350','Concrete Topping '],
+      ['8400','Plastering Window and Door Opening'],
+      ['8450','Skimcoating Works '],
+      ['8500','Grinding, Sanding and Mortar Jointing to Slab Soffit for Cast in Situ (Termination Only)'],
+      ['8550','Mortar Jointing to Exposed PC Half Slab Soffit (Termination Only)'],
+      ['8600','Masonry Concrete'],
+      ['8650','Masonry Consumables '],
+      ['8700','PC Toilet '],
+      ['9050','Marble Stone'],
+      ['9100','Granite Stone'],
+      ['9150','Stone Works Consumables '],
+      ['10050','Homogenous Tiles'],
+      ['10100','Ceramic Tiles'],
+      ['10150','Rustic Tiles'],
+      ['10200','Paver Tiles'],
+      ['10250','Urra Tiles'],
+      ['10300','Porcelain Tiles'],
+      ['10350','Vinyl Tiles'],
+      ['10400','Carpet Tiles'],
+      ['10450','Rubber Tiles'],
+      ['10500','Non-skid Concrete Tiles'],
+      ['10550','Tile Works Consumables '],
+      ['11050','Drywall Partition'],
+      ['11100','Board Ceiling'],
+      ['11150','Special Ceiling'],
+      ['12050','Damproofing and Waterproofing'],
+      ['12100','Cementitious Waterproof'],
+      ['12150','Epoxy Tank Lining'],
+      ['12200','Flexible Cementitious '],
+      ['12250','PU Waterproof'],
+      ['12300','Floor Hardener'],
+      ['12350','HDPE Geotextile Dimple Sheet Membrane'],
+      ['12400','Waterstop (Structural Joint)'],
+      ['12450','Integral Waterproofing Works '],
+      ['13050','Fire Rated Metal Doors w/ Jamb'],
+      ['13100','Metal Doors & Jamb'],
+      ['13150','Wooden Panel Door & Jamb '],
+      ['13200','PVC Door'],
+      ['13250','Laminated Fire Rated Door & Jamb'],
+      ['13300','Laminated Door & Jamb'],
+      ['13350','Wooden Flush Door & Jamb'],
+      ['13400','Doors and Jamb Consumables '],
+      ['14050','Metal Door Hardware'],
+      ['14100','Wooden Door Hardware'],
+      ['14150','PVC Door Hardware'],
+      ['15050','Railings'],
+      ['15060','Steel Grilles '],
+      ['15100','Ladder Rung'],
+      ['15150','ACU Cover/ Ledge'],
+      ['15200','Manhole Cover'],
+      ['15250','Trench Drain'],
+      ['15300','Column Guard'],
+      ['15350','Bollard'],
+      ['15400','Water Tank'],
+      ['15450','Elevator Separator Beam '],
+      ['15500','Stair Nosing '],
+      ['15550','Steel Skirting '],
+      ['15600','Metal Sheet'],
+      ['15650','Steel Hoisting Beam '],
+      ['16050','Latex Paint'],
+      ['16100','Elastomeric Paint'],
+      ['16150','Epoxy  Paint'],
+      ['16200','Acrytex Paint'],
+      ['16250','QDE'],
+      ['16300','Automotive Paint '],
+      ['16350','Varnish'],
+      ['16400','Painting Works Miscellaneous '],
+      ['17050','Curtain Wall'],
+      ['17100','Aluminum Punch Windows'],
+      ['17150','Aluminum Swing Windows'],
+      ['17200','Aluminum Sliding Windows'],
+      ['17250','Aluminum Doors'],
+      ['17300','Louvers & Vents'],
+      ['17350','Aluminum Cladding Panel'],
+      ['17400','Glass Door and Window'],
+      ['17450','Glass Railing'],
+      ['17500','Wall Glass/ Mirror Finish'],
+      ['18050','Kitchen Cabinet'],
+      ['18100','Kitchen Countertop'],
+      ['18150','Bedroom Closet'],
+      ['18200','Reception Counter '],
+      ['19050','Hardscape'],
+      ['19100','Softscape'],
+      ['19150','Swimming Pool'],
+      ['19200','Water Features '],
+      ['20050','Signage'],
+      ['20100','Cubicle Partition'],
+      ['20150','Equipment and Appliances '],
+      ['20200','Wall Paper Finishes '],
+      ['20250','Lockers and Mailbox '],
+      ['20300','Prefabricated Toilet '],
+      ['21050','Laminates & Plastic Finishes'],
+      ['22050','Roof Sheeting & Insulation'],
+      ['23050','Architectural Miscellaneous Works '],
+      ['24050','Mill Works'],
+      ['25050','Mechanical Equipment '],
+      ['25100','Refrigerant Pipe Works'],
+      ['25150','Chilled Water AC Works'],
+      ['25200','Fresh Air Ducting Works '],
+      ['25210','Smoke Extraction Ducting Works '],
+      ['25250','Exhaust Air Ducting Works '],
+      ['25300','Toilet Exhaust Air Ducting Works '],
+      ['25350','Air Cooled Ducting Works'],
+      ['25400','Return Air Ducting Works'],
+      ['25450','Pre Cooled Ducting Works '],
+      ['25500','Stair Pressurization Ducting Works '],
+      ['25550','Kitchen Exhaust Ducting Works '],
+      ['25600','Generator and Fuel Piping Works '],
+      ['25610','LPG System '],
+      ['25650','Mechanical Works Miscellaneous '],
+      ['26050','Power System Works'],
+      ['26100','Power System Utilities, Hallways, Lobby, Wiring, Wiring Devices, Lighting Works '],
+      ['26150','Power System Switchboard and Panel board'],
+      ['26200','Power System Meter Center '],
+      ['26250','Power System Bus Duct'],
+      ['26300','Small Power Roughing-ins, Wires, Wiring Devices, Panel Board, ECB, Lighting Works '],
+      ['26350','Lighting System Outdoor Works'],
+      ['26400','Telephone System Works'],
+      ['26450','Cable Antenna Television System (CATV)'],
+      ['26500','Closed Circuit Television System (CCTV)'],
+      ['26550','Intercommunication System '],
+      ['26600','Entry Phone System '],
+      ['26650','Internet Systems '],
+      ['26700','Public Address and Background Music (PABGM)'],
+      ['26750','Fire Detection and Alarm System (FDAS)'],
+      ['26800','Building Management Systems (BMS)'],
+      ['26850','Electrical Works Miscellaneous '],
+      ['27050','Plumbing Fixtures'],
+      ['27100','Waterline Distribution System '],
+      ['27150','Sanitary Drainage System '],
+      ['27200','Storm Drainage System '],
+      ['27250','Pipe Vents System '],
+      ['27300','Plumbing Miscellaneous Works '],
+      ['27350','Sewer Treatment Plant (STP)'],
+      ['27400','Plumbing Pumps and Equipment '],
+      ['28050','Fire Protection Wet Stand Pipe Works'],
+      ['28100','Fire Protection Main Fire Line Works'],
+      ['28150','Fire Protection Drain Pipe Works '],
+      ['28200','Fire Protection Dry Stand Pipe Works '],
+      ['28250','Fire Protection Equiptment and Accessories Works '],
+      ['28300','Fire Protection Miscellaneous Works '],
+      ['29050','Elevators'],
+      ['29100','Building Management Unit '],
+      ['29150','Transformer'],
+      ['29200','Escalator '],
+      ['29250','Other Allied Miscellaneous Works '],
+      ['30050','Site Development Works - Outside the Building '],
+      ['31050','Defect Liability Period '],
+      ['32050','Structural Rectification'],
+      ['32100','Architectural Rectification '],
+      ['32150','MEPF Rectification'],
+      ['33050','Change Order'],
+      ['34050','Contingency '],
+      ['35050','Buyback '],
+      ['36050','Advances '],
+      ['37050','Solar Energy Infrastructure '],
+      ['38050','Horizontal Housing '],
+      ['39050','LD Roadworks '],
+      ['39100','LD Drainage Works '],
+      ['39150','LD Potable Waterline Works  '],
+      ['39200','LD Sewerline Works  '],
+      ['39250','LD Underground Distribution System '],
+      ['39300','LD Telecom Works '],
+      ['39350','LD Exterior Lighting Works '],
+      ['39400','LD Sewer Pumps Works ']
+    ];
+    // Seed cfg.catalog (the step-1 holding list on the right) from the master library.
+    // Skips codes already present in the build or the list so re-loading never duplicates.
+    function loadClassCodeLibrary() {
+      var have = {};
+      (cfg.activities || []).concat(cfg.catalog || []).forEach(function (a) { if (a.code) have[String(a.code).trim()] = 1; });
+      var added = 0;
+      CLASS_CODE_DB.forEach(function (r) {
+        var code = r[0], name = r[1].trim();
+        if (have[code]) return;
+        cfg.catalog.push({ id: uidv(), code: code, name: name, group: 'ST', durInt: 0, durExt: 0, scope: 'zone' });
+        have[code] = 1; added++;
+      });
+      if (added) { markDirty(); UI.toast('Loaded ' + added + ' class code(s) into the list. Tick codes and press ← to add them to the build, then Save.', 'success'); }
+      else UI.toast('All ' + CLASS_CODE_DB.length + ' library class codes are already loaded.', 'info');
+      render();
+    }
     function scopeLabel(s) { var o = SCOPE_OPTS.filter(function (x) { return x[0] === (s || 'zone'); })[0]; return o ? o[1] : 'Per zone'; }
     function parseScope(text) {
       var t = String(text == null ? '' : text).trim().toLowerCase();
@@ -12148,10 +12378,10 @@
       ov.innerHTML = '<div class="pd-modal" style="max-width:620px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Schedule Builder — instructions &amp; shortcuts</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div class="sbld-help-body" style="padding:16px;max-height:70vh;overflow:auto;">' +
         '<h4>The 6 steps</h4><ul>' +
-        '<li><b>1 · Activities</b> — a spreadsheet of your class codes (code · name · trade · <b>scope</b> · interior/exterior durations) beside a holding list of all codes. Click/drag to select cells, type or double-click to edit, <kbd>Ctrl+C</kbd>/<kbd>Ctrl+V</kbd> copy &amp; paste (paste one cell into a selection to fill), <kbd>Ctrl+D</kbd> fill-down, <kbd>Delete</kbd> to clear; paste blocks from Excel. <b>&larr;/&rarr;</b> load/remove codes between the list and the build. <b>Scope</b> (per zone / per floor / whole project) auto-splits a duration down to per-zone; refine it in step 4.</li>' +
+        '<li><b>1 · Activities</b> — a spreadsheet of your class codes (code · name · trade · <b>scope</b> · interior/exterior durations) beside a holding list of all codes. Click/drag to select cells, type or double-click to edit, <kbd>Ctrl+C</kbd>/<kbd>Ctrl+V</kbd> copy &amp; paste (paste one cell into a selection to fill), <kbd>Ctrl+D</kbd> fill-down, <kbd>Delete</kbd> to clear; paste blocks from Excel. <b>&larr;/&rarr;</b> load/remove codes between the list and the build. Press <b>+ Library</b> to load the standard class-code library into the list, tick codes and press <b>&larr;</b> to add them, then <b>Save</b>. <b>Scope</b> (per zone / per floor / whole project) auto-splits a duration down to per-zone; refine it in step 4.</li>' +
         '<li><b>2 · Floors &amp; Zones</b> — per trade, define floors (and basements) and split each into zones/units.</li>' +
-        '<li><b>3 · Zone sequence</b> — connect the zones (which location follows which). Just topology — blocks are equal size here.</li>' +
-        '<li><b>4 · Trade sequence</b> — connect the class codes within each trade (how they run inside a zone).</li>' +
+        '<li><b>3 · Zone sequence</b> — connect the zones (which location follows which). Just topology — blocks are equal size here. <b>Click any bar</b> to highlight its <b style="color:#1f8f4e">predecessors</b> (what drives it) and <b style="color:#e08a1e">successors</b> (what it drives).</li>' +
+        '<li><b>4 · Trade sequence</b> — connect the class codes within each trade (how they run inside a zone). Edit the enlarged <b>Int/Ext</b> durations inline. <b>Click any bar</b> to highlight its predecessors/successors.</li>' +
         '<li><b>5 · Scope per zone</b> — tick which activities apply to each location.</li>' +
         '<li><b>6 · Generate</b> — build the schedule and push it into the live Project Schedule.</li></ul>' +
         '<h4>Linking (steps 3 &amp; 4) — pick, then confirm</h4><ol>' +
@@ -12284,6 +12514,13 @@
     }
     function actReset() { pendActSet = []; pendActDst = []; actLinkPhase = 'src'; render(); }
     // uniform-block flow chart for a trade's class codes — description emphasized, code shown
+    // Legend + clear control for the predecessor/successor inspection (steps 3 & 4).
+    function focusLegendHTML(active, clearId) {
+      return '<div class="sbld-focuslegend"><span>Click a bar to see its links.</span>' +
+        '<span><span class="sw" style="background:#1f8f4e"></span><b>Predecessors</b> (drive it)</span>' +
+        '<span><span class="sw" style="background:#e08a1e"></span><b>Successors</b> (it drives)</span>' +
+        (active ? '<button class="pd-btn sbld-libbtn" id="' + clearId + '">Clear selection</button>' : '') + '</div>';
+    }
     function actSchedSVG(acts, starts) {
       var rowH = 32, pad = 8, labelW = 210, chartX = labelW + 6;
       var colW = Math.max(26, Math.round(seqZoom * 9)), step = colW + 26;
@@ -12291,6 +12528,9 @@
       var H = pad * 2 + Math.max(acts.length, 1) * rowH, W = chartX + (maxUnit + 1) * step + 30;
       if (!acts.length) return '<svg viewBox="0 0 300 60" width="300" height="60"><text x="10" y="34" font-size="12" fill="var(--pd-muted)">No class codes for this trade.</text></svg>';
       var pos = {}, bars = '', links = '', grid = '';
+      var afP = {}, afS = {};
+      if (actFocus) cfg.actLinks.forEach(function (k) { if (k.to === actFocus) afP[k.from] = 1; if (k.from === actFocus) afS[k.to] = 1; });
+      function relCls(id) { if (!actFocus || id === actFocus) return ''; if (afP[id]) return ' prednode'; if (afS[id]) return ' succnode'; return ' dimnode'; }
       function xOf(u) { return chartX + u * step; }
       for (var u = 0; u <= maxUnit; u++) { var gx = xOf(u); grid += '<line x1="' + gx + '" y1="' + pad + '" x2="' + gx + '" y2="' + (H - pad) + '" stroke="var(--pd-line)" stroke-width="1" opacity=".3"></line>'; }
       acts.forEach(function (a, i) {
@@ -12299,7 +12539,7 @@
         var desc = a.name || '(unnamed)', code = a.code || '—';
         bars += '<text x="3" y="' + (y + rowH / 2 - 2) + '" font-size="11.5" font-weight="700" fill="var(--pd-ink)">' + e2(desc.length > 30 ? desc.slice(0, 29) + '…' : desc) + '</text>' +
           '<text x="3" y="' + (y + rowH / 2 + 11) + '" font-size="9" fill="var(--pd-muted)">' + e2(code) + '</text>' +
-          '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '') + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
+          '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '') + relCls(a.id) + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
           '<text x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 3) + '" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">' + e2(code) + '</text>';
       });
       cfg.actLinks.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
@@ -12307,7 +12547,8 @@
         var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;
         var y1 = a.cy, y2 = b.cy, mx = (tx >= fx ? fx + 8 : fx - 8), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
         var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
-        links += '<path class="sbld-link" d="' + d + '" marker-end="url(#sbldarrow3)"></path>' +
+        var lcls = actFocus ? (k.to === actFocus ? ' hotpred' : (k.from === actFocus ? ' hotsucc' : ' dimlink')) : '';
+        links += '<path class="sbld-link' + lcls + '" d="' + d + '" marker-end="url(#sbldarrow3)"></path>' +
           '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' +
           '<path class="sbld-linkhit" data-fk="' + e2(k.from + '~' + k.to) + '" d="' + d + '"></path>'; });
       return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + grid + links + bars + '</svg>';
@@ -12364,13 +12605,16 @@
       }
       head += '<line x1="' + chartX + '" y1="' + chartTop + '" x2="' + (W - 4) + '" y2="' + chartTop + '" stroke="var(--pd-line)" stroke-width="1"></line>';
       var pos = {}, bars = '', links = '';
+      var afP = {}, afS = {};
+      if (actFocus) cfg.actLinks.forEach(function (k) { if (k.to === actFocus) afP[k.from] = 1; if (k.from === actFocus) afS[k.to] = 1; });
+      function relCls(id) { if (!actFocus || id === actFocus) return ''; if (afP[id]) return ' prednode'; if (afS[id]) return ' succnode'; return ' dimnode'; }
       acts.forEach(function (a, i) {
         var y = chartTop + i * rowH, dur = Math.max(1, pDur(a, basis)), x = xOf(startsDays[a.id] || 0), w = Math.max(barMin, dur * scale), fill = gc(a.group);
         pos[a.id] = { x: x, y: y, w: w, cy: y + rowH / 2 };
         var desc = a.name || '(unnamed)', code = a.code || '—';
         bars += '<text x="3" y="' + (y + rowH / 2 - 2) + '" font-size="11.5" font-weight="700" fill="var(--pd-ink)">' + e2(desc.length > 30 ? desc.slice(0, 29) + '…' : desc) + '</text>' +
           '<text x="3" y="' + (y + rowH / 2 + 11) + '" font-size="9" fill="var(--pd-muted)">' + e2(code) + '</text>' +
-          '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '') + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
+          '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '') + relCls(a.id) + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
           '<text x="' + (x + w + 4) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="var(--pd-muted)" pointer-events="none">' + actDur(a, basis) + 'd</text>';
       });
       cfg.actLinks.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
@@ -12378,7 +12622,8 @@
         var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;
         var y1 = a.cy, y2 = b.cy, mx = (tx >= fx ? fx + 8 : fx - 8), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
         var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
-        links += '<path class="sbld-link" d="' + d + '" marker-end="url(#sbldarrow3)"></path>' +
+        var lcls = actFocus ? (k.to === actFocus ? ' hotpred' : (k.from === actFocus ? ' hotsucc' : ' dimlink')) : '';
+        links += '<path class="sbld-link' + lcls + '" d="' + d + '" marker-end="url(#sbldarrow3)"></path>' +
           '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' +
           '<path class="sbld-linkhit" data-fk="' + e2(k.from + '~' + k.to) + '" d="' + d + '"></path>'; });
       return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + grid + head + links + bars + '</svg>';
@@ -12645,7 +12890,7 @@
           '<span class="sbld-hold-desc">' + e2(a.name || '(unnamed)') + '</span>' +
           '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
       }).join('');
-      var holdPane = '<div class="sbld-hold"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') + '</div>' +
+      var holdPane = '<div class="sbld-hold"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') + '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
         '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty" style="padding:10px;font-size:11.5px;">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       host.innerHTML = '<h2>1 · Activities &amp; required duration</h2>' +
@@ -12668,6 +12913,7 @@
         [['MOB','Mobilization','GR',3,3],['EXC','Excavation','SW',4,4],['BACKFILL','Backfilling','SW',3,3],['REBAR','Rebar','ST',3,4],['FORM','Formworks','ST',3,4],['POUR','Concreting','ST',2,3],['MAS','Masonry','AR',5,6],['PLA','Plastering','AR',5,6],['TILE','Tiling','AR',4,5],['CEIL','Ceiling','AR',3,4],['PAINT','Painting','AR',4,5]].forEach(function (r) { cfg.activities.push({ id: uidv(), code: r[0], name: r[1], group: r[2], durInt: r[3], durExt: r[4] }); });
         markDirty(); render();
       };
+      var libBtn = host.querySelector('#b-lib'); if (libBtn) libBtn.onclick = loadClassCodeLibrary;
       // holding-area shuttle
       host.querySelectorAll('[data-cat]').forEach(function (b) { b.onclick = function () { var id = b.dataset.cat, i = catSel.indexOf(id); if (i >= 0) catSel.splice(i, 1); else catSel.push(id); render(); }; });
       host.querySelector('#b-load').onclick = function () {
@@ -12827,14 +13073,14 @@
         (function () {
           var listH = '<div class="sbld-seq2-h">Class codes — ' + e2(GLABEL[tr]) + '</div>';
           var chartH = '<div class="sbld-seq2-h">Trade ' + (tradeView === 'gantt' ? 'Gantt' : 'flow') + ' (' + countTradeLinks(tr) + ' link' + (countTradeLinks(tr) === 1 ? '' : 's') + ')</div>';
-          var chartBody = '<div class="sbld-canvaswrap">' + svg + '</div>';
+          var chartBody = focusLegendHTML(!!actFocus, 'b-afocusclear') + '<div class="sbld-canvaswrap">' + svg + '</div>';
           return seqLayout === 'stack'
             ? '<div class="sbld-seqstack"><div class="sbld-seqstack-top">' + listH + list + '</div><div class="sbld-seqstack-bot">' + chartH + chartBody + '</div></div>'
             : '<div class="sbld-seq2"><div class="sbld-seq2-left" style="width:' + seqLeftW + 'px;">' + listH + list + '</div>' +
               '<div class="sbld-seq2-grip" id="b-agrip" title="Drag to resize the list / chart"></div>' +
               '<div class="sbld-seq2-right">' + chartH + chartBody + '</div></div>';
         })();
-      host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; actReset(); }; });
+      host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; actFocus = null; actReset(); }; });
       host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
       var atSel = host.querySelector('#b-autotype'); if (atSel) atSel.onchange = function () { autoChainType = atSel.value; };
       host.querySelector('#b-autochain').onclick = function () { autoChainTrade(tr, atSel ? atSel.value : autoChainType); };
@@ -12871,6 +13117,7 @@
           : (pendActDst.length ? (pendActDst.length + ' destination(s) selected — right-click to choose the relationship.') : 'Step 3: click one or more destination codes (then right-click to confirm).'));
       host.querySelectorAll('.sbld-actnode').forEach(function (b) { b.onclick = function () { actFocus = b.dataset.act; actSelect(b.dataset.act); }; });
       host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { actFocus = b.getAttribute('data-act'); actSelect(b.getAttribute('data-act')); }); });
+      var afclr = host.querySelector('#b-afocusclear'); if (afclr) afclr.onclick = function () { actFocus = null; render(); };
       var aseq2 = host.querySelector('.sbld-seq2'); if (aseq2) aseq2.addEventListener('contextmenu', actConfirm);
       host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
         var fk = (p.getAttribute('data-fk') || '').split('~'), ex = actLinkOf(fk[0], fk[1]); if (!ex) return;
@@ -13010,6 +13257,11 @@
         .concat([{ uid: '__end__', label: 'End', fill: 'var(--pd-red)', s: maxUnit, txt: 'END' }]);
       var H = pad * 2 + rows.length * rowH, W = chartX + (maxUnit + 1) * step + 30;
       var pos = {}, bars = '', links = '';
+      // Predecessor / successor inspection: when a bar is focused, mark what drives it (predecessors)
+      // and what it drives (successors), and dim the rest — so multi-predecessor chains are legible.
+      var fPred = {}, fSucc = {}, fAny = seqFocus.length;
+      if (fAny) cfg.links.forEach(function (k) { if (seqFocus.indexOf(k.to) >= 0) fPred[k.from] = 1; if (seqFocus.indexOf(k.from) >= 0) fSucc[k.to] = 1; });
+      function relCls(uid) { if (!fAny || seqFocus.indexOf(uid) >= 0) return ''; if (fPred[uid]) return ' prednode'; if (fSucc[uid]) return ' succnode'; return ' dimnode'; }
       function xOf(unit) { return chartX + unit * step; }
       // faint column guides so aligned (SS) blocks read as sharing a column
       var grid = ''; for (var u = 0; u <= maxUnit; u++) { var gx = xOf(u); grid += '<line x1="' + gx + '" y1="' + pad + '" x2="' + gx + '" y2="' + (H - pad) + '" stroke="var(--pd-line)" stroke-width="1" opacity=".3"></line>'; }
@@ -13017,7 +13269,7 @@
         var y = pad + i * rowH, x = xOf(r.s), w = colW;
         pos[r.uid] = { x: x, y: y, w: w, cy: y + rowH / 2 };
         bars += '<text x="3" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="var(--pd-ink)">' + e2(r.label) + '</text>' +
-          '<rect class="sbld-schedbar' + (inPend(r.uid) ? ' pend' : (inDst(r.uid) ? ' pend-dst' : '')) + (isFocus([r.uid]) ? ' sbld-focus' : '') + '" data-uid="' + r.uid + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
+          '<rect class="sbld-schedbar' + (inPend(r.uid) ? ' pend' : (inDst(r.uid) ? ' pend-dst' : '')) + (isFocus([r.uid]) ? ' sbld-focus' : '') + relCls(r.uid) + '" data-uid="' + r.uid + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
           '<text x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 3) + '" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">' + e2(r.txt) + '</text>';
       });
       cfg.links.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
@@ -13025,7 +13277,8 @@
         var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;   // arrive at to finish (FF/SF) or start (FS/SS)
         var y1 = a.cy, y2 = b.cy, mx = (tx >= fx ? fx + 8 : fx - 8), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
         var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
-        links += '<path class="sbld-link" d="' + d + '" marker-end="url(#sbldarrow2)"></path>' +
+        var lcls = fAny ? (seqFocus.indexOf(k.to) >= 0 ? ' hotpred' : (seqFocus.indexOf(k.from) >= 0 ? ' hotsucc' : ' dimlink')) : '';
+        links += '<path class="sbld-link' + lcls + '" d="' + d + '" marker-end="url(#sbldarrow2)"></path>' +
           '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' +
           '<path class="sbld-linkhit" data-fk="' + e2(k.from + '~' + k.to) + '" d="' + d + '"></path>'; });
       return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + grid + links + bars + '</svg>';
@@ -13051,7 +13304,7 @@
       var towerBody = towerEmpty ? '<div class="sbld-empty">No zones yet — add floors/zones for a trade in <b>Step 2</b>, then their nodes appear here to connect.</div>' :
         '<div class="sbld-twr' + (seqLayout === 'stack' ? ' sbld-twr-hz' : '') + '">' + showTr.map(seqTowerCol).join('') + '</div>';
       var schedH = '<div class="sbld-seq2-h">Resulting schedule (' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's') + (seqTradeFilter === 'ALL' ? '' : ' · ' + e2(GLABEL[seqTradeFilter]) + ' only') + ')</div>';
-      var schedBody = '<div class="sbld-canvaswrap">' + scheduleSVG(dispLocs, starts) + '</div>';
+      var schedBody = focusLegendHTML(seqFocus.length, 'b-focusclear') + '<div class="sbld-canvaswrap">' + scheduleSVG(dispLocs, starts) + '</div>';
       var LEVELS = [[1, 'Trade'], [2, 'Floor'], [3, 'Zone'], [4, 'Unit']];
       var body = seqLayout === 'stack'
         ? '<div class="sbld-seqstack"><div class="sbld-seqstack-top"><div class="sbld-seq2-h">Building view — click a zone/unit to highlight it below</div>' + towerBody + '</div>' +
@@ -13095,6 +13348,7 @@
           : (pendDst.length ? (pendDst.length + ' destination(s) selected — right-click to choose the relationship.') : 'Step 3: click one or more destination zones (then right-click to confirm).'));
       host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { var uids = (b.dataset.uids || '').split(' ').filter(Boolean); setFocus(uids); nodeSelectMany(uids); }; });
       host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { var u = b.getAttribute('data-uid'); setFocus([u]); nodeSelect(u); }); });
+      var fclr = host.querySelector('#b-focusclear'); if (fclr) fclr.onclick = function () { setFocus([]); render(); };
       // right-click anywhere in the linking area confirms the current phase (source → destination → dialog)
       var seq2 = host.querySelector('.sbld-seq2'); if (seq2) seq2.addEventListener('contextmenu', nodeConfirm);
       host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {

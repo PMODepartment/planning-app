@@ -1,5 +1,30 @@
 # Module: project-schedule
 
+## Schedule Builder: class-code library + predecessor/successor inspection + bigger duration fields (2026-08-13f) — eprobles
+Three asks against the Schedule Builder (`ScheduleBuilder` closure in `index.html`), all additive:
+- **Class-code library (right side of step 1).** Extracted **197 codes** from *EPC. FIN. Class Code
+  Mapping Template (12).xlsx* — **Class Code number Level 3** (column 5) + **Description 3** (column 6),
+  filtered to non-empty rows — into a `CLASS_CODE_DB` constant. A **+ Library** button in step 1's
+  "All class codes" holding pane header seeds `cfg.catalog` with any not-already-present codes
+  (`loadClassCodeLibrary`, group defaults ST, dur 0). They appear on the right; tick + `←` loads them
+  into the build, and **Save** persists (catalog already rides in the `schedule_builder.config` jsonb).
+  Re-loading never duplicates (dedup by trimmed code across build + list).
+- **Predecessor/Successor inspection on bar select (steps 3 & 4).** Main already had a cross-highlight
+  (`seqFocus` array / `actFocus`) that highlighted the *same* node across tower & gantt. Extended it:
+  when a bar is focused, `scheduleSVG` / `actSchedSVG` / `actGanttSVG` now also mark its
+  **predecessors** (green `.prednode`, links `.hotpred`), **successors** (amber `.succnode`,
+  `.hotsucc`), and dim the rest (`.dimnode` / `.dimlink`) — computed from `cfg.links` / `cfg.actLinks`
+  relative to the focused id(s). A legend + **Clear selection** button (`focusLegendHTML`) sits above
+  each schedule. So with multiple predecessors/successors, clicking a bar makes the drivers obvious.
+- **Bigger Int/Ext duration fields (step 4 inline editors).** `.sbld-actdur input` 48×24px/11px →
+  82×38px/16px bold centered, labels 10.5px→13px, with a focus ring — far more readable.
+- `MODULE_V` bumped `20260813a → 20260813b`. Verified: inline script parses (`new Function`), all new
+  symbols present. ⚠️ **NOT browser-verified** — the module is auth-gated (no live session here), the
+  standing constraint for this module. ⚠️ **Branch note:** the edits were re-applied onto **main**
+  (52268c3) — the local `module/schedule-builder` branch was 7 commits stale and main had meanwhile
+  added the `seqFocus`/`actFocus` cross-highlight this work builds on, so a stale-branch patch would
+  have conflicted/duplicated.
+
 ## Schedule Builder: fully-dynamic per-trade auto-trace questions (+ cure lag, zone order) (2026-08-13e) — eprobles
 The auto-trace dialog now asks each trade ONLY the questions that apply to what it actually has, and
 adds two new takt inputs the user asked for. Per trade, dynamically shown:
