@@ -1323,6 +1323,8 @@
     .sbld-mini { width:62px; height:30px; padding:2px 6px; font-size:12px; font-weight:700; }
     .sbld-at-q { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--pd-line); font-size:13px; }
     .sbld-at-q:last-child { border-bottom:none; }
+    .sbld-at-sec { margin:0 0 14px; padding:10px 12px; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); }
+    .sbld-at-tr { display:flex; align-items:center; gap:7px; font-weight:800; font-size:13px; margin-bottom:2px; }
     .sbld-help-btn { width:30px; height:30px; padding:0; border-radius:50%; font-weight:700; font-size:14px; flex:none; }
     .sbld-help-body h4 { margin:14px 0 6px; font-size:13px; color:var(--pd-ink); }
     .sbld-help-body p, .sbld-help-body li { font-size:12.5px; color:var(--pd-muted); line-height:1.5; }
@@ -11978,7 +11980,7 @@
     function blankZoning() { var z = {}; GROUPS.forEach(function (g) { z[g] = { floors: [] }; }); return z; }
     var WBS_DIMS = ['trade', 'floor', 'zone', 'unit'];
     var DIM_LABEL = { trade: 'Trade', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, zoneSimul: {}, unitSimul: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       var di = (a.durInt != null) ? Math.max(0, +a.durInt || 0) : legacy;
@@ -12011,6 +12013,8 @@
       d.wbsOrder = (function () { var seen = {}, out = []; (Array.isArray(c.wbsOrder) ? c.wbsOrder : []).forEach(function (k) { if (WBS_DIMS.indexOf(k) >= 0 && !seen[k]) { seen[k] = 1; out.push(k); } }); return out.length ? out : ['trade', 'floor', 'zone', 'unit']; })();
       d.floorLead = (c.floorLead >= 1 && c.floorLead <= 40) ? c.floorLead : 4;
       d.tradeBatch = (c.tradeBatch && typeof c.tradeBatch === 'object') ? c.tradeBatch : {};  // per-trade: floors done at a time before the next trade follows
+      d.zoneSimul = (c.zoneSimul && typeof c.zoneSimul === 'object') ? c.zoneSimul : {};  // per-trade: how many zones run at once per floor (0 = all/parallel)
+      d.unitSimul = (c.unitSimul && typeof c.unitSimul === 'object') ? c.unitSimul : {};  // per-trade: how many units run at once per zone (0 = all/parallel)
       d.locLevel = (['auto', 'floor', 'zone', 'unit'].indexOf(c.locLevel) >= 0) ? c.locLevel : 'auto';  // global activity/takt leaf level
       return d;
     }
@@ -12059,7 +12063,7 @@
         '<li><b>Right-click</b> again to confirm.</li>' +
         '<li>A dialog asks the <b>relationship (FS / SS / FF / SF)</b> and <b>lag</b> — every source is linked to every destination.</li>' +
         '</ol><p><b>Reset selection</b> cancels; <b>click an arrow</b> to edit its type/lag or unlink. <b>SS</b> lines two bars up at the same start; <b>FS</b> steps the next bar over.</p>' +
-        '<h4>Auto-trace (step 3)</h4><p><b>Auto-trace logic</b> asks, for each trade, <b>how many floors it does at a time</b> before the next trade follows behind it (its takt batch), then builds the whole takt flow for you. It replaces the current links.</p>' +
+        '<h4>Auto-trace (step 3)</h4><p><b>Auto-trace logic</b> first asks a few takt questions per trade — how many <b>zones</b> run at once per floor, how many <b>units</b> at once per zone, and how many <b>floors</b> it finishes before the next trade follows — then builds the whole takt flow for you (sequencing whatever isn\'t simultaneous). It replaces the current links.</p>' +
         '<h4>Auto-chain (step 4)</h4><p><b>Auto-chain</b> links a trade\'s class codes back-to-back using the relationship picked in the dropdown beside it (FS / SS / FF / SF).</p>' +
         '</div><div class="pd-modal-footer"><button class="pd-btn pd-btn-primary" data-x>Got it</button></div></div>';
       document.body.appendChild(ov);
@@ -12332,6 +12336,20 @@
       function firstOf(o) { var k = Object.keys(o); return k.length ? o[k[0]] : null; }
       // 1) vertical progression within each trade
       present.forEach(function (tr) { var fl = floorsOf(tr); for (var i = 1; i < fl.length; i++) Object.keys(idx[tr][i]).forEach(function (ck) { var p = idx[tr][i - 1][ck]; if (p) tryLink(p, idx[tr][i][ck]); }); });
+      // 1b) intra-floor sequencing — zones/units that DON'T run simultaneously are chained so only N
+      //     run at once (sliding window: leaf[i] waits on leaf[i-N]). zoneSimul[tr]/unitSimul[tr] = how
+      //     many zones-per-floor / units-per-zone run at once; 0/blank = all parallel (no links). Reads
+      //     leavesOfFloor (which already respects cfg.locLevel), so floor/zone-level remaps behave.
+      present.forEach(function (tr) {
+        var zS = Math.max(0, +cfg.zoneSimul[tr] || 0), uS = Math.max(0, +cfg.unitSimul[tr] || 0);
+        if (!zS && !uS) return;
+        floorsOf(tr).forEach(function (f) {
+          var order = [], byZone = {};   // per-zone list of unit-leaf uids, in listed order
+          leavesOfFloor(tr, f).forEach(function (l) { var zk = l.zone ? (l.zone.code || l.zone.id) : '_'; if (!(zk in byZone)) { byZone[zk] = order.length; order.push([]); } order[byZone[zk]].push(l.uid); });
+          if (uS > 0) order.forEach(function (uids) { for (var j = uS; j < uids.length; j++) tryLink(uids[j - uS], uids[j]); });          // units within a zone
+          if (zS > 0 && zS < order.length) for (var i = zS; i < order.length; i++) { var p = order[i - zS], c = order[i]; if (p.length && c.length) tryLink(p[p.length - 1], c[0]); }   // zones within a floor
+        });
+      });
       // 2) cross-trade lead — each transition uses the LEADING trade's own "floors at a time" batch
       //    (cfg.tradeBatch[prev]); falls back to a legacy per-pair lead, then the global floorLead.
       for (var t = 1; t < present.length; t++) {
@@ -12352,17 +12370,36 @@
     function openAutoTraceDialog() {
       var present = GROUPS.filter(function (tr) { return floorsOf(tr).length && tradeActs(tr).length; });
       if (present.length < 1) { UI.toast('Add activities (step 1) and floors/zones (step 2) first.', 'warn'); return; }
-      var leading = present.slice(0, Math.max(0, present.length - 1));  // last trade has nobody following it
-      var rowsHtml = leading.length ? leading.map(function (tr) {
-        var next = present[present.indexOf(tr) + 1];
-        var v = (cfg.tradeBatch[tr] != null ? cfg.tradeBatch[tr] : (cfg.floorLead || 4));
-        return '<div class="sbld-at-q"><label>How many floors at a time does <b style="color:' + gc(tr) + '">' + e2(GLABEL[tr]) + '</b> do before <b style="color:' + gc(next) + '">' + e2(GLABEL[next]) + '</b> follows?</label>' +
-          '<input class="pd-input" type="number" min="1" max="60" data-atbatch="' + e2(tr) + '" value="' + v + '" style="width:70px;height:34px;"></div>';
-      }).join('') : '<p class="sbld-hint">Only one trade has locations — auto-trace will just chain its floors vertically.</p>';
+      var lvl = cfg.locLevel || 'auto';
+      // per-trade capacities (respecting the global location level): how many zones a floor can hold,
+      // and how many units a zone can hold — used to decide which questions are worth asking + defaults.
+      function maxZones(tr) { return floorsOf(tr).reduce(function (m, f) { return Math.max(m, f.zones.length || 1); }, 1); }
+      function maxUnits(tr) { return floorsOf(tr).reduce(function (m, f) { return f.zones.reduce(function (mm, z) { return Math.max(mm, z.units.length || 1); }, m); }, 1); }
+      var num = function (key, tr, def, max) { return '<input class="pd-input" type="number" min="1" max="' + max + '" data-' + key + '="' + e2(tr) + '" value="' + def + '" style="width:70px;height:34px;">'; };
+      // One section per trade: (a) zones simultaneous per floor, (b) units simultaneous per zone,
+      // (c) floors done before the FOLLOWING trade may start. Only the questions that apply are shown.
+      var sections = present.map(function (tr, ti) {
+        var next = present[ti + 1], mZ = maxZones(tr), mU = maxUnits(tr), qs = [];
+        if (lvl !== 'floor' && mZ > 1) {   // zones question only when this trade actually has multiple zones
+          var zv = (cfg.zoneSimul[tr] != null && +cfg.zoneSimul[tr] > 0) ? cfg.zoneSimul[tr] : mZ;
+          qs.push('<div class="sbld-at-q"><label>How many <b>zones</b> does it run <b>at the same time</b> per floor? <span class="sbld-hint">(of ' + mZ + ' — ' + mZ + ' = all in parallel)</span></label>' + num('atzone', tr, zv, mZ) + '</div>');
+        }
+        if ((lvl === 'auto' || lvl === 'unit') && mU > 1) {   // units question only when zones are split into units
+          var uv = (cfg.unitSimul[tr] != null && +cfg.unitSimul[tr] > 0) ? cfg.unitSimul[tr] : mU;
+          qs.push('<div class="sbld-at-q"><label>How many <b>units</b> does it run <b>at the same time</b> per zone? <span class="sbld-hint">(of ' + mU + ' — ' + mU + ' = all in parallel)</span></label>' + num('atunit', tr, uv, mU) + '</div>');
+        }
+        if (next) {
+          var fv = (cfg.tradeBatch[tr] != null ? cfg.tradeBatch[tr] : (cfg.floorLead || 4));
+          qs.push('<div class="sbld-at-q"><label>How many <b>floors</b> does it finish before <b style="color:' + gc(next) + '">' + e2(GLABEL[next]) + '</b> follows behind it?</label>' + num('atbatch', tr, fv, 60) + '</div>');
+        }
+        if (!qs.length) return '';
+        return '<div class="sbld-at-sec"><div class="sbld-at-tr" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + qs.join('') + '</div>';
+      }).filter(Boolean).join('');
+      if (!sections) sections = '<p class="sbld-hint">Nothing to configure — add more floors/zones/units (step 2) or a second trade to shape the takt flow. Auto-trace will just chain the floors vertically.</p>';
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
-      ov.innerHTML = '<div class="pd-modal" style="max-width:560px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Auto-trace logic</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
-        '<div style="padding:16px;"><p class="sbld-hint" style="margin:0 0 14px;">For each trade, say <b>how many floors it works at a time</b> before the next trade starts behind it. Auto-trace then builds the takt flow: each trade climbs its own floors zone-by-zone, and every following trade stays that many floors behind. <b>This replaces the current links.</b></p>' +
-        rowsHtml + '</div>' +
+      ov.innerHTML = '<div class="pd-modal" style="max-width:600px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Auto-trace logic — takt questions</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+        '<div style="padding:16px;max-height:70vh;overflow:auto;"><p class="sbld-hint" style="margin:0 0 14px;">Answer how each trade flows through the building. Auto-trace then builds the whole takt logic: each trade climbs its floors, running the answered number of <b>zones</b>/<b>units</b> at a time (the rest are sequenced), and every following trade stays the answered number of <b>floors</b> behind. <b>This replaces the current links.</b></p>' +
+        sections + '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbld-at-go">Generate logic</button></div></div>';
       document.body.appendChild(ov);
       function close() { ov.remove(); }
@@ -12370,6 +12407,8 @@
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
       ov.querySelector('#sbld-at-go').onclick = function () {
         ov.querySelectorAll('[data-atbatch]').forEach(function (inp) { cfg.tradeBatch[inp.dataset.atbatch] = Math.max(1, Math.min(60, +inp.value || 4)); });
+        ov.querySelectorAll('[data-atzone]').forEach(function (inp) { cfg.zoneSimul[inp.dataset.atzone] = Math.max(1, +inp.value || 1); });
+        ov.querySelectorAll('[data-atunit]').forEach(function (inp) { cfg.unitSimul[inp.dataset.atunit] = Math.max(1, +inp.value || 1); });
         close(); autoTrace();
       };
     }

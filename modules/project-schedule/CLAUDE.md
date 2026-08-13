@@ -1,5 +1,21 @@
 # Module: project-schedule
 
+## Schedule Builder: auto-trace takt questions — zones/units simultaneity + unit sequencing (2026-08-13b) — eprobles
+Step-3 auto-trace now asks the significant takt questions BEFORE building, and actually sequences units.
+- **`openAutoTraceDialog` expanded** into a per-trade section asking: (a) how many **zones** run at the
+  same time per floor, (b) how many **units** at the same time per zone, (c) how many **floors** finish
+  before the following trade starts. Each question only shows when it applies (trade has >1 zone / >1
+  unit / has a follower) and respects `cfg.locLevel` (floor/zone remaps hide the deeper questions).
+  Stored in new per-trade `cfg.zoneSimul[tr]` / `cfg.unitSimul[tr]` (+ existing `cfg.tradeBatch`).
+- **`autoTrace` gained intra-floor sequencing (step 1b)** — the fix for units. Previously units/zones
+  within a floor ran fully parallel (only the vertical cellKey chain existed). Now a sliding-window
+  chain (`leaf[i]` waits on `leaf[i-N]`) enforces "≤ N zones per floor / ≤ N units per zone at once":
+  N = the answered simultaneity (0/blank or ≥ count = all parallel = old behaviour). Reads
+  `leavesOfFloor` so it honours `cfg.locLevel`. Cross-trade floor batch + Start/End bookends unchanged.
+- Additive `jsonb` keys (`zoneSimul`/`unitSimul`), tolerated by `normalize`; no migration. Verified:
+  inline JS parses; sequencing unit-checked (fully-seq, zones-seq/units-parallel, zones-parallel/units-
+  seq, all-parallel, 2-at-a-time window all correct). **NOT browser-verified** (module auth-gated).
+
 ## Schedule Builder: per-trade takt batch + global activity-level remap (2026-08-13) — eprobles
 Three additive changes to the `ScheduleBuilder` closure in `index.html` (⚠️ re-applied directly onto
 main — the session's original edits were made on the stale `module/schedule-builder` branch, which is
