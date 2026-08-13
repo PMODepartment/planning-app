@@ -1,5 +1,23 @@
 # Module: project-schedule
 
+## Schedule Builder: step-3/4 viewing — stacked layout, cross-highlight, L1–L4 collapse (2026-08-13c) — eprobles
+Viewing/UX features for the Zone-sequence (step 3) and Trade-sequence (step 4) screens. UI-only, no
+config/model change.
+- **Stacked layout toggle** (`seqLayout` split|stack, shared by both steps). Split = building/list on
+  the left, gantt on the right (original). **Stack = building view on TOP, gantt on the BOTTOM**, with
+  the trades laid out **side-by-side** across the top (`.sbld-twr-hz` / `.sbld-twr-col` /
+  `.sbld-seqstack`). Toggle in each step's action bar (Split/Stacked).
+- **Click cross-highlight** (like the project-schedule row highlight). Clicking a zone/unit node or a
+  gantt bar highlights the SAME location in both views via `.sbld-focus` (amber outline). Step 3 uses
+  `seqFocus` (uids); step 4 uses `actFocus` (class-code id). Bars/nodes carry the focus class in
+  `scheduleSVG`/`actSchedSVG`/`actGanttSVG` and the tower/list.
+- **L1–L4 collapse (step 3 only)** — `seqLevel` 1=Trade / 2=Floor / 3=Zone / 4=Unit, via a "Detail
+  1 2 3 4" button group. `towerNodesFor`/`seqTowerCol` build the tower at the chosen depth; a collapsed
+  node carries ALL its descendant leaf uids (`data-uids`), so linking/highlighting it acts on the whole
+  group (`nodeSelectMany`). Respects `cfg.locLevel`.
+- Verified: inline JS parses (`new Function`). **NOT browser-verified** — module is auth-gated (local
+  server redirects to sign-in), so no signed-in click-through of the new layout/highlight/collapse yet.
+
 ## Schedule Builder: auto-trace takt questions — zones/units simultaneity + unit sequencing (2026-08-13b) — eprobles
 Step-3 auto-trace now asks the significant takt questions BEFORE building, and actually sequences units.
 - **`openAutoTraceDialog` expanded** into a per-trade section asking: (a) how many **zones** run at the
