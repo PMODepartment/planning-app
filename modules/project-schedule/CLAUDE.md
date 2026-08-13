@@ -1,5 +1,24 @@
 # Module: project-schedule
 
+## Schedule Builder: fully-dynamic per-trade auto-trace questions (+ cure lag, zone order) (2026-08-13e) — eprobles
+The auto-trace dialog now asks each trade ONLY the questions that apply to what it actually has, and
+adds two new takt inputs the user asked for. Per trade, dynamically shown:
+- **Starts how many floors behind <previous trade>** (only when it has a preceding trade) — stored on
+  the leading trade's `cfg.tradeBatch`.
+- **Cure / lag between floors (days)** — only when the trade has >1 floor. NEW `cfg.floorLag[tr]`,
+  applied as the FS lag on every vertical floor→floor link in `autoTrace` step 1.
+- **Zones at once per floor** (only when >1 zone) — `cfg.zoneSimul`.
+- **Zone order** — a reorderable ↑/↓ list of the trade's distinct zone codes (only when >1 zone). NEW
+  `cfg.zoneOrder[tr]`; `autoTrace` step 1b sorts each floor's zones by this order before the
+  simultaneity sliding-window, so the sequence zones are worked in is honoured.
+- **Units at once per zone** (only when >1 unit) — `cfg.unitSimul`.
+- Sections with no applicable question are omitted (respects `cfg.locLevel`: floor-level hides
+  zone/unit questions, zone-level hides unit questions).
+- Save uses clean `data-atkind`/`data-attr` attributes (an earlier hyphen-in-attribute approach
+  mangled the key via camelCase — avoided). Additive jsonb (`floorLag`/`zoneOrder`); no migration.
+- Verified: inline JS parses; cure-lag-on-vertical-link + zone-order chaining unit-checked. **NOT
+  browser-verified** (auth-gated).
+
 ## Schedule Builder: level-link cascade to units + push start = data date (2026-08-13d) — eprobles
 - **Zone-sequence collapsed-group linking now cascades to the unit level.** Linking two collapsed nodes
   (Level 1–3) previously created a full cross-product of every source leaf × every destination leaf.
