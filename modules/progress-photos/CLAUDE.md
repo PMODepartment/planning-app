@@ -2,6 +2,32 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Bug fix: live "WBS Location" only showed one root node (2026-08-12b)
+Reported live on Avesta Residences (real screenshot: the depth-0 select showed only
+"Milestones" instead of the project's real Construction/Tower/… tree) — the previous entry's
+harness never caught this because a stub of a few dozen fake rows can't reproduce a
+**row-count** bug.
+- **Root cause**: `loadSchedule()`'s `wbs_nodes` (and `project_schedule`) reads were single,
+  unpaginated `select()` calls. Supabase enforces a server-side row cap (commonly 1000)
+  **regardless of any client `.limit()`**, silently truncating the result to whatever falls
+  in the first page by sort order — this is the *exact* problem Project Schedule's own
+  `load()` already had to solve for its schedule fetches (documented in its own CLAUDE.md),
+  just never applied here. Avesta's real WBS (imported/built over time) exceeds 1000 rows;
+  its real "Construction" branch simply wasn't in the truncated set that came back, while an
+  early-created "Milestones" skeleton root was.
+- **Fix**: new shared `fetchAllPages(table, selectCols, extraFilter)` — the same keyset-by-id
+  pagination pattern (`order('id') + .gt('id', last)`, loop until a page returns <1000) this
+  module's own `load()` already uses for `progress_photos`. Applied to both the `wbs_nodes`
+  fetch and the `project_schedule` (SCHED_ACTS) fetch (which had a `.limit(5000)` that was
+  **also silently capped to the server's real limit** — a client `.limit()` can't exceed it).
+- **Verified the actual mechanism, not just "it looks right"**: harness seeded 1,201 real rows
+  (1 root + 1,200 children, ids ordered so a naive fetch would cut off `Child 1001`–`Child
+  1200`) against a fake backend that enforces the same 1000-row server cap Supabase does.
+  Confirmed exactly 2 pages fetched, all 1,201 rows present in the picker (`Child 1001`/
+  `Child 1200` included) — proving the fix, not assuming it from code review.
+- No schema/behavior change beyond this — the picker logic from the entry below is otherwise
+  unchanged.
+
 ## Phase 1 correction: no preset hierarchy at all — pure dynamic WBS, code-inspected
 ## first (2026-08-12)
 Owner's explicit correction after reviewing the real Schedule/WBS Manager: **every** preset tried so

@@ -173,14 +173,37 @@ window.ProgressPhotos = (function () {
   // Reads wbs_nodes / project_schedule / activity codes for the current
   // project. Tolerant of the tables not existing yet (pre-migration DB) —
   // the module just falls back to free-text-only locations.
+  // Keyset-paginate (a single select caps at 1000 rows server-side, regardless
+  // of any client .limit()) — a real project's wbs_nodes/project_schedule can
+  // exceed that (P6/Excel imports routinely create thousands), which was
+  // silently truncating the WBS tree to whatever fell in the first page by
+  // sort_order — e.g. only an early "Milestones" root showing, with the
+  // project's real structure (added later / higher sort_order) cut off
+  // entirely. Same fix Project Schedule's own load() already needed for the
+  // identical reason.
+  async function fetchAllPages(table, selectCols, extraFilter) {
+    var all = [], last = null;
+    while (true) {
+      var q = sb().from(table).select(selectCols).eq('project_id', pid);
+      if (extraFilter) q = extraFilter(q);
+      q = q.order('id', { ascending: true }).limit(1000);
+      if (last) q = q.gt('id', last);
+      var res = await q;
+      if (res.error) return { data: null, error: res.error };
+      var batch = res.data || [];
+      all = all.concat(batch);
+      if (batch.length < 1000) break;
+      last = batch[batch.length - 1].id;
+    }
+    return { data: all, error: null };
+  }
+
   async function loadSchedule() {
     WBS = []; WBS_BY_ID = {}; WBS_LEAVES = []; SCHED_ACTS = [];
     CODE_TYPES = []; CODE_VALUES = [];
     if (!pid) return;
     try {
-      var wres = await sb().from('wbs_nodes')
-        .select('id,parent_id,code,name,sort_order')
-        .eq('project_id', pid).order('sort_order', { ascending: true });
+      var wres = await fetchAllPages('wbs_nodes', 'id,parent_id,code,name,sort_order');
       if (!wres.error) WBS = wres.data || [];
     } catch (e) {}
     WBS.forEach(function (n) { WBS_BY_ID[n.id] = n; });
@@ -192,11 +215,9 @@ window.ProgressPhotos = (function () {
       .sort(function (a, b) { return a.label.localeCompare(b.label); });
 
     try {
-      var ares = await sb().from('project_schedule')
-        .select('id,activity_id,activity_name,wbs_node_id,activity_type,status,start_date,end_date')
-        .eq('project_id', pid).not('wbs_node_id', 'is', null)
-        .neq('activity_type', 'WBS Summary')
-        .limit(5000);
+      var ares = await fetchAllPages('project_schedule',
+        'id,activity_id,activity_name,wbs_node_id,activity_type,status,start_date,end_date',
+        function (q) { return q.not('wbs_node_id', 'is', null).neq('activity_type', 'WBS Summary'); });
       if (!ares.error) SCHED_ACTS = ares.data || [];
     } catch (e) {}
 
