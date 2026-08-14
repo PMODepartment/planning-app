@@ -1398,6 +1398,9 @@
     .sbld-seq2-grip:hover::after, .sbld-seq2-grip.drag::after { background:var(--pd-red); }
     .sbld-seq2-right { flex:1 1 0; min-width:0; }
     .sbld-seq2-h { font-size:12px; font-weight:700; color:var(--pd-muted); margin-bottom:6px; }
+    .sbld-seq-totals { display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:12px; color:var(--pd-ink); background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:6px; padding:5px 10px; margin-bottom:8px; }
+    .sbld-seq-totals b { color:var(--pd-red); font-weight:800; }
+    .sbld-seq-totals .sbld-tot-sep { color:var(--pd-line); }
     .sbld-twr { display:flex; flex-direction:column; gap:4px; flex:1 1 auto; min-height:0; }
     /* Stacked layout — building view on top, gantt on the bottom; trades laid out side-by-side up top */
     .sbld-seqstack { display:flex; flex-direction:column; gap:10px; }
@@ -12839,6 +12842,14 @@
         stk[id] = 0; return (memo[id] = Math.max(0, m)); }
       var out = {}; acts.forEach(function (a) { out[a.id] = st(a.id); }); return out;
     }
+    // Longest-path total duration (days) of a trade's linked class codes for the given basis
+    // (int = interior, ext = exterior) — the finish day of the latest-finishing code.
+    function tradeTotalDays(tr, basis) {
+      var acts = tradeActs(tr); if (!acts.length) return 0;
+      var starts = actDayStarts(tr, basis), max = 0;
+      acts.forEach(function (a) { max = Math.max(max, (starts[a.id] || 0) + (pDur(a, basis) || 0)); });
+      return Math.round(max);
+    }
     // Time-scaled trade Gantt — bars placed at their real start day (from the project start) and sized
     // by the chosen duration basis; calendar header + gridlines keyed to tradeScale (day/week/month/
     // year), column width driven by tgZoom. Bars stay clickable for linking; actLinks drawn as arrows.
@@ -13376,14 +13387,21 @@
             ((a.scope && a.scope !== 'zone') ? '<span class="sbld-scopetag">per zone · from ' + e2(scopeLabel(a.scope)) + '</span>' : '') +
           '</div></div>';
       }).join('') + '</div>' : '<div class="sbld-empty">No class codes assigned to ' + e2(GLABEL[tr]) + ' yet — assign a trade to your activities in step 1.</div>';
+      var aConfirmBtn = (actLinkPhase === 'src' && pendActSet.length)
+        ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Confirm ' + pendActSet.length + ' source' + (pendActSet.length === 1 ? '' : 's') + ' →</button>'
+        : (actLinkPhase === 'dst' && pendActDst.length)
+          ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Create ' + pendActDst.length + ' link' + (pendActDst.length === 1 ? '' : 's') + ' →</button>'
+          : '';
       host.innerHTML = '<h2>4 · Trade sequence — connect the class codes</h2>' +
-        '<p class="sbld-lede">Pick a <b>trade</b>, then connect its <b>class codes</b> the way they run inside a zone. Linking is pick-then-confirm: <b>1)</b> click one or more <b>source</b> codes, <b>2)</b> <b>right-click</b> to confirm, <b>3)</b> click one or more <b>destination</b> codes, <b>4)</b> <b>right-click</b> to confirm, <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Edit <b>Int/Ext</b> durations inline; switch <b>Flow/Gantt</b>. <b>Auto-chain</b> links them back-to-back with the chosen relationship.</p>' +
+        '<p class="sbld-lede">Pick a <b>trade</b>, then connect its <b>class codes</b> the way they run inside a zone: <b>1)</b> click one or more <b>source</b> codes, <b>2)</b> press <b>Confirm sources</b> (or right-click), <b>3)</b> click one or more <b>destination</b> codes, <b>4)</b> press <b>Create links</b> (or right-click), <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Click a bar to <b>highlight / inspect</b> its links; open <b>Links</b> to edit them in a table. Edit <b>Int/Ext</b> durations inline; switch <b>Flow/Gantt</b>. <b>Auto-chain</b> links every code back-to-back with the chosen relationship.</p>' +
         chips +
         '<div class="sbld-sec-actions">' +
         '<button class="pd-btn pd-btn-primary" id="b-autochain">Auto-chain</button>' +
         '<select class="pd-select sbld-mini" id="b-autotype" title="Relationship used when auto-chaining the class codes (FS / SS / FF / SF)">' +
         ['FS', 'SS', 'FF', 'SF'].map(function (o) { return '<option value="' + o + '"' + (autoChainType === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' +
+        aConfirmBtn +
         ((pendActSet.length || pendActDst.length || actLinkPhase === 'dst') ? '<button class="pd-btn" id="b-adone">Reset selection</button>' : '') +
+        '<button class="pd-btn" id="b-alinkmgr">Links (' + countTradeLinks(tr) + ')</button>' +
         '<button class="pd-btn" id="b-aclear">Clear links</button>' +
         '<span class="sbld-tb-sep2"></span><span class="sbld-quick">View ' +
         [['flow', 'Flow'], ['gantt', 'Gantt']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (tradeView === v[0] ? ' on' : '') + '" data-tview="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
@@ -13395,7 +13413,9 @@
         '<span class="sbld-hint" id="b-apend"></span></div>' +
         (function () {
           var listH = '<div class="sbld-seq2-h">Class codes — ' + e2(GLABEL[tr]) + '</div>';
-          var chartH = '<div class="sbld-seq2-h">Trade ' + (tradeView === 'gantt' ? 'Gantt' : 'flow') + ' (' + countTradeLinks(tr) + ' link' + (countTradeLinks(tr) === 1 ? '' : 's') + ')</div>';
+          var totInt = tradeTotalDays(tr, 'int'), totExt = tradeTotalDays(tr, 'ext');
+          var totalsH = '<div class="sbld-seq-totals">Total duration &mdash; <b>Internal:</b> ' + totInt + ' day' + (totInt === 1 ? '' : 's') + ' <span class="sbld-tot-sep">·</span> <b>External:</b> ' + totExt + ' day' + (totExt === 1 ? '' : 's') + '</div>';
+          var chartH = '<div class="sbld-seq2-h">Trade ' + (tradeView === 'gantt' ? 'Gantt' : 'flow') + ' (' + countTradeLinks(tr) + ' link' + (countTradeLinks(tr) === 1 ? '' : 's') + ')</div>' + totalsH;
           var chartBody = focusLegendHTML(!!actFocus, 'b-afocusclear') + '<div class="sbld-canvaswrap">' + svg + '</div>';
           return seqLayout === 'stack'
             ? '<div class="sbld-seqstack"><div class="sbld-seqstack-top">' + listH + list + '</div><div class="sbld-seqstack-bot">' + chartH + chartBody + '</div></div>'
@@ -13407,7 +13427,9 @@
       host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
       var atSel = host.querySelector('#b-autotype'); if (atSel) atSel.onchange = function () { autoChainType = atSel.value; };
       host.querySelector('#b-autochain').onclick = function () { autoChainTrade(tr, atSel ? atSel.value : autoChainType); };
-      host.querySelector('#b-aclear').onclick = function () { clearTradeLinks(tr); actReset(); render(); };
+      host.querySelector('#b-aclear').onclick = function () { if (countTradeLinks(tr) && !confirm('Remove all ' + countTradeLinks(tr) + ' ' + GLABEL[tr] + ' link(s)?')) return; clearTradeLinks(tr); actReset(); render(); };
+      var acf = host.querySelector('#b-aconfirm'); if (acf) acf.onclick = function () { actConfirm(); };
+      var almb = host.querySelector('#b-alinkmgr'); if (almb) almb.onclick = function () { openActLinkManager(tr); };
       var ad = host.querySelector('#b-adone'); if (ad) ad.onclick = actReset;
       host.querySelectorAll('[data-tview]').forEach(function (b) { b.onclick = function () { tradeView = b.dataset.tview; render(); }; });
       host.querySelectorAll('[data-tscale]').forEach(function (b) { b.onclick = function () { tradeScale = b.dataset.tscale; tgZoom = TG_PPD[tradeScale] || 2.2; render(); }; });
@@ -13436,8 +13458,8 @@
       });
       var pendEl = host.querySelector('#b-apend'); if (pendEl) pendEl.textContent = !acts.length ? '' :
         (actLinkPhase === 'src'
-          ? (pendActSet.length ? (pendActSet.length + ' source(s) selected — right-click to confirm, then pick destinations.') : 'Step 1: click one or more source codes (then right-click to confirm).')
-          : (pendActDst.length ? (pendActDst.length + ' destination(s) selected — right-click to choose the relationship.') : 'Step 3: click one or more destination codes (then right-click to confirm).'));
+          ? (pendActSet.length ? (pendActSet.length + ' source(s) selected — press Confirm sources (or right-click).') : 'Step 1: click one or more source codes.')
+          : (pendActDst.length ? (pendActDst.length + ' destination(s) selected — press Create links (or right-click).') : 'Step 3: click one or more destination codes.'));
       host.querySelectorAll('.sbld-actnode').forEach(function (b) { b.onclick = function () { actFocus = b.dataset.act; actSelect(b.dataset.act); }; });
       // schedule bars INSPECT only; link from the class-code list on the left (was a linking bug —
       // clicking a bar both focused it and toggled it into the pending link selection).
@@ -13871,6 +13893,45 @@
       }
       search.oninput = draw;
       ov.querySelector('#sblm-clear').onclick = function () { if (cfg.links.length && confirm('Remove all ' + cfg.links.length + ' link(s)?')) { cfg.links = []; markDirty(); draw(); } };
+      draw();
+    }
+    // Readable label for a class-code link endpoint.
+    function actUidLabel(id) { var a = (cfg.activities || []).filter(function (x) { return x.id === id; })[0]; return a ? ((a.name || '(unnamed)') + (a.code ? ' · ' + a.code : '')) : id; }
+    // Tabular link manager for a TRADE's class-code links (mirrors openLinkManager for the zone flow).
+    // Scoped to the trade so a dense sequence stays auditable: filter, change type/lag inline, remove.
+    function openActLinkManager(tr) {
+      var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
+      ov.innerHTML = '<div class="pd-modal" style="max-width:760px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Links — ' + e2(GLABEL[tr]) + '</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+        '<div style="padding:12px 16px;"><input class="pd-input" id="sbam-search" placeholder="Filter by class code / description…" style="width:100%;height:34px;margin-bottom:10px;">' +
+        '<div id="sbam-body" style="max-height:60vh;overflow:auto;"></div></div>' +
+        '<div class="pd-modal-footer"><button class="pd-btn" id="sbam-clear">Clear ' + e2(GLABEL[tr]) + ' links</button><button class="pd-btn pd-btn-primary" data-x>Done</button></div></div>';
+      document.body.appendChild(ov);
+      function close() { ov.remove(); render(); }
+      ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
+      ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+      var body = ov.querySelector('#sbam-body'), search = ov.querySelector('#sbam-search'), TYPES = ['FS', 'SS', 'FF', 'SF'];
+      function draw() {
+        var ids = tradeLinkIds(tr);
+        var rows = cfg.actLinks.map(function (k, i) { return { k: k, i: i }; }).filter(function (x) { return ids[x.k.from] && ids[x.k.to]; })
+          .map(function (x) { return { k: x.k, i: x.i, fl: actUidLabel(x.k.from), tl: actUidLabel(x.k.to) }; });
+        if (!rows.length) { body.innerHTML = '<div class="sbld-empty">No links yet for ' + e2(GLABEL[tr]) + '. Connect codes in the diagram or use <b>Auto-chain</b>.</div>'; return; }
+        var q = (search.value || '').toLowerCase();
+        var items = rows.filter(function (x) { return !q || (x.fl + ' ' + x.tl).toLowerCase().indexOf(q) >= 0; });
+        body.innerHTML = '<div class="sbld-hint" style="margin-bottom:6px;">' + items.length + ' of ' + rows.length + ' link(s)</div>' +
+          '<div class="sbld-tablewrap"><table class="sbld-tbl" style="width:100%;"><thead><tr><th>From</th><th>To</th><th>Type</th><th>Lag</th><th></th></tr></thead><tbody>' +
+          items.map(function (x) {
+            return '<tr><td>' + e2(x.fl) + '</td><td>' + e2(x.tl) + '</td>' +
+              '<td><select class="pd-select sbam-type" data-i="' + x.i + '" style="height:28px;">' + TYPES.map(function (t) { return '<option' + (x.k.type === t ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></td>' +
+              '<td><input class="pd-input sbam-lag" type="number" data-i="' + x.i + '" value="' + (x.k.lag || 0) + '" style="width:64px;height:28px;"></td>' +
+              '<td><button class="sbld-del sbam-del" data-i="' + x.i + '" title="Remove link"><span data-ico="trash" data-ico-size="13"></span></button></td></tr>';
+          }).join('') + '</tbody></table></div>' + (items.length ? '' : '<div class="sbld-empty">No links match your filter.</div>');
+        body.querySelectorAll('.sbam-type').forEach(function (s) { s.onchange = function () { cfg.actLinks[+s.dataset.i].type = s.value; markDirty(); }; });
+        body.querySelectorAll('.sbam-lag').forEach(function (inp) { inp.onchange = function () { cfg.actLinks[+inp.dataset.i].lag = parseInt(inp.value, 10) || 0; markDirty(); }; });
+        body.querySelectorAll('.sbam-del').forEach(function (b) { b.onclick = function () { cfg.actLinks.splice(+b.dataset.i, 1); markDirty(); draw(); }; });
+        if (window.Icons) Icons.hydrate(body);
+      }
+      search.oninput = draw;
+      ov.querySelector('#sbam-clear').onclick = function () { if (countTradeLinks(tr) && confirm('Remove all ' + countTradeLinks(tr) + ' ' + GLABEL[tr] + ' link(s)?')) { clearTradeLinks(tr); draw(); } };
       draw();
     }
 
