@@ -1,5 +1,30 @@
 # Module: project-schedule
 
+## Phase-tagging wizard + docked stacking-pane fixes (2026-08-14) — fmlozano
+Two owner asks in one turn.
+- **"Tag project phases" wizard** (`openPhaseWizard`, in the Group menu → "Tag project phases (T&C /
+  Handover…)…" and a "Tag phases…" button in the stacking modal). Detects Testing & Commissioning /
+  Punchlisting / Handover/Turnover / Closeout / Defects-Liability activities **by name** (reuses the
+  `STK_PHASES` keywords) and bulk-assigns each a value on a chosen **Level** (default value = the phase
+  name), writing `project_schedule.location` via `_batchUpdate` — so they become real data usable in
+  grouping/filters/stack, not only keyword-detected at render. Auto = accept the defaults; the table
+  lets you untick/edit each. New `stkPhaseByLabel` (EXACT-label match, so an ordinary "Testing Floor"
+  is never mistaken for a phase); `levelRank` returns 1000+ for those exact labels so a tagged phase
+  sorts **above the roof**; `stackModel` styles a phase-named band as a phase row (phase colour + "X
+  complete" text). No double-render: `stkPhaseRows` only adds UNtagged (no-level-value) phases.
+- ⚠️ **Docked stacking pane bug — bands were never visible (debugged).** `.ps-sp-band` had **no
+  height** and the row is `align-items:center`, so each band collapsed to its 1px border (the fill
+  `<i>` is absolutely positioned). Gave it `height:20px` + a `--pd-bg` background so empty/not-started
+  slots are visible too. This is why "the stacking wasn't seen in the pane" — not a data issue.
+- ⚠️ **Pane cut-off defaulted to the data date**, which on a not-yet-started project (Avesta: data
+  date Aug-26, work starts Nov-26) is all "not started" → empty. The pane now **defaults its cut-off
+  to the project's planned finish** (shows the full end-state) and has its own **date input** to scrub
+  earlier (`_stkPaneCut`, persisted).
+- **Pane is resizable** — drag handle on its left edge (`#ps-stkp-grip`, `_stkPaneW` 150–700px,
+  persisted `ps_stackpane_w`).
+- Verified: inline `<script>` parses (0 fail). ⚠️ **NOT verified signed-in** (auth-gated). `MODULE_V`
+  → `20260814c`.
+
 ## Schedule Builder audit — 8 functionality + UX fixes (2026-08-14) — fmlozano
 Acting on an audit the owner approved. All in the `ScheduleBuilder` closure in `index.html`.
 - **#1 Step-2 edits no longer wipe Step-3 links.** Previously EVERY structural edit — add floor/zone/

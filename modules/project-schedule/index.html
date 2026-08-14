@@ -571,17 +571,21 @@
     .ps-stk-ovtable tbody th { text-align:right; font-weight:700; color:var(--pd-ink); padding-right:10px; white-space:nowrap; }
 
     /* Docked stacking pane — a third column of .ps-split, row-aligned with the grid + Gantt. */
-    .ps-stackpane { flex:0 0 250px; display:none; flex-direction:column; min-width:0;
+    .ps-stackpane { position:relative; flex:0 0 250px; display:none; flex-direction:column; min-width:0;
       border-left:2px solid var(--pd-line); background:var(--pd-card); }
     .ps-split.ps-stack-on .ps-stackpane { display:flex; }
+    /* Drag handle on the pane's left edge to resize its width. */
+    .ps-stkp-grip { position:absolute; left:-4px; top:0; bottom:0; width:8px; cursor:col-resize; z-index:6; }
+    .ps-stkp-grip::after { content:''; position:absolute; left:3px; top:0; bottom:0; width:2px; background:transparent; }
+    .ps-stkp-grip:hover::after, .ps-stkp-grip.drag::after { background:var(--pd-red); }
     .ps-stackpane-head { flex:none; height:38px; border-bottom:2px solid var(--pd-line); background:var(--pd-bg);
       display:flex; align-items:center; gap:6px; padding:0 8px; font-size:11px; font-weight:700;
       text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); overflow:hidden; }
     .ps-stackpane-body { flex:1 1 auto; position:relative; overflow:hidden; min-height:0; }
     .ps-stackpane-inner { position:absolute; left:0; right:0; top:0; }
     .ps-sp-row { position:absolute; left:8px; right:8px; display:flex; align-items:center; gap:6px; }
-    .ps-sp-band { flex:1 1 auto; border:1px solid var(--pd-line); border-radius:2px; position:relative;
-      overflow:hidden; min-width:0; }
+    .ps-sp-band { flex:1 1 auto; height:20px; border:1px solid var(--pd-line); border-radius:2px; position:relative;
+      overflow:hidden; min-width:0; background:var(--pd-bg); }
     .ps-sp-band i { position:absolute; left:0; top:0; bottom:0; display:block; }
     .ps-sp-lvl { flex:none; width:38px; font-size:10.5px; font-weight:700; color:var(--pd-ink);
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1646,6 +1650,7 @@
           <!-- Docked vertical-stacking pane: one band per location level, row-aligned with the
                grid + Gantt so the stack and the bars read side by side (renderStackPane()). -->
           <div class="ps-stackpane" id="ps-stackpane">
+            <div class="ps-stkp-grip" id="ps-stkp-grip" title="Drag to resize the stacking pane"></div>
             <div class="ps-stackpane-head" id="ps-stkp-head"></div>
             <div class="ps-stackpane-body"><div class="ps-stackpane-inner" id="ps-stkp-inner"></div></div>
           </div>
@@ -3509,6 +3514,7 @@
       '<button data-gact="levels"><span data-ico="layers" data-ico-size="14"></span> Location Breakdown…</button>' +
       '<button data-gact="wizard"><span data-ico="layout" data-ico-size="14"></span> Match WBS to locations…</button>' +
       '<button data-gact="backfill"><span data-ico="download" data-ico-size="14"></span> Fill location from the WBS tree…</button>' +
+      '<button data-gact="phases"><span data-ico="calendar" data-ico-size="14"></span> Tag project phases (T&amp;C / Handover…)…</button>' +
       '<div class="ps-gm-sec">Discipline / Trade</div>' +
       '<button data-gact="discwizard"><span data-ico="layout" data-ico-size="14"></span> Match WBS to Discipline/Trade…</button>';
     m.innerHTML = h;
@@ -3527,7 +3533,7 @@
     // ⚠️ Close this menu directly — `closeMenus()` is declared in the init/wiring scope, NOT at
     // module scope where renderGroupMenu lives, so calling it here threw ReferenceError and both
     // of these buttons did nothing. (Node harnesses stub it, so only running the real page caught it.)
-    m.querySelectorAll('button[data-gact]').forEach(function (b) { b.onclick = function () { m.classList.remove('open'); var a = b.dataset.gact; if (a === 'levels') openLocLevels(); else if (a === 'wizard') openLocWizard(); else if (a === 'discwizard') openDiscWizard(); else openLocBackfill(); }; });
+    m.querySelectorAll('button[data-gact]').forEach(function (b) { b.onclick = function () { m.classList.remove('open'); var a = b.dataset.gact; if (a === 'levels') openLocLevels(); else if (a === 'wizard') openLocWizard(); else if (a === 'discwizard') openDiscWizard(); else if (a === 'phases') openPhaseWizard(); else openLocBackfill(); }; });
   }
   // ---- Grouping dimensions -------------------------------------------------------------------
   // A dimension is a flat key an activity can be bucketed by. `groupBys` is an ORDERED list of
@@ -4303,6 +4309,61 @@
       else UI.toast('Filled location on ' + okCount + ' of ' + p.ups.length + ' activities — run this again to retry the rest.', 'warn');
     };
     preview();
+  }
+  // ---- Tag project phases (Testing & Commissioning / Punchlisting / Handover / Closeout / Defects) --
+  // These whole-building end phases carry no per-floor Level tag, so they don't sit in the stack the
+  // way floors do. This wizard finds them by name (the same STK_PHASES keywords the stacking uses) and
+  // bulk-assigns each a value on a chosen Level — so they become real data (grouping/filters/stack),
+  // shown as phase rows above the roof. Auto = accept the defaults (each phase → its own name).
+  function openPhaseWizard() {
+    if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
+    if (!LOC_LEVELS.length) { UI.toast('Define your location levels first (Location Breakdown…).', 'warn'); return; }
+    var groups = {};
+    rows.forEach(function (r) { if (isWbs(r)) return; var p = stkPhaseLabel(r); if (!p) return; (groups[p.label] || (groups[p.label] = { p: p, acts: [] })).acts.push(r); });
+    var list = STK_PHASES.map(function (p) { return groups[p.label]; }).filter(Boolean);
+    if (!list.length) {
+      var mm = UI.modal('<h2 style="margin-top:0;">Tag project phases</h2>' +
+        '<p style="color:var(--pd-muted);font-size:12.5px;">No Testing/Commissioning, Punchlisting, Handover/Turnover, Closeout, or Defects-Liability activities were found <b>by name</b>. Rename those activities to include the phase word, or tag them by hand in the grid\'s Level column.</p>' +
+        '<div style="text-align:right;"><button class="pd-btn pd-btn-primary" id="pw-x">OK</button></div>');
+      mm.el.querySelector('#pw-x').onclick = mm.close; return;
+    }
+    var defLevel = (typeof stkDefaultLevel === 'function' && stkDefaultLevel()) || LOC_LEVELS[LOC_LEVELS.length - 1].id;
+    var levelOpts = LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === defLevel ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('');
+    var rowsHtml = list.map(function (g, i) {
+      return '<tr>' +
+        '<td><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" class="pw-inc" data-i="' + i + '" checked><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:' + g.p.color + ';"></span>' + esc(g.p.label) + '</label></td>' +
+        '<td class="num" style="text-align:center;">' + g.acts.length + '</td>' +
+        '<td><input class="pd-input pw-val" data-i="' + i + '" value="' + esc(g.p.label) + '" style="width:190px;height:30px;"></td></tr>';
+    }).join('');
+    var m = UI.modal('<h2 style="margin-top:0;">Tag project phases</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Detected end-phase activities (by name). Assign each a value on the chosen <b>Level</b> so it shows in the vertical stacking and groups with its phase. The default value is the phase name itself; edit or untick any row.</p>' +
+      '<label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:8px;">Write to level &nbsp;<select class="pd-select" id="pw-level" style="height:30px;">' + levelOpts + '</select></label>' +
+      '<div class="sbld-tablewrap" style="max-height:320px;overflow:auto;"><table class="pd-table" style="width:100%;"><thead><tr><th>Phase</th><th style="text-align:center;">Activities</th><th>Value to write</th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div>' +
+      '<label style="display:block;font-size:12.5px;margin:10px 0;"><input type="checkbox" id="pw-over"> Overwrite activities that already have a value at this level</label>' +
+      '<div style="text-align:right;"><button class="pd-btn" id="pw-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="pw-go">Assign</button></div>');
+    m.el.querySelector('#pw-x').onclick = m.close;
+    m.el.querySelector('#pw-go').onclick = async function () {
+      var levelId = m.el.querySelector('#pw-level').value, over = m.el.querySelector('#pw-over').checked, ups = [];
+      list.forEach(function (g, i) {
+        if (!m.el.querySelector('.pw-inc[data-i="' + i + '"]').checked) return;
+        var val = (m.el.querySelector('.pw-val[data-i="' + i + '"]').value || '').trim(); if (!val) return;
+        g.acts.forEach(function (r) {
+          var cur = (r.location && r.location[levelId]) || '';
+          if ((cur && !over) || cur === val) return;
+          var loc = {}; if (r.location) for (var k in r.location) loc[k] = r.location[k]; loc[levelId] = val;
+          ups.push({ rec: r, loc: loc });
+        });
+      });
+      if (!ups.length) { UI.toast('Nothing to assign (already tagged, or all unticked).', 'info'); return; }
+      m.close(); showLoading('Tagging project phases…');
+      var prev = {}; ups.forEach(function (u) { prev[u.rec.id] = u.rec.location; u.rec.location = u.loc; });
+      var res = await _batchUpdate(TABLE, ups.map(function (u) { return { id: u.rec.id, patch: { location: u.loc } }; }));
+      if (res.failedIds.length) { var f = {}; res.failedIds.forEach(function (id) { f[id] = 1; }); ups.forEach(function (u) { if (f[u.rec.id]) u.rec.location = prev[u.rec.id]; }); }
+      hideLoading(); rebuild(false); renderGrid(); renderGantt();
+      var ok = ups.length - res.failedIds.length;
+      UI.toast(res.ok ? ('Tagged ' + ups.length + ' phase activit' + (ups.length === 1 ? 'y' : 'ies') + '.') : ('Tagged ' + ok + ' of ' + ups.length + ' — run again to retry the rest.'), res.ok ? 'success' : 'warn');
+      if (typeof renderStackView === 'function') renderStackView();
+    };
   }
   // Creates any levels the mapping asked for (import path) and rewrites their placeholder keys to
   // the real level ids. Returns false if a level couldn't be created — the caller must not proceed
@@ -15180,6 +15241,7 @@
   // the basements among the upper floors (B1 between F8 and F5) because a basement is built early
   // but sits at the BOTTOM. So rank them structurally: basements negative, ground 0, roof last.
   function levelRank(v) {
+    var ph = stkPhaseByLabel(v); if (ph) return 1000 + ph.idx;   // whole-building end phases sit above the roof
     var s = String(v == null ? '' : v).trim().toLowerCase();
     if (!s) return null;
     var t = s.replace(/[’'".,()\-_]/g, ' ').replace(/\s+/g, ' ');
@@ -15334,6 +15396,13 @@
     for (var i = 0; i < STK_PHASES.length; i++) if (STK_PHASES[i].re.test(s)) return STK_PHASES[i];
     return null;
   }
+  // EXACT-label match (not the regex) — used to recognise a location value the phase wizard WROTE, so
+  // an ordinary floor called e.g. "Testing Floor" is never mistaken for a phase. Returns {p, idx}.
+  function stkPhaseByLabel(v) {
+    v = String(v == null ? '' : v);
+    for (var i = 0; i < STK_PHASES.length; i++) if (STK_PHASES[i].label === v) return { p: STK_PHASES[i], idx: i };
+    return null;
+  }
   function stkPhaseRows(levelId, D) {
     var groups = {};
     rows.forEach(function (r) {
@@ -15410,6 +15479,16 @@
       // its own text label, so colour alone reads cleanly with no illusion.
       b.style = b.cur ? 'background-color:' + (map[b.cur.value] || b.cur).color + ';' : '';
       b.tint = b.cur ? catTint((map[b.cur.value] || b.cur).color) : '';
+      // A band whose Level value is a canonical phase (written by the phase wizard) renders AS a phase
+      // row: phase colour + "X complete/on-going" text, ranked above the roof (levelRank did the rank).
+      var ph = stkPhaseByLabel(b.loc);
+      if (ph) {
+        var pst = b.pct >= 100 ? 'done' : (b.done > 0 || b.wip) ? 'wip' : 'none';
+        b.isPhase = true; b.color = ph.p.color;
+        b.cur = (pst === 'none' ? null : ph.p);
+        b.text = pst === 'wip' ? ('On-going ' + ph.p.label) : pst === 'done' ? (ph.p.label + ' complete') : (ph.p.label + ' — not started');
+        b.style = 'background-color:' + ph.p.color + ';'; b.tint = catTint(ph.p.color);
+      }
     });
     // Whole-building end phases as their own rows above the top floor (Testing & Commissioning,
     // Punchlisting, Handover, …). Ranked 1000+, so stkDisplayOrder / the grid place them at the top.
@@ -15612,6 +15691,7 @@
       '</select></label>' + allTowersToggle + scopeSel +
       '<span>Cut-off: <strong>' + esc(Fmt.date(dstr(D))) + '</strong></span>' +
       '<label title="Also sets the order of the location groups in the grid + Gantt, so the stack and the bars read the same way."><input type="checkbox" id="ps-stk-top"' + (_stkTopFirst ? ' checked' : '') + '> Highest level at the top</label>' +
+      '<button class="pd-btn" id="ps-stk-tagphases" style="height:28px;font-size:12px;" title="Assign Testing/Commissioning, Punchlisting, Handover, Closeout & Defects activities a Level value so they persist across the app">Tag phases…</button>' +
       '<span style="margin-left:auto;">Actual dates where recorded, else planned.</span></div>';
     if (!LOC_LEVELS.length) {
       cnt.textContent = '';
@@ -15711,6 +15791,8 @@
       renderStackView();
       renderGrid(); renderGantt();   // the location groups re-order with it (cmpLevelValue)
     };
+    var tagp = body.querySelector('#ps-stk-tagphases');
+    if (tagp) tagp.onclick = function () { if (typeof openPhaseWizard === 'function') openPhaseWizard(); };
   }
 
   // ---- Docked stacking pane (side-by-side with the grid + Gantt) -------------------------------
@@ -15719,15 +15801,30 @@
   // can put that level's band at exactly that row's y. It never reorders the WBS view — it offers
   // to switch the grouping (and it is the location dimension's own group sort, `cmpLevelValue`,
   // that puts the levels in building order, so the Gantt reads bottom-up like the stack does).
-  var _stkPaneOn = false;
+  var _stkPaneOn = false, _stkPaneCut = null, _stkPaneW = 250, _stkGripWired = false;
   try { _stkPaneOn = localStorage.getItem('ps_stackpane') === '1'; } catch (e) {}
+  try { _stkPaneCut = localStorage.getItem('ps_stackpane_cut') || null; } catch (e) {}
+  try { var _w = parseInt(localStorage.getItem('ps_stackpane_w'), 10); if (_w >= 150 && _w <= 700) _stkPaneW = _w; } catch (e) {}
   function stackPaneOn() { return _stkPaneOn; }
+  function applyStackPaneWidth() { var p = document.getElementById('ps-stackpane'); if (p) p.style.flexBasis = _stkPaneW + 'px'; }
+  // Drag the pane's left edge to resize. Wired once; moving the mouse LEFT widens the pane.
+  function wireStackGrip() {
+    if (_stkGripWired) return; var grip = document.getElementById('ps-stkp-grip'); if (!grip) return; _stkGripWired = true;
+    grip.addEventListener('mousedown', function (ev) {
+      ev.preventDefault(); grip.classList.add('drag');
+      var startX = ev.clientX, startW = _stkPaneW;
+      function mm(e) { _stkPaneW = Math.max(150, Math.min(700, startW - (e.clientX - startX))); applyStackPaneWidth(); }
+      function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); grip.classList.remove('drag'); try { localStorage.setItem('ps_stackpane_w', String(_stkPaneW)); } catch (e) {} }
+      document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+    });
+  }
   function toggleStackPane(force) {
     _stkPaneOn = (force === undefined) ? !_stkPaneOn : !!force;
     try { localStorage.setItem('ps_stackpane', _stkPaneOn ? '1' : '0'); } catch (e) {}
     var sp = document.querySelector('.ps-split'); if (sp) sp.classList.toggle('ps-stack-on', _stkPaneOn);
     var b = document.getElementById('ps-stackbtn'); if (b) b.classList.toggle('active', _stkPaneOn);
     if (_stkPaneOn && !_stkLevel) _stkLevel = stkDefaultLevel();
+    applyStackPaneWidth(); wireStackGrip();
     renderStackPane();
   }
   // The level dimension currently being grouped by, if any.
@@ -15748,13 +15845,21 @@
     var pane = document.getElementById('ps-stackpane'); if (!pane) return;
     var head = document.getElementById('ps-stkp-head'), inner = document.getElementById('ps-stkp-inner');
     if (!_stkPaneOn) { if (inner) inner.innerHTML = ''; return; }
+    applyStackPaneWidth(); wireStackGrip();
     if (!_stkLevel) _stkLevel = stkDefaultLevel();
-    var D = today();
+    // Cut-off date — when none is chosen, default to the project's planned FINISH (not the data date):
+    // most projects here start after the data date, so an as-of-today stack is all "not started" and
+    // looks empty. Showing the full planned end-state makes the stack visible; scrub the date earlier
+    // to see it build up.
+    var D = _stkPaneCut && pd(_stkPaneCut);
+    if (!D) { var mx = null; rows.forEach(function (r) { if (isWbs(r)) return; var f = pd(dispFin(r)); if (f && (!mx || f > mx)) mx = f; }); D = mx || today(); }
     stkEnsureScope(_stkLevel);
     var sc = stkScopeLabel(_stkLevel);
-    head.innerHTML = esc(stkLevelName(_stkLevel) || 'Stacking') + (sc ? ' · ' + esc(sc) : '') +
-      '<button class="ps-bulk-x" id="ps-stkp-x" style="margin-left:auto;" title="Hide the stacking pane">&#215;</button>';
+    head.innerHTML = '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(stkLevelName(_stkLevel) || 'Stacking') + (sc ? ' · ' + esc(sc) : '') + '</span>' +
+      '<input type="date" id="ps-stkp-cut" class="pd-input" value="' + esc(dstr(D)) + '" title="Cut-off — planned status as of this date" style="margin-left:auto;height:24px;font-size:10px;padding:1px 3px;width:118px;text-transform:none;letter-spacing:0;">' +
+      '<button class="ps-bulk-x" id="ps-stkp-x" style="margin-left:4px;" title="Hide the stacking pane">&#215;</button>';
     var x = head.querySelector('#ps-stkp-x'); if (x) x.onclick = function () { toggleStackPane(false); };
+    var cut = head.querySelector('#ps-stkp-cut'); if (cut) cut.onchange = function () { _stkPaneCut = this.value || null; try { localStorage.setItem('ps_stackpane_cut', _stkPaneCut || ''); } catch (e) {} renderStackPane(); };
     if (!LOC_LEVELS.length || !catCfg().on) {
       inner.innerHTML = '<div class="ps-sp-note">' + (!LOC_LEVELS.length
         ? 'Define a <strong>Location Breakdown</strong> (Group ▸ Location Breakdown…) to stack by level.'
