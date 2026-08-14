@@ -487,6 +487,10 @@
     .ps-actlegend-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:6px; }
     .ps-actlegend-head label { display:inline-flex; align-items:center; gap:6px; }
     .ps-actlegend-items { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+    /* ⚠️ 28px was too short for the 12px option text — the select clipped its own descenders and
+       read as a smudge. Height is a MINIMUM here, never a fixed box. */
+    .ps-actlegend .ps-alg-field { min-height:32px; height:auto; font-size:12.5px; line-height:1.35;
+      padding:4px 26px 4px 9px; min-width:170px; max-width:230px; }
     .ps-alg { display:inline-flex; align-items:center; gap:6px; max-width:230px; }
     .ps-alg > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-alg-sw { width:24px; height:12px; border:1px solid rgba(0,0,0,.35); border-radius:2px; flex:none;
@@ -500,17 +504,21 @@
     .ps-stk-ctrls { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin-bottom:12px;
       font-size:12px; color:var(--pd-muted); }
     .ps-stk-ctrls .pd-select { height:30px; font-size:12px; width:150px; flex:none; }
-    /* ⚠️ Fixed status column, not `auto` — with an auto column every row's band ended at a different
-       x (the widest label won), which read as cantilevered floors rather than a stack. */
-    .ps-stk-row { display:grid; grid-template-columns:58px minmax(0,1fr) 168px; align-items:center;
+    /* ⚠️ Fixed columns on BOTH sides, not `auto` — with an auto column every row's band ended at a
+       different x (the widest label won), which read as cantilevered floors rather than a stack.
+       ⚠️ Both side columns are wide enough for the real values ("Ground Reservoir", "Architectural
+       Works complete") and clip with an ellipsis + tooltip rather than wrapping to a second line,
+       which was pushing rows out of alignment with each other. */
+    .ps-stk-row { display:grid; grid-template-columns:118px minmax(0,1fr) 215px; align-items:center;
       gap:10px; margin-bottom:2px; }
-    .ps-stk-lvl { font-size:12px; font-weight:700; text-align:right; color:var(--pd-ink); }
+    .ps-stk-lvl { font-size:12px; font-weight:700; text-align:right; color:var(--pd-ink);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .ps-stk-band { height:22px; border:1px solid var(--pd-line); border-radius:2px; position:relative;
       overflow:hidden; }
     .ps-stk-band i { position:absolute; left:0; top:0; bottom:0; display:block; }
     .ps-stk-txt { font-size:11.5px; color:var(--pd-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .ps-stk-txt.none { color:var(--pd-muted); }
-    .ps-stk-grade { display:grid; grid-template-columns:58px minmax(0,1fr) 168px; gap:10px; align-items:center;
+    .ps-stk-grade { display:grid; grid-template-columns:118px minmax(0,1fr) 215px; gap:10px; align-items:center;
       margin:4px 0 5px; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--pd-red); }
     .ps-stk-grade i { border-top:2px solid var(--pd-red); display:block; height:0; }
 
@@ -1916,7 +1924,7 @@
 
 <!-- Vertical stacking: project status by location level as of a period (click a month in the Gantt header) -->
 <div class="ps-bulk-back" id="ps-stack-back">
-  <div class="ps-bulk-panel" style="width:820px;">
+  <div class="ps-bulk-panel" style="width:1000px;max-width:96vw;">
     <div class="ps-bulk-head"><strong id="ps-stk-title">Planned status</strong><span class="ps-bulk-count" id="ps-stk-count"></span><button class="ps-bulk-x" id="ps-stk-x">&#215;</button></div>
     <div class="ps-stk-body" id="ps-stk-body"></div>
   </div>
@@ -14853,10 +14861,10 @@
     host.innerHTML =
       '<div class="ps-actlegend-head">' +
         '<label><input type="checkbox" id="ps-alg-on"' + (cfg.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
-        '<select class="pd-select" id="ps-alg-field" style="height:28px;font-size:12px;max-width:200px;">' + opts + '</select>' +
+        '<select class="pd-select ps-alg-field" id="ps-alg-field">' + opts + '</select>' +
         (cfg.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (cfg.tex ? ' checked' : '') + '> Textures</label>' : '') +
-        (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="height:28px;font-size:12px;">Reset colours</button>' : '') +
-        (cfg.on ? '<button class="pd-btn" id="ps-alg-stack" style="height:28px;font-size:12px;">Vertical stacking pane</button>' : '') +
+        (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="min-height:32px;font-size:12px;">Reset colours</button>' : '') +
+        (cfg.on ? '<button class="pd-btn" id="ps-alg-stack" style="min-height:32px;font-size:12px;">Vertical stacking pane</button>' : '') +
         '<span style="margin-left:auto;">Tip: click a <strong>month</strong> in the Gantt header for the status at that date.</span>' +
       '</div>' +
       '<div class="ps-actlegend-items">' + items + '</div>';
@@ -14952,6 +14960,49 @@
     if (allDone) return 'done';
     return started ? 'wip' : 'none';
   }
+  // ⚠️ Levels above the stacked one are a SCOPE, not part of the stack. Avesta is
+  // Tower › Level › Zone › Orientation: stacking by Level across all seven towers merges seven
+  // different buildings' 9th floors into one band, which is meaningless — Tower 1's 9th floor can
+  // be topped out while Tower 5 is still in substructure. `_stkScope` pins the outer levels.
+  var _stkScope = {};   // { <levelId>: value } for levels ABOVE the stacked one
+  function stkOuterLevels(levelId) {
+    var i = LOC_LEVELS.map(function (l) { return l.id; }).indexOf(levelId);
+    return i <= 0 ? [] : LOC_LEVELS.slice(0, i);
+  }
+  // Distinct values of an outer level, honouring any scope already set on the levels above IT.
+  function stkScopeValues(levelId) {
+    var outer = stkOuterLevels(levelId), seen = {};
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      for (var i = 0; i < outer.length; i++) {
+        var want = _stkScope[outer[i].id];
+        if (want && locValOf(r, outer[i].id) !== want) return;
+      }
+      var v = locValOf(r, levelId); if (v) seen[v] = (seen[v] || 0) + 1;
+    });
+    return Object.keys(seen).sort(cmpLevelValue).map(function (v) { return { value: v, n: seen[v] }; });
+  }
+  function stkInScope(r, levelId) {
+    var outer = stkOuterLevels(levelId);
+    for (var i = 0; i < outer.length; i++) {
+      var want = _stkScope[outer[i].id];
+      if (want && locValOf(r, outer[i].id) !== want) return false;
+    }
+    return true;
+  }
+  // Default the scope to the FIRST value of each outer level, so the panel opens on one real
+  // building rather than a merge of all of them.
+  function stkEnsureScope(levelId) {
+    stkOuterLevels(levelId).forEach(function (l) {
+      var vals = stkScopeValues(l.id);
+      if (!vals.length) { delete _stkScope[l.id]; return; }
+      if (!_stkScope[l.id] || !vals.some(function (v) { return v.value === _stkScope[l.id]; })) _stkScope[l.id] = vals[0].value;
+    });
+  }
+  function stkScopeLabel(levelId) {
+    var parts = stkOuterLevels(levelId).map(function (l) { return _stkScope[l.id]; }).filter(Boolean);
+    return parts.join(' · ');
+  }
   // THE model both surfaces render. One row per location value, in building order (bottom-up),
   // each carrying what is running / last finished there at the cut-off.
   function stackModel(levelId, D) {
@@ -14960,6 +15011,7 @@
     var by = {};
     rows.forEach(function (r) {
       if (isWbs(r)) return;
+      if (!stkInScope(r, levelId)) return;
       var loc = locValOf(r, levelId); if (!loc) return;
       var v = catValOf(r, cfg.field); if (!v || !(v in catIdx)) return;
       var b = by[loc] || (by[loc] = { loc: loc, cats: {} });
@@ -15010,12 +15062,20 @@
         ttl = document.getElementById('ps-stk-title'),
         cnt = document.getElementById('ps-stk-count');
     if (!body) return;
-    ttl.textContent = 'Planned status as of ' + _stkLabel;
+    ttl.textContent = 'Planned status as of ' + _stkLabel + (stkScopeLabel(_stkLevel) ? ' — ' + stkScopeLabel(_stkLevel) : '');
     var cfg = catCfg(), cats = catList(), D = _stkTo;
+    stkEnsureScope(_stkLevel);
+    // One selector per level ABOVE the stacked one — a tower at a time, not seven merged.
+    var scopeSel = stkOuterLevels(_stkLevel).map(function (l) {
+      var vals = stkScopeValues(l.id); if (!vals.length) return '';
+      return '<label>' + esc(l.name) + ' <select class="pd-select ps-stk-scope" data-lvl="' + esc(l.id) + '">' +
+        vals.map(function (v) { return '<option value="' + esc(v.value) + '"' + (v.value === _stkScope[l.id] ? ' selected' : '') + '>' + esc(v.value) + '</option>'; }).join('') +
+        '</select></label>';
+    }).join('');
     var ctrls = '<div class="ps-stk-ctrls">' +
       '<label>Stack by <select class="pd-select" id="ps-stk-level">' +
         LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === _stkLevel ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
-      '</select></label>' +
+      '</select></label>' + scopeSel +
       '<span>Cut-off: <strong>' + esc(Fmt.date(dstr(D))) + '</strong></span>' +
       '<label title="Also sets the order of the location groups in the grid + Gantt, so the stack and the bars read the same way."><input type="checkbox" id="ps-stk-top"' + (_stkTopFirst ? ' checked' : '') + '> Highest level at the top</label>' +
       '<span style="margin-left:auto;">Actual dates where recorded, else planned.</span></div>';
@@ -15065,6 +15125,9 @@
   function wireStackCtrls(body) {
     var sel = body.querySelector('#ps-stk-level');
     if (sel) sel.onchange = function () { _stkLevel = this.value; renderStackView(); renderStackPane(); };
+    body.querySelectorAll('.ps-stk-scope').forEach(function (s) {
+      s.onchange = function () { _stkScope[s.dataset.lvl] = this.value; renderStackView(); renderStackPane(); };
+    });
     var top = body.querySelector('#ps-stk-top');
     if (top) top.onchange = function () {
       _stkTopFirst = this.checked;
@@ -15098,13 +15161,22 @@
     }
     return null;
   }
+  // Collapse everything under each level group so the grid shows one row per level.
+  function stkCollapseToLevels(dim) {
+    (DL || []).forEach(function (nd) {
+      if (nd._dkind === 'group' && nd._gdim === dim) collapsed[nd._dcode] = true;
+    });
+    renderGrid(); renderGantt();
+  }
   function renderStackPane() {
     var pane = document.getElementById('ps-stackpane'); if (!pane) return;
     var head = document.getElementById('ps-stkp-head'), inner = document.getElementById('ps-stkp-inner');
     if (!_stkPaneOn) { if (inner) inner.innerHTML = ''; return; }
     if (!_stkLevel) _stkLevel = stkDefaultLevel();
     var D = today();
-    head.innerHTML = esc(stkLevelName(_stkLevel) || 'Stacking') + ' · ' + esc(Fmt.date(dstr(D))) +
+    stkEnsureScope(_stkLevel);
+    var sc = stkScopeLabel(_stkLevel);
+    head.innerHTML = esc(stkLevelName(_stkLevel) || 'Stacking') + (sc ? ' · ' + esc(sc) : '') +
       '<button class="ps-bulk-x" id="ps-stkp-x" style="margin-left:auto;" title="Hide the stacking pane">&#215;</button>';
     var x = head.querySelector('#ps-stkp-x'); if (x) x.onclick = function () { toggleStackPane(false); };
     if (!LOC_LEVELS.length || !catCfg().on) {
@@ -15132,17 +15204,31 @@
     // Row-align: every group node of this dimension in the display list gets its band at that row.
     var model = stackModel(_stkLevel, D), byLoc = {};
     model.forEach(function (b) { byLoc[b.loc] = b; });
-    var html = '';
+    var html = '', shown = 0;
     (DL || []).forEach(function (nd, i) {
       if (nd._dkind !== 'group' || nd._gdim !== dim) return;
       var b = byLoc[nd.activity_name]; if (!b) return;
+      shown++;
       html += '<div class="ps-sp-row" style="top:' + (i * ROWH) + 'px;height:' + ROWH + 'px;" title="' +
         esc(b.loc + ' — ' + b.text) + '">' +
         '<span class="ps-sp-lvl">' + esc(b.loc) + '</span>' +
         stkBandHTML(b, 'ps-sp-band') + '</div>';
     });
+    // ⚠️ Grouping by the level is not enough to make this READ as a stack. Each level group is
+    // followed by its whole subtree, so on Avesta two level rows sit hundreds of rows apart and the
+    // pane looks empty at any scroll position. Collapsing the level groups puts every level on its
+    // own single row — which is the side-by-side the reference sheet shows.
+    var expanded = (DL || []).filter(function (nd) { return nd._dkind === 'group' && nd._gdim === dim && !collapsed[nd._dcode]; }).length;
+    if (expanded) {
+      html = '<div class="ps-sp-note">Collapse the level groups so each ' + esc(stkLevelName(_stkLevel)) +
+        ' is one row — then the stack lines up with the bars.<br><br>' +
+        '<button class="pd-btn" id="ps-sp-fit" style="height:28px;font-size:12px;">Collapse to one row per ' + esc(stkLevelName(_stkLevel)) + '</button></div>' + html;
+    }
     inner.style.height = ((DL || []).length * ROWH) + 'px';
-    inner.innerHTML = html || '<div class="ps-sp-note">No level rows visible — expand the outline or clear the filter.</div>';
+    inner.innerHTML = html || '<div class="ps-sp-note">No ' + esc(stkLevelName(_stkLevel)) +
+      ' rows in view — clear the filter, or check that the activities carry a ' + esc(stkLevelName(_stkLevel)) + ' value.</div>';
+    var fit = inner.querySelector('#ps-sp-fit');
+    if (fit) fit.onclick = function () { stkCollapseToLevels(dim); };
     syncStackPaneScroll();
   }
   function syncStackPaneScroll() {
