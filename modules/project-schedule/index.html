@@ -14245,7 +14245,7 @@
     }
 
     var _prevStep = -1;   // preserve scroll across a SAME-step re-render (selecting a node re-renders the panel)
-    var SCROLL_SEL = ['.sbld-seq2-left', '.sbld-seqstack-top', '.sbld-seq2-right', '.sbld-canvaswrap', '.sbld-schedscroll', '.sbld-actlist', '.sbld-stackscroll'];
+    var SCROLL_SEL = ['.sbld-seq2-left', '.sbld-seqstack-top', '.sbld-seq2-right', '.sbld-canvaswrap', '.sbld-schedscroll', '.sbld-actlist', '.sbld-stackscroll', '.sbld-xlwrap', '.sbld-hold-list', '.sbld-stackgrid'];
     function render() {
       var rail = document.getElementById('ps-bld-rail'), panel = document.getElementById('ps-bld-panel');
       if (!rail || !panel) return;
