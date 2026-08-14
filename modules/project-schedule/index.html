@@ -13614,11 +13614,13 @@
       function glabelFull(l) { if (lvl <= 1) return GLABEL[l.trade] || l.trade; var p = [l.floor.code || l.floor.name || 'F']; if (lvl >= 3 && l.zone) p.push(l.zone.code || l.zone.name || 'Z'); if (lvl >= 4 && l.unit) p.push(l.unit.code || l.unit.name || 'U'); return p.join(' · '); }
       var gmap = {}, uid2key = {};
       dispLocs.forEach(function (l) { var k = gkey(l); uid2key[l.uid] = k;
-        if (!gmap[k]) gmap[k] = { key: k, trade: l.trade, label: l.trade + ' ' + glabelFull(l), txt: (lvl <= 1 ? l.trade : glabel(l)), uids: [], s: Infinity };
-        var g = gmap[k]; g.uids.push(l.uid); g.s = Math.min(g.s, starts[l.uid] || 0); });
+        if (!gmap[k]) gmap[k] = { key: k, trade: l.trade, label: l.trade + ' ' + glabelFull(l), txt: (lvl <= 1 ? l.trade : glabel(l)), uids: [], s: Infinity, sMax: 0 };
+        var g = gmap[k], st = starts[l.uid] || 0; g.uids.push(l.uid); g.s = Math.min(g.s, st); g.sMax = Math.max(g.sMax, st); });
       var nodes = Object.keys(gmap).map(function (k) { return gmap[k]; })
         .sort(function (a, b) { return (a.s - b.s) || (GROUPS.indexOf(a.trade) - GROUPS.indexOf(b.trade)); });
-      var maxUnit = 1; nodes.forEach(function (n) { maxUnit = Math.max(maxUnit, n.s + 1); });
+      // sMax = the LAST column any leaf of the group starts in — a collapsed bar spans first→last so it
+      // captures all its zones/units (e.g. a Floor bar covers every zone of that floor).
+      var maxUnit = 1; nodes.forEach(function (n) { maxUnit = Math.max(maxUnit, n.sMax + 1); });
       // Aggregate leaf links into collapsed-group links (dedup; drop group-internal links).
       var aggMap = {}, agg = [];
       cfg.links.forEach(function (k) {
@@ -13627,7 +13629,7 @@
         aggMap[ak] = { from: fk, to: tk, type: k.type, lag: k.lag, n: 1, raw: (lvl >= 4 ? { from: k.from, to: k.to } : null) }; agg.push(aggMap[ak]);
       });
       var rows = [{ key: '__start__', label: 'Start', fill: 'var(--pd-ok)', s: 0, txt: 'START', uids: [] }]
-        .concat(nodes.map(function (n) { return { key: n.key, label: n.label, fill: gc(n.trade), s: n.s, txt: n.txt, uids: n.uids }; }))
+        .concat(nodes.map(function (n) { return { key: n.key, label: n.label, fill: gc(n.trade), s: n.s, sMax: n.sMax, txt: n.txt, uids: n.uids }; }))
         .concat([{ key: '__end__', label: 'End', fill: 'var(--pd-red)', s: maxUnit, txt: 'END', uids: [] }]);
       var H = pad * 2 + rows.length * rowH, W = chartX + (maxUnit + 1) * step + 40;
       var pos = {}, bars = '', links = '', hot = '', rowhi = '', labels = '';
@@ -13642,7 +13644,7 @@
       // faint column guides so aligned (SS) blocks read as sharing a column
       var grid = ''; for (var u = 0; u <= maxUnit; u++) { var gx = xOf(u); grid += '<line x1="' + gx + '" y1="' + pad + '" x2="' + gx + '" y2="' + (H - pad) + '" stroke="var(--pd-line)" stroke-width="1" opacity=".3"></line>'; }
       rows.forEach(function (r, i) {
-        var y = pad + i * rowH, x = xOf(r.s), w = colW;
+        var y = pad + i * rowH, x = xOf(r.s), w = ((r.sMax != null ? r.sMax : r.s) - r.s) * step + colW;   // span first→last column
         pos[r.key] = { x: x, y: y, w: w, cy: y + rowH / 2 };
         var isF = r.uids.length && r.uids.some(function (u) { return seqFocus.indexOf(u) >= 0; });
         if (isF) rowhi += '<rect class="sbld-schedrowhi" x="0" y="' + y + '" width="' + W + '" height="' + rowH + '"></rect>';
@@ -13926,6 +13928,7 @@
     // basements below — same tower layout as step 2, but filled with dates instead of empty cells.
     var stackBasis = 'int';
     var stackZoom = 1;   // step-6 stacking: cell-width multiplier so many-unit floors still show the date
+    var stackTrade = 'ALL';   // step-6 stacking: which trade's tower(s) are shown ('ALL' = every trade)
     var _stkUnits = {};  // zone key -> {trade, floor, zone, units:[{code,fin}]} for the unit drill-down
     // The stacking shows one cell per ZONE (a zone completes when its LAST unit does), so a floor with
     // many units isn't compressed. A zone that HAS units under it is clickable to reveal each unit.
@@ -13992,12 +13995,19 @@
       var g = generate(stackBasis);
       var finBy = {}; g.perZone.forEach(function (z) { finBy[z.loc.uid] = z.finish; });
       var used = usedGroups();
+      if (stackTrade !== 'ALL' && used.indexOf(stackTrade) < 0) stackTrade = 'ALL';
+      var showTr = used.filter(function (tr) { return stackTrade === 'ALL' || tr === stackTrade; });
+      var tradeChips = used.length ? '<div class="sbld-tradechips">' +
+        '<button class="sbld-chip' + (stackTrade === 'ALL' ? ' on' : '') + '" data-stktr="ALL">All trades</button>' +
+        used.map(function (tr) { return '<button class="sbld-chip' + (stackTrade === tr ? ' on' : '') + '" data-stktr="' + tr + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</button>'; }).join('') +
+        '</div>' : '';
       _stkUnits = {};   // repopulated by stackTowerSVG below
-      var towers = used.map(function (tr) {
+      var towers = showTr.map(function (tr) {
         return '<div class="sbld-stacktower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + stackTowerSVG(tr, finBy) + '</div>';
       }).join('');
       host.innerHTML = '<h2>6 · Vertical stacking — completion by zone</h2>' +
-        '<p class="sbld-lede">From steps 1–5, this is the <b>vertical stacking</b>: each trade\'s building model, one cell per <b>zone</b> with its <b>zone number</b> and <b>completion date</b> (a zone completes when its last unit does). A zone marked <b>“N units ▾”</b> is <b>clickable</b> to see each unit\'s date. Superstructure sits above the grade line, basements below. Switch Internal (target) / External (contract); push it into the live schedule next.</p>' +
+        '<p class="sbld-lede">From steps 1–5, this is the <b>vertical stacking</b>: each trade\'s building model, one cell per <b>zone</b> with its <b>zone number</b> and <b>completion date</b> (a zone completes when its last unit does). A zone marked <b>“N units ▾”</b> is <b>clickable</b> to see each unit\'s date. Superstructure sits above the grade line, basements below. Pick a <b>trade</b> to focus it; switch Internal (target) / External (contract); push it into the live schedule next.</p>' +
+        tradeChips +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Schedule&nbsp; ' +
         '<select class="pd-select sbld-mini" id="b-stackbasis">' +
         [['int', 'Internal (target)'], ['ext', 'External (contract)']].map(function (o) { return '<option value="' + o[0] + '"' + (stackBasis === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
@@ -14005,6 +14015,7 @@
         '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-stkzout" title="Narrower cells">−</button><button class="pd-btn sbld-zbtn" id="b-stkzin" title="Wider cells — more room for dates">+</button></span>' +
         '<span class="sbld-hint">Project finish ' + fmtD(g.finish) + ' · ' + used.length + ' trade(s). Zoom in if a floor\'s dates are cramped.</span></div>' +
         '<div class="sbld-stackgrid">' + (towers || '<div class="sbld-empty">No trades with floors yet.</div>') + '</div>';
+      host.querySelectorAll('[data-stktr]').forEach(function (b) { b.onclick = function () { stackTrade = b.dataset.stktr; render(); }; });
       var sel = host.querySelector('#b-stackbasis'); if (sel) sel.onchange = function () { stackBasis = sel.value; render(); };
       var zo = host.querySelector('#b-stkzout'); if (zo) zo.onclick = function () { stackZoom = Math.max(0.6, Math.round((stackZoom - 0.2) * 10) / 10); render(); };
       var zi = host.querySelector('#b-stkzin'); if (zi) zi.onclick = function () { stackZoom = Math.min(4, Math.round((stackZoom + 0.2) * 10) / 10); render(); };
