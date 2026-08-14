@@ -13645,7 +13645,7 @@
       var grid = ''; for (var u = 0; u <= maxUnit; u++) { var gx = xOf(u); grid += '<line x1="' + gx + '" y1="' + pad + '" x2="' + gx + '" y2="' + (H - pad) + '" stroke="var(--pd-line)" stroke-width="1" opacity=".3"></line>'; }
       rows.forEach(function (r, i) {
         var y = pad + i * rowH, x = xOf(r.s), w = ((r.sMax != null ? r.sMax : r.s) - r.s) * step + colW;   // span first→last column
-        pos[r.key] = { x: x, y: y, w: w, cy: y + rowH / 2 };
+        pos[r.key] = { x: x, y: y, w: w, cy: y + rowH / 2, top: y + 4, bot: y + rowH - 6 };
         var isF = r.uids.length && r.uids.some(function (u) { return seqFocus.indexOf(u) >= 0; });
         if (isF) rowhi += '<rect class="sbld-schedrowhi" x="0" y="' + y + '" width="' + W + '" height="' + rowH + '"></rect>';
         var pend = r.uids.length && r.uids.every(function (u) { return inPend(u); });
@@ -13657,12 +13657,17 @@
       // Links: stagger the elbow x per source so parallel arrows out of one bar don't coincide (so you
       // can tell which activities are linked); draw dimmed links first and the focused (hot) links last
       // so a selected bar's relationships stand out on top.
-      var srcCount = {};
+      // Stagger where each link touches a bar, vertically, so multiple links sharing a source or
+      // destination bar don't pile their arrowheads on one point (the overlapping-arrows bug): the
+      // 1st sits at the bar centre, the rest fan ±4px within the bar's own height (clamped inside it).
+      function stagY(p, i) { if (!i) return p.cy; var k = Math.ceil(i / 2), off = (i % 2 ? k : -k) * 4; return Math.max(p.top + 2, Math.min(p.bot - 2, p.cy + off)); }
+      var srcCount = {}, dstCount = {};
       agg.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
         var fx = (k.type === 'SS' || k.type === 'SF') ? a.x : a.x + a.w;   // leave from start (SS/SF) or finish (FS/FF)
         var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;   // arrive at to finish (FF/SF) or start (FS/SS)
-        var y1 = a.cy, y2 = b.cy;
         var oi = (srcCount[k.from] = (srcCount[k.from] || 0) + 1) - 1, extra = oi * 7;
+        var di = (dstCount[k.to] = (dstCount[k.to] || 0) + 1) - 1;
+        var y1 = stagY(a, oi), y2 = stagY(b, di);
         var mx = (tx >= fx ? fx + 8 + extra : fx - 8 - extra), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
         var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
         var lcls = fAny ? (fKeys[k.to] ? ' hotpred' : (fKeys[k.from] ? ' hotsucc' : ' dimlink')) : '';
