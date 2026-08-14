@@ -1,5 +1,62 @@
 # Module: project-schedule
 
+## Vertical stacking: fixed the hatch-texture illusion, "Show all towers", overall discipline status (2026-08-13h) — fmlozano
+Owner reported the "Planned status as of…" stack looked **wavy**, plus two feature asks: see all
+towers at once instead of one at a time, and show whether disciplines beyond the coloured one
+(MEPF, Allied Services, Testing & Commissioning, Punchlisting & Handover) are also finished.
+
+- ⚠️ **The waviness is a real optical illusion, not a rendering bug — same family as the café-wall
+  illusion.** Every band's fill used `catStyle()`, which layers a 45°
+  `repeating-linear-gradient` hatch on top of the colour (built for a 15-20-trade Gantt legend, where
+  colour alone stops being distinguishable). Stacking many same-height bands directly above each
+  other means that diagonal texture crosses every band's dead-straight top/bottom border at a
+  regular interval — which is exactly what makes straight, perfectly aligned lines read as wavy to
+  the eye. **Fixed by making `stackModel()`'s `b.style` a flat `background-color`, never
+  `(map[...]).style`.** A stacked band doesn't need texture to disambiguate — it's already its own
+  bordered box with its own text label — so removing it costs nothing and the illusion is gone in
+  both the modal and the docked pane (`renderStackPane` shares `stackModel`/`stkBandHTML`, so no
+  second fix was needed there).
+- **"Show all towers"** — a checkbox in the modal (only rendered when there's a level above the one
+  being stacked) that renders every value of the *immediate parent* level side by side in one CSS
+  grid (`stkGridHTML`), rows aligned by the union of location values across all of them via the same
+  rank/order logic as the single-tower view, so "highest level at the top" means the same thing in
+  both modes. Any level COARSER than the immediate parent (e.g. a Region above Tower) stays a single
+  pinned selector, unaffected — only the one level directly being multiplied changes behaviour.
+  ⚠️ **Implemented by temporarily pinning `_stkScope[parentLevelId]` per tower and restoring it**
+  (`stackModelForTower`) rather than reworking `stkInScope` to take an override — synchronous, so
+  there's no risk of the pin leaking across calls. Text labels move from an adjoining column (no room
+  per tower) to a tooltip on each band. A tower with no value at a given row renders a distinct
+  dashed placeholder (`.ps-stk-mnone`), not a status colour — that's a real absence (that building
+  has no 14th floor), not "not started".
+  ⚠️ **Scoped to the modal only.** The docked pane's whole model is "row-align a band to the grid's
+  own group rows" (`renderStackPane`), which has no natural place to put N side-by-side columns
+  without a much larger rework — left alone.
+- **"Overall discipline status"** — a new footer panel listing every category on the "Colour
+  activities by" field (not just the disciplines that happen to carry a value at the stacked level),
+  aggregated across the current scope at the cut-off. Reuses `stkInScope()` but drops its requirement
+  that the row also carry a value AT the stacked level — that's the whole point: **Testing &
+  Commissioning and Punchlisting & Handover are routinely modelled as one whole-building activity
+  with no per-floor tag**, so the per-floor stack can only ever report up to the last
+  floor-tagged discipline (Architectural, in the screenshots) and silently says nothing about what
+  happens after, even once those phases are done. `overallDisciplineStatus()` computes it for the
+  current tower; `overallDisciplineStatusAllTowers()` un-pins just the immediate parent level so the
+  same panel covers every tower shown when "Show all towers" is on.
+  ⚠️ **This only surfaces disciplines that are actual values on the selected field already** — if
+  Testing & Commissioning / Punchlisting & Handover aren't distinct `work_type` (or whichever field)
+  values on any activity yet, they won't appear as their own row here either; they need to be tagged
+  as their own category for this (or the legend) to separate them from whatever they're currently
+  filed under.
+- `MODULE_V` → `20260813i`.
+- Verified: the whole inline `<script>` block parses (`new Function`) and the `<style>` block's
+  braces/comments balance. ⚠️ **NOT browser-verified** — this repo's project-schedule module has no
+  test seams (`_internals`/exported functions) the way the Engineering App's newer modules do, being
+  one large closure not designed for external testing, and there is no live login available in this
+  session. The scoping mechanism this builds on (`_stkScope`, `stkOuterLevels`, `stkInScope`) was
+  itself only just added in the immediately preceding commits (`06bb6f5`…`3be1cd4`) — re-check the
+  "Show all towers" toggle specifically against a project with 2+ hierarchy levels above the stacked
+  one (e.g. Region › Tower › Level) to confirm the coarser selector still pins correctly once signed
+  in.
+
 ## Schedule Builder: library trades + "Others", resizable step-1, step-3 scroll + level-detail fix (2026-08-13g) — eprobles
 Follow-ups on the class-code library + linking UX.
 - **Library items now carry their real trade.** Re-parsed the mapping workbook's **"Excel Temp"**

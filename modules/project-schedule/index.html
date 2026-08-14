@@ -526,6 +526,33 @@
       margin:4px 0 5px; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--pd-red); }
     .ps-stk-grade i { border-top:2px solid var(--pd-red); display:block; height:0; }
 
+    /* "Show all towers" grid — one column per tower/building, rows = the union of level values
+       across them so e.g. every tower's 9th floor lines up on the same row. Column count is
+       dynamic (set inline via grid-template-columns), rows/cells reuse .ps-stk-band/stkBandHTML. */
+    .ps-stk-mrow { display:grid; align-items:center; gap:5px; margin-bottom:2px; }
+    .ps-stk-mhead { margin-bottom:8px; font-size:10.5px; font-weight:700; color:var(--pd-muted); }
+    .ps-stk-mtow { text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-stk-mtow small { display:block; font-weight:400; font-size:9.5px; color:var(--pd-muted); margin-top:1px; }
+    .ps-stk-mgrade { border-top:2px solid var(--pd-red); margin:4px 0 5px; height:0; }
+    /* A tower with no value at this row's level — a real absence (that building has no 14th floor),
+       not a status, so it reads as a blank slot rather than an unstarted band. */
+    .ps-stk-mnone { background:repeating-linear-gradient(135deg,var(--pd-line) 0 1px,transparent 1px 6px); opacity:.5; }
+
+    /* Overall discipline status — every category on the "Colour activities by" field, aggregated
+       across the WHOLE current scope regardless of whether an activity carries a location-level
+       value. Complements the per-floor stack above, which can only speak for categories that ARE
+       floor-tagged: a Testing & Commissioning or Punchlisting/Handover phase is routinely modelled
+       as one whole-building activity with no Level value, so it would never appear up there even
+       once finished. */
+    .ps-stk-overall { margin-top:14px; padding-top:12px; border-top:1px dashed var(--pd-line); }
+    .ps-stk-overall-hd { font-size:12px; font-weight:700; color:var(--pd-ink); margin-bottom:2px; }
+    .ps-stk-overall-hd small { display:block; font-weight:400; font-size:11px; color:var(--pd-muted); margin-top:2px; }
+    .ps-stk-overall-items { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
+    .ps-stk-ov { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:20px;
+      font-size:11.5px; font-weight:600; }
+    .ps-stk-ov i { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
+    .ps-stk-ov-none { opacity:.55; }
+
     /* Docked stacking pane — a third column of .ps-split, row-aligned with the grid + Gantt. */
     .ps-stackpane { flex:0 0 250px; display:none; flex-direction:column; min-width:0;
       border-left:2px solid var(--pd-line); background:var(--pd-card); }
@@ -15038,17 +15065,131 @@
       b.cur = wip || lastDone || null;         // what colours the band
       b.wip = wip; b.lastDone = lastDone;
       b.text = wip ? ('On-going ' + wip.value) : (lastDone ? (lastDone.value + ' complete') : 'Not started');
-      b.style = b.cur ? (map[b.cur.value] || b.cur).style : '';
+      // ⚠️ SOLID colour, deliberately NOT (map[...]).style (which carries the legend's diagonal
+      // hatch/dot texture). Stacking many bands of the same height directly above one another turns
+      // that texture into a real optical illusion — the diagonal lines crossing each band's straight
+      // top/bottom border make dead-straight, perfectly aligned rows look "wavy" (the same family of
+      // effect as the café-wall illusion). The Gantt/legend need texture to tell 15+ thin, closely
+      // packed bars apart; a stacked-status band doesn't — it is already its own bordered box with
+      // its own text label, so colour alone reads cleanly with no illusion.
+      b.style = b.cur ? 'background-color:' + (map[b.cur.value] || b.cur).color + ';' : '';
       b.tint = b.cur ? catTint((map[b.cur.value] || b.cur).color) : '';
     });
     return list;
   }
-  // A band: the remainder in the category's own colour at low alpha, the completed part solid +
-  // textured — so a level visibly FILLS UP rather than flipping between two flat colours.
-  function stkBandHTML(b, cls) {
-    if (!b.cur) return '<div class="' + cls + '"></div>';
+  // A band: the remainder in the category's own colour at low alpha, the completed part solid — so
+  // a level visibly FILLS UP rather than flipping between two flat colours. `title` is optional: the
+  // single-tower view carries its text in an adjoining column instead, the multi-tower grid (no room
+  // for a text column per tower) puts it here as a tooltip.
+  function stkBandHTML(b, cls, title) {
+    var t = title ? ' title="' + esc(title) + '"' : '';
+    if (!b.cur) return '<div class="' + cls + '"' + t + '></div>';
     var w = b.wip ? Math.max(b.pct, 6) : 100;
-    return '<div class="' + cls + '" style="' + b.tint + '"><i style="width:' + w + '%;' + b.style + '"></i></div>';
+    return '<div class="' + cls + '"' + t + ' style="' + b.tint + '"><i style="width:' + w + '%;' + b.style + '"></i></div>';
+  }
+
+  // ---- "Show all <towers>" — one stack per value of the level immediately above the one being
+  // stacked, aligned into a grid so every tower's Nth floor lands on the same row. -----------------
+  var _stkAllTowers = false;
+  try { _stkAllTowers = localStorage.getItem('ps_stk_alltowers') === '1'; } catch (e) {}
+  // Computes stackModel() for ONE value of `parentLevelId` without disturbing the scope the rest of
+  // the view is showing — pin it, compute, restore. Synchronous, so this is safe.
+  function stackModelForTower(levelId, D, parentLevelId, towerVal) {
+    var prev = _stkScope[parentLevelId];
+    _stkScope[parentLevelId] = towerVal;
+    var m = stackModel(levelId, D);
+    _stkScope[parentLevelId] = prev;
+    return m;
+  }
+  function stkGridHTML(levelId, D, parentLvl) {
+    var towerVals = stkScopeValues(parentLvl.id);   // still honours any scope ABOVE parentLvl
+    var perTower = towerVals.map(function (t) {
+      return { value: t.value, model: stackModelForTower(levelId, D, parentLvl.id, t.value) };
+    });
+    // Union of location values across every tower, ranked and ordered exactly like the single-tower
+    // view (stkDisplayOrder) so "highest level at the top" means the same thing in both modes.
+    var rankOf = {};
+    perTower.forEach(function (pt) {
+      pt.model.forEach(function (b) { if (!(b.loc in rankOf)) rankOf[b.loc] = b.rank; });
+    });
+    var locs = Object.keys(rankOf);
+    var ranked = locs.filter(function (l) { return rankOf[l] != null; })
+      .sort(function (a, b2) { return rankOf[a] - rankOf[b2]; });
+    var other = locs.filter(function (l) { return rankOf[l] == null; }).sort(cmpGroupName);
+    if (_stkTopFirst) ranked.reverse();
+    var order = ranked.concat(other);
+
+    var N = perTower.length;
+    var cols = '118px repeat(' + N + ',minmax(64px,1fr))';
+    var head = '<div class="ps-stk-mrow ps-stk-mhead" style="grid-template-columns:' + cols + '"><div></div>' +
+      perTower.map(function (pt) {
+        var nDone = pt.model.filter(function (b) { return b.pct === 100; }).length;
+        return '<div class="ps-stk-mtow" title="' + esc(pt.value) + '">' + esc(pt.value) +
+          '<small>' + nDone + '/' + pt.model.length + '</small></div>';
+      }).join('') + '</div>';
+
+    var gradeDrawn = false, rowsHtml = '';
+    order.forEach(function (loc) {
+      var rank = rankOf[loc];
+      if (_stkTopFirst && !gradeDrawn && rank != null && rank < 0) {
+        rowsHtml += '<div class="ps-stk-mgrade"></div>';
+        gradeDrawn = true;
+      }
+      rowsHtml += '<div class="ps-stk-mrow" style="grid-template-columns:' + cols + '">' +
+        '<div class="ps-stk-lvl">' + esc(loc) + '</div>' +
+        perTower.map(function (pt) {
+          var b = pt.model.filter(function (x) { return x.loc === loc; })[0];
+          if (!b) return '<div class="ps-stk-band ps-stk-mnone" title="' + esc(pt.value) + ' has no ' + esc(stkLevelName(levelId).toLowerCase()) + ' here"></div>';
+          return stkBandHTML(b, 'ps-stk-band', pt.value + ' — ' + b.text + ' (' + b.done + ' of ' + b.total + ' categories complete)');
+        }).join('') +
+      '</div>';
+    });
+
+    var totalLocs = perTower.reduce(function (a, pt) { return a + pt.model.length; }, 0);
+    var totalDone = perTower.reduce(function (a, pt) { return a + pt.model.filter(function (b) { return b.pct === 100; }).length; }, 0);
+    return { html: head + rowsHtml, towers: towerVals.length, count: totalLocs, done: totalDone };
+  }
+
+  // ---- Overall discipline status — every category on the "Colour activities by" field, aggregated
+  // across the WHOLE current scope, WHETHER OR NOT an activity carries a value at the stacked level.
+  // The per-floor stack above can only speak for categories that ARE floor-tagged: Testing &
+  // Commissioning and Punchlisting & Handover are routinely modelled as one whole-building activity
+  // with no Level value at all, so they would sit outside every per-floor band even once finished —
+  // the stack tops out at "Architectural Works complete" and stays there regardless of what happens
+  // after. This re-uses stkInScope(), which already filters on every level ABOVE the stacked one, and
+  // simply drops the requirement that the row also carry a value AT the stacked level.
+  function overallDisciplineStatus(levelId, D) {
+    var cfg = catCfg(), cats = catList();
+    return cats.map(function (c) {
+      var acts = rows.filter(function (r) {
+        if (isWbs(r)) return false;
+        if (!stkInScope(r, levelId)) return false;
+        return catValOf(r, cfg.field) === c.value;
+      });
+      return { cat: c, state: _stkState(acts, D), n: acts.length };
+    });
+  }
+  // Same, but for "show all towers": un-pins JUST the immediate parent level (any level ABOVE that
+  // stays pinned), so the summary covers every tower currently on screen instead of one.
+  function overallDisciplineStatusAllTowers(levelId, D, parentLevelId) {
+    var had = parentLevelId in _stkScope, prev = _stkScope[parentLevelId];
+    delete _stkScope[parentLevelId];
+    var out = overallDisciplineStatus(levelId, D);
+    if (had) _stkScope[parentLevelId] = prev;
+    return out;
+  }
+  function overallStatusHTML(list, scopeNote) {
+    if (!list.length) return '';
+    return '<div class="ps-stk-overall"><div class="ps-stk-overall-hd">Overall discipline status' +
+      '<small>Every category on this field, across ' + esc(scopeNote) + ' — including phases with no ' +
+      'per-floor tag, such as Testing &amp; Commissioning or Punchlisting &amp; Handover.</small></div>' +
+      '<div class="ps-stk-overall-items">' + list.map(function (o) {
+        var icon = o.state === 'done' ? '✓' : o.state === 'wip' ? '●' : '—';
+        return '<span class="ps-stk-ov ps-stk-ov-' + o.state + '" style="' + catTint(o.cat.color, .16) + '" title="' +
+          esc(o.n + ' activit' + (o.n === 1 ? 'y' : 'ies') + ' — ' +
+            (o.state === 'done' ? 'all finished' : o.state === 'wip' ? 'in progress' : (o.n ? 'not started yet' : 'no activities in this scope'))) + '">' +
+          '<i style="background:' + o.cat.color + '"></i>' + icon + ' ' + esc(o.cat.value) + '</span>';
+      }).join('') + '</div></div>';
   }
 
   function openStackView(from, to, label) {
@@ -15070,19 +15211,34 @@
     // ⚠️ Resolve the scope BEFORE the title — on the first open it is still empty, so a title built
     // above this line silently omitted which tower you were looking at.
     stkEnsureScope(_stkLevel);
-    var _sc = stkScopeLabel(_stkLevel);
-    ttl.textContent = 'Planned status as of ' + _stkLabel + (_sc ? ' — ' + _sc : '');
-    // One selector per level ABOVE the stacked one — a tower at a time, not seven merged.
-    var scopeSel = stkOuterLevels(_stkLevel).map(function (l) {
+    // The level immediately above the one being stacked — "tower" in the LSM sense. Only this one
+    // level is ever multiplied by "Show all towers"; anything coarser than it (levels above IT)
+    // stays a single pinned selection, same as today.
+    var outer = stkOuterLevels(_stkLevel);
+    var parentLvl = outer.length ? outer[outer.length - 1] : null;
+    var showAll = _stkAllTowers && !!parentLvl;
+    var _sc = showAll
+      ? outer.slice(0, -1).map(function (l) { return _stkScope[l.id]; }).filter(Boolean).join(' · ')
+      : stkScopeLabel(_stkLevel);
+    ttl.textContent = 'Planned status as of ' + _stkLabel + (_sc ? ' — ' + _sc : '') +
+      (showAll ? ' — all ' + parentLvl.name.toLowerCase() + 's' : '');
+    // One selector per level ABOVE the stacked one — a tower at a time, not seven merged. When
+    // "Show all towers" is on, drop the immediate parent's own selector (there is no longer a single
+    // value to pick); any COARSER level above it still shows its selector as normal.
+    var scopeSel = outer.map(function (l) {
+      if (showAll && l.id === parentLvl.id) return '';
       var vals = stkScopeValues(l.id); if (!vals.length) return '';
       return '<label>' + esc(l.name) + ' <select class="pd-select ps-stk-scope" data-lvl="' + esc(l.id) + '">' +
         vals.map(function (v) { return '<option value="' + esc(v.value) + '"' + (v.value === _stkScope[l.id] ? ' selected' : '') + '>' + esc(v.value) + '</option>'; }).join('') +
         '</select></label>';
     }).join('');
+    var allTowersToggle = parentLvl
+      ? '<label title="Stacks every ' + esc(parentLvl.name.toLowerCase()) + ' side by side instead of one at a time, rows aligned by level."><input type="checkbox" id="ps-stk-alltow"' + (showAll ? ' checked' : '') + '> Show all ' + esc(parentLvl.name.toLowerCase()) + 's</label>'
+      : '';
     var ctrls = '<div class="ps-stk-ctrls">' +
       '<label>Stack by <select class="pd-select" id="ps-stk-level">' +
         LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === _stkLevel ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
-      '</select></label>' + scopeSel +
+      '</select></label>' + allTowersToggle + scopeSel +
       '<span>Cut-off: <strong>' + esc(Fmt.date(dstr(D))) + '</strong></span>' +
       '<label title="Also sets the order of the location groups in the grid + Gantt, so the stack and the bars read the same way."><input type="checkbox" id="ps-stk-top"' + (_stkTopFirst ? ' checked' : '') + '> Highest level at the top</label>' +
       '<span style="margin-left:auto;">Actual dates where recorded, else planned.</span></div>';
@@ -15099,34 +15255,56 @@
       wireStackCtrls(body);
       return;
     }
-    var model = stackModel(_stkLevel, D);
-    if (!model.length) {
-      cnt.textContent = '';
-      body.innerHTML = ctrls + '<div class="ps-ck-empty">No activities carry a <strong>' + esc(stkLevelName(_stkLevel)) +
-        '</strong> value. Run <strong>Group ▸ Match WBS to locations…</strong> first.</div>';
-      wireStackCtrls(body);
-      return;
-    }
-    var disp = stkDisplayOrder(model);
-    var nDone = model.filter(function (b) { return b.pct === 100; }).length;
-    var out = '', gradeDrawn = false;
-    disp.forEach(function (b, i) {
-      // Grade line between the superstructure and the basements, as the reference sheet shows it.
-      if (_stkTopFirst && !gradeDrawn && b.rank != null && b.rank < 0) {
-        out += '<div class="ps-stk-grade"><span></span><i></i><span>grade</span></div>'; gradeDrawn = true;
+
+    var out, nLocs, nDone, overall, scopeNote;
+    if (showAll) {
+      var grid = stkGridHTML(_stkLevel, D, parentLvl);
+      if (!grid.count) {
+        cnt.textContent = '';
+        body.innerHTML = ctrls + '<div class="ps-ck-empty">No activities carry a <strong>' + esc(stkLevelName(_stkLevel)) +
+          '</strong> value. Run <strong>Group ▸ Match WBS to locations…</strong> first.</div>';
+        wireStackCtrls(body);
+        return;
       }
-      out += '<div class="ps-stk-row">' +
-          '<div class="ps-stk-lvl">' + esc(b.loc) + '</div>' +
-          stkBandHTML(b, 'ps-stk-band') +
-          '<div class="ps-stk-txt' + (b.cur ? '' : ' none') + '" title="' + esc(b.text + ' — ' + b.done + ' of ' + b.total + ' categories complete') + '">' + esc(b.text) + '</div>' +
-        '</div>';
-    });
-    cnt.textContent = model.length + ' location' + (model.length === 1 ? '' : 's') + ' · ' + nDone + ' complete';
+      out = grid.html; nLocs = grid.count; nDone = grid.done;
+      cnt.textContent = nLocs + ' location' + (nLocs === 1 ? '' : 's') + ' across ' + grid.towers + ' ' +
+        parentLvl.name.toLowerCase() + (grid.towers === 1 ? '' : 's') + ' · ' + nDone + ' complete';
+      overall = overallDisciplineStatusAllTowers(_stkLevel, D, parentLvl.id);
+      scopeNote = 'all ' + parentLvl.name.toLowerCase() + 's shown' + (_sc ? ' (' + _sc + ')' : '');
+    } else {
+      var model = stackModel(_stkLevel, D);
+      if (!model.length) {
+        cnt.textContent = '';
+        body.innerHTML = ctrls + '<div class="ps-ck-empty">No activities carry a <strong>' + esc(stkLevelName(_stkLevel)) +
+          '</strong> value. Run <strong>Group ▸ Match WBS to locations…</strong> first.</div>';
+        wireStackCtrls(body);
+        return;
+      }
+      var disp = stkDisplayOrder(model);
+      nLocs = model.length;
+      nDone = model.filter(function (b) { return b.pct === 100; }).length;
+      out = ''; var gradeDrawn = false;
+      disp.forEach(function (b) {
+        // Grade line between the superstructure and the basements, as the reference sheet shows it.
+        if (_stkTopFirst && !gradeDrawn && b.rank != null && b.rank < 0) {
+          out += '<div class="ps-stk-grade"><span></span><i></i><span>grade</span></div>'; gradeDrawn = true;
+        }
+        out += '<div class="ps-stk-row">' +
+            '<div class="ps-stk-lvl">' + esc(b.loc) + '</div>' +
+            stkBandHTML(b, 'ps-stk-band') +
+            '<div class="ps-stk-txt' + (b.cur ? '' : ' none') + '" title="' + esc(b.text + ' — ' + b.done + ' of ' + b.total + ' categories complete') + '">' + esc(b.text) + '</div>' +
+          '</div>';
+      });
+      cnt.textContent = nLocs + ' location' + (nLocs === 1 ? '' : 's') + ' · ' + nDone + ' complete';
+      overall = overallDisciplineStatus(_stkLevel, D);
+      scopeNote = _sc || 'the whole project';
+    }
     var leg = cats.map(function (c) {
       return '<span class="ps-alg"><span class="ps-alg-sw" style="' + c.style + ';cursor:default;"></span><span>' + esc(c.value) + '</span></span>';
     }).join('');
     body.innerHTML = ctrls + out +
-      '<div class="ps-actlegend-items" style="margin-top:12px;border-top:1px dashed var(--pd-line);padding-top:10px;">' + leg + '</div>';
+      '<div class="ps-actlegend-items" style="margin-top:12px;border-top:1px dashed var(--pd-line);padding-top:10px;">' + leg + '</div>' +
+      overallStatusHTML(overall, scopeNote);
     wireStackCtrls(body);
   }
   function wireStackCtrls(body) {
@@ -15135,6 +15313,12 @@
     body.querySelectorAll('.ps-stk-scope').forEach(function (s) {
       s.onchange = function () { _stkScope[s.dataset.lvl] = this.value; renderStackView(); renderStackPane(); };
     });
+    var allTow = body.querySelector('#ps-stk-alltow');
+    if (allTow) allTow.onchange = function () {
+      _stkAllTowers = this.checked;
+      try { localStorage.setItem('ps_stk_alltowers', _stkAllTowers ? '1' : '0'); } catch (e) {}
+      renderStackView();
+    };
     var top = body.querySelector('#ps-stk-top');
     if (top) top.onchange = function () {
       _stkTopFirst = this.checked;
