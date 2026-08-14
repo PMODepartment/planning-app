@@ -1353,10 +1353,17 @@
     .sbld-scope-col, .sbld-scope-row { cursor:pointer; user-select:none; }
     .sbld-scope-col:hover, .sbld-scope-row:hover { color:var(--pd-red); text-decoration:underline; }
     /* step 6 — vertical stacking (building model per trade) */
-    .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; align-items:start; margin-top:8px; }
-    .sbld-stacktower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); }
-    .sbld-stackscroll { overflow-x:auto; max-width:100%; }
+    .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; align-items:start; margin-top:10px; }
+    .sbld-stacktower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px; background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04); overflow:hidden; }
+    /* header restyle scoped to the stacking card (the step-2 tower shares .sbld-towerh) */
+    .sbld-stacktower .sbld-towerh { justify-content:space-between; margin:0; padding:10px 14px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:13.5px; font-weight:800; letter-spacing:.01em; }
+    .sbld-stacktower .sbld-towerh .sbld-dot { width:11px; height:11px; box-shadow:0 0 0 3px var(--pd-card); }
+    .sbld-stacktower .sbld-towerh .sbld-stkh-name { flex:1 1 auto; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sbld-stkh-ct { flex:none; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); background:var(--pd-card); border:1px solid var(--pd-line); border-radius:999px; padding:2px 9px; }
+    .sbld-stackscroll { overflow-x:auto; max-width:100%; padding:12px 14px 14px; }
     .sbld-stackscroll svg { display:block; height:auto; }
+    .sbld-stacktower .sbld-empty { margin:12px 14px 14px; }
+    .sbld-stkcell:hover { opacity:1 !important; filter:brightness(1.06); }
     /* step 3 — link canvas */
     .sbld-canvaswrap { overflow:auto; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); max-height:62vh; }
     /* Resulting schedule with a FROZEN (sticky-left) row-label column so labels stay visible when the
@@ -13971,10 +13978,10 @@
         zcells.forEach(function (z, ci) {
           var cx = pad + labelW + ci * fcw, mid = cx + (fcw - 3) / 2, hasU = z.units.length > 0;
           if (hasU) _stkUnits[z.key] = { trade: tr, floor: (f.code || f.name || 'F'), zone: z.label, units: z.units };
-          svg += '<rect' + (hasU ? ' class="sbld-stkcell" data-zk="' + e2(z.key) + '" style="cursor:pointer"' : '') + ' x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (ci % 2 ? 0.45 : 0.58) : (ci % 2 ? 0.74 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '>' + (hasU ? '<title>' + z.units.length + ' units — click to see each</title>' : '') + '</rect>' +
-            '<text x="' + mid + '" y="' + (y + (hasU ? 15 : 18)) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" pointer-events="none">' + e2(z.label) + '</text>' +
-            '<text x="' + mid + '" y="' + (y + (hasU ? 30 : 34)) + '" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,.92)" pointer-events="none">' + e2(z.fin ? fmtD(z.fin) : '—') + '</text>' +
-            (hasU ? '<text x="' + mid + '" y="' + (y + 42) + '" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,.85)" pointer-events="none">' + z.units.length + ' units ▾</text>' : '');
+          svg += '<rect' + (hasU ? ' class="sbld-stkcell" data-zk="' + e2(z.key) + '" style="cursor:pointer"' : '') + ' x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="5" fill="' + col + '" opacity="' + (f.sub ? (ci % 2 ? 0.5 : 0.62) : (ci % 2 ? 0.82 : 0.96)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : ' stroke="rgba(0,0,0,.16)" stroke-width="1"') + '>' + (hasU ? '<title>' + z.units.length + ' units — click to see each</title>' : '') + '</rect>' +
+            '<text x="' + mid + '" y="' + (y + (hasU ? 15 : 18)) + '" text-anchor="middle" font-size="12" font-weight="800" fill="#fff" pointer-events="none">' + e2(z.label) + '</text>' +
+            '<text x="' + mid + '" y="' + (y + (hasU ? 28 : 34)) + '" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,.95)" pointer-events="none">' + e2(z.fin ? fmtD(z.fin) : '—') + '</text>' +
+            (hasU ? (function () { var uw = Math.min(fcw - 10, 54), ux = mid - uw / 2; return '<rect x="' + ux + '" y="' + (y + fh - 15) + '" width="' + uw + '" height="12.5" rx="6.2" fill="rgba(255,255,255,.22)" pointer-events="none"></rect><text x="' + mid + '" y="' + (y + fh - 6) + '" text-anchor="middle" font-size="8.5" font-weight="600" fill="#fff" pointer-events="none">' + z.units.length + ' units ▾</text>'; })() : '');
         });
       });
       var gy = pad + groundAt * (fh + gap) - gap / 2 + (groundAt === disp.length ? 3 : 0);
@@ -14008,7 +14015,11 @@
         '</div>' : '';
       _stkUnits = {};   // repopulated by stackTowerSVG below
       var towers = showTr.map(function (tr) {
-        return '<div class="sbld-stacktower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + stackTowerSVG(tr, finBy) + '</div>';
+        var nf = (cfg.zoning[tr] && cfg.zoning[tr].floors ? cfg.zoning[tr].floors.length : 0);
+        return '<div class="sbld-stacktower" style="--tc:' + gc(tr) + '">' +
+          '<div class="sbld-towerh"><span class="sbld-stkh-name"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</span>' +
+          '<span class="sbld-stkh-ct">' + nf + ' floor' + (nf === 1 ? '' : 's') + '</span></div>' +
+          stackTowerSVG(tr, finBy) + '</div>';
       }).join('');
       host.innerHTML = '<h2>6 · Vertical stacking — completion by zone</h2>' +
         '<p class="sbld-lede">From steps 1–5, this is the <b>vertical stacking</b>: each trade\'s building model, one cell per <b>zone</b> with its <b>zone number</b> and <b>completion date</b> (a zone completes when its last unit does). A zone marked <b>“N units ▾”</b> is <b>clickable</b> to see each unit\'s date. Superstructure sits above the grade line, basements below. Pick a <b>trade</b> to focus it; switch Internal (target) / External (contract); push it into the live schedule next.</p>' +
