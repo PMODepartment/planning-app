@@ -13948,18 +13948,22 @@
       var disp = supers.slice().reverse().concat(subs.slice().reverse()), groundAt = supers.length;
       // Fixed per-cell width (scaled by zoom) so each zone always has room for its completion date;
       // the tower widens with the busiest floor and scrolls horizontally instead of squeezing the dates.
+      // The busiest floor sets a readable per-cell width (scaled by zoom); every floor then STRETCHES
+      // its own cells across that full plot width — so a floor with one zone (e.g. B1) spans the whole
+      // building, like the original, while a many-zone floor never drops below the readable minimum.
       var maxCells = disp.reduce(function (m, f) { return Math.max(m, zonesOfFloorStk(tr, f, finBy).length || 1); }, 1);
       var cw = Math.max(48, Math.round(64 * stackZoom));
-      var W = labelW + pad * 2 + maxCells * cw;
+      var plotW = maxCells * cw, W = labelW + pad * 2 + plotW;
       var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
       disp.forEach(function (f, i) {
         var y = pad + i * (fh + gap);
         svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="12" font-weight="700" fill="var(--pd-muted)">' + e2(f.code || f.name || 'F') + '</text>';
         var zcells = zonesOfFloorStk(tr, f, finBy);
+        var fcw = plotW / (zcells.length || 1);   // this floor's cells fill the full building width
         zcells.forEach(function (z, ci) {
-          var cx = pad + labelW + ci * cw, mid = cx + (cw - 3) / 2, hasU = z.units.length > 0;
+          var cx = pad + labelW + ci * fcw, mid = cx + (fcw - 3) / 2, hasU = z.units.length > 0;
           if (hasU) _stkUnits[z.key] = { trade: tr, floor: (f.code || f.name || 'F'), zone: z.label, units: z.units };
-          svg += '<rect' + (hasU ? ' class="sbld-stkcell" data-zk="' + e2(z.key) + '" style="cursor:pointer"' : '') + ' x="' + cx + '" y="' + y + '" width="' + (cw - 3) + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (ci % 2 ? 0.45 : 0.58) : (ci % 2 ? 0.74 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '>' + (hasU ? '<title>' + z.units.length + ' units — click to see each</title>' : '') + '</rect>' +
+          svg += '<rect' + (hasU ? ' class="sbld-stkcell" data-zk="' + e2(z.key) + '" style="cursor:pointer"' : '') + ' x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (ci % 2 ? 0.45 : 0.58) : (ci % 2 ? 0.74 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '>' + (hasU ? '<title>' + z.units.length + ' units — click to see each</title>' : '') + '</rect>' +
             '<text x="' + mid + '" y="' + (y + (hasU ? 15 : 18)) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" pointer-events="none">' + e2(z.label) + '</text>' +
             '<text x="' + mid + '" y="' + (y + (hasU ? 30 : 34)) + '" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,.92)" pointer-events="none">' + e2(z.fin ? fmtD(z.fin) : '—') + '</text>' +
             (hasU ? '<text x="' + mid + '" y="' + (y + 42) + '" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,.85)" pointer-events="none">' + z.units.length + ' units ▾</text>' : '');
