@@ -480,24 +480,60 @@
     .ps-legend .lg { display:inline-flex; align-items:center; gap:6px; }
     .lg-swatch { display:inline-block; width:22px; height:11px; border-radius:2px; }
     /* Activity legend (LSM-style): one swatch per activity CATEGORY, colouring the bars.
-       Separate from .ps-legend above, which explains the bar SHAPES (task/summary/baseline/…). */
+       Separate from .ps-legend above, which explains the bar SHAPES (task/summary/baseline/…).
+       ⚠️ Swatches carry a TEXTURE as well as a colour (see catStyle()) — an LSM legend runs to
+       15-20 trades and colour alone stops being distinguishable well before that. */
     .ps-actlegend { border-top:1px dashed var(--pd-line); padding:8px 2px 10px; font-size:12px; color:var(--pd-muted); }
     .ps-actlegend-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:6px; }
     .ps-actlegend-head label { display:inline-flex; align-items:center; gap:6px; }
     .ps-actlegend-items { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
     .ps-alg { display:inline-flex; align-items:center; gap:6px; max-width:230px; }
-    .ps-alg span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ps-alg input[type=color] { width:22px; height:14px; padding:0; border:1px solid var(--pd-line); border-radius:2px; background:none; cursor:pointer; flex:none; }
-    /* Vertical stacking (status-as-of-a-month) */
+    .ps-alg > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-alg-sw { width:24px; height:12px; border:1px solid rgba(0,0,0,.35); border-radius:2px; flex:none;
+      cursor:pointer; padding:0; display:inline-block; }
+    html.pd-dark .ps-alg-sw { border-color:rgba(255,255,255,.35); }
+    .ps-alg-clr { width:0; height:0; opacity:0; position:absolute; pointer-events:none; }
+    .ps-alg-wrap { position:relative; display:inline-flex; }
+
+    /* Vertical stacking — modal ("as of a month") and the docked side-by-side pane share these. */
     .ps-stk-body { padding:12px 14px 16px; overflow:auto; max-height:74vh; }
-    .ps-stk-ctrls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:10px; font-size:12px; color:var(--pd-muted); }
-    .ps-stk-row { display:grid; grid-template-columns:70px 1fr auto; align-items:center; gap:10px; margin-bottom:2px; }
+    .ps-stk-ctrls { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin-bottom:12px;
+      font-size:12px; color:var(--pd-muted); }
+    .ps-stk-ctrls .pd-select { height:30px; font-size:12px; width:150px; flex:none; }
+    /* ⚠️ Fixed status column, not `auto` — with an auto column every row's band ended at a different
+       x (the widest label won), which read as cantilevered floors rather than a stack. */
+    .ps-stk-row { display:grid; grid-template-columns:58px minmax(0,1fr) 168px; align-items:center;
+      gap:10px; margin-bottom:2px; }
     .ps-stk-lvl { font-size:12px; font-weight:700; text-align:right; color:var(--pd-ink); }
-    .ps-stk-band { height:22px; border:1px solid var(--pd-line); border-radius:2px; position:relative; background:var(--pd-bg); overflow:hidden; }
+    .ps-stk-band { height:22px; border:1px solid var(--pd-line); border-radius:2px; position:relative;
+      overflow:hidden; }
     .ps-stk-band i { position:absolute; left:0; top:0; bottom:0; display:block; }
-    .ps-stk-txt { font-size:11.5px; color:var(--pd-ink); white-space:nowrap; }
+    .ps-stk-txt { font-size:11.5px; color:var(--pd-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .ps-stk-txt.none { color:var(--pd-muted); }
-    .ps-stk-grade { border-top:2px solid var(--pd-red); margin:6px 0; font-size:10.5px; color:var(--pd-red); }
+    .ps-stk-grade { display:grid; grid-template-columns:58px minmax(0,1fr) 168px; gap:10px; align-items:center;
+      margin:4px 0 5px; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--pd-red); }
+    .ps-stk-grade i { border-top:2px solid var(--pd-red); display:block; height:0; }
+
+    /* Docked stacking pane — a third column of .ps-split, row-aligned with the grid + Gantt. */
+    .ps-stackpane { flex:0 0 250px; display:none; flex-direction:column; min-width:0;
+      border-left:2px solid var(--pd-line); background:var(--pd-card); }
+    .ps-split.ps-stack-on .ps-stackpane { display:flex; }
+    .ps-stackpane-head { flex:none; height:38px; border-bottom:2px solid var(--pd-line); background:var(--pd-bg);
+      display:flex; align-items:center; gap:6px; padding:0 8px; font-size:11px; font-weight:700;
+      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); overflow:hidden; }
+    .ps-stackpane-body { flex:1 1 auto; position:relative; overflow:hidden; min-height:0; }
+    .ps-stackpane-inner { position:absolute; left:0; right:0; top:0; }
+    .ps-sp-row { position:absolute; left:8px; right:8px; display:flex; align-items:center; gap:6px; }
+    .ps-sp-band { flex:1 1 auto; border:1px solid var(--pd-line); border-radius:2px; position:relative;
+      overflow:hidden; min-width:0; }
+    .ps-sp-band i { position:absolute; left:0; top:0; bottom:0; display:block; }
+    .ps-sp-lvl { flex:none; width:38px; font-size:10.5px; font-weight:700; color:var(--pd-ink);
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-sp-note { padding:10px; font-size:11.5px; color:var(--pd-muted); line-height:1.45; }
+    /* Activities shown inside a WBS summary bar (LSM composition) */
+    .ps-sum-seg { position:absolute; border-radius:2px; overflow:hidden; z-index:3; pointer-events:none;
+      box-shadow:0 0 0 .5px rgba(0,0,0,.18) inset; }
+    .ps-sum-seg i { position:absolute; left:0; top:0; bottom:0; display:block; }
     .ps-mo { cursor:pointer; }
     .lg-task { background:var(--ps-bar,#2B2C2B); position:relative; overflow:hidden; }
     .lg-task::after { content:""; position:absolute; left:0; top:0; bottom:0; width:55%; background:var(--pd-red); }
@@ -1501,6 +1537,12 @@
           <div class="ps-gantt-pane">
             <div class="ps-gantt-head" id="ps-gantt-head"></div>
             <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
+          </div>
+          <!-- Docked vertical-stacking pane: one band per location level, row-aligned with the
+               grid + Gantt so the stack and the bars read side by side (renderStackPane()). -->
+          <div class="ps-stackpane" id="ps-stackpane">
+            <div class="ps-stackpane-head" id="ps-stkp-head"></div>
+            <div class="ps-stackpane-body"><div class="ps-stackpane-inner" id="ps-stkp-inner"></div></div>
           </div>
         </div>
 
@@ -4773,7 +4815,13 @@
       if (di >= dims.length) { emitLeaf(list, parentCode, parentAnc); return; }
       var buckets = {};
       list.forEach(function (a) { var g = dimValOf(a, dims[di]) || '—'; (buckets[g] = buckets[g] || []).push(a); });
-      Object.keys(buckets).sort(dims[di] === 'work' ? cmpWorkName : cmpGroupName).forEach(function (g) {
+      // ⚠️ A LOCATION dimension sorts in BUILDING order, not alphabetically — "B3 / Ground / 9th
+      // Floor / Roof Deck" is meaningless as text, and the whole point of the side-by-side stacking
+      // pane is that the bars and the stack read in the same vertical order.
+      var _isLoc = dims[di].indexOf('loc:') === 0;
+      var _keys = Object.keys(buckets).sort(dims[di] === 'work' ? cmpWorkName : (_isLoc ? cmpLevelValue : cmpGroupName));
+      if (_isLoc && _stkTopFirst) _keys.reverse();
+      _keys.forEach(function (g) {
         var gcode = parentCode + '§' + g;
         out.push({ _dkind: 'group', _dcode: gcode, _ddepth: parentAnc.length, _danc: parentAnc,
           activity_name: g, _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
@@ -8361,6 +8409,7 @@
     host.style.position = 'relative'; host.style.height = H + 'px';
     renderWindow();
     syncHeadHeights();
+    renderStackPane();   // row-aligned to DL, so it repaints with the grid
   }
 
   function renderWindow() {
@@ -8673,6 +8722,44 @@
   }
 
   // ----- RIGHT GANTT: per-row bar builder (used by the windowed renderer) -----
+  // ---- WBS summary composition: the activities inside a summary, as legend-coloured segments -----
+  // ⚠️ Built ONCE per rebuild (one pass over the leaves, pushing each into every ancestor's bucket)
+  // rather than scanning `_sorted` per visible summary row — the latter is O(rows × visible) and the
+  // real schedules here run to 17k activities.
+  var _segMap = null, _segMapKey = null, SEG_CAP = 400;
+  function _buildSegMap() {
+    var m = {};
+    for (var i = 0; i < _sorted.length; i++) {
+      var a = _sorted[i];
+      if (isWbs(a) || isMile(a)) continue;
+      var anc = a._anc || [];
+      for (var j = 0; j < anc.length; j++) {
+        var b = m[anc[j]] || (m[anc[j]] = []);
+        if (b.length < SEG_CAP) b.push(a);
+      }
+    }
+    return m;
+  }
+  function _sumSegsHTML(r, min, dayw, sumTop, oY) {
+    var cfg = catCfg();
+    if (!cfg.on || r._dkind === 'group' || !r.wbs) return '';
+    var key = pid + '|' + _sorted.length + '|' + cfg.field;
+    if (_segMapKey !== key) { _segMap = _buildSegMap(); _segMapKey = key; }
+    var kids = (_segMap && _segMap[r.wbs]) || [];
+    if (!kids.length) return '';
+    var h = Math.max(5, Math.round(7 * oY)), top = sumTop + Math.round(10 * oY), out = '';
+    for (var i = 0; i < kids.length; i++) {
+      var a = kids[i], e = catEntry(a); if (!e) continue;
+      var s = pd(dispStart(a)), f = pd(dispFin(a)); if (!s || !f) continue;
+      var x = dayDiff(min, s) * dayw, w = Math.max((dayDiff(s, f) + 1) * dayw, 2);
+      var pct = Math.max(0, Math.min(100, a.percent_complete || 0));
+      out += '<div class="ps-sum-seg" title="' + esc((a.activity_name || '') + ' — ' + pct + '%') +
+        '" style="left:' + x + 'px;width:' + w + 'px;top:' + top + 'px;height:' + h + 'px;' + catTint(e.color, 0.32) + '">' +
+        '<i style="width:' + pct + '%;' + catStyle(e.color, e.tex) + '"></i></div>';
+    }
+    return out;
+  }
+
   function ganttRowHTML(r, i, min, dayw) {
     var top = i * ROWH, out = '';
     // Bar vertical offsets scale with row height so compact rows stay aligned (oY=1 at comfortable).
@@ -8693,6 +8780,10 @@
       var sumPct = (_cm && _cm.wd > 0) ? Math.max(0, Math.min(100, Math.round(_cm.wearn / _cm.wd))) : 0;
       var sumTop = top + (blsp ? o12 : o8);   // sit below the baseline roll-up when present
       out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' + (sumPct > 0 ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + '</div>';
+      // LSM composition: with the legend on, a summary row also shows the activities INSIDE it as
+      // coloured segments, each filling up with its own progress — so a top-level WBS bar reads as
+      // the sequence of trades running under it rather than one flat block.
+      out += _sumSegsHTML(r, min, dayw, sumTop, oY);
       if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
     }
@@ -8702,7 +8793,13 @@
     var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && mfpOn && r._near) ? ' ps-near' : '');
     if (spotlightRow(r)) crit += ' ps-spot';
     // Per-activity override wins, then the category legend colour (LSM), then the WBS branch colour.
-    var wc = actColor(r) || catColor(r) || effWbsColor(r);
+    var _ce = catEntry(r);
+    var wc = actColor(r) || (_ce && _ce.color) || effWbsColor(r);
+    // With the legend on, the bar reads as FILLING UP: the remainder is the same colour at low
+    // alpha, the complete part is the solid, textured legend colour. Without it, the existing
+    // dark-bar + red-fill treatment is untouched.
+    var barBg = _ce ? catTint(_ce.color) : (wc ? 'background:' + wc + ';' : '');
+    var fillStyle = _ce ? catStyle(_ce.color, _ce.tex) : '';
     var lbl = _barLabel(r);
     if (isMile(r)) {
       var md = isFinishMile(r) ? (e || s) : s; if (!md) return out;   // Finish Milestone anchors on the finish
@@ -8729,7 +8826,7 @@
     } else {
       barH = ROWH - Math.round(8 * oY); barTop = top + Math.round(4 * oY);
     }
-    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"><div class="ps-bar-fill" style="width:' + pct + '%;"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
+    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
     if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (barTop + Math.round(barH / 2) - 7) + 'px;">' + esc(lbl) + '</div>';
     return out;
   }
@@ -14260,14 +14357,46 @@
   // category FIELD (activity name / discipline / activity code), and every row sharing that
   // value shares the colour. Stored per project in localStorage (like the other colour overrides):
   //   ps_catcolors = { "<pid>": { on:bool, field:'name'|'work'|'type'|'code:<typeId>', colors:{value:hex} } }
-  var CAT_PALETTE = ['#6E6E6E','#00B050','#375623','#7C6FCB','#00B0F0','#0070C0','#1F4E79',
-                     '#C00000','#8B0000','#B4B4B4','#BFBF00','#5A3A1B','#A0522D','#FF9900',
-                     '#FF66A3','#E5007E','#2F6FB0','#7F3F00'];
+  // ⚠️ Palette ordered so ADJACENT legend entries are far apart in hue/lightness — an LSM legend
+  // runs 15-20 trades and a smoothly-graded palette makes neighbours indistinguishable on a 15px bar.
+  var CAT_PALETTE = ['#6E6E6E','#00B050','#0070C0','#C00000','#7C5CD6','#00B0F0','#7F4A15','#FF8C00',
+                     '#1F4E79','#8B0000','#009B8E','#E5007E','#B4B4B4','#375623','#C9A400','#FF66A3'];
+  // …and TEXTURES on top, the way the reference LSM legend does it: colour alone stops scaling long
+  // before a real trade list does, and a texture survives greyscale printing and colour-blindness.
+  // Each entry renders as background-image over the base colour (see catStyle()).
+  var CAT_TEXTURES = [
+    { k:'solid', css:'' },
+    { k:'hatch', css:'background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 6px);' },
+    { k:'dots',  css:'background-image:radial-gradient(rgba(255,255,255,.8) 1.1px,transparent 1.3px);background-size:5px 5px;' },
+    { k:'vert',  css:'background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.6) 0 2px,transparent 2px 5px);' },
+    { k:'back',  css:'background-image:repeating-linear-gradient(-45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 6px);' },
+    { k:'cross', css:'background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.5) 0 1.5px,transparent 1.5px 5px),repeating-linear-gradient(-45deg,rgba(255,255,255,.5) 0 1.5px,transparent 1.5px 5px);' },
+    { k:'horz',  css:'background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.55) 0 2px,transparent 2px 5px);' },
+    { k:'grid',  css:'background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.55) 0 1.5px,transparent 1.5px 6px),repeating-linear-gradient(0deg,rgba(255,255,255,.55) 0 1.5px,transparent 1.5px 6px);' }
+  ];
+  function _hexRgb(h) {
+    h = String(h || '').replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var n = parseInt(h, 16); if (isNaN(n)) return [128, 128, 128];
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  // The full (100%-complete / legend) look: colour + texture.
+  function catStyle(color, texIdx) {
+    var t = CAT_TEXTURES[(texIdx || 0) % CAT_TEXTURES.length];
+    return 'background-color:' + color + ';' + (t ? t.css : '');
+  }
+  // ⚠️ The UNFILLED remainder of a bar: the SAME colour at low alpha, not a grey. Alpha (rather
+  // than a blend toward white) so it reads correctly in both light and dark themes — this is what
+  // makes an in-progress bar look like it is filling up rather than like a different category.
+  function catTint(color, a) {
+    var c = _hexRgb(color);
+    return 'background-color:rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (a || 0.26) + ');';
+  }
   function catCfg() {
-    var d = { on:false, field:'name', colors:{} };
+    var d = { on:false, field:'name', colors:{}, tex:true };
     try { var all = JSON.parse(localStorage.getItem('ps_catcolors') || '{}'); var c = all[pid];
       if (!c) return d;
-      return { on: !!c.on, field: c.field || 'name', colors: c.colors || {} };
+      return { on: !!c.on, field: c.field || 'name', colors: c.colors || {}, tex: c.tex !== false };
     } catch (e) { return d; }
   }
   function saveCatCfg(cfg) {
@@ -14312,16 +14441,29 @@
       if (!a.first && b2.first) return 1;
       return a.value.localeCompare(b2.value);
     });
-    list.forEach(function (c, i) { c.color = cfg.colors[c.value] || CAT_PALETTE[i % CAT_PALETTE.length]; });
-    _catCache = { key: key, list: list, map: list.reduce(function (m, c) { m[c.value] = c.color; return m; }, {}) };
+    list.forEach(function (c, i) {
+      c.color = cfg.colors[c.value] || CAT_PALETTE[i % CAT_PALETTE.length];
+      // Texture cycles one step per entry, so NEIGHBOURING legend rows differ in both hue and
+      // texture; after a full palette lap the texture is what keeps a repeated colour distinct.
+      c.tex = cfg.tex ? (i % CAT_TEXTURES.length) : 0;
+      c.style = catStyle(c.color, c.tex);
+    });
+    _catCache = { key: key, list: list, map: list.reduce(function (m, c) { m[c.value] = c; return m; }, {}) };
     return list;
   }
-  function catColorMapNow() { catList(); return (_catCache && _catCache.map) || {}; }
-  function catColor(r) {
+  function catMapNow() { catList(); return (_catCache && _catCache.map) || {}; }
+  // Back-compat shape for callers that only want the hex.
+  function catColorMapNow() {
+    var m = catMapNow(), out = {};
+    Object.keys(m).forEach(function (k) { out[k] = m[k].color; });
+    return out;
+  }
+  function catEntry(r) {
     var cfg = catCfg(); if (!cfg.on || !pid) return null;
     var v = catValOf(r, cfg.field); if (!v) return null;
-    return catColorMapNow()[v] || null;
+    return catMapNow()[v] || null;
   }
+  function catColor(r) { var e = catEntry(r); return e ? e.color : null; }
   function renderActLegend() {
     var host = document.getElementById('ps-actlegend'); if (!host) return;
     if (!pid || !rows.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
@@ -14333,9 +14475,10 @@
     var items = cfg.on
       ? (list.length
           ? list.slice(0, MAXL).map(function (c) {
-              return '<label class="ps-alg" title="' + esc(c.value) + ' — ' + c.n + ' activit' + (c.n === 1 ? 'y' : 'ies') + '">' +
-                '<input type="color" class="ps-catclr" data-v="' + esc(c.value) + '" value="' + c.color + '">' +
-                '<span>' + esc(c.value) + '</span></label>';
+              return '<span class="ps-alg" title="' + esc(c.value) + ' — ' + c.n + ' activit' + (c.n === 1 ? 'y' : 'ies') + ' · click the swatch to recolour">' +
+                '<span class="ps-alg-wrap"><button type="button" class="ps-alg-sw" data-v="' + esc(c.value) + '" style="' + c.style + '"></button>' +
+                '<input type="color" class="ps-alg-clr ps-catclr" data-v="' + esc(c.value) + '" value="' + c.color + '"></span>' +
+                '<span>' + esc(c.value) + '</span></span>';
             }).join('') + (list.length > MAXL ? '<span>+' + (list.length - MAXL) + ' more</span>' : '')
           : '<span>No values on this field yet — pick another, or set Discipline / Trade on the activities.</span>')
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
@@ -14343,39 +14486,75 @@
       '<div class="ps-actlegend-head">' +
         '<label><input type="checkbox" id="ps-alg-on"' + (cfg.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
         '<select class="pd-select" id="ps-alg-field" style="height:28px;font-size:12px;max-width:200px;">' + opts + '</select>' +
+        (cfg.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (cfg.tex ? ' checked' : '') + '> Textures</label>' : '') +
         (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="height:28px;font-size:12px;">Reset colours</button>' : '') +
-        '<span style="margin-left:auto;">Tip: click a <strong>month</strong> in the Gantt header for the vertical stacking view.</span>' +
+        (cfg.on ? '<button class="pd-btn" id="ps-alg-stack" style="height:28px;font-size:12px;">Vertical stacking pane</button>' : '') +
+        '<span style="margin-left:auto;">Tip: click a <strong>month</strong> in the Gantt header for the status at that date.</span>' +
       '</div>' +
       '<div class="ps-actlegend-items">' + items + '</div>';
     host.querySelector('#ps-alg-on').onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
     host.querySelector('#ps-alg-field').onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    var tex = host.querySelector('#ps-alg-tex');
+    if (tex) tex.onchange = function () { var c = catCfg(); c.tex = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var rst = host.querySelector('#ps-alg-reset');
     if (rst) rst.onclick = function () { var c = catCfg(); c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    var stk = host.querySelector('#ps-alg-stack');
+    if (stk) stk.onclick = function () { toggleStackPane(); };
+    // The swatch shows colour + texture (a native colour input can only show a flat swatch), so it
+    // is a button that opens a hidden colour input sitting behind it.
+    host.querySelectorAll('.ps-alg-sw').forEach(function (b) {
+      b.onclick = function () { var i = b.parentNode.querySelector('.ps-alg-clr'); if (i) i.click(); };
+    });
     host.querySelectorAll('.ps-catclr').forEach(function (inp) {
       inp.onchange = function () { var c = catCfg(); c.colors[inp.dataset.v] = inp.value; saveCatCfg(c); renderActLegend(); renderGantt(); };
     });
   }
 
-  // ---- Vertical stacking: status by location level as of a period ------------------------------
-  // Clicking a month/quarter in the Gantt header answers "what does the building look like at the
-  // end of this period?" — one band per floor/level, coloured by the activity category that is
-  // running (or last completed) there, using the SAME legend colours as the bars.
+  // ---- Vertical stacking: status by location level -------------------------------------------
+  // Two surfaces over ONE model (stackModel): a modal for "as of <month>" (click a period in the
+  // Gantt header) and a docked pane that sits beside the Gantt so the stack and the bars read
+  // side by side, the way the reference LSM sheet presents them.
   var _stkFrom = null, _stkTo = null, _stkLabel = '', _stkLevel = null;
+  var _stkTopFirst = true;   // display order: highest level at the top (a building, not a list)
+  try { _stkTopFirst = localStorage.getItem('ps_stk_topfirst') !== '0'; } catch (e) {}
+
+  // ⚠️ Level values are TEXT ("B3", "Ground Floor", "Nineth Floor", "Roof Deck") and neither
+  // alphabetical nor earliest-start order puts them in building order — earliest-start interleaved
+  // the basements among the upper floors (B1 between F8 and F5) because a basement is built early
+  // but sits at the BOTTOM. So rank them structurally: basements negative, ground 0, roof last.
+  function levelRank(v) {
+    var s = String(v == null ? '' : v).trim().toLowerCase();
+    if (!s) return null;
+    var t = s.replace(/[’'".,()\-_]/g, ' ').replace(/\s+/g, ' ');
+    t = t.replace(/[a-z]+/g, function (w) { return LOC_ORD[w] != null ? String(LOC_ORD[w]) : w; });
+    var m;
+    if (/\b(roof|rd|penthouse|ph|top deck|helipad)\b/.test(t)) return 900;
+    if ((m = t.match(/\b(?:b|bsmt|basement|cellar)\s*(\d+)\b/))) return -parseInt(m[1], 10);
+    if (/\b(basement|bsmt|cellar)\b/.test(t)) return -1;
+    if (/\b(ground|gf|g f|lgf|ugf)\b/.test(t)) return 0;
+    if (/\b(mezz|mezzanine)\b/.test(t)) return 0.5;
+    if ((m = t.match(/\b(?:f|fl|flr|floor|l|lvl|level|storey|story)\s*(\d+)\b/))) return parseInt(m[1], 10);
+    if ((m = t.match(/\b(\d+)\s*(?:st|nd|rd|th)?\s*(?:floor|flr|level|storey|story)\b/))) return parseInt(m[1], 10);
+    if ((m = t.match(/^(\d+)$/))) return parseInt(m[1], 10);
+    return null;
+  }
+  // Bottom-up build order (what the Gantt should follow), independent of display direction.
+  function cmpLevelValue(a, b) {
+    var ra = levelRank(a), rb = levelRank(b);
+    if (ra != null && rb != null && ra !== rb) return ra - rb;
+    if (ra != null && rb == null) return -1;
+    if (ra == null && rb != null) return 1;
+    return cmpGroupName(a, b);
+  }
   function stkDefaultLevel() {
     if (_stkLevel && LOC_LEVELS.some(function (l) { return l.id === _stkLevel; })) return _stkLevel;
     var m = LOC_LEVELS.filter(function (l) { return /floor|level|storey|story/i.test(l.name || ''); })[0];
     return (m && m.id) || (LOC_LEVELS.length ? LOC_LEVELS[LOC_LEVELS.length - 1].id : null);
   }
-  function openStackView(from, to, label) {
-    _stkFrom = from; _stkTo = to; _stkLabel = label;
-    _stkLevel = stkDefaultLevel();
-    var back = document.getElementById('ps-stack-back'); if (!back) return;
-    back.classList.add('open');
-    document.getElementById('ps-stk-x').onclick = closeStackView;
-    back.onclick = function (e) { if (e.target === back) closeStackView(); };
-    renderStackView();
+  function stkLevelName(id) {
+    var l = LOC_LEVELS.filter(function (x) { return x.id === id; })[0];
+    return (l && l.name) || '';
   }
-  function closeStackView() { var b = document.getElementById('ps-stack-back'); if (b) b.classList.remove('open'); }
   // State of one (location, category) bucket at the cut-off date.
   function _stkState(acts, D) {
     var any = false, allDone = true, started = false;
@@ -14390,16 +14569,73 @@
     if (allDone) return 'done';
     return started ? 'wip' : 'none';
   }
+  // THE model both surfaces render. One row per location value, in building order (bottom-up),
+  // each carrying what is running / last finished there at the cut-off.
+  function stackModel(levelId, D) {
+    var cfg = catCfg(), cats = catList(), map = catMapNow();
+    var catIdx = {}; cats.forEach(function (c, i) { catIdx[c.value] = i; });
+    var by = {};
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      var loc = locValOf(r, levelId); if (!loc) return;
+      var v = catValOf(r, cfg.field); if (!v || !(v in catIdx)) return;
+      var b = by[loc] || (by[loc] = { loc: loc, cats: {} });
+      (b.cats[v] || (b.cats[v] = [])).push(r);
+    });
+    var list = Object.keys(by).map(function (k) { return by[k]; });
+    list.sort(function (a, b2) { return cmpLevelValue(a.loc, b2.loc); });
+    list.forEach(function (b) {
+      var wip = null, lastDone = null, done = 0, total = 0;
+      cats.forEach(function (c) {
+        var acts = b.cats[c.value]; if (!acts || !acts.length) return;
+        total++;
+        var st = _stkState(acts, D);
+        if (st === 'done') { lastDone = c; done++; }
+        else if (st === 'wip' && !wip) wip = c;
+      });
+      b.rank = levelRank(b.loc);
+      b.total = total; b.done = done;
+      b.pct = total ? Math.round((done / total) * 100) : 0;
+      b.cur = wip || lastDone || null;         // what colours the band
+      b.wip = wip; b.lastDone = lastDone;
+      b.text = wip ? ('On-going ' + wip.value) : (lastDone ? (lastDone.value + ' complete') : 'Not started');
+      b.style = b.cur ? (map[b.cur.value] || b.cur).style : '';
+      b.tint = b.cur ? catTint((map[b.cur.value] || b.cur).color) : '';
+    });
+    return list;
+  }
+  // A band: the remainder in the category's own colour at low alpha, the completed part solid +
+  // textured — so a level visibly FILLS UP rather than flipping between two flat colours.
+  function stkBandHTML(b, cls) {
+    if (!b.cur) return '<div class="' + cls + '"></div>';
+    var w = b.wip ? Math.max(b.pct, 6) : 100;
+    return '<div class="' + cls + '" style="' + b.tint + '"><i style="width:' + w + '%;' + b.style + '"></i></div>';
+  }
+
+  function openStackView(from, to, label) {
+    _stkFrom = from; _stkTo = to; _stkLabel = label;
+    _stkLevel = stkDefaultLevel();
+    var back = document.getElementById('ps-stack-back'); if (!back) return;
+    back.classList.add('open');
+    document.getElementById('ps-stk-x').onclick = closeStackView;
+    back.onclick = function (e) { if (e.target === back) closeStackView(); };
+    renderStackView();
+  }
+  function closeStackView() { var b = document.getElementById('ps-stack-back'); if (b) b.classList.remove('open'); }
   function renderStackView() {
     var body = document.getElementById('ps-stk-body'),
         ttl = document.getElementById('ps-stk-title'),
         cnt = document.getElementById('ps-stk-count');
     if (!body) return;
     ttl.textContent = 'Planned status as of ' + _stkLabel;
-    var cfg = catCfg(), cats = catList(), colors = catColorMapNow();
-    var lvlSel = '<select class="pd-select" id="ps-stk-level" style="height:28px;font-size:12px;max-width:180px;">' +
-      LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === _stkLevel ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
-      '</select>';
+    var cfg = catCfg(), cats = catList(), D = _stkTo;
+    var ctrls = '<div class="ps-stk-ctrls">' +
+      '<label>Stack by <select class="pd-select" id="ps-stk-level">' +
+        LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === _stkLevel ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
+      '</select></label>' +
+      '<span>Cut-off: <strong>' + esc(Fmt.date(dstr(D))) + '</strong></span>' +
+      '<label title="Also sets the order of the location groups in the grid + Gantt, so the stack and the bars read the same way."><input type="checkbox" id="ps-stk-top"' + (_stkTopFirst ? ' checked' : '') + '> Highest level at the top</label>' +
+      '<span style="margin-left:auto;">Actual dates where recorded, else planned.</span></div>';
     if (!LOC_LEVELS.length) {
       cnt.textContent = '';
       body.innerHTML = '<div class="ps-ck-empty">This project has no Location Breakdown yet. Open the <strong>Group</strong> menu → <strong>Location Breakdown…</strong> to define levels (Tower / Level / Zone), then fill them from the WBS.</div>';
@@ -14407,76 +14643,122 @@
     }
     if (!cats.length) {
       cnt.textContent = '';
-      body.innerHTML = '<div class="ps-ck-empty">No activity categories on the <strong>' +
+      body.innerHTML = ctrls + '<div class="ps-ck-empty">No activity categories on the <strong>' +
         esc((catFieldOptions().filter(function (o) { return o[0] === cfg.field; })[0] || ['', cfg.field])[1]) +
         '</strong> field — pick another field in the activity legend under the Gantt.</div>';
+      wireStackCtrls(body);
       return;
     }
-    var D = _stkTo;
-    // Bucket the leaf activities by location value, then by category.
-    var by = {}, catIdx = {};
-    cats.forEach(function (c, i) { catIdx[c.value] = i; });
-    rows.forEach(function (r) {
-      if (isWbs(r)) return;
-      var loc = locValOf(r, _stkLevel); if (!loc) return;
-      var v = catValOf(r, cfg.field); if (!v || !(v in catIdx)) return;
-      var b = by[loc] || (by[loc] = { loc: loc, first: null, cats: {} });
-      (b.cats[v] || (b.cats[v] = [])).push(r);
-      var s = pd(dispStart(r)) || pd(r.bl_start);
-      if (s && (!b.first || s < b.first)) b.first = s;
-    });
-    var locs = Object.keys(by).map(function (k) { return by[k]; });
-    if (!locs.length) {
+    var model = stackModel(_stkLevel, D);
+    if (!model.length) {
       cnt.textContent = '';
-      body.innerHTML = '<div class="ps-ck-empty">No activities carry a <strong>' + esc((LOC_LEVELS.filter(function (l) { return l.id === _stkLevel; })[0] || {}).name || '') +
+      body.innerHTML = ctrls + '<div class="ps-ck-empty">No activities carry a <strong>' + esc(stkLevelName(_stkLevel)) +
         '</strong> value. Run <strong>Group ▸ Match WBS to locations…</strong> first.</div>';
-      body.innerHTML = '<div class="ps-stk-ctrls">Stack by ' + lvlSel + '</div>' + body.innerHTML;
-      wireStackCtrls(lvlSel, body);
+      wireStackCtrls(body);
       return;
     }
-    // Bottom-up build order: earliest start first = lowest level. Displayed top-down (top level first).
-    locs.sort(function (a, b2) {
-      if (a.first && b2.first && +a.first !== +b2.first) return a.first - b2.first;
-      return String(a.loc).localeCompare(String(b2.loc), undefined, { numeric: true });
-    });
-    locs.reverse();
-    var nDone = 0;
-    var rowsHtml = locs.map(function (b) {
-      var wip = null, lastDone = null, doneCount = 0;
-      cats.forEach(function (c) {
-        var acts = b.cats[c.value]; if (!acts || !acts.length) return;
-        var st = _stkState(acts, D);
-        if (st === 'done') { lastDone = c; doneCount++; }
-        else if (st === 'wip' && !wip) wip = c;
-      });
-      var total = Object.keys(b.cats).length;
-      var pct = total ? Math.round((doneCount / total) * 100) : 0;
-      if (pct === 100) nDone++;
-      var col = wip ? (colors[wip.value] || '#999') : (lastDone ? (colors[lastDone.value] || '#999') : null);
-      var txt = wip ? ('On-going ' + wip.value) : (lastDone ? (lastDone.value + ' complete') : 'Not started');
-      return '<div class="ps-stk-row">' +
+    var disp = model.slice(); if (_stkTopFirst) disp.reverse();
+    var nDone = model.filter(function (b) { return b.pct === 100; }).length;
+    var out = '', gradeDrawn = false;
+    disp.forEach(function (b, i) {
+      // Grade line between the superstructure and the basements, as the reference sheet shows it.
+      if (_stkTopFirst && !gradeDrawn && b.rank != null && b.rank < 0) {
+        out += '<div class="ps-stk-grade"><span></span><i></i><span>grade</span></div>'; gradeDrawn = true;
+      }
+      out += '<div class="ps-stk-row">' +
           '<div class="ps-stk-lvl">' + esc(b.loc) + '</div>' +
-          '<div class="ps-stk-band" title="' + esc(b.loc + ' — ' + txt + ' (' + doneCount + ' of ' + total + ' categories complete)') + '">' +
-            (col ? '<i style="width:' + Math.max(pct, wip ? 6 : 0) + '%;background:' + col + ';"></i>' : '') +
-          '</div>' +
-          '<div class="ps-stk-txt' + (col ? '' : ' none') + '">' + esc(txt) + '</div>' +
+          stkBandHTML(b, 'ps-stk-band') +
+          '<div class="ps-stk-txt' + (b.cur ? '' : ' none') + '" title="' + esc(b.text + ' — ' + b.done + ' of ' + b.total + ' categories complete') + '">' + esc(b.text) + '</div>' +
         '</div>';
-    }).join('');
-    cnt.textContent = locs.length + ' location' + (locs.length === 1 ? '' : 's') + ' · ' + nDone + ' complete';
+    });
+    cnt.textContent = model.length + ' location' + (model.length === 1 ? '' : 's') + ' · ' + nDone + ' complete';
     var leg = cats.map(function (c) {
-      return '<span class="ps-alg"><span class="lg-swatch" style="background:' + (colors[c.value] || '#999') + ';"></span><span>' + esc(c.value) + '</span></span>';
+      return '<span class="ps-alg"><span class="ps-alg-sw" style="' + c.style + ';cursor:default;"></span><span>' + esc(c.value) + '</span></span>';
     }).join('');
-    body.innerHTML =
-      '<div class="ps-stk-ctrls">Stack by ' + lvlSel +
-        '<span>Cut-off: <strong>' + esc(Fmt.date(dstr(D))) + '</strong></span>' +
-        '<span style="margin-left:auto;">Based on the displayed dates (actual where recorded, else planned).</span></div>' +
-      rowsHtml +
+    body.innerHTML = ctrls + out +
       '<div class="ps-actlegend-items" style="margin-top:12px;border-top:1px dashed var(--pd-line);padding-top:10px;">' + leg + '</div>';
-    wireStackCtrls(lvlSel, body);
+    wireStackCtrls(body);
   }
-  function wireStackCtrls(lvlSel, body) {
+  function wireStackCtrls(body) {
     var sel = body.querySelector('#ps-stk-level');
-    if (sel) sel.onchange = function () { _stkLevel = this.value; renderStackView(); };
+    if (sel) sel.onchange = function () { _stkLevel = this.value; renderStackView(); renderStackPane(); };
+    var top = body.querySelector('#ps-stk-top');
+    if (top) top.onchange = function () {
+      _stkTopFirst = this.checked;
+      try { localStorage.setItem('ps_stk_topfirst', _stkTopFirst ? '1' : '0'); } catch (e) {}
+      renderStackView();
+      renderGrid(); renderGantt();   // the location groups re-order with it (cmpLevelValue)
+    };
+  }
+
+  // ---- Docked stacking pane (side-by-side with the grid + Gantt) -------------------------------
+  // ⚠️ Alignment is the whole point, and it is only meaningful when the grid is GROUPED by the
+  // location level: each level's group row then occupies one row of the display list, so the pane
+  // can put that level's band at exactly that row's y. It never reorders the WBS view — it offers
+  // to switch the grouping (and it is the location dimension's own group sort, `cmpLevelValue`,
+  // that puts the levels in building order, so the Gantt reads bottom-up like the stack does).
+  var _stkPaneOn = false;
+  try { _stkPaneOn = localStorage.getItem('ps_stackpane') === '1'; } catch (e) {}
+  function stackPaneOn() { return _stkPaneOn; }
+  function toggleStackPane(force) {
+    _stkPaneOn = (force === undefined) ? !_stkPaneOn : !!force;
+    try { localStorage.setItem('ps_stackpane', _stkPaneOn ? '1' : '0'); } catch (e) {}
+    var sp = document.querySelector('.ps-split'); if (sp) sp.classList.toggle('ps-stack-on', _stkPaneOn);
+    var b = document.getElementById('ps-stackbtn'); if (b) b.classList.toggle('active', _stkPaneOn);
+    if (_stkPaneOn && !_stkLevel) _stkLevel = stkDefaultLevel();
+    renderStackPane();
+  }
+  // The level dimension currently being grouped by, if any.
+  function stkGroupedDim() {
+    for (var i = 0; i < groupBys.length; i++) {
+      if (groupBys[i].indexOf('loc:') === 0 && groupBys[i].slice(4) === _stkLevel) return groupBys[i];
+    }
+    return null;
+  }
+  function renderStackPane() {
+    var pane = document.getElementById('ps-stackpane'); if (!pane) return;
+    var head = document.getElementById('ps-stkp-head'), inner = document.getElementById('ps-stkp-inner');
+    if (!_stkPaneOn) { if (inner) inner.innerHTML = ''; return; }
+    if (!_stkLevel) _stkLevel = stkDefaultLevel();
+    var D = today();
+    head.innerHTML = esc(stkLevelName(_stkLevel) || 'Stacking') + ' · ' + esc(Fmt.date(dstr(D))) +
+      '<button class="ps-bulk-x" id="ps-stkp-x" style="margin-left:auto;" title="Hide the stacking pane">&#215;</button>';
+    var x = head.querySelector('#ps-stkp-x'); if (x) x.onclick = function () { toggleStackPane(false); };
+    if (!LOC_LEVELS.length || !catCfg().on) {
+      inner.innerHTML = '<div class="ps-sp-note">' + (!LOC_LEVELS.length
+        ? 'Define a <strong>Location Breakdown</strong> (Group ▸ Location Breakdown…) to stack by level.'
+        : 'Turn on <strong>Colour activities by</strong> in the legend below — the stack uses those colours.') + '</div>';
+      return;
+    }
+    var dim = stkGroupedDim();
+    if (!dim) {
+      inner.innerHTML = '<div class="ps-sp-note">Group the schedule by <strong>' + esc(stkLevelName(_stkLevel)) +
+        '</strong> to line the stack up with the bars.<br><br><button class="pd-btn" id="ps-sp-group" style="height:28px;font-size:12px;">Group by ' + esc(stkLevelName(_stkLevel)) + '</button></div>';
+      var g = inner.querySelector('#ps-sp-group');
+      if (g) g.onclick = function () { setGroupBys(['loc:' + _stkLevel].concat(groupBys.filter(function (d) { return d !== 'loc:' + _stkLevel; }))); renderStackPane(); };
+      return;
+    }
+    // Row-align: every group node of this dimension in the display list gets its band at that row.
+    var model = stackModel(_stkLevel, D), byLoc = {};
+    model.forEach(function (b) { byLoc[b.loc] = b; });
+    var html = '';
+    (DL || []).forEach(function (nd, i) {
+      if (nd._dkind !== 'group' || nd._gdim !== dim) return;
+      var b = byLoc[nd.activity_name]; if (!b) return;
+      html += '<div class="ps-sp-row" style="top:' + (i * ROWH) + 'px;height:' + ROWH + 'px;" title="' +
+        esc(b.loc + ' — ' + b.text) + '">' +
+        '<span class="ps-sp-lvl">' + esc(b.loc) + '</span>' +
+        stkBandHTML(b, 'ps-sp-band') + '</div>';
+    });
+    inner.style.height = ((DL || []).length * ROWH) + 'px';
+    inner.innerHTML = html || '<div class="ps-sp-note">No level rows visible — expand the outline or clear the filter.</div>';
+    syncStackPaneScroll();
+  }
+  function syncStackPaneScroll() {
+    var inner = document.getElementById('ps-stkp-inner'); if (!inner || !_stkPaneOn) return;
+    var gz = document.getElementById('ps-gantt-scroll'), gs = document.getElementById('ps-grid-scroll');
+    var scr = (gz && gz.clientHeight > 0) ? gz : gs;
+    inner.style.transform = 'translateY(' + (-(scr ? scr.scrollTop : 0)) + 'px)';
   }
   // Right-click color picker on a Gantt bar / milestone / WBS summary. Replaces the old Colors button:
   // an activity bar sets its own override; a WBS summary sets a branch color (cascades to descendants).
@@ -15460,6 +15742,7 @@
     vMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.addEventListener('click', closeMenus);
     applyColors();
+    if (_stkPaneOn) toggleStackPane(true);   // restore the docked stacking pane
     document.getElementById('ps-refresh').onclick = function () { load(); };
     document.getElementById('ps-export').onclick = exportExcel;
     document.getElementById('ps-download').onclick = downloadSchedule;
@@ -15649,7 +15932,7 @@
     // scroll sync (vertical grid<->gantt, horizontal head<->body)
     var gs = document.getElementById('ps-grid-scroll'), gz = document.getElementById('ps-gantt-scroll'), gh = document.getElementById('ps-gantt-head'), gHead = document.getElementById('ps-grid-head');
     var lock = false, winRaf = false;
-    function onVScroll() { if (winRaf) return; winRaf = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { winRaf = false; renderWindow(); }); }
+    function onVScroll() { syncStackPaneScroll(); if (winRaf) return; winRaf = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { winRaf = false; renderWindow(); }); }
     gs.addEventListener('scroll', function () { if (gHead) gHead.scrollLeft = gs.scrollLeft; if (!lock) { lock = true; gz.scrollTop = gs.scrollTop; lock = false; } onVScroll(); });
     gz.addEventListener('scroll', function () { if (!lock) { lock = true; gs.scrollTop = gz.scrollTop; lock = false; } gh.scrollLeft = gz.scrollLeft; onVScroll(); });
     // Ctrl + mouse-wheel over the Gantt zooms the timeline, keeping the date under the cursor fixed.
