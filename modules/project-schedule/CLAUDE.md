@@ -1,5 +1,30 @@
 # Module: project-schedule
 
+## Schedule Builder step 3: level-of-detail on the schedule + bar highlight/relationships + new Stacking step (2026-08-14) — fmlozano
+Four owner asks on the Schedule Builder, all in the `ScheduleBuilder` closure in `index.html`:
+- **Level-of-detail (`seqLevel`, the step-3 "Detail 1 2 3 4" buttons) now also collapses the RESULTING
+  SCHEDULE, not just the tower.** `scheduleSVG` groups the leaf locations to the chosen level (1 Trade /
+  2 Floor / 3 Zone / 4 Unit) — one bar per collapsed group — and **aggregates** the leaf-to-leaf
+  `cfg.links` between the collapsed bars (dedup; a link internal to a group is hidden), so the arrows
+  stay visible even when collapsed (WBS-style). Relationships remain leaf-to-leaf in the data; only the
+  drawing collapses. ⚠️ **Edit/unlink of a link (`sbld-linkhit`) is only offered at Unit level (lvl 4)**,
+  where a bar is a single leaf so the raw `from~to` is unambiguous; at coarser levels a bar's arrow may
+  represent many leaf links, so it's inspect-only.
+- **Clicking a bar highlights its whole row** (`.sbld-schedrowhi` full-width band, amber-tint), like the
+  Project Schedule row highlight — in addition to the existing predecessor(green)/successor(amber)/dim
+  marking. Bar click now focuses the group's leaf uids (`data-uids`, was singular `data-uid`).
+- **Coincident relationship lines fixed** — the elbow x is now **staggered per source bar**
+  (`srcCount`/`extra = i*7`) so parallel arrows out of one bar don't overlap, and the focused (hot)
+  links are drawn LAST (on top of the dimmed ones) so a selected bar's links stand out.
+- **NEW step 6 "Stacking"** inserted between Scope-per-zone (5) and Generate (now 7). `stStacking` runs
+  `generate(stackBasis)` and renders one **building model per used trade** (`stackTowerSVG`, same
+  superstructure-above-grade / basements-below layout as step 2), each zone cell labelled with its
+  **zone number + completion date** (from `perZone[].finish`). Internal/External basis toggle. `STEPS`
+  array + the two `stGenerate` headings + the help-modal step list renumbered.
+- Verified: the inline `<script>` block parses (`new Function`, 0 fail). ⚠️ **NOT verified signed-in** —
+  module is auth-gated (local server redirects to login), the standing constraint for this module.
+  `MODULE_V` → `20260814a`.
+
 ## Vertical stacking: whole-tower phases now continue the per-floor stack, "by tower" breakdown (2026-08-13i) — fmlozano
 Follow-up to the previous entry, from the owner reviewing it live: every floor's band was stalling
 at "Architectural Works complete" and staying there forever, reading as though nothing happens after

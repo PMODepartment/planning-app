@@ -1336,6 +1336,9 @@
     .sbld-znhint { font-size:12px; color:var(--pd-muted); padding:2px 2px 4px; font-style:italic; }
     .sbld-tower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); position:sticky; top:12px; }
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; margin-bottom:8px; }
+    /* step 6 — vertical stacking (building model per trade) */
+    .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; align-items:start; margin-top:8px; }
+    .sbld-stacktower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); }
     /* step 3 — link canvas */
     .sbld-canvaswrap { overflow:auto; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); max-height:62vh; }
     /* obvious scrollbars so a long/wide linking diagram is clearly scrollable */
@@ -1456,6 +1459,7 @@
     svg.sbld-sched .sbld-link { marker-end:url(#sbldarrow2); }
     .sbld-schedbar { cursor:pointer; }
     .sbld-schedbar:hover { opacity:.85; }
+    svg.sbld-sched .sbld-schedrowhi { fill:rgba(245,166,35,.15); pointer-events:none; }
     .sbld-schedbar.pend { stroke:var(--pd-red); stroke-width:2; }
     .sbld-linklbl { fill:var(--pd-muted); pointer-events:none; }
     .sbld-zbtn { width:28px; height:28px; padding:0; font-size:15px; font-weight:700; }
@@ -12546,7 +12550,8 @@
         '<li><b>3 · Zone sequence</b> — connect the zones (which location follows which). Just topology — blocks are equal size here. <b>Click any bar</b> to highlight its <b style="color:#1f8f4e">predecessors</b> (what drives it) and <b style="color:#e08a1e">successors</b> (what it drives).</li>' +
         '<li><b>4 · Trade sequence</b> — connect the class codes within each trade (how they run inside a zone). Edit the enlarged <b>Int/Ext</b> durations inline. <b>Click any bar</b> to highlight its predecessors/successors.</li>' +
         '<li><b>5 · Scope per zone</b> — tick which activities apply to each location.</li>' +
-        '<li><b>6 · Generate</b> — build the schedule and push it into the live Project Schedule.</li></ul>' +
+        '<li><b>6 · Stacking</b> — the vertical stacking per trade: each zone with its number and completion date.</li>' +
+        '<li><b>7 · Generate</b> — build the schedule and push it into the live Project Schedule.</li></ul>' +
         '<h4>Linking (steps 3 &amp; 4) — pick, then confirm</h4><ol>' +
         '<li><b>Click</b> one or more <b>source</b> blocks/nodes (red outline). Click again to deselect.</li>' +
         '<li><b>Right-click</b> anywhere in the linking area to <b>confirm the sources</b>.</li>' +
@@ -12993,6 +12998,7 @@
       { t: 'Zone sequence', s: 'Order of locations', fn: stSequence },
       { t: 'Trade sequence', s: 'Order codes within a trade', fn: stTradeSeq },
       { t: 'Scope per zone', s: 'Activities per location', fn: stScope },
+      { t: 'Stacking', s: 'Vertical stacking by trade', fn: stStacking },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
 
@@ -13449,39 +13455,75 @@
     // lines both blocks up in the same column and FS steps the successor to the next column. This keeps
     // the chart compact and readable — its only job is to show/connect the zones.
     function scheduleSVG(dispLocs, starts) {
-      var rowH = 28, pad = 8, labelW = 138, chartX = labelW + 6;
+      var rowH = 28, pad = 8, labelW = 150, chartX = labelW + 6;
       var colW = Math.max(26, Math.round(seqZoom * 9)), step = colW + 26;   // uniform block width + column gap (zoomable)
-      var maxUnit = 1; dispLocs.forEach(function (l) { maxUnit = Math.max(maxUnit, (starts[l.uid] || 0) + 1); });
-      var rows = [{ uid: '__start__', label: 'Start', fill: 'var(--pd-ok)', s: 0, txt: 'START' }]
-        .concat(dispLocs.map(function (l) { return { uid: l.uid, label: l.trade + ' ' + locLabel(l), fill: gc(l.trade), s: starts[l.uid] || 0, txt: (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F'))) }; }))
-        .concat([{ uid: '__end__', label: 'End', fill: 'var(--pd-red)', s: maxUnit, txt: 'END' }]);
-      var H = pad * 2 + rows.length * rowH, W = chartX + (maxUnit + 1) * step + 30;
-      var pos = {}, bars = '', links = '';
-      // Predecessor / successor inspection: when a bar is focused, mark what drives it (predecessors)
-      // and what it drives (successors), and dim the rest — so multi-predecessor chains are legible.
-      var fPred = {}, fSucc = {}, fAny = seqFocus.length;
-      if (fAny) cfg.links.forEach(function (k) { if (seqFocus.indexOf(k.to) >= 0) fPred[k.from] = 1; if (seqFocus.indexOf(k.from) >= 0) fSucc[k.to] = 1; });
-      function relCls(uid) { if (!fAny || seqFocus.indexOf(uid) >= 0) return ''; if (fPred[uid]) return ' prednode'; if (fSucc[uid]) return ' succnode'; return ' dimnode'; }
+      // Collapse the resulting schedule to the chosen DETAIL level (the same seqLevel that drives the
+      // tower): a Floor-level view shows one bar per floor, a Zone-level view one bar per zone, etc.
+      // The underlying links stay leaf-to-leaf in cfg.links; here they are AGGREGATED between the
+      // collapsed bars (WBS-style: you still see the arrows even when collapsed), and any link internal
+      // to a collapsed group is hidden. Only at Unit level (lvl 4) is each bar a single leaf, so only
+      // then can a link be edited/unlinked (its raw from~to is unambiguous).
+      var lvl = seqLevel;
+      function gkey(l) { if (lvl <= 1) return l.trade; if (lvl === 2) return l.trade + '/' + l.floor.id; if (lvl === 3) return l.trade + '/' + l.floor.id + '/' + (l.zone ? l.zone.id : '_'); return l.uid; }
+      function glabel(l) { if (lvl <= 1) return GLABEL[l.trade] || l.trade; if (lvl === 2) return (l.floor.code || l.floor.name || 'F'); if (lvl === 3) return (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F')); return (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F'))); }
+      var gmap = {}, uid2key = {};
+      dispLocs.forEach(function (l) { var k = gkey(l); uid2key[l.uid] = k;
+        if (!gmap[k]) gmap[k] = { key: k, trade: l.trade, label: l.trade + ' ' + glabel(l), txt: glabel(l), uids: [], s: Infinity };
+        var g = gmap[k]; g.uids.push(l.uid); g.s = Math.min(g.s, starts[l.uid] || 0); });
+      var nodes = Object.keys(gmap).map(function (k) { return gmap[k]; })
+        .sort(function (a, b) { return (a.s - b.s) || (GROUPS.indexOf(a.trade) - GROUPS.indexOf(b.trade)); });
+      var maxUnit = 1; nodes.forEach(function (n) { maxUnit = Math.max(maxUnit, n.s + 1); });
+      // Aggregate leaf links into collapsed-group links (dedup; drop group-internal links).
+      var aggMap = {}, agg = [];
+      cfg.links.forEach(function (k) {
+        var fk = uid2key[k.from], tk = uid2key[k.to]; if (!fk || !tk || fk === tk) return;
+        var ak = fk + '~' + tk; if (aggMap[ak]) { aggMap[ak].n++; return; }
+        aggMap[ak] = { from: fk, to: tk, type: k.type, lag: k.lag, n: 1, raw: (lvl >= 4 ? { from: k.from, to: k.to } : null) }; agg.push(aggMap[ak]);
+      });
+      var rows = [{ key: '__start__', label: 'Start', fill: 'var(--pd-ok)', s: 0, txt: 'START', uids: [] }]
+        .concat(nodes.map(function (n) { return { key: n.key, label: n.label, fill: gc(n.trade), s: n.s, txt: n.txt, uids: n.uids }; }))
+        .concat([{ key: '__end__', label: 'End', fill: 'var(--pd-red)', s: maxUnit, txt: 'END', uids: [] }]);
+      var H = pad * 2 + rows.length * rowH, W = chartX + (maxUnit + 1) * step + 40;
+      var pos = {}, bars = '', links = '', hot = '', rowhi = '';
+      // Focus (click a bar): seqFocus holds leaf uids → resolve to their collapsed group keys, then mark
+      // predecessors (green) / successors (amber) / dim the rest, and band-highlight the selected row.
+      var fKeys = {}; seqFocus.forEach(function (u) { if (uid2key[u]) fKeys[uid2key[u]] = 1; });
+      var fAny = Object.keys(fKeys).length;
+      var fPred = {}, fSucc = {};
+      if (fAny) agg.forEach(function (k) { if (fKeys[k.to]) fPred[k.from] = 1; if (fKeys[k.from]) fSucc[k.to] = 1; });
+      function relCls(key) { if (!fAny || fKeys[key]) return ''; if (fPred[key]) return ' prednode'; if (fSucc[key]) return ' succnode'; return ' dimnode'; }
       function xOf(unit) { return chartX + unit * step; }
       // faint column guides so aligned (SS) blocks read as sharing a column
       var grid = ''; for (var u = 0; u <= maxUnit; u++) { var gx = xOf(u); grid += '<line x1="' + gx + '" y1="' + pad + '" x2="' + gx + '" y2="' + (H - pad) + '" stroke="var(--pd-line)" stroke-width="1" opacity=".3"></line>'; }
       rows.forEach(function (r, i) {
         var y = pad + i * rowH, x = xOf(r.s), w = colW;
-        pos[r.uid] = { x: x, y: y, w: w, cy: y + rowH / 2 };
+        pos[r.key] = { x: x, y: y, w: w, cy: y + rowH / 2 };
+        var isF = r.uids.length && r.uids.some(function (u) { return seqFocus.indexOf(u) >= 0; });
+        if (isF) rowhi += '<rect class="sbld-schedrowhi" x="0" y="' + y + '" width="' + W + '" height="' + rowH + '"></rect>';
+        var pend = r.uids.length && r.uids.every(function (u) { return inPend(u); });
+        var pdst = r.uids.length && r.uids.every(function (u) { return inDst(u); });
         bars += '<text x="3" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="var(--pd-ink)">' + e2(r.label) + '</text>' +
-          '<rect class="sbld-schedbar' + (inPend(r.uid) ? ' pend' : (inDst(r.uid) ? ' pend-dst' : '')) + (isFocus([r.uid]) ? ' sbld-focus' : '') + relCls(r.uid) + '" data-uid="' + r.uid + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
+          '<rect class="sbld-schedbar' + (pend ? ' pend' : (pdst ? ' pend-dst' : '')) + (isF ? ' sbld-focus' : '') + relCls(r.key) + '" data-uids="' + e2(r.uids.join(' ')) + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
           '<text x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 3) + '" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">' + e2(r.txt) + '</text>';
       });
-      cfg.links.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
+      // Links: stagger the elbow x per source so parallel arrows out of one bar don't coincide (so you
+      // can tell which activities are linked); draw dimmed links first and the focused (hot) links last
+      // so a selected bar's relationships stand out on top.
+      var srcCount = {};
+      agg.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
         var fx = (k.type === 'SS' || k.type === 'SF') ? a.x : a.x + a.w;   // leave from start (SS/SF) or finish (FS/FF)
         var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;   // arrive at to finish (FF/SF) or start (FS/SS)
-        var y1 = a.cy, y2 = b.cy, mx = (tx >= fx ? fx + 8 : fx - 8), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
+        var y1 = a.cy, y2 = b.cy;
+        var oi = (srcCount[k.from] = (srcCount[k.from] || 0) + 1) - 1, extra = oi * 7;
+        var mx = (tx >= fx ? fx + 8 + extra : fx - 8 - extra), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
         var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
-        var lcls = fAny ? (seqFocus.indexOf(k.to) >= 0 ? ' hotpred' : (seqFocus.indexOf(k.from) >= 0 ? ' hotsucc' : ' dimlink')) : '';
-        links += '<path class="sbld-link' + lcls + '" d="' + d + '" marker-end="url(#sbldarrow2)"></path>' +
+        var lcls = fAny ? (fKeys[k.to] ? ' hotpred' : (fKeys[k.from] ? ' hotsucc' : ' dimlink')) : '';
+        var seg = '<path class="sbld-link' + lcls + '" d="' + d + '" marker-end="url(#sbldarrow2)"></path>' +
           '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' +
-          '<path class="sbld-linkhit" data-fk="' + e2(k.from + '~' + k.to) + '" d="' + d + '"></path>'; });
-      return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + grid + links + bars + '</svg>';
+          (k.raw ? '<path class="sbld-linkhit" data-fk="' + e2(k.raw.from + '~' + k.raw.to) + '" d="' + d + '"></path>' : '');
+        if (lcls === ' hotpred' || lcls === ' hotsucc') hot += seg; else links += seg;
+      });
+      return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + grid + rowhi + links + bars + hot + '</svg>';
     }
     function stSequence(host) {
       // Layout uses a UNIFORM 1 unit per zone (durations are NOT summed here) so the diagram stays a
@@ -13520,7 +13562,7 @@
         '<label class="sbld-quick">Structure leads by <input class="pd-input" id="b-lead" type="number" min="1" max="40" value="' + (cfg.floorLead || 4) + '" style="width:52px;height:30px;"> floor(s)</label>' +
         ((pendSet.length || pendDst.length || linkPhase === 'dst') ? '<button class="pd-btn" id="b-done">Reset selection</button>' : '') +
         '<button class="pd-btn" id="b-clear">Clear links</button>' +
-        '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Detail ' + LEVELS.map(function (l) { return '<button class="pd-btn sbld-scbtn' + (seqLevel === l[0] ? ' on' : '') + '" data-seqlvl="' + l[0] + '" title="Collapse the building view to ' + l[1] + ' level">' + l[0] + '</button>'; }).join('') + '</span>' +
+        '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Detail ' + LEVELS.map(function (l) { return '<button class="pd-btn sbld-scbtn' + (seqLevel === l[0] ? ' on' : '') + '" data-seqlvl="' + l[0] + '" title="Collapse both the building view AND the resulting schedule to ' + l[1] + ' level (links stay, aggregated between the collapsed bars)">' + l[0] + '</button>'; }).join('') + '</span>' +
         '<span class="sbld-quick">View ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
         '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-zout">−</button><button class="pd-btn sbld-zbtn" id="b-zin">+</button></span>' +
         '<span class="sbld-hint" id="b-pend"></span></div>' + body;
@@ -13549,7 +13591,7 @@
       host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { var uids = (b.dataset.uids || '').split(' ').filter(Boolean); setFocus(uids); nodeSelectMany(uids); }; });
       // schedule bars INSPECT only (highlight predecessors/successors); linking is done from the tower
       // nodes on the left, so clicking a bar never adds it to a pending link (was a linking bug).
-      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { setFocus([b.getAttribute('data-uid')]); render(); }); });
+      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { setFocus((b.getAttribute('data-uids') || '').split(' ').filter(Boolean)); render(); }); });
       var fclr = host.querySelector('#b-focusclear'); if (fclr) fclr.onclick = function () { setFocus([]); render(); };
       // right-click anywhere in the linking area confirms the current phase (source → destination → dialog)
       var seq2 = host.querySelector('.sbld-seq2'); if (seq2) seq2.addEventListener('contextmenu', nodeConfirm);
@@ -13651,9 +13693,9 @@
         kpis + pz + '<div class="sbld-tablewrap" style="max-height:340px;margin-top:8px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div></div>';
     }
     function stGenerate(host) {
-      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>6 · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
+      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>7 · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
       var gInt = generate('int'), gExt = generate('ext');
-      host.innerHTML = '<h2>6 · Generate &amp; preview — Internal vs External</h2>' +
+      host.innerHTML = '<h2>7 · Generate &amp; preview — Internal vs External</h2>' +
         '<p class="sbld-lede">Both schedules are built from the same zoning + links (steps 2–3), each using its own activity durations: <b>Internal</b> (target) and <b>External</b> (contract). Use <b>Push to Project Schedule</b> to add one of them to the live schedule (with its relationships).</p>' +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Project start&nbsp; <input class="pd-input" type="date" id="b-start" value="' + e2(cfg.startDate) + '" style="height:30px;"></label>' +
         '<button class="pd-btn" id="b-csv-int">CSV · Internal</button><button class="pd-btn" id="b-csv-ext">CSV · External</button>' +
@@ -13663,6 +13705,53 @@
       host.querySelector('#b-csv-int').onclick = function () { exportCsv(gInt, 'internal'); };
       host.querySelector('#b-csv-ext').onclick = function () { exportCsv(gExt, 'external'); };
       host.querySelector('#b-push').onclick = openPushModal;
+    }
+
+    // ---- Step 6: vertical stacking — one building model per trade, each zone labelled with its zone
+    // number and its COMPLETION date (from the generated schedule). Superstructure above the grade line,
+    // basements below — same tower layout as step 2, but filled with dates instead of empty cells.
+    var stackBasis = 'int';
+    function stackTowerSVG(tr, finBy) {
+      var floors = cfg.zoning[tr].floors;
+      if (!floors.length) return '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + '.</div>';
+      var W = 460, fh = 46, gap = 6, pad = 14, labelW = 44, col = gc(tr);
+      var supers = floors.filter(function (f) { return !f.sub; }), subs = floors.filter(function (f) { return f.sub; });
+      var disp = supers.slice().reverse().concat(subs.slice().reverse()), groundAt = supers.length;
+      var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
+      disp.forEach(function (f, i) {
+        var y = pad + i * (fh + gap), plotW = W - labelW - pad * 2;
+        svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="12" font-weight="700" fill="var(--pd-muted)">' + e2(f.code || f.name || 'F') + '</text>';
+        var cells = leavesOfFloor(tr, f), cw = plotW / (cells.length || 1);
+        cells.forEach(function (l, ci) {
+          var cx = pad + labelW + ci * cw, fin = finBy[l.uid];
+          var znum = l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (f.code || 'F'));
+          svg += '<rect x="' + cx + '" y="' + y + '" width="' + (cw - 3) + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (ci % 2 ? 0.45 : 0.58) : (ci % 2 ? 0.74 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '></rect>' +
+            '<text x="' + (cx + cw / 2) + '" y="' + (y + 17) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">' + e2(znum) + '</text>' +
+            '<text x="' + (cx + cw / 2) + '" y="' + (y + 35) + '" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,.92)">' + e2(fin ? fmtD(fin) : '—') + '</text>';
+        });
+      });
+      var gy = pad + groundAt * (fh + gap) - gap / 2 + (groundAt === disp.length ? 3 : 0);
+      svg += '<line x1="' + pad + '" y1="' + gy + '" x2="' + (W - pad) + '" y2="' + gy + '" stroke="var(--pd-line)" stroke-width="2.5"/>';
+      if (subs.length) svg += '<text x="' + (W - pad) + '" y="' + (gy - 4) + '" text-anchor="end" font-size="9" fill="var(--pd-muted)">grade</text>';
+      return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;height:auto;">' + svg + '</svg>';
+    }
+    function stStacking(host) {
+      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>6 · Vertical stacking</h2><div class="sbld-empty">Complete steps 1–5 first (activities + per-trade floors/zones + scope).</div>'; return; }
+      var g = generate(stackBasis);
+      var finBy = {}; g.perZone.forEach(function (z) { finBy[z.loc.uid] = z.finish; });
+      var used = usedGroups();
+      var towers = used.map(function (tr) {
+        return '<div class="sbld-stacktower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + stackTowerSVG(tr, finBy) + '</div>';
+      }).join('');
+      host.innerHTML = '<h2>6 · Vertical stacking — completion by zone</h2>' +
+        '<p class="sbld-lede">From steps 1–5, this is the <b>vertical stacking</b>: each trade\'s building model with every zone\'s <b>zone number</b> and its <b>completion date</b>. Superstructure sits above the grade line, basements below. Switch between the Internal (target) and External (contract) schedule. Push it into the live schedule in the next step.</p>' +
+        '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Schedule&nbsp; ' +
+        '<select class="pd-select sbld-mini" id="b-stackbasis">' +
+        [['int', 'Internal (target)'], ['ext', 'External (contract)']].map(function (o) { return '<option value="' + o[0] + '"' + (stackBasis === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+        '</select></label>' +
+        '<span class="sbld-hint">Project finish ' + fmtD(g.finish) + ' · ' + used.length + ' trade(s).</span></div>' +
+        '<div class="sbld-stackgrid">' + (towers || '<div class="sbld-empty">No trades with floors yet.</div>') + '</div>';
+      var sel = host.querySelector('#b-stackbasis'); if (sel) sel.onchange = function () { stackBasis = sel.value; render(); };
     }
 
     function exportCsv(g, label) {
