@@ -525,6 +525,11 @@
     .ps-stk-grade { display:grid; grid-template-columns:118px minmax(0,1fr) 215px; gap:10px; align-items:center;
       margin:4px 0 5px; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--pd-red); }
     .ps-stk-grade i { border-top:2px solid var(--pd-red); display:block; height:0; }
+    /* Whole-building END phases (Testing & Commissioning, Punchlisting, Handover) — no per-floor tag,
+       shown as their own rows ABOVE the top floor, with an accented italic label + a dashed divider
+       separating the phase block from the floors. */
+    .ps-stk-phaserow .ps-stk-lvl, .ps-stk-mrow.ps-stk-phaserow .ps-stk-lvl { font-style:italic; color:var(--pd-red); font-weight:800; }
+    .ps-stk-phasediv, .ps-stk-mphasediv { border-top:2px dashed var(--pd-line); margin:5px 0 6px; height:0; }
 
     /* "Show all towers" grid — one column per tower/building, rows = the union of level values
        across them so e.g. every tower's 9th floor lines up on the same row. Column count is
@@ -1262,7 +1267,12 @@
     .sbld-step.on .sbld-step-n { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     .sbld-step-t { font-size:13px; font-weight:600; line-height:1.25; }
     .sbld-step-s { font-size:11px; color:var(--pd-muted); }
-    .sbld-panel { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:20px; min-height:55vh; }
+    /* ⚠️ min-width:0 is load-bearing — this is the 1fr grid child, and without it wide step content
+       (the step-3 resulting-schedule SVG, the step-1 spreadsheet) forces the grid track past the
+       viewport; body{overflow-x:clip} then clips the right edge, so the schedule spilled off-screen
+       and was unreachable. With min-width:0 the track stays bounded and each inner scroll container
+       (.sbld-canvaswrap / .sbld-xlwrap) handles its own overflow. */
+    .sbld-panel { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:20px; min-height:55vh; min-width:0; }
     .sbld-panel h2 { margin:0 0 4px; font-size:18px; }
     .sbld-panel .sbld-lede { margin:0 0 18px; color:var(--pd-muted); font-size:13px; max-width:70ch; }
     .sbld-sec-actions { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
@@ -15158,12 +15168,57 @@
       var acts = rows.filter(function (r) {
         if (isWbs(r)) return false;
         if (!stkInScope(r, levelId)) return false;
+        if (stkPhaseLabel(r)) return false;   // end phases are their own rows, not folded here
         return catValOf(r, cfg.field) === c.value;
       });
       if (!acts.length) return;
       out[c.value] = { cat: c, state: _stkState(acts, D) };
     });
     return out;
+  }
+  // ---- Whole-building END phases (Testing & Commissioning, Punchlisting, Handover, …) -----------
+  // These carry NO per-floor Level tag, so they never surface in a floor band — yet the reference LSM
+  // sheets show them as their own rows ABOVE the top floor. Detected by KEYWORD on the activity name
+  // (field-independent: they need not be a distinct "Colour activities by" value), grouped by a
+  // canonical phase label, and rendered as phase rows ranked above the roof (1000+) in first-start
+  // order. Keyword-matched activities are excluded from stkTowerWideCats() so they can't also fold
+  // into a floor band — a phase is shown once, as its own row.
+  var STK_PHASES = [
+    { re: /(commission|pre[-\s]?comm|testing|\bt\s*&\s*c\b|\bt\s*and\s*c\b)/i, label: 'Testing & Commissioning', color: '#8e44ad' },
+    { re: /punch/i, label: 'Punchlisting', color: '#e67e22' },
+    { re: /(handover|hand\s*over|turn\s*over|turnover)/i, label: 'Handover', color: '#c0392b' },
+    { re: /(close\s*out|closeout)/i, label: 'Closeout', color: '#16a085' },
+    { re: /(defects?\s*liability|\bdlp\b)/i, label: 'Defects Liability', color: '#7f8c8d' }
+  ];
+  function stkPhaseLabel(r) {
+    var s = String(r && r.activity_name || '');
+    for (var i = 0; i < STK_PHASES.length; i++) if (STK_PHASES[i].re.test(s)) return STK_PHASES[i];
+    return null;
+  }
+  function stkPhaseRows(levelId, D) {
+    var groups = {};
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      if (!stkInScope(r, levelId)) return;
+      if (locValOf(r, levelId)) return;            // has a per-floor tag → part of the floor stack, not here
+      var p = stkPhaseLabel(r); if (!p) return;
+      var g = groups[p.label] || (groups[p.label] = { p: p, acts: [], first: null });
+      g.acts.push(r);
+      var s = pd(dispStart(r)); if (s && (!g.first || s < g.first)) g.first = s;
+    });
+    var list = Object.keys(groups).map(function (k) { return groups[k]; });
+    list.sort(function (a, b) { return (a.first && b.first) ? (a.first - b.first) : (a.first ? -1 : (b.first ? 1 : 0)); });
+    return list.map(function (g, i) {
+      var st = _stkState(g.acts, D), color = g.p.color;
+      return {
+        loc: g.p.label, isPhase: true, rank: 1000 + i, color: color, nActs: g.acts.length,
+        total: 1, done: st === 'done' ? 1 : 0, pct: st === 'done' ? 100 : st === 'wip' ? 55 : 0,
+        cur: (st === 'none' ? null : g.p), wip: st === 'wip' ? g.p : null, lastDone: st === 'done' ? g.p : null,
+        curIsTowerWide: true,
+        text: st === 'wip' ? ('On-going ' + g.p.label) : st === 'done' ? (g.p.label + ' complete') : (g.p.label + ' — not started'),
+        style: 'background-color:' + color + ';', tint: catTint(color)
+      };
+    });
   }
   function stackModel(levelId, D) {
     var cfg = catCfg(), cats = catList(), map = catMapNow();
@@ -15217,7 +15272,9 @@
       b.style = b.cur ? 'background-color:' + (map[b.cur.value] || b.cur).color + ';' : '';
       b.tint = b.cur ? catTint((map[b.cur.value] || b.cur).color) : '';
     });
-    return list;
+    // Whole-building end phases as their own rows above the top floor (Testing & Commissioning,
+    // Punchlisting, Handover, …). Ranked 1000+, so stkDisplayOrder / the grid place them at the top.
+    return list.concat(stkPhaseRows(levelId, D));
   }
   // A band: the remainder in the category's own colour at low alpha, the completed part solid — so
   // a level visibly FILLS UP rather than flipping between two flat colours. `title` is optional: the
@@ -15265,30 +15322,33 @@
     var cols = '118px repeat(' + N + ',minmax(64px,1fr))';
     var head = '<div class="ps-stk-mrow ps-stk-mhead" style="grid-template-columns:' + cols + '"><div></div>' +
       perTower.map(function (pt) {
-        var nDone = pt.model.filter(function (b) { return b.pct === 100; }).length;
+        var floors = pt.model.filter(function (b) { return !b.isPhase; });
+        var nDone = floors.filter(function (b) { return b.pct === 100; }).length;
         return '<div class="ps-stk-mtow" title="' + esc(pt.value) + '">' + esc(pt.value) +
-          '<small>' + nDone + '/' + pt.model.length + '</small></div>';
+          '<small>' + nDone + '/' + floors.length + '</small></div>';
       }).join('') + '</div>';
 
-    var gradeDrawn = false, rowsHtml = '';
-    order.forEach(function (loc) {
-      var rank = rankOf[loc];
+    var gradeDrawn = false, rowsHtml = '', prevPhase;
+    order.forEach(function (loc, idx) {
+      var rank = rankOf[loc], isPhase = rank != null && rank >= 1000;
+      if (idx > 0 && !!isPhase !== !!prevPhase) rowsHtml += '<div class="ps-stk-mphasediv"></div>';
+      prevPhase = isPhase;
       if (_stkTopFirst && !gradeDrawn && rank != null && rank < 0) {
         rowsHtml += '<div class="ps-stk-mgrade"></div>';
         gradeDrawn = true;
       }
-      rowsHtml += '<div class="ps-stk-mrow" style="grid-template-columns:' + cols + '">' +
+      rowsHtml += '<div class="ps-stk-mrow' + (isPhase ? ' ps-stk-phaserow' : '') + '" style="grid-template-columns:' + cols + '">' +
         '<div class="ps-stk-lvl">' + esc(loc) + '</div>' +
         perTower.map(function (pt) {
           var b = pt.model.filter(function (x) { return x.loc === loc; })[0];
-          if (!b) return '<div class="ps-stk-band ps-stk-mnone" title="' + esc(pt.value) + ' has no ' + esc(stkLevelName(levelId).toLowerCase()) + ' here"></div>';
-          return stkBandHTML(b, 'ps-stk-band', pt.value + ' — ' + b.text + ' (' + b.done + ' of ' + b.total + ' categories complete)');
+          if (!b) return '<div class="ps-stk-band ps-stk-mnone" title="' + esc(pt.value) + (isPhase ? ' has no ' + esc(loc) : ' has no ' + esc(stkLevelName(levelId).toLowerCase())) + ' here"></div>';
+          return stkBandHTML(b, 'ps-stk-band', pt.value + ' — ' + b.text + (b.isPhase ? ' (whole building)' : ' (' + b.done + ' of ' + b.total + ' categories complete)'));
         }).join('') +
       '</div>';
     });
 
-    var totalLocs = perTower.reduce(function (a, pt) { return a + pt.model.length; }, 0);
-    var totalDone = perTower.reduce(function (a, pt) { return a + pt.model.filter(function (b) { return b.pct === 100; }).length; }, 0);
+    var totalLocs = perTower.reduce(function (a, pt) { return a + pt.model.filter(function (b) { return !b.isPhase; }).length; }, 0);
+    var totalDone = perTower.reduce(function (a, pt) { return a + pt.model.filter(function (b) { return !b.isPhase && b.pct === 100; }).length; }, 0);
     return { html: head + rowsHtml, towers: towerVals.length, count: totalLocs, done: totalDone };
   }
 
@@ -15456,18 +15516,22 @@
         return;
       }
       var disp = stkDisplayOrder(model);
-      nLocs = model.length;
-      nDone = model.filter(function (b) { return b.pct === 100; }).length;
-      out = ''; var gradeDrawn = false;
-      disp.forEach(function (b) {
+      nLocs = model.filter(function (b) { return !b.isPhase; }).length;
+      nDone = model.filter(function (b) { return !b.isPhase && b.pct === 100; }).length;
+      out = ''; var gradeDrawn = false, prevPhase;
+      disp.forEach(function (b, idx) {
+        // Dashed divider where the whole-building phase block meets the floors (works whether phases
+        // are at the top — "highest at top" — or the bottom).
+        if (idx > 0 && !!b.isPhase !== !!prevPhase) out += '<div class="ps-stk-phasediv"></div>';
+        prevPhase = b.isPhase;
         // Grade line between the superstructure and the basements, as the reference sheet shows it.
         if (_stkTopFirst && !gradeDrawn && b.rank != null && b.rank < 0) {
           out += '<div class="ps-stk-grade"><span></span><i></i><span>grade</span></div>'; gradeDrawn = true;
         }
-        out += '<div class="ps-stk-row">' +
+        out += '<div class="ps-stk-row' + (b.isPhase ? ' ps-stk-phaserow' : '') + '">' +
             '<div class="ps-stk-lvl">' + esc(b.loc) + '</div>' +
             stkBandHTML(b, 'ps-stk-band') +
-            '<div class="ps-stk-txt' + (b.cur ? '' : ' none') + '" title="' + esc(b.text + ' — ' + b.done + ' of ' + b.total + ' categories complete') + '">' + esc(b.text) + '</div>' +
+            '<div class="ps-stk-txt' + (b.cur ? '' : ' none') + '" title="' + esc(b.isPhase ? (b.text + ' (whole building)') : (b.text + ' — ' + b.done + ' of ' + b.total + ' categories complete')) + '">' + esc(b.text) + '</div>' +
           '</div>';
       });
       cnt.textContent = nLocs + ' location' + (nLocs === 1 ? '' : 's') + ' · ' + nDone + ' complete';
@@ -15477,8 +15541,15 @@
     var leg = cats.map(function (c) {
       return '<span class="ps-alg"><span class="ps-alg-sw" style="' + c.style + ';cursor:default;"></span><span>' + esc(c.value) + '</span></span>';
     }).join('');
+    // End-phase legend swatches (only the phases actually present in the current scope).
+    var legPhases;
+    if (showAll && parentLvl) { var _had = parentLvl.id in _stkScope, _prev = _stkScope[parentLvl.id]; delete _stkScope[parentLvl.id]; legPhases = stkPhaseRows(_stkLevel, D); if (_had) _stkScope[parentLvl.id] = _prev; }
+    else legPhases = stkPhaseRows(_stkLevel, D);
+    var phaseLeg = legPhases.length ? '<span class="ps-alg" style="opacity:.7;font-style:italic;">End phases:</span>' + legPhases.map(function (b) {
+      return '<span class="ps-alg"><span class="ps-alg-sw" style="background:' + b.color + ';cursor:default;"></span><span>' + esc(b.loc) + '</span></span>';
+    }).join('') : '';
     body.innerHTML = ctrls + out +
-      '<div class="ps-actlegend-items" style="margin-top:12px;border-top:1px dashed var(--pd-line);padding-top:10px;">' + leg + '</div>' +
+      '<div class="ps-actlegend-items" style="margin-top:12px;border-top:1px dashed var(--pd-line);padding-top:10px;">' + leg + phaseLeg + '</div>' +
       overallStatusHTML(overall, scopeNote, perTowerOverall);
     wireStackCtrls(body);
   }

@@ -1,5 +1,30 @@
 # Module: project-schedule
 
+## Vertical stacking: end phases (Testing & Commissioning / Punchlisting / Handover) as their own rows + Schedule Builder overflow fix (2026-08-14) — fmlozano
+Two asks in one turn:
+- **End phases now show in the LSM vertical stacking** (`renderStackView`). Testing & Commissioning,
+  Punchlisting, Handover (also Closeout, Defects Liability) carry **no per-floor Level tag**, so they
+  never appeared in a floor band — the reference LSM sheets show them as their own rows ABOVE the top
+  floor. New `STK_PHASES` + `stkPhaseLabel` (**keyword match on the activity name**, deliberately
+  field-independent — they need not be a distinct "Colour activities by" value, which on AVR101 they
+  are not) + `stkPhaseRows(levelId, D)`: groups the keyword-matched, untagged, in-scope activities by
+  canonical phase, ranked **1000+** (so `stkDisplayOrder` / the grid place them at the top), each with
+  its own fixed colour, an italic red label, and a dashed divider separating the phase block from the
+  floors. `stackModel` appends them; `stkTowerWideCats` **excludes** phase acts so a phase is shown
+  once (its own row, never also folded into a floor). Both the single-tower render and the multi-tower
+  grid render them; floor **counts exclude phase rows** (so "N/14" still means floors). Legend gains an
+  "End phases:" group. ⚠️ The docked stacking pane (`renderStackPane`) is row-aligned to grid group
+  rows, which have no phase group, so phase rows simply don't appear there (harmless — the modal is
+  where phases show).
+- ⚠️ **Schedule Builder step-3 resulting-schedule spilled off the right, unreachable** (owner report).
+  Root cause: `.sbld-panel` is the `1fr` grid child of `.sbld-wrap` with the default `min-width:auto`,
+  so the wide resulting-schedule SVG forced the grid track **past the viewport** and `body{overflow-x:
+  clip}` clipped the right edge. Fix = `min-width:0` on `.sbld-panel` so the track stays bounded and
+  the inner `.sbld-canvaswrap` (overflow:auto) scrolls internally. ⚠️ Deliberately **not** `overflow:
+  hidden` — that would break the step-2 tower's `position:sticky`.
+- Verified: inline `<script>` parses (0 fail). ⚠️ **NOT verified signed-in** (auth-gated). `MODULE_V`
+  already `20260814a` this turn.
+
 ## Schedule Builder step 3: level-of-detail on the schedule + bar highlight/relationships + new Stacking step (2026-08-14) — fmlozano
 Four owner asks on the Schedule Builder, all in the `ScheduleBuilder` closure in `index.html`:
 - **Level-of-detail (`seqLevel`, the step-3 "Detail 1 2 3 4" buttons) now also collapses the RESULTING
