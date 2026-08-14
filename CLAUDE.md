@@ -77,6 +77,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-13 — Project Schedule: LSM pass 2 (textures, filling bars, WBS composition, side-by-side stack)
+Owner reviewed the first LSM pass and asked for eight fixes. All landed in
+`modules/project-schedule/index.html`, and this time they were **verified signed in on Avesta (AVR101)**.
+- **Legend colours were too close — they now carry a TEXTURE too** (hatch / dots / lines / crosshatch),
+  cycling one step per entry so neighbours differ in hue *and* pattern, with a Textures on/off switch.
+- **Bars fill up**: the remainder is the category colour at low alpha, the complete part is solid +
+  textured. **WBS summary bars now show the activities inside them** as coloured segments, each with its
+  own progress — a summary reads as its sequence of trades.
+- **Stacking order fixed.** ⚠️ Two defects only the live data exposed: **"Substructure"** was unrankable
+  and floated to the TOP of the tower, and **"Ground Reservoir"** matched the bare word "ground" and
+  ranked as level 0, wedging a water tank between 2nd and Ground Floor. Levels now rank structurally
+  (basements negative, sub-grade below them, roof last) and non-storeys sit below the stack.
+- **Bands align** — the status column is a fixed track, not `auto` (the widest label was setting every
+  band's right edge, which read as cantilevered floors). Verified: every band ends at the same x.
+- **New docked stacking pane beside the Gantt**, row-aligned to the location group rows and
+  scroll-synced, with a one-click "Group by <level>"; the location groups then follow the same
+  top-first / bottom-first order, without touching the WBS ordering.
+- **49 checks in Node against the shipped functions** + live confirmation of the legend, the filling
+  bars, 378 summary segments and the corrected stack. ⚠️ The docked pane's row alignment is the one
+  thing not confirmed live. `MODULE_V` → `20260813e`. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-14 — Sign in with Microsoft (Azure AD via Supabase OAuth)
 User asked to add Microsoft login. Added the client side only — this needs a matching **Azure AD app
 registration + enabling the "azure" provider in the Supabase Auth dashboard**, both owner-only actions

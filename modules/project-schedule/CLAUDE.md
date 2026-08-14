@@ -4092,3 +4092,53 @@ and **clicking a month to show progress as a vertical stack** of floors.
   fail); the module page loads with no console errors.
   ⚠️ **Not verified signed-in** — needs a project with a location breakdown to eyeball the stack.
   `MODULE_V` bumped to `20260813a` (module `index.html` is cache-busted from dashboard.html).
+
+## LSM pass 2: textures, filling bars, WBS composition, side-by-side stacking (2026-08-13) — fmlozano
+Owner feedback on the first LSM pass, verified **signed in on AVR101 (Avesta, 6,016 rows)** this time.
+- **Legend colours were too close together → colour + TEXTURE, as the reference sheet does it.**
+  New `CAT_TEXTURES` (solid / hatch / dots / vertical / back-hatch / crosshatch / horizontal / grid)
+  rendered as `background-image` over the base colour by `catStyle()`, cycling **one step per legend
+  entry** so neighbours differ in hue *and* pattern; palette re-ordered for maximum adjacent
+  separation. A **Textures** checkbox turns it off. ⚠️ A native `<input type=color>` can only show a
+  flat swatch, so the legend swatch is a styled button with the colour input hidden behind it.
+  **Verified live: 6 trades, 6 distinct colours, 5 distinct textures.**
+- **Bars now FILL UP.** `catTint()` paints the remainder in the same colour at 0.26 alpha and the
+  `.ps-bar-fill` carries the solid textured colour. ⚠️ Alpha rather than a blend toward white, so it
+  reads in both themes. **Verified live: bar `rgba(0,176,240,.26)` / fill `rgb(0,176,240)` + texture,
+  widths 0 / 53 / 100% matching `percent_complete`.**
+- **WBS summary bars show what is INSIDE them** (`_sumSegsHTML`): each descendant activity as a
+  segment at its own dates, tinted + filled by its own progress — so a summary reads as its sequence
+  of trades, not one flat block. ⚠️ Built from a **one-pass `_segMap`** (each leaf pushed into every
+  ancestor's bucket, capped at 400) rather than scanning `_sorted` per visible row, which would be
+  O(rows × visible) on a 17k schedule. **Verified live: 378 segments on Avesta's default outline.**
+- **Stacking view rebuilt.**
+  - ⚠️ **Level order was wrong and it was not a sort-stability issue — the values are text.** Ordering
+    by earliest start interleaved basements among the upper floors. New `levelRank()` ranks
+    structurally (basements negative, ground 0, mezzanine 0.5, floors by number, roof last) and
+    `cmpLevelValue` falls back to a numeric-aware name sort. **Two defects the live run caught that no
+    fixture would have:** `Substructure` was unrankable and floated to the TOP of the tower (now −50,
+    below the basements), and **`Ground Reservoir` matched the bare word "ground" and ranked as level
+    0**, wedging a water tank between 2nd Floor and Ground Floor (the ground match now needs the floor
+    sense). Values that are not a storey are appended **below** the stack instead of reversing with it.
+    **Verified live: Roof Deck → 12th … 2nd → Ground Floor → grade line → Substructure → Ground
+    Reservoir.**
+  - **Bands are aligned** — the status column is a fixed `168px` grid track, not `auto`. With `auto`
+    the widest label won and every band ended at a different x, which read as cantilevered floors.
+    **Verified live: every band's right edge at exactly 918px.**
+  - "Stack by" is a real 150×30 select on its own label, no longer colliding with its own text.
+- **Docked stacking pane** (`.ps-stackpane`, third column of `.ps-split`): one band per level, placed
+  at `DL index × ROWH` and scroll-synced by `transform`, so the stack sits **beside** the Gantt on the
+  same row axis. It only aligns when the grid is **grouped by that level**, and offers a one-click
+  "Group by <level>"; location groups then order by `cmpLevelValue` (top-first or bottom-first,
+  shared with the stack) — the WBS grouping is never touched.
+  ⚠️ **`normalizeGroupBys()` silently DROPS a `loc:` dimension whose level isn't in `LOC_LEVELS`**, so
+  clicking that button before the project's levels finish loading did nothing at all. Confirmed as the
+  live symptom (4/4 in Node) and now guarded with a toast instead of a silent no-op.
+- **Verified 49 checks in Node against the SHIPPED functions** (sliced, not reimplemented): 12 state/
+  category + 33 level-rank / ordering / tint / stackModel + 4 grouping-normalisation. Inline script
+  parses. ⚠️ **The docked pane's row alignment is the one thing NOT confirmed live** — switching a
+  6k-row project's grouping repeatedly timed out CDP on a backgrounded tab.
+- ⚠️ **Environment note that finally paid off:** the tab reports `visibilityState:"hidden"`, so rAF
+  never fires and the Gantt does not repaint after a state change. **`window.__PS.fn.doRender()` (the
+  stage-1 scaffold) calls the render choke point directly and bypasses it** — that is how the bars and
+  segments were measurable at all.

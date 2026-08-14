@@ -15118,7 +15118,15 @@
       inner.innerHTML = '<div class="ps-sp-note">Group the schedule by <strong>' + esc(stkLevelName(_stkLevel)) +
         '</strong> to line the stack up with the bars.<br><br><button class="pd-btn" id="ps-sp-group" style="height:28px;font-size:12px;">Group by ' + esc(stkLevelName(_stkLevel)) + '</button></div>';
       var g = inner.querySelector('#ps-sp-group');
-      if (g) g.onclick = function () { setGroupBys(['loc:' + _stkLevel].concat(groupBys.filter(function (d) { return d !== 'loc:' + _stkLevel; }))); renderStackPane(); };
+      // ⚠️ normalizeGroupBys() silently DROPS a loc: dimension whose level isn't in LOC_LEVELS —
+      // which is exactly what happens if this is clicked before the project's levels have finished
+      // loading. Say so rather than appearing to do nothing (observed live on AVR101).
+      if (g) g.onclick = function () {
+        var dim = 'loc:' + _stkLevel;
+        if (allDims().indexOf(dim) === -1) { UI.toast('Location levels are still loading — try again in a moment.', 'warn'); return; }
+        setGroupBys([dim].concat(groupBys.filter(function (d) { return d !== dim; })));
+        renderStackPane();
+      };
       return;
     }
     // Row-align: every group node of this dimension in the display list gets its band at that row.
