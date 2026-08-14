@@ -4142,3 +4142,37 @@ Owner feedback on the first LSM pass, verified **signed in on AVR101 (Avesta, 6,
   never fires and the Gantt does not repaint after a state change. **`window.__PS.fn.doRender()` (the
   stage-1 scaffold) calls the render choke point directly and bypasses it** — that is how the bars and
   segments were measurable at all.
+
+## LSM pass 3: tower scoping + the two clipped selects (2026-08-13) — fmlozano
+Owner feedback on pass 2, all four items, verified signed in on AVR101.
+- ⚠️ **THE REAL ONE — the stack ignored TOWER logic.** Avesta is `Tower › Level › Zone ›
+  Orientation`, so stacking by Level merged **seven different buildings' 9th floors into one band**.
+  That is not a display nit: Tower 1 can be topped out while Tower 5 is still in substructure, and a
+  merged band cannot represent both. **Levels above the stacked one are now a SCOPE**
+  (`_stkScope` + `stkOuterLevels`/`stkScopeValues`/`stkInScope`/`stkEnsureScope`), one selector per
+  outer level, defaulting to the **first real value rather than a merge**, named in the panel title
+  and the pane header. Scoping cascades: the Zone stack is scoped by Tower **and** Level.
+  **Verified live: Tower 1 → 13 levels (tops out at the 11th), Tower 3 and Tower 5 → 14 (they have a
+  12th) — three different buildings, three different stacks, from one project.**
+- ⚠️ **Two selects were clipping their own text** (`Colour activities by`, then `Stack by` + the new
+  Tower selector) — all three had a **fixed** `height` (28/30px) that the 12–12.5px option text
+  overflowed, so the descenders were cut and it read as a smudge. Height is a **minimum** now and the
+  box grows with its content. **Verified live: 32px box, 30px needed, `clipped:false` on all three.**
+- **Label spill-over in the modal.** The level column wrapped "Ground Reservoir" onto two lines and
+  the status column cut "Architectural Works complete" — and a wrapped label pushed its own row out
+  of alignment with the others. Both side columns are fixed and wide enough (118 / 215px) and clip
+  with a tooltip instead of wrapping; panel 1000px. **Verified live: 0 two-line labels, 0 clipped
+  statuses, every band's right edge at 976px.**
+- ⚠️ **The docked pane looked empty, and grouping by the level was NOT enough to fix it.** Each level
+  group is followed by its whole subtree, so on Avesta two level rows sit hundreds of rows apart and
+  no scroll position shows two bands. The pane now offers **"Collapse to one row per <level>"**
+  (`stkCollapseToLevels`), which is what actually produces the side-by-side of the reference sheet.
+- ⚠️ **My own ordering slip, caught live:** `renderStackView` built the title *before* resolving the
+  scope, so the first open never said which tower you were looking at. Scope resolves first now.
+- **60 checks green against the SHIPPED functions** (12 + 33 + 4 + 11), the new suite covering
+  outer-level detection, cascading scope, first-value defaulting, per-tower models, and the
+  **unscoped merge as an explicit regression case**. ⚠️ **Still not verified live: the docked pane's
+  collapse-to-levels alignment** — regrouping a 6k-row project repeatedly timed out CDP.
+- ⚠️ **Method note:** `window.__PS.fn.doRender()` (the stage-1 scaffold) is the only way to measure
+  anything here — the tab reports `visibilityState:"hidden"`, so rAF never fires and the Gantt never
+  repaints after a state change. Every measurement above came through it.

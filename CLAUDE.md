@@ -77,6 +77,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-13 — Project Schedule: tower-scoped stacking + two selects that clipped their own text
+- ⚠️ **The vertical stack ignored TOWER logic.** Avesta is `Tower › Level › Zone › Orientation`, so
+  stacking by Level merged **seven buildings' 9th floors into one band** — Tower 1 can be topped out
+  while Tower 5 is still in substructure. Outer levels are now a **scope** with a selector each,
+  defaulting to the first real value rather than a merge, and it cascades (a Zone stack is scoped by
+  Tower *and* Level). **Verified live: Tower 1 = 13 levels, Towers 3/5 = 14 — three different stacks.**
+- ⚠️ **Three selects had a FIXED height that their own option text overflowed** ("Colour activities
+  by", "Stack by", the new Tower filter) — the descenders were cut off. Height is a minimum now.
+- Modal labels no longer wrap or clip (a wrapped label was also knocking its row out of alignment).
+- The docked pane looked empty because grouping alone leaves each level's whole subtree between the
+  level rows; it now offers "Collapse to one row per <level>", which is what makes it a stack.
+- 60 checks green against the shipped functions, incl. the unscoped tower merge as a regression case.
+  ⚠️ The docked pane's alignment is still the one thing unverified live. `MODULE_V` → `20260813h`.
+
 ### 2026-08-13 — Project Schedule: LSM pass 2 (textures, filling bars, WBS composition, side-by-side stack)
 Owner reviewed the first LSM pass and asked for eight fixes. All landed in
 `modules/project-schedule/index.html`, and this time they were **verified signed in on Avesta (AVR101)**.
