@@ -13109,7 +13109,17 @@
 
     function generate(basis, startOverride) {
       basis = basis || 'int';
-      var locs = locList(), days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l, basis); });
+      var locs = locList();
+      // "Push EVERYTHING" — the point of the builder. A trade that has class codes (step 1) but no
+      // floors/zones (step 2) used to produce zero locations, so its whole discipline was silently
+      // dropped from the push (the "only Structural got pushed" surprise). Give each such trade a
+      // single un-located occurrence so its activities still reach the schedule (tagged with their
+      // discipline). Trades that DO have floors keep their full per-location breakdown, unchanged.
+      var haveLoc = {}; locs.forEach(function (l) { haveLoc[l.trade] = 1; });
+      usedGroups().forEach(function (tr) {
+        if (!haveLoc[tr] && tradeActs(tr).length) locs.push({ uid: tr + '/__all__', trade: tr, floor: { id: '__all__', code: '', name: '', zones: [] }, zone: null, unit: null });
+      });
+      var days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l, basis); });
       var starts = computeStarts(locs, days), start = pdd(startOverride) || pdd(cfg.startDate) || new Date();
       var rows = [], perZone = [];
       locs.slice().sort(function (a, b) { return (starts[a.uid] - starts[b.uid]) || (GROUPS.indexOf(a.trade) - GROUPS.indexOf(b.trade)); }).forEach(function (loc) {
