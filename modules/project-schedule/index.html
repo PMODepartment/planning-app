@@ -13003,11 +13003,22 @@
       });
       // 2) cross-trade lead — each transition uses the LEADING trade's own "floors at a time" batch
       //    (cfg.tradeBatch[prev]); falls back to a legacy per-pair lead, then the global floorLead.
+      //    ⚠️ The lead is counted in SUPERSTRUCTURE STOREYS, and basements pair basement-to-basement
+      //    by code (trail 1:1, no cross-grade lead). Before, a "4-floor lead" on a 3-basement building
+      //    was silently spent on the basements — the next trade started when the leader was only 1
+      //    storey up (i.e. "right after B3"), which is the reported bug. A basement-free project is
+      //    unchanged (pSup = every floor, so this reduces to the old j + L − 1 mapping).
       for (var t = 1; t < present.length; t++) {
         var prev = present[t - 1], next = present[t],
-          L = Math.max(1, +(cfg.tradeBatch[prev]) || +(cfg.tradeLeads[prev + '>' + next]) || lead), fpN = floorsOf(prev).length;
+          L = Math.max(1, +(cfg.tradeBatch[prev]) || +(cfg.tradeLeads[prev + '>' + next]) || lead),
+          pF = floorsOf(prev), lastP = pF.length - 1, pByCode = {}, pSup = [];
+        pF.forEach(function (f, i) { pByCode[f.code] = i; if (!f.sub) pSup.push(i); });   // pSup = prev superstructure indices (bottom-up)
+        var nSeen = 0;   // 0-based superstructure ordinal of the NEXT floor being placed
         floorsOf(next).forEach(function (nf, j) {
-          var si = Math.min(j + L - 1, fpN - 1); if (si < 0) si = 0;
+          var si;
+          if (nf.sub) { si = (pByCode[nf.code] != null) ? pByCode[nf.code] : (pSup.length ? pSup[0] : Math.min(j, lastP)); }   // basement → same basement in the leader
+          else { var target = Math.min(nSeen + L - 1, pSup.length - 1); si = pSup.length ? pSup[target] : lastP; nSeen++; }    // superstructure → leader L storeys ahead
+          if (si < 0) si = 0;
           Object.keys(idx[next][j]).forEach(function (ck) { var pf = idx[prev][si][ck] || firstOf(idx[prev][si]); if (pf) tryLink(pf, idx[next][j][ck]); });
         });
       }
