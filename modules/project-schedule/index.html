@@ -4845,7 +4845,11 @@
       // pane is that the bars and the stack read in the same vertical order.
       var _isLoc = dims[di].indexOf('loc:') === 0;
       var _keys = Object.keys(buckets).sort(dims[di] === 'work' ? cmpWorkName : (_isLoc ? cmpLevelValue : cmpGroupName));
-      if (_isLoc && _stkTopFirst) _keys.reverse();
+      if (_isLoc && _stkTopFirst) {   // same rule as the stack: reverse the storeys, keep non-levels last
+        var _rk = _keys.filter(function (k) { return levelRank(k) != null; });
+        var _ot = _keys.filter(function (k) { return levelRank(k) == null; });
+        _rk.reverse(); _keys = _rk.concat(_ot);
+      }
       _keys.forEach(function (g) {
         var gcode = parentCode + '§' + g;
         out.push({ _dkind: 'group', _dcode: gcode, _ddepth: parentAnc.length, _danc: parentAnc,
@@ -14895,7 +14899,12 @@
     if (/\b(roof|rd|penthouse|ph|top deck|helipad)\b/.test(t)) return 900;
     if ((m = t.match(/\b(?:b|bsmt|basement|cellar)\s*(\d+)\b/))) return -parseInt(m[1], 10);
     if (/\b(basement|bsmt|cellar)\b/.test(t)) return -1;
-    if (/\b(ground|gf|g f|lgf|ugf)\b/.test(t)) return 0;
+    // ⚠️ Sub-grade structure ("Substructure", "Foundation", "Pile Cap") is BELOW everything, and
+    // measured on AVR101 it was the value that made the stack read wrong: unranked, it floated to
+    // the top of a tower whose other values are ordinary floors.
+    if (/\b(substructure|sub structure|foundation|footing|pile cap|piling|raft)\b/.test(t)) return -50;
+    // ⚠️ "ground" must be the FLOOR sense — AVR101 has a "Ground Reservoir", which is not level 0.
+    if (/\bground\s*(floor|flr|level|lvl)\b|^ground$|\b(gf|g f|lgf|ugf)\b/.test(t)) return 0;
     if (/\b(mezz|mezzanine)\b/.test(t)) return 0.5;
     if ((m = t.match(/\b(?:f|fl|flr|floor|l|lvl|level|storey|story)\s*(\d+)\b/))) return parseInt(m[1], 10);
     if ((m = t.match(/\b(\d+)\s*(?:st|nd|rd|th)?\s*(?:floor|flr|level|storey|story)\b/))) return parseInt(m[1], 10);
@@ -14909,6 +14918,16 @@
     if (ra != null && rb == null) return -1;
     if (ra == null && rb != null) return 1;
     return cmpGroupName(a, b);
+  }
+  // Display order for the stack. ⚠️ Reversing the WHOLE list for top-first would drag the
+  // unrankable values ("Ground Reservoir", "Podium Amenities" — things that are not a storey) to
+  // the TOP of the building. They are not part of the vertical stack at all, so the ranked levels
+  // are reversed among themselves and the rest is appended below.
+  function stkDisplayOrder(model) {
+    var ranked = model.filter(function (b) { return b.rank != null; });
+    var other = model.filter(function (b) { return b.rank == null; });
+    if (_stkTopFirst) ranked.reverse();
+    return ranked.concat(other);
   }
   function stkDefaultLevel() {
     if (_stkLevel && LOC_LEVELS.some(function (l) { return l.id === _stkLevel; })) return _stkLevel;
@@ -15021,7 +15040,7 @@
       wireStackCtrls(body);
       return;
     }
-    var disp = model.slice(); if (_stkTopFirst) disp.reverse();
+    var disp = stkDisplayOrder(model);
     var nDone = model.filter(function (b) { return b.pct === 100; }).length;
     var out = '', gradeDrawn = false;
     disp.forEach(function (b, i) {
