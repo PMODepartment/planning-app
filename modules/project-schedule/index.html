@@ -14203,6 +14203,7 @@
     }
     async function pushToSchedule(parentCode, grouped, basis, order, startISO) {
       var g = generate(basis || 'int', startISO); if (!g.rows.length) return;
+      if (typeof showLoading === 'function') showLoading('Pushing to the project schedule…');
       var locIds = await ensureLocLevels();
       // floor -> level 1, zone -> level 2, unit -> level 3 (only as far as the project has levels).
       function locMapOf(loc) {
@@ -14291,6 +14292,7 @@
           var nres = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: keyToNodeId[nd.parentKey] || null, name: nd.name, sort_order: soByParent[nd.parentKey]++, created_by: UID }).select().single();
           if (nres.error) { wbsOk = false; wbsMsg = nres.error.message; break; }
           keyToNodeId[nd.key] = nres.data.id; WBS_NODES.push(nres.data);
+          if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length);
         }
         if (wbsOk) {
           // codes computed from the now-updated WBS_NODES tree, so the pushed rows carry their correct
@@ -14308,9 +14310,30 @@
       }
 
       var CH = 500, ok = true, msg = '';
-      for (var i = 0; i < payloads.length; i += CH) { var res = await sb().from(TABLE).insert(payloads.slice(i, i + CH)); if (res.error) { ok = false; msg = res.error.message; break; } }
+      for (var i = 0; i < payloads.length; i += CH) {
+        if (typeof showLoading === 'function') showLoading('Pushing to the project schedule… (' + Math.min(i + CH, payloads.length) + ' of ' + payloads.length + ' rows)');
+        var res = await sb().from(TABLE).insert(payloads.slice(i, i + CH)); if (res.error) { ok = false; msg = res.error.message; break; }
+        if (typeof setProgress === 'function') setProgress(0.4 + 0.6 * Math.min(i + CH, payloads.length) / payloads.length);
+      }
+      if (typeof hideLoading === 'function') hideLoading();
       if (!ok) { UI.toast('Could not add to schedule: ' + msg, 'error'); return; }
-      UI.toast('Added ' + taskN + ' activities with their relationships to the schedule' + (base ? ' under ' + base : '') + (wbsMsg ? ' (WBS Manager not updated — run the wbs-nodes migration)' : '') + '.', 'success');
+      // Completion notification — a modal summary of what landed in the schedule, not just a toast.
+      var wbsCount = payloads.filter(function (p) { return p.activity_type === 'WBS Summary'; }).length;
+      if (typeof showImportSummary === 'function') {
+        showImportSummary({
+          title: 'Pushed to the schedule',
+          file: cfg.name || projName(curPid) || 'Schedule Builder',
+          tiles: [
+            { n: taskN, l: 'Activities added' },
+            { n: cfg.links ? cfg.links.length : 0, l: 'Relationships' },
+            { n: wbsCount, l: 'WBS branches' }
+          ],
+          warnings: wbsMsg ? ['WBS Manager not updated — run the wbs-nodes migration.'] : [],
+          note: 'Filed ' + (base ? 'under <strong>' + e2(base) + '</strong>' : 'at the top level') + ' · ' + (basis === 'ext' ? 'External' : 'Internal') + ' durations. Opening the schedule…'
+        });
+      } else {
+        UI.toast('Added ' + taskN + ' activities to the schedule.', 'success');
+      }
       // A flat push deliberately builds no WBS branch, so land the planner on the grouping that
       // shows the structure they just designed — otherwise the schedule reads as one long list of
       // repeated work-type names and looks like the push failed.
