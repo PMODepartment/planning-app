@@ -1496,6 +1496,11 @@
     table.sbld-xl td.xl-rowact { width:38px; text-align:center; }
     table.sbld-xl td.xl-rowact .sbld-del { padding:2px 6px; }
     table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
+    /* step-4 grid: link-select button + pending/focus row states (don't fight the cell selection tint) */
+    table.sbld-xl .t4-link { width:26px; height:24px; padding:0; font-size:13px; line-height:1; }
+    table.sbld-xl tr.pend .t4-link { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    table.sbld-xl tr.pend-dst .t4-link { background:#2f6fed; color:#fff; border-color:#2f6fed; }
+    table.sbld-xl tr.sbld-focus > td.xl-rn { color:var(--pd-red); font-weight:800; }
     svg.sbld-sched { display:block; }
     svg.sbld-sched .sbld-link { marker-end:url(#sbldarrow2); }
     .sbld-schedbar { cursor:pointer; }
@@ -12527,6 +12532,9 @@
     function setFocus(uids) { seqFocus = (uids || []).slice(); }
     var actFocus = null;      // step-4: class-code id highlighted across the list & chart
     function isActFocus(id) { return actFocus && actFocus === id; }
+    // step-4 Excel-style class-code grid state (its own cursor, separate from step-1's xa/xf)
+    var t4a = { r: 0, c: 0 }, t4f = { r: 0, c: 0 }, t4edit = false, t4want = false;
+    var T4_COLS = [{ k: 'code', label: 'Code', w: 100 }, { k: 'name', label: 'Activity name', w: 190 }, { k: 'durInt', label: 'Interior (d)', w: 84, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 84, num: true }];
     // Tower display nodes for one floor at the current collapse level. Each node carries ALL its
     // descendant leaf uids (so a collapsed node links/highlights its whole group). L1 is handled at
     // the trade level (whole-trade node), so this covers L2–L4.
@@ -13368,6 +13376,95 @@
       var dr = host.querySelector('#b-delrows'); if (dr) dr.onclick = function () { if (!nR()) return; var b = bounds(); cfg.activities.splice(b.r0, b.r1 - b.r0 + 1); xf = { r: clampR(b.r0), c: xf.c }; xa = { r: xf.r, c: xf.c }; commitRender(); };
     }
 
+    // Step-4 class-code grid: Excel-style cell block, drag/Shift range, copy/paste (block from Excel,
+    // one cell → fill selection), Ctrl+D fill-down, type-to-edit. Operates on the TRADE's activities
+    // (references into cfg.activities), so edits show everywhere. A per-row ▸ button selects the code
+    // for the 2-phase linking (source → destination). No paste-beyond-rows: adding codes is step 1's job.
+    function t4Set(a, k, text) {
+      if (!a) return;
+      if (k === 'durInt' || k === 'durExt') { a[k] = Math.max(0, parseInt(text, 10) || 0); a.scope = 'zone'; }   // an explicit per-zone value (matches the old inline editor)
+      else a[k] = String(text == null ? '' : text);
+    }
+    function t4GridHTML(acts, tr) {
+      if (!acts.length) return '<div class="sbld-empty">No class codes assigned to ' + e2(GLABEL[tr]) + ' yet — assign a trade to your activities in step 1.</div>';
+      var cols = T4_COLS, CW = function (c) { return c.w || 100; };
+      var totalW = 34 + cols.reduce(function (t, c) { return t + CW(c); }, 0) + 34;
+      var colgroup = '<colgroup><col style="width:34px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '<col style="width:34px" /></colgroup>';
+      var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c) { return '<th>' + e2(c.label) + '</th>'; }).join('') + '<th class="xl-rowact" title="Select the code for linking">↔</th></tr>';
+      var body = acts.map(function (a, r) {
+        var cls = (inPendAct(a.id) ? 'pend' : (inActDst(a.id) ? 'pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '');
+        return '<tr class="' + cls.trim() + '"><td class="xl-rn" data-r="' + r + '">' + (r + 1) + '</td>' +
+          cols.map(function (c, ci) { return '<td class="xl-cell" data-r="' + r + '" data-c="' + ci + '">' + e2(xlGet(a, c.k)) + '</td>'; }).join('') +
+          '<td class="xl-rowact"><button class="pd-btn t4-link" data-linkact="' + a.id + '" title="Select this code as a link source / destination">▸</button></td></tr>';
+      }).join('');
+      return '<div class="sbld-xlwrap" tabindex="0" id="b-t4"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+    }
+    function wireT4Grid(host, acts) {
+      var cols = T4_COLS, wrap = host.querySelector('#b-t4'); if (!wrap) return;
+      var nR = function () { return acts.length; };
+      function clampR(r) { return Math.max(0, Math.min(r, Math.max(0, nR() - 1))); }
+      function clampC(c) { return Math.max(0, Math.min(c, cols.length - 1)); }
+      function cellEl(r, c) { return wrap.querySelector('td.xl-cell[data-r="' + r + '"][data-c="' + c + '"]'); }
+      function bounds() { return { r0: Math.min(t4a.r, t4f.r), r1: Math.max(t4a.r, t4f.r), c0: Math.min(t4a.c, t4f.c), c1: Math.max(t4a.c, t4f.c) }; }
+      function paint() {
+        wrap.querySelectorAll('td.xl-cell.xl-sel,td.xl-cell.xl-active').forEach(function (td) { td.classList.remove('xl-sel', 'xl-active'); });
+        if (!nR()) return; var b = bounds();
+        for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) { var td = cellEl(r, c); if (td) td.classList.add('xl-sel'); }
+        var af = cellEl(t4f.r, t4f.c); if (af) { af.classList.add('xl-active'); af.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+      }
+      function setFocus(r, c, extend) { t4f = { r: clampR(r), c: clampC(c) }; if (!extend) t4a = { r: t4f.r, c: t4f.c }; paint(); }
+      t4a = { r: clampR(t4a.r), c: clampC(t4a.c) }; t4f = { r: clampR(t4f.r), c: clampC(t4f.c) };
+      paint(); if (t4want) { wrap.focus(); t4want = false; }
+      function commitRender() { markDirty(); t4want = true; render(); }
+      function beginEdit(seed) {
+        if (!nR()) return; var r = t4f.r, c = t4f.c, a = acts[r], col = cols[c], td = cellEl(r, c); if (!td) return;
+        t4edit = true; var ctl = document.createElement('input'); ctl.type = col.num ? 'number' : 'text'; if (col.num) ctl.min = '0';
+        ctl.value = seed != null ? seed : xlGet(a, col.k);
+        td.textContent = ''; td.appendChild(ctl); ctl.focus(); if (ctl.select) ctl.select();
+        function commit(move) { if (!t4edit) return; t4edit = false; t4Set(a, col.k, ctl.value); if (move === 'down') t4f = { r: clampR(r + 1), c: c }; else if (move === 'right') t4f = { r: r, c: clampC(c + 1) }; if (move) t4a = { r: t4f.r, c: t4f.c }; commitRender(); }
+        ctl.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); commit('down'); }
+          else if (e.key === 'Tab') { e.preventDefault(); commit('right'); }
+          else if (e.key === 'Escape') { e.preventDefault(); t4edit = false; t4want = true; render(); }
+          e.stopPropagation();
+        });
+        ctl.addEventListener('blur', function () { commit(null); });
+      }
+      var dragging = false;
+      wrap.addEventListener('mousedown', function (e) { var td = e.target.closest && e.target.closest('td.xl-cell'); if (!td || t4edit) return; e.preventDefault(); wrap.focus(); setFocus(+td.dataset.r, +td.dataset.c, e.shiftKey); dragging = true; });
+      wrap.addEventListener('mouseover', function (e) { if (!dragging) return; var td = e.target.closest && e.target.closest('td.xl-cell'); if (td) setFocus(+td.dataset.r, +td.dataset.c, true); });
+      document.addEventListener('mouseup', function () { dragging = false; });
+      wrap.addEventListener('dblclick', function (e) { var td = e.target.closest && e.target.closest('td.xl-cell'); if (!td) return; setFocus(+td.dataset.r, +td.dataset.c, false); beginEdit(); });
+      wrap.addEventListener('keydown', function (e) {
+        if (t4edit) return; var k = e.key;
+        if (k === 'ArrowDown') { e.preventDefault(); setFocus(t4f.r + 1, t4f.c, e.shiftKey); }
+        else if (k === 'ArrowUp') { e.preventDefault(); setFocus(t4f.r - 1, t4f.c, e.shiftKey); }
+        else if (k === 'ArrowRight') { e.preventDefault(); setFocus(t4f.r, t4f.c + 1, e.shiftKey); }
+        else if (k === 'ArrowLeft') { e.preventDefault(); setFocus(t4f.r, t4f.c - 1, e.shiftKey); }
+        else if (k === 'Tab') { e.preventDefault(); setFocus(t4f.r, t4f.c + (e.shiftKey ? -1 : 1), false); }
+        else if (k === 'Enter' || k === 'F2') { e.preventDefault(); beginEdit(); }
+        else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); var b = bounds(); for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) t4Set(acts[r], cols[c].k, ''); commitRender(); }
+        else if ((e.ctrlKey || e.metaKey) && (k === 'd' || k === 'D')) { e.preventDefault(); var bd = bounds(); for (var c2 = bd.c0; c2 <= bd.c1; c2++) { var v = xlGet(acts[bd.r0], cols[c2].k); for (var r2 = bd.r0 + 1; r2 <= bd.r1; r2++) t4Set(acts[r2], cols[c2].k, v); } commitRender(); }
+        else if ((e.ctrlKey || e.metaKey) && (k === 'a' || k === 'A')) { e.preventDefault(); if (nR()) { t4a = { r: 0, c: 0 }; t4f = { r: nR() - 1, c: cols.length - 1 }; paint(); } }
+        else if (!e.ctrlKey && !e.metaKey && !e.altKey && k.length === 1) { beginEdit(k); }
+      });
+      wrap.addEventListener('copy', function (e) {
+        if (t4edit || !nR()) return; e.preventDefault(); var b = bounds(), out = [];
+        for (var r = b.r0; r <= b.r1; r++) { var row = []; for (var c = b.c0; c <= b.c1; c++) row.push(xlGet(acts[r], cols[c].k)); out.push(row.join('\t')); }
+        e.clipboardData.setData('text/plain', out.join('\n'));
+      });
+      wrap.addEventListener('paste', function (e) {
+        if (t4edit) return; e.preventDefault();
+        var text = (e.clipboardData || window.clipboardData).getData('text'); if (text == null) return;
+        var lines = text.replace(/\r/g, '').split('\n'); if (lines.length && lines[lines.length - 1] === '') lines.pop();
+        var grid = lines.map(function (l) { return l.split('\t'); }), b = bounds();
+        if (grid.length === 1 && grid[0].length === 1) { var v = grid[0][0]; for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) t4Set(acts[r], cols[c].k, v); }
+        else { var sr = b.r0, sc = b.c0; grid.forEach(function (row, i) { row.forEach(function (val, j) { if (sr + i < nR() && sc + j < cols.length) t4Set(acts[sr + i], cols[sc + j].k, val); }); }); t4f = { r: clampR(sr + grid.length - 1), c: Math.min(cols.length - 1, sc + grid[0].length - 1) }; t4a = { r: clampR(sr), c: sc }; }
+        commitRender();
+      });
+      wrap.querySelectorAll('[data-linkact]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); actFocus = b.dataset.linkact; actSelect(b.dataset.linkact); }; });
+    }
+
     // Step 4 — connect the class codes WITHIN a trade (mirrors the Zone-sequence layout): a class-code
     // list on the left, a uniform-block flow chart on the right. Links (FS/SS/FF/SF + lag) between codes
     // drive how they run inside every zone of that trade when the schedule is generated.
@@ -13385,26 +13482,17 @@
         var n = tradeActs(g).length;
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
-      // Left: complete list of class codes for this trade — description emphasized, code beneath, and
-      // the step-1 Interior/Exterior durations editable inline (edits feed the Gantt widths + Generate).
-      var list = acts.length ? '<div class="sbld-actlist">' + acts.map(function (a) {
-        return '<div class="sbld-actrow' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '') + '" style="--zc:' + gc(a.group) + '">' +
-          '<button class="sbld-actnode" data-act="' + a.id + '" title="Click to link · Ctrl/Shift-click a target to link several">' +
-            '<span class="sbld-actdesc">' + e2(a.name || '(unnamed)') + '</span>' +
-            '<span class="sbld-actcode">' + e2(a.code || '—') + '</span></button>' +
-          '<div class="sbld-actdur"' + ((a.scope && a.scope !== 'zone') ? ' title="Shown per zone (computed from the ' + e2(scopeLabel(a.scope)) + ' duration set in step 1). Editing here fixes an explicit per-zone value."' : '') + '>' +
-            '<label>Int<input type="number" min="0" step="1" data-dur="int" data-act="' + a.id + '" value="' + pDur(a, 'int') + '"></label>' +
-            '<label>Ext<input type="number" min="0" step="1" data-dur="ext" data-act="' + a.id + '" value="' + pDur(a, 'ext') + '"></label>' +
-            ((a.scope && a.scope !== 'zone') ? '<span class="sbld-scopetag">per zone · from ' + e2(scopeLabel(a.scope)) + '</span>' : '') +
-          '</div></div>';
-      }).join('') + '</div>' : '<div class="sbld-empty">No class codes assigned to ' + e2(GLABEL[tr]) + ' yet — assign a trade to your activities in step 1.</div>';
+      // Left: this trade's class codes as an EXCEL-STYLE grid (Code / Name / Interior / Exterior) with
+      // multi-cell copy/paste, so a column of durations can be pasted straight from Excel. The ▸ button
+      // on each row selects that code for linking (source → destination), replacing the old click-node.
+      var list = t4GridHTML(acts, tr);
       var aConfirmBtn = (actLinkPhase === 'src' && pendActSet.length)
         ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Confirm ' + pendActSet.length + ' source' + (pendActSet.length === 1 ? '' : 's') + ' →</button>'
         : (actLinkPhase === 'dst' && pendActDst.length)
           ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Create ' + pendActDst.length + ' link' + (pendActDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
       host.innerHTML = '<h2>4 · Trade sequence — connect the class codes</h2>' +
-        '<p class="sbld-lede">Pick a <b>trade</b>, then connect its <b>class codes</b> the way they run inside a zone: <b>1)</b> click one or more <b>source</b> codes, <b>2)</b> press <b>Confirm sources</b> (or right-click), <b>3)</b> click one or more <b>destination</b> codes, <b>4)</b> press <b>Create links</b> (or right-click), <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Click a bar to <b>highlight / inspect</b> its links; open <b>Links</b> to edit them in a table. Edit <b>Int/Ext</b> durations inline; switch <b>Flow/Gantt</b>. <b>Auto-chain</b> links every code back-to-back with the chosen relationship.</p>' +
+        '<p class="sbld-lede">Pick a <b>trade</b>. Its class codes are an <b>Excel-style grid</b> — click/drag or Shift-click to select cells, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste a column of Interior/Exterior durations straight from Excel; one cell fills a selection), <b>Ctrl+D</b> fill-down, <b>Delete</b> clears. Connect codes with the <b>▸</b> button on each row: <b>1)</b> select one or more <b>source</b> codes, <b>2)</b> <b>Confirm sources</b> (or right-click), <b>3)</b> select <b>destination</b> codes, <b>4)</b> <b>Create links</b>, <b>5)</b> choose FS/SS/FF/SF + lag. Open <b>Links</b> to edit them in a table; <b>Auto-chain</b> links every code back-to-back.</p>' +
         chips +
         '<div class="sbld-sec-actions">' +
         '<button class="pd-btn pd-btn-primary" id="b-autochain">Auto-chain</button>' +
@@ -13445,13 +13533,9 @@
       host.querySelectorAll('[data-tview]').forEach(function (b) { b.onclick = function () { tradeView = b.dataset.tview; render(); }; });
       host.querySelectorAll('[data-tscale]').forEach(function (b) { b.onclick = function () { tradeScale = b.dataset.tscale; tgZoom = TG_PPD[tradeScale] || 2.2; render(); }; });
       host.querySelectorAll('[data-tbasis]').forEach(function (b) { b.onclick = function () { tradeBasis = b.dataset.tbasis; render(); }; });
-      // inline duration edits (Interior / Exterior) → update the step-1 activity, refresh the chart
-      host.querySelectorAll('input[data-dur]').forEach(function (inp) { inp.onchange = function () {
-        var a = cfg.activities.filter(function (x) { return x.id === inp.dataset.act; })[0]; if (!a) return;
-        // Editing the per-zone value here fixes it as an explicit per-zone duration (scope → zone),
-        // overriding a floor/project-scope split from step 1.
-        var v = Math.max(0, +inp.value || 0); if (inp.dataset.dur === 'ext') a.durExt = v; else a.durInt = v; a.scope = 'zone'; markDirty(); render();
-      }; });
+      // Excel-style class-code grid (edit Code/Name/Interior/Exterior; multi-cell copy/paste) + the
+      // per-row ▸ link-select buttons. Replaces the old inline duration inputs + click-to-link nodes.
+      wireT4Grid(host, acts);
       if (tradeView === 'gantt') {
         host.querySelector('#b-azout').onclick = function () { tgZoom = Math.max(0.3, tgZoom / 1.25); render(); };
         host.querySelector('#b-azin').onclick = function () { tgZoom = Math.min(40, tgZoom * 1.25); render(); };
@@ -13471,7 +13555,7 @@
         (actLinkPhase === 'src'
           ? (pendActSet.length ? (pendActSet.length + ' source(s) selected — press Confirm sources (or right-click).') : 'Step 1: click one or more source codes.')
           : (pendActDst.length ? (pendActDst.length + ' destination(s) selected — press Create links (or right-click).') : 'Step 3: click one or more destination codes.'));
-      host.querySelectorAll('.sbld-actnode').forEach(function (b) { b.onclick = function () { actFocus = b.dataset.act; actSelect(b.dataset.act); }; });
+      // (class-code linking is now via the grid's per-row ▸ buttons, wired in wireT4Grid)
       // schedule bars INSPECT only; link from the class-code list on the left (was a linking bug —
       // clicking a bar both focused it and toggled it into the pending link selection).
       host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { actFocus = b.getAttribute('data-act'); render(); }); });
