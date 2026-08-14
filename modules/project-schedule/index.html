@@ -1355,6 +1355,8 @@
     /* step 6 — vertical stacking (building model per trade) */
     .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; align-items:start; margin-top:8px; }
     .sbld-stacktower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); }
+    .sbld-stackscroll { overflow-x:auto; max-width:100%; }
+    .sbld-stackscroll svg { display:block; height:auto; }
     /* step 3 — link canvas */
     .sbld-canvaswrap { overflow:auto; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); max-height:62vh; }
     /* Resulting schedule with a FROZEN (sticky-left) row-label column so labels stay visible when the
@@ -13610,7 +13612,7 @@
       function glabel(l) { if (lvl <= 1) return GLABEL[l.trade] || l.trade; if (lvl === 2) return (l.floor.code || l.floor.name || 'F'); if (lvl === 3) return (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F')); return (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F'))); }
       var gmap = {}, uid2key = {};
       dispLocs.forEach(function (l) { var k = gkey(l); uid2key[l.uid] = k;
-        if (!gmap[k]) gmap[k] = { key: k, trade: l.trade, label: l.trade + ' ' + glabel(l), txt: glabel(l), uids: [], s: Infinity };
+        if (!gmap[k]) gmap[k] = { key: k, trade: l.trade, label: l.trade + ' ' + glabel(l), txt: (lvl <= 1 ? l.trade : glabel(l)), uids: [], s: Infinity };
         var g = gmap[k]; g.uids.push(l.uid); g.s = Math.min(g.s, starts[l.uid] || 0); });
       var nodes = Object.keys(gmap).map(function (k) { return gmap[k]; })
         .sort(function (a, b) { return (a.s - b.s) || (GROUPS.indexOf(a.trade) - GROUPS.indexOf(b.trade)); });
@@ -13921,47 +13923,86 @@
     // number and its COMPLETION date (from the generated schedule). Superstructure above the grade line,
     // basements below — same tower layout as step 2, but filled with dates instead of empty cells.
     var stackBasis = 'int';
+    var stackZoom = 1;   // step-6 stacking: cell-width multiplier so many-unit floors still show the date
+    var _stkUnits = {};  // zone key -> {trade, floor, zone, units:[{code,fin}]} for the unit drill-down
+    // The stacking shows one cell per ZONE (a zone completes when its LAST unit does), so a floor with
+    // many units isn't compressed. A zone that HAS units under it is clickable to reveal each unit.
+    function zonesOfFloorStk(tr, f, finBy) {
+      var leaves = leavesOfFloor(tr, f), order = [], byZone = {};
+      leaves.forEach(function (l) {
+        var zid = l.zone ? l.zone.id : '_', fin = finBy[l.uid] || null;
+        if (!(zid in byZone)) { byZone[zid] = order.length; order.push({ label: l.zone ? (l.zone.code || 'Z') : (f.code || 'F'), fin: null, units: [], key: tr + '/' + f.id + '/' + zid }); }
+        var z = order[byZone[zid]];
+        if (fin && (!z.fin || fin > z.fin)) z.fin = fin;   // zone done when its last unit is done
+        if (l.unit) z.units.push({ code: l.unit.code || 'U', fin: fin });
+      });
+      return order;
+    }
     function stackTowerSVG(tr, finBy) {
       var floors = cfg.zoning[tr].floors;
       if (!floors.length) return '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + '.</div>';
-      var W = 460, fh = 46, gap = 6, pad = 14, labelW = 44, col = gc(tr);
+      var fh = 46, gap = 6, pad = 14, labelW = 44, col = gc(tr);
       var supers = floors.filter(function (f) { return !f.sub; }), subs = floors.filter(function (f) { return f.sub; });
       var disp = supers.slice().reverse().concat(subs.slice().reverse()), groundAt = supers.length;
+      // Fixed per-cell width (scaled by zoom) so each zone always has room for its completion date;
+      // the tower widens with the busiest floor and scrolls horizontally instead of squeezing the dates.
+      var maxCells = disp.reduce(function (m, f) { return Math.max(m, zonesOfFloorStk(tr, f, finBy).length || 1); }, 1);
+      var cw = Math.max(48, Math.round(64 * stackZoom));
+      var W = labelW + pad * 2 + maxCells * cw;
       var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
       disp.forEach(function (f, i) {
-        var y = pad + i * (fh + gap), plotW = W - labelW - pad * 2;
+        var y = pad + i * (fh + gap);
         svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="12" font-weight="700" fill="var(--pd-muted)">' + e2(f.code || f.name || 'F') + '</text>';
-        var cells = leavesOfFloor(tr, f), cw = plotW / (cells.length || 1);
-        cells.forEach(function (l, ci) {
-          var cx = pad + labelW + ci * cw, fin = finBy[l.uid];
-          var znum = l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (f.code || 'F'));
-          svg += '<rect x="' + cx + '" y="' + y + '" width="' + (cw - 3) + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (ci % 2 ? 0.45 : 0.58) : (ci % 2 ? 0.74 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '></rect>' +
-            '<text x="' + (cx + cw / 2) + '" y="' + (y + 17) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">' + e2(znum) + '</text>' +
-            '<text x="' + (cx + cw / 2) + '" y="' + (y + 35) + '" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,.92)">' + e2(fin ? fmtD(fin) : '—') + '</text>';
+        var zcells = zonesOfFloorStk(tr, f, finBy);
+        zcells.forEach(function (z, ci) {
+          var cx = pad + labelW + ci * cw, mid = cx + (cw - 3) / 2, hasU = z.units.length > 0;
+          if (hasU) _stkUnits[z.key] = { trade: tr, floor: (f.code || f.name || 'F'), zone: z.label, units: z.units };
+          svg += '<rect' + (hasU ? ' class="sbld-stkcell" data-zk="' + e2(z.key) + '" style="cursor:pointer"' : '') + ' x="' + cx + '" y="' + y + '" width="' + (cw - 3) + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (ci % 2 ? 0.45 : 0.58) : (ci % 2 ? 0.74 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '>' + (hasU ? '<title>' + z.units.length + ' units — click to see each</title>' : '') + '</rect>' +
+            '<text x="' + mid + '" y="' + (y + (hasU ? 15 : 18)) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" pointer-events="none">' + e2(z.label) + '</text>' +
+            '<text x="' + mid + '" y="' + (y + (hasU ? 30 : 34)) + '" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,.92)" pointer-events="none">' + e2(z.fin ? fmtD(z.fin) : '—') + '</text>' +
+            (hasU ? '<text x="' + mid + '" y="' + (y + 42) + '" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,.85)" pointer-events="none">' + z.units.length + ' units ▾</text>' : '');
         });
       });
       var gy = pad + groundAt * (fh + gap) - gap / 2 + (groundAt === disp.length ? 3 : 0);
       svg += '<line x1="' + pad + '" y1="' + gy + '" x2="' + (W - pad) + '" y2="' + gy + '" stroke="var(--pd-line)" stroke-width="2.5"/>';
       if (subs.length) svg += '<text x="' + (W - pad) + '" y="' + (gy - 4) + '" text-anchor="end" font-size="9" fill="var(--pd-muted)">grade</text>';
-      return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;height:auto;">' + svg + '</svg>';
+      return '<div class="sbld-stackscroll"><svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + svg + '</svg></div>';
+    }
+    // unit drill-down: a zone with units listed with each unit's completion date
+    function openStackUnits(key) {
+      var d = _stkUnits[key]; if (!d) return;
+      var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
+      ov.innerHTML = '<div class="pd-modal" style="max-width:420px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:15px;">' + e2(GLABEL[d.trade] + ' · ' + d.floor + ' · ' + d.zone) + ' — units</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+        '<div style="padding:14px;max-height:60vh;overflow:auto;"><table class="sbld-tbl" style="width:100%;"><thead><tr><th style="text-align:left;">Unit</th><th style="text-align:left;">Completion</th></tr></thead><tbody>' +
+        d.units.map(function (u) { return '<tr><td>' + e2(u.code) + '</td><td>' + e2(u.fin ? fmtD(u.fin) : '—') + '</td></tr>'; }).join('') +
+        '</tbody></table></div><div class="pd-modal-footer"><button class="pd-btn pd-btn-primary" data-x>Close</button></div></div>';
+      document.body.appendChild(ov);
+      function close() { ov.remove(); }
+      ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
+      ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
     }
     function stStacking(host) {
       if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>6 · Vertical stacking</h2><div class="sbld-empty">Complete steps 1–5 first (activities + per-trade floors/zones + scope).</div>'; return; }
       var g = generate(stackBasis);
       var finBy = {}; g.perZone.forEach(function (z) { finBy[z.loc.uid] = z.finish; });
       var used = usedGroups();
+      _stkUnits = {};   // repopulated by stackTowerSVG below
       var towers = used.map(function (tr) {
         return '<div class="sbld-stacktower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + stackTowerSVG(tr, finBy) + '</div>';
       }).join('');
       host.innerHTML = '<h2>6 · Vertical stacking — completion by zone</h2>' +
-        '<p class="sbld-lede">From steps 1–5, this is the <b>vertical stacking</b>: each trade\'s building model with every zone\'s <b>zone number</b> and its <b>completion date</b>. Superstructure sits above the grade line, basements below. Switch between the Internal (target) and External (contract) schedule. Push it into the live schedule in the next step.</p>' +
+        '<p class="sbld-lede">From steps 1–5, this is the <b>vertical stacking</b>: each trade\'s building model, one cell per <b>zone</b> with its <b>zone number</b> and <b>completion date</b> (a zone completes when its last unit does). A zone marked <b>“N units ▾”</b> is <b>clickable</b> to see each unit\'s date. Superstructure sits above the grade line, basements below. Switch Internal (target) / External (contract); push it into the live schedule next.</p>' +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Schedule&nbsp; ' +
         '<select class="pd-select sbld-mini" id="b-stackbasis">' +
         [['int', 'Internal (target)'], ['ext', 'External (contract)']].map(function (o) { return '<option value="' + o[0] + '"' + (stackBasis === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
-        '<span class="sbld-hint">Project finish ' + fmtD(g.finish) + ' · ' + used.length + ' trade(s).</span></div>' +
+        '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-stkzout" title="Narrower cells">−</button><button class="pd-btn sbld-zbtn" id="b-stkzin" title="Wider cells — more room for dates">+</button></span>' +
+        '<span class="sbld-hint">Project finish ' + fmtD(g.finish) + ' · ' + used.length + ' trade(s). Zoom in if a floor\'s dates are cramped.</span></div>' +
         '<div class="sbld-stackgrid">' + (towers || '<div class="sbld-empty">No trades with floors yet.</div>') + '</div>';
       var sel = host.querySelector('#b-stackbasis'); if (sel) sel.onchange = function () { stackBasis = sel.value; render(); };
+      var zo = host.querySelector('#b-stkzout'); if (zo) zo.onclick = function () { stackZoom = Math.max(0.6, Math.round((stackZoom - 0.2) * 10) / 10); render(); };
+      var zi = host.querySelector('#b-stkzin'); if (zi) zi.onclick = function () { stackZoom = Math.min(4, Math.round((stackZoom + 0.2) * 10) / 10); render(); };
+      host.querySelectorAll('.sbld-stkcell').forEach(function (el) { el.addEventListener('click', function () { openStackUnits(el.getAttribute('data-zk')); }); });
     }
 
     function exportCsv(g, label) {
@@ -14186,10 +14227,15 @@
       if (typeof load === 'function') load();   // module schedule reload (loadCfg no longer shadows it)
     }
 
+    var _prevStep = -1;   // preserve scroll across a SAME-step re-render (selecting a node re-renders the panel)
+    var SCROLL_SEL = ['.sbld-seq2-left', '.sbld-seqstack-top', '.sbld-seq2-right', '.sbld-canvaswrap', '.sbld-schedscroll', '.sbld-actlist', '.sbld-stackscroll'];
     function render() {
       var rail = document.getElementById('ps-bld-rail'), panel = document.getElementById('ps-bld-panel');
       if (!rail || !panel) return;
       if (!curPid || !cfg) { rail.innerHTML = ''; panel.innerHTML = '<div class="sbld-empty">Select a project to build its schedule.</div>'; return; }
+      // capture scroll positions of any scrollable panes before the panel is rebuilt
+      var _scroll = null;
+      if (_prevStep === step) { _scroll = {}; SCROLL_SEL.forEach(function (sel) { _scroll[sel] = Array.prototype.map.call(panel.querySelectorAll(sel), function (el) { return [el.scrollTop, el.scrollLeft]; }); }); }
       rail.innerHTML = STEPS.map(function (s, i) { return '<button class="sbld-step ' + (i === step ? 'on' : '') + '" data-step="' + i + '"><span class="sbld-step-n">' + (i + 1) + '</span><span><span class="sbld-step-t">' + e2(s.t) + '</span><br><span class="sbld-step-s">' + e2(s.s) + '</span></span></button>'; }).join('');
       rail.querySelectorAll('[data-step]').forEach(function (b) { b.onclick = function () { step = +b.dataset.step; render(); }; });
       STEPS[step].fn(panel);
@@ -14200,6 +14246,10 @@
       var nx = foot.querySelector('#b-next'); if (nx) nx.onclick = function () { if (step < STEPS.length - 1) { step++; render(); } };
       var sf = foot.querySelector('#b-savefoot'); if (sf) sf.onclick = save;
       if (window.Icons) { Icons.hydrate(panel); Icons.hydrate(rail); }
+      // restore scroll positions of the rebuilt panes (same step only), so selecting a zone/floor
+      // doesn't jump the tower/schedule back to the top
+      if (_scroll) SCROLL_SEL.forEach(function (sel) { var els = panel.querySelectorAll(sel), pos = _scroll[sel] || []; pos.forEach(function (p, i) { if (els[i]) { els[i].scrollTop = p[0]; els[i].scrollLeft = p[1]; } }); });
+      _prevStep = step;
     }
 
     return { open: open, save: save, isDirty: isDirty };
