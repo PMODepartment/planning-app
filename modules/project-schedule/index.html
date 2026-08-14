@@ -13610,9 +13610,11 @@
       var lvl = seqLevel;
       function gkey(l) { if (lvl <= 1) return l.trade; if (lvl === 2) return l.trade + '/' + l.floor.id; if (lvl === 3) return l.trade + '/' + l.floor.id + '/' + (l.zone ? l.zone.id : '_'); return l.uid; }
       function glabel(l) { if (lvl <= 1) return GLABEL[l.trade] || l.trade; if (lvl === 2) return (l.floor.code || l.floor.name || 'F'); if (lvl === 3) return (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F')); return (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F'))); }
+      // Full location path for the row label (so a Unit isn't shown as a bare "U3" with no floor/zone).
+      function glabelFull(l) { if (lvl <= 1) return GLABEL[l.trade] || l.trade; var p = [l.floor.code || l.floor.name || 'F']; if (lvl >= 3 && l.zone) p.push(l.zone.code || l.zone.name || 'Z'); if (lvl >= 4 && l.unit) p.push(l.unit.code || l.unit.name || 'U'); return p.join(' · '); }
       var gmap = {}, uid2key = {};
       dispLocs.forEach(function (l) { var k = gkey(l); uid2key[l.uid] = k;
-        if (!gmap[k]) gmap[k] = { key: k, trade: l.trade, label: l.trade + ' ' + glabel(l), txt: (lvl <= 1 ? l.trade : glabel(l)), uids: [], s: Infinity };
+        if (!gmap[k]) gmap[k] = { key: k, trade: l.trade, label: l.trade + ' ' + glabelFull(l), txt: (lvl <= 1 ? l.trade : glabel(l)), uids: [], s: Infinity };
         var g = gmap[k]; g.uids.push(l.uid); g.s = Math.min(g.s, starts[l.uid] || 0); });
       var nodes = Object.keys(gmap).map(function (k) { return gmap[k]; })
         .sort(function (a, b) { return (a.s - b.s) || (GROUPS.indexOf(a.trade) - GROUPS.indexOf(b.trade)); });
