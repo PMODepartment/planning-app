@@ -1,5 +1,46 @@
 # Module: project-schedule
 
+## Vertical stacking: whole-tower phases now continue the per-floor stack, "by tower" breakdown (2026-08-13i) — fmlozano
+Follow-up to the previous entry, from the owner reviewing it live: every floor's band was stalling
+at "Architectural Works complete" and staying there forever, reading as though nothing happens after
+Architectural — the Overall discipline status footer said otherwise, but only as a separate note, not
+in the graphic itself. And with "Show all towers" on, the footer's pills collapse every tower into
+one shared state per discipline, which cannot distinguish "all 7 towers really are in lockstep" from
+"they're not, and this view just can't tell you that."
+
+- **`stkTowerWideCats(levelId, D, cats, byLoc)`** — finds every category with **no per-floor tag
+  anywhere in the tower** (computed once per tower, not per floor) and its state at the cut-off.
+  Testing & Commissioning and Punchlisting & Handover are the textbook case: modelled as one
+  whole-building line, so they never get a Level value and were previously invisible to every
+  per-floor band. A category with zero activities in the tower is left out entirely, not counted as
+  "none" — it genuinely doesn't apply here, and counting it would inflate every floor's total for a
+  trade the tower never had.
+- **`stackModel()` now folds those tower-wide phases into every floor's own tail.** One pass through
+  `cats` (already chronological, from `catList()`'s own sort) resolves each category from either the
+  floor's own activities or the precomputed tower-wide state — a single pass, not floor-categories-
+  then-tower-categories as two loops, which is what keeps `lastDone` correct if a floor-tagged and a
+  tower-wide category happen to be chronologically interleaved. A floor's `total`/`done`/`pct` now
+  honestly include these phases (previously a floor read 100% once Architectural finished; now it's
+  genuinely `n` of `n+2` until Testing & Punchlisting also finish) — and once they start, the band
+  keeps moving past Architectural instead of stopping. **`b.text` appends "(whole tower)"** when the
+  current state came from one of these, so a floor showing "Testing & Commissioning complete" doesn't
+  read as if that floor individually was tested in isolation.
+- **"By tower" breakdown table** under the existing discipline pills, shown whenever 2+ towers are on
+  screen (`overallStatusHTML`'s new `perTower` param): one row per tower, one column per discipline,
+  ✓/●/— per cell. New `overallDisciplineStatusForTower()` is the same pin-compute-restore pattern as
+  `stackModelForTower()`, just returning `overallDisciplineStatus()`'s output for one tower instead of
+  a `stackModel()`. Columns are guaranteed to line up with the pills above them because both come from
+  the same `catList()` order.
+- `MODULE_V` → `20260813j`.
+- Verified: inline script parses (`new Function`), style block braces/comments balance. ⚠️ **NOT
+  browser-verified.** The performance cost is worth flagging rather than guessing at: "Show all
+  towers" now does, per tower, a `stackModel()` call (which itself does one `rows.filter` per
+  tower-wide category) PLUS a separate `overallDisciplineStatusForTower()` call (one `rows.filter` per
+  category) — on the owner's 7-tower / 4393-activity project that's on the order of 50-60 full-row
+  scans per render. Untested against how it actually feels live; if it's noticeably slow, the fix is
+  memoizing `stkTowerWideCats`/`overallDisciplineStatus` per (tower, cut-off) pair within one
+  `renderStackView()` call rather than recomputing from `rows` each time.
+
 ## Vertical stacking: fixed the hatch-texture illusion, "Show all towers", overall discipline status (2026-08-13h) — fmlozano
 Owner reported the "Planned status as of…" stack looked **wavy**, plus two feature asks: see all
 towers at once instead of one at a time, and show whether disciplines beyond the coloured one

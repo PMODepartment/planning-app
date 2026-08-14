@@ -552,6 +552,18 @@
       font-size:11.5px; font-weight:600; }
     .ps-stk-ov i { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
     .ps-stk-ov-none { opacity:.55; }
+    /* "By tower" breakdown — one row per tower, one column per discipline. Answers which towers are
+       actually done with a discipline, which the pills above cannot: they collapse every tower into
+       one shared state per discipline, so a project where towers are drifting apart looks identical
+       to one where they are not. */
+    .ps-stk-ovtable-hd { font-size:11px; font-weight:700; color:var(--pd-muted); margin:12px 0 4px;
+      text-transform:uppercase; letter-spacing:.03em; }
+    .ps-stk-ovtable-wrap { overflow-x:auto; }
+    .ps-stk-ovtable { border-collapse:collapse; font-size:11.5px; }
+    .ps-stk-ovtable th, .ps-stk-ovtable td { padding:4px 9px; text-align:center; border:1px solid var(--pd-line); white-space:nowrap; }
+    .ps-stk-ovtable thead th { font-weight:600; color:var(--pd-ink); }
+    .ps-stk-ovtable thead th i { width:9px; height:9px; border-radius:50%; display:inline-block; }
+    .ps-stk-ovtable tbody th { text-align:right; font-weight:700; color:var(--pd-ink); padding-right:10px; white-space:nowrap; }
 
     /* Docked stacking pane — a third column of .ps-split, row-aligned with the grid + Gantt. */
     .ps-stackpane { flex:0 0 250px; display:none; flex-direction:column; min-width:0;
@@ -15036,6 +15048,34 @@
   }
   // THE model both surfaces render. One row per location value, in building order (bottom-up),
   // each carrying what is running / last finished there at the cut-off.
+  // Categories that carry NO per-floor tag ANYWHERE in this tower — Testing & Commissioning and
+  // Punchlisting & Handover are the textbook case: one whole-building line, never broken down by
+  // floor. Computed once per tower and folded into every floor's tail in stackModel() below, so a
+  // floor's band doesn't stall on the last floor-tagged discipline forever once the tower has
+  // genuinely moved past it (which is exactly what happened before this: every floor bottomed out
+  // at "Architectural Works complete" and stayed there, silently implying nothing else was
+  // happening, when Testing/Punchlisting simply had nowhere floor-shaped to be counted).
+  // ⚠️ A category with ZERO activities in this scope is left out entirely, not included as "none" —
+  // it genuinely doesn't apply to this tower, and counting it would inflate every floor's total for
+  // a trade the tower never had.
+  function stkTowerWideCats(levelId, D, cats, byLoc) {
+    var tagged = {};
+    Object.keys(byLoc).forEach(function (loc) {
+      Object.keys(byLoc[loc].cats).forEach(function (v) { tagged[v] = 1; });
+    });
+    var cfg = catCfg(), out = {};
+    cats.forEach(function (c) {
+      if (tagged[c.value]) return;
+      var acts = rows.filter(function (r) {
+        if (isWbs(r)) return false;
+        if (!stkInScope(r, levelId)) return false;
+        return catValOf(r, cfg.field) === c.value;
+      });
+      if (!acts.length) return;
+      out[c.value] = { cat: c, state: _stkState(acts, D) };
+    });
+    return out;
+  }
   function stackModel(levelId, D) {
     var cfg = catCfg(), cats = catList(), map = catMapNow();
     var catIdx = {}; cats.forEach(function (c, i) { catIdx[c.value] = i; });
@@ -15050,12 +15090,20 @@
     });
     var list = Object.keys(by).map(function (k) { return by[k]; });
     list.sort(function (a, b2) { return cmpLevelValue(a.loc, b2.loc); });
+    var towerWide = stkTowerWideCats(levelId, D, cats, by);
     list.forEach(function (b) {
       var wip = null, lastDone = null, done = 0, total = 0;
+      // ⚠️ ONE pass through `cats`, in its own chronological order (catList() sorts by first-start
+      // date) — a whole-tower phase like Punchlisting just resolves its state from `towerWide`
+      // instead of from this floor's own activities. Doing it in a single pass (rather than floor
+      // categories then tower-wide categories as two separate loops) is what keeps `lastDone`
+      // correct if a floor-tagged and a tower-wide category are chronologically interleaved.
       cats.forEach(function (c) {
-        var acts = b.cats[c.value]; if (!acts || !acts.length) return;
+        var tw = towerWide[c.value], st, has;
+        if (tw) { has = true; st = tw.state; }
+        else { var acts = b.cats[c.value]; has = !!(acts && acts.length); if (has) st = _stkState(acts, D); }
+        if (!has) return;
         total++;
-        var st = _stkState(acts, D);
         if (st === 'done') { lastDone = c; done++; }
         else if (st === 'wip' && !wip) wip = c;
       });
@@ -15064,7 +15112,12 @@
       b.pct = total ? Math.round((done / total) * 100) : 0;
       b.cur = wip || lastDone || null;         // what colours the band
       b.wip = wip; b.lastDone = lastDone;
-      b.text = wip ? ('On-going ' + wip.value) : (lastDone ? (lastDone.value + ' complete') : 'Not started');
+      // Flagged so the text can say "whole tower" — a floor showing "Testing & Commissioning
+      // complete" did not individually undergo testing; the whole tower did, and this floor merely
+      // inherited that state because it has no finer-grained data of its own.
+      b.curIsTowerWide = !!(b.cur && towerWide[b.cur.value]);
+      b.text = wip ? ('On-going ' + wip.value + (towerWide[wip.value] ? ' (whole tower)' : ''))
+        : (lastDone ? (lastDone.value + ' complete' + (towerWide[lastDone.value] ? ' (whole tower)' : '')) : 'Not started');
       // ⚠️ SOLID colour, deliberately NOT (map[...]).style (which carries the legend's diagonal
       // hatch/dot texture). Stacking many bands of the same height directly above one another turns
       // that texture into a real optical illusion — the diagonal lines crossing each band's straight
@@ -15178,18 +15231,48 @@
     if (had) _stkScope[parentLevelId] = prev;
     return out;
   }
-  function overallStatusHTML(list, scopeNote) {
+  // Same, but pinned to exactly ONE tower — the per-tower rows of the "by tower" breakdown below.
+  function overallDisciplineStatusForTower(levelId, D, parentLevelId, towerVal) {
+    var prev = _stkScope[parentLevelId];
+    _stkScope[parentLevelId] = towerVal;
+    var out = overallDisciplineStatus(levelId, D);
+    _stkScope[parentLevelId] = prev;
+    return out;
+  }
+  // `perTower`, when given, is [{value, status}] with `status` in the SAME category order as `list`
+  // (both come from overallDisciplineStatus() → catList(), so the columns always line up). Only
+  // rendered with 2+ towers — the aggregate pills above already answer it for one.
+  //
+  // ⚠️ Added because the aggregate pills COLLAPSE every tower into one state per discipline — on a
+  // project where all towers genuinely are running in lockstep that reads fine, but it looks
+  // IDENTICAL to a project where they are not, which is silently misleading the moment towers drift
+  // apart. The table is what actually answers "which towers are done and which are still going".
+  function overallStatusHTML(list, scopeNote, perTower) {
     if (!list.length) return '';
-    return '<div class="ps-stk-overall"><div class="ps-stk-overall-hd">Overall discipline status' +
+    var header = '<div class="ps-stk-overall-hd">Overall discipline status' +
       '<small>Every category on this field, across ' + esc(scopeNote) + ' — including phases with no ' +
-      'per-floor tag, such as Testing &amp; Commissioning or Punchlisting &amp; Handover.</small></div>' +
-      '<div class="ps-stk-overall-items">' + list.map(function (o) {
-        var icon = o.state === 'done' ? '✓' : o.state === 'wip' ? '●' : '—';
-        return '<span class="ps-stk-ov ps-stk-ov-' + o.state + '" style="' + catTint(o.cat.color, .16) + '" title="' +
-          esc(o.n + ' activit' + (o.n === 1 ? 'y' : 'ies') + ' — ' +
-            (o.state === 'done' ? 'all finished' : o.state === 'wip' ? 'in progress' : (o.n ? 'not started yet' : 'no activities in this scope'))) + '">' +
-          '<i style="background:' + o.cat.color + '"></i>' + icon + ' ' + esc(o.cat.value) + '</span>';
-      }).join('') + '</div></div>';
+      'per-floor tag, such as Testing &amp; Commissioning or Punchlisting &amp; Handover.</small></div>';
+    var pills = '<div class="ps-stk-overall-items">' + list.map(function (o) {
+      var icon = o.state === 'done' ? '✓' : o.state === 'wip' ? '●' : '—';
+      return '<span class="ps-stk-ov ps-stk-ov-' + o.state + '" style="' + catTint(o.cat.color, .16) + '" title="' +
+        esc(o.n + ' activit' + (o.n === 1 ? 'y' : 'ies') + ' — ' +
+          (o.state === 'done' ? 'all finished' : o.state === 'wip' ? 'in progress' : (o.n ? 'not started yet' : 'no activities in this scope'))) + '">' +
+        '<i style="background:' + o.cat.color + '"></i>' + icon + ' ' + esc(o.cat.value) + '</span>';
+    }).join('') + '</div>';
+    var table = '';
+    if (perTower && perTower.length > 1) {
+      table = '<div class="ps-stk-ovtable-hd">By tower</div><div class="ps-stk-ovtable-wrap"><table class="ps-stk-ovtable"><thead><tr><th></th>' +
+        list.map(function (o) { return '<th title="' + esc(o.cat.value) + '"><i style="background:' + o.cat.color + '"></i></th>'; }).join('') +
+        '</tr></thead><tbody>' + perTower.map(function (pt) {
+          return '<tr><th>' + esc(pt.value) + '</th>' + pt.status.map(function (o) {
+            var icon = o.state === 'done' ? '✓' : o.state === 'wip' ? '●' : '—';
+            return '<td class="ps-stk-ov-' + o.state + '" style="' + catTint(o.cat.color, .16) + '" title="' +
+              esc(pt.value + ' — ' + o.cat.value + ': ' + o.n + ' activit' + (o.n === 1 ? 'y' : 'ies') + ' — ' +
+                (o.state === 'done' ? 'all finished' : o.state === 'wip' ? 'in progress' : (o.n ? 'not started yet' : 'none'))) + '">' + icon + '</td>';
+          }).join('') + '</tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    return '<div class="ps-stk-overall">' + header + pills + table + '</div>';
   }
 
   function openStackView(from, to, label) {
@@ -15256,7 +15339,7 @@
       return;
     }
 
-    var out, nLocs, nDone, overall, scopeNote;
+    var out, nLocs, nDone, overall, scopeNote, perTowerOverall;
     if (showAll) {
       var grid = stkGridHTML(_stkLevel, D, parentLvl);
       if (!grid.count) {
@@ -15270,6 +15353,9 @@
       cnt.textContent = nLocs + ' location' + (nLocs === 1 ? '' : 's') + ' across ' + grid.towers + ' ' +
         parentLvl.name.toLowerCase() + (grid.towers === 1 ? '' : 's') + ' · ' + nDone + ' complete';
       overall = overallDisciplineStatusAllTowers(_stkLevel, D, parentLvl.id);
+      perTowerOverall = stkScopeValues(parentLvl.id).map(function (t) {
+        return { value: t.value, status: overallDisciplineStatusForTower(_stkLevel, D, parentLvl.id, t.value) };
+      });
       scopeNote = 'all ' + parentLvl.name.toLowerCase() + 's shown' + (_sc ? ' (' + _sc + ')' : '');
     } else {
       var model = stackModel(_stkLevel, D);
@@ -15304,7 +15390,7 @@
     }).join('');
     body.innerHTML = ctrls + out +
       '<div class="ps-actlegend-items" style="margin-top:12px;border-top:1px dashed var(--pd-line);padding-top:10px;">' + leg + '</div>' +
-      overallStatusHTML(overall, scopeNote);
+      overallStatusHTML(overall, scopeNote, perTowerOverall);
     wireStackCtrls(body);
   }
   function wireStackCtrls(body) {
