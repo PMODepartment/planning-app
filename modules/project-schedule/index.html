@@ -503,7 +503,11 @@
     .ps-stk-body { padding:12px 14px 16px; overflow:auto; max-height:74vh; }
     .ps-stk-ctrls { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin-bottom:12px;
       font-size:12px; color:var(--pd-muted); }
-    .ps-stk-ctrls .pd-select { height:30px; font-size:12px; width:150px; flex:none; }
+    /* ⚠️ Same defect as the legend select: a FIXED height clips the option text's descenders.
+       Height is a minimum here and the box grows with its content. */
+    .ps-stk-ctrls .pd-select { min-height:32px; height:auto; font-size:12.5px; line-height:1.35;
+      padding:4px 26px 4px 9px; width:auto; min-width:130px; max-width:220px; flex:none; }
+    .ps-stk-ctrls label { display:inline-flex; align-items:center; gap:6px; }
     /* ⚠️ Fixed columns on BOTH sides, not `auto` — with an auto column every row's band ended at a
        different x (the widest label won), which read as cantilevered floors rather than a stack.
        ⚠️ Both side columns are wide enough for the real values ("Ground Reservoir", "Architectural
@@ -15062,9 +15066,12 @@
         ttl = document.getElementById('ps-stk-title'),
         cnt = document.getElementById('ps-stk-count');
     if (!body) return;
-    ttl.textContent = 'Planned status as of ' + _stkLabel + (stkScopeLabel(_stkLevel) ? ' — ' + stkScopeLabel(_stkLevel) : '');
     var cfg = catCfg(), cats = catList(), D = _stkTo;
+    // ⚠️ Resolve the scope BEFORE the title — on the first open it is still empty, so a title built
+    // above this line silently omitted which tower you were looking at.
     stkEnsureScope(_stkLevel);
+    var _sc = stkScopeLabel(_stkLevel);
+    ttl.textContent = 'Planned status as of ' + _stkLabel + (_sc ? ' — ' + _sc : '');
     // One selector per level ABOVE the stacked one — a tower at a time, not seven merged.
     var scopeSel = stkOuterLevels(_stkLevel).map(function (l) {
       var vals = stkScopeValues(l.id); if (!vals.length) return '';
