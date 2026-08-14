@@ -1,5 +1,35 @@
 # Module: project-schedule
 
+## Schedule Builder audit — 8 functionality + UX fixes (2026-08-14) — fmlozano
+Acting on an audit the owner approved. All in the `ScheduleBuilder` closure in `index.html`.
+- **#1 Step-2 edits no longer wipe Step-3 links.** Previously EVERY structural edit — add floor/zone/
+  unit, delete anything, **or even rename a zone code** — ran `cfg.links = []`, making the builder
+  one-way. New `pruneLinks()` drops only links whose endpoints no longer exist (leaf uids key off
+  `id`s, not codes, so adds and renames keep every link). Adds → no clear; deletes → prune; the
+  Activity-level change (which genuinely changes all uids) → confirm-then-clear.
+- **#2 Reuse zoning across trades.** Step 2 gained "Copy <trade> floors/zones → all trades" and a
+  "copy from <trade>" select (`cloneFloors` deep-copies with fresh ids). Most towers share one
+  building across ST/AR/MEPF — was re-entered per trade.
+- **#3 Link manager table** (`openLinkManager`, "Links (N)" button in Step 3): filterable From·To·
+  Type·Lag·✕ list with inline type/lag edit + clear-all — the only practical way to audit hundreds of
+  links (One Portwood has 748). `uidLabel()` renders readable endpoints.
+- **#4 Confirms on destructive actions.** Auto-trace's "Generate logic" and "Clear links" now confirm
+  when links exist (auto-trace + clear both replace/erase everything).
+- **#5 Removed the duplicate lead input.** The Step-3 "Structure leads by N floors" box overlapped the
+  Auto-trace dialog's per-trade "floors behind"; the dialog is now the single place (`cfg.floorLead`
+  stays the fallback default).
+- **#6/#7 Resulting-schedule readability.** Row labels moved to a **frozen sticky-left column**
+  (`.sbld-schedlabels`) so they stay visible when the diagonal takt chart scrolls right (SVG carries
+  no label gutter now); labels are clickable to focus a row. Default **Detail = Floor (2)** instead of
+  Unit (4) so a tall building opens compact. Right-click-to-confirm replaced with explicit **Confirm
+  sources / Create links** buttons (right-click still works).
+- **#8 Per-row / per-column scope toggles** (Step 5): click an activity header to toggle it across all
+  locations, or a location label to toggle all its activities (was global All-on/All-off only).
+- **#9 Unsaved-changes guard.** `beforeunload` warns on page close/refresh while dirty; switching
+  project offers to save the previous project's builder config first (was discarded silently).
+- Verified: inline `<script>` parses (0 fail). ⚠️ **NOT verified signed-in** (auth-gated). `MODULE_V`
+  → `20260814b`.
+
 ## Vertical stacking: end phases (Testing & Commissioning / Punchlisting / Handover) as their own rows + Schedule Builder overflow fix (2026-08-14) — fmlozano
 Two asks in one turn:
 - **End phases now show in the LSM vertical stacking** (`renderStackView`). Testing & Commissioning,

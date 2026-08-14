@@ -1346,11 +1346,26 @@
     .sbld-znhint { font-size:12px; color:var(--pd-muted); padding:2px 2px 4px; font-style:italic; }
     .sbld-tower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); position:sticky; top:12px; }
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; margin-bottom:8px; }
+    .sbld-scope-col, .sbld-scope-row { cursor:pointer; user-select:none; }
+    .sbld-scope-col:hover, .sbld-scope-row:hover { color:var(--pd-red); text-decoration:underline; }
     /* step 6 — vertical stacking (building model per trade) */
     .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; align-items:start; margin-top:8px; }
     .sbld-stacktower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); }
     /* step 3 — link canvas */
     .sbld-canvaswrap { overflow:auto; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); max-height:62vh; }
+    /* Resulting schedule with a FROZEN (sticky-left) row-label column so labels stay visible when the
+       diagonal takt chart scrolls right. Outer box clips; inner scrolls both axes; labels stick left. */
+    .sbld-schedwrap { border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); overflow:hidden; }
+    .sbld-schedscroll { overflow:auto; max-height:62vh; }
+    .sbld-schedscroll::-webkit-scrollbar { width:12px; height:12px; }
+    .sbld-schedscroll::-webkit-scrollbar-thumb { background:var(--pd-line); border-radius:6px; border:3px solid var(--pd-bg); }
+    .sbld-schedscroll::-webkit-scrollbar-thumb:hover { background:var(--pd-muted); }
+    .sbld-schedgrid { display:flex; align-items:flex-start; width:max-content; }
+    .sbld-schedlabels { position:sticky; left:0; z-index:2; flex:0 0 auto; background:var(--pd-bg); border-right:1px solid var(--pd-line); }
+    .sbld-schedchart { flex:0 0 auto; }
+    .sbld-schedlab { display:flex; align-items:center; box-sizing:border-box; padding:0 8px; font-size:10px; color:var(--pd-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+    .sbld-schedlab.on { background:rgba(245,166,35,.18); font-weight:700; }
+    .sbld-schedlab:hover { color:var(--pd-red); }
     /* obvious scrollbars so a long/wide linking diagram is clearly scrollable */
     .sbld-canvaswrap::-webkit-scrollbar { width:12px; height:12px; }
     .sbld-canvaswrap::-webkit-scrollbar-thumb { background:var(--pd-line); border-radius:6px; border:3px solid var(--pd-bg); }
@@ -12433,7 +12448,7 @@
     var seqLeftW = 300;   // step-3 tower pane width (px) — draggable divider
     var seqTradeFilter = 'ALL';   // Zone-sequence: which trade's bars/nodes are shown ('ALL' = every trade)
     var seqLayout = 'split';  // step 3/4 layout: 'split' (tower left / gantt right) | 'stack' (building top / gantt bottom)
-    var seqLevel = 4;         // step-3 tower collapse depth: 1=Trade, 2=Floor, 3=Zone, 4=Unit (full)
+    var seqLevel = 2;         // step-3 collapse depth default: 2=Floor (compact + readable on tall buildings); 1=Trade, 3=Zone, 4=Unit
     var seqFocus = [];        // uids currently highlighted (cross-highlight between tower nodes & gantt bars)
     function isFocus(uids) { return seqFocus.length && uids.some(function (u) { return seqFocus.indexOf(u) >= 0; }); }
     function setFocus(uids) { seqFocus = (uids || []).slice(); }
@@ -12579,8 +12594,18 @@
     }
     async function open(projectId, userId) {
       curUid = userId;
-      if (!wired) { var sv = document.getElementById('ps-bld-save'); if (sv) sv.onclick = save; var hb = document.getElementById('ps-bld-help'); if (hb) hb.onclick = openHelp; wired = true; }
-      if (projectId !== curPid) { curPid = projectId; step = 0; await loadCfg(); } else render();
+      if (!wired) {
+        var sv = document.getElementById('ps-bld-save'); if (sv) sv.onclick = save;
+        var hb = document.getElementById('ps-bld-help'); if (hb) hb.onclick = openHelp;
+        // Guard accidental page close/refresh with unsaved builder edits.
+        window.addEventListener('beforeunload', function (e) { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
+        wired = true;
+      }
+      if (projectId !== curPid) {
+        // Switching project discards the in-memory builder config — offer to save the old one first.
+        if (curPid && isDirty() && confirm('You have unsaved Schedule Builder changes for the previous project. Save them before switching?')) { try { await save(); } catch (e) {} }
+        curPid = projectId; step = 0; await loadCfg();
+      } else render();
     }
 
     // ---- location model (per-trade, per-floor zones) --------------------
@@ -12844,6 +12869,25 @@
       cfg.links.push({ from: from, to: to, type: type || 'FS', lag: lag || 0 });
       markDirty(); render();
     }
+    // Drop only the links whose endpoints no longer exist (a leaf was deleted / re-levelled). Adding a
+    // floor/zone/unit or renaming a code leaves every existing leaf uid intact, so those edits keep all
+    // links — the builder is iterative again instead of nuking Step 3 on every Step 2 tweak.
+    function pruneLinks() {
+      var ok = {}; ok[START()] = 1; ok[END()] = 1; locList().forEach(function (l) { ok[l.uid] = 1; });
+      var before = cfg.links.length;
+      cfg.links = cfg.links.filter(function (k) { return ok[k.from] && ok[k.to]; });
+      return before - cfg.links.length;
+    }
+    // Deep-copy a trade's floors/zones/units with FRESH ids, so the copy is independent of the source.
+    function cloneFloors(floors) {
+      return (floors || []).map(function (f) {
+        return { id: uidv(), code: f.code, name: f.name, sub: !!f.sub,
+          zones: (f.zones || []).map(function (z) {
+            return { id: uidv(), code: z.code, name: z.name,
+              units: (z.units || []).map(function (u) { return { id: uidv(), code: u.code, name: u.name }; }) };
+          }) };
+      });
+    }
     function floorsOf(tr) { return cfg.zoning[tr].floors; }             // listed order: index 0 = lowest/ground
     // Takt / location-based logic: each trade climbs its own floors cell-by-cell (matched by zone+unit
     // code), and a following trade stays a configurable number of floors BEHIND the one before it.
@@ -12950,6 +12994,7 @@
       ov.querySelectorAll('[data-zup]').forEach(function (b) { b.onclick = function () { var it = b.closest('.sbld-zord-item'), pv = it && it.previousElementSibling; if (pv) it.parentNode.insertBefore(it, pv); }; });
       ov.querySelectorAll('[data-zdown]').forEach(function (b) { b.onclick = function () { var it = b.closest('.sbld-zord-item'), nx = it && it.nextElementSibling; if (nx) it.parentNode.insertBefore(nx, it); }; });
       ov.querySelector('#sbld-at-go').onclick = function () {
+        if (cfg.links.length && !confirm('Auto-trace REPLACES the current ' + cfg.links.length + ' link(s) with a fresh takt flow. Continue?')) return;
         Array.prototype.forEach.call(ov.querySelectorAll('input[data-atkind]'), function (inp) {
           var kind = inp.dataset.atkind, target = inp.dataset.attr, v = +inp.value;
           if (kind === 'batch') cfg.tradeBatch[target] = Math.max(1, Math.min(60, v || 4));       // floors-behind, stored on the leading (previous) trade
@@ -13388,6 +13433,15 @@
         var n = leafCount(g);
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
+      // Most towers share the same floors/zones across trades — copy this trade's zoning to the others
+      // (or pull another trade's zoning in) instead of re-entering the whole building per trade.
+      var otherTr = used.filter(function (g) { return g !== tr; }), srcTr = otherTr.filter(function (g) { return cfg.zoning[g].floors.length; });
+      var copyCtrl = otherTr.length ? '<div class="sbld-sec-actions" style="margin:2px 0 12px;flex-wrap:wrap;">' +
+        '<span class="sbld-hint">Same building for several trades?</span>' +
+        (zn.floors.length ? '<button class="pd-btn" id="b-applyall">Copy ' + e2(GLABEL[tr]) + ' floors/zones → all trades</button>' : '') +
+        (srcTr.length ? '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">or copy from <select class="pd-select sbld-mini" id="b-copyfrom" style="height:30px;"><option value="">choose trade…</option>' +
+          srcTr.map(function (g) { return '<option value="' + g + '">' + e2(GLABEL[g]) + ' (' + leafCount(g) + ')</option>'; }).join('') + '</select></label>' : '') +
+        '</div>' : '';
       var floorsHtml = zn.floors.length ? zn.floors.map(function (f, i) {
         var zonesHtml = f.zones.length ? f.zones.map(function (z, zi) {
           return '<div class="sbld-znrow"><span class="sbld-zntag" style="border-color:' + gc(tr) + ';color:' + gc(tr) + '">ZONE</span>' +
@@ -13417,7 +13471,7 @@
         [['auto', 'Auto (deepest defined)'], ['floor', 'Floor level'], ['zone', 'Zone level'], ['unit', 'Unit level']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.locLevel || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
         '<span class="sbld-hint">Remaps the whole builder — e.g. <b>Floor level</b> schedules activities per floor (zones/units ignored); <b>Zone level</b> per zone.</span></div>' +
-        chips +
+        chips + copyCtrl +
         '<div class="sbld-lvlgrid">' +
         '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
         '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
@@ -13425,10 +13479,24 @@
         '<div class="sbld-tower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
         '</div>';
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; render(); }; });
-      var lvlSel = host.querySelector('#b-loclevel'); if (lvlSel) lvlSel.onchange = function () { cfg.locLevel = lvlSel.value; cfg.links = []; markDirty(); render(); };  // leaf uids change → old zone links no longer resolve
-      host.querySelector('#b-addfloor').onclick = function () { var nf = zn.floors.filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', zones: [] }); cfg.links = []; markDirty(); render(); };
+      var applyAll = host.querySelector('#b-applyall'); if (applyAll) applyAll.onclick = function () {
+        if (!confirm('Copy ' + GLABEL[tr] + '\'s floors/zones/units to all ' + otherTr.length + ' other trade(s)? This REPLACES their current zoning.')) return;
+        otherTr.forEach(function (g) { cfg.zoning[g].floors = cloneFloors(zn.floors); });
+        pruneLinks(); markDirty(); render();
+      };
+      var copyFrom = host.querySelector('#b-copyfrom'); if (copyFrom) copyFrom.onchange = function () {
+        var g = copyFrom.value; if (!g) return;
+        if (zn.floors.length && !confirm('Replace ' + GLABEL[tr] + '\'s current zoning with a copy of ' + GLABEL[g] + '\'s?')) { copyFrom.value = ''; return; }
+        zn.floors = cloneFloors(cfg.zoning[g].floors); pruneLinks(); markDirty(); render();
+      };
+      var lvlSel = host.querySelector('#b-loclevel'); if (lvlSel) lvlSel.onchange = function () {
+        // Changing the activity level changes every leaf uid, so links can't survive it — confirm first.
+        if (cfg.links.length && !confirm('Changing the Activity level rebuilds the locations, so the ' + cfg.links.length + ' zone link(s) from Step 3 will be cleared. Continue?')) { lvlSel.value = cfg.locLevel || 'auto'; return; }
+        cfg.locLevel = lvlSel.value; cfg.links = []; markDirty(); render();
+      };
+      host.querySelector('#b-addfloor').onclick = function () { var nf = zn.floors.filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', zones: [] }); markDirty(); render(); };
       // Basements build bottom-up (deepest first), so a new basement is INSERTED at index 0 (deepest).
-      host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, zones: [] }); cfg.links = []; markDirty(); render(); };
+      host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, zones: [] }); markDirty(); render(); };
       host.querySelector('#b-quick').onclick = function () {
         var B = Math.max(0, Math.min(20, qv('#q-base', 0))), F = Math.max(1, Math.min(80, qv('#q-floors', 1))), Z = Math.max(0, Math.min(20, qv('#q-zones', 0))), U = Math.max(0, Math.min(20, qv('#q-units', 0)));
         quickN[tr] = { B: B, F: F, Z: Z, U: U };
@@ -13439,13 +13507,13 @@
         for (var i = 1; i <= F; i++) zn.floors.push({ id: uidv(), code: 'F' + i, name: '', zones: mkZones() });
         cfg.links = []; markDirty(); render();
       };
-      host.querySelectorAll('.sbld-addzone').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.f]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1), units: [] }); cfg.links = []; markDirty(); render(); }; });
-      host.querySelectorAll('.sbld-delzone').forEach(function (b) { b.onclick = function () { zn.floors[+b.dataset.f].zones.splice(+b.dataset.z, 1); cfg.links = []; markDirty(); render(); }; });
-      host.querySelectorAll('.sbld-unplus').forEach(function (b) { b.onclick = function () { var z = zn.floors[+b.dataset.f].zones[+b.dataset.z]; z.units.push({ id: uidv(), code: 'U' + (z.units.length + 1) }); cfg.links = []; markDirty(); render(); }; });
-      host.querySelectorAll('.sbld-unminus').forEach(function (b) { b.onclick = function () { var z = zn.floors[+b.dataset.f].zones[+b.dataset.z]; if (z.units.length) z.units.pop(); cfg.links = []; markDirty(); render(); }; });
-      host.querySelectorAll('.sbld-delfloor').forEach(function (b) { b.onclick = function () { zn.floors.splice(+b.dataset.f, 1); cfg.links = []; markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-addzone').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.f]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1), units: [] }); markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-delzone').forEach(function (b) { b.onclick = function () { zn.floors[+b.dataset.f].zones.splice(+b.dataset.z, 1); pruneLinks(); markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-unplus').forEach(function (b) { b.onclick = function () { var z = zn.floors[+b.dataset.f].zones[+b.dataset.z]; z.units.push({ id: uidv(), code: 'U' + (z.units.length + 1) }); markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-unminus').forEach(function (b) { b.onclick = function () { var z = zn.floors[+b.dataset.f].zones[+b.dataset.z]; if (z.units.length) z.units.pop(); pruneLinks(); markDirty(); render(); }; });
+      host.querySelectorAll('.sbld-delfloor').forEach(function (b) { b.onclick = function () { zn.floors.splice(+b.dataset.f, 1); pruneLinks(); markDirty(); render(); }; });
       host.querySelectorAll('[data-fk]').forEach(function (inp) { inp.onchange = function () { zn.floors[+inp.dataset.f][inp.dataset.fk] = inp.value; markDirty(); render(); }; });
-      host.querySelectorAll('[data-zk]').forEach(function (inp) { inp.onchange = function () { zn.floors[+inp.dataset.f].zones[+inp.dataset.z][inp.dataset.zk] = inp.value; cfg.links = []; markDirty(); render(); }; });
+      host.querySelectorAll('[data-zk]').forEach(function (inp) { inp.onchange = function () { zn.floors[+inp.dataset.f].zones[+inp.dataset.z][inp.dataset.zk] = inp.value; markDirty(); render(); }; });
       host.querySelectorAll('.sbld-flr').forEach(function (row) { wireDrag(row, zn.floors); });
     }
 
@@ -13465,7 +13533,10 @@
     // lines both blocks up in the same column and FS steps the successor to the next column. This keeps
     // the chart compact and readable — its only job is to show/connect the zones.
     function scheduleSVG(dispLocs, starts) {
-      var rowH = 28, pad = 8, labelW = 150, chartX = labelW + 6;
+      // Row labels live in a FROZEN (sticky-left) HTML column outside the scrolling chart, so they stay
+      // visible when you scroll the diagonal takt schedule right — the chart SVG itself carries no label
+      // gutter (chartX is a small pad).
+      var rowH = 28, pad = 8, labelW = 158, chartX = 6;
       var colW = Math.max(26, Math.round(seqZoom * 9)), step = colW + 26;   // uniform block width + column gap (zoomable)
       // Collapse the resulting schedule to the chosen DETAIL level (the same seqLevel that drives the
       // tower): a Floor-level view shows one bar per floor, a Zone-level view one bar per zone, etc.
@@ -13494,7 +13565,7 @@
         .concat(nodes.map(function (n) { return { key: n.key, label: n.label, fill: gc(n.trade), s: n.s, txt: n.txt, uids: n.uids }; }))
         .concat([{ key: '__end__', label: 'End', fill: 'var(--pd-red)', s: maxUnit, txt: 'END', uids: [] }]);
       var H = pad * 2 + rows.length * rowH, W = chartX + (maxUnit + 1) * step + 40;
-      var pos = {}, bars = '', links = '', hot = '', rowhi = '';
+      var pos = {}, bars = '', links = '', hot = '', rowhi = '', labels = '';
       // Focus (click a bar): seqFocus holds leaf uids → resolve to their collapsed group keys, then mark
       // predecessors (green) / successors (amber) / dim the rest, and band-highlight the selected row.
       var fKeys = {}; seqFocus.forEach(function (u) { if (uid2key[u]) fKeys[uid2key[u]] = 1; });
@@ -13512,8 +13583,8 @@
         if (isF) rowhi += '<rect class="sbld-schedrowhi" x="0" y="' + y + '" width="' + W + '" height="' + rowH + '"></rect>';
         var pend = r.uids.length && r.uids.every(function (u) { return inPend(u); });
         var pdst = r.uids.length && r.uids.every(function (u) { return inDst(u); });
-        bars += '<text x="3" y="' + (y + rowH / 2 + 3) + '" font-size="10" fill="var(--pd-ink)">' + e2(r.label) + '</text>' +
-          '<rect class="sbld-schedbar' + (pend ? ' pend' : (pdst ? ' pend-dst' : '')) + (isF ? ' sbld-focus' : '') + relCls(r.key) + '" data-uids="' + e2(r.uids.join(' ')) + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
+        labels += '<div class="sbld-schedlab' + (isF ? ' on' : '') + '" data-uids="' + e2(r.uids.join(' ')) + '" style="height:' + rowH + 'px;" title="' + e2(r.label) + '">' + e2(r.label) + '</div>';
+        bars += '<rect class="sbld-schedbar' + (pend ? ' pend' : (pdst ? ' pend-dst' : '')) + (isF ? ' sbld-focus' : '') + relCls(r.key) + '" data-uids="' + e2(r.uids.join(' ')) + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
           '<text x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 3) + '" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">' + e2(r.txt) + '</text>';
       });
       // Links: stagger the elbow x per source so parallel arrows out of one bar don't coincide (so you
@@ -13533,7 +13604,13 @@
           (k.raw ? '<path class="sbld-linkhit" data-fk="' + e2(k.raw.from + '~' + k.raw.to) + '" d="' + d + '"></path>' : '');
         if (lcls === ' hotpred' || lcls === ' hotsucc') hot += seg; else links += seg;
       });
-      return '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>' + grid + rowhi + links + bars + hot + '</svg>';
+      var defs = '<defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>';
+      var svg = '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + defs + grid + rowhi + links + bars + hot + '</svg>';
+      return '<div class="sbld-schedwrap"><div class="sbld-schedscroll">' +
+        '<div class="sbld-schedgrid">' +
+          '<div class="sbld-schedlabels" style="width:' + labelW + 'px;padding-top:' + pad + 'px;">' + labels + '</div>' +
+          '<div class="sbld-schedchart">' + svg + '</div>' +
+        '</div></div></div>';
     }
     function stSequence(host) {
       // Layout uses a UNIFORM 1 unit per zone (durations are NOT summed here) so the diagram stays a
@@ -13556,7 +13633,7 @@
       var towerBody = towerEmpty ? '<div class="sbld-empty">No zones yet — add floors/zones for a trade in <b>Step 2</b>, then their nodes appear here to connect.</div>' :
         '<div class="sbld-twr' + (seqLayout === 'stack' ? ' sbld-twr-hz' : '') + '">' + showTr.map(seqTowerCol).join('') + '</div>';
       var schedH = '<div class="sbld-seq2-h">Resulting schedule (' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's') + (seqTradeFilter === 'ALL' ? '' : ' · ' + e2(GLABEL[seqTradeFilter]) + ' only') + ')</div>';
-      var schedBody = focusLegendHTML(seqFocus.length, 'b-focusclear') + '<div class="sbld-canvaswrap">' + scheduleSVG(dispLocs, starts) + '</div>';
+      var schedBody = focusLegendHTML(seqFocus.length, 'b-focusclear') + scheduleSVG(dispLocs, starts);
       var LEVELS = [[1, 'Trade'], [2, 'Floor'], [3, 'Zone'], [4, 'Unit']];
       var body = seqLayout === 'stack'
         ? '<div class="sbld-seqstack"><div class="sbld-seqstack-top"><div class="sbld-seq2-h">Building view — click a zone/unit to highlight it below</div>' + towerBody + '</div>' +
@@ -13564,13 +13641,19 @@
         : '<div class="sbld-seq2"><div class="sbld-seq2-left" style="width:' + seqLeftW + 'px;"><div class="sbld-seq2-h">Tower — building view</div>' + towerBody + '</div>' +
           '<div class="sbld-seq2-grip" id="b-grip" title="Drag to resize the tower / schedule"></div>' +
           '<div class="sbld-seq2-right">' + schedH + schedBody + '</div></div>';
+      var confirmBtn = (linkPhase === 'src' && pendSet.length)
+        ? '<button class="pd-btn pd-btn-primary" id="b-confirm">Confirm ' + pendSet.length + ' source' + (pendSet.length === 1 ? '' : 's') + ' →</button>'
+        : (linkPhase === 'dst' && pendDst.length)
+          ? '<button class="pd-btn pd-btn-primary" id="b-confirm">Create ' + pendDst.length + ' link' + (pendDst.length === 1 ? '' : 's') + ' →</button>'
+          : '';
       host.innerHTML = '<h2>3 · Zone sequence — connect the flow</h2>' +
-        '<p class="sbld-lede">This step <b>connects the zones</b>. Linking is a pick-then-confirm flow: <b>1)</b> click one or more <b>source</b> zones, <b>2)</b> <b>right-click</b> to confirm the sources, <b>3)</b> click one or more <b>destination</b> zones, <b>4)</b> <b>right-click</b> to confirm, <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Every source is linked to every destination. Click a zone/unit to <b>highlight</b> it in both views; click an arrow to edit/unlink; <b>Auto-trace logic</b> builds the takt flow for you.</p>' +
+        '<p class="sbld-lede">This step <b>connects the zones</b>: <b>1)</b> click one or more <b>source</b> zones, <b>2)</b> press <b>Confirm sources</b> (or right-click), <b>3)</b> click one or more <b>destination</b> zones, <b>4)</b> press <b>Create links</b> (or right-click), <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Every source is linked to every destination. Click a bar to <b>highlight / inspect</b> its links; open <b>Links</b> to edit them in a table; <b>Auto-trace logic</b> builds the whole takt flow for you.</p>' +
         tradeChips +
         '<div class="sbld-sec-actions">' +
         '<button class="pd-btn pd-btn-primary" id="b-autotrace">Auto-trace logic</button>' +
-        '<label class="sbld-quick">Structure leads by <input class="pd-input" id="b-lead" type="number" min="1" max="40" value="' + (cfg.floorLead || 4) + '" style="width:52px;height:30px;"> floor(s)</label>' +
+        confirmBtn +
         ((pendSet.length || pendDst.length || linkPhase === 'dst') ? '<button class="pd-btn" id="b-done">Reset selection</button>' : '') +
+        '<button class="pd-btn" id="b-linkmgr">Links (' + cfg.links.length + ')</button>' +
         '<button class="pd-btn" id="b-clear">Clear links</button>' +
         '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Detail ' + LEVELS.map(function (l) { return '<button class="pd-btn sbld-scbtn' + (seqLevel === l[0] ? ' on' : '') + '" data-seqlvl="' + l[0] + '" title="Collapse both the building view AND the resulting schedule to ' + l[1] + ' level (links stay, aggregated between the collapsed bars)">' + l[0] + '</button>'; }).join('') + '</span>' +
         '<span class="sbld-quick">View ' + [['split', 'Split'], ['stack', 'Stacked']].map(function (v) { return '<button class="pd-btn sbld-scbtn' + (seqLayout === v[0] ? ' on' : '') + '" data-seqlayout="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</span>' +
@@ -13580,9 +13663,10 @@
       host.querySelectorAll('[data-seqlvl]').forEach(function (b) { b.onclick = function () { seqLevel = +b.dataset.seqlvl; render(); }; });
       host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
       host.querySelector('#b-autotrace').onclick = openAutoTraceDialog;
-      host.querySelector('#b-clear').onclick = function () { cfg.links = []; nodeReset(); markDirty(); render(); };
+      host.querySelector('#b-clear').onclick = function () { if (cfg.links.length && !confirm('Remove all ' + cfg.links.length + ' link(s)?')) return; cfg.links = []; nodeReset(); markDirty(); render(); };
+      var cfb = host.querySelector('#b-confirm'); if (cfb) cfb.onclick = function () { nodeConfirm(); };
+      var lmb = host.querySelector('#b-linkmgr'); if (lmb) lmb.onclick = openLinkManager;
       var doneb = host.querySelector('#b-done'); if (doneb) doneb.onclick = nodeReset;
-      var lead = host.querySelector('#b-lead'); if (lead) lead.onchange = function () { cfg.floorLead = Math.max(1, Math.min(40, +lead.value || 4)); markDirty(); };
       // +/- adjusts the block size / column spacing of the flow diagram
       host.querySelector('#b-zout').onclick = function () { seqZoom = Math.max(1.5, seqZoom - 1); render(); };
       host.querySelector('#b-zin').onclick = function () { seqZoom = Math.min(12, seqZoom + 1); render(); };
@@ -13596,12 +13680,12 @@
       });
       var pendEl = host.querySelector('#b-pend'); if (pendEl) pendEl.textContent = !locs.length ? '' :
         (linkPhase === 'src'
-          ? (pendSet.length ? (pendSet.length + ' source(s) selected — right-click to confirm, then pick destinations.') : 'Step 1: click one or more source zones (then right-click to confirm).')
-          : (pendDst.length ? (pendDst.length + ' destination(s) selected — right-click to choose the relationship.') : 'Step 3: click one or more destination zones (then right-click to confirm).'));
+          ? (pendSet.length ? (pendSet.length + ' source(s) selected — press Confirm sources (or right-click).') : 'Step 1: click one or more source zones.')
+          : (pendDst.length ? (pendDst.length + ' destination(s) selected — press Create links (or right-click).') : 'Step 3: click one or more destination zones.'));
       host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { var uids = (b.dataset.uids || '').split(' ').filter(Boolean); setFocus(uids); nodeSelectMany(uids); }; });
       // schedule bars INSPECT only (highlight predecessors/successors); linking is done from the tower
       // nodes on the left, so clicking a bar never adds it to a pending link (was a linking bug).
-      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { setFocus((b.getAttribute('data-uids') || '').split(' ').filter(Boolean)); render(); }); });
+      host.querySelectorAll('.sbld-schedbar, .sbld-schedlab').forEach(function (b) { b.addEventListener('click', function () { setFocus((b.getAttribute('data-uids') || '').split(' ').filter(Boolean)); render(); }); });
       var fclr = host.querySelector('#b-focusclear'); if (fclr) fclr.onclick = function () { setFocus([]); render(); };
       // right-click anywhere in the linking area confirms the current phase (source → destination → dialog)
       var seq2 = host.querySelector('.sbld-seq2'); if (seq2) seq2.addEventListener('contextmenu', nodeConfirm);
@@ -13669,6 +13753,47 @@
     }
     function _ldOut(e) { var d = document.getElementById('sbld-linkdlg'); if (d && !d.contains(e.target)) closeLinkDialog(); }
     function closeLinkDialog() { var d = document.getElementById('sbld-linkdlg'); if (d) d.remove(); document.removeEventListener('mousedown', _ldOut); }
+    // Readable label for a link endpoint (or START/END).
+    function uidLabel(uid) {
+      if (uid === START()) return 'START'; if (uid === END()) return 'END';
+      var l = locList().filter(function (x) { return x.uid === uid; })[0];
+      return l ? (GLABEL[l.trade] + ' · ' + locLabel(l)) : uid;
+    }
+    // Tabular link manager — the only practical way to audit/edit relationships when the diagram is
+    // dense (hundreds of links). Filter, change type/lag inline, remove individually, or clear all.
+    function openLinkManager() {
+      var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
+      ov.innerHTML = '<div class="pd-modal" style="max-width:760px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Links</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+        '<div style="padding:12px 16px;"><input class="pd-input" id="sblm-search" placeholder="Filter by activity / trade / location…" style="width:100%;height:34px;margin-bottom:10px;">' +
+        '<div id="sblm-body" style="max-height:60vh;overflow:auto;"></div></div>' +
+        '<div class="pd-modal-footer"><button class="pd-btn" id="sblm-clear">Clear all links</button><button class="pd-btn pd-btn-primary" data-x>Done</button></div></div>';
+      document.body.appendChild(ov);
+      function close() { ov.remove(); render(); }
+      ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
+      ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+      var body = ov.querySelector('#sblm-body'), search = ov.querySelector('#sblm-search'), TYPES = ['FS', 'SS', 'FF', 'SF'];
+      function draw() {
+        if (!cfg.links.length) { body.innerHTML = '<div class="sbld-empty">No links yet. Connect zones in the diagram or use <b>Auto-trace logic</b>.</div>'; return; }
+        var q = (search.value || '').toLowerCase();
+        var items = cfg.links.map(function (k, i) { return { k: k, i: i, fl: uidLabel(k.from), tl: uidLabel(k.to) }; })
+          .filter(function (x) { return !q || (x.fl + ' ' + x.tl).toLowerCase().indexOf(q) >= 0; });
+        body.innerHTML = '<div class="sbld-hint" style="margin-bottom:6px;">' + items.length + ' of ' + cfg.links.length + ' link(s)</div>' +
+          '<div class="sbld-tablewrap"><table class="sbld-tbl" style="width:100%;"><thead><tr><th>From</th><th>To</th><th>Type</th><th>Lag</th><th></th></tr></thead><tbody>' +
+          items.map(function (x) {
+            return '<tr><td>' + e2(x.fl) + '</td><td>' + e2(x.tl) + '</td>' +
+              '<td><select class="pd-select sblm-type" data-i="' + x.i + '" style="height:28px;">' + TYPES.map(function (t) { return '<option' + (x.k.type === t ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></td>' +
+              '<td><input class="pd-input sblm-lag" type="number" data-i="' + x.i + '" value="' + (x.k.lag || 0) + '" style="width:64px;height:28px;"></td>' +
+              '<td><button class="sbld-del sblm-del" data-i="' + x.i + '" title="Remove link"><span data-ico="trash" data-ico-size="13"></span></button></td></tr>';
+          }).join('') + '</tbody></table></div>' + (items.length ? '' : '<div class="sbld-empty">No links match your filter.</div>');
+        body.querySelectorAll('.sblm-type').forEach(function (s) { s.onchange = function () { cfg.links[+s.dataset.i].type = s.value; markDirty(); }; });
+        body.querySelectorAll('.sblm-lag').forEach(function (inp) { inp.onchange = function () { cfg.links[+inp.dataset.i].lag = parseInt(inp.value, 10) || 0; markDirty(); }; });
+        body.querySelectorAll('.sblm-del').forEach(function (b) { b.onclick = function () { cfg.links.splice(+b.dataset.i, 1); markDirty(); draw(); }; });
+        if (window.Icons) Icons.hydrate(body);
+      }
+      search.oninput = draw;
+      ov.querySelector('#sblm-clear').onclick = function () { if (cfg.links.length && confirm('Remove all ' + cfg.links.length + ' link(s)?')) { cfg.links = []; markDirty(); draw(); } };
+      draw();
+    }
 
     function stScope(host) {
       var locs = locList();
@@ -13677,16 +13802,30 @@
       usedGroups().forEach(function (tr) {
         var tlocs = locs.filter(function (l) { return l.trade === tr; }), acts = tradeActs(tr);
         if (!tlocs.length || !acts.length) return;
-        var head = '<tr><th>' + e2(GLABEL[tr]) + '</th>' + acts.map(function (a) { return '<th title="' + e2(a.name) + '">' + e2(a.code || a.name) + '</th>'; }).join('') + '</tr>';
+        var head = '<tr><th>' + e2(GLABEL[tr]) + '</th>' + acts.map(function (a) { return '<th class="sbld-scope-col" data-tr="' + tr + '" data-act="' + a.id + '" title="' + e2(a.name) + ' — click to toggle this activity for every location">' + e2(a.code || a.name) + '</th>'; }).join('') + '</tr>';
         var body = tocs(tlocs, acts);
         sections += '<h3 style="font-size:13px;margin:14px 0 6px;"><span class="sbld-dot" style="background:' + gc(tr) + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
       });
-      function tocs(tlocs, acts) { return tlocs.map(function (l) { return '<tr><td>' + e2(locLabel(l)) + '</td>' + acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join(''); }
+      function tocs(tlocs, acts) { return tlocs.map(function (l) { return '<tr><td class="sbld-scope-row" data-tr="' + l.trade + '" data-uid="' + l.uid + '" title="Click to toggle every activity at ' + e2(locLabel(l)) + '">' + e2(locLabel(l)) + '</td>' + acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join(''); }
       host.innerHTML = '<h2>5 · Scope per zone</h2>' +
-        '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations (all on by default). Untick where a trade doesn\'t occur.</p>' +
+        '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations (all on by default). Untick where a trade doesn\'t occur. Click an <b>activity header</b> to toggle that activity across every location, or a <b>location label</b> to toggle all its activities.</p>' +
         '<div class="sbld-sec-actions"><button class="pd-btn" id="b-all">All on</button><button class="pd-btn" id="b-none">All off</button></div>' +
         (sections || '<div class="sbld-empty">Assign activities to trades (step 1) and give those trades floors/zones (step 2).</div>');
       host.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.onchange = function () { var key = c.dataset.uid + '|' + c.dataset.act; if (c.checked) delete cfg.scopeOff[key]; else cfg.scopeOff[key] = true; markDirty(); }; });
+      // Column toggle: flip an activity for every location of its trade (all on → all off, else all on).
+      host.querySelectorAll('.sbld-scope-col').forEach(function (th) { th.onclick = function () {
+        var tr = th.dataset.tr, aid = th.dataset.act, tl = locList().filter(function (l) { return l.trade === tr; });
+        var allOn = tl.every(function (l) { return included(l.uid, aid); });
+        tl.forEach(function (l) { var key = l.uid + '|' + aid; if (allOn) cfg.scopeOff[key] = true; else delete cfg.scopeOff[key]; });
+        markDirty(); render();
+      }; });
+      // Row toggle: flip every activity for one location.
+      host.querySelectorAll('.sbld-scope-row').forEach(function (td) { td.onclick = function () {
+        var tr = td.dataset.tr, uid = td.dataset.uid, acts = tradeActs(tr);
+        var allOn = acts.every(function (a) { return included(uid, a.id); });
+        acts.forEach(function (a) { var key = uid + '|' + a.id; if (allOn) cfg.scopeOff[key] = true; else delete cfg.scopeOff[key]; });
+        markDirty(); render();
+      }; });
       host.querySelector('#b-all').onclick = function () { cfg.scopeOff = {}; markDirty(); render(); };
       host.querySelector('#b-none').onclick = function () { cfg.scopeOff = {}; locs.forEach(function (l) { tradeActs(l.trade).forEach(function (a) { cfg.scopeOff[l.uid + '|' + a.id] = true; }); }); markDirty(); render(); };
     }
