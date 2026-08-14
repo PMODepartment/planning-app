@@ -1,5 +1,93 @@
 # Module: project-schedule
 
+## Schedule Builder: library trades + "Others", resizable step-1, step-3 scroll + level-detail fix (2026-08-13g) — eprobles
+Follow-ups on the class-code library + linking UX.
+- **Library items now carry their real trade.** Re-parsed the mapping workbook's **"Excel Temp"**
+  sheet, which has a trade column (**Description 1** — General Requirement / Site Works / Rebar /
+  Concrete / … / Electrical / Plumbing / Fire Protection / …), keyed by the same base code. Mapped
+  each of the 197 Level-3 items to an app trade group and stored it as the 3rd tuple field; the
+  loader files them under that group instead of defaulting all to ST. Counts: GR 17 · SW 15 · ST 5 ·
+  AR 101 · MEPF 46 · ALLIED 5 · **OT 8**.
+- **New trade "Others" (OT).** Added to `GROUPS`/`GLABEL`/`GCOLOR` (teal `#0d9488`) + `parseTrade`,
+  used for the misc/financial codes (DLP, rectification, change order, contingency, buyback, …).
+- **Step 1: resizable grid columns** — the grid is now `table-layout:fixed` with a `<colgroup>`;
+  each header has a drag grip (`.xl-colgrip`) writing per-column widths into `xColW` (persist across
+  re-renders). **Resizable library pane** — a drag grip on the "All class codes" pane's left edge
+  (`holdW`, 180–720px, default widened 260→320) fixes the cramped-on-the-right complaint.
+- **Step 3: long linking is scrollable** — `.sbld-canvaswrap` capped at `max-height:62vh` with visible
+  scrollbars, so a tall/wide zone diagram scrolls inside its pane instead of growing the page.
+- **Level-3/4 detail bug fixed** — when the **Activity level** is Floor or Zone, the deeper controls
+  (unit +/- at Zone, zones+units at Floor) and the tower's unit/zone splits are now **hidden**
+  (`showZones`/`showUnits` gates in `stLevels` + `towerSVG`), matching `leavesOfFloor`. Previously
+  level-4 (unit) controls showed even when scheduling at level 3, which read as a bug.
+- **Linking bug fixed** — clicking a schedule **bar** now only **inspects** (highlights preds/succs);
+  it no longer also toggles the bar into the pending link selection. Linking is done from the tower
+  nodes (step 3) / class-code list (step 4) on the left.
+- `MODULE_V` → `20260813c`. Verified: inline script parses; all symbols present; trade mapping
+  produced 0 unmatched. ⚠️ NOT browser-verified (auth wall).
+
+## Schedule Builder: class-code library + predecessor/successor inspection + bigger duration fields (2026-08-13f) — eprobles
+Three asks against the Schedule Builder (`ScheduleBuilder` closure in `index.html`), all additive:
+- **Class-code library (right side of step 1).** Extracted **197 codes** from *EPC. FIN. Class Code
+  Mapping Template (12).xlsx* — **Class Code number Level 3** (column 5) + **Description 3** (column 6),
+  filtered to non-empty rows — into a `CLASS_CODE_DB` constant. A **+ Library** button in step 1's
+  "All class codes" holding pane header seeds `cfg.catalog` with any not-already-present codes
+  (`loadClassCodeLibrary`, group defaults ST, dur 0). They appear on the right; tick + `←` loads them
+  into the build, and **Save** persists (catalog already rides in the `schedule_builder.config` jsonb).
+  Re-loading never duplicates (dedup by trimmed code across build + list).
+- **Predecessor/Successor inspection on bar select (steps 3 & 4).** Main already had a cross-highlight
+  (`seqFocus` array / `actFocus`) that highlighted the *same* node across tower & gantt. Extended it:
+  when a bar is focused, `scheduleSVG` / `actSchedSVG` / `actGanttSVG` now also mark its
+  **predecessors** (green `.prednode`, links `.hotpred`), **successors** (amber `.succnode`,
+  `.hotsucc`), and dim the rest (`.dimnode` / `.dimlink`) — computed from `cfg.links` / `cfg.actLinks`
+  relative to the focused id(s). A legend + **Clear selection** button (`focusLegendHTML`) sits above
+  each schedule. So with multiple predecessors/successors, clicking a bar makes the drivers obvious.
+- **Bigger Int/Ext duration fields (step 4 inline editors).** `.sbld-actdur input` 48×24px/11px →
+  82×38px/16px bold centered, labels 10.5px→13px, with a focus ring — far more readable.
+- `MODULE_V` bumped `20260813a → 20260813b`. Verified: inline script parses (`new Function`), all new
+  symbols present. ⚠️ **NOT browser-verified** — the module is auth-gated (no live session here), the
+  standing constraint for this module. ⚠️ **Branch note:** the edits were re-applied onto **main**
+  (52268c3) — the local `module/schedule-builder` branch was 7 commits stale and main had meanwhile
+  added the `seqFocus`/`actFocus` cross-highlight this work builds on, so a stale-branch patch would
+  have conflicted/duplicated.
+
+## Schedule Builder: fully-dynamic per-trade auto-trace questions (+ cure lag, zone order) (2026-08-13e) — eprobles
+The auto-trace dialog now asks each trade ONLY the questions that apply to what it actually has, and
+adds two new takt inputs the user asked for. Per trade, dynamically shown:
+- **Starts how many floors behind <previous trade>** (only when it has a preceding trade) — stored on
+  the leading trade's `cfg.tradeBatch`.
+- **Cure / lag between floors (days)** — only when the trade has >1 floor. NEW `cfg.floorLag[tr]`,
+  applied as the FS lag on every vertical floor→floor link in `autoTrace` step 1.
+- **Zones at once per floor** (only when >1 zone) — `cfg.zoneSimul`.
+- **Zone order** — a reorderable ↑/↓ list of the trade's distinct zone codes (only when >1 zone). NEW
+  `cfg.zoneOrder[tr]`; `autoTrace` step 1b sorts each floor's zones by this order before the
+  simultaneity sliding-window, so the sequence zones are worked in is honoured.
+- **Units at once per zone** (only when >1 unit) — `cfg.unitSimul`.
+- Sections with no applicable question are omitted (respects `cfg.locLevel`: floor-level hides
+  zone/unit questions, zone-level hides unit questions).
+- Save uses clean `data-atkind`/`data-attr` attributes (an earlier hyphen-in-attribute approach
+  mangled the key via camelCase — avoided). Additive jsonb (`floorLag`/`zoneOrder`); no migration.
+- Verified: inline JS parses; cure-lag-on-vertical-link + zone-order chaining unit-checked. **NOT
+  browser-verified** (auth-gated).
+
+## Schedule Builder: level-link cascade to units + push start = data date (2026-08-13d) — eprobles
+- **Zone-sequence collapsed-group linking now cascades to the unit level.** Linking two collapsed nodes
+  (Level 1–3) previously created a full cross-product of every source leaf × every destination leaf.
+  New `linkMapped(srcs, dsts, type, lag)` (used by `nodeConfirm`) instead maps each source unit-leaf to
+  the destination unit-leaf that shares its **sub-location** (`cellKey` = zone#unit) — so linking Floor 5
+  → Floor 6 establishes Z1U1→Z1U1, Z1U2→Z1U2, … (unit-to-unit relationships "followed" down the level).
+  Falls back to the every-source×every-destination link only when no sub-locations match (e.g. a genuine
+  cross-zone single pick). Unit-checked (group→group = clean 1:1; cross-zone single = 1 link).
+- **Trade sequence → per-unit activities (already worked, confirmed):** `generate` iterates `locList()`
+  (per-leaf = per-unit at unit level) and `pushToSchedule` applies each trade's `cfg.actLinks` WITHIN
+  every location — so the class-code sequence is established per unit and replicated to all unit-level
+  locations from step 2. No change needed.
+- **Push start date = project Data Date.** `openPushModal` now shows a Start date: when the project's
+  `dataDate` is set the schedule builds from it (read-only, with a note); when NO data date is defined
+  the user is prompted to pick a start date (required). `generate(basis, startOverride)` +
+  `pushToSchedule(..., startISO)` thread it through. (Preview panel still uses `cfg.startDate`.)
+- Verified: inline JS parses; `linkMapped` + start logic unit-checked. **NOT browser-verified** (auth-gated).
+
 ## Schedule Builder: step-3/4 viewing — stacked layout, cross-highlight, L1–L4 collapse (2026-08-13c) — eprobles
 Viewing/UX features for the Zone-sequence (step 3) and Trade-sequence (step 4) screens. UI-only, no
 config/model change.
