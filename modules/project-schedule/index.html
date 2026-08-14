@@ -14246,7 +14246,11 @@
         else if (ty === 'FF') bLast._preds.push(aLast + ' FF' + lagStr(k.lag));
         else if (ty === 'SF') bLast._preds.push(aFirst + ' SF' + lagStr(k.lag));
       });
-      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: (r.act && r.act.name) || null, location: locMapOf(r.loc) }; }
+      // work_type = the TRADE/DISCIPLINE (e.g. "Structural"), so Project Schedule's Discipline/Trade
+      // grouping detects it. It used to be the activity's own NAME (a unique value per row), which is
+      // why grouping by trade showed hundreds of one-off buckets instead of the real trades.
+      function tradeOf(r) { var tr = (r.loc && r.loc.trade) || (r.act && r.act.group); return tr ? (GLABEL[tr] || tr) : null; }
+      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc) }; }
       var payloads = [], taskN = g.rows.length, wbsMsg = '';
 
       if (!grouped) {
