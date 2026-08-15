@@ -14332,8 +14332,22 @@
       // Clean sequential ids (dotted WBS codes would confuse the predecessor parser); chain each
       // location's activities FS internally, then map each zone→zone link (FS/SS/FF/SF + lag) onto
       // the right end activities of the two locations.
+      // Standardized activity IDs + seq_order by TRADE rank so the pushed schedule always arranges
+      // General Requirements → Site Works → Structural → Architectural → MEPF → Allied → Others,
+      // regardless of the order the generator produced. seq_order is the grid's real leaf-sort key;
+      // the trade rank is also baked into the SB<rank><nnnnn> id (no hyphen — a hyphen + a negative
+      // FS lag would confuse the predecessor parser). Both the id and every predecessor token that
+      // references it use the same format, so relationships still resolve.
+      function tradeRank(tr) { var i = GROUPS.indexOf(tr); return i < 0 ? 9 : i + 1; }
+      function pad5(n) { n = String(n); return '00000'.slice(n.length) + n; }
       var seq = 0, locRows = {};
-      g.rows.forEach(function (r) { r._id = uniqId('SB' + (++seq)); r._preds = []; (locRows[r.loc.uid] = locRows[r.loc.uid] || []).push(r); });
+      g.rows.forEach(function (r) {
+        var rk = tradeRank(r.group || (r.loc && r.loc.trade)), gi = seq++;
+        r._id = uniqId('SB' + rk + pad5(gi));
+        r._seq = rk * 1000000 + gi;
+        r._preds = [];
+        (locRows[r.loc.uid] = locRows[r.loc.uid] || []).push(r);
+      });
       function lagStr(l) { return l ? (l > 0 ? '+' + l : '' + l) : ''; }
       // intra-zone predecessors: use the trade's class-code links (step 4) when it has any; otherwise
       // fall back to a plain FS chain in the step-1 order.
@@ -14360,7 +14374,7 @@
       // grouping detects it. It used to be the activity's own NAME (a unique value per row), which is
       // why grouping by trade showed hundreds of one-off buckets instead of the real trades.
       function tradeOf(r) { var tr = (r.loc && r.loc.trade) || (r.act && r.act.group); return tr ? (GLABEL[tr] || tr) : null; }
-      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc) }; }
+      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq }; }
       var payloads = [], taskN = g.rows.length, wbsMsg = '';
 
       if (!grouped) {
@@ -14470,6 +14484,10 @@
         };
         var gb = (orders[flatGroup] || orders.auto).map(tok).filter(Boolean);
         setGroupBys(gb.length ? gb : ['work']);
+      } else if (grouped && typeof setGroupBys === 'function') {
+        // A sub-WBS push built a real WBS tree — land on it, not on whatever stale location grouping
+        // was persisted (which would bucket every level a trade lacks into a nested "— Unassigned —").
+        setGroupBys(['wbs']);
       }
       switchTab('schedule');
       if (typeof load === 'function') load();   // module schedule reload (loadCfg no longer shadows it)
