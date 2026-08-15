@@ -9149,18 +9149,14 @@
     }
     return m;
   }
-  function _sumSegsHTML(r, min, dayw, sumTop, oY, standalone) {
+  function _sumSegsHTML(r, min, dayw, sumTop, oY) {
     var cfg = catCfg();
     if (!cfg.on || r._dkind === 'group' || !r.wbs) return '';
     var key = pid + '|' + _sorted.length + '|' + cfg.field;
     if (_segMapKey !== key) { _segMap = _buildSegMap(); _segMapKey = key; }
     var kids = (_segMap && _segMap[r.wbs]) || [];
     if (!kids.length) return '';
-    // `standalone` = the segments ARE the row's only mark (LSM mode), so they take the row's own
-    // height instead of the thin strip that sat under the roll-up bar.
-    var h = standalone ? Math.max(8, ROWH - Math.round(10 * oY)) : Math.max(5, Math.round(7 * oY));
-    var top = standalone ? (sumTop - Math.round(3 * oY)) : (sumTop + Math.round(10 * oY));
-    var out = '';
+    var h = Math.max(5, Math.round(7 * oY)), top = sumTop + Math.round(10 * oY), out = '';
     for (var i = 0; i < kids.length; i++) {
       var a = kids[i], e = catEntry(a); if (!e) continue;
       var s = pd(dispStart(a)), f = pd(dispFin(a)); if (!s || !f) continue;
@@ -9205,15 +9201,15 @@
       // LSM composition: with the legend on, a summary row shows the activities INSIDE it as
       // coloured segments, each filling up with its own progress — so a WBS bar reads as the
       // sequence of trades running under it rather than one flat block.
-      // ⚠️ In LSM mode the segments REPLACE the roll-up bar rather than sitting under it — but only
-      // when there actually are segments. A synthetic group header (Activity / Tower / Level) has no
-      // `wbs`, so _sumSegsHTML returns '' for it; dropping its bar too would leave that row with no
-      // mark at all, which is why this is gated on `segs` and not on `_lsm` alone.
-      var segs = _sumSegsHTML(r, min, dayw, sumTop, oY, _lsm);
-      if (!(_lsm && segs)) {
-        out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' + (sumPct > 0 ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + '</div>';
-      }
-      out += segs;
+      // ⚠️ REGRESSION FIX (2026-08-15): LSM mode used to DROP this roll-up bar and show only the
+      // per-activity segments. That looked right on a small fixture and was wrong on real data:
+      // `_segMap` is capped at SEG_CAP (400) per ancestor and filled with the FIRST 400 activities
+      // met in `_sorted` order, so a collapsed high-level WBS branch on a 4k-activity project got
+      // segments for a handful of its children and NOTHING for the rest — rows of empty Gantt.
+      // The roll-up bar is the only mark that is guaranteed to be there, so it always draws now.
+      // Only the BL0 bar and the red %-complete treatment are suppressed in LSM mode.
+      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' + (sumPct > 0 ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + '</div>';
+      out += _sumSegsHTML(r, min, dayw, sumTop, oY);
       if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
     }

@@ -4593,3 +4593,27 @@ act as a filtering function… only showing activities that have the applied sel
   ⚠️ One assertion failed first and it was **my expected value**, not the code — the leaves sort by WBS
   code, so the unique name lands second, not last.
 - ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815r`.
+
+## REGRESSION FIXED: LSM mode left WBS rows with no Gantt bar (2026-08-15) — fmlozano
+Owner: *"The Gantt bars in the gantt view is missing."*
+- **Audited by EXECUTING the shipped `ganttRowHTML`** against fixtures rather than reading it — it
+  neither throws nor returns empty, so this was never a crash. That pointed straight at what LSM mode
+  had changed.
+- ⚠️ **Root cause, and it is mine.** The "only the activity bars" pass dropped the **WBS roll-up bar**
+  in LSM mode and left the row to be drawn by its per-activity segments alone. That looked right on a
+  small fixture and is wrong on real data: `_segMap` is capped at **SEG_CAP (400) per ancestor** and
+  `_buildSegMap` fills each bucket with the **first 400 activities met in `_sorted` order**. On a
+  4,393-activity project a collapsed high-level branch therefore got segments for a handful of its
+  children and **nothing at all** for the rest — rows of empty Gantt, exactly as reported.
+- **Fix: the roll-up bar always draws again.** It is the only mark guaranteed to exist for a summary
+  row. Only the **BL0 bar** (task, milestone and roll-up) and the **red %-complete treatment** stay
+  suppressed in LSM mode — which is what was actually asked for. The `standalone` sizing added for the
+  removed layout is gone with it.
+- ⚠️ **Lesson: a cap that exists for DRAWING became a correctness bug the moment it was the only
+  drawing.** Before, the cap just meant "some segments are omitted from a bar that is still there".
+  Check what a truncation guard is load-bearing for before making it the sole source of a mark.
+- **Verified 28/28 in Node against the SHIPPED `ganttRowHTML`/`_sumSegsHTML`/`_hlCls`** (sliced, not
+  reimplemented), across the full matrix of LSM on/off × segments present/absent × task / WBS / group /
+  milestone rows: **every row type always produces a bar**, BL0 appears only outside LSM mode (task and
+  roll-up), and segments appear only in LSM with segments available. Inline script parses (1 block, 0 fail).
+- ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815s`.

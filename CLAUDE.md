@@ -5309,3 +5309,15 @@ represent the whole project. **Verified 10/10 in Node against the shipped functi
   patch — replacing a small bug rather than adding a listener that would fight the drag.
 - **Verified 19/19 in Node against the shipped code** + clean parse. ⚠️ Not verified signed-in.
   `MODULE_V` → `20260815r`.
+
+### 2026-08-15 — Project Schedule: REGRESSION fix — LSM mode left WBS rows with no Gantt bar
+⚠️ **Mine, from the "only the activity bars" pass.** Dropping the WBS roll-up bar in LSM mode and
+letting per-activity segments carry the row looked right on a fixture and failed on real data:
+`_segMap` is capped at SEG_CAP (400) per ancestor and filled with the first 400 activities met, so a
+collapsed high-level branch on a 4,393-activity project got segments for a few children and nothing
+for the rest — empty Gantt rows. The roll-up bar always draws again; only BL0 and the red %-complete
+treatment stay suppressed in LSM mode, which is what was actually asked for. ⚠️ Lesson: a cap that
+exists for drawing became a correctness bug the moment it was the only thing drawn. **Audited by
+executing the shipped renderer** (it never threw — so not a crash) and **verified 28/28 in Node**
+across LSM on/off × segments present/absent × task/WBS/group/milestone: every row type always
+produces a bar. ⚠️ Not verified signed-in. `MODULE_V` → `20260815s`.
