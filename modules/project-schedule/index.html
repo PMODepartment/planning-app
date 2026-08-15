@@ -478,6 +478,11 @@
     /* legend */
     .ps-legend { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:8px 2px; font-size:12px; color:var(--pd-muted); }
     .ps-legend .lg { display:inline-flex; align-items:center; gap:6px; }
+    .ps-bar.ps-cat-hl, .ps-mile.ps-cat-hl { outline:2px solid var(--pd-ink); outline-offset:1px; z-index:4; }
+    .ps-bar.ps-cat-dim, .ps-mile.ps-cat-dim { opacity:.18; }
+    .ps-alg-hl { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:4px;
+      background:var(--pd-red-light); color:var(--pd-red); font-weight:600; }
+    .ps-alg-hl button { border:none; background:none; color:inherit; cursor:pointer; font-size:13px; padding:0 2px; }
     #ps-view-schedule.ps-lsm .ps-legend .lg-lsmoff { display:none; }
     .lg-swatch { display:inline-block; width:22px; height:11px; border-radius:2px; }
     /* Activity legend (LSM-style): one swatch per activity CATEGORY, colouring the bars.
@@ -1123,6 +1128,7 @@
     .ps-gm-row { display:flex; align-items:center; gap:6px; padding:3px 12px; }
     .ps-gm-n { flex:none; width:16px; height:16px; border-radius:50%; background:var(--pd-red); color:#fff;
       font-size:10px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+    .ps-dsuffix { color:var(--pd-muted); font-weight:400; font-size:11.5px; }
     .ps-gm-lbl { flex:1; font-size:12.5px; color:var(--pd-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-gm-x { flex:none; width:22px; height:22px; padding:0; border:1px solid transparent; background:none;
       border-radius:4px; cursor:pointer; color:var(--pd-muted); font-size:11px; }
@@ -2580,6 +2586,20 @@
   // Grouping doubles as a filter: default ON, so a location breakdown never shows "— Unassigned —".
   var _hideUnassigned = true; try { _hideUnassigned = localStorage.getItem('ps_hideunassigned') !== '0'; } catch (e) {}
   var _gbHidden = 0;   // how many activities that filter removed, for the footer
+  // Click a Gantt bar to highlight every bar of the SAME activity category (Masonry, 1st Fix, …).
+  // Keyed by the "Colour activities by" field when the legend is on, else by activity name, so the
+  // highlight always matches whatever the planner is currently reading the colours as.
+  var _hlCat = null;
+  function _hlKeyOf(r) {
+    var cfg = catCfg();
+    return (cfg.on ? catValOf(r, cfg.field) : (r.activity_name || '').trim()) || '';
+  }
+  function toggleCatHighlight(r) {
+    var k = _hlKeyOf(r); if (!k) return;
+    _hlCat = (_hlCat === k) ? null : k;
+    renderGantt(); renderActLegend();
+  }
+  function clearCatHighlight() { if (_hlCat === null) return; _hlCat = null; renderGantt(); renderActLegend(); }
   // Ordered grouping levels. ['wbs'] = the plain WBS tree (default). Anything else nests a group
   // header per entry, in order — so Location>Zone>Activity and Activity>Location>Zone differ only
   // by the order of this list. Persisted per project; see setGroupBys/loadGroupBys.
@@ -3525,8 +3545,7 @@
       // ⚠️ No trailing 'wbs' — the location levels already say where the work is, so the WBS path
       // underneath them was pure duplication in this view (owner's call after seeing it live).
       { name: 'Activity › Location (LSM)', dims: ['act'].concat(locDims) },
-      { name: 'Discipline › Location (recommended)', dims: ['work'].concat(locDims) },
-      { name: 'Location › Discipline', dims: locDims.concat(['work']) }
+      { name: 'Discipline › Activity › Location', dims: ['work', 'act'].concat(locDims) }
     ].filter(function (p) { return p.dims.length; });
     var h = '<div class="ps-gm-sec">Presets</div>';
     presets.forEach(function (p, i) {
@@ -4950,7 +4969,7 @@
         list.forEach(function (r) { if (rowMatches(r)) { keep[r.wbs] = true; for (var i = 0; i < r._anc.length; i++) keep[r._anc[i]] = true; } });
         list = list.filter(function (r) { return keep[r.wbs] || rowMatches(r); });
       }
-      list.forEach(function (r) { r._dcode = r.wbs; r._ddepth = r._depth; r._danc = r._anc; r._dkind = isWbs(r) ? 'wbs' : 'task'; r._realCode = r.wbs; r._dlabel = null; });
+      list.forEach(function (r) { r._dcode = r.wbs; r._ddepth = r._depth; r._danc = r._anc; r._dkind = isWbs(r) ? 'wbs' : 'task'; r._realCode = r.wbs; r._dlabel = null; r._dsuffix = null; });
       return list;
     }
     // Grouped: nest a group header per dimension in `groupBys` order, then at the deepest level
@@ -5015,8 +5034,21 @@
     function emitLeaf(list, base, baseAnc, prune) {
       var depth = baseAnc.length;
       if (!showWbs) {
+        // ⚠️ Four rows all reading "1st Fix" is unreadable — on this project they are the Mechanical /
+        // Electrical / Plumbing / Fire Protection ones, and only their WBS parent says which. Without
+        // a trailing 'wbs' level there is no path shown, so when a group holds repeated names, tag
+        // each with its immediate WBS parent. Only when it actually repeats: a unique name needs no
+        // qualifier and adding one to every row would be noise.
+        var _nameN = {};
+        list.forEach(function (a) { var k = (a.activity_name || '').trim(); _nameN[k] = (_nameN[k] || 0) + 1; });
         list.slice().sort(function (x, y) { return cmpCodeStr(x.wbs, y.wbs); }).forEach(function (a) {
           a._dcode = base + SEP + a.wbs; a._ddepth = depth; a._danc = baseAnc; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null;
+          a._dsuffix = null;
+          if (_nameN[(a.activity_name || '').trim()] > 1) {
+            var _pc = (a._anc && a._anc.length) ? a._anc[a._anc.length - 1] : null;
+            var _pr = _pc && realByCode[_pc];
+            if (_pr && _pr.activity_name) a._dsuffix = _pr.activity_name;
+          }
           out.push(a);
           var s = pd(a.start_date), e = pd(a.end_date);
           addSpan(a._dcode, s, e); baseAnc.forEach(function (x) { addSpan(x, s, e); });
@@ -5058,7 +5090,7 @@
           node._dkind = 'wbs'; node._dcode = dc; node._ddepth = depth + rdepth; node._danc = da; node._realCode = en.real;
           out.push(node);
         } else {
-          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null;
+          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null; a._dsuffix = null;
           out.push(a);
           var s = pd(a.start_date), e = pd(a.end_date);
           addSpan(dc, s, e); da.forEach(function (x) { addSpan(x, s, e); });
@@ -5095,7 +5127,7 @@
       var execName = (execRow && execRow.activity_name) || 'Execution Phase';
       execHeadCode = '§EXEC§' + execCode;
       out.push({ _dkind: 'group', _dcode: execHeadCode, _ddepth: 0, _danc: [],
-        activity_name: execName, _gcount: acts.length, _gacts: acts, _gdim: 'exec', id: 'grp:' + execHeadCode });
+        activity_name: execName, _gcount: acts.length, _gdim: 'exec', id: 'grp:' + execHeadCode });
     }
     (function walk(list, di, parentCode, parentAnc) {
       // prune=true ONLY here: the two other emitLeaf calls render the carved-out non-Execution
@@ -5147,7 +5179,7 @@
         if (_lastDim && !showWbs && buckets[g].length === 1) {
           var solo = buckets[g][0];
           solo._dcode = gcode; solo._ddepth = parentAnc.length; solo._danc = parentAnc;
-          solo._dkind = 'task'; solo._realCode = solo.wbs; solo._dlabel = g;
+          solo._dkind = 'task'; solo._realCode = solo.wbs; solo._dlabel = g; solo._dsuffix = null;
           out.push(solo);
           var ss = pd(solo.start_date), se = pd(solo.end_date);
           addSpan(gcode, ss, se); parentAnc.forEach(function (x) { addSpan(x, ss, se); });
@@ -5165,11 +5197,7 @@
         }
         out.push({ _dkind: 'group', _dcode: gcode, _ddepth: parentAnc.length, _danc: parentAnc,
           _gdone: gd, _gprog: gp,
-          // _gacts is a REFERENCE to the bucket (no copy) so a collapsed group row can still answer
-          // "which activities do I stand for?" — used by the legend to scope itself to what is on
-          // screen. It respects the Execution-Phase carve-out and the filters, because `buckets` is
-          // built from the already-scoped `acts`.
-          activity_name: g, _gcount: buckets[g].length, _gacts: buckets[g], _gdim: dims[di], id: 'grp:' + gcode });
+          activity_name: g, _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
         walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
       });
     })(acts, 0, execHeadCode, execWrap ? [execHeadCode] : []);
@@ -8515,6 +8543,10 @@
     else { s = 'Not Started'; cls = 'ps-status-notstarted'; }
     return '<span class="ps-status-pill ' + cls + '">' + s + '</span>';
   }
+  // The WBS-parent qualifier on a repeated activity name — see the note in emitLeaf.
+  function _dsuffixHtml(r) {
+    return r._dsuffix ? ' <span class="ps-dsuffix" title="WBS parent">· ' + esc(r._dsuffix) + '</span>' : '';
+  }
   function statusCellHtml(r) {
     var s = r.status || 'Not Started';
     var cls = s === 'Completed' ? 'ps-status-completed' : (s === 'In Progress' ? 'ps-status-inprogress' : 'ps-status-notstarted');
@@ -8682,8 +8714,8 @@
       // read "Vertical" while editing `activity_name`, which is how someone renames an activity by
       // accident. Rename it from the detail panel or a grouping where the name is the label.
       (r._dlabel
-        ? '<div class="ps-cell c-name" title="' + esc(r.activity_name || '') + '" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r._dlabel) + '</div>'
-        : '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r.activity_name || '') + '</div>') +
+        ? '<div class="ps-cell c-name" title="' + esc(r.activity_name || '') + '" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r._dlabel) + _dsuffixHtml(r) + '</div>'
+        : '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r.activity_name || '') + _dsuffixHtml(r) + '</div>') +
       statusCellHtml(r) +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_start" data-type="date">' + (r.bl_start ? Fmt.date(r.bl_start) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_finish" data-type="date">' + (r.bl_finish ? Fmt.date(r.bl_finish) : '—') + '</div>' +
@@ -9141,6 +9173,11 @@
     return out;
   }
 
+  // '' when nothing is highlighted, so the normal render is byte-identical to before.
+  function _hlCls(r) {
+    if (_hlCat === null) return '';
+    return _hlKeyOf(r) === _hlCat ? ' ps-cat-hl' : ' ps-cat-dim';
+  }
   function ganttRowHTML(r, i, min, dayw) {
     var top = i * ROWH, out = '';
     // Bar vertical offsets scale with row height so compact rows stay aligned (oY=1 at comfortable).
@@ -9204,7 +9241,7 @@
       var curTop = top + (blMd ? Math.round(15 * oY) : o9);   // when a baseline is shown, the current diamond sits below it
       if (blMd) { var bmx = dayDiff(min, blMd) * dayw; out += '<div class="ps-mile-bl" title="Baseline (BL0) milestone" style="left:' + (bmx - 5) + 'px;top:' + (top + Math.round(3 * oY)) + 'px;"></div>'; }
       var mx = dayDiff(min, md) * dayw;
-      out += '<div class="ps-mile' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + curTop + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
+      out += '<div class="ps-mile' + crit + _hlCls(r) + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + curTop + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
       if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (mx + 9) + 'px;top:' + curTop + 'px;">' + esc(lbl) + '</div>';
       return out;
     }
@@ -9222,7 +9259,7 @@
     } else {
       barH = ROWH - Math.round(8 * oY); barTop = top + Math.round(4 * oY);
     }
-    out += '<div class="ps-bar task' + crit + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
+    out += '<div class="ps-bar task' + crit + _hlCls(r) + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
     if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (barTop + Math.round(barH / 2) - 7) + 'px;">' + esc(lbl) + '</div>';
     return out;
   }
@@ -9259,7 +9296,9 @@
       document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
       el.classList.remove('dragging');
       var dd = Math.round((ev.clientX - startX) / dayw);
-      if (dd === 0 && mode !== 'move') { return; }
+      // ⚠️ No movement = a CLICK, not a drag. Previously a 0-day 'move' still persisted an identical
+      // patch (a pointless write + undo entry); it now toggles the same-activity highlight instead.
+      if (dd === 0) { toggleCatHighlight(r); return; }
       var ns = os, ne = oe, patch = {};
       if (mode === 'move' || mode === 'mile') { ns = addDays(os, dd); ne = addDays(oe, dd); }
       else if (mode === 'l') { ns = addDays(os, dd); if (ns > ne) ns = ne; }
@@ -15703,61 +15742,23 @@
   // the stable colour assignment; this only decides what the legend PRINTS.
   // ⚠️ Reads the already-computed DL rather than calling displayList() — that runs buildNodes() over
   // every row, and this is called from doRender, which has just built DL for exactly this frame.
-  // WBS code -> the set of category values living anywhere under it. Uncapped on purpose: the
-  // Gantt's _segMap is capped at SEG_CAP for drawing, and reusing it here would silently drop
-  // categories out of the key on any branch with more than SEG_CAP activities.
-  var _catAnc = null, _catAncKey = '';
-  function catAncMap() {
-    var cfg = catCfg(), key = pid + '|' + cfg.field + '|' + _sorted.length;
-    if (_catAnc && _catAncKey === key) return _catAnc;
-    var m = {};
-    for (var i = 0; i < _sorted.length; i++) {
-      var a = _sorted[i]; if (isWbs(a)) continue;
-      var v = catValOf(a, cfg.field); if (!v) continue;
-      var anc = a._anc || [];
-      for (var j = 0; j < anc.length; j++) (m[anc[j]] || (m[anc[j]] = {}))[v] = true;
-    }
-    _catAnc = m; _catAncKey = key; return m;
-  }
+  // ⚠️ STRICTLY the rows on screen. An earlier cut also resolved what a COLLAPSED row stood for
+  // (its bucket / its WBS subtree), which is defensible — the Gantt paints those activities as
+  // segments — but it meant five collapsed phase rows produced a 400-entry key, which is exactly
+  // what the owner asked twice to stop seeing. "Activities that are seen (opened WBS)" means leaf
+  // activity rows, nothing else.
+  // ⚠️ Known trade-off, deliberately accepted: in LSM mode a collapsed summary bar still shows its
+  // activities as coloured segments that now have no legend entry. Expand the branch to key them.
   function catVisibleValues() {
     var cfg = catCfg(), out = {};
     var list = (DL && DL.length) ? DL : [];
     for (var i = 0; i < list.length; i++) {
-      var nd = list[i]; if (!nd) continue;
-      if (nd._dkind === 'task') { var v = catValOf(nd, cfg.field); if (v) out[v] = true; continue; }
-      // ⚠️ A COLLAPSED row still stands for the activities beneath it — and the Gantt still paints
-      // them as coloured segments — so resolving only leaf task rows made the legend empty on a
-      // collapsed outline and sent it to a "whole project" fallback that ignored both the
-      // Execution-Phase-only toggle and which branches were on screen. Resolve what each row
-      // represents instead.
-      if (nd._dkind === 'group') {
-        var ga = nd._gacts || [];
-        for (var k = 0; k < ga.length; k++) { var gv = catValOf(ga[k], cfg.field); if (gv) out[gv] = true; }
-        continue;
-      }
-      // ⚠️ Only expand a WBS row that is NOT inside a group (group codes carry '§'). Inside a group
-      // the ancestor map would return every activity under that code across ALL groups, pulling in
-      // categories the group itself excludes — and that row's group ancestor is in DL anyway, so it
-      // is already accounted for.
-      if (nd._dkind === 'wbs' && nd.wbs && String(nd._dcode || '').indexOf('§') === -1) {
-        var set = catAncMap()[nd.wbs];
-        if (set) for (var w in set) out[w] = true;
-      }
+      var nd = list[i];
+      if (!nd || nd._dkind !== 'task') continue;
+      var v = catValOf(nd, cfg.field); if (v) out[v] = true;
     }
     return out;
   }
-  // Back-compat shape for callers that only want the hex.
-  function catColorMapNow() {
-    var m = catMapNow(), out = {};
-    Object.keys(m).forEach(function (k) { out[k] = m[k].color; });
-    return out;
-  }
-  function catEntry(r) {
-    var cfg = catCfg(); if (!cfg.on || !pid) return null;
-    var v = catValOf(r, cfg.field); if (!v) return null;
-    return catMapNow()[v] || null;
-  }
-  function catColor(r) { var e = catEntry(r); return e ? e.color : null; }
   function renderActLegend() {
     var host = document.getElementById('ps-actlegend'); if (!host) return;
     if (!pid || !rows.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
@@ -15787,7 +15788,7 @@
                 '<span>' + esc(c.value) + '</span></span>';
             }).join('') + (list.length > MAXL ? '<span>+' + (list.length - MAXL) + ' more</span>' : '') +
             (_hidden > 0 ? '<span title="Not on screen: hidden by a filter, by “Execution Phase only”, or in a branch the current view excludes.">· ' + _hidden + ' not in this view</span>' : '')
-          : '<span>No values on this field yet — pick another, or set Discipline / Trade on the activities.</span>')
+          : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>')
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
     host.innerHTML =
       '<div class="ps-actlegend-head">' +
@@ -15796,7 +15797,8 @@
         (cfg.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (cfg.tex ? ' checked' : '') + '> Textures</label>' : '') +
         (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="min-height:32px;font-size:12px;">Reset colours</button>' : '') +
         (cfg.on ? '<button class="pd-btn" id="ps-alg-stack" style="min-height:32px;font-size:12px;">Vertical stacking pane</button>' : '') +
-        '<span style="margin-left:auto;">Tip: click a <strong>month</strong> in the Gantt header for the status at that date.</span>' +
+        (_hlCat ? '<span class="ps-alg-hl">Highlighting: ' + esc(_hlCat) + '<button type="button" id="ps-alg-hlclear" title="Clear the highlight">✕</button></span>' : '') +
+        '<span style="margin-left:auto;">Tip: click a <strong>bar</strong> to highlight every bar of that activity; click a <strong>month</strong> in the header for the status at that date.</span>' +
       '</div>' +
       '<div class="ps-actlegend-items">' + items + '</div>';
     host.querySelector('#ps-alg-on').onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
@@ -15807,6 +15809,8 @@
     if (rst) rst.onclick = function () { var c = catCfg(); c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var stk = host.querySelector('#ps-alg-stack');
     if (stk) stk.onclick = function () { toggleStackPane(); };
+    var hlc = host.querySelector('#ps-alg-hlclear');
+    if (hlc) hlc.onclick = function () { clearCatHighlight(); };
     // The swatch shows colour + texture (a native colour input can only show a flat swatch), so it
     // is a button that opens a hidden colour input sitting behind it.
     host.querySelectorAll('.ps-alg-sw').forEach(function (b) {

@@ -4558,3 +4558,38 @@ act as a filtering function… only showing activities that have the applied sel
   ⚠️ **A stale test anchor cost a run**: `indexOf('_gbHidden = 0;')` matched the module-scope
   declaration, not the filter block, and sliced thousands of lines. Anchor on something unique.
 - ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815q`.
+
+## Legend strictly = rows on screen; presets trimmed; repeated names qualified; click-a-bar highlight (2026-08-15) — fmlozano
+- ⚠️ **Legend scope reverted to leaf task rows ONLY.** The previous cut also resolved what a COLLAPSED
+  row stood for — defensible, since the Gantt paints those activities as segments on it — but it meant
+  five collapsed phase rows produced a 400-entry key, which is what the owner asked twice to stop
+  seeing. "Activities that are seen (opened WBS)" means rendered activity rows, nothing else. Empty
+  state now reads *"Nothing expanded — open a WBS branch and its activities appear here."*
+  ⚠️ **Known trade-off, deliberately accepted and stated:** in LSM mode a collapsed summary bar still
+  paints coloured segments that now have no legend entry. `catAncMap()` and the `_gacts` node property
+  were removed with it rather than left as rot.
+- **Presets:** "Discipline › Location (recommended)" → **"Discipline › Activity › Location"**
+  (`['work','act'] + locDims`); "Location › Discipline" removed. (The owner's text said "Discipline ›
+  Activity › Trade › …" — Discipline and Trade are the same `work_type` field here, so it is listed once.)
+- **The four identical "1st Fix" rows.** Without a trailing `wbs` level there is no path shown, so four
+  activities that differ only by WBS parent (Mechanical / Electrical / Plumbing / Fire Protection) all
+  read "1st Fix". `emitLeaf`'s non-`showWbs` branch now counts names within the group and tags **only
+  the repeated ones** with their immediate WBS parent (`_dsuffix`, muted). ⚠️ Only when it actually
+  repeats — qualifying every row would be noise. ⚠️ Cleared on the other emit paths, like `_dlabel`,
+  because row objects are reused across renders.
+- **Click a Gantt bar → every bar of that activity highlights**, the rest dim to 18%. Keyed by the
+  "Colour activities by" field when the legend is on, else by activity name, so it always matches what
+  the colours currently mean. Clicking the same bar again, or the ✕ on the legend's "Highlighting: X"
+  chip, clears it.
+  ⚠️ **Rides on the existing drag handler's zero-movement path.** A 0-day `move` previously persisted an
+  identical patch — a pointless write plus an undo entry — so this replaced a small bug rather than
+  adding a competing click listener that would fight the drag.
+  ⚠️ `_hlCls()` returns `''` when nothing is highlighted, so the normal render is byte-identical.
+- **Verified 19/19 in Node against the SHIPPED code** (`catVisibleValues`, `_hlKeyOf`/`_hlCls` and
+  `emitLeaf` sliced out, not reimplemented): task-rows-only scoping incl. an all-collapsed outline
+  returning an empty key and dedupe; no-highlight/match/non-match classes and the legend-on field
+  switch; the qualifier applied to repeated names only, skipped for unique ones, and safe when the
+  parent WBS row is missing; leaf sort order; both presets. Inline script parses (1 block, 0 fail).
+  ⚠️ One assertion failed first and it was **my expected value**, not the code — the leaves sort by WBS
+  code, so the unique name lands second, not last.
+- ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815r`.

@@ -5294,3 +5294,18 @@ represent the whole project. **Verified 10/10 in Node against the shipped functi
   collapsing a level moves the detail up instead of leaving blank cells.
 - **LSM preset dropped its trailing `wbs`.** **Verified 15/15 in Node against the shipped code** + clean
   parse. ⚠️ Not verified signed-in. `MODULE_V` → `20260815q`.
+
+### 2026-08-15 — Project Schedule: legend = rows on screen only; preset trim; repeated-name qualifier; bar-click highlight
+- ⚠️ **Legend reverted to leaf task rows only.** Resolving what a collapsed row stood for was
+  defensible (the Gantt paints those as segments) but produced a 400-entry key from five collapsed
+  phase rows — what the owner asked twice to stop seeing. ⚠️ Trade-off accepted: a collapsed summary
+  bar's segments now have no legend entry. `catAncMap()`/`_gacts` removed rather than left as rot.
+- **Presets:** "Discipline › Location" → "Discipline › Activity › Location"; "Location › Discipline"
+  removed.
+- **Four rows all reading "1st Fix"** (they differ only by WBS parent) are now tagged with that parent
+  — ⚠️ only where the name actually repeats, and cleared on the other emit paths since rows are reused.
+- **Click a Gantt bar → all bars of that activity highlight**, rest dim; click again or the legend chip's
+  ✕ to clear. ⚠️ Rides the drag handler's zero-movement path, which previously persisted an identical
+  patch — replacing a small bug rather than adding a listener that would fight the drag.
+- **Verified 19/19 in Node against the shipped code** + clean parse. ⚠️ Not verified signed-in.
+  `MODULE_V` → `20260815r`.
