@@ -98,22 +98,33 @@ window.PPR = (function () {
     if (!pid) { host.innerHTML = '<div class="pp-empty">Select a project.</div>'; return; }
     host.innerHTML = '<div class="pp-empty">Loading PPRs…</div>';
 
-    var pr = await sb().from(T_PPR).select('*')
-      .eq('project_id', pid).order('ppr_date', { ascending: false });
-    if (pr.error) { host.innerHTML = ''; UI.toast(pr.error.message, 'error'); return; }
-    pprs = pr.data || [];
+    // ⚠️ All three reads are keyset-paginated. The photo library in particular routinely exceeds
+    // PostgREST's 1000-row server cap — module.js's own load() has paginated for exactly that reason
+    // since 2026-07-21, but this one did not, so the slide picker silently could not SEE any photo
+    // past the first 1000 and a slide referencing one rendered as an empty frame. Slides and PPRs
+    // accumulate over years, so they get the same treatment rather than waiting to break later.
+    // PDb.selectAll returns id order — the display sorts below are re-applied in memory.
+    try {
+      pprs = await PDb.selectAll(T_PPR, function (q) { return q.eq('project_id', pid); });
+    } catch (e) { host.innerHTML = ''; UI.toast(e.message || String(e), 'error'); return; }
+    pprs.sort(function (a, b) { return String(b.ppr_date || '').localeCompare(String(a.ppr_date || '')); });
 
-    var sl = await sb().from(T_SLIDE).select('*')
-      .eq('project_id', pid).order('slide_no', { ascending: true });
-    if (sl.error) { host.innerHTML = ''; UI.toast(sl.error.message, 'error'); return; }
+    var slides;
+    try {
+      slides = await PDb.selectAll(T_SLIDE, function (q) { return q.eq('project_id', pid); });
+    } catch (e) { host.innerHTML = ''; UI.toast(e.message || String(e), 'error'); return; }
     slidesOf = {};
-    (sl.data || []).forEach(function (s) {
+    slides.forEach(function (s) {
       (slidesOf[s.ppr_id] = slidesOf[s.ppr_id] || []).push(s);
     });
+    Object.keys(slidesOf).forEach(function (k) {
+      slidesOf[k].sort(function (a, b) { return (a.slide_no || 0) - (b.slide_no || 0); });
+    });
 
-    var ph = await sb().from(T_PHOTO).select('*')
-      .eq('project_id', pid).order('taken_at', { ascending: false });
-    photos = ph.error ? [] : (ph.data || []);
+    try {
+      photos = await PDb.selectAll(T_PHOTO, function (q) { return q.eq('project_id', pid); });
+      photos.sort(function (a, b) { return String(b.taken_at || '').localeCompare(String(a.taken_at || '')); });
+    } catch (e) { photos = []; }
 
     await signAll();
     render();

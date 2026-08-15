@@ -203,7 +203,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260812b"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
-<script src="../../assets/js/db.js?v=20260812b"></script>
+<script src="../../assets/js/db.js?v=20260816a"></script>
 <script src="../../assets/js/ui.js?v=20260812b"></script>
 <script src="../../assets/js/icons.js?v=20260813a"></script>
 <script src="../../assets/js/calendar.js?v=20260812b"></script>
@@ -452,9 +452,15 @@
       if (a.error) throw a.error;
       acts = a.data || [];
       entriesByAct = {};
-      var e = await sb().from('productivity_entries').select('*').eq('project_id', pid).order('period', { ascending: true });
-      if (e.error) throw e.error;
-      (e.data || []).forEach(function (row) { (entriesByAct[row.activity_id] = entriesByAct[row.activity_id] || []).push(row); });
+      // ⚠️ Paginated: this is one row per ACTIVITY per MONTH, so a project with a few dozen trades
+      // over a multi-year build passes PostgREST's 1000-row cap — and a truncated read would drop
+      // whole months out of the rate/cumulative curves with no error to notice.
+      // PDb.selectAll returns id order, so the by-period sort is re-applied per activity below.
+      var ents = await PDb.selectAll('productivity_entries', function (q) { return q.eq('project_id', pid); });
+      ents.forEach(function (row) { (entriesByAct[row.activity_id] = entriesByAct[row.activity_id] || []).push(row); });
+      Object.keys(entriesByAct).forEach(function (k) {
+        entriesByAct[k].sort(function (x, y) { return String(x.period || '').localeCompare(String(y.period || '')); });
+      });
       cacheState();   // keep the offline read-cache current
     } catch (err) {
       hideLoading();

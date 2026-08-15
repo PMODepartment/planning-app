@@ -119,13 +119,25 @@ window.RiskRegister = (function () {
 
   async function load() {
     if (!pid) return;
-    var res = await sb().from(TABLE).select('*')
-      .eq('project_id', pid).order('rating', { ascending: false, nullsFirst: false });
+    // ⚠️ Keyset-paginated via PDb.selectAll: a plain .select() is capped at 1000 rows SERVER-side and
+    // truncates silently — a register past that would under-report every KPI with no error. Shaped as
+    // {data}/{error} so the existing offline-cache fallback below is untouched. Sort is re-applied
+    // in memory because selectAll returns id order.
+    var res;
+    try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
+    catch (err) { res = { error: err }; }
     if (res.error) {
       if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); render(); return; } }
       UI.toast(res.error.message, 'error'); return;
     }
     rows = res.data || [];
+    rows.sort(function (a, b) {   // rating desc, unrated last (was .order('rating', nullsFirst:false))
+      var x = a.rating, y = b.rating;
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return y - x;
+    });
     if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
     // populate category filter from data
     var cats = {};

@@ -5334,6 +5334,37 @@ where it only needs DL (this is the "automatic without refresh" ask), and `rende
 task/WBS/group/milestone × LSM on/off × segments present/absent — but the console now names it.
 **Verified 10/10 in Node against the shipped loop** + clean parse. `MODULE_V` → `20260815t`.
 
+### 2026-08-16 — Audit: the 1000-row truncation bug class killed once, in a shared helper
+Audit pass over every Supabase read in the app. **The recurring highest-severity defect in this repo
+is silent truncation** — PostgREST caps a table read at **1000 rows server-side and a client
+`.limit()` cannot raise it**, so a plain `.select()` on a growable table returns a partial result with
+**no error**: wrong KPIs, wrong totals, wrong charts, nothing to notice. It has been found and fixed
+one module at a time at least seven times (project_schedule, drawing_register, progress_photos,
+material_submittal, resource_assignments, activity_steps, wbs_nodes), each reinventing the same loop.
+- **New shared `PDb.selectAll(table, apply, cols)`** in `assets/js/db.js` — the keyset loop, once, so
+  the next module doesn't rediscover it. ⚠️ Paginates by `id` because a keyset cursor **must** be
+  unique and non-null; `sort_order`/`period`/`taken_at` are none of those. Returns id order, so
+  callers re-apply their display sort in memory.
+- ⚠️ **One of these was ALREADY WRONG IN PRODUCTION.** Portfolio Overview's `cash_flow_rollup` read is
+  `.in('project_id', ids)` over **every** scoped project at one row per project per month — 19
+  projects × a 5-year horizon is ~1,140 rows, past the cap. The consolidated Cash In/Out, the net
+  funding curve and the **peak-funding KPI** have been computed from a partial set. Not latent.
+- **Also fixed (latent, same class):** the PPR slide picker's photo read (module.js has paginated
+  since 2026-07-21 *because* libraries exceed 1000 — ppr.js never did, so a slide citing photo #1001
+  rendered an empty frame), plus PPRs/slides, `productivity_entries` (activity × month),
+  `cash_flow_actuals` (period × direction × category), and the four registers (risk / issues /
+  contracts-claims / stakeholder-map). Each register keeps its offline-cache and migration-hint
+  branch byte-identical — the call is reshaped to `{data}/{error}`, not rewritten.
+- **44 checks green**, incl. the mechanism itself: against a fake server enforcing the real cap, a
+  client **`.limit(5000)` still returns 1000** (proving the loop is required, not stylistic); 0 / 1 /
+  999 / **1000** / 1001 / 2500 rows all load complete with no duplicates and terminate (2500 → 3
+  round-trips, exactly-1000 → 2, empty → 1); a server error propagates instead of silently returning
+  a short list; every module calling it actually loads `db.js`; and no unpaginated read is left behind
+  in the touched files. All 10 edited files parse.
+- Shared asset changed → **`db.js?v=` bumped `20260812b` → `20260816a` across all 16 referencing files.**
+- ⚠️ **Not verified signed-in.** ⚠️ Deliberately NOT changed: `getProjects`/`getAllUsers` (bounded by
+  org size, and both feed pickers where a 1000-row page is already a UX problem, not a data one).
+
 ### 2026-08-16 — Project Schedule: the baseline read as a second activity; bar colours now theme-aware
 Owner: *"two bar graphs signify the same activity but show progress — rather it shows these are two
 different activities"*, plus "bar graph colours should be sensitive for light and dark mode".

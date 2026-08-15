@@ -186,15 +186,23 @@ window.IssuesLessons = (function () {
       return;
     }
     $('il-table').innerHTML = '<tr><td style="padding:24px;color:var(--pd-muted);">Loading…</td></tr>';
-    var res = await sb().from(TABLE).select('*')
-      .eq('project_id', pid)
-      .order('date_presented', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false });
+    // ⚠️ Keyset-paginated (see PDb.selectAll) — a plain .select() truncates at 1000 rows server-side
+    // with no error, and this log accumulates for the life of the project. Shaped as {data}/{error}
+    // so the offline-cache branch is untouched; the display sort is re-applied in memory.
+    var res;
+    try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
+    catch (err) { res = { error: err }; }
     if (res.error) {
       if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); populateFilterOptions(); render(); return; } }
       UI.toast(res.error.message, 'error'); return;
     }
     rows = res.data || [];
+    rows.sort(function (a, b) {   // date_presented desc (blanks last), then created_at desc
+      var x = a.date_presented || '', y = b.date_presented || '';
+      if (!x !== !y) return x ? -1 : 1;
+      if (x !== y) return y.localeCompare(x);
+      return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+    });
     if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
     populateFilterOptions();
     render();

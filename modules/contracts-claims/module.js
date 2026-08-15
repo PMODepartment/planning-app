@@ -550,7 +550,13 @@ window.ContractsClaims = (function () {
   async function load() {
     if (!pid) { rows = []; render(); return; }
     document.getElementById('cc-view').innerHTML = '<div class="pd-card cc-empty"><h3><span class="cc-spin"></span>Loading…</h3></div>';
-    var res = await sb().from(TABLE).select('*').eq('project_id', pid);
+    // ⚠️ Keyset-paginated (see PDb.selectAll) — a plain .select() truncates at 1000 rows server-side
+    // with no error, and a truncated register would silently understate the roll-up banner totals,
+    // which are the headline numbers of this module. Shaped as {data}/{error} so the offline-cache +
+    // migration-hint branch below is untouched. No display sort here — the renderer sorts.
+    var res;
+    try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
+    catch (err) { res = { error: err }; }
     if (res.error) {
       if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); fillFilters(); render(); return; } }
       var missing = /column|schema cache|PGRST204|does not exist/i.test(res.error.message || '');

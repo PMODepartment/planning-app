@@ -153,8 +153,12 @@ window.StakeholderMap = (function () {
 
   async function load() {
     if (!pid) return;
-    var res = await sb().from(TABLE).select('*')
-      .eq('project_id', pid).order('name', { ascending: true, nullsFirst: false });
+    // ⚠️ Keyset-paginated (see PDb.selectAll) — a plain .select() truncates at 1000 rows server-side
+    // with no error. Shaped as {data}/{error} so the offline-cache + migration-hint branch is
+    // untouched; the display sort is re-applied in memory since selectAll returns id order.
+    var res;
+    try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
+    catch (err) { res = { error: err }; }
     if (res.error) {
       if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); render(); return; } }
       var msg = /column .* does not exist|schema cache/i.test(res.error.message || '')
@@ -162,6 +166,11 @@ window.StakeholderMap = (function () {
       UI.toast(msg, 'error'); return;
     }
     rows = res.data || [];
+    rows.sort(function (a, b) {   // name asc, blanks last (was .order('name', nullsFirst:false))
+      var x = a.name || '', y = b.name || '';
+      if (!x !== !y) return x ? -1 : 1;
+      return x.localeCompare(y);
+    });
     if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
     // populate the Group filter from data + the canonical list
     var groups = {};

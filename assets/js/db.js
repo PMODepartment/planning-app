@@ -10,6 +10,39 @@
   function sb() { return window.getSB(); }
 
   var PDb = {
+    // ---- Keyset pagination (shared) ----
+    // ⚠️ PostgREST caps a table read at 1000 rows SERVER-side, and a client `.limit()` cannot raise
+    // it. A plain `.select()` on a growable table therefore returns a SILENTLY TRUNCATED result —
+    // no error, no warning, just wrong KPIs/totals/charts. This has been found and fixed one module
+    // at a time (project_schedule, drawing_register, progress_photos, material_submittal,
+    // resource_assignments, activity_steps, wbs_nodes…), each reinventing the same loop. This is
+    // that loop, once, so the next module doesn't have to rediscover it.
+    //
+    //   var rows = await PDb.selectAll('cash_flow_rollup', function (q) { return q.in('project_id', ids); });
+    //
+    // ⚠️ Paginates by `id` (the uuid PK) because a keyset cursor MUST be unique and non-null —
+    // `sort_order`/`period`/`taken_at` are none of those, so they cannot be the cursor. Rows come
+    // back in id order; **re-sort in memory** if you need a display order.
+    async selectAll(table, apply, cols) {
+      var out = [], last = null, PAGE = 1000;
+      for (;;) {
+        var q = sb().from(table).select(cols || '*');
+        if (typeof apply === 'function') q = apply(q);
+        q = q.order('id', { ascending: true }).limit(PAGE);
+        if (last) q = q.gt('id', last);
+        var res = await q;
+        if (res.error) throw res.error;
+        var page = res.data || [];
+        out = out.concat(page);
+        // A short page means the server had nothing more — the only safe terminator, since a full
+        // page is ambiguous (it may or may not be the last).
+        if (page.length < PAGE) return out;
+        last = page[page.length - 1].id;
+        // Defensive: a table whose `id` is not unique would loop forever otherwise.
+        if (last == null) return out;
+      }
+    },
+
     // ---- Projects (shared across all modules) ----
     async getProjects() {
       var { data, error } = await sb()

@@ -362,7 +362,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260812b"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
-<script src="../../assets/js/db.js?v=20260812b"></script>
+<script src="../../assets/js/db.js?v=20260816a"></script>
 <script src="../../assets/js/ui.js?v=20260812b"></script>
 <script src="../../assets/js/icons.js?v=20260813a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -603,8 +603,13 @@
   function milestoneDate(name) { var m = milestones.find(function (x) { return x.name === name; }); return m ? pd(m.date) : null; }
 
   async function loadActuals() {
-    var res = await sb().from('cash_flow_actuals').select('*').eq('project_id', pid).order('period');
-    actuals = (res.error ? [] : (res.data || []));
+    // ⚠️ Paginated: one row per period × direction × category, so a long project with a real
+    // category breakdown reaches PostgREST's 1000-row cap — and a truncated ledger silently
+    // understates recorded cash, which is exactly the number the variance card exists to report.
+    try {
+      actuals = await PDb.selectAll('cash_flow_actuals', function (q) { return q.eq('project_id', pid); });
+      actuals.sort(function (a, b) { return String(a.period || '').localeCompare(String(b.period || '')); });
+    } catch (e) { actuals = []; }
   }
 
   async function loadTrades() {
