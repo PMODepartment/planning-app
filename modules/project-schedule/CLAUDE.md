@@ -4485,3 +4485,36 @@ Structural Works" repeated above every single leaf group.
   depths 1-5), uneven depths, the single-activity clamp, and **every `_danc` entry existing as a
   rendered row across all five fixtures**. Inline script parses (1 block, 0 fail).
 - ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815n`.
+
+## Legend ignored "Execution Phase only" and the visible branches on a collapsed outline (2026-08-15) — fmlozano
+Owner: with **Execution Phase only** ticked the legend still listed Bid Review / Site Visit / Bid
+Submission — Planning-and-Initiation work that is not on screen.
+- ⚠️ **My own regression from the scoping pass earlier today.** `catVisibleValues()` resolved only leaf
+  `_dkind:'task'` rows. On a collapsed outline there are none, so the scope came back empty and hit the
+  "nothing expanded yet → show the whole project" fallback — which ignored the Execution-Phase carve-out
+  AND which branches were rendered. The fallback was the bug, not a missing filter.
+- **A collapsed row now resolves what it STANDS FOR**, which is also exactly what the Gantt paints as
+  coloured segments on that row:
+  - **group row** → `_gacts`, a **reference** (no copy) to its bucket, stashed in `buildNodes`. Buckets
+    are built from the already-scoped `acts`, so this inherits the Execution-Phase carve-out and the
+    filters for free.
+  - **WBS row** → `catAncMap()`, a cached `wbs code → {category: true}` index.
+    ⚠️ **Uncapped on purpose.** The obvious reuse is the Gantt's `_segMap`, but that is capped at
+    `SEG_CAP` (400) for drawing — reusing it would silently drop categories out of the key on any
+    branch bigger than that.
+    ⚠️ **Only expanded when the row is NOT inside a group** (group display codes carry `§`). Inside a
+    group the ancestor index returns every activity under that code across ALL groups, pulling in
+    categories the group itself excludes — and that row's group ancestor is in `DL` anyway, so it is
+    already counted.
+  - **task row** → its own value, as before.
+- ⚠️ **Grouping by WBS at level 1 with no phase filter still lists everything, and that is correct** —
+  those five phase rows genuinely represent every activity in the project, and the Gantt draws a
+  segment for each one. The levers are the **Execution Phase only** toggle and expanding a branch;
+  the legend now follows exactly the same scope rule the bars do.
+- **Verified 10/10 in Node against the SHIPPED `catAncMap`/`catVisibleValues`** (sliced, not
+  reimplemented): a collapsed discipline group resolving to its bucket ONLY (excluding the other
+  phase's work), a collapsed top-level WBS row resolving its whole subtree, a sibling phase resolving
+  only its own, a WBS row inside a group correctly NOT expanded, task rows, mixed input deduping,
+  empty `DL`, a group with no `_gacts`, blank names skipped, and a 900-activity branch returning all
+  900 (proving the SEG_CAP truncation is not inherited). Inline script parses (1 block, 0 fail).
+- ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815p`.

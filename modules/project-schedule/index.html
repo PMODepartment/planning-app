@@ -5029,7 +5029,7 @@
       var execName = (execRow && execRow.activity_name) || 'Execution Phase';
       execHeadCode = '§EXEC§' + execCode;
       out.push({ _dkind: 'group', _dcode: execHeadCode, _ddepth: 0, _danc: [],
-        activity_name: execName, _gcount: acts.length, _gdim: 'exec', id: 'grp:' + execHeadCode });
+        activity_name: execName, _gcount: acts.length, _gacts: acts, _gdim: 'exec', id: 'grp:' + execHeadCode });
     }
     (function walk(list, di, parentCode, parentAnc) {
       // prune=true ONLY here: the two other emitLeaf calls render the carved-out non-Execution
@@ -5071,7 +5071,11 @@
       _keys.forEach(function (g) {
         var gcode = parentCode + '§' + g;
         out.push({ _dkind: 'group', _dcode: gcode, _ddepth: parentAnc.length, _danc: parentAnc,
-          activity_name: g, _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
+          // _gacts is a REFERENCE to the bucket (no copy) so a collapsed group row can still answer
+          // "which activities do I stand for?" — used by the legend to scope itself to what is on
+          // screen. It respects the Execution-Phase carve-out and the filters, because `buckets` is
+          // built from the already-scoped `acts`.
+          activity_name: g, _gcount: buckets[g].length, _gacts: buckets[g], _gdim: dims[di], id: 'grp:' + gcode });
         walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
       });
     })(acts, 0, execHeadCode, execWrap ? [execHeadCode] : []);
@@ -15577,13 +15581,46 @@
   // the stable colour assignment; this only decides what the legend PRINTS.
   // ⚠️ Reads the already-computed DL rather than calling displayList() — that runs buildNodes() over
   // every row, and this is called from doRender, which has just built DL for exactly this frame.
+  // WBS code -> the set of category values living anywhere under it. Uncapped on purpose: the
+  // Gantt's _segMap is capped at SEG_CAP for drawing, and reusing it here would silently drop
+  // categories out of the key on any branch with more than SEG_CAP activities.
+  var _catAnc = null, _catAncKey = '';
+  function catAncMap() {
+    var cfg = catCfg(), key = pid + '|' + cfg.field + '|' + _sorted.length;
+    if (_catAnc && _catAncKey === key) return _catAnc;
+    var m = {};
+    for (var i = 0; i < _sorted.length; i++) {
+      var a = _sorted[i]; if (isWbs(a)) continue;
+      var v = catValOf(a, cfg.field); if (!v) continue;
+      var anc = a._anc || [];
+      for (var j = 0; j < anc.length; j++) (m[anc[j]] || (m[anc[j]] = {}))[v] = true;
+    }
+    _catAnc = m; _catAncKey = key; return m;
+  }
   function catVisibleValues() {
     var cfg = catCfg(), out = {};
     var list = (DL && DL.length) ? DL : [];
     for (var i = 0; i < list.length; i++) {
-      var nd = list[i];
-      if (!nd || nd._dkind !== 'task') continue;
-      var v = catValOf(nd, cfg.field); if (v) out[v] = true;
+      var nd = list[i]; if (!nd) continue;
+      if (nd._dkind === 'task') { var v = catValOf(nd, cfg.field); if (v) out[v] = true; continue; }
+      // ⚠️ A COLLAPSED row still stands for the activities beneath it — and the Gantt still paints
+      // them as coloured segments — so resolving only leaf task rows made the legend empty on a
+      // collapsed outline and sent it to a "whole project" fallback that ignored both the
+      // Execution-Phase-only toggle and which branches were on screen. Resolve what each row
+      // represents instead.
+      if (nd._dkind === 'group') {
+        var ga = nd._gacts || [];
+        for (var k = 0; k < ga.length; k++) { var gv = catValOf(ga[k], cfg.field); if (gv) out[gv] = true; }
+        continue;
+      }
+      // ⚠️ Only expand a WBS row that is NOT inside a group (group codes carry '§'). Inside a group
+      // the ancestor map would return every activity under that code across ALL groups, pulling in
+      // categories the group itself excludes — and that row's group ancestor is in DL anyway, so it
+      // is already accounted for.
+      if (nd._dkind === 'wbs' && nd.wbs && String(nd._dcode || '').indexOf('§') === -1) {
+        var set = catAncMap()[nd.wbs];
+        if (set) for (var w in set) out[w] = true;
+      }
     }
     return out;
   }
@@ -15612,9 +15649,9 @@
       var _all = list;
       list = _all.filter(function (c) { return _vis[c.value]; });
       _hidden = _all.length - list.length;
-      // Nothing expanded yet (everything collapsed) — showing an empty legend beside a Gantt full of
-      // coloured segments would read as broken, so fall back to the full key and say so.
-      if (!list.length) { list = _all; _hidden = -1; }
+      // Only reachable when the schedule renders no rows at all (filtered to nothing) — a collapsed
+      // outline now resolves what its rows stand for rather than coming back empty.
+      if (!list.length) { list = _all; _hidden = 0; }
     }
     var opts = catFieldOptions().map(function (o) {
       return '<option value="' + esc(o[0]) + '"' + (o[0] === cfg.field ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
@@ -15627,8 +15664,7 @@
                 '<input type="color" class="ps-alg-clr ps-catclr" data-v="' + esc(c.value) + '" value="' + c.color + '"></span>' +
                 '<span>' + esc(c.value) + '</span></span>';
             }).join('') + (list.length > MAXL ? '<span>+' + (list.length - MAXL) + ' more</span>' : '') +
-            (_hidden > 0 ? '<span title="Expand a WBS branch to bring its activities into the key.">· ' + _hidden + ' more in collapsed branches</span>'
-              : (_hidden < 0 ? '<span title="Expand a WBS branch and the key narrows to what is on screen.">· whole project (nothing expanded yet)</span>' : ''))
+            (_hidden > 0 ? '<span title="Not on screen: hidden by a filter, by “Execution Phase only”, or in a branch the current view excludes.">· ' + _hidden + ' not in this view</span>' : '')
           : '<span>No values on this field yet — pick another, or set Discipline / Trade on the activities.</span>')
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
     host.innerHTML =

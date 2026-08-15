@@ -5265,3 +5265,15 @@ Three asks off live AVR101 screenshots.
   add/reorder/remove list expresses all of them, and location levels differ per project anyway.
 - **Verified 17/17 in Node against the shipped `emitLeaf`** + clean parse. ⚠️ Not verified signed-in.
   `MODULE_V` → `20260815n`.
+
+### 2026-08-15 — Project Schedule: activity legend ignored "Execution Phase only" on a collapsed outline
+⚠️ **Regression from the legend-scoping pass earlier the same day.** `catVisibleValues()` resolved only
+leaf task rows; a collapsed outline has none, so it fell through to a "show the whole project" fallback
+that ignored both the Execution-Phase carve-out and which branches were rendered. A collapsed row now
+resolves what it stands for — the same set the Gantt paints as segments on it: a group row via `_gacts`
+(a reference to its already-scoped bucket) and a WBS row via a cached, **uncapped** ancestor→category
+index (reusing the Gantt's `_segMap` would inherit its SEG_CAP=400 truncation). ⚠️ A WBS row inside a
+group is deliberately not expanded — the index spans all groups, and its group ancestor already counts
+it. ⚠️ Grouping by WBS at level 1 with no phase filter still lists everything, correctly: those rows do
+represent the whole project. **Verified 10/10 in Node against the shipped functions** + clean parse.
+⚠️ Not verified signed-in. `MODULE_V` → `20260815p`.
