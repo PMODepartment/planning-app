@@ -345,6 +345,48 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Baseline stopped reading as a second activity; bar colours are now theme-aware (2026-08-16) — fmlozano
+Owner: *"Is the other colour of the rebar works its actual progress while the other is planned? It
+doesn't look intuitive that two bar graphs signify the same activity… rather it shows these are two
+different activities."* Plus: bar colours should be sensitive to light and dark mode.
+- ⚠️ **The two-bars complaint was real and it was the BASELINE.** With `_gset.baseline` on, an
+  activity drew **two solid bars of EQUAL height** — planned above, current below — with nothing
+  about either saying one is the plan for the other. Read literally, that is two activities on one
+  row. The baseline is now a **thin ghost rail (5px, 62–70% opacity, no shadow) tucked under the
+  current bar**, which keeps the visual weight (asserted ≥3× the rail). The slip is then the offset
+  between their left/right edges — the standard P6/MSP reading — instead of a stacked pair.
+  Same change to the WBS **roll-up** baseline, which had the identical problem one level up.
+  ⚠️ The summary bar's own top no longer shifts by whether a baseline exists (`sumTop` was
+  `top + (blsp ? o12 : o8)`), so a branch doesn't jump when a baseline is captured. `o12` died with it.
+- ⚠️ **Dark mode was the real colour failure, and it was invisible rather than merely low-contrast.**
+  `CAT_PALETTE` is fixed hex; `#1F4E79` / `#8B0000` / `#375623` sit at **~0.05 relative luminance**
+  against a near-black card. New **`catShade()`** pulls a colour into a readable band **for the active
+  theme at RENDER time only** — the stored/user-picked hex is never rewritten, so a theme flip cannot
+  silently change a project's saved colours and the legend's colour inputs still show what the planner
+  chose. Measured: all five dark palette entries lift above 0.12; a colour already in range is
+  returned untouched.
+  ⚠️ **The light-mode correction is deliberately gentle** (threshold 0.68, cap 0.35) — a first cut at
+  0.62/0.55 turned a pale yellow into muddy olive, which is worse than the washing-out it fixed.
+  **No palette entry trips it at all** (asserted), which is the honest statement of where the bug was.
+- ⚠️ **Textures were hardcoded `rgba(255,255,255,…)`** — a white hatch is invisible on a pale bar.
+  `CAT_TEXTURES` now carries a `%C%` placeholder and `catStyle()` substitutes white or black by the
+  **shaded** colour's own luminance. `catTint()`'s default alpha is theme-dependent too (0.22 light /
+  0.34 dark): 0.26 over a dark card is barely distinguishable from the empty row behind it.
+- ⚠️ **Bar colours are inlined into the row HTML at render time** (they have to be — every row can
+  carry a different category colour), so unlike a CSS var they do NOT re-theme on a toggle. A
+  `MutationObserver` on the `<html>` class that shared `theme.js` flips drops both colour caches and
+  repaints. `catList`'s cache key gained the theme for the same reason — `c.style` is a rendered
+  style string, so a cache hit across a flip would hand the legend the other theme's colours.
+- **Verified 23/23 + 20/20 in Node against the SHIPPED functions** (`CAT_TEXTURES`…`catTint` and
+  `ganttRowHTML` sliced out, not reimplemented): luminance lift per palette entry, both no-op cases,
+  overlay polarity in both themes, every texture substituting, theme-dependent + explicit alpha,
+  garbage input; and rail-below-bar, thin-rail, weight ratio, adjacency, in-row containment, the old
+  equal-height stack as an explicit regression case, no-baseline and LSM suppression, summary-top
+  stability, and compact density. Inline block parses (1 block, 0 fail).
+  ⚠️ **Two test failures were MY assertions, not the code** — comparing `_rgbHex` output case-sensitively,
+  and a `catEntry` stub returning null even with the legend on, which tests a state that cannot occur.
+- ⚠️ **Not verified signed-in.** `MODULE_V` → `20260816a`.
+
 ## Location matching scoped to Execution Phase only (2026-08-06) — fmlozano
 User: location/zone describes construction, so the Location Wizard (and grouping by a location
 level) must not touch activities outside the Execution Phase WBS branch.

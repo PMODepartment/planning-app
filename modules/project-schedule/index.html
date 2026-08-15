@@ -461,7 +461,11 @@
       clip-path:polygon(0 0,100% 0,100% 60%,calc(100% - 6px) 100%,6px 100%,0 60%); }
     /* Rolled-up %-complete (POC) fill on a WBS summary bar; clipped to the bracket shape by parent. */
     .ps-sum-fill { position:absolute; left:0; top:0; height:100%; background:var(--ps-prog,var(--pd-red)); }
-    .ps-bl { position:absolute; height:8px; background:var(--ps-bl); border:1px solid rgba(0,0,0,.18); border-radius:2px; z-index:2; box-shadow:0 1px 1px rgba(0,0,0,.12); }
+    /* Baseline = a subordinate ghost rail under the current bar, never a peer of it. The muted
+       opacity + no shadow is what stops it reading as a second activity on the same row. */
+    .ps-bl { position:absolute; height:5px; background:var(--ps-bl); border:1px solid rgba(0,0,0,.18);
+      border-radius:2px; z-index:2; opacity:.7; }
+    html.pd-dark .ps-bl { border-color:rgba(255,255,255,.22); opacity:.62; }
     .ps-mile { position:absolute; width:13px; height:13px; background:var(--ps-mile,var(--pd-red)); transform:rotate(45deg); z-index:3; cursor:grab; }
     /* Baseline (planned) milestone marker — hollow diamond in the baseline colour, drawn above the current one. */
     .ps-mile-bl { position:absolute; width:11px; height:11px; background:var(--ps-bl); border:1px solid rgba(0,0,0,.28); transform:rotate(45deg); z-index:2; box-shadow:0 1px 1px rgba(0,0,0,.12); }
@@ -9192,7 +9196,7 @@
   function ganttRowHTML(r, i, min, dayw) {
     var top = i * ROWH, out = '';
     // Bar vertical offsets scale with row height so compact rows stay aligned (oY=1 at comfortable).
-    var oY = ROWH / 34, o8 = Math.round(8 * oY), o9 = Math.round(9 * oY), o12 = Math.round(12 * oY), o24 = Math.round(24 * oY);
+    var oY = ROWH / 34, o8 = Math.round(8 * oY), o9 = Math.round(9 * oY), o24 = Math.round(24 * oY);
     var showLbl = _gset.labels !== 'none';
     // Selection band spanning the whole Gantt row (matches the grid-row highlight).
     if (r.id && r.id === selId) out += '<div class="ps-gantt-selband" style="top:' + top + 'px;height:' + ROWH + 'px;width:' + (_tlW || 3000) + 'px;"></div>';
@@ -9205,14 +9209,15 @@
       var sp = wbsSpan(r); if (!sp) return '';
       var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw;
       var wcS = (r._dkind === 'group') ? null : effWbsColor(r);
-      // Rolled-up BASELINE (BL0) summary bar, drawn ABOVE the current summary bar.
+      // Rolled-up BASELINE (BL0), as a thin ghost rail UNDER the summary bracket — same reasoning as
+      // the activity bar below: an equal-weight bar above it read as a second, separate summary.
       var blsp = (r._dkind === 'group') ? null : ((_gset.baseline && !_lsm) ? wbsBlSpan(r) : null);
-      if (blsp) { var bx0 = dayDiff(min, blsp.s) * dayw, bw0 = Math.max((dayDiff(blsp.s, blsp.e) + 1) * dayw, 3);
-        out += '<div class="ps-bl" title="Baseline (roll-up)" style="left:' + bx0 + 'px;width:' + bw0 + 'px;top:' + (top + Math.round(3 * oY)) + 'px;"></div>'; }
       // Rolled-up %-complete (duration-weighted) on the summary bar, from _costMap.
       var _cm = (r._dkind === 'group') ? null : _costMap[r.wbs];
       var sumPct = (_cm && _cm.wd > 0) ? Math.max(0, Math.min(100, Math.round(_cm.wearn / _cm.wd))) : 0;
-      var sumTop = top + (blsp ? o12 : o8);   // sit below the baseline roll-up when present
+      var sumTop = top + o8;
+      if (blsp) { var bx0 = dayDiff(min, blsp.s) * dayw, bw0 = Math.max((dayDiff(blsp.s, blsp.e) + 1) * dayw, 3);
+        out += '<div class="ps-bl" title="Baseline (roll-up) — planned span for this branch" style="left:' + bx0 + 'px;width:' + bw0 + 'px;top:' + (sumTop + 10) + 'px;height:' + Math.max(4, Math.round(5 * oY)) + 'px;"></div>'; }
       // LSM composition: with the legend on, a summary row shows the activities INSIDE it as
       // coloured segments, each filling up with its own progress — so a WBS bar reads as the
       // sequence of trades running under it rather than one flat block.
@@ -9238,7 +9243,7 @@
     // span and the solid fill the actual progress, so a second bar above it is the duplication the
     // LSM view exists to remove. A row with no category value keeps the normal baseline treatment.
     var hasBL = !!(_gset.baseline && bs && be && !_ce);
-    var wc = actColor(r) || (_ce && _ce.color) || effWbsColor(r);
+    var wc = actColor(r) || (_ce && catShade(_ce.color)) || effWbsColor(r);
     // With the legend on, the bar reads as FILLING UP: the remainder is the same colour at low
     // alpha, the complete part is the solid, textured legend colour. Without it, the existing
     // dark-bar + red-fill treatment is untouched.
@@ -9259,14 +9264,18 @@
     if (!s || !e) return out;
     var x2 = dayDiff(min, s) * dayw, w2 = Math.max((dayDiff(s, e) + 1) * dayw, 4);
     var pct = Math.max(0, Math.min(100, r.percent_complete || 0));
-    // With a baseline: two EQUAL-height bars — planned baseline ABOVE, current schedule below.
-    // Without a baseline: the current bar fills (nearly) the whole row height.
+    // ⚠️ The baseline is a THIN GHOST RAIL tucked under the current bar — NOT an equal-height sibling.
+    // Two solid bars of the same height, stacked, read as two different activities (owner report,
+    // 2026-08-15): nothing about them says one is the plan for the other. A slim, muted rail hugging
+    // the bar's underside reads as "where this bar was planned", and the slip is the offset between
+    // their left/right edges. The current (real) bar keeps the visual weight, as it should.
     var barTop, barH;
     if (hasBL) {
-      var eqH = Math.max(6, Math.round(11 * oY)), blTop = top + Math.round(4 * oY);
+      var blH = Math.max(4, Math.round(5 * oY));
+      barTop = top + Math.round(4 * oY);
+      barH = Math.max(9, ROWH - Math.round(8 * oY) - blH - 1);
       var bx = dayDiff(min, bs) * dayw, bw = Math.max((dayDiff(bs, be) + 1) * dayw, 3);
-      out += '<div class="ps-bl" title="Baseline (BL0)" style="left:' + bx + 'px;width:' + bw + 'px;top:' + blTop + 'px;height:' + eqH + 'px;"></div>';
-      barH = eqH; barTop = blTop + eqH + Math.max(1, Math.round(2 * oY));
+      out += '<div class="ps-bl" title="Baseline (BL0) — planned span for this activity" style="left:' + bx + 'px;width:' + bw + 'px;top:' + (barTop + barH + 1) + 'px;height:' + blH + 'px;"></div>';
     } else {
       barH = ROWH - Math.round(8 * oY); barTop = top + Math.round(4 * oY);
     }
@@ -15657,15 +15666,17 @@
   // …and TEXTURES on top, the way the reference LSM legend does it: colour alone stops scaling long
   // before a real trade list does, and a texture survives greyscale printing and colour-blindness.
   // Each entry renders as background-image over the base colour (see catStyle()).
+  // ⚠️ The overlay colour is a `%C%` PLACEHOLDER, not a literal white — a white hatch is invisible on
+  // a pale bar in light mode. catStyle() substitutes white or black per the bar's own luminance.
   var CAT_TEXTURES = [
     { k:'solid', css:'' },
-    { k:'hatch', css:'background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 6px);' },
-    { k:'dots',  css:'background-image:radial-gradient(rgba(255,255,255,.8) 1.1px,transparent 1.3px);background-size:5px 5px;' },
-    { k:'vert',  css:'background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.6) 0 2px,transparent 2px 5px);' },
-    { k:'back',  css:'background-image:repeating-linear-gradient(-45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 6px);' },
-    { k:'cross', css:'background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.5) 0 1.5px,transparent 1.5px 5px),repeating-linear-gradient(-45deg,rgba(255,255,255,.5) 0 1.5px,transparent 1.5px 5px);' },
-    { k:'horz',  css:'background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.55) 0 2px,transparent 2px 5px);' },
-    { k:'grid',  css:'background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.55) 0 1.5px,transparent 1.5px 6px),repeating-linear-gradient(0deg,rgba(255,255,255,.55) 0 1.5px,transparent 1.5px 6px);' }
+    { k:'hatch', css:'background-image:repeating-linear-gradient(45deg,%C%.55) 0 2px,transparent 2px 6px);' },
+    { k:'dots',  css:'background-image:radial-gradient(%C%.8) 1.1px,transparent 1.3px);background-size:5px 5px;' },
+    { k:'vert',  css:'background-image:repeating-linear-gradient(90deg,%C%.6) 0 2px,transparent 2px 5px);' },
+    { k:'back',  css:'background-image:repeating-linear-gradient(-45deg,%C%.55) 0 2px,transparent 2px 6px);' },
+    { k:'cross', css:'background-image:repeating-linear-gradient(45deg,%C%.5) 0 1.5px,transparent 1.5px 5px),repeating-linear-gradient(-45deg,%C%.5) 0 1.5px,transparent 1.5px 5px);' },
+    { k:'horz',  css:'background-image:repeating-linear-gradient(0deg,%C%.55) 0 2px,transparent 2px 5px);' },
+    { k:'grid',  css:'background-image:repeating-linear-gradient(90deg,%C%.55) 0 1.5px,transparent 1.5px 6px),repeating-linear-gradient(0deg,%C%.55) 0 1.5px,transparent 1.5px 6px);' }
   ];
   function _hexRgb(h) {
     h = String(h || '').replace('#', '');
@@ -15673,17 +15684,53 @@
     var n = parseInt(h, 16); if (isNaN(n)) return [128, 128, 128];
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   }
-  // The full (100%-complete / legend) look: colour + texture.
-  function catStyle(color, texIdx) {
-    var t = CAT_TEXTURES[(texIdx || 0) % CAT_TEXTURES.length];
-    return 'background-color:' + color + ';' + (t ? t.css : '');
+  function _psDark() { return document.documentElement.classList.contains('pd-dark'); }
+  function _rgbHex(c) {
+    return '#' + c.map(function (v) {
+      var s = Math.max(0, Math.min(255, Math.round(v))).toString(16);
+      return s.length < 2 ? '0' + s : s;
+    }).join('');
   }
-  // ⚠️ The UNFILLED remainder of a bar: the SAME colour at low alpha, not a grey. Alpha (rather
-  // than a blend toward white) so it reads correctly in both light and dark themes — this is what
-  // makes an in-progress bar look like it is filling up rather than like a different category.
+  // WCAG relative luminance — the honest measure of "how light is this on screen", unlike a naive
+  // average of the channels (pure blue and pure yellow average the same and look nothing alike).
+  function _relLum(c) {
+    var f = c.map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
+  }
+  function _mix(c, t, k) { return [c[0] + (t[0] - c[0]) * k, c[1] + (t[1] - c[1]) * k, c[2] + (t[2] - c[2]) * k]; }
+  // ⚠️ Theme-aware shading, applied at RENDER time only. The stored / user-picked hex is NEVER
+  // rewritten, so flipping the theme cannot silently change a project's saved colours, and the
+  // colour inputs in the legend still show what the planner actually chose.
+  // Dark palette entries (#1F4E79, #8B0000, #375623) sit at ~0.05 luminance and vanish against the
+  // dark card; light ones wash out on white. Each is pulled back into a readable band for the
+  // active theme, proportionally — a colour already in range is returned untouched.
+  var _catShadeCache = {};
+  function catShade(hex) {
+    var dark = _psDark(), ck = (dark ? 'd|' : 'l|') + hex, hit = _catShadeCache[ck];
+    if (hit) return hit;
+    var c = _hexRgb(hex), l = _relLum(c), out = c;
+    if (dark) { if (l < 0.22) out = _mix(c, [255, 255, 255], Math.min(0.62, (0.22 - l) * 2.2)); }
+    // ⚠️ The light-mode correction is deliberately GENTLE (and no palette entry even trips it): a
+    // strong darkening turned a pale yellow into muddy olive, which is a worse outcome than the mild
+    // washing-out it was fixing. Dark mode is where the real failure is — a #1F4E79 bar on a
+    // near-black card is invisible, not merely low-contrast.
+    else      { if (l > 0.68) out = _mix(c, [0, 0, 0],       Math.min(0.35, (l - 0.68) * 1.2)); }
+    return (_catShadeCache[ck] = _rgbHex(out));
+  }
+  // The full (100%-complete / legend) look: theme-shaded colour + texture.
+  function catStyle(color, texIdx) {
+    var c = catShade(color);
+    var t = CAT_TEXTURES[(texIdx || 0) % CAT_TEXTURES.length];
+    var ov = _relLum(_hexRgb(c)) > 0.5 ? 'rgba(0,0,0,' : 'rgba(255,255,255,';
+    return 'background-color:' + c + ';' + (t && t.css ? t.css.split('%C%').join(ov) : '');
+  }
+  // ⚠️ The UNFILLED remainder of a bar: the SAME colour at low alpha, not a grey — that is what makes
+  // an in-progress bar read as filling up rather than as a different category. The default alpha is
+  // theme-dependent: 0.26 over a near-black card is barely distinguishable from the row itself.
   function catTint(color, a) {
-    var c = _hexRgb(color);
-    return 'background-color:rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (a || 0.26) + ');';
+    var c = _hexRgb(catShade(color));
+    if (a == null) a = _psDark() ? 0.34 : 0.22;
+    return 'background-color:rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ');';
   }
   function catCfg() {
     var d = { on:false, field:'name', colors:{}, tex:true };
@@ -15717,7 +15764,9 @@
   // (so Structural → Masonry → Plastering → Finishes falls out of the schedule itself), blanks last.
   var _catCache = null;
   function catList() {
-    var cfg = catCfg(), key = pid + '|' + cfg.field + '|' + rows.length;
+    // ⚠️ The theme is part of the key: c.style is a rendered (theme-shaded) style string, so a cache
+    // hit across a theme flip would hand the legend swatches the other theme's colours.
+    var cfg = catCfg(), key = pid + '|' + cfg.field + '|' + rows.length + '|' + (_psDark() ? 'd' : 'l');
     if (_catCache && _catCache.key === key) return _catCache.list;
     var by = {};
     rows.forEach(function (r) {
@@ -15765,6 +15814,20 @@
     return catMapNow()[v] || null;
   }
   function catColor(r) { var e = catEntry(r); return e ? e.color : null; }
+  // ⚠️ Bar colours are inlined into the row HTML at render time (they have to be — every row can carry
+  // a different category colour), so a theme flip does NOT re-theme them the way a CSS var would.
+  // Watch the <html> class the shared theme.js toggles, drop both colour caches and repaint.
+  (function watchThemeForBars() {
+    try {
+      var last = _psDark();
+      new MutationObserver(function () {
+        var now = _psDark(); if (now === last) return;
+        last = now; _catCache = null; _catShadeCache = {};
+        try { scheduleRender(); } catch (e) {}
+        try { renderActLegend(); } catch (e) {}
+      }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    } catch (e) {}
+  })();
   // ⚠️ STRICTLY the rows on screen. An earlier cut also resolved what a COLLAPSED row stood for
   // (its bucket / its WBS subtree), which is defensible — the Gantt paints those activities as
   // segments — but it meant five collapsed phase rows produced a 400-entry key, which is exactly

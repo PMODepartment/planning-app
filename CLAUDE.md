@@ -5334,6 +5334,26 @@ where it only needs DL (this is the "automatic without refresh" ask), and `rende
 task/WBS/group/milestone × LSM on/off × segments present/absent — but the console now names it.
 **Verified 10/10 in Node against the shipped loop** + clean parse. `MODULE_V` → `20260815t`.
 
+### 2026-08-16 — Project Schedule: the baseline read as a second activity; bar colours now theme-aware
+Owner: *"two bar graphs signify the same activity but show progress — rather it shows these are two
+different activities"*, plus "bar graph colours should be sensitive for light and dark mode".
+- ⚠️ **The two bars were the BASELINE.** An activity drew planned and current as **two solid bars of
+  equal height**, stacked, with nothing saying one is the plan for the other — read literally, that is
+  two activities. The baseline is now a **thin ghost rail tucked under the current bar** (≥3× weight
+  ratio, asserted), so the slip reads as the offset between their edges — the P6/MSP convention. Same
+  for the WBS roll-up baseline. The summary bar's top no longer shifts by whether a baseline exists.
+- ⚠️ **Dark mode was invisible, not merely low-contrast** — `#1F4E79`/`#8B0000`/`#375623` sit at ~0.05
+  luminance on a near-black card. New `catShade()` corrects at **render time only**, so a theme flip
+  can never rewrite a project's saved colours. The **light-mode correction is deliberately gentle and
+  trips on no palette entry at all** — a first cut turned pale yellow into muddy olive, worse than the
+  problem. Textures carried a hardcoded white overlay (invisible on a pale bar); they now take the
+  polarity from the shaded colour, and the unfilled-remainder alpha is theme-dependent.
+- ⚠️ **Inlined colours don't re-theme like a CSS var**, so a `MutationObserver` on the `<html>` class
+  drops both colour caches and repaints; `catList`'s cache key gained the theme for the same reason.
+- **43 checks green against the shipped functions** (23 colour + 20 bar geometry, sliced not
+  reimplemented), incl. the old equal-height stack as a regression case. ⚠️ Two failures were **my
+  assertions**, not the code. Not verified signed-in. `MODULE_V` → `20260816a`.
+
 ### 2026-08-15 — Project Schedule: blank Gantt root cause — I had deleted catEntry/catColor/catColorMapNow
 The per-row isolation shipped an hour earlier paid off immediately: the console named it
 (`ReferenceError: catEntry is not defined at _sumSegsHTML → ganttRowHTML`, 21–23 rows/render).
