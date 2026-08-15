@@ -4379,3 +4379,29 @@ Owner feedback on pass 2, all four items, verified signed in on AVR101.
 - ⚠️ **Method note:** `window.__PS.fn.doRender()` (the stage-1 scaffold) is the only way to measure
   anything here — the tab reports `visibilityState:"hidden"`, so rAF never fires and the Gantt never
   repaints after a state change. Every measurement above came through it.
+
+## New "Activity" grouping dimension — Activity › Location › WBS (2026-08-15) — fmlozano
+User: *"the activities will swap with the WBS and the WBS Locations are the ones below the
+activities. The current group by is not working as intended."*
+- ⚠️ **Not a bug in `buildNodes` — the layout was simply not expressible.** `allDims()` offered WBS,
+  Discipline/Trade, the location levels, Phase, Status, Responsible, Type, Work Package and activity
+  codes, but **no dimension keyed on the activity itself**, so "activity on top, its locations
+  beneath" had no way to be selected. The N-level engine already supported it; only the key was missing.
+- **New `'act'` dimension** = trimmed `activity_name`, blank → `— Unnamed activity —`. Three sites,
+  exactly as `'wp'` was added: `dimValOf` / `dimLabel` / `allDims` (listed second, right after `wbs`).
+  Nothing else needed — `buildNodes`, `normalizeGroupBys`, collapse, group roll-up bars and the
+  per-project `ps_groupbys_<pid>` persistence are all dimension-agnostic.
+- ⚠️ **A one-activity group is CORRECT here, unlike `'work'`.** `dimValOf`'s work_type branch
+  deliberately avoids falling back to the activity name because that flooded the view with hundreds
+  of one-activity "disciplines". For the LSM dimension the name **is** the key, so a one-off activity
+  forming its own group is the intended reading, not the failure mode — noted in the code so nobody
+  "fixes" it back.
+- **New preset "Activity › Location (LSM)"** = `['act'] + locDims + ['wbs']`. `wbs` last is load-bearing
+  per the user's choice: it means each location group still renders its **pruned WBS path** above its
+  activities, rather than listing activities flat.
+- **Verified 9/9 in Node against the SHIPPED `dimValOf`/`dimLabel`/`allDims`/`normalizeGroupBys`**
+  (sliced out of index.html, not reimplemented): value + trim, both blank forms, label, presence and
+  picker order in `allDims`, the full preset surviving normalization, `wbs` still forced last from a
+  mid-list position, and a stale `loc:` dim still dropped. Inline script parses (1 block, 0 fail).
+- ⚠️ **Not verified signed-in** — needs a project with a location breakdown to eyeball the nesting.
+  Module-local, no migration. `MODULE_V` → `20260815k`.

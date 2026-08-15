@@ -3502,6 +3502,9 @@
     var locDims = LOC_LEVELS.map(function (l) { return 'loc:' + l.id; });
     var presets = [
       { name: 'WBS tree (default)', dims: ['wbs'] },
+      // The swap the planners asked for: the ACTIVITY on top, its locations beneath it, and each
+      // location group still showing its pruned WBS path (which is what 'wbs' as the LAST dim means).
+      { name: 'Activity › Location (LSM)', dims: ['act'].concat(locDims).concat(['wbs']) },
       { name: 'Discipline › Location (recommended)', dims: ['work'].concat(locDims) },
       { name: 'Location › Discipline', dims: locDims.concat(['work']) }
     ].filter(function (p) { return p.dims.length; });
@@ -3563,6 +3566,10 @@
     // matched has no work_type, so it fell back to its OWN activity_name and formed a group of
     // exactly one, flooding the grouping with hundreds of one-activity "disciplines" instead of a
     // single "— No discipline/trade —" bucket like every other dimension here uses for its blanks.
+    // ⚠️ The LSM dimension: one bucket per REPEATING activity name, so "Formworks" is a single group
+    // and every Tower/Level/Zone it occurs in nests beneath it. Unlike 'work' (below), forming a
+    // group of exactly one is the CORRECT outcome here for a one-off activity — the name IS the key.
+    if (dim === 'act') return (r.activity_name || '').trim() || '— Unnamed activity —';
     if (dim === 'work') return (r.work_type || '').trim() || '— No discipline/trade —';
     if (dim === 'status') return r.status || 'Not Started';
     if (dim === 'responsible') return r.responsible_party || 'Unassigned';
@@ -3582,6 +3589,7 @@
   }
   function dimLabel(dim) {
     if (dim === 'wbs') return 'WBS';
+    if (dim === 'act') return 'Activity';
     if (dim === 'work') return 'Discipline / Trade';
     if (dim === 'status') return 'Status';
     if (dim === 'responsible') return 'Responsible';
@@ -3594,7 +3602,7 @@
   }
   // Every dimension available on this project, in picker order.
   function allDims() {
-    var out = ['wbs', 'work'];
+    var out = ['wbs', 'act', 'work'];
     LOC_LEVELS.forEach(function (l) { out.push('loc:' + l.id); });
     out.push('phase', 'status', 'responsible', 'type', 'wp');
     CODE_TYPES.forEach(function (ct) { out.push('code:' + ct.id); });

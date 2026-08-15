@@ -5211,3 +5211,22 @@ Groundwork for splitting the 1.2 MB module, **without moving a single line of co
   function) — stub real behaviour or the test proves nothing.
 - Cost: +23,634 chars (~2%) on a file whose problem is size — accepted as the enabler, and it should
   shrink as code moves out. **Stage 2 not started.** See `modules/project-schedule/CLAUDE.md`.
+
+### 2026-08-15 — Project Schedule: Activity › Location grouping (the "swap activities with the WBS" ask)
+User: activities should swap with the WBS, with the WBS locations below them; the current group-by
+isn't doing what's intended. **Not a `buildNodes` bug — the layout was never expressible:** the module
+had no grouping dimension keyed on the activity itself (only WBS / Discipline / location levels /
+Phase / Status / Responsible / Type / Work Package / activity codes), so "activity on top, locations
+beneath" could not be selected at all.
+- Added an **`'act'` dimension** (trimmed `activity_name`, blank → "— Unnamed activity —") in the same
+  three sites `'wp'` used — `dimValOf` / `dimLabel` / `allDims`. The N-level grouping engine is
+  dimension-agnostic, so `buildNodes`, `normalizeGroupBys`, collapse, group roll-up bars and the
+  per-project persistence all applied unchanged.
+- New preset **"Activity › Location (LSM)"** = `['act'] + location levels + ['wbs']`. ⚠️ `wbs` LAST is
+  deliberate (the user's call): that is what makes each location group render its **pruned WBS path**
+  above its activities instead of a flat activity list.
+- ⚠️ **A one-activity group is correct for this dimension**, unlike `'work'` — whose blank fallback was
+  specifically changed away from the activity name because it flooded the grid with one-activity
+  "disciplines". Documented in the code so it isn't "fixed" back.
+- **Verified 9/9 in Node against the shipped functions** (sliced, not reimplemented) + a clean parse.
+  ⚠️ **Not verified signed-in** — needs a project with a location breakdown. `MODULE_V` → `20260815k`.
