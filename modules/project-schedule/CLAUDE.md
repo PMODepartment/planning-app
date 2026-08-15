@@ -4405,3 +4405,45 @@ activities. The current group by is not working as intended."*
   mid-list position, and a stale `loc:` dim still dropped. Inline script parses (1 block, 0 fail).
 - ⚠️ **Not verified signed-in** — needs a project with a location breakdown to eyeball the nesting.
   Module-local, no migration. `MODULE_V` → `20260815k`.
+
+## LSM pass 4: legend scoped to what's open, bars stripped to activities only, activity groups in build order (2026-08-15) — fmlozano
+Three owner asks off live screenshots of AVR101.
+- **1. The legend printed the whole project — 398+ entries.** `catList()` scans every row, and the
+  legend printed all of it. Now scoped by **`catVisibleValues()`** to the categories exposed by the
+  WBS branches actually opened (leaf `_dkind:'task'` rows in `DL`), with a "· N more in collapsed
+  branches" tail.
+  ⚠️ **Deliberately NOT folded into `catList()`.** Colours are assigned by **position** in that list
+  (`CAT_PALETTE[i % …]`), so scoping the list itself would **re-colour every bar on every
+  expand/collapse**. The full list stays the stable colour assignment; the scoping only decides what
+  the legend PRINTS.
+  ⚠️ **Fallback when nothing is expanded:** a fully-collapsed outline exposes 0 task rows, but the
+  Gantt still draws every activity as a coloured segment on the summary bars — an empty key beside a
+  full chart reads as broken. So it falls back to the whole list and says "whole project (nothing
+  expanded yet)".
+  ⚠️ **`renderAll()` was the legend's ONLY caller**, and collapse/expand routes through
+  `renderGrid → scheduleRender → doRender`, never `renderAll` — so the scoping would have been dead
+  on arrival. Hooked at the end of `doRender()`, where `DL` is already built for that frame (it reads
+  `DL` rather than calling `displayList()`, which would re-run `buildNodes()` over every row).
+- **2. LSM mode now shows ONLY the activity bars.** New `_lsm = catCfg().on` in `ganttRowHTML`
+  suppresses the BL0 bar (task, milestone **and** the WBS roll-up baseline) and the red %-complete
+  treatment. Planned = the category colour at low alpha, actual = the solid textured fill — that
+  pairing already existed; what was missing was removing the three other bars stacked around it.
+  ⚠️ The summary roll-up bar is dropped **only when segments actually exist** (`!(_lsm && segs)`).
+  A synthetic group header (Activity / Tower / Level) has no `wbs`, so `_sumSegsHTML` returns '' for
+  it — dropping its bar on `_lsm` alone would leave that row with no mark at all.
+  `_sumSegsHTML` gained a `standalone` flag so the segments take the row's height instead of the thin
+  strip that used to sit under the roll-up bar. The shape legend's Activity / WBS summary / Baseline
+  entries hide via `#ps-view-schedule.ps-lsm` — they'd otherwise describe marks that no longer exist.
+- **3. "Activities are mixed with locations" — it was ORDERING, not nesting.** The nesting was
+  correct (`3rd Fix › Tower 1 › 11th Floor`). ⚠️ **On this project "2nd Floor" and "3rd Floor" are
+  genuine ACTIVITY NAMES** (14 each — per-floor milestones), so alphabetical `cmpGroupName` interleaved
+  them with "1st Fix"/"2nd Fix"/"3rd Fix" into one meaningless run that reads as locations leaking into
+  the activity level. The `'act'` dimension now sorts by **earliest start** (the same rule the LSM
+  legend uses), blanks last, name as tiebreak — build order separates them because they genuinely
+  start apart. Every other dimension's comparator is untouched.
+- **Verified 15/15 in Node against the SHIPPED code** (the sort block and `catVisibleValues` sliced out
+  of index.html, not reimplemented): chronological order with blanks last, min-start-per-bucket,
+  equal-start name tiebreak, `loc:`/`status` dims still using their own comparators, legend scoping
+  counting only task rows and deduping, empty/null `DL`, and the presence of all six LSM guards.
+  Inline script parses (1 block, 0 fail).
+- ⚠️ **Not verified signed-in** — needs a live look at AVR101 with the legend on. `MODULE_V` → `20260815m`.

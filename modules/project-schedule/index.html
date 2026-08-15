@@ -478,6 +478,7 @@
     /* legend */
     .ps-legend { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:8px 2px; font-size:12px; color:var(--pd-muted); }
     .ps-legend .lg { display:inline-flex; align-items:center; gap:6px; }
+    #ps-view-schedule.ps-lsm .ps-legend .lg-lsmoff { display:none; }
     .lg-swatch { display:inline-block; width:22px; height:11px; border-radius:2px; }
     /* Activity legend (LSM-style): one swatch per activity CATEGORY, colouring the bars.
        Separate from .ps-legend above, which explains the bar SHAPES (task/summary/baseline/…).
@@ -1695,9 +1696,13 @@
 
         <!-- Gantt legend — moved below the grid footer -->
         <div class="ps-legend">
-          <span class="lg"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>
-          <span class="lg"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>
-          <span class="lg"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>
+          <!-- ⚠️ .lg-lsmoff = "only true when the activity legend is OFF". In LSM mode the bar IS the
+               category colour (light = planned, solid = complete) and neither the red %-fill, the
+               summary roll-up bar nor the BL0 bar is drawn — so leaving these three on screen would
+               describe marks that no longer exist. Hidden via #ps-view-schedule.ps-lsm. -->
+          <span class="lg lg-lsmoff"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>
+          <span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>
+          <span class="lg lg-lsmoff"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>
           <span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>
           <span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>
         </div>
@@ -5010,7 +5015,28 @@
       // Floor / Roof Deck" is meaningless as text, and the whole point of the side-by-side stacking
       // pane is that the bars and the stack read in the same vertical order.
       var _isLoc = dims[di].indexOf('loc:') === 0;
-      var _keys = Object.keys(buckets).sort(dims[di] === 'work' ? cmpWorkName : (_isLoc ? cmpLevelValue : cmpGroupName));
+      // ⚠️ An ACTIVITY dimension sorts by when the work first starts, NOT alphabetically — the same
+      // rule the LSM legend uses. Real activity names on a tower project include both trades ("1st
+      // Fix", "3rd Fix") and floor-named milestones ("2nd Floor", "3rd Floor"), and alphabetical
+      // order interleaves them into one meaningless run — which is exactly the "activities are mixed
+      // with locations" symptom. Build order separates them because they genuinely start apart.
+      var _actFirst = null;
+      if (dims[di] === 'act') {
+        _actFirst = {};
+        Object.keys(buckets).forEach(function (k) {
+          var f = null;
+          buckets[k].forEach(function (a) { var s = pd(dispStart(a)) || pd(a.bl_start); if (s && (!f || s < f)) f = s; });
+          _actFirst[k] = f;
+        });
+      }
+      var _keys = Object.keys(buckets).sort(
+        _actFirst ? function (a, b) {
+          var fa = _actFirst[a], fb = _actFirst[b];
+          if (fa && fb && +fa !== +fb) return fa - fb;
+          if (fa && !fb) return -1;
+          if (!fa && fb) return 1;
+          return cmpGroupName(a, b);
+        } : (dims[di] === 'work' ? cmpWorkName : (_isLoc ? cmpLevelValue : cmpGroupName)));
       if (_isLoc && _stkTopFirst) {   // same rule as the stack: reverse the storeys, keep non-levels last
         var _rk = _keys.filter(function (k) { return levelRank(k) != null; });
         var _ot = _keys.filter(function (k) { return levelRank(k) == null; });
@@ -8605,6 +8631,10 @@
     renderWindow();
     syncHeadHeights();
     renderStackPane();   // row-aligned to DL, so it repaints with the grid
+    // ⚠️ Every collapse/expand routes through renderGrid -> scheduleRender -> here and NOT through
+    // renderAll(), which was the legend's only caller — so without this hook the "categories on
+    // screen" scoping would never update as branches are opened. DL is current at this point.
+    renderActLegend();
   }
 
   function renderWindow() {
@@ -8935,14 +8965,18 @@
     }
     return m;
   }
-  function _sumSegsHTML(r, min, dayw, sumTop, oY) {
+  function _sumSegsHTML(r, min, dayw, sumTop, oY, standalone) {
     var cfg = catCfg();
     if (!cfg.on || r._dkind === 'group' || !r.wbs) return '';
     var key = pid + '|' + _sorted.length + '|' + cfg.field;
     if (_segMapKey !== key) { _segMap = _buildSegMap(); _segMapKey = key; }
     var kids = (_segMap && _segMap[r.wbs]) || [];
     if (!kids.length) return '';
-    var h = Math.max(5, Math.round(7 * oY)), top = sumTop + Math.round(10 * oY), out = '';
+    // `standalone` = the segments ARE the row's only mark (LSM mode), so they take the row's own
+    // height instead of the thin strip that sat under the roll-up bar.
+    var h = standalone ? Math.max(8, ROWH - Math.round(10 * oY)) : Math.max(5, Math.round(7 * oY));
+    var top = standalone ? (sumTop - Math.round(3 * oY)) : (sumTop + Math.round(10 * oY));
+    var out = '';
     for (var i = 0; i < kids.length; i++) {
       var a = kids[i], e = catEntry(a); if (!e) continue;
       var s = pd(dispStart(a)), f = pd(dispFin(a)); if (!s || !f) continue;
@@ -8962,33 +8996,48 @@
     var showLbl = _gset.labels !== 'none';
     // Selection band spanning the whole Gantt row (matches the grid-row highlight).
     if (r.id && r.id === selId) out += '<div class="ps-gantt-selband" style="top:' + top + 'px;height:' + ROWH + 'px;width:' + (_tlW || 3000) + 'px;"></div>';
+    // ⚠️ LSM mode ("Colour activities by" ticked): the ONLY marks are the activity bars — light
+    // (planned span) filling to solid (actual progress) in the category colour. The BL0 bar, the
+    // WBS roll-up bar and the red %-complete treatment are all suppressed, because in an LSM
+    // reading they are three extra bars per row saying nothing the coloured bar doesn't already say.
+    var _lsm = catCfg().on;
     if (isWbsNode(r)) {
       var sp = wbsSpan(r); if (!sp) return '';
       var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw;
       var wcS = (r._dkind === 'group') ? null : effWbsColor(r);
       // Rolled-up BASELINE (BL0) summary bar, drawn ABOVE the current summary bar.
-      var blsp = (r._dkind === 'group') ? null : (_gset.baseline ? wbsBlSpan(r) : null);
+      var blsp = (r._dkind === 'group') ? null : ((_gset.baseline && !_lsm) ? wbsBlSpan(r) : null);
       if (blsp) { var bx0 = dayDiff(min, blsp.s) * dayw, bw0 = Math.max((dayDiff(blsp.s, blsp.e) + 1) * dayw, 3);
         out += '<div class="ps-bl" title="Baseline (roll-up)" style="left:' + bx0 + 'px;width:' + bw0 + 'px;top:' + (top + Math.round(3 * oY)) + 'px;"></div>'; }
       // Rolled-up %-complete (duration-weighted) on the summary bar, from _costMap.
       var _cm = (r._dkind === 'group') ? null : _costMap[r.wbs];
       var sumPct = (_cm && _cm.wd > 0) ? Math.max(0, Math.min(100, Math.round(_cm.wearn / _cm.wd))) : 0;
       var sumTop = top + (blsp ? o12 : o8);   // sit below the baseline roll-up when present
-      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' + (sumPct > 0 ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + '</div>';
-      // LSM composition: with the legend on, a summary row also shows the activities INSIDE it as
-      // coloured segments, each filling up with its own progress — so a top-level WBS bar reads as
-      // the sequence of trades running under it rather than one flat block.
-      out += _sumSegsHTML(r, min, dayw, sumTop, oY);
+      // LSM composition: with the legend on, a summary row shows the activities INSIDE it as
+      // coloured segments, each filling up with its own progress — so a WBS bar reads as the
+      // sequence of trades running under it rather than one flat block.
+      // ⚠️ In LSM mode the segments REPLACE the roll-up bar rather than sitting under it — but only
+      // when there actually are segments. A synthetic group header (Activity / Tower / Level) has no
+      // `wbs`, so _sumSegsHTML returns '' for it; dropping its bar too would leave that row with no
+      // mark at all, which is why this is gated on `segs` and not on `_lsm` alone.
+      var segs = _sumSegsHTML(r, min, dayw, sumTop, oY, _lsm);
+      if (!(_lsm && segs)) {
+        out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' + (sumPct > 0 ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + '</div>';
+      }
+      out += segs;
       if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
     }
     var bs = pd(r.bl_start), be = pd(r.bl_finish);
-    var hasBL = !!(_gset.baseline && bs && be);
     var s = pd(dispStart(r)), e = pd(dispFin(r));   // actual when set, else planned
     var crit = (critMode && r._critical) ? ' ps-crit' : ((critMode && mfpOn && r._near) ? ' ps-near' : '');
     if (spotlightRow(r)) crit += ' ps-spot';
     // Per-activity override wins, then the category legend colour (LSM), then the WBS branch colour.
     var _ce = catEntry(r);
+    // ⚠️ A categorised bar suppresses its own BL0 bar — the light remainder already IS the planned
+    // span and the solid fill the actual progress, so a second bar above it is the duplication the
+    // LSM view exists to remove. A row with no category value keeps the normal baseline treatment.
+    var hasBL = !!(_gset.baseline && bs && be && !_ce);
     var wc = actColor(r) || (_ce && _ce.color) || effWbsColor(r);
     // With the legend on, the bar reads as FILLING UP: the remainder is the same colour at low
     // alpha, the complete part is the solid, textured legend colour. Without it, the existing
@@ -8999,7 +9048,7 @@
     if (isMile(r)) {
       var md = isFinishMile(r) ? (e || s) : s; if (!md) return out;   // Finish Milestone anchors on the finish
       // Baseline (planned) milestone marker — Finish Milestone uses BL Finish, else BL Start.
-      var blMd = _gset.baseline ? (isFinishMile(r) ? pd(r.bl_finish) : pd(r.bl_start)) : null;
+      var blMd = (_gset.baseline && !_lsm) ? (isFinishMile(r) ? pd(r.bl_finish) : pd(r.bl_start)) : null;
       var curTop = top + (blMd ? Math.round(15 * oY) : o9);   // when a baseline is shown, the current diamond sits below it
       if (blMd) { var bmx = dayDiff(min, blMd) * dayw; out += '<div class="ps-mile-bl" title="Baseline (BL0) milestone" style="left:' + (bmx - 5) + 'px;top:' + (top + Math.round(3 * oY)) + 'px;"></div>'; }
       var mx = dayDiff(min, md) * dayw;
@@ -15494,6 +15543,24 @@
     return list;
   }
   function catMapNow() { catList(); return (_catCache && _catCache.map) || {}; }
+  // The categories currently ON SCREEN — i.e. the activities exposed by the WBS branches the planner
+  // has actually opened, so the legend is a key to what is in front of them rather than a 400-entry
+  // index of the whole project.
+  // ⚠️ Deliberately NOT folded into catList(): colours are assigned by POSITION in that list, so
+  // scoping the list itself would re-colour every bar on every expand/collapse. The full list stays
+  // the stable colour assignment; this only decides what the legend PRINTS.
+  // ⚠️ Reads the already-computed DL rather than calling displayList() — that runs buildNodes() over
+  // every row, and this is called from doRender, which has just built DL for exactly this frame.
+  function catVisibleValues() {
+    var cfg = catCfg(), out = {};
+    var list = (DL && DL.length) ? DL : [];
+    for (var i = 0; i < list.length; i++) {
+      var nd = list[i];
+      if (!nd || nd._dkind !== 'task') continue;
+      var v = catValOf(nd, cfg.field); if (v) out[v] = true;
+    }
+    return out;
+  }
   // Back-compat shape for callers that only want the hex.
   function catColorMapNow() {
     var m = catMapNow(), out = {};
@@ -15511,6 +15578,18 @@
     if (!pid || !rows.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
     var cfg = catCfg(), list = catList(), MAXL = 40;
     host.style.display = '';
+    var vw = document.getElementById('ps-view-schedule');
+    if (vw) vw.classList.toggle('ps-lsm', !!cfg.on);
+    // Scope the printed entries to what the opened WBS branches actually expose.
+    var _vis = cfg.on ? catVisibleValues() : null, _hidden = 0;
+    if (_vis) {
+      var _all = list;
+      list = _all.filter(function (c) { return _vis[c.value]; });
+      _hidden = _all.length - list.length;
+      // Nothing expanded yet (everything collapsed) — showing an empty legend beside a Gantt full of
+      // coloured segments would read as broken, so fall back to the full key and say so.
+      if (!list.length) { list = _all; _hidden = -1; }
+    }
     var opts = catFieldOptions().map(function (o) {
       return '<option value="' + esc(o[0]) + '"' + (o[0] === cfg.field ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
     }).join('');
@@ -15521,7 +15600,9 @@
                 '<span class="ps-alg-wrap"><button type="button" class="ps-alg-sw" data-v="' + esc(c.value) + '" style="' + c.style + '"></button>' +
                 '<input type="color" class="ps-alg-clr ps-catclr" data-v="' + esc(c.value) + '" value="' + c.color + '"></span>' +
                 '<span>' + esc(c.value) + '</span></span>';
-            }).join('') + (list.length > MAXL ? '<span>+' + (list.length - MAXL) + ' more</span>' : '')
+            }).join('') + (list.length > MAXL ? '<span>+' + (list.length - MAXL) + ' more</span>' : '') +
+            (_hidden > 0 ? '<span title="Expand a WBS branch to bring its activities into the key.">· ' + _hidden + ' more in collapsed branches</span>'
+              : (_hidden < 0 ? '<span title="Expand a WBS branch and the key narrows to what is on screen.">· whole project (nothing expanded yet)</span>' : ''))
           : '<span>No values on this field yet — pick another, or set Discipline / Trade on the activities.</span>')
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
     host.innerHTML =

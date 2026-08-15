@@ -5230,3 +5230,22 @@ beneath" could not be selected at all.
   "disciplines". Documented in the code so it isn't "fixed" back.
 - **Verified 9/9 in Node against the shipped functions** (sliced, not reimplemented) + a clean parse.
   ⚠️ **Not verified signed-in** — needs a project with a location breakdown. `MODULE_V` → `20260815k`.
+
+### 2026-08-15 — Project Schedule LSM: legend scoped to open branches, Gantt stripped to activity bars, activity groups in build order
+Three asks off live AVR101 screenshots.
+- **Legend printed all 398 categories.** Now scoped to the categories exposed by the WBS branches
+  actually opened. ⚠️ **Not** by scoping `catList()` — colours are assigned by position in that list,
+  so that would re-colour every bar on each expand; a separate `catVisibleValues()` decides only what
+  the legend prints. ⚠️ Hooked into `doRender()`, because `renderAll()` was the legend's only caller
+  and collapse/expand never routes through it. Falls back to the full key when nothing is expanded
+  (an empty legend beside a Gantt full of coloured segments reads as broken).
+- **Gantt in LSM mode now shows only the activity bars** — BL0 (task, milestone and WBS roll-up) and
+  the red %-complete treatment are suppressed; planned = light tint, actual = solid textured fill of
+  the same colour. ⚠️ The summary bar is dropped only when segments actually exist, or a synthetic
+  group header (which has no `wbs`, so no segments) would render with no mark at all.
+- **"Activities mixed with locations" was ORDERING, not nesting.** ⚠️ On this project "2nd Floor" /
+  "3rd Floor" are genuine **activity names** (per-floor milestones), so alphabetical sorting
+  interleaved them with "1st Fix"/"2nd Fix"/"3rd Fix". The `'act'` dimension now sorts by earliest
+  start (the LSM rule), blanks last; other dimensions' comparators untouched.
+- **Verified 15/15 in Node against the shipped code** (sort block + `catVisibleValues` sliced out) +
+  clean parse. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815m`.
