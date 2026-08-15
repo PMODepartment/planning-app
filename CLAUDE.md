@@ -5321,3 +5321,15 @@ exists for drawing became a correctness bug the moment it was the only thing dra
 executing the shipped renderer** (it never threw — so not a crash) and **verified 28/28 in Node**
 across LSM on/off × segments present/absent × task/WBS/group/milestone: every row type always
 produces a bar. ⚠️ Not verified signed-in. `MODULE_V` → `20260815s`.
+
+### 2026-08-15 — Project Schedule: blank Gantt + stale legend were ONE throwing row
+⚠️ The failure signature named it: grid painted, Gantt empty, legend stale until a page reload.
+`renderWindow()` assigns the grid rows first, accumulates the Gantt bars into a string and assigns
+them only after the loop, and `doRender()` calls `renderStackPane()`/`renderActLegend()` after
+`renderWindow()` — so one throwing row left the bars unassigned AND aborted the pane and the legend.
+Fixed by isolating rather than guessing: per-row try/catch with the assignment happening regardless
+(a bad row now costs one bar and logs which row), `renderActLegend()` moved to the top of `doRender()`
+where it only needs DL (this is the "automatic without refresh" ask), and `renderStackPane()`/
+`wireDrag()` wrapped. ⚠️ The culprit row is still unidentified — `ganttRowHTML` ran 28/28 clean over
+task/WBS/group/milestone × LSM on/off × segments present/absent — but the console now names it.
+**Verified 10/10 in Node against the shipped loop** + clean parse. `MODULE_V` → `20260815t`.

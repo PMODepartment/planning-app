@@ -8812,13 +8812,15 @@
       return;
     }
     host.style.position = 'relative'; host.style.height = H + 'px';
+    // ⚠️ ORDER MATTERS. This used to sit at the very END, after renderWindow() — so any throw while
+    // building the Gantt bars took the legend down with it and it only recovered on a full page
+    // reload ("the legend needs a refresh"). It needs nothing but DL, which is ready here.
+    renderActLegend();
     renderWindow();
     syncHeadHeights();
-    renderStackPane();   // row-aligned to DL, so it repaints with the grid
-    // ⚠️ Every collapse/expand routes through renderGrid -> scheduleRender -> here and NOT through
-    // renderAll(), which was the legend's only caller — so without this hook the "categories on
-    // screen" scoping would never update as branches are opened. DL is current at this point.
-    renderActLegend();
+    // Isolated: the stacking pane is an optional side panel and must never be able to blank the grid
+    // or the Gantt that were just painted.
+    try { renderStackPane(); } catch (e) { console.error('[ps] renderStackPane failed', e); }
   }
 
   function renderWindow() {
@@ -8929,7 +8931,20 @@
     // gantt: window bars
     var bc = document.getElementById('ps-tl-bars');
     if (bc) {
-      var bars = ''; for (var j = first; j < last; j++) bars += ganttRowHTML(DL[j], j, _rMin, _rDayw); bc.innerHTML = bars; wireDrag(_rMin, _rDayw);
+      // ⚠️ Per-row try/catch, and the assignment happens even if a row fails. `bars` is accumulated
+      // in a loop and was assigned only AFTER it finished, so a single throwing row left
+      // #ps-tl-bars empty — a blank Gantt — and the exception escaped renderWindow, which also
+      // skipped renderStackPane() and (when it still sat at the end) renderActLegend(). One bad row
+      // could take out the bars, the side pane and the legend at once, with nothing on screen
+      // saying why. Now it costs exactly one bar and logs which row it was.
+      var bars = '', _rowErr = null, _rowErrN = 0;
+      for (var j = first; j < last; j++) {
+        try { bars += ganttRowHTML(DL[j], j, _rMin, _rDayw); }
+        catch (e) { _rowErrN++; if (!_rowErr) _rowErr = { e: e, row: DL[j], i: j }; }
+      }
+      bc.innerHTML = bars;
+      if (_rowErr) console.error('[ps] ' + _rowErrN + ' Gantt row(s) failed to render; first was row ' + _rowErr.i, _rowErr.row, _rowErr.e);
+      try { wireDrag(_rMin, _rDayw); } catch (e2) { console.error('[ps] wireDrag failed', e2); }
       // Right-click a bar / milestone / summary → color picker (delegated; wired once per #ps-tl-bars).
       if (!bc._ctxWired) { bc._ctxWired = true; bc.addEventListener('contextmenu', function (e) {
         var el = e.target.closest ? e.target.closest('.ps-bar,.ps-mile,.ps-sum') : null;

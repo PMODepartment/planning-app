@@ -4617,3 +4617,33 @@ Owner: *"The Gantt bars in the gantt view is missing."*
   milestone rows: **every row type always produces a bar**, BL0 appears only outside LSM mode (task and
   roll-up), and segments appear only in LSM with segments available. Inline script parses (1 block, 0 fail).
 - ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815s`.
+
+## Blank Gantt + stale legend: ONE throwing row was taking out three things at once (2026-08-15) — fmlozano
+Owner: Gantt still empty, and the legend only updated after a tab refresh.
+- ⚠️ **The two symptoms are ONE fault, and the failure signature named it.** The grid painted, the
+  Gantt did not, and the legend was stale until a full reload. In `renderWindow()` the grid rows are
+  assigned FIRST, then the Gantt bars are accumulated into a `bars` string and assigned **only after
+  the loop finishes**; `doRender()` then calls `renderStackPane()` and (as it was) `renderActLegend()`
+  *after* `renderWindow()`. So a throw on a single row mid-loop leaves `#ps-tl-bars` never assigned
+  (blank Gantt), and the exception escapes `renderWindow` → `doRender` aborts → the stacking pane and
+  the legend never repaint (legend only recovers on a page load). Every symptom, one cause.
+- **Fixes, none of which need the culprit row identified:**
+  1. **Per-row try/catch in the bars loop, and the assignment happens regardless.** A bad row now
+     costs exactly one bar and logs `[ps] N Gantt row(s) failed to render; first was row <i>` with the
+     row object — so the next occurrence is diagnosable from the console instead of invisible.
+  2. **`renderActLegend()` moved to the TOP of `doRender()`**, right after `DL` is built (all it
+     needs). It no longer depends on the Gantt render succeeding — which is literally the
+     "automatic without the need to refresh" the owner asked for.
+  3. **`renderStackPane()` and `wireDrag()` isolated** in their own try/catch — an optional side pane
+     and an event-wiring pass must never blank the grid and bars that were just painted.
+- ⚠️ **I could NOT reproduce the throwing row.** `ganttRowHTML` was executed against task / WBS /
+  group / milestone rows with LSM on and off and segments present and absent — **28/28, never threw**
+  — so the bad row is some shape those fixtures don't cover. The isolation above is the right fix
+  either way (one row should never blank the view), and the console line will name the row next time.
+- **Verified 10/10 in Node against the SHIPPED loop** (sliced out, not reimplemented): a poisoned row
+  in the middle still renders the other three bars, the container is assigned rather than left stale,
+  the failure is counted and logged, an all-good render is byte-identical with no logging, an
+  all-bad render still assigns and logs the full count, plus the new ordering
+  (`renderActLegend` before `renderWindow`) and both isolation wrappers. Parses (1 block, 0 fail).
+- ⚠️ **Not verified signed-in.** If the Gantt is still empty after this, the console now says which
+  row — that is the next thing to send. `MODULE_V` → `20260815t`.
