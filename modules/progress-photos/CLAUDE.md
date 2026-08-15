@@ -250,9 +250,9 @@ the schedule integration path **before** writing code, and don't start a phase u
 one ships. This entry is Phase 1 only — Phase 2 (report templates), Phase 3+ are NOT started.
 
 - **Audit finding:** `location` was free text with no link to anything; "+ Add photos" was a
-  batch-metadata upload (good primitive) but had no walkthrough/checklist UX. The PPR module
-  (already built) is most of Phase 2 already; the gap there is a *template* concept, not slide
-  assembly itself.
+  batch-metadata upload (good primitive) but had no walkthrough/checklist UX and **no offline
+  queue at all** — a failed upload just failed. The PPR module (already built) is most of Phase 2
+  already; the gap there is a *template* concept, not slide assembly itself.
 - **"Schedule app" = the `project-schedule` module in this same repo/Supabase project** — not an
   external system. Integration is a plain cross-module table read (same pattern Cash Flow/
   Portfolio Overview already use for `project_schedule`), not a new API.
@@ -291,6 +291,16 @@ one ships. This entry is Phase 1 only — Phase 2 (report templates), Phase 3+ a
   for the first ("Capture — 1 of N"), and on Upload/Skip it auto-advances to the next selected zone
   without returning to the Rounds screen; **End walkthrough** stops the chain early. Uses the same
   `openUpload(preset)` as the plain "+ Add photos" button — just pre-filled and chained.
+- **Offline queue (plain IndexedDB, no library)**: a capture tries to save immediately; a thrown
+  upload (or `navigator.onLine === false`) queues the file blob + metadata in `pp_offline_v1`
+  instead of losing the shot. A topbar **"N pending — Sync now"** button (hidden at 0) replays the
+  queue on click and auto-flushes on the browser's `online` event. This directly answers brief §4's
+  "offline queueing still required" — the old module had none.
+- **Migration-tolerant writes**: every insert/update carrying the three new columns retries once
+  without them on a "column does not exist" error (same convention as Cash Flow's `tolerantWrite`),
+  warning once per session rather than losing the capture. Verified this path explicitly (forced a
+  simulated missing-column error) — the photo still saves, just without the zone link, until the
+  migration runs.
 - **Reconciled with the collaboration/offline-editing work already on `main`** (this branch was
   originally built against an older snapshot — see below): rather than inventing a second, competing
   offline system, new-capture uploads now go through a **narrow addition on top of the existing
