@@ -1126,6 +1126,13 @@
     .ps-gm-lbl { flex:1; font-size:12.5px; color:var(--pd-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-gm-x { flex:none; width:22px; height:22px; padding:0; border:1px solid transparent; background:none;
       border-radius:4px; cursor:pointer; color:var(--pd-muted); font-size:11px; }
+    /* ⚠️ `.ps-menu button` (0,1,1 — class + type) OUTRANKS `.ps-gm-x` (0,1,0) and sets
+       display:block; width:100%; padding:8px 14px. So every row button was rendered a full row wide
+       and un-shrinkable (flex:none), which pushed ▼ and ✕ past the menu's clipped right edge and
+       collapsed the level's label to zero width — i.e. "Move down" and "Remove" were INVISIBLE AND
+       UNREACHABLE since the picker shipped. Re-assert the geometry at (0,2,1) so it wins. */
+    .ps-group-menu button.ps-gm-x { display:inline-flex; align-items:center; justify-content:center;
+      width:22px; min-width:22px; padding:0; text-align:center; }
     .ps-gm-x:hover:not(:disabled) { background:var(--pd-bg); border-color:var(--pd-line); color:var(--pd-ink); }
     .ps-gm-x:disabled { opacity:.3; cursor:default; }
     .ps-gm-x.danger:hover { color:var(--pd-red); border-color:var(--pd-red-mid); }
@@ -4941,7 +4948,7 @@
     var out = [], span = {}, SEP = '';
     function addSpan(code, s, e) { if (!s && !e) return; if (!s) s = e; if (!e) e = s; var m = span[code]; if (!m) span[code] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
     // One group's contents: the pruned WBS path, or just the activities in WBS order.
-    function emitLeaf(list, base, baseAnc) {
+    function emitLeaf(list, base, baseAnc, prune) {
       var depth = baseAnc.length;
       if (!showWbs) {
         list.slice().sort(function (x, y) { return cmpCodeStr(x.wbs, y.wbs); }).forEach(function (a) {
@@ -4952,15 +4959,32 @@
         });
         return;
       }
+      // ⚠️ COMMON-PREFIX PRUNE. The WBS path is emitted per GROUP, so with a location grouping every
+      // single leaf group re-rendered the same "Execution Phase › Construction Phase › Tower 1 ›
+      // Structural Works" chain above its handful of activities — the same four rows repeated
+      // hundreds of times, saying nothing (they're identical for every row in the group, and the
+      // Tower/Level/Zone are already the group headings above them). Drop the ancestors that ALL
+      // activities in this group share; keep only the part of the tree that actually branches.
+      // ⚠️ Clamped to minSegs-1 so a group holding ONE activity still emits that activity (an
+      // unclamped common prefix of a single code is the whole code, which would emit nothing).
+      var cut = 0;
+      if (prune && list.length) {
+        var segsOf = list.map(function (a) { return String(a.wbs || '').split('.'); });
+        var minSegs = segsOf.reduce(function (m, s) { return Math.min(m, s.length); }, Infinity);
+        while (cut < minSegs - 1 && segsOf.every(function (s) { return s[cut] === segsOf[0][cut]; })) cut++;
+      }
       var ancSet = {}; list.forEach(function (a) { (a._anc || []).forEach(function (c) { ancSet[c] = true; }); });
       var entries = [];
-      Object.keys(ancSet).forEach(function (c) { entries.push({ real: c, isW: true }); });
+      // An ancestor at or above the cut is common to the whole group — never emitted.
+      Object.keys(ancSet).forEach(function (c) { if (String(c).split('.').length > cut) entries.push({ real: c, isW: true }); });
       list.forEach(function (a) { entries.push({ real: a.wbs, isW: false, a: a }); });
       entries.sort(function (x, y) { var c = cmpCodeStr(x.real, y.real); if (c !== 0) return c; return x.isW === y.isW ? 0 : (x.isW ? -1 : 1); });
       entries.forEach(function (en) {
-        var rsegs = String(en.real).split('.'), rdepth = rsegs.length - 1;
+        var rsegs = String(en.real).split('.'), rdepth = Math.max(0, rsegs.length - 1 - cut);
         var da = baseAnc.slice();
-        for (var i = 1; i < rsegs.length; i++) da.push(base + SEP + rsegs.slice(0, i).join('.'));
+        // Only RETAINED ancestors go into _danc — collapse walks that chain and expects every entry
+        // in it to exist as a rendered row.
+        for (var i = cut + 1; i < rsegs.length; i++) da.push(base + SEP + rsegs.slice(0, i).join('.'));
         var dc = base + SEP + en.real;
         if (en.isW) {
           var wr = realByCode[en.real];
@@ -5008,7 +5032,9 @@
         activity_name: execName, _gcount: acts.length, _gdim: 'exec', id: 'grp:' + execHeadCode });
     }
     (function walk(list, di, parentCode, parentAnc) {
-      if (di >= dims.length) { emitLeaf(list, parentCode, parentAnc); return; }
+      // prune=true ONLY here: the two other emitLeaf calls render the carved-out non-Execution
+      // phases by their real WBS path with no group above them, where the full chain IS the view.
+      if (di >= dims.length) { emitLeaf(list, parentCode, parentAnc, true); return; }
       var buckets = {};
       list.forEach(function (a) { var g = dimValOf(a, dims[di]) || '—'; (buckets[g] = buckets[g] || []).push(a); });
       // ⚠️ A LOCATION dimension sorts in BUILDING order, not alphabetically — "B3 / Ground / 9th

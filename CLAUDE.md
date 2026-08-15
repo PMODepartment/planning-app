@@ -5249,3 +5249,19 @@ Three asks off live AVR101 screenshots.
   start (the LSM rule), blanks last; other dimensions' comparators untouched.
 - **Verified 15/15 in Node against the shipped code** (sort block + `catVisibleValues` sliced out) +
   clean parse. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815m`.
+
+### 2026-08-15 — Project Schedule: grouping picker's Move-down/Remove were unreachable; WBS path repeated per group
+- ⚠️ **CSS specificity bug, live since the picker shipped.** `.ps-menu button` (0,1,1) beat `.ps-gm-x`
+  (0,1,0) and forced `display:block; width:100%`, so each level row's three buttons totalled 3× the row
+  width: the label collapsed to zero and **▼ / ✕ were pushed past the menu's clipped edge** — invisible
+  and unreachable. The markup was correct all along. Re-asserted at (0,2,1).
+- **The WBS path is emitted per GROUP**, so a location grouping repeated "Execution Phase › Construction
+  Phase › Tower 1 › Structural Works" above every leaf group — identical for every row in the group, and
+  duplicating the group headings above it. `emitLeaf` now drops the ancestors common to all activities
+  in a group and keeps only what branches. ⚠️ Clamped to `minSegs-1` (a single code's common prefix is
+  itself), `_danc` carries only retained ancestors (collapse walks that chain), and `prune` is passed
+  only from the dims walk — the carved-out non-Execution phases still render their full WBS path.
+- **No hardcoded presets** — the owner's five examples were illustrative; with ▼/✕ working the existing
+  add/reorder/remove list expresses all of them, and location levels differ per project anyway.
+- **Verified 17/17 in Node against the shipped `emitLeaf`** + clean parse. ⚠️ Not verified signed-in.
+  `MODULE_V` → `20260815n`.

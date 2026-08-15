@@ -4447,3 +4447,41 @@ Three owner asks off live screenshots of AVR101.
   counting only task rows and deduping, empty/null `DL`, and the presence of all six LSM guards.
   Inline script parses (1 block, 0 fail).
 - ⚠️ **Not verified signed-in** — needs a live look at AVR101 with the legend on. `MODULE_V` → `20260815m`.
+
+## Grouping picker: Move down / Remove were unreachable, and the WBS path repeated per group (2026-08-15) — fmlozano
+Owner screenshot of the Group menu showed each level row as a number badge, a blank label and a single
+▲ — no ▼, no ✕. Plus: with a location grouping, "Execution Phase › Construction Phase › Tower 1 ›
+Structural Works" repeated above every single leaf group.
+- ⚠️ **CSS SPECIFICITY BUG — ▼ and ✕ have been invisible AND unreachable since the picker shipped.**
+  `.ps-menu button` is `(0,1,1)` (class + type) and sets `display:block; width:100%; padding:8px 14px`;
+  `.ps-gm-x` is only `(0,1,0)`, so it lost. Each row button therefore rendered a **full row wide** and
+  un-shrinkable (`flex:none` DID apply — `.ps-menu button` sets no flex), so the three buttons totalled
+  3× the row width: the label (`flex:1` + `overflow:hidden`) collapsed to **zero width**, and ▼/✕ were
+  pushed past the menu's clipped edge (`.ps-group-menu{overflow-y:auto}` makes overflow-x computed
+  `auto`). That is the whole screenshot — blank label, lone ▲ — from one missing class in a selector.
+  Re-asserted at `(0,2,1)` as `.ps-group-menu button.ps-gm-x`.
+  ⚠️ **The markup was correct all along**, which is why this reads as a missing feature rather than a
+  style bug. Check the cascade before adding a control that the code already emits.
+- **Common-prefix prune in `emitLeaf`.** The WBS path is emitted PER GROUP, so a grouping like
+  Activity › Tower › Level › Zone › Orientation › WBS re-rendered the identical four-row ancestor chain
+  inside every one of hundreds of leaf groups — rows that are the same for every activity in the group
+  AND whose Tower/Level/Zone are already the group headings above them. `emitLeaf` now drops the
+  ancestors **common to every activity in the group** and keeps only the part of the tree that actually
+  branches.
+  ⚠️ **Clamped to `minSegs - 1`**: the common prefix of a SINGLE code is the whole code, which would
+  emit no row at all for a one-activity group.
+  ⚠️ **`_danc` gets only the RETAINED ancestors** — collapse walks that chain and expects every entry
+  in it to exist as a rendered row; leaving the dropped codes in would break expand/collapse silently.
+  ⚠️ **`prune` is passed ONLY from the dims walk.** The two other `emitLeaf` calls render the carved-out
+  non-Execution phases by their real WBS path with no group heading above them, where the full chain
+  **is** the view.
+- **No hardcoded A–E presets.** The owner clarified the five examples were illustrative — the ask is
+  general flexibility for reporting. With ▼/✕ working, the existing add / reorder / remove list already
+  expresses every one of them (and Tower/Level/Zone/Orientation/Unit are per-project location levels,
+  so fixed presets would be wrong on the next project anyway).
+- **Verified 17/17 in Node against the SHIPPED `emitLeaf`** (sliced out, not reimplemented): the
+  reported chain dropped, depths flattened to group level, a group that genuinely branches keeping its
+  branching level with correct kinds/depths, unpruned behaviour byte-identical to before (6 rows,
+  depths 1-5), uneven depths, the single-activity clamp, and **every `_danc` entry existing as a
+  rendered row across all five fixtures**. Inline script parses (1 block, 0 fail).
+- ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815n`.
