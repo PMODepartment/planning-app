@@ -15753,6 +15753,18 @@
   // the stable colour assignment; this only decides what the legend PRINTS.
   // ⚠️ Reads the already-computed DL rather than calling displayList() — that runs buildNodes() over
   // every row, and this is called from doRender, which has just built DL for exactly this frame.
+  // Back-compat shape for callers that only want the hex.
+  function catColorMapNow() {
+    var m = catMapNow(), out = {};
+    Object.keys(m).forEach(function (k) { out[k] = m[k].color; });
+    return out;
+  }
+  function catEntry(r) {
+    var cfg = catCfg(); if (!cfg.on || !pid) return null;
+    var v = catValOf(r, cfg.field); if (!v) return null;
+    return catMapNow()[v] || null;
+  }
+  function catColor(r) { var e = catEntry(r); return e ? e.color : null; }
   // ⚠️ STRICTLY the rows on screen. An earlier cut also resolved what a COLLAPSED row stood for
   // (its bucket / its WBS subtree), which is defensible — the Gantt paints those activities as
   // segments — but it meant five collapsed phase rows produced a 400-entry key, which is exactly

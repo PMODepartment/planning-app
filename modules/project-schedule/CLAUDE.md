@@ -4647,3 +4647,33 @@ Owner: Gantt still empty, and the legend only updated after a tab refresh.
   (`renderActLegend` before `renderWindow`) and both isolation wrappers. Parses (1 block, 0 fail).
 - ⚠️ **Not verified signed-in.** If the Gantt is still empty after this, the console now says which
   row — that is the next thing to send. `MODULE_V` → `20260815t`.
+
+## The blank Gantt: I had DELETED catEntry / catColor / catColorMapNow (2026-08-15) — fmlozano
+The isolation shipped in the previous entry did its job on the first try — the console named it:
+`ReferenceError: catEntry is not defined at _sumSegsHTML → ganttRowHTML → renderWindow`, 21–23 rows
+failing per render.
+- ⚠️ **Root cause: a region-replace of mine silently removed three live functions.** The "legend =
+  visible rows only" pass replaced everything between my own comment marker and
+  `function renderActLegend()`. **`catColorMapNow`, `catEntry` and `catColor` were sitting in that
+  gap** and went with it. `catEntry` had **3 call sites** (`ganttRowHTML` ×2, `_sumSegsHTML`), so with
+  the legend ON every single Gantt row threw — a completely blank Gantt.
+- ⚠️ **Why it was invisible for four commits:** the file still **parsed cleanly** (a missing function
+  is a runtime ReferenceError, not a syntax error), and every harness I wrote **stubbed `catEntry`**
+  rather than slicing it out of the file — so the tests were green while the shipped code could not
+  run. This is the same trap already recorded on 2026-08-05 ("stub real behaviour or the test proves
+  nothing") and on 2026-08-10 (a scan that reported all 826 functions dead). **A green harness that
+  injects a dependency proves nothing about whether that dependency still exists.**
+- **Fix:** the three functions restored verbatim from `bb991bd`.
+- **New standing check, and it should have existed already:** diff the SET of
+  `function NAME(` between HEAD and a known-good commit after any bulk edit. Run against `2053790`
+  (last commit before today's work): **0 functions lost, 10 added** — so nothing else went missing
+  across the day's ~8 commits.
+  ⚠️ Do NOT use a "called but never defined" scan on this file — prose inside the ~2,700 comment lines
+  matches `word(` and buries the signal (it returned `collaboration`, `guard`, `weeks`…). Compare
+  definition SETS across commits instead.
+- ⚠️ **Never again replace a computed `src[i:j]` region without printing what is inside it.** I
+  asserted on both boundaries and never looked at the 11 lines between them.
+- **Verified 7/7 in Node against the SHIPPED functions**, sliced (not stubbed) this time: the exact
+  reported call — `_sumSegsHTML` on a WBS row with the legend on — no longer throws and emits its
+  segment, plus `catEntry` hit/miss, `catColor` hit/miss and `catColorMapNow`. Parses (1 block, 0 fail).
+- `MODULE_V` → `20260815u`.

@@ -5333,3 +5333,16 @@ where it only needs DL (this is the "automatic without refresh" ask), and `rende
 `wireDrag()` wrapped. ⚠️ The culprit row is still unidentified — `ganttRowHTML` ran 28/28 clean over
 task/WBS/group/milestone × LSM on/off × segments present/absent — but the console now names it.
 **Verified 10/10 in Node against the shipped loop** + clean parse. `MODULE_V` → `20260815t`.
+
+### 2026-08-15 — Project Schedule: blank Gantt root cause — I had deleted catEntry/catColor/catColorMapNow
+The per-row isolation shipped an hour earlier paid off immediately: the console named it
+(`ReferenceError: catEntry is not defined at _sumSegsHTML → ganttRowHTML`, 21–23 rows/render).
+⚠️ **A region-replace in the "legend = visible rows only" pass removed three live functions** that sat
+between my comment marker and `function renderActLegend()`. `catEntry` had 3 call sites, so with the
+legend ON every Gantt row threw — blank Gantt. ⚠️ It survived four commits because the file still
+PARSED (a missing function is a runtime error) and every harness **stubbed `catEntry`** instead of
+slicing it — green tests over code that could not run. Restored from `bb991bd`. **New standing check:
+diff the set of `function NAME(` against a known-good commit after any bulk edit** — run against
+`2053790` it shows 0 lost / 10 added across the whole day. ⚠️ Never replace a computed `src[i:j]`
+region without printing what is inside it. **Verified 7/7 in Node against the sliced (not stubbed)
+functions.** `MODULE_V` → `20260815u`.
