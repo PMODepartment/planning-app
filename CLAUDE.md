@@ -5277,3 +5277,20 @@ group is deliberately not expanded — the index spans all groups, and its group
 it. ⚠️ Grouping by WBS at level 1 with no phase filter still lists everything, correctly: those rows do
 represent the whole project. **Verified 10/10 in Node against the shipped functions** + clean parse.
 ⚠️ Not verified signed-in. `MODULE_V` → `20260815p`.
+
+### 2026-08-15 — Project Schedule: grouping now filters; deepest level carries the activity; group rows roll up
+- **Grouping doubles as a filter** (owner's clarification). An activity with no value on a grouping
+  dimension is dropped rather than bucketed into "— Unassigned —", so a location breakdown shows only
+  located work. ⚠️ Runs after the Execution-Phase carve-out and clears it too; ⚠️ restricted to
+  loc:/code:/work/wp/phase — `responsible`'s "Unassigned" is a real state and filtering it would be
+  silent data loss; ⚠️ it hides real rows, so it is a toggle (default ON) and the footer reports the
+  count. This also fixed the legend showing all 400 activity names: with Activity on top every name was
+  a group row, so the correctly-scoped legend listed them all until the non-located work left the view.
+- **A one-activity deepest bucket now emits the activity itself** carrying the level's label, instead of
+  a "Vertical (1)" group row plus a duplicate leaf — so Status / BL Start / BL Finish are populated by
+  the normal task rendering. ⚠️ That cell is not editable (it would read "Vertical" while editing
+  `activity_name`), and the label is cleared on the other emit paths since rows are reused.
+- **Group rows roll up baseline dates + status** (`addBlSpan`/`_dblspan`, `_groupStatusPill`), so
+  collapsing a level moves the detail up instead of leaving blank cells.
+- **LSM preset dropped its trailing `wbs`.** **Verified 15/15 in Node against the shipped code** + clean
+  parse. ⚠️ Not verified signed-in. `MODULE_V` → `20260815q`.

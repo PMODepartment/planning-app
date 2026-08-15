@@ -4518,3 +4518,43 @@ Submission — Planning-and-Initiation work that is not on screen.
   empty `DL`, a group with no `_gacts`, blank names skipped, and a 900-activity branch returning all
   900 (proving the SEG_CAP truncation is not inherited). Inline script parses (1 block, 0 fail).
 - ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815p`.
+
+## Grouping is now also a FILTER; deepest level carries the activity; group rows roll up baseline + status (2026-08-15) — fmlozano
+Four owner asks off live AVR101 screenshots, plus a clarification mid-turn: *"the group by function will
+act as a filtering function… only showing activities that have the applied selection."*
+- **The grouping filters.** An activity with no value on a grouping dimension can only ever land in an
+  "— Unassigned —" bucket, so it is now dropped instead: a Tower › Level › Zone › Orientation breakdown
+  shows the work that HAS a location and nothing else. Manpower Loading, Bonds & Permits and the rest of
+  General Requirements say nothing in a location breakdown and no longer appear.
+  ⚠️ **Runs AFTER the Execution-Phase carve-out and clears `otherPhaseActs` too.** That carve-out exists
+  to render non-located phases by their WBS path — which is exactly what the owner asked to stop seeing.
+  ⚠️ **Restricted to `dimNeedsValue()` dimensions** (loc:, code:, work, wp, phase). `status` defaults to
+  'Not Started', `type` to 'Task', `act` to the name, and **`responsible`'s "Unassigned" is a genuine
+  state a planner needs to see** — filtering on those would be silent data loss, not tidying.
+  ⚠️ **It HIDES real activities**, so it is a toggle (Group menu → View, default ON) and the grid footer
+  reports "· N hidden (no value on a grouping level)". Never let that be silent.
+  **This also fixed the legend complaint**: with Activity as the top level, every activity name was a
+  group row in `DL`, so the correctly-scoped legend still listed all 400. Filtering the non-located work
+  out of the view removes it from the key as a side effect.
+- **The deepest level now carries the activity.** A one-activity bucket at the last dimension emitted a
+  "Vertical (1)" group row followed by its single activity — the same record twice, and the group row was
+  the one WITHOUT Status / BL Start / BL Finish. That bucket now emits the ACTIVITY itself carrying the
+  group's label (`_dlabel`), so every column is populated by the normal task-row rendering.
+  ⚠️ **The label cell is NOT editable** when `_dlabel` is set: it would read "Vertical" while editing
+  `activity_name`, which is how someone renames an activity by accident.
+  ⚠️ **`_dlabel` is stamped on a REUSED row object**, so all three other emit paths now clear it — a
+  stale label would otherwise survive a grouping change.
+- **Group rows roll up baseline dates and status.** New `bspan`/`addBlSpan` in `buildNodes` +
+  `_dblspan`, resolved by `wbsBlSpan` via the DISPLAY code (a group heading has no dotted WBS code);
+  `_groupStatusPill` reads `_gdone`/`_gprog` counted once per bucket while it is in hand (`_costMap` is
+  keyed by real WBS codes, so it cannot serve a group). So collapsing a level moves its detail up the
+  tree instead of leaving three blank cells.
+- **The LSM preset dropped its trailing `wbs`** — the location levels already say where the work is.
+- **Verified 15/15 in Node against the SHIPPED code** (`dimRawOf`, `dimNeedsValue`, the filter block and
+  `_groupStatusPill` sliced out, not reimplemented): required-dim filtering incl. missing-`location`
+  entirely, the toggle off, a grouping with no filterable dim left untouched, the carve-out phases
+  filtered too, all three status states, an empty group, and that status/responsible/type/act/wbs are
+  NOT filterable. Inline script parses (1 block, 0 fail).
+  ⚠️ **A stale test anchor cost a run**: `indexOf('_gbHidden = 0;')` matched the module-scope
+  declaration, not the filter block, and sliced thousands of lines. Anchor on something unique.
+- ⚠️ **Not verified signed-in.** `MODULE_V` → `20260815q`.

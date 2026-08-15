@@ -1697,6 +1697,9 @@
         <!-- OPC-style grid footer: activity count + Download (mirrors OPC's strip under its grid) -->
         <div class="ps-grid-foot">
           <span>Total: <strong id="ps-total-count">0</strong> activities</span>
+          <!-- Set by doRender: how many activities the grouping filtered out for having no value on
+               a grouping level. Never let that hiding be silent. -->
+          <span id="ps-gb-hidden" style="display:none;color:var(--pd-muted);"></span>
           <label class="ps-foot-chk" title="Hide WBS groups that contain no activities"><input type="checkbox" id="ps-hide-empty"> Hide empty groups</label>
           <button class="pd-btn" id="ps-download" title="Export the schedule to Excel"><span data-ico="download" data-ico-size="14"></span> Download</button>
         </div>
@@ -2574,11 +2577,15 @@
   // "Execution Phase only" view toggle (Group menu) — narrows every grouping mode (incl. the plain
   // WBS tree) down to the Execution Phase branch, hiding Milestones/Initiation/Planning/Closeout.
   var _execOnly = false; try { _execOnly = localStorage.getItem('ps_execonly') === '1'; } catch (e) {}
+  // Grouping doubles as a filter: default ON, so a location breakdown never shows "— Unassigned —".
+  var _hideUnassigned = true; try { _hideUnassigned = localStorage.getItem('ps_hideunassigned') !== '0'; } catch (e) {}
+  var _gbHidden = 0;   // how many activities that filter removed, for the footer
   // Ordered grouping levels. ['wbs'] = the plain WBS tree (default). Anything else nests a group
   // header per entry, in order — so Location>Zone>Activity and Activity>Location>Zone differ only
   // by the order of this list. Persisted per project; see setGroupBys/loadGroupBys.
   var groupBys = ['wbs'];
   var _dspan = {};       // span map keyed by display code (real WBS codes in WBS mode)
+  var _dblspan = null;   // baseline span map keyed by display code (grouped mode only)
   var isAdmin = false;
   // Roles that may write the schedule (matches is_planner() in the DB). Used to gate the
   // WBS-summary self-repair so a read-only user never triggers a write on load.
@@ -3514,9 +3521,10 @@
     var locDims = LOC_LEVELS.map(function (l) { return 'loc:' + l.id; });
     var presets = [
       { name: 'WBS tree (default)', dims: ['wbs'] },
-      // The swap the planners asked for: the ACTIVITY on top, its locations beneath it, and each
-      // location group still showing its pruned WBS path (which is what 'wbs' as the LAST dim means).
-      { name: 'Activity › Location (LSM)', dims: ['act'].concat(locDims).concat(['wbs']) },
+      // The swap the planners asked for: the ACTIVITY on top, its locations beneath it.
+      // ⚠️ No trailing 'wbs' — the location levels already say where the work is, so the WBS path
+      // underneath them was pure duplication in this view (owner's call after seeing it live).
+      { name: 'Activity › Location (LSM)', dims: ['act'].concat(locDims) },
       { name: 'Discipline › Location (recommended)', dims: ['work'].concat(locDims) },
       { name: 'Location › Discipline', dims: locDims.concat(['work']) }
     ].filter(function (p) { return p.dims.length; });
@@ -3528,7 +3536,8 @@
     });
     if (!locDims.length) h += '<div class="ps-gm-note">No location levels defined yet — add them in <strong>Location Breakdown…</strong> to group by location.</div>';
     h += '<div class="ps-gm-sec">View</div>' +
-      '<label class="ps-gm-check"><input type="checkbox" id="ps-gm-execonly"' + (_execOnly ? ' checked' : '') + '> Execution Phase only</label>';
+      '<label class="ps-gm-check"><input type="checkbox" id="ps-gm-execonly"' + (_execOnly ? ' checked' : '') + '> Execution Phase only</label>' +
+      '<label class="ps-gm-check" title="The grouping doubles as a filter: an activity with no value on a grouping level (e.g. no Tower/Level/Zone) is dropped instead of landing in an “— Unassigned —” bucket."><input type="checkbox" id="ps-gm-hideun"' + (_hideUnassigned ? ' checked' : '') + '> Hide activities missing a grouping value</label>';
     h += '<div class="ps-gm-sec">Levels (in order)</div>';
     if (!groupBys.length) h += '<div class="ps-gm-note">No grouping.</div>';
     groupBys.forEach(function (d, i) {
@@ -3560,6 +3569,12 @@
     if (execOnlyChk) execOnlyChk.onchange = function (e) {
       _execOnly = e.target.checked;
       try { localStorage.setItem('ps_execonly', _execOnly ? '1' : '0'); } catch (ex) {}
+      renderGrid(); renderGantt();
+    };
+    var hideUnChk = m.querySelector('#ps-gm-hideun');
+    if (hideUnChk) hideUnChk.onchange = function (e) {
+      _hideUnassigned = e.target.checked;
+      try { localStorage.setItem('ps_hideunassigned', _hideUnassigned ? '1' : '0'); } catch (ex) {}
       renderGrid(); renderGantt();
     };
     // ⚠️ Close this menu directly — `closeMenus()` is declared in the init/wiring scope, NOT at
@@ -3598,6 +3613,28 @@
       return valId ? (codeValueLabel(valId) || '— Unknown —') : '— Unassigned —';
     }
     return '—';
+  }
+  // The RAW value, with no "— Unassigned —" style fallback — used to decide whether an activity is
+  // even classified on a dimension.
+  function dimRawOf(r, dim) {
+    if (dim === 'wbs') return r.wbs || '';
+    if (dim === 'act') return (r.activity_name || '').trim();
+    if (dim === 'work') return (r.work_type || '').trim();
+    if (dim === 'status') return r.status || '';
+    if (dim === 'responsible') return r.responsible_party || '';
+    if (dim === 'type') return r.activity_type || '';
+    if (dim === 'wp') return (r.work_package || '').trim();
+    if (dim === 'phase') return phaseOf(r) ? (phaseLabel(phaseOf(r)) || '') : '';
+    if (dim.indexOf('loc:') === 0) return locValOf(r, dim.slice(4)) || '';
+    if (dim.indexOf('code:') === 0) { var v = r.activity_codes && r.activity_codes[dim.slice(5)]; return (v && codeValueLabel(v)) || ''; }
+    return '';
+  }
+  // ⚠️ Only dimensions whose blank case is a real "not classified" bucket. status / type / act always
+  // carry a meaningful default ('Not Started', 'Task', the name), and `responsible`'s "Unassigned" is
+  // a genuine state a planner needs to SEE — hiding those rows would be silent data loss, not tidying.
+  function dimNeedsValue(dim) {
+    return dim === 'work' || dim === 'wp' || dim === 'phase' ||
+      dim.indexOf('loc:') === 0 || dim.indexOf('code:') === 0;
   }
   function dimLabel(dim) {
     if (dim === 'wbs') return 'WBS';
@@ -4900,7 +4937,7 @@
     normalizeGroupBys();
     var groupBy = groupBys.length === 1 ? groupBys[0] : '__multi';
     if (groupBy === 'wbs') {
-      _dspan = _spanMap;
+      _dspan = _spanMap; _dblspan = null;
       var list = _sorted;
       // "Execution Phase only": keep the branch's own WBS-summary row + everything under it. No
       // synthetic wrapper needed here — the real "Execution Phase" row IS the top-level heading.
@@ -4913,7 +4950,7 @@
         list.forEach(function (r) { if (rowMatches(r)) { keep[r.wbs] = true; for (var i = 0; i < r._anc.length; i++) keep[r._anc[i]] = true; } });
         list = list.filter(function (r) { return keep[r.wbs] || rowMatches(r); });
       }
-      list.forEach(function (r) { r._dcode = r.wbs; r._ddepth = r._depth; r._danc = r._anc; r._dkind = isWbs(r) ? 'wbs' : 'task'; r._realCode = r.wbs; });
+      list.forEach(function (r) { r._dcode = r.wbs; r._ddepth = r._depth; r._danc = r._anc; r._dkind = isWbs(r) ? 'wbs' : 'task'; r._realCode = r.wbs; r._dlabel = null; });
       return list;
     }
     // Grouped: nest a group header per dimension in `groupBys` order, then at the deepest level
@@ -4944,18 +4981,47 @@
         if (_execOnly) otherPhaseActs = [];   // the toggle means ONLY Execution Phase — drop the rest
       }
     }
+    // ⚠️ THE GROUPING ALSO FILTERS (owner: "the group by function will act as a filtering function").
+    // An activity carrying no value on a grouping dimension can only ever land in a "— Unassigned —"
+    // bucket, so it is dropped instead: grouping by Tower › Level › Zone › Orientation shows the work
+    // that HAS a location and nothing else. Manpower Loading, Bonds & Permits etc. have no location
+    // and say nothing in a location breakdown.
+    // ⚠️ Runs AFTER the Execution-Phase carve-out on purpose, and clears `otherPhaseActs` too — the
+    // carve-out exists to render non-located phases by their WBS path, which is exactly what the
+    // owner asked to stop seeing here.
+    // ⚠️ This HIDES real activities, so it is a toggle (Group menu → View) and the grid footer
+    // reports the count. Restricted to dimNeedsValue() dimensions — see the note there.
+    _gbHidden = 0;
+    if (_hideUnassigned) {
+      var reqDims = dims.filter(dimNeedsValue);
+      if (reqDims.length) {
+        var _keep = function (r) {
+          for (var q = 0; q < reqDims.length; q++) if (!dimRawOf(r, reqDims[q])) return false;
+          return true;
+        };
+        var _before = acts.length + otherPhaseActs.length;
+        acts = acts.filter(_keep);
+        otherPhaseActs = otherPhaseActs.filter(_keep);
+        _gbHidden = _before - acts.length - otherPhaseActs.length;
+      }
+    }
     var realByCode = {}; rows.forEach(function (r) { if (isWbs(r)) realByCode[r.wbs] = r; });
-    var out = [], span = {}, SEP = '';
+    var out = [], span = {}, bspan = {}, SEP = '';
     function addSpan(code, s, e) { if (!s && !e) return; if (!s) s = e; if (!e) e = s; var m = span[code]; if (!m) span[code] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
+    // Same accumulation for BASELINE dates, so a group row can show a rolled-up BL Start / BL Finish
+    // rather than the blank cells it used to.
+    function addBlSpan(code, s, e) { if (!s && !e) return; if (!s) s = e; if (!e) e = s; var m = bspan[code]; if (!m) bspan[code] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
     // One group's contents: the pruned WBS path, or just the activities in WBS order.
     function emitLeaf(list, base, baseAnc, prune) {
       var depth = baseAnc.length;
       if (!showWbs) {
         list.slice().sort(function (x, y) { return cmpCodeStr(x.wbs, y.wbs); }).forEach(function (a) {
-          a._dcode = base + SEP + a.wbs; a._ddepth = depth; a._danc = baseAnc; a._dkind = 'task'; a._realCode = a.wbs;
+          a._dcode = base + SEP + a.wbs; a._ddepth = depth; a._danc = baseAnc; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null;
           out.push(a);
           var s = pd(a.start_date), e = pd(a.end_date);
           addSpan(a._dcode, s, e); baseAnc.forEach(function (x) { addSpan(x, s, e); });
+          var bs0 = pd(a.bl_start), be0 = pd(a.bl_finish);
+          baseAnc.forEach(function (x) { addBlSpan(x, bs0, be0); });
         });
         return;
       }
@@ -4992,7 +5058,7 @@
           node._dkind = 'wbs'; node._dcode = dc; node._ddepth = depth + rdepth; node._danc = da; node._realCode = en.real;
           out.push(node);
         } else {
-          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs;
+          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null;
           out.push(a);
           var s = pd(a.start_date), e = pd(a.end_date);
           addSpan(dc, s, e); da.forEach(function (x) { addSpan(x, s, e); });
@@ -5068,9 +5134,37 @@
         var _ot = _keys.filter(function (k) { return levelRank(k) == null; });
         _rk.reverse(); _keys = _rk.concat(_ot);
       }
+      var _lastDim = (di === dims.length - 1);
       _keys.forEach(function (g) {
         var gcode = parentCode + '§' + g;
+        // ⚠️ DEEPEST LEVEL HOLDING EXACTLY ONE ACTIVITY = one row, not two. Without this, an
+        // Activity › Tower › Level › Zone › Orientation breakdown ended every branch with a
+        // "Vertical (1)" group row followed by its single activity on the next line — the same
+        // record twice, and the group row was the one WITHOUT the Status / BL Start / BL Finish.
+        // Emit the ACTIVITY itself carrying the group's label, so every one of those columns is
+        // populated by the normal task-row rendering and the deepest row really is the last level
+        // that was ticked.
+        if (_lastDim && !showWbs && buckets[g].length === 1) {
+          var solo = buckets[g][0];
+          solo._dcode = gcode; solo._ddepth = parentAnc.length; solo._danc = parentAnc;
+          solo._dkind = 'task'; solo._realCode = solo.wbs; solo._dlabel = g;
+          out.push(solo);
+          var ss = pd(solo.start_date), se = pd(solo.end_date);
+          addSpan(gcode, ss, se); parentAnc.forEach(function (x) { addSpan(x, ss, se); });
+          addBlSpan(gcode, pd(solo.bl_start), pd(solo.bl_finish));
+          parentAnc.forEach(function (x) { addBlSpan(x, pd(solo.bl_start), pd(solo.bl_finish)); });
+          return;
+        }
+        // Roll the group's BASELINE span and status counts up now, while its bucket is in hand —
+        // so a COLLAPSED level still shows BL Start / BL Finish / Status instead of blank cells.
+        var gd = 0, gp = 0;
+        for (var bi = 0; bi < buckets[g].length; bi++) {
+          var ba = buckets[g][bi];
+          addBlSpan(gcode, pd(ba.bl_start), pd(ba.bl_finish));
+          if (isComplete(ba)) gd++; else if (ba.actual_start || (ba.percent_complete || 0) > 0) gp++;
+        }
         out.push({ _dkind: 'group', _dcode: gcode, _ddepth: parentAnc.length, _danc: parentAnc,
+          _gdone: gd, _gprog: gp,
           // _gacts is a REFERENCE to the bucket (no copy) so a collapsed group row can still answer
           // "which activities do I stand for?" — used by the legend to scope itself to what is on
           // screen. It respects the Execution-Phase carve-out and the filters, because `buckets` is
@@ -5084,7 +5178,7 @@
       emitLeaf(afterExecActs, '', []);
       showWbs = savedShowWbs2;
     }
-    _dspan = span;
+    _dspan = span; _dblspan = bspan;
     return out;
   }
   function displayList() { var nodes = buildNodes(); if (_hideEmptyGroups) _computeNonEmpty(nodes); return nodes.filter(function (nd) { return !hiddenRow(nd); }); }
@@ -6063,7 +6157,8 @@
   }
   // Rolled-up BASELINE span for a WBS summary (keyed by real dotted code; WBS grouping).
   function wbsBlSpan(w) {
-    var m = _blSpanMap[w.wbs]; if (!m) return null;
+    // Grouped mode: the roll-up is keyed by DISPLAY code (a group has no dotted WBS code of its own).
+    var m = (_dblspan && _dblspan[dcode(w)]) || (w.wbs ? _blSpanMap[w.wbs] : null); if (!m) return null;
     return { s: new Date(m.s), e: new Date(m.e) };
   }
 
@@ -8409,6 +8504,17 @@
     else { s = 'Not Started'; cls = 'ps-status-notstarted'; }
     return '<span class="ps-status-pill ' + cls + '">' + s + '</span>';
   }
+  // Same three-state roll-up as _wbsStatusPill, but for a synthetic GROUP row — its counts are
+  // stashed on the node in buildNodes (_costMap is keyed by real dotted WBS codes, which a group
+  // heading like "Zone 1" does not have).
+  function _groupStatusPill(r) {
+    var total = r._gcount || 0; if (!total) return '';
+    var done = r._gdone || 0, prog = r._gprog || 0, s, cls;
+    if (done === total) { s = 'Completed'; cls = 'ps-status-completed'; }
+    else if (prog > 0 || done > 0) { s = 'In Progress'; cls = 'ps-status-inprogress'; }
+    else { s = 'Not Started'; cls = 'ps-status-notstarted'; }
+    return '<span class="ps-status-pill ' + cls + '">' + s + '</span>';
+  }
   function statusCellHtml(r) {
     var s = r.status || 'Not Started';
     var cls = s === 'Completed' ? 'ps-status-completed' : (s === 'In Progress' ? 'ps-status-inprogress' : 'ps-status-notstarted');
@@ -8533,8 +8639,12 @@
         '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
         '<div class="ps-cell c-id"></div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + garr + '</span><strong>' + esc(r.activity_name || '') + '</strong> <span style="color:var(--pd-muted);font-weight:400;">(' + r._gcount + ')</span></div>' +
-        '<div class="ps-cell c-status"></div>' +
-        '<div class="ps-cell c-date"></div><div class="ps-cell c-date"></div>' +
+        // Rolled up from the group's own bucket in buildNodes, so a COLLAPSED level still reports
+        // its status and baseline dates instead of three blank cells.
+        '<div class="ps-cell c-status">' + _groupStatusPill(r) + '</div>' +
+        (function () { var gbl = wbsBlSpan(r);
+          return '<div class="ps-cell c-date">' + (gbl ? Fmt.date(dstr(gbl.s)) : '') + '</div>' +
+                 '<div class="ps-cell c-date">' + (gbl ? Fmt.date(dstr(gbl.e)) : '') + '</div>'; })() +
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.e)) : '—') + '</div>' +
         '<div class="ps-cell c-dur"></div>' + costCellsHtml(r) +
@@ -8567,7 +8677,13 @@
     return '<div class="ps-grid-row' + altc + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
       '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
       '<div class="ps-cell c-id ps-editable" data-id="' + r.id + '" data-field="activity_id" data-type="text" style="padding-left:' + idPad + 'px;">' + esc(r.activity_id || '') + '</div>' +
-      '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r.activity_name || '') + '</div>' +
+      // ⚠️ _dlabel = this row IS the deepest grouping level (a one-activity bucket merged into its
+      // group row), so it shows the LEVEL's name. Deliberately NOT editable there: the cell would
+      // read "Vertical" while editing `activity_name`, which is how someone renames an activity by
+      // accident. Rename it from the detail panel or a grouping where the name is the label.
+      (r._dlabel
+        ? '<div class="ps-cell c-name" title="' + esc(r.activity_name || '') + '" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r._dlabel) + '</div>'
+        : '<div class="ps-cell c-name ps-editable" data-id="' + r.id + '" data-field="activity_name" data-type="text" style="padding-left:' + (6 + depth*14) + 'px;">' + mile + esc(r.activity_name || '') + '</div>') +
       statusCellHtml(r) +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_start" data-type="date">' + (r.bl_start ? Fmt.date(r.bl_start) : '—') + '</div>' +
       '<div class="ps-cell c-date ps-editable" data-id="' + r.id + '" data-field="bl_finish" data-type="date">' + (r.bl_finish ? Fmt.date(r.bl_finish) : '—') + '</div>' +
@@ -8594,6 +8710,12 @@
     // debounced hook persists the tree without touching the ~8 individual toggle handlers.
     _collapseSaveSoon();
     DL = displayList();
+    var _gbh = document.getElementById('ps-gb-hidden');
+    if (_gbh) {
+      _gbh.style.display = _gbHidden ? '' : 'none';
+      _gbh.textContent = _gbHidden ? ('· ' + _gbHidden + ' hidden (no value on a grouping level)') : '';
+      _gbh.title = 'The grouping also filters. Turn off “Hide activities missing a grouping value” in the Group menu to show them.';
+    }
     var rg = range(), min = rg.min, max = rg.max, dayw = DAYW[zoom] * ganttScale;
     _rMin = min; _rDayw = dayw;
     var totalDays = dayDiff(min, max) + 1, W = Math.max(totalDays * dayw, 300), H = DL.length * ROWH;
