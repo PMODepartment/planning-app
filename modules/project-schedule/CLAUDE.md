@@ -345,6 +345,47 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Stacking legend scoped to the stack + click-a-chip band highlight (2026-08-16) — fmlozano
+Owner, from the "all towers" stack on AVR101: *"with this amount of activities there might be
+confusion as to what activity is it referring to. Having difficulty determining which activity from
+the whole bunch of legend activities in the list."*
+- ⚠️ **The legend was listing EVERY category in the project.** `renderStackView` built it from the
+  full `catList()`, so a 4,393-activity schedule produced a wall of ~50 visible chips (many
+  truncated to "…") — and the screenshot shows the giveaway: Bid Kick-Off Meeting, Site Visit,
+  Contract Review, Bid Submission. **Planning-phase work that can never colour a floor of a tower.**
+  The reader had to find the right entry among mostly-irrelevant ones.
+- ⚠️ **A band is coloured by exactly ONE category** — `b.cur`, its WIP-or-last-done (`stackModel`
+  line ~16151). So every other category in the list is unreferenced by anything on screen. The
+  legend now lists only the categories that actually colour a band, keeping `catList()`'s
+  chronological order, plus an honest "· N more not on this stack" tail so the omission is visible
+  rather than silent.
+- **Click a chip → every band it is responsible for stays lit, the rest dim to 22%** (+ a red ring,
+  so a lit band reads even against a pale fill). This is the actual answer to "which band is this?"
+  in the multi-tower grid, where a band has **no text label of its own** — there is no room for a
+  text column per tower, so it only ever had a tooltip. Click the same chip again, or "Clear
+  highlight ✕", to reset.
+  ⚠️ Bands carry `data-cat` (`stkCatKey`, which falls back to `.label` because a **phase** row's
+  `cur` is a phase object with no `.value`). ⚠️ The highlight is **local view state on the modal's
+  own DOM** — deliberately not wired into the Gantt's `toggleCatHighlight`, so closing the stack
+  can't leave the schedule behind it filtered.
+- **Verified 24/24 in Node against the SHIPPED functions** (`stkCatKey`/`stkBandHTML`/
+  `wireStackLegend` sliced out, not stubbed — a sanity gate fails the run if a name is missing):
+  key extraction incl. the phase-label fallback and null-safety, `data-cat` stamping + escaping +
+  tooltip retention, scoping 50 categories down to the 3 on the stack with dedupe and order
+  preserved, the nothing-started empty case, and the full highlight cycle (light, switch chips,
+  re-click to clear, Clear control) asserting that other-category and not-started bands are never
+  lit. Inline script parses; 0 function definitions lost. ⚠️ **Not verified signed-in.**
+  `MODULE_V` → `20260816b`.
+
+## Audit: two more silent 1000-row truncations (2026-08-16) — fmlozano
+Fresh audit cycle. `weekly_commitments` (Last Planner) was read with a bare `.select()`:
+`loadLPAll()` loads **every week of the project's life** to drive the PPC trend and the
+reasons-for-variance Pareto, and a Last Planner project accrues commitments weekly (20/wk × 150wk
+≈ 3,000 rows) — past the 1000 cap, so the **earliest weeks would silently vanish from the trend**.
+Now `PDb.selectAll` + an explicit in-memory re-sort by `week_start` (the helper returns id order,
+and every reader here assumes chronological). The existing `try/catch → LP_ALL = []` tolerance is
+preserved, since `selectAll` throws rather than returning `{error}`.
+
 ## Baseline stopped reading as a second activity; bar colours are now theme-aware (2026-08-16) — fmlozano
 Owner: *"Is the other colour of the rebar works its actual progress while the other is planned? It
 doesn't look intuitive that two bar graphs signify the same activity… rather it shows these are two

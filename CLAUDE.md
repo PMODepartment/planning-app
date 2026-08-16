@@ -5365,6 +5365,43 @@ material_submittal, resource_assignments, activity_steps, wbs_nodes), each reinv
 - ⚠️ **Not verified signed-in.** ⚠️ Deliberately NOT changed: `getProjects`/`getAllUsers` (bounded by
   org size, and both feed pickers where a 1000-row page is already a UX problem, not a data one).
 
+### 2026-08-16 — Audit cycle 2: two more silent truncations, and the stacking legend made findable
+Second audit pass over the whole app. **Six checks, four came back clean:** all 20 JS files + 22
+inline blocks parse (1.59 MB); **0 function definitions lost** across the last 12 commits (the
+definition-set diff that catches the region-replace failure mode which blanked the Gantt twice);
+all 11 shared assets referenced at **one** `?v=` each with none unversioned; and no `service_role`
+/ non-anon key material in any shipped file.
+- ⚠️ **Two more instances of the repo's recurring worst bug class — silent 1000-row truncation.**
+  A refined detector (only a **select-first** chain is a read; `.insert().select()` is not) found
+  18 genuine reads on growable tables, of which two were unbounded and real:
+  **`weekly_commitments`** (Last Planner — grows every week for the project's life; would have
+  dropped the earliest weeks out of the PPC trend) and **`wpm_work_packages`** (the *entire*
+  cash-out side of the cash-flow projection — truncation understates net cash flow and **peak
+  funding need** with a plausible-looking number). Both now use the shared `PDb.selectAll` from
+  cycle 1; both tolerant paths preserved (`selectAll` **throws**, it does not return `{error}`).
+  The remaining 7 bare reads were each judged bounded and left alone — notably
+  `project_schedule` in resource-loading, which looks alarming but is capped by a 200-code
+  chunked `.in()`.
+- ⚠️ **17 duplicate DOM ids found, ZERO of them defects** — and the discriminator is the point: a
+  duplicate id only bites when read **globally** (`document.getElementById` returns the FIRST
+  match — the shape of the old `ps-cost-body` bug). 16 are read via a **scoped**
+  `root/m.el.querySelector`; the one global read (`f-rate`, resource-loading) sits in an
+  `if/else` that writes all branches into the same `#rl-form`, so only one is ever in the DOM.
+  Reporting these as bugs would have been a false alarm.
+- ⚠️ **Two of my own audit scripts produced wrong numbers before being caught** (the third time
+  this has happened in this repo, and the reason every scan here needs a sanity gate): the first
+  truncation detector counted `.insert().select()` as reads (33 false positives), and the
+  called-but-undefined scanner both false-positived on multi-declarator `var a, b, c` locals AND
+  **missed 13 real definitions that grep found** — i.e. it can produce false negatives, so its
+  clean result is not by itself proof. The definition-set diff is the trustworthy check.
+- **Stacking view (owner report):** the legend listed **every** category in the project, so an
+  "all towers" stack showed ~50 chips — including Planning/Bid work that can never colour a
+  tower's floor — and there was no way to tell which chip a given band referred to. A band is
+  coloured by exactly **one** category, so the legend is now scoped to just those (with an honest
+  "N more not on this stack"), and **clicking a chip lights every band it owns and dims the rest** —
+  which matters because in the multi-tower grid a band has no text label at all, only a tooltip.
+  24/24 against sliced shipped functions. `MODULE_V` → `20260816b`.
+
 ### 2026-08-16 — Project Schedule: the baseline read as a second activity; bar colours now theme-aware
 Owner: *"two bar graphs signify the same activity but show progress — rather it shows these are two
 different activities"*, plus "bar graph colours should be sensitive for light and dark mode".

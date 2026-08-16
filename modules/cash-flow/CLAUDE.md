@@ -149,6 +149,17 @@ indicator + live recompute + offline READ-cache** (writes stay online-only — s
 - Verified: inline script parses. Live verification pending. Assets: `offline.js?v=20260726d` +
   `collab.js?v=20260727a`.
 
+## Audit fix: the WPM mirror read was silently truncatable (2026-08-16) — fmlozano
+`loadWPM()` read `wpm_work_packages` with a bare `.select()`. That mirror is the **entire cash-out
+side of the projection**, and PostgREST caps a read at 1000 rows server-side with **no error** — so
+a project with more work packages than that would have understated cash out, and therefore the net
+cash flow, the closing balance and the **peak funding need**, with a plausible-looking number and
+nothing to notice. Now `PDb.selectAll` (the mirror has a uuid `id` PK, so keyset pagination works).
+⚠️ The tolerant **retry-without-`trade`** path is preserved — `selectAll` throws instead of
+returning `{error}`, so the retry moved into a `catch` that re-checks the same
+`/trade|column|schema cache/` message before falling back, and any other error still surfaces as
+`wpmStatus = 'error'`.
+
 ## Verified
 - JS parses (`node --check`). Engine math hand-checked on a synthetic fixture:
   DP/billing-net/retention/terms lag land in the correct months and totals

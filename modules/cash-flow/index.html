@@ -648,13 +648,17 @@
     var wpmPid = settings.wpm_project_id;
     if (!wpmPid) { wpmStatus = 'no-map'; wpmMsg = 'No WPM project id mapped'; return; }
     var cols = 'wp_no,description,trade,approved_budget_bcb,awarded_cost,total_awarded,dp_percent,retention_percent,payment_terms_days,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at';
-    var res = await sb().from('wpm_work_packages').select(cols).eq('wpm_project_id', wpmPid);
-    // `trade` column may not exist yet (migration/sync not run) — retry without it.
-    if (res.error && /trade|column|schema cache/i.test(res.error.message || '')) {
-      res = await sb().from('wpm_work_packages').select(cols.replace(',trade', '')).eq('wpm_project_id', wpmPid);
+    // ⚠️ Paginated: this mirror is the ENTIRE cash-out side of the projection, so a bare select
+    // capping at 1000 rows would silently understate cash out — and therefore the net cash flow
+    // and the peak funding need — with no error and a plausible-looking number.
+    var applyPid = function (q) { return q.eq('wpm_project_id', wpmPid); };
+    try { wpRows = await PDb.selectAll('wpm_work_packages', applyPid, cols); }
+    catch (e1) {
+      // `trade` column may not exist yet (migration/sync not run) — retry without it.
+      if (!/trade|column|schema cache/i.test(e1.message || '')) { wpmStatus = 'error'; wpmMsg = e1.message; return; }
+      try { wpRows = await PDb.selectAll('wpm_work_packages', applyPid, cols.replace(',trade', '')); }
+      catch (e2) { wpmStatus = 'error'; wpmMsg = e2.message; return; }
     }
-    if (res.error) { wpmStatus = 'error'; wpmMsg = res.error.message; return; }
-    wpRows = res.data || [];
     wpmStatus = wpRows.length ? 'ok' : 'empty';
     if (wpRows.length) wpmSyncedAt = wpRows.reduce(function (a, r) { return r.synced_at && r.synced_at > a ? r.synced_at : a; }, '');
     if (!wpRows.length) wpmMsg = 'Mirror empty for "' + wpmPid + '" — click "Sync from WPM"';

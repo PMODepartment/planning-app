@@ -530,6 +530,14 @@
     .ps-stk-band { height:22px; border:1px solid var(--pd-line); border-radius:2px; position:relative;
       overflow:hidden; }
     .ps-stk-band i { position:absolute; left:0; top:0; bottom:0; display:block; }
+    /* Legend chip -> band highlight. Dimming the rest is what makes one category findable in a
+       7-tower grid; the lit bands also get a ring so they read even against a pale fill. */
+    .ps-stk-legchip { cursor:pointer; border-radius:3px; padding:1px 4px; margin:-1px -4px; }
+    .ps-stk-legchip:hover { background:var(--pd-bg); }
+    .ps-stk-legchip.on { background:var(--pd-red-light); box-shadow:inset 0 0 0 1px var(--pd-red); }
+    .ps-stk-legclear { cursor:pointer; color:var(--pd-red); font-weight:600; }
+    .ps-stk-hl .ps-stk-band { opacity:.22; transition:opacity .12s; }
+    .ps-stk-hl .ps-stk-band.ps-stk-bandhl { opacity:1; box-shadow:0 0 0 2px var(--pd-red); }
     .ps-stk-txt { font-size:11.5px; color:var(--pd-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .ps-stk-txt.none { color:var(--pd-muted); }
     .ps-stk-grade { display:grid; grid-template-columns:118px minmax(0,1fr) 215px; gap:10px; align-items:center;
@@ -10753,7 +10761,14 @@
   function _lpWeekKey() { return 'ps_lp_week_' + pid; }
   async function loadLPAll() {
     if (!pid) { LP_ALL = []; _lpLoadedFor = null; return; }
-    try { var res = await sb().from('weekly_commitments').select('*').eq('project_id', pid).order('week_start'); LP_ALL = res.error ? [] : (res.data || []); }
+    // ⚠️ Paginated: a Last Planner project accrues commitments EVERY week for its whole life
+    // (20/wk x 150wk = 3,000 rows), and a bare select caps at 1000 with no error — which would
+    // silently drop the earliest weeks from the PPC trend and under-count the variance Pareto.
+    // selectAll returns id order, so re-sort by week_start (what every reader here assumes).
+    try {
+      LP_ALL = await PDb.selectAll('weekly_commitments', function (q) { return q.eq('project_id', pid); });
+      LP_ALL.sort(function (a, b) { return String(a.week_start || '').localeCompare(String(b.week_start || '')); });
+    }
     catch (e) { LP_ALL = []; }
     _lpLoadedFor = pid;
   }
@@ -16181,7 +16196,32 @@
     var t = title ? ' title="' + esc(title) + '"' : '';
     if (!b.cur) return '<div class="' + cls + '"' + t + '></div>';
     var w = b.wip ? Math.max(b.pct, 6) : 100;
-    return '<div class="' + cls + '"' + t + ' style="' + b.tint + '"><i style="width:' + w + '%;' + b.style + '"></i></div>';
+    // data-cat lets a legend chip highlight every band it is responsible for. A phase row's `cur`
+    // is a phase object (label, no value), so fall back to the label.
+    return '<div class="' + cls + '" data-cat="' + esc(stkCatKey(b)) + '"' + t + ' style="' + b.tint + '"><i style="width:' + w + '%;' + b.style + '"></i></div>';
+  }
+  // The single category a band is coloured by — the only thing a legend entry can refer to here.
+  function stkCatKey(b) { return b && b.cur ? (b.cur.value || b.cur.label || '') : ''; }
+  // Click a legend chip -> every band that chip is responsible for stays lit, the rest dim. This is
+  // the answer to "which activity is this band?" on a 7-tower grid, where a band carries no text
+  // label of its own (there is no room for a text column per tower — it only has a tooltip).
+  // Purely a view state on the modal's own DOM: nothing here touches the Gantt's highlight.
+  function wireStackLegend(body) {
+    var chips = body.querySelectorAll('.ps-stk-legchip');
+    var clear = body.querySelector('.ps-stk-legclear');
+    if (!chips.length) return;
+    function apply(cat) {
+      body.classList.toggle('ps-stk-hl', !!cat);
+      chips.forEach(function (c) { c.classList.toggle('on', !!cat && c.dataset.cat === cat); });
+      body.querySelectorAll('.ps-stk-band').forEach(function (bd) {
+        bd.classList.toggle('ps-stk-bandhl', !!cat && bd.dataset.cat === cat);
+      });
+      if (clear) clear.style.display = cat ? '' : 'none';
+    }
+    chips.forEach(function (c) {
+      c.onclick = function () { apply(c.classList.contains('on') ? '' : c.dataset.cat); };
+    });
+    if (clear) clear.onclick = function () { apply(''); };
   }
 
   // ---- "Show all <towers>" — one stack per value of the level immediately above the one being
@@ -16246,7 +16286,11 @@
 
     var totalLocs = perTower.reduce(function (a, pt) { return a + pt.model.filter(function (b) { return !b.isPhase; }).length; }, 0);
     var totalDone = perTower.reduce(function (a, pt) { return a + pt.model.filter(function (b) { return !b.isPhase && b.pct === 100; }).length; }, 0);
-    return { html: head + rowsHtml, towers: towerVals.length, count: totalLocs, done: totalDone };
+    // Which categories actually colour a band here — the legend is scoped to these, since every
+    // other category in the project is unreferenced by anything on screen.
+    var used = {};
+    perTower.forEach(function (pt) { pt.model.forEach(function (b) { var k = stkCatKey(b); if (k) used[k] = true; }); });
+    return { html: head + rowsHtml, towers: towerVals.length, count: totalLocs, done: totalDone, used: used };
   }
 
   // ---- Overall discipline status — every category on the "Colour activities by" field, aggregated
@@ -16436,9 +16480,23 @@
       overall = overallDisciplineStatus(_stkLevel, D);
       scopeNote = _sc || 'the whole project';
     }
-    var leg = cats.map(function (c) {
-      return '<span class="ps-alg"><span class="ps-alg-sw" style="' + c.style + ';cursor:default;"></span><span>' + esc(c.value) + '</span></span>';
+    // ⚠️ The legend lists ONLY the categories that actually colour a band on this stack, not every
+    // category in the project. A band is coloured by exactly one category (its WIP-or-last-done),
+    // so on a 4,393-activity schedule the full list ran to hundreds of entries — including all the
+    // Planning/Bid work that can never appear on a tower's floors — and made it impossible to tell
+    // which entry any given band referred to. Order still comes from catList() (chronological).
+    var usedCats = showAll ? (grid.used || {}) : {};
+    if (!showAll) disp.forEach(function (b) { var k = stkCatKey(b); if (k) usedCats[k] = true; });
+    var shown = cats.filter(function (c) { return usedCats[c.value]; });
+    var hiddenN = cats.length - shown.length;
+    var leg = shown.map(function (c) {
+      return '<span class="ps-alg ps-stk-legchip" data-cat="' + esc(c.value) + '" title="Click to highlight every band showing ' + esc(c.value) + '">' +
+        '<span class="ps-alg-sw" style="' + c.style + '"></span><span>' + esc(c.value) + '</span></span>';
     }).join('');
+    if (!shown.length) leg = '<span class="ps-alg" style="opacity:.7;font-style:italic;">No activity has started on this stack yet.</span>';
+    var legMore = hiddenN > 0
+      ? '<span class="ps-alg" style="opacity:.6;font-style:italic;" title="Categories that exist on this project but do not colour any band at this cut-off date.">· ' + hiddenN + ' more not on this stack</span>'
+      : '';
     // End-phase legend swatches (only the phases actually present in the current scope).
     var legPhases;
     if (showAll && parentLvl) { var _had = parentLvl.id in _stkScope, _prev = _stkScope[parentLvl.id]; delete _stkScope[parentLvl.id]; legPhases = stkPhaseRows(_stkLevel, D); if (_had) _stkScope[parentLvl.id] = _prev; }
@@ -16447,11 +16505,13 @@
       return '<span class="ps-alg"><span class="ps-alg-sw" style="background:' + b.color + ';cursor:default;"></span><span>' + esc(b.loc) + '</span></span>';
     }).join('') : '';
     body.innerHTML = ctrls + out +
-      '<div class="ps-actlegend-items" style="margin-top:12px;border-top:1px dashed var(--pd-line);padding-top:10px;">' + leg + phaseLeg + '</div>' +
+      '<div class="ps-actlegend-items ps-stk-leg" style="margin-top:12px;border-top:1px dashed var(--pd-line);padding-top:10px;">' + leg + phaseLeg + legMore +
+        '<span class="ps-alg ps-stk-legclear" style="display:none;">Clear highlight ✕</span></div>' +
       overallStatusHTML(overall, scopeNote, perTowerOverall);
     wireStackCtrls(body);
   }
   function wireStackCtrls(body) {
+    wireStackLegend(body);
     var sel = body.querySelector('#ps-stk-level');
     if (sel) sel.onchange = function () { _stkLevel = this.value; renderStackView(); renderStackPane(); };
     body.querySelectorAll('.ps-stk-scope').forEach(function (s) {
