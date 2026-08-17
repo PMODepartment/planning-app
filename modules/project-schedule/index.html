@@ -2685,7 +2685,7 @@
     return codeOf;
   }
   function wbsActivityCount(nodeId) { return rows.filter(function (r) { return !isWbs(r) && r.wbs_node_id === nodeId; }).length; }
-  var zoom = 'month', collapsed = {}, selId = null, search = '';
+  var zoom = 'month', collapsed = {}, selId = null, search = '', _selGroup = null;
   // Multi-row selection + row clipboard (Excel/OPC-style). selId stays the "active"/anchor row;
   // _selSet holds every selected task-row id; _clip holds copied/cut row payloads.
   var _selSet = new Set(), _selAnchor = null, _clip = null;
@@ -5311,8 +5311,19 @@
       // prune=true ONLY here: the two other emitLeaf calls render the carved-out non-Execution
       // phases by their real WBS path with no group above them, where the full chain IS the view.
       if (di >= dims.length) { emitLeaf(list, parentCode, parentAnc, true); return; }
-      var buckets = {};
-      list.forEach(function (a) { var g = dimValOf(a, dims[di]) || '—'; (buckets[g] = buckets[g] || []).push(a); });
+      // ⚠️ DISSOLVE the "— Unassigned —" bucket (owner: "if there are activities under an unassigned
+      // WBS, dissolve it and reorganise the activities to the parent"). An activity with no value on
+      // THIS dimension shouldn't hang under a placeholder heading — it is lifted and re-grouped by the
+      // NEXT dimension under the same parent (recurse at di+1 with the parent's code/anc), so it nests
+      // as deep as it genuinely has values and, when nothing deeper matches either, emits directly
+      // under the parent. Only dimNeedsValue() dims dissolve — status/type/act/responsible treat a
+      // blank as a real bucket ('Not Started' / 'Task' / 'Unassigned'), which must stay visible.
+      var _needsVal = dimNeedsValue(dims[di]);
+      var buckets = {}, _dissolve = null;
+      list.forEach(function (a) {
+        if (_needsVal && !dimRawOf(a, dims[di])) { (_dissolve = _dissolve || []).push(a); return; }
+        var g = dimValOf(a, dims[di]) || '—'; (buckets[g] = buckets[g] || []).push(a);
+      });
       // ⚠️ A LOCATION dimension sorts in BUILDING order, not alphabetically — "B3 / Ground / 9th
       // Floor / Roof Deck" is meaningless as text, and the whole point of the side-by-side stacking
       // pane is that the bars and the stack read in the same vertical order.
@@ -5398,6 +5409,9 @@
           activity_name: g, _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
         walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
       });
+      // Lift the dissolved (no-value-at-this-level) activities to the parent — grouped by the next
+      // dimension, or emitted directly here when this was the last one.
+      if (_dissolve) walk(_dissolve, di + 1, parentCode, parentAnc);
     })(acts, 0, execHeadCode, execWrap ? [execHeadCode] : []);
     if (afterExecActs.length) {
       var savedShowWbs2 = showWbs; showWbs = true;
@@ -8901,7 +8915,7 @@
     var idPad = 4 + Math.min(depth, 6) * 8;   // indent Activity ID by WBS level
     if (r._dkind === 'group') {
       var gsp = wbsSpan(r), garr = collapsed[code] ? '►' : '▼';
-      return '<div class="ps-grid-row ps-wbs-row ps-group-row' + altc + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
+      return '<div class="ps-grid-row ps-wbs-row ps-group-row' + altc + (code === _selGroup ? ' ps-row-sel' : '') + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
         '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
         '<div class="ps-cell c-id"></div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + garr + '</span><strong>' + esc(r.activity_name || '') + '</strong> <span style="color:var(--pd-muted);font-weight:400;">(' + r._gcount + ')</span></div>' +
@@ -9083,19 +9097,26 @@
       if (tg) { e.stopPropagation(); collapsed[tg.dataset.toggle] = !collapsed[tg.dataset.toggle]; renderGrid(); return; }
       // A status <select> swallowed its own click so opening it never selected the row.
       if (e.target.closest('.ps-status-sel')) { e.stopPropagation(); return; }
-      // Clicking a real WBS row SELECTS it (so Add activity places under it); expand/collapse is via
-      // the ▼/► chevron only. Synthetic group headers keep the click-to-collapse behavior.
+      // Clicking any summary row (real WBS OR a synthetic grouping header) SELECTS it — expand/
+      // collapse is via the ▼/► chevron ONLY (the data-toggle handler above). A bare row click never
+      // minimises/maximises a branch.
       var wr = e.target.closest('.ps-wbs-row');
       if (wr) {
         var nd = DL[parseInt(wr.dataset.i, 10)];
-        if (!nd || nd._dkind === 'group') { var w = wr.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); return; }
-        selId = nd.id || null; _selSet = new Set();
-        _wbsSel = nd.wbs_node_id || null;
+        if (nd && nd._dkind === 'group') {
+          // A grouping header has no WBS node/activity to target, so just highlight the row.
+          _selGroup = wr.dataset.code; selId = null; _selSet = new Set();
+          renderGrid(); return;
+        }
+        _selGroup = null;
+        selId = (nd && nd.id) || null; _selSet = new Set();
+        _wbsSel = (nd && nd.wbs_node_id) || null;
         renderGrid(); renderDetails();
         return;
       }
       var rw = e.target.closest('.ps-grid-row[data-rowid]');
       if (!rw) return;
+      _selGroup = null;
       var id = rw.dataset.rowid;
       // Excel-style selection: Ctrl/Cmd-click toggles a row; Shift-click extends a range from the
       // anchor; a plain click selects just this row. selId stays the active/anchor row.

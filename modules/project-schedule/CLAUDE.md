@@ -72,6 +72,28 @@ pair was run alongside. Also ⚠️ `count=exact` on the whole of `project_sched
 filtered counts are fine. And one `wbs` value came back rendered as `[BLOCKED: JWT token]` — a
 redaction in the browser tool's output, not data.
 
+## Grouping click = SELECT, and "unassigned" buckets are dissolved to the parent (2026-08-17) — eprobles
+Two owner asks after the partial-depth fix below ("it didn't work" the way expected):
+- **Clicking a grouping header now SELECTS the row, never collapses it.** Real WBS rows already
+  selected on click (chevron-only collapse), but SYNTHETIC group headers (`_dkind === 'group'` —
+  Discipline/Trade, Tower, Level, etc., which is what a location grouping actually shows) still
+  toggled collapse on a bare click. They now highlight instead (new `_selGroup` = the group's
+  `_dcode`, `ps-row-sel` applied to `.ps-group-row`); expand/collapse is the ▼/► chevron
+  (`data-toggle`) only. `_selGroup` clears when a WBS row or a task row is selected.
+- **"— Unassigned —" buckets are DISSOLVED, not shown** (owner: "if there are activities under an
+  unassigned WBS, dissolve it and reorganize the activities to the parent"). In `buildNodes()`'s
+  `walk`, an activity with no value on a `dimNeedsValue()` dimension (loc:/code:/work/wp/phase) is no
+  longer bucketed under a placeholder heading — it is collected into `_dissolve` and recursed at
+  `di+1` under the **same parent**, so it re-groups by the next dimension (nesting as deep as it
+  genuinely has values) and, when nothing deeper matches, emits directly under the parent. So a
+  Structural trade with Tower/Level/Zone but no Unit lands directly under its Zone instead of under a
+  "— Unassigned —" unit node. ⚠️ Only `dimNeedsValue()` dims dissolve — status/type/act/responsible
+  keep their blank buckets ('Not Started' / 'Task' / 'Unassigned'), which are real states.
+- Verified against a faithful model of the new `walk` (dissolve + solo + group nodes): a partial-depth
+  Structural activity lifts to depth 3 (under Zone) with no "— Unassigned —" group node, while a
+  fully-tagged activity still nests to the Unit level. Inline script parses. ⚠️ Not verified
+  signed-in. `MODULE_V` → `20260817z`.
+
 ## Grouping is a guide, not a hard filter — partial-depth trades are kept (2026-08-17) — eprobles
 User: when the grouping is defined deeper than a trade goes (e.g. Structural has up to Zone but the
 groups are defined up to Unit), the grouping-as-filter was excluding the whole Structural trade. It
