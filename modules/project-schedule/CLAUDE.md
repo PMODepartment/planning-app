@@ -367,6 +367,42 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## ⚠️ CROSS-PROJECT CORRUPTION: one project's WBS nodes written into another (2026-08-17) — fmlozano
+
+Diagnosed LIVE against OPW101 (Management API, read-only). My two earlier theories were both WRONG
+and the live data disproved them:
+- NOT duplicate WBS nodes. OPW101's node tree is **clean**: 11 nodes, each projected **exactly once**.
+- NOT the `is_locked` gap I flagged as a caveat. There are no duplicate node names at all.
+
+**What is actually there:** 709 WBS-Summary rows for 11 nodes —
+`421` whose `wbs_node_id` belongs to **AVR101**, `277` with a NULL `wbs_node_id`, `11` correct.
+Only 7 collide on a `wbs` code (4, 4.1, 4.1.1, 4.2 ×3, 4.2.1, 4.3.5), which is why just a handful
+show as visible duplicates — the rest is Avesta's structure (B3, Z6, F5, Tower 1, Ground Reservoir)
+silently grafted into One Portwood's tree.
+
+**Cause — `pid` is not pinned across awaits.** `_wbsEnsureSummariesInner` makes dozens of
+round-trips, while `pid` and `WBS_NODES` are module-level and BOTH move on a project switch. The
+insert read `project_id: pid` fresh each iteration while `n` came from the `WBS_NODES` captured
+before the loop, so a switch mid-run stamped the NEW project's id onto the OLD project's nodes.
+⚠️ The `_ensuringSummaries` re-entrancy guard does **not** cover this — it is a single run whose
+`pid` changes underneath it, not two overlapping runs.
+
+⚠️ **Why every integrity check passed and refresh never helped:** the existence probe fetches by
+`.in('wbs_node_id', <this project's ids>)`, which matches neither a foreign project's node id nor a
+NULL. So the healer cannot see the bad rows, and its invariant ("each node has exactly one summary
+row") is *genuinely true* the whole time. The duplicates hang off ids it never asks about.
+
+**Fixed (writer only):** pin `ownPid` + `ownNodes` at entry; use them for every query and insert;
+re-check for a switch on **every iteration** (not once before the loop — each iteration is its own
+round-trip); skip the in-memory `rows` mutation on a switch, since `rows` then belongs to the new
+project. `MODULE_V` → `20260817a`.
+
+⚠️ **NOT cleaned up — needs explicit sign-off (destructive).** Known scope, whole DB:
+`SLT101` **42,823** excess summary rows, `OPW101` 7 (plus 421 foreign-linked), `XERTEST` 2, `GPR101` 1.
+Proposed cleanup is to delete summary rows whose `wbs_node_id` points at a node in a *different*
+project, then re-dedupe by `wbs` code. ⚠️ The 277 NULL-linked rows must NOT be blanket-deleted —
+import-created structure can legitimately have no node id; only code-duplicates among them should go.
+
 ## Duplicate WBS rows on every refresh: the dedupe healed ONE LEVEL per call (2026-08-16) — fmlozano
 Owner on One Portwood (OPW101): *"Refreshing the project schedule bugs out with having duplicated WBS
 rows."* Screenshot: Execution Phase ×2, General Requirements ×2, Site Works ×2.

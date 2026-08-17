@@ -5365,6 +5365,21 @@ material_submittal, resource_assignments, activity_steps, wbs_nodes), each reinv
 - ⚠️ **Not verified signed-in.** ⚠️ Deliberately NOT changed: `getProjects`/`getAllUsers` (bounded by
   org size, and both feed pickers where a 1000-row page is already a UX problem, not a data one).
 
+### 2026-08-17 — ⚠️ Cross-project corruption: one project's WBS nodes written into another
+Diagnosed LIVE against OPW101. Both earlier theories were wrong: the node tree is clean (11 nodes,
+each projected exactly once) and there are no duplicate node names. What exists is 709 WBS-Summary
+ROWS for those 11 nodes — 421 carrying an **AVR101** `wbs_node_id`, 277 NULL, 11 correct.
+- ⚠️ `_wbsEnsureSummariesInner` awaits dozens of round-trips while `pid` and `WBS_NODES` are
+  module-level and both move on a project switch. The insert read `project_id: pid` fresh per
+  iteration but took `n` from the WBS_NODES captured before the loop — so a mid-run switch stamped
+  the new project's id onto the old project's nodes. The re-entrancy guard does not cover this.
+- ⚠️ Invisible to its own healing (probe is `.in('wbs_node_id', <this project's ids>)`, matching
+  neither a foreign id nor NULL), so every integrity check truthfully passed while the UI showed
+  duplicates — and refresh could never fix it.
+- Writer fixed by pinning ownPid/ownNodes and re-checking the switch every iteration. Existing bad
+  rows NOT cleaned up: destructive, needs sign-off. Scope: SLT101 42,823 excess, OPW101 7, XERTEST 2,
+  GPR101 1.
+
 ### 2026-08-16 — Project Schedule: duplicate WBS rows on every refresh
 Owner on OPW101: refreshing produced duplicated WBS rows (Execution Phase x2, General Requirements
 x2, Site Works x2).
