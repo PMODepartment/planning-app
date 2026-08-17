@@ -5565,3 +5565,15 @@ renderer; 0 functions lost. Not verified signed-in. `MODULE_V` → `20260817s`.
 ⚠️ **Known, not fixed:** the Colors menu clips off-screen when the toolbar is wide (`.ps-menu` is
 absolute/left:0 with no viewport clamp — `positionColsMenu` already solves this for the column
 chooser and should be generalised).
+
+### 2026-08-17 — Project Schedule: Colors menu clipping fixed; bar thickness tied to real content
+⚠️ **Colors menu**: `.ps-menu` is absolute/`left:0`, so a menu opened near the right edge ran off the
+viewport and lost its right-hand column — the colour swatches. Depends on toolbar width, which is why
+it showed with a long grouping label and looked like a grouping bug. New `anchorMenu()` pins it fixed,
+right-aligned to the button, clamped/capped to the viewport, re-anchored on resize + capture-phase
+scroll. ⚠️ **Bar thickness**: the 9px→13px bump in coloured mode exists for the composition bands
+inside a bracket; after the altitude fix most branches draw no bands, so they were just fatter for no
+reason. Now keyed to the bands actually being emitted. All three suites green, 0 functions lost. Not
+verified signed-in. `MODULE_V` → `20260817t`.
+⚠️ **Open:** owner reports the Gantt "bugging" for Mat Footing / SW-CW Starter / FTB / SOG — not
+investigated, see the module CLAUDE.md for the two leads.

@@ -680,7 +680,12 @@
     .ps-sum-seg i { position:absolute; left:0; top:0; bottom:0; display:block; }
     /* With the activity legend on the bracket is no longer a rule — it is the row's content — so it
        gets a little more height for the bands to be readable. LSM only; the plain view is untouched. */
-    #ps-view-schedule.ps-lsm .ps-sum { height:13px; }
+    /* ⚠️ The extra height is ONLY for a bracket that actually carries the trade-composition bands
+       inside it — at 9px those bands are unreadable. It used to apply to every summary bar in
+       coloured mode, so after the altitude fix (a branch containing other branches draws no
+       composition) high-level rows just got fatter with nothing inside them. Owner asked what the
+       thickness was buying; on those rows, nothing. Keyed off the bands actually being emitted. */
+    #ps-view-schedule.ps-lsm .ps-sum.ps-sum-comp { height:13px; }
     .ps-mo { cursor:pointer; }
     .lg-task { background:var(--ps-bar,#2B2C2B); position:relative; overflow:hidden; }
     .lg-task::after { content:""; position:absolute; left:0; top:0; bottom:0; width:55%; background:var(--pd-red); }
@@ -9508,7 +9513,7 @@
       if (r._dkind === 'group') sumPct = r._gpct || 0;
       var _gBg = _gce ? catTint(_gce.color) : (wcS ? 'background:' + wcS + ';' : '');
       var _fillStyle = _gce ? catStyle(_gce.color, _gce.tex) : '';
-      out += '<div class="ps-sum' + (r._dkind === 'group' ? (_gce ? ' ps-sum-gcat' : ' ps-sum-group') : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + _gBg + '">' +
+      out += '<div class="ps-sum' + (_segs ? ' ps-sum-comp' : '') + (r._dkind === 'group' ? (_gce ? ' ps-sum-gcat' : ' ps-sum-group') : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + _gBg + '">' +
         ((sumPct > 0 && !_segs) ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;' + _fillStyle + '"></i>' : '') + _segs + '</div>';
       if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
@@ -18117,7 +18122,39 @@
     function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
     oMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     if (colorsMenu) colorsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    (function () { var cb = document.getElementById('ps-colorsbtn'); if (cb) cb.onclick = function (e) { e.stopPropagation(); var o = colorsMenu.classList.contains('open'); closeMenus(); if (!o) { renderColorsMenu(); colorsMenu.classList.add('open'); } }; })();
+    // ⚠️ CLIPPING FIX. `.ps-menu` is `position:absolute; left:0`, so a menu opened from a button
+    // near the right edge runs off the viewport and its right-hand column is cut off — on the
+    // Colors menu that is the colour swatches themselves, i.e. the whole point of the menu. It
+    // depends on TOOLBAR WIDTH, which is why it appeared with a long grouping label
+    // ("Discipline / Trade › Activity › Tower › Level › Zone › Orientation") and not with
+    // "Group: WBS", and why it looked like a grouping bug. Same treatment the column chooser
+    // already uses: pin to the viewport and anchor to the button's own rect.
+    // ⚠️ `position:fixed` is viewport-relative, so it MUST be re-anchored on resize/scroll while
+    // open (capture phase, to catch ancestor scrolls) or it detaches from its button.
+    function anchorMenu(btn, menu) {
+      if (!btn || !menu) return;
+      var r = btn.getBoundingClientRect();
+      menu.style.position = 'fixed';
+      menu.style.left = 'auto';
+      menu.style.top = Math.round(r.bottom + 4) + 'px';
+      // Right-align to the button, then clamp so the menu can never start off the left edge either.
+      var right = Math.max(8, Math.round(window.innerWidth - r.right));
+      menu.style.right = right + 'px';
+      menu.style.maxWidth = Math.max(220, Math.round(window.innerWidth - right - 16)) + 'px';
+      menu.style.maxHeight = Math.max(180, Math.round(window.innerHeight - r.bottom - 16)) + 'px';
+      menu.style.overflowY = 'auto';
+    }
+    (function () {
+      var cb = document.getElementById('ps-colorsbtn');
+      if (cb) cb.onclick = function (e) {
+        e.stopPropagation();
+        var o = colorsMenu.classList.contains('open'); closeMenus();
+        if (!o) { renderColorsMenu(); colorsMenu.classList.add('open'); anchorMenu(cb, colorsMenu); }
+      };
+      var re = function () { if (colorsMenu && colorsMenu.classList.contains('open')) anchorMenu(cb, colorsMenu); };
+      window.addEventListener('resize', re);
+      window.addEventListener('scroll', re, true);
+    })();
     document.getElementById('ps-openbtn').onclick = function (e) { e.stopPropagation(); var o = oMenu.classList.contains('open'); closeMenus(); if (!o) { renderOpenMenu(); oMenu.classList.add('open'); } };
     // File menu (Import / Export / Print). The item buttons keep their original ids so their
     // existing handlers work unchanged; the menu just re-homes them from the Actions menu + topbar.

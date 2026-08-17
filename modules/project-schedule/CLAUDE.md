@@ -5402,3 +5402,37 @@ column (the colour swatches) is cut off. It depends on toolbar width, which is w
 long grouping label ("Discipline / Trade › Activity › Tower › Level › Zone › Orientation") and not
 with "Group: WBS". The fix already exists for the column chooser (`positionColsMenu`: `position:fixed`
 anchored to the button rect, clamped to the viewport) and should be generalised to the toolbar menus.
+
+## Colors menu clipped off-screen + bars thickened for nothing (2026-08-17) — fmlozano
+- ⚠️ **Colors menu clipping (owner asked for this one explicitly).** `.ps-menu` is
+  `position:absolute; left:0`, so a menu opened from a button near the right edge overflowed the
+  viewport and its right-hand column was cut off — on the Colors menu that is the colour swatches,
+  i.e. the entire point of the menu, which is why it read as "the colour editing is broken". It
+  depends on **toolbar width**, so it appeared with a long grouping label and not with "Group: WBS" —
+  which is also why it looked like a grouping bug. New `anchorMenu(btn, menu)` pins it `fixed`,
+  right-aligned to the button's own rect, clamped so it can never start off the LEFT edge either,
+  width- and height-capped to the viewport with `overflow-y:auto`. Same approach as the existing
+  `positionColsMenu`. ⚠️ `fixed` is viewport-relative, so it re-anchors on `resize` and on
+  **capture-phase** `scroll` (to catch ancestor scrolls) while open, or it detaches from its button.
+- ⚠️ **The thicker bars in coloured mode were buying nothing on most rows.** Owner: *"the width of
+  the bars become thicker when Colour activities by is ticked — what value does that bring?"* The
+  9px→13px bump exists so the trade-composition bands INSIDE a bracket are readable. But after the
+  altitude fix (a branch containing other branches draws no composition), high-level rows got the
+  extra height with nothing inside them. Now keyed to the bands actually being emitted
+  (`.ps-sum-comp`, set when `_segs` is non-empty), so a bracket is only thicker when it has
+  something to show.
+- 8 checks + all three earlier suites green (transpose 14, baseline 18, group roll-up 21). Parse
+  clean, **0 functions lost**. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817t`.
+- ⚠️ **One stale TEST failed and it was the test, not the code** — it still asserted the two flat
+  legend chips ("Still to do" / "Actual (complete)") that the owner then asked to be replaced by the
+  single bar-sample swatch. Updated to assert the shipped intent (one `.lg-lsmbar` sample drawing
+  both halves + the rail). Worth remembering: a suite written against an intermediate iteration will
+  fail on the FINAL one and look like a regression.
+
+⚠️ **OPEN / NOT INVESTIGATED — owner report: "check the Gantt for Mat Footing etc, it is bugging."**
+Screenshot: under Foundation, the leaf branches (Mat Footing, SW/CW Starter, FTB, SOG) draw green
+hatched composition bands, while their parents (Substructure, Earthworks, Foundation, Superstructure)
+draw plain red brackets. Earthworks in particular shows a green band over a wide pale bar. Not
+diagnosed — ran out of context. First things to check: whether those bands span the right dates (the
+band geometry is relative to the bracket's own left edge, `barX`), and whether the pale bar behind is
+the category TINT or a stray baseline rail now that the rail draws in coloured mode.
