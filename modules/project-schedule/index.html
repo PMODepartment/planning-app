@@ -521,6 +521,15 @@
     /* Sample swatches drawn the way a real bar is: same hue, pale remainder vs solid+texture done. */
     .lg-plan { background:rgba(0,112,192,.30); border:1px solid rgba(0,112,192,.55); }
     .lg-done { background:#0070C0; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 6px); }
+    /* Sample of a REAL coloured bar — the counterpart to .lg-task in the plain view: the same swatch
+       shows both halves at once (solid+textured actual over the pale remainder) with the baseline
+       rail beneath, so the key looks like the thing it is describing rather than three flat chips. */
+    .lg-lsmbar { background:rgba(0,112,192,.30); border:1px solid rgba(0,112,192,.55);
+      position:relative; overflow:visible; }
+    .lg-lsmbar::after { content:""; position:absolute; left:0; top:0; bottom:0; width:55%;
+      background:#0070C0; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 6px); }
+    .lg-lsmbar::before { content:""; position:absolute; left:-2px; right:-6px; bottom:-5px; height:3px;
+      background:var(--ps-bl,#2F6FB0); border-radius:2px; }
     .lg-swatch { display:inline-block; width:22px; height:11px; border-radius:2px; }
     /* Activity legend (LSM-style): one swatch per activity CATEGORY, colouring the bars.
        Separate from .ps-legend above, which explains the bar SHAPES (task/summary/baseline/…).
@@ -16349,8 +16358,12 @@
       // ⚠️ These two are progress WITHIN the current bar — deliberately worded so they cannot be
       // read as the planned-vs-actual DATES comparison above. "Planned (remaining)" used to sit
       // next to "Baseline (BL0)" and the two sounded like the same thing.
-      '<span class="lg lg-lsmon" title="Inside the bar: the part of this activity still to do, in its trade colour at low alpha. This is work remaining, NOT the planned dates — those are the rail underneath."><span class="lg-swatch lg-plan"></span> Still to do</span>' +
-      '<span class="lg lg-lsmon" title="Inside the bar: the completed part, in the trade’s solid colour + texture. A bar half solid is half complete."><span class="lg-swatch lg-done"></span> Actual (complete)</span>' +
+      // One sample of a real bar, the way the plain view's "Activity (red = % complete)" chip works —
+      // solid+textured actual over the pale remainder, with the baseline rail under it — instead of
+      // three flat chips the reader has to reassemble mentally.
+      '<span class="lg lg-lsmon" title="A coloured bar reads as: solid + textured = actual (complete), pale = still to do, and the thin rail underneath = the BL0 planned dates. Bar right of its rail means slip.">' +
+        '<span class="lg-swatch lg-lsmbar"></span> Activity ' +
+        '<em style="font-style:normal;color:var(--pd-muted);">(solid = actual, pale = still to do, rail = planned)</em></span>' +
       '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
       '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>';
   // Top-level WBS branches that contain NO activity anywhere beneath them, and so are dropped by
@@ -16947,19 +16960,72 @@
     if (_stkTopFirst) ranked.reverse();
     var order = ranked.concat(other);
 
-    var N = perTower.length;
+    // ⚠️ ORIENTATION. Rows are the axis a reader treats as VERTICAL, and in a building that is
+    // always the floors. Stacking by Zone inside one tower used to put Zone 1 / Zone 2 on the rows
+    // with the floors running across the columns — a building lying on its side. Which axis is
+    // floor-like is decided from the DATA, never from a level's name: levelRank() returns a number
+    // for storeys (basement / ground / Nth / roof) and null for anything else, so whichever side has
+    // the larger share of rankable values is the vertical one. Tower × Level is therefore unchanged
+    // (towers are unrankable, so levels keep the rows) and Level × Zone transposes.
+    function _rankFrac(vals) {
+      if (!vals.length) return 0;
+      var n = 0; for (var i = 0; i < vals.length; i++) if (levelRank(vals[i]) != null) n++;
+      return n / vals.length;
+    }
+    // cell[outerValue][stackedLoc] — one index, so neither orientation re-derives a model.
+    var cell = {};
+    perTower.forEach(function (pt) {
+      cell[pt.value] = {};
+      pt.model.forEach(function (bnd) { cell[pt.value][bnd.loc] = bnd; });
+    });
+    var outerVals = perTower.map(function (p) { return p.value; });
+    var flip = _rankFrac(outerVals) > _rankFrac(order);
+
+    // Order whichever list ends up on the rows the same way the single-tower stack orders itself.
+    function _orderVals(vals) {
+      var rk = {}; vals.forEach(function (v) { rk[v] = levelRank(v); });
+      var rr = vals.filter(function (v) { return rk[v] != null; }).sort(function (x, y) { return rk[x] - rk[y]; });
+      var ro = vals.filter(function (v) { return rk[v] == null; }).sort(cmpGroupName);
+      if (_stkTopFirst) rr.reverse();
+      return { list: rr.concat(ro), rank: rk };
+    }
+    var rowVals, colVals, rowRank, at;
+    if (flip) {
+      var ov = _orderVals(outerVals);
+      rowVals = ov.list; rowRank = ov.rank; colVals = order;
+      at = function (row, col) { return (cell[row] || {})[col]; };
+    } else {
+      rowVals = order; rowRank = rankOf; colVals = outerVals;
+      at = function (row, col) { return (cell[col] || {})[row]; };
+    }
+
+    var N = colVals.length;
     var cols = '118px repeat(' + N + ',minmax(64px,1fr))';
+    // Column header: name + how many of that column's real locations are complete (phases excluded,
+    // so "2/2" always means floors, never floors-plus-a-handover-milestone).
     var head = '<div class="ps-stk-mrow ps-stk-mhead" style="grid-template-columns:' + cols + '"><div></div>' +
-      perTower.map(function (pt) {
-        var floors = pt.model.filter(function (b) { return !b.isPhase; });
-        var nDone = floors.filter(function (b) { return b.pct === 100; }).length;
-        return '<div class="ps-stk-mtow" title="' + esc(pt.value) + '">' + esc(pt.value) +
-          '<small>' + nDone + '/' + floors.length + '</small></div>';
+      colVals.map(function (cv) {
+        var tot = 0, done = 0, sum = 0;
+        rowVals.forEach(function (rv) {
+          var bnd = at(rv, cv); if (!bnd || bnd.isPhase) return;
+          tot++; sum += (bnd.pct || 0); if (bnd.pct === 100) done++;
+        });
+        // ⚠️ This used to read "0/13" on every tower and was mistaken for zero accomplishment.
+        // It counted only bands at 100%, and a band's total now includes the WHOLE-BUILDING phases
+        // folded into every floor (Testing & Commissioning, Punchlisting, Closeout). One unfinished
+        // phase therefore holds EVERY floor of that tower below 100% — so the count is structurally
+        // 0 until the very end of the job, on every project, which tells the reader nothing.
+        // The headline is now average progress; the exact fully-complete count stays in the tooltip.
+        var avg = tot ? Math.round(sum / tot) : 0;
+        return '<div class="ps-stk-mtow" title="' + esc(cv) + ' — ' + avg + '% average progress across ' +
+          tot + ' ' + esc(stkLevelName(flip ? parentLvl.id : levelId).toLowerCase()) + '; ' + done +
+          ' fully complete (a floor only counts as complete once the whole-building phases are done too)">' +
+          esc(cv) + '<small>' + avg + '%</small></div>';
       }).join('') + '</div>';
 
     var gradeDrawn = false, rowsHtml = '', prevPhase;
-    order.forEach(function (loc, idx) {
-      var rank = rankOf[loc], isPhase = rank != null && rank >= 1000;
+    rowVals.forEach(function (loc, idx) {
+      var rank = rowRank[loc], isPhase = rank != null && rank >= 1000;
       if (idx > 0 && !!isPhase !== !!prevPhase) rowsHtml += '<div class="ps-stk-mphasediv"></div>';
       prevPhase = isPhase;
       if (_stkTopFirst && !gradeDrawn && rank != null && rank < 0) {
@@ -16968,21 +17034,28 @@
       }
       rowsHtml += '<div class="ps-stk-mrow' + (isPhase ? ' ps-stk-phaserow' : '') + '" style="grid-template-columns:' + cols + '">' +
         '<div class="ps-stk-lvl">' + esc(loc) + '</div>' +
-        perTower.map(function (pt) {
-          var b = pt.model.filter(function (x) { return x.loc === loc; })[0];
-          if (!b) return '<div class="ps-stk-band ps-stk-mnone" title="' + esc(pt.value) + (isPhase ? ' has no ' + esc(loc) : ' has no ' + esc(stkLevelName(levelId).toLowerCase())) + ' here"></div>';
-          return stkBandHTML(b, 'ps-stk-band', pt.value + ' — ' + b.text + (b.isPhase ? ' (whole building)' : ' (' + b.done + ' of ' + b.total + ' categories complete)'));
+        colVals.map(function (cv) {
+          var bnd = at(loc, cv);
+          if (!bnd) return '<div class="ps-stk-band ps-stk-mnone" title="' + esc(cv) + ' has no ' + esc(loc) + '"></div>';
+          return stkBandHTML(bnd, 'ps-stk-band', cv + ' — ' + bnd.text +
+            (bnd.isPhase ? ' (whole building)' : ' (' + bnd.done + ' of ' + bnd.total + ' categories complete)'));
         }).join('') +
       '</div>';
     });
 
     var totalLocs = perTower.reduce(function (a, pt) { return a + pt.model.filter(function (b) { return !b.isPhase; }).length; }, 0);
     var totalDone = perTower.reduce(function (a, pt) { return a + pt.model.filter(function (b) { return !b.isPhase && b.pct === 100; }).length; }, 0);
+    // Average progress across every real location on screen — the honest headline, for the same
+    // reason the per-column counter changed: `totalDone` is structurally 0 until the whole-building
+    // phases finish, so on its own it reads as "nothing has happened".
+    var _sumPct = 0, _nPct = 0;
+    perTower.forEach(function (pt) { pt.model.forEach(function (b) { if (!b.isPhase) { _sumPct += (b.pct || 0); _nPct++; } }); });
+    var totalAvg = _nPct ? Math.round(_sumPct / _nPct) : 0;
     // Which categories actually colour a band here — the legend is scoped to these, since every
     // other category in the project is unreferenced by anything on screen.
     var used = {};
     perTower.forEach(function (pt) { pt.model.forEach(function (b) { var k = stkCatKey(b); if (k) used[k] = true; }); });
-    return { html: head + rowsHtml, towers: towerVals.length, count: totalLocs, done: totalDone, used: used };
+    return { html: head + rowsHtml, towers: towerVals.length, count: totalLocs, done: totalDone, avg: totalAvg, used: used };
   }
 
   // ---- Overall discipline status — every category on the "Colour activities by" field, aggregated
@@ -17150,8 +17223,12 @@
         return;
       }
       out = grid.html; nLocs = grid.count; nDone = grid.done;
+      // ⚠️ Leads with average progress, not the fully-complete count — see the per-column counter:
+      // "0 complete" is structurally true until the whole-building phases finish and reads as
+      // "nothing has happened" on a job that is most of the way done.
       cnt.textContent = nLocs + ' location' + (nLocs === 1 ? '' : 's') + ' across ' + grid.towers + ' ' +
-        parentLvl.name.toLowerCase() + (grid.towers === 1 ? '' : 's') + ' · ' + nDone + ' complete';
+        parentLvl.name.toLowerCase() + (grid.towers === 1 ? '' : 's') + ' · ' + grid.avg + '% avg progress · ' +
+        nDone + ' fully complete';
       overall = overallDisciplineStatusAllTowers(_stkLevel, D, parentLvl.id);
       perTowerOverall = stkScopeValues(parentLvl.id).map(function (t) {
         return { value: t.value, status: overallDisciplineStatusForTower(_stkLevel, D, parentLvl.id, t.value) };

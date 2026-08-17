@@ -5369,3 +5369,36 @@ Owner: *"The legend should show the planned vs actual."* Confirmed with them tha
   non-LSM, measuring real pixel geometry from the emitted HTML. Earlier group-roll-up suite (21) still
   green. Parse clean; **function-set diff vs HEAD: 0 lost.** ⚠️ **Not verified signed-in.**
   `MODULE_V` → `20260817r`.
+
+## Stacking grid: floors on the vertical axis, and the "0/13" counter that meant nothing (2026-08-17) — fmlozano
+Two owner reports on the vertical stacking modal.
+- ⚠️ **Axes were inverted when stacking by Zone.** Rows were always the stacked level and columns
+  always the parent, so Tower × Level came out right by luck (floors on the rows) while Level × Zone
+  put Zone 1 / Zone 2 on the rows with the floors running across — a building lying on its side.
+  Orientation is now decided **from the data, never from a level's name**: `levelRank()` returns a
+  number for storeys and null for anything else, so whichever axis has the larger share of rankable
+  values becomes the vertical one. Tower × Level is unchanged; Level × Zone transposes.
+  ⚠️ Both orientations now read from ONE `cell[outer][loc]` index — the first cut stashed state on
+  the function object (`stkGridHTML._flipCols`) and was thrown away before it shipped.
+- ⚠️ **"0/13" on every tower did NOT mean zero accomplishment.** It counted bands at `pct === 100`,
+  and since the 2026-08-13 change every floor's total includes the **whole-building phases**
+  (Testing & Commissioning, Punchlisting, Closeout). One unfinished phase therefore holds **every
+  floor of that tower** below 100% — so the count is structurally 0 until the very end of the job,
+  on every project. The headline is now **average progress** (`87%`), with the exact fully-complete
+  count kept in the tooltip; the modal's summary line reads "N locations · X% avg progress · N fully
+  complete" for the same reason. Phase rows stay excluded from both.
+- **Legend (owner): show planned vs actual as a bar sample, like the plain view's "Activity (red = %
+  complete)" chip.** The three flat chips are now ONE `.lg-lsmbar` swatch drawn the way a real bar is
+  — solid+textured actual over the pale remainder, with the baseline rail underneath — labelled
+  "Activity (solid = actual, pale = still to do, rail = planned)".
+- **14 checks by EXECUTING the shipped `stkGridHTML`** with the real `levelRank` sliced in: both
+  orientations, floor ordering, every cell still placed after the transpose **and placed in the right
+  cell** (not merely the right count), the average counter, and phases excluded. Parse clean;
+  **function-set diff: 0 lost, 2 added.** ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817s`.
+
+⚠️ **KNOWN BUG, NOT FIXED — the Colors menu clips off-screen.** `.ps-menu` is `position:absolute;
+left:0`, so a menu opened from a button near the right edge overflows the viewport and its right-hand
+column (the colour swatches) is cut off. It depends on toolbar width, which is why it shows with a
+long grouping label ("Discipline / Trade › Activity › Tower › Level › Zone › Orientation") and not
+with "Group: WBS". The fix already exists for the column chooser (`positionColsMenu`: `position:fixed`
+anchored to the button rect, clamped to the viewport) and should be generalised to the toolbar menus.

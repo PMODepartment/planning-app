@@ -5551,3 +5551,17 @@ Gantt-settings baseline toggle still wins. Legend now names it "Planned dates (B
 the progress chips were reworded to "Still to do" / "Actual (complete)" so they can't be misread as
 the dates comparison. Dead `_lsm` flag removed. 17 checks by executing the shipped renderer; 0
 functions lost. Not verified signed-in. `MODULE_V` → `20260817r`.
+
+### 2026-08-17 — Project Schedule: stacking axes inverted, "0/13" counter, legend bar sample
+Owner reports on the vertical stacking modal. ⚠️ **Axes**: rows were always the stacked level, so
+Level × Zone put zones vertical and floors horizontal — a building on its side. Orientation is now
+decided from the data (`levelRank` — storeys rank, towers/zones don't), so floors always take the
+vertical axis. ⚠️ **"0/13" never meant zero accomplishment**: it counted only bands at 100%, and every
+floor's total includes the whole-building phases (Closeout, T&C), so one unfinished phase holds every
+floor below 100% — structurally 0 until the end of the job. Now shows average progress with the
+fully-complete count in the tooltip. **Legend** now carries one bar-sample swatch (solid = actual,
+pale = still to do, rail = planned) instead of three flat chips. 14 checks by executing the shipped
+renderer; 0 functions lost. Not verified signed-in. `MODULE_V` → `20260817s`.
+⚠️ **Known, not fixed:** the Colors menu clips off-screen when the toolbar is wide (`.ps-menu` is
+absolute/left:0 with no viewport clamp — `positionColsMenu` already solves this for the column
+chooser and should be generalised).
