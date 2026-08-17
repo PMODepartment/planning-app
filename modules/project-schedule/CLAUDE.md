@@ -367,6 +367,32 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Data cleanup executed across ALL projects (2026-08-17) — fmlozano
+Owner signed off: "Let's do a complete clean for all projects." Run against live via the Management
+API. ⚠️ **Full backup taken first: `wbs_summary_backup_20260817` holds all 103,548 pre-clean
+WBS-Summary rows** — the whole operation is reversible from that table.
+
+Scope was bigger than the OPW101 sample implied: 103,548 summary rows, of which 42,988 *correctly
+linked* rows still sat at a duplicated `wbs` code (SLT101 alone), plus 423 foreign-project links,
+460 orphans and 35,168 null-linked.
+
+Three steps, in order:
+1. **Deleted pure contamination** — foreign-project-linked summary rows with **no activities under
+   them**. ⚠️ Checked first rather than assumed: of OPW101's 421 foreign rows only **4** held real
+   activities, so 417 were another project's structure grafted in with nothing beneath it.
+2. **Cleared the bad link (kept the row)** on the handful that DO head real activities — deleting
+   those would have left live activities with no branch header.
+3. **Deduped to one summary row per `(project_id, wbs)`**, preferring a row correctly linked to that
+   project, then earliest.
+
+Result: **103,548 → 60,297** rows; **0** duplicated codes; **0** foreign links. Per project:
+SLT101 57,672→14,849 · OPW101 709→285 · GPR101 8,692→8,690 · XERTEST 14,503→14,501. Every other
+project untouched, AVR101 (the contamination *source*) included.
+⚠️ A verification column counting "activities whose `wbs` has no matching summary row" came back
+huge — and is **meaningless**: untouched projects (CP104, DEMO01, AVR101) score identically, because
+activities carry codes below their branch header. It is not evidence of orphaning.
+⚠️ This is cleanup only. It would refill without the writer fix shipped in `20260817a`.
+
 ## ⚠️ CROSS-PROJECT CORRUPTION: one project's WBS nodes written into another (2026-08-17) — fmlozano
 
 Diagnosed LIVE against OPW101 (Management API, read-only). My two earlier theories were both WRONG
