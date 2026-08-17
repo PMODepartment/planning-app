@@ -487,7 +487,10 @@
     .ps-alg-hl { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:4px;
       background:var(--pd-red-light); color:var(--pd-red); font-weight:600; }
     .ps-alg-hl button { border:none; background:none; color:inherit; cursor:pointer; font-size:13px; padding:0 2px; }
-    #ps-view-schedule.ps-lsm .ps-legend .lg-lsmoff { display:none; }
+    /* ⚠️ Deliberately NOT scoped to `.ps-legend`. It used to be, and when the marks were flattened
+       into the single legend row that wrapper stopped existing — so Activity / WBS summary /
+       Baseline (BL0) started showing in LSM mode again, describing marks that are not drawn. */
+    #ps-view-schedule.ps-lsm .lg-lsmoff { display:none; }
     .lg-swatch { display:inline-block; width:22px; height:11px; border-radius:2px; }
     /* Activity legend (LSM-style): one swatch per activity CATEGORY, colouring the bars.
        Separate from .ps-legend above, which explains the bar SHAPES (task/summary/baseline/…).
@@ -16176,7 +16179,10 @@
         (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="min-height:32px;font-size:12px;">Reset colours</button>' : '') +
         (cfg.on ? '<button class="pd-btn" id="ps-alg-stack" style="min-height:32px;font-size:12px;">Vertical stacking pane</button>' : '') +
         (_hlCat ? '<span class="ps-alg-hl">Highlighting: ' + esc(_hlCat) + '<button type="button" id="ps-alg-hlclear" title="Clear the highlight">✕</button></span>' : '') +
-        '<span style="margin-left:auto;">Tip: click a <strong>bar</strong> to highlight every bar of that activity; click a <strong>month</strong> in the header for the status at that date.</span>' +
+        // Tip line removed — it was a permanent paragraph of instructions competing with the legend
+        // it sat next to. Both behaviours it described are already discoverable (a bar and a month
+        // header both carry a cursor + title), so the words bought nothing but clutter.
+        ''  +
       '</div>' +
       // ⚠️ ONE row. The marks (Milestone / Data date / …) are now the LEADING entries of the very
       // same flex list as the category chips, not a sibling block above it — a separate <div>, even
@@ -16401,6 +16407,28 @@
     for (var i = 0; i < STK_PHASES.length; i++) if (STK_PHASES[i].label === v) return { p: STK_PHASES[i], idx: i };
     return null;
   }
+  // The whole-building end phases as PSEUDO-CATEGORIES, so they fold into every floor's band the
+  // way any other tower-wide category does (owner: "the closeout, handover and testing &
+  // commissioning bars for each tower should be within a per floor level not a separate bar").
+  // ⚠️ Keyword-detected on the activity name and carrying their own colour, deliberately independent
+  // of the "Colour activities by" field — these activities routinely have no work_type, which is
+  // what made them vanish under Discipline / Trade when they were treated as ordinary categories.
+  // Ordered by first start, which puts them after the construction trades where they belong.
+  function stkPhaseCats(levelId, D) {
+    var groups = {};
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      if (!stkPhaseInScope(r, levelId)) return;
+      var p = stkPhaseLabel(r); if (!p) return;
+      var g = groups[p.label] || (groups[p.label] = { value: p.label, color: p.color, isPhase: true, acts: [], first: null });
+      g.acts.push(r);
+      var s = pd(dispStart(r)); if (s && (!g.first || s < g.first)) g.first = s;
+    });
+    var list = Object.keys(groups).map(function (k) { return groups[k]; });
+    list.sort(function (a, b) { return (a.first && b.first) ? (a.first - b.first) : (a.first ? -1 : (b.first ? 1 : 0)); });
+    list.forEach(function (c) { c.tex = 0; c.style = catStyle(c.color, 0); c.n = c.acts.length; });
+    return list;
+  }
   function stkPhaseRows(levelId, D) {
     var groups = {};
     rows.forEach(function (r) {
@@ -16457,6 +16485,13 @@
     var list = Object.keys(by).map(function (k) { return by[k]; });
     list.sort(function (a, b2) { return cmpLevelValue(a.loc, b2.loc); });
     var towerWide = stkTowerWideCats(levelId, D, cats, by);
+    // ⚠️ Phases are injected straight into the tower-wide map (their state comes from their own
+    // activities, not from a category lookup) and appended to the iteration order, so each FLOOR's
+    // band can advance into "Testing & Commissioning" / "Handover" / "Closeout" instead of stalling
+    // at the last construction trade while a separate row carried the phase.
+    var phaseCats = stkPhaseCats(levelId, D);
+    phaseCats.forEach(function (c) { towerWide[c.value] = { cat: c, state: _stkState(c.acts, D) }; });
+    cats = cats.concat(phaseCats);   // plain reassign: catIdx above is already built from the originals
     list.forEach(function (b) {
       var wip = null, lastDone = null, done = 0, total = 0;
       // ⚠️ ONE pass through `cats`, in its own chronological order (catList() sorts by first-start
@@ -16508,9 +16543,11 @@
         b.style = 'background-color:' + ph.p.color + ';'; b.tint = catTint(ph.p.color);
       }
     });
-    // Whole-building end phases as their own rows above the top floor (Testing & Commissioning,
-    // Punchlisting, Handover, …). Ranked 1000+, so stkDisplayOrder / the grid place them at the top.
-    return list.concat(stkPhaseRows(levelId, D));
+    // ⚠️ NO separate phase rows any more — they are folded into every floor's band above
+    // (stkPhaseCats). Adding them here as well would show the same work twice: once as a row of its
+    // own and again as the state of every floor beneath it. stkPhaseRows() is kept because a Level
+    // value the phase wizard WROTE still renders as a phase-styled row through stkPhaseByLabel().
+    return list;
   }
   // A band: the remainder in the category's own colour at low alpha, the completed part solid — so
   // a level visibly FILLS UP rather than flipping between two flat colours. `title` is optional: the
@@ -16732,7 +16769,16 @@
     var allTowersToggle = parentLvl
       ? '<label title="Stacks every ' + esc(parentLvl.name.toLowerCase()) + ' side by side instead of one at a time, rows aligned by level."><input type="checkbox" id="ps-stk-alltow"' + (showAll ? ' checked' : '') + '> Show all ' + esc(parentLvl.name.toLowerCase()) + 's</label>'
       : '';
+    // ⚠️ "Colour activities by" is repeated here on purpose. The stack is unreadable under Activity
+    // name on a 4,000-activity project and readable under Discipline / Trade, and switching used to
+    // mean closing the window, changing it in the legend, and reopening — losing the cut-off month
+    // and scope each time. Same `catCfg().field`, so the Gantt legend below stays in step.
     var ctrls = '<div class="ps-stk-ctrls">' +
+      '<label>Colour by <select class="pd-select" id="ps-stk-field">' +
+        catFieldOptions().map(function (o) {
+          return '<option value="' + esc(o[0]) + '"' + (o[0] === cfg.field ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+        }).join('') +
+      '</select></label>' +
       '<label>Stack by <select class="pd-select" id="ps-stk-level">' +
         LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === _stkLevel ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
       '</select></label>' + allTowersToggle + scopeSel +
@@ -16811,8 +16857,18 @@
     // which entry any given band referred to. Order still comes from catList() (chronological).
     var usedCats = showAll ? (grid.used || {}) : {};
     if (!showAll) disp.forEach(function (b) { var k = stkCatKey(b); if (k) usedCats[k] = true; });
-    var shown = cats.filter(function (c) { return usedCats[c.value]; });
-    var hiddenN = cats.length - shown.length;
+    // ⚠️ Phases are pseudo-categories (not in catList()), so the legend source has to include them
+    // or the purple/red/teal bands folded into the floors would have no key at all.
+    var legendCats = cats.concat(stkPhaseCats(_stkLevel, D));
+    var shown = legendCats.filter(function (c) { return usedCats[c.value]; });
+    var hiddenN = legendCats.length - shown.length;
+    // ⚠️ Scope "Overall discipline status" to what the STACK is actually showing. Under Activity
+    // name on Avesta it listed all 438 categories — the owner's "hundreds of legends" — burying the
+    // handful that mean something. Its original justification was surfacing phases carrying no
+    // per-floor tag; those now fold into the floor bands themselves, so the wide list has no job
+    // left. Falls back to the full set rather than rendering an empty panel.
+    var _ovScoped = overall.filter(function (e) { return e.cat && usedCats[e.cat.value]; });
+    if (_ovScoped.length) overall = _ovScoped;
     var leg = shown.map(function (c) {
       return '<span class="ps-alg ps-stk-legchip" data-cat="' + esc(c.value) + '" title="Click to highlight every band showing ' + esc(c.value) + '">' +
         '<span class="ps-alg-sw" style="' + c.style + '"></span><span>' + esc(c.value) + '</span></span>';
@@ -16827,9 +16883,9 @@
     var legPhases;
     if (showAll && parentLvl) { var _had = parentLvl.id in _stkScope, _prev = _stkScope[parentLvl.id]; delete _stkScope[parentLvl.id]; legPhases = stkPhaseRows(_stkLevel, D); if (_had) _stkScope[parentLvl.id] = _prev; }
     else legPhases = stkPhaseRows(_stkLevel, D);
-    var phaseLeg = legPhases.length ? '<span class="ps-alg" style="opacity:.7;font-style:italic;">End phases:</span>' + legPhases.map(function (b) {
-      return '<span class="ps-alg"><span class="ps-alg-sw" style="background:' + b.color + ';cursor:default;"></span><span>' + esc(b.loc) + '</span></span>';
-    }).join('') : '';
+    // ⚠️ No separate "End phases:" strip. The phases are ordinary chips in the list above now that
+    // they fold into the floor bands — keeping this would key the same colour twice.
+    var phaseLeg = '';
     body.innerHTML = ctrls + out +
       '<div class="ps-actlegend-items ps-stk-leg" style="margin-top:12px;border-top:1px dashed var(--pd-line);padding-top:10px;">' + leg + phaseLeg + legMore +
         '<span class="ps-alg ps-stk-legclear" style="display:none;">Clear highlight ✕</span></div>' +
@@ -16838,6 +16894,12 @@
   }
   function wireStackCtrls(body) {
     wireStackLegend(body);
+    var fld = body.querySelector('#ps-stk-field');
+    if (fld) fld.onchange = function () {
+      var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c);
+      renderStackView(); renderStackPane();
+      renderActLegend(); renderGantt();   // keep the Gantt behind the window in step
+    };
     var sel = body.querySelector('#ps-stk-level');
     if (sel) sel.onchange = function () { _stkLevel = this.value; renderStackView(); renderStackPane(); };
     body.querySelectorAll('.ps-stk-scope').forEach(function (s) {

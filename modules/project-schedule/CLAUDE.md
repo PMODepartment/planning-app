@@ -367,6 +367,35 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Legend audit + end phases folded into the floor bands (2026-08-17) — fmlozano
+- ⚠️ **REGRESSION I INTRODUCED, caught by the owner.** Baseline (BL0) / Activity / WBS summary
+  reappeared in LSM mode. The hiding rule was `#ps-view-schedule.ps-lsm **.ps-legend** .lg-lsmoff`,
+  scoped to the wrapper I deleted when flattening the marks into one legend row — and my own comment
+  claimed "the existing rule still applies". It did not: it needed a `.ps-legend` ancestor. Rule is
+  now unscoped, with a note saying why it must stay that way. **Lesson: a CSS rule can depend on
+  markup structure, so deleting a wrapper is a behaviour change, not a cosmetic one.**
+- **Tip line removed** — a permanent paragraph of instructions competing with the legend beside it.
+- ⚠️ **End phases now fold into EVERY floor's band instead of getting their own rows** (owner:
+  "should be within a per floor level not a separate bar"). New `stkPhaseCats()` turns them into
+  **pseudo-categories** carrying their own colour, keyword-detected and **deliberately independent
+  of the "Colour activities by" field** — these activities routinely have no `work_type`, which is
+  what made them vanish under Discipline / Trade. They are injected into `towerWide` (state from
+  their own activities) and appended to the per-band iteration, so a floor advances into
+  Testing & Commissioning → Handover → Closeout instead of stalling at the last construction trade.
+  `stackModel` no longer concatenates `stkPhaseRows()`; the separate "End phases:" legend strip is
+  gone too, since the phases are ordinary chips now — keeping either would show the same work twice.
+- **Stacking window gets its own "Colour by" switcher.** Switching used to mean closing the window,
+  changing it in the Gantt legend and reopening — losing the cut-off month and scope each time. Same
+  `catCfg().field`, and it repaints the Gantt behind so the two stay in step.
+- **"Overall discipline status" scoped to the stack.** It listed all 438 categories under Activity
+  name (the owner's "hundreds of legends"); its original job was surfacing phases with no per-floor
+  tag, which now fold into the bands. Falls back to the full set rather than rendering empty.
+- **Verified 15/15**: the 4 phases becoming pseudo-categories, keyword (not exact-name) detection,
+  ordinary trades not swept in, chronological order, distinct per-phase colours, ⚠️ **a phase with
+  NO work_type still becoming a category** (the exact regression), whole-building scope across
+  towers, plus **CSS assertions that the lsmoff rule is unscoped and the Tip line is gone**. All 8
+  suites green (133 assertions). ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817e`.
+
 ## The WBS bracket is now subdivided by activity (2026-08-17) — fmlozano
 Owner picked option 2: the white bar itself banded by activity, not a strip beneath it.
 - **Segments are now the bracket's CHILDREN**, so every coordinate is relative to the bracket's own
