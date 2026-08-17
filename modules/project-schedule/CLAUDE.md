@@ -5340,3 +5340,32 @@ anything."* Correct, and it had nothing to do with the LSM work — the rows on 
   100d@0% + 10d@100% case landing on 9% rather than 50%, zero-duration → 0 with no NaN, weights
   matching `_costMap`, and the four render-branch behaviours. Parse clean; **function-set diff vs
   HEAD: 0 lost, 1 added.** ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817q`.
+
+## Planned vs actual restored in the coloured view + named in the legend (2026-08-17) — fmlozano
+Owner: *"The legend should show the planned vs actual."* Confirmed with them that this means the
+**baseline dates vs the current dates**, not the progress shading already on the bar.
+- ⚠️ **REVERSES a deliberate earlier decision, on the owner's call.** With "Colour activities by" on,
+  the `_lsm` flag suppressed the BL0 bar on the reasoning that the pale remainder already IS the
+  planned span. That conflates two different things: the remainder is planned **work** not yet done
+  *inside the current dates*, while the baseline is the planned **dates** — and only the second one
+  shows slip. A reporting view that cannot show slip is the wrong trade. Both draw now.
+- Safe to bring back because the 2026-08-16 fix had already changed the baseline from an
+  equal-weight second bar into a **thin ghost rail tucked under** the bar — which is what stopped it
+  reading as two separate activities in the first place. Asserted: rail 5px vs bar 20px (≥3×), rail
+  below the bar, both inside the row, and the slip visible as the offset between their left edges.
+- Applies to all three row kinds: activity bar, WBS/group roll-up, and the milestone's baseline
+  diamond. ⚠️ Group rows now get a rolled-up baseline too (`wbsBlSpan` resolves them via `_dblspan`).
+  The Gantt-settings **baseline toggle still wins** — asserted, or this would have quietly overridden
+  a user setting.
+- **Legend:** the Baseline entry is no longer `.lg-lsmoff`, so it is named in the coloured view as
+  **"Planned dates (BL0 baseline)"**. ⚠️ The two progress chips were reworded — **"Still to do"** /
+  **"Actual (complete)"** — because "Planned (remaining)" sitting next to "Baseline (BL0)" made the
+  two sound like the same thing, which is exactly the confusion being fixed.
+- **`_lsm` is deleted, not left dangling.** Both things it gated have now come back (roll-up bar
+  2026-08-15, baseline today), so it had one remaining reference: its own declaration. The comment it
+  carried had been factually wrong for two days.
+- **17 checks green by EXECUTING the shipped `ganttRowHTML`** (sliced out, ~9.6k chars, not
+  reimplemented) across categorised activity / WBS summary / milestone / no-baseline / toggle-off /
+  non-LSM, measuring real pixel geometry from the emitted HTML. Earlier group-roll-up suite (21) still
+  green. Parse clean; **function-set diff vs HEAD: 0 lost.** ⚠️ **Not verified signed-in.**
+  `MODULE_V` → `20260817r`.

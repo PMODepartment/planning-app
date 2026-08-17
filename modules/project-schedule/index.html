@@ -9453,18 +9453,22 @@
     var showLbl = _gset.labels !== 'none';
     // Selection band spanning the whole Gantt row (matches the grid-row highlight).
     if (r.id && r.id === selId) out += '<div class="ps-gantt-selband" style="top:' + top + 'px;height:' + ROWH + 'px;width:' + (_tlW || 3000) + 'px;"></div>';
-    // ⚠️ LSM mode ("Colour activities by" ticked): the ONLY marks are the activity bars — light
-    // (planned span) filling to solid (actual progress) in the category colour. The BL0 bar, the
-    // WBS roll-up bar and the red %-complete treatment are all suppressed, because in an LSM
-    // reading they are three extra bars per row saying nothing the coloured bar doesn't already say.
-    var _lsm = catCfg().on;
+    // ⚠️ The old `_lsm` flag is GONE, and the comment it carried was already out of date twice over.
+    // It suppressed the BL0 bar, the WBS roll-up bar and the red %-fill whenever "Colour activities
+    // by" was on. The roll-up bar came back on 2026-08-15 (segments are capped, so it was the only
+    // guaranteed mark), and the baseline came back on 2026-08-17 (it is the planned half of
+    // planned-vs-actual, which is the whole point of the view for reporting). What remains
+    // category-driven is per-bar: a categorised bar carries its own colour + fill, so the red
+    // %-treatment is skipped there — decided by `_ce`/`_segs` at the bar, not by a mode flag.
     if (isWbsNode(r)) {
       var sp = wbsSpan(r); if (!sp) return '';
       var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw;
       var wcS = (r._dkind === 'group') ? null : effWbsColor(r);
       // Rolled-up BASELINE (BL0), as a thin ghost rail UNDER the summary bracket — same reasoning as
       // the activity bar below: an equal-weight bar above it read as a second, separate summary.
-      var blsp = (r._dkind === 'group') ? null : ((_gset.baseline && !_lsm) ? wbsBlSpan(r) : null);
+      // Baseline roll-up draws in LSM mode too (see the activity bar below) — planned vs actual is
+      // the point of the view for reporting. Group rows keep theirs from _dblspan via wbsBlSpan.
+      var blsp = _gset.baseline ? wbsBlSpan(r) : null;
       // Rolled-up %-complete (duration-weighted) on the summary bar, from _costMap.
       var _cm = (r._dkind === 'group') ? null : _costMap[r.wbs];
       var sumPct = (_cm && _cm.wd > 0) ? Math.max(0, Math.min(100, Math.round(_cm.wearn / _cm.wd))) : 0;
@@ -9506,10 +9510,14 @@
     if (spotlightRow(r)) crit += ' ps-spot';
     // Per-activity override wins, then the category legend colour (LSM), then the WBS branch colour.
     var _ce = catEntry(r);
-    // ⚠️ A categorised bar suppresses its own BL0 bar — the light remainder already IS the planned
-    // span and the solid fill the actual progress, so a second bar above it is the duplication the
-    // LSM view exists to remove. A row with no category value keeps the normal baseline treatment.
-    var hasBL = !!(_gset.baseline && bs && be && !_ce);
+    // ⚠️ REVERSED 2026-08-17 (owner's call): a categorised bar used to suppress its BL0 bar, on the
+    // reasoning that the pale remainder already IS the planned span. That conflates two different
+    // things — the remainder is planned WORK not yet done inside the current dates, whereas the
+    // baseline is the planned DATES, and only the second one shows slip. Both now draw: the
+    // baseline as the same thin ghost rail tucked under the bar (the treatment that stopped the two
+    // reading as separate activities in the first place), so planned-vs-actual is visible in the
+    // coloured view too — which is what reporting actually needs off this screen.
+    var hasBL = !!(_gset.baseline && bs && be);
     var wc = actColor(r) || (_ce && catShade(_ce.color)) || effWbsColor(r);
     // With the legend on, the bar reads as FILLING UP: the remainder is the same colour at low
     // alpha, the complete part is the solid, textured legend colour. Without it, the existing
@@ -9520,7 +9528,7 @@
     if (isMile(r)) {
       var md = isFinishMile(r) ? (e || s) : s; if (!md) return out;   // Finish Milestone anchors on the finish
       // Baseline (planned) milestone marker — Finish Milestone uses BL Finish, else BL Start.
-      var blMd = (_gset.baseline && !_lsm) ? (isFinishMile(r) ? pd(r.bl_finish) : pd(r.bl_start)) : null;
+      var blMd = _gset.baseline ? (isFinishMile(r) ? pd(r.bl_finish) : pd(r.bl_start)) : null;
       var curTop = top + (blMd ? Math.round(15 * oY) : o9);   // when a baseline is shown, the current diamond sits below it
       if (blMd) { var bmx = dayDiff(min, blMd) * dayw; out += '<div class="ps-mile-bl" title="Baseline (BL0) milestone" style="left:' + (bmx - 5) + 'px;top:' + (top + Math.round(3 * oY)) + 'px;"></div>'; }
       var mx = dayDiff(min, md) * dayw;
@@ -16329,13 +16337,20 @@
   var MARKS_LEGEND_HTML =
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>' +
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
-      '<span class="lg lg-lsmoff"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>' +
+      // ⚠️ NOT .lg-lsmoff — the baseline rail draws in the coloured view too now, so the key must
+      // name it there. It is the PLANNED half of planned-vs-actual: the rail is the baseline dates,
+      // the bar above it is where the work actually sits, and the gap between their edges is slip.
+      '<span class="lg" title="The thin rail under each bar: the BL0 planned dates. The bar above it is the current/actual dates — the offset between their edges is the slip.">' +
+        '<span class="lg-swatch lg-bl"></span> Planned dates (BL0 baseline)</span>' +
       // ⚠️ LSM-only, and the counterpart to .lg-lsmoff. With the legend on, a bar no longer reads as
       // "dark bar + red fill" — it fills with its OWN trade colour, pale for the remaining part and
       // solid/textured for the completed part. Nothing on screen said so, which is why two greens on
       // one bar read as two different trades. Sample swatch, not a category.
-      '<span class="lg lg-lsmon" title="With colours on, a bar fills with its own trade colour: pale = still to do, solid = done. The two shades on one bar are the SAME trade, not two."><span class="lg-swatch lg-plan"></span> Planned (remaining)</span>' +
-      '<span class="lg lg-lsmon" title="The completed part of the bar, in the trade’s solid colour + texture. A bar half solid is half complete."><span class="lg-swatch lg-done"></span> Complete</span>' +
+      // ⚠️ These two are progress WITHIN the current bar — deliberately worded so they cannot be
+      // read as the planned-vs-actual DATES comparison above. "Planned (remaining)" used to sit
+      // next to "Baseline (BL0)" and the two sounded like the same thing.
+      '<span class="lg lg-lsmon" title="Inside the bar: the part of this activity still to do, in its trade colour at low alpha. This is work remaining, NOT the planned dates — those are the rail underneath."><span class="lg-swatch lg-plan"></span> Still to do</span>' +
+      '<span class="lg lg-lsmon" title="Inside the bar: the completed part, in the trade’s solid colour + texture. A bar half solid is half complete."><span class="lg-swatch lg-done"></span> Actual (complete)</span>' +
       '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
       '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>';
   // Top-level WBS branches that contain NO activity anywhere beneath them, and so are dropped by

@@ -5539,3 +5539,15 @@ groups so there was no composition. Group rows now roll up their own duration-we
 category when single-trade (`_gcat`) — so a Structural Works group bar fills up green, MEPF grey,
 and a mixed group stays a neutral bracket. Red is now only ever progress. 21 checks against the
 shipped code; 0 functions lost. Not verified signed-in. `MODULE_V` → `20260817q`.
+
+### 2026-08-17 — Project Schedule: planned vs actual back in the coloured Gantt + named in the legend
+Owner asked the legend to show planned vs actual; confirmed that means baseline dates vs current
+dates. ⚠️ **Reverses an earlier deliberate call**: the coloured (LSM) view suppressed the BL0 bar
+because "the pale remainder already IS the planned span" — but the remainder is planned *work* inside
+the current dates, whereas the baseline is the planned *dates*, and only the latter shows slip. Safe
+to restore because the baseline is now a thin ghost rail under the bar (asserted 5px vs 20px), not an
+equal-weight second bar. Applies to activity bars, WBS/group roll-ups and milestone diamonds; the
+Gantt-settings baseline toggle still wins. Legend now names it "Planned dates (BL0 baseline)", and
+the progress chips were reworded to "Still to do" / "Actual (complete)" so they can't be misread as
+the dates comparison. Dead `_lsm` flag removed. 17 checks by executing the shipped renderer; 0
+functions lost. Not verified signed-in. `MODULE_V` → `20260817r`.
