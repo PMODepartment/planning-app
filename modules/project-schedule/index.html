@@ -534,7 +534,8 @@
        7-tower grid; the lit bands also get a ring so they read even against a pale fill. */
     /* One consolidated legend: the bar-mark row sits directly above the category controls, with a
        hairline between rather than the old gap between two separate blocks. */
-    .ps-actlegend > .ps-legend { margin:0 0 8px; padding-bottom:8px; border-bottom:1px dashed var(--pd-line); }
+    /* Marks and category chips share one flex row; this is just a visual divider between them. */
+    .ps-alg-sep { flex:none; width:1px; align-self:stretch; min-height:14px; background:var(--pd-line); margin:0 4px; }
     /* "N more, not on screen" -> hover reveals WHICH ones, instead of a tooltip. */
     .ps-alg-more { position:relative; cursor:help; text-decoration:underline dotted; text-underline-offset:2px; }
     .ps-alg-morepop { display:none; position:absolute; bottom:calc(100% + 6px); left:0; z-index:60;
@@ -16062,13 +16063,11 @@
   // exist. Hidden via the existing `#ps-view-schedule.ps-lsm .lg-lsmoff` rule, which still applies
   // now that the row lives inside #ps-actlegend (same subtree, same classes).
   var MARKS_LEGEND_HTML =
-    '<div class="ps-legend">' +
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>' +
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>' +
       '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
-      '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>' +
-    '</div>';
+      '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>';
   // Top-level WBS branches that contain NO activity anywhere beneath them, and so are dropped by
   // "Hide empty groups". Reads `rows` (not DL) on purpose — DL is the post-filter list these are
   // already missing from, so it could never tell us what went.
@@ -16150,7 +16149,6 @@
           : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>')
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
     host.innerHTML =
-      MARKS_LEGEND_HTML +
       '<div class="ps-actlegend-head">' +
         '<label><input type="checkbox" id="ps-alg-on"' + (cfg.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
         '<select class="pd-select ps-alg-field" id="ps-alg-field">' + opts + '</select>' +
@@ -16161,7 +16159,11 @@
         (_hlCat ? '<span class="ps-alg-hl">Highlighting: ' + esc(_hlCat) + '<button type="button" id="ps-alg-hlclear" title="Clear the highlight">✕</button></span>' : '') +
         '<span style="margin-left:auto;">Tip: click a <strong>bar</strong> to highlight every bar of that activity; click a <strong>month</strong> in the header for the status at that date.</span>' +
       '</div>' +
-      '<div class="ps-actlegend-items">' + items + '</div>';
+      // ⚠️ ONE row. The marks (Milestone / Data date / …) are now the LEADING entries of the very
+      // same flex list as the category chips, not a sibling block above it — a separate <div>, even
+      // inside the same container, still read as "two legend sections" to the owner.
+      '<div class="ps-actlegend-items">' + MARKS_LEGEND_HTML +
+        (items ? '<span class="ps-alg-sep"></span>' + items : '') + '</div>';
     host.querySelector('#ps-alg-on').onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
     host.querySelector('#ps-alg-field').onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var tex = host.querySelector('#ps-alg-tex');
@@ -16415,8 +16417,21 @@
       // ⚠️ A phase the "Tag phases…" wizard WROTE carries the phase label AS its Level value, so it
       // arrives here rather than via stkPhaseRows — and it still has no tower value. Scope it by the
       // whole-building rule or it is filtered out of every tower exactly like the untagged case.
-      if (!(stkPhaseByLabel(loc) ? stkPhaseInScope(r, levelId) : stkInScope(r, levelId))) return;
-      var v = catValOf(r, cfg.field); if (!v || !(v in catIdx)) return;
+      var isPh = !!stkPhaseByLabel(loc);
+      if (!(isPh ? stkPhaseInScope(r, levelId) : stkInScope(r, levelId))) return;
+      var v = catValOf(r, cfg.field);
+      if (!v || !(v in catIdx)) {
+        // ⚠️ A PHASE row is coloured by its phase (purple T&C, orange Punchlisting, …), never by the
+        // "Colour activities by" field — so dropping it for having no value on that field is wrong.
+        // That is why Closeout / Testing & Commissioning / Handover vanished under
+        // **Discipline / Trade** but showed under Activity name: every activity has a name, but
+        // whole-building end-phase activities routinely carry no work_type. Keep them, and let the
+        // band take its state from the activities themselves (see `acts` in the phase branch below).
+        if (!isPh) return;
+        var b0 = by[loc] || (by[loc] = { loc: loc, cats: {} });
+        (b0.acts || (b0.acts = [])).push(r);
+        return;
+      }
       var b = by[loc] || (by[loc] = { loc: loc, cats: {} });
       (b.cats[v] || (b.cats[v] = [])).push(r);
     });
@@ -16463,7 +16478,11 @@
       // row: phase colour + "X complete/on-going" text, ranked above the roof (levelRank did the rank).
       var ph = stkPhaseByLabel(b.loc);
       if (ph) {
-        var pst = b.pct >= 100 ? 'done' : (b.done > 0 || b.wip) ? 'wip' : 'none';
+        // ⚠️ Falls back to the activities' own state when the band has NO categories — which is the
+        // normal case under a field the phase activities don't carry (Discipline / Trade). Without
+        // this the row would render but always read "not started".
+        var pst = b.total ? (b.pct >= 100 ? 'done' : (b.done > 0 || b.wip) ? 'wip' : 'none')
+                          : ((b.acts && b.acts.length) ? _stkState(b.acts, D) : 'none');
         b.isPhase = true; b.color = ph.p.color;
         b.cur = (pst === 'none' ? null : ph.p);
         b.text = pst === 'wip' ? ('On-going ' + ph.p.label) : pst === 'done' ? (ph.p.label + ' complete') : (ph.p.label + ' — not started');
@@ -16780,9 +16799,11 @@
         '<span class="ps-alg-sw" style="' + c.style + '"></span><span>' + esc(c.value) + '</span></span>';
     }).join('');
     if (!shown.length) leg = '<span class="ps-alg" style="opacity:.7;font-style:italic;">No activity has started on this stack yet.</span>';
-    var legMore = hiddenN > 0
-      ? '<span class="ps-alg" style="opacity:.6;font-style:italic;" title="Categories that exist on this project but do not colour any band at this cut-off date.">· ' + hiddenN + ' more not on this stack</span>'
-      : '';
+    // ⚠️ No "· N more not on this stack" tail. Under "Activity name" on a 4,393-activity project it
+    // read "· 436 more not on this stack", which the owner reported as making the stack MORE
+    // confusing — it is a count of things deliberately not drawn here, so it is never actionable and
+    // just competes with the handful of chips that do mean something. The scoped legend stands alone.
+    var legMore = '';
     // End-phase legend swatches (only the phases actually present in the current scope).
     var legPhases;
     if (showAll && parentLvl) { var _had = parentLvl.id in _stkScope, _prev = _stkScope[parentLvl.id]; delete _stkScope[parentLvl.id]; legPhases = stkPhaseRows(_stkLevel, D); if (_had) _stkScope[parentLvl.id] = _prev; }

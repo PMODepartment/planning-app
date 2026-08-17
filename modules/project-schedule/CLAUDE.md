@@ -367,6 +367,29 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## End phases missing under Discipline/Trade; legend truly merged (2026-08-17) — fmlozano
+- ⚠️ **Closeout / Testing & Commissioning / Handover appeared under "Activity name" but NOT under
+  "Discipline / Trade".** `stackModel`'s main loop dropped any row with no value on the colour field
+  (`if (!v || !(v in catIdx)) return`). Every activity has a *name*, so the phases survived there —
+  but whole-building end-phase activities routinely carry **no `work_type`**, so under
+  Discipline/Trade they were filtered out before a band could form. ⚠️ A phase band is coloured by
+  its **phase** (purple T&C, orange Punchlisting…), never by the colour field, so that filter never
+  applied to it in the first place. Phase-labelled locations now keep their activities in `b.acts`,
+  and the phase branch takes its state from `_stkState(b.acts, D)` when the band has no categories —
+  without that fallback the row would render but permanently read "not started".
+- **Legend merged for real.** The marks were a sibling `<div>` inside the same container, which still
+  read as two sections. They are now the **leading entries of the same flex list** as the category
+  chips, with a hairline `.ps-alg-sep` between.
+- **Dropped "· N more not on this stack"** from the stacking legend. Under Activity name it read
+  "· 436 more not on this stack" — a count of things deliberately not drawn, never actionable, and
+  competing with the handful of chips that do mean something. Owner reported it as making the stack
+  more confusing, not less.
+- All 6 suites still green (103 assertions). `MODULE_V` → `20260817c`. ⚠️ **Not verified signed-in.**
+- ⚠️ **OPEN:** "white bar per WBS to show even by activity level" is not done — the request has two
+  readings and I did not want to guess. `_sumSegsHTML` already draws per-activity segments on every
+  summary bar; on General Requirements / Site Works those spans are 2–6 days, so at Month zoom the
+  segments are ~2px and the bar reads as plain white. Asked the owner which they mean.
+
 ## One legend, an explained empty-branch hide, and a visible "N more" list (2026-08-17) — fmlozano
 Three owner asks in one pass.
 - **Consolidated the two legends.** The bar-mark key (Activity / WBS summary / Baseline / Milestone /
