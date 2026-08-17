@@ -367,6 +367,26 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Stacking pane was O(categories x rows); now O(rows) (2026-08-17) — fmlozano
+Owner: "the app is lagging so much when opening the vertical stacking." It was algorithmic, not
+hardware.
+- ⚠️ **`stkTowerWideCats` and `overallDisciplineStatus` were both `cats.forEach(rows.filter(...))`.**
+  Under "Colour activities by = **Activity name**" Avesta has **438 categories x 4,393 rows = 1.9M
+  row visits per call** — and `stkTowerWideCats` runs once per tower (7) while
+  `overallDisciplineStatus` runs once per tower plus once for all-towers (8). **~30M `catValOf`
+  calls to open one pane.** Both now bucket rows by category in ONE pass, then look up: O(rows + cats).
+- ⚠️ **`stkOuterLevels` memoised.** `stkInScope` calls it for EVERY row on every pass, and it built a
+  throwaway id array each time. Cache is keyed on `LOC_LEVELS`' **identity**, so it self-drops when
+  the location breakdown is reassigned — asserted in the tests, since a stale cache here would
+  silently scope the whole stack to the wrong levels.
+- ⚠️ This is why the lag scaled with the **colour field**, not the project: Discipline/Trade has ~6
+  categories and felt fine; Activity name has 438 and did not.
+- **Verified 15/15 with the ORIGINAL implementations transcribed from git history as a behavioural
+  oracle** — same category set, same order, same state, **same per-category activity counts** —
+  then the complexity assertion: **274,436 -> 628 row visits (437x)** on an Avesta-sized fixture,
+  with the new cost bounded at one pass over in-scope rows. All 10 suites green (167 assertions).
+  ⚠️ **Not verified signed-in.** `MODULE_V` -> `20260817h`.
+
 ## Phase AUDIT against live AVR101: the detection was over-matching (2026-08-17) — fmlozano
 Owner asked "audit the closeout, how is this showing?" — queried the live schedule. The answer is
 that **most of what the stack called a phase was not one.**

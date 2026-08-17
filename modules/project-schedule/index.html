@@ -16291,9 +16291,16 @@
   // different buildings' 9th floors into one band, which is meaningless — Tower 1's 9th floor can
   // be topped out while Tower 5 is still in substructure. `_stkScope` pins the outer levels.
   var _stkScope = {};   // { <levelId>: value } for levels ABOVE the stacked one
+  // ⚠️ Memoised. stkInScope() calls this for EVERY row on every pass, so on Avesta it was building
+  // a throwaway id array 4,393 × 7 times per stack open. Cache is keyed on LOC_LEVELS' identity, so
+  // it drops itself whenever the location breakdown is reassigned.
+  var _stkOuterSrc = null, _stkOuterCache = null;
   function stkOuterLevels(levelId) {
+    if (_stkOuterSrc !== LOC_LEVELS) { _stkOuterSrc = LOC_LEVELS; _stkOuterCache = {}; }
+    var hit = _stkOuterCache[levelId];
+    if (hit) return hit;
     var i = LOC_LEVELS.map(function (l) { return l.id; }).indexOf(levelId);
-    return i <= 0 ? [] : LOC_LEVELS.slice(0, i);
+    return (_stkOuterCache[levelId] = (i <= 0 ? [] : LOC_LEVELS.slice(0, i)));
   }
   // Distinct values of an outer level, honouring any scope already set on the levels above IT.
   function stkScopeValues(levelId) {
@@ -16374,15 +16381,24 @@
       Object.keys(byLoc[loc].cats).forEach(function (v) { tagged[v] = 1; });
     });
     var cfg = catCfg(), out = {};
+    // ⚠️ ONE pass over `rows`, bucketed by category value — this used to be
+    // `cats.forEach(rows.filter(...))`, i.e. O(categories × rows). Under "Colour activities by =
+    // Activity name" Avesta has 438 categories × 4,393 rows = 1.9M row visits PER TOWER, and the
+    // grid builds a model for each of 7 towers, so opening the stack cost ~13M `catValOf` calls in
+    // this function alone. Now O(rows + categories).
+    var byCat = {};
+    for (var _i = 0; _i < rows.length; _i++) {
+      var _r = rows[_i];
+      if (isWbs(_r)) continue;
+      if (!stkInScope(_r, levelId)) continue;
+      if (stkPhaseLabel(_r)) continue;   // phases are their own pseudo-categories
+      var _v = catValOf(_r, cfg.field);
+      if (!_v || tagged[_v]) continue;   // already floor-tagged somewhere → not tower-wide
+      (byCat[_v] || (byCat[_v] = [])).push(_r);
+    }
     cats.forEach(function (c) {
-      if (tagged[c.value]) return;
-      var acts = rows.filter(function (r) {
-        if (isWbs(r)) return false;
-        if (!stkInScope(r, levelId)) return false;
-        if (stkPhaseLabel(r)) return false;   // end phases are their own rows, not folded here
-        return catValOf(r, cfg.field) === c.value;
-      });
-      if (!acts.length) return;
+      var acts = byCat[c.value];
+      if (!acts || !acts.length) return;
       out[c.value] = { cat: c, state: _stkState(acts, D) };
     });
     return out;
@@ -16699,12 +16715,20 @@
   // simply drops the requirement that the row also carry a value AT the stacked level.
   function overallDisciplineStatus(levelId, D) {
     var cfg = catCfg(), cats = catList();
+    // ⚠️ Same O(categories × rows) → O(rows + categories) rewrite as stkTowerWideCats. This one is
+    // called ONCE PER TOWER by the "by tower" breakdown (overallDisciplineStatusForTower) plus once
+    // for the all-towers row, so on Avesta it was another ~15M row visits every time the stacking
+    // pane opened. Between the two functions that was the lag the owner reported.
+    var byCat = {};
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (isWbs(r)) continue;
+      if (!stkInScope(r, levelId)) continue;
+      var v = catValOf(r, cfg.field); if (!v) continue;
+      (byCat[v] || (byCat[v] = [])).push(r);
+    }
     return cats.map(function (c) {
-      var acts = rows.filter(function (r) {
-        if (isWbs(r)) return false;
-        if (!stkInScope(r, levelId)) return false;
-        return catValOf(r, cfg.field) === c.value;
-      });
+      var acts = byCat[c.value] || [];
       return { cat: c, state: _stkState(acts, D), n: acts.length };
     });
   }
