@@ -15748,11 +15748,34 @@
     return 'background-color:rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ');';
   }
   function catCfg() {
-    var d = { on:false, field:'name', colors:{}, tex:true };
+    var d = { on:false, field:'name', colors:{}, tex:true, keys:{} };
     try { var all = JSON.parse(localStorage.getItem('ps_catcolors') || '{}'); var c = all[pid];
       if (!c) return d;
-      return { on: !!c.on, field: c.field || 'name', colors: c.colors || {}, tex: c.tex !== false };
+      return { on: !!c.on, field: c.field || 'name', colors: c.colors || {}, tex: c.tex !== false,
+               keys: c.keys || {} };
     } catch (e) { return d; }
+  }
+  // ---- Curated KEY TRADES (the LSM discipline) ------------------------------------------------
+  // The reference P6 LSM layout keys ~17 trades, and its own slide says why: "Not all activities can
+  // or need be shown in the LSM Layout as the more activities you want to see on the chart, the more
+  // complex it will be. Choose only those activities that are with great importance and impact."
+  // On a 4,393-activity schedule "Activity name" yields 438 categories, which is not a key at all.
+  // A curated set is stored PER FIELD (`keys['name']`, `keys['work']`, …) because Activity name and
+  // Discipline/Trade have completely different vocabularies — curating one must not blank the other.
+  // ⚠️ Empty / absent set = NOT curated = every category keyed, i.e. exactly the old behaviour.
+  var CAT_MUTED = '#8A9099';
+  function catKeySet() {
+    var cfg = catCfg(), arr = cfg.keys && cfg.keys[cfg.field];
+    if (!arr || !arr.length) return null;
+    var out = {}; for (var i = 0; i < arr.length; i++) out[arr[i]] = true;
+    return out;
+  }
+  function catKeyList() { var cfg = catCfg(); return (cfg.keys && cfg.keys[cfg.field]) || []; }
+  function saveCatKeys(values) {
+    var cfg = catCfg(); cfg.keys = cfg.keys || {};
+    if (values && values.length) cfg.keys[cfg.field] = values.slice();
+    else delete cfg.keys[cfg.field];
+    saveCatCfg(cfg);
   }
   function saveCatCfg(cfg) {
     var all = {}; try { all = JSON.parse(localStorage.getItem('ps_catcolors') || '{}'); } catch (e) {}
@@ -15781,7 +15804,11 @@
   function catList() {
     // ⚠️ The theme is part of the key: c.style is a rendered (theme-shaded) style string, so a cache
     // hit across a theme flip would hand the legend swatches the other theme's colours.
-    var cfg = catCfg(), key = pid + '|' + cfg.field + '|' + rows.length + '|' + (_psDark() ? 'd' : 'l');
+    // ⚠️ The curated key set is part of the cache key too — it decides both `muted` AND the palette
+    // index every entry gets, so a stale hit would paint the old colours after an edit.
+    var cfg = catCfg(), keySet = catKeySet();
+    var key = pid + '|' + cfg.field + '|' + rows.length + '|' + (_psDark() ? 'd' : 'l') +
+              '|' + (keySet ? catKeyList().slice().sort().join('') : '*');
     if (_catCache && _catCache.key === key) return _catCache.list;
     var by = {};
     rows.forEach(function (r) {
@@ -15798,12 +15825,21 @@
       if (!a.first && b2.first) return 1;
       return a.value.localeCompare(b2.value);
     });
-    list.forEach(function (c, i) {
-      c.color = cfg.colors[c.value] || CAT_PALETTE[i % CAT_PALETTE.length];
+    // ⚠️ Palette index counts KEYED entries only. With a curated set of ~15 that hands each one a
+    // distinct palette slot instead of an arbitrary position in a 438-entry list, where two chosen
+    // trades could easily land on the same colour after the palette wraps. Safe to do here (unlike
+    // scoping by what is expanded, see catVisibleValues) because a curated set is explicit and
+    // stable — it only moves when the planner edits it, never on expand/collapse.
+    var ki = 0;
+    list.forEach(function (c) {
+      c.muted = keySet ? !keySet[c.value] : false;
+      if (c.muted) { c.color = CAT_MUTED; c.tex = 0; c.style = catStyle(CAT_MUTED, 0); return; }
+      c.color = cfg.colors[c.value] || CAT_PALETTE[ki % CAT_PALETTE.length];
       // Texture cycles one step per entry, so NEIGHBOURING legend rows differ in both hue and
       // texture; after a full palette lap the texture is what keeps a repeated colour distinct.
-      c.tex = cfg.tex ? (i % CAT_TEXTURES.length) : 0;
+      c.tex = cfg.tex ? (ki % CAT_TEXTURES.length) : 0;
       c.style = catStyle(c.color, c.tex);
+      ki++;
     });
     _catCache = { key: key, list: list, map: list.reduce(function (m, c) { m[c.value] = c; return m; }, {}) };
     return list;
@@ -15876,6 +15912,73 @@
     }
     return out;
   }
+  // ---- "Key trades…" picker -------------------------------------------------------------------
+  // Curating is a judgement call the planner makes, so this stays a manual list — but it is ordered
+  // by ACTIVITY COUNT (most-used first), which is the closest proxy the schedule has for "great
+  // importance and impact", and it offers a Top-15 quick pick so a 438-entry field is workable.
+  // ⚠️ Only offers categories the CURRENT VIEW admits (catScopedValues) — curating against
+  // Bidding-phase names while "Execution Phase only" is on would key trades that can never draw.
+  function openKeyTrades() {
+    var cfg = catCfg(), all = catList(), scoped = catScopedValues();
+    var pool = all.filter(function (c) { return scoped[c.value]; });
+    if (!pool.length) pool = all;
+    var byCount = pool.slice().sort(function (a, b) { return b.n - a.n || a.value.localeCompare(b.value); });
+    var sel = {}; catKeyList().forEach(function (v) { sel[v] = true; });
+    var fieldName = (catFieldOptions().filter(function (o) { return o[0] === cfg.field; })[0] || ['', cfg.field])[1];
+
+    var m = UI.modal('<div style="width:100%;max-height:82vh;display:flex;flex-direction:column;">' +
+      '<div style="flex:0 0 auto;">' +
+      '<h2 style="margin:0 0 4px;">Key trades</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">Colour and key only the work that carries the programme. Everything else still draws on the Gantt, in grey — it is just not competing for the eye. Keying <strong>every</strong> one of ' + pool.length + ' ' + esc(String(fieldName).toLowerCase()) + ' values is what makes the chart unreadable. <em>Leave nothing ticked to key them all (the old behaviour).</em></p>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">' +
+        '<input class="pd-input" id="kt-q" placeholder="Search…" style="flex:1 1 180px;">' +
+        '<button class="pd-btn" id="kt-top">Top 15 by activity count</button>' +
+        '<button class="pd-btn" id="kt-none">Clear all</button>' +
+      '</div>' +
+      '<div id="kt-count" style="font-size:12px;color:var(--pd-muted);margin-bottom:6px;"></div>' +
+      '</div>' +
+      '<div style="flex:1 1 auto;min-height:140px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;padding:4px 8px;" id="kt-list"></div>' +
+      '<div style="flex:0 0 auto;text-align:right;margin-top:12px;"><button class="pd-btn" id="kt-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="kt-go">Apply</button></div>' +
+    '</div>');
+    var _pm = m.el.querySelector('.pd-modal');
+    if (_pm) { _pm.style.maxWidth = 'min(94vw,720px)'; _pm.style.overflowX = 'hidden'; }
+
+    function paint() {
+      var q = (m.el.querySelector('#kt-q').value || '').trim().toLowerCase();
+      var shown = byCount.filter(function (c) { return !q || c.value.toLowerCase().indexOf(q) !== -1; });
+      m.el.querySelector('#kt-list').innerHTML = shown.map(function (c) {
+        return '<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px;cursor:pointer;">' +
+          '<input type="checkbox" class="kt-c" data-v="' + esc(c.value) + '"' + (sel[c.value] ? ' checked' : '') + '>' +
+          '<span class="ps-alg-sw" style="' + c.style + ';cursor:pointer;"></span>' +
+          '<span style="flex:1 1 auto;">' + esc(c.value) + '</span>' +
+          '<span style="color:var(--pd-muted);">' + c.n + '</span></label>';
+      }).join('') || '<div style="color:var(--pd-muted);font-size:12.5px;padding:8px 0;">Nothing matches.</div>';
+      m.el.querySelectorAll('.kt-c').forEach(function (i) {
+        i.onchange = function () { if (i.checked) sel[i.dataset.v] = true; else delete sel[i.dataset.v]; count(); };
+      });
+      count();
+    }
+    function count() {
+      var n = Object.keys(sel).length;
+      m.el.querySelector('#kt-count').textContent = n
+        ? (n + ' keyed · the other ' + (pool.length - n) + ' draw in grey')
+        : 'Nothing ticked — all ' + pool.length + ' will be keyed, as now.';
+    }
+    m.el.querySelector('#kt-q').oninput = paint;
+    m.el.querySelector('#kt-top').onclick = function () {
+      sel = {}; byCount.slice(0, 15).forEach(function (c) { sel[c.value] = true; }); paint();
+    };
+    m.el.querySelector('#kt-none').onclick = function () { sel = {}; paint(); };
+    m.el.querySelector('#kt-x').onclick = function () { m.close(); };
+    m.el.querySelector('#kt-go').onclick = function () {
+      // Store in catList() order (chronological), NOT click order, so the palette runs with the
+      // sequence of the work — Structural → Masonry → Plastering → Finishes, as an LSM key reads.
+      var keep = all.filter(function (c) { return sel[c.value]; }).map(function (c) { return c.value; });
+      saveCatKeys(keep);
+      m.close(); renderActLegend(); renderGantt();
+    };
+    paint();
+  }
   function renderActLegend() {
     var host = document.getElementById('ps-actlegend'); if (!host) return;
     if (!pid || !rows.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
@@ -15904,6 +16007,10 @@
         // Genuinely nothing in scope (filtered to nothing) — show the full key rather than a blank.
         if (!list.length) { list = _all; _hidden = 0; }
       }
+      // A curated key set wins over everything above: the legend keys the chosen trades and nothing
+      // else. The muted remainder is still drawn on the Gantt (in grey), it just isn't keyed —
+      // which is the entire point of the LSM layout.
+      if (catKeySet()) { list = list.filter(function (c) { return !c.muted; }); _hidden = 0; }
     }
     var opts = catFieldOptions().map(function (o) {
       return '<option value="' + esc(o[0]) + '"' + (o[0] === cfg.field ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
@@ -15924,6 +16031,7 @@
         '<label><input type="checkbox" id="ps-alg-on"' + (cfg.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
         '<select class="pd-select ps-alg-field" id="ps-alg-field">' + opts + '</select>' +
         (cfg.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (cfg.tex ? ' checked' : '') + '> Textures</label>' : '') +
+        (cfg.on ? '<button class="pd-btn" id="ps-alg-keys" style="min-height:32px;font-size:12px;" title="Choose the handful of trades worth keying, LSM-style. Everything else still draws, in grey.">Key trades' + (catKeySet() ? ' (' + catKeyList().length + ')' : '…') + '</button>' : '') +
         (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="min-height:32px;font-size:12px;">Reset colours</button>' : '') +
         (cfg.on ? '<button class="pd-btn" id="ps-alg-stack" style="min-height:32px;font-size:12px;">Vertical stacking pane</button>' : '') +
         (_hlCat ? '<span class="ps-alg-hl">Highlighting: ' + esc(_hlCat) + '<button type="button" id="ps-alg-hlclear" title="Clear the highlight">✕</button></span>' : '') +
@@ -15938,6 +16046,8 @@
     if (rst) rst.onclick = function () { var c = catCfg(); c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var stk = host.querySelector('#ps-alg-stack');
     if (stk) stk.onclick = function () { toggleStackPane(); };
+    var kys = host.querySelector('#ps-alg-keys');
+    if (kys) kys.onclick = function () { openKeyTrades(); };
     var hlc = host.querySelector('#ps-alg-hlclear');
     if (hlc) hlc.onclick = function () { clearCatHighlight(); };
     // The swatch shows colour + texture (a native colour input can only show a flat swatch), so it

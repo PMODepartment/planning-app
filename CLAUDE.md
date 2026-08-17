@@ -5365,6 +5365,21 @@ material_submittal, resource_assignments, activity_steps, wbs_nodes), each reinv
 - ⚠️ **Not verified signed-in.** ⚠️ Deliberately NOT changed: `getProjects`/`getAllUsers` (bounded by
   org size, and both feed pickers where a 1000-row page is already a UX problem, not a data one).
 
+### 2026-08-16 — Project Schedule: curated key trades (the LSM discipline)
+With "Execution Phase only" honoured the legend fell 438 -> 79, but 79 is still not a key.
+- ⚠️ **The remaining entries were CORRECT.** Mobilization, Temp. Facil., Manpower Loading, Safety
+  Provisions sit under **General Requirements, a child of Execution Phase**. Nothing was leaking —
+  "Execution Phase" is just broader than the construction work the owner pictures. Owner chose to
+  curate rather than redefine the toggle.
+- Added `cfg.keys[field]`, a curated set stored **per field**. ⚠️ Empty = not curated = every
+  category keyed, so nothing changes until the planner opts in. Unkeyed work still DRAWS, in neutral
+  grey, and leaves the legend — it stops competing for the eye rather than disappearing.
+- ⚠️ Palette index now counts **keyed entries only**, so a curated 15 gets 15 distinct colour+texture
+  slots instead of arbitrary positions in a 438-entry list. Safe precisely because a curated set is
+  explicit and stable, unlike the expand/collapse scoping `catVisibleValues` warns about.
+- "Key trades..." picker with search, counts, and a Top-15-by-activity-count quick pick; it offers
+  only categories the current view admits. 22/22 against sliced shipped functions.
+
 ### 2026-08-16 — Project Schedule: legend ignored "Execution Phase only" when collapsed
 Owner ticked "Execution Phase only" and the legend still listed Bidding-phase activities + "+398 more".
 - ⚠️ **A comment asserted an invariant that was never true.** `renderActLegend`'s fallback

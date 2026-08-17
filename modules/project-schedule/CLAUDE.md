@@ -345,6 +345,38 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Curated KEY TRADES — the LSM discipline, not a bigger legend (2026-08-16) — fmlozano
+Follow-on from the legend-scoping fix: with "Execution Phase only" honoured the legend fell 438 → 79,
+but 79 is still not a key. ⚠️ **The remaining entries were CORRECT** — Mobilization, Temp. Facil.,
+Manpower Loading, Safety Provisions etc. sit under **General Requirements, which is a child of
+Execution Phase**. Nothing was leaking; "Execution Phase" is simply broader than the construction
+work the owner pictures. Owner chose to curate rather than redefine the toggle.
+- The reference P6 LSM layout keys ~17 trades and its own slide says why: *"Not all activities can or
+  need be shown in the LSM Layout… Choose only those activities that are with great importance and
+  impact."* So the fix is **fewer keyed activities**, not more legend.
+- **`cfg.keys[field]`** — a curated set stored **per field**, because Activity name (438 values) and
+  Discipline/Trade (6) have different vocabularies and curating one must not blank the other.
+  ⚠️ **Empty/absent = not curated = every category keyed**, i.e. the exact old behaviour, so nothing
+  changes until the planner opts in.
+- ⚠️ **Palette index counts KEYED entries only.** A curated 15 now gets 15 consecutive, distinct
+  palette+texture slots instead of arbitrary positions in a 438-entry list where two chosen trades
+  could collide after the palette wraps. This is safe here — and explicitly NOT safe for
+  `catVisibleValues` (see its warning) — because a curated set is **explicit and stable**: it moves
+  only when edited, never on expand/collapse. The curated list is stored in `catList()` order
+  (chronological), not click order, so the palette runs with the sequence of the work.
+- Unkeyed work **still draws**, in neutral grey (`CAT_MUTED`), and drops out of the legend. It is not
+  hidden — it just stops competing for the eye.
+- **"Key trades…" picker** in the legend header: search, activity counts, **Top 15 by activity
+  count** quick pick (the closest proxy the schedule has for "importance and impact"), Clear all.
+  ⚠️ Offers only categories the **current view admits** (`catScopedValues`) — curating against
+  Bidding-phase names while "Execution Phase only" is on would key trades that can never draw.
+- **Verified 22/22 against the SHIPPED functions** (`catCfg`/`saveCatCfg`/`catKeySet`/`catKeyList`/
+  `saveCatKeys`/`catList` + the real `CAT_PALETTE`/`CAT_TEXTURES` sliced out): uncurated behaviour
+  unchanged, mute flags both ways, neutral grey + no texture on muted, **keyed entries landing on
+  consecutive distinct palette slots and distinct textures**, the legend filter, **cache
+  self-invalidating on a key-set change** (a stale hit would ship the old colours), per-field
+  isolation both directions, and clearing returning to key-them-all. ⚠️ **Not verified signed-in.**
+
 ## Legend ignored "Execution Phase only" whenever the outline was collapsed (2026-08-16) — fmlozano
 Owner: *"I ticked on Execution Phase only but legend still shows activities from other phases."*
 Screenshot: WBS collapsed to 4 summary rows, legend full of Bid Kick-Off Meeting / Site Visit /
