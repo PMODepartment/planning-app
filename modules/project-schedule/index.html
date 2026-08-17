@@ -16027,6 +16027,27 @@
     }
     return true;
   }
+  // ⚠️ Scope test for END PHASES ONLY (Testing & Commissioning, Punchlisting, Handover, Closeout,
+  // Defects Liability). These are modelled the way the schedule actually carries them: ONE
+  // whole-building line with NO tower value at all. Plain stkInScope() therefore rejects them for
+  // EVERY tower — the scope is pinned to a tower, the row's tower value is blank, blank !== "Tower 3"
+  // — which is why a tagged Punchlisting/Closeout never showed up in the stack, in single-tower OR
+  // "all towers" mode. (renderStackView already worked around exactly this for the legend by
+  // deleting the parent scope; the model never got the same treatment.)
+  // The rule: a BLANK value at the immediate parent level means "applies to the whole building", so
+  // it is in scope everywhere. A value that IS present must still match — a genuinely tower-tagged
+  // phase stays scoped to its own tower. Levels COARSER than the immediate parent are unchanged, so
+  // this never leaks one site's phases into another's.
+  function stkPhaseInScope(r, levelId) {
+    var outer = stkOuterLevels(levelId);
+    for (var i = 0; i < outer.length; i++) {
+      var want = _stkScope[outer[i].id]; if (!want) continue;
+      var got = locValOf(r, outer[i].id);
+      if (got) { if (got !== want) return false; continue; }
+      if (i < outer.length - 1) return false;   // only the IMMEDIATE parent may be blank
+    }
+    return true;
+  }
   // Default the scope to the FIRST value of each outer level, so the panel opens on one real
   // building rather than a merge of all of them.
   function stkEnsureScope(levelId) {
@@ -16101,7 +16122,7 @@
     var groups = {};
     rows.forEach(function (r) {
       if (isWbs(r)) return;
-      if (!stkInScope(r, levelId)) return;
+      if (!stkPhaseInScope(r, levelId)) return;    // whole-building: no tower value, in scope everywhere
       if (locValOf(r, levelId)) return;            // has a per-floor tag → part of the floor stack, not here
       var p = stkPhaseLabel(r); if (!p) return;
       var g = groups[p.label] || (groups[p.label] = { p: p, acts: [], first: null });
@@ -16128,8 +16149,11 @@
     var by = {};
     rows.forEach(function (r) {
       if (isWbs(r)) return;
-      if (!stkInScope(r, levelId)) return;
       var loc = locValOf(r, levelId); if (!loc) return;
+      // ⚠️ A phase the "Tag phases…" wizard WROTE carries the phase label AS its Level value, so it
+      // arrives here rather than via stkPhaseRows — and it still has no tower value. Scope it by the
+      // whole-building rule or it is filtered out of every tower exactly like the untagged case.
+      if (!(stkPhaseByLabel(loc) ? stkPhaseInScope(r, levelId) : stkInScope(r, levelId))) return;
       var v = catValOf(r, cfg.field); if (!v || !(v in catIdx)) return;
       var b = by[loc] || (by[loc] = { loc: loc, cats: {} });
       (b.cats[v] || (b.cats[v] = [])).push(r);

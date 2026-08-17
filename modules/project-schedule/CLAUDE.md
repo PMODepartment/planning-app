@@ -345,6 +345,37 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## End phases never appeared in the stack, tagged or not (2026-08-16) — fmlozano
+Owner: *"Closeout phase, Testing & Commissioning, Punchlisting & Handover is not appearing in the
+vertical stacking even when tagged."* Correct, and it was broken in **both** single-tower and
+"all towers" mode.
+- ⚠️ **Root cause: a whole-building phase has NO tower value, and every model run pins one.**
+  `stkInScope()` walks the levels ABOVE the stacked one and demands a match; the scope is pinned to
+  a tower (the grid pins one per column via `stackModelForTower`), the phase row's tower value is
+  blank, and `'' !== 'Tower 3'` → rejected. For **every** tower. So the phase rows silently
+  vanished no matter how they were tagged.
+- ⚠️ **Both tagging paths died on the same check**, which is why "even when tagged" didn't help:
+  an **untagged** phase goes through `stkPhaseRows()`, a phase the **"Tag phases…" wizard wrote**
+  carries the phase label as its *Level* value and so arrives through `stackModel()`'s main loop
+  instead — and both call `stkInScope` first.
+- ⚠️ **The workaround was already in the file, applied to the wrong half.** `renderStackView`
+  deletes `_stkScope[parentLvl.id]` before computing the *legend's* phase swatches — someone had
+  already hit this and fixed it for the legend only. The model never got the same treatment.
+- **Fix: `stkPhaseInScope()`, used for end phases only.** A **blank** value at the immediate parent
+  level means "whole building" → in scope everywhere. A value that IS present must still match, so
+  a genuinely tower-tagged phase stays on its own tower. Levels **coarser** than the immediate
+  parent are unchanged, so one site's phases never leak into another's. Ordinary floors keep the
+  strict `stkInScope` rule untouched. In the grid a whole-building phase now renders across every
+  tower column with the same state, which is what "whole building" means (the tooltip already said
+  so). `stkTowerWideCats` needed no change — it already excludes phase-named rows by design.
+- **Verified 16/16 in Node against the SHIPPED functions** (`stkInScope`/`stkPhaseInScope`/
+  `stkPhaseByLabel` + the real `STK_PHASES` sliced out, sanity-gated): the regression asserted
+  directly (old rule excludes, new rule admits), in-scope for all 7 tower columns, tower-tagged
+  phases still scoped to their own tower, cross-site leakage still blocked, blank-at-a-coarser-level
+  still blocked, ordinary floors unaffected, the `stackModel` gate expression, all 5 canonical phase
+  labels round-tripping, and the exact-label guard that stops a floor named "Testing Floor" being
+  taken for a phase. ⚠️ **Not verified signed-in.**
+
 ## Stacking legend scoped to the stack + click-a-chip band highlight (2026-08-16) — fmlozano
 Owner, from the "all towers" stack on AVR101: *"with this amount of activities there might be
 confusion as to what activity is it referring to. Having difficulty determining which activity from

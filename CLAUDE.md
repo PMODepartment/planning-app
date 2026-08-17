@@ -5365,6 +5365,21 @@ material_submittal, resource_assignments, activity_steps, wbs_nodes), each reinv
 - ⚠️ **Not verified signed-in.** ⚠️ Deliberately NOT changed: `getProjects`/`getAllUsers` (bounded by
   org size, and both feed pickers where a 1000-row page is already a UX problem, not a data one).
 
+### 2026-08-16 — Project Schedule: end phases never appeared in the vertical stack
+Owner reported Closeout / Testing & Commissioning / Punchlisting & Handover missing from the stack
+"even when tagged". Broken in **both** single-tower and all-towers mode.
+- ⚠️ **A whole-building phase carries NO tower value, and every model run pins a tower.**
+  `stkInScope()` demands a match on every level above the stacked one, so blank ≠ "Tower 3" and the
+  phase row was rejected for *every* tower.
+- ⚠️ **Both tagging paths hit the same check** — untagged phases go through `stkPhaseRows()`,
+  wizard-tagged ones carry the label as their Level value and go through `stackModel()`'s main loop
+  — which is exactly why tagging them didn't help.
+- ⚠️ **The workaround already existed in the file, on the wrong half:** `renderStackView` deletes
+  the parent scope before computing the *legend's* phase swatches. The model never got it.
+- Fixed with `stkPhaseInScope()` (end phases only): blank at the immediate parent = whole building,
+  in scope everywhere; a present value must still match; coarser levels unchanged, so no cross-site
+  leakage; ordinary floors keep the strict rule. 16/16 against sliced shipped functions.
+
 ### 2026-08-16 — Audit cycle 2: two more silent truncations, and the stacking legend made findable
 Second audit pass over the whole app. **Six checks, four came back clean:** all 20 JS files + 22
 inline blocks parse (1.59 MB); **0 function definitions lost** across the last 12 commits (the
