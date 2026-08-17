@@ -14395,28 +14395,49 @@
     function towerSVG(tr) {
       var floors = cfg.zoning[tr].floors;
       if (!floors.length) return '<div class="sbld-empty">No floors yet for ' + e2(GLABEL[tr]) + '. Add floors or basements on the left.</div>';
-      var W = 430, fh = 52, gap = 6, pad = 14, labelW = 40, col = gc(tr);
+      var fh = 52, gap = 6, pad = 14, labelW = 40, col = gc(tr);
       // Display order top→bottom: superstructure (highest floor first … ground last), then a GROUND
       // line, then basements (B1 first … deepest last). Grade sits between the two blocks.
       var supers = floors.filter(function (f) { return !f.sub; }), subs = floors.filter(function (f) { return f.sub; });
       var disp = supers.slice().reverse().concat(subs.slice().reverse()), groundAt = supers.length;
       // Draw only the detail the current Activity level uses (matches the editor + leavesOfFloor).
       var lvl = (cfg && cfg.locLevel) || 'auto', showZones = lvl !== 'floor', showUnits = (lvl === 'auto' || lvl === 'unit');
-      var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
+      // ⚠️ SIZE THE TOWER TO ITS CONTENT so a busy building stays readable (the pane scrolls if it gets
+      // wide). Drawing 16 labelled unit slivers in a fixed 430px is unreadable — so beyond UMAX units a
+      // zone is SUMMARISED as one block ("Z1 · 16u") with a few faint tick marks instead of 16 tiny
+      // labelled cells. Zones with ≤ UMAX units still show each unit labelled, just given real width.
+      var UMAX = 8, UNITW = 24, ZMINW = 70, ZSUMW = 108;
+      var maxZ = 1, maxLabeledU = 1, anySummary = false;
+      floors.forEach(function (f) {
+        if (!(showZones && f.zones.length)) return;
+        maxZ = Math.max(maxZ, f.zones.length);
+        if (showUnits) f.zones.forEach(function (z) { var n = z.units.length || 0; if (n > UMAX) anySummary = true; else if (n > maxLabeledU) maxLabeledU = n; });
+      });
+      var zoneNeed = Math.max(ZMINW, anySummary ? ZSUMW : 0, maxLabeledU > 1 ? maxLabeledU * UNITW : 0);
+      var W = Math.max(430, labelW + pad * 2 + maxZ * zoneNeed);
+      var plotW = W - labelW - pad * 2, H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
       disp.forEach(function (f, i) {
-        var y = pad + i * (fh + gap), plotW = W - labelW - pad * 2, zones = (showZones && f.zones.length) ? f.zones : [null], zw = plotW / zones.length;
+        var y = pad + i * (fh + gap), zones = (showZones && f.zones.length) ? f.zones : [null], zw = plotW / zones.length;
         svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="13" font-weight="700" fill="' + (f.sub ? gc(tr) : 'var(--pd-muted)') + '">' + e2(f.code || f.name || 'F') + '</text>';
         zones.forEach(function (z, zi) {
-          var zx = pad + labelW + zi * zw, hasU = showUnits && z && z.units.length;
-          svg += '<rect x="' + zx + '" y="' + y + '" width="' + (zw - 3) + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (zi % 2 ? 0.4 : 0.55) : (zi % 2 ? 0.72 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '></rect>';
-          var units = hasU ? z.units : [null], uw = (zw - 3) / units.length;
-          units.forEach(function (u, ui) {
-            var ux = zx + ui * uw;
-            if (ui > 0) svg += '<line x1="' + ux + '" y1="' + (y + 4) + '" x2="' + ux + '" y2="' + (y + fh - 4) + '" stroke="rgba(255,255,255,.55)" stroke-width="1"/>';
-            var lbl = u ? (u.code || 'U') : (z ? (z.code || 'Z') : (f.code || 'F'));
-            svg += '<text x="' + (ux + uw / 2) + '" y="' + (y + fh / 2 + (hasU ? 8 : 5)) + '" text-anchor="middle" font-size="' + (u ? 12 : 14) + '" font-weight="600" fill="#fff">' + e2(lbl) + '</text>';
-          });
-          if (hasU) svg += '<text x="' + (zx + zw / 2) + '" y="' + (y + 13) + '" text-anchor="middle" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)">' + e2(z.code || 'Z') + '</text>';
+          var zx = pad + labelW + zi * zw, nU = (showUnits && z && z.units.length) ? z.units.length : 0, hasU = nU > 0, wIn = zw - 3, cx = zx + wIn / 2;
+          svg += '<rect x="' + zx + '" y="' + y + '" width="' + wIn + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (zi % 2 ? 0.4 : 0.55) : (zi % 2 ? 0.72 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '></rect>';
+          if (hasU && nU > UMAX) {
+            // SUMMARY: one block for the whole zone — code on top, unit count below, a few faint ticks.
+            var ticks = Math.min(nU - 1, 11);
+            for (var t = 1; t <= ticks; t++) { var tx = zx + wIn * t / (ticks + 1); svg += '<line x1="' + tx + '" y1="' + (y + 20) + '" x2="' + tx + '" y2="' + (y + fh - 6) + '" stroke="rgba(255,255,255,.35)" stroke-width="1"/>'; }
+            svg += '<text x="' + cx + '" y="' + (y + 22) + '" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">' + e2(z.code || 'Z') + '</text>' +
+                   '<text x="' + cx + '" y="' + (y + fh - 12) + '" text-anchor="middle" font-size="11" font-weight="600" fill="rgba(255,255,255,.92)">' + nU + ' units</text>';
+          } else {
+            var units = hasU ? z.units : [null], uw = wIn / units.length;
+            units.forEach(function (u, ui) {
+              var ux = zx + ui * uw;
+              if (ui > 0) svg += '<line x1="' + ux + '" y1="' + (y + 4) + '" x2="' + ux + '" y2="' + (y + fh - 4) + '" stroke="rgba(255,255,255,.55)" stroke-width="1"/>';
+              var lbl = u ? (u.code || 'U') : (z ? (z.code || 'Z') : (f.code || 'F'));
+              svg += '<text x="' + (ux + uw / 2) + '" y="' + (y + fh / 2 + (hasU ? 8 : 5)) + '" text-anchor="middle" font-size="' + (u ? 12 : 14) + '" font-weight="600" fill="#fff">' + e2(lbl) + '</text>';
+            });
+            if (hasU) svg += '<text x="' + cx + '" y="' + (y + 13) + '" text-anchor="middle" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)">' + e2(z.code || 'Z') + '</text>';
+          }
         });
       });
       // ground line between superstructure and basements (or at the very bottom if no basements)
@@ -14672,8 +14693,8 @@
         : (editing && linkPhase === 'dst' && pendDst.length)
           ? '<button class="pd-btn pd-btn-primary" id="b-confirm">Create ' + pendDst.length + ' link' + (pendDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
-      var modeToggle = '<span class="sbld-quick" style="margin-right:2px;">Mode ' +
-        [['view', 'View'], ['edit', 'Edit']].map(function (m) { return '<button class="pd-btn sbld-scbtn' + (seqMode === m[0] ? ' on' : '') + '" data-seqmode="' + m[0] + '" title="' + (m[0] === 'view' ? 'Click a bar or zone to inspect its relationships' : 'Click zones to select sources, right-click to choose destinations, then link') + '">' + m[1] + '</button>'; }).join('') + '</span><span class="sbld-tb-sep2"></span>';
+      // Single toggle button: flips View ⇄ Edit. Primary (filled) while Editing so the mode is obvious.
+      var modeToggle = '<button class="pd-btn ' + (editing ? 'pd-btn-primary' : '') + '" id="b-seqmode" title="' + (editing ? 'Edit mode: click zones to select sources, right-click for destinations, then link. Click to return to View.' : 'View mode: click a bar or zone to inspect its relationships. Click to switch to Edit and create links.') + '">' + (editing ? '✎ Edit mode — click to View' : '◉ View mode — click to Edit') + '</button><span class="sbld-tb-sep2"></span>';
       var lede = editing
         ? '<p class="sbld-lede"><b>Edit mode:</b> <b>1)</b> click one or more <b>source</b> zones, <b>2)</b> right-click (or press <b>Confirm sources</b>), <b>3)</b> click one or more <b>destination</b> zones, <b>4)</b> right-click (or <b>Create links</b>), <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Every source links to every destination. <b>Auto-trace logic</b> builds the whole takt flow for you.</p>'
         : '<p class="sbld-lede"><b>View mode:</b> click any bar or zone to <b>highlight / inspect</b> its relationships (predecessors + successors). Switch to <b>Edit</b> to connect zones, or open <b>Links</b> to edit them in a table.</p>';
@@ -14694,8 +14715,8 @@
       host.querySelectorAll('[data-seqtr]').forEach(function (b) { b.onclick = function () { seqTradeFilter = b.dataset.seqtr; nodeReset(); }; });
       host.querySelectorAll('[data-seqlvl]').forEach(function (b) { b.onclick = function () { seqLevel = +b.dataset.seqlvl; render(); }; });
       host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
-      // View ↔ Edit mode. Leaving Edit clears any half-finished selection so it can't linger into View.
-      host.querySelectorAll('[data-seqmode]').forEach(function (b) { b.onclick = function () { seqMode = b.dataset.seqmode; if (seqMode !== 'edit') { pendSet = []; pendDst = []; linkPhase = 'src'; } render(); }; });
+      // View ⇄ Edit toggle. Leaving Edit clears any half-finished selection so it can't linger into View.
+      var smb = host.querySelector('#b-seqmode'); if (smb) smb.onclick = function () { seqMode = (seqMode === 'edit') ? 'view' : 'edit'; if (seqMode !== 'edit') { pendSet = []; pendDst = []; linkPhase = 'src'; } render(); };
       host.querySelector('#b-autotrace').onclick = openAutoTraceDialog;
       host.querySelector('#b-clear').onclick = function () { if (cfg.links.length && !confirm('Remove all ' + cfg.links.length + ' link(s)?')) return; cfg.links = []; nodeReset(); markDirty(); render(); };
       var cfb = host.querySelector('#b-confirm'); if (cfb) cfb.onclick = function () { nodeConfirm(); };
