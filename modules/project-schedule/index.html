@@ -11430,6 +11430,19 @@
     try { return await _wbsEnsureSummariesInner(); } finally { _ensuringSummaries = false; }
   }
   async function _wbsEnsureSummariesInner() {
+    // ⚠️⚠️ PIN THE PROJECT. `pid` and `WBS_NODES` are module-level and BOTH move when the planner
+    // switches project — but this function awaits dozens of round-trips, so a switch lands mid-run.
+    // The insert below read `project_id: pid` fresh on every iteration while `n` came from the
+    // WBS_NODES captured before the loop, so a switch stamped the NEW project's id onto the OLD
+    // project's nodes. That is not hypothetical: OPW101 was found holding 421 WBS-Summary rows whose
+    // wbs_node_id belongs to AVR101, and SLT101 had 42,823 excess summary rows from the same cause.
+    // ⚠️ The corruption is INVISIBLE to the healing above: it fetches by `.in('wbs_node_id', <this
+    // project's ids>)`, which matches neither a foreign project's node id NOR a NULL, so every
+    // "each node has exactly one summary row" check passed while the schedule showed duplicates.
+    var ownPid = pid;
+    var ownNodes = WBS_NODES.slice();
+    if (!ownPid || !ownNodes.length) return 0;
+    var switched = function () { return pid !== ownPid; };
     // Merge duplicate locked skeleton nodes first (two racing page loads can each seed a full
     // skeleton — see ensureWbsSkeleton) — otherwise the loop below would happily give each duplicate
     // node its own summary row, which is corruption, not healing.
@@ -11444,10 +11457,11 @@
     // wrote), and trusting a stale snapshot here is exactly what let the Avesta incident insert
     // thousands of "missing" rows that, on the server, already existed.
     var have = {}, existing = [];
-    for (var ci = 0; ci < WBS_NODES.length; ci += 200) {
-      var ids = WBS_NODES.slice(ci, ci + 200).map(function (n) { return n.id; });
-      var eq = await sb().from(TABLE).select('id,wbs_node_id').eq('project_id', pid).eq('activity_type', 'WBS Summary').in('wbs_node_id', ids);
+    for (var ci = 0; ci < ownNodes.length; ci += 200) {
+      var ids = ownNodes.slice(ci, ci + 200).map(function (n) { return n.id; });
+      var eq = await sb().from(TABLE).select('id,wbs_node_id').eq('project_id', ownPid).eq('activity_type', 'WBS Summary').in('wbs_node_id', ids);
       if (eq.error) return 0;   // can't safely determine "missing" — bail rather than risk duplicating
+      if (switched()) return 0; // project changed under us — these results describe the old one
       existing = existing.concat(eq.data || []);
     }
     var byNode = {}, dupIds = [];
@@ -11459,17 +11473,24 @@
         var dres = await sb().from(TABLE).delete().in('id', dupIds.slice(d, d + 100));
         if (dres.error) { UI.toast('Could not clean up duplicate WBS rows: ' + dres.error.message, 'error'); break; }
       }
+      // ⚠️ The DELETEs above are keyed on explicit ids, so they stay correct even if the planner
+      // switched project mid-run — but `rows` now belongs to the NEW project, and filtering/rebuilding
+      // it here would mutate the wrong schedule's view.
+      if (switched()) return 0;
       var dead = {}; dupIds.forEach(function (i2) { dead[i2] = 1; });
       rows = rows.filter(function (r) { return !dead[r.id]; });
       rebuild(true);   // the deleted rows are still in _sorted / the roll-up maps until we re-sort
       UI.toast('Removed ' + dupIds.length + ' duplicate WBS row' + (dupIds.length === 1 ? '' : 's') + ' from the schedule.', 'success');
     }
-    var missing = WBS_NODES.filter(function (n) { return !have[n.id]; });
+    var missing = ownNodes.filter(function (n) { return !have[n.id]; });
     if (!missing.length) return 0;
     var codeOf = computeWbsCodes(), made = 0;
     for (var i = 0; i < missing.length; i++) {
       var n = missing[i];
-      var res = await _insertWbsSummary({ project_id: pid, wbs_node_id: n.id, activity_type: 'WBS Summary',
+      // ⚠️ Re-checked EVERY iteration, not just once before the loop: the switch we are guarding
+      // against happens mid-loop, and each iteration is its own round-trip.
+      if (switched()) break;
+      var res = await _insertWbsSummary({ project_id: ownPid, wbs_node_id: n.id, activity_type: 'WBS Summary',
         wbs: codeOf[n.id], activity_name: n.name, created_by: UID });
       if (res.error) { UI.toast('Could not restore the schedule row for WBS “' + esc(n.name || '') + '”: ' + res.error.message, 'error'); break; }
       if (res.data && !rows.some(function (r) { return r.id === res.data.id; })) rows.push(res.data);
