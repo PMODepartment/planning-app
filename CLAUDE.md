@@ -5683,3 +5683,15 @@ rendered *done paler than remaining* — inverted — and was caught by the scre
 checks executing the shipped `ganttRowHTML`, all six other suites green, 0 functions lost, parses;
 before/after/dark PNGs captured at 1440px with headless Edge (the browser tool's screenshot times
 out here). ⚠️ Not verified signed-in. `MODULE_V` → `20260817w`.
+
+## Gantt: the trade composition left the WBS bracket (2026-08-17) — fmlozano
+Owner: *"the varying colour within the same bar is causing confusion — under Earthworks it shows grey
+then green."* A leaf branch's summary bracket was subdivided into one band per descendant activity in
+that activity's own trade colour, so a branch holding both MEPF and Structural work looked like one
+bar changing colour rather than several activities inside one branch. Option C: the bracket is now a
+single plain structural mark and the bands moved to their own thin strip beneath it.
+- ⚠️ **The row did not grow.** The strip's room came out of the bracket (13px → 8px), so the whole
+  stack — bracket, strip, BL0 rail, 1px apart, in that fixed order — ends at 31px of the 34px row
+  (26 of 27 compact). Detail, geometry table, the inert-track finding and the before/after numbers
+  are in `modules/project-schedule/CLAUDE.md`.
+- `MODULE_V` → `20260817x`.

@@ -672,32 +672,40 @@
     .ps-sp-lvl { flex:none; width:38px; font-size:10.5px; font-weight:700; color:var(--pd-ink);
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-sp-note { padding:10px; font-size:11.5px; color:var(--pd-muted); line-height:1.45; }
-    /* Activities shown inside a WBS summary bar (LSM composition) */
-    /* ⚠️ Activity bands live INSIDE the .ps-sum bracket now (they are its children), so they fill its
-       full height and inherit its clip-path — the bracket keeps its tapered shape while its body
-       reads as the sequence of trades under that branch, the way the reference LSM chart does.
-       top/bottom:0 rather than a computed height, so it tracks the bracket at every row density. */
-    /* ⚠️ top/height come INLINE now (lane-packed), so no top/bottom here — a `bottom:0` would fight
-       the computed height and flatten every lane back to full bracket height. */
+    /* Activities shown under a WBS summary bar (LSM composition) */
+    /* ⚠️ 2026-08-17 (Option C): the bands are OUT of the bracket again and live in their own strip
+       BENEATH it. Owner: "the varying colour within the same bar is causing confusion — under
+       Earthworks it shows grey then green". Drawing one band per descendant activity, each in its
+       own trade colour, INSIDE the bracket made a single bar appear to change colour along its
+       length instead of reading as several activities inside one branch. Two rows of meaning now:
+       the bracket is one plain structural mark (span + roll-up %), the strip below it is the trade
+       composition. `.ps-sum-strip` is a SIBLING of the bracket, positioned at the same left/width,
+       so the segment maths in _sumSegsHTML is unchanged (still relative to `barX`).
+       ⚠️ It is deliberately NOT clip-path'd like the bracket and NOT rounded/bordered like the BL0
+       rail — three marks stack on this row and each must be unmistakable. */
+    /* ⚠️ top/height come INLINE (lane-packed), so no top/bottom here — a `bottom:0` would fight
+       the computed height and flatten every lane back to full strip height. */
+    .ps-sum-strip { position:absolute; z-index:3; overflow:hidden; pointer-events:none;
+      /* ⚠️ THE INERT TRACK MOVED HERE. It used to sit on `.ps-sum-comp` — the bracket — where it was
+         half of the owner's "grey": a faint grey hatch filling every stretch of the bracket that no
+         band covered, on the very rows that also carry grey MEPF bands. Now that composition has
+         left the bracket the bracket has no "uncovered stretch" to explain, so the track has no job
+         there; but the STRIP does have gaps, and a gap meaning "nothing is scheduled here" must not
+         look like a gap meaning "the data is wrong" (that is what made the Mat Footing bug hard to
+         spot). So it is kept, on the strip only. It cannot be read as a grey trade band: it is
+         hatched at 45deg, far fainter, and has no inset outline — every real band has one. */
+      background:var(--ps-track);
+      background-image:repeating-linear-gradient(45deg,var(--ps-trackln) 0 1px,transparent 1px 7px); }
     .ps-sum-seg { position:absolute; overflow:hidden; z-index:1; pointer-events:none;
       box-shadow:0 0 0 .5px rgba(0,0,0,.22) inset; }
     .ps-sum-seg i { position:absolute; left:0; top:0; bottom:0; display:block; }
-    /* With the activity legend on the bracket is no longer a rule — it is the row's content — so it
-       gets a little more height for the bands to be readable. LSM only; the plain view is untouched. */
-    /* ⚠️ The extra height is ONLY for a bracket that actually carries the trade-composition bands
-       inside it — at 9px those bands are unreadable. It used to apply to every summary bar in
-       coloured mode, so after the altitude fix (a branch containing other branches draws no
-       composition) high-level rows just got fatter with nothing inside them. Owner asked what the
-       thickness was buying; on those rows, nothing. Keyed off the bands actually being emitted. */
-    #ps-view-schedule.ps-lsm .ps-sum.ps-sum-comp { height:13px;
-      /* ⚠️ The stretch of a band-carrying bracket that NO band covers must read as EMPTY TRACK.
-         It used to show the bracket's own solid structural colour, so a gap meaning "nothing is
-         scheduled here" looked identical to a gap meaning "the data is wrong" — which is exactly
-         what made the Mat Footing bug hard to spot. A faint hatched track is unmistakably inert,
-         so the bands are the only coloured thing on the row. Plain CSS vars, so it re-themes.
-         (An explicit per-WBS colour is an inline style and still wins — a deliberate choice.) */
-      background:var(--ps-track);
-      background-image:repeating-linear-gradient(45deg,var(--ps-trackln) 0 1px,transparent 1px 7px); }
+    /* ⚠️ A band-carrying bracket is now THINNER, not thicker. The 13px bump existed so the bands
+       INSIDE it were readable; the bands have moved out, and the room the strip needs is taken from
+       the bracket's own height rather than from the row — the row must not grow (the owner has
+       already objected once to brackets thickening for nothing). 9px → 8px. The class stays: it is
+       still the marker for "this row carries composition", and the JS reads the same number when it
+       stacks the strip and the rail under it. */
+    #ps-view-schedule.ps-lsm .ps-sum.ps-sum-comp { height:8px; }
     /* ⚠️ RED MEANS PROGRESS, AND ONLY PROGRESS — and in the coloured view red is not the progress
        colour, the row's own trade colour is. So in LSM a summary bracket's roll-up fill must NOT be
        red: five stacked branch-of-branches rows (Execution Phase › Construction Phase › Tower 1 ›
@@ -713,7 +721,11 @@
        part, i.e. inverted against every other row on the chart. The bracket track is now the pale
        tone and the completed portion the solid one, so "solid = done, pale = remaining" holds for
        activity bars, group bars and summary brackets alike. */
-    #ps-view-schedule.ps-lsm .ps-sum:not(.ps-sum-comp):not(.ps-sum-gcat) { background:var(--ps-track); }
+    /* ⚠️ `.ps-sum-comp` is no longer excluded here. With the composition out of the bracket, a leaf
+       branch's bracket is the same plain structural mark as every other summary row's — pale track,
+       solid roll-up fill — so the whole WBS column reads consistently instead of leaf branches
+       being a different kind of object. (A group's inline category background still wins.) */
+    #ps-view-schedule.ps-lsm .ps-sum:not(.ps-sum-gcat) { background:var(--ps-track); }
     #ps-view-schedule.ps-lsm .ps-sum > .ps-sum-fill { background:var(--ps-sumprog); }
     .ps-mo { cursor:pointer; }
     .lg-task { background:var(--ps-bar,#2B2C2B); position:relative; overflow:hidden; }
@@ -9463,10 +9475,10 @@
     }
     return m;
   }
-  // ⚠️ Emits the bracket's CHILDREN, so every coordinate is RELATIVE to the bracket's own left edge
-  // (`barX`), not to the timeline origin. Previously these were siblings drawn as a thin strip
-  // BELOW the bracket, which made a WBS row read as "a plain white bar, plus something underneath";
-  // subdividing the bracket itself is what makes it read as the trade sequence.
+  // ⚠️ Emits the CHILDREN of `.ps-sum-strip`, which is positioned at the bracket's own left/width,
+  // so every coordinate stays RELATIVE to `barX` (not to the timeline origin) exactly as when these
+  // were drawn inside the bracket itself. The maths here is untouched by the 2026-08-17 Option C
+  // move; only the box they land in changed. See the `.ps-sum-strip` CSS for why they moved out.
   function _sumSegsHTML(r, min, dayw, barX) {
     var cfg = catCfg();
     if (!cfg.on || r._dkind === 'group' || !r.wbs) return '';
@@ -9497,7 +9509,7 @@
     }
     if (!seg.length) return '';
     seg.sort(function (p, q) { return p.s - q.s || p.f - q.f; });
-    // ⚠️ Capped: the bracket is 13px in LSM mode, so beyond ~5 lanes a stripe is under 3px and the
+    // ⚠️ Capped: the strip is 8px (comfortable), so beyond ~5 lanes a stripe is under 2px and the
     // stacking stops carrying information. Past the cap lanes are reused — overlap returns, but only
     // in the rare deeply-concurrent case, and never for the ordinary 2-4 trade overlap.
     var LANE_CAP = 5, laneEnd = [];
@@ -9557,15 +9569,25 @@
       var _cm = (r._dkind === 'group') ? null : _costMap[r.wbs];
       var sumPct = (_cm && _cm.wd > 0) ? Math.max(0, Math.min(100, Math.round(_cm.wearn / _cm.wd))) : 0;
       var sumTop = top + o8;
-      // ⚠️ Computed BEFORE the baseline rail because the rail is tucked under the bracket and the
-      // bracket's height depends on whether it carries bands (.ps-sum-comp is 13px in LSM mode, the
-      // plain bracket 9px). Hard-coding `sumTop + 10` put the rail 3px INSIDE a 13px bracket, so on
-      // exactly the rows that show a composition the "planned dates" rail was half-hidden behind
-      // them and read as a stray pale slab poking out of the bar rather than as the baseline.
+      // ⚠️ Computed BEFORE the baseline rail because THREE marks now stack under this row and each
+      // one's top depends on the height of the one above it. The stacking order is fixed and
+      // deliberate, top to bottom:
+      //   1. the BRACKET       — structural: the branch's span + its roll-up %.  8px comp / 9px plain
+      //   2. the COMPOSITION STRIP — the trade bands, only when there are any.   8px (6px compact)
+      //   3. the BL0 RAIL      — the planned-dates marker, always the bottom-most mark on the row.
+      // The rail stays last so the rule "the rail is the thing furthest from the bar" holds on
+      // every row kind, comp or not. 1px of clear air between each, so the strip can never be read
+      // as part of the bracket, nor the rail as part of the strip.
+      // ⚠️ TOTAL must stay inside ROWH or the row grows, which the owner has already rejected once:
+      //   comfortable ROWH 34 -> 8 + 8 +1+ 8 +1+ 5 = 31   (was 8 + 13 +1+ 5 = 27, bracket 13px)
+      //   compact     ROWH 27 -> 6 + 8 +1+ 6 +1+ 4 = 26
+      // The strip's room is taken out of the BRACKET (13px -> 8px), never out of the row.
       var _segs = _sumSegsHTML(r, min, dayw, x);
-      var sumH = (_segs && catCfg().on) ? 13 : 9;
+      var sumH = _segs ? 8 : 9;                        // must match .ps-sum / .ps-sum-comp in CSS
+      var _stripH = _segs ? Math.max(6, Math.round(8 * oY)) : 0;
+      if (_segs) out += '<div class="ps-sum-strip" style="left:' + x + 'px;width:' + w + 'px;top:' + (sumTop + sumH + 1) + 'px;height:' + _stripH + 'px;">' + _segs + '</div>';
       if (blsp) { var bx0 = dayDiff(min, blsp.s) * dayw, bw0 = Math.max((dayDiff(blsp.s, blsp.e) + 1) * dayw, 3);
-        out += '<div class="ps-bl" title="Baseline (roll-up) — planned span for this branch" style="left:' + bx0 + 'px;width:' + bw0 + 'px;top:' + (sumTop + sumH + 1) + 'px;height:' + Math.max(4, Math.round(5 * oY)) + 'px;"></div>'; }
+        out += '<div class="ps-bl" title="Baseline (roll-up) — planned span for this branch" style="left:' + bx0 + 'px;width:' + bw0 + 'px;top:' + (sumTop + sumH + 1 + (_segs ? _stripH + 1 : 0)) + 'px;height:' + Math.max(4, Math.round(5 * oY)) + 'px;"></div>'; }
       // LSM composition: with the legend on, a summary row shows the activities INSIDE it as
       // coloured segments, each filling up with its own progress — so a WBS bar reads as the
       // sequence of trades running under it rather than one flat block.
@@ -9576,10 +9598,12 @@
       // segments for a handful of its children and NOTHING for the rest — rows of empty Gantt.
       // The roll-up bar is the only mark that is guaranteed to be there, so it always draws now.
       // Only the BL0 bar and the red %-complete treatment are suppressed in LSM mode.
-      // ⚠️ The activity bands go INSIDE the bracket. When they are present the rolled-up red
-      // %-fill is suppressed: each band already carries its own progress, so the red would sit on
-      // top of them and describe the same thing twice.
-      // (`_segs` is computed above, before the baseline rail, which needs the bracket's height.)
+      // ⚠️ The activity bands are NO LONGER inside the bracket (2026-08-17, Option C) — they are in
+      // `.ps-sum-strip`, emitted above. Consequence: the roll-up fill is NOT suppressed any more.
+      // It used to be, because the bands sat on top of it and described progress twice; now the
+      // bracket is the only thing in its own box, so a leaf branch gets the same solid-over-pale
+      // roll-up % as every other summary row, which is information that used to be readable only
+      // in the label and the tooltip.
       // ⚠️ GROUP rows carry their own roll-up (_gpct) and, when single-trade, their own category
       // (_gcat) — computed in buildNodes because _costMap is keyed by WBS code and a group has none.
       // Without this a grouped Gantt drew every row as one flat brand-red slab: no progress, no
@@ -9591,7 +9615,7 @@
       var _gBg = _gce ? catTint(_gce.color) : (wcS ? 'background:' + wcS + ';' : '');
       var _fillStyle = _gce ? catStyle(_gce.color, _gce.tex) : '';
       out += '<div class="ps-sum' + (_segs ? ' ps-sum-comp' : '') + (r._dkind === 'group' ? (_gce ? ' ps-sum-gcat' : ' ps-sum-group') : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + _gBg + '">' +
-        ((sumPct > 0 && !_segs) ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;' + _fillStyle + '"></i>' : '') + _segs + '</div>';
+        ((sumPct > 0) ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;' + _fillStyle + '"></i>' : '') + '</div>';
       if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
     }

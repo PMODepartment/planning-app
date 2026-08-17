@@ -5814,3 +5814,98 @@ parse clean; **function-set diff vs HEAD: 0 lost, 0 added.**
   BL0 chip being `.lg-lsmoff` again. Neither is a regression; both are this pass's intent.
 - ⚠️ **NOT verified signed-in** — no authenticated session is possible from this environment.
 - `MODULE_V` → `20260817w`.
+
+## Option C: the trade composition moved OUT of the bracket into a strip beneath it (2026-08-17) — fmlozano
+Owner: *"The varying colour within the same bar is causing confusion. For example under Earthworks it
+shows grey then green… same with Substructure."* A leaf branch's bracket drew **one band per
+descendant activity, each in that activity's own trade colour**, INSIDE the bracket. Earthworks holds
+both MEPF (grey) and Structural (green) work, so the bracket showed grey bands then green bands and
+read as *a single bar changing colour along its length* rather than as *several activities inside one
+branch*. Owner picked Option C over four alternatives: **the bracket becomes one plain structural
+mark, and the bands relocate to their own thin strip below it** — two rows of meaning instead of one
+overloaded bar.
+- **The bracket.** `.ps-sum` is now a single plain mark on every summary row alike: pale
+  `--ps-track`, solid `--ps-sumprog` for the rolled-up %. Leaf branches stop being a different *kind
+  of object* from their parents, which is half of why the row read as one confusing bar.
+  `#ps-view-schedule.ps-lsm .ps-sum:not(.ps-sum-comp):not(.ps-sum-gcat)` lost its `:not(.ps-sum-comp)`.
+- **The strip.** New `.ps-sum-strip`, a SIBLING of the bracket at the same `left`/`width`. The band
+  maths in `_sumSegsHTML` is **completely untouched** — same dates, same greedy lane-packing, same
+  `LANE_CAP 5`, same colours, same per-band tooltips — because the coordinates were already relative
+  to `barX`, which is the strip's left edge too. Only the box they land in changed.
+- ⚠️ **THE ROW DID NOT GET TALLER; the bracket got THINNER.** The 13px comp bracket existed only so
+  the bands inside it were readable, and they are not inside it any more. Final geometry (the numbers
+  are the point, given the earlier "what is the thickness buying?" complaint):
+
+  | | bracket | strip | rail | bottom | ROWH |
+  |---|---|---|---|---|---|
+  | comfortable, BEFORE | 8→21 (13px) | — | 22→27 | 27 | 34 |
+  | comfortable, AFTER | 8→16 (**8px**) | 17→25 (8px) | 26→31 | **31** | 34 |
+  | compact, AFTER | 6→14 (8px) | 15→21 (6px) | 22→26 | **26** | 27 |
+
+  `sumH` in `ganttRowHTML` is `_segs ? 8 : 9` and must stay equal to the CSS (`.ps-sum` 9px /
+  `.ps-sum.ps-sum-comp` 8px) — the JS reads that number to stack the two marks below it.
+- ⚠️ **Three marks now compete for the space under the bracket; the stacking order is FIXED and
+  documented in the code:** bracket → strip → **rail last**. The rail stays the bottom-most mark on
+  *every* row kind, comp or not, so "the rail is the thing furthest from the bar" is a rule the eye
+  can rely on. 1px of clear air between each. Strip vs rail cannot be confused: the rail is 5px,
+  rounded, bordered, `--ps-bl` blue, `opacity:.7` and titled "Baseline (roll-up)"; the strip is
+  square, unbordered, inert-hatched, `pointer-events:none` and carries no title of its own. Asserted
+  both ways, including that they never overlap vertically.
+- ⚠️ **THE INERT TRACK: the owner's grey was PARTLY it, and it does still earn its place — but not
+  where it was.** Added earlier today to `.ps-sum-comp`, it filled every stretch of the bracket that
+  no band covered with a faint grey 45° hatch — on exactly the rows that also carry grey MEPF bands.
+  So one bracket could show, left to right: hatched grey (inert), grey (MEPF), green (Structural),
+  pale grey (remainder) — four tones, three meanings, one bar. **Verdict: keep it, move it.** Once
+  composition leaves the bracket the bracket has no "uncovered stretch" to explain, so the track has
+  no job there; the STRIP does have gaps, and a gap meaning "nothing is scheduled here" must not look
+  like a gap meaning "the data is wrong" (exactly what made the Mat Footing bug hard to spot). It now
+  lives on `.ps-sum-strip` only. It cannot be read as a grey trade band: hatched, far fainter, and
+  with **no inset outline** — every real band has one (`.ps-sum-seg`'s box-shadow).
+- ⚠️ **INFORMATION WAS ADDED BACK, not removed.** The roll-up %-fill used to be *suppressed* on a
+  band-carrying bracket (the bands sat on top of it and described progress twice). With the bands
+  gone from the bracket the suppression is dropped, so a leaf branch now draws its duration-weighted
+  roll-up % like every other summary row instead of carrying it only in the label and the tooltip.
+  Bar label, bracket tooltip and per-band tooltips all asserted individually.
+- **Which rows draw composition is UNCHANGED.** A branch containing another branch still draws none
+  (the deliberate 2026-08-17 altitude fix) — no strip either, and its bracket stays the plain 9px
+  one. Asserted. **The plain (colours-off) view is byte-identical**: `_segs` is `''` with colours off,
+  so no strip, no `.ps-sum-comp`, rail still at `sumTop + 9 + 1`, `.ps-sum-fill` still red.
+- **Theming.** The strip uses `--ps-track`/`--ps-trackln` only — **plain CSS vars already defined in
+  both the light and the dark block**, nothing inlined at render time, so it follows a theme flip with
+  no JS and needs nothing from the `MutationObserver` that drops the colour caches. Asserted that the
+  strip's inline style contains geometry and no colour at all; confirmed in both themes visually.
+- **Verified by EXECUTING the shipped code**, nothing under test stubbed: `rebuild`, `wbsSpan`,
+  `wbsBlSpan`, `_buildSegMap`, `_sumSegsHTML`, `ganttRowHTML` and the whole
+  `catEntry`/`catTint`/`catStyle` chain sliced verbatim out of index.html. `scratchpad/check-optc.js`,
+  **38 checks** on emitted geometry and classes, at both densities. ⚠️ **BEFORE/AFTER: the same suite
+  against HEAD fails 17 of 38** — including the literal complaint, measured: the Earthworks bracket's
+  own body contained
+  `["rgba(110,110,110,0.32)","#6e6e6e","rgba(0,176,80,0.32)","#00b050","rgba(255,255,255,.55)"]`,
+  i.e. **five colours inside one bar**; after, the bracket body carries **at most one**.
+- **Other suites green:** sumspan 22, blrail 14, present2 30, baseline-lsm, transpose, grouprollup.
+  Parse clean (1 block); **function-set diff vs HEAD: 0 lost, 0 added.**
+- ⚠️ **`scratchpad/check-present2.js` has three assertions changed and they are this pass's INTENT,
+  not regressions** — the fill is no longer suppressed on a comp bracket, the inert track is asserted
+  on `.ps-sum-strip` instead of `.ps-sum-comp`, and the pale-track rule no longer excludes comp rows.
+- ⚠️ **A HARNESS TRAP that produced ten confidently wrong failures on the first run:** matching the
+  bracket with `class="ps-sum[^"]*"` also matches **`ps-sum-strip`**, and the strip is emitted
+  *before* the bracket — so every geometry reading came off the wrong element. The matcher now
+  requires an exact class token (`ps-sum(?: [^"]*)?`). The same trap will bite anything that greps
+  this markup.
+- **Screenshots** at 1440px from a gitignored `_ui_test.html` built from the module's REAL `<style>`
+  block + rows emitted by the REAL `ganttRowHTML`, taken with **headless Edge** (the browser tool's
+  screenshot still times out here): `scratchpad/optc-before.png`, `optc-after.png`,
+  `optc-after-dark.png`. Harnesses deleted, PNGs kept. Before shows Substructure as one bar carrying
+  orange, green, blue and hatched grey; after, a neutral bracket with a thin coloured strip under it.
+- ⚠️ **NOT verified signed-in** — the anon key has no grants on `project_schedule`, so AVR101 was
+  never opened from here. Everything above is measured against the shipped functions in Node and in a
+  real browser rendering the shipped CSS.
+- ⚠️ **Left open.** (1) `LANE_CAP` is still 5 against an 8px strip, so a five-lane row gives ~1.6px
+  stripes — deliberately unchanged (identical lane packing was a requirement), but 4 lanes would
+  probably read better and is worth putting to the owner. (2) `scratchpad/check-present.js` fails 12
+  checks **and fails them identically on HEAD** — a stale suite for a "Presentation mode" that is not
+  in the file; not touched, not caused here. (3) The strip is `pointer-events:none`, so its per-band
+  tooltips are emitted but never shown — the same as before this change; enabling them would need
+  `.ps-sum-strip` added to the Gantt click delegate's `closest()` list first, or a click on a band
+  would deselect the row.
+- `MODULE_V` → `20260817x`.
