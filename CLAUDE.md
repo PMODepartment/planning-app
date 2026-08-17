@@ -5507,3 +5507,12 @@ diff the set of `function NAME(` against a known-good commit after any bulk edit
 `2053790` it shows 0 lost / 10 added across the whole day. ⚠️ Never replace a computed `src[i:j]`
 region without printing what is inside it. **Verified 7/7 in Node against the sliced (not stubbed)
 functions.** `MODULE_V` → `20260815u`.
+
+### 2026-08-17 — Project Schedule: grouped views stop flipping; stack order is an opt-in ticker
+Owner: a grouped view flipped the grid to top-floor-first while the WBS view builds bottom-up.
+⚠️ **`_stkTopFirst` was doing double duty** — it is the stacking view's own display order, but the
+grid's location-group sort read it directly, so ticking "Highest level at the top" in the stack modal
+reversed every location grouping in the grid even with the stack closed. New `_gridMatchStack`
+(default off) gates it: the grid only flips when the docked stacking pane is **open** and the new
+**"Match grid"** ticker in that pane's header is on. The ticker sits in the pane because it is inert
+anywhere else. Verified: parses; not verified signed-in. `MODULE_V` → `20260817o`.

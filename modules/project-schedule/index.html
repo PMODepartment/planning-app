@@ -640,7 +640,9 @@
        full height and inherit its clip-path — the bracket keeps its tapered shape while its body
        reads as the sequence of trades under that branch, the way the reference LSM chart does.
        top/bottom:0 rather than a computed height, so it tracks the bracket at every row density. */
-    .ps-sum-seg { position:absolute; top:0; bottom:0; overflow:hidden; z-index:1; pointer-events:none;
+    /* ⚠️ top/height come INLINE now (lane-packed), so no top/bottom here — a `bottom:0` would fight
+       the computed height and flatten every lane back to full bracket height. */
+    .ps-sum-seg { position:absolute; overflow:hidden; z-index:1; pointer-events:none;
       box-shadow:0 0 0 .5px rgba(0,0,0,.22) inset; }
     .ps-sum-seg i { position:absolute; left:0; top:0; bottom:0; display:block; }
     /* With the activity legend on the bracket is no longer a rule — it is the row's content — so it
@@ -5202,7 +5204,11 @@
           if (!fa && fb) return 1;
           return cmpGroupName(a, b);
         } : (dims[di] === 'work' ? cmpWorkName : (_isLoc ? cmpLevelValue : cmpGroupName)));
-      if (_isLoc && _stkTopFirst) {   // same rule as the stack: reverse the storeys, keep non-levels last
+      // ⚠️ The grid keeps its natural BUILD order (bottom-up) unless the planner explicitly asks the
+      // rows to line up with the vertical stacking pane — and only while that pane is actually open.
+      // Flipping the grid whenever _stkTopFirst is set (its old behaviour) silently reversed every
+      // location grouping even with the stack closed, which read as the grid "flipping by itself".
+      if (_isLoc && _stkPaneOn && _gridMatchStack && _stkTopFirst) {   // same rule as the stack: reverse the storeys, keep non-levels last
         var _rk = _keys.filter(function (k) { return levelRank(k) != null; });
         var _ot = _keys.filter(function (k) { return levelRank(k) == null; });
         _rk.reverse(); _keys = _rk.concat(_ot);
@@ -9341,19 +9347,45 @@
     if (_kidBranch && _kidBranch[r.wbs]) return '';
     var kids = (_segMap && _segMap[r.wbs]) || [];
     if (!kids.length) return '';
-    var out = '';
+    // ⚠️ LANE-PACK overlapping activities. Every segment used to be drawn at the bracket's FULL
+    // height, so concurrent work simply painted over itself and whichever came last in `_sorted`
+    // won. Owner report on Ground floor › Wet Works, where Masonry (Apr-Jul), Sealant (Apr-Jul) and
+    // Waterproofing (Jun-Jul) all run together: the bracket showed a mash that read as one activity
+    // spilling over the others. Greedy interval partitioning puts each concurrent activity in its
+    // own horizontal lane, so overlap becomes STACKED STRIPES — which is what a bar carrying several
+    // trades at once actually means — instead of one silently hiding the rest.
+    var seg = [];
     for (var i = 0; i < kids.length; i++) {
       var a = kids[i], e = catEntry(a); if (!e) continue;
       var s = pd(dispStart(a)), f = pd(dispFin(a)); if (!s || !f) continue;
+      seg.push({ a: a, e: e, s: +s, f: +f });
+    }
+    if (!seg.length) return '';
+    seg.sort(function (p, q) { return p.s - q.s || p.f - q.f; });
+    // ⚠️ Capped: the bracket is 13px in LSM mode, so beyond ~5 lanes a stripe is under 3px and the
+    // stacking stops carrying information. Past the cap lanes are reused — overlap returns, but only
+    // in the rare deeply-concurrent case, and never for the ordinary 2-4 trade overlap.
+    var LANE_CAP = 5, laneEnd = [];
+    for (var j = 0; j < seg.length; j++) {
+      var L = -1;
+      for (var k = 0; k < laneEnd.length; k++) if (laneEnd[k] <= seg[j].s) { L = k; break; }
+      if (L < 0) { if (laneEnd.length < LANE_CAP) { L = laneEnd.length; laneEnd.push(0); } else L = j % LANE_CAP; }
+      laneEnd[L] = seg[j].f;
+      seg[j].lane = L;
+    }
+    var LN = Math.max(1, laneEnd.length), lh = 100 / LN;
+    var out = '';
+    for (var m2 = 0; m2 < seg.length; m2++) {
+      var g = seg[m2], pct = Math.max(0, Math.min(100, g.a.percent_complete || 0));
       // ⚠️ MIN 2px. A 2-day activity on a months-long branch is otherwise sub-pixel and simply does
-      // not paint — which is exactly why short branches (General Requirements, Site Works) looked
-      // like plain white bars while long ones showed their full composition.
-      var x = Math.round(dayDiff(min, s) * dayw - barX);
-      var w = Math.max(Math.round((dayDiff(s, f) + 1) * dayw), 2);
-      var pct = Math.max(0, Math.min(100, a.percent_complete || 0));
-      out += '<div class="ps-sum-seg" title="' + esc((a.activity_name || '') + ' — ' + pct + '%') +
-        '" style="left:' + x + 'px;width:' + w + 'px;' + catTint(e.color, 0.32) + '">' +
-        '<i style="width:' + pct + '%;' + catStyle(e.color, e.tex) + '"></i></div>';
+      // not paint — which is why short branches looked like plain white bars while long ones showed
+      // their full composition.
+      var x = Math.round(dayDiff(min, pd(dispStart(g.a))) * dayw - barX);
+      var w = Math.max(Math.round((dayDiff(pd(dispStart(g.a)), pd(dispFin(g.a))) + 1) * dayw), 2);
+      out += '<div class="ps-sum-seg" title="' + esc((g.a.activity_name || '') + ' — ' + pct + '%') +
+        '" style="left:' + x + 'px;width:' + w + 'px;top:' + (g.lane * lh).toFixed(3) + '%;height:' + lh.toFixed(3) + '%;' +
+        catTint(g.e.color, 0.32) + '">' +
+        '<i style="width:' + pct + '%;' + catStyle(g.e.color, g.e.tex) + '"></i></div>';
     }
     return out;
   }
@@ -17008,7 +17040,7 @@
         LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === _stkLevel ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
       '</select></label>' + allTowersToggle + scopeSel +
       '<span>Cut-off: <strong>' + esc(Fmt.date(dstr(D))) + '</strong></span>' +
-      '<label title="Also sets the order of the location groups in the grid + Gantt, so the stack and the bars read the same way."><input type="checkbox" id="ps-stk-top"' + (_stkTopFirst ? ' checked' : '') + '> Highest level at the top</label>' +
+      '<label title="Display order of THIS stack. The grid + Gantt keep their own build order unless &quot;Match grid&quot; is ticked in the docked stacking pane."><input type="checkbox" id="ps-stk-top"' + (_stkTopFirst ? ' checked' : '') + '> Highest level at the top</label>' +
       '<button class="pd-btn" id="ps-stk-tagphases" style="height:28px;font-size:12px;" title="Assign Testing/Commissioning, Punchlisting, Handover, Closeout & Defects activities a Level value so they persist across the app">Tag phases…</button>' +
       '<span style="margin-left:auto;">Actual dates where recorded, else planned.</span></div>';
     if (!LOC_LEVELS.length) {
@@ -17154,6 +17186,10 @@
   // to switch the grouping (and it is the location dimension's own group sort, `cmpLevelValue`,
   // that puts the levels in building order, so the Gantt reads bottom-up like the stack does).
   var _stkPaneOn = false, _stkPaneCut = null, _stkPaneW = 250, _stkGripWired = false;
+  // Opt-in: make the GRID's location groups read in the same direction as the stacking pane.
+  // Off by default, and inert while the pane is closed — the grid otherwise keeps build order.
+  var _gridMatchStack = false;
+  try { _gridMatchStack = localStorage.getItem('ps_grid_matchstack') === '1'; } catch (e) {}
   try { _stkPaneOn = localStorage.getItem('ps_stackpane') === '1'; } catch (e) {}
   try { _stkPaneCut = localStorage.getItem('ps_stackpane_cut') || null; } catch (e) {}
   try { var _w = parseInt(localStorage.getItem('ps_stackpane_w'), 10); if (_w >= 150 && _w <= 700) _stkPaneW = _w; } catch (e) {}
@@ -17178,6 +17214,8 @@
     if (_stkPaneOn && !_stkLevel) _stkLevel = stkDefaultLevel();
     applyStackPaneWidth(); wireStackGrip();
     renderStackPane();
+    // Opening/closing the pane changes the grid's location order when the match toggle is on.
+    if (_gridMatchStack) { renderGrid(); renderGantt(); }
   }
   // The level dimension currently being grouped by, if any.
   function stkGroupedDim() {
@@ -17209,8 +17247,17 @@
     var sc = stkScopeLabel(_stkLevel);
     head.innerHTML = '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(stkLevelName(_stkLevel) || 'Stacking') + (sc ? ' · ' + esc(sc) : '') + '</span>' +
       '<input type="date" id="ps-stkp-cut" class="pd-input" value="' + esc(dstr(D)) + '" title="Cut-off — planned status as of this date" style="margin-left:auto;height:24px;font-size:10px;padding:1px 3px;width:118px;text-transform:none;letter-spacing:0;">' +
+      '<label id="ps-stkp-match" title="Also order the grid + Gantt location groups to match this stack (only while this pane is open)" ' +
+      'style="margin-left:6px;display:inline-flex;align-items:center;gap:3px;font-size:10px;white-space:nowrap;cursor:pointer;text-transform:none;letter-spacing:0;">' +
+      '<input type="checkbox" id="ps-stkp-match-cb"' + (_gridMatchStack ? ' checked' : '') + '> Match grid</label>' +
       '<button class="ps-bulk-x" id="ps-stkp-x" style="margin-left:4px;" title="Hide the stacking pane">&#215;</button>';
     var x = head.querySelector('#ps-stkp-x'); if (x) x.onclick = function () { toggleStackPane(false); };
+    var mcb = head.querySelector('#ps-stkp-match-cb');
+    if (mcb) mcb.onchange = function () {
+      _gridMatchStack = this.checked;
+      try { localStorage.setItem('ps_grid_matchstack', _gridMatchStack ? '1' : '0'); } catch (e) {}
+      renderGrid(); renderGantt();
+    };
     var cut = head.querySelector('#ps-stkp-cut'); if (cut) cut.onchange = function () { _stkPaneCut = this.value || null; try { localStorage.setItem('ps_stackpane_cut', _stkPaneCut || ''); } catch (e) {} renderStackPane(); };
     if (!LOC_LEVELS.length || !catCfg().on) {
       inner.innerHTML = '<div class="ps-sp-note">' + (!LOC_LEVELS.length

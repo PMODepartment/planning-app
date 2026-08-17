@@ -5257,3 +5257,23 @@ failing per render.
   reported call — `_sumSegsHTML` on a WBS row with the legend on — no longer throws and emits its
   segment, plus `catEntry` hit/miss, `catColor` hit/miss and `catColorMapNow`. Parses (1 block, 0 fail).
 - `MODULE_V` → `20260815u`.
+
+## Grouping no longer flips the grid — the stack order is now an opt-in "Match grid" ticker (2026-08-17) — fmlozano
+Owner: the WBS view builds bottom-up (lower floors first), but selecting a grouped view flipped the
+grid to top-floor-first. Wanted: never flip by default; flip only for the vertical stacking pane, via
+a ticker, and only while that pane is open.
+- ⚠️ **`_stkTopFirst` was doing double duty.** It is the stacking view's own display order (a building
+  reads top-down), but the grid's location-group sort also read it directly — so ticking "Highest
+  level at the top" in the stack modal silently reversed **every** location grouping in the grid,
+  even with the stack closed. That is the reported flip; nothing else was reordering rows.
+- **New `_gridMatchStack`** (persisted `ps_grid_matchstack`, **default off**) and the grid gate is now
+  `_isLoc && _stkPaneOn && _gridMatchStack && _stkTopFirst`. So: off → build order always; on but pane
+  closed → build order; on with the pane open → grid follows the stack's direction, which is the only
+  state where alignment means anything.
+- **The ticker lives in the docked pane's header** ("Match grid"), not the modal — it is inert unless
+  that pane is open, so putting it anywhere else would offer a control that does nothing. Toggling it,
+  and opening/closing the pane, re-render the grid + Gantt so the order changes immediately.
+- The stack modal's checkbox tooltip no longer claims it sets the grid order.
+- Verified: inline block parses (1 block, 0 fail); the gate and all 7 `_gridMatchStack` references
+  present. ⚠️ **Not verified signed-in** — needs a project with a location breakdown. `MODULE_V` →
+  `20260817o`.
