@@ -72,6 +72,15 @@ pair was run alongside. Also ⚠️ `count=exact` on the whole of `project_sched
 filtered counts are fine. And one `wbs` value came back rendered as `[BLOCKED: JWT token]` — a
 redaction in the browser tool's output, not data.
 
+## Schedule Builder step 3: declutter the resulting-schedule diagonal (drop redundant FS labels) (2026-08-18) — eprobles
+Owner screenshot: the step-3 resulting schedule was littered with overlapping "FS" tags piled on the
+bars near the diagonal. Cause: `scheduleSVG` drew a text label on EVERY link, and auto-trace produces
+almost entirely FS+0 links, so each one stamped a redundant "FS". Fixed by only labelling a link that
+carries real information — a **non-FS type or a non-zero lag** (FS+0 is left unlabelled, matching Gantt
+convention where finish-to-start is implicit). The arrows/arrowheads are unchanged; only the redundant
+text is gone. Verified: inline script parses; label model gives ""/FS+3/SS/FF-2 for FS+0/FS+3/SS+0/FF-2.
+⚠️ **Not verified signed-in** (auth wall). `MODULE_V` → `20260818a`.
+
 ## Schedule Builder: parallel-trades auto-logic option, cure question removed, Ctrl+scroll zoom, bar-chart linking (2026-08-18) — eprobles
 Four owner asks on the Schedule Builder (`ScheduleBuilder` closure).
 - **Step 3 auto-trace: "can start at the same time" option.** Each cross-trade section's handoff

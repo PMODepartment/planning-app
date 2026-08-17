@@ -14615,11 +14615,16 @@
         var oi = (srcCount[k.from] = (srcCount[k.from] || 0) + 1) - 1, extra = oi * 7;
         var di = (dstCount[k.to] = (dstCount[k.to] || 0) + 1) - 1;
         var y1 = stagY(a, oi), y2 = stagY(b, di);
-        var mx = (tx >= fx ? fx + 8 + extra : fx - 8 - extra), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
+        var mx = (tx >= fx ? fx + 8 + extra : fx - 8 - extra);
+        // ⚠️ Only LABEL a link that carries real information — a non-FS type or a non-zero lag. Auto-trace
+        // produces mostly FS+0 links, and drawing "FS" on every one of them litters the diagonal with
+        // overlapping tags piled on the bars (the reported clutter). Plain FS+0 links are left unlabelled,
+        // matching Gantt convention where finish-to-start is implicit.
+        var lbl = ((k.type && k.type !== 'FS') || k.lag) ? ((k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '')) : '';
         var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
         var lcls = fAny ? (fKeys[k.to] ? ' hotpred' : (fKeys[k.from] ? ' hotsucc' : ' dimlink')) : '';
         var seg = '<path class="sbld-link' + lcls + '" d="' + d + '" marker-end="url(#sbldarrow2)"></path>' +
-          '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' +
+          (lbl ? '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' : '') +
           (k.raw ? '<path class="sbld-linkhit" data-fk="' + e2(k.raw.from + '~' + k.raw.to) + '" d="' + d + '"></path>' : '');
         if (lcls === ' hotpred' || lcls === ' hotsucc') hot += seg; else links += seg;
       });
