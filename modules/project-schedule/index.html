@@ -627,9 +627,16 @@
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-sp-note { padding:10px; font-size:11.5px; color:var(--pd-muted); line-height:1.45; }
     /* Activities shown inside a WBS summary bar (LSM composition) */
-    .ps-sum-seg { position:absolute; border-radius:2px; overflow:hidden; z-index:3; pointer-events:none;
-      box-shadow:0 0 0 .5px rgba(0,0,0,.18) inset; }
+    /* ⚠️ Activity bands live INSIDE the .ps-sum bracket now (they are its children), so they fill its
+       full height and inherit its clip-path — the bracket keeps its tapered shape while its body
+       reads as the sequence of trades under that branch, the way the reference LSM chart does.
+       top/bottom:0 rather than a computed height, so it tracks the bracket at every row density. */
+    .ps-sum-seg { position:absolute; top:0; bottom:0; overflow:hidden; z-index:1; pointer-events:none;
+      box-shadow:0 0 0 .5px rgba(0,0,0,.22) inset; }
     .ps-sum-seg i { position:absolute; left:0; top:0; bottom:0; display:block; }
+    /* With the activity legend on the bracket is no longer a rule — it is the row's content — so it
+       gets a little more height for the bands to be readable. LSM only; the plain view is untouched. */
+    #ps-view-schedule.ps-lsm .ps-sum { height:13px; }
     .ps-mo { cursor:pointer; }
     .lg-task { background:var(--ps-bar,#2B2C2B); position:relative; overflow:hidden; }
     .lg-task::after { content:""; position:absolute; left:0; top:0; bottom:0; width:55%; background:var(--pd-red); }
@@ -9204,21 +9211,29 @@
     }
     return m;
   }
-  function _sumSegsHTML(r, min, dayw, sumTop, oY) {
+  // ⚠️ Emits the bracket's CHILDREN, so every coordinate is RELATIVE to the bracket's own left edge
+  // (`barX`), not to the timeline origin. Previously these were siblings drawn as a thin strip
+  // BELOW the bracket, which made a WBS row read as "a plain white bar, plus something underneath";
+  // subdividing the bracket itself is what makes it read as the trade sequence.
+  function _sumSegsHTML(r, min, dayw, barX) {
     var cfg = catCfg();
     if (!cfg.on || r._dkind === 'group' || !r.wbs) return '';
     var key = pid + '|' + _sorted.length + '|' + cfg.field;
     if (_segMapKey !== key) { _segMap = _buildSegMap(); _segMapKey = key; }
     var kids = (_segMap && _segMap[r.wbs]) || [];
     if (!kids.length) return '';
-    var h = Math.max(5, Math.round(7 * oY)), top = sumTop + Math.round(10 * oY), out = '';
+    var out = '';
     for (var i = 0; i < kids.length; i++) {
       var a = kids[i], e = catEntry(a); if (!e) continue;
       var s = pd(dispStart(a)), f = pd(dispFin(a)); if (!s || !f) continue;
-      var x = dayDiff(min, s) * dayw, w = Math.max((dayDiff(s, f) + 1) * dayw, 2);
+      // ⚠️ MIN 2px. A 2-day activity on a months-long branch is otherwise sub-pixel and simply does
+      // not paint — which is exactly why short branches (General Requirements, Site Works) looked
+      // like plain white bars while long ones showed their full composition.
+      var x = Math.round(dayDiff(min, s) * dayw - barX);
+      var w = Math.max(Math.round((dayDiff(s, f) + 1) * dayw), 2);
       var pct = Math.max(0, Math.min(100, a.percent_complete || 0));
       out += '<div class="ps-sum-seg" title="' + esc((a.activity_name || '') + ' — ' + pct + '%') +
-        '" style="left:' + x + 'px;width:' + w + 'px;top:' + top + 'px;height:' + h + 'px;' + catTint(e.color, 0.32) + '">' +
+        '" style="left:' + x + 'px;width:' + w + 'px;' + catTint(e.color, 0.32) + '">' +
         '<i style="width:' + pct + '%;' + catStyle(e.color, e.tex) + '"></i></div>';
     }
     return out;
@@ -9264,8 +9279,12 @@
       // segments for a handful of its children and NOTHING for the rest — rows of empty Gantt.
       // The roll-up bar is the only mark that is guaranteed to be there, so it always draws now.
       // Only the BL0 bar and the red %-complete treatment are suppressed in LSM mode.
-      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' + (sumPct > 0 ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + '</div>';
-      out += _sumSegsHTML(r, min, dayw, sumTop, oY);
+      // ⚠️ The activity bands go INSIDE the bracket. When they are present the rolled-up red
+      // %-fill is suppressed: each band already carries its own progress, so the red would sit on
+      // top of them and describe the same thing twice.
+      var _segs = _sumSegsHTML(r, min, dayw, x);
+      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' +
+        ((sumPct > 0 && !_segs) ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + _segs + '</div>';
       if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
     }

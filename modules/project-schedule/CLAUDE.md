@@ -367,6 +367,27 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## The WBS bracket is now subdivided by activity (2026-08-17) — fmlozano
+Owner picked option 2: the white bar itself banded by activity, not a strip beneath it.
+- **Segments are now the bracket's CHILDREN**, so every coordinate is relative to the bracket's own
+  left edge (`barX`) rather than the timeline origin, and they inherit its `clip-path` — the tapered
+  bracket shape survives while its body reads as the trade sequence under that branch.
+- ⚠️ **MIN 2px per band.** This was the actual cause of the reported "simple white bar graph": on
+  short branches (General Requirements, Site Works — 2-6 day spans) the bands were **sub-pixel at
+  Month zoom and simply did not paint**, while months-long branches showed their full composition.
+  Nothing was missing from the data; it was rounding to nothing.
+- ⚠️ **The rolled-up red %-fill is suppressed when bands are present** — each band already carries
+  its own progress, so the red would sit on top of them and describe the same thing twice.
+- `.ps-sum-seg` uses `top/bottom:0` rather than a computed height, so it tracks the bracket at every
+  row density; the bracket goes 9px → 13px **in LSM mode only**, since there it is the row's content
+  rather than a rule. The plain (legend-off) view is byte-identical.
+- **Verified 15/15** against the sliced shipped `_sumSegsHTML`: one band per activity, ⚠️ **relative
+  positioning asserted directly** (first band at 0, not the 60px an absolute-coordinate regression
+  would give), correct offsets for successive activities, the **1-day band still painting at ≥2px**,
+  the sub-pixel zoom case that caused the bug, per-band progress, escaping, no stray top/height, and
+  the four skip paths (legend off / group row / no wbs / no children). All 7 suites green (118
+  assertions). ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817d`.
+
 ## End phases missing under Discipline/Trade; legend truly merged (2026-08-17) — fmlozano
 - ⚠️ **Closeout / Testing & Commissioning / Handover appeared under "Activity name" but NOT under
   "Discipline / Trade".** `stackModel`'s main loop dropped any row with no value on the colour field
