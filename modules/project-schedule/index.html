@@ -3513,15 +3513,25 @@
       var bs = pd(r.bl_start), be = pd(r.bl_finish); if (bs || be) { if (!bs) bs = be; if (!be) be = bs;
         _mergeSpan(_blSpanMap, codes, +bs, +be); }
     });
-    // Fallback for a branch that holds no activities at all: seed it (and its ancestors) from the
-    // summary row's own stored dates, so an empty branch still draws instead of silently vanishing.
+    // Fallback for a branch that holds no activities at all: seed it from the summary row's own
+    // stored dates, so an empty branch still draws a bracket instead of silently vanishing.
+    // ⚠️ THERE IS DELIBERATELY NO BASELINE FALLBACK (fixed 2026-08-17 — the BL0 rail was landing
+    //    nowhere near its bar). A summary row's own stored bl_start/bl_finish is stale imported
+    //    data that nothing in this module recomputes, and it routinely spans the whole project —
+    //    so a branch whose descendants carry no baseline drew a PANE-WIDE rail beside a two-week
+    //    bar (the owner's screenshot). The rail means "the PLANNED dates of exactly the activities
+    //    this bracket rolls up", so when none of them is baselined there is nothing to draw: a
+    //    missing baseline must render as NO RAIL, never as a bogus one. `wbsBlSpan` then returns
+    //    null and `ganttRowHTML` omits the rail. Do not "restore" the symmetry with the span pass.
+    // ⚠️ The CURRENT-span fallback below still seeds ancestors as well as the branch itself, on
+    //    purpose: a parent bracket must visually contain its children, and an empty branch's own
+    //    stored dates are the only information there is about it. That its dates may be stale is a
+    //    DATA problem (documented), not a reason to let a child bracket hang outside its parent.
     rows.forEach(function (r) {
       if (!isWbs(r) || !r.wbs) return;
       var codes = [r.wbs].concat(r._anc || []);
       if (!_spanMap[r.wbs]) { var s = pd(dispStart(r)), e = pd(dispFin(r));
         if (s || e) { if (!s) s = e; if (!e) e = s; _mergeSpan(_spanMap, codes, +s, +e); } }
-      if (!_blSpanMap[r.wbs]) { var bs = pd(r.bl_start), be = pd(r.bl_finish);
-        if (bs || be) { if (!bs) bs = be; if (!be) be = bs; _mergeSpan(_blSpanMap, codes, +bs, +be); } }
     });
     // precompute cost/POC roll-ups per WBS code (OPC shows IBB sums + weighted POC on summary
     // rows). Costs sum; POC %s are duration-weighted (planned POC only over rows that have a

@@ -5646,3 +5646,20 @@ Owner's call. The 14 traps (undated descendants — a roll-up would erase the on
 Completion) are **deliberately not fixed**; rolling them back 40–337 days is a commercial judgement.
 ⚠️ The 4 rows corrected earlier today stay corrected (reverse statements logged). ⚠️ Future scans will
 keep flagging these 17 — treat as a reviewed exclusion, not a new finding, and do not bulk-fix.
+
+### 2026-08-17 — Project Schedule: BL0 rails didn't line up with their bars
+The blue baseline rail on the upper summary rows spanned nearly the whole pane beside a short
+coloured bar. ⚠️ **Root cause: `rebuild()`'s fallback pass seeded the baseline roll-up from the
+SUMMARY ROW'S OWN stale stored `bl_start`/`bl_finish`** whenever its descendants had no baseline —
+and merged it into **every ancestor**, so one un-baselined branch pushed a pane-wide rail onto six
+rows above it. Measured: rail 2922px beside a 122px bar. **Ruled out:** the rail deriving from a
+differently-scoped roll-up — pass 1 already rolls up the same descendant leaves as the bar, and the
+two agreed on every baselined branch. **Basis chosen:** the rail is the baseline dates of exactly
+the activities the bar rolls up (bar on displayed dates, rail on planned — the only pairing that
+shows slip). Fallback deleted: no descendant baseline → **no rail**, never a bogus one. ⚠️ A first
+cut also stopped an empty branch widening its ancestor's bar; that broke bracket nesting and was
+reverted — only the baseline half changed. Verified by executing the shipped `rebuild`/`wbsBlSpan`/
+`ganttRowHTML` and measuring real pixel geometry: **the new suite fails 6/15 against HEAD and passes
+14/14 after**; sumspan/baseline-lsm/transpose/grouprollup all green; 0 functions lost; parses.
+⚠️ One sumspan assertion changed — it encoded the defect as expected behaviour. ⚠️ Not verified
+signed-in. `MODULE_V` → `20260817v`.

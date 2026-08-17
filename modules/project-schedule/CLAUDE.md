@@ -5686,3 +5686,56 @@ Owner's call: drop the remaining WCB363 fix. Recording it so nobody reopens it a
   rather than a fresh finding — and must NOT bulk-fix them.
 - The Gantt does not read these columns any more (spans roll up from descendant activities), so the
   stale values are cosmetic at source; they only mislead someone querying the table directly.
+
+## BL0 rails didn't line up with their bars: the baseline fallback was inventing them (2026-08-17) — fmlozano
+Owner, AVR101 grouped by WBS with colours on: on the upper summary rows (Execution Phase,
+General Requirements, Construction Phase, Tower 1, Structural Works, Substructure, Earthworks) the
+blue rail spans nearly the full pane while the coloured bar sits well to the right of it.
+- ⚠️ **ROOT CAUSE: the fallback pass in `rebuild()` seeded `_blSpanMap` from the SUMMARY ROW'S OWN
+  stored `bl_start`/`bl_finish` whenever its descendants had no baseline** — and a WBS-summary row's
+  stored dates are stale imported data that nothing in this module recomputes, routinely spanning
+  the whole project. Worse, `_mergeSpan` merged that stale value into **every ancestor code**, so one
+  un-baselined branch pushed a pane-wide rail onto Earthworks *and* Substructure, Structural Works,
+  Tower 1, Construction Phase and Execution Phase — exactly the seven rows reported. Measured in the
+  harness: **rail x=0 w=2922px beside a bar x=118 w=122px.**
+- ⚠️ **The hypothesis in the brief was half right and the half that mattered was different.** The
+  rail does NOT derive from a differently-scoped roll-up: pass 1 of `_blSpanMap` already rolls up
+  descendant leaf activities only, on the same tree walk as `_spanMap` (both were fixed earlier the
+  same day). Rail and bar agreed on **every branch whose work carries a baseline**. The disagreement
+  came only from the fallback, which is not a roll-up at all — it is the summary row's own row data.
+  So "the two marks derive from different spans" was true only for un-baselined branches.
+- **Basis chosen, explicitly:** the rail is **`bl_start`/`bl_finish` rolled up over exactly the
+  descendant leaf activities the bar rolls up** — the planned dates for the same activity set. The
+  bar uses `dispStart`/`dispFin` for that set (actual → forecast → planned), which is the only
+  correct pairing, because baseline has no actual/forecast variant: comparing a planned baseline to
+  a planned current date would never show slip, which is the entire point of the rail. Where a
+  descendant has no baseline it contributes nothing to the rail and still contributes to the bar —
+  correct, and it is why a rail can legitimately be narrower than its bar.
+- **Fix: the baseline fallback is deleted outright.** No descendant baseline → `_blSpanMap` has no
+  entry → `wbsBlSpan` returns null → `ganttRowHTML` omits the rail. A missing baseline now renders
+  as **no rail**, never a bogus one.
+- ⚠️ **Scope creep considered and REVERTED.** I first also restricted the CURRENT-span fallback so an
+  empty branch could not widen a real ancestor. It measurably broke bracket nesting (`check-sumspan`
+  went red: a child bracket ended up outside its parent), so it was reverted. A parent bracket must
+  contain its children, and an empty branch's own stored dates are the only information about it —
+  that they may be stale is the documented **data** problem, not a render one. Only the baseline half
+  changed; a comment now says why the two passes are deliberately asymmetric.
+- **All three rail sites checked and consistent:** the activity bar and the milestone diamond read
+  `r.bl_start`/`r.bl_finish` off their own row (nothing to roll up), and the grouped-mode roll-up
+  (`addBlSpan` in `buildNodes`) only ever accumulates from activities and has no summary-row fallback
+  — so neither needed a change, and neither can reproduce this.
+- **Verified by EXECUTING the shipped code**, nothing under test stubbed: `rebuild`, `wbsSpan`,
+  `wbsBlSpan`, `_sumSegsHTML` and `ganttRowHTML` sliced verbatim out of index.html, with real pixel
+  geometry read back out of the emitted HTML (`scratchpad/check-blrail.js`, 14 checks). ⚠️ **BEFORE
+  /AFTER: the same suite run against HEAD fails 6 of 15** — including the literal screenshot
+  (pane-wide rail beside a short bar) — and passes 14/14 after. Existing suites green: sumspan 22,
+  baseline-lsm, transpose, grouprollup. Parse clean; **function-set diff vs HEAD: 0 lost, 0 added.**
+- ⚠️ **`scratchpad/check-sumspan.js` had ONE assertion changed**, and it is worth flagging: it
+  required the empty branch to inherit its summary row's stored baseline — i.e. the suite encoded
+  the defect as expected behaviour. It now asserts no rail. Everything else in that file is untouched.
+- ⚠️ **NOT verified signed-in** — no authenticated session is possible from this environment, so
+  AVR101 was not opened; the reproduction and the fix are both measured in the harness against the
+  shipped functions.
+- ⚠️ **Still open (data, unchanged):** WBS-summary rows keep stale `bl_start`/`bl_finish` in the
+  database. Nothing reads them for the rail any more, but they are still wrong at source.
+- `MODULE_V` → `20260817v`.
