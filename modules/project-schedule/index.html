@@ -15860,6 +15860,22 @@
     }
     return out;
   }
+  // The categories the CURRENT VIEW admits — "Execution Phase only" plus any active filter —
+  // independently of what happens to be expanded. This is what a COLLAPSED outline stands for.
+  // ⚠️ Mirrors buildNodes()' own scoping (the `_execOnly` carve-out at the top of each branch and
+  // `rowMatches` for filters) so the legend can never advertise a category the view has excluded.
+  function catScopedValues() {
+    var cfg = catCfg(), out = {};
+    var ec = _execOnly ? execPhaseCode() : null, filt = anyFilter();
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (isWbs(r)) continue;
+      if (ec && !(r.wbs === ec || locCodeUnder(r.wbs, ec))) continue;
+      if (filt && !rowMatches(r)) continue;
+      var v = catValOf(r, cfg.field); if (v) out[v] = true;
+    }
+    return out;
+  }
   function renderActLegend() {
     var host = document.getElementById('ps-actlegend'); if (!host) return;
     if (!pid || !rows.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
@@ -15873,9 +15889,21 @@
       var _all = list;
       list = _all.filter(function (c) { return _vis[c.value]; });
       _hidden = _all.length - list.length;
-      // Only reachable when the schedule renders no rows at all (filtered to nothing) — a collapsed
-      // outline now resolves what its rows stand for rather than coming back empty.
-      if (!list.length) { list = _all; _hidden = 0; }
+      // ⚠️ This fallback used to be `list = _all` on the stated assumption that it was "only
+      // reachable when the schedule renders no rows at all". That assumption was WRONG: it fires
+      // whenever no LEAF task row is on screen, which is the ordinary collapsed outline — and it
+      // then printed EVERY category in the project, ignoring "Execution Phase only" and every
+      // active filter. That is exactly the reported bug (Execution Phase ticked, legend still full
+      // of Bidding-phase activities and "+398 more").
+      // A collapsed outline does stand for its subtree, so falling back is right — but it must fall
+      // back to what the VIEW admits, never to the raw project.
+      if (!list.length) {
+        var _sc = catScopedValues();
+        list = _all.filter(function (c) { return _sc[c.value]; });
+        _hidden = _all.length - list.length;
+        // Genuinely nothing in scope (filtered to nothing) — show the full key rather than a blank.
+        if (!list.length) { list = _all; _hidden = 0; }
+      }
     }
     var opts = catFieldOptions().map(function (o) {
       return '<option value="' + esc(o[0]) + '"' + (o[0] === cfg.field ? ' selected' : '') + '>' + esc(o[1]) + '</option>';

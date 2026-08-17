@@ -345,6 +345,30 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Legend ignored "Execution Phase only" whenever the outline was collapsed (2026-08-16) — fmlozano
+Owner: *"I ticked on Execution Phase only but legend still shows activities from other phases."*
+Screenshot: WBS collapsed to 4 summary rows, legend full of Bid Kick-Off Meeting / Site Visit /
+Contract Review + **"+398 more"**.
+- ⚠️ **A comment asserting an invariant that was never true.** `renderActLegend`'s fallback
+  `if (!list.length) { list = _all; _hidden = 0; }` carried the note *"Only reachable when the
+  schedule renders no rows at all (filtered to nothing)"*. **It is reachable whenever no LEAF task
+  row is on screen** — i.e. the ordinary collapsed outline — because `catVisibleValues()` only
+  collects from `_dkind === 'task'`. Collapse the tree and it returns `{}`, the filter yields an
+  empty list, and the fallback then printed `catList()`: **every category in the project**,
+  ignoring `_execOnly` and every active filter. The scoping work from e211b5d/fc67cae was intact;
+  this one line threw it away in the most common state.
+- **Fix: `catScopedValues()`** — the categories the current view admits, mirroring `buildNodes()`'
+  own scoping (the `_execOnly` carve-out `r.wbs === ec || locCodeUnder(r.wbs, ec)`, plus
+  `rowMatches` for filters), independent of what is expanded. A collapsed outline *does* stand for
+  its subtree, so falling back is right — but it now falls back to what the **view** admits, never
+  to the raw project. The final `list = _all` guard survives only for "filtered to nothing", so the
+  legend never goes blank.
+- **Verified 13/13** against the sliced shipped `catScopedValues` with the fallback chain replicated
+  verbatim, on an Avesta-shaped Execution/Bidding split: the regression asserted directly (collapsed
+  + exec ON no longer prints the project), exact Execution-only membership, no Bidding leakage, the
+  "not in this view" count, expanded leaves still winning outright, exec-OFF behaviour unchanged,
+  and filtered-to-nothing still falling back rather than blanking. ⚠️ **Not verified signed-in.**
+
 ## End phases never appeared in the stack, tagged or not (2026-08-16) — fmlozano
 Owner: *"Closeout phase, Testing & Commissioning, Punchlisting & Handover is not appearing in the
 vertical stacking even when tagged."* Correct, and it was broken in **both** single-tower and

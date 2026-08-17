@@ -5365,6 +5365,17 @@ material_submittal, resource_assignments, activity_steps, wbs_nodes), each reinv
 - ⚠️ **Not verified signed-in.** ⚠️ Deliberately NOT changed: `getProjects`/`getAllUsers` (bounded by
   org size, and both feed pickers where a 1000-row page is already a UX problem, not a data one).
 
+### 2026-08-16 — Project Schedule: legend ignored "Execution Phase only" when collapsed
+Owner ticked "Execution Phase only" and the legend still listed Bidding-phase activities + "+398 more".
+- ⚠️ **A comment asserted an invariant that was never true.** `renderActLegend`'s fallback
+  `if (!list.length) { list = _all; }` was annotated *"only reachable when the schedule renders no rows
+  at all"*. It is reachable whenever no **leaf task row** is on screen — the ordinary collapsed outline
+  — since `catVisibleValues()` only collects `_dkind === 'task'`. It then printed every category in
+  the project, discarding `_execOnly` and every filter. The earlier legend-scoping work was intact;
+  this single line threw it away in the most common state.
+- Fixed with `catScopedValues()`, mirroring `buildNodes()`' own scoping, so a collapsed outline falls
+  back to what the **view** admits rather than the raw project. 13/13 against sliced shipped code.
+
 ### 2026-08-16 — Project Schedule: end phases never appeared in the vertical stack
 Owner reported Closeout / Testing & Commissioning / Punchlisting & Handover missing from the stack
 "even when tagged". Broken in **both** single-tower and all-towers mode.
