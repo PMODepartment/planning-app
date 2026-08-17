@@ -1630,6 +1630,7 @@
     .sbld-link.hotpred { stroke:#1f8f4e !important; stroke-width:2.4; opacity:1; }
     .sbld-link.hotsucc { stroke:#e08a1e !important; stroke-width:2.4; opacity:1; }
     .sbld-link.dimlink { opacity:.12; }
+    .sbld-link.sellink { stroke:var(--pd-red) !important; stroke-width:3.2; opacity:1; }   /* the clicked relationship — stays highlighted until you click elsewhere */
     .sbld-focuslegend { display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin:6px 0 2px; font-size:11.5px; color:var(--pd-muted); }
     .sbld-focuslegend b { color:var(--pd-ink); }
     .sbld-focuslegend .sw { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:5px; }
@@ -13408,6 +13409,7 @@
     var seqLevel = 2;         // step-3 collapse depth default: 2=Floor (compact + readable on tall buildings); 1=Trade, 3=Zone, 4=Unit
     var seqMode = 'view';     // step-3 interaction mode: 'view' = click a bar/zone to INSPECT its links; 'edit' = click to SELECT sources → right-click → destinations → link
     var seqFocus = [];        // uids currently highlighted (cross-highlight between tower nodes & gantt bars)
+    var seqSelLink = null;    // {from,to} group-keys of the clicked relationship arrow — stays highlighted until you click elsewhere
     function isFocus(uids) { return seqFocus.length && uids.some(function (u) { return seqFocus.indexOf(u) >= 0; }); }
     function setFocus(uids) { seqFocus = (uids || []).slice(); }
     var actFocus = null;      // step-4: class-code id highlighted across the list & chart
@@ -13688,11 +13690,15 @@
     function actReset() { pendActSet = []; pendActDst = []; actLinkPhase = 'src'; render(); }
     // uniform-block flow chart for a trade's class codes — description emphasized, code shown
     // Legend + clear control for the predecessor/successor inspection (steps 3 & 4).
-    function focusLegendHTML(active, clearId) {
-      return '<div class="sbld-focuslegend"><span>Click a bar to see its links.</span>' +
+    function focusLegendHTML(active, clearId, linkSel) {
+      // `active` = a bar/zone is focused; `linkSel` = a relationship line is clicked (stays highlighted).
+      var lede = linkSel
+        ? '<span>Relationship highlighted (red). Click a bar or elsewhere to clear.</span>'
+        : '<span>Click a bar to see its links, or a line to keep it highlighted.</span>';
+      return '<div class="sbld-focuslegend">' + lede +
         '<span><span class="sw" style="background:#1f8f4e"></span><b>Predecessors</b> (drive it)</span>' +
         '<span><span class="sw" style="background:#e08a1e"></span><b>Successors</b> (it drives)</span>' +
-        (active ? '<button class="pd-btn sbld-libbtn" id="' + clearId + '">Clear selection</button>' : '') + '</div>';
+        ((active || linkSel) ? '<button class="pd-btn sbld-libbtn" id="' + clearId + '">Clear selection</button>' : '') + '</div>';
     }
     function actSchedSVG(acts, starts) {
       var rowH = 32, pad = 8, labelW = 210, chartX = labelW + 6;
@@ -14725,6 +14731,9 @@
       var fPred = {}, fSucc = {};
       if (fAny) agg.forEach(function (k) { if (fKeys[k.to]) fPred[k.from] = 1; if (fKeys[k.from]) fSucc[k.to] = 1; });
       function relCls(key) { if (!fAny || fKeys[key]) return ''; if (fPred[key]) return ' prednode'; if (fSucc[key]) return ' succnode'; return ' dimnode'; }
+      // A clicked relationship arrow (seqSelLink) OVERRIDES focus: mark its source bar green, its
+      // destination bar amber, dim the rest — so the exact relationship you clicked is unmistakable.
+      function barCls(key) { if (seqSelLink) { if (key === seqSelLink.from) return ' prednode'; if (key === seqSelLink.to) return ' succnode'; return ' dimnode'; } return relCls(key); }
       function xOf(unit) { return chartX + unit * step; }
       // faint column guides so aligned (SS) blocks read as sharing a column
       var grid = ''; for (var u = 0; u <= maxUnit; u++) { var gx = xOf(u); grid += '<line x1="' + gx + '" y1="' + pad + '" x2="' + gx + '" y2="' + (H - pad) + '" stroke="var(--pd-line)" stroke-width="1" opacity=".3"></line>'; }
@@ -14736,7 +14745,7 @@
         var pend = r.uids.length && r.uids.every(function (u) { return inPend(u); });
         var pdst = r.uids.length && r.uids.every(function (u) { return inDst(u); });
         labels += '<div class="sbld-schedlab' + (isF ? ' on' : '') + '" data-uids="' + e2(r.uids.join(' ')) + '" style="height:' + rowH + 'px;" title="' + e2(r.label) + '">' + e2(r.label) + '</div>';
-        bars += '<rect class="sbld-schedbar' + (pend ? ' pend' : (pdst ? ' pend-dst' : '')) + (isF ? ' sbld-focus' : '') + relCls(r.key) + '" data-uids="' + e2(r.uids.join(' ')) + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
+        bars += '<rect class="sbld-schedbar' + (pend ? ' pend' : (pdst ? ' pend-dst' : '')) + (isF ? ' sbld-focus' : '') + barCls(r.key) + '" data-uids="' + e2(r.uids.join(' ')) + '" x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="' + (rowH - 10) + '" rx="3" fill="' + r.fill + '"></rect>' +
           '<text x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 3) + '" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">' + e2(r.txt) + '</text>';
       });
       // Links: stagger the elbow x per source so parallel arrows out of one bar don't coincide (so you
@@ -14760,15 +14769,19 @@
         // matching Gantt convention where finish-to-start is implicit.
         var lbl = ((k.type && k.type !== 'FS') || k.lag) ? ((k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '')) : '';
         var d = 'M' + fx + ' ' + y1 + ' H' + mx + ' V' + y2 + ' H' + tx;
-        var lcls = fAny ? (fKeys[k.to] ? ' hotpred' : (fKeys[k.from] ? ' hotsucc' : ' dimlink')) : '';
-        var seg = '<path class="sbld-link' + lcls + '" d="' + d + '" marker-end="url(#sbldarrow2)"></path>' +
+        var selHere = seqSelLink && seqSelLink.from === k.from && seqSelLink.to === k.to;
+        // A selected arrow wins; if any arrow is selected the rest dim so the clicked one stands out;
+        // otherwise fall back to the focus (pred/succ) colouring.
+        var lcls = selHere ? ' sellink' : (seqSelLink ? ' dimlink' : (fAny ? (fKeys[k.to] ? ' hotpred' : (fKeys[k.from] ? ' hotsucc' : ' dimlink')) : ''));
+        var seg = '<path class="sbld-link' + lcls + '" d="' + d + '" marker-end="url(#' + (selHere ? 'sbldarrowsel' : 'sbldarrow2') + ')"></path>' +
           (lbl ? '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' : '') +
           // Clickable hit-path on EVERY arrow (keyed by the two group codes) so a relationship can be
           // edited / unlinked at any Detail level — n = how many leaf links it stands for.
           '<path class="sbld-linkhit" data-fk="' + e2(k.from + '~' + k.to) + '" data-n="' + k.n + '" d="' + d + '"></path>';
-        if (lcls === ' hotpred' || lcls === ' hotsucc') hot += seg; else links += seg;
+        if (selHere || lcls === ' hotpred' || lcls === ' hotsucc') hot += seg; else links += seg;
       });
-      var defs = '<defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>';
+      var defs = '<defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker>' +
+        '<marker id="sbldarrowsel" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 z" fill="var(--pd-red)"></path></marker></defs>';
       var svg = '<svg class="sbld-sched" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + defs + grid + rowhi + links + bars + hot + '</svg>';
       return '<div class="sbld-schedwrap"><div class="sbld-schedscroll">' +
         '<div class="sbld-schedgrid">' +
@@ -14797,7 +14810,7 @@
       var towerBody = towerEmpty ? '<div class="sbld-empty">No zones yet — add floors/zones for a trade in <b>Step 2</b>, then their nodes appear here to connect.</div>' :
         '<div class="sbld-twr' + (seqLayout === 'stack' ? ' sbld-twr-hz' : '') + '" style="zoom:' + towerZoom + ';">' + showTr.map(seqTowerCol).join('') + '</div>';
       var schedH = '<div class="sbld-seq2-h">Resulting schedule (' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's') + (seqTradeFilter === 'ALL' ? '' : ' · ' + e2(GLABEL[seqTradeFilter]) + ' only') + ')</div>';
-      var schedBody = focusLegendHTML(seqFocus.length, 'b-focusclear') + scheduleSVG(dispLocs, starts);
+      var schedBody = focusLegendHTML(seqFocus.length, 'b-focusclear', !!seqSelLink) + scheduleSVG(dispLocs, starts);
       var LEVELS = [[1, 'Trade'], [2, 'Floor'], [3, 'Zone'], [4, 'Unit']];
       var body = seqLayout === 'stack'
         ? '<div class="sbld-seqstack"><div class="sbld-seqstack-top"><div class="sbld-seq2-h">Building view — click a zone/unit to highlight it below</div>' + towerBody + '</div>' +
@@ -14857,11 +14870,11 @@
           : (pendDst.length ? (pendDst.length + ' destination(s) selected — right-click (or Create links).') : 'Step 3: click one or more destination zones.'));
       // Click behaviour depends on the mode: EDIT selects zones/bars for linking (source → destination);
       // VIEW just highlights the clicked node's relationships (predecessors + successors) — inspect only.
-      function clickNode(uids) { if (!uids.length) return; setFocus(uids); if (editing) nodeSelectMany(uids); else render(); }
+      function clickNode(uids) { seqSelLink = null; if (!uids.length) { render(); return; } setFocus(uids); if (editing) nodeSelectMany(uids); else render(); }
       host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { clickNode((b.dataset.uids || '').split(' ').filter(Boolean)); }; });
       // Schedule bars / row labels behave the same as the tower nodes: inspect in View, select in Edit.
       host.querySelectorAll('.sbld-schedbar, .sbld-schedlab').forEach(function (b) { b.addEventListener('click', function () { clickNode((b.getAttribute('data-uids') || '').split(' ').filter(Boolean)); }); });
-      var fclr = host.querySelector('#b-focusclear'); if (fclr) fclr.onclick = function () { setFocus([]); render(); };
+      var fclr = host.querySelector('#b-focusclear'); if (fclr) fclr.onclick = function () { setFocus([]); seqSelLink = null; render(); };
       // Ctrl+scroll to zoom the building view and the resulting schedule.
       bindTowerZoom(host.querySelector('.sbld-twr'));
       bindSchedZoom(host.querySelector('.sbld-schedscroll'));
@@ -14873,14 +14886,18 @@
       // two group codes; resolve the actual leaf link(s) behind it. One underlying link → edit or unlink
       // it directly; several (a collapsed Trade/Floor bar) → the dialog's Unlink removes them all.
       host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
+        ev.stopPropagation();
         var fk = (p.getAttribute('data-fk') || '').split('~'), gfrom = fk[0], gto = fk[1];
         var u2l = {}; locList().forEach(function (l) { u2l[l.uid] = l; });
         var matches = cfg.links.filter(function (k) { var a = u2l[k.from], b = u2l[k.to]; return a && b && schedKeyOf(a) === gfrom && schedKeyOf(b) === gto; });
         if (!matches.length) return;
+        // Persist the highlight: mark THIS arrow (+ its two end bars) selected and keep it until the
+        // user clicks a bar/zone/empty space — so you can tell which of many parallel lines you picked.
+        seqSelLink = { from: gfrom, to: gto }; setFocus([]); render();
         var ex = matches[0], many = matches.length > 1;
         openLinkDialog(ev.clientX, ev.clientY, { type: ex.type, lag: ex.lag, existing: true, count: matches.length },
           function (type, lag) { matches.forEach(function (m) { m.type = type; m.lag = lag; }); markDirty(); render(); },
-          function () { if (many && !confirm('Unlink all ' + matches.length + ' relationships between these two?')) return; matches.forEach(function (m) { removeLink(m.from, m.to); }); markDirty(); render(); });
+          function () { if (many && !confirm('Unlink all ' + matches.length + ' relationships between these two?')) return; matches.forEach(function (m) { removeLink(m.from, m.to); }); seqSelLink = null; markDirty(); render(); });
       }); });
     }
     // left-click a zone/bar → toggle it in the current phase's set (free multi-select)
@@ -14925,7 +14942,7 @@
       srcs.forEach(function (s) { var arr = dstByCk[ck[s]]; if (arr) { matched = true; arr.forEach(function (d) { if (s !== d) addLink(s, d, type, lag); }); } });
       if (!matched) srcs.forEach(function (s) { dsts.forEach(function (d) { if (s !== d) addLink(s, d, type, lag); }); });
     }
-    function nodeReset() { pendSet = []; pendDst = []; linkPhase = 'src'; render(); }
+    function nodeReset() { pendSet = []; pendDst = []; linkPhase = 'src'; seqSelLink = null; render(); }
     // relationship dialog: asks FS/SS/FF/SF + lag (and Unlink when editing an existing link)
     function openLinkDialog(x, y, cur, onSave, onUnlink) {
       closeLinkDialog();

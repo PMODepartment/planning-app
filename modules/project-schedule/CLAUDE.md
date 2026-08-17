@@ -72,6 +72,23 @@ pair was run alongside. Also ⚠️ `count=exact` on the whole of `project_sched
 filtered counts are fine. And one `wbs` value came back rendered as `[BLOCKED: JWT token]` — a
 redaction in the browser tool's output, not data.
 
+## Schedule Builder step 3: clicked relationship line stays highlighted (2026-08-18) — eprobles
+Owner: with many overlapping arrows it's unclear which relationship was clicked — a clicked line
+should STAY highlighted until you click somewhere else.
+- New persistent selection state `seqSelLink = {from,to}` (the clicked arrow's group-key pair),
+  surviving re-renders. `scheduleSVG` draws the selected arrow bold red with a red arrowhead
+  (`sbldarrowsel` marker) on TOP of the rest (pushed into the `hot` layer), colours its two endpoint
+  bars green (source) / amber (dest) via `barCls`, and dims every other arrow (`dimlink`).
+- Arrow-click (`.sbld-linkhit`) sets `seqSelLink`, clears any bar focus, and re-renders BEFORE opening
+  the edit/unlink dialog; unlinking clears it. Clicking a bar/zone, the focus-clear button, or
+  `nodeReset` all clear `seqSelLink` — i.e. "click somewhere else".
+- The focus legend's clear affordance now shows when EITHER a bar is focused OR a link is selected
+  (`focusLegendHTML(active, id, linkSel)`); arrow-click clears `seqFocus`, so gating on `seqFocus.length`
+  alone would have hidden the deselect control. Legend lede is selection-aware.
+- CSS `.sbld-link.sellink` (bold red) + `.sbld-linkhit:hover` (red halo affordance). Verified: inline
+  script parses; all symbols present. ⚠️ **Not verified signed-in** (auth wall). `MODULE_V` → `20260818f`
+  (rebased past a concurrent bump to `…e`).
+
 ## Schedule Builder: floor CATEGORIES + per-category auto-trace handoff + click-arrow unlink (2026-08-18) — eprobles
 Three related owner asks.
 - **Floor categories in step 2.** Each floor now carries a `kind` — **Basement / Podium-Commercial /
