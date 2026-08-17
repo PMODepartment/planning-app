@@ -72,6 +72,31 @@ pair was run alongside. Also ⚠️ `count=exact` on the whole of `project_sched
 filtered counts are fine. And one `wbs` value came back rendered as `[BLOCKED: JWT token]` — a
 redaction in the browser tool's output, not data.
 
+## Schedule Builder: floor CATEGORIES + per-category auto-trace handoff + click-arrow unlink (2026-08-18) — eprobles
+Three related owner asks.
+- **Floor categories in step 2.** Each floor now carries a `kind` — **Basement / Podium-Commercial /
+  Typical / Roof Deck** — chosen from a dropdown on the floor row. `f.sub` is kept in step with
+  'basement' (tower grade line + ordering). `floorKind(f)` derives a kind from `f.sub` for legacy
+  floors, so nothing needs migrating. Add-floor → typical, add-basement → basement, quick-gen tags
+  basements/floors accordingly. New cfg maps `tradeBatchKind` / `tradeParallelKind` (per leading trade,
+  per kind), added to blank()/normalize().
+- **Auto-trace handoff is now PER CATEGORY** (owner: "questions for the basements as well / unique
+  floors"). The dialog's handoff section lists every floor category the building has, each with its own
+  "start together" checkbox + "N level(s) behind" input. `autoTrace`'s cross-trade step trails the
+  leading trade WITHIN each kind by that kind's own lead (or runs it parallel), instead of the old
+  "basements 1:1, everything else = one global lead". Typical falls back to the legacy
+  `tradeBatch`/`tradeParallel` so existing configs are unchanged; other kinds default to 1 level behind
+  (the old basement behaviour). Verified with a model: default → basements 1:1, typical trail by 4;
+  basements-parallel + typical-2 → no basement links, typical trail by 2.
+- **Unlink a relationship by clicking its arrow — at ANY Detail level** (owner: easy, visually pleasing
+  unlink). Every arrow in the resulting schedule now carries a clickable hit-path keyed by its two group
+  codes (was Unit level only). Clicking resolves the leaf link(s) behind it via the shared `schedKeyOf`:
+  one → edit/unlink directly; several (a collapsed Trade/Floor bar) → the dialog's Unlink removes them
+  all (with a confirm). Hovering an arrow shows a red halo (`.sbld-linkhit:hover`) as the affordance.
+  ⚠️ Relationships live in step 3 (the linking step), so that is where this landed — step 2 is zoning.
+- Verified: inline script parses; all symbols present; cross-trade + unlink logic modelled in Node.
+  ⚠️ **Not verified signed-in** (auth wall). `MODULE_V` → `20260818c`.
+
 ## Schedule Builder step 2: tower sizes to content + summarises high-unit zones (2026-08-18) — eprobles
 Owner: 16 units per zone made the step-2 tower an unreadable row of tiny labelled slivers. `towerSVG`
 rebuilt:

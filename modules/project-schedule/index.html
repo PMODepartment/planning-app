@@ -1536,6 +1536,7 @@
     .sbld-handle:hover { fill:var(--pd-red); }
     .sbld-link { fill:none; stroke:var(--pd-ink); stroke-width:1.6; marker-end:url(#sbldarrow); opacity:.75; }
     .sbld-linkhit { fill:none; stroke:transparent; stroke-width:12; cursor:pointer; }
+    .sbld-linkhit:hover { stroke:rgba(238,49,36,.28); }   /* hovering an arrow shows a red halo → click to edit / unlink */
     .sbld-tmpline { stroke:var(--pd-red); stroke-width:1.8; stroke-dasharray:4 3; pointer-events:none; }
     /* step 3 v3 — resizable split: vertical tower (left) + schedule (right), draggable divider */
     .sbld-seq2 { display:flex; align-items:stretch; gap:0; }
@@ -13366,7 +13367,7 @@
     function blankZoning() { var z = {}; GROUPS.forEach(function (g) { z[g] = { floors: [] }; }); return z; }
     var WBS_DIMS = ['trade', 'floor', 'zone', 'unit'];
     var DIM_LABEL = { trade: 'Trade', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       var di = (a.durInt != null) ? Math.max(0, +a.durInt || 0) : legacy;
@@ -13400,6 +13401,8 @@
       d.floorLead = (c.floorLead >= 1 && c.floorLead <= 40) ? c.floorLead : 4;
       d.tradeBatch = (c.tradeBatch && typeof c.tradeBatch === 'object') ? c.tradeBatch : {};  // per-trade: floors done at a time before the next trade follows
       d.tradeParallel = (c.tradeParallel && typeof c.tradeParallel === 'object') ? c.tradeParallel : {};  // per-leading-trade: the next trade may start at the same time (run in parallel)
+      d.tradeBatchKind = (c.tradeBatchKind && typeof c.tradeBatchKind === 'object') ? c.tradeBatchKind : {};        // per-leading-trade, per floor-kind: levels-behind
+      d.tradeParallelKind = (c.tradeParallelKind && typeof c.tradeParallelKind === 'object') ? c.tradeParallelKind : {};  // per-leading-trade, per floor-kind: start together
       d.zoneSimul = (c.zoneSimul && typeof c.zoneSimul === 'object') ? c.zoneSimul : {};  // per-trade: how many zones run at once per floor (0 = all/parallel)
       d.unitSimul = (c.unitSimul && typeof c.unitSimul === 'object') ? c.unitSimul : {};  // per-trade: how many units run at once per zone (0 = all/parallel)
       d.floorLag = (c.floorLag && typeof c.floorLag === 'object') ? c.floorLag : {};      // per-trade: cure/lag days between a floor and the floor above
@@ -13777,6 +13780,16 @@
       });
     }
     function floorsOf(tr) { return cfg.zoning[tr].floors; }             // listed order: index 0 = lowest/ground
+    // Floor CATEGORY — tagged per floor in step 2, drives per-category cross-trade linking in step 3.
+    // A basement is also f.sub=true (tower grade line + ordering). Legacy floors with no kind derive one
+    // from f.sub, so nothing needs migrating.
+    var KIND_ORDER = ['basement', 'podium', 'typical', 'roof'];
+    var KIND_LABEL = { basement: 'Basement', podium: 'Podium / Commercial', typical: 'Typical', roof: 'Roof Deck' };
+    function floorKind(f) { return (f && f.kind && KIND_LABEL[f.kind]) ? f.kind : (f && f.sub ? 'basement' : 'typical'); }
+    // Per-leading-trade, per-kind handoff. Typical falls back to the legacy global tradeBatch/tradeParallel
+    // so existing configs keep working; other kinds default to 1 level behind (the old basement 1:1 rule).
+    function batchKind(prev, k) { var m = cfg.tradeBatchKind && cfg.tradeBatchKind[prev]; var v = m ? m[k] : null; if (v == null && k === 'typical') v = cfg.tradeBatch[prev]; if (v == null) v = (k === 'typical' ? (cfg.floorLead || 4) : 1); return Math.max(1, +v || 1); }
+    function parallelKind(prev, k) { var m = cfg.tradeParallelKind && cfg.tradeParallelKind[prev]; if (m && (k in m)) return !!m[k]; if (k === 'typical') return !!cfg.tradeParallel[prev]; return false; }
     // Takt / location-based logic: each trade climbs its own floors cell-by-cell (matched by zone+unit
     // code), and a following trade stays a configurable number of floors BEHIND the one before it.
     function autoTrace() {
@@ -13812,27 +13825,24 @@
           if (zS > 0 && zS < order.length) for (var i = zS; i < order.length; i++) { var p = order[i - zS], c = order[i]; if (p.length && c.length) tryLink(p[p.length - 1], c[0]); }   // zones within a floor
         });
       });
-      // 2) cross-trade lead — each transition uses the LEADING trade's own "floors at a time" batch
-      //    (cfg.tradeBatch[prev]); falls back to a legacy per-pair lead, then the global floorLead.
-      //    ⚠️ The lead is counted in SUPERSTRUCTURE STOREYS, and basements pair basement-to-basement
-      //    by code (trail 1:1, no cross-grade lead). Before, a "4-floor lead" on a 3-basement building
-      //    was silently spent on the basements — the next trade started when the leader was only 1
-      //    storey up (i.e. "right after B3"), which is the reported bug. A basement-free project is
-      //    unchanged (pSup = every floor, so this reduces to the old j + L − 1 mapping).
+      // 2) cross-trade lead — PER FLOOR CATEGORY. Each transition trails the leading trade WITHIN each
+      //    kind (basement / podium / typical / roof) by that kind's own lead, or runs in parallel for
+      //    that kind. So basements can be 1:1 (default) while typical floors trail by 4, roof waits for
+      //    the roof below, etc. — instead of the old "basements 1:1, everything else = one global lead".
+      //    Owner ask: real handoff questions for basements and non-typical levels, not just typical.
       for (var t = 1; t < present.length; t++) {
         var prev = present[t - 1], next = present[t];
-        // "Start at the same time" — the next trade runs in PARALLEL with the previous one: skip the
-        // trailing cross-trade links entirely, so step 3's bookend links it straight to START.
+        // Whole-trade "start at the same time" still wins — skip every cross-trade link (bookend → START).
         if (cfg.tradeParallel[prev]) continue;
-        var
-          L = Math.max(1, +(cfg.tradeBatch[prev]) || +(cfg.tradeLeads[prev + '>' + next]) || lead),
-          pF = floorsOf(prev), lastP = pF.length - 1, pByCode = {}, pSup = [];
-        pF.forEach(function (f, i) { pByCode[f.code] = i; if (!f.sub) pSup.push(i); });   // pSup = prev superstructure indices (bottom-up)
-        var nSeen = 0;   // 0-based superstructure ordinal of the NEXT floor being placed
+        var pF = floorsOf(prev), lastP = pF.length - 1, pByCode = {}, pByKind = {};
+        pF.forEach(function (f, i) { pByCode[f.code] = i; var k = floorKind(f); (pByKind[k] = pByKind[k] || []).push(i); });   // prev floor indices grouped by kind, build order
+        var nOrd = {};   // 0-based ordinal of the NEXT floor WITHIN its own kind
         floorsOf(next).forEach(function (nf, j) {
-          var si;
-          if (nf.sub) { si = (pByCode[nf.code] != null) ? pByCode[nf.code] : (pSup.length ? pSup[0] : Math.min(j, lastP)); }   // basement → same basement in the leader
-          else { var target = Math.min(nSeen + L - 1, pSup.length - 1); si = pSup.length ? pSup[target] : lastP; nSeen++; }    // superstructure → leader L storeys ahead
+          var k = floorKind(nf), ord = (nOrd[k] = (nOrd[k] || 0)); nOrd[k]++;
+          if (parallelKind(prev, k)) return;   // this kind runs in parallel → no trailing link (bookend → START)
+          var pk = pByKind[k] || [], si;
+          if (pk.length) { var L = batchKind(prev, k); si = pk[Math.min(ord + L - 1, pk.length - 1)]; }   // trail within the same kind by that kind's lead
+          else { si = (pByCode[nf.code] != null) ? pByCode[nf.code] : lastP; }   // leader has no floor of this kind → same code, else its top floor
           if (si < 0) si = 0;
           Object.keys(idx[next][j]).forEach(function (ck) { var pf = idx[prev][si][ck] || firstOf(idx[prev][si]); if (pf) tryLink(pf, idx[next][j][ck]); });
         });
@@ -13856,15 +13866,21 @@
       var num = function (kind, target, def, max, min) { return '<input class="pd-input" type="number" min="' + (min == null ? 0 : min) + '" max="' + max + '" data-atkind="' + kind + '" data-attr="' + e2(target) + '" value="' + def + '" style="width:70px;height:34px;">'; };
       var sections = present.map(function (tr, ti) {
         var prev = present[ti - 1], mZ = maxZones(tr), mU = maxUnits(tr), nF = floorCount(tr), qs = [], zoneable = lvl !== 'floor' && mZ > 1;
-        // (a) handoff — how many floors of the PREVIOUS trade before this one starts behind it (stored
-        //     on prev). Plus a "start at the same time" option: when ticked, this trade runs in
-        //     PARALLEL with the previous one (no trailing lead) and the floors-behind input is disabled.
+        // (a) handoff from the PREVIOUS trade — asked PER FLOOR CATEGORY (basement / podium / typical /
+        //     roof) that the building actually has. Each kind can "start together" (parallel) or trail
+        //     by N levels of that kind. So basements, commercial podium and typical floors each get
+        //     their own handoff rule instead of one global lead. Stored on the leading (prev) trade.
         if (prev) {
-          var fv = (cfg.tradeBatch[prev] != null ? cfg.tradeBatch[prev] : (cfg.floorLead || 4));
-          var par = !!cfg.tradeParallel[prev];
-          qs.push('<div class="sbld-at-q sbld-at-qcol">' +
-            '<label style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><input type="checkbox" data-atkind="parallel" data-attr="' + e2(prev) + '"' + (par ? ' checked' : '') + '> Can <b>start at the same time</b> as <b style="color:' + gc(prev) + '">' + e2(GLABEL[prev]) + '</b> <span class="sbld-hint">(run in parallel)</span></label>' +
-            '<label class="sbld-at-behind"' + (par ? ' style="opacity:.4;"' : '') + '>Otherwise, starts <b>how many floors behind</b> <b style="color:' + gc(prev) + '">' + e2(GLABEL[prev]) + '</b>? ' + num('batch', prev, fv, 60, 1) + '</label></div>');
+          var kindsPresent = KIND_ORDER.filter(function (k) { return floorsOf(prev).some(function (f) { return floorKind(f) === k; }) || floorsOf(tr).some(function (f) { return floorKind(f) === k; }); });
+          var krows = kindsPresent.map(function (k) {
+            var par = parallelKind(prev, k), bv = batchKind(prev, k);
+            return '<div class="sbld-at-kind" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:3px 0;">' +
+              '<span style="min-width:132px;font-weight:600;">' + e2(KIND_LABEL[k]) + '</span>' +
+              '<label style="display:inline-flex;align-items:center;gap:5px;"><input type="checkbox" data-atkind="pkind" data-attr="' + e2(prev) + '" data-kind="' + k + '"' + (par ? ' checked' : '') + '> start together</label>' +
+              '<label class="sbld-at-behind"' + (par ? ' style="opacity:.4;"' : '') + '>else <input class="pd-input" type="number" min="1" max="60" data-atkind="bkind" data-attr="' + e2(prev) + '" data-kind="' + k + '" value="' + bv + '" style="width:56px;height:30px;"> level(s) behind</label>' +
+            '</div>';
+          }).join('');
+          qs.push('<div class="sbld-at-q sbld-at-qcol"><label style="margin-bottom:4px;">Handoff from <b style="color:' + gc(prev) + '">' + e2(GLABEL[prev]) + '</b> <span class="sbld-hint">(per floor category — how far behind this trade follows)</span></label>' + krows + '</div>');
         }
         // (c) zones simultaneous per floor
         if (zoneable) {
@@ -13899,8 +13915,8 @@
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
       // zone-order reorder buttons — move the item up/down in the DOM (read back on save)
       // Ticking "start at the same time" dims the floors-behind row (it no longer applies).
-      ov.querySelectorAll('input[data-atkind="parallel"]').forEach(function (cb) { cb.onchange = function () {
-        var beh = cb.closest('.sbld-at-q') && cb.closest('.sbld-at-q').querySelector('.sbld-at-behind');
+      ov.querySelectorAll('input[data-atkind="pkind"]').forEach(function (cb) { cb.onchange = function () {
+        var beh = cb.closest('.sbld-at-kind') && cb.closest('.sbld-at-kind').querySelector('.sbld-at-behind');
         if (beh) beh.style.opacity = cb.checked ? '.4' : '';
       }; });
       ov.querySelectorAll('[data-zup]').forEach(function (b) { b.onclick = function () { var it = b.closest('.sbld-zord-item'), pv = it && it.previousElementSibling; if (pv) it.parentNode.insertBefore(it, pv); }; });
@@ -13908,11 +13924,11 @@
       ov.querySelector('#sbld-at-go').onclick = function () {
         if (cfg.links.length && !confirm('Auto-trace REPLACES the current ' + cfg.links.length + ' link(s) with a fresh takt flow. Continue?')) return;
         Array.prototype.forEach.call(ov.querySelectorAll('input[data-atkind]'), function (inp) {
-          var kind = inp.dataset.atkind, target = inp.dataset.attr;
-          if (kind === 'parallel') { cfg.tradeParallel[target] = inp.checked; return; }             // start-together toggle (leading trade key)
+          var kind = inp.dataset.atkind, target = inp.dataset.attr, fk = inp.dataset.kind;
+          if (kind === 'pkind') { (cfg.tradeParallelKind[target] = cfg.tradeParallelKind[target] || {})[fk] = inp.checked; if (fk === 'typical') cfg.tradeParallel[target] = inp.checked; return; }
+          if (kind === 'bkind') { var bv = Math.max(1, Math.min(60, +inp.value || 1)); (cfg.tradeBatchKind[target] = cfg.tradeBatchKind[target] || {})[fk] = bv; if (fk === 'typical') cfg.tradeBatch[target] = bv; return; }
           var v = +inp.value;
-          if (kind === 'batch') cfg.tradeBatch[target] = Math.max(1, Math.min(60, v || 4));       // floors-behind, stored on the leading (previous) trade
-          else if (kind === 'zone') cfg.zoneSimul[target] = Math.max(1, v || 1);                   // zones at once
+          if (kind === 'zone') cfg.zoneSimul[target] = Math.max(1, v || 1);                   // zones at once
           else if (kind === 'unit') cfg.unitSimul[target] = Math.max(1, v || 1);                   // units at once
         });
         ov.querySelectorAll('[data-atzord]').forEach(function (list) { cfg.zoneOrder[list.dataset.atzord] = Array.prototype.map.call(list.querySelectorAll('.sbld-zord-item'), function (it) { return it.dataset.zk; }); });
@@ -14488,6 +14504,8 @@
           (f.sub ? '<span class="sbld-subtag" title="Basement / substructure">BSMT</span>' : '') +
           '<input class="pd-input" data-fk="code" data-f="' + i + '" value="' + e2(f.code) + '" placeholder="' + (f.sub ? 'B1' : 'Floor') + '" style="width:88px;" />' +
           '<input class="pd-input grow" data-fk="name" data-f="' + i + '" value="' + e2(f.name) + '" placeholder="Floor name" />' +
+          '<select class="pd-select sbld-kind" data-kf="' + i + '" title="Floor category — drives how trades hand off on this kind of level in step 3" style="height:34px;">' +
+            KIND_ORDER.map(function (k) { return '<option value="' + k + '"' + (floorKind(f) === k ? ' selected' : '') + '>' + e2(KIND_LABEL[k]) + '</option>'; }).join('') + '</select>' +
           (showZones ? '<button class="pd-btn sbld-addzone" data-f="' + i + '">+ Zone</button>' : '') +
           '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
           (showZones ? '<div class="sbld-znwrap">' + zonesHtml + '</div>' : '<div class="sbld-znwrap"><div class="sbld-znhint">Floor level — zones &amp; units are ignored. Switch <b>Activity level</b> to Zone/Unit to split this floor.</div></div>') + '</div>';
@@ -14525,17 +14543,17 @@
         if (cfg.links.length && !confirm('Changing the Activity level rebuilds the locations, so the ' + cfg.links.length + ' zone link(s) from Step 3 will be cleared. Continue?')) { lvlSel.value = cfg.locLevel || 'auto'; return; }
         cfg.locLevel = lvlSel.value; cfg.links = []; markDirty(); render();
       };
-      host.querySelector('#b-addfloor').onclick = function () { var nf = zn.floors.filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', zones: [] }); markDirty(); render(); };
+      host.querySelector('#b-addfloor').onclick = function () { var nf = zn.floors.filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', kind: 'typical', zones: [] }); markDirty(); render(); };
       // Basements build bottom-up (deepest first), so a new basement is INSERTED at index 0 (deepest).
-      host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, zones: [] }); markDirty(); render(); };
+      host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, kind: 'basement', zones: [] }); markDirty(); render(); };
       host.querySelector('#b-quick').onclick = function () {
         var B = Math.max(0, Math.min(20, qv('#q-base', 0))), F = Math.max(1, Math.min(80, qv('#q-floors', 1))), Z = Math.max(0, Math.min(20, qv('#q-zones', 0))), U = Math.max(0, Math.min(20, qv('#q-units', 0)));
         quickN[tr] = { B: B, F: F, Z: Z, U: U };
         if (zn.floors.length && !confirm('Replace the ' + zn.floors.length + ' existing floor(s) for ' + GLABEL[tr] + '?')) return;
         function mkZones() { var zs = []; for (var j = 1; j <= Z; j++) { var us = []; for (var k = 1; k <= U; k++) us.push({ id: uidv(), code: 'U' + k }); zs.push({ id: uidv(), code: 'Z' + j, units: us }); } return zs; }
         zn.floors = [];
-        for (var bi = B; bi >= 1; bi--) zn.floors.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, zones: mkZones() });   // deepest (B{B}) first
-        for (var i = 1; i <= F; i++) zn.floors.push({ id: uidv(), code: 'F' + i, name: '', zones: mkZones() });
+        for (var bi = B; bi >= 1; bi--) zn.floors.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, kind: 'basement', zones: mkZones() });   // deepest (B{B}) first
+        for (var i = 1; i <= F; i++) zn.floors.push({ id: uidv(), code: 'F' + i, name: '', kind: 'typical', zones: mkZones() });
         cfg.links = []; markDirty(); render();
       };
       host.querySelectorAll('.sbld-addzone').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.f]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1), units: [] }); markDirty(); render(); }; });
@@ -14544,12 +14562,18 @@
       host.querySelectorAll('.sbld-unminus').forEach(function (b) { b.onclick = function () { var z = zn.floors[+b.dataset.f].zones[+b.dataset.z]; if (z.units.length) z.units.pop(); pruneLinks(); markDirty(); render(); }; });
       host.querySelectorAll('.sbld-delfloor').forEach(function (b) { b.onclick = function () { zn.floors.splice(+b.dataset.f, 1); pruneLinks(); markDirty(); render(); }; });
       host.querySelectorAll('[data-fk]').forEach(function (inp) { inp.onchange = function () { zn.floors[+inp.dataset.f][inp.dataset.fk] = inp.value; markDirty(); render(); }; });
+      // Floor category: set kind, and keep f.sub in step with 'basement' (tower grade line + ordering).
+      host.querySelectorAll('[data-kf]').forEach(function (sel) { sel.onchange = function () { var f = zn.floors[+sel.dataset.kf]; f.kind = sel.value; f.sub = (sel.value === 'basement'); markDirty(); render(); }; });
       host.querySelectorAll('[data-zk]').forEach(function (inp) { inp.onchange = function () { zn.floors[+inp.dataset.f].zones[+inp.dataset.z][inp.dataset.zk] = inp.value; markDirty(); render(); }; });
       host.querySelectorAll('.sbld-flr').forEach(function (row) { wireDrag(row, zn.floors); });
       bindTowerZoom(host.querySelector('.sbld-tower'));   // Ctrl+scroll zoom the building view
     }
 
     var NS = 'http://www.w3.org/2000/svg';
+    // The collapsed-group key a leaf falls into at the current Detail level — shared by scheduleSVG (to
+    // draw one bar per group) and the arrow-click handler (to find the leaf links behind an aggregated
+    // arrow, so clicking a relationship can edit/unlink it at ANY level, not just Unit).
+    function schedKeyOf(l) { var lvl = seqLevel; if (lvl <= 1) return l.trade; if (lvl === 2) return l.trade + '/' + l.floor.id; if (lvl === 3) return l.trade + '/' + l.floor.id + '/' + (l.zone ? l.zone.id : '_'); return l.uid; }
     // Ordered union of floor codes across all trades (index 0 = lowest / ground).
     // ---- schedule (right pane): bars from the links, Start/End + labelled arrows; bars/arrows editable ----
     // Dependency rank (topological depth) — 0 for nodes with no predecessor, else max(pred rank)+1.
@@ -14577,7 +14601,7 @@
       // to a collapsed group is hidden. Only at Unit level (lvl 4) is each bar a single leaf, so only
       // then can a link be edited/unlinked (its raw from~to is unambiguous).
       var lvl = seqLevel;
-      function gkey(l) { if (lvl <= 1) return l.trade; if (lvl === 2) return l.trade + '/' + l.floor.id; if (lvl === 3) return l.trade + '/' + l.floor.id + '/' + (l.zone ? l.zone.id : '_'); return l.uid; }
+      function gkey(l) { return schedKeyOf(l); }
       function glabel(l) { if (lvl <= 1) return GLABEL[l.trade] || l.trade; if (lvl === 2) return (l.floor.code || l.floor.name || 'F'); if (lvl === 3) return (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F')); return (l.unit ? (l.unit.code || 'U') : (l.zone ? (l.zone.code || 'Z') : (l.floor.code || 'F'))); }
       // Full location path for the row label (so a Unit isn't shown as a bare "U3" with no floor/zone).
       function glabelFull(l) { if (lvl <= 1) return GLABEL[l.trade] || l.trade; var p = [l.floor.code || l.floor.name || 'F']; if (lvl >= 3 && l.zone) p.push(l.zone.code || l.zone.name || 'Z'); if (lvl >= 4 && l.unit) p.push(l.unit.code || l.unit.name || 'U'); return p.join(' · '); }
@@ -14647,7 +14671,9 @@
         var lcls = fAny ? (fKeys[k.to] ? ' hotpred' : (fKeys[k.from] ? ' hotsucc' : ' dimlink')) : '';
         var seg = '<path class="sbld-link' + lcls + '" d="' + d + '" marker-end="url(#sbldarrow2)"></path>' +
           (lbl ? '<text class="sbld-linklbl" x="' + (mx + 2) + '" y="' + ((y1 + y2) / 2 - 1) + '" font-size="8">' + lbl + '</text>' : '') +
-          (k.raw ? '<path class="sbld-linkhit" data-fk="' + e2(k.raw.from + '~' + k.raw.to) + '" d="' + d + '"></path>' : '');
+          // Clickable hit-path on EVERY arrow (keyed by the two group codes) so a relationship can be
+          // edited / unlinked at any Detail level — n = how many leaf links it stands for.
+          '<path class="sbld-linkhit" data-fk="' + e2(k.from + '~' + k.to) + '" data-n="' + k.n + '" d="' + d + '"></path>';
         if (lcls === ' hotpred' || lcls === ' hotsucc') hot += seg; else links += seg;
       });
       var defs = '<defs><marker id="sbldarrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pd-ink)"></path></marker></defs>';
@@ -14751,9 +14777,18 @@
       // Bound on BOTH layouts' containers (split = .sbld-seq2, stacked = .sbld-seqstack).
       var seq2 = host.querySelector('.sbld-seq2') || host.querySelector('.sbld-seqstack');
       if (seq2) seq2.addEventListener('contextmenu', nodeConfirm);
+      // Click a relationship ARROW to edit / unlink it — at ANY Detail level. The arrow is keyed by the
+      // two group codes; resolve the actual leaf link(s) behind it. One underlying link → edit or unlink
+      // it directly; several (a collapsed Trade/Floor bar) → the dialog's Unlink removes them all.
       host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
-        var fk = (p.getAttribute('data-fk') || '').split('~'), ex = linkOf(fk[0], fk[1]); if (!ex) return;
-        openLinkDialog(ev.clientX, ev.clientY, { type: ex.type, lag: ex.lag, existing: true }, function (type, lag) { ex.type = type; ex.lag = lag; markDirty(); render(); }, function () { removeLink(fk[0], fk[1]); });
+        var fk = (p.getAttribute('data-fk') || '').split('~'), gfrom = fk[0], gto = fk[1];
+        var u2l = {}; locList().forEach(function (l) { u2l[l.uid] = l; });
+        var matches = cfg.links.filter(function (k) { var a = u2l[k.from], b = u2l[k.to]; return a && b && schedKeyOf(a) === gfrom && schedKeyOf(b) === gto; });
+        if (!matches.length) return;
+        var ex = matches[0], many = matches.length > 1;
+        openLinkDialog(ev.clientX, ev.clientY, { type: ex.type, lag: ex.lag, existing: true, count: matches.length },
+          function (type, lag) { matches.forEach(function (m) { m.type = type; m.lag = lag; }); markDirty(); render(); },
+          function () { if (many && !confirm('Unlink all ' + matches.length + ' relationships between these two?')) return; matches.forEach(function (m) { removeLink(m.from, m.to); }); markDirty(); render(); });
       }); });
     }
     // left-click a zone/bar → toggle it in the current phase's set (free multi-select)
