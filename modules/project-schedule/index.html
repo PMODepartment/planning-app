@@ -229,6 +229,30 @@
       #ps-print-head .pph-title { font-size:18px; font-weight:800; color:#231F20; }
       #ps-print-head .pph-sub { font-size:11px; color:#555; margin-top:2px; }
     }
+    /* ---- Reporting view -----------------------------------------------------------------------
+       A reading view for meetings / screen-shares: it HIDES THE AUTHORING CONTROLS and nothing
+       else. Every view control a presenter still needs — grouping, zoom, outline, layout, filter,
+       search, colors, legend — stays exactly where it is, and no data, column or collapse state
+       is touched. ⚠️ The Layout ▾ menu must stay visible: it is the way back out.
+       Hidden: writing controls (Actions, + Add activity, Schedule/reschedule, Link mode, undo,
+       redo) plus the editing surfaces (details panel, per-column filter row, footer checkbox). */
+    body.ps-reporting #ps-actionsbtn,
+    body.ps-reporting #ps-add,
+    body.ps-reporting #ps-schedbtn,
+    body.ps-reporting #ps-linkmode,
+    body.ps-reporting #ps-undo,
+    body.ps-reporting #ps-redo,
+    body.ps-reporting #ps-details,
+    body.ps-reporting .ps-filter-row,
+    body.ps-reporting .ps-grid-foot .ps-foot-chk { display:none !important; }
+    /* No edit affordances — nothing should invite a click that would change data. */
+    body.ps-reporting .ps-editable { cursor:default; }
+    body.ps-reporting .ps-grid-pane .ps-cell.ps-editable:hover { background:transparent; }
+    /* A quiet marker so it is obvious the view is trimmed, and how to undo it. */
+    body.ps-reporting .ps-toolbar .ps-tb-row::before { content:'Reporting view'; align-self:center;
+      font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-red);
+      font-weight:700; border:1px solid var(--pd-red); border-radius:4px; padding:2px 7px;
+      white-space:nowrap; }
     .ps-topbar-tools .pd-btn { background:transparent; border-color:transparent; font-size:13px; }
     .ps-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .ps-topbar-tools .pd-btn:disabled { opacity:.35; cursor:not-allowed; }
@@ -8544,6 +8568,8 @@
   // Row density (comfortable 34px / compact 27px). ROWH is the single source the grid + Gantt
   // geometry read live, so reassigning it and re-rendering keeps both panes aligned.
   var _density = 'comfortable'; try { if (localStorage.getItem('ps_density') === 'compact') _density = 'compact'; } catch (e) {}
+  // Reporting view — hides the authoring controls only. Session-only by design (see applyReporting).
+  var _reporting = false;
   var ROWH = _density === 'compact' ? 27 : 34, DL = [], _rMin = null, _rDayw = 0, _rafP = false, _tlW = 0;
   // `_editing` is true only while an inline cell editor is genuinely open (not mid-commit). While set,
   // the windowed repaint is deferred (it replaces #ps-grid-rows innerHTML, which would destroy a
@@ -18040,6 +18066,18 @@
       var sp = document.querySelector('.ps-split'); if (sp) sp.classList.toggle('ps-compact', _density === 'compact');
       renderGrid(); renderGantt();
     }
+
+    // ---- Reporting view ------------------------------------------------------------------
+    // Hides the AUTHORING controls (Actions, + Add activity, Schedule, Link mode, undo/redo,
+    // the details panel, the per-column filter row) and leaves every view control in place.
+    // Purely CSS on a body class: no data, columns, collapse state or row height are touched,
+    // so it is exactly reversible and there is nothing to restore on exit.
+    // ⚠️ Session-only by design — a planner who reopens the module to edit must never land in
+    // a trimmed view with no obvious way out. The Layout menu (its toggle) always stays visible.
+    function applyReporting(on) {
+      _reporting = !!on;
+      document.body.classList.toggle('ps-reporting', _reporting);
+    }
     function renderLayoutMenu() {
       function radio(v, label) { return '<button data-lay="' + v + '">' + (layoutMode === v ? '● ' : '○ ') + label + '</button>'; }
       lMenu.innerHTML =
@@ -18051,11 +18089,15 @@
         '<button data-den="compact">' + (_density === 'compact' ? '● ' : '○ ') + 'Compact</button>' +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<button data-dettoggle>' + (detailsHidden ? '○ ' : '● ') + 'Show details panel</button>' +
-        '<button data-ganttset><span data-ico="settings" data-ico-size="14"></span> Gantt settings…</button>';
+        '<button data-ganttset><span data-ico="settings" data-ico-size="14"></span> Gantt settings…</button>' +
+        '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
+        '<button data-report title="Hide the authoring controls (Actions, Add activity, Schedule, Link, undo/redo, details panel, column filters) for meetings and screen-shares. View controls stay; nothing is written.">' +
+          (_reporting ? '● ' : '○ ') + 'Reporting view</button>';
       lMenu.querySelectorAll('[data-lay]').forEach(function (b) { b.onclick = function () { layoutMode = b.dataset.lay; try { localStorage.setItem('ps_layout', layoutMode); } catch (e) {} applyLayout(); renderLayoutMenu(); }; });
       lMenu.querySelectorAll('[data-den]').forEach(function (b) { b.onclick = function () { applyDensity(b.dataset.den); renderLayoutMenu(); }; });
       lMenu.querySelector('[data-dettoggle]').onclick = function () { detailsHidden = !detailsHidden; try { localStorage.setItem('ps_details_hidden', detailsHidden ? '1' : '0'); } catch (e) {} applyLayout(); renderLayoutMenu(); };
       lMenu.querySelector('[data-ganttset]').onclick = function () { lMenu.classList.remove('open'); openGanttSettings(); };
+      lMenu.querySelector('[data-report]').onclick = function () { applyReporting(!_reporting); renderLayoutMenu(); };
     }
     applyLayout();
     document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); closeMenus(); cMenu.classList.toggle('open'); };

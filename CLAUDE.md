@@ -5516,3 +5516,15 @@ reversed every location grouping in the grid even with the stack closed. New `_g
 (default off) gates it: the grid only flips when the docked stacking pane is **open** and the new
 **"Match grid"** ticker in that pane's header is on. The ticker sits in the pane because it is inert
 anywhere else. Verified: parses; not verified signed-in. `MODULE_V` → `20260817o`.
+
+### 2026-08-17 — Project Schedule: Reporting view (Layout ▾ → Reporting view)
+Owner asked for a better on-screen view for reporting, then clarified it should "only hide some
+tabs/buttons". ⚠️ **First cut was over-built** (presentation bar, Summary/Detail altitudes, column
+overlay, report header, bigger rows) and was scrapped for ~25 lines: a `body.ps-reporting` class
+hiding the **authoring** controls only — Actions, + Add activity, Schedule (it reschedules, i.e.
+writes), Link mode, undo/redo, the details panel, the per-column filter row and the footer checkbox
+— plus neutralised edit affordances and a red "Reporting view" chip. Every view control stays,
+including the Layout menu that holds the toggle (the way out). Session-only; nothing is written or
+restored. Verified in-browser against the real stylesheet + real toolbar markup: 7 hidden, 11 kept,
+fully reversible; ⚠️ the sanity gate caught a first run taken below the 700px phone breakpoint,
+where the toolbar is hidden anyway. Not verified signed-in. `MODULE_V` → `20260817p`.

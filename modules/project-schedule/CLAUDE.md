@@ -5277,3 +5277,34 @@ a ticker, and only while that pane is open.
 - Verified: inline block parses (1 block, 0 fail); the gate and all 7 `_gridMatchStack` references
   present. ⚠️ **Not verified signed-in** — needs a project with a location breakdown. `MODULE_V` →
   `20260817o`.
+
+## Reporting view — hide the authoring controls (2026-08-17) — fmlozano
+Owner asked to improve the page for reporting, chose "the on-screen view itself", then clarified
+mid-build: *"the reporting view will only hide some tabs/buttons."*
+- ⚠️ **I had over-built it first** — a presentation bar, Summary/Detail altitudes, a summary column
+  overlay, a report header and a bigger row height (~180 lines). Scrapped on the clarification and
+  replaced with ~25 lines: a `body.ps-reporting` class and CSS. Nothing renders, nothing is written,
+  nothing is restored on exit — so it is exactly reversible by construction rather than by care.
+- **Hidden:** `#ps-actionsbtn`, `#ps-add`, `#ps-schedbtn` (it reschedules — a write), `#ps-linkmode`,
+  `#ps-undo`, `#ps-redo`, `#ps-details`, the per-column filter row, and the footer's Hide-empty-groups
+  checkbox. Edit affordances (`.ps-editable` cursor + hover) are neutralised.
+- **Kept:** every view control — Open, grouping, zoom, Outline, Layouts, Layout, Progress, Analyze,
+  Colors, Labels, search, Reports, Health, File/Print. ⚠️ **The Layout menu must stay visible: it
+  holds the toggle, so it is the way back out.** A red "Reporting view" chip on the toolbar says the
+  view is trimmed.
+- **Session-only** (not persisted): a planner reopening the module to edit must never land in a
+  trimmed view.
+- **Verified in-browser against the module's REAL stylesheet and REAL toolbar markup** (harness
+  extracted from index.html, gitignored, deleted): all 7 targets hidden when on, **all 11 view
+  controls still visible**, filter row + footer checkbox hidden, edit cursor `text`→`default`, chip
+  renders, and **fully reversible — the off-state snapshot is byte-identical after toggling back**.
+  ⚠️ **The sanity gate earned its keep**: the first run reported the toolbar hidden with reporting
+  OFF, because the Browser pane was below the 700px phone breakpoint (which hides `.ps-toolbar` and
+  `.ps-split`); every measurement in that run was meaningless. Gate on `innerWidth` + a known-good
+  computed value before trusting any of this.
+  ⚠️ Two entries in that output look like failures and are not: `ps-colsbtn` reads MISSING because
+  the columns control is the grid-header "+" corner, not a toolbar button, and `ps-linkmode` reads
+  hidden in both states because it lives inside the closed Analyze menu.
+- 15 static checks green (parse, every hidden id exists in the markup so no rule is a silent no-op,
+  the Layout button is never hidden, no leftovers from the heavier version, ROWH untouched).
+  Function-set diff vs HEAD: **0 lost**. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817p`.
