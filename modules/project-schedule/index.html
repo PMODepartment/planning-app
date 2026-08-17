@@ -16449,12 +16449,20 @@
       if (isWbs(r)) return;
       if (!stkPhaseInScope(r, levelId)) return;
       var p = stkPhaseLabel(r); if (!p) return;
-      var g = groups[p.label] || (groups[p.label] = { value: p.label, color: p.color, isPhase: true, acts: [], first: null });
+      var g = groups[p.label] || (groups[p.label] = { value: p.label, color: p.color, isPhase: true,
+        idx: STK_PHASES.indexOf(p), acts: [], first: null });
       g.acts.push(r);
       var s = pd(dispStart(r)); if (s && (!g.first || s < g.first)) g.first = s;
     });
     var list = Object.keys(groups).map(function (k) { return groups[k]; });
-    list.sort(function (a, b) { return (a.first && b.first) ? (a.first - b.first) : (a.first ? -1 : (b.first ? 1 : 0)); });
+    // ⚠️ Ordered by the CANONICAL lifecycle (STK_PHASES order: T&C → Punchlisting → Handover →
+    // Closeout → Defects Liability), NOT by earliest start. Sorting by date put Handover AFTER
+    // Closeout on Avesta, because "Tower 1 Partial Closeout" starts 2026-07-28 while "Tower 1
+    // Handover" is 2026-12-21 — a partial closeout runs alongside the works and says nothing about
+    // where the phase sits in the lifecycle. The date is still kept on `first` for reference.
+    // ⚠️ This order also decides `lastDone` in the band loop, so a floor with both Handover and
+    // Closeout complete now correctly reports the LATER phase.
+    list.sort(function (a, b) { return a.idx - b.idx; });
     list.forEach(function (c) { c.tex = 0; c.style = catStyle(c.color, 0); c.n = c.acts.length; });
     return list;
   }

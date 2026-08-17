@@ -143,7 +143,7 @@
     // Bump MODULE_V on any deploy that changes a module's index.html. It is defined here, not in
     // config.js, deliberately: config.js is itself cache-busted from 22 HTML files, so versioning it
     // there would mean a 22-file bump to make a one-module change visible.
-    var MODULE_V = '20260817f';
+    var MODULE_V = '20260817g';
     function renderModules() {
       var grid = document.getElementById('module-grid');
       grid.innerHTML = (APP_CONFIG.MODULES || []).map(function (m) {
