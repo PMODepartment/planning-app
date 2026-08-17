@@ -8866,15 +8866,19 @@
     // building the Gantt bars took the legend down with it and it only recovered on a full page
     // reload ("the legend needs a refresh"). It needs nothing but DL, which is ready here.
     renderActLegend();
-    renderWindow();
+    renderWindow(true);
     syncHeadHeights();
     // Isolated: the stacking pane is an optional side panel and must never be able to blank the grid
     // or the Gantt that were just painted.
     try { renderStackPane(); } catch (e) { console.error('[ps] renderStackPane failed', e); }
   }
 
-  function renderWindow() {
-    if (!DL.length) return;
+  // ⚠️ `force` = "state changed, repaint regardless". Scroll passes nothing and is guarded by
+  // `_gridWinKey` below; every other caller MUST force, or an edit/selection/filter would leave the
+  // painted window stale. Same pattern the WBS Manager already uses (`_wbsWinKey`).
+  var _gridWinKey = '';
+  function renderWindow(force) {
+    if (!DL.length) { _gridWinKey = ''; return; }
     if (_editing) { _pendingWin = true; return; }   // don't wipe an open inline editor; flush on close
     // Use whichever scroll container is VISIBLE for the virtualization viewport. In Grid-only the
     // gantt pane is display:none (clientHeight 0), so reading it gave vh=0 → only ~10 buffer rows
@@ -8887,6 +8891,14 @@
     if (top > maxTop) { top = maxTop; if (scr) scr.scrollTop = maxTop; }
     var first = Math.max(0, Math.floor(top / ROWH) - 10);
     var last = Math.min(DL.length, Math.ceil((top + vh) / ROWH) + 10);
+    // ⚠️ THE SCROLL FIX. Below this line every row is re-serialised AND several hundred listeners are
+    // re-bound per call (~20 per row × ~40 rows: row click/contextmenu/drag, a dblclick per editable
+    // cell, 3 per status <select>, chevrons, WBS rows). Scroll is rAF-throttled, so that ran up to
+    // 60×/second — but a rAF fires far more often than the 10-row buffer actually moves, so most of
+    // those repaints painted the exact same rows. Skipping the no-op ones is most of the lag.
+    var winKey = first + ':' + last + ':' + DL.length;
+    if (!force && winKey === _gridWinKey) return;
+    _gridWinKey = winKey;
     // grid: render only the window, offset with translateY
     var gh = '';
     for (var i = first; i < last; i++) gh += gridRowHTML(DL[i], i);
@@ -9136,7 +9148,7 @@
       // per-branch renders below are conditional (a no-op/failed persist skips `if (ok) renderGrid()`),
       // which used to leave the closing editor's <input> orphaned in the cell — visible now that
       // Tab/Enter move the cursor away from it. rAF-batched + `_rafP`-deduped, so this is free.
-      _editing = false; _pendingWin = false; scheduleRender();
+      _editing = false; _pendingWin = false; _gridWinKey = ''; scheduleRender();
       if (!save) { renderGrid(); return; }
       var val = inp.value;
       var patch = {};

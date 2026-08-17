@@ -367,6 +367,24 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Gantt scroll: skip no-op window repaints (2026-08-17) — fmlozano
+Owner: "also lagging when scrolling down and left". Scroll was ALREADY rAF-throttled, so the cost was
+inside `renderWindow()` itself.
+- ⚠️ Every call re-serialises the window AND **re-binds several hundred listeners** — roughly 20 per
+  row x ~40 visible rows: row click + contextmenu + the drag set, a dblclick per editable cell,
+  three per status `<select>`, chevrons, WBS rows. A rAF fires up to 60x/second, but the 10-row
+  buffer moves far less often, so **most of those repaints painted the exact same rows.**
+- Added a `_gridWinKey` guard (`first:last:DL.length`): a scroll that lands on the same slice now
+  returns immediately. This is the pattern the **WBS Manager already used** (`_wbsWinKey`); the
+  Gantt grid never got it.
+- ⚠️ `renderWindow(force)` — scroll passes nothing, **every other caller MUST force**, or an edit /
+  selection / filter would leave a stale window painted. `doRender` forces; closing an inline editor
+  clears the key before flushing.
+- ⚠️ **The deeper fix is still open:** those listeners should be *delegated* to `#ps-grid-rows` once
+  instead of bound per element per repaint. That removes the cost entirely rather than skipping it,
+  but it touches ~8 handler groups in the grid's hot path and was too big to do safely in the same
+  pass. The key guard makes the common case cheap; delegation is the real answer.
+
 ## Stacking pane was O(categories x rows); now O(rows) (2026-08-17) — fmlozano
 Owner: "the app is lagging so much when opening the vertical stacking." It was algorithmic, not
 hardware.
