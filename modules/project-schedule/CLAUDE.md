@@ -367,6 +367,34 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Concurrent activities are LANE-PACKED inside the bracket (2026-08-17) — fmlozano
+Owner on Ground floor › Wet Works: *"it captures also the planned for other activities and overlaps
+them which makes it confusing at the Wet Works level"* — then confirmed the target with a zoomed
+crop of the P6 LSM sheet, where concurrent trades sit in their own sub-lanes and sequential ones
+share a line.
+- ⚠️ Every segment was drawn at the bracket's FULL height, so concurrent work simply painted over
+  itself and whichever came last in `_sorted` won. Wet Works runs Masonry (Apr–Jul), Sealant
+  (Apr–Jul) and Waterproofing (Jun–Jul) together, so the bracket showed a mash that read as one
+  activity spilling over the others.
+- **Greedy interval partitioning**: each activity takes the first lane whose previous occupant has
+  finished, else a new lane. Overlap becomes **stacked stripes** — which is what a bar carrying
+  several trades at once actually means — and purely sequential work still uses ONE full-height
+  lane, so the common case is unchanged.
+- ⚠️ **`LANE_CAP = 5`.** The bracket is 13px in LSM mode; past five lanes a stripe is under 3px and
+  the stacking stops carrying information, so lanes are reused beyond that. Overlap returns only in
+  the rare deeply-concurrent case, never for the ordinary 2–4 trade overlap.
+- ⚠️ `top`/`height` now come **inline** (percentages), so `.ps-sum-seg` lost its `top:0;bottom:0` —
+  a `bottom:0` would fight the computed height and flatten every lane back to full height.
+- **Verified 22/22** against the sliced `_sumSegsHTML`: the three concurrent trades land in three
+  different lanes, lanes tile the bracket exactly, none overflows, a non-overlapping follower reuses
+  lane 0 rather than adding height, **sequential-only work still uses a single full-height lane**,
+  and the cap holds at 12 concurrent activities. All 14 suites green.
+- ⚠️ **Test-file lesson:** an existing assertion (`no stray top/height`) kept passing after this
+  change because it matched `top:…px` while the code now emits `top:…%` — it was passing
+  *vacuously*. Two attempts to patch the file with Python `.replace()` also silently no-op'd on
+  escaping. The file was rewritten from scratch instead. A green assertion that no longer tests
+  anything is worse than a missing one.
+
 ## Mixed branches drew a misleading partial composition (2026-08-17) — fmlozano
 Owner, on Tower 1 › Structural Works: *"a white bar then filled with green then blank bars again
 which doesn't make any sense."* Correct — and caused by the altitude fix earlier the same day.
