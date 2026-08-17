@@ -5171,10 +5171,16 @@
       }
     }
     // ⚠️ THE GROUPING ALSO FILTERS (owner: "the group by function will act as a filtering function").
-    // An activity carrying no value on a grouping dimension can only ever land in a "— Unassigned —"
-    // bucket, so it is dropped instead: grouping by Tower › Level › Zone › Orientation shows the work
-    // that HAS a location and nothing else. Manpower Loading, Bonds & Permits etc. have no location
-    // and say nothing in a location breakdown.
+    // An activity with NO value on ANY grouping dimension can only ever land in a "— Unassigned —"
+    // bucket, so it is dropped: grouping by Tower › Level › Zone › Orientation shows the work that
+    // belongs to that breakdown and nothing else. Manpower Loading, Bonds & Permits etc. have no
+    // location at all and say nothing in a location breakdown.
+    // ⚠️ PARTIAL-DEPTH TRADES ARE KEPT (owner: "if structural only has up to zone level and the
+    // groups are defined up to unit level, do not exclude structural — it is just a guide on how the
+    // WBS should be organized"). So the test is "has a value on AT LEAST ONE required dim", NOT "on
+    // every one". A trade with Tower/Level/Zone but no Unit is retained and simply nests as deep as
+    // it has values, landing in a "— Unassigned —" leaf at the level it stops — never dropped for a
+    // missing deeper criterion. Only work that matches none of the grouping levels is hidden.
     // ⚠️ Runs AFTER the Execution-Phase carve-out on purpose, and clears `otherPhaseActs` too — the
     // carve-out exists to render non-located phases by their WBS path, which is exactly what the
     // owner asked to stop seeing here.
@@ -5185,8 +5191,8 @@
       var reqDims = dims.filter(dimNeedsValue);
       if (reqDims.length) {
         var _keep = function (r) {
-          for (var q = 0; q < reqDims.length; q++) if (!dimRawOf(r, reqDims[q])) return false;
-          return true;
+          for (var q = 0; q < reqDims.length; q++) if (dimRawOf(r, reqDims[q])) return true;
+          return false;
         };
         var _before = acts.length + otherPhaseActs.length;
         acts = acts.filter(_keep);

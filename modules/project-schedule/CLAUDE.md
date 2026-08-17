@@ -72,6 +72,25 @@ pair was run alongside. Also ⚠️ `count=exact` on the whole of `project_sched
 filtered counts are fine. And one `wbs` value came back rendered as `[BLOCKED: JWT token]` — a
 redaction in the browser tool's output, not data.
 
+## Grouping is a guide, not a hard filter — partial-depth trades are kept (2026-08-17) — eprobles
+User: when the grouping is defined deeper than a trade goes (e.g. Structural has up to Zone but the
+groups are defined up to Unit), the grouping-as-filter was excluding the whole Structural trade. It
+should be a guide on how the WBS is organized, not drop a trade for a missing deeper criterion.
+- ⚠️ **Root cause:** the `_hideUnassigned` filter in `buildNodes()` (~line 5029) required a value on
+  **EVERY** required grouping dim (`dimNeedsValue()` dims — loc:/code:/work/wp/phase): `for … if
+  (!dimRawOf(r, reqDims[q])) return false`. So an activity with Tower/Level/Zone but no Unit was
+  dropped when grouping Tower › Level › Zone › Unit.
+- **Fix:** the test is now "has a value on **AT LEAST ONE** required dim" (`if (dimRawOf(…)) return
+  true; … return false`). A partial-depth trade is retained and simply nests as deep as it has
+  values, landing in a "— Unassigned —" leaf at the level it stops. Only work matching **none** of
+  the grouping levels (truly unassigned — Manpower Loading, Bonds & Permits with no location and no
+  discipline) is still hidden. The toggle + footer count are unchanged.
+- Verified against the SHIPPED `dimRawOf`/`dimNeedsValue` (sliced, not reimplemented): a Structural
+  activity with Tower/Level/Zone but no Unit is kept under both Discipline›Location and location-only
+  groupings; a fully-tagged activity kept; a truly-unassigned activity dropped; and under a
+  location-only grouping a discipline-only General Requirements activity (no location) is still
+  dropped. Inline script parses. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817y`.
+
 ## Schedule Builder push: doubled disciplines fix + canonical work_type labels (2026-08-17) — eprobles
 User: after pushing the builder result into the project schedule, the Discipline/Trade grouping shows
 **two of each trade** (two General Requirements, two Structural, …); also put Others/Allied after MEPF.
