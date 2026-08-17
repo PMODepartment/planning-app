@@ -5667,3 +5667,22 @@ target before deleting rather than taking the description on trust — and it he
   is a sandbox copy of Avesta and is reconstructible by re-importing. Do NOT apply the same reasoning
   to a real project.
 - This also moots the **74 flagged DEMO01 summary rows** from the stale-dates investigation.
+
+## WCB363 stale-date work: CLOSED, remaining rows deliberately not fixed (2026-08-17) — fmlozano
+Owner's call: drop the remaining WCB363 fix. Recording it so nobody reopens it as an oversight.
+- **Not being changed (17 rows), by decision, not by omission:**
+  - the **14 traps** — descendants exist but carry no dates, so the min/max roll-up computes NULL and
+    would ERASE each row's only stored date (mostly `1.1.3.12.*` "Tender Award / LOA Signed --- TBC");
+  - the **3 mostly-undated rows** — `1.1.1` Milestone (16/19 descendants dated), `1.1.1.2` **SA-3
+    Milestone** (12/15) and `1.1.3.7.16.1.1.1.4.4.1` Turn Over from STR – ABWF (**2/15**). Their
+    undated descendants include *"Substantial / Practical Completion incl. Partial Occupancy
+    Permit"*, so the stored 2025-10-30 may be the only record of the SA-3 contractual date. Rolling
+    them back 40–337 days is a commercial judgement, not a data fix.
+- ⚠️ **The 4 rows already corrected earlier today STAY corrected** — dropping the remaining work does
+  not revert them. They were the fully-dated cases (2/2, 2/2, 2/2, 29/30), so nothing was inferred
+  from absent data. Reverse statements are in the entry above if they are ever to be undone.
+- ⚠️ **These rows will keep showing as "disagreeing" in any future scan.** That is expected. Anyone
+  re-running the stale-date measurement should treat WCB363's 17 as a known, reviewed exclusion
+  rather than a fresh finding — and must NOT bulk-fix them.
+- The Gantt does not read these columns any more (spans roll up from descendant activities), so the
+  stale values are cosmetic at source; they only mislead someone querying the table directly.

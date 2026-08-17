@@ -5639,3 +5639,10 @@ bug). Keyset batches of 500, safety facts re-asserted immediately before deletin
 project's cached schedule roll-up, which still read 4,393 activities. Verified 0 rows, AVR101
 untouched at 6,016. ⚠️ Not reversible — accepted because it is a reconstructible sandbox, and that
 reasoning must not be reused on a real project. Moots the 74 flagged DEMO01 rows.
+
+### 2026-08-17 — WCB363 stale-date work closed (remaining 17 rows deliberately left)
+Owner's call. The 14 traps (undated descendants — a roll-up would erase the only stored date) and the
+3 mostly-undated rows (incl. the **SA-3 Milestone**, whose undated children include Substantial
+Completion) are **deliberately not fixed**; rolling them back 40–337 days is a commercial judgement.
+⚠️ The 4 rows corrected earlier today stay corrected (reverse statements logged). ⚠️ Future scans will
+keep flagging these 17 — treat as a reviewed exclusion, not a new finding, and do not bulk-fix.
