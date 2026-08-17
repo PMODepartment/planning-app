@@ -345,6 +345,43 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Duplicate WBS rows on every refresh: the dedupe healed ONE LEVEL per call (2026-08-16) — fmlozano
+Owner on One Portwood (OPW101): *"Refreshing the project schedule bugs out with having duplicated WBS
+rows."* Screenshot: Execution Phase ×2, General Requirements ×2, Site Works ×2.
+- ⚠️ **`_wbsDedupeSkeleton` keys duplicates by `(parent_id, name)`** — so two fully-seeded skeletons
+  (two racing page loads, the scenario the function exists for) only ever collide at the **ROOTS**.
+  Every child sits under its **own** root, so "General Requirements" under root A and under root B
+  are *different keys* and are invisible to the pass. The pass then re-points B's children onto A —
+  **which is the moment they become duplicate siblings** — but `dupes` was computed before that and
+  the function returns.
+- ⚠️ **Net effect: exactly one level collapsed per call**, and `load()` calls it once. So every
+  refresh healed the next level down and `_wbsEnsureSummaries` faithfully projected a fresh crop of
+  duplicate summary rows for the newly-exposed level. The bug *looked* like refresh causing
+  duplication; refresh was actually the (partial) repair, surfacing the next layer each time.
+- **Fix: run to a fixed point** — loop the pass until one heals nothing (guard 24, ~tree depth). A
+  healthy tree exits after a single pass, so the normal cost is unchanged. The existing pass body is
+  untouched and now lives in `_wbsDedupeSkeletonPass`.
+- ⚠️ Deliberately **did not** widen the `is_locked` filter. Two same-named siblings under one parent
+  are always wrong, but non-locked nodes come from imports and merging those is a data decision, not
+  a repair — out of scope for the reported bug.
+- **Verified 16/16** against the sliced shipped functions with an in-memory DB seeded to the exact
+  OPW101 shape (two 5-node skeletons, 4 levels deep): all 10 nodes collapse to 5, the merge count is
+  5 (**the old single-pass code could only ever report 1**), it provably takes more than one pass,
+  the surviving chain keeps its parent/child structure, the **earliest** node survives each merge
+  (activities are filed against it), the DB agrees with memory, and re-running on a healthy tree is a
+  no-op costing one pass. ⚠️ **Not verified signed-in**, and ⚠️ **I could not query OPW101** to
+  confirm its duplicate nodes carry `is_locked` — if they came from an import instead, this fix will
+  not reach them and the dedupe scope is the next thing to look at.
+
+## "· N not in this view" reworded (2026-08-16) — fmlozano
+Owner asked what it meant. It was jargon ("categories" the user never named) and the tooltip listed
+causes without saying what the number *was*. Now reads **"· 7 more, not on screen"**, and the tooltip
+names the field in the planner's own words via `_catNoun()` ("activity names" / "disciplines /
+trades" / "activity types") and states the actual meaning: they exist on the project, but none of
+their activities are among the rows on screen, so there is nothing for them to key — usually a
+collapsed branch. ⚠️ Suppressed entirely when a curated key set is active (`_hidden = 0` there),
+since "not on screen" would then be conflated with "not keyed", which is a different thing.
+
 ## Curated KEY TRADES — the LSM discipline, not a bigger legend (2026-08-16) — fmlozano
 Follow-on from the legend-scoping fix: with "Execution Phase only" honoured the legend fell 438 → 79,
 but 79 is still not a key. ⚠️ **The remaining entries were CORRECT** — Mobilization, Temp. Facil.,

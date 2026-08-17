@@ -11334,7 +11334,26 @@
   // chronologically sortable, but `created_at` is on every row) and re-points anything filed against
   // a dropped duplicate (summary rows via wbs_node_id, activities' wbs_node_id, child wbs_nodes'
   // parent_id) onto the survivor before deleting it — so nothing is silently orphaned.
+  // ⚠️ Runs to a FIXED POINT, and it has to. A pass keys duplicates by (parent_id, name), so two
+  // fully-seeded skeletons only ever collide at the ROOTS — every child sits under its own root, so
+  // "General Requirements" under root A and under root B are different keys and are invisible to the
+  // pass. Merging the roots re-points B's children onto A, which is the moment they BECOME duplicate
+  // siblings — but the dupes list was computed before that, and the function returned.
+  // Net effect: one level collapsed per call. load() calls this once, so each refresh healed the next
+  // level down and re-projected a fresh crop of duplicate WBS rows — exactly the reported
+  // "refreshing bugs out with duplicated WBS rows". Looping until a pass finds nothing collapses the
+  // whole duplicated subtree in one go.
   async function _wbsDedupeSkeleton() {
+    var total = 0;
+    // Bounded by tree depth; a pass that heals nothing exits immediately, so this is normally 1 call.
+    for (var guard = 0; guard < 24; guard++) {
+      var n2 = await _wbsDedupeSkeletonPass();
+      total += n2;
+      if (!n2) break;
+    }
+    return total;
+  }
+  async function _wbsDedupeSkeletonPass() {
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
     var byKey = {}, dupes = [];
     WBS_NODES.filter(function (n) { return n.is_locked; })
@@ -15979,6 +15998,16 @@
     };
     paint();
   }
+  // Names the thing being counted after the legend ("· 7 more, not on screen") in the user's own
+  // terms — "activity names" / "disciplines" reads as an explanation; "categories" reads as jargon.
+  function _catNoun(cfg) {
+    var f = (cfg || catCfg()).field;
+    if (f === 'work') return 'disciplines / trades';
+    if (f === 'type') return 'activity types';
+    if (f === 'name') return 'activity names';
+    var lbl = (catFieldOptions().filter(function (o) { return o[0] === f; })[0] || ['', 'categories'])[1];
+    return String(lbl).toLowerCase() + ' values';
+  }
   function renderActLegend() {
     var host = document.getElementById('ps-actlegend'); if (!host) return;
     if (!pid || !rows.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
@@ -16023,7 +16052,7 @@
                 '<input type="color" class="ps-alg-clr ps-catclr" data-v="' + esc(c.value) + '" value="' + c.color + '"></span>' +
                 '<span>' + esc(c.value) + '</span></span>';
             }).join('') + (list.length > MAXL ? '<span>+' + (list.length - MAXL) + ' more</span>' : '') +
-            (_hidden > 0 ? '<span title="Not on screen: hidden by a filter, by “Execution Phase only”, or in a branch the current view excludes.">· ' + _hidden + ' not in this view</span>' : '')
+            (_hidden > 0 ? '<span class="ps-alg-more" title="' + esc(_hidden + ' more ' + _catNoun(cfg) + ' exist on this project, but none of their activities are among the rows on screen right now — so there is nothing here for them to key. Usually the branch holding them is still collapsed; a filter or “Execution Phase only” can also exclude them. Expand a WBS branch and they appear.') + '">· ' + _hidden + ' more, not on screen</span>' : '')
           : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>')
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
     host.innerHTML =

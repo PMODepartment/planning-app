@@ -5365,6 +5365,23 @@ material_submittal, resource_assignments, activity_steps, wbs_nodes), each reinv
 - ⚠️ **Not verified signed-in.** ⚠️ Deliberately NOT changed: `getProjects`/`getAllUsers` (bounded by
   org size, and both feed pickers where a 1000-row page is already a UX problem, not a data one).
 
+### 2026-08-16 — Project Schedule: duplicate WBS rows on every refresh
+Owner on OPW101: refreshing produced duplicated WBS rows (Execution Phase x2, General Requirements
+x2, Site Works x2).
+- ⚠️ `_wbsDedupeSkeleton` keys duplicates by **(parent_id, name)**, so two fully-seeded skeletons only
+  ever collide at the **roots** — every child sits under its own root, so the same-named children are
+  different keys and invisible to the pass. Merging the roots re-points B's children onto A, which is
+  the moment they BECOME duplicate siblings, but `dupes` was computed before that and the function
+  returned.
+- ⚠️ **One level healed per call**, and `load()` calls it once — so each refresh healed the next level
+  down and `_wbsEnsureSummaries` projected a fresh crop of duplicate summary rows for it. Refresh
+  looked like the cause; it was actually the partial repair surfacing the next layer.
+- Fixed by running the pass to a **fixed point** (guard 24; a healthy tree still exits in one pass).
+  Did NOT widen the `is_locked` scope — merging imported nodes is a data decision, not a repair.
+- 16/16 against sliced shipped functions on the exact OPW101 shape; the old code could only ever
+  report 1 merge where the fix reports 5. ⚠️ Could not query OPW101 to confirm its duplicates are
+  `is_locked`; if they came from an import, the dedupe scope is the next thing to look at.
+
 ### 2026-08-16 — Project Schedule: curated key trades (the LSM discipline)
 With "Execution Phase only" honoured the legend fell 438 -> 79, but 79 is still not a key.
 - ⚠️ **The remaining entries were CORRECT.** Mobilization, Temp. Facil., Manpower Loading, Safety
