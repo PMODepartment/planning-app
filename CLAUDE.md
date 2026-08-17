@@ -5663,3 +5663,23 @@ reverted — only the baseline half changed. Verified by executing the shipped `
 14/14 after**; sumspan/baseline-lsm/transpose/grouprollup all green; 0 functions lost; parses.
 ⚠️ One sumspan assertion changed — it encoded the defect as expected behaviour. ⚠️ Not verified
 signed-in. `MODULE_V` → `20260817v`.
+
+### 2026-08-17 — Project Schedule: Gantt presentation pass (red confined to progress)
+Follow-up to the rail fix, separate commit. **One rule, stated: progress is always the SOLID portion
+of the row's own tone over a PALE version of the same tone.** Red is the progress colour in the
+plain view only (where it is the row's tone at both levels, already coherent — left byte-identical);
+in the coloured view the row's tone is its trade colour and **red no longer appears at all**. Five
+stacked branch-of-branches rows were drawing saturated red slabs in a view where red means nothing
+else; they are now quiet structural brackets. ⚠️ Nothing removed — the roll-up % is still the fill,
+the label and the tooltip. A single-trade group still fills in its own trade colour (inline style
+beats the new var). The uncovered stretch of a band-carrying bracket is now a faint hatched **inert
+track**, so a gap meaning "nothing scheduled" can no longer be mistaken for "the data is wrong" —
+the thing that hid the Mat Footing bug. Which rows draw composition is unchanged. **Legend
+rewritten:** "still to do" was wrong (the owner read it as a forecast) — a row encodes three things
+and they are now named apart: rail = planned dates, bar extent = forecast dates, fill = done vs
+remaining; and the duplicate BL0 chip is folded so the rail is named exactly once per view. New
+tones are plain CSS vars in both light and dark blocks, so they re-theme with no JS. ⚠️ A first cut
+rendered *done paler than remaining* — inverted — and was caught by the screenshot. Verified: 29 new
+checks executing the shipped `ganttRowHTML`, all six other suites green, 0 functions lost, parses;
+before/after/dark PNGs captured at 1440px with headless Edge (the browser tool's screenshot times
+out here). ⚠️ Not verified signed-in. `MODULE_V` → `20260817w`.

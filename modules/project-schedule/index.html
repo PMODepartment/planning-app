@@ -500,8 +500,12 @@
        legend matches the bars (incl. dark mode + user recolors, which applyColors sets on this same
        element). Previously these lived on .ps-gantt-pane, so the legend fell back to the light-mode
        values and read black while dark-mode bars were white. */
-    #ps-view-schedule { --ps-bar:#2B2C2B; --ps-sum:#231F20; --ps-bl:#2F6FB0; --ps-dep:#231F20; --ps-dd:#231F20; }
-    html.pd-dark #ps-view-schedule { --ps-bar:#c7ccd1; --ps-sum:#e0e0e0; --ps-bl:#5AA0E6; --ps-dep:#f4f4f4; --ps-dd:#f4f4f4; }
+    #ps-view-schedule { --ps-bar:#2B2C2B; --ps-sum:#231F20; --ps-bl:#2F6FB0; --ps-dep:#231F20; --ps-dd:#231F20;
+      /* structural (non-accent) tones used by the coloured view's summary brackets — see the
+         "RED MEANS PROGRESS" note below. Plain vars so they follow the theme with no JS. */
+      --ps-sumprog:rgba(35,31,32,.58); --ps-track:rgba(35,31,32,.13); --ps-trackln:rgba(35,31,32,.20); }
+    html.pd-dark #ps-view-schedule { --ps-bar:#c7ccd1; --ps-sum:#e0e0e0; --ps-bl:#5AA0E6; --ps-dep:#f4f4f4; --ps-dd:#f4f4f4;
+      --ps-sumprog:rgba(224,224,224,.62); --ps-track:rgba(224,224,224,.16); --ps-trackln:rgba(224,224,224,.26); }
     html.pd-dark .ps-bar-lbl { color:var(--pd-muted); }
     /* legend */
     .ps-legend { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:8px 2px; font-size:12px; color:var(--pd-muted); }
@@ -685,7 +689,32 @@
        coloured mode, so after the altitude fix (a branch containing other branches draws no
        composition) high-level rows just got fatter with nothing inside them. Owner asked what the
        thickness was buying; on those rows, nothing. Keyed off the bands actually being emitted. */
-    #ps-view-schedule.ps-lsm .ps-sum.ps-sum-comp { height:13px; }
+    #ps-view-schedule.ps-lsm .ps-sum.ps-sum-comp { height:13px;
+      /* ⚠️ The stretch of a band-carrying bracket that NO band covers must read as EMPTY TRACK.
+         It used to show the bracket's own solid structural colour, so a gap meaning "nothing is
+         scheduled here" looked identical to a gap meaning "the data is wrong" — which is exactly
+         what made the Mat Footing bug hard to spot. A faint hatched track is unmistakably inert,
+         so the bands are the only coloured thing on the row. Plain CSS vars, so it re-themes.
+         (An explicit per-WBS colour is an inline style and still wins — a deliberate choice.) */
+      background:var(--ps-track);
+      background-image:repeating-linear-gradient(45deg,var(--ps-trackln) 0 1px,transparent 1px 7px); }
+    /* ⚠️ RED MEANS PROGRESS, AND ONLY PROGRESS — and in the coloured view red is not the progress
+       colour, the row's own trade colour is. So in LSM a summary bracket's roll-up fill must NOT be
+       red: five stacked branch-of-branches rows (Execution Phase › Construction Phase › Tower 1 ›
+       Structural Works › Substructure) drew five near-identical saturated red slabs carrying almost
+       no information, in a view where red means nothing anywhere else. It becomes a subdued neutral
+       of the bracket's own structural tone — still solid-vs-pale, still the same roll-up %, just
+       without the visual weight of an accent colour. Nothing is removed: the % is still in the bar
+       label and the tooltip. A single-trade GROUP sets its fill inline (catStyle) and still wins,
+       so it keeps filling in its own trade colour. The plain (colours-off) view is untouched: there
+       red is the progress colour at BOTH levels, which is already coherent. */
+    /* ⚠️ SOLID-OVER-PALE, the same way round as an activity bar. A first cut kept the bracket dark
+       and made the fill a translucent light — which rendered the DONE part paler than the remaining
+       part, i.e. inverted against every other row on the chart. The bracket track is now the pale
+       tone and the completed portion the solid one, so "solid = done, pale = remaining" holds for
+       activity bars, group bars and summary brackets alike. */
+    #ps-view-schedule.ps-lsm .ps-sum:not(.ps-sum-comp):not(.ps-sum-gcat) { background:var(--ps-track); }
+    #ps-view-schedule.ps-lsm .ps-sum > .ps-sum-fill { background:var(--ps-sumprog); }
     .ps-mo { cursor:pointer; }
     .lg-task { background:var(--ps-bar,#2B2C2B); position:relative; overflow:hidden; }
     .lg-task::after { content:""; position:absolute; left:0; top:0; bottom:0; width:55%; background:var(--pd-red); }
@@ -16399,10 +16428,11 @@
   var MARKS_LEGEND_HTML =
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>' +
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
-      // ⚠️ NOT .lg-lsmoff — the baseline rail draws in the coloured view too now, so the key must
-      // name it there. It is the PLANNED half of planned-vs-actual: the rail is the baseline dates,
-      // the bar above it is where the work actually sits, and the gap between their edges is slip.
-      '<span class="lg" title="The thin rail under each bar: the BL0 planned dates. The bar above it is the current/actual dates — the offset between their edges is the slip.">' +
+      // ⚠️ .lg-lsmoff AGAIN, deliberately — and this is a fold, not a removal. It used to show in
+      // both views, but in the coloured view the bar sample below ALREADY draws the rail and names
+      // it, so the two chips described the same mark twice and read as a clash. Plain view: this is
+      // the only rail statement, so it stays. Coloured view: the bar sample carries it.
+      '<span class="lg lg-lsmoff" title="The thin rail under each bar: the BL0 planned dates. The bar above it is the current dates — the offset between their edges is the slip.">' +
         '<span class="lg-swatch lg-bl"></span> Planned dates (BL0 baseline)</span>' +
       // ⚠️ LSM-only, and the counterpart to .lg-lsmoff. With the legend on, a bar no longer reads as
       // "dark bar + red fill" — it fills with its OWN trade colour, pale for the remaining part and
@@ -16414,9 +16444,17 @@
       // One sample of a real bar, the way the plain view's "Activity (red = % complete)" chip works —
       // solid+textured actual over the pale remainder, with the baseline rail under it — instead of
       // three flat chips the reader has to reassemble mentally.
-      '<span class="lg lg-lsmon" title="A coloured bar reads as: solid + textured = actual (complete), pale = still to do, and the thin rail underneath = the BL0 planned dates. Bar right of its rail means slip.">' +
+      // ⚠️ WORDING. "still to do" was wrong and the owner read it as a forecast. A row encodes THREE
+      // different things and none of them may be mistakable for another:
+      //   rail        = the BL0 PLANNED DATES
+      //   bar extent  = the CURRENT/FORECAST DATES (a started activity's right edge IS the forecast
+      //                 finish — dispFin -> forecastFin, retained logic off the data date)
+      //   fill inside = PROGRESS: solid = done, pale = remaining (100 - percent_complete)
+      // So the pale part is remaining WORK inside the current dates, never a forecast date — the
+      // forecast is already expressed by where the bar ENDS. Say "remaining", never "still to do".
+      '<span class="lg lg-lsmon" title="A coloured bar carries three separate things. WHERE THE BAR SITS = the current dates; for a started activity its right edge is the forecast finish. INSIDE THE BAR = progress: solid + textured is done, pale is the remaining work. THE RAIL UNDERNEATH = the BL0 planned dates; the offset between the rail and the bar is the slip.">' +
         '<span class="lg-swatch lg-lsmbar"></span> Activity ' +
-        '<em style="font-style:normal;color:var(--pd-muted);">(solid = actual, pale = still to do, rail = planned)</em></span>' +
+        '<em style="font-style:normal;color:var(--pd-muted);">(solid = done, pale = remaining · bar = forecast dates · rail = planned)</em></span>' +
       '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
       '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>';
   // Top-level WBS branches that contain NO activity anywhere beneath them, and so are dropped by

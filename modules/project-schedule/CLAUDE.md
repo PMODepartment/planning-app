@@ -5739,3 +5739,78 @@ blue rail spans nearly the full pane while the coloured bar sits well to the rig
 - ⚠️ **Still open (data, unchanged):** WBS-summary rows keep stale `bl_start`/`bl_finish` in the
   database. Nothing reads them for the rail any more, but they are still wrong at source.
 - `MODULE_V` → `20260817v`.
+
+## Gantt presentation pass: red confined to progress, inert track, legend rewritten (2026-08-17) — fmlozano
+Owner, on AVR101 grouped by WBS with colours on. Three things, one commit, kept separate from the
+rail fix above.
+
+**1. "Red means progress" — the rule, and the tension the owner correctly spotted.**
+The owner's own words: *"Let's try the red mean progress and only progress. But this will overlap
+the planned vs actual per activity difference."* That is real, so here is the rule actually adopted,
+which holds across all three row kinds instead of only one:
+> **Progress is always the SOLID portion of the row's own tone, over a PALE version of that same
+> tone. Red is the progress colour in the plain view only, where it is the row's tone at BOTH
+> levels; in the coloured view the row's tone is its trade colour and red never appears at all.**
+- **Plain (colours-off) view: byte-identical, deliberately.** There red already means progress on
+  both the activity bar and the summary bracket — internally coherent, and the owner has not
+  complained about it. Asserted: `.ps-sum-fill`'s default is still `var(--ps-prog,var(--pd-red))`
+  and every new rule is scoped under `.ps-lsm`.
+- **Coloured view: red is gone from summary rows entirely.** Five stacked branch-of-branches rows
+  (Execution Phase › Construction Phase › Tower 1 › Structural Works › Substructure) were drawing
+  five near-identical saturated red slabs in a view where red means nothing anywhere else, competing
+  with the activity bars and the composition bands for the eye. They now render as a quiet
+  structural bracket: pale neutral track, solid neutral for the completed portion.
+- ⚠️ **NOTHING was removed.** The roll-up % is still emitted as the fill (same width), still in the
+  bar label, still in the tooltip — asserted individually. This is about visual weight only.
+- ⚠️ **A single-trade GROUP still fills in its own trade colour**: it sets `_fillStyle` inline via
+  `catStyle`, and an inline style beats the new CSS var. A mixed group stays neutral. Both asserted.
+- ⚠️ **First cut was inverted and the screenshot caught it.** I kept the bracket dark and made the
+  fill a translucent white, so the DONE portion rendered *paler* than the remaining portion —
+  backwards against every other row on the chart. Track and fill were swapped; there is now an
+  assertion in both themes that the solid tone's alpha is more than twice the track's.
+
+**2. The uncovered stretch of a band-carrying bracket is now inert.**
+It used to show the bracket's own solid structural colour, so a gap meaning "nothing is scheduled
+here" looked identical to a gap meaning "the data is wrong" — which is precisely what made the Mat
+Footing bug hard to spot. `.ps-sum-comp` gets a faint hatched track, so the bands are the only
+coloured thing on the row. ⚠️ **Which rows draw composition is UNCHANGED** — a branch containing
+another branch still draws none (the deliberate 2026-08-17 altitude fix); asserted.
+
+**3. Legend rewritten — "still to do" was wrong, and two chips clashed.**
+- ⚠️ The owner read "still to do" as a forecast. It is not. A row encodes **three separate things**
+  and the wording now keeps them apart: **the rail** = BL0 planned dates; **where the bar sits** =
+  the current/forecast dates (a started activity's right edge *is* the forecast finish, `dispFin` →
+  `forecastFin` off the data date); **the fill inside the bar** = progress, solid = done, pale =
+  **remaining** (100 − percent_complete). The pale part is remaining *work* inside the current
+  dates, never a forecast date — the forecast is already expressed by where the bar ends. Chip:
+  `Activity (solid = done, pale = remaining · bar = forecast dates · rail = planned)`, with the
+  fuller three-part explanation in the `title`.
+- ⚠️ **The two chips did clash and are now folded.** `Planned dates (BL0 baseline)` and the bar
+  sample both named the rail. The standalone BL0 chip goes back to `.lg-lsmoff`: in the coloured
+  view the bar sample already draws *and* names the rail, so it is the single statement there; in
+  the plain view the standalone chip is the only one, so it stays. Nothing lost in either view.
+
+**Theming.** All three new tones (`--ps-sumprog`, `--ps-track`, `--ps-trackln`) are **plain CSS
+vars** defined in both the light and the dark block — not inlined at render time — so they follow a
+theme flip with no JS and need nothing from the existing `MutationObserver`. Asserted for each var
+in both blocks, and confirmed visually in both themes.
+
+**Verified.** `scratchpad/check-present2.js`, **29 checks**, executing the shipped `ganttRowHTML`
+(sliced verbatim) for emitted classes/geometry and asserting the CSS + legend against index.html
+itself. All six other suites green (blrail 14, sumspan 22, baseline-lsm, transpose, grouprollup);
+parse clean; **function-set diff vs HEAD: 0 lost, 0 added.**
+- **Screenshots** at 1440px from a gitignored `_ui_test.html` built from the module's REAL `<style>`
+  block + rows emitted by the REAL `ganttRowHTML`, in both themes:
+  `scratchpad/gantt-before.png`, `gantt-after.png`, `gantt-after-dark.png`. Harness deleted, server
+  killed, PNGs kept.
+  ⚠️ **The browser tool's screenshot times out here (the documented stalled compositor)** — these
+  were taken with **headless Edge** (`msedge.exe --headless=new --screenshot`), which works.
+  ⚠️ Two harness traps, both caught by a sanity gate rather than by eye: the shared
+  `assets/css/dashboard.css` must be linked or every `--pd-*` token (including the `--pd-red` that
+  `.ps-sum-fill` falls back to) is unresolved and every measurement is meaningless; and
+  `ganttRowHTML`'s second argument is a **row INDEX**, not a pixel top — passing pixels stacked
+  every row 34x too far down and only the first row appeared.
+- ⚠️ **`scratchpad/check-baseline-lsm.js` has two assertions updated** — the legend wording, and the
+  BL0 chip being `.lg-lsmoff` again. Neither is a regression; both are this pass's intent.
+- ⚠️ **NOT verified signed-in** — no authenticated session is possible from this environment.
+- `MODULE_V` → `20260817w`.
