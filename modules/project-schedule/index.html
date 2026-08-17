@@ -491,6 +491,12 @@
        into the single legend row that wrapper stopped existing — so Activity / WBS summary /
        Baseline (BL0) started showing in LSM mode again, describing marks that are not drawn. */
     #ps-view-schedule.ps-lsm .lg-lsmoff { display:none; }
+    /* …and the mirror: the planned/complete key only means anything WITH colours on. */
+    .lg-lsmon { display:none; }
+    #ps-view-schedule.ps-lsm .lg-lsmon { display:inline-flex; }
+    /* Sample swatches drawn the way a real bar is: same hue, pale remainder vs solid+texture done. */
+    .lg-plan { background:rgba(0,112,192,.30); border:1px solid rgba(0,112,192,.55); }
+    .lg-done { background:#0070C0; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 6px); }
     .lg-swatch { display:inline-block; width:22px; height:11px; border-radius:2px; }
     /* Activity legend (LSM-style): one swatch per activity CATEGORY, colouring the bars.
        Separate from .ps-legend above, which explains the bar SHAPES (task/summary/baseline/…).
@@ -5244,7 +5250,18 @@
     _dspan = span; _dblspan = bspan;
     return out;
   }
-  function displayList() { var nodes = buildNodes(); if (_hideEmptyGroups) _computeNonEmpty(nodes); return nodes.filter(function (nd) { return !hiddenRow(nd); }); }
+  // `_treeDepth` = how many levels the CURRENT grouping actually produces. Recorded here because
+  // this is the one place the full (un-collapsed) tree exists; measuring DL instead would shrink the
+  // Expand menu as branches were collapsed, and calling buildNodes() again just to count would
+  // double the most expensive step of a render.
+  var _treeDepth = 0;
+  function displayList() {
+    var nodes = buildNodes();
+    _treeDepth = 0;
+    for (var i = 0; i < nodes.length; i++) { var d = ddepth(nodes[i]) + 1; if (d > _treeDepth) _treeDepth = d; }
+    if (_hideEmptyGroups) _computeNonEmpty(nodes);
+    return nodes.filter(function (nd) { return !hiddenRow(nd); });
+  }
 
   // ---- IMPORT from Oracle Primavera Cloud .xlsx export ----
   var MON = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
@@ -6246,7 +6263,17 @@
   function hideLoading() { var el=document.getElementById('ps-loading'); if(el)el.style.display='none'; setProgress(null); }
 
   // ---- OPC-style "Collapse to → WBS Level N" dropdown ----
-  function maxDepth() { var m = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > m) m = d; }); return (groupBys.length === 1 && groupBys[0] === 'wbs') ? m : m + groupBys.length; }
+  // ⚠️ Measured from the TREE THAT WAS ACTUALLY BUILT (`_treeDepth`, recorded by displayList), not
+  // guessed. The old formula was `deepest WBS code + groupBys.length`, which is only right when the
+  // WBS path is part of the tree. Grouping by Discipline › Activity › Tower › Level › Zone does NOT
+  // show the WBS path at all, so on Avesta it offered "WBS Level 1…14" for a tree six deep — eight
+  // menu entries that collapsed to nothing. Falls back to the old estimate only before the first
+  // render, when no tree has been built yet.
+  function maxDepth() {
+    if (_treeDepth) return _treeDepth;
+    var m = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > m) m = d; });
+    return (groupBys.length === 1 && groupBys[0] === 'wbs') ? m : m + groupBys.length;
+  }
   function renderCollapseMenu() {
     var menu = document.getElementById('ps-collapse-menu'); if (!menu) return;
     var mx = Math.max(1, maxDepth());
@@ -10717,10 +10744,20 @@
       '<input class="pd-input" id="ps-codes-rename" value="' + esc(ct.name) + '" style="max-width:220px;">' +
       '<button class="pd-btn pd-btn-sm" id="ps-codes-rename-save">Rename</button></div>' +
       '<table class="ps-snap-tbl"><thead><tr><th>Value</th><th style="text-align:right;">Assigned to</th><th></th></tr></thead><tbody>' +
-      (vals.length ? vals.map(function (v) {
-        var n = rows.filter(function (r) { return r.activity_codes && r.activity_codes[ct.id] === v.id; }).length;
+      // ⚠️ Count in ONE pass. This was a full `rows.filter` PER VALUE — a code type with a few
+      // hundred values against 4,393 rows meant the panel scanned the schedule hundreds of times
+      // just to print an "Assigned to" column.
+      (vals.length ? (function () {
+        var _cnt = {};
+        for (var _i = 0; _i < rows.length; _i++) {
+          var _ac = rows[_i].activity_codes; if (!_ac) continue;
+          var _vid = _ac[ct.id]; if (_vid) _cnt[_vid] = (_cnt[_vid] || 0) + 1;
+        }
+        return vals.map(function (v) {
+        var n = _cnt[v.id] || 0;
         return '<tr><td>' + esc(v.value) + '</td><td style="text-align:right;">' + n + '</td><td style="text-align:right;"><button class="ps-btn-sm" data-vdel="' + esc(v.id) + '">&#215;</button></td></tr>';
-      }).join('') : '<tr><td colspan="3" class="ps-ck-empty">No values yet.</td></tr>') +
+        }).join('');
+      })() : '<tr><td colspan="3" class="ps-ck-empty">No values yet.</td></tr>') +
       '</tbody></table>' +
       '<div style="display:flex;gap:8px;margin-top:12px;"><input class="pd-input" id="ps-codes-newval" placeholder="New value… (e.g. Design, Procurement, Construction)" style="flex:1;"><button class="pd-btn pd-btn-primary pd-btn-sm" id="ps-codes-addval">Add</button></div>';
     det.querySelector('#ps-codes-rename-save').onclick = function () { renameCodeType(ct.id, det.querySelector('#ps-codes-rename').value); };
@@ -10933,9 +10970,13 @@
     var host = document.getElementById('ps-lp-table'); if (!host) return;
     if (!weekRows.length) { host.innerHTML = '<div class="ps-ck-empty">No commitments for this week yet. Use “Add commitment”.</div>'; return; }
     var STATUS_OPTS = ['Open', 'Complete', 'Not Complete'];
+    // ⚠️ Index once — the row builder below used a `rows.find` per commitment, i.e. commitments ×
+    // 4,393 rows just to print each linked activity's name. First match wins, as `find` did.
+    var _lpActByAid = {};
+    for (var _li = 0; _li < rows.length; _li++) { var _aid = rows[_li].activity_id; if (_aid && !_lpActByAid[_aid]) _lpActByAid[_aid] = rows[_li]; }
     host.innerHTML = '<table class="ps-mini"><thead><tr><th>Description</th><th>Activity</th><th>Responsible</th><th>Status</th><th>Reason (if not complete)</th><th></th></tr></thead><tbody>' +
       weekRows.map(function (c) {
-        var act = c.activity_id ? rows.find(function (r) { return r.activity_id === c.activity_id; }) : null;
+        var act = c.activity_id ? (_lpActByAid[c.activity_id] || null) : null;
         return '<tr data-id="' + esc(c.id) + '">' +
           '<td>' + esc(c.description) + '</td>' +
           '<td>' + (act ? esc(act.activity_id) + ' — ' + esc(act.activity_name || '') : (c.activity_id ? esc(c.activity_id) : '—')) + '</td>' +
@@ -16172,6 +16213,12 @@
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>' +
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>' +
+      // ⚠️ LSM-only, and the counterpart to .lg-lsmoff. With the legend on, a bar no longer reads as
+      // "dark bar + red fill" — it fills with its OWN trade colour, pale for the remaining part and
+      // solid/textured for the completed part. Nothing on screen said so, which is why two greens on
+      // one bar read as two different trades. Sample swatch, not a category.
+      '<span class="lg lg-lsmon" title="With colours on, a bar fills with its own trade colour: pale = still to do, solid = done. The two shades on one bar are the SAME trade, not two."><span class="lg-swatch lg-plan"></span> Planned (remaining)</span>' +
+      '<span class="lg lg-lsmon" title="The completed part of the bar, in the trade’s solid colour + texture. A bar half solid is half complete."><span class="lg-swatch lg-done"></span> Complete</span>' +
       '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
       '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>';
   // Top-level WBS branches that contain NO activity anywhere beneath them, and so are dropped by
@@ -16387,7 +16434,24 @@
     return (_stkOuterCache[levelId] = (i <= 0 ? [] : LOC_LEVELS.slice(0, i)));
   }
   // Distinct values of an outer level, honouring any scope already set on the levels above IT.
+  // ⚠️⚠️ MEMOISED, and it HAS to be. This does a full pass over `rows` plus a sort. `stkPhaseNamedScope`
+  // calls it to find the tower a phase names, and that runs PER ROW from `stkPhaseInScope` — so
+  // uncached, `stkPhaseCats` became rows × (rows + sort) ≈ 19M comparisons and ~4,400 sorts, times 8
+  // per stack open (7 towers + the legend). That is the one-to-two-minute open the owner reported,
+  // and it was a regression from the per-tower phase work earlier the same day: the O(n×m) sweep
+  // never saw it, because the nesting is across two functions rather than inside one.
+  // Keyed on rows.length + the scope signature, so pinning a different tower or reloading drops it.
+  var _svKey = '', _svMap = {};
+  function _stkScopeSig() {
+    var ks = Object.keys(_stkScope).sort(), s = '';
+    for (var i = 0; i < ks.length; i++) s += ks[i] + '=' + _stkScope[ks[i]] + ';';
+    return s;
+  }
   function stkScopeValues(levelId) {
+    var k = rows.length + '|' + _stkScopeSig();
+    if (_svKey !== k) { _svKey = k; _svMap = {}; }
+    var hit = _svMap[levelId];
+    if (hit) return hit;
     var outer = stkOuterLevels(levelId), seen = {};
     rows.forEach(function (r) {
       if (isWbs(r)) return;
@@ -16397,7 +16461,7 @@
       }
       var v = locValOf(r, levelId); if (v) seen[v] = (seen[v] || 0) + 1;
     });
-    return Object.keys(seen).sort(cmpLevelValue).map(function (v) { return { value: v, n: seen[v] }; });
+    return (_svMap[levelId] = Object.keys(seen).sort(cmpLevelValue).map(function (v) { return { value: v, n: seen[v] }; }));
   }
   function stkInScope(r, levelId) {
     var outer = stkOuterLevels(levelId);

@@ -367,6 +367,35 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## The REAL stacking lag: a cross-function n-squared I introduced (2026-08-17) — fmlozano
+Owner: opening the vertical stacking still took *"about a minute or 2"*. The earlier O(n x m) sweep
+had not touched it, because **the nesting spans two functions**.
+- ⚠️ `stkPhaseNamedScope()` — added earlier the same day to scope "Tower 3 Handover" to Tower 3 —
+  calls `stkScopeValues()`, and it runs **PER ROW** from `stkPhaseInScope`. `stkScopeValues` does a
+  full pass over `rows` **plus a sort**. So `stkPhaseCats` became rows x (rows + sort), run **8x per
+  open** (7 towers + the legend): **~154M row visits and ~35,000 sorts.**
+- ⚠️ **My own fix caused it, and my own audit could not see it.** `audit-perf.js` looks for a scan
+  nested inside an iteration *within one function body*; this one is `A → B → C` across three. The
+  audit is a filter for one shape, not proof of absence.
+- **Fixed by memoising `stkScopeValues`**, keyed on `rows.length` + a scope signature so pinning a
+  different tower or reloading drops it.
+- **Measured end to end with the shipped chain: 154,387,592 -> 70,288 row visits (2,197x).**
+  8/8, including that a tower still gets **only its own** handover, and three cache-staleness
+  assertions (same scope reuses, changed scope drops, changed rows drops).
+
+## Expand menu offered levels that do not exist (2026-08-17) — fmlozano
+`maxDepth()` estimated *deepest WBS code + groupBys.length*, which is only right when the WBS path is
+part of the tree. Grouping by Discipline › Activity › Tower › Level › Zone does not show it at all,
+so Avesta offered **"WBS Level 1…14" for a tree six deep** — eight entries that collapsed to nothing.
+Now measured from the tree that was actually built (`_treeDepth`, recorded in `displayList` — the one
+place the full un-collapsed tree exists; measuring `DL` would shrink the menu as branches collapsed,
+and re-running `buildNodes()` just to count would double the costliest step of a render).
+
+## Legend now shows planned vs complete (2026-08-17) — fmlozano
+With colours on, a bar fills with its OWN trade colour — pale for remaining, solid+textured for
+done — and **nothing on screen said so**, which is why two greens on one bar read as two trades.
+Added `.lg-lsmon` entries (the mirror of `.lg-lsmoff`): sample swatches drawn the way a real bar is.
+
 ## Swept the remaining O(n x m) hot spots (2026-08-17) — fmlozano
 Wrote a static audit for the shape that caused both stacking-pane wins — a scan of one large
 collection nested inside an iteration of another — and worked the list. 19 candidates, 5 real.
