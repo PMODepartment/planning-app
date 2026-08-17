@@ -370,7 +370,7 @@
     /* Reset the WBS-Manager tree styling (.ps-wbs-row, defined later) that leaks into the
        schedule grid's summary rows — its gap/padding/border-left pushed the level-1/2 summary
        cells out of alignment with the data rows. Keep grid rows on the exact same cell grid. */
-    .ps-grid-pane .ps-wbs-row { background:var(--wl, var(--pd-bg)); font-weight:700; gap:0; padding:0;
+    .ps-grid-pane .ps-wbs-row { cursor:pointer; background:var(--wl, var(--pd-bg)); font-weight:700; gap:0; padding:0;
       border-left:0; border-radius:0; align-items:stretch; }
     .ps-grid-pane .ps-wbs-row .c-name { color:var(--pd-ink); }
     /* WBS depth shading (OPC-style): shallower summary levels are darker/heavier so the tree
@@ -8873,6 +8873,87 @@
     try { renderStackPane(); } catch (e) { console.error('[ps] renderStackPane failed', e); }
   }
 
+  // One-time delegated handlers for the windowed grid. Every selector here matches the element the
+  // old per-element listener was attached to, and each branch is a faithful transcription of it.
+  function _bindGridDelegates(host) {
+    if (!host || host._psDelegated) return;
+    host._psDelegated = true;
+
+    host.addEventListener('click', function (e) {
+      var tg = e.target.closest ? e.target.closest('[data-toggle]') : null;
+      if (tg) { e.stopPropagation(); collapsed[tg.dataset.toggle] = !collapsed[tg.dataset.toggle]; renderGrid(); return; }
+      // A status <select> swallowed its own click so opening it never selected the row.
+      if (e.target.closest('.ps-status-sel')) { e.stopPropagation(); return; }
+      // Clicking a real WBS row SELECTS it (so Add activity places under it); expand/collapse is via
+      // the ▼/► chevron only. Synthetic group headers keep the click-to-collapse behavior.
+      var wr = e.target.closest('.ps-wbs-row');
+      if (wr) {
+        var nd = DL[parseInt(wr.dataset.i, 10)];
+        if (!nd || nd._dkind === 'group') { var w = wr.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); return; }
+        selId = nd.id || null; _selSet = new Set();
+        _wbsSel = nd.wbs_node_id || null;
+        renderGrid(); renderDetails();
+        return;
+      }
+      var rw = e.target.closest('.ps-grid-row[data-rowid]');
+      if (!rw) return;
+      var id = rw.dataset.rowid;
+      // Excel-style selection: Ctrl/Cmd-click toggles a row; Shift-click extends a range from the
+      // anchor; a plain click selects just this row. selId stays the active/anchor row.
+      if (e.ctrlKey || e.metaKey) { if (_selSet.has(id)) _selSet.delete(id); else _selSet.add(id); _selAnchor = id; }
+      else if (e.shiftKey && _selAnchor) { _selRange(_selAnchor, id); }
+      else { _selSet = new Set([id]); _selAnchor = id; }
+      selId = id;
+      _setCellFromClick(rw, e);
+      // Selecting a row also targets its WBS for the next Add-activity (task → its parent WBS).
+      var sr = rows.find(function (x) { return x.id === selId; });
+      _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null;
+      highlightRow(); renderDetails();
+    });
+
+    host.addEventListener('contextmenu', function (e) {
+      var wr = e.target.closest ? e.target.closest('.ps-wbs-row') : null;
+      if (wr) {
+        var nd = DL[parseInt(wr.dataset.i, 10)]; if (!nd) return;
+        if (nd.id) selId = nd.id;                       // make this WBS the paste / add target
+        if (nd.wbs_node_id) _wbsSel = nd.wbs_node_id;
+        highlightRow();
+        openRowMenu(e, nd);
+        return;
+      }
+      var rw = e.target.closest('.ps-grid-row[data-rowid]');
+      if (!rw) return;
+      var id = rw.dataset.rowid;
+      // Right-clicking a row that isn't already in the selection selects just it (Excel behavior);
+      // right-clicking inside a multi-selection keeps the whole selection so the action applies to all.
+      if (!_selSet.has(id)) { _selSet = new Set([id]); _selAnchor = id; }
+      selId = id; var sr = rows.find(function (x) { return x.id === selId; });
+      _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null;
+      _setCellFromClick(rw, e); highlightRow();
+      // Which editable cell was clicked (drives "Fill down" for that field).
+      var cell = e.target && e.target.closest ? e.target.closest('.ps-editable') : null;
+      openRowMenu(e, sr || { id: id }, cell ? cell.dataset.field : null);
+    });
+
+    host.addEventListener('dblclick', function (e) {
+      var c = e.target.closest ? e.target.closest('.ps-editable') : null;
+      if (c) { e.stopPropagation(); beginEdit(c); }
+    });
+
+    // stopPropagation so opening the dropdown doesn't also trigger row-select / cell-nav.
+    host.addEventListener('mousedown', function (e) {
+      if (e.target.closest && e.target.closest('.ps-status-sel')) e.stopPropagation();
+    });
+
+    // Inline Status dropdown — change status in one click, routed through _statusPatch (Completed →
+    // Actual Finish + 100% + 0 remaining, etc.) and the undoable persist().
+    host.addEventListener('change', function (e) {
+      var sel = e.target.closest ? e.target.closest('.ps-status-sel') : null;
+      if (!sel) return;
+      var id = sel.dataset.id, r = rows.find(function (x) { return x.id === id; }); if (!r) return;
+      persist(id, _statusPatch(r, sel.value)).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
+    });
+  }
   // ⚠️ `force` = "state changed, repaint regardless". Scroll passes nothing and is guarded by
   // `_gridWinKey` below; every other caller MUST force, or an edit/selection/filter would leave the
   // painted window stale. Same pattern the WBS Manager already uses (`_wbsWinKey`).
@@ -8905,90 +8986,47 @@
     var host = document.getElementById('ps-grid-rows');
     host.innerHTML = '<div style="transform:translateY(' + (first * ROWH) + 'px);">' + gh + '</div>';
     applyCellFmtGrid(host);
-    host.querySelectorAll('[data-toggle]').forEach(function (t) { t.onclick = function (e) { e.stopPropagation(); collapsed[t.dataset.toggle] = !collapsed[t.dataset.toggle]; renderGrid(); }; });
-    // Clicking a real WBS row SELECTS it (so Add activity places under it); expand/collapse is via
-    // the ▼/► chevron only. Synthetic group headers keep the click-to-collapse behavior.
-    host.querySelectorAll('.ps-wbs-row').forEach(function (rw) { rw.style.cursor = 'pointer'; rw.addEventListener('click', function (e) {
-      if (e.target && e.target.closest && e.target.closest('[data-toggle]')) return;   // chevron handles collapse
-      var nd = DL[parseInt(rw.dataset.i, 10)];
-      if (!nd || nd._dkind === 'group') { var w = rw.dataset.code; collapsed[w] = !collapsed[w]; renderGrid(); return; }
-      selId = nd.id || null; _selSet = new Set();
-      _wbsSel = nd.wbs_node_id || null;
-      renderGrid(); renderDetails();
-    });
-      rw.addEventListener('contextmenu', function (e) {
-        var nd = DL[parseInt(rw.dataset.i, 10)]; if (!nd) return;
-        if (nd.id) selId = nd.id;                       // make this WBS the paste / add target
-        if (nd.wbs_node_id) _wbsSel = nd.wbs_node_id;
-        highlightRow();
-        openRowMenu(e, nd);
-      }); });
-    host.querySelectorAll('.ps-editable').forEach(function (c) { c.ondblclick = function (e) { e.stopPropagation(); beginEdit(c); }; });
-    // Inline Status dropdown — change status in one click, routed through _statusPatch (Completed →
-    // Actual Finish + 100% + 0 remaining, etc.) and the undoable persist(). stopPropagation so opening
-    // the dropdown doesn't also trigger row-select / cell-nav.
-    host.querySelectorAll('.ps-status-sel').forEach(function (sel) {
-      sel.addEventListener('mousedown', function (e) { e.stopPropagation(); });
-      sel.addEventListener('click', function (e) { e.stopPropagation(); });
-      sel.addEventListener('change', function () {
-        var id = sel.dataset.id, r = rows.find(function (x) { return x.id === id; }); if (!r) return;
-        persist(id, _statusPatch(r, sel.value)).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } });
-      });
-    });
-    host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) { rw.addEventListener('click', function (e) {
-      var id = rw.dataset.rowid;
-      // Excel-style selection: Ctrl/Cmd-click toggles a row; Shift-click extends a range from the
-      // anchor; a plain click selects just this row. selId stays the active/anchor row.
-      if (e.ctrlKey || e.metaKey) { if (_selSet.has(id)) _selSet.delete(id); else _selSet.add(id); _selAnchor = id; }
-      else if (e.shiftKey && _selAnchor) { _selRange(_selAnchor, id); }
-      else { _selSet = new Set([id]); _selAnchor = id; }
-      selId = id;
-      _setCellFromClick(rw, e);
-      // Selecting a row also targets its WBS for the next Add-activity (task → its parent WBS).
-      var sr = rows.find(function (x) { return x.id === selId; });
-      _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null;
-      highlightRow(); renderDetails();
-    }); rw.addEventListener('contextmenu', function (e) {
-      var id = rw.dataset.rowid;
-      // Right-clicking a row that isn't already in the selection selects just it (Excel behavior);
-      // right-clicking inside a multi-selection keeps the whole selection so the action applies to all.
-      if (!_selSet.has(id)) { _selSet = new Set([id]); _selAnchor = id; }
-      selId = id; var sr = rows.find(function (x) { return x.id === selId; });
-      _wbsSel = (sr && sr.wbs_node_id) ? sr.wbs_node_id : null;
-      _setCellFromClick(rw, e); highlightRow();
-      // Which editable cell was clicked (drives "Fill down" for that field).
-      var cell = e.target && e.target.closest ? e.target.closest('.ps-editable') : null;
-      openRowMenu(e, sr || { id: id }, cell ? cell.dataset.field : null);
-    });
-    // Drag-and-drop reorder (task rows, WBS grouping, no column sort). Rebinds each render (rows are
-    // windowed); a red insertion line marks the drop position; drop only lands within the same WBS.
+    // ⚠️ DELEGATION — the deeper half of the scroll fix. These handlers used to be bound PER
+    // ELEMENT on every window repaint: a click + contextmenu per row, a dblclick per editable cell
+    // (10-18 of them), three per status <select>, plus chevrons and WBS rows — roughly 20 listeners
+    // × ~40 visible rows ≈ 800 addEventListener calls every time the scroll window moved. They are
+    // now bound ONCE to the persistent #ps-grid-rows container and dispatched with closest(), so a
+    // window repaint is pure innerHTML + one attribute pass.
+    // ⚠️ `host` survives innerHTML replacement — that is what makes one-time binding correct. The
+    // guard flag lives ON the element, so if the host is ever re-created the binder runs again.
+    _bindGridDelegates(host);
+    // Drag-and-drop reorder stays PER ELEMENT deliberately: it is gated on _reorderEnabled() (so it
+    // usually costs nothing at all), it needs the `draggable` attribute per row regardless, and its
+    // five handlers close over per-row drop state that delegation would make markedly trickier to
+    // get right. Bindings here are the exception, not the rule.
     if (_reorderEnabled()) {
-      rw.setAttribute('draggable', 'true');
-      rw.addEventListener('dragstart', function (e) {
-        _dragRowId = rw.dataset.rowid;
-        try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', _dragRowId); } catch (er) {}
-        rw.classList.add('ps-rowdragging');
+      host.querySelectorAll('.ps-grid-row[data-rowid]').forEach(function (rw) {
+        rw.setAttribute('draggable', 'true');
+        rw.addEventListener('dragstart', function (e) {
+          _dragRowId = rw.dataset.rowid;
+          try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', _dragRowId); } catch (er) {}
+          rw.classList.add('ps-rowdragging');
+        });
+        rw.addEventListener('dragover', function (e) {
+          if (!_dragRowId || _dragRowId === rw.dataset.rowid) return;
+          var dg = rows.find(function (x) { return x.id === _dragRowId; }), tg = rows.find(function (x) { return x.id === rw.dataset.rowid; });
+          // Allow a drop when both rows sit under the SAME WBS parent — whether they share a WBS
+          // (reorder activities) or are different WBS leaves (reorder the WBS nodes).
+          if (!dg || !tg || parentCodeOf(dg.wbs) !== parentCodeOf(tg.wbs)) return;
+          e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (er) {}
+          var rect = rw.getBoundingClientRect(), below = (e.clientY - rect.top) > rect.height / 2;
+          rw.classList.toggle('ps-drop-below', below); rw.classList.toggle('ps-drop-above', !below);
+        });
+        rw.addEventListener('dragleave', function () { rw.classList.remove('ps-drop-above', 'ps-drop-below'); });
+        rw.addEventListener('drop', function (e) {
+          e.preventDefault();
+          var below = rw.classList.contains('ps-drop-below');
+          rw.classList.remove('ps-drop-above', 'ps-drop-below');
+          if (_dragRowId && _dragRowId !== rw.dataset.rowid) reorderDrop(_dragRowId, rw.dataset.rowid, !below);
+        });
+        rw.addEventListener('dragend', function () { rw.classList.remove('ps-rowdragging'); document.querySelectorAll('.ps-drop-above,.ps-drop-below').forEach(function (x) { x.classList.remove('ps-drop-above', 'ps-drop-below'); }); _dragRowId = null; });
       });
-      rw.addEventListener('dragover', function (e) {
-        if (!_dragRowId || _dragRowId === rw.dataset.rowid) return;
-        var dg = rows.find(function (x) { return x.id === _dragRowId; }), tg = rows.find(function (x) { return x.id === rw.dataset.rowid; });
-        // Allow a drop when both rows sit under the SAME WBS parent — whether they share a WBS
-        // (reorder activities) or are different WBS leaves (reorder the WBS nodes).
-        if (!dg || !tg || parentCodeOf(dg.wbs) !== parentCodeOf(tg.wbs)) return;
-        e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (er) {}
-        var rect = rw.getBoundingClientRect(), below = (e.clientY - rect.top) > rect.height / 2;
-        rw.classList.toggle('ps-drop-below', below); rw.classList.toggle('ps-drop-above', !below);
-      });
-      rw.addEventListener('dragleave', function () { rw.classList.remove('ps-drop-above', 'ps-drop-below'); });
-      rw.addEventListener('drop', function (e) {
-        e.preventDefault();
-        var below = rw.classList.contains('ps-drop-below');
-        rw.classList.remove('ps-drop-above', 'ps-drop-below');
-        if (_dragRowId && _dragRowId !== rw.dataset.rowid) reorderDrop(_dragRowId, rw.dataset.rowid, !below);
-      });
-      rw.addEventListener('dragend', function () { rw.classList.remove('ps-rowdragging'); document.querySelectorAll('.ps-drop-above,.ps-drop-below').forEach(function (x) { x.classList.remove('ps-drop-above', 'ps-drop-below'); }); _dragRowId = null; });
     }
-    });
     var _gp = document.querySelector('.ps-grid-pane'); if (_gp) _gp.classList.toggle('ps-reorder', _reorderEnabled());
     // gantt: window bars
     var bc = document.getElementById('ps-tl-bars');

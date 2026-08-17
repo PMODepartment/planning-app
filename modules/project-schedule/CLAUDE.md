@@ -367,6 +367,31 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Grid handlers delegated — the deeper half of the scroll fix (2026-08-17) — fmlozano
+The `_gridWinKey` guard skipped no-op repaints; this removes the cost of the repaints that DO happen.
+- ⚠️ `renderWindow` bound handlers **per element, every repaint**: click + contextmenu per row, a
+  dblclick per editable cell (10-18 of them), three per status `<select>`, chevrons, WBS rows —
+  ~20 listeners × ~40 visible rows ≈ **800 `addEventListener` calls each time the window moved**.
+  Now bound **once** to the persistent `#ps-grid-rows` container and dispatched with `closest()`, so
+  a window repaint is pure `innerHTML` plus one attribute pass.
+- ⚠️ The guard flag lives **on the element** (`host._psDelegated`), not in a module var, so a
+  re-created host re-binds rather than silently losing all its handlers.
+- ⚠️ **Drag-and-drop stays per-element ON PURPOSE**: it is gated on `_reorderEnabled()` (usually
+  costing nothing), it needs the `draggable` attribute per row anyway, and its five handlers close
+  over per-row drop state that delegation would make materially easier to get wrong. Documented as
+  the exception so it does not read as an oversight.
+- ⚠️ `.ps-wbs-row { cursor:pointer }` moved to CSS — it used to be set as an inline style at bind
+  time, which delegation would have dropped silently.
+- **Verified 19/19 against the sliced shipped binder** on a DOM shim: **50 repeat binds add zero
+  listeners** (the perf claim asserted directly), chevron-beats-row-select, WBS row selecting vs
+  synthetic group header collapsing, plain/ctrl/shift selection, dblclick-to-edit, ⚠️ **the status
+  dropdown NOT selecting its row** (a `stopPropagation` that delegation could easily have lost),
+  status change persisting + repainting, both context menus, the Fill-down field passthrough, and a
+  click on empty space being inert. All 11 suites green (206 assertions).
+  ⚠️ **Not verified signed-in** — this touches the grid's core interactions, so it is worth a real
+  click-through: select, ctrl/shift-select, double-click edit, status change, right-click menu, and
+  drag-reorder if you use it. `MODULE_V` → `20260817j`.
+
 ## Gantt scroll: skip no-op window repaints (2026-08-17) — fmlozano
 Owner: "also lagging when scrolling down and left". Scroll was ALREADY rAF-throttled, so the cost was
 inside `renderWindow()` itself.
