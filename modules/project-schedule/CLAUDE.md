@@ -95,17 +95,25 @@ Four owner asks on the Schedule Builder (`ScheduleBuilder` closure).
   the resulting-schedule bar chart, right-click to advance to the destination phase, pick a
   destination bar, right-click to create the link. The confirm `contextmenu` handler is now bound on
   the stacked layout's container too (`.sbld-seqstack`), not only the split `.sbld-seq2`.
-- **Zoneless floor = one-zone floor.** ⚠️ Bug: a floor with no zones produced a floor-level leaf
-  (`zone:null`) while a floor with one zone produced a zone-level leaf, so the two were distinct — a
-  zoneless floor's cellKey (`#`) never matched a `Z1#` floor across trades in auto-trace. `leavesOfFloor`
-  now synthesizes a single implicit `Z1` zone for a zoneless floor (stable id `<floorId>~z1`), so the
-  two are indistinguishable (same leaf shape, same cellKey `Z1#`, same tower node). Only explicit
-  Floor-level scheduling (`locLevel==='floor'`) still yields a zoneless leaf. Stored floor data is not
-  mutated. ⚠️ This changes zoneless-floor leaf uids, so any pre-existing links on such floors are
-  pruned as dangling — acceptable during active building.
-- Verified: inline script parses; a model of `autoTrace`'s cross-trade loop confirms a parallel-tagged
-  transition is skipped (next trade bookends to START); a model of `leavesOfFloor`+`cellKey` confirms a
-  zoneless floor and a 1-zone floor yield identical leaves and matching cellKeys across trades.
+- **Zoneless floor: same as one-zone for SCHEDULING, but floor-lowest for the WBS.** Two owner asks,
+  reconciled:
+  - *WBS hierarchy* — a floor with no zones is the lowest location level (floor › activity); a floor
+    with one zone is floor › zone › activity. So `leavesOfFloor` keeps `zone:null` for a zoneless floor
+    (NOT a synthesized zone — that would wrongly add a zone level to the WBS). `locMapOf`/`locLabel`/
+    the `buildTree` dim walk all read `loc.zone` directly, so a zoneless floor naturally stops at the
+    floor level while a one-zone floor emits its zone.
+  - *Cross-trade cell matching* — a zoneless floor and a one-zone floor must still pair up in
+    auto-trace. `cellKey` now includes the zone code ONLY when the floor has **>1** zone; a 0-zone and
+    a 1-zone floor both collapse to the same key, while a 2+-zone floor keeps its zones distinct.
+- **Vertical chain fallback (owner: "AR F13 has no predecessor").** `autoTrace` step 1 linked floor i
+  to floor i-1 only when a same-`cellKey` cell existed below — so a floor whose zoning differed from
+  the one beneath it (a zoneless floor between zoned floors, mismatched zone counts) got NO predecessor
+  and floated to the start. It now falls back to the **first cell of the floor below** when no cell
+  matches, so every floor always chains to the one beneath it regardless of zoning.
+- Verified: inline script parses; models confirm — a parallel-tagged transition is skipped (bookends to
+  START); a zoneless floor keeps `zone:null` (WBS skips the zone level) while a one-zone floor keeps it;
+  a 0-zone and 1-zone floor share a cellKey (pair across trades) while a 2-zone floor's cells stay
+  distinct; and the vertical fallback chains F12(1 zone)→F13(0)→F14(0) so none is left predecessor-less.
   ⚠️ **Not verified signed-in** (auth wall). `MODULE_V` → `20260818a`.
 
 ## Grouping click = SELECT, and "unassigned" buckets are dissolved to the parent (2026-08-17) — eprobles
