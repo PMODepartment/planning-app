@@ -72,6 +72,42 @@ pair was run alongside. Also ⚠️ `count=exact` on the whole of `project_sched
 filtered counts are fine. And one `wbs` value came back rendered as `[BLOCKED: JWT token]` — a
 redaction in the browser tool's output, not data.
 
+## Schedule Builder: parallel-trades auto-logic option, cure question removed, Ctrl+scroll zoom, bar-chart linking (2026-08-18) — eprobles
+Four owner asks on the Schedule Builder (`ScheduleBuilder` closure).
+- **Step 3 auto-trace: "can start at the same time" option.** Each cross-trade section's handoff
+  question now leads with a checkbox — *"Can start at the same time as <prev> (run in parallel)"* —
+  which dims the "floors behind" input. Stored as `cfg.tradeParallel[prev]` (keyed on the leading
+  trade). In `autoTrace` step 2, `if (cfg.tradeParallel[prev]) continue;` skips the trailing
+  cross-trade links, so the next trade has no incoming link and step 3's bookend wires it straight to
+  START — i.e. it runs concurrently with the previous trade instead of trailing by a floor lead.
+- **Cure/lag question removed.** The per-trade "Cure / lag between a floor and the one above" question
+  is gone from the dialog and its save branch; `autoTrace`'s vertical floor→floor link now always uses
+  lag 0. `cfg.floorLag` is left in blank()/normalize() for back-compat but is no longer read/written.
+- **Ctrl+scroll zoom on the building view AND the resulting schedule.** New `bindTowerZoom(el)` (CSS
+  `zoom`, applied live without a re-render — clamped 0.4–3) and `bindSchedZoom(el)` (adjusts the
+  existing `seqZoom` ±1 and re-renders). Wired to the step-3 tower (`.sbld-twr`) + schedule
+  (`.sbld-schedscroll`), and to step-2's `.sbld-tower`. `passive:false` so Ctrl+wheel zooms instead of
+  scrolling the page. `towerZoom` is baked into the tower container's inline style so it survives a
+  re-render.
+- **Bar-chart linking fixed (ask: "select a zone in the bar chart then right-click doesn't work").**
+  Schedule bars were deliberately inspect-only (linking was tower-nodes-only). Clicking a bar / row
+  label now also calls `nodeSelectMany(uids)` (same as a tower node), so you can pick a source zone in
+  the resulting-schedule bar chart, right-click to advance to the destination phase, pick a
+  destination bar, right-click to create the link. The confirm `contextmenu` handler is now bound on
+  the stacked layout's container too (`.sbld-seqstack`), not only the split `.sbld-seq2`.
+- **Zoneless floor = one-zone floor.** ⚠️ Bug: a floor with no zones produced a floor-level leaf
+  (`zone:null`) while a floor with one zone produced a zone-level leaf, so the two were distinct — a
+  zoneless floor's cellKey (`#`) never matched a `Z1#` floor across trades in auto-trace. `leavesOfFloor`
+  now synthesizes a single implicit `Z1` zone for a zoneless floor (stable id `<floorId>~z1`), so the
+  two are indistinguishable (same leaf shape, same cellKey `Z1#`, same tower node). Only explicit
+  Floor-level scheduling (`locLevel==='floor'`) still yields a zoneless leaf. Stored floor data is not
+  mutated. ⚠️ This changes zoneless-floor leaf uids, so any pre-existing links on such floors are
+  pruned as dangling — acceptable during active building.
+- Verified: inline script parses; a model of `autoTrace`'s cross-trade loop confirms a parallel-tagged
+  transition is skipped (next trade bookends to START); a model of `leavesOfFloor`+`cellKey` confirms a
+  zoneless floor and a 1-zone floor yield identical leaves and matching cellKeys across trades.
+  ⚠️ **Not verified signed-in** (auth wall). `MODULE_V` → `20260818a`.
+
 ## Grouping click = SELECT, and "unassigned" buckets are dissolved to the parent (2026-08-17) — eprobles
 Two owner asks after the partial-depth fix below ("it didn't work" the way expected):
 - **Clicking a grouping header now SELECTS the row, never collapses it.** Real WBS rows already

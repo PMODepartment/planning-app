@@ -13288,8 +13288,28 @@
     var tradeBasis = 'int';    // step-4 Gantt duration basis: 'int' (interior) | 'ext' (exterior)
     var tgZoom = 2.2;          // step-4 Gantt px-per-day (set by scale presets, fine-tuned by +/-)
     var TG_PPD = { day: 18, week: 8, month: 2.2, year: 0.6 };
-    var seqZoom = 3;      // Zone-sequence flow diagram: block size / column spacing (zoom +/-)
+    var seqZoom = 3;      // Zone-sequence flow diagram: block size / column spacing (zoom +/- and Ctrl+scroll)
+    var towerZoom = 1;    // building/tower view zoom (CSS zoom, Ctrl+scroll over the tower)
     var seqLeftW = 300;   // step-3 tower pane width (px) — draggable divider
+    // Ctrl+scroll zoom binders (shared by step 2 + step 3). The tower uses CSS `zoom` applied live so
+    // it doesn't need a full re-render on every wheel notch; the resulting schedule re-renders (seqZoom
+    // is baked into its SVG geometry). passive:false so preventDefault stops the page from scrolling.
+    function bindTowerZoom(el) {
+      if (!el || el._twz) return; el._twz = true;
+      el.addEventListener('wheel', function (e) {
+        if (!e.ctrlKey) return; e.preventDefault();
+        towerZoom = Math.max(0.4, Math.min(3, +(towerZoom + (e.deltaY < 0 ? 0.1 : -0.1)).toFixed(2)));
+        el.style.zoom = towerZoom;
+      }, { passive: false });
+    }
+    function bindSchedZoom(el) {
+      if (!el || el._scz) return; el._scz = true;
+      el.addEventListener('wheel', function (e) {
+        if (!e.ctrlKey) return; e.preventDefault();
+        var nz = Math.max(1.5, Math.min(12, seqZoom + (e.deltaY < 0 ? 1 : -1)));
+        if (nz !== seqZoom) { seqZoom = nz; render(); }
+      }, { passive: false });
+    }
     var seqTradeFilter = 'ALL';   // Zone-sequence: which trade's bars/nodes are shown ('ALL' = every trade)
     var seqLayout = 'split';  // step 3/4 layout: 'split' (tower left / gantt right) | 'stack' (building top / gantt bottom)
     var seqLevel = 2;         // step-3 collapse depth default: 2=Floor (compact + readable on tall buildings); 1=Trade, 3=Zone, 4=Unit
@@ -13345,7 +13365,7 @@
     function blankZoning() { var z = {}; GROUPS.forEach(function (g) { z[g] = { floors: [] }; }); return z; }
     var WBS_DIMS = ['trade', 'floor', 'zone', 'unit'];
     var DIM_LABEL = { trade: 'Trade', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       var di = (a.durInt != null) ? Math.max(0, +a.durInt || 0) : legacy;
@@ -13378,6 +13398,7 @@
       d.wbsOrder = (function () { var seen = {}, out = []; (Array.isArray(c.wbsOrder) ? c.wbsOrder : []).forEach(function (k) { if (WBS_DIMS.indexOf(k) >= 0 && !seen[k]) { seen[k] = 1; out.push(k); } }); return out.length ? out : ['trade', 'floor', 'zone', 'unit']; })();
       d.floorLead = (c.floorLead >= 1 && c.floorLead <= 40) ? c.floorLead : 4;
       d.tradeBatch = (c.tradeBatch && typeof c.tradeBatch === 'object') ? c.tradeBatch : {};  // per-trade: floors done at a time before the next trade follows
+      d.tradeParallel = (c.tradeParallel && typeof c.tradeParallel === 'object') ? c.tradeParallel : {};  // per-leading-trade: the next trade may start at the same time (run in parallel)
       d.zoneSimul = (c.zoneSimul && typeof c.zoneSimul === 'object') ? c.zoneSimul : {};  // per-trade: how many zones run at once per floor (0 = all/parallel)
       d.unitSimul = (c.unitSimul && typeof c.unitSimul === 'object') ? c.unitSimul : {};  // per-trade: how many units run at once per zone (0 = all/parallel)
       d.floorLag = (c.floorLag && typeof c.floorLag === 'object') ? c.floorLag : {};      // per-trade: cure/lag days between a floor and the floor above
@@ -13465,8 +13486,15 @@
     // these leaves, so one setting remaps the whole builder.
     function leavesOfFloor(tr, f) {
       var out = [], lvl = (cfg && cfg.locLevel) || 'auto';
-      if (lvl === 'floor' || !f.zones.length) { out.push({ uid: tr + '/' + f.id, trade: tr, floor: f, zone: null, unit: null }); return out; }
-      f.zones.forEach(function (z) {
+      // Floor-level scheduling: one leaf per floor, no zone (explicit choice).
+      if (lvl === 'floor') { out.push({ uid: tr + '/' + f.id, trade: tr, floor: f, zone: null, unit: null }); return out; }
+      // ⚠️ A floor with NO zones is treated as a floor with ONE zone (owner: "a floor with no zones and
+      // a floor with just 1 zone must be treated the same"). Synthesize a single implicit "Z1" so the
+      // two are indistinguishable — same leaf shape, same cellKey (so cross-trade matching lines them
+      // up), same tower node. The implicit zone's id is derived from the floor id so it is STABLE
+      // across renders. The floor's stored data is not mutated (the step-2 editor still shows 0 zones).
+      var zones = f.zones.length ? f.zones : [{ id: f.id + '~z1', code: 'Z1', name: '', units: [], _implicit: true }];
+      zones.forEach(function (z) {
         if (lvl === 'zone' || !z.units.length) { out.push({ uid: tr + '/' + f.id + '/' + z.id, trade: tr, floor: f, zone: z, unit: null }); }
         else z.units.forEach(function (u) { out.push({ uid: tr + '/' + f.id + '/' + z.id + '/' + u.id, trade: tr, floor: f, zone: z, unit: u }); });
       });
@@ -13754,9 +13782,8 @@
       var idx = {}; present.forEach(function (tr) { idx[tr] = floorsOf(tr).map(function () { return {}; }); });
       leaves.forEach(function (l) { if (idx[l.trade]) { var fi = floorIndexOf(l); if (idx[l.trade][fi]) idx[l.trade][fi][cellKey(l)] = l.uid; } });
       function firstOf(o) { var k = Object.keys(o); return k.length ? o[k[0]] : null; }
-      // 1) vertical progression within each trade — floor to the floor above, same sub-location
-      //    (cellKey). The FS lag is the trade's CURE LAG (cfg.floorLag[tr] days between floors).
-      present.forEach(function (tr) { var fl = floorsOf(tr), cure = Math.max(0, +cfg.floorLag[tr] || 0); for (var i = 1; i < fl.length; i++) Object.keys(idx[tr][i]).forEach(function (ck) { var p = idx[tr][i - 1][ck]; if (p) tryLink(p, idx[tr][i][ck], 'FS', cure); }); });
+      // 1) vertical progression within each trade — floor to the floor above, same sub-location (cellKey).
+      present.forEach(function (tr) { var fl = floorsOf(tr); for (var i = 1; i < fl.length; i++) Object.keys(idx[tr][i]).forEach(function (ck) { var p = idx[tr][i - 1][ck]; if (p) tryLink(p, idx[tr][i][ck], 'FS', 0); }); });
       // 1b) intra-floor sequencing — zones/units that DON'T run simultaneously are chained so only N
       //     run at once (sliding window: leaf[i] waits on leaf[i-N]). zoneSimul[tr]/unitSimul[tr] = how
       //     many zones-per-floor / units-per-zone run at once; 0/blank = all parallel (no links). Zones
@@ -13783,7 +13810,11 @@
       //    storey up (i.e. "right after B3"), which is the reported bug. A basement-free project is
       //    unchanged (pSup = every floor, so this reduces to the old j + L − 1 mapping).
       for (var t = 1; t < present.length; t++) {
-        var prev = present[t - 1], next = present[t],
+        var prev = present[t - 1], next = present[t];
+        // "Start at the same time" — the next trade runs in PARALLEL with the previous one: skip the
+        // trailing cross-trade links entirely, so step 3's bookend links it straight to START.
+        if (cfg.tradeParallel[prev]) continue;
+        var
           L = Math.max(1, +(cfg.tradeBatch[prev]) || +(cfg.tradeLeads[prev + '>' + next]) || lead),
           pF = floorsOf(prev), lastP = pF.length - 1, pByCode = {}, pSup = [];
         pF.forEach(function (f, i) { pByCode[f.code] = i; if (!f.sub) pSup.push(i); });   // pSup = prev superstructure indices (bottom-up)
@@ -13815,15 +13846,15 @@
       var num = function (kind, target, def, max, min) { return '<input class="pd-input" type="number" min="' + (min == null ? 0 : min) + '" max="' + max + '" data-atkind="' + kind + '" data-attr="' + e2(target) + '" value="' + def + '" style="width:70px;height:34px;">'; };
       var sections = present.map(function (tr, ti) {
         var prev = present[ti - 1], mZ = maxZones(tr), mU = maxUnits(tr), nF = floorCount(tr), qs = [], zoneable = lvl !== 'floor' && mZ > 1;
-        // (a) handoff — how many floors of the PREVIOUS trade before this one starts behind it (stored on prev)
+        // (a) handoff — how many floors of the PREVIOUS trade before this one starts behind it (stored
+        //     on prev). Plus a "start at the same time" option: when ticked, this trade runs in
+        //     PARALLEL with the previous one (no trailing lead) and the floors-behind input is disabled.
         if (prev) {
           var fv = (cfg.tradeBatch[prev] != null ? cfg.tradeBatch[prev] : (cfg.floorLead || 4));
-          qs.push('<div class="sbld-at-q"><label>Starts <b>how many floors behind</b> <b style="color:' + gc(prev) + '">' + e2(GLABEL[prev]) + '</b>?</label>' + num('batch', prev, fv, 60, 1) + '</div>');
-        }
-        // (b) cure/lag between floors — only when the trade stacks more than one floor
-        if (nF > 1) {
-          var cv = (cfg.floorLag[tr] != null ? +cfg.floorLag[tr] : 0);
-          qs.push('<div class="sbld-at-q"><label><b>Cure / lag</b> between a floor and the one above? <span class="sbld-hint">(days — e.g. concrete cure)</span></label>' + num('lag', tr, cv, 90, 0) + '</div>');
+          var par = !!cfg.tradeParallel[prev];
+          qs.push('<div class="sbld-at-q sbld-at-qcol">' +
+            '<label style="display:flex;align-items:center;gap:7px;margin-bottom:4px;"><input type="checkbox" data-atkind="parallel" data-attr="' + e2(prev) + '"' + (par ? ' checked' : '') + '> Can <b>start at the same time</b> as <b style="color:' + gc(prev) + '">' + e2(GLABEL[prev]) + '</b> <span class="sbld-hint">(run in parallel)</span></label>' +
+            '<label class="sbld-at-behind"' + (par ? ' style="opacity:.4;"' : '') + '>Otherwise, starts <b>how many floors behind</b> <b style="color:' + gc(prev) + '">' + e2(GLABEL[prev]) + '</b>? ' + num('batch', prev, fv, 60, 1) + '</label></div>');
         }
         // (c) zones simultaneous per floor
         if (zoneable) {
@@ -13857,14 +13888,20 @@
       ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
       // zone-order reorder buttons — move the item up/down in the DOM (read back on save)
+      // Ticking "start at the same time" dims the floors-behind row (it no longer applies).
+      ov.querySelectorAll('input[data-atkind="parallel"]').forEach(function (cb) { cb.onchange = function () {
+        var beh = cb.closest('.sbld-at-q') && cb.closest('.sbld-at-q').querySelector('.sbld-at-behind');
+        if (beh) beh.style.opacity = cb.checked ? '.4' : '';
+      }; });
       ov.querySelectorAll('[data-zup]').forEach(function (b) { b.onclick = function () { var it = b.closest('.sbld-zord-item'), pv = it && it.previousElementSibling; if (pv) it.parentNode.insertBefore(it, pv); }; });
       ov.querySelectorAll('[data-zdown]').forEach(function (b) { b.onclick = function () { var it = b.closest('.sbld-zord-item'), nx = it && it.nextElementSibling; if (nx) it.parentNode.insertBefore(nx, it); }; });
       ov.querySelector('#sbld-at-go').onclick = function () {
         if (cfg.links.length && !confirm('Auto-trace REPLACES the current ' + cfg.links.length + ' link(s) with a fresh takt flow. Continue?')) return;
         Array.prototype.forEach.call(ov.querySelectorAll('input[data-atkind]'), function (inp) {
-          var kind = inp.dataset.atkind, target = inp.dataset.attr, v = +inp.value;
+          var kind = inp.dataset.atkind, target = inp.dataset.attr;
+          if (kind === 'parallel') { cfg.tradeParallel[target] = inp.checked; return; }             // start-together toggle (leading trade key)
+          var v = +inp.value;
           if (kind === 'batch') cfg.tradeBatch[target] = Math.max(1, Math.min(60, v || 4));       // floors-behind, stored on the leading (previous) trade
-          else if (kind === 'lag') cfg.floorLag[target] = Math.max(0, Math.min(90, v || 0));       // cure lag days
           else if (kind === 'zone') cfg.zoneSimul[target] = Math.max(1, v || 1);                   // zones at once
           else if (kind === 'unit') cfg.unitSimul[target] = Math.max(1, v || 1);                   // units at once
         });
@@ -14439,7 +14476,7 @@
         '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
         '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
         floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
-        '<div class="sbld-tower"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
+        '<div class="sbld-tower" style="zoom:' + towerZoom + ';"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
         '</div>';
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; render(); }; });
       var applyAll = host.querySelector('#b-applyall'); if (applyAll) applyAll.onclick = function () {
@@ -14478,6 +14515,7 @@
       host.querySelectorAll('[data-fk]').forEach(function (inp) { inp.onchange = function () { zn.floors[+inp.dataset.f][inp.dataset.fk] = inp.value; markDirty(); render(); }; });
       host.querySelectorAll('[data-zk]').forEach(function (inp) { inp.onchange = function () { zn.floors[+inp.dataset.f].zones[+inp.dataset.z][inp.dataset.zk] = inp.value; markDirty(); render(); }; });
       host.querySelectorAll('.sbld-flr').forEach(function (row) { wireDrag(row, zn.floors); });
+      bindTowerZoom(host.querySelector('.sbld-tower'));   // Ctrl+scroll zoom the building view
     }
 
     var NS = 'http://www.w3.org/2000/svg';
@@ -14603,7 +14641,7 @@
       // columns vertically; stack layout lays them side-by-side across the top.
       var towerEmpty = !locs.length;
       var towerBody = towerEmpty ? '<div class="sbld-empty">No zones yet — add floors/zones for a trade in <b>Step 2</b>, then their nodes appear here to connect.</div>' :
-        '<div class="sbld-twr' + (seqLayout === 'stack' ? ' sbld-twr-hz' : '') + '">' + showTr.map(seqTowerCol).join('') + '</div>';
+        '<div class="sbld-twr' + (seqLayout === 'stack' ? ' sbld-twr-hz' : '') + '" style="zoom:' + towerZoom + ';">' + showTr.map(seqTowerCol).join('') + '</div>';
       var schedH = '<div class="sbld-seq2-h">Resulting schedule (' + cfg.links.length + ' link' + (cfg.links.length === 1 ? '' : 's') + (seqTradeFilter === 'ALL' ? '' : ' · ' + e2(GLABEL[seqTradeFilter]) + ' only') + ')</div>';
       var schedBody = focusLegendHTML(seqFocus.length, 'b-focusclear') + scheduleSVG(dispLocs, starts);
       var LEVELS = [[1, 'Trade'], [2, 'Floor'], [3, 'Zone'], [4, 'Unit']];
@@ -14655,12 +14693,18 @@
           ? (pendSet.length ? (pendSet.length + ' source(s) selected — press Confirm sources (or right-click).') : 'Step 1: click one or more source zones.')
           : (pendDst.length ? (pendDst.length + ' destination(s) selected — press Create links (or right-click).') : 'Step 3: click one or more destination zones.'));
       host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { var uids = (b.dataset.uids || '').split(' ').filter(Boolean); setFocus(uids); nodeSelectMany(uids); }; });
-      // schedule bars INSPECT only (highlight predecessors/successors); linking is done from the tower
-      // nodes on the left, so clicking a bar never adds it to a pending link (was a linking bug).
-      host.querySelectorAll('.sbld-schedbar, .sbld-schedlab').forEach(function (b) { b.addEventListener('click', function () { setFocus((b.getAttribute('data-uids') || '').split(' ').filter(Boolean)); render(); }); });
+      // Clicking a schedule bar (or its row label) SELECTS it for linking too — same as a tower node —
+      // so you can pick a source zone in the bar chart, right-click to move to the destination phase,
+      // pick a destination bar, right-click again. (It also highlights predecessors/successors.)
+      host.querySelectorAll('.sbld-schedbar, .sbld-schedlab').forEach(function (b) { b.addEventListener('click', function () { var uids = (b.getAttribute('data-uids') || '').split(' ').filter(Boolean); if (!uids.length) return; setFocus(uids); nodeSelectMany(uids); }); });
       var fclr = host.querySelector('#b-focusclear'); if (fclr) fclr.onclick = function () { setFocus([]); render(); };
-      // right-click anywhere in the linking area confirms the current phase (source → destination → dialog)
-      var seq2 = host.querySelector('.sbld-seq2'); if (seq2) seq2.addEventListener('contextmenu', nodeConfirm);
+      // Ctrl+scroll to zoom the building view and the resulting schedule.
+      bindTowerZoom(host.querySelector('.sbld-twr'));
+      bindSchedZoom(host.querySelector('.sbld-schedscroll'));
+      // right-click anywhere in the linking area confirms the current phase (source → destination → dialog).
+      // Bound on BOTH layouts' containers (split = .sbld-seq2, stacked = .sbld-seqstack).
+      var seq2 = host.querySelector('.sbld-seq2') || host.querySelector('.sbld-seqstack');
+      if (seq2) seq2.addEventListener('contextmenu', nodeConfirm);
       host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
         var fk = (p.getAttribute('data-fk') || '').split('~'), ex = linkOf(fk[0], fk[1]); if (!ex) return;
         openLinkDialog(ev.clientX, ev.clientY, { type: ex.type, lag: ex.lag, existing: true }, function (type, lag) { ex.type = type; ex.lag = lag; markDirty(); render(); }, function () { removeLink(fk[0], fk[1]); });
