@@ -12543,6 +12543,13 @@
   var ScheduleBuilder = (function () {
     var GROUPS = ['GR', 'SW', 'ST', 'AR', 'MEPF', 'ALLIED', 'OT'];
     var GLABEL = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', ALLIED: 'Allied Services', OT: 'Others' };
+    // GWORK = the CANONICAL discipline/trade label written to project_schedule.work_type, so a pushed
+    // activity groups into the SAME Discipline/Trade bucket as imported activities (which use WORK_CANON's
+    // "Structural Works"/"Architectural Works"/"MEPF Works"/"Site Works"/"Allied Services"). GLABEL is the
+    // builder's own short UI label ("Structural"); using it for work_type produced TWO buckets per trade
+    // (a "Structural" from the builder beside "Structural Works" from the import). GR/OT have no WORK_CANON
+    // entry, so they keep their GLABEL name.
+    var GWORK = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural Works', AR: 'Architectural Works', MEPF: 'MEPF Works', ALLIED: 'Allied Services', OT: 'Others' };
     var GCOLOR = { GR: '#8a5cd1', SW: '#c07f2c', ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e', OT: '#0d9488' };
     // ⚠️ Structural's brand Dark Gray (#2B2C2B) is EXACTLY the dark-mode card colour, so on a dark
     // surface the trade name rendered dark-on-dark and was unreadable (reported on the Auto-trace
@@ -14675,7 +14682,7 @@
       // work_type = the TRADE/DISCIPLINE (e.g. "Structural"), so Project Schedule's Discipline/Trade
       // grouping detects it. It used to be the activity's own NAME (a unique value per row), which is
       // why grouping by trade showed hundreds of one-off buckets instead of the real trades.
-      function tradeOf(r) { var tr = (r.loc && r.loc.trade) || (r.act && r.act.group); return tr ? (GLABEL[tr] || tr) : null; }
+      function tradeOf(r) { var tr = (r.loc && r.loc.trade) || (r.act && r.act.group); return tr ? (GWORK[tr] || GLABEL[tr] || tr) : null; }
       function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq }; }
       var payloads = [], taskN = g.rows.length, wbsMsg = '';
 

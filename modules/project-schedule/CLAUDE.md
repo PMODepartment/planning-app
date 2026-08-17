@@ -1,5 +1,27 @@
 # Module: project-schedule
 
+## Schedule Builder push: doubled disciplines fix + canonical work_type labels (2026-08-17) — eprobles
+User: after pushing the builder result into the project schedule, the Discipline/Trade grouping shows
+**two of each trade** (two General Requirements, two Structural, …); also put Others/Allied after MEPF.
+- ⚠️ **Root cause of the doubled buckets:** `tradeOf()` wrote the builder's short UI label
+  (`GLABEL`: "Structural", "MEPF", "Architectural") into `project_schedule.work_type`, but imported
+  activities carry the canonical **WORK_CANON** labels ("Structural Works" / "MEPF Works" /
+  "Architectural Works" / "Site Works" / "Allied Services"). Grouping by Discipline/Trade therefore
+  split each trade into a builder bucket beside the import bucket.
+- **Fix:** new `GWORK` map beside `GLABEL` in the `ScheduleBuilder` closure (canonical labels; GR/OT
+  keep their names — no WORK_CANON entry), and `tradeOf` now returns `GWORK[tr] || GLABEL[tr] || tr`.
+  Pushed activities now merge into ONE bucket per trade with the imported ones.
+- **Others/Allied after MEPF:** already handled — `GROUPS = [GR,SW,ST,AR,MEPF,ALLIED,OT]` and
+  `tradeRank`/`_seq = rk*1e6+gi` carry that order into `seq_order` (ALLIED=6, OT=7 after MEPF=5). The
+  doubled-bucket bug was masking it; with the labels merged, the groups collapse to one each and sort
+  GR→SW→ST→AR→MEPF→Allied→Others.
+- ⚠️ **Existing already-pushed rows keep the old labels** — re-push (or Global Change on `work_type`)
+  to migrate them.
+- Verified: inline `<script>` parses (0 fail); `GWORK`/`GLABEL`/`tradeOf` all in the ScheduleBuilder
+  closure. ⚠️ **Not verified signed-in** (push→group-by-Discipline is behind the auth wall).
+  `MODULE_V` → `20260817a`.
+- **Still pending: Step 3 (Zone Sequencing) rules-engine redesign** — deferred, needs its own scoping pass.
+
 ## Phase-tagging wizard + docked stacking-pane fixes (2026-08-14) — fmlozano
 Two owner asks in one turn.
 - **"Tag project phases" wizard** (`openPhaseWizard`, in the Group menu → "Tag project phases (T&C /
