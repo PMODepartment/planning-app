@@ -216,7 +216,7 @@ should be a guide on how the WBS is organized, not drop a trade for a missing de
   activity with Tower/Level/Zone but no Unit is kept under both Discipline›Location and location-only
   groupings; a fully-tagged activity kept; a truly-unassigned activity dropped; and under a
   location-only grouping a discipline-only General Requirements activity (no location) is still
-  dropped. Inline script parses. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817y`.
+  dropped. Inline script parses. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260818d`.
 
 ## Schedule Builder push: doubled disciplines fix + canonical work_type labels (2026-08-17) — eprobles
 User: after pushing the builder result into the project schedule, the Discipline/Trade grouping shows
@@ -584,6 +584,108 @@ main — the session's original edits were made on the stale `module/schedule-bu
 - Additive `jsonb` keys (`tradeBatch`/`locLevel`), tolerated by `normalize`; no migration. Verified:
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
+
+## Option A: ONE LANE PER ACTIVITY in the composition strip, with an honest overflow lane (2026-08-17) — fmlozano
+Owner, on the strip shipped this morning: *"Slab on grade"* sharing lane 1 with *"Strip topsoil"* read as
+a misalignment. Correct diagnosis on their part — the strip used **greedy interval partitioning**, so an
+activity took the first lane whose previous occupant had **finished**, and two activities that merely do
+not OVERLAP shared a lane. A shared lane says "these are one track of work"; nothing of the sort was
+meant. Owner: *"A is the most ideal so that it will be easier to understand."* Now one lane per activity,
+ordered by start date — an LSM staircase.
+
+- **THE LEGIBILITY ARITHMETIC, which is the whole of this change.** Lane count is now activity count, not
+  concurrency width, so the cap stopped being a safety net and became the design constraint.
+  - **`PS_LANE_MIN = 3` — the minimum legible lane, measured.** A band carries `box-shadow:0 0 0 .5px
+    inset`, and lanes **tile contiguously**, so the abutting outlines of two neighbours ARE the separator
+    — there is no inter-lane gap to budget. A lane must render ≥2px of its own trade colour after the
+    outline takes 0.5px top and bottom: **2 + 0.5 + 0.5 = 3px**. Below that a band is outline-and-nothing,
+    indistinguishable from the hatched inert track behind it.
+  - **Bracket floor = 6px comfortable / 5px compact, and 5 is a hard floor.** The bracket is a pale track
+    + solid roll-up fill with `border-radius:2px`. At 4px the radius rounds away the full height at both
+    ends and it reads as a lozenge, not a bar, and the solid-vs-pale split has under 3px of body left.
+    **There is nothing left to take from the bracket.**
+  - **The strip may only grow by taking from the bracket, never from the row** (ROWH is unchanged):
+
+    | | o8 | bracket | strip | rail | bottom | ROWH |
+    |---|---|---|---|---|---|---|
+    | comfortable BEFORE | 8 | 8 | 8 | 5 | 31 | 34 |
+    | comfortable AFTER | 8 | **6** | **12** | 5 | **33** | 34 |
+    | compact BEFORE | 6 | 8 | 6 | 4 | 26 | 27 |
+    | compact AFTER | 6 | **5** | **9** | 4 | **26** | 27 |
+
+  - **`stripH = ROWH - o8 - compH - 1 - 1 - railH - 1`** — derived, never a literal, so the three marks
+    cannot drift out of agreement with each other or with ROWH. The trailing −1 is the clear pixel: a
+    rail flush with the row boundary touches the next row's divider.
+  - **`LANE_CAP = floor(stripH / 3)` → 4 comfortable, 3 compact**, i.e. **3.00px per lane exactly, AT the
+    floor in both densities**. Confirmed in a real browser, not just in the emitted string (below).
+- ⚠️ **THE HONEST VERDICT, because the cap went DOWN (5 → 4) and the owner should hear it from us.**
+  One-lane-per-activity is only fully expressible for a branch of **≤4 activities** (≤3 compact). The
+  Earthworks case the owner is looking at has exactly 4 and renders as a perfect 4-step staircase — but a
+  20-activity fit-out branch shows 3 lanes plus an overflow marker. **A real leaf branch can hold dozens**,
+  so on those the strip now says "here are the earliest three, and there are 17 more" where it previously
+  drew all of them. That is a genuine loss of per-activity detail, traded for lanes that mean what they
+  look like. **4 lanes is the ceiling** — bracket and rail are both at their floors and ROWH cannot grow.
+  If the owner prefers detail over unambiguous lanes on big branches, the honest options are (a) revert to
+  greedy packing for branches over the cap, or (b) grow ROWH; there is no third answer at this row height.
+- **The overflow rule — and this replaces a silent truncation, which is the point.** The old cap did
+  `lane = j % LANE_CAP`: past the fifth activity bands **silently painted over each other** while the row
+  implied it showed everything. Now the earliest `cap−1` keep individual lanes and the whole remainder
+  folds into ONE `.ps-sum-more` marker spanning their combined date range, carrying the count and the
+  names. Nothing is dropped and nothing is overpainted. It cannot be read as a trade band: no trade
+  colour, dense neutral cross-hatch, dashed outline where a real band has a solid inset one.
+  ⚠️ **The strip is `pointer-events:none` (pre-existing), so the marker's title is emitted but NEVER
+  reachable on hover** — which is exactly why the marker has to be unmistakable on sight rather than
+  relying on its tooltip. Enabling hover needs `.ps-sum-strip` added to the Gantt click delegate's
+  `closest()` list first, or a click on a band deselects the row.
+- **Ordering** is start date, then finish, then activity id — a **deterministic** tie-break, so the
+  staircase cannot reshuffle between renders when two activities start on the same day. Asserted
+  order-independent (feeding the same two rows in either order yields identical lanes).
+- **Unchanged, each asserted individually:** band dates, per-band tooltips, trade colours and textures;
+  which rows draw composition (a branch containing another branch still draws none — the altitude fix);
+  ROWH; the bracket → strip → rail order and the rail's treatment; the roll-up %, bar label and tooltips;
+  and **the plain (colours-off) view is byte-identical** (no strip, no marker, no comp bracket, rail still
+  at `sumTop+9+1`, no inline colour on the bracket so the red CSS fill still applies).
+- **Theming** needs nothing new: the marker uses `--ps-track`/`--ps-trackln`, plain CSS vars already
+  defined in both the light and dark blocks, so it follows a theme flip with no JS.
+- **Verified by EXECUTING the shipped code**, nothing under test stubbed — `rebuild`, `_buildSegMap`,
+  `_sumSegsHTML`, `ganttRowHTML` and the whole `catEntry`/`catTint`/`catStyle` chain sliced verbatim out
+  of index.html. `scratchpad/check-lanes.js`, **39 checks** on emitted geometry, at both densities.
+  ⚠️ **BEFORE/AFTER: the same suite against HEAD fails 21 of 39**, including the literal complaint
+  measured — four non-overlapping activities all reporting lane top `[0,0,0,0]`, and the 20-activity
+  branch emitting **24 bands and 0 overflow markers**.
+- **Confirmed in a REAL BROWSER** (headless Edge, shipped CSS, sanity-gated on `--pd-red` resolving so an
+  unloaded stylesheet cannot pass as a measurement): strip **12.00px**, Earthworks **4 lanes @ 3.00px**,
+  Fit-out **3 lanes @ 3.00px + a 3.00px overflow lane**, comp brackets **6.00px**, plain bracket
+  **9.00px**, rails **5.00px** — the derived arithmetic exactly.
+- **Other suites green:** optc 39, sumspan 22, blrail 14, present2 30, baseline-lsm, transpose,
+  grouprollup. Parse clean (1 block); **function-set diff vs HEAD: 0 lost, 0 added.**
+- ⚠️ **FIVE SUITES NEEDED A STUB ADDED, and that is a trap worth knowing:** `PS_LANE_MIN` is a
+  module-scope `var`, NOT inside any sliced function body, so every harness that slices `ganttRowHTML`
+  threw `ReferenceError` until it was added to the sandbox. A suite that crashes reads as a code defect;
+  it was a harness gap.
+- ⚠️ **Five assertions were CHANGED and they are this pass's intent, not regressions** — four in
+  check-optc and one in check-present2 hard-coded the superseded `8px` comp bracket. They now read the
+  height from the CSS and assert the surviving invariant (thinner than the old 13px, at/above the 5px
+  floor, rule is height-only). Same precedent as the earlier "suite written against an intermediate
+  iteration" note.
+- **Screenshots** at 1440px from a gitignored `_ui_test.html` built from the module's REAL `<style>` block
+  + rows emitted by the REAL `ganttRowHTML` (⚠️ unlike the older `mk-shot.js`, `_sumSegsHTML` is NOT
+  stubbed — stubbing it would bypass the very logic under test): `scratchpad/lanes-before.png`,
+  `lanes-after.png`, `lanes-after-dark.png`, plus `probe.png` (the in-browser measurements above).
+  Harness pages deleted, PNGs kept. Before: Earthworks reads as one bar changing colour along its length.
+  After: four descending steps.
+  ⚠️ **Honest note on the after shot — at 1× the 3px bands are visibly fainter than the old 8px single
+  lane.** They are legible and the staircase reads, but this is at the floor, not comfortably above it.
+- ⚠️ **Traps.** The browser tool's screenshot still times out here — use headless Edge, and it needs
+  **Windows-style paths** for `--screenshot` (a POSIX path silently writes nothing). `--dump-dom` is
+  unavailable in this Edge build; render measurements into the page and screenshot them instead.
+- ⚠️ **NOT verified signed-in** — the anon key has no grants on `project_schedule`, so AVR101 was never
+  opened from here. Everything above is measured against the shipped functions in Node and in a real
+  browser rendering the shipped CSS.
+- ⚠️ **Left open.** (1) The cap-vs-detail trade-off above is the owner's call. (2)
+  `scratchpad/check-present.js` still fails 12 checks and **fails them identically on HEAD** — a stale
+  suite for a "Presentation mode" that is not in the file; not touched, not caused here.
+- `MODULE_V` → `20260818d`.
 
 ## Concurrent activities are LANE-PACKED inside the bracket (2026-08-17) — fmlozano
 Owner on Ground floor › Wet Works: *"it captures also the planned for other activities and overlaps

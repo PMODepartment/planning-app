@@ -5695,3 +5695,25 @@ single plain structural mark and the bands moved to their own thin strip beneath
   (26 of 27 compact). Detail, geometry table, the inert-track finding and the before/after numbers
   are in `modules/project-schedule/CLAUDE.md`.
 - `MODULE_V` → `20260817x`.
+
+## Gantt composition strip: one lane per activity, and an overflow lane that admits what it hides (2026-08-17) — fmlozano
+Owner saw "Slab on grade" sharing a lane with "Strip topsoil" and read it as a misalignment. They were
+right: the strip lane-packed by *overlap*, so two activities that merely don't overlap shared a lane —
+which says "one track of work" when nothing of the sort is meant. Now one lane per activity, ordered by
+start date, so a branch reads as an LSM staircase.
+- ⚠️ **The cap is measured, and it went DOWN — 5 lanes to 4.** A lane needs 3px to show any of its own
+  colour (2px of body after the 0.5px inset outline top and bottom; lanes tile, so their outlines are the
+  separator). The strip grew 8px → 12px by taking the bracket to its 6px floor — **never by growing the
+  row** — giving `floor(12/3)` = **4 lanes at exactly 3.00px** (compact: 9px strip, 3 lanes). Bracket and
+  rail are both at their floors now, so 4 is the ceiling at this row height.
+- ⚠️ **Honest trade-off for the owner to weigh:** ≤4 activities render as a perfect staircase (the
+  Earthworks case), but a 20-activity branch now shows 3 lanes + an overflow marker where it previously
+  drew all of them. Unambiguous lanes were bought with per-activity detail on big branches.
+- **The overflow marker replaces a silent truncation** — the old cap reused lanes (`j % LANE_CAP`), so
+  past the fifth activity bands painted over each other while the row implied it showed everything. The
+  remainder now folds into one clearly-marked lane carrying the count and the names.
+- Verified by executing the shipped functions (39 checks; **the same suite fails 21/39 against HEAD**,
+  measuring the literal complaint as lane tops `[0,0,0,0]`) and confirmed in a real browser rendering the
+  shipped CSS. All seven existing suites green, 0 functions lost. ⚠️ Not verified signed-in.
+  Full arithmetic, the bracket floor and the traps: `modules/project-schedule/CLAUDE.md`.
+- `MODULE_V` → `20260818d`.

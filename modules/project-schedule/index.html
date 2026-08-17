@@ -685,6 +685,11 @@
        rail — three marks stack on this row and each must be unmistakable. */
     /* ⚠️ top/height come INLINE (lane-packed), so no top/bottom here — a `bottom:0` would fight
        the computed height and flatten every lane back to full strip height. */
+    /* ⚠️ `pointer-events:none` means every title inside this strip — the per-band tooltips AND the
+       overflow marker's "+N more" count — is emitted but NEVER REACHABLE ON HOVER. That is
+       pre-existing, not new, but it is why the overflow lane has to be unmistakable on sight rather
+       than relying on its tooltip to explain itself. Enabling hover needs `.ps-sum-strip` added to
+       the Gantt click delegate's closest() list first, or a click on a band deselects the row. */
     .ps-sum-strip { position:absolute; z-index:3; overflow:hidden; pointer-events:none;
       /* ⚠️ THE INERT TRACK MOVED HERE. It used to sit on `.ps-sum-comp` — the bracket — where it was
          half of the owner's "grey": a faint grey hatch filling every stretch of the bracket that no
@@ -702,10 +707,33 @@
     /* ⚠️ A band-carrying bracket is now THINNER, not thicker. The 13px bump existed so the bands
        INSIDE it were readable; the bands have moved out, and the room the strip needs is taken from
        the bracket's own height rather than from the row — the row must not grow (the owner has
-       already objected once to brackets thickening for nothing). 9px → 8px. The class stays: it is
-       still the marker for "this row carries composition", and the JS reads the same number when it
-       stacks the strip and the rail under it. */
-    #ps-view-schedule.ps-lsm .ps-sum.ps-sum-comp { height:8px; }
+       already objected once to brackets thickening for nothing). 9px → 8px → 6px. The class stays:
+       it is still the marker for "this row carries composition", and the JS reads the same number
+       when it stacks the strip and the rail under it.
+       ⚠️ 6px (5px compact) is the BRACKET FLOOR, and it is a measured floor, not a preference. The
+       bracket is a pale track with a solid roll-up fill and `border-radius:2px`. At 4px the 2px
+       radius rounds away the full height at both ends and the mark reads as a lozenge rather than a
+       bar, and the solid-vs-pale split has under 3px of body left to read. 5px is the last height at
+       which the radius only eats the extreme ends. Do NOT take another pixel from here to widen the
+       strip — there is nothing left to take.
+       ⚠️ THESE TWO NUMBERS ARE DUPLICATED IN JS (`_compH` in ganttRowHTML, which stacks the strip and
+       the rail below the bracket). Change one and you must change the other, or the marks overlap. */
+    #ps-view-schedule.ps-lsm .ps-sum.ps-sum-comp { height:6px; }
+    #ps-view-schedule.ps-lsm .ps-split.ps-compact .ps-sum.ps-sum-comp { height:5px; }
+    /* ⚠️ THE OVERFLOW LANE — the strip's honesty mark. One lane per activity means lane count =
+       activity count, and the strip only fits 4 legible lanes (3 compact); see PS_LANE_MIN in the JS
+       for that arithmetic. When a branch holds more activities than there are lanes, the LAST lane
+       becomes this single marker spanning the remainder's full date range instead of silently
+       dropping them or overpainting them on top of each other (the old `lane = j % LANE_CAP`
+       fallback did exactly that — the repeated defect this replaces).
+       It must never be mistaken for a trade band: no trade colour, a dense neutral cross-hatch, and
+       a dashed outline where a real band has a solid inset one. It carries the count and the names
+       in its title. */
+    .ps-sum-more { position:absolute; overflow:hidden; z-index:2; pointer-events:none;
+      background:var(--ps-track);
+      background-image:repeating-linear-gradient(45deg,var(--ps-trackln) 0 1px,transparent 1px 3px),
+                       repeating-linear-gradient(-45deg,var(--ps-trackln) 0 1px,transparent 1px 3px);
+      box-shadow:0 0 0 .5px var(--pd-ink) inset; opacity:.85; }
     /* ⚠️ RED MEANS PROGRESS, AND ONLY PROGRESS — and in the coloured view red is not the progress
        colour, the row's own trade colour is. So in LSM a summary bracket's roll-up fill must NOT be
        red: five stacked branch-of-branches rows (Execution Phase › Construction Phase › Tower 1 ›
@@ -9507,7 +9535,17 @@
   // so every coordinate stays RELATIVE to `barX` (not to the timeline origin) exactly as when these
   // were drawn inside the bracket itself. The maths here is untouched by the 2026-08-17 Option C
   // move; only the box they land in changed. See the `.ps-sum-strip` CSS for why they moved out.
-  function _sumSegsHTML(r, min, dayw, barX) {
+  // ⚠️ MINIMUM LEGIBLE LANE HEIGHT, in CSS px. This is measured, not chosen by eye, and every other
+  // number in the strip is derived from it. A band is a rectangle carrying `box-shadow:0 0 0 .5px
+  // inset` (`.ps-sum-seg`), i.e. a half-pixel outline on each edge, and lanes TILE contiguously —
+  // the abutting outlines of two neighbouring lanes ARE the separator between them, so there is no
+  // extra inter-lane gap to budget for. A lane must therefore render at least 2px of its own trade
+  // colour after the outline eats 0.5px top and bottom: 2 + 0.5 + 0.5 = 3. Below 3px a band is
+  // outline-and-nothing, indistinguishable from the hatched inert track behind it, and at fractional
+  // device-pixel offsets it aliases to a half-tone. See the CSS on .ps-sum-more for what happens
+  // when a branch has more activities than the strip has lanes.
+  var PS_LANE_MIN = 3;
+  function _sumSegsHTML(r, min, dayw, barX, laneCap) {
     var cfg = catCfg();
     if (!cfg.on || r._dkind === 'group' || !r.wbs) return '';
     var key = pid + '|' + _sorted.length + '|' + cfg.field;
@@ -9522,13 +9560,14 @@
     if (_kidBranch && _kidBranch[r.wbs]) return '';
     var kids = (_segMap && _segMap[r.wbs]) || [];
     if (!kids.length) return '';
-    // ⚠️ LANE-PACK overlapping activities. Every segment used to be drawn at the bracket's FULL
-    // height, so concurrent work simply painted over itself and whichever came last in `_sorted`
-    // won. Owner report on Ground floor › Wet Works, where Masonry (Apr-Jul), Sealant (Apr-Jul) and
-    // Waterproofing (Jun-Jul) all run together: the bracket showed a mash that read as one activity
-    // spilling over the others. Greedy interval partitioning puts each concurrent activity in its
-    // own horizontal lane, so overlap becomes STACKED STRIPES — which is what a bar carrying several
-    // trades at once actually means — instead of one silently hiding the rest.
+    // ⚠️ ONE LANE PER ACTIVITY, ordered by start date — an LSM-style staircase. This REPLACES the
+    // greedy interval partitioning that shipped earlier: that packed each activity into the first
+    // lane whose previous occupant had finished, so two activities that merely do not OVERLAP shared
+    // a lane. Owner report: "Slab on grade" sitting on lane 1 beside "Strip topsoil" read as a
+    // misalignment, because a shared lane says "these are the same track of work" when nothing of
+    // the sort is meant. Owner: "A is the most ideal so that it will be easier to understand."
+    // ⚠️ The cost is that lane count is now activity count rather than the concurrency width, which
+    // is why the cap below is load-bearing rather than a safety net.
     var seg = [];
     for (var i = 0; i < kids.length; i++) {
       var a = kids[i], e = catEntry(a); if (!e) continue;
@@ -9536,19 +9575,34 @@
       seg.push({ a: a, e: e, s: +s, f: +f });
     }
     if (!seg.length) return '';
-    seg.sort(function (p, q) { return p.s - q.s || p.f - q.f; });
-    // ⚠️ Capped: the strip is 8px (comfortable), so beyond ~5 lanes a stripe is under 2px and the
-    // stacking stops carrying information. Past the cap lanes are reused — overlap returns, but only
-    // in the rare deeply-concurrent case, and never for the ordinary 2-4 trade overlap.
-    var LANE_CAP = 5, laneEnd = [];
-    for (var j = 0; j < seg.length; j++) {
-      var L = -1;
-      for (var k = 0; k < laneEnd.length; k++) if (laneEnd[k] <= seg[j].s) { L = k; break; }
-      if (L < 0) { if (laneEnd.length < LANE_CAP) { L = laneEnd.length; laneEnd.push(0); } else L = j % LANE_CAP; }
-      laneEnd[L] = seg[j].f;
-      seg[j].lane = L;
+    // ⚠️ Ties broken DETERMINISTICALLY (start, then finish, then activity id) so the staircase does
+    // not reshuffle between renders when two activities start on the same day.
+    seg.sort(function (p, q) {
+      return p.s - q.s || p.f - q.f ||
+        String(p.a.activity_id || p.a.id || '').localeCompare(String(q.a.activity_id || q.a.id || ''));
+    });
+    // ⚠️ THE OVERFLOW RULE. `laneCap` is derived from the strip's real height in ganttRowHTML
+    // (floor(stripH / PS_LANE_MIN)) — 4 lanes comfortable, 3 compact. A branch with more activities
+    // than that keeps its earliest `cap - 1` as individual lanes and folds the WHOLE remainder into
+    // one clearly-marked final lane spanning their combined date range.
+    // ⚠️ NOTHING IS DROPPED AND NOTHING IS OVERPAINTED. The previous cap reused lanes
+    // (`lane = j % LANE_CAP`), so past the fifth activity bands silently painted over each other and
+    // the row implied it was showing everything — the exact silent-truncation defect this repo keeps
+    // re-introducing. The marker carries the count and the names of what is not individually shown.
+    var CAP = Math.max(1, laneCap || 1), more = null;
+    if (seg.length > CAP) {
+      var rest = seg.slice(CAP - 1);
+      seg = seg.slice(0, CAP - 1);
+      var ms = rest[0].s, mf = rest[0].f;
+      for (var q2 = 1; q2 < rest.length; q2++) {
+        if (rest[q2].s < ms) ms = rest[q2].s;
+        if (rest[q2].f > mf) mf = rest[q2].f;
+      }
+      more = { s: new Date(ms), f: new Date(mf), n: rest.length,
+        names: rest.slice(0, 8).map(function (g) { return g.a.activity_name || '(unnamed)'; }) };
     }
-    var LN = Math.max(1, laneEnd.length), lh = 100 / LN;
+    for (var j = 0; j < seg.length; j++) seg[j].lane = j;
+    var LN = Math.max(1, seg.length + (more ? 1 : 0)), lh = 100 / LN;
     var out = '';
     for (var m2 = 0; m2 < seg.length; m2++) {
       var g = seg[m2], pct = Math.max(0, Math.min(100, g.a.percent_complete || 0));
@@ -9561,6 +9615,17 @@
         '" style="left:' + x + 'px;width:' + w + 'px;top:' + (g.lane * lh).toFixed(3) + '%;height:' + lh.toFixed(3) + '%;' +
         catTint(g.e.color, 0.32) + '">' +
         '<i style="width:' + pct + '%;' + catStyle(g.e.color, g.e.tex) + '"></i></div>';
+    }
+    // ⚠️ The overflow marker takes the LAST lane. Same MIN 2px width rule as a band, so a short
+    // remainder still paints. Its title is the only place the count lives, and the strip is
+    // `pointer-events:none` (pre-existing), so treat the VISUAL distinction as the load-bearing
+    // signal — see the note in .ps-sum-strip's CSS.
+    if (more) {
+      var mx = Math.round(dayDiff(min, more.s) * dayw - barX);
+      var mw = Math.max(Math.round((dayDiff(more.s, more.f) + 1) * dayw), 2);
+      out += '<div class="ps-sum-more" title="' + esc('+' + more.n + ' more activities in this branch — not shown individually (the strip fits ' +
+        LN + ' lanes): ' + more.names.join(', ') + (more.n > more.names.length ? ', …' : '')) +
+        '" style="left:' + mx + 'px;width:' + mw + 'px;top:' + ((LN - 1) * lh).toFixed(3) + '%;height:' + lh.toFixed(3) + '%;"></div>';
     }
     return out;
   }
@@ -9606,16 +9671,29 @@
       // The rail stays last so the rule "the rail is the thing furthest from the bar" holds on
       // every row kind, comp or not. 1px of clear air between each, so the strip can never be read
       // as part of the bracket, nor the rail as part of the strip.
-      // ⚠️ TOTAL must stay inside ROWH or the row grows, which the owner has already rejected once:
-      //   comfortable ROWH 34 -> 8 + 8 +1+ 8 +1+ 5 = 31   (was 8 + 13 +1+ 5 = 27, bracket 13px)
-      //   compact     ROWH 27 -> 6 + 8 +1+ 6 +1+ 4 = 26
-      // The strip's room is taken out of the BRACKET (13px -> 8px), never out of the row.
-      var _segs = _sumSegsHTML(r, min, dayw, x);
-      var sumH = _segs ? 8 : 9;                        // must match .ps-sum / .ps-sum-comp in CSS
-      var _stripH = _segs ? Math.max(6, Math.round(8 * oY)) : 0;
+      // ⚠️ TOTAL must stay inside ROWH or the row grows, which the owner has already rejected once.
+      // The strip's room is taken out of the BRACKET, never out of the row, and the bracket is now
+      // at its floor (6px / 5px compact — see the .ps-sum-comp CSS for why 5 is the floor), so the
+      // strip below is as tall as it can be made without growing the row:
+      //   comfortable ROWH 34 -> 8 + 6 +1+ 12 +1+ 5 = 33 of 34   (1px clear of the row divider)
+      //   compact     ROWH 27 -> 6 + 5 +1+  9 +1+ 4 = 26 of 27
+      // ⚠️ `_stripH` is DERIVED from that budget rather than written as a literal, so the three
+      // marks can never be edited out of agreement with each other or with ROWH. The trailing -1 is
+      // the clear pixel: a rail flush with the row boundary touches the next row's divider line.
+      // ⚠️ `_laneCap` then falls out of the strip height and PS_LANE_MIN — comfortable 12/3 = 4
+      // lanes at exactly 3.00px each, compact 9/3 = 3. That is the whole legibility budget: 4 is the
+      // most one-lane-per-activity lanes this row can carry, so any branch with more activities than
+      // that gets the overflow marker (see _sumSegsHTML).
+      var _compH = Math.max(5, Math.round(6 * oY));    // must match .ps-sum.ps-sum-comp in CSS
+      var _railH = Math.max(4, Math.round(5 * oY));
+      var _stripMax = ROWH - o8 - _compH - 1 - 1 - _railH - 1;
+      var _laneCap = Math.max(1, Math.floor(_stripMax / PS_LANE_MIN));
+      var _segs = _sumSegsHTML(r, min, dayw, x, _laneCap);
+      var sumH = _segs ? _compH : 9;                   // must match .ps-sum / .ps-sum-comp in CSS
+      var _stripH = _segs ? _stripMax : 0;
       if (_segs) out += '<div class="ps-sum-strip" style="left:' + x + 'px;width:' + w + 'px;top:' + (sumTop + sumH + 1) + 'px;height:' + _stripH + 'px;">' + _segs + '</div>';
       if (blsp) { var bx0 = dayDiff(min, blsp.s) * dayw, bw0 = Math.max((dayDiff(blsp.s, blsp.e) + 1) * dayw, 3);
-        out += '<div class="ps-bl" title="Baseline (roll-up) — planned span for this branch" style="left:' + bx0 + 'px;width:' + bw0 + 'px;top:' + (sumTop + sumH + 1 + (_segs ? _stripH + 1 : 0)) + 'px;height:' + Math.max(4, Math.round(5 * oY)) + 'px;"></div>'; }
+        out += '<div class="ps-bl" title="Baseline (roll-up) — planned span for this branch" style="left:' + bx0 + 'px;width:' + bw0 + 'px;top:' + (sumTop + sumH + 1 + (_segs ? _stripH + 1 : 0)) + 'px;height:' + _railH + 'px;"></div>'; }
       // LSM composition: with the legend on, a summary row shows the activities INSIDE it as
       // coloured segments, each filling up with its own progress — so a WBS bar reads as the
       // sequence of trades running under it rather than one flat block.
