@@ -3477,22 +3477,51 @@
       return String(a.activity_id || '').localeCompare(String(b.activity_id || ''));
     });
     var ds = [], de = [];
-    rows.forEach(function (r) { var s = pd(r.start_date) || pd(r.bl_start), e = pd(r.end_date) || pd(r.bl_finish); if (s) ds.push(+s); if (e) de.push(+e); });
+    // ⚠️ DISPLAYED dates, not stored planned dates. Everything that DRAWS (activity bars, the grid's
+    // Start/Finish columns, the LSM composition bands) uses dispStart/dispFin — actual when set, else
+    // the retained-logic forecast, else planned. Ranging the timeline off start_date/end_date alone
+    // therefore let a bar whose actual start precedes its planned start fall off the left edge.
+    rows.forEach(function (r) { var s = pd(dispStart(r)) || pd(r.bl_start), e = pd(dispFin(r)) || pd(r.bl_finish); if (s) ds.push(+s); if (e) de.push(+e); });
     var t = +today(); ds.push(t); de.push(t);
     if (ds.length) { var mn = new Date(Math.min.apply(null, ds)), mx = new Date(Math.max.apply(null, de));
       _min = new Date(mn.getFullYear(), mn.getMonth(), 1); _max = new Date(mx.getFullYear(), mx.getMonth() + 2, 0); }
     else { var n = today(); _min = addDays(n, -30); _max = addDays(n, 90); }
     // precompute rolled-up spans per WBS code (self + all descendants) in one pass
+    // ⚠️ TWO THINGS HERE, both fixed 2026-08-17 — see the notes on each.
+    // (1) The roll-up is over the DESCENDANT ACTIVITIES ONLY (`isWbs(r)` is skipped), exactly like
+    //     `_costMap` below. A WBS-summary row carries its OWN stored start_date/end_date/bl_* from
+    //     the import and NOTHING ever recomputes them, so folding them in let a stale summary date
+    //     stretch its own bracket (and every ancestor's) far past the work actually under it — the
+    //     "green band sitting on a wide pale bar" report. A branch with no activities under it at
+    //     all still gets a span, from the fallback pass below, so no row loses its bar.
+    // (2) The current span rolls up dispStart/dispFin, NOT start_date/end_date. The bracket, the
+    //     bands inside it and the grid's Start/Finish column must all describe the same dates; they
+    //     did not, so on any STARTED branch (foundations, in the report) the bands were offset from
+    //     their own bracket by the actual-vs-planned slip and the clip-path ate the overflow.
     _spanMap = {}; _blSpanMap = {};
+    function _mergeSpan(map, codes, a, b) {
+      for (var i = 0; i < codes.length; i++) { var m = map[codes[i]];
+        if (!m) map[codes[i]] = { s: a, e: b }; else { if (a < m.s) m.s = a; if (b > m.e) m.e = b; } }
+    }
     rows.forEach(function (r) {
-      var s = pd(r.start_date), e = pd(r.end_date); if (s || e) { if (!s) s = e; if (!e) e = s;
-        var codes = [r.wbs].concat(r._anc || []);
-        for (var i = 0; i < codes.length; i++) { var m = _spanMap[codes[i]]; if (!m) _spanMap[codes[i]] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } } }
+      if (isWbs(r)) return;
+      var codes = [r.wbs].concat(r._anc || []);
+      var s = pd(dispStart(r)), e = pd(dispFin(r)); if (s || e) { if (!s) s = e; if (!e) e = s;
+        _mergeSpan(_spanMap, codes, +s, +e); }
       // Baseline roll-up (BL0) — same tree walk, from bl_start/bl_finish, so WBS summaries get a
       // planned-baseline span too (keyed by real dotted code; used in the default WBS grouping).
       var bs = pd(r.bl_start), be = pd(r.bl_finish); if (bs || be) { if (!bs) bs = be; if (!be) be = bs;
-        var codes2 = [r.wbs].concat(r._anc || []);
-        for (var k = 0; k < codes2.length; k++) { var mb = _blSpanMap[codes2[k]]; if (!mb) _blSpanMap[codes2[k]] = { s: +bs, e: +be }; else { if (+bs < mb.s) mb.s = +bs; if (+be > mb.e) mb.e = +be; } } }
+        _mergeSpan(_blSpanMap, codes, +bs, +be); }
+    });
+    // Fallback for a branch that holds no activities at all: seed it (and its ancestors) from the
+    // summary row's own stored dates, so an empty branch still draws instead of silently vanishing.
+    rows.forEach(function (r) {
+      if (!isWbs(r) || !r.wbs) return;
+      var codes = [r.wbs].concat(r._anc || []);
+      if (!_spanMap[r.wbs]) { var s = pd(dispStart(r)), e = pd(dispFin(r));
+        if (s || e) { if (!s) s = e; if (!e) e = s; _mergeSpan(_spanMap, codes, +s, +e); } }
+      if (!_blSpanMap[r.wbs]) { var bs = pd(r.bl_start), be = pd(r.bl_finish);
+        if (bs || be) { if (!bs) bs = be; if (!be) be = bs; _mergeSpan(_blSpanMap, codes, +bs, +be); } }
     });
     // precompute cost/POC roll-ups per WBS code (OPC shows IBB sums + weighted POC on summary
     // rows). Costs sum; POC %s are duration-weighted (planned POC only over rows that have a
@@ -5140,7 +5169,9 @@
             if (_pr && _pr.activity_name) a._dsuffix = _pr.activity_name;
           }
           out.push(a);
-          var s = pd(a.start_date), e = pd(a.end_date);
+          // ⚠️ dispStart/dispFin, matching `_spanMap` in rebuild() — a group header's bracket must
+          // cover the same dates its children's bars are drawn at, or it is offset by the slip.
+          var s = pd(dispStart(a)), e = pd(dispFin(a));
           addSpan(a._dcode, s, e); baseAnc.forEach(function (x) { addSpan(x, s, e); });
           var bs0 = pd(a.bl_start), be0 = pd(a.bl_finish);
           baseAnc.forEach(function (x) { addBlSpan(x, bs0, be0); });
@@ -5182,7 +5213,7 @@
         } else {
           var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null; a._dsuffix = null;
           out.push(a);
-          var s = pd(a.start_date), e = pd(a.end_date);
+          var s = pd(dispStart(a)), e = pd(dispFin(a));   // displayed dates — see the note above
           addSpan(dc, s, e); da.forEach(function (x) { addSpan(x, s, e); });
         }
       });
@@ -5275,7 +5306,7 @@
           solo._dcode = gcode; solo._ddepth = parentAnc.length; solo._danc = parentAnc;
           solo._dkind = 'task'; solo._realCode = solo.wbs; solo._dlabel = g; solo._dsuffix = null;
           out.push(solo);
-          var ss = pd(solo.start_date), se = pd(solo.end_date);
+          var ss = pd(dispStart(solo)), se = pd(dispFin(solo));   // displayed dates — see the note above
           addSpan(gcode, ss, se); parentAnc.forEach(function (x) { addSpan(x, ss, se); });
           addBlSpan(gcode, pd(solo.bl_start), pd(solo.bl_finish));
           parentAnc.forEach(function (x) { addBlSpan(x, pd(solo.bl_start), pd(solo.bl_finish)); });
@@ -9487,8 +9518,15 @@
       var _cm = (r._dkind === 'group') ? null : _costMap[r.wbs];
       var sumPct = (_cm && _cm.wd > 0) ? Math.max(0, Math.min(100, Math.round(_cm.wearn / _cm.wd))) : 0;
       var sumTop = top + o8;
+      // ⚠️ Computed BEFORE the baseline rail because the rail is tucked under the bracket and the
+      // bracket's height depends on whether it carries bands (.ps-sum-comp is 13px in LSM mode, the
+      // plain bracket 9px). Hard-coding `sumTop + 10` put the rail 3px INSIDE a 13px bracket, so on
+      // exactly the rows that show a composition the "planned dates" rail was half-hidden behind
+      // them and read as a stray pale slab poking out of the bar rather than as the baseline.
+      var _segs = _sumSegsHTML(r, min, dayw, x);
+      var sumH = (_segs && catCfg().on) ? 13 : 9;
       if (blsp) { var bx0 = dayDiff(min, blsp.s) * dayw, bw0 = Math.max((dayDiff(blsp.s, blsp.e) + 1) * dayw, 3);
-        out += '<div class="ps-bl" title="Baseline (roll-up) — planned span for this branch" style="left:' + bx0 + 'px;width:' + bw0 + 'px;top:' + (sumTop + 10) + 'px;height:' + Math.max(4, Math.round(5 * oY)) + 'px;"></div>'; }
+        out += '<div class="ps-bl" title="Baseline (roll-up) — planned span for this branch" style="left:' + bx0 + 'px;width:' + bw0 + 'px;top:' + (sumTop + sumH + 1) + 'px;height:' + Math.max(4, Math.round(5 * oY)) + 'px;"></div>'; }
       // LSM composition: with the legend on, a summary row shows the activities INSIDE it as
       // coloured segments, each filling up with its own progress — so a WBS bar reads as the
       // sequence of trades running under it rather than one flat block.
@@ -9502,7 +9540,7 @@
       // ⚠️ The activity bands go INSIDE the bracket. When they are present the rolled-up red
       // %-fill is suppressed: each band already carries its own progress, so the red would sit on
       // top of them and describe the same thing twice.
-      var _segs = _sumSegsHTML(r, min, dayw, x);
+      // (`_segs` is computed above, before the baseline rail, which needs the bracket's height.)
       // ⚠️ GROUP rows carry their own roll-up (_gpct) and, when single-trade, their own category
       // (_gcat) — computed in buildNodes because _costMap is keyed by WBS code and a group has none.
       // Without this a grouped Gantt drew every row as one flat brand-red slab: no progress, no

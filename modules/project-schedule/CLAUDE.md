@@ -5436,3 +5436,60 @@ draw plain red brackets. Earthworks in particular shows a green band over a wide
 diagnosed — ran out of context. First things to check: whether those bands span the right dates (the
 band geometry is relative to the bracket's own left edge, `barX`), and whether the pale bar behind is
 the category TINT or a stray baseline rail now that the rail draws in coloured mode.
+
+## "Check the Gantt for Mat Footing etc" — the summary bracket was drawing DIFFERENT DATES from the bands inside it (2026-08-17) — fmlozano
+Owner: *"Check the Gantt for Mat Footing etc, it is bugging."* Avesta (AVR101), grouped by WBS,
+"Colour activities by = Discipline / Trade" ticked. It is one root cause with two visible faces, and
+it is **not** in `_sumSegsHTML` and **not** in this morning's baseline reinstatement.
+- ⚠️ **ROOT CAUSE: `_spanMap` — the roll-up that positions every summary bracket — was built from
+  `start_date`/`end_date`, while EVERYTHING that draws inside or beside it uses `dispStart`/`dispFin`**
+  (actual when set, else the retained-logic forecast, else planned). Activity bars, the grid's
+  Start/Finish columns and the LSM composition bands are all on displayed dates; the bracket alone
+  was on stored planned dates. So on any branch whose work has actually STARTED — foundations, which
+  is exactly the screenshot — the bands are offset from their own bracket by the slip. The bands are
+  the bracket's CHILDREN and the bracket carries a `clip-path`, so the overflow is silently eaten
+  rather than drawn: short bands in the wrong place, white where work should be.
+- ⚠️ **SECOND HALF, same block: the roll-up folded in the WBS-SUMMARY ROW'S OWN stored dates.**
+  `rows.forEach` had no `isWbs(r)` guard (`_costMap`, three lines below, has always had one). An
+  imported summary row carries its own `start_date`/`end_date`/`bl_*` and **nothing in this module
+  ever recomputes them**, so one stale summary date stretched its own bracket *and every ancestor's*
+  far past the work underneath. That is the "green hatched band sitting on a wide pale bar" —
+  the pale bar is the BL0 roll-up rail blown out to the stale baseline width, not a rendering
+  artefact of the rail itself.
+- **Fix, all in `rebuild()`:** the span roll-up now walks **descendant activities only** and uses
+  **dispStart/dispFin**; `_blSpanMap` likewise skips summary rows. A second pass seeds a branch that
+  holds no activities at all from its own dates, so an empty branch still draws instead of vanishing
+  — ⚠️ without that fallback `wbsSpan` returns null and `ganttRowHTML` returns `''`, i.e. a blank row.
+  The timeline `_min`/`_max` moved to displayed dates too, or a bar whose actual start precedes its
+  planned start falls off the left edge.
+- **Same inconsistency fixed in the GROUPED path** (`buildNodes`' `addSpan`, 3 call sites) — group
+  headers had the identical planned-vs-displayed mismatch. Latent, not reported, one line each.
+- **Also: the roll-up baseline rail was hard-coded to `sumTop + 10`** while a bracket carrying bands
+  is **13px** (`.ps-sum-comp`), not 9px — so on exactly the rows that show a composition the rail was
+  3px *inside* the bracket and read as a stray pale slab poking out of it. It is now placed from the
+  bracket's actual height; `_segs` is computed before the rail for that reason.
+- **RULED OUT, both of the leads I started with.** (1) `_sumSegsHTML`'s band maths is CORRECT:
+  `barX` is the bracket's own left edge, `_anc[last]` really is the activity's direct parent branch
+  (an activity's `wbs` is its OWN dotted code — `recToPayload`/`xerRecToPayload` set `wbs: r.code`
+  for leaves and summaries alike — so `_anc` excludes it and its last element is the containing
+  branch), and the `_kidBranch` guard is right. (2) The baseline rail reinstated this morning is not
+  drawing where it shouldn't; it was drawing the wrong WIDTH, because of the stale-summary-date bug
+  above, and at the wrong HEIGHT on comp brackets.
+- **Verified 22/22 in Node by EXECUTING the shipped code** — `rebuild`, `dispStart`, `dispFin`,
+  `forecastFin`, `wbsSpan`, `wbsBlSpan`, `_buildSegMap`, `_sumSegsHTML`, `ganttRowHTML` and the whole
+  `catEntry`/`catList`/`catShade` chain all **sliced out of index.html, none stubbed** (only the
+  browser environment is: `localStorage`, `Fmt`, `_psDark`). ⚠️ **The suite was then run against the
+  PRE-FIX file (`BEFORE=1 node check-sumspan.js head-index.html`) and fails 11/22** — including the
+  literal screenshot: bracket 2190px wide with only 453px of bands on it. A suite that does not fail
+  on the old file proves nothing; this one does.
+  `scratchpad/check-sumspan.js`, plus a new `scratchpad/check-regress.js` (parse + function-set diff).
+- Earlier suites still green: transpose 14, baseline-LSM 18, group roll-up 21. Parse clean (1 block).
+  **Function-set diff vs HEAD: 0 lost, 1 added (`_mergeSpan`).**
+- ⚠️ **NOT verified signed-in** — no auth from this environment, so I could not open Avesta and
+  confirm which of the two mechanisms dominates in the owner's actual screenshot. Both are fixed and
+  both reproduce the reported picture in the harness.
+- ⚠️ **STILL OPEN, and it is a DATA problem, not a render one:** WBS-summary rows in the database
+  keep stale `start_date`/`end_date`/`bl_start`/`bl_finish` from import. Nothing reads them for the
+  Gantt any more, but they are still exported to Excel for non-summary paths and would mislead
+  anyone querying the table directly. Worth a one-off cleanup or a write-back on rebuild.
+- `MODULE_V` → `20260817u`.

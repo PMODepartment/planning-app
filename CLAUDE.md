@@ -5577,3 +5577,21 @@ reason. Now keyed to the bands actually being emitted. All three suites green, 0
 verified signed-in. `MODULE_V` → `20260817t`.
 ⚠️ **Open:** owner reports the Gantt "bugging" for Mat Footing / SW-CW Starter / FTB / SOG — not
 investigated, see the module CLAUDE.md for the two leads.
+
+### 2026-08-17 — Project Schedule: the "Mat Footing" Gantt bug — bracket and bands were on different dates
+⚠️ **Root cause:** `_spanMap` (which positions every WBS/group summary bracket) was rolled up from
+`start_date`/`end_date`, while the activity bars, the grid Start/Finish columns and the LSM
+composition bands all use `dispStart`/`dispFin` (actual → forecast → planned). On any started branch
+the bands were therefore offset from their own bracket by the slip, and the bracket's `clip-path`
+silently ate the overflow. ⚠️ **Second half:** the roll-up had no `isWbs(r)` guard (unlike `_costMap`),
+so a WBS-summary row's own stale imported dates — nothing ever recomputes them — stretched its
+bracket and every ancestor's, which is the "green band on a wide pale bar". Both fixed: descendants
+only, displayed dates, with a fallback so a branch with no activities still draws. Same fix applied
+to the grouped `addSpan` path, and the roll-up baseline rail now clears the bracket's real height
+(13px when it carries bands, not the hard-coded 9). **Both of my starting leads were wrong** —
+`_sumSegsHTML`'s geometry is correct and the reinstated baseline was not drawing where it shouldn't.
+22 checks by executing the shipped code (nothing stubbed); ⚠️ the same suite **fails 11/22 against
+the pre-fix file**, so it actually bites. Three earlier suites green, 0 functions lost. Not verified
+signed-in. `MODULE_V` → `20260817u`.
+⚠️ **Open (data, not code):** WBS-summary rows still hold stale dates in the database; nothing reads
+them for the Gantt now, but they are wrong at source.
