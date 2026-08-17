@@ -5595,3 +5595,27 @@ the pre-fix file**, so it actually bites. Three earlier suites green, 0 function
 signed-in. `MODULE_V` → `20260817u`.
 ⚠️ **Open (data, not code):** WBS-summary rows still hold stale dates in the database; nothing reads
 them for the Gantt now, but they are wrong at source.
+
+### 2026-08-17 — The stale WBS-summary dates, measured live: 23 rows, not 52,715 — cleanup NOT run
+Measured the "wrong at source" item above against the live DB across all 20 projects, changed nothing,
+and stopped before writing. Partial-state check first (a prior attempt was killed mid-task): **clean** —
+no `*_dates_backup_*` table exists, and today's 202 touched summary rows are `_wbsEnsureSummaries`
+**inserts** (`created_at === updated_at`), not a half-applied update.
+- Of **60,297** WBS-Summary rows: 535 have no descendants, 7,047 already agree, 52,715 disagree —
+  ⚠️ **but 52,692 of those are entirely NULL. They are empty, not stale.** Filling them would write
+  ~52.7k derived values into columns nothing reads and nothing keeps in step. Different decision;
+  not taken unilaterally.
+- **Exactly 23 rows hold a date contradicting their descendants** — WCB363 21 (max **337 days**) and
+  DEMO01 2 (3 days). ⚠️ **14 of the 21 must not be touched**: their descendants carry no dates at all,
+  so the specified min/max rule computes NULL and would erase the row's only dates.
+- **Consumer check clean.** `schedule_scurve_agg_multi` (hence `schedule_scurve_agg` /
+  `cashflow_schedule_agg`) filters summaries in SQL; S-Curve, Cash Flow and Portfolio all filter
+  client-side. The two unfiltered date aggregations (`range()`, `persistRollup()`) are **min/max, not
+  sums** — no double-count possible. ⚠️ One visible effect if it ever runs: `projects.schedule_finish`
+  for WCB363 would move, and Portfolio/dashboard read it.
+- ⚠️ **Blocked on backup:** DDL is impossible via PostgREST with the publishable key and this
+  environment has no secret key / Management API token, so the mandated reversible backup table could
+  not be created. See `modules/project-schedule/CLAUDE.md` for the full numbers, the planned-vs-
+  displayed roll-up ambiguity, and the measurement traps (the REST root endpoint now 401s the
+  publishable key and its body reads as "0 tables").
+- Docs only — no code, no data, no `MODULE_V` bump.

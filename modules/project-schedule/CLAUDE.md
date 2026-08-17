@@ -1,5 +1,77 @@
 # Module: project-schedule
 
+## Stale WBS-summary dates: measured live, and the cleanup was NOT run (2026-08-17) — fmlozano
+Asked to repair the WBS-Summary rows' own `start_date`/`end_date`/`bl_start`/`bl_finish`, which
+nothing recomputes. **Measured first, changed nothing — and the measurement says the premise does not
+hold at the scale assumed.** No write was made; no backup table was created; the table is exactly as
+it was found.
+
+**Partial-state check (a prior run of this task was killed mid-way).** ⚠️ Clean — nothing half-applied.
+The only backup-looking table in the DB is the earlier cleanup's **`wbs_summary_backup_20260817`**
+(103,548 rows, a FULL column copy incl. all four date columns); **no `*_dates_backup_*` table exists**.
+202 WBS-Summary rows carry a 2026-08-17 `updated_at`, but all 202 are **INSERTs, not updates**
+(`created_at === updated_at` to the microsecond, all AVR101, one 30-second burst at 01:50 UTC, all
+four dates NULL) — that is `_wbsEnsureSummaries` projecting new rows when someone opened the project,
+not a cleanup write.
+
+**Scope measured, all 20 projects, 60,297 WBS-Summary rows** (matches the post-clean figure in the
+entry below exactly — used as the sanity gate). Descendants resolved by dotted-`wbs` prefix, the same
+relation `_anc` builds:
+- **535 rows have no descendant activities** → out of scope, left alone by rule.
+- **7,047 rows already agree** with their roll-up (CP104 981/981 and HOR102 5/5 are perfect).
+- **52,715 rows disagree — but 52,692 of them are entirely NULL at source.** ⚠️ **They are not stale,
+  they are empty.** Writing them is not a repair, it is populating ~52.7k derived values into columns
+  the app deliberately ignores and nothing keeps in step — they would drift again on the next edit.
+  That is a different decision from the one signed off, so it was not taken unilaterally.
+- **Only 23 rows in the whole database actually hold a date that contradicts their descendants:**
+  **WCB363 21** (14 stale `start_date`, 21 stale `end_date`; median small, **max 337 days**, 7 over
+  30 days) and **DEMO01 2** (`bl_start`, 3 days). Verified one independently by direct query rather
+  than from the in-memory model: WCB363 `1.1.1.2` *"Supplementary Agreement 3 'SA-3' Milestone"*
+  stores finish **2025-10-30** while its last dated descendant ends **2024-11-27**.
+- ⚠️ **And 14 of those 21 WCB363 rows must NOT be touched anyway.** They are the `1.1.3.12.*` branches
+  whose descendants exist but carry **no dates at all**, so the specified rule (min/max of descendants)
+  computes NULL and would **erase** the only dates on the row. The brief's "leave a row with no
+  descendants alone" guard does not cover "descendants with no dates".
+- ⚠️ Same hazard on the biggest offender: `1.1.1.2`'s undated descendants include *"Grand Opening
+  (Overall Completion)"*, so the stored 2025-10-30 may be the only record of the SA-3 contractual
+  date. Shrinking it to 2024-11-27 is defensible as arithmetic and questionable as data. **Owner call.**
+
+**Consumer check (done BEFORE any write was contemplated) — no consumer is materially harmed.**
+Every aggregate consumer already excludes summaries: `schedule_scurve_agg_multi` (and therefore
+`schedule_scurve_agg` / `cashflow_schedule_agg`, both thin wrappers) filters
+`activity_type !~* 'wbs|summary'` in SQL; the three client fallbacks — S-Curve `!isWbs`, Cash Flow's
+`indexOf('wbs')===-1 && indexOf('summary')===-1`, Portfolio `!isWbsRow` — all filter too.
+`schedule_rows` returns everything by design and the module filters downstream. Two whole-row date
+aggregations do **not** filter summaries, and both are safe: `range()` (Gantt timeline bounds) and
+`persistRollup()`'s `schedule_start`/`schedule_finish` written onto `projects`. ⚠️ Both are **min/max,
+never a sum — so there is no double-count**, and since a corrected summary is by construction inside
+its descendants' extent it becomes a no-op for them. The only effect is that a stale outlier stops
+stretching the range. ⚠️ Worth flagging anyway: **`projects.schedule_finish` for WCB363 would move**
+(next time someone opens it) — Portfolio Overview and the dashboard read that column.
+
+**Two blockers, either one sufficient to stop:**
+1. ⚠️ **The mandated backup table cannot be created from here.** DDL is impossible through PostgREST
+   with the publishable key, and this environment has no secret key and no Management API token (the
+   precedent below had one; key handling is a dashboard action the owner performs). Constraint: the
+   operation must be fully reversible from a timestamped backup table — so no write.
+2. The real scope is 23 rows, 14 of which are traps. That is a hand-reviewed edit, not a bulk job.
+
+⚠️ **Semantics note for whoever picks this up.** The brief says match `_spanMap`/`_blSpanMap`, which
+roll up **displayed** dates (`dispStart`/`dispFin`) — but `dispFin` includes the retained-logic
+**forecast**, which moves with the data date, and the code carries an explicit note that it *"never
+writes back to end_date, so the PLANNED finish/duration stay intact."* Storing it would freeze a
+moving value into a planned column. Measured both ways: planned roll-up 52,713 rows vs displayed
+52,716, and **for all 23 real rows the two definitions are identical** — so the choice is immaterial
+where it matters, but it must be made explicitly before any bulk write.
+
+⚠️ Measurement traps hit and worth keeping: the PostgREST **root endpoint now refuses the publishable
+key** (`401 "Secret API key required"`), and its body parses to an empty object — the first table
+enumeration read as *"0 tables, no backups exist"*, which is exactly the confident-wrong-number
+failure this module keeps producing. It was caught only because a known-missing/known-present control
+pair was run alongside. Also ⚠️ `count=exact` on the whole of `project_schedule` **statement-timeouts**;
+filtered counts are fine. And one `wbs` value came back rendered as `[BLOCKED: JWT token]` — a
+redaction in the browser tool's output, not data.
+
 ## Schedule Builder push: doubled disciplines fix + canonical work_type labels (2026-08-17) — eprobles
 User: after pushing the builder result into the project schedule, the Discipline/Trade grouping shows
 **two of each trade** (two General Requirements, two Structural, …); also put Others/Allied after MEPF.
