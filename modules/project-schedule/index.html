@@ -9291,8 +9291,18 @@
   // rather than scanning `_sorted` per visible summary row — the latter is O(rows × visible) and the
   // real schedules here run to 17k activities.
   var _segMap = null, _segMapKey = null, SEG_CAP = 400;
+  // Branches that contain ANOTHER BRANCH. Such a branch must not draw a composition at all — see
+  // the guard in _sumSegsHTML for why.
+  var _kidBranch = null;
   function _buildSegMap() {
     var m = {};
+    _kidBranch = {};
+    for (var k = 0; k < _sorted.length; k++) {
+      var w = _sorted[k];
+      if (!isWbs(w) || !w.wbs) continue;
+      var pc = parentCodeOf(w.wbs);
+      if (pc) _kidBranch[pc] = true;
+    }
     for (var i = 0; i < _sorted.length; i++) {
       var a = _sorted[i];
       if (isWbs(a) || isMile(a)) continue;
@@ -9321,6 +9331,14 @@
     if (!cfg.on || r._dkind === 'group' || !r.wbs) return '';
     var key = pid + '|' + _sorted.length + '|' + cfg.field;
     if (_segMapKey !== key) { _segMap = _buildSegMap(); _segMapKey = key; }
+    // ⚠️ A branch that contains another BRANCH never draws a composition — not even a partial one.
+    // Owner report: "Structural Works" under Tower 1 rendered white, then one green block, then
+    // white again. It has child branches (Substructure, Superstructure, …) AND a couple of
+    // activities hanging directly off it, so mapping to the direct parent gave it a bracket
+    // decorated with only those strays — the white gaps read as "nothing is happening here" while
+    // the child branches were in fact full of work. A mixed branch must summarise, like any other
+    // branch of branches; only a TRUE leaf branch shows the trade sequence.
+    if (_kidBranch && _kidBranch[r.wbs]) return '';
     var kids = (_segMap && _segMap[r.wbs]) || [];
     if (!kids.length) return '';
     var out = '';

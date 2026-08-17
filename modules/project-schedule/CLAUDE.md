@@ -367,6 +367,22 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Mixed branches drew a misleading partial composition (2026-08-17) — fmlozano
+Owner, on Tower 1 › Structural Works: *"a white bar then filled with green then blank bars again
+which doesn't make any sense."* Correct — and caused by the altitude fix earlier the same day.
+- ⚠️ Narrowing `_buildSegMap` to the **direct parent** was right for pure branch-of-branches, but a
+  **MIXED** branch — child branches (Substructure, Superstructure…) AND a couple of activities
+  hanging directly off it — then drew a bracket decorated with only those strays. The white gaps
+  read as "nothing is happening here" while the child branches were full of work.
+- **A branch containing another BRANCH now draws no composition at all**, not even a partial one:
+  it summarises like any other branch of branches, and only a TRUE leaf branch shows the trade
+  sequence. `_kidBranch` is built in the same pass as the seg map.
+- ⚠️ The stray activities are still in the map and still counted in the roll-up — nothing is dropped
+  from the model, only from the drawing. Asserted.
+- **Verified 18/18 against the real `_sumSegsHTML`** (not a proxy): leaf branches still draw, the
+  mixed branch returns **empty**, higher branches return empty, and the flags are right in both
+  directions.
+
 ## The REAL stacking lag: a cross-function n-squared I introduced (2026-08-17) — fmlozano
 Owner: opening the vertical stacking still took *"about a minute or 2"*. The earlier O(n x m) sweep
 had not touched it, because **the nesting spans two functions**.
