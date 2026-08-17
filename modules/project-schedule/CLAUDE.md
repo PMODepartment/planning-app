@@ -367,6 +367,28 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Bar altitude + progress on every bar (2026-08-17) — fmlozano
+Owner: *"the higher the WBS level the more high level the gantt bars should look like"*, the mixed
+green/blue/grey textures are *"confusing during reporting"*, and *"how should the viewers know what
+is the actual progress per activity — that is the main weakness of the gantt view right now."*
+Both were fair, and the first was made worse by the bracket-subdivision work earlier today.
+- ⚠️ **`_buildSegMap` mapped every activity into EVERY ancestor** (`a._anc`), so Execution Phase,
+  Construction Phase and Tower 1 each drew the *same* 4,393-activity composition. Every level of the
+  tree looked identical — a band of confetti that says nothing at reporting altitude. Now mapped to
+  the **direct parent only**, so only the branch that actually contains activities shows the trade
+  sequence; everything above falls through to the plain bracket with its rolled-up %-complete fill.
+  The higher the level, the more summary the bar reads, which is the point of a WBS.
+- ⚠️ **Progress was genuinely unreadable per activity.** A summary row printed its roll-up %, but an
+  ACTIVITY printed only its name. In the plain view progress was a red sliver to eyeball; in LSM mode
+  the red fill is suppressed entirely (the bar fills with its own trade colour), so **there was no
+  number anywhere**. `_barLabel` now appends `%` for anything started — and a 100% bar says "100%"
+  rather than going silent, so "no number" unambiguously means not-started.
+- **Verified 15/15**: composition on the leaf branch and its sibling, ⚠️ **none on Tower 1 /
+  Construction Phase / Execution Phase** (asserted individually), every activity still mapped exactly
+  once (nothing lost by narrowing), and the label rules incl. 100% staying visible, not-started
+  staying blank, the dates-label variant, `labels=none`, and clamping. All 12 suites green (221
+  assertions). ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817k`.
+
 ## Grid handlers delegated — the deeper half of the scroll fix (2026-08-17) — fmlozano
 The `_gridWinKey` guard skipped no-op repaints; this removes the cost of the repaints that DO happen.
 - ⚠️ `renderWindow` bound handlers **per element, every repaint**: click + contextmenu per row, a

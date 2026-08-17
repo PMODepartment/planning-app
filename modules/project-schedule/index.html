@@ -8526,10 +8526,23 @@
     var sd = r.start_date ? Fmt.date(r.start_date) : '—', fd = r.end_date ? Fmt.date(r.end_date) : '—';
     return esc((r.activity_id ? r.activity_id + ' · ' : '') + (r.activity_name || '') + '\n' + (r.status || '') + (r.percent_complete != null ? ' · ' + r.percent_complete + '%' : '') + '\nStart ' + sd + '  Finish ' + fd + (r._float != null ? '  Float ' + r._float + 'd' : ''));
   }
+  // ⚠️ The label now carries % COMPLETE. Owner: "how should the viewers know what is the actual
+  // progress per activity — that is the main weakness of the gantt view right now." They were right:
+  // a summary row printed its roll-up %, but an ACTIVITY printed only its name. In the plain view
+  // progress was a red sliver you had to eyeball, and in LSM mode the red fill is suppressed
+  // entirely (the bar fills with its own trade colour instead), so there was no number anywhere.
+  // Shown for anything started; a 100% bar says "100%" rather than going silent, because "no number"
+  // must never be ambiguous between not-started and complete.
+  function _barPct(r) {
+    if (isWbs(r) || isMile(r)) return null;
+    var p = Math.round(Math.max(0, Math.min(100, r.percent_complete || 0)));
+    return p > 0 ? p : null;
+  }
   function _barLabel(r) {
     if (_gset.labels === 'none') return '';
-    if (_gset.labels === 'dates') return (r.start_date ? Fmt.date(r.start_date) : '') + (r.end_date && r.end_date !== r.start_date ? ' – ' + Fmt.date(r.end_date) : '');
-    return r.activity_name || '';
+    var pct = _barPct(r), suf = pct == null ? '' : '  ' + pct + '%';
+    if (_gset.labels === 'dates') return (r.start_date ? Fmt.date(r.start_date) : '') + (r.end_date && r.end_date !== r.start_date ? ' – ' + Fmt.date(r.end_date) : '') + suf;
+    return (r.activity_name || '') + suf;
   }
   function openGanttSettings() {
     var m = UI.modal('<h2 style="margin-top:0;">Gantt settings</h2>' +
@@ -9256,9 +9269,17 @@
     for (var i = 0; i < _sorted.length; i++) {
       var a = _sorted[i];
       if (isWbs(a) || isMile(a)) continue;
+      // ⚠️ DIRECT parent only — not every ancestor. Mapping an activity into all of its ancestors
+      // meant Execution Phase, Construction Phase and Tower 1 each drew the SAME 4,393-activity
+      // composition, so every level of the tree looked identical: a band of green/blue/grey confetti
+      // that says nothing at a reporting altitude. Now only the branch that DIRECTLY contains
+      // activities shows the trade sequence; every branch above it falls through to the plain
+      // bracket with its rolled-up %-complete fill, so the higher the level, the more summary the
+      // bar reads — which is what a WBS is for.
       var anc = a._anc || [];
-      for (var j = 0; j < anc.length; j++) {
-        var b = m[anc[j]] || (m[anc[j]] = []);
+      var direct = anc.length ? anc[anc.length - 1] : null;
+      if (direct) {
+        var b = m[direct] || (m[direct] = []);
         if (b.length < SEG_CAP) b.push(a);
       }
     }
