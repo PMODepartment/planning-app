@@ -814,7 +814,13 @@
     html.pd-dark .ps-alt { background:rgba(255,255,255,.06); }
     .ps-group-row { background:var(--pd-red-light) !important; }
     .ps-group-row .c-name { color:var(--pd-red); }
-    .ps-sum-group { background:var(--pd-red) !important; opacity:.85; }
+    /* ⚠️ A MIXED group (several trades under it) is neutral, NOT brand red. It used to be
+       `background:var(--pd-red) !important`, which painted every group bar the same flat red — so a
+       grouped Gantt carried no progress and no trade information at all, just slabs. Red is reserved
+       for progress; a summary bracket is structure. The `!important` is gone so the inline
+       category background on a single-trade group (.ps-sum-gcat) can win. */
+    .ps-sum-group { background:var(--ps-sum); opacity:.9; }
+    .ps-sum-gcat { opacity:1; }
     /* Schedule options + Colors menus */
     .ps-sched-menu, .ps-colors-menu { min-width:250px; padding:12px 14px; }
     .ps-sched-menu.open, .ps-colors-menu.open { display:block; }
@@ -5021,6 +5027,9 @@
   // Build the full annotated node list for the current groupBys + filters (no collapse).
   function buildNodes() {
     normalizeGroupBys();
+    // Hoisted: the group-category roll-up below resolves one value PER ACTIVITY, and catCfg()
+    // re-reads storage on every call — reading it per row would make this O(rows) storage hits.
+    var _catField = catCfg().field;
     var groupBy = groupBys.length === 1 ? groupBys[0] : '__multi';
     if (groupBy === 'wbs') {
       _dspan = _spanMap; _dblspan = null;
@@ -5260,14 +5269,30 @@
         }
         // Roll the group's BASELINE span and status counts up now, while its bucket is in hand —
         // so a COLLAPSED level still shows BL Start / BL Finish / Status instead of blank cells.
-        var gd = 0, gp = 0;
+        // ⚠️ Also roll up PROGRESS and the group's category here, in the same pass. A group row has
+        // no WBS code, so `_costMap` (keyed by dotted code) can never serve it — which is why a
+        // grouped Gantt used to draw every group as a flat block with no progress and no colour.
+        // Duration-weighted, with the SAME weights as _costMap's wd/wearn, so a group and a WBS row
+        // covering the same activities can never report different percentages.
+        var gd = 0, gp = 0, gwd = 0, gwe = 0, gcat, gcatSet = false, gcatMixed = false;
         for (var bi = 0; bi < buckets[g].length; bi++) {
           var ba = buckets[g][bi];
           addBlSpan(gcode, pd(ba.bl_start), pd(ba.bl_finish));
           if (isComplete(ba)) gd++; else if (ba.actual_start || (ba.percent_complete || 0) > 0) gp++;
+          var bdur = (pd(ba.start_date) && pd(ba.end_date)) ? (dayDiff(pd(ba.start_date), pd(ba.end_date)) + 1) : 0;
+          if (bdur > 0) { gwd += bdur; gwe += bdur * (ba.percent_complete || 0); }
+          if (!gcatMixed) {
+            var bc = catValOf(ba, _catField);
+            if (!gcatSet) { gcat = bc; gcatSet = true; }
+            else if (bc !== gcat) { gcatMixed = true; gcat = null; }
+          }
         }
         out.push({ _dkind: 'group', _dcode: gcode, _ddepth: parentAnc.length, _danc: parentAnc,
           _gdone: gd, _gprog: gp,
+          _gpct: gwd > 0 ? Math.max(0, Math.min(100, Math.round(gwe / gwd))) : 0,
+          // Only when every activity in the group carries the SAME category — a mixed group
+          // (e.g. a Tower holding all trades) has no one colour and must stay neutral.
+          _gcat: gcatMixed ? null : (gcat || null),
           activity_name: g, _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
         walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
       });
@@ -9460,8 +9485,18 @@
       // %-fill is suppressed: each band already carries its own progress, so the red would sit on
       // top of them and describe the same thing twice.
       var _segs = _sumSegsHTML(r, min, dayw, x);
-      out += '<div class="ps-sum' + (r._dkind === 'group' ? ' ps-sum-group' : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + (wcS ? 'background:' + wcS + ';' : '') + '">' +
-        ((sumPct > 0 && !_segs) ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;"></i>' : '') + _segs + '</div>';
+      // ⚠️ GROUP rows carry their own roll-up (_gpct) and, when single-trade, their own category
+      // (_gcat) — computed in buildNodes because _costMap is keyed by WBS code and a group has none.
+      // Without this a grouped Gantt drew every row as one flat brand-red slab: no progress, no
+      // trade colour, nothing to read. A single-trade group now fills up in ITS legend colour (the
+      // same tint-remainder + solid-textured-fill treatment as an activity bar), so grouping by
+      // Discipline/Trade reads as the trades it names. A MIXED group stays neutral.
+      var _gce = (r._dkind === 'group') ? catEntryByValue(r._gcat) : null;
+      if (r._dkind === 'group') sumPct = r._gpct || 0;
+      var _gBg = _gce ? catTint(_gce.color) : (wcS ? 'background:' + wcS + ';' : '');
+      var _fillStyle = _gce ? catStyle(_gce.color, _gce.tex) : '';
+      out += '<div class="ps-sum' + (r._dkind === 'group' ? (_gce ? ' ps-sum-gcat' : ' ps-sum-group') : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + _gBg + '">' +
+        ((sumPct > 0 && !_segs) ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;' + _fillStyle + '"></i>' : '') + _segs + '</div>';
       if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
     }
@@ -16160,6 +16195,12 @@
   function catEntry(r) {
     var cfg = catCfg(); if (!cfg.on || !pid) return null;
     var v = catValOf(r, cfg.field); if (!v) return null;
+    return catMapNow()[v] || null;
+  }
+  // Same lookup for a caller that already has the VALUE rather than a row — group rows resolve
+  // their category once in buildNodes, so they have the value and no row to hand.
+  function catEntryByValue(v) {
+    var cfg = catCfg(); if (!cfg.on || !pid || !v) return null;
     return catMapNow()[v] || null;
   }
   function catColor(r) { var e = catEntry(r); return e ? e.color : null; }

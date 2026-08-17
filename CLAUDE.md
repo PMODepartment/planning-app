@@ -5528,3 +5528,14 @@ including the Layout menu that holds the toggle (the way out). Session-only; not
 restored. Verified in-browser against the real stylesheet + real toolbar markup: 7 hidden, 11 kept,
 fully reversible; ⚠️ the sanity gate caught a first run taken below the 700px phone breakpoint,
 where the toolbar is hidden anyway. Not verified signed-in. `MODULE_V` → `20260817p`.
+
+### 2026-08-17 — Project Schedule: grouped Gantt showed flat red bars with no information
+Owner: grouping by Discipline/Trade filled the Gantt with red bars that signify nothing. ⚠️ Not an
+LSM regression — those are **group** rows, and they were never given anything to draw:
+`.ps-sum-group` was hardcoded `var(--pd-red) !important`, `sumPct` comes from `_costMap` (keyed by
+WBS code, which a group has none of) so there was no progress fill, and `_sumSegsHTML` bails on
+groups so there was no composition. Group rows now roll up their own duration-weighted progress
+(`_gpct`, using the SAME weights as `_costMap` so a group and a WBS row can't disagree) and their
+category when single-trade (`_gcat`) — so a Structural Works group bar fills up green, MEPF grey,
+and a mixed group stays a neutral bracket. Red is now only ever progress. 21 checks against the
+shipped code; 0 functions lost. Not verified signed-in. `MODULE_V` → `20260817q`.

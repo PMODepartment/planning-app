@@ -5308,3 +5308,35 @@ mid-build: *"the reporting view will only hide some tabs/buttons."*
 - 15 static checks green (parse, every hidden id exists in the markup so no rule is a silent no-op,
   the Layout button is never hidden, no leftovers from the heavier version, ROWH untouched).
   Function-set diff vs HEAD: **0 lost**. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817p`.
+
+## Grouped Gantt was a wall of flat red — group rows had no progress and no colour (2026-08-17) — fmlozano
+Owner, on Discipline/Trade grouping: *"The gantt view is filled with red only, it doesn't signify
+anything."* Correct, and it had nothing to do with the LSM work — the rows on that screen are
+**group** rows, not WBS rows, and group rows were never given anything to draw.
+- ⚠️ **`.ps-sum-group { background:var(--pd-red) !important }`** painted every group bar flat brand
+  red, and the `!important` made it unoverridable. On top of that a group row got **no progress
+  fill** (`sumPct` comes from `_costMap`, which is keyed by dotted WBS code — a group has none, so
+  `_cm` is null and `sumPct` is 0) and **no composition** (`_sumSegsHTML` returns '' for
+  `_dkind === 'group'`). So the moment you group by anything, every bar is an identical red slab
+  carrying zero information. It was not a regression; it has been like that since grouping shipped.
+- **Group rows now carry their own roll-up**, computed in `buildNodes` in the pass that was already
+  walking the bucket (so it costs nothing): `_gpct` duration-weighted progress and `_gcat`, the
+  group's category when **every** activity in it shares one.
+  ⚠️ `_gpct` deliberately uses **the same weights and the same duration definition as `_costMap`'s
+  `wd`/`wearn`** — a group and a WBS row covering the same activities must never report different
+  percentages. Asserted against both formulas read out of the shipped source.
+  ⚠️ A **mixed** group (a Tower holding all trades) resolves to `null` and stays neutral — colouring
+  it as one trade would be a lie.
+- **A single-trade group bar now fills up in its own legend colour** (tint remainder + solid textured
+  fill, the same treatment as an activity bar), so grouping by Discipline/Trade reads as the trades
+  it names. Mixed groups get a neutral `--ps-sum` bracket. Red is now only ever progress.
+- New `catEntryByValue(v)` — `catEntry(r)` resolves a row, and a group has a value but no row.
+  ⚠️ Two bugs in my first cut, both caught before shipping: I called `catValOf(ba)` **without the
+  field**, which silently falls back to the activity NAME (so every group would have looked mixed),
+  and I faked a row for `catEntry`. `catCfg().field` is hoisted out of the per-activity loop — it
+  re-reads localStorage on every call.
+- **21 checks green against the SHIPPED code** (the bucket block sliced out and executed, not
+  reimplemented): category resolution, mixed → null, blank → null, duration-weighting proven by a
+  100d@0% + 10d@100% case landing on 9% rather than 50%, zero-duration → 0 with no NaN, weights
+  matching `_costMap`, and the four render-branch behaviours. Parse clean; **function-set diff vs
+  HEAD: 0 lost, 1 added.** ⚠️ **Not verified signed-in.** `MODULE_V` → `20260817q`.
