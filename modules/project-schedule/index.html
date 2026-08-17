@@ -13313,6 +13313,7 @@
     var seqTradeFilter = 'ALL';   // Zone-sequence: which trade's bars/nodes are shown ('ALL' = every trade)
     var seqLayout = 'split';  // step 3/4 layout: 'split' (tower left / gantt right) | 'stack' (building top / gantt bottom)
     var seqLevel = 2;         // step-3 collapse depth default: 2=Floor (compact + readable on tall buildings); 1=Trade, 3=Zone, 4=Unit
+    var seqMode = 'view';     // step-3 interaction mode: 'view' = click a bar/zone to INSPECT its links; 'edit' = click to SELECT sources → right-click → destinations → link
     var seqFocus = [];        // uids currently highlighted (cross-highlight between tower nodes & gantt bars)
     function isFocus(uids) { return seqFocus.length && uids.some(function (u) { return seqFocus.indexOf(u) >= 0; }); }
     function setFocus(uids) { seqFocus = (uids || []).slice(); }
@@ -14665,18 +14666,25 @@
         : '<div class="sbld-seq2"><div class="sbld-seq2-left" style="width:' + seqLeftW + 'px;"><div class="sbld-seq2-h">Tower — building view</div>' + towerBody + '</div>' +
           '<div class="sbld-seq2-grip" id="b-grip" title="Drag to resize the tower / schedule"></div>' +
           '<div class="sbld-seq2-right">' + schedH + schedBody + '</div></div>';
-      var confirmBtn = (linkPhase === 'src' && pendSet.length)
+      var editing = seqMode === 'edit';
+      var confirmBtn = editing && (linkPhase === 'src' && pendSet.length)
         ? '<button class="pd-btn pd-btn-primary" id="b-confirm">Confirm ' + pendSet.length + ' source' + (pendSet.length === 1 ? '' : 's') + ' →</button>'
-        : (linkPhase === 'dst' && pendDst.length)
+        : (editing && linkPhase === 'dst' && pendDst.length)
           ? '<button class="pd-btn pd-btn-primary" id="b-confirm">Create ' + pendDst.length + ' link' + (pendDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
+      var modeToggle = '<span class="sbld-quick" style="margin-right:2px;">Mode ' +
+        [['view', 'View'], ['edit', 'Edit']].map(function (m) { return '<button class="pd-btn sbld-scbtn' + (seqMode === m[0] ? ' on' : '') + '" data-seqmode="' + m[0] + '" title="' + (m[0] === 'view' ? 'Click a bar or zone to inspect its relationships' : 'Click zones to select sources, right-click to choose destinations, then link') + '">' + m[1] + '</button>'; }).join('') + '</span><span class="sbld-tb-sep2"></span>';
+      var lede = editing
+        ? '<p class="sbld-lede"><b>Edit mode:</b> <b>1)</b> click one or more <b>source</b> zones, <b>2)</b> right-click (or press <b>Confirm sources</b>), <b>3)</b> click one or more <b>destination</b> zones, <b>4)</b> right-click (or <b>Create links</b>), <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Every source links to every destination. <b>Auto-trace logic</b> builds the whole takt flow for you.</p>'
+        : '<p class="sbld-lede"><b>View mode:</b> click any bar or zone to <b>highlight / inspect</b> its relationships (predecessors + successors). Switch to <b>Edit</b> to connect zones, or open <b>Links</b> to edit them in a table.</p>';
       host.innerHTML = '<h2>3 · Zone sequence — connect the flow</h2>' +
-        '<p class="sbld-lede">This step <b>connects the zones</b>: <b>1)</b> click one or more <b>source</b> zones, <b>2)</b> press <b>Confirm sources</b> (or right-click), <b>3)</b> click one or more <b>destination</b> zones, <b>4)</b> press <b>Create links</b> (or right-click), <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Every source is linked to every destination. Click a bar to <b>highlight / inspect</b> its links; open <b>Links</b> to edit them in a table; <b>Auto-trace logic</b> builds the whole takt flow for you.</p>' +
+        lede +
         tradeChips +
         '<div class="sbld-sec-actions">' +
+        modeToggle +
         '<button class="pd-btn pd-btn-primary" id="b-autotrace">Auto-trace logic</button>' +
         confirmBtn +
-        ((pendSet.length || pendDst.length || linkPhase === 'dst') ? '<button class="pd-btn" id="b-done">Reset selection</button>' : '') +
+        ((editing && (pendSet.length || pendDst.length || linkPhase === 'dst')) ? '<button class="pd-btn" id="b-done">Reset selection</button>' : '') +
         '<button class="pd-btn" id="b-linkmgr">Links (' + cfg.links.length + ')</button>' +
         '<button class="pd-btn" id="b-clear">Clear links</button>' +
         '<span class="sbld-tb-sep2"></span><span class="sbld-quick">Detail ' + LEVELS.map(function (l) { return '<button class="pd-btn sbld-scbtn' + (seqLevel === l[0] ? ' on' : '') + '" data-seqlvl="' + l[0] + '" title="Collapse both the building view AND the resulting schedule to ' + l[1] + ' level (links stay, aggregated between the collapsed bars)">' + l[0] + '</button>'; }).join('') + '</span>' +
@@ -14686,6 +14694,8 @@
       host.querySelectorAll('[data-seqtr]').forEach(function (b) { b.onclick = function () { seqTradeFilter = b.dataset.seqtr; nodeReset(); }; });
       host.querySelectorAll('[data-seqlvl]').forEach(function (b) { b.onclick = function () { seqLevel = +b.dataset.seqlvl; render(); }; });
       host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
+      // View ↔ Edit mode. Leaving Edit clears any half-finished selection so it can't linger into View.
+      host.querySelectorAll('[data-seqmode]').forEach(function (b) { b.onclick = function () { seqMode = b.dataset.seqmode; if (seqMode !== 'edit') { pendSet = []; pendDst = []; linkPhase = 'src'; } render(); }; });
       host.querySelector('#b-autotrace').onclick = openAutoTraceDialog;
       host.querySelector('#b-clear').onclick = function () { if (cfg.links.length && !confirm('Remove all ' + cfg.links.length + ' link(s)?')) return; cfg.links = []; nodeReset(); markDirty(); render(); };
       var cfb = host.querySelector('#b-confirm'); if (cfb) cfb.onclick = function () { nodeConfirm(); };
@@ -14702,15 +14712,16 @@
         function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); grip.classList.remove('drag'); }
         document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
       });
-      var pendEl = host.querySelector('#b-pend'); if (pendEl) pendEl.textContent = !locs.length ? '' :
+      var pendEl = host.querySelector('#b-pend'); if (pendEl) pendEl.textContent = (!locs.length || !editing) ? '' :
         (linkPhase === 'src'
-          ? (pendSet.length ? (pendSet.length + ' source(s) selected — press Confirm sources (or right-click).') : 'Step 1: click one or more source zones.')
-          : (pendDst.length ? (pendDst.length + ' destination(s) selected — press Create links (or right-click).') : 'Step 3: click one or more destination zones.'));
-      host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { var uids = (b.dataset.uids || '').split(' ').filter(Boolean); setFocus(uids); nodeSelectMany(uids); }; });
-      // Clicking a schedule bar (or its row label) SELECTS it for linking too — same as a tower node —
-      // so you can pick a source zone in the bar chart, right-click to move to the destination phase,
-      // pick a destination bar, right-click again. (It also highlights predecessors/successors.)
-      host.querySelectorAll('.sbld-schedbar, .sbld-schedlab').forEach(function (b) { b.addEventListener('click', function () { var uids = (b.getAttribute('data-uids') || '').split(' ').filter(Boolean); if (!uids.length) return; setFocus(uids); nodeSelectMany(uids); }); });
+          ? (pendSet.length ? (pendSet.length + ' source(s) selected — right-click (or Confirm sources).') : 'Step 1: click one or more source zones.')
+          : (pendDst.length ? (pendDst.length + ' destination(s) selected — right-click (or Create links).') : 'Step 3: click one or more destination zones.'));
+      // Click behaviour depends on the mode: EDIT selects zones/bars for linking (source → destination);
+      // VIEW just highlights the clicked node's relationships (predecessors + successors) — inspect only.
+      function clickNode(uids) { if (!uids.length) return; setFocus(uids); if (editing) nodeSelectMany(uids); else render(); }
+      host.querySelectorAll('.sbld-znode').forEach(function (b) { b.onclick = function () { clickNode((b.dataset.uids || '').split(' ').filter(Boolean)); }; });
+      // Schedule bars / row labels behave the same as the tower nodes: inspect in View, select in Edit.
+      host.querySelectorAll('.sbld-schedbar, .sbld-schedlab').forEach(function (b) { b.addEventListener('click', function () { clickNode((b.getAttribute('data-uids') || '').split(' ').filter(Boolean)); }); });
       var fclr = host.querySelector('#b-focusclear'); if (fclr) fclr.onclick = function () { setFocus([]); render(); };
       // Ctrl+scroll to zoom the building view and the resulting schedule.
       bindTowerZoom(host.querySelector('.sbld-twr'));
@@ -14740,8 +14751,10 @@
       uids.forEach(function (u) { var i = set.indexOf(u); if (allIn) { if (i >= 0) set.splice(i, 1); } else if (i < 0) set.push(u); });
       render();
     }
-    // right-click anywhere in the linking pane → confirm the current phase
+    // right-click anywhere in the linking pane → confirm the current phase (Edit mode only; in View
+    // mode right-click does nothing so it stays a pure inspect view).
     function nodeConfirm(ev) {
+      if (seqMode !== 'edit') return;
       if (ev) ev.preventDefault();
       if (linkPhase === 'src') { if (!pendSet.length) { UI.toast('Select one or more source zones first.', 'warn'); return; } linkPhase = 'dst'; render(); return; }
       if (!pendDst.length) { UI.toast('Select one or more destination zones, then right-click.', 'warn'); return; }

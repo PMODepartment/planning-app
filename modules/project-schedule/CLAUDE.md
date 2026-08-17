@@ -72,6 +72,20 @@ pair was run alongside. Also ⚠️ `count=exact` on the whole of `project_sched
 filtered counts are fine. And one `wbs` value came back rendered as `[BLOCKED: JWT token]` — a
 redaction in the browser tool's output, not data.
 
+## Schedule Builder step 3: View / Edit mode toggle (2026-08-18) — eprobles
+Owner: make step 3 easier — a **View** mode where clicking a bar/zone just shows its relationships, and
+an **Edit** mode where clicking selects sources → right-click → destinations → link.
+- New `seqMode` ('view' default | 'edit') + a **Mode View/Edit** segmented toggle at the front of the
+  step-3 actions bar. A shared `clickNode(uids)` handles both tower nodes and schedule bars/labels:
+  always `setFocus` (highlight predecessors/successors), and additionally `nodeSelectMany` (add to the
+  pending source/destination set) **only in Edit mode**.
+- `nodeConfirm` (right-click) no-ops unless Edit mode, so View stays a pure inspect view. The Confirm/
+  Reset-selection buttons and the pending-step hint render only in Edit; the lede text is mode-aware.
+- Switching out of Edit clears any half-finished selection (`pendSet`/`pendDst`/`linkPhase`) so it can't
+  linger into View. Auto-trace / Links / Clear stay available in both modes.
+- Verified: inline script parses; `seqMode` gates clicks + right-click, `data-seqmode` toggle wired,
+  `clickNode` present. ⚠️ **Not verified signed-in** (auth wall). `MODULE_V` → `20260818a`.
+
 ## Schedule Builder step 3: declutter the resulting-schedule diagonal (drop redundant FS labels) (2026-08-18) — eprobles
 Owner screenshot: the step-3 resulting schedule was littered with overlapping "FS" tags piled on the
 bars near the diagonal. Cause: `scheduleSVG` drew a text label on EVERY link, and auto-trace produces
