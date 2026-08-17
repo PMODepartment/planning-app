@@ -1668,8 +1668,12 @@ window.DrawingRegister = (function () {
     ids.splice(before ? ti : ti + 1, 0, draggedId);
 
     var changes = [];
+    // ⚠️ Index once — this was a rows.find per id, and a drag re-sequences every row in the pool,
+    // so it was O(rows²) on a large register.
+    var byId = {};
+    for (var _i = 0; _i < rows.length; _i++) byId[rows[_i].id] = rows[_i];
     ids.forEach(function (id, i) {
-      var r = rows.find(function(x){ return x.id===id; });
+      var r = byId[id];
       var v = pool[i];
       var old = r.sort_order == null ? null : +r.sort_order;
       if (old !== v) { r.sort_order = v; changes.push({ id:id, val:v }); }

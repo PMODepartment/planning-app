@@ -367,6 +367,34 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Swept the remaining O(n x m) hot spots (2026-08-17) — fmlozano
+Wrote a static audit for the shape that caused both stacking-pane wins — a scan of one large
+collection nested inside an iteration of another — and worked the list. 19 candidates, 5 real.
+- ⚠️ **`_wbsCommit`** ran **two** scans of `rows` per node: a `find` for the node's summary row plus
+  a full `forEach` when its code changed. ~1,600 nodes x 4,393 rows = **~14M row visits per WBS
+  commit**, and since renaming near the top of the tree re-codes every descendant, the expensive
+  branch is the COMMON one. Now two indexes built in one pass. ⚠️ Kept `find`'s **first-match**
+  tie-break for the summary row — asserted in the tests, because silently picking a different
+  duplicate would change which row gets renamed.
+- ⚠️ **`_selectedTaskRows`** did a `rows.find` PER SELECTED ID — Ctrl-A on Avesta made it 4,393²
+  (**9.66M** comparisons, measured) and froze copy / bulk-delete / fill-down. One pass now.
+  ⚠️ **Selection ORDER is preserved** (the clipboard pastes in it), so the result is re-sorted by
+  each id's position in the selection rather than by row order.
+- **Reorder persist** (`changes.map -> rows.find`) and **drawing-register's drag re-sequence**
+  (`ids.forEach -> rows.find`): both O(changes x rows), both indexed once.
+- **resource-loading `loadingModel`** looked up the resource master with a `find` **per assignment** —
+  a P6/XER import brings ~55,000 of them.
+- ⚠️ **The audit tool reported wrong line numbers for HTML** (it counts lines in the concatenated
+  `<script>` bodies, not the file) and sent the first fix attempt to the wrong code. Locations were
+  re-derived by grep. A second silent failure followed: a Python patch to the tool didn't match and
+  no-op'd, and the "fixed" run printed identical output. **Both are the same lesson — verify a tool
+  changed what you think before trusting its output.**
+- **Verified 15/15 against the ORIGINAL implementations as oracles**: identical results for single /
+  multi / stale-id / empty / select-all selections, selection order preserved, WBS rows excluded, the
+  summary-row tie-break, and the activity bucket holding exactly the rows the old `forEach` touched —
+  plus the measurement, **9,655,814 -> 4,393 visits**. All 13 suites green (236 assertions).
+  ⚠️ **Not verified signed-in.** `MODULE_V` -> `20260817l`.
+
 ## Bar altitude + progress on every bar (2026-08-17) — fmlozano
 Owner: *"the higher the WBS level the more high level the gantt bars should look like"*, the mixed
 green/blue/grey textures are *"confusing during reporting"*, and *"how should the viewers know what

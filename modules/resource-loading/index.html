@@ -466,8 +466,13 @@
   }
   function loadingModel() {
     var byRes = {}, monthsSet = {}, totUnits = 0, totCost = 0;
+    // ⚠️ Index the resource master once. This was a `rows.resources.find` PER ASSIGNMENT, and a
+    // P6/XER import brings ~55,000 assignments — so the Loading matrix was doing assignments ×
+    // resources comparisons every time it rendered.
+    var resById = {};
+    for (var _i = 0; _i < rows.resources.length; _i++) resById[rows.resources[_i].id] = rows.resources[_i];
     assignments.forEach(function (a) {
-      var res = a.resource_id && rows.resources.find(function (x) { return x.id === a.resource_id; });
+      var res = a.resource_id ? resById[a.resource_id] : null;
       var key = a.resource_id || ('code:' + (a.resource_code || a.role || '—'));
       var b = byRes[key] || (byRes[key] = { name: res ? res.name : (a.resource_code || a.role || '—'), res: res, months: {}, totUnits: 0, totCost: 0, unsched: 0 });
       var units = +a.budgeted_units || 0;

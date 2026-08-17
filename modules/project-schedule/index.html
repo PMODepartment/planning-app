@@ -11623,12 +11623,25 @@
     await _wbsEnsureSummaries();   // heal orphans before syncing codes/names onto their rows
     var codeOf = computeWbsCodes();
     var nodeUp = [], schedUp = [];   // schedUp: {id, patch} for project_schedule rows (summary + activities)
+    // ⚠️ Index ONCE, then look up. This loop ran TWO scans of `rows` per node — a `find` for the
+    // node's summary row, plus a full `forEach` whenever its code changed — i.e. O(nodes × rows).
+    // Avesta has ~1,600 WBS nodes against 4,393 rows, so a single WBS commit cost ~14M row visits
+    // and locked the UI; a rename near the top of the tree changes every descendant's code, so the
+    // expensive branch is the COMMON one, not the rare one.
+    var sumByNode = {}, actsByNode = {};
+    for (var _ri = 0; _ri < rows.length; _ri++) {
+      var _rr = rows[_ri], _nid = _rr.wbs_node_id;
+      if (!_nid) continue;
+      // `find` returned the FIRST matching summary row — keep that exact tie-break.
+      if (isWbs(_rr)) { if (!sumByNode[_nid]) sumByNode[_nid] = _rr; }
+      else (actsByNode[_nid] || (actsByNode[_nid] = [])).push(_rr);
+    }
     WBS_NODES.forEach(function (n) {
       var newCode = codeOf[n.id], oldCode = n.code;
       if (n.code !== newCode) { n.code = newCode; nodeUp.push({ id: n.id, patch: { code: newCode } }); }
-      var sr = rows.find(function (r) { return isWbs(r) && r.wbs_node_id === n.id; });
+      var sr = sumByNode[n.id];
       if (sr && (sr.wbs !== newCode || sr.activity_name !== n.name)) { sr.wbs = newCode; sr.activity_name = n.name; schedUp.push({ id: sr.id, patch: { wbs: newCode, activity_name: n.name } }); }
-      if (oldCode !== newCode) rows.forEach(function (r) { if (!isWbs(r) && r.wbs_node_id === n.id && r.wbs !== newCode) { r.wbs = newCode; schedUp.push({ id: r.id, patch: { wbs: newCode } }); } });
+      if (oldCode !== newCode) (actsByNode[n.id] || []).forEach(function (r) { if (r.wbs !== newCode) { r.wbs = newCode; schedUp.push({ id: r.id, patch: { wbs: newCode } }); } });
     });
     await _batchUpdate('wbs_nodes', nodeUp);
     await _batchUpdate(TABLE, schedUp);
@@ -17232,7 +17245,17 @@
   // clipboard/bulk-delete operate on activities only.
   function _selectedTaskRows() {
     var ids = _selSet.size ? Array.from(_selSet) : (selId ? [selId] : []);
-    return ids.map(function (id) { return rows.find(function (x) { return x.id === id; }); }).filter(function (r) { return r && !isWbs(r); });
+    if (!ids.length) return [];
+    // ⚠️ One pass, not a `rows.find` PER SELECTED ID. Ctrl-A on Avesta selects 4,393 rows, which
+    // made this 4,393² ≈ 19M comparisons and froze copy / bulk-delete / fill-down for seconds.
+    // ⚠️ Selection ORDER is preserved (the clipboard pastes in it), so the result is re-sorted by
+    // the position each id had in `ids` rather than by row order.
+    var want = {};
+    ids.forEach(function (id, i) { want[id] = i; });
+    var out = [];
+    for (var i = 0; i < rows.length; i++) { var r = rows[i]; if (!isWbs(r) && Object.prototype.hasOwnProperty.call(want, r.id)) out.push(r); }
+    out.sort(function (a, b) { return want[a.id] - want[b.id]; });
+    return out;
   }
   // Fields duplicated when a row is copied. Identity (id/activity_id), WBS placement and links
   // (predecessors) are deliberately omitted — placement comes from the paste target and a fresh
@@ -17345,7 +17368,11 @@
   }
   // Apply a recorded reorder's before/after seq_order values (used by undo/redo). seq-only, no refetch.
   async function _reorderApply(changes, key) {
-    await Promise.all(changes.map(function (c) { var v = c[key]; var r = rows.find(function (x) { return x.id === c.id; }); if (r) r.seq_order = v; return sb().from(TABLE).update({ seq_order: v, updated_at: new Date().toISOString() }).eq('id', c.id); }));
+    // ⚠️ Index once — this was a `rows.find` per change, and a reorder inside a large WBS branch
+    // produces one change per sibling, so it was O(changes × rows).
+    var _byId = {};
+    for (var _ci = 0; _ci < rows.length; _ci++) _byId[rows[_ci].id] = rows[_ci];
+    await Promise.all(changes.map(function (c) { var v = c[key]; var r = _byId[c.id]; if (r) r.seq_order = v; return sb().from(TABLE).update({ seq_order: v, updated_at: new Date().toISOString() }).eq('id', c.id); }));
     rebuild(true); renderGrid(); renderGantt();
   }
 
