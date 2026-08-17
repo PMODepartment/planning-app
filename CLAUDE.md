@@ -5630,3 +5630,12 @@ rolling them back 40–337 days could have destroyed the only record of a contra
 planner. The 4 applied all had fully-dated descendants; `end_date` only, row-by-row, each pre-checked.
 Before-state + reverse statements are in `modules/project-schedule/CLAUDE.md`. Verified: row count
 20,716 unchanged, risky rows untouched, `schedule_finish` unmoved. No code change.
+
+### 2026-08-17 — DEMO01 schedule cleared (sandbox)
+6,017 rows deleted after verifying the target: name "Demo Project (sandbox)", one creation burst, a
+copy of Avesta's schedule, 0 baselines/assignments/steps/commitments/cash-flow settings and **0
+`wbs_nodes`** (⚠️ with nodes present, clearing rows alone resurrects the summaries — the 2026-07-17
+bug). Keyset batches of 500, safety facts re-asserted immediately before deleting. Also zeroed the
+project's cached schedule roll-up, which still read 4,393 activities. Verified 0 rows, AVR101
+untouched at 6,016. ⚠️ Not reversible — accepted because it is a reconstructible sandbox, and that
+reasoning must not be reused on a real project. Moots the 74 flagged DEMO01 rows.

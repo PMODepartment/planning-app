@@ -5642,3 +5642,28 @@ await __sb.from('project_schedule').update({end_date:'2025-03-15'}).eq('id','079
 - **Still open:** DEMO01's 74 rows (needs a decision, not a cleanup); the 14 WCB363 traps; the 3
   milestone/turn-over rows above; and the ~52,700 summary rows that are simply NULL — empty, not
   stale, and populating them is a separate product decision.
+
+## DEMO01 schedule cleared (2026-08-17) — fmlozano
+Owner: *"let's just clear the DEMO01 project schedule since this is just a demo project."* Checked the
+target before deleting rather than taking the description on trust — and it held up:
+- `projects.name` = **"Demo Project (sandbox)"**; all **6,017** rows created in ONE burst on
+  2026-07-11; content is a **copy of Avesta** (Tower 1–5 Topping Off, 4,393 activities — AVR101's
+  exact count). **0** schedule_baselines / resource_assignments / activity_steps /
+  weekly_commitments / cash_flow_settings, and **0 `wbs_nodes`**.
+- ⚠️ That last one mattered: with nodes present, deleting schedule rows alone would have let
+  `_wbsEnsureSummaries()` re-project a summary row per surviving node on the next load — the
+  documented 2026-07-17 "Clear did nothing" bug. With 0 nodes the trap does not apply here, but
+  **any future clear must drop `wbs_nodes` too** (that is what the module's own Clear does).
+- Deleted in keyset batches of 500 (a single 6k-row delete can statement-timeout), with the safety
+  facts **re-asserted immediately before the delete** — it would have aborted if the project name had
+  stopped saying "sandbox" or if `wbs_nodes` had become non-zero, rather than deleting under a stale
+  premise. **6,017 → 0.**
+- Also zeroed `projects.schedule_activities/_progress/_start/_finish` for DEMO01: the cached roll-up
+  still read **4,393 activities / 12%**, which the Portfolio and dashboard read, so an emptied project
+  would have kept advertising a schedule. The `projects` row itself is untouched.
+- **Verified:** DEMO01 0 rows, **AVR101 untouched at 6,016**, project row still present.
+- ⚠️ **NOT reversible** — no backup table is creatable from the browser session (DDL needs a key this
+  environment does not have) and 6,017 rows cannot be exported through it. Accepted deliberately: it
+  is a sandbox copy of Avesta and is reconstructible by re-importing. Do NOT apply the same reasoning
+  to a real project.
+- This also moots the **74 flagged DEMO01 summary rows** from the stale-dates investigation.
