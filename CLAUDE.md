@@ -5619,3 +5619,14 @@ no `*_dates_backup_*` table exists, and today's 202 touched summary rows are `_w
   displayed roll-up ambiguity, and the measurement traps (the REST root endpoint now 401s the
   publishable key and its body reads as "0 tables").
 - Docs only — no code, no data, no `MODULE_V` bump.
+
+### 2026-08-17 — 4 stale WBS-summary end_dates corrected on WCB363
+Applied in the owner's signed-in browser (the anon key has **no grants** on `project_schedule`, so
+this is not doable headlessly). ⚠️ Re-derivation **confirmed WCB363** (21 flagged = 7 fixable + 14
+traps) but **disproved the DEMO01 count — it is 74 rows, not 2**, so DEMO01 was left untouched
+pending a decision. ⚠️ Only **4** of the 7 were applied: three "fixable" rows had mostly undated
+descendants (incl. the **SA-3 Milestone**, whose undated children include Substantial Completion), so
+rolling them back 40–337 days could have destroyed the only record of a contractual date — left for a
+planner. The 4 applied all had fully-dated descendants; `end_date` only, row-by-row, each pre-checked.
+Before-state + reverse statements are in `modules/project-schedule/CLAUDE.md`. Verified: row count
+20,716 unchanged, risky rows untouched, `schedule_finish` unmoved. No code change.

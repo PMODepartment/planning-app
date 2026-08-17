@@ -5593,3 +5593,52 @@ it is **not** in `_sumSegsHTML` and **not** in this morning's baseline reinstate
   Gantt any more, but they are still exported to Excel for non-summary paths and would mislead
   anyone querying the table directly. Worth a one-off cleanup or a write-back on rebuild.
 - `MODULE_V` → `20260817u`.
+
+## Stale WBS-summary dates: 4 rows corrected on WCB363 (2026-08-17) — fmlozano
+Follow-on to the "stale WBS-summary dates" finding. Derived and applied in the owner's signed-in
+browser session (the anon key has **no grants at all** on `project_schedule` — `401 42501` — so this
+cannot be done from a headless agent; see the traps below).
+- ⚠️ **Re-derivation confirmed WCB363 and DISPROVED the DEMO01 figure.** WCB363: 21 flagged,
+  **7 fixable / 14 traps** — matches the earlier measurement exactly. **DEMO01 is NOT 2 rows, it is
+  74** (8 fixable, 66 whose computed value is NULL, i.e. a write would erase the stored `bl_start`).
+  DEMO01 was therefore left entirely alone — a 2 → 74 scope change is an owner decision, not a
+  cleanup. ⚠️ Do not trust the "2" recorded in the earlier entry.
+- ⚠️ **3 of the 7 "fixable" WCB363 rows were NOT applied, because the mechanical rule is not
+  sufficient.** A row passes as fixable if *any* descendant carries a date, but three had mostly
+  undated descendants and the roll-up would have dragged the stored date backwards by 40–337 days:
+  `1.1.1` Milestone (16/19 dated), `1.1.1.2` **SA-3 Milestone** (12/15) and
+  `1.1.3.7.16.1.1.1.4.4.1` Turn Over from STR – ABWF (**2/15**). On the two milestones the undated
+  descendants include *"Substantial / Practical Completion incl. Partial Occupancy Permit"*, so the
+  stored 2025-10-30 may be the only record of the SA-3 contractual date. Same trap as the 14, one
+  level subtler. **Left for a planner.**
+- **Applied — 4 rows, `end_date` only, one row at a time, each pre-checked to still hold the exact
+  expected value before writing** (a mismatch would have aborted the whole run):
+
+| id | wbs | name | end_date before → after |
+|---|---|---|---|
+| 2109e622-ac2f-466c-9a69-fff89393d318 | 1.1.3.7.14.1.1.3.1 | Permits | 2024-08-28 → 2024-07-19 |
+| 788017d5-9296-406f-97fa-0a7f0bcaf3d3 | 1.1.3.7.17.7.2 | Transformer, Main VCB and Switchgear Room | 2023-09-30 → 2023-07-01 |
+| 7f1846a2-41bb-46d3-883d-e09b71e73bf3 | 1.1.3.7.17.7.2.1 | ABWF Works | 2023-09-30 → 2023-07-01 |
+| 079407be-aaa2-4a33-a51d-c31c59ea7bd9 | 1.1.3.7.14.2 | Waterproofing of Decks | 2025-03-15 → 2025-01-14 |
+
+  All four had **fully-dated descendants** (2/2, 2/2, 2/2, 29/30), so nothing was inferred from
+  absent data. `start_date`/`bl_start`/`bl_finish` were untouched (all four rows carry NULL baselines).
+- **REVERSE (paste into the browser console on a signed-in page to undo):**
+```js
+await __sb.from('project_schedule').update({end_date:'2024-08-28'}).eq('id','2109e622-ac2f-466c-9a69-fff89393d318');
+await __sb.from('project_schedule').update({end_date:'2023-09-30'}).eq('id','788017d5-9296-406f-97fa-0a7f0bcaf3d3');
+await __sb.from('project_schedule').update({end_date:'2023-09-30'}).eq('id','7f1846a2-41bb-46d3-883d-e09b71e73bf3');
+await __sb.from('project_schedule').update({end_date:'2025-03-15'}).eq('id','079407be-aaa2-4a33-a51d-c31c59ea7bd9');
+```
+- **Verified after:** all four re-read at their new values; the 3 risky rows + a sample trap row
+  confirmed **unchanged**; WCB363 row count **20,716 before and after**; no other project touched.
+  `projects.schedule_finish` for WCB363 is **2025-12-21, unmoved** (the corrections all pull dates
+  *earlier* and none was the project max).
+- ⚠️ **Traps for anyone repeating this:** the anon key has zero grants, so a headless agent cannot
+  read this table at all — it must run in a signed-in browser session. And the PostgREST root
+  endpoint 401s that key while returning a body that parses to `{}`, which reads as "nothing exists";
+  every probe here was gated with a known-present AND a known-missing table (`PGRST205`) to tell a
+  real empty result from a silent auth failure.
+- **Still open:** DEMO01's 74 rows (needs a decision, not a cleanup); the 14 WCB363 traps; the 3
+  milestone/turn-over rows above; and the ~52,700 summary rows that are simply NULL — empty, not
+  stale, and populating them is a separate product decision.
