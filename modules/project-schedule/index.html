@@ -532,6 +532,23 @@
     .ps-stk-band i { position:absolute; left:0; top:0; bottom:0; display:block; }
     /* Legend chip -> band highlight. Dimming the rest is what makes one category findable in a
        7-tower grid; the lit bands also get a ring so they read even against a pale fill. */
+    /* One consolidated legend: the bar-mark row sits directly above the category controls, with a
+       hairline between rather than the old gap between two separate blocks. */
+    .ps-actlegend > .ps-legend { margin:0 0 8px; padding-bottom:8px; border-bottom:1px dashed var(--pd-line); }
+    /* "N more, not on screen" -> hover reveals WHICH ones, instead of a tooltip. */
+    .ps-alg-more { position:relative; cursor:help; text-decoration:underline dotted; text-underline-offset:2px; }
+    .ps-alg-morepop { display:none; position:absolute; bottom:calc(100% + 6px); left:0; z-index:60;
+      width:min(460px,80vw); max-height:46vh; overflow:auto; padding:10px 12px; border-radius:8px;
+      background:var(--pd-card); border:1px solid var(--pd-line); box-shadow:0 10px 28px rgba(0,0,0,.28);
+      font-size:12px; line-height:1.5; color:var(--pd-ink); text-align:left; cursor:default; }
+    /* Hover the label OR the panel itself, so the list stays open long enough to read/scroll. */
+    .ps-alg-more:hover .ps-alg-morepop, .ps-alg-morepop:hover { display:block; }
+    .ps-alg-morepop b { display:block; margin-bottom:2px; }
+    .ps-alg-morepop i { display:block; font-style:normal; color:var(--pd-muted); margin-bottom:7px; }
+    .ps-alg-morepop u { display:flex; flex-wrap:wrap; gap:4px 6px; text-decoration:none; }
+    .ps-alg-morepop em { font-style:normal; background:var(--pd-bg); border:1px solid var(--pd-line);
+      border-radius:3px; padding:1px 6px; white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+    .ps-alg-morepop em.more { background:none; border:none; color:var(--pd-muted); }
     .ps-stk-legchip { cursor:pointer; border-radius:3px; padding:1px 4px; margin:-1px -4px; }
     .ps-stk-legchip:hover { background:var(--pd-bg); }
     .ps-stk-legchip.on { background:var(--pd-red-light); box-shadow:inset 0 0 0 1px var(--pd-red); }
@@ -1718,25 +1735,20 @@
           <!-- Set by doRender: how many activities the grouping filtered out for having no value on
                a grouping level. Never let that hiding be silent. -->
           <span id="ps-gb-hidden" style="display:none;color:var(--pd-muted);"></span>
+          <!-- Set by doRender: top-level branches "Hide empty groups" is suppressing. Owner reported
+               un-ticking "Execution Phase only" as broken because nothing came back — the other
+               phases are simply EMPTY, and that was hidden silently with nothing to read. -->
+          <span id="ps-empty-hidden" style="display:none;color:var(--pd-muted);"></span>
           <label class="ps-foot-chk" title="Hide WBS groups that contain no activities"><input type="checkbox" id="ps-hide-empty"> Hide empty groups</label>
           <button class="pd-btn" id="ps-download" title="Export the schedule to Excel"><span data-ico="download" data-ico-size="14"></span> Download</button>
         </div>
 
-        <!-- Gantt legend — moved below the grid footer -->
-        <div class="ps-legend">
-          <!-- ⚠️ .lg-lsmoff = "only true when the activity legend is OFF". In LSM mode the bar IS the
-               category colour (light = planned, solid = complete) and neither the red %-fill, the
-               summary roll-up bar nor the BL0 bar is drawn — so leaving these three on screen would
-               describe marks that no longer exist. Hidden via #ps-view-schedule.ps-lsm. -->
-          <span class="lg lg-lsmoff"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>
-          <span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>
-          <span class="lg lg-lsmoff"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>
-          <span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>
-          <span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>
-        </div>
-
-        <!-- Activity legend: colours the Gantt bars by activity CATEGORY (LSM-style).
-             Rendered by renderActLegend(); hidden until the project has categories. -->
+        <!-- ONE legend for one Gantt. The bar-mark key (Activity / WBS summary / Baseline /
+             Milestone / Data date) and the activity-category key used to be two separate blocks
+             describing the same chart; the marks row is now emitted by renderActLegend() as the
+             first line of this container so they read as a single section.
+             ⚠️ Kept as a fallback in the markup for the one state renderActLegend() bails out of
+             (no project / no rows), where it would otherwise leave the strip empty. -->
         <div class="ps-actlegend" id="ps-actlegend" style="display:none;"></div>
 
         <!-- OPC-style Activity Details / Project Usage panel (driven by selected activity) -->
@@ -8759,6 +8771,21 @@
       _gbh.style.display = _gbHidden ? '' : 'none';
       _gbh.textContent = _gbHidden ? ('· ' + _gbHidden + ' hidden (no value on a grouping level)') : '';
       _gbh.title = 'The grouping also filters. Turn off “Hide activities missing a grouping value” in the Group menu to show them.';
+    }
+    // ⚠️ "Hide empty groups" was suppressing whole top-level phases with nothing to say so. On
+    // OPW101 that is Milestones / Initiation / Planning / Closeout — all genuinely 0 activities —
+    // which made un-ticking "Execution Phase only" look broken: the filter really did widen, there
+    // was just nothing behind it to show. Name them instead of hiding the hiding.
+    var _eh = document.getElementById('ps-empty-hidden');
+    if (_eh) {
+      var _empties = emptyTopBranches();
+      _eh.style.display = _empties.length ? '' : 'none';
+      _eh.textContent = _empties.length ? ('· ' + _empties.length + ' empty branch' + (_empties.length === 1 ? '' : 'es') + ' hidden') : '';
+      _eh.title = _empties.length
+        ? (_empties.join(', ') + ' — ' + (_empties.length === 1 ? 'this branch holds' : 'these hold') +
+           ' no activities at all, so “Hide empty groups” is leaving ' + (_empties.length === 1 ? 'it' : 'them') +
+           ' out. Un-tick that box to show ' + (_empties.length === 1 ? 'it' : 'them') + ' as empty headings.')
+        : '';
     }
     var rg = range(), min = rg.min, max = rg.max, dayw = DAYW[zoom] * ganttScale;
     _rMin = min; _rDayw = dayw;
@@ -16028,6 +16055,33 @@
   }
   // Names the thing being counted after the legend ("· 7 more, not on screen") in the user's own
   // terms — "activity names" / "disciplines" reads as an explanation; "categories" reads as jargon.
+  // The bar-mark key, now rendered as the FIRST row of the single consolidated legend.
+  // ⚠️ .lg-lsmoff = "only true when the activity legend is OFF". In LSM mode the bar IS the category
+  // colour (light = planned, solid = complete) and neither the red %-fill, the summary roll-up bar
+  // nor the BL0 bar is drawn — so leaving those three on screen would describe marks that no longer
+  // exist. Hidden via the existing `#ps-view-schedule.ps-lsm .lg-lsmoff` rule, which still applies
+  // now that the row lives inside #ps-actlegend (same subtree, same classes).
+  var MARKS_LEGEND_HTML =
+    '<div class="ps-legend">' +
+      '<span class="lg lg-lsmoff"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>' +
+      '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
+      '<span class="lg lg-lsmoff"><span class="lg-swatch lg-bl"></span> Baseline (BL0)</span>' +
+      '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
+      '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>' +
+    '</div>';
+  // Top-level WBS branches that contain NO activity anywhere beneath them, and so are dropped by
+  // "Hide empty groups". Reads `rows` (not DL) on purpose — DL is the post-filter list these are
+  // already missing from, so it could never tell us what went.
+  function emptyTopBranches() {
+    if (!_hideEmptyGroups || !rows.length) return [];
+    var tops = rows.filter(function (r) { return isWbs(r) && r.wbs && r.wbs.indexOf('.') === -1; });
+    if (!tops.length) return [];
+    return tops.filter(function (t) {
+      return !rows.some(function (a) {
+        return !isWbs(a) && a.wbs && (a.wbs === t.wbs || a.wbs.indexOf(t.wbs + '.') === 0);
+      });
+    }).map(function (t) { return String(t.activity_name || t.wbs); });
+  }
   function _catNoun(cfg) {
     var f = (cfg || catCfg()).field;
     if (f === 'work') return 'disciplines / trades';
@@ -16069,6 +16123,13 @@
       // which is the entire point of the LSM layout.
       if (catKeySet()) { list = list.filter(function (c) { return !c.muted; }); _hidden = 0; }
     }
+    // The actual names behind the "N more" count — the owner asked to SEE which ones, not read a
+    // number. Derived as the set difference so it can never disagree with `_hidden`.
+    var _hiddenNames = [];
+    if (_vis && _hidden > 0) {
+      var _inList = {}; list.forEach(function (c) { _inList[c.value] = 1; });
+      _hiddenNames = _all.filter(function (c) { return !_inList[c.value]; }).map(function (c) { return c.value; });
+    }
     var opts = catFieldOptions().map(function (o) {
       return '<option value="' + esc(o[0]) + '"' + (o[0] === cfg.field ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
     }).join('');
@@ -16080,10 +16141,16 @@
                 '<input type="color" class="ps-alg-clr ps-catclr" data-v="' + esc(c.value) + '" value="' + c.color + '"></span>' +
                 '<span>' + esc(c.value) + '</span></span>';
             }).join('') + (list.length > MAXL ? '<span>+' + (list.length - MAXL) + ' more</span>' : '') +
-            (_hidden > 0 ? '<span class="ps-alg-more" title="' + esc(_hidden + ' more ' + _catNoun(cfg) + ' exist on this project, but none of their activities are among the rows on screen right now — so there is nothing here for them to key. Usually the branch holding them is still collapsed; a filter or “Execution Phase only” can also exclude them. Expand a WBS branch and they appear.') + '">· ' + _hidden + ' more, not on screen</span>' : '')
+            (_hidden > 0 ? '<span class="ps-alg-more">· ' + _hidden + ' more, not on screen' +
+                '<span class="ps-alg-morepop"><b>' + _hidden + ' ' + esc(_catNoun(cfg)) + ' with nothing on screen</b>' +
+                '<i>They exist on this project, but none of their activities are among the rows currently shown — usually the branch holding them is still collapsed. Expand it and they appear here.</i>' +
+                '<u>' + _hiddenNames.slice(0, 80).map(function (v) { return '<em>' + esc(v) + '</em>'; }).join('') +
+                (_hiddenNames.length > 80 ? '<em class="more">+' + (_hiddenNames.length - 80) + ' more…</em>' : '') +
+                '</u></span></span>' : '')
           : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>')
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
     host.innerHTML =
+      MARKS_LEGEND_HTML +
       '<div class="ps-actlegend-head">' +
         '<label><input type="checkbox" id="ps-alg-on"' + (cfg.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
         '<select class="pd-select ps-alg-field" id="ps-alg-field">' + opts + '</select>' +

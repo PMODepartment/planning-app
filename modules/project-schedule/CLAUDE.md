@@ -367,6 +367,33 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## One legend, an explained empty-branch hide, and a visible "N more" list (2026-08-17) — fmlozano
+Three owner asks in one pass.
+- **Consolidated the two legends.** The bar-mark key (Activity / WBS summary / Baseline / Milestone /
+  Data date) and the activity-category key were separate blocks describing the same chart. The marks
+  row is now `MARKS_LEGEND_HTML`, emitted by `renderActLegend()` as the first line of `#ps-actlegend`
+  with a hairline under it. ⚠️ The `.lg-lsmoff` marks still hide correctly in LSM mode — the existing
+  `#ps-view-schedule.ps-lsm .lg-lsmoff` rule applies unchanged because the row stays in the same
+  subtree with the same classes. ⚠️ The static div is retained (now empty) for the one state
+  `renderActLegend()` bails out of — no project / no rows — where it would otherwise leave a gap.
+- ⚠️ **"Execution Phase only" was NOT broken.** Confirmed against live OPW101: Milestones,
+  Initiation Phase, Planning Phase and Closeout Phase hold **0 activities each** (only Execution
+  Phase has any — 962). Un-ticking the toggle really did widen the filter; there was simply nothing
+  behind it, and **"Hide empty groups" removed those branches silently**, so the toggle looked dead.
+  Fixed the legibility, not the filter: the footer now reads **"· 4 empty branches hidden"** and
+  names them in the tooltip with what to do about it. `emptyTopBranches()` reads `rows`, not `DL` —
+  DL is the post-filter list they are already missing from, so it could never say what went.
+- **"N more, not on screen" now shows WHICH.** Hovering opens a panel listing the actual names
+  (capped at 80 + "…"), replacing a tooltip that only restated the number. Derived as a set
+  difference from the same lists, so it can never disagree with the count. Hover is forgiving — the
+  panel stays open while the pointer is over it, so a long list can be read and scrolled.
+- **Verified 12/12** against the sliced shipped `emptyTopBranches` on the real OPW101 shape: exactly
+  the 4 empty branches named, Execution excluded, only top-level rows considered, a branch counted
+  empty even when it holds empty CHILD branches, silence when the checkbox is off, and ⚠️ a
+  **dot-anchored prefix test proving "4" does not absorb "41"**; plus the hidden-name set difference
+  in all four directions. All 5 earlier suites still green (91 assertions). ⚠️ **Not verified
+  signed-in.** `MODULE_V` → `20260817b`.
+
 ## Data cleanup executed across ALL projects (2026-08-17) — fmlozano
 Owner signed off: "Let's do a complete clean for all projects." Run against live via the Management
 API. ⚠️ **Full backup taken first: `wbs_summary_backup_20260817` holds all 103,548 pre-clean
