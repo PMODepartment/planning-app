@@ -5717,3 +5717,15 @@ start date, so a branch reads as an LSM staircase.
   shipped CSS. All seven existing suites green, 0 functions lost. ⚠️ Not verified signed-in.
   Full arithmetic, the bracket floor and the traps: `modules/project-schedule/CLAUDE.md`.
 - `MODULE_V` → `20260818d`.
+
+### 2026-08-18 — Project Schedule: Discipline/Trade groups sort in construction order
+Owner: group by Discipline/Trade should read Gen Req → Site Works → Structural → Archi → MEPF →
+Allied → Others. ⚠️ **`WORK_ORDER` existed but was missing half the vocabulary** — General
+Requirements was **unranked, so it sorted last**, and Site Works sat after MEPF. Every trade is now
+listed under both the canonical `WORK_CANON` label and the Schedule Builder's short `GLABEL`, since a
+project pushed before the GWORK fix still carries the short one and an unranked value silently falls
+to the end. Verified against the shipped `cmpWorkName` (sliced + executed): both label sets sort to
+the owner's order, an unknown trade stays after the known ones but before the blank bucket, matching
+stays case-insensitive. Parse clean. ⚠️ Not verified signed-in. `MODULE_V` → `20260818e`.
+⚠️ **Still open:** the duplicated WBS rows after a Schedule Builder push — investigated, not
+reproduced; ruled-out causes and the exact live query needed are in the module's CLAUDE.md.

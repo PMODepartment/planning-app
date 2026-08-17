@@ -6157,3 +6157,38 @@ overloaded bar.
   `.ps-sum-strip` added to the Gantt click delegate's `closest()` list first, or a click on a band
   would deselect the row.
 - `MODULE_V` → `20260817x`.
+
+## Discipline/Trade groups sort in construction order (2026-08-18) — fmlozano
+Owner asked for Gen Req → Site Works → Structural → Archi → MEPF → Allied Services → Others.
+- ⚠️ **`WORK_ORDER` already existed but was missing half the vocabulary** — it listed only
+  `structural / architectural / mepf / allied / site development`, so **General Requirements was
+  unranked and fell to the END** (an unranked value sorts after every known trade), and Site Works
+  was ranked after MEPF rather than second. That is the reported order, from four missing strings.
+- Each trade is now listed under **both spellings it can reach the grid by**: the canonical
+  `WORK_CANON` label written by imports and the discipline wizard (`Structural Works`) and the
+  Schedule Builder's short `GLABEL` (`Structural`). GWORK is supposed to merge those into one bucket,
+  but a project pushed before that fix still holds the short label — and an unranked value silently
+  falls to the end, which is exactly the failure this list exists to prevent.
+- **Verified against the SHIPPED `cmpWorkName`** (sliced out and executed, not reimplemented):
+  canonical labels sort to the owner's order, short builder labels sort to the same order, an unknown
+  trade still lands after the known ones but **before** the blank "— No discipline/trade —" bucket,
+  and matching stays case/whitespace-insensitive. Parse clean (1 block, 0 fail).
+- ⚠️ **Not verified signed-in.** `MODULE_V` → `20260818e`.
+
+⚠️ **OPEN — duplicated WBS rows after a Schedule Builder push (owner report, NOT fixed).** Screenshot
+shows General Requirements / Site Works / Allied Services each rendered **twice** with identical dates
+and %, while Structural / Architectural / MEPF appear **once**. Investigated, not reproduced; recording
+what has been ruled OUT so the next pass does not redo it:
+- **Not the skeleton.** `WBS_SKELETON` is Milestones / Initiation / Planning (+3 children) / Execution /
+  Closeout — it contains no trade names, so a push cannot collide with a seeded node.
+- **Not `buildTree` emitting two buckets per trade.** `dimKey('trade')` returns `l.trade`, so one
+  bucket per distinct trade code per push.
+- **The 3-of-6 split is the real clue** and is unexplained: GR / SW / ALLIED duplicate, ST / AR / MEPF
+  do not. Worth checking next: whether the project was pushed twice (each push inserts a fresh
+  `wbs_nodes` row per trade — `ensureNode` keys on `'N'+(++nodeSeq)`, so it dedupes **within** one push
+  and not across pushes), and whether the `wbsOk === false` fallback ran, since that path writes dotted
+  summary rows with **no `wbs_node_id`** — and `_wbsEnsureSummaries`' duplicate heal keys on
+  `wbs_node_id`, so it cannot see or heal those.
+- ⚠️ Needs a live query of `project_schedule` + `wbs_nodes` for that project (`wbs`, `wbs_node_id`,
+  `created_at` per duplicate pair) — `created_at` clustering will immediately say "two pushes" vs "one
+  push wrote two rows". The anon key has no grants, so it must run in a signed-in browser session.

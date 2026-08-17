@@ -5132,7 +5132,21 @@
   // Construction-sequence order for Discipline/Trade groups (the trades a build actually proceeds
   // through), not alphabetical. Anything not on the list falls after the known trades but still
   // before the blank "— No discipline/trade —" bucket, which always sinks to the bottom.
-  var WORK_ORDER = ['structural works', 'architectural works', 'mepf works', 'allied services', 'site development works', 'site development'];
+  // ⚠️ Owner-specified order (2026-08-18): Gen Req → Site Works → Structural → Architectural → MEPF
+  // → Allied Services → Others. Each trade is listed under BOTH spellings it can reach the grid by:
+  // the canonical WORK_CANON label written by imports and the discipline wizard ("Structural Works"),
+  // and the Schedule Builder's short GLABEL ("Structural"). They should merge into one bucket via
+  // GWORK, but a project pushed before that fix still holds the short label, and an unranked value
+  // silently falls to the end of the list — which is the failure this ordering exists to prevent.
+  var WORK_ORDER = [
+    'general requirements', 'general requirement',
+    'site works', 'sitework', 'site development works', 'site development',
+    'structural works', 'structural',
+    'architectural works', 'architectural',
+    'mepf works', 'mepf',
+    'allied services', 'allied',
+    'others', 'other'
+  ];
   function cmpWorkName(a, b) {
     var ua = /^—/.test(a), ub = /^—/.test(b);
     if (ua !== ub) return ua ? 1 : -1;
