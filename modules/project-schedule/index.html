@@ -16329,6 +16329,12 @@
   // this never leaks one site's phases into another's.
   function stkPhaseInScope(r, levelId) {
     var outer = stkOuterLevels(levelId);
+    // ⚠️ A phase that NAMES a tower belongs to that tower only — never to all of them.
+    var named = stkPhaseNamedScope(r, levelId);
+    if (named) {
+      var want = _stkScope[named.levelId];
+      return !want || want === named.value;
+    }
     for (var i = 0; i < outer.length; i++) {
       var want = _stkScope[outer[i].id]; if (!want) continue;
       var got = locValOf(r, outer[i].id);
@@ -16388,8 +16394,15 @@
   // canonical phase label, and rendered as phase rows ranked above the roof (1000+) in first-start
   // order. Keyword-matched activities are excluded from stkTowerWideCats() so they can't also fold
   // into a floor band — a phase is shown once, as its own row.
+  // ⚠️ NOT a phase, however much the keyword looks like one. Audited against AVR101 (2026-08-17):
+  //   • bare "testing" matched **Material Testing** — a QA activity running Apr-2025 → Aug-2027 —
+  //     and it was the ONLY thing feeding "Testing & Commissioning" on that project. The purple
+  //     T&C band was therefore pure false positive; Avesta has no commissioning work modelled.
+  //   • "Commercial / Financial / Technical Closeout" are per-work-package COMMERCIAL admin (14 of
+  //     each on AVR101), not the building's closeout. Only "Tower N Full/Partial Closeout" is.
+  var STK_PHASE_NOT = /^\s*(commercial|financial|technical)\b/i;
   var STK_PHASES = [
-    { re: /(commission|pre[-\s]?comm|testing|\bt\s*&\s*c\b|\bt\s*and\s*c\b)/i, label: 'Testing & Commissioning', color: '#8e44ad' },
+    { re: /(commission|pre[-\s]?comm|\bt\s*&\s*c\b|\bt\s*and\s*c\b)/i, label: 'Testing & Commissioning', color: '#8e44ad' },
     { re: /punch/i, label: 'Punchlisting', color: '#e67e22' },
     { re: /(handover|hand\s*over|turn\s*over|turnover)/i, label: 'Handover', color: '#c0392b' },
     { re: /(close\s*out|closeout)/i, label: 'Closeout', color: '#16a085' },
@@ -16397,7 +16410,23 @@
   ];
   function stkPhaseLabel(r) {
     var s = String(r && r.activity_name || '');
+    if (STK_PHASE_NOT.test(s)) return null;
     for (var i = 0; i < STK_PHASES.length; i++) if (STK_PHASES[i].re.test(s)) return STK_PHASES[i];
+    return null;
+  }
+  // ⚠️ A phase activity usually NAMES its tower ("Tower 3 Handover", "Tower 5 Full Closeout")
+  // instead of carrying a Tower value — AVR101 has exactly one Handover per tower, each with its
+  // own date. Treating those as whole-building made all 7 towers inherit Tower 1's handover, which
+  // is why every floor of every tower painted the same colour. Returns the tower a phase names.
+  function stkPhaseNamedScope(r, levelId) {
+    var outer = stkOuterLevels(levelId); if (!outer.length) return null;
+    var pl = outer[outer.length - 1];
+    var vals = stkScopeValues(pl.id) || [];
+    var nm = String(r && r.activity_name || '').toLowerCase();
+    for (var i = 0; i < vals.length; i++) {
+      var v = String(vals[i].value == null ? '' : vals[i].value).trim();
+      if (v && nm.indexOf(v.toLowerCase()) !== -1) return { levelId: pl.id, value: v };
+    }
     return null;
   }
   // EXACT-label match (not the regex) — used to recognise a location value the phase wizard WROTE, so
@@ -16464,21 +16493,19 @@
       // ⚠️ A phase the "Tag phases…" wizard WROTE carries the phase label AS its Level value, so it
       // arrives here rather than via stkPhaseRows — and it still has no tower value. Scope it by the
       // whole-building rule or it is filtered out of every tower exactly like the untagged case.
-      var isPh = !!stkPhaseByLabel(loc);
-      if (!(isPh ? stkPhaseInScope(r, levelId) : stkInScope(r, levelId))) return;
+      // ⚠️ A location whose value IS a phase label (written by the "Tag phases…" wizard) no longer
+      // gets a band of its own. That is what was STILL drawing separate Closeout / Handover /
+      // Testing & Commissioning rows above the floors after the fold: they were not stkPhaseRows()
+      // output at all, they were ordinary location bands named after a phase. The activities are
+      // still counted — stkPhaseCats() picks them up by name — so nothing is lost, it just stops
+      // being a second bar for work already folded into every floor.
+      if (stkPhaseByLabel(loc)) return;
+      if (!stkInScope(r, levelId)) return;
+      // ⚠️ Phase activities no longer need an escape hatch here — they are handled entirely by
+      // stkPhaseCats(), which is field-independent. (They used to be dropped at this line for
+      // carrying no work_type, which is why they vanished under Discipline / Trade.)
       var v = catValOf(r, cfg.field);
-      if (!v || !(v in catIdx)) {
-        // ⚠️ A PHASE row is coloured by its phase (purple T&C, orange Punchlisting, …), never by the
-        // "Colour activities by" field — so dropping it for having no value on that field is wrong.
-        // That is why Closeout / Testing & Commissioning / Handover vanished under
-        // **Discipline / Trade** but showed under Activity name: every activity has a name, but
-        // whole-building end-phase activities routinely carry no work_type. Keep them, and let the
-        // band take its state from the activities themselves (see `acts` in the phase branch below).
-        if (!isPh) return;
-        var b0 = by[loc] || (by[loc] = { loc: loc, cats: {} });
-        (b0.acts || (b0.acts = [])).push(r);
-        return;
-      }
+      if (!v || !(v in catIdx)) return;
       var b = by[loc] || (by[loc] = { loc: loc, cats: {} });
       (b.cats[v] || (b.cats[v] = [])).push(r);
     });

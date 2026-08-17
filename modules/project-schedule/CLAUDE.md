@@ -367,6 +367,37 @@ main — the session's original edits were made on the stale `module/schedule-bu
   inline JS parses (`new Function`); leaf-remap counts unit-checked. **NOT browser-verified** (module
   is auth-gated; local server redirects to sign-in).
 
+## Phase AUDIT against live AVR101: the detection was over-matching (2026-08-17) — fmlozano
+Owner asked "audit the closeout, how is this showing?" — queried the live schedule. The answer is
+that **most of what the stack called a phase was not one.**
+- ⚠️ **"Testing & Commissioning" was 100% FALSE POSITIVE on AVR101.** The only activities matching
+  were **Material Testing** ×2 (Apr-2025 → Aug-2027) — QA sampling, not commissioning. The bare
+  `testing` keyword was doing it. Avesta models no commissioning work at all, so the purple band was
+  showing a QA task as a building phase. Keyword narrowed to `commission | pre-comm | T&C`.
+- ⚠️ **"Closeout" was mostly per-work-package COMMERCIAL admin** — `Commercial Closeout` ×14,
+  `Financial Closeout` ×14, `Technical Closeout` ×14, scattered Jul-2026 → Nov-2027. The building's
+  actual closeout is only `Tower N Full/Partial Closeout`. Added `STK_PHASE_NOT`
+  (`^(commercial|financial|technical)`), which keeps the real ones and drops the admin.
+- ⚠️ **Phases are PER TOWER on this project, not whole-building.** `Tower 1 Handover` 2026-12-21 …
+  `Tower 4 Handover` 2027-08-31 — one each, each with its own date, and the tower is in the NAME
+  rather than in a Tower field. Treating them as whole-building made **all 7 towers inherit one
+  tower's dates**, which is why every floor of every tower painted the same colour in the owner's
+  screenshot. `stkPhaseNamedScope()` now reads the tower out of the activity name and scopes the
+  phase to it; a phase naming no tower stays whole-building as before.
+- **Separate phase rows removed for real.** They were never `stkPhaseRows()` output — they were
+  ordinary location bands whose Level value the "Tag phases…" wizard had set to a phase label.
+  `stackModel` now drops those locations (`if (stkPhaseByLabel(loc)) return;`); the activities are
+  still counted through `stkPhaseCats()`, so nothing is lost, it just stops being a second bar for
+  work already folded into every floor.
+- ⚠️ **Caught before shipping:** removing the phase branch from the bucketing loop left `isPh`
+  referenced but undefined — a ReferenceError that parses fine. Found by grepping the symbol after
+  the edit, not by the parse check, which is exactly the class this module has shipped twice.
+- **Verified 19/19 on REAL AVR101 activity names**, incl. Material Testing rejected, all three
+  admin-closeout variants rejected while `Tower N Full/Partial Closeout` are kept, per-tower
+  attribution picking the right tower, and ⚠️ **the regression asserted directly — Tower 4 Handover
+  is NOT in scope for Tower 1**. All 9 suites green (152 assertions). ⚠️ **Not verified signed-in.**
+  `MODULE_V` → `20260817f`.
+
 ## Legend audit + end phases folded into the floor bands (2026-08-17) — fmlozano
 - ⚠️ **REGRESSION I INTRODUCED, caught by the owner.** Baseline (BL0) / Activity / WBS summary
   reappeared in LSM mode. The hiding rule was `#ps-view-schedule.ps-lsm **.ps-legend** .lg-lsmoff`,
