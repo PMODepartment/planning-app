@@ -3894,7 +3894,22 @@
   // view or persisted order can't group by something that isn't there any more.
   function normalizeGroupBys() {
     var valid = allDims();
-    var out = groupBys.filter(function (d) { return valid.indexOf(d) !== -1; });
+    // ⚠️ A grouping level is only STALE if the registry it comes from is LOADED and does not contain
+    // it. `allDims()` is built from LOC_LEVELS / CODE_TYPES, which are fetched per project and are
+    // tolerant of failure ("no table -> no levels"), so an empty registry means either "this project
+    // has none" OR "the fetch failed / has not landed". Treating those alike silently DELETED the
+    // planner's saved location grouping: measured live on AVR101, a load where `location_levels`
+    // came back empty turned "Discipline / Trade › Level" into plain "Discipline / Trade", with the
+    // Group menu offering zero location levels — the grouping looked like it had reset itself.
+    // Keeping the level when the registry is empty is safe: dimValOf/dimRawOf resolve it through
+    // `r.location[levelId]`, which simply yields no value, and the level reappears intact as soon as
+    // a load does bring the registry back. Only a registry that IS loaded may retire a level.
+    var out = groupBys.filter(function (d) {
+      if (valid.indexOf(d) !== -1) return true;
+      if (d.indexOf('loc:') === 0) return !LOC_LEVELS.length;
+      if (d.indexOf('code:') === 0) return !CODE_TYPES.length;
+      return false;
+    });
     var w = out.indexOf('wbs');
     if (w !== -1 && w !== out.length - 1) { out.splice(w, 1); out.push('wbs'); }   // wbs is only ever last
     if (!out.length) out = ['wbs'];
