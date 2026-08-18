@@ -92,8 +92,8 @@ build: **the freeze is not real.**
   `location_levels` came back empty. `normalizeGroupBys()` filtered against `allDims()`, and since that
   fetch is deliberately tolerant ("no table → no levels"), an empty registry could mean "not loaded /
   failed" — yet every `loc:` level was dropped anyway. Seen live twice on AVR101: `Discipline / Trade ›
-  Level` came back as plain `Discipline / Trade` with zero location levels in the Group menu, while
-  localStorage still held the right grouping. A level is now retired only when its registry is loaded
+  Level` came back as plain `Discipline / Trade` while localStorage still held the right grouping (group-button
+  text, plus the instrumented build logging `dims=["work"]` for a stored `["work","loc:<Level>"]`). A level is now retired only when its registry is loaded
   and genuinely lacks it. **9 new checks (55 total, green).** ⚠️ Not verified live — the trigger is an
   intermittently empty response I cannot force. See `modules/project-schedule/CLAUDE.md`.
 

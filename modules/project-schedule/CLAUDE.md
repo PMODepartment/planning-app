@@ -6448,9 +6448,14 @@ still hidden.
 empty registry means *either* "this project has none" *or* "the fetch failed / returned nothing" — and
 the filter treated them alike, **deleting every `loc:` level from the planner's grouping**.
 - **Seen live on AVR101, twice in one session:** a load where the levels came back empty turned
-  `Discipline / Trade › Level` into plain `Discipline / Trade`, with the Group menu offering **zero**
-  location levels. localStorage still held the correct grouping, so it looked like the app had reset
-  the grouping by itself. This is a far better candidate for anything the owner has experienced as
+  `Discipline / Trade › Level` into plain `Discipline / Trade` while localStorage still held the correct
+  grouping — so it looked like the app had reset the grouping by itself. Evidenced by the group-button
+  text and, independently, by the instrumented build logging `doRender START dims=["work"]` for a stored
+  grouping of `["work","loc:<Level>"]`.
+  ⚠️ **An earlier version of this note also claimed "the Group menu offered zero location levels". That
+  observation was unsound** — the menu is built on OPEN, so querying `button[data-gadd]` without opening
+  it returns nothing on a healthy load too. Verified afterwards: with the menu opened on a healthy load
+  it offers all four levels. The two data points above are the ones that hold. This is a far better candidate for anything the owner has experienced as
   "the Level grouping doesn't work" than the freeze ever was.
 - **Fix:** a `loc:` / `code:` level is only retired when its registry is **loaded** and genuinely lacks
   it; an empty registry keeps the level. Safe, because `dimValOf`/`dimRawOf` resolve a location level
