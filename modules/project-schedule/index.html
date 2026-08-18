@@ -293,17 +293,32 @@
        body stay aligned) while the rest of the grid scrolls. The "#" cell is DOM child 1 but not a
        data column, so column reorder (CSS `order`) must never move it — pin it with order:-1. Sticky
        cells need an opaque background so scrolling columns don't bleed through (set per row-state). */
-    .ps-grid-row > .ps-cell.c-num { position:sticky; left:0; z-index:3; order:-1; background:var(--pd-card);
+    /* ⚠️ EVERY row state must give the frozen cells an OPAQUE background, or the columns that have
+       scrolled underneath them show straight through — which reads as two different rows' values
+       colliding in one cell. Reported by the owner as "when selecting a row there are clashing data
+       in the columns … this happens when scrolling", and it was the dark-mode SELECTED row: its
+       frozen cells were painted `rgba(238,49,36,.22)`, i.e. 22% opaque, so the status pill and the
+       BL dates that had scrolled behind the name column were both visible through it.
+       The fix is structural rather than per-rule: `--ps-frozen-bg` carries the row's own OPAQUE base
+       colour, every frozen-cell rule paints THAT, and a translucent state (selection tint, spotlight)
+       is layered on top as a background-IMAGE. Same appearance, nothing can bleed through.
+       ⚠️ Never give a frozen cell a translucent `background` again — layer it. */
+    .ps-grid-row { --ps-frozen-bg: var(--pd-card); }
+    .ps-grid-pane .ps-wbs-row { --ps-frozen-bg: var(--wl, var(--pd-bg)); }
+    .ps-group-row { --ps-frozen-bg: var(--pd-red-light); }
+    .ps-grid-row > .ps-cell.c-num { position:sticky; left:0; z-index:3; order:-1; background:var(--ps-frozen-bg);
       justify-content:flex-end; color:var(--pd-muted); font-size:11px; }
-    .ps-grid-row > .ps-cell.c-id { position:sticky; left:var(--c-num); z-index:3; background:var(--pd-card); }
-    .ps-grid-row > .ps-cell.c-name { position:sticky; left:calc(var(--c-num) + var(--c-id)); z-index:3; background:var(--pd-card);
+    .ps-grid-row > .ps-cell.c-id { position:sticky; left:var(--c-num); z-index:3; background:var(--ps-frozen-bg); }
+    .ps-grid-row > .ps-cell.c-name { position:sticky; left:calc(var(--c-num) + var(--c-id)); z-index:3; background:var(--ps-frozen-bg);
       border-right:2px solid var(--pd-line); }
-    .ps-grid-pane .ps-wbs-row > .ps-cell.c-num, .ps-grid-pane .ps-wbs-row > .ps-cell.c-id, .ps-grid-pane .ps-wbs-row > .ps-cell.c-name { background:var(--wl, var(--pd-bg)); }
-    .ps-group-row > .ps-cell.c-num, .ps-group-row > .ps-cell.c-id, .ps-group-row > .ps-cell.c-name { background:var(--pd-red-light); }
+    .ps-grid-pane .ps-wbs-row > .ps-cell.c-num, .ps-grid-pane .ps-wbs-row > .ps-cell.c-id, .ps-grid-pane .ps-wbs-row > .ps-cell.c-name { background:var(--ps-frozen-bg); }
+    .ps-group-row > .ps-cell.c-num, .ps-group-row > .ps-cell.c-id, .ps-group-row > .ps-cell.c-name { background:var(--ps-frozen-bg); }
     /* Conditional formatting: --fmt-bg/--fmt-fg are set inline on the row; custom props inherit so
        the frozen cells pick up the same tint. Ordered before .ps-row-sel so selection still wins. */
     .ps-grid-row.ps-fmt { background:var(--fmt-bg, transparent); color:var(--fmt-fg, inherit); }
-    .ps-grid-row.ps-fmt > .ps-cell.c-num, .ps-grid-row.ps-fmt > .ps-cell.c-id, .ps-grid-row.ps-fmt > .ps-cell.c-name { background:var(--fmt-bg, transparent); }
+    /* ⚠️ `transparent` would be a bleed-through here too — fall back to the row's opaque base. */
+    .ps-grid-row.ps-fmt { --ps-frozen-bg: var(--fmt-bg, var(--pd-card)); }
+    .ps-grid-row.ps-fmt > .ps-cell.c-num, .ps-grid-row.ps-fmt > .ps-cell.c-id, .ps-grid-row.ps-fmt > .ps-cell.c-name { background:var(--ps-frozen-bg); }
     .ps-row-sel > .ps-cell.c-num, .ps-row-sel > .ps-cell.c-id, .ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
     /* Full-width selection highlight: the whole grid row tints, and a matching band spans the Gantt. */
     .ps-grid-pane .ps-grid-row.ps-row-sel { background:var(--pd-red-light); box-shadow:inset 2px 0 0 var(--pd-red); }
@@ -315,13 +330,19 @@
     .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
     /* Dark mode: --pd-red-light is a very dark maroon that barely reads — use a clearer translucent
        red for the selected row (and its frozen cells) so the highlight is obvious in night mode. */
-    html.pd-dark .ps-grid-pane .ps-grid-row.ps-row-sel,
+    html.pd-dark .ps-grid-pane .ps-grid-row.ps-row-sel { background:rgba(238,49,36,.22); }
+    /* The frozen cells get the SAME tint as a layer over their opaque base — see the note above. */
     html.pd-dark .ps-row-sel > .ps-cell.c-num, html.pd-dark .ps-row-sel > .ps-cell.c-id, html.pd-dark .ps-row-sel > .ps-cell.c-name,
     html.pd-dark .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-num,
     html.pd-dark .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-id,
-    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-name { background:rgba(238,49,36,.22); }
+    html.pd-dark .ps-grid-pane .ps-wbs-row.ps-row-sel > .ps-cell.c-name {
+      background-color:var(--ps-frozen-bg);
+      background-image:linear-gradient(rgba(238,49,36,.22), rgba(238,49,36,.22)); }
     /* Progress Spotlight: a theme-neutral translucent blue row tint (reads in light AND dark). */
-    .ps-spotrow, .ps-spotrow > .ps-cell.c-num, .ps-spotrow > .ps-cell.c-id, .ps-spotrow > .ps-cell.c-name { background:rgba(37,99,235,.12); }
+    .ps-spotrow { background:rgba(37,99,235,.12); }
+    .ps-spotrow > .ps-cell.c-num, .ps-spotrow > .ps-cell.c-id, .ps-spotrow > .ps-cell.c-name {
+      background-color:var(--ps-frozen-bg);
+      background-image:linear-gradient(rgba(37,99,235,.12), rgba(37,99,235,.12)); }
     .ps-gantt-selband { position:absolute; left:0; background:var(--pd-red-light); z-index:1; pointer-events:none; }
     html.pd-dark .ps-gantt-selband { background:rgba(238,49,36,.22); }
     /* Header sticky needs extra specificity to beat the later `.ps-grid-row.head .ps-cell
@@ -2773,6 +2794,11 @@
   // Cost / progress / status roll-ups keyed by DISPLAY code (grouped mode only; null in WBS mode,
   // where _costMap's dotted-code roll-up already describes exactly what is rendered). See cmOf().
   var _dcost = null;
+  // The work_type / location values that are UNIFORM across everything rendered under a display
+  // code, so a branch or group row can state the discipline / level / zone / unit it covers instead
+  // of leaving those columns blank. Keyed by display code; `null` marks a mixed (non-uniform) value.
+  // Grouped mode only, like _dcost.
+  var _duni = null;
   var isAdmin = false;
   // Roles that may write the schedule (matches is_planner() in the DB). Used to gate the
   // WBS-summary self-repair so a read-only user never triggers a write on load.
@@ -3354,6 +3380,10 @@
     _setFresh('live');
     await loadResourcesAssignments();   // loads WBS_NODES
     if (gen !== _loadGen) return;
+    // Self-heal duplicate summary rows sharing one dotted WBS code (the shape the node-id dedupe
+    // below cannot see). Runs FIRST: _wbsEnsureSummaries' "missing" pass must see the deduped set.
+    await _wbsDedupeSummariesByCode();
+    if (gen !== _loadGen) return;
     // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
@@ -3655,6 +3685,22 @@
   // WBS information is wrong when the groupings are altered". `_dcost` is built in buildNodes from
   // exactly the rows emitted beneath each display code, so both halves now agree.
   function cmOf(nd) { return (_dcost && _dcost[dcode(nd)]) || _costMap[nd._realCode || nd.wbs]; }
+  var _MIX = '\u0000mixed';
+  // First value wins; a second, different value poisons the key to _MIX for good. A blank is not a
+  // value — an activity with no zone must not veto the zone its siblings agree on.
+  function _uniPut(map, key, val) {
+    if (!val) return;
+    var cur = map[key];
+    if (cur === undefined) { map[key] = val; return; }
+    if (cur !== val) map[key] = _MIX;
+  }
+  // The uniform value of `key` under a summary/group row, or '' when mixed / unknown / a leaf.
+  function uniOf(nd, key) {
+    if (!_duni) return '';
+    var m = _duni[dcode(nd)]; if (!m) return '';
+    var v = m[key];
+    return (v === undefined || v === _MIX) ? '' : v;
+  }
   function hiddenRow(nd) {
     if (collapsed[dcode(nd)] && nd._dkind === 'task') return true;
     var a = danc(nd); for (var i = 0; i < a.length; i++) if (collapsed[a[i]]) return true;
@@ -5202,7 +5248,7 @@
     var _catField = catCfg().field;
     var groupBy = groupBys.length === 1 ? groupBys[0] : '__multi';
     if (groupBy === 'wbs') {
-      _dspan = _spanMap; _dblspan = null; _dcost = null;
+      _dspan = _spanMap; _dblspan = null; _dcost = null; _duni = null;
       var list = _sorted;
       // "Execution Phase only": keep the branch's own WBS-summary row + everything under it. No
       // synthetic wrapper needed here — the real "Execution Phase" row IS the top-level heading.
@@ -5279,7 +5325,7 @@
       }
     }
     var realByCode = {}; rows.forEach(function (r) { if (isWbs(r)) realByCode[r.wbs] = r; });
-    var out = [], span = {}, bspan = {}, dcost = {}, SEP = '';
+    var out = [], span = {}, bspan = {}, dcost = {}, duni = {}, SEP = '';
     // Display-scoped cost / progress / status roll-up — the same arithmetic (and the same weights)
     // as _costMap in rebuild(), but keyed by DISPLAY code so a branch or group row reports the rows
     // rendered under IT rather than its whole WBS subtree. See cmOf().
@@ -5294,6 +5340,12 @@
         cm.eac += eac(a, cpi);
         if (dur > 0) { cm.wd += dur; cm.wearn += dur * (a.percent_complete || 0); if (poc != null) { cm.wdPoc += dur; cm.wpoc += dur * poc; } }
         if (od > 0) { cm.wdur += od; cm.wdurE += dpE; }
+        // Uniform-value roll-up, same pass. A value is reported on a summary row only when EVERY
+        // activity under it agrees — a Tower holding all trades has no single discipline, and saying
+        // one would be wrong. `_MIX` is the sentinel for "more than one value seen".
+        var un = duni[codes[j]] || (duni[codes[j]] = {});
+        _uniPut(un, 'work', (a.work_type || '').trim());
+        for (var q = 0; q < LOC_LEVELS.length; q++) _uniPut(un, LOC_LEVELS[q].id, locValOf(a, LOC_LEVELS[q].id));
       }
     }
     function addSpan(code, s, e) { if (!s && !e) return; if (!s) s = e; if (!e) e = s; var m = span[code]; if (!m) span[code] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
@@ -5535,7 +5587,7 @@
       emitLeaf(afterExecActs, '', [], false, []);
       showWbs = savedShowWbs2;
     }
-    _dspan = span; _dblspan = bspan; _dcost = dcost;
+    _dspan = span; _dblspan = bspan; _dcost = dcost; _duni = duni;
     return out;
   }
   // `_treeDepth` = how many levels the CURRENT grouping actually produces. Recorded here because
@@ -8596,14 +8648,24 @@
     if (meta.kind === 'code') { var vid = r.activity_codes && r.activity_codes[meta.id]; return vid ? (codeValueLabel(vid) || '') : ''; }
     var raw = r.udf && r.udf[meta.def.id]; return (raw == null || raw === '') ? '' : udfFmt(meta.def, raw);
   }
-  // Extra-column cells appended to every row (value on leaf tasks, blank on group/WBS summary rows
-  // so the cell count — and therefore the nth-child hide rules — stay aligned across row kinds).
+  // Extra-column cells appended to every row. One cell per column on EVERY row kind, so the cell
+  // count — and therefore the nth-child order/hide rules — stays aligned.
+  // ⚠️ A summary row is no longer blank here: it prints the Discipline / Level / Zone / Unit value
+  // when every activity beneath it agrees on one (uniOf), which is what makes "Structural Works ›
+  // F3 › Z1" readable in the group-by view instead of three empty location columns. A mixed branch
+  // stays blank on purpose — a Tower holding all trades has no single discipline. Activity Codes and
+  // UDFs stay blank on summaries: those are per-activity assignments, not roll-ups.
   function gridExtraHtml(r) {
     var ex = extraColDefs(); if (!ex.length) return '';
     var leaf = r._dkind !== 'group' && !isWbsNode(r);
     var ro = window.__viewOnly || window.__archived;
     return ex.map(function (c) {
-      if (!leaf) return '<div class="ps-cell c-x"></div>';
+      if (!leaf) {
+        var meta = c[3] || {}, uv = '';
+        if (meta.kind === 'work') uv = uniOf(r, 'work');
+        else if (meta.kind === 'loc') uv = uniOf(r, meta.id);
+        return '<div class="ps-cell c-x">' + esc(uv) + '</div>';
+      }
       // Work Type / Location levels are editable in place; codes + UDFs stay read-only here
       // (they're assigned from the activity form / their own managers).
       var ed = c[3] && c[3].edit && !ro;
@@ -8900,6 +8962,20 @@
   // Days the forecast finish is past the CONTRACT date (+ = LD exposure). null if no contract date.
   function contractVar(r) { if (!r.contract_date) return null; var c = pd(r.contract_date), f = pd(r.actual_finish || r.end_date); if (!c || !f) return null; return dayDiff(c, f); }
   function varCellHtml(r) { var d = finVar(r); if (d == null) return '<div class="ps-cell c-var"></div>'; var cls = d > 0 ? 'ps-var-late' : (d < 0 ? 'ps-var-early' : ''); return '<div class="ps-cell c-var ' + cls + '">' + (d > 0 ? '+' : '') + d + 'd</div>'; }
+  // Dur + Var (BL) for a SUMMARY row (WBS branch or grouping header), from the rolled-up spans
+  // rather than from stored fields the row does not have. Dur = the branch's span in days, which is
+  // what its Gantt bracket measures; Var (BL) = rolled-up finish vs rolled-up baseline finish.
+  function sumDurCellHtml(r) {
+    var sp = wbsSpan(r); if (!sp) return '<div class="ps-cell c-dur"></div>';
+    var d = dayDiff(sp.s, sp.e) + 1;
+    return '<div class="ps-cell c-dur" title="Rolled-up span of everything under this branch">' + d + 'd</div>';
+  }
+  function sumVarCellHtml(r) {
+    var sp = wbsSpan(r), bl = wbsBlSpan(r);
+    if (!sp || !bl) return '<div class="ps-cell c-var"></div>';
+    var d = dayDiff(bl.e, sp.e), cls = d > 0 ? 'ps-var-late' : (d < 0 ? 'ps-var-early' : '');
+    return '<div class="ps-cell c-var ' + cls + '" title="Rolled-up finish vs rolled-up baseline finish">' + (d > 0 ? '+' : '') + d + 'd</div>';
+  }
   var STATUS_OPTS = ['Not Started', 'In Progress', 'Completed'];
   // Rolled-up status pill for a WBS/summary (from its leaf activities): all done → Completed,
   // any started/done → In Progress, else Not Started. Uses the precomputed _costMap counters.
@@ -8945,11 +9021,12 @@
   // to 100). Group headers (status/responsible/type groupings) get blank cells: their members
   // are scattered across the WBS tree, so the per-WBS-code roll-up map doesn't apply.
   function costCellsHtml(r) {
-    if (r._dkind === 'group') {
-      return '<div class="ps-cell c-poc"></div><div class="ps-cell c-pct"></div><div class="ps-cell c-durpct"></div>' +
-        '<div class="ps-cell c-cost"></div><div class="ps-cell c-cost"></div><div class="ps-cell c-cost"></div>' +
-        '<div class="ps-cell c-cost"></div><div class="ps-cell c-cost"></div><div class="ps-cell c-ctype"></div>';
-    }
+    // ⚠️ A GROUP row used to return nine BLANK cells, with the note that its members are "scattered
+    // across the WBS tree, so the per-WBS-code roll-up map doesn't apply". That was true of
+    // `_costMap` (keyed by dotted code) and is no longer true of `cmOf`, which reads the
+    // display-scoped `_dcost` — built from exactly the rows rendered under this group. Owner
+    // 2026-08-18: "the data should also be available at the WBS level not just activity level".
+    // A group row now reports the same roll-ups a WBS summary does, over its own bucket.
     if (isWbsNode(r)) {
       var cm = cmOf(r);
       var wPoc = (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) + '%' : '';
@@ -9060,8 +9137,8 @@
                  '<div class="ps-cell c-date">' + (gbl ? Fmt.date(dstr(gbl.e)) : '') + '</div>'; })() +
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.e)) : '—') + '</div>' +
-        '<div class="ps-cell c-dur"></div>' + costCellsHtml(r) +
-        '<div class="ps-cell c-flt"></div><div class="ps-cell c-var"></div>' + gridExtraHtml(r) + '</div>';
+        sumDurCellHtml(r) + costCellsHtml(r) +
+        '<div class="ps-cell c-flt"></div>' + sumVarCellHtml(r) + gridExtraHtml(r) + '</div>';
     }
     if (isWbsNode(r)) {
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
@@ -9076,8 +9153,8 @@
           return '<div class="ps-cell c-date">' + (blsp ? Fmt.date(dstr(blsp.s)) : '') + '</div><div class="ps-cell c-date">' + (blsp ? Fmt.date(dstr(blsp.e)) : '') + '</div>'; })() +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.e)) : '—') + '</div>' +
-        '<div class="ps-cell c-dur"></div>' + costCellsHtml(r) +
-        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + varCellHtml(r) + gridExtraHtml(r) + '</div>';
+        sumDurCellHtml(r) + costCellsHtml(r) +
+        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + sumVarCellHtml(r) + gridExtraHtml(r) + '</div>';
     }
     // Planned (original) duration — baseline-based, always ≥0 and never disturbed by actuals/forecast.
     var dur = _origDurOf(r); if (dur == null) dur = '';
@@ -12039,6 +12116,61 @@
   }
   function wbsSourceKind(id) { var n = wbsById(id); return n ? (n.source_kind || null) : null; }
   var SOURCE_KIND_LABEL = { design_development: 'Design Development — synced from Drawing Register + Material Submittal Log', procurement: 'Procurement — synced from the Procurement (WPM) app' };
+  // ⚠️ Duplicate WBS-Summary rows that share the same dotted `wbs` CODE. A dotted code identifies
+  // exactly one branch, so two summary rows on one code always draw that branch twice — and this is
+  // the shape `_wbsEnsureSummaries()`' dedupe cannot see, because that one keys on `wbs_node_id` and
+  // here one row of the pair (or both) has none. Measured on OPW101: 457 summary rows, only 13 with a
+  // node id, and 5 codes carrying two rows each — General Requirements (4.1), Site Works (4.2),
+  // Allied Services (4.3) and two F1 floors, i.e. precisely the rows the owner sees twice.
+  // ⚠️ Keeps the NODE-BACKED row of a pair. `_wbsEnsureSummaries()` re-creates a summary for any node
+  // that lacks one, so dropping the node-backed row would resurrect the duplicate on the next load;
+  // keeping it is the only stable fixed point. Otherwise the earliest row wins (the one activities
+  // were filed against). Safe either way: activities reference a branch by its dotted CODE, never by
+  // the summary row's id.
+  // ⚠️ NOT gated on WBS_NODES like _wbsEnsureSummaries is — a project whose tree is entirely
+  // dotted-code rows (no wbs_nodes at all) is exactly the case that needs this.
+  var _dedupingByCode = false;
+  async function _wbsDedupeSummariesByCode() {
+    if (!pid || !canWrite) return 0;
+    if (_dedupingByCode) return 0;
+    _dedupingByCode = true;
+    try {
+      var ownPid = pid, all = [], from = 0;
+      for (;;) {
+        var q = await sb().from(TABLE).select('id,wbs,wbs_node_id,created_at')
+          .eq('project_id', ownPid).eq('activity_type', 'WBS Summary').range(from, from + 999);
+        if (q.error) return 0;                 // can't safely tell duplicates from a partial read
+        if (pid !== ownPid) return 0;          // project switched under us
+        all = all.concat(q.data || []);
+        if (!q.data || q.data.length < 1000) break;
+        from += 1000;
+      }
+      var by = {}, drop = [];
+      all.forEach(function (r) { var k = (r.wbs == null) ? '' : String(r.wbs); if (!k) return; (by[k] = by[k] || []).push(r); });
+      Object.keys(by).forEach(function (k) {
+        var g = by[k]; if (g.length < 2) return;
+        g.sort(function (a, b) {
+          var an = a.wbs_node_id ? 0 : 1, bn = b.wbs_node_id ? 0 : 1;
+          if (an !== bn) return an - bn;
+          return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+        });
+        for (var i = 1; i < g.length; i++) drop.push(g[i].id);
+      });
+      if (!drop.length) return 0;
+      for (var d = 0; d < drop.length; d += 100) {
+        var dres = await sb().from(TABLE).delete().in('id', drop.slice(d, d + 100));
+        if (dres.error) { UI.toast('Could not clean up duplicate WBS rows: ' + dres.error.message, 'error'); return 0; }
+      }
+      // The DELETEs are keyed on explicit ids so they stay correct across a project switch, but
+      // `rows` would then belong to the new project — don't touch it.
+      if (pid !== ownPid) return drop.length;
+      var dead = {}; drop.forEach(function (i2) { dead[i2] = 1; });
+      rows = rows.filter(function (r) { return !dead[r.id]; });
+      rebuild(true);
+      UI.toast('Removed ' + drop.length + ' duplicate WBS row' + (drop.length === 1 ? '' : 's') + ' (two rows on one WBS code).', 'success');
+      return drop.length;
+    } finally { _dedupingByCode = false; }
+  }
   var _ensuringSummaries = false;
   async function _wbsEnsureSummaries() {
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
@@ -15637,7 +15769,7 @@
         // each duplicate node has its own), so they render as a full second copy of the branch.
         // `reused` also suppresses the WBS-Summary payload below: the surviving node already has one,
         // and writing another is exactly the "two rows for one wbs_node_id" duplication.
-        var keyToNodeId = { '__base__': baseNodeId }, soByParent = {}, wbsOk = true, reused = {}, reusedN = 0;
+        var keyToNodeId = { '__base__': baseNodeId }, soByParent = {}, wbsOk = true, reused = {}, reusedN = 0, createdNodeIds = [];
         function existingChild(parentId, name) {
           var key = String(name || '').trim().toLowerCase();
           if (!key) return null;
@@ -15651,8 +15783,28 @@
           if (ex) { keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++; soByParent[nd.parentKey]++; if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length); continue; }
           var nres = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: keyToNodeId[nd.parentKey] || null, name: nd.name, sort_order: soByParent[nd.parentKey]++, created_by: UID }).select().single();
           if (nres.error) { wbsOk = false; wbsMsg = nres.error.message; break; }
-          keyToNodeId[nd.key] = nres.data.id; WBS_NODES.push(nres.data);
+          keyToNodeId[nd.key] = nres.data.id; WBS_NODES.push(nres.data); createdNodeIds.push(nres.data.id);
           if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length);
+        }
+        // ⚠️⚠️ ROLL THE PARTIAL TREE BACK. This is the root cause of the duplicated WBS rows the
+        // owner has reported twice. The loop above stops at the FIRST insert error, but every node it
+        // already created stays in `wbs_nodes` — and the fallback below then writes a dotted-code
+        // WBS-Summary row for EVERY branch, including those. On the next load
+        // `_wbsEnsureSummaries()` sees those orphan nodes as un-projected and inserts a SECOND
+        // summary row for each, with the same computed dotted code and the same name.
+        // Measured on OPW101: five nodes were created (General Requirements, Site Works, Allied
+        // Services and two F1 floors) before the insert failed, and exactly those five branches show
+        // twice — which is also why only 3 of 6 trades duplicated, the unexplained clue in the
+        // original report. Deleting this push's own nodes leaves the dotted-code rows as the single
+        // representation, which is what the fallback is for.
+        // ⚠️ Only nodes THIS push inserted: `reused` branches and the pre-existing skeleton are not
+        // ours to delete.
+        if (!wbsOk && createdNodeIds.length) {
+          for (var rb = 0; rb < createdNodeIds.length; rb += 100) {
+            await sb().from('wbs_nodes').delete().in('id', createdNodeIds.slice(rb, rb + 100));
+          }
+          var _rbDead = {}; createdNodeIds.forEach(function (i2) { _rbDead[i2] = 1; });
+          WBS_NODES = WBS_NODES.filter(function (n) { return !_rbDead[n.id]; });
         }
         if (wbsOk) {
           // codes computed from the now-updated WBS_NODES tree, so the pushed rows carry their correct
