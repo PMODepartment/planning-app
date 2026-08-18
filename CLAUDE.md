@@ -77,6 +77,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Project Schedule: the vanishing Gantt pane, and the header/body column drift
+- ⚠️ **The Gantt pane really was gone.** Confirmed from the owner's storage: `ps_grid_w = "1518"`. The
+  divider drag writes an inline `flex-basis` and cleared the pane's `max-width`, and that pixel width is
+  restored verbatim on the next load — so a width dragged on a wider window collapses the Gantt to zero,
+  with no way back but editing localStorage. Guarded in **CSS** (`max-width: calc(100% - 240px - 6px)
+  !important`, re-evaluated by the browser on every resize) and **healed** in JS (every write clamps and
+  persists the corrected value). `max-width:none` is gone from the split code — that was the enabler.
+- **New "Reset layout to defaults"** in the View menu: clears the saved pane width, column widths and
+  column order and returns to Split, so an unusable layout is never a dead end.
+- ⚠️ **The column lines drifted because the header and the body are two scroll boxes with different
+  content widths** — the body has a vertical scrollbar, the header does not, so the body's maximum
+  scrollLeft is ~15px larger and the header clamps short of it. `syncHeadGutter()` measures the
+  scrollbar and pads the header by exactly that, making the maxima identical. Measured, not assumed: it
+  is zero when the grid does not overflow.
+- The other candidate was **ruled out** with a new structural check that renders the header and all three
+  body row kinds and diffs their cell sequences — 28 cells, same classes, same order.
+- **252 checks green.** ⚠️ Neither fix verified live: the automation window was minimised all pass. See
+  `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-18 — Project Schedule: push speed, the sub-WBS tick-box, autofit columns, location breakdown first
 - ⚠️ **The warning after pushing is the previous fix WORKING**, not a new fault: the push completed with
   444 branches and reported "Floor ×1 had no code or name, so its branch was named after its level".

@@ -6711,3 +6711,61 @@ could not walk the dialog or time a real push. **The push timing in particular i
 (444 round-trips → ~5), not a measured one** — the next real push is the test.
 ⚠️ BAU101-TEST is empty again (cleared after my earlier test push), so there was no sandbox tree to
 re-push into either.
+
+## The Gantt pane vanishing, and the header/body column drift (2026-08-18) — fmlozano
+
+### 1 · ⚠️ The Gantt pane really was gone — an unclamped saved width, now guarded
+View said "Split (Grid + Gantt)" and no Gantt existed anywhere on screen. **Confirmed from the owner's
+own storage: `ps_grid_w = "1518"`.** The divider drag writes an INLINE `flex-basis` on the grid pane and
+cleared its `max-width`, and that pixel width is restored **verbatim** on the next load — so a width
+dragged on a wide window (or another monitor) exceeds the split's width and the Gantt pane, `flex:1 1
+auto; min-width:0`, collapses to **zero**. There was no way back short of editing localStorage by hand.
+- **The guard is CSS, deliberately, not a number in JS** — the browser re-evaluates it on every resize,
+  so it self-corrects at any window size:
+  `.ps-split:not(.ps-grid-only) > .ps-grid-pane { max-width: calc(100% - var(--ps-gantt-min) - 6px) !important; }`
+  ⚠️ The `!important` is load-bearing: it has to beat the inline `max-width` the drag writes. "Grid only"
+  keeps its own `100%` rule, since the Gantt is `display:none` there.
+- **JS then HEALS the stored number** rather than merely surviving it. Every write goes through
+  `setGridW()`, which clamps to what fits and persists the corrected value, so a width dragged on a wide
+  monitor stops fighting a narrow one. A window resize re-clamps, leaving Gantt-only clamps on the way
+  out, and ⚠️ **`max-width:none` is gone from the split code entirely** — that is what let an inline
+  flex-basis eat the whole pane. Never write it there again.
+- **New "Reset layout to defaults" in the View menu.** A saved pane width or column layout that ends up
+  unusable must always be undoable from the UI — a planner should never be asked to open devtools. It
+  clears `ps_grid_w` / `ps_cols` / `ps_colorder`, drops the inline width and every `--c-*` variable,
+  returns the view to Split, repaints, and says outright that the schedule itself is untouched.
+
+### 2 · ⚠️ The column lines: two scroll boxes with two different content widths
+The header and the body are separate scroll containers. `.ps-grid-scroll` is `overflow:auto` and shows a
+vertical scrollbar; `.ps-grid-head` is `overflow:hidden` and never does. So the body's content box is
+~15px narrower and its **maximum scrollLeft is ~15px LARGER**:
+
+    body max = content − (paneW − scrollbar)        head max = content − paneW
+
+The sync does `gHead.scrollLeft = gs.scrollLeft`, which the header **clamps to its own smaller maximum** —
+so the header lags the body by up to the scrollbar's width as you scroll toward the right end, and agrees
+exactly at scrollLeft 0. That is why it looked intermittent ("when scrolling or not scrolling").
+- **`syncHeadGutter()`** measures the body's scrollbar and pads the header by exactly that. Padding counts
+  toward `scrollWidth` but not toward the row's available width, so the header's maximum becomes
+  `content + pad − paneW` — identical to the body's.
+- ⚠️ **Measured, never assumed.** The width varies by platform and by overlay-scrollbar setting, and is
+  **zero** while the grid has too few rows to overflow — a hard-coded 15px would misalign the other way.
+  Re-measured from `syncHeadHeights()` (which the column resize, the autofit and the density toggle
+  already call) and after every paint, since the scrollbar comes and goes with the row count.
+- **The other candidate was ruled out first, not guessed away.** A new structural check renders the header
+  and all three body row kinds from the shipped code and diffs their cell sequences: **28 cells, same
+  classes, same order**. Column order and hiding are `nth-child` CSS over those cells, so a count or order
+  mismatch would misalign them — there isn't one. Keep that check: it is the cheap way to catch a future
+  row kind that forgets a cell.
+
+### Verification
+**252 checks green**, including the clamp arithmetic executed at three window widths (a 1000px split caps
+the grid at 754px; oversize clamps to 754; undersize floors at 240; a 400px split still gives the 240
+floor), the reset clearing every key and variable, and the gutter arithmetic showing the two maxima differ
+by exactly the scrollbar width without the pad and by zero with it.
+⚠️ **Neither fix is verified live.** The automation's Chrome window was minimised for this whole pass
+(`innerWidth: 0`, `visibilityState: hidden` — see [[browser-hidden-tab-artefact]]), so I could not measure
+cell positions or see the Gantt come back. The Gantt diagnosis is nonetheless **evidence-based** (the
+stored 1518px), and the drift diagnosis follows from the two containers' geometry, but **both want the
+owner's eyes**: the Gantt should reappear on load, and the column lines should stay put at any scroll
+position.
