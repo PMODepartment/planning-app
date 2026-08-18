@@ -8809,7 +8809,31 @@
   }
   // Keep the Gantt header the same height as the grid header (which can grow when long column
   // labels wrap on narrow columns) so the first data row stays aligned across both panes.
+  // ⚠️⚠️ THE HEADER AND THE BODY MUST HAVE THE SAME CONTENT WIDTH, or their column lines drift apart.
+  // `.ps-grid-scroll` is `overflow:auto` and shows a vertical scrollbar; `.ps-grid-head` is
+  // `overflow:hidden` and never does. So the body's content box is ~15px narrower, and therefore its
+  // maximum scrollLeft is ~15px LARGER:
+  //     body max = content − (paneW − scrollbar)      head max = content − paneW
+  // The sync does `gHead.scrollLeft = gs.scrollLeft`, which the header CLAMPS to its own smaller
+  // maximum — so the header lags the body by up to the scrollbar's width as you scroll toward the
+  // right end, and the vertical column lines stop lining up. That is the reported "column lines are
+  // not aligned when scrolling"; at scrollLeft 0 they agree, which is why it looks intermittent.
+  // ⚠️ Fixed by MEASURING the body's scrollbar and padding the header by exactly that. Padding is
+  // included in scrollWidth but not in the row's available width, so the header's maximum scrollLeft
+  // becomes content + pad − paneW = content − paneW + scrollbar — identical to the body's.
+  // ⚠️ Measured rather than assumed: the scrollbar's width varies by platform, by overlay-scrollbar
+  // setting, and is ZERO while the grid has too few rows to overflow — a hard-coded 15px would then
+  // misalign the other way. Re-measured on every layout change (this runs from syncHeadHeights, which
+  // the column resize, the autofit, the density toggle and each render already call).
+  function syncHeadGutter() {
+    var gs = document.getElementById('ps-grid-scroll'), gHead = document.getElementById('ps-grid-head');
+    if (!gs || !gHead) return;
+    var sb = Math.max(0, Math.round(gs.offsetWidth - gs.clientWidth));
+    if (gHead.style.paddingRight !== sb + 'px') gHead.style.paddingRight = sb + 'px';
+    if (gHead.scrollLeft !== gs.scrollLeft) gHead.scrollLeft = gs.scrollLeft;
+  }
   function syncHeadHeights() {
+    syncHeadGutter();
     var gh = document.getElementById('ps-gantt-head'), gHead = document.getElementById('ps-grid-head');
     if (!gh || !gHead) return;
     gh.style.boxSizing = 'border-box';
@@ -9423,6 +9447,9 @@
     syncGridColumns();
     renderActLegend();
     renderWindow(true);
+    // The vertical scrollbar appears/disappears with the row count, so the header's matching gutter
+    // has to be re-measured after the rows are in — see syncHeadGutter().
+    syncHeadHeights();
     syncHeadHeights();
     // Isolated: the stacking pane is an optional side panel and must never be able to blank the grid
     // or the Gantt that were just painted.
