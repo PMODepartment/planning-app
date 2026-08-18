@@ -77,6 +77,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Project Schedule: push speed, the sub-WBS tick-box, autofit columns, location breakdown first
+- ⚠️ **The warning after pushing is the previous fix WORKING**, not a new fault: the push completed with
+  444 branches and reported "Floor ×1 had no code or name, so its branch was named after its level".
+  Before the fix that same condition aborted the whole node-insert loop. Naming that floor in step 2
+  clears it — and the diagnostic identified the culprit that reading the code could not.
+- ⚠️ **Why the push was slow:** the `wbs_nodes` loop awaited **one single-row insert per branch**, and
+  OPW101 builds **444** — ~45 s of waiting at ~100 ms a round-trip. Siblings at the same depth now go in
+  one insert, so the tree costs as many round-trips as it has LEVELS (4), not nodes (444). Row ids are
+  matched back by payload order, with a `(parent_id, name)` fallback that consumes the matched row, a
+  row-by-row retry when a batch fails, and a hard failure rather than a silently mis-parented tree.
+- **"Group into a sub-WBS instead" removed** — always ticked, like the WBS picker before it. A push always
+  builds the real branch tree now; the flat path's grouping select went with it.
+- **Location breakdown first.** Step 2 states the project's own location levels (or that it has none and
+  what a push would create) and opens the real breakdown editor; every label in steps 2–7 and the push
+  dialog reads those names instead of a hard-coded Floor / Zone / Unit.
+- **Double-click a column divider to auto-fit**, Excel-style — measured by collapsing the width variable
+  to 0 first, since at normal width `scrollWidth` reports the box and could never shrink a column. Widths
+  are per column TYPE (the tooltip now says so). The "+" is restyled and pinned to its lane's width.
+- **214 checks green.** ⚠️ Not verified live — the automation window was minimised again, so the push
+  timing is an analytical claim (444 round-trips → ~5), not a measured one. See
+  `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-18 — Project Schedule: the NOT-NULL push warning, the WBS picker, and the "+" column lane
 - ⚠️ **The push warning named the real cause and it was not the transient failure I assumed:**
   `null value in column "name" of relation "wbs_nodes" violates not-null constraint`. **One unnamed

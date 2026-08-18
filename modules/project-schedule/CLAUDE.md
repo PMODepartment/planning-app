@@ -6636,3 +6636,78 @@ and the spacer's explicit order, its presence on all three body row kinds plus t
 rows, and that no order/hide rule can target it.
 ⚠️ **Not verified live** — the next real push is the test: it should now complete with a WBS-Manager tree
 (so Execution Phase reports its activities) and, if any location is still unnamed, say which level.
+
+## Push speed, the sub-WBS tick-box, autofit columns, location-breakdown-first (2026-08-18) — fmlozano
+Five owner items. One of them is confirmation that the previous fix landed.
+
+### 1 · ⚠️ The warning after pushing IS the previous fix working — not a new fault
+The push completed with **444 WBS branches** and no NOT-NULL abort, and the warning read:
+> Some locations had no code or name, so their branch was named after its level instead: **Floor ×1**.
+> Give those floors/zones/units a code in step 2 to name them properly.
+
+That is exactly the designed behaviour: one location in the builder has neither a code nor a name, so its
+branch was named after its level rather than costing the planner the whole tree. **Before the fix this
+same condition aborted the entire `wbs_nodes` insert loop**, which is what produced the dotted-code
+fallback and "Execution Phase · 0 activities". The diagnostic also finally identifies the culprit that
+reading the code could not: **one unnamed floor**. Naming it in step 2 clears the warning.
+
+### 2 · ⚠️ Why the push was slow — one round-trip PER BRANCH
+The `wbs_nodes` loop `await`ed a **single-row insert per branch**, and OPW101 builds **444** of them. At
+the ~100 ms a Supabase round-trip costs that is **~45 seconds** of the push spent waiting, one node at a
+time — with 2,561 activities going in afterwards in six chunks of 500.
+- Siblings at the same **depth** can all go in one insert, because their parents already have ids. The
+  tree now costs as many round-trips as it has **levels** (Trade › Floor › Zone › Unit = 4), not as many
+  as it has nodes — 444 → ~5.
+- ⚠️ **Order is load-bearing.** PostgREST returns inserted rows in payload order, which is how each new
+  id is matched back to its nodeDesc. Three layers guard that: a length check on the happy path; a
+  `(parent_id, name)` match for a short or reordered response, which **consumes** the matched row so two
+  branches can never claim the same id; and an unmatchable row **fails the push** rather than silently
+  mis-parenting the tree. A batch that errors as a whole is retried **row by row** through
+  `insertNodeSafe`, so one bad branch still costs only itself.
+
+### 3 · "Group into a sub-WBS instead" removed
+Always ticked, exactly like the WBS picker before it. A builder push now always builds the real branch
+tree — that is the point of defining the location breakdown — so the tick-box, its visibility toggle and
+the flat path's "Group the pushed schedule by" select (which only applied when it was OFF) are all gone.
+Activities still carry discipline + location as DATA, so the schedule's own Group control re-orders the
+view freely afterwards. An empty level list is still refused.
+
+### 4 · Location breakdown FIRST
+The builder's three location levels **are** the project's Location Breakdown levels — but the builder
+hard-labelled them Floor / Zone / Unit and the only way to create them was to push and let
+`ensureLocLevels()` invent "Location / Zone / Unit".
+- **New bar at the top of step 2**: states this project's levels ("Tower › Level › Zone"), or that it has
+  none yet *and what a push would create*, with a button that opens the real Location Breakdown editor
+  (`openLocLevels()`) before any floors are typed in. Degrades with a message if that editor is absent.
+- **`dimLabelOf()`**: every level label in steps 2–7, the push dialog's L1…L4 and the unnamed-branch
+  warning now read the project's own names, falling back to Floor / Zone / Unit only when it has none.
+- A first push names the levels it creates **after the builder's own labels**, so a project that gets its
+  breakdown *from* a push ends up with the words the planner already saw.
+
+### 5 · Double-click a divider to auto-fit + a better "+"
+- **`autoFitCol()`**, wired to `dblclick` on the column grip. ⚠️ It collapses the column's width variable
+  to `0px` before measuring: at its normal width a cell's `scrollWidth` just reports the (possibly too
+  wide) box, so the fit could never *shrink* anything. Clamped 46–520 px and persisted to `ps_cols`
+  alongside the drag-resized widths.
+- ⚠️ **Widths are per column TYPE, not per column** — all four date columns read `--c-date` — so fitting
+  one date column fits them all. That is how the drag grips have always worked; the tooltip now says so
+  instead of the behaviour pretending otherwise.
+- ⚠️ It fits what is **rendered**: the grid is windowed, so the measurement covers the visible rows plus
+  the buffer, not all 2,561. Same trade-off Excel makes on a filtered sheet, and it keeps it to one reflow.
+- The **"+"** is restyled (ink-coloured, real hover/open state) and pinned to `width: var(--c-plus)` — the
+  exact width of the spacer lane the header and body rows reserve — so it can never overlap the last
+  column again.
+
+### Verification
+**214 checks green** against the shipped functions, including: the depth bucketing and per-level batching,
+all three id-mapping paths (payload order / `(parent_id, name)` with row consumption / row-by-row retry)
+and the fail-rather-than-mis-parent case; the tick-box and its toggle being gone and the push always being
+called grouped; `autoFitCol`'s measure-at-zero ordering, its clamp, its restore-on-nothing-to-measure and
+its persistence; the "+" width being tied to `--c-plus`; `dimLabelOf` reading the project's levels and
+falling back per level; and an unnamed location now being named after the **project's** level.
+⚠️ **Not verified live.** The deployed build loads with 0 console errors, but the automation's Chrome
+window was minimised again ([[browser-hidden-tab-artefact]]) so the builder panel would not repaint and I
+could not walk the dialog or time a real push. **The push timing in particular is an analytical claim
+(444 round-trips → ~5), not a measured one** — the next real push is the test.
+⚠️ BAU101-TEST is empty again (cleared after my earlier test push), so there was no sandbox tree to
+re-push into either.
