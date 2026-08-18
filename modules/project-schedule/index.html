@@ -292,10 +292,14 @@
       padding:0; border-left:1px solid var(--pd-line); }
     .ps-grid-row.head > .ps-cell.c-plus { background:var(--pd-bg); }
     .ps-grid-pane .ps-cols-corner { position:absolute; top:0; right:0; z-index:12; }
-    .ps-cols-corner > .ps-icobtn { height:38px !important; width:32px; border-radius:0; border:none;
+    /* ⚠️ Width MUST match --c-plus, the spacer lane the header/body rows reserve for it — if the
+       button is wider than its lane it starts overlapping the last column again. */
+    .ps-cols-corner > .ps-icobtn { height:38px !important; width:var(--c-plus, 34px); border-radius:0; border:none;
       border-left:1px solid var(--pd-line); border-bottom:2px solid var(--pd-line);
-      background:var(--pd-bg); color:var(--pd-muted); }
-    .ps-cols-corner > .ps-icobtn:hover { background:var(--pd-card); color:var(--pd-ink); }
+      background:var(--pd-bg); color:var(--pd-ink); opacity:.75; display:inline-flex; align-items:center;
+      justify-content:center; transition:background .12s, opacity .12s; }
+    .ps-cols-corner > .ps-icobtn:hover { background:var(--pd-red-light); color:var(--pd-red); opacity:1; }
+    .ps-cols-corner.open > .ps-icobtn, .ps-cols-corner > .ps-icobtn:focus-visible { background:var(--pd-red-light); color:var(--pd-red); opacity:1; }
     .ps-cols-corner .ps-cols-menu { right:0; left:auto; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
@@ -417,6 +421,8 @@
     .ps-nearrow .c-name { color:#C77700; }
     .ps-colgrip { position:absolute; right:0; top:0; bottom:0; width:7px; cursor:col-resize; z-index:2; }
     .ps-colgrip:hover { background:var(--pd-red); opacity:.4; }
+    /* The double-click target wants to feel like Excel's — widen the hit area a touch on hover. */
+    .ps-colgrip:active { background:var(--pd-red); opacity:.7; }
     .ps-colhdr { cursor:pointer; }
     .ps-colhdr:hover { background:var(--pd-red-light); color:var(--pd-ink); }
     .ps-colhdr.ps-coldrag { opacity:.45; }
@@ -1537,6 +1543,11 @@
     .sbld-bargrp .lab { width:150px; flex:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .sbld-bar { height:16px; background:var(--pd-red); border-radius:3px; }
     /* step 4 — level-type (basement / podium / typical / roof deck) sequence selector */
+    /* step 2 — the project's Location Breakdown, stated before any floors are typed in */
+    .sbld-locbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 11px; margin-bottom:14px;
+      border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:8px; background:var(--pd-bg); }
+    .sbld-locbar-l { font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .sbld-locbar .sbld-hint { margin:0; flex:1 1 260px; min-width:0; }
     .sbld-seqkind { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 11px; margin-bottom:14px;
       border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:8px; background:var(--pd-bg); }
     .sbld-seqkind-l { font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
@@ -8820,7 +8831,7 @@
     var headRow = '<div class="ps-grid-row head"><div class="ps-cell c-num" title="Row number">#</div>' + gridCols().map(function (c, i) {
       var arrow = (colSort && colSort.idx === i) ? '<span class="ps-sort-ind">' + (colSort.dir < 0 ? '▼' : '▲') + '</span>' : '';
       return '<div class="ps-cell ps-colhdr ' + c[2] + '" draggable="true" data-ci="' + i + '" data-key="' + esc(colKey(c)) + '" title="' + esc(colLabel(c)) + ' — click for options, drag to reorder">' + esc(colLabel(c)) + arrow +
-        '<span class="ps-colgrip" data-col="' + c[2].replace('c-', '') + '" title="Drag to resize column"></span></div>';
+        '<span class="ps-colgrip" data-col="' + c[2].replace('c-', '') + '" title="Drag to resize · double-click to fit the widest value (fits every column of this type)"></span></div>';
     }).join('') + '<div class="ps-cell c-plus"></div></div>';
     // Optional per-column filter row (OPC-style) — mirrors the exact cell structure so widths, the
     // frozen columns, column order and hidden columns all apply automatically.
@@ -8837,7 +8848,11 @@
       inp.addEventListener('mousedown', function (e) { e.stopPropagation(); });   // don't start a header drag
       inp.addEventListener('input', function () { filters.col = filters.col || {}; filters.col[inp.dataset.ck] = inp.value; clearTimeout(_colfT); _colfT = setTimeout(function () { renderGrid(); }, 200); });
     });
-    head.querySelectorAll('.ps-colgrip').forEach(function (g) { g.addEventListener('mousedown', function (e) { startColResize(e, g.dataset.col); }); });
+    head.querySelectorAll('.ps-colgrip').forEach(function (g) {
+      g.addEventListener('mousedown', function (e) { startColResize(e, g.dataset.col); });
+      // Excel's gesture: double-click the divider to fit the column to its widest visible value.
+      g.addEventListener('dblclick', function (e) { e.preventDefault(); e.stopPropagation(); autoFitCol(g.dataset.col); });
+    });
     head.querySelectorAll('.ps-colhdr').forEach(function (h) {
       h.addEventListener('click', function (e) { if (e.target.classList.contains('ps-colgrip')) return; openColMenu(parseInt(h.dataset.ci, 10), h); });
       // Drag-to-reorder (HTML5 DnD). The resize grip preventDefaults its mousedown, so dragging the
@@ -8931,6 +8946,38 @@
         saveColHidden(); applyColHidden(); renderCost(); renderColsMenu();
       };
     });
+  }
+  // ⚠️ AUTO-FIT ON DOUBLE-CLICK, like Excel. Measured by collapsing the column's width variable to
+  // 0 first: with `overflow:hidden; white-space:nowrap` a cell's scrollWidth is then its CONTENT
+  // width, whereas at its normal width scrollWidth just reports the (possibly too wide) box and the
+  // fit would never shrink anything.
+  // ⚠️ Column widths are per COLUMN TYPE, not per column — the four date columns all read --c-date —
+  // so fitting one date column fits them all to the widest date on screen. That is how the drag
+  // grips have always worked; the tooltip says so rather than the behaviour pretending otherwise.
+  // ⚠️ The grid is WINDOWED, so this fits what is rendered (the visible rows plus the buffer), not
+  // all 2,500 rows. That is the same trade-off Excel makes on a filtered sheet and it keeps the
+  // measurement to one reflow.
+  function autoFitCol(col) {
+    var pane = document.querySelector('.ps-grid-pane'); if (!pane || !col) return;
+    var vn = '--c-' + col, prev = pane.style.getPropertyValue(vn);
+    var cells = pane.querySelectorAll('.ps-cell.c-' + col);
+    if (!cells.length) return;
+    pane.style.setProperty(vn, '0px');
+    var max = 0;
+    for (var i = 0; i < cells.length; i++) {
+      var el = cells[i], w = el.scrollWidth;
+      if (el.classList.contains('ps-colhdr')) w += 18;   // room for the sort arrow + the grip
+      if (w > max) max = w;
+    }
+    var want = Math.max(46, Math.min(520, max + 16));
+    pane.style.setProperty(vn, want + 'px');
+    if (!max) { pane.style.setProperty(vn, prev || ''); return; }
+    syncHeadHeights();
+    try {
+      var st = JSON.parse(localStorage.getItem('ps_cols') || '{}');
+      st[col] = want + 'px'; localStorage.setItem('ps_cols', JSON.stringify(st));
+    } catch (e) {}
+    UI.toast('Fitted the ' + col + ' column' + (cells.length > 1 ? 's' : '') + ' to ' + want + 'px.', 'success');
   }
   function startColResize(e, col) {
     e.preventDefault(); e.stopPropagation();
@@ -13833,6 +13880,22 @@
     function blankZoning() { var z = {}; GROUPS.forEach(function (g) { z[g] = { floors: [] }; }); return z; }
     var WBS_DIMS = ['trade', 'floor', 'zone', 'unit'];
     var DIM_LABEL = { trade: 'Trade', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
+    // ⚠️ The builder's three location levels ARE the project's Location Breakdown levels — the push
+    // even creates them when a project has none. Owner 2026-08-18: "the location breakdown should be
+    // intuitive to define … first, then do the schedule builder". So the labels now come from the
+    // project's own levels wherever they exist (a project that calls them Tower / Level / Zone reads
+    // that way in step 2 and in the push dialog), and only fall back to Floor / Zone / Unit for a
+    // project that has not defined any yet.
+    function dimLabelOf(d) {
+      var idx = { floor: 0, zone: 1, unit: 2 }[d];
+      if (idx != null) {
+        try {
+          var lv = (typeof LOC_LEVELS !== 'undefined' && LOC_LEVELS) ? LOC_LEVELS[idx] : null;
+          if (lv && String(lv.name || '').trim()) return String(lv.name).trim();
+        } catch (e) {}
+      }
+      return DIM_LABEL[d] || d;
+    }
     function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
@@ -14970,6 +15033,18 @@
       }); });
     }
 
+    // The project's Location Breakdown, shown at the top of step 2. `LOC_LEVELS` is the schedule
+    // module's own list, so this reflects (and edits) exactly what the schedule groups and columns use.
+    function _locBreakdownBar() {
+      var lv = (typeof LOC_LEVELS !== 'undefined' && LOC_LEVELS) ? LOC_LEVELS : [];
+      var names = lv.map(function (l) { return String(l.name || '').trim(); }).filter(Boolean);
+      var body = names.length
+        ? '<span class="sbld-hint">This project breaks location down as <b>' + e2(names.join(' › ')) + '</b>. Steps 2–7 and the pushed schedule all use these names.</span>'
+        : '<span class="sbld-hint">This project has <b>no location breakdown yet</b>. Define it first and the builder will use your names — otherwise the first push creates <b>' +
+          e2([DIM_LABEL.floor, DIM_LABEL.zone, DIM_LABEL.unit].join(' › ')) + '</b> for you.</span>';
+      return '<div class="sbld-locbar"><span class="sbld-locbar-l">Location breakdown</span>' + body +
+        '<button class="pd-btn" id="b-locedit">' + (names.length ? 'Edit levels…' : 'Define levels…') + '</button></div>';
+    }
     function leafCount(tr) { return cfg.zoning[tr].floors.reduce(function (t, f) { return t + leavesOfFloor(tr, f).length; }, 0); }
     // Tower visual: floors stacked (ground at bottom), each split into zones, each zone into units.
     function towerSVG(tr) {
@@ -15078,7 +15153,13 @@
       // value they just typed (e.g. units) stays put instead of snapping back to 0 on re-render.
       var qd = quickN[tr] || { B: 0, F: 5, Z: 2, U: 0 };
       host.innerHTML = '<h2>2 · Substructure &amp; Superstructure — per trade</h2>' +
-        '<p class="sbld-lede">Pick a trade, add its <b>floors</b> (superstructure) and any <b>basements</b> (substructure), then optionally split each into <b>zones</b> and <b>units</b>. Zones/units are optional. The tower on the right shows superstructure above the grade line and basements below.</p>' +
+        '<p class="sbld-lede">Pick a trade, add its <b>' + e2(dimLabelOf('floor').toLowerCase()) + 's</b> (superstructure) and any <b>basements</b> (substructure), then optionally split each into <b>' + e2(dimLabelOf('zone').toLowerCase()) + 's</b> and <b>' + e2(dimLabelOf('unit').toLowerCase()) + 's</b>. These are optional. The tower on the right shows superstructure above the grade line and basements below.</p>' +
+        // ⚠️ THE LOCATION BREAKDOWN COMES FIRST. The builder's three location levels ARE the project's
+        // Location Breakdown levels, and until now the only way to get them was to push and let the
+        // push invent "Location / Zone / Unit". Owner 2026-08-18: defining the breakdown first is the
+        // intuitive order — so step 2 states which levels this project has (or that it has none yet)
+        // and opens the breakdown editor right here, before any floors are typed in.
+        _locBreakdownBar() +
         '<div class="sbld-sec-actions" style="margin-bottom:8px;"><label class="sbld-tag" style="padding:6px 10px;">Activity level (whole project)&nbsp; ' +
         '<select class="pd-select sbld-mini" id="b-loclevel" title="Which location level activities are scheduled at across the whole project. Auto = deepest level you define per floor.">' +
         [['auto', 'Auto (deepest defined)'], ['floor', 'Floor level'], ['zone', 'Zone level'], ['unit', 'Unit level']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.locLevel || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
@@ -15101,6 +15182,11 @@
         var g = copyFrom.value; if (!g) return;
         if (zn.floors.length && !confirm('Replace ' + GLABEL[tr] + '\'s current zoning with a copy of ' + GLABEL[g] + '\'s?')) { copyFrom.value = ''; return; }
         zn.floors = cloneFloors(cfg.zoning[g].floors); pruneLinks(); markDirty(); render();
+      };
+      var le = host.querySelector('#b-locedit');
+      if (le) le.onclick = function () {
+        if (typeof openLocLevels !== 'function') { UI.toast('The Location Breakdown editor is unavailable on this project.', 'warn'); return; }
+        openLocLevels();
       };
       var lvlSel = host.querySelector('#b-loclevel'); if (lvlSel) lvlSel.onchange = function () {
         // Changing the activity level changes every leaf uid, so links can't survive it — confirm first.
@@ -15716,13 +15802,13 @@
         // execPhaseCode() so it follows a renamed/re-coded branch, and falling back to the top level
         // only if the project genuinely has no Execution Phase branch.
         '<p class="sbld-hint" style="margin:12px 0 0;">Filed under <b>' + e2(_pushParentLabel()) + '</b>.</p>' +
-        '<div id="sbpush-flat" style="margin-top:12px;"><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Group the pushed schedule by</label>' +
-        '<select class="pd-select" id="sbpush-groupby" style="width:100%;height:34px;">' +
-        [['auto', 'Discipline → Location → Zone (auto — skips a level a trade doesn\'t have)'], ['trade-loc-zone', 'Discipline → Location → Zone'], ['trade-zone', 'Discipline → Zone (zone lowest)'], ['zone-trade', 'Zone → Discipline'], ['loc-zone-trade', 'Location → Zone → Discipline'], ['trade-only', 'Discipline only']].map(function (o) { return '<option value="' + o[0] + '">' + e2(o[1]) + '</option>'; }).join('') + '</select>' +
-        '<p class="sbld-hint" style="margin:4px 0 0;">The schedule opens grouped this way; every activity carries its <b>discipline</b> + <b>location</b> as data, so you can re-order the levels any time from the schedule\'s <b>Group</b> control. <b>Auto</b> never leaves an <em>Unassigned</em> bucket — the named orders group exactly as written (a trade missing a level shows under Unassigned there).</p></div>' +
-        '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;"><input type="checkbox" id="sbpush-grp"> Group into a sub-WBS instead</label>' +
-        '<p class="sbld-hint" id="sbpush-flathint" style="margin:6px 0 0;">Tick this only when the WBS <b>codes</b> themselves must encode the structure; otherwise leave it off and use the grouping above.</p>' +
-        '<div id="sbpush-struct" style="margin-top:8px;"></div>' +
+        // ⚠️ The "Group into a sub-WBS instead" tick-box is gone (owner 2026-08-18: it was always
+        // ticked, exactly like the WBS picker before it). A builder push always builds the real
+        // Trade › Floor › Zone › Unit branch tree — that is the whole point of defining the location
+        // breakdown — so the choice, and the flat push's "group the schedule by" select that only
+        // applied when it was OFF, are both removed. Every activity still carries its discipline and
+        // its location as DATA, so the schedule's own Group control re-orders the view freely after.
+        '<div id="sbpush-struct" style="margin-top:12px;"></div>' +
         '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbpush-go">Add to schedule</button></div></div>';
       document.body.appendChild(ov);
@@ -15737,35 +15823,28 @@
           '<div class="sbld-wbsrows">' + work.map(function (d, i) {
             var on = incl[d]; if (on) lvl++;
             return '<div class="sbld-wbsrow"><label style="flex:1;display:flex;align-items:center;gap:7px;"><input type="checkbox" data-dim="' + d + '"' + (on ? ' checked' : '') + '>' +
-              '<span class="sbld-wbslvl">' + (on ? 'L' + lvl : '—') + '</span> ' + DIM_LABEL[d] + '</label>' +
+              '<span class="sbld-wbslvl">' + (on ? 'L' + lvl : '—') + '</span> ' + e2(dimLabelOf(d)) + '</label>' +
               '<button class="pd-btn sbld-wbsmv" data-up="' + i + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
               '<button class="pd-btn sbld-wbsmv" data-down="' + i + '"' + (i === work.length - 1 ? ' disabled' : '') + '>↓</button></div>';
           }).join('') + '</div>' +
-          '<p class="sbld-hint" style="margin:6px 0 0;">' + (lvl ? lvl + '-level WBS: ' + work.filter(function (d) { return incl[d]; }).map(function (d) { return DIM_LABEL[d]; }).join(' → ') : 'No levels selected — tick at least one dimension.') + '</p>';
+          '<p class="sbld-hint" style="margin:6px 0 0;">' + (lvl ? lvl + '-level WBS: ' + e2(work.filter(function (d) { return incl[d]; }).map(dimLabelOf).join(' → ')) : 'No levels selected — tick at least one level.') + '</p>';
         host.querySelectorAll('[data-dim]').forEach(function (c) { c.onchange = function () { incl[c.dataset.dim] = c.checked; renderStruct(); }; });
         host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.up; var t = work[i - 1]; work[i - 1] = work[i]; work[i] = t; renderStruct(); }; });
         host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.down; var t = work[i + 1]; work[i + 1] = work[i]; work[i] = t; renderStruct(); }; });
       }
-      function syncStructVisibility() {
-        var on = ov.querySelector('#sbpush-grp').checked;
-        var s = ov.querySelector('#sbpush-struct'); if (s) s.style.display = on ? '' : 'none';
-        var f = ov.querySelector('#sbpush-flat'); if (f) f.style.display = on ? 'none' : '';   // grouping-order selector (flat path only)
-      }
-      renderStruct(); syncStructVisibility();
+      renderStruct();
       function close() { ov.remove(); }
       ov.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = close; });
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
-      ov.querySelector('#sbpush-grp').onchange = syncStructVisibility;
       ov.querySelector('#sbpush-go').onclick = function () {
         var order = work.filter(function (d) { return incl[d]; });
-        var grp = ov.querySelector('#sbpush-grp').checked;
-        if (grp && !order.length) { UI.toast('Tick at least one WBS dimension, or turn off grouping.', 'warn'); return; }
+        if (!order.length) { UI.toast('Tick at least one WBS level to build the branch tree.', 'warn'); return; }
         var startISO = (ov.querySelector('#sbpush-start') || {}).value || ddISO;
         if (!startISO) { UI.toast('Choose a start date first.', 'warn'); return; }
         cfg.wbsOrder = order.slice(); markDirty();   // remember the chosen structure
         var pc = _pushParentCode(), bs = ov.querySelector('#sbpush-basis').value;
-        var gbSel = (ov.querySelector('#sbpush-groupby') || {}).value || 'auto'; close();
-        pushToSchedule(pc, grp, bs, order, startISO, gbSel);
+        close();
+        pushToSchedule(pc, true, bs, order, startISO, 'auto');
       };
     }
     // The builder already knows every generated activity's work type and its floor/zone/unit — it
@@ -15785,8 +15864,11 @@
       return pc + ' · ' + ((row && row.activity_name) || 'Execution Phase');
     }
     async function ensureLocLevels() {
-      var wanted = ['Location', 'Zone'];
-      if (locList().some(function (l) { return l.unit; })) wanted.push('Unit');
+      // ⚠️ Named after the builder's own level labels, so a project that gets its Location Breakdown
+      // FROM a push ends up with the same words the planner saw in steps 2 and 7 — not a fixed
+      // "Location / Zone / Unit" trio that then reads differently everywhere else.
+      var wanted = [DIM_LABEL.floor, DIM_LABEL.zone];
+      if (locList().some(function (l) { return l.unit; })) wanted.push(DIM_LABEL.unit);
       if (!LOC_LEVELS.length) {
         for (var i = 0; i < wanted.length; i++) {
           var res = await sb().from('location_levels').insert({ project_id: pid, name: wanted[i], sort_order: i, created_by: UID }).select().single();
@@ -15908,7 +15990,7 @@
         // name, and `_unnamedDims` records which one needed it so the push can say so instead of
         // failing silently.
         var _unnamedDims = {};
-        function _dimFallback(dim) { _unnamedDims[dim] = (_unnamedDims[dim] || 0) + 1; return DIM_LABEL[dim] || 'WBS'; }
+        function _dimFallback(dim) { _unnamedDims[dim] = (_unnamedDims[dim] || 0) + 1; return dimLabelOf(dim) || 'WBS'; }
         function dimName(dim, r) {
           var l = r.loc || {}, v = null;
           if (dim === 'trade') v = GWORK[l.trade] || GLABEL[l.trade] || l.trade;
@@ -15979,19 +16061,73 @@
           }
           return last;
         }
-        for (var di = 0; di < nodeDescs.length; di++) {
-          var nd = nodeDescs[di]; soByParent[nd.parentKey] = (soByParent[nd.parentKey] || 0);
-          var ex = existingChild(keyToNodeId[nd.parentKey] || null, nd.name) ||
-                   (nd.alt ? existingChild(keyToNodeId[nd.parentKey] || null, nd.alt) : null);
-          if (ex) { keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++; soByParent[nd.parentKey]++; if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length); continue; }
-          // ⚠️ Last-ditch coalesce: whatever happens upstream, this column is NOT NULL and one bad
-          // row must not cost the planner the whole WBS tree.
-          var _nm = (nd.name == null) ? '' : String(nd.name).trim();
-          if (!_nm) { _nm = 'WBS'; _unnamedDims.unknown = (_unnamedDims.unknown || 0) + 1; }
-          var nres = await insertNodeSafe({ project_id: pid, parent_id: keyToNodeId[nd.parentKey] || null, name: _nm, sort_order: soByParent[nd.parentKey]++, created_by: UID });
-          if (nres.error) { wbsOk = false; wbsMsg = nres.error.message; break; }
-          keyToNodeId[nd.key] = nres.data.id; WBS_NODES.push(nres.data); createdNodeIds.push(nres.data.id);
-          if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length);
+        // ⚠️⚠️ ONE ROUND-TRIP PER DEPTH LEVEL, NOT PER NODE. This loop used to `await` a single-row
+        // insert for every branch: the owner's OPW101 push builds **444** of them, so at the ~100 ms a
+        // Supabase round-trip costs that was ~45 seconds of the push spent waiting, one node at a time
+        // — the reported "pushing took longer than usual". Siblings at the same DEPTH can all go in one
+        // insert because their parents already have ids, so the whole tree needs as many round-trips as
+        // it has levels (Trade › Floor › Zone › Unit = 4), not as many as it has nodes.
+        // ⚠️ Order is load-bearing: PostgREST returns inserted rows in payload order, which is how each
+        // new id is matched back to its nodeDesc. A short/misordered response falls back to matching on
+        // (parent_id, name), and a batch that errors is retried ROW BY ROW through insertNodeSafe, so
+        // one bad row costs that row and not the level.
+        var depthOf = {};
+        (function () {
+          depthOf['__base__'] = 0;
+          // nodeDescs is parent-before-child by construction (buildTree recurses), so one pass is enough.
+          nodeDescs.forEach(function (nd) { depthOf[nd.key] = (depthOf[nd.parentKey] || 0) + 1; });
+        })();
+        var byDepth = {}, maxDepth = 0;
+        nodeDescs.forEach(function (nd) { var d = depthOf[nd.key]; (byDepth[d] = byDepth[d] || []).push(nd); if (d > maxDepth) maxDepth = d; });
+        var doneN = 0;
+        for (var dep = 1; dep <= maxDepth && wbsOk; dep++) {
+          var level = byDepth[dep] || [], batch = [], batchDescs = [];
+          for (var li = 0; li < level.length; li++) {
+            var nd = level[li];
+            soByParent[nd.parentKey] = (soByParent[nd.parentKey] || 0);
+            var parentId = keyToNodeId[nd.parentKey] || null;
+            var ex = existingChild(parentId, nd.name) || (nd.alt ? existingChild(parentId, nd.alt) : null);
+            if (ex) { keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++; soByParent[nd.parentKey]++; doneN++; continue; }
+            // ⚠️ Last-ditch coalesce: whatever happens upstream, this column is NOT NULL and one bad
+            // row must not cost the planner the whole WBS tree.
+            var _nm = (nd.name == null) ? '' : String(nd.name).trim();
+            if (!_nm) { _nm = 'WBS'; _unnamedDims.unknown = (_unnamedDims.unknown || 0) + 1; }
+            batch.push({ project_id: pid, parent_id: parentId, name: _nm, sort_order: soByParent[nd.parentKey]++, created_by: UID });
+            batchDescs.push(nd);
+          }
+          for (var b = 0; b < batch.length && wbsOk; b += 400) {
+            var slice_ = batch.slice(b, b + 400), descs_ = batchDescs.slice(b, b + 400);
+            var bres = await sb().from('wbs_nodes').insert(slice_).select();
+            if (!bres.error && bres.data && bres.data.length === slice_.length) {
+              for (var k2 = 0; k2 < descs_.length; k2++) {
+                keyToNodeId[descs_[k2].key] = bres.data[k2].id;
+                WBS_NODES.push(bres.data[k2]); createdNodeIds.push(bres.data[k2].id);
+              }
+            } else if (!bres.error && bres.data) {
+              // Short or reordered response — match each desc to its row by (parent_id, name).
+              var pool = bres.data.slice();
+              for (var k3 = 0; k3 < descs_.length; k3++) {
+                var want = slice_[k3], hit = -1;
+                for (var pi = 0; pi < pool.length; pi++) {
+                  if ((pool[pi].parent_id || null) === (want.parent_id || null) && pool[pi].name === want.name) { hit = pi; break; }
+                }
+                if (hit < 0) { wbsOk = false; wbsMsg = 'WBS branch "' + want.name + '" was not returned by the insert.'; break; }
+                keyToNodeId[descs_[k3].key] = pool[hit].id;
+                WBS_NODES.push(pool[hit]); createdNodeIds.push(pool[hit].id);
+                pool.splice(hit, 1);
+              }
+            } else {
+              // The batch failed as a whole — retry row by row so one bad branch costs only itself.
+              for (var k4 = 0; k4 < descs_.length; k4++) {
+                var rres = await insertNodeSafe(slice_[k4]);
+                if (rres.error) { wbsOk = false; wbsMsg = rres.error.message; break; }
+                keyToNodeId[descs_[k4].key] = rres.data.id;
+                WBS_NODES.push(rres.data); createdNodeIds.push(rres.data.id);
+              }
+            }
+            doneN += descs_.length;
+            if (typeof setProgress === 'function') setProgress(0.35 * Math.min(1, doneN / Math.max(1, nodeDescs.length)));
+          }
         }
         // ⚠️⚠️ ROLL THE PARTIAL TREE BACK. This is the root cause of the duplicated WBS rows the
         // owner has reported twice. The loop above stops at the FIRST insert error, but every node it
@@ -16053,7 +16189,7 @@
           warnings: (wbsMsg ? ['WBS Manager not updated, so this push filed under dotted WBS codes instead of WBS-Manager branches. Reason: ' + wbsMsg] : [])
             .concat(Object.keys(wbsUnnamed || {}).length
               ? ['Some locations had no code or name, so their branch was named after its level instead: ' +
-                 Object.keys(wbsUnnamed).map(function (k) { return (DIM_LABEL[k] || k) + ' \u00d7' + wbsUnnamed[k]; }).join(', ') +
+                 Object.keys(wbsUnnamed).map(function (k) { return (k === 'unknown' ? 'WBS' : dimLabelOf(k)) + ' \u00d7' + wbsUnnamed[k]; }).join(', ') +
                  '. Give those floors/zones/units a code in step 2 to name them properly.']
               : []),
           note: 'Filed ' + (base ? 'under <strong>' + e2(base) + '</strong>' : 'at the top level') + ' · ' + (basis === 'ext' ? 'External' : 'Internal') + ' durations. Opening the schedule…'
