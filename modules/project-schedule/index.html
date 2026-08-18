@@ -13499,6 +13499,7 @@
     var seqLayout = 'split';  // step 3/4 layout: 'split' (tower left / gantt right) | 'stack' (building top / gantt bottom)
     var seqLevel = 2;         // step-3 collapse depth default: 2=Floor (compact + readable on tall buildings); 1=Trade, 3=Zone, 4=Unit
     var seqMode = 'view';     // step-3 interaction mode: 'view' = click a bar/zone to INSPECT its links; 'edit' = click to SELECT sources → right-click → destinations → link
+    var actMode = 'view';     // step-4 interaction mode (mirrors seqMode): 'view' = click a class-code bar to INSPECT its links; 'edit' = click bars to SELECT sources → right-click → destinations → link. Replaces the old per-row ▸ column.
     var seqFocus = [];        // uids currently highlighted (cross-highlight between tower nodes & gantt bars)
     var seqSelLink = null;    // {from,to} group-keys of the clicked relationship arrow — stays highlighted until you click elsewhere
     function isFocus(uids) { return seqFocus.length && uids.some(function (u) { return seqFocus.indexOf(u) >= 0; }); }
@@ -14471,14 +14472,15 @@
     function t4GridHTML(acts, tr) {
       if (!acts.length) return '<div class="sbld-empty">No class codes assigned to ' + e2(GLABEL[tr]) + ' yet — assign a trade to your activities in step 1.</div>';
       var cols = T4_COLS, CW = function (c) { return c.w || 100; };
-      var totalW = 34 + cols.reduce(function (t, c) { return t + CW(c); }, 0) + 34;
-      var colgroup = '<colgroup><col style="width:34px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '<col style="width:34px" /></colgroup>';
-      var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c) { return '<th>' + e2(c.label) + '</th>'; }).join('') + '<th class="xl-rowact" title="Select the code for linking">↔</th></tr>';
+      // Linking is done by clicking the schedule BARS on the right (view/edit toggle, like step 3),
+      // NOT a per-row column — so the grid is purely the Excel editor for the code/durations.
+      var totalW = 34 + cols.reduce(function (t, c) { return t + CW(c); }, 0);
+      var colgroup = '<colgroup><col style="width:34px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '</colgroup>';
+      var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c) { return '<th>' + e2(c.label) + '</th>'; }).join('') + '</tr>';
       var body = acts.map(function (a, r) {
         var cls = (inPendAct(a.id) ? 'pend' : (inActDst(a.id) ? 'pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '');
         return '<tr class="' + cls.trim() + '"><td class="xl-rn" data-r="' + r + '">' + (r + 1) + '</td>' +
-          cols.map(function (c, ci) { return '<td class="xl-cell" data-r="' + r + '" data-c="' + ci + '">' + e2(xlGet(a, c.k)) + '</td>'; }).join('') +
-          '<td class="xl-rowact"><button class="pd-btn t4-link" data-linkact="' + a.id + '" title="Select this code as a link source / destination">▸</button></td></tr>';
+          cols.map(function (c, ci) { return '<td class="xl-cell" data-r="' + r + '" data-c="' + ci + '">' + e2(xlGet(a, c.k)) + '</td>'; }).join('') + '</tr>';
       }).join('');
       return '<div class="sbld-xlwrap" tabindex="0" id="b-t4"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
     }
@@ -14545,7 +14547,7 @@
         else { var sr = b.r0, sc = b.c0; grid.forEach(function (row, i) { row.forEach(function (val, j) { if (sr + i < nR() && sc + j < cols.length) t4Set(acts[sr + i], cols[sc + j].k, val); }); }); t4f = { r: clampR(sr + grid.length - 1), c: Math.min(cols.length - 1, sc + grid[0].length - 1) }; t4a = { r: clampR(sr), c: sc }; }
         commitRender();
       });
-      wrap.querySelectorAll('[data-linkact]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); actFocus = b.dataset.linkact; actSelect(b.dataset.linkact); }; });
+      // (class-code linking moved to the schedule bars on the right — view/edit toggle, like step 3)
     }
 
     // Step 4 — connect the class codes WITHIN a trade (mirrors the Zone-sequence layout): a class-code
@@ -14591,23 +14593,26 @@
         return '<div class="sbld-seqkind"><span class="sbld-seqkind-l">Level type</span>' + btns + copy + state + '</div>';
       })();
       // Left: this trade's class codes as an EXCEL-STYLE grid (Code / Name / Interior / Exterior) with
-      // multi-cell copy/paste, so a column of durations can be pasted straight from Excel. The ▸ button
-      // on each row selects that code for linking (source → destination), replacing the old click-node.
+      // multi-cell copy/paste, so a column of durations can be pasted straight from Excel. LINKING is
+      // done on the schedule BARS on the right via the View/Edit toggle (mirrors step 3) — the old
+      // per-row ▸ column is gone.
       var list = t4GridHTML(acts, tr);
-      var aConfirmBtn = (actLinkPhase === 'src' && pendActSet.length)
+      var aEditing = actMode === 'edit';
+      var aConfirmBtn = !aEditing ? '' : (actLinkPhase === 'src' && pendActSet.length)
         ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Confirm ' + pendActSet.length + ' source' + (pendActSet.length === 1 ? '' : 's') + ' →</button>'
         : (actLinkPhase === 'dst' && pendActDst.length)
           ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Create ' + pendActDst.length + ' link' + (pendActDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
       host.innerHTML = '<h2>4 · Trade sequence — connect the class codes, per level type</h2>' +
-        '<p class="sbld-lede">Pick a <b>trade</b>, then the <b>level type</b> the sequence applies to (basements, podium, typical floors and the roof deck are not built in the same order). <b>All levels</b> is the default; any category can define its own, or <b>copy</b> one already defined. Its class codes are an <b>Excel-style grid</b> — click/drag or Shift-click to select cells, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste a column of Interior/Exterior durations straight from Excel; one cell fills a selection), <b>Ctrl+D</b> fill-down, <b>Delete</b> clears. Connect codes with the <b>▸</b> button on each row: <b>1)</b> select one or more <b>source</b> codes, <b>2)</b> <b>Confirm sources</b> (or right-click), <b>3)</b> select <b>destination</b> codes, <b>4)</b> <b>Create links</b>, <b>5)</b> choose FS/SS/FF/SF + lag. Open <b>Links</b> to edit them in a table; <b>Auto-chain</b> links every code back-to-back.</p>' +
+        '<p class="sbld-lede">Pick a <b>trade</b>, then the <b>level type</b> the sequence applies to (basements, podium, typical floors and the roof deck are not built in the same order). <b>All levels</b> is the default; any category can define its own, or <b>copy</b> one already defined. Its class codes are an <b>Excel-style grid</b> — click/drag or Shift-click to select cells, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste, <b>Ctrl+D</b> fill-down, <b>Delete</b> clears. To connect codes, switch to <b>Edit mode</b> and click the <b>schedule bars</b> on the right: <b>1)</b> click one or more <b>source</b> bars, <b>2)</b> <b>right-click</b>, <b>3)</b> click <b>destination</b> bars, <b>4)</b> right-click, <b>5)</b> choose FS/SS/FF/SF + lag. In <b>View mode</b> a click just shows a bar\'s links. Open <b>Links</b> to edit them in a table; <b>Auto-chain</b> links every code back-to-back.</p>' +
         chips + kindRow +
         '<div class="sbld-sec-actions">' +
+        '<button class="pd-btn' + (aEditing ? ' pd-btn-primary' : '') + '" id="b-amode">' + (aEditing ? '✎ Edit mode — click to View' : '◉ View mode — click to Edit') + '</button>' +
         '<button class="pd-btn pd-btn-primary" id="b-autochain">Auto-chain</button>' +
         '<select class="pd-select sbld-mini" id="b-autotype" title="Relationship used when auto-chaining the class codes (FS / SS / FF / SF)">' +
         ['FS', 'SS', 'FF', 'SF'].map(function (o) { return '<option value="' + o + '"' + (autoChainType === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' +
         aConfirmBtn +
-        ((pendActSet.length || pendActDst.length || actLinkPhase === 'dst') ? '<button class="pd-btn" id="b-adone">Reset selection</button>' : '') +
+        ((aEditing && (pendActSet.length || pendActDst.length || actLinkPhase === 'dst')) ? '<button class="pd-btn" id="b-adone">Reset selection</button>' : '') +
         '<button class="pd-btn" id="b-alinkmgr">Links (' + countTradeLinks(tr) + ')</button>' +
         '<button class="pd-btn" id="b-aclear">Clear links</button>' +
         '<span class="sbld-tb-sep2"></span><span class="sbld-quick">View ' +
@@ -14648,8 +14653,8 @@
       host.querySelectorAll('[data-tview]').forEach(function (b) { b.onclick = function () { tradeView = b.dataset.tview; render(); }; });
       host.querySelectorAll('[data-tscale]').forEach(function (b) { b.onclick = function () { tradeScale = b.dataset.tscale; tgZoom = TG_PPD[tradeScale] || 2.2; render(); }; });
       host.querySelectorAll('[data-tbasis]').forEach(function (b) { b.onclick = function () { tradeBasis = b.dataset.tbasis; render(); }; });
-      // Excel-style class-code grid (edit Code/Name/Interior/Exterior; multi-cell copy/paste) + the
-      // per-row ▸ link-select buttons. Replaces the old inline duration inputs + click-to-link nodes.
+      // Excel-style class-code grid (edit Code/Name/Interior/Exterior; multi-cell copy/paste).
+      // Linking is on the schedule bars (View/Edit toggle), not a per-row column.
       wireT4Grid(host, acts);
       if (tradeView === 'gantt') {
         host.querySelector('#b-azout').onclick = function () { tgZoom = Math.max(0.3, tgZoom / 1.25); render(); };
@@ -14666,16 +14671,19 @@
         function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); grip.classList.remove('drag'); }
         document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
       });
-      var pendEl = host.querySelector('#b-apend'); if (pendEl) pendEl.textContent = !acts.length ? '' :
+      var pendEl = host.querySelector('#b-apend'); if (pendEl) pendEl.textContent = (!acts.length || !aEditing) ? '' :
         (actLinkPhase === 'src'
-          ? (pendActSet.length ? (pendActSet.length + ' source(s) selected — press Confirm sources (or right-click).') : 'Step 1: click one or more source codes.')
-          : (pendActDst.length ? (pendActDst.length + ' destination(s) selected — press Create links (or right-click).') : 'Step 3: click one or more destination codes.'));
-      // (class-code linking is now via the grid's per-row ▸ buttons, wired in wireT4Grid)
-      // schedule bars INSPECT only; link from the class-code list on the left (was a linking bug —
-      // clicking a bar both focused it and toggled it into the pending link selection).
-      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { actFocus = b.getAttribute('data-act'); render(); }); });
+          ? (pendActSet.length ? (pendActSet.length + ' source(s) selected — right-click to confirm.') : 'Step 1: click one or more source bars.')
+          : (pendActDst.length ? (pendActDst.length + ' destination(s) selected — right-click to create the links.') : 'Step 3: click one or more destination bars.'));
+      // View/Edit toggle (mirrors step 3's #b-seqmode). Leaving Edit clears any half-finished selection.
+      var amb = host.querySelector('#b-amode'); if (amb) amb.onclick = function () { actMode = (actMode === 'edit') ? 'view' : 'edit'; if (actMode !== 'edit') actReset(); else render(); };
+      // Class-code linking is now on the schedule BARS: View mode inspects a bar's predecessors/
+      // successors; Edit mode selects sources → right-click → destinations → link.
+      host.querySelectorAll('.sbld-schedbar').forEach(function (b) { b.addEventListener('click', function () { var id = b.getAttribute('data-act'); if (actMode === 'edit') { actFocus = null; actSelect(id); } else { actFocus = id; render(); } }); });
       var afclr = host.querySelector('#b-afocusclear'); if (afclr) afclr.onclick = function () { actFocus = null; render(); };
-      var aseq2 = host.querySelector('.sbld-seq2'); if (aseq2) aseq2.addEventListener('contextmenu', actConfirm);
+      function aCtx(ev) { if (actMode !== 'edit') return; actConfirm(ev); }
+      var aseq2 = host.querySelector('.sbld-seq2'); if (aseq2) aseq2.addEventListener('contextmenu', aCtx);
+      var aStack = host.querySelector('.sbld-seqstack'); if (aStack) aStack.addEventListener('contextmenu', aCtx);
       host.querySelectorAll('.sbld-linkhit').forEach(function (p) { p.addEventListener('click', function (ev) {
         var fk = (p.getAttribute('data-fk') || '').split('~'), ex = actLinkOf(fk[0], fk[1]); if (!ex) return;
         openLinkDialog(ev.clientX, ev.clientY, { type: ex.type, lag: ex.lag, existing: true }, function (type, lag) { ex.type = type; ex.lag = lag; markDirty(); render(); }, function () { removeActLink(fk[0], fk[1]); });

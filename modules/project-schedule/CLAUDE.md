@@ -72,6 +72,40 @@ pair was run alongside. Also ⚠️ `count=exact` on the whole of `project_sched
 filtered counts are fine. And one `wbs` value came back rendered as `[BLOCKED: JWT token]` — a
 redaction in the browser tool's output, not data.
 
+## Schedule Builder step 4: linking via View/Edit toggle (the ▸ column is gone) (2026-08-18) — eprobles
+Owner: the per-row **▸ column** on the far right of the step-4 class-code grid was "too hassle" for
+linking — use step 3's View/Edit method instead.
+- Removed the ▸ / ↔ column from `t4GridHTML` (and its `data-linkact` wiring) — the grid is now purely
+  the Excel editor for Code/Name/Interior/Exterior.
+- New `actMode` ('view'|'edit') + a single toggle button `#b-amode` at the front of the action bar
+  (mirrors step 3's `#b-seqmode`): **View** = click a schedule **bar** to inspect its predecessors/
+  successors; **Edit** = click bars to select sources → right-click → destinations → link (FS/SS/FF/SF
+  + lag dialog). The Confirm/Reset buttons + the pending hint render only in Edit; Auto-chain / Links /
+  Clear stay in both. Right-click confirm (`aCtx`) is gated to Edit and bound on both the split and
+  stacked layout containers. Leaving Edit clears any half-finished selection.
+- ⚠️ Bars already carried `pend`/`pend-dst`/`sbld-focus` styling + `data-act` in BOTH the flow and
+  gantt views (13722 / 13805), so selection reflects visually in either view with no extra CSS. The
+  `actSelect`/`actConfirm`/`actReset`/`addActLink` 2-phase machinery is reused unchanged — only the
+  entry point moved from the ▸ button to bar clicks.
+- Verified: inline script parses; `data-linkact` fully removed; `actMode`/`#b-amode`/`aCtx` present.
+  ⚠️ **Not verified signed-in** (auth wall). `MODULE_V` → `20260818g`.
+- ✅ **Ask #1 ("podium + roof deck level type in step 4") was delivered by a CONCURRENT commit on main**
+  (the `kindRow` / `uiSeqKind` / `data-seqkind` level-type selector — All levels · per-kind own/inherit
+  + copy). Found at rebase: the step-4 `innerHTML` block conflicted; resolved by keeping the concurrent
+  `kindRow` + "per level type" heading AND my View/Edit lede (the ▸ column it described is now gone).
+  Both feature sets coexist — verified `data-seqkind`/`#b-seqcopy`/`#b-seqreset` and my `#b-amode` +
+  bar-click handlers are all present and the script parses.
+- ⚠️ **DEFERRED (told the owner) — two asks in the same message NOT done here, on purpose:**
+  2. **Push doubles Gen Req / Site Works / Allied Services** — the doubled trades are exactly those
+     where `GWORK === GLABEL`; the non-doubled (ST/AR/MEPF) are where they differ. Strong signal it's
+     the grouped-push trade WBS node (named by GLABEL) colliding with the work_type group header
+     (GWORK) in the Discipline/Trade view — i.e. a `pushToSchedule` grouped-branch / `buildNodes`
+     interaction. This is the live-schedule push/grouping path the change log repeatedly warns
+     regresses when changed without a signed-in run; needs live verification, not a blind edit.
+  3. **Grouping Trade›Activity›Level›Zone›Unit shows the leaf as the activity name ("Concrete")
+     instead of the unit number** — `emitLeaf`/`_dlabel` deepest-bucket logic; also a live-grouping
+     change needing sign-in. See both flagged for a focused pass.
+
 ## Schedule Builder step 3: clicked relationship line stays highlighted (2026-08-18) — eprobles
 Owner: with many overlapping arrows it's unclear which relationship was clicked — a clicked line
 should STAY highlighted until you click somewhere else.
