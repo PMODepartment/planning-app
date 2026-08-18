@@ -6192,7 +6192,8 @@ Owner asked for Gen Req → Site Works → Structural → Archi → MEPF → All
   and matching stays case/whitespace-insensitive. Parse clean (1 block, 0 fail).
 - ⚠️ **Not verified signed-in.** `MODULE_V` → `20260818e`.
 
-⚠️ **OPEN — duplicated WBS rows after a Schedule Builder push (owner report, NOT fixed).** Screenshot
+⚠️ **CLOSED 2026-08-18 (see the entry below) — duplicated WBS rows after a Schedule Builder push.**
+Original note, kept for the reasoning it rules out: Screenshot
 shows General Requirements / Site Works / Allied Services each rendered **twice** with identical dates
 and %, while Structural / Architectural / MEPF appear **once**. Investigated, not reproduced; recording
 what has been ruled OUT so the next pass does not redo it:
@@ -6209,3 +6210,90 @@ what has been ruled OUT so the next pass does not redo it:
 - ⚠️ Needs a live query of `project_schedule` + `wbs_nodes` for that project (`wbs`, `wbs_node_id`,
   `created_at` per duplicate pair) — `created_at` clustering will immediately say "two pushes" vs "one
   push wrote two rows". The anon key has no grants, so it must run in a signed-in browser session.
+
+## Duplicate trade branches, per-level-type trade sequencing, and the grouped roll-up (2026-08-18) — fmlozano
+Three owner asks in one prompt. All in `modules/project-schedule/index.html` (module-local, no migration).
+
+### 1 · The doubled trades from Schedule Builder → Project Schedule (the OPEN item above, now closed)
+Two independent causes, both fixed; the 3-of-6 split that made the report look impossible is explained.
+- ⚠️ **The grouped push was never idempotent.** `ensureNode` keys on `'N'+(++nodeSeq)`, so it dedupes
+  **within** one push and not across pushes — every re-push (normal after fixing durations or adding a
+  trade) inserted a **fresh `wbs_nodes` row per trade / floor / zone / unit**, i.e. a whole second copy
+  of the tree. Those duplicates are invisible to `_wbsEnsureSummaries`' heal, which keys on
+  `wbs_node_id` and sees each duplicate node as legitimately un-projected. The push now looks for an
+  existing child of the same parent with the same name (`existingChild`, earliest `created_at` wins),
+  **reuses** it, and — critically — **suppresses that node's WBS-Summary payload**, because the
+  survivor already has one and writing another is the exact "two rows for one `wbs_node_id`"
+  duplication.
+- ⚠️ **The trade branch was named with the WRONG one of two labels, and that is the 3-of-6 clue.**
+  `dimName('trade')` used `GLABEL` ("Structural") while the activities' `work_type` used `GWORK`
+  ("Structural Works"), so the same trade was reachable under two names. For **GR / Site Works /
+  Allied Services the two labels are byte-for-byte identical** — those read as a duplicated row; for
+  ST / AR / MEPF they read as two differently-named rows, which is why exactly three of six "looked
+  duplicated". `dimName` now returns `GWORK`, so a builder branch and an imported/wizard-tagged branch
+  land on one name.
+- ⚠️ **The duplicate-branch heal was restricted to `is_locked` skeleton nodes**, so it could never
+  touch builder branches — projects already carrying duplicates stayed broken. `_wbsDedupeSkeletonPass`
+  now merges **any** same-name siblings (blank names skipped — every unnamed sibling would key alike).
+  Merging is lossless: children, activities and summary rows are re-pointed onto the survivor before
+  the duplicate is deleted, and the fixed-point loop already collapses a whole duplicated subtree in
+  one call. It now **toasts what it merged** — it changes the tree, so it must not be silent.
+  (`_clearWbsTree`'s `is_locked` filter is unrelated and untouched.)
+
+### 2 · Step 4 Trade sequence — per level type, with copy
+A basement is not sequenced like a typical floor, so the class-code sequence is now definable **per
+floor category** (Basement / Podium-Commercial / Typical / Roof Deck — the `KIND_ORDER` the auto-trace
+takt questions already use).
+- `cfg.actLinks` stays the **default**; `cfg.actLinksKind[kind]` is an optional override, present only
+  once the planner actually edits that category. **A project that never touches this reads and writes
+  exactly the same data as before.**
+- New **Level type** row in step 4: All levels (default) + every category the project actually builds,
+  each badged `own` when it has forked. Selecting a category **shows** the default (reading never
+  forks — clicking a tab must not make the setup dirty); the **first edit** forks a copy so the default
+  is never edited by accident. One click reverts a category to the default.
+- **Copy sequence from…** copies **one trade's** links from any other defined category (or from the
+  default), replacing only that trade's links in the target and leaving every other trade's alone.
+- Every step-4 read/write now goes through `AL()` / `AL(true)` — the flow diagram, the trade Gantt, the
+  totals, Auto-chain, Clear links and the tabular Links manager (whose title names the category).
+- ⚠️ **`generate()` and the push resolve the sequence per LOCATION**, via `linksForLoc(loc)` →
+  `floorKind(loc.floor)`, so the generated dates AND the pushed predecessors describe the same logic.
+  The un-located "whole project" placeholder (`floor._all`) has no category and follows the default.
+
+### 3 · Project Schedule: the lowest level of detail names the line item, and the roll-up is scoped
+- **New `locSuffixOf(r, dims)`** — the level / zone / unit an activity carries that the **current
+  grouping does not already state**, appended to the leaf row: "Precast Works · B3 - Z1 - U1". A level
+  that IS a grouping dimension is a heading above the row, so it is subtracted rather than repeated.
+  Wired into all three leaf paths (plain WBS view subtracts nothing — it groups by nothing). The
+  repeated-name WBS-parent qualifier survives as the **fallback** for rows with no location.
+- ⚠️ **The deepest-bucket-of-one merge no longer throws the activity name away.** It set
+  `_dlabel = <bucket value>`, so the merged row read "U1" where the planner needs "Precast Works
+  B3 - Z1 - U1" — and that row is the *only* row for the leaf, so the name was gone from the schedule.
+  It now keeps the name and carries the bucket's identity in the suffix (its own dimension included,
+  since this row replaced its heading; shallower dimensions are still headings and are subtracted).
+- ⚠️ **The roll-up on a branch inside a grouped view mixed two scopes.** `wbsSpan` reads the
+  display-scoped `_dspan`, but `%`-complete / status / IBB / cost read `_costMap`, which is keyed by
+  dotted WBS code and always covers the branch's **whole subtree** — so a branch reported 400
+  activities' progress beside 12 activities' dates. New **`_dcost`**, built in `buildNodes` from
+  exactly the rows emitted under each display code with the same arithmetic and the same weights as
+  `_costMap`, and new **`cmOf(nd)`** which prefers it. Wired into the cost/POC cells, the rolled-up
+  status pill (now takes the roll-up object, not a code), the Gantt bracket %, and the Progress
+  table — where group rows had no dotted code at all and therefore always showed **0 %**.
+- ⚠️ **The BASELINE roll-up was accumulated in only one of the two leaf branches**, so any grouping
+  ending in `wbs` left every branch and group row above it with blank BL Start / BL Finish and no BL0
+  rail. `addBlSpan` now runs in both.
+
+### Verification
+- **46 behavioural checks green in Node against the SHIPPED functions** (sliced out of `index.html` by
+  their exact source text and executed, never reimplemented): `locSuffixOf` across every
+  grouping/location combination incl. the owner's example string and the LOC_LEVELS ordering; `cmOf`'s
+  scoped-vs-global precedence and its fallback; the level-type fork/inherit/no-fork-on-read rules,
+  `kindsInProject`, `locKind`, and `copyTradeSeq`'s trade isolation in both directions; `actOffsets`
+  proving a basement's own all-parallel sequence spans 5 days where the default FS chain spans 15, with
+  roof and un-located work still inheriting; `dimName`'s canonical trade label; `existingChild`'s
+  case/padding-insensitive, earliest-wins, parent-scoped reuse; and that the dedupe filter no longer
+  mentions `is_locked`. Inline script parses (1 block, 0 fail).
+- **Loaded in a real browser** (local static server): the module initialises with **0 console errors**
+  before redirecting to sign-in.
+- ⚠️ **Not verified signed in on a project.** The three things that need it: a re-push actually merging
+  into the existing branches, the heal's toast firing on a project that already holds duplicates, and
+  the grouped roll-up numbers read off the live grid.

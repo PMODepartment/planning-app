@@ -1497,6 +1497,12 @@
     .sbld-bargrp { display:flex; align-items:center; gap:10px; margin:5px 0; font-size:12.5px; }
     .sbld-bargrp .lab { width:150px; flex:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .sbld-bar { height:16px; background:var(--pd-red); border-radius:3px; }
+    /* step 4 — level-type (basement / podium / typical / roof deck) sequence selector */
+    .sbld-seqkind { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 11px; margin-bottom:14px;
+      border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:8px; background:var(--pd-bg); }
+    .sbld-seqkind-l { font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .sbld-seqkind .sbld-hint { margin:0; }
+    .sbld-scbtn b.own { font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--pd-red); margin-left:4px; }
     /* step 2 — trade chips + tower */
     .sbld-tradechips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
     .sbld-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border:1px solid var(--pd-line); border-radius:999px; background:var(--pd-card); cursor:pointer; font:inherit; font-size:12.5px; color:var(--pd-ink); }
@@ -2764,6 +2770,9 @@
   var groupBys = ['wbs'];
   var _dspan = {};       // span map keyed by display code (real WBS codes in WBS mode)
   var _dblspan = null;   // baseline span map keyed by display code (grouped mode only)
+  // Cost / progress / status roll-ups keyed by DISPLAY code (grouped mode only; null in WBS mode,
+  // where _costMap's dotted-code roll-up already describes exactly what is rendered). See cmOf().
+  var _dcost = null;
   var isAdmin = false;
   // Roles that may write the schedule (matches is_planner() in the DB). Used to gate the
   // WBS-summary self-repair so a read-only user never triggers a write on load.
@@ -3638,6 +3647,14 @@
   function ddepth(nd) { return nd._ddepth != null ? nd._ddepth : (nd._depth || 0); }
   function danc(nd) { return nd._danc || nd._anc || []; }
   function isWbsNode(nd) { return nd._dkind ? (nd._dkind !== 'task') : isWbs(nd); }
+  // ⚠️ Roll-up numbers for a summary / branch / group row, SCOPED TO WHAT IS ACTUALLY RENDERED
+  // UNDER IT. `_costMap` is keyed by dotted WBS code and always covers a branch's WHOLE subtree —
+  // but in a grouped view a branch only holds the subset of its activities that landed in this
+  // group, so the branch reported the whole subtree's % / cost / status beside group-scoped dates
+  // (wbsSpan already reads the display-scoped `_dspan`). That mismatch is the reported "roll-up
+  // WBS information is wrong when the groupings are altered". `_dcost` is built in buildNodes from
+  // exactly the rows emitted beneath each display code, so both halves now agree.
+  function cmOf(nd) { return (_dcost && _dcost[dcode(nd)]) || _costMap[nd._realCode || nd.wbs]; }
   function hiddenRow(nd) {
     if (collapsed[dcode(nd)] && nd._dkind === 'task') return true;
     var a = danc(nd); for (var i = 0; i < a.length; i++) if (collapsed[a[i]]) return true;
@@ -5170,7 +5187,7 @@
     var _catField = catCfg().field;
     var groupBy = groupBys.length === 1 ? groupBys[0] : '__multi';
     if (groupBy === 'wbs') {
-      _dspan = _spanMap; _dblspan = null;
+      _dspan = _spanMap; _dblspan = null; _dcost = null;
       var list = _sorted;
       // "Execution Phase only": keep the branch's own WBS-summary row + everything under it. No
       // synthetic wrapper needed here — the real "Execution Phase" row IS the top-level heading.
@@ -5183,7 +5200,9 @@
         list.forEach(function (r) { if (rowMatches(r)) { keep[r.wbs] = true; for (var i = 0; i < r._anc.length; i++) keep[r._anc[i]] = true; } });
         list = list.filter(function (r) { return keep[r.wbs] || rowMatches(r); });
       }
-      list.forEach(function (r) { r._dcode = r.wbs; r._ddepth = r._depth; r._danc = r._anc; r._dkind = isWbs(r) ? 'wbs' : 'task'; r._realCode = r.wbs; r._dlabel = null; r._dsuffix = null; });
+      // Plain WBS view groups by nothing, so NO location level is expressed as a heading — every
+      // level an activity has belongs on the line item itself (see locSuffixOf).
+      list.forEach(function (r) { r._dcode = r.wbs; r._ddepth = r._depth; r._danc = r._anc; r._dkind = isWbs(r) ? 'wbs' : 'task'; r._realCode = r.wbs; r._dlabel = null; r._dsuffix = isWbs(r) ? null : locSuffixOf(r, []); });
       return list;
     }
     // Grouped: nest a group header per dimension in `groupBys` order, then at the deepest level
@@ -5245,13 +5264,31 @@
       }
     }
     var realByCode = {}; rows.forEach(function (r) { if (isWbs(r)) realByCode[r.wbs] = r; });
-    var out = [], span = {}, bspan = {}, SEP = '';
+    var out = [], span = {}, bspan = {}, dcost = {}, SEP = '';
+    // Display-scoped cost / progress / status roll-up — the same arithmetic (and the same weights)
+    // as _costMap in rebuild(), but keyed by DISPLAY code so a branch or group row reports the rows
+    // rendered under IT rather than its whole WBS subtree. See cmOf().
+    function addCost(a, codes) {
+      var dur = (pd(a.start_date) && pd(a.end_date)) ? (dayDiff(pd(a.start_date), pd(a.end_date)) + 1) : 0;
+      var poc = plannedPOC(a), cpi = a.actual_cost > 0 ? (a.earned_value || 0) / a.actual_cost : null;
+      var od = _origDurOf(a) || 0, dpE = od * (_durPct(a) / 100);
+      for (var j = 0; j < codes.length; j++) {
+        var cm = dcost[codes[j]] || (dcost[codes[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0 });
+        cm.total += 1; if (isComplete(a)) cm.done += 1; else if (a.actual_start || (a.percent_complete || 0) > 0) cm.prog += 1;
+        cm.pc += a.planned_cost || 0; cm.ac += a.actual_cost || 0; cm.ev += a.earned_value || 0; cm.bl += a.bl_cost || 0;
+        cm.eac += eac(a, cpi);
+        if (dur > 0) { cm.wd += dur; cm.wearn += dur * (a.percent_complete || 0); if (poc != null) { cm.wdPoc += dur; cm.wpoc += dur * poc; } }
+        if (od > 0) { cm.wdur += od; cm.wdurE += dpE; }
+      }
+    }
     function addSpan(code, s, e) { if (!s && !e) return; if (!s) s = e; if (!e) e = s; var m = span[code]; if (!m) span[code] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
     // Same accumulation for BASELINE dates, so a group row can show a rolled-up BL Start / BL Finish
     // rather than the blank cells it used to.
     function addBlSpan(code, s, e) { if (!s && !e) return; if (!s) s = e; if (!e) e = s; var m = bspan[code]; if (!m) bspan[code] = { s: +s, e: +e }; else { if (+s < m.s) m.s = +s; if (+e > m.e) m.e = +e; } }
     // One group's contents: the pruned WBS path, or just the activities in WBS order.
-    function emitLeaf(list, base, baseAnc, prune) {
+    // `shownDims` = the grouping dimensions rendered as headings ABOVE this group, so the leaf rows
+    // only carry the location levels those headings do not already state.
+    function emitLeaf(list, base, baseAnc, prune, shownDims) {
       var depth = baseAnc.length;
       if (!showWbs) {
         // ⚠️ Four rows all reading "1st Fix" is unreadable — on this project they are the Mechanical /
@@ -5263,13 +5300,16 @@
         list.forEach(function (a) { var k = (a.activity_name || '').trim(); _nameN[k] = (_nameN[k] || 0) + 1; });
         list.slice().sort(function (x, y) { return cmpCodeStr(x.wbs, y.wbs); }).forEach(function (a) {
           a._dcode = base + SEP + a.wbs; a._ddepth = depth; a._danc = baseAnc; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null;
-          a._dsuffix = null;
-          if (_nameN[(a.activity_name || '').trim()] > 1) {
+          // Location first: it is the identity the owner asked every line item to carry. The
+          // repeated-name WBS-parent qualifier is the FALLBACK for rows that have no location.
+          a._dsuffix = locSuffixOf(a, shownDims);
+          if (!a._dsuffix && _nameN[(a.activity_name || '').trim()] > 1) {
             var _pc = (a._anc && a._anc.length) ? a._anc[a._anc.length - 1] : null;
             var _pr = _pc && realByCode[_pc];
             if (_pr && _pr.activity_name) a._dsuffix = _pr.activity_name;
           }
           out.push(a);
+          addCost(a, [a._dcode].concat(baseAnc));
           // ⚠️ dispStart/dispFin, matching `_spanMap` in rebuild() — a group header's bracket must
           // cover the same dates its children's bars are drawn at, or it is offset by the slip.
           var s = pd(dispStart(a)), e = pd(dispFin(a));
@@ -5312,10 +5352,17 @@
           node._dkind = 'wbs'; node._dcode = dc; node._ddepth = depth + rdepth; node._danc = da; node._realCode = en.real;
           out.push(node);
         } else {
-          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null; a._dsuffix = null;
+          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null;
+          a._dsuffix = locSuffixOf(a, shownDims);
           out.push(a);
           var s = pd(dispStart(a)), e = pd(dispFin(a));   // displayed dates — see the note above
           addSpan(dc, s, e); da.forEach(function (x) { addSpan(x, s, e); });
+          // The BASELINE roll-up was accumulated only in the non-WBS branch, so any grouping that
+          // ended in 'wbs' left every branch and group row above it with blank BL Start / BL Finish
+          // and no BL0 rail - half the "roll-up WBS information" the owner reported as wrong.
+          var _bs = pd(a.bl_start), _be = pd(a.bl_finish);
+          addBlSpan(dc, _bs, _be); da.forEach(function (x) { addBlSpan(x, _bs, _be); });
+          addCost(a, [dc].concat(da));
         }
       });
     }
@@ -5338,7 +5385,7 @@
     otherPhaseActs.forEach(function (a) { (isUnderCloseout(a) ? afterExecActs : beforeExecActs).push(a); });
     if (beforeExecActs.length) {
       var savedShowWbs1 = showWbs; showWbs = true;
-      emitLeaf(beforeExecActs, '', []);
+      emitLeaf(beforeExecActs, '', [], false, []);
       showWbs = savedShowWbs1;
     }
     // Wrap Execution's Discipline/Location breakdown in its own "Execution Phase" heading — purely
@@ -5354,7 +5401,7 @@
     (function walk(list, di, parentCode, parentAnc) {
       // prune=true ONLY here: the two other emitLeaf calls render the carved-out non-Execution
       // phases by their real WBS path with no group above them, where the full chain IS the view.
-      if (di >= dims.length) { emitLeaf(list, parentCode, parentAnc, true); return; }
+      if (di >= dims.length) { emitLeaf(list, parentCode, parentAnc, true, dims); return; }
       // ⚠️ DISSOLVE the "— Unassigned —" bucket (owner: "if there are activities under an unassigned
       // WBS, dissolve it and reorganise the activities to the parent"). An activity with no value on
       // THIS dimension shouldn't hang under a placeholder heading — it is lifted and re-grouped by the
@@ -5416,12 +5463,23 @@
         if (_lastDim && !showWbs && buckets[g].length === 1) {
           var solo = buckets[g][0];
           solo._dcode = gcode; solo._ddepth = parentAnc.length; solo._danc = parentAnc;
-          solo._dkind = 'task'; solo._realCode = solo.wbs; solo._dlabel = g; solo._dsuffix = null;
+          solo._dkind = 'task'; solo._realCode = solo.wbs;
+          // This row IS the deepest grouping level, so it carries that level's identity - but as a
+          // QUALIFIER, not as the name. Replacing the name with the bucket value (its old behaviour)
+          // showed "U1" where the planner needs to read "Precast Works B3 - Z1 - U1": the merged row
+          // is the only row for this leaf, so losing the activity name loses it from the schedule.
+          // The bucket's own value is included here because this row replaced its heading; every
+          // shallower dimension is still a heading above and is subtracted by locSuffixOf.
+          var _soloLoc = locSuffixOf(solo, dims.slice(0, di));
+          var _soloExtra = (dims[di].indexOf('loc:') === 0 || dims[di] === 'act') ? null : g;
+          solo._dlabel = null;
+          solo._dsuffix = [_soloExtra, _soloLoc].filter(Boolean).join(' - ') || null;
           out.push(solo);
           var ss = pd(dispStart(solo)), se = pd(dispFin(solo));   // displayed dates — see the note above
           addSpan(gcode, ss, se); parentAnc.forEach(function (x) { addSpan(x, ss, se); });
           addBlSpan(gcode, pd(solo.bl_start), pd(solo.bl_finish));
           parentAnc.forEach(function (x) { addBlSpan(x, pd(solo.bl_start), pd(solo.bl_finish)); });
+          addCost(solo, [gcode].concat(parentAnc));
           return;
         }
         // Roll the group's BASELINE span and status counts up now, while its bucket is in hand —
@@ -5459,10 +5517,10 @@
     })(acts, 0, execHeadCode, execWrap ? [execHeadCode] : []);
     if (afterExecActs.length) {
       var savedShowWbs2 = showWbs; showWbs = true;
-      emitLeaf(afterExecActs, '', []);
+      emitLeaf(afterExecActs, '', [], false, []);
       showWbs = savedShowWbs2;
     }
-    _dspan = span; _dblspan = bspan;
+    _dspan = span; _dblspan = bspan; _dcost = dcost;
     return out;
   }
   // `_treeDepth` = how many levels the CURRENT grouping actually produces. Recorded here because
@@ -7281,7 +7339,7 @@
     var body = DL.map(function (nd) {
       if (hiddenRow(nd)) return '';
       var isW = isWbsNode(nd), depth = ddepth(nd), pad = 4 + depth * 14, ctx;
-      if (isW) { var cm = _costMap[nd._realCode || nd.wbs]; ctx = { isW: true, pad: pad, phys: (cm && cm.wd > 0) ? Math.round(cm.wearn / cm.wd) : 0, planv: (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) : null }; }
+      if (isW) { var cm = cmOf(nd); ctx = { isW: true, pad: pad, phys: (cm && cm.wd > 0) ? Math.round(cm.wearn / cm.wd) : 0, planv: (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) : null }; }
       else { ctx = { isW: false, pad: pad, no: ++_no, phys: Math.max(0, Math.min(100, nd.percent_complete || 0)), planv: plannedPOC(nd) }; }
       var tds = order.map(function (k, ci) {
         var caret = (ci === 0 && isW) ? '<span class="ps-prog-caret" data-toggle="' + esc(dcode(nd)) + '">' + (collapsed[dcode(nd)] ? '►' : '▼') + '</span>' : '';
@@ -8486,6 +8544,20 @@
   }
   function locLevelName(id) { var l = LOC_LEVELS.find(function (x) { return x.id === id; }); return l ? l.name : null; }
   function locValOf(r, levelId) { return (r && r.location && r.location[levelId]) || ''; }
+  // The location tokens an activity carries that the CURRENT grouping does NOT already say, joined
+  // for display on the LEAF (line-item) row. Owner 2026-08-18: "if the level / zone / unit is not
+  // part of the groupings, the lowest level or activity level of information must include the level /
+  // zoning / unit information in that data (e.g. Precast Works B3 - Z1 - U1)". A level that IS a
+  // grouping dimension is already a heading above the row, so repeating it there would be noise —
+  // hence `dims` is subtracted rather than the whole location being printed unconditionally.
+  function locSuffixOf(r, dims) {
+    if (!r || !r.location || !LOC_LEVELS.length) return null;
+    var shown = {};
+    (dims || []).forEach(function (d) { if (String(d).indexOf('loc:') === 0) shown[String(d).slice(4)] = 1; });
+    var parts = [];
+    LOC_LEVELS.forEach(function (l) { if (shown[l.id]) return; var v = locValOf(r, l.id); if (v) parts.push(String(v)); });
+    return parts.length ? parts.join(' - ') : null;
+  }
   // Every distinct value already used at a level — feeds the grid editor's datalist and the
   // Add/Edit form, so a planner picks an existing "Tower A" instead of retyping (and mistyping) it.
   function locValuesFor(levelId) {
@@ -8816,8 +8888,8 @@
   var STATUS_OPTS = ['Not Started', 'In Progress', 'Completed'];
   // Rolled-up status pill for a WBS/summary (from its leaf activities): all done → Completed,
   // any started/done → In Progress, else Not Started. Uses the precomputed _costMap counters.
-  function _wbsStatusPill(code) {
-    var cm = _costMap[code]; if (!cm || !cm.total) return '';
+  function _wbsStatusPill(cm) {
+    if (!cm || !cm.total) return '';
     var s, cls;
     if (cm.done === cm.total) { s = 'Completed'; cls = 'ps-status-completed'; }
     else if (cm.prog > 0 || cm.done > 0) { s = 'In Progress'; cls = 'ps-status-inprogress'; }
@@ -8836,8 +8908,10 @@
     return '<span class="ps-status-pill ' + cls + '">' + s + '</span>';
   }
   // The WBS-parent qualifier on a repeated activity name — see the note in emitLeaf.
+  // The qualifier printed after a leaf row's name: the location levels the current grouping does
+  // not already state (locSuffixOf), or - for a row with no location - its immediate WBS parent.
   function _dsuffixHtml(r) {
-    return r._dsuffix ? ' <span class="ps-dsuffix" title="WBS parent">· ' + esc(r._dsuffix) + '</span>' : '';
+    return r._dsuffix ? ' <span class="ps-dsuffix" title="Level / zone / unit not shown as a grouping">· ' + esc(r._dsuffix) + '</span>' : '';
   }
   function statusCellHtml(r) {
     var s = r.status || 'Not Started';
@@ -8862,7 +8936,7 @@
         '<div class="ps-cell c-cost"></div><div class="ps-cell c-cost"></div><div class="ps-cell c-ctype"></div>';
     }
     if (isWbsNode(r)) {
-      var cm = _costMap[r._realCode || r.wbs];
+      var cm = cmOf(r);
       var wPoc = (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) + '%' : '';
       var wEarn = (cm && cm.wd > 0) ? Math.round(cm.wearn / cm.wd) + '%' : '';
       function s(v) { return (cm && v) ? Fmt.money(v) : ''; }
@@ -8982,7 +9056,7 @@
         // per request — those summary rows read cleaner without their dotted code.
         '<div class="ps-cell c-id" style="padding-left:' + idPad + 'px;">' + (depth <= 1 ? '' : esc(r._realCode || r.wbs || '')) + '</div>' +
         '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + arrow + '</span>' + esc(r.activity_name || '') + '</div>' +
-        '<div class="ps-cell c-status">' + _wbsStatusPill(r._realCode || r.wbs) + '</div>' +
+        '<div class="ps-cell c-status">' + _wbsStatusPill(cmOf(r)) + '</div>' +
         (function () { var blsp = (r._dkind === 'group') ? null : wbsBlSpan(r);
           return '<div class="ps-cell c-date">' + (blsp ? Fmt.date(dstr(blsp.s)) : '') + '</div><div class="ps-cell c-date">' + (blsp ? Fmt.date(dstr(blsp.e)) : '') + '</div>'; })() +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
@@ -9674,7 +9748,7 @@
       // the point of the view for reporting. Group rows keep theirs from _dblspan via wbsBlSpan.
       var blsp = _gset.baseline ? wbsBlSpan(r) : null;
       // Rolled-up %-complete (duration-weighted) on the summary bar, from _costMap.
-      var _cm = (r._dkind === 'group') ? null : _costMap[r.wbs];
+      var _cm = (r._dkind === 'group') ? null : cmOf(r);
       var sumPct = (_cm && _cm.wd > 0) ? Math.max(0, Math.min(100, Math.round(_cm.wearn / _cm.wd))) : 0;
       var sumTop = top + o8;
       // ⚠️ Computed BEFORE the baseline rail because THREE marks now stack under this row and each
@@ -11860,20 +11934,36 @@
   // level down and re-projected a fresh crop of duplicate WBS rows — exactly the reported
   // "refreshing bugs out with duplicated WBS rows". Looping until a pass finds nothing collapses the
   // whole duplicated subtree in one go.
+  var _dedupedNames = [];
   async function _wbsDedupeSkeleton() {
-    var total = 0;
+    var total = 0; _dedupedNames = [];
     // Bounded by tree depth; a pass that heals nothing exits immediately, so this is normally 1 call.
     for (var guard = 0; guard < 24; guard++) {
       var n2 = await _wbsDedupeSkeletonPass();
       total += n2;
       if (!n2) break;
     }
+    // The heal CHANGES the tree, so it must not be silent - a planner who sees a branch count drop
+    // needs to know why.
+    if (total) {
+      var uniq = _dedupedNames.filter(function (n, i) { return _dedupedNames.indexOf(n) === i; });
+      UI.toast('Merged ' + total + ' duplicate WBS branch' + (total === 1 ? '' : 'es') + (uniq.length ? ' (' + uniq.slice(0, 4).join(', ') + (uniq.length > 4 ? '…' : '') + ')' : '') + '.', 'success');
+    }
     return total;
   }
   async function _wbsDedupeSkeletonPass() {
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
     var byKey = {}, dupes = [];
-    WBS_NODES.filter(function (n) { return n.is_locked; })
+    // ⚠️ Was restricted to `is_locked` (skeleton) nodes, which left the OTHER source of same-name
+    // siblings unhealed: a Schedule Builder push inserted a fresh branch per trade/floor/zone/unit
+    // every time it ran, so a re-pushed project carried a full second copy of the tree - the reported
+    // "General Requirements / Site Works / Allied Services each rendered twice with identical dates
+    // and %". The push is idempotent now (see pushToSchedule), but projects already holding the
+    // duplicates need them merged. Merging is lossless: children, activities and summary rows are all
+    // re-pointed onto the survivor before the duplicate is deleted, so two same-name branches become
+    // one branch holding everything both of them held.
+    // Blank names are skipped - every unnamed sibling would otherwise key alike and merge into one.
+    WBS_NODES.filter(function (n) { return String(n.name || '').trim() !== ''; })
       .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); })
       .forEach(function (n) {
         var key = (n.parent_id || '') + ' ' + String(n.name || '').trim().toLowerCase();
@@ -11894,6 +11984,7 @@
       WBS_NODES = WBS_NODES.filter(function (n) { return n.id !== dropId; });
       WBS_NODES.forEach(function (n) { if (n.parent_id === dropId) n.parent_id = keepId; });
       rows.forEach(function (r) { if (r.wbs_node_id === dropId) r.wbs_node_id = keepId; });
+      _dedupedNames.push(dupes[i].keep.name);
     }
     return dupes.length;
   }
@@ -13461,7 +13552,7 @@
     function blankZoning() { var z = {}; GROUPS.forEach(function (g) { z[g] = { floors: [] }; }); return z; }
     var WBS_DIMS = ['trade', 'floor', 'zone', 'unit'];
     var DIM_LABEL = { trade: 'Trade', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       var di = (a.durInt != null) ? Math.max(0, +a.durInt || 0) : legacy;
@@ -13486,7 +13577,13 @@
       });
       function normLinks(src) { return Array.isArray(src) ? src.filter(function (k) { return k && k.from && k.to; }).map(function (k) { return { from: k.from, to: k.to, type: (['FS', 'SS', 'FF', 'SF'].indexOf(k.type) >= 0 ? k.type : 'FS'), lag: (typeof k.lag === 'number' ? k.lag : (parseInt(k.lag, 10) || 0)) }; }) : []; }
       d.links = normLinks(c.links);           // zone-to-zone links (step 3)
-      d.actLinks = normLinks(c.actLinks);     // class-code-to-class-code links within a trade (step 4)
+      d.actLinks = normLinks(c.actLinks);     // class-code-to-class-code links within a trade (step 4) - the DEFAULT sequence
+      // Per-LEVEL-TYPE overrides of that sequence (basement / podium / typical / roof deck). A key is
+      // present only when the planner gave that level type its own sequence; every absent key falls
+      // back to `actLinks`, so an existing project keeps behaving exactly as it did.
+      d.actLinksKind = {};
+      var _srcK = (c.actLinksKind && typeof c.actLinksKind === 'object') ? c.actLinksKind : {};
+      KIND_ORDER.forEach(function (k) { if (Array.isArray(_srcK[k])) d.actLinksKind[k] = normLinks(_srcK[k]); });
       d.scopeOff = (c.scopeOff && typeof c.scopeOff === 'object') ? c.scopeOff : {};
       d.tradeLeads = (c.tradeLeads && typeof c.tradeLeads === 'object') ? c.tradeLeads : {};  // per cross-trade transition: floors of the leading trade done before the following one starts
       // WBS structure: ordered list of location dimensions used when pushing into the schedule
@@ -13627,15 +13724,64 @@
     // trade has class-code links (step 4) the codes are scheduled by those links (FS/SS/FF/SF + lag, so
     // some run in parallel); with no links they run back-to-back in the step-1 order. actOffsets returns
     // each included code's day-offset within the zone plus the total span.
+    // ---- per-LEVEL-TYPE trade sequencing (owner 2026-08-18) --------------------------------------
+    // A basement is not sequenced like a typical floor (no facade, different formwork cycle, no roof
+    // works), so the class-code sequence is definable PER FLOOR CATEGORY. `cfg.actLinks` stays the
+    // default every category follows; `cfg.actLinksKind[kind]` is an optional override. Nothing is
+    // forked until the planner actually edits a category, so a project that never touches this reads
+    // and writes exactly the same data as before.
+    var uiSeqKind = 'all';   // which level type step 4 is currently editing
+    function kindHasOwn(kind) { return !!(kind && kind !== 'all' && cfg && cfg.actLinksKind && Array.isArray(cfg.actLinksKind[kind])); }
+    function kindLinks(kind) { return kindHasOwn(kind) ? cfg.actLinksKind[kind] : cfg.actLinks; }
+    function setKindLinks(kind, arr) {
+      if (!kind || kind === 'all') { cfg.actLinks = arr; return; }
+      cfg.actLinksKind = cfg.actLinksKind || {}; cfg.actLinksKind[kind] = arr;
+    }
+    // The array step 4 reads (AL()) or is about to MUTATE (AL(true)). Editing a category that has no
+    // override yet forks a copy of the default first, so the default is never edited by accident.
+    function AL(forEdit) {
+      if (uiSeqKind === 'all' || kindHasOwn(uiSeqKind)) return kindLinks(uiSeqKind);
+      if (!forEdit) return cfg.actLinks;
+      cfg.actLinksKind = cfg.actLinksKind || {};
+      cfg.actLinksKind[uiSeqKind] = cfg.actLinks.map(function (k) { return { from: k.from, to: k.to, type: k.type, lag: k.lag }; });
+      return cfg.actLinksKind[uiSeqKind];
+    }
+    // The floor category a generated location sits in - the un-located "whole project" placeholder
+    // (floor._all) has no category, so it follows the default.
+    function locKind(loc) { return (loc && loc.floor && !loc.floor._all) ? floorKind(loc.floor) : 'all'; }
+    function linksForLoc(loc) { return kindLinks(locKind(loc)); }
+    // Level types worth offering: the ones this project actually builds, plus any that already carry
+    // an override (so a category whose floors were later deleted is still reachable/removable).
+    function kindsInProject() {
+      var seen = {};
+      GROUPS.forEach(function (g) { ((cfg.zoning[g] && cfg.zoning[g].floors) || []).forEach(function (f) { seen[floorKind(f)] = 1; }); });
+      KIND_ORDER.forEach(function (k) { if (kindHasOwn(k)) seen[k] = 1; });
+      var out = KIND_ORDER.filter(function (k) { return seen[k]; });
+      return out.length ? out : KIND_ORDER.slice();
+    }
+    // Copy ONE TRADE's sequence from another level type (or from the default) into `toKind`, replacing
+    // that trade's links there and leaving every other trade's links alone.
+    function copyTradeSeq(fromKind, toKind, tr) {
+      var ids = tradeLinkIds(tr);
+      var src = kindLinks(fromKind).filter(function (k) { return ids[k.from] && ids[k.to]; });
+      var saved = uiSeqKind; uiSeqKind = toKind;
+      var kept = AL(true).filter(function (k) { return !(ids[k.from] && ids[k.to]); });
+      src.forEach(function (k) { kept.push({ from: k.from, to: k.to, type: k.type || 'FS', lag: k.lag || 0 }); });
+      setKindLinks(toKind, kept);
+      uiSeqKind = saved;
+      markDirty(); render();
+      UI.toast('Copied ' + src.length + ' ' + GLABEL[tr] + ' link' + (src.length === 1 ? '' : 's') + ' from ' + (fromKind === 'all' ? 'the default' : KIND_LABEL[fromKind]) + '.', 'success');
+    }
     function actOffsets(tr, loc, basis) {
       function dur(a) { return effDur(a, basis, loc); }
+      var AK = linksForLoc(loc);   // this location's level type may define its own trade sequence
       var acts = tradeActs(tr).filter(function (a) { return included(loc.uid, a.id) && dur(a) > 0; });
       var ids = {}; acts.forEach(function (a) { ids[a.id] = a; });
       var trIds = {}; tradeActs(tr).forEach(function (a) { trIds[a.id] = 1; });
-      var hasLinks = cfg.actLinks.some(function (k) { return trIds[k.from] && trIds[k.to]; });
+      var hasLinks = AK.some(function (k) { return trIds[k.from] && trIds[k.to]; });
       if (!hasLinks) { var off = {}, cur = 0; acts.forEach(function (a) { off[a.id] = cur; cur += dur(a); }); return { off: off, span: cur }; }
       var inc = {}; acts.forEach(function (a) { inc[a.id] = []; });
-      cfg.actLinks.forEach(function (k) { if (ids[k.to] && ids[k.from]) inc[k.to].push(k); });
+      AK.forEach(function (k) { if (ids[k.to] && ids[k.from]) inc[k.to].push(k); });
       var memo = {}, stk = {};
       function st(id) { if (memo[id] != null) return memo[id]; if (stk[id]) return 0; stk[id] = 1; var m = 0;
         inc[id].forEach(function (k) { m = Math.max(m, linkStart(st(k.from), dur(ids[k.from]), dur(ids[id]), k.type, k.lag)); });
@@ -13645,24 +13791,24 @@
     }
     function nodeDays(loc, basis) { return actOffsets(loc.trade, loc, basis).span; }
     // ---- class-code (trade) link helpers — mirror the zone-link helpers, over cfg.actLinks ----
-    function actLinkOf(f, t) { return cfg.actLinks.find(function (k) { return k.from === f && k.to === t; }); }
-    function reachesAct(a, b) { var seen = {}, stack = [a]; while (stack.length) { var x = stack.pop(); if (x === b) return true; if (seen[x]) continue; seen[x] = 1; cfg.actLinks.forEach(function (k) { if (k.from === x) stack.push(k.to); }); } return false; }
-    function removeActLink(f, t) { cfg.actLinks = cfg.actLinks.filter(function (k) { return !(k.from === f && k.to === t); }); markDirty(); render(); }
+    function actLinkOf(f, t) { return AL().find(function (k) { return k.from === f && k.to === t; }); }
+    function reachesAct(a, b) { var seen = {}, stack = [a], L = AL(); while (stack.length) { var x = stack.pop(); if (x === b) return true; if (seen[x]) continue; seen[x] = 1; L.forEach(function (k) { if (k.from === x) stack.push(k.to); }); } return false; }
+    function removeActLink(f, t) { setKindLinks(uiSeqKind, AL(true).filter(function (k) { return !(k.from === f && k.to === t); })); markDirty(); render(); }
     function addActLink(f, t, type, lag) {
       if (!f || !t || f === t) return;
       if (actLinkOf(f, t)) { UI.toast('Those two class codes are already linked.', 'warn'); return; }
       if (reachesAct(t, f)) { UI.toast('That link would create a loop.', 'error'); return; }
-      cfg.actLinks.push({ from: f, to: t, type: type || 'FS', lag: lag || 0 }); markDirty(); render();
+      AL(true).push({ from: f, to: t, type: type || 'FS', lag: lag || 0 }); markDirty(); render();
     }
     function tradeLinkIds(tr) { var ids = {}; tradeActs(tr).forEach(function (a) { ids[a.id] = 1; }); return ids; }
-    function countTradeLinks(tr) { var ids = tradeLinkIds(tr); return cfg.actLinks.filter(function (k) { return ids[k.from] && ids[k.to]; }).length; }
-    function clearTradeLinks(tr) { var ids = tradeLinkIds(tr); cfg.actLinks = cfg.actLinks.filter(function (k) { return !(ids[k.from] && ids[k.to]); }); markDirty(); }
-    function autoChainTrade(tr, type) { type = (['FS', 'SS', 'FF', 'SF'].indexOf(type) >= 0) ? type : 'FS'; var acts = tradeActs(tr); clearTradeLinks(tr); for (var i = 1; i < acts.length; i++) cfg.actLinks.push({ from: acts[i - 1].id, to: acts[i].id, type: type, lag: 0 }); markDirty(); render(); }
+    function countTradeLinks(tr) { var ids = tradeLinkIds(tr); return AL().filter(function (k) { return ids[k.from] && ids[k.to]; }).length; }
+    function clearTradeLinks(tr) { var ids = tradeLinkIds(tr); setKindLinks(uiSeqKind, AL(true).filter(function (k) { return !(ids[k.from] && ids[k.to]); })); markDirty(); }
+    function autoChainTrade(tr, type) { type = (['FS', 'SS', 'FF', 'SF'].indexOf(type) >= 0) ? type : 'FS'; var acts = tradeActs(tr); clearTradeLinks(tr); var L = AL(true); for (var i = 1; i < acts.length; i++) L.push({ from: acts[i - 1].id, to: acts[i].id, type: type, lag: 0 }); markDirty(); render(); }
     // unit layout (1 per code) for the flow diagram — SS lands both in the same column, FS steps one over
     function actStartsUnit(tr) {
       var acts = tradeActs(tr), ids = {}; acts.forEach(function (a) { ids[a.id] = 1; });
       var inc = {}; acts.forEach(function (a) { inc[a.id] = []; });
-      cfg.actLinks.forEach(function (k) { if (ids[k.to] && ids[k.from]) inc[k.to].push(k); });
+      AL().forEach(function (k) { if (ids[k.to] && ids[k.from]) inc[k.to].push(k); });
       var memo = {}, stk = {};
       function st(id) { if (memo[id] != null) return memo[id]; if (stk[id]) return 0; stk[id] = 1; var m = 0;
         inc[id].forEach(function (k) { m = Math.max(m, linkStart(st(k.from), 1, 1, k.type, k.lag)); });
@@ -13708,7 +13854,7 @@
       if (!acts.length) return '<svg viewBox="0 0 300 60" width="300" height="60"><text x="10" y="34" font-size="12" fill="var(--pd-muted)">No class codes for this trade.</text></svg>';
       var pos = {}, bars = '', links = '', grid = '';
       var afP = {}, afS = {};
-      if (actFocus) cfg.actLinks.forEach(function (k) { if (k.to === actFocus) afP[k.from] = 1; if (k.from === actFocus) afS[k.to] = 1; });
+      if (actFocus) AL().forEach(function (k) { if (k.to === actFocus) afP[k.from] = 1; if (k.from === actFocus) afS[k.to] = 1; });
       function relCls(id) { if (!actFocus || id === actFocus) return ''; if (afP[id]) return ' prednode'; if (afS[id]) return ' succnode'; return ' dimnode'; }
       function xOf(u) { return chartX + u * step; }
       for (var u = 0; u <= maxUnit; u++) { var gx = xOf(u); grid += '<line x1="' + gx + '" y1="' + pad + '" x2="' + gx + '" y2="' + (H - pad) + '" stroke="var(--pd-line)" stroke-width="1" opacity=".3"></line>'; }
@@ -13721,7 +13867,7 @@
           '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '') + relCls(a.id) + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
           '<text x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 3) + '" text-anchor="middle" font-size="9" fill="#fff" pointer-events="none">' + e2(code) + '</text>';
       });
-      cfg.actLinks.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
+      AL().forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
         var fx = (k.type === 'SS' || k.type === 'SF') ? a.x : a.x + a.w;
         var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;
         var y1 = a.cy, y2 = b.cy, mx = (tx >= fx ? fx + 8 : fx - 8), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
@@ -13738,7 +13884,7 @@
     function actDayStarts(tr, basis) {
       var acts = tradeActs(tr), ids = {}; acts.forEach(function (a) { ids[a.id] = a; });
       var inc = {}; acts.forEach(function (a) { inc[a.id] = []; });
-      cfg.actLinks.forEach(function (k) { if (ids[k.to] && ids[k.from]) inc[k.to].push(k); });
+      AL().forEach(function (k) { if (ids[k.to] && ids[k.from]) inc[k.to].push(k); });
       var memo = {}, stk = {};
       function st(id) { if (memo[id] != null) return memo[id]; if (stk[id]) return 0; stk[id] = 1; var m = 0;
         inc[id].forEach(function (k) { m = Math.max(m, linkStart(st(k.from), pDur(ids[k.from], basis), pDur(ids[id], basis), k.type, k.lag)); });
@@ -13793,7 +13939,7 @@
       head += '<line x1="' + chartX + '" y1="' + chartTop + '" x2="' + (W - 4) + '" y2="' + chartTop + '" stroke="var(--pd-line)" stroke-width="1"></line>';
       var pos = {}, bars = '', links = '';
       var afP = {}, afS = {};
-      if (actFocus) cfg.actLinks.forEach(function (k) { if (k.to === actFocus) afP[k.from] = 1; if (k.from === actFocus) afS[k.to] = 1; });
+      if (actFocus) AL().forEach(function (k) { if (k.to === actFocus) afP[k.from] = 1; if (k.from === actFocus) afS[k.to] = 1; });
       function relCls(id) { if (!actFocus || id === actFocus) return ''; if (afP[id]) return ' prednode'; if (afS[id]) return ' succnode'; return ' dimnode'; }
       acts.forEach(function (a, i) {
         var y = chartTop + i * rowH, dur = Math.max(1, pDur(a, basis)), x = xOf(startsDays[a.id] || 0), w = Math.max(barMin, dur * scale), fill = gc(a.group);
@@ -13804,7 +13950,7 @@
           '<rect class="sbld-schedbar' + (inPendAct(a.id) ? ' pend' : (inActDst(a.id) ? ' pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '') + relCls(a.id) + '" data-act="' + a.id + '" x="' + x + '" y="' + (y + 5) + '" width="' + w + '" height="' + (rowH - 12) + '" rx="3" fill="' + fill + '"></rect>' +
           '<text x="' + (x + w + 4) + '" y="' + (y + rowH / 2 + 3) + '" font-size="9" fill="var(--pd-muted)" pointer-events="none">' + actDur(a, basis) + 'd</text>';
       });
-      cfg.actLinks.forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
+      AL().forEach(function (k) { var a = pos[k.from], b = pos[k.to]; if (!a || !b) return;
         var fx = (k.type === 'SS' || k.type === 'SF') ? a.x : a.x + a.w;
         var tx = (k.type === 'FF' || k.type === 'SF') ? b.x + b.w : b.x;
         var y1 = a.cy, y2 = b.cy, mx = (tx >= fx ? fx + 8 : fx - 8), lbl = (k.type || 'FS') + (k.lag ? (k.lag > 0 ? '+' + k.lag : k.lag) : '');
@@ -14088,7 +14234,7 @@
       { t: 'Activities', s: 'Class-code list + duration', fn: stActivities },
       { t: 'Floors & Zones', s: 'Location breakdown', fn: stLevels },
       { t: 'Zone sequence', s: 'Order of locations', fn: stSequence },
-      { t: 'Trade sequence', s: 'Order codes within a trade', fn: stTradeSeq },
+      { t: 'Trade sequence', s: 'Order codes per level type', fn: stTradeSeq },
       { t: 'Scope per zone', s: 'Activities per location', fn: stScope },
       { t: 'Stacking', s: 'Vertical stacking by trade', fn: stStacking },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
@@ -14408,7 +14554,7 @@
     function stTradeSeq(host) {
       var used = usedGroups();
       if (!used.length) {
-        host.innerHTML = '<h2>4 · Trade sequence — connect the class codes</h2>' +
+        host.innerHTML = '<h2>4 · Trade sequence — connect the class codes, per level type</h2>' +
           '<div class="sbld-empty">No trades yet — add activities in step 1 and assign each one a trade. The trades you use there will show up here to sequence.</div>';
         return;
       }
@@ -14419,6 +14565,31 @@
         var n = tradeActs(g).length;
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
+      // LEVEL TYPE selector. The sequence a trade follows is not the same on every kind of floor, so
+      // each category can define its own; "All levels" is the default the others inherit until they
+      // do. A category that has forked shows an "own" badge, can be copied from any other defined
+      // category (or from the default), and can be reverted to the default in one click.
+      var kindRow = (function () {
+        var btns = [['all', 'All levels (default)']].concat(kindsInProject().map(function (k) { return [k, KIND_LABEL[k]]; }))
+          .map(function (o) {
+            var own = kindHasOwn(o[0]);
+            var ttl = o[0] === 'all' ? 'The sequence every level type follows unless it defines its own'
+              : ('Trade sequence used on ' + KIND_LABEL[o[0]] + ' levels' + (own ? ' (defined)' : ' (inherits the default)'));
+            return '<button class="pd-btn sbld-scbtn' + (uiSeqKind === o[0] ? ' on' : '') + '" data-seqkind="' + o[0] + '" title="' + e2(ttl) + '">' + e2(o[1]) + (own ? ' <b class="own">own</b>' : '') + '</button>';
+          }).join('');
+        var srcs = [['all', 'All levels (default)']].concat(KIND_ORDER.filter(kindHasOwn).map(function (k) { return [k, KIND_LABEL[k]]; }))
+          .filter(function (o) { return o[0] !== uiSeqKind; });
+        var copy = srcs.length
+          ? '<select class="pd-select sbld-mini" id="b-seqcopy" title="Copy this trade\'s sequence from another level type"><option value="">Copy ' + e2(GLABEL[tr]) + ' sequence from…</option>' +
+            srcs.map(function (o) { return '<option value="' + o[0] + '">' + e2(o[1]) + '</option>'; }).join('') + '</select>'
+          : '';
+        var state = uiSeqKind === 'all'
+          ? '<span class="sbld-hint">Every level type follows this unless it defines its own.</span>'
+          : (kindHasOwn(uiSeqKind)
+            ? '<span class="sbld-hint"><b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> levels have their own sequence.</span><button class="pd-btn" id="b-seqreset">Follow the default here</button>'
+            : '<span class="sbld-hint">Showing the default — the first edit gives <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> its own sequence.</span>');
+        return '<div class="sbld-seqkind"><span class="sbld-seqkind-l">Level type</span>' + btns + copy + state + '</div>';
+      })();
       // Left: this trade's class codes as an EXCEL-STYLE grid (Code / Name / Interior / Exterior) with
       // multi-cell copy/paste, so a column of durations can be pasted straight from Excel. The ▸ button
       // on each row selects that code for linking (source → destination), replacing the old click-node.
@@ -14428,9 +14599,9 @@
         : (actLinkPhase === 'dst' && pendActDst.length)
           ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Create ' + pendActDst.length + ' link' + (pendActDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
-      host.innerHTML = '<h2>4 · Trade sequence — connect the class codes</h2>' +
-        '<p class="sbld-lede">Pick a <b>trade</b>. Its class codes are an <b>Excel-style grid</b> — click/drag or Shift-click to select cells, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste a column of Interior/Exterior durations straight from Excel; one cell fills a selection), <b>Ctrl+D</b> fill-down, <b>Delete</b> clears. Connect codes with the <b>▸</b> button on each row: <b>1)</b> select one or more <b>source</b> codes, <b>2)</b> <b>Confirm sources</b> (or right-click), <b>3)</b> select <b>destination</b> codes, <b>4)</b> <b>Create links</b>, <b>5)</b> choose FS/SS/FF/SF + lag. Open <b>Links</b> to edit them in a table; <b>Auto-chain</b> links every code back-to-back.</p>' +
-        chips +
+      host.innerHTML = '<h2>4 · Trade sequence — connect the class codes, per level type</h2>' +
+        '<p class="sbld-lede">Pick a <b>trade</b>, then the <b>level type</b> the sequence applies to (basements, podium, typical floors and the roof deck are not built in the same order). <b>All levels</b> is the default; any category can define its own, or <b>copy</b> one already defined. Its class codes are an <b>Excel-style grid</b> — click/drag or Shift-click to select cells, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste a column of Interior/Exterior durations straight from Excel; one cell fills a selection), <b>Ctrl+D</b> fill-down, <b>Delete</b> clears. Connect codes with the <b>▸</b> button on each row: <b>1)</b> select one or more <b>source</b> codes, <b>2)</b> <b>Confirm sources</b> (or right-click), <b>3)</b> select <b>destination</b> codes, <b>4)</b> <b>Create links</b>, <b>5)</b> choose FS/SS/FF/SF + lag. Open <b>Links</b> to edit them in a table; <b>Auto-chain</b> links every code back-to-back.</p>' +
+        chips + kindRow +
         '<div class="sbld-sec-actions">' +
         '<button class="pd-btn pd-btn-primary" id="b-autochain">Auto-chain</button>' +
         '<select class="pd-select sbld-mini" id="b-autotype" title="Relationship used when auto-chaining the class codes (FS / SS / FF / SF)">' +
@@ -14460,6 +14631,13 @@
               '<div class="sbld-seq2-right">' + chartH + chartBody + '</div></div>';
         })();
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; actFocus = null; actReset(); }; });
+      host.querySelectorAll('[data-seqkind]').forEach(function (b) { b.onclick = function () { uiSeqKind = b.dataset.seqkind; actFocus = null; actReset(); }; });
+      var scp = host.querySelector('#b-seqcopy'); if (scp) scp.onchange = function () { if (scp.value) copyTradeSeq(scp.value, uiSeqKind, tr); };
+      var srs = host.querySelector('#b-seqreset'); if (srs) srs.onclick = function () {
+        if (!confirm('Drop the ' + KIND_LABEL[uiSeqKind] + ' sequence and follow the default on those levels?')) return;
+        if (cfg.actLinksKind) delete cfg.actLinksKind[uiSeqKind];
+        markDirty(); render();
+      };
       host.querySelectorAll('[data-seqlayout]').forEach(function (b) { b.onclick = function () { seqLayout = b.dataset.seqlayout; render(); }; });
       var atSel = host.querySelector('#b-autotype'); if (atSel) atSel.onchange = function () { autoChainType = atSel.value; };
       host.querySelector('#b-autochain').onclick = function () { autoChainTrade(tr, atSel ? atSel.value : autoChainType); };
@@ -15008,7 +15186,7 @@
     // Scoped to the trade so a dense sequence stays auditable: filter, change type/lag inline, remove.
     function openActLinkManager(tr) {
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
-      ov.innerHTML = '<div class="pd-modal" style="max-width:760px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Links — ' + e2(GLABEL[tr]) + '</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+      ov.innerHTML = '<div class="pd-modal" style="max-width:760px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Links — ' + e2(GLABEL[tr]) + ' · ' + e2(uiSeqKind === 'all' ? 'all levels' : KIND_LABEL[uiSeqKind]) + '</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:12px 16px;"><input class="pd-input" id="sbam-search" placeholder="Filter by class code / description…" style="width:100%;height:34px;margin-bottom:10px;">' +
         '<div id="sbam-body" style="max-height:60vh;overflow:auto;"></div></div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" id="sbam-clear">Clear ' + e2(GLABEL[tr]) + ' links</button><button class="pd-btn pd-btn-primary" data-x>Done</button></div></div>';
@@ -15019,7 +15197,7 @@
       var body = ov.querySelector('#sbam-body'), search = ov.querySelector('#sbam-search'), TYPES = ['FS', 'SS', 'FF', 'SF'];
       function draw() {
         var ids = tradeLinkIds(tr);
-        var rows = cfg.actLinks.map(function (k, i) { return { k: k, i: i }; }).filter(function (x) { return ids[x.k.from] && ids[x.k.to]; })
+        var rows = AL().map(function (k, i) { return { k: k, i: i }; }).filter(function (x) { return ids[x.k.from] && ids[x.k.to]; })
           .map(function (x) { return { k: x.k, i: x.i, fl: actUidLabel(x.k.from), tl: actUidLabel(x.k.to) }; });
         if (!rows.length) { body.innerHTML = '<div class="sbld-empty">No links yet for ' + e2(GLABEL[tr]) + '. Connect codes in the diagram or use <b>Auto-chain</b>.</div>'; return; }
         var q = (search.value || '').toLowerCase();
@@ -15032,9 +15210,11 @@
               '<td><input class="pd-input sbam-lag" type="number" data-i="' + x.i + '" value="' + (x.k.lag || 0) + '" style="width:64px;height:28px;"></td>' +
               '<td><button class="sbld-del sbam-del" data-i="' + x.i + '" title="Remove link"><span data-ico="trash" data-ico-size="13"></span></button></td></tr>';
           }).join('') + '</tbody></table></div>' + (items.length ? '' : '<div class="sbld-empty">No links match your filter.</div>');
-        body.querySelectorAll('.sbam-type').forEach(function (s) { s.onchange = function () { cfg.actLinks[+s.dataset.i].type = s.value; markDirty(); }; });
-        body.querySelectorAll('.sbam-lag').forEach(function (inp) { inp.onchange = function () { cfg.actLinks[+inp.dataset.i].lag = parseInt(inp.value, 10) || 0; markDirty(); }; });
-        body.querySelectorAll('.sbam-del').forEach(function (b) { b.onclick = function () { cfg.actLinks.splice(+b.dataset.i, 1); markDirty(); draw(); }; });
+        // AL(true) forks the level type's own copy on the first edit; the fork preserves order, so
+        // the row indices computed from AL() above stay valid.
+        body.querySelectorAll('.sbam-type').forEach(function (s) { s.onchange = function () { AL(true)[+s.dataset.i].type = s.value; markDirty(); }; });
+        body.querySelectorAll('.sbam-lag').forEach(function (inp) { inp.onchange = function () { AL(true)[+inp.dataset.i].lag = parseInt(inp.value, 10) || 0; markDirty(); }; });
+        body.querySelectorAll('.sbam-del').forEach(function (b) { b.onclick = function () { AL(true).splice(+b.dataset.i, 1); markDirty(); draw(); }; });
         if (window.Icons) Icons.hydrate(body);
       }
       search.oninput = draw;
@@ -15356,9 +15536,13 @@
       Object.keys(locRows).forEach(function (uid) {
         var arr = locRows[uid], byAct = {}; arr.forEach(function (r) { byAct[r.act.id] = r; });
         var tr = arr[0].loc.trade, trIds = {}; tradeActs(tr).forEach(function (a) { trIds[a.id] = 1; });
-        var hasLinks = cfg.actLinks.some(function (k) { return trIds[k.from] && trIds[k.to]; });
+        // The sequence for THIS location's level type (basement / podium / typical / roof deck),
+        // falling back to the default - same resolution generate() uses, so the pushed predecessors
+        // describe the dates that were generated.
+        var AK = linksForLoc(arr[0].loc);
+        var hasLinks = AK.some(function (k) { return trIds[k.from] && trIds[k.to]; });
         if (hasLinks) {
-          cfg.actLinks.forEach(function (k) { var f = byAct[k.from], t = byAct[k.to]; if (!f || !t) return; var ty = k.type || 'FS'; t._preds.push(f._id + (ty !== 'FS' ? ' ' + ty : '') + lagStr(k.lag)); });
+          AK.forEach(function (k) { var f = byAct[k.from], t = byAct[k.to]; if (!f || !t) return; var ty = k.type || 'FS'; t._preds.push(f._id + (ty !== 'FS' ? ' ' + ty : '') + lagStr(k.lag)); });
         } else {
           for (var i = 1; i < arr.length; i++) arr[i]._preds.push(arr[i - 1]._id);
         }
@@ -15397,7 +15581,13 @@
         var nodeDescs = [], nodeByKey = {}, taskAssign = [], nodeSeq = 0;
         function ensureNode(key, parentKey, name) { if (!nodeByKey[key]) { var d = { key: key, parentKey: parentKey, name: name }; nodeByKey[key] = d; nodeDescs.push(d); } }
         function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'floor') return (l.floor && l.floor._all) ? ' ' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : ' '; if (dim === 'unit') return l.unit ? l.unit.id : ' '; return ' '; }
-        function dimName(dim, r) { var l = r.loc; if (dim === 'trade') return GLABEL[l.trade] || l.trade; if (dim === 'floor') return (l.floor && l.floor._all) ? null : (l.floor.code || l.floor.name || 'Floor'); if (dim === 'zone') return l.zone ? (l.zone.code || l.zone.name || 'Zone') : null; if (dim === 'unit') return l.unit ? (l.unit.code || l.unit.name || 'Unit') : null; return null; }
+        // ⚠️ The trade BRANCH is named with GWORK (the canonical "Structural Works"), not GLABEL
+        // ("Structural"). work_type on the pushed activities is already GWORK, so a branch named with
+        // the short label made the same trade reachable under TWO different names - and for the three
+        // trades whose short and canonical labels are identical (General Requirements / Site Works /
+        // Allied Services) the second name is a byte-for-byte duplicate of the first, which is the
+        // reported "each rendered twice with identical dates and %".
+        function dimName(dim, r) { var l = r.loc; if (dim === 'trade') return GWORK[l.trade] || GLABEL[l.trade] || l.trade; if (dim === 'floor') return (l.floor && l.floor._all) ? null : (l.floor.code || l.floor.name || 'Floor'); if (dim === 'zone') return l.zone ? (l.zone.code || l.zone.name || 'Zone') : null; if (dim === 'unit') return l.unit ? (l.unit.code || l.unit.name || 'Unit') : null; return null; }
         function buildTree(rowsIn, dims, parentKey) {
           if (!dims.length) { rowsIn.forEach(function (r) { taskAssign.push({ k: parentKey, r: r, name: r.act.name }); }); return; }
           var dim = dims[0], rest = dims.slice(1), m = {}, ord = [];
@@ -15416,9 +15606,26 @@
         var baseRow = rows.filter(function (r) { return isWbs(r) && String(r.wbs) === String(base); })[0];
         var baseNodeId = baseRow ? (baseRow.wbs_node_id || null) : null;
         // 1) create the wbs_nodes parent-first (sequential so children can reference their parent's id)
-        var keyToNodeId = { '__base__': baseNodeId }, soByParent = {}, wbsOk = true;
+        // ⚠️ IDEMPOTENT: reuse a branch that already exists rather than inserting a second one with
+        // the same name under the same parent. `ensureNode` only dedupes WITHIN one push (its keys are
+        // 'N'+(++nodeSeq)), so pushing a project twice - which is normal, after fixing durations or
+        // adding a trade - used to insert a fresh wbs_nodes row per trade/floor/zone/unit every time.
+        // Those duplicates are invisible to _wbsEnsureSummaries' heal (it keys on wbs_node_id, and
+        // each duplicate node has its own), so they render as a full second copy of the branch.
+        // `reused` also suppresses the WBS-Summary payload below: the surviving node already has one,
+        // and writing another is exactly the "two rows for one wbs_node_id" duplication.
+        var keyToNodeId = { '__base__': baseNodeId }, soByParent = {}, wbsOk = true, reused = {}, reusedN = 0;
+        function existingChild(parentId, name) {
+          var key = String(name || '').trim().toLowerCase();
+          if (!key) return null;
+          var hit = WBS_NODES.filter(function (n) { return (n.parent_id || null) === (parentId || null) && String(n.name || '').trim().toLowerCase() === key; })
+            .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); })[0];
+          return hit || null;
+        }
         for (var di = 0; di < nodeDescs.length; di++) {
           var nd = nodeDescs[di]; soByParent[nd.parentKey] = (soByParent[nd.parentKey] || 0);
+          var ex = existingChild(keyToNodeId[nd.parentKey] || null, nd.name);
+          if (ex) { keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++; soByParent[nd.parentKey]++; if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length); continue; }
           var nres = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: keyToNodeId[nd.parentKey] || null, name: nd.name, sort_order: soByParent[nd.parentKey]++, created_by: UID }).select().single();
           if (nres.error) { wbsOk = false; wbsMsg = nres.error.message; break; }
           keyToNodeId[nd.key] = nres.data.id; WBS_NODES.push(nres.data);
@@ -15428,7 +15635,7 @@
           // codes computed from the now-updated WBS_NODES tree, so the pushed rows carry their correct
           // dotted WBS code immediately (load() heals summaries but doesn't re-sync codes).
           var codeOf = computeWbsCodes();
-          nodeDescs.forEach(function (nd) { var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, created_by: UID }); });
+          nodeDescs.forEach(function (nd) { if (reused[nd.key]) return; var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; var nidt = keyToNodeId[t.k] || baseNodeId || null; p.wbs_node_id = nidt; p.wbs = nidt ? (codeOf[nidt] || null) : null; payloads.push(p); });
         } else {
           // fallback: dotted WBS-Summary + task rows (old behavior), so the push still works pre-migration

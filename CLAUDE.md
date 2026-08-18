@@ -77,6 +77,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Project Schedule: doubled trades closed, per-level-type trade sequencing, grouped roll-up
+Three owner asks in one prompt; all module-local in `modules/project-schedule/index.html`, no migration.
+- ⚠️ **The doubled trades are two bugs, and the "3 of 6 duplicate" split is what identified them.**
+  (a) The grouped push was **never idempotent** — `ensureNode` dedupes only *within* one push, so every
+  re-push inserted a fresh `wbs_nodes` row per trade/floor/zone/unit (a second copy of the tree) that
+  `_wbsEnsureSummaries`' heal cannot see, because it keys on `wbs_node_id` and each duplicate has its
+  own. The push now reuses an existing same-name child and suppresses its summary payload.
+  (b) The trade branch was named with the builder's short `GLABEL` while the activities' `work_type`
+  used the canonical `GWORK` — and for **General Requirements / Site Works / Allied Services those two
+  labels are identical**, so those three read as duplicated rows while Structural / Architectural /
+  MEPF read as two differently-named ones. `dimName` returns `GWORK` now.
+  (c) The duplicate-branch heal only looked at `is_locked` skeleton nodes, so existing corruption was
+  unreachable; it now merges any same-name siblings (losslessly, re-pointing children/activities/summary
+  rows onto the survivor) and toasts what it merged.
+- **Schedule Builder step 4 is now per LEVEL TYPE** (Basement / Podium / Typical / Roof Deck), with an
+  inherit-until-edited default, an `own` badge per forked category, one-click revert, and **copy this
+  trade's sequence from another category**. `generate()` and the push both resolve the sequence from the
+  location's floor category, so the dates and the pushed predecessors describe the same logic.
+- **The lowest level of detail now names the line item.** A leaf row carries the level/zone/unit the
+  current grouping does not already state ("Precast Works · B3 - Z1 - U1"), and the deepest-bucket-of-one
+  merge no longer replaces the activity name with the bucket value.
+- ⚠️ **The grouped roll-up mixed two scopes** — dates came from the display-scoped `_dspan` while
+  %/status/cost came from `_costMap`, which always covers a branch's whole subtree. New `_dcost`/`cmOf`
+  scope both halves to the rows actually rendered; the baseline roll-up, previously accumulated in only
+  one of the two leaf paths, now runs in both.
+- **46 behavioural checks green in Node against the shipped functions**; module loads in a real browser
+  with 0 console errors. ⚠️ Not verified signed in on a project. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-13 — Project Schedule: tower-scoped stacking + two selects that clipped their own text
 - ⚠️ **The vertical stack ignored TOWER logic.** Avesta is `Tower › Level › Zone › Orientation`, so
   stacking by Level merged **seven buildings' 9th floors into one band** — Tower 1 can be topped out
