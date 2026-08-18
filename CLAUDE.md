@@ -77,6 +77,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Multi-cell select already exists; finished off the cell clipboard's positional drift
+- **Answer to "can the schedule have Excel-style multi-cell select": it already does.** Click /
+  shift-click / shift+arrow ranges, `Ctrl+C`/`X`/`V` as TSV (round-trips with Excel), `Ctrl+D` fill-down,
+  all listed in the **?** shortcuts panel. Nothing to build.
+- ⚠️ **Checking it found the column mapping still drifted.** ethanrobles10 had just fixed most of it
+  (`7280198`, `0313786`): the `_CELL_META` array was off by one from index 10 because "Duration %
+  Complete" was never added to it, so cost columns pasted the wrong field, and Start/Finish always wrote
+  the ACTUAL fields. **Their fix is kept verbatim** — including the `disp` marker that routes paste
+  through `_dateEditPatch` — I rebased onto them rather than resolving in my favour.
+- ⚠️ **Still broken and now fixed:** `_cellText()` had the same drift as a `switch (ci)` on 7/8/13/16/17,
+  so **At Completion IBB copied nothing and Float / Var (BL) copied the neighbouring column's text**.
+  And the array itself remained the cause: their second commit is a hand-added entry for the Task column.
+  `cellMeta(ci)` now resolves the field from `gridCols()` **by label**, so an unlisted column is
+  copy-only by default and adding one needs no bookkeeping.
+- **Free from the label keying:** Discipline / Trade, the location levels, Activity Codes, UDFs and Task
+  now copy their displayed value — they were blank before, which defeats the point of copying to Excel.
+- **31 new checks** (`t2.js`) against the shipped resolver, plus the 259-check suite. ⚠️ Not verified
+  live. MODULE_V → 20260818i. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-18 — Fix: the Project Schedule module would not load (my regression) + MODULE_V bump
 - ⚠️ **My regression, module-wide.** The Gantt-pane clamp patch deleted the line that reads the saved
   pane width and left `if (saved && …)` behind, so init threw `ReferenceError: saved is not defined`

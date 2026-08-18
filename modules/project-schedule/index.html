@@ -18860,29 +18860,47 @@
   }
 
   // ---- Cell clipboard (Excel/OPC-style Cut/Copy/Paste of individual cells) ----
-  // Per-column metadata in GRID_COLS order (built-ins only). `edit` = writable inline; `t` = the
-  // edit/coerce type. Computed columns (POC, At-Completion, Dur, Float, Var) are copy-only.
-  // ⚠️ This MUST stay index-aligned with GRID_COLS (the built-in columns) — copy/paste keys cells by
-  // grid position. When a built-in column is added to GRID_COLS (e.g. Duration % Complete at index 10),
-  // add the matching entry HERE or every column after it copies/pastes the WRONG field.
-  // Start/Finish carry `disp`: the grid shows dispStart/dispFin (actual → forecast → planned) and edits
-  // start_date/actual_start (or end_date/actual_finish) per the row's state, so copy reads the DISPLAYED
-  // date and paste routes through _dateEditPatch to the right field — NOT the fixed actual_* fields.
-  var _CELL_META = [
-    { f: 'activity_id', edit: 1, t: 'text' }, { f: 'activity_name', edit: 1, t: 'text' }, { f: 'status', edit: 0, t: 'text' },
-    { f: 'bl_start', edit: 1, t: 'date' }, { f: 'bl_finish', edit: 1, t: 'date' },
-    { f: 'start_date', edit: 1, t: 'date', disp: 'start' }, { f: 'end_date', edit: 1, t: 'date', disp: 'fin' },
-    { f: 'duration_days', edit: 0, t: 'text' },                    // Dur (computed)
-    { f: null, edit: 0 },                                          // Planned Value % (computed)
-    { f: 'percent_complete', edit: 1, t: 'number' },               // Activity % Complete
-    { f: null, edit: 0 },                                          // Duration % Complete (derived; copy-only)
-    { f: 'planned_cost', edit: 1, t: 'money' }, { f: 'actual_cost', edit: 1, t: 'money' }, { f: 'earned_value', edit: 1, t: 'money' },
-    { f: null, edit: 0 },                                          // At Completion IBB (computed)
-    { f: 'bl_cost', edit: 1, t: 'money' },
-    { f: 'percent_complete_type', edit: 0, t: 'text' },            // Percent Complete Type
-    { f: null, edit: 0 }, { f: null, edit: 0 },                    // Float, Var (BL) — computed
-    { f: null, edit: 0 }                                           // Task (row-kind pill — computed)
-  ];
+  // ⚠️⚠️ KEYED BY THE COLUMN'S LABEL, resolved through gridCols() — NOT by grid position.
+  // The positional version cost two separate fixes in one day: it drifted when "Duration % Complete"
+  // was added to GRID_COLS (every cost column after it copied and PASTED the wrong field — "Planned
+  // IBB" wrote actual_cost, and "At Completion IBB", a computed column, wrote bl_cost), and then it
+  // needed a hand-added entry when the Task column landed. A comment saying "add the matching entry
+  // HERE" is the right instinct but it is the drift's cause, not its cure: paste is destructive, so
+  // the mapping must be derived from the grid rather than be a second copy of it.
+  // With a label lookup, a built-in column that is not listed here is simply COPY-ONLY — the safe
+  // default — and adding a column needs no bookkeeping at all.
+  // `edit` = writable by paste/fill-down; `t` = the coerce type.
+  // ⚠️ `disp` (Start/Finish) is kept exactly as it was: the grid shows dispStart/dispFin and edits
+  // start_date/actual_start (or end_date/actual_finish) per the row's state, so copy reads the
+  // DISPLAYED date and paste routes through _dateEditPatch to the field the grid itself would edit.
+  var _CELL_META_BY_LABEL = {
+    'Activity ID':           { f: 'activity_id', edit: 1, t: 'text' },
+    'Activity Name':         { f: 'activity_name', edit: 1, t: 'text' },
+    'Status':                { f: 'status', edit: 0, t: 'text' },
+    'BL Start':              { f: 'bl_start', edit: 1, t: 'date' },
+    'BL Finish':             { f: 'bl_finish', edit: 1, t: 'date' },
+    'Start':                 { f: 'start_date', edit: 1, t: 'date', disp: 'start' },
+    'Finish':                { f: 'end_date', edit: 1, t: 'date', disp: 'fin' },
+    'Dur':                   { f: 'duration_days', edit: 0, t: 'text' },   // computed from the dates
+    'Planned Value %':       { f: null, edit: 0 },                          // computed
+    'Activity % Complete':   { f: 'percent_complete', edit: 1, t: 'number' },
+    'Duration % Complete':   { f: null, edit: 0 },                          // derived; copy-only
+    'Planned IBB':           { f: 'planned_cost', edit: 1, t: 'money' },
+    'Actual IBB to date':    { f: 'actual_cost', edit: 1, t: 'money' },
+    'Earned Value IBB':      { f: 'earned_value', edit: 1, t: 'money' },
+    'At Completion IBB':     { f: null, edit: 0 },                          // computed
+    'BL Planned IBB':        { f: 'bl_cost', edit: 1, t: 'money' },
+    'Percent Complete Type': { f: 'percent_complete_type', edit: 0, t: 'text' },
+    'Float':                 { f: null, edit: 0 },                          // computed
+    'Var (BL)':              { f: null, edit: 0 },                          // computed
+    'Task':                  { f: null, edit: 0 }                           // row-kind pill; computed
+  };
+  var _CELL_RO = { f: null, edit: 0 };
+  function cellMeta(ci) {
+    var c = gridCols()[ci]; if (!c) return null;
+    if (c[3]) return _CELL_RO;   // dynamic Activity Code / UDF / location columns — copy-only
+    return _CELL_META_BY_LABEL[c[1]] || _CELL_RO;
+  }
   function _cellRect() { if (!_cellSel) return null; return { r0: Math.min(_cellSel.r0, _cellSel.r1), r1: Math.max(_cellSel.r0, _cellSel.r1), c0: Math.min(_cellSel.c0, _cellSel.c1), c1: Math.max(_cellSel.c0, _cellSel.c1) }; }
   // Set the active cell / extend the cell range from a grid click. ci is the grid-column index
   // (DOM child position minus the "#" gutter); a click on the gutter (ci<0) leaves cells untouched.
@@ -18894,23 +18912,36 @@
     if (e.shiftKey && _cellAnchor) { _cellSel = { r0: _cellAnchor.r, c0: _cellAnchor.c, r1: ri, c1: ci }; }
     else { _cellAnchor = { r: ri, c: ci }; _cellSel = { r0: ri, c0: ci, r1: ri, c1: ci }; }
     // Broadcast my active cell to other viewers (row id + field). Read the field from the
-    // clicked cell's OWN data-field — not _CELL_META[ci], which is keyed to the legacy built-in
-    // column order and is out of sync with the live grid (POC / %/ Float / Var / dynamic columns),
-    // so the meta lookup mislabeled most columns (or returned null → fell back to the name cell).
+    // clicked cell's OWN data-field. This note used to warn that the positional meta array was out of
+    // sync with the live grid and mislabelled most columns; that array is gone (cellMeta() resolves the
+    // field from gridCols() by label), but reading the cell's own attribute is still the most direct
+    // answer here and needs no column bookkeeping at all.
     var _d = DL[ri];
     broadcastCollabSel(_d && _d.id, (cellEl.getAttribute && cellEl.getAttribute('data-field')) || null, false);
   }
   // Display text for a cell (used for the TSV written to the system clipboard).
+  // ⚠️ The SAME positional drift lived here, in a `switch (ci)` on 7 / 8 / 13 / 16 / 17. Those were
+  // right before "Duration % Complete" was inserted at index 10 and wrong after it: 13 became Earned
+  // Value IBB (so At Completion copied nothing), 16 became Percent Complete Type and 17 became Float,
+  // so copying Float or Var (BL) produced the neighbouring column's text. Keyed by label now, for the
+  // same reason as the meta above.
+  // ⚠️ Dynamic columns copy their displayed value too — Discipline, the location levels, Activity
+  // Codes and UDFs used to come out BLANK, which is exactly wrong when the point of a copy is to
+  // paste the block into Excel.
   function _cellText(r, ci) {
     if (!r) return '';
-    switch (ci) {
-      case 7: { var s = pd(r.start_date), e = pd(r.end_date); var d = (s && e) ? dayDiff(s, e) + 1 : (r.duration_days || ''); return d ? String(d) : ''; }
-      case 8: { var p = plannedPOC(r); return p == null ? '' : p + '%'; }
-      case 13: { var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; var hasCost = r.planned_cost != null || r.actual_cost != null || r.earned_value != null; return hasCost ? String(eac(r, cpi)) : ''; }
-      case 16: return r._critical ? 'CP' : (r._float != null ? r._float + 'd' : '');
-      case 17: { var v = finVar(r); return v == null ? '' : (v > 0 ? '+' : '') + v + 'd'; }
+    var c = gridCols()[ci]; if (!c) return '';
+    if (c[3]) return extraCellVal(c[3], r);
+    switch (c[1]) {
+      case 'Dur': { var s = pd(r.start_date), e = pd(r.end_date); var d = (s && e) ? dayDiff(s, e) + 1 : (r.duration_days || ''); return d ? String(d) : ''; }
+      case 'Planned Value %': { var p = plannedPOC(r); return p == null ? '' : p + '%'; }
+      case 'Duration % Complete': return _durPct(r) + '%';
+      case 'At Completion IBB': { var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; var hasCost = r.planned_cost != null || r.actual_cost != null || r.earned_value != null; return hasCost ? String(eac(r, cpi)) : ''; }
+      case 'Float': return r._critical ? 'CP' : (r._float != null ? r._float + 'd' : '');
+      case 'Var (BL)': { var v = finVar(r); return v == null ? '' : (v > 0 ? '+' : '') + v + 'd'; }
+      case 'Task': return taskKindOf(r);
     }
-    var meta = _CELL_META[ci]; if (!meta || !meta.f) return '';
+    var meta = cellMeta(ci); if (!meta || !meta.f) return '';
     if (meta.disp) { var dv = meta.disp === 'fin' ? dispFin(r) : dispStart(r); return dv ? String(dv).slice(0, 10) : ''; }
     var val = r[meta.f]; if (val == null || val === '') return '';
     if (meta.t === 'date') return String(val).slice(0, 10);
@@ -18918,7 +18949,7 @@
   }
   // One packed cell for the clipboard: editable source keeps its raw value (for a clean round-trip);
   // every cell also carries display text (used when pasting from a computed source or external TSV).
-  function _cellPack(r, ci) { var meta = _CELL_META[ci]; var text = _cellText(r, ci); if (meta && meta.f && meta.edit) { var val = meta.disp ? (text || null) : (r[meta.f] === undefined ? null : r[meta.f]); return { val: val, text: text }; } return { text: text }; }
+  function _cellPack(r, ci) { var meta = cellMeta(ci); var text = _cellText(r, ci); if (meta && meta.f && meta.edit) { var val = meta.disp ? (text || null) : (r[meta.f] === undefined ? null : r[meta.f]); return { val: val, text: text }; } return { text: text }; }
   function _isoFromAny(s) { if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10); var d = new Date(s); if (isNaN(d.getTime())) return null; return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   function _coerceCell(t, src) {
     if (src == null) return null; var s = String(src).trim(); if (s === '') return null;
@@ -18935,7 +18966,7 @@
       var d = DL[ri], row = [], tsv = [];
       for (var ci = rc.c0; ci <= rc.c1; ci++) {
         var pk = d ? _cellPack(d, ci) : { text: '' }; row.push(pk); tsv.push(pk.text || '');
-        var meta = _CELL_META[ci];
+        var meta = cellMeta(ci);
         if (mode === 'cut' && d && d._dkind === 'task' && meta && meta.f && meta.edit) refs.push({ id: d.id, ri: ri, ci: ci, f: meta.f });
       }
       cells.push(row); tsvRows.push(tsv.join('\t'));
@@ -18968,7 +18999,7 @@
       var editable = d._dkind === 'task' && !isWbsNode(d);
       for (var tc = rc.c0; tc <= lastC; tc++) {
         if (tc >= gridCols().length) continue;
-        var meta = _CELL_META[tc];
+        var meta = cellMeta(tc);
         var src = single ? clip.cells[0][0] : (clip.cells[tr - rc.r0] && clip.cells[tr - rc.r0][tc - rc.c0]); if (!src) continue;
         targeted++;
         if (!editable || !meta || !meta.f || !meta.edit) { skipped++; continue; }
@@ -19625,7 +19656,7 @@
       else if (ctrl && (k === 'v' || k === 'V')) { if (_cellClip || (!_clip && _cellSel)) { e.preventDefault(); pasteCells(); } else if (_clip) { e.preventDefault(); pasteRows(); } }
       else if (ctrl && (k === 'd' || k === 'D')) {
         // Fill down: use the active cell's field + row (Excel Ctrl+D), filling the selected rows.
-        if (_cellSel) { var _ci = _cellSel.c0, _meta = _CELL_META[_ci]; var _src = DL[_cellSel.r0];
+        if (_cellSel) { var _ci = _cellSel.c0, _meta = cellMeta(_ci); var _src = DL[_cellSel.r0];
           if (_meta && _meta.f && _meta.edit && _src && _src._dkind === 'task') { e.preventDefault(); fillDown(_meta.f, _src); } }
       }
       // Plain navigation breaks the Tab/Enter entry chain (re-anchors on the next fresh edit).
@@ -20184,7 +20215,7 @@
       _wcCacheKey: { get: function () { return _wcCacheKey; }, set: function (v) { _wcCacheKey = v; }, enumerable: true },
       _CLIP_FIELDS: { get: function () { return _CLIP_FIELDS; }, set: function (v) { _CLIP_FIELDS = v; }, enumerable: true },
       _FIELD_LABELS: { get: function () { return _FIELD_LABELS; }, set: function (v) { _FIELD_LABELS = v; }, enumerable: true },
-      _CELL_META: { get: function () { return _CELL_META; }, set: function (v) { _CELL_META = v; }, enumerable: true },
+      _CELL_META_BY_LABEL: { get: function () { return _CELL_META_BY_LABEL; }, set: function (v) { _CELL_META_BY_LABEL = v; }, enumerable: true },
       linkMode: { get: function () { return linkMode; }, set: function (v) { linkMode = v; }, enumerable: true }
     });
     PS.fn = {

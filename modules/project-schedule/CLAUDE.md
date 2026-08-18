@@ -6831,3 +6831,47 @@ forgetting it has been **mis-diagnosed as a code bug more than once**.
 **I deployed `modules/project-schedule/index.html` about ten times today and never bumped it.** So
 `?v=20260818g` kept serving a cached page and the owner was testing stale builds for much of the session.
 Bumped `20260818g` → `20260818h`. Treat the bump as part of the same commit as the module change.
+
+## Multi-cell select: it already exists — and the last of the positional drift (2026-08-18) — fmlozano
+Owner asked whether the Project Schedule could have Excel-style multi-cell selection. **It already
+does**, and has for a while: `_cellSel` is a rectangle in DL-row × grid-column space, `_cellAnchor` is
+the shift-extend anchor, `_cellClip` is the cell clipboard. Click, shift-click and shift+arrows select a
+range; `Ctrl+C` / `Ctrl+X` write TSV to the system clipboard (so it round-trips with Excel), `Ctrl+V`
+pastes a block or fills the selection from a single copied cell, `Ctrl+D` fills down, and the whole set
+is listed in the **?** shortcuts panel under Editing / Clipboard / Selection. Nothing to build.
+
+### ⚠️ But checking it found the mapping still drifted — and ethanrobles10 had just fixed most of it
+Two commits landed while I was looking (`7280198`, `0313786`, Claude Opus 4.8): they found the same
+off-by-one — "Duration % Complete" was added to `GRID_COLS` in July but never to the parallel
+`_CELL_META`, so every cost column after index 10 copied and **pasted the wrong field** — and the
+Start/Finish rows writing `actual_start`/`actual_finish` unconditionally. Their fix re-aligned the array
+and added a `disp` marker so copy reads the DISPLAYED date and paste routes through `_dateEditPatch`,
+which is better than what I had written (it gets the actual/planned routing, the duration recompute and
+the validation, where mine did a raw field write). **Their `disp` handling and paste path are kept
+verbatim.** I rebased onto them rather than resolving the conflict in my favour.
+- ⚠️ **What was still wrong:** `_cellText()` carried the same drift as a `switch (ci)` on hard-coded
+  7 / 8 / 13 / 16 / 17. Those were right before index 10 was inserted and wrong after: 13 became Earned
+  Value IBB (so **At Completion IBB copied nothing**), 16 became Percent Complete Type and 17 became
+  Float — so **copying Float or Var (BL) produced the neighbouring column's text**.
+- ⚠️ **And the array itself was still the cause, not the cure.** Their second commit is them
+  hand-adding an entry for the Task column I had introduced — exactly the bookkeeping that had already
+  failed once. `_CELL_META_BY_LABEL` + `cellMeta(ci)` now resolve the field from `gridCols()` **by
+  label**, so an unlisted built-in column is **copy-only by default** instead of silently inheriting its
+  neighbour's field, and adding a column needs no bookkeeping at all. The comment that told the next
+  person to "add the matching entry HERE" is gone with it.
+- **Bonus the label keying makes free:** the dynamic columns (Discipline / Trade, the location levels,
+  Activity Codes, UDFs) and Task now copy their **displayed value**. They came out blank before, which is
+  precisely wrong when the point of the copy is to paste the block into Excel.
+- Also dropped a `PS.state` accessor still naming the deleted `_CELL_META` (reading it would have thrown).
+
+### Verification
+**31 checks in a new `t2.js`, executed against the shipped `cellMeta` + `gridCols`**: every cost column
+resolves to its own field; `Start`/`Finish` keep `disp: 'start'` / `'fin'`; the seven computed columns and
+every dynamic column are copy-only; out-of-range is `null`; the `disp` date read and the `_dateEditPatch`
+paste routing are still in place; and — the point of the change — **a newly added built-in column is
+copy-only rather than inheriting a neighbour's field**, asserted by injecting one into a copy of
+`GRID_COLS`. The 259-check suite still passes (its own cell-mapping block was superseded by `t2.js` and
+removed rather than left asserting my discarded signature).
+⚠️ **Not verified live** — no signed-in run this pass. The behaviour is unchanged for the columns
+ethanrobles10 had already corrected; what is newly correct is Float / Var (BL) / At Completion copy text
+and the dynamic columns copying at all. MODULE_V → 20260818i.
