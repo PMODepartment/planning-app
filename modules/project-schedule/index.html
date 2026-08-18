@@ -18880,7 +18880,8 @@
     { f: null, edit: 0 },                                          // At Completion IBB (computed)
     { f: 'bl_cost', edit: 1, t: 'money' },
     { f: 'percent_complete_type', edit: 0, t: 'text' },            // Percent Complete Type
-    { f: null, edit: 0 }, { f: null, edit: 0 }                     // Float, Var (BL) — computed
+    { f: null, edit: 0 }, { f: null, edit: 0 },                    // Float, Var (BL) — computed
+    { f: null, edit: 0 }                                           // Task (row-kind pill — computed)
   ];
   function _cellRect() { if (!_cellSel) return null; return { r0: Math.min(_cellSel.r0, _cellSel.r1), r1: Math.max(_cellSel.r0, _cellSel.r1), c0: Math.min(_cellSel.c0, _cellSel.c1), c1: Math.max(_cellSel.c0, _cellSel.c1) }; }
   // Set the active cell / extend the cell range from a grid click. ci is the grid-column index
