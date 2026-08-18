@@ -15786,7 +15786,12 @@
         // skip that level and attach to the parent. This makes the structure fully user-configurable
         // (how many levels + what each level is).
         var nodeDescs = [], nodeByKey = {}, taskAssign = [], nodeSeq = 0;
-        function ensureNode(key, parentKey, name) { if (!nodeByKey[key]) { var d = { key: key, parentKey: parentKey, name: name }; nodeByKey[key] = d; nodeDescs.push(d); } }
+        // `alt` = another name the SAME branch may already exist under. Trade branches are named with
+        // the canonical GWORK label now ("Structural Works"), but every project pushed before that
+        // change holds the builder's short GLABEL ("Structural") — without the alias a re-push would
+        // create "Structural Works" as a SECOND branch beside it, which is a duplicate in every sense
+        // that matters to the planner even though the two names differ.
+        function ensureNode(key, parentKey, name, alt) { if (!nodeByKey[key]) { var d = { key: key, parentKey: parentKey, name: name, alt: alt || null }; nodeByKey[key] = d; nodeDescs.push(d); } }
         function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'floor') return (l.floor && l.floor._all) ? ' ' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : ' '; if (dim === 'unit') return l.unit ? l.unit.id : ' '; return ' '; }
         // ⚠️ The trade BRANCH is named with GWORK (the canonical "Structural Works"), not GLABEL
         // ("Structural"). work_type on the pushed activities is already GWORK, so a branch named with
@@ -15794,6 +15799,8 @@
         // trades whose short and canonical labels are identical (General Requirements / Site Works /
         // Allied Services) the second name is a byte-for-byte duplicate of the first, which is the
         // reported "each rendered twice with identical dates and %".
+        // The pre-GWORK name for the same branch (trade dimension only) — see ensureNode.
+        function dimAltName(dim, r) { return dim === 'trade' ? (GLABEL[r.loc.trade] || null) : null; }
         function dimName(dim, r) { var l = r.loc; if (dim === 'trade') return GWORK[l.trade] || GLABEL[l.trade] || l.trade; if (dim === 'floor') return (l.floor && l.floor._all) ? null : (l.floor.code || l.floor.name || 'Floor'); if (dim === 'zone') return l.zone ? (l.zone.code || l.zone.name || 'Zone') : null; if (dim === 'unit') return l.unit ? (l.unit.code || l.unit.name || 'Unit') : null; return null; }
         function buildTree(rowsIn, dims, parentKey) {
           if (!dims.length) { rowsIn.forEach(function (r) { taskAssign.push({ k: parentKey, r: r, name: r.act.name }); }); return; }
@@ -15804,7 +15811,7 @@
           ord.forEach(function (k) {
             var grpRows = m[k];
             if (k === ' ') { buildTree(grpRows, rest, parentKey); return; }   // null-value rows attach to the parent
-            var nkey = 'N' + (++nodeSeq); ensureNode(nkey, parentKey, dimName(dim, grpRows[0]));
+            var nkey = 'N' + (++nodeSeq); ensureNode(nkey, parentKey, dimName(dim, grpRows[0]), dimAltName(dim, grpRows[0]));
             buildTree(grpRows, rest, nkey);
           });
         }
@@ -15857,7 +15864,8 @@
         }
         for (var di = 0; di < nodeDescs.length; di++) {
           var nd = nodeDescs[di]; soByParent[nd.parentKey] = (soByParent[nd.parentKey] || 0);
-          var ex = existingChild(keyToNodeId[nd.parentKey] || null, nd.name);
+          var ex = existingChild(keyToNodeId[nd.parentKey] || null, nd.name) ||
+                   (nd.alt ? existingChild(keyToNodeId[nd.parentKey] || null, nd.alt) : null);
           if (ex) { keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++; soByParent[nd.parentKey]++; if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length); continue; }
           var nres = await insertNodeSafe({ project_id: pid, parent_id: keyToNodeId[nd.parentKey] || null, name: nd.name, sort_order: soByParent[nd.parentKey]++, created_by: UID });
           if (nres.error) { wbsOk = false; wbsMsg = nres.error.message; break; }
