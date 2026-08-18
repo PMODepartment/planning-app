@@ -77,6 +77,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Project Schedule: the NOT-NULL push warning, the WBS picker, and the "+" column lane
+- ⚠️ **The push warning named the real cause and it was not the transient failure I assumed:**
+  `null value in column "name" of relation "wbs_nodes" violates not-null constraint`. **One unnamed
+  branch aborted the whole node-insert loop**, the push fell back to dotted codes, and the WBS Manager
+  therefore showed Execution Phase with **0 activities** (nothing carried a `wbs_node_id`). `dimName()`'s
+  nulls were supposedly unreachable and were reached anyway, so each dimension now **falls back to its
+  level name**, the insert coalesces a blank as a last resort, and the push **reports which level was
+  unnamed** instead of losing the tree silently. ⚠️ Which location produces the blank is still
+  unexplained — the next push will name it.
+- **"Assign under WBS" removed.** It was always Execution Phase, so the choice only invited a wrong one;
+  the parent is now resolved by `execPhaseCode()` at push time and the dialog says where it will land.
+- **The "+" column chooser no longer covers a column.** It is an absolute overlay on the header's right
+  edge, so scrolled fully right it sat on top of the last column's heading while its data stayed visible.
+  It now has its own trailing lane, mirrored on the header, filter row and every body row — with an
+  explicit `order:9999`, because `applyColOrder()` assigns order by `nth-child` and an unstyled cell
+  would default to `order:0` and jump to the front.
+- **172 checks green.** ⚠️ Not verified live: the next real push is the test. See
+  `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-18 — Project Schedule: group-by roll-ups, the frozen-column clash, a Task column, and the real duplicate-WBS cause
 - **Group rows are no longer blank.** `costCellsHtml` short-circuited a grouping header to nine empty
   cells because `_costMap` (keyed by dotted code) could not serve it — no longer true of `cmOf`, which

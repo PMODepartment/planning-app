@@ -6587,3 +6587,52 @@ not acceptable. Both true. Three mechanisms, in the order they were found:
 - ⚠️ The body rows could not be inspected on the last pass because the automation's Chrome window was
   minimised again — see [[browser-hidden-tab-artefact]]. The header was confirmed to carry the Task
   column; body/header cell parity rests on the unit checks.
+
+## Push dialog, the NOT-NULL warning, the "+" column lane (2026-08-18) — fmlozano
+Owner's screenshots, on OPW101.
+
+### 1 · "Assign under WBS" removed — a builder push always files under Execution Phase
+It was always set to Execution Phase, so offering the choice only invited a wrong one. The picker (and
+its option list) is gone; the parent is resolved at push time by **`execPhaseCode()`**, so a renamed or
+re-coded branch still matches, and the dialog states where the push will land. No Execution Phase branch
+→ top level, and a throwing resolver degrades to the top level rather than breaking the dialog.
+
+### 2 · ⚠️ The warning names the real cause, and it was NOT the transient failure I assumed
+> `null value in column "name" of relation "wbs_nodes" violates not-null constraint`
+
+**One unnamed branch aborted the entire `wbs_nodes` insert loop.** The push then fell back to dotted
+codes — which is why the WBS Manager showed **Execution Phase · 0 activities**: nothing carried a
+`wbs_node_id`, so the Manager had nothing to count. The retry I added earlier cannot help a constraint
+violation, and the earlier entry's "transient blip" reading was wrong for this failure.
+- ⚠️ `dimName()`'s `null` returns were *supposedly unreachable*: `buildTree` creates a node only when
+  `dimKey()` is not `' '`, and `dimKey` returns `' '` for exactly the cases `dimName` returned `null`
+  for (`floor._all`, missing zone, missing unit). **They were reached anyway.** I could not find the
+  path by reading — OPW101's config has zero blank-named floors/zones/units and every trade key is in
+  `GROUPS` — so the guard stops being a proof and becomes a value: every dimension now falls back to its
+  level name, and the insert coalesces a blank as a last resort.
+- **`_unnamedDims` counts the fallbacks per level and the push reports them**, so if it recurs the
+  planner is told *which* level was unnamed ("Zone ×3 — give those a code in step 2") instead of losing
+  the whole tree silently. That report is also how the remaining mystery gets identified next time.
+- ⚠️ **Still unexplained:** exactly which location produces the blank name. The guard makes it harmless
+  and self-reporting; it does not explain it. Next push on OPW101 will name the level.
+
+### 3 · The "+" column chooser no longer covers the last column
+`.ps-cols-corner` is `position:absolute; right:0` over the header, so with the grid scrolled fully right
+it sat **on top of the last column's heading** while that column's data stayed visible — the reported
+"the + makes the columns not aligned". It now has its **own trailing lane**: a `.c-plus` spacer cell on
+the header, the filter row and every body row, so the last real column always ends before the button and
+header/body stay cell-for-cell identical.
+- ⚠️ The spacer carries an explicit **`order:9999`**. `applyColOrder()` assigns `order: 0..N-1` by
+  `nth-child`, and an unstyled cell defaults to `order:0` — the spacer would have jumped to the front.
+- Neither `applyColOrder()` nor `applyColHidden()` can ever target it: both generate rules only for
+  `gridCols()` entries, and the spacer sits past the end.
+
+### Verification
+**172 checks green** against the shipped functions, including: every `dimName` fallback case (unknown
+trade, `_all` floor, missing zone/unit, blank code+name, no `loc` at all) plus that a real code still
+wins and is trimmed, and that the fallbacks are counted per level; `_pushParentLabel` naming a found
+branch, a renamed branch and the no-branch case, and `_pushParentCode` surviving a throwing resolver;
+and the spacer's explicit order, its presence on all three body row kinds plus the header and filter
+rows, and that no order/hide rule can target it.
+⚠️ **Not verified live** — the next real push is the test: it should now complete with a WBS-Manager tree
+(so Execution Phase reports its activities) and, if any location is still unnamed, say which level.
