@@ -19900,8 +19900,16 @@
 
     // resizable split: drag the divider to widen the activities grid or the Gantt
     var divider = document.getElementById('ps-divider'), gridPane = document.querySelector('.ps-grid-pane'), split = document.querySelector('.ps-split');
+    // ⚠️⚠️ THIS WHOLE BLOCK IS COSMETIC — IT MUST NEVER BE ABLE TO STOP THE MODULE LOADING.
+    // `loadProjects()` runs just after it, so anything that throws in here leaves the module showing
+    // "— Select project —" with an empty grid, which is indistinguishable from "the app is broken".
+    // That is not hypothetical: the patch that added the pane clamp deleted the line that reads the
+    // saved width and left `if (saved && …)` behind, so init threw ReferenceError on every load. The
+    // try/catch is the guard the owner asked for — a layout nicety can cost the layout, never the data.
+    try {
     if (divider && gridPane && split) {
       var GANTT_MIN = 240;
+      var saved = null; try { saved = localStorage.getItem('ps_grid_w'); } catch (e) {}
       // ⚠️ The belt to the CSS guard's braces, and the part that HEALS the stored value. The CSS keeps
       // the Gantt visible whatever the stored number says, but the number itself would stay wrong for
       // ever and keep pinning the grid to the maximum. This clamps it to what actually fits and writes
@@ -19950,6 +19958,7 @@
       // A narrower window must not be able to strand the Gantt off-screen either.
       window.addEventListener('resize', function () { clampGridPane(); });
     }
+    } catch (e) { try { console.error('[project-schedule] split-pane setup failed; the schedule still loads.', e); } catch (e2) {} }
 
     loadProjects();
   });
