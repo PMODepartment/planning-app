@@ -6474,3 +6474,116 @@ the filter treated them alike, **deleting every `loc:` level from the planner's 
 `scheduleRender()`'s rAF-only scheduling is what makes a hidden tab never repaint. Left alone: for a
 real user the queued frame fires as soon as the window is shown again and the grid paints the current
 state, so there is no user-facing defect to fix — only an automation hazard, now documented above.
+
+## Group-by roll-ups, the frozen-column clash, the Task column, and the REAL duplicate-WBS cause (2026-08-18) — fmlozano
+Four owner reports in one pass, all reproduced on live data. The duplicate-WBS one took three attempts
+to get right and the final cause is not what the first two entries said — read this one, not those.
+
+### 1 · Group rows were blank across every roll-up column
+Screenshot: grouped Discipline / Trade › Activity › Level › Zone › Unit, and every group row empty in
+Dur / Planned Value % / Activity % / Duration % / Var (BL) and in the Discipline, Level, Zone and Unit
+columns — while the same numbers DO appear on WBS rows in the plain WBS view.
+- ⚠️ `costCellsHtml()` short-circuited a group row to **nine blank cells**, with the note that its
+  members are "scattered across the WBS tree, so the per-WBS-code roll-up map doesn't apply". That was
+  true of `_costMap` (keyed by dotted code) and stopped being true when `cmOf()` landed: it reads the
+  display-scoped `_dcost`, built from exactly the rows rendered under this group. The short-circuit is
+  gone, so a group row reports what a WBS summary reports, over its own bucket.
+- Summaries also gained **Dur** (`sumDurCellHtml` — the rolled-up span, which is what the Gantt bracket
+  measures) and **Var (BL)** (`sumVarCellHtml` — rolled-up finish vs rolled-up baseline finish). Both
+  degrade to an empty cell when there is no span / no baseline, never to a broken one.
+- **New `_duni` / `uniOf()`**: the Discipline / Level / Zone / Unit columns on a summary row now state
+  the value when **every** activity beneath agrees. Accumulated in the same `addCost` pass, so it costs
+  one extra pass over the levels per row. ⚠️ A **mixed** branch stays blank on purpose — a Tower holding
+  all trades has no single discipline and printing one would be a lie. Activity Codes and UDFs stay
+  blank on summaries: those are per-activity assignments, not roll-ups.
+- **Verified live on OPW101**: `Execution Phase (2561)` → Dur 982d, PV 36%; `General Requirements (1)`
+  → 960d / 45% / Discipline "General Requirements"; `Structural Works (308)` → 102d / 100%.
+
+### 2 · "Clashing data in the columns … happens when scrolling" — two independent causes
+- ⚠️ **The frozen columns were TRANSLUCENT in two row states.** A dark-mode **selected** row painted its
+  sticky `c-num`/`c-id`/`c-name` `rgba(238,49,36,.22)` — 22% opaque — so the status pill and the BL dates
+  that had scrolled *behind* the name column showed straight through it. That is the doubled text on row
+  24 of the screenshot. `.ps-spotrow` (`rgba(37,99,235,.12)`) had the same defect and the
+  conditional-formatting rule fell back to `transparent`.
+  **Fixed structurally, not rule-by-rule:** `--ps-frozen-bg` carries each row state's OPAQUE base, every
+  frozen-cell rule paints that, and a tint is layered as a `background-image`. Identical appearance,
+  nothing can bleed through. ⚠️ **Never give a frozen cell a translucent `background` again — layer it.**
+  A test now fails if any `.c-num/.c-id/.c-name` rule sets `background: rgba(...)` or `transparent`.
+- ⚠️ **The header and the body were built from different column sets.** Measured on OPW101: the header
+  carried **29** cells (9 extra columns) while every body row carried **21** (1 extra column), because
+  `extraColDefs()` depends on `LOC_LEVELS`/`CODE_TYPES`/`UDF_DEFS` and `renderHeader()` is called from
+  ~14 places while the rows come from `renderWindow()`. Column order and hiding are `nth-child` CSS, so
+  an 8-column offset puts body values under the wrong headings — and it shifts as you scroll because the
+  frozen columns share those `order` values. **`syncGridColumns()`** re-asserts the header + the
+  order/hide CSS whenever the column **signature** changes (a signature, not a count, so a reorder or a
+  rename is caught too), called from `doRender` before the rows are built.
+
+### 3 · New "Task" column
+`['task','Task','c-task']` in `GRID_COLS`, so the Columns menu, hiding, reordering, resizing and the
+Excel export all pick it up for free. `taskKindOf()`: **WBS** for a branch or a grouping header,
+**Start Milestone** / **Finish Milestone**, else **Task**. A bare `'Milestone'` counts as a start (only a
+Finish Milestone is anchored on the finish); `'Task Dependent'` normalises to Task; ⚠️ an unrecognised
+P6 type (e.g. `Level of Effort`) is shown **as stored** rather than mislabelled "Task"; and WBS wins
+over a milestone type on the same row. Appended rather than inserted mid-list so a saved (positional)
+column-sort index keeps pointing at the column it was set on — drag it where you want it.
+
+### 4 · The duplicated WBS rows — the actual cause, found by doing the owner's own workflow
+The owner said it happens **when pushing from the Schedule Builder**, and that a one-time cleanup was
+not acceptable. Both true. Three mechanisms, in the order they were found:
+- **(a) A partial `wbs_nodes` tree.** On OPW101 the five non-locked nodes were written by the push at
+  `05:54:13.509–14.314`, the sixth insert failed, and 450 ms later the dotted-code fallback wrote a
+  summary row for **every** branch including those five. The next load's `_wbsEnsureSummaries()` saw the
+  five orphan nodes as un-projected and inserted a **second** row for each: General Requirements (4.1),
+  Site Works (4.2), Allied Services (4.3) and two F1 floors — the owner's original screenshot, and the
+  explanation for the "only 3 of 6 trades" clue. The push now **rolls its own partial tree back** before
+  falling back.
+- **(b) The failure was TRANSIENT, so the rollback alone is not a fix.** The byte-identical insert
+  succeeds on demand (probed live on OPW101 and cleaned up). Each node is its own round-trip (~100 ms),
+  so a real build is hundreds of them and one blip aborted the whole tree at random.
+  **`insertNodeSafe()`** retries three times with backoff and ⚠️ **re-reads before each retry** — a
+  failure can be the *response* rather than the write, and a blind retry would create the second copy of
+  the very node this fix exists to prevent.
+- **(c) ⚠️⚠️ THE ONE THAT ACTUALLY RECURS: dotted codes drift when the tree is renumbered.** A dotted
+  `wbs` code is DERIVED from a node's position among its siblings, so inserting nodes renumbers every
+  later branch — and nothing wrote the new codes back. The push even documents the gap ("load() heals
+  summaries but doesn't re-sync codes"). **Reproduced by doing a real re-push on the BAU101-TEST
+  sandbox: 48 of 94 summary rows and 90 of 132 activities were left carrying a stale code, and 18 codes
+  were shared by two different branches** — which the grid draws as the same WBS twice. New
+  **`_wbsResyncCodes()`** rewrites `wbs` from `wbs_node_id` (the stable identity) for every drifted row,
+  grouped by target code so it is one UPDATE per code. A healthy project writes nothing; an imported
+  project whose rows carry no node ids is untouched.
+- ⚠️ **And (c) made the earlier heal DANGEROUS, which matters more than the resync itself.** Two summary
+  rows on one code are *not* necessarily duplicates: if they are backed by **different** nodes they are
+  two real branches whose codes merely collided. Deleting one would have destroyed a live branch, and
+  `_wbsEnsureSummaries` would re-create it — the pair would flap on every load. `_wbsDedupeSummariesByCode`
+  now skips any group with more than one distinct `wbs_node_id`, and the resync runs first so the dedupe
+  judges duplicates on correct codes.
+- **A re-push must also recognise a branch created under the OLD trade label.** Trade branches are named
+  with canonical `GWORK` ("Structural Works") since this morning, but BAU101-TEST holds 58 branches named
+  `Structural` / `Architectural` / `MEPF` from an earlier push. Without an alias the reuse lookup would
+  miss them and add "Structural Works" as a second branch — a duplicate in every sense that matters even
+  though the names differ. `ensureNode` now carries the pre-GWORK name and the lookup falls back to it.
+
+### Verification
+- **142 checks green in Node against the SHIPPED functions**, including: `costCellsHtml` **executed** for
+  each row kind to prove the cell counts still match (textual counting cannot work — the task branch
+  emits three cost cells through one `money()` helper); every `taskKindOf` case incl. WBS-beats-milestone
+  and the unrecognised-type passthrough; `syncGridColumns` re-rendering on arrival, disappearance and
+  reorder but **not** on an unchanged set; the retry's re-read-before-write ordering and its `.is()`
+  null-parent match; and the dedupe guard refusing a two-different-nodes pair while still merging a
+  same-branch pair.
+- **Live, OPW101:** the same-code heal took 457 summary rows → 452 and 5 duplicate codes → **0**; group
+  rows now carry their roll-ups (numbers above).
+- **Live, BAU101-TEST — the real end-to-end proof:** an actual Schedule Builder push under `4 Execution
+  Phase`, grouped into a sub-WBS. Result: 66 activities / 38 relationships / 36 branches, **no fallback
+  warning** (so the node path held), **0** same-name sibling nodes, **94 nodes and 94 summary rows 1:1**,
+  **0** rows without a node id, and the pre-GWORK trade names preserved by the alias. Then on the next
+  load the resync took code drift **138 → 0** and duplicate codes **18 → 0**.
+- ⚠️ **What that push left behind:** BAU101-TEST grew by 66 activities and 36 WBS branches (58 → 94
+  nodes). It is the sandbox and the tree is now internally consistent, but clear it if you want the
+  pre-test state back.
+- ⚠️ **Not verified live:** the retry firing on a real transient failure (it cannot be forced), and the
+  rollback path (it needs a genuine mid-tree insert failure). Both are covered by the unit checks only.
+- ⚠️ The body rows could not be inspected on the last pass because the automation's Chrome window was
+  minimised again — see [[browser-hidden-tab-artefact]]. The header was confirmed to carry the Task
+  column; body/header cell parity rests on the unit checks.

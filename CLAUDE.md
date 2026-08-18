@@ -77,6 +77,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Project Schedule: group-by roll-ups, the frozen-column clash, a Task column, and the real duplicate-WBS cause
+- **Group rows are no longer blank.** `costCellsHtml` short-circuited a grouping header to nine empty
+  cells because `_costMap` (keyed by dotted code) could not serve it — no longer true of `cmOf`, which
+  reads the display-scoped `_dcost`. Group rows now report the same roll-ups a WBS summary does, plus
+  **Dur** (rolled-up span) and **Var (BL)** (rolled-up finish vs baseline), and the Discipline / Level /
+  Zone / Unit columns state their value when every activity beneath agrees (a mixed branch stays blank).
+- ⚠️ **The "clashing data when scrolling" was two bugs.** The frozen columns were **translucent** in a
+  dark-mode selected row (`rgba(238,49,36,.22)`), so the columns scrolled behind them showed through;
+  fixed with an opaque `--ps-frozen-bg` base plus the tint as a layer. And the **header was built from a
+  different column set than the body** (measured: header 29 cells, rows 21) — order/hide are `nth-child`
+  CSS, so values sat under the wrong headings; `syncGridColumns()` now re-asserts on any signature change.
+- **New "Task" column**: WBS / Start Milestone / Finish Milestone / Task, registered in `GRID_COLS` so
+  the Columns menu, hiding, reordering and the Excel export pick it up.
+- ⚠️⚠️ **The duplicated WBS rows are finally fixed at the cause, and it was none of the earlier
+  guesses.** Reproduced by doing a real Schedule Builder push on the BAU101-TEST sandbox: a dotted `wbs`
+  code is derived from a node's position among its siblings, so inserting nodes **renumbers the tree and
+  nothing re-synced the stored codes** — one re-push left 48 of 94 summary rows and 90 of 132 activities
+  stale, and 18 codes shared by two different branches, which the grid draws twice. `_wbsResyncCodes()`
+  rewrites `wbs` from `wbs_node_id`. That also made the earlier heal dangerous — two rows on one code
+  backed by *different* nodes are two real branches, not a duplicate — so the dedupe now refuses those.
+  Plus: the push retries a transient node insert (re-reading first, so a lost response cannot
+  double-insert), rolls a partial tree back before falling back, and recognises a branch created under
+  the pre-GWORK trade label.
+- **142 checks green.** Live: OPW101 457→452 summary rows / 5→0 duplicate codes; BAU101-TEST re-push
+  reused every branch, then the resync took drift 138→0 and duplicate codes 18→0. ⚠️ The retry and
+  rollback paths are unit-tested only — a real transient failure cannot be forced. See
+  `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-18 — Retraction: there is no Discipline/Trade > Level freeze; one real grouping bug fixed
 Owner asked me to fix the freeze I reported earlier today. Profiled it on AVR101 with an instrumented
 build: **the freeze is not real.**
