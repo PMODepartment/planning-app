@@ -77,6 +77,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Project Schedule: past data date + Schedule Builder floor-WBS naming
+Two owner asks, module-local in `modules/project-schedule/index.html`, no migration.
+- **Past data date reverted to today.** The Schedule dialog's date field only applies when the
+  "Apply a specific data date" radio is selected, but that radio defaults to "system date" — so
+  typing a past date (14-Nov-2025) without clicking the radio made `scheduleNow()` call
+  `setDataDate(null)` = today. Nothing clamps the date; it was the radio UX. Editing the field now
+  auto-selects the "set" radio, so a past data date is honoured and persisted.
+- **Floor WBS branch now named by the floor NAME with a unique readable code.** On a grouped push,
+  the floor branch reads Name "Ground Floor" (was the code "F1") with a custom WBS code
+  `<TRADE>-<floorcode>` e.g. `ST-F1`; `computeWbsCodes` prefixes it onto the subtree (zone `ST-F1.1`).
+  Unique by construction (+ a de-dupe guard); re-pushes reuse the pre-change branch via an alias so
+  they don't duplicate; the dotted-code fallback honours it too.
+- **13/13 Node checks** against the shipped `computeWbsCodes` + reconstructed floor naming/code logic;
+  inline script parses. ⚠️ Not verified signed-in. `MODULE_V` → `20260818k`. See
+  `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-18 — Multi-cell select already exists; finished off the cell clipboard's positional drift
 - **Answer to "can the schedule have Excel-style multi-cell select": it already does.** Click /
   shift-click / shift+arrow ranges, `Ctrl+C`/`X`/`V` as TSV (round-trips with Excel), `Ctrl+D` fill-down,

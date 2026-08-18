@@ -16017,7 +16017,7 @@
         // change holds the builder's short GLABEL ("Structural") — without the alias a re-push would
         // create "Structural Works" as a SECOND branch beside it, which is a duplicate in every sense
         // that matters to the planner even though the two names differ.
-        function ensureNode(key, parentKey, name, alt) { if (!nodeByKey[key]) { var d = { key: key, parentKey: parentKey, name: name, alt: alt || null }; nodeByKey[key] = d; nodeDescs.push(d); } }
+        function ensureNode(key, parentKey, name, alt, code) { if (!nodeByKey[key]) { var d = { key: key, parentKey: parentKey, name: name, alt: alt || null, code: code || null }; nodeByKey[key] = d; nodeDescs.push(d); } }
         function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'floor') return (l.floor && l.floor._all) ? ' ' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : ' '; if (dim === 'unit') return l.unit ? l.unit.id : ' '; return ' '; }
         // ⚠️ The trade BRANCH is named with GWORK (the canonical "Structural Works"), not GLABEL
         // ("Structural"). work_type on the pushed activities is already GWORK, so a branch named with
@@ -16025,8 +16025,15 @@
         // trades whose short and canonical labels are identical (General Requirements / Site Works /
         // Allied Services) the second name is a byte-for-byte duplicate of the first, which is the
         // reported "each rendered twice with identical dates and %".
-        // The pre-GWORK name for the same branch (trade dimension only) — see ensureNode.
-        function dimAltName(dim, r) { return dim === 'trade' ? (GLABEL[r.loc.trade] || null) : null; }
+        // Another name the SAME branch may already exist under, so a re-push REUSES it instead of
+        // creating a duplicate. Trade: the pre-GWORK short label. Floor: its old code-based name — the
+        // floor branch is now named by the floor's NAME ("Ground Floor"), but a project pushed before
+        // that change holds it under the floor CODE ("F1"), so alias to the code to find that node.
+        function dimAltName(dim, r) {
+          if (dim === 'trade') return GLABEL[r.loc.trade] || null;
+          if (dim === 'floor') { var f = r.loc.floor; return (f && !f._all && f.code) ? String(f.code) : null; }
+          return null;
+        }
         // ⚠️⚠️ NEVER RETURN A BLANK NAME. `wbs_nodes.name` is NOT NULL, so one unnamed branch used to
         // abort the whole tree mid-insert — which is the warning the owner reported ('null value in
         // column "name" of relation "wbs_nodes" violates not-null constraint'), and the reason the push
@@ -16041,11 +16048,28 @@
         function dimName(dim, r) {
           var l = r.loc || {}, v = null;
           if (dim === 'trade') v = GWORK[l.trade] || GLABEL[l.trade] || l.trade;
-          else if (dim === 'floor') v = (l.floor && !l.floor._all) ? (l.floor.code || l.floor.name) : null;
+          // ⚠️ Floor branch is named by the floor's NAME ("Ground Floor"), falling back to its code —
+          // owner: "utilize the names of the floors as the name of the WBS". Its unique code comes from
+          // dimCode() below. Zone/unit still prefer their code (no name convention there).
+          else if (dim === 'floor') v = (l.floor && !l.floor._all) ? (l.floor.name || l.floor.code) : null;
           else if (dim === 'zone') v = l.zone ? (l.zone.code || l.zone.name) : null;
           else if (dim === 'unit') v = l.unit ? (l.unit.code || l.unit.name) : null;
           v = (v == null) ? '' : String(v).trim();
           return v || _dimFallback(dim);
+        }
+        // A readable, UNIQUE custom WBS code for a floor branch — "<TRADE>-<floorcode>" (e.g. "ST-F1"),
+        // so the floor node reads code "ST-F1" / Name "Ground Floor" instead of an opaque dotted number
+        // (owner request). Only floors get one; other levels keep auto dotted codes, which under a
+        // custom-coded floor read "ST-F1.1" etc. (computeWbsCodes prefixes a custom code onto its
+        // subtree). De-duped within the push so two floors sharing a code can't collide into one code.
+        var _usedCode = {};
+        function dimCode(dim, r) {
+          if (dim !== 'floor') return null;
+          var l = r.loc || {}; if (!l.floor || l.floor._all) return null;
+          var fc = String(l.floor.code || '').trim(); if (!fc) return null;   // no code → auto dotted
+          var b = (l.trade ? l.trade + '-' : '') + fc, c = b, n = 2;
+          while (_usedCode[c]) { c = b + '-' + n; n++; }
+          _usedCode[c] = 1; return c;
         }
         function buildTree(rowsIn, dims, parentKey) {
           if (!dims.length) { rowsIn.forEach(function (r) { taskAssign.push({ k: parentKey, r: r, name: r.act.name }); }); return; }
@@ -16056,7 +16080,7 @@
           ord.forEach(function (k) {
             var grpRows = m[k];
             if (k === ' ') { buildTree(grpRows, rest, parentKey); return; }   // null-value rows attach to the parent
-            var nkey = 'N' + (++nodeSeq); ensureNode(nkey, parentKey, dimName(dim, grpRows[0]), dimAltName(dim, grpRows[0]));
+            var nkey = 'N' + (++nodeSeq); ensureNode(nkey, parentKey, dimName(dim, grpRows[0]), dimAltName(dim, grpRows[0]), dimCode(dim, grpRows[0]));
             buildTree(grpRows, rest, nkey);
           });
         }
@@ -16139,7 +16163,9 @@
             // row must not cost the planner the whole WBS tree.
             var _nm = (nd.name == null) ? '' : String(nd.name).trim();
             if (!_nm) { _nm = 'WBS'; _unnamedDims.unknown = (_unnamedDims.unknown || 0) + 1; }
-            batch.push({ project_id: pid, parent_id: parentId, name: _nm, sort_order: soByParent[nd.parentKey]++, created_by: UID });
+            var _row = { project_id: pid, parent_id: parentId, name: _nm, sort_order: soByParent[nd.parentKey]++, created_by: UID };
+            if (nd.code) { _row.code = nd.code; _row.code_custom = true; }   // readable floor code, e.g. "ST-F1"
+            batch.push(_row);
             batchDescs.push(nd);
           }
           for (var b = 0; b < batch.length && wbsOk; b += 400) {
@@ -16206,7 +16232,7 @@
           // fallback: dotted WBS-Summary + task rows (old behavior), so the push still works pre-migration
           var codeByKey = {}, so2 = {};
           function childCode(pk) { var pc = pk === '__base__' ? base : codeByKey[pk]; if (so2[pk] == null) so2[pk] = nextChildIndex(pc); return code(pc, so2[pk]++); }
-          nodeDescs.forEach(function (nd) { var c = childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', created_by: UID }); });
+          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; p.wbs = childCode(t.k); payloads.push(p); });
         }
       }
@@ -17082,6 +17108,14 @@
         '<label><input type="checkbox" id="ps-mfp"' + (mfpOn ? ' checked' : '') + '><span>Highlight near-critical paths<small>When Critical Path is on, activities with total float at or below the threshold are flagged (amber) alongside the critical path.</small></span></label></div>' +
         '<div class="fld"><span>Float threshold (days)</span><input class="pd-input" type="number" min="1" id="ps-mfp-days" value="' + NEARDAYS + '" style="max-width:120px;"></div>' +
         '<p style="color:var(--pd-muted);font-size:11.5px;margin:4px 0 0;">Turn on <strong>Critical path</strong> in the toolbar to see the paths highlighted on the grid and Gantt.</p>';
+    }
+    // ⚠️ Editing the Data Date field auto-selects "Apply a specific data date". Without this, a user who
+    // types a date (e.g. a PAST date like 14-Nov-2025) while the radio is still on "Use the current
+    // (system) date" hits Schedule Now and scheduleNow() reads the radio, calls setDataDate(null), and
+    // the data date silently reverts to today. A past data date is fully allowed — nothing clamps it.
+    if (schedTab === 'project') {
+      var _ddi = document.getElementById('ps-dd-date');
+      if (_ddi) _ddi.oninput = function () { var r = document.querySelector('input[name="ps-dd"][value="set"]'); if (r) r.checked = true; };
     }
   }
   function openSchedule() {

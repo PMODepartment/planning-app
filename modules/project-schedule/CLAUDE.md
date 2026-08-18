@@ -1,5 +1,45 @@
 # Module: project-schedule
 
+## Schedule dialog: a PAST data date silently reverted to today (2026-08-18) — eprobles
+Owner: can't set a data date before today (e.g. 14-Nov-2025) — it reverts to today.
+- ⚠️ **Root cause was the radio UX, not a clamp.** The Schedule dialog (also opened by clicking the
+  topbar Data Date badge) has two radios — "Use the current (system) date" (default when `dataDate`
+  is null) and "Apply a specific data date" — plus an always-enabled date field. `scheduleNow()`
+  reads the **radio**: if it's still on "system", it calls `setDataDate(null)` (= wall clock) no
+  matter what's typed in the field. So a user who types a date without also clicking the "set" radio
+  gets today. Nothing anywhere clamps the data date to ≥ today — a past date is fully allowed.
+- **Fix:** editing the Data Date field now auto-selects the "Apply a specific data date" radio
+  (`#ps-dd-date` `oninput` → checks `input[name="ps-dd"][value="set"]`), so typing/picking a date is
+  honoured on Schedule Now. `setDataDate` persists it (`ps_datadate_<pid>`) and `loadDataDate`
+  restores it, past dates included.
+- Verified: inline script parses (1 block, 0 fail); wiring present; the date input carries no `min`
+  so the browser allows past dates. ⚠️ Not verified signed-in. `MODULE_V` → `20260818k`.
+
+## Schedule Builder push: floor WBS branch named by the floor NAME, coded uniquely (2026-08-18) — eprobles
+Owner: when pushing to the schedule, use the floor NAMES as the WBS name but keep the WBS id unique
+(e.g. WBS id `ST-F1` / Name `Ground Floor`). All in the grouped `pushToSchedule` tree builder.
+- **`dimName('floor')` now prefers the floor's `name`** (falling back to its code), so the floor
+  branch reads "Ground Floor" instead of "F1". Zone/unit unchanged (no name convention there).
+- **New `dimCode(dim, r)`** gives a floor branch a **custom** WBS code `<TRADE>-<floorcode>`
+  (e.g. `ST-F1`), threaded through `ensureNode` → the `wbs_nodes` insert as `code`/`code_custom:true`.
+  `computeWbsCodes` already honours a custom code and **prefixes its subtree**, so a zone under it
+  reads `ST-F1.1`, a unit `ST-F1.1.1`. Trade/zone/unit keep auto dotted codes. Unique by
+  construction (trade prefix + floor code); a `_usedCode` guard de-dupes within a push if two floors
+  ever share a code (→ `ST-F1-2`). Blank floor code → no custom code (auto dotted), never a bad code.
+- ⚠️ **Re-push safety:** `dimAltName('floor')` now returns the floor's **code** (its old,
+  pre-change branch name), so `existingChild(parentId, name) || existingChild(parentId, alt)` finds a
+  branch pushed before this change (named "F1") and REUSES it instead of creating a duplicate
+  "Ground Floor" beside it. (It keeps the existing node's name on reuse — a re-push doesn't rename in
+  place; new/clean pushes get the new naming, which is the builder's common case.)
+- ⚠️ The dotted-code **fallback** path (pre-migration / wbs-nodes insert failed) honours `nd.code`
+  too — the floor row's `wbs` is `ST-F1`, its children `ST-F1.1`, name "Ground Floor".
+- **Verified 13/13 in Node**: the SHIPPED `computeWbsCodes` sliced out and run over a
+  trade→floor(custom)→zone→unit tree gives `ST-F1` / `ST-F1.1` / `ST-F1.1.1`, a second trade's
+  "Ground Floor" is the distinct `AR-F1`, and the trade node keeps its auto dotted code; plus the
+  reconstructed `dimName`/`dimCode` floor logic (name = floor name, name→code fallback, `ST-F1`
+  format, non-floor/blank → null, and the dedupe → `ST-F1-2`). Inline script parses.
+  ⚠️ **Not verified signed-in** (needs a real push). `MODULE_V` → `20260818k`.
+
 ## Schedule Builder step 7: "Total duration" was the SUM of durations, not the span (2026-08-18) — eprobles
 Owner: Nov 14 '25 → Jul 22 '28 can't be 12,820 days. Correct — the Generate/preview KPI
 (`_genPanel` → `g.totalDays`) read `rows.reduce((t,r)=>t+r.dur,0)`, i.e. **every activity's duration
