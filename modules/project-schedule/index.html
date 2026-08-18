@@ -280,6 +280,17 @@
     /* Higher specificity than the generic .ps-menu-wrap{position:relative} rule below, so this
        stays absolute (a floating "+" over the header) rather than falling into normal flow and
        creating an extra strip above the header row. */
+    /* ⚠️ The column-chooser "+" is ABSOLUTE over the header's right edge, so with the grid scrolled
+       fully right it sat ON TOP of the last column's heading while that column's data stayed visible —
+       reported as "the + makes the columns not aligned". It now gets its OWN lane: a trailing spacer
+       cell of the same width is emitted on the header, the filter row and every body row, so the last
+       real column always ends before the button and header/body stay cell-for-cell identical.
+       ⚠️ The spacer needs an explicit high `order`: applyColOrder() assigns order 0..N-1 by nth-child
+       and anything unstyled defaults to order:0, which would jump the spacer to the front. */
+    .ps-grid-pane { --c-plus:34px; }
+    .ps-cell.c-plus { width:var(--c-plus); min-width:var(--c-plus); flex:0 0 var(--c-plus); order:9999;
+      padding:0; border-left:1px solid var(--pd-line); }
+    .ps-grid-row.head > .ps-cell.c-plus { background:var(--pd-bg); }
     .ps-grid-pane .ps-cols-corner { position:absolute; top:0; right:0; z-index:12; }
     .ps-cols-corner > .ps-icobtn { height:38px !important; width:32px; border-radius:0; border:none;
       border-left:1px solid var(--pd-line); border-bottom:2px solid var(--pd-line);
@@ -8810,7 +8821,7 @@
       var arrow = (colSort && colSort.idx === i) ? '<span class="ps-sort-ind">' + (colSort.dir < 0 ? '▼' : '▲') + '</span>' : '';
       return '<div class="ps-cell ps-colhdr ' + c[2] + '" draggable="true" data-ci="' + i + '" data-key="' + esc(colKey(c)) + '" title="' + esc(colLabel(c)) + ' — click for options, drag to reorder">' + esc(colLabel(c)) + arrow +
         '<span class="ps-colgrip" data-col="' + c[2].replace('c-', '') + '" title="Drag to resize column"></span></div>';
-    }).join('') + '</div>';
+    }).join('') + '<div class="ps-cell c-plus"></div></div>';
     // Optional per-column filter row (OPC-style) — mirrors the exact cell structure so widths, the
     // frozen columns, column order and hidden columns all apply automatically.
     var filterRow = '';
@@ -8818,7 +8829,7 @@
       filterRow = '<div class="ps-grid-row ps-filter-row"><div class="ps-cell c-num"></div>' + gridCols().map(function (c) {
         var k = colKey(c), cur = (filters.col && filters.col[k]) || '';
         return '<div class="ps-cell ' + c[2] + '"><input class="ps-colf-in" data-ck="' + esc(k) + '" value="' + esc(cur) + '" placeholder="Filter" title="Filter ' + esc(colLabel(c)) + '"></div>';
-      }).join('') + '</div>';
+      }).join('') + '<div class="ps-cell c-plus"></div></div>';
     }
     head.innerHTML = headRow + filterRow;
     var split = document.querySelector('.ps-split'); if (split) split.classList.toggle('ps-colf-on', !!_colFilterOn);
@@ -9170,6 +9181,9 @@
     var cls = k === 'WBS' ? 'ps-tk-wbs' : (k === 'Task' ? 'ps-tk-task' : 'ps-tk-mile');
     return '<div class="ps-cell c-task"><span class="ps-tk ' + cls + '">' + esc(k) + '</span></div>';
   }
+  // The trailing lane the column-chooser "+" lives in — see the .c-plus note in the CSS. Emitted on
+  // EVERY row kind so the header and the body stay cell-for-cell identical.
+  var PLUS_CELL = '<div class="ps-cell c-plus"></div>';
   function gridRowHTML(r, i) {
     // Zebra-stripe task rows only. WBS/group summary rows have their own solid background;
     // striping them makes odd-indexed summaries look different (the dark-mode .ps-alt overlay
@@ -9192,7 +9206,7 @@
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.e)) : '—') + '</div>' +
         sumDurCellHtml(r) + costCellsHtml(r) +
-        '<div class="ps-cell c-flt"></div>' + sumVarCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + '</div>';
+        '<div class="ps-cell c-flt"></div>' + sumVarCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
     }
     if (isWbsNode(r)) {
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
@@ -9208,7 +9222,7 @@
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.e)) : '—') + '</div>' +
         sumDurCellHtml(r) + costCellsHtml(r) +
-        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + sumVarCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + '</div>';
+        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + sumVarCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
     }
     // Planned (original) duration — baseline-based, always ≥0 and never disturbed by actuals/forecast.
     var dur = _origDurOf(r); if (dur == null) dur = '';
@@ -9239,7 +9253,7 @@
         ? '<div class="ps-cell c-dur" title="Planned Duration = baseline span (locked)">' + (dur !== '' ? dur + 'd' : '') + '</div>'
         : '<div class="ps-cell c-dur ps-editable" data-id="' + r.id + '" data-field="planned_duration" data-type="pdur">' + (dur !== '' ? dur + 'd' : '') + '</div>') +
       costCellsHtml(r) +
-      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + '</div>';
+      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
   }
 
   function doRender() {
@@ -15688,7 +15702,7 @@
         : '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Start date <span style="color:var(--pd-red);">*</span></label>' +
           '<input class="pd-input" type="date" id="sbpush-start" value="' + e2(ddISO) + '" style="width:100%;height:34px;">' +
           '<p class="sbld-hint" style="margin:4px 0 0;">No project <b>Data Date</b> is set — choose the date the schedule should start from.</p>';
-      var wbsOpts = '<option value="">— Top level (new WBS branch) —</option>' + rows.filter(isWbs).sort(function (a, b) { return String(a.wbs).localeCompare(String(b.wbs), undefined, { numeric: true }); }).map(function (r) { return '<option value="' + e2(r.wbs) + '">' + e2(r.wbs + '  ' + (r.activity_name || '')) + '</option>'; }).join('');
+      // (the WBS picker was removed — a builder push always files under Execution Phase)
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 500;
       ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:16px;">' +
@@ -15696,8 +15710,12 @@
         '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Schedule to push</label>' +
         '<select class="pd-select" id="sbpush-basis" style="width:100%;height:34px;"><option value="int">Internal (target)</option><option value="ext">External (contract)</option></select>' +
         startBlock +
-        '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Assign under WBS</label>' +
-        '<select class="pd-select" id="sbpush-wbs" style="width:100%;height:34px;">' + wbsOpts + '</select>' +
+        // ⚠️ The "Assign under WBS" picker is gone (owner 2026-08-18: it was always set to Execution
+        // Phase, so offering the choice only invited a wrong one). A builder push is construction
+        // work by definition, and construction lives under Execution Phase — resolved at push time by
+        // execPhaseCode() so it follows a renamed/re-coded branch, and falling back to the top level
+        // only if the project genuinely has no Execution Phase branch.
+        '<p class="sbld-hint" style="margin:12px 0 0;">Filed under <b>' + e2(_pushParentLabel()) + '</b>.</p>' +
         '<div id="sbpush-flat" style="margin-top:12px;"><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Group the pushed schedule by</label>' +
         '<select class="pd-select" id="sbpush-groupby" style="width:100%;height:34px;">' +
         [['auto', 'Discipline → Location → Zone (auto — skips a level a trade doesn\'t have)'], ['trade-loc-zone', 'Discipline → Location → Zone'], ['trade-zone', 'Discipline → Zone (zone lowest)'], ['zone-trade', 'Zone → Discipline'], ['loc-zone-trade', 'Location → Zone → Discipline'], ['trade-only', 'Discipline only']].map(function (o) { return '<option value="' + o[0] + '">' + e2(o[1]) + '</option>'; }).join('') + '</select>' +
@@ -15745,7 +15763,7 @@
         var startISO = (ov.querySelector('#sbpush-start') || {}).value || ddISO;
         if (!startISO) { UI.toast('Choose a start date first.', 'warn'); return; }
         cfg.wbsOrder = order.slice(); markDirty();   // remember the chosen structure
-        var pc = ov.querySelector('#sbpush-wbs').value, bs = ov.querySelector('#sbpush-basis').value;
+        var pc = _pushParentCode(), bs = ov.querySelector('#sbpush-basis').value;
         var gbSel = (ov.querySelector('#sbpush-groupby') || {}).value || 'auto'; close();
         pushToSchedule(pc, grp, bs, order, startISO, gbSel);
       };
@@ -15754,6 +15772,18 @@
     // just used to throw that away, baking it into the activity NAME and the WBS nesting. Stamp it
     // as DATA so the schedule can be grouped Activity > Location > Zone (or any other order).
     // Creates the project's location levels on first push if it has none.
+    // Where a builder push is filed: the project's Execution Phase branch. `execPhaseCode()` is the
+    // schedule module's own resolver, so a renamed or re-coded branch still matches; '' means "top
+    // level", which is what an un-skeletoned project gets.
+    function _pushParentCode() {
+      try { return (typeof execPhaseCode === 'function' && execPhaseCode()) || ''; } catch (e) { return ''; }
+    }
+    function _pushParentLabel() {
+      var pc = _pushParentCode();
+      if (!pc) return 'the top level (this project has no Execution Phase branch)';
+      var row = (typeof rows !== 'undefined' ? rows : []).filter(function (r) { return String(r.wbs) === String(pc); })[0];
+      return pc + ' · ' + ((row && row.activity_name) || 'Execution Phase');
+    }
     async function ensureLocLevels() {
       var wanted = ['Location', 'Zone'];
       if (locList().some(function (l) { return l.unit; })) wanted.push('Unit');
@@ -15835,7 +15865,7 @@
       // why grouping by trade showed hundreds of one-off buckets instead of the real trades.
       function tradeOf(r) { var tr = (r.loc && r.loc.trade) || (r.act && r.act.group); return tr ? (GWORK[tr] || GLABEL[tr] || tr) : null; }
       function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq }; }
-      var payloads = [], taskN = g.rows.length, wbsMsg = '';
+      var payloads = [], taskN = g.rows.length, wbsMsg = '', wbsUnnamed = {};
 
       if (!grouped) {
         // Flat push — no sub-WBS; tasks get sequential codes under the chosen base (no WBS-Manager nodes).
@@ -15868,7 +15898,26 @@
         // reported "each rendered twice with identical dates and %".
         // The pre-GWORK name for the same branch (trade dimension only) — see ensureNode.
         function dimAltName(dim, r) { return dim === 'trade' ? (GLABEL[r.loc.trade] || null) : null; }
-        function dimName(dim, r) { var l = r.loc; if (dim === 'trade') return GWORK[l.trade] || GLABEL[l.trade] || l.trade; if (dim === 'floor') return (l.floor && l.floor._all) ? null : (l.floor.code || l.floor.name || 'Floor'); if (dim === 'zone') return l.zone ? (l.zone.code || l.zone.name || 'Zone') : null; if (dim === 'unit') return l.unit ? (l.unit.code || l.unit.name || 'Unit') : null; return null; }
+        // ⚠️⚠️ NEVER RETURN A BLANK NAME. `wbs_nodes.name` is NOT NULL, so one unnamed branch used to
+        // abort the whole tree mid-insert — which is the warning the owner reported ('null value in
+        // column "name" of relation "wbs_nodes" violates not-null constraint'), and the reason the push
+        // fell back to dotted codes and the WBS Manager showed Execution Phase with 0 activities.
+        // The old nulls were "unreachable": buildTree only creates a node when dimKey() is not ' ', and
+        // dimKey returns ' ' for exactly the cases dimName returned null for. They were reached anyway,
+        // so the guard cannot be a proof — it has to be a value. Each dim now falls back to its level
+        // name, and `_unnamedDims` records which one needed it so the push can say so instead of
+        // failing silently.
+        var _unnamedDims = {};
+        function _dimFallback(dim) { _unnamedDims[dim] = (_unnamedDims[dim] || 0) + 1; return DIM_LABEL[dim] || 'WBS'; }
+        function dimName(dim, r) {
+          var l = r.loc || {}, v = null;
+          if (dim === 'trade') v = GWORK[l.trade] || GLABEL[l.trade] || l.trade;
+          else if (dim === 'floor') v = (l.floor && !l.floor._all) ? (l.floor.code || l.floor.name) : null;
+          else if (dim === 'zone') v = l.zone ? (l.zone.code || l.zone.name) : null;
+          else if (dim === 'unit') v = l.unit ? (l.unit.code || l.unit.name) : null;
+          v = (v == null) ? '' : String(v).trim();
+          return v || _dimFallback(dim);
+        }
         function buildTree(rowsIn, dims, parentKey) {
           if (!dims.length) { rowsIn.forEach(function (r) { taskAssign.push({ k: parentKey, r: r, name: r.act.name }); }); return; }
           var dim = dims[0], rest = dims.slice(1), m = {}, ord = [];
@@ -15883,6 +15932,7 @@
           });
         }
         buildTree(g.rows, (order && order.length ? order : cfg.wbsOrder).slice(), '__base__');
+        wbsUnnamed = _unnamedDims;
         // base parent = the wbs_node behind the chosen WBS row (if any)
         var baseRow = rows.filter(function (r) { return isWbs(r) && String(r.wbs) === String(base); })[0];
         var baseNodeId = baseRow ? (baseRow.wbs_node_id || null) : null;
@@ -15934,7 +15984,11 @@
           var ex = existingChild(keyToNodeId[nd.parentKey] || null, nd.name) ||
                    (nd.alt ? existingChild(keyToNodeId[nd.parentKey] || null, nd.alt) : null);
           if (ex) { keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++; soByParent[nd.parentKey]++; if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length); continue; }
-          var nres = await insertNodeSafe({ project_id: pid, parent_id: keyToNodeId[nd.parentKey] || null, name: nd.name, sort_order: soByParent[nd.parentKey]++, created_by: UID });
+          // ⚠️ Last-ditch coalesce: whatever happens upstream, this column is NOT NULL and one bad
+          // row must not cost the planner the whole WBS tree.
+          var _nm = (nd.name == null) ? '' : String(nd.name).trim();
+          if (!_nm) { _nm = 'WBS'; _unnamedDims.unknown = (_unnamedDims.unknown || 0) + 1; }
+          var nres = await insertNodeSafe({ project_id: pid, parent_id: keyToNodeId[nd.parentKey] || null, name: _nm, sort_order: soByParent[nd.parentKey]++, created_by: UID });
           if (nres.error) { wbsOk = false; wbsMsg = nres.error.message; break; }
           keyToNodeId[nd.key] = nres.data.id; WBS_NODES.push(nres.data); createdNodeIds.push(nres.data.id);
           if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length);
@@ -15996,7 +16050,12 @@
           // ⚠️ Name the ACTUAL error. This used to read only "run the wbs-nodes migration", which is
           // one possible cause among many — and it hid the reason the tree fell back to dotted codes,
           // which is the same failure that used to leave duplicated WBS rows behind.
-          warnings: wbsMsg ? ['WBS Manager not updated, so this push filed under dotted WBS codes instead of WBS-Manager branches. Reason: ' + wbsMsg] : [],
+          warnings: (wbsMsg ? ['WBS Manager not updated, so this push filed under dotted WBS codes instead of WBS-Manager branches. Reason: ' + wbsMsg] : [])
+            .concat(Object.keys(wbsUnnamed || {}).length
+              ? ['Some locations had no code or name, so their branch was named after its level instead: ' +
+                 Object.keys(wbsUnnamed).map(function (k) { return (DIM_LABEL[k] || k) + ' \u00d7' + wbsUnnamed[k]; }).join(', ') +
+                 '. Give those floors/zones/units a code in step 2 to name them properly.']
+              : []),
           note: 'Filed ' + (base ? 'under <strong>' + e2(base) + '</strong>' : 'at the top level') + ' · ' + (basis === 'ext' ? 'External' : 'Internal') + ' durations. Opening the schedule…'
         });
       } else {
