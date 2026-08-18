@@ -3387,8 +3387,12 @@
     _setFresh('live');
     await loadResourcesAssignments();   // loads WBS_NODES
     if (gen !== _loadGen) return;
+    // Re-sync dotted codes to the node tree FIRST — a code that drifted after a push makes two
+    // branches look like one, which the dedupe below would otherwise "fix" by deleting a live branch.
+    await _wbsResyncCodes();
+    if (gen !== _loadGen) return;
     // Self-heal duplicate summary rows sharing one dotted WBS code (the shape the node-id dedupe
-    // below cannot see). Runs FIRST: _wbsEnsureSummaries' "missing" pass must see the deduped set.
+    // below cannot see). Runs after the resync: it must judge duplicates on correct codes.
     await _wbsDedupeSummariesByCode();
     if (gen !== _loadGen) return;
     // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
@@ -12181,6 +12185,59 @@
   // the summary row's id.
   // ⚠️ NOT gated on WBS_NODES like _wbsEnsureSummaries is — a project whose tree is entirely
   // dotted-code rows (no wbs_nodes at all) is exactly the case that needs this.
+  // ⚠️⚠️ RE-SYNC THE DOTTED CODES FROM THE NODE TREE. A dotted `wbs` code is DERIVED from a node's
+  // position among its siblings, so inserting a node renumbers every later branch — and nothing used
+  // to write those new codes back. The push even says so ("load() heals summaries but doesn't
+  // re-sync codes"). The consequence is the duplicated-WBS report: after a push into an existing
+  // tree, two different branches end up storing the SAME code and the grid draws that code twice.
+  // Measured on BAU101-TEST after one ordinary re-push: 48 of 94 summary rows and 90 of 132
+  // activities were carrying a stale code, and 18 codes were shared by two branches.
+  // ⚠️ Keyed on `wbs_node_id`, which is the stable identity — so an imported project whose rows carry
+  // no node ids is untouched, and a healthy project performs zero writes.
+  // ⚠️ Runs BEFORE the same-code dedupe, so that pass judges duplicates on correct codes.
+  var _resyncingCodes = false;
+  async function _wbsResyncCodes() {
+    if (!pid || !canWrite || !WBS_NODES.length) return 0;
+    if (_resyncingCodes) return 0;
+    _resyncingCodes = true;
+    try {
+      var ownPid = pid, codeOf = computeWbsCodes(), all = [], from = 0;
+      for (;;) {
+        var q = await sb().from(TABLE).select('id,wbs,wbs_node_id').eq('project_id', ownPid)
+          .not('wbs_node_id', 'is', null).range(from, from + 999);
+        if (q.error) return 0;
+        if (pid !== ownPid) return 0;
+        all = all.concat(q.data || []);
+        if (!q.data || q.data.length < 1000) break;
+        from += 1000;
+      }
+      // Group the drifted rows by the code they SHOULD carry — one UPDATE per target code.
+      var byCode = {}, n = 0;
+      all.forEach(function (r) {
+        var want = codeOf[r.wbs_node_id];
+        if (!want || String(r.wbs) === String(want)) return;
+        (byCode[want] = byCode[want] || []).push(r.id); n++;
+      });
+      if (!n) return 0;
+      var codes = Object.keys(byCode), failed = 0;
+      for (var i = 0; i < codes.length; i++) {
+        var ids = byCode[codes[i]];
+        for (var j = 0; j < ids.length; j += 100) {
+          var ures = await sb().from(TABLE).update({ wbs: codes[i] }).in('id', ids.slice(j, j + 100));
+          if (ures.error) failed++;
+        }
+      }
+      if (pid !== ownPid) return n;
+      // Mirror into the in-memory rows so the very next render is correct without a refetch.
+      var want2 = {};
+      codes.forEach(function (cd) { byCode[cd].forEach(function (id) { want2[id] = cd; }); });
+      rows.forEach(function (r) { if (want2[r.id] != null) r.wbs = want2[r.id]; });
+      rebuild(true);
+      if (failed) UI.toast('Re-synced ' + n + ' WBS code(s); ' + failed + ' batch(es) failed — reload to retry.', 'warn');
+      else UI.toast('Re-synced ' + n + ' WBS code' + (n === 1 ? '' : 's') + ' after the WBS tree was renumbered.', 'success');
+      return n;
+    } finally { _resyncingCodes = false; }
+  }
   var _dedupingByCode = false;
   async function _wbsDedupeSummariesByCode() {
     if (!pid || !canWrite) return 0;
@@ -12201,6 +12258,16 @@
       all.forEach(function (r) { var k = (r.wbs == null) ? '' : String(r.wbs); if (!k) return; (by[k] = by[k] || []).push(r); });
       Object.keys(by).forEach(function (k) {
         var g = by[k]; if (g.length < 2) return;
+        // ⚠️⚠️ NOT EVERY SHARED CODE IS A DUPLICATE. Two rows backed by DIFFERENT wbs_nodes are two
+        // real branches whose dotted codes have merely COLLIDED — see _wbsResyncCodes(): inserting
+        // nodes renumbers the tree and the stored codes drift behind it. Deleting one of those would
+        // destroy a live branch, and `_wbsEnsureSummaries` would then re-create it, so the pair would
+        // flap on every load. Measured on BAU101-TEST after one ordinary re-push: 18 codes carried two
+        // rows each, every pair node-backed by different nodes ("Zone 1" vs "Z1"). The resync is the
+        // cure for those; only same-branch rows are duplicates.
+        var nodeIds = {}, distinct = 0;
+        g.forEach(function (r) { if (r.wbs_node_id && !nodeIds[r.wbs_node_id]) { nodeIds[r.wbs_node_id] = 1; distinct++; } });
+        if (distinct > 1) return;
         g.sort(function (a, b) {
           var an = a.wbs_node_id ? 0 : 1, bn = b.wbs_node_id ? 0 : 1;
           if (an !== bn) return an - bn;
