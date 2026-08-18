@@ -77,6 +77,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Retraction: there is no Discipline/Trade > Level freeze; one real grouping bug fixed
+Owner asked me to fix the freeze I reported earlier today. Profiled it on AVR101 with an instrumented
+build: **the freeze is not real.**
+- ⚠️ **It was my test harness.** The Chrome window the automation drives was **minimised**, so
+  `document.visibilityState === 'hidden'` (while `hasFocus()` was still true). `scheduleRender()`
+  schedules through `requestAnimationFrame`, which never fires in a hidden tab — so the grouping change
+  completed in 62 ms and then no repaint ever happened — and background tabs throttle `setTimeout` to
+  ~1/minute, which made my polling loops exceed the 45 s CDP limit and report "renderer frozen". The A/B
+  that "proved it pre-existing" proved nothing: both builds ran in the same hidden tab.
+- **Real numbers on AVR101** (4,393 activities): WBS 153 ms · Discipline/Trade ~150 ms ·
+  Discipline/Trade › Level **209 ms** · Discipline/Trade › Level › WBS **270 ms**. Nothing quadratic.
+- ⚠️ **One real bug found and fixed:** a saved **location grouping silently degraded** when
+  `location_levels` came back empty. `normalizeGroupBys()` filtered against `allDims()`, and since that
+  fetch is deliberately tolerant ("no table → no levels"), an empty registry could mean "not loaded /
+  failed" — yet every `loc:` level was dropped anyway. Seen live twice on AVR101: `Discipline / Trade ›
+  Level` came back as plain `Discipline / Trade` with zero location levels in the Group menu, while
+  localStorage still held the right grouping. A level is now retired only when its registry is loaded
+  and genuinely lacks it. **9 new checks (55 total, green).** ⚠️ Not verified live — the trigger is an
+  intermittently empty response I cannot force. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-18 — Live test on AVR101 of the same-day Project Schedule changes
 Signed in as the owner on the deployed build, against Avesta Residences (4,393 activities / 1,623 WBS nodes).
 - **Passed live:** AVR101's WBS tree is clean (1,623 nodes, 0 duplicate sibling names, exactly one

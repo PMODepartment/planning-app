@@ -6381,7 +6381,8 @@ data-level checks. What passed, what could not be tested there, and one thing th
   branch is still right (it is what feeds a group row, which has no dotted code), but it is **not**
   a fix for a symptom anyone has seen. Claim it as belt-and-braces, not as a bug fixed.
 
-### ⚠️ Separate, PRE-EXISTING bug found while testing (not caused by these changes)
+### ⚠️ RETRACTED — see the entry below; this "freeze" was a test-harness artefact, not a bug
+Original note kept for the reasoning it records:
 **Grouping AVR101 by `Discipline / Trade › Level` freezes the tab.** The renderer stops responding
 (CDP `Runtime.evaluate` times out); at 74 s the grid is still empty with **no console error**, so it is
 a compute blow-up, not an exception.
@@ -6400,3 +6401,71 @@ a compute blow-up, not an exception.
 `ps_collapsed_AVR101` in localStorage is **1.5 MB** and holds 22 per-grouping collapse maps, one with
 8,199 entries. Not touched here beyond removing the `work` key, but it is a lot of state to parse on
 every load and is a plausible contributor to the slowness above.
+
+## ⚠️ RETRACTION — there is no "Discipline / Trade › Level freeze" (2026-08-18) — fmlozano
+Owner asked me to fix the freeze I reported earlier today. **I profiled it on AVR101 and the freeze is
+not real — it was an artefact of my own test harness.** Correcting the record, because the previous
+entry sends the next reader hunting a bug that does not exist.
+
+### What the numbers actually are
+An instrumented copy of the module (`perf.html`, deployed alongside, since removed) timed every stage
+of `doRender` on AVR101 (4,393 activities / 1,623 WBS nodes / 3,672 in the Execution Phase scope):
+
+| grouping | buildNodes | displayList | renderWindow | doRender total |
+|---|---|---|---|---|
+| WBS (default) | 13 ms | 27 ms | 116 ms | **153 ms** |
+| Discipline / Trade | 83 ms | 88 ms | 57 ms | **~150 ms** |
+| Discipline / Trade › Level | 119 ms | 128 ms | 74 ms | **209 ms** |
+| Discipline / Trade › Level › WBS | 166 ms | 181 ms | 80 ms | **270 ms** |
+
+Inside `buildNodes` the grouped walk is 156 ms of the 166 ms worst case and the pre-work (Execution
+Phase carve-out + hide-unassigned) is 5 ms. **Nothing is quadratic and nothing hangs.**
+
+### What I actually saw, and why
+⚠️ **The Chrome window the automation drives was MINIMISED**, so `document.visibilityState === 'hidden'`
+while `document.hasFocus()` was still true. Two consequences, and between them they produce a perfect
+imitation of a frozen app:
+- **`scheduleRender()` schedules through `requestAnimationFrame`, which never fires in a hidden tab**,
+  and it latches `_rafP = true` first — so the grouping change completed (measured: `setGroupBys` 62 ms
+  end to end) and then *no repaint ever happened*. The grid kept showing the previous grouping's rows.
+- **Background tabs throttle `setTimeout` to roughly once a minute**, so my in-page polling loops blew
+  straight past the 45 s CDP limit and came back as "the renderer may be frozen or unresponsive".
+- ⚠️ **The A/B that "proved it pre-existing" proved nothing** — both builds were driven in the same
+  hidden tab, so of course both "froze". The A/B conclusion for the *roll-up change* still stands only
+  because the roll-up numbers were read from a rendered grid, not from that timing.
+- Two more red herrings from the same run, recorded so nobody re-derives them: `.ps-row` is not the row
+  class (it is `.ps-grid-row`), and `#ps-grid-rows` only ever holds the **windowed** ~24 rows, so "24
+  rows" is the healthy state, not a truncation.
+
+**Lesson for the next live session: check `document.visibilityState` before believing any render-timing
+or "nothing rendered" observation.** `hasFocus()` is not enough — a minimised window has focus and is
+still hidden.
+
+### One REAL bug found while profiling, and fixed
+⚠️ **A saved location grouping silently degrades when `location_levels` comes back empty.**
+`loadGroupBys()` → `normalizeGroupBys()` filtered `groupBys` against `allDims()`, which is built from
+`LOC_LEVELS` / `CODE_TYPES`. Those fetches are deliberately tolerant ("no table → no levels"), so an
+empty registry means *either* "this project has none" *or* "the fetch failed / returned nothing" — and
+the filter treated them alike, **deleting every `loc:` level from the planner's grouping**.
+- **Seen live on AVR101, twice in one session:** a load where the levels came back empty turned
+  `Discipline / Trade › Level` into plain `Discipline / Trade`, with the Group menu offering **zero**
+  location levels. localStorage still held the correct grouping, so it looked like the app had reset
+  the grouping by itself. This is a far better candidate for anything the owner has experienced as
+  "the Level grouping doesn't work" than the freeze ever was.
+- **Fix:** a `loc:` / `code:` level is only retired when its registry is **loaded** and genuinely lacks
+  it; an empty registry keeps the level. Safe, because `dimValOf`/`dimRawOf` resolve a location level
+  through `r.location[levelId]` and simply yield no value — and the level comes back intact as soon as
+  a load brings the registry back. `wbs`-forced-last, dropping genuinely stale levels, dropping unknown
+  plain dims and the `['wbs']` fallback are all unchanged.
+- **9 new checks against the shipped `normalizeGroupBys` + `allDims`** (55 total in the harness, all
+  green): known level kept; deleted level and deleted activity code both retired; **empty** location and
+  code registries both KEEP the saved level; a location-only grouping is not wiped to the `wbs`
+  fallback; `wbs` still forced last; unknown plain dim still dropped; all-invalid still falls back.
+- ⚠️ **Not verified live** — the trigger is an intermittently empty `location_levels` response, which I
+  cannot force from the page. The unit checks cover the branch; the live smoke test only confirms the
+  normal path still loads `Discipline / Trade › Level` correctly.
+
+### Not changed, deliberately
+`scheduleRender()`'s rAF-only scheduling is what makes a hidden tab never repaint. Left alone: for a
+real user the queued frame fires as soon as the window is shown again and the grid paints the current
+state, so there is no user-facing defect to fix — only an automation hazard, now documented above.
