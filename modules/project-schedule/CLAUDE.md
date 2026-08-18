@@ -1,5 +1,35 @@
 # Module: project-schedule
 
+## Grid cell copy/paste of DATES was broken — two root causes (2026-08-18) — eprobles
+Owner: *"In the project schedule, the copy paste of dates is not working."* Two independent defects in
+the cell clipboard, both found by comparing `_CELL_META` (the position-keyed copy/paste metadata) against
+the live `GRID_COLS` and the grid's own cell rendering.
+- ⚠️ **Start/Finish copied the WRONG field.** The grid Start/Finish cells display `dispStart`/`dispFin`
+  (actual → forecast → planned) and edit `start_date`/`actual_start` (or `end_date`/`actual_finish`) per
+  the row's state — but `_CELL_META[5]/[6]` hardcoded `actual_start`/`actual_finish`. So copying a
+  Start/Finish cell of any **not-yet-actualized** activity (the common case — it shows a planned date but
+  has no actual) copied **empty**, and pasting a date wrote to `actual_start`/`actual_finish`, bypassing
+  the duration recompute + validation and wrongly marking the activity started/complete. That is the
+  literal "copy paste of dates is not working".
+- ⚠️ **`_CELL_META` was off-by-one from index 10.** The **Duration % Complete** column was added to
+  `GRID_COLS` (index 10) on 2026-07-16 but never to `_CELL_META`, so every entry from 10 onward was
+  shifted — the cost columns (Planned/Actual/Earned/BL IBB) all copied/pasted the wrong field, and a
+  paste into the computed **At Completion IBB** column wrote `bl_cost`. Latent since July; fixed here too.
+- **Fixes:** `_CELL_META` rebuilt to 19 entries index-aligned with `GRID_COLS` (durpct + the two
+  computed IBB/float/var columns marked copy-only `f:null`; Start/Finish carry `disp:'start'|'fin'`).
+  `_cellText`/`_cellPack` read the DISPLAYED date for `disp` columns so copy is never empty. `pasteCells`
+  routes any `t==='date'` paste through **`_dateEditPatch`** with the field the grid would edit for that
+  row (`d.actual_start ? 'actual_start' : 'start_date'`, `isComplete(d) ? 'actual_finish' : 'end_date'`)
+  — same path the inline editor uses, so paste gets actual/planned routing, duration recompute and
+  validation; a rejected date is skipped (counted), not aborted. A comment on `_CELL_META` now warns it
+  must stay index-aligned with `GRID_COLS`.
+- **Verified 28/28 in Node against the SHIPPED functions** (`GRID_COLS`, `_CELL_META`, `_cellText`,
+  `_cellPack`, `_isoFromAny`, `_coerceCell`, `_dateEditPatch` sliced out, not reimplemented): meta↔grid
+  alignment incl. the realigned cost columns; copying a planned-only Start/Finish is non-empty; copying a
+  started row's Start shows the actual; pasting into a not-started Start routes to `start_date` (not
+  `actual_start`); a completed Finish routes to `actual_finish`; `_isoFromAny`/`_coerceCell` edge cases.
+  Inline script parses (1 block, 0 fail). ⚠️ **Not verified signed-in.** `MODULE_V` → `20260818h`.
+
 ## Stale WBS-summary dates: measured live, and the cleanup was NOT run (2026-08-17) — fmlozano
 Asked to repair the WBS-Summary rows' own `start_date`/`end_date`/`bl_start`/`bl_finish`, which
 nothing recomputes. **Measured first, changed nothing — and the measurement says the premise does not

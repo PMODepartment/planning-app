@@ -18862,12 +18862,25 @@
   // ---- Cell clipboard (Excel/OPC-style Cut/Copy/Paste of individual cells) ----
   // Per-column metadata in GRID_COLS order (built-ins only). `edit` = writable inline; `t` = the
   // edit/coerce type. Computed columns (POC, At-Completion, Dur, Float, Var) are copy-only.
+  // ⚠️ This MUST stay index-aligned with GRID_COLS (the built-in columns) — copy/paste keys cells by
+  // grid position. When a built-in column is added to GRID_COLS (e.g. Duration % Complete at index 10),
+  // add the matching entry HERE or every column after it copies/pastes the WRONG field.
+  // Start/Finish carry `disp`: the grid shows dispStart/dispFin (actual → forecast → planned) and edits
+  // start_date/actual_start (or end_date/actual_finish) per the row's state, so copy reads the DISPLAYED
+  // date and paste routes through _dateEditPatch to the right field — NOT the fixed actual_* fields.
   var _CELL_META = [
     { f: 'activity_id', edit: 1, t: 'text' }, { f: 'activity_name', edit: 1, t: 'text' }, { f: 'status', edit: 0, t: 'text' },
-    { f: 'bl_start', edit: 1, t: 'date' }, { f: 'bl_finish', edit: 1, t: 'date' }, { f: 'actual_start', edit: 1, t: 'date' }, { f: 'actual_finish', edit: 1, t: 'date' },
-    { f: 'duration_days', edit: 0, t: 'text' }, { f: null, edit: 0 }, { f: 'percent_complete', edit: 1, t: 'number' },
+    { f: 'bl_start', edit: 1, t: 'date' }, { f: 'bl_finish', edit: 1, t: 'date' },
+    { f: 'start_date', edit: 1, t: 'date', disp: 'start' }, { f: 'end_date', edit: 1, t: 'date', disp: 'fin' },
+    { f: 'duration_days', edit: 0, t: 'text' },                    // Dur (computed)
+    { f: null, edit: 0 },                                          // Planned Value % (computed)
+    { f: 'percent_complete', edit: 1, t: 'number' },               // Activity % Complete
+    { f: null, edit: 0 },                                          // Duration % Complete (derived; copy-only)
     { f: 'planned_cost', edit: 1, t: 'money' }, { f: 'actual_cost', edit: 1, t: 'money' }, { f: 'earned_value', edit: 1, t: 'money' },
-    { f: null, edit: 0 }, { f: 'bl_cost', edit: 1, t: 'money' }, { f: 'percent_complete_type', edit: 0, t: 'text' }, { f: null, edit: 0 }, { f: null, edit: 0 }
+    { f: null, edit: 0 },                                          // At Completion IBB (computed)
+    { f: 'bl_cost', edit: 1, t: 'money' },
+    { f: 'percent_complete_type', edit: 0, t: 'text' },            // Percent Complete Type
+    { f: null, edit: 0 }, { f: null, edit: 0 }                     // Float, Var (BL) — computed
   ];
   function _cellRect() { if (!_cellSel) return null; return { r0: Math.min(_cellSel.r0, _cellSel.r1), r1: Math.max(_cellSel.r0, _cellSel.r1), c0: Math.min(_cellSel.c0, _cellSel.c1), c1: Math.max(_cellSel.c0, _cellSel.c1) }; }
   // Set the active cell / extend the cell range from a grid click. ci is the grid-column index
@@ -18897,13 +18910,14 @@
       case 17: { var v = finVar(r); return v == null ? '' : (v > 0 ? '+' : '') + v + 'd'; }
     }
     var meta = _CELL_META[ci]; if (!meta || !meta.f) return '';
+    if (meta.disp) { var dv = meta.disp === 'fin' ? dispFin(r) : dispStart(r); return dv ? String(dv).slice(0, 10) : ''; }
     var val = r[meta.f]; if (val == null || val === '') return '';
     if (meta.t === 'date') return String(val).slice(0, 10);
     return String(val);
   }
   // One packed cell for the clipboard: editable source keeps its raw value (for a clean round-trip);
   // every cell also carries display text (used when pasting from a computed source or external TSV).
-  function _cellPack(r, ci) { var meta = _CELL_META[ci]; var text = _cellText(r, ci); if (meta && meta.f && meta.edit) return { val: (r[meta.f] === undefined ? null : r[meta.f]), text: text }; return { text: text }; }
+  function _cellPack(r, ci) { var meta = _CELL_META[ci]; var text = _cellText(r, ci); if (meta && meta.f && meta.edit) { var val = meta.disp ? (text || null) : (r[meta.f] === undefined ? null : r[meta.f]); return { val: val, text: text }; } return { text: text }; }
   function _isoFromAny(s) { if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10); var d = new Date(s); if (isNaN(d.getTime())) return null; return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   function _coerceCell(t, src) {
     if (src == null) return null; var s = String(src).trim(); if (s === '') return null;
@@ -18959,8 +18973,21 @@
         if (!editable || !meta || !meta.f || !meta.edit) { skipped++; continue; }
         var raw = (src.val !== undefined ? src.val : src.text);
         var v = _coerceCell(meta.t, raw);
-        (byRow[d.id] = byRow[d.id] || {})[meta.f] = v;
-        written[d.id + '|' + meta.f] = 1;
+        if (meta.t === 'date') {
+          // Resolve the field the grid would edit for this row's state (mirrors the inline Start/Finish
+          // cells) and run it through _dateEditPatch, so paste gets the actual/planned routing, the
+          // duration recompute and the validation instead of a raw write to a fixed column.
+          var fld = meta.disp === 'start' ? (d.actual_start ? 'actual_start' : 'start_date')
+                  : meta.disp === 'fin' ? (isComplete(d) ? 'actual_finish' : 'end_date')
+                  : meta.f;
+          var dres = _dateEditPatch(d, fld, v);
+          if (dres.error) { skipped++; continue; }
+          var bp = (byRow[d.id] = byRow[d.id] || {});
+          Object.keys(dres.patch).forEach(function (k) { bp[k] = dres.patch[k]; written[d.id + '|' + k] = 1; });
+        } else {
+          (byRow[d.id] = byRow[d.id] || {})[meta.f] = v;
+          written[d.id + '|' + meta.f] = 1;
+        }
       }
     }
     var ids = Object.keys(byRow);

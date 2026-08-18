@@ -219,6 +219,21 @@ Signed in as the owner on the deployed build, against Avesta Residences (4,393 a
   console error, empty grid at 74 s). Proved pre-existing by deploying the `22103fc` module alongside and
   reproducing the freeze on it; that temp file has been removed. Also learned: **Jekyll 404s any path
   starting with `_`** on GitHub Pages (no `.nojekyll` here). See `modules/project-schedule/CLAUDE.md`.
+### 2026-08-18 — Project Schedule: grid copy/paste of DATES fixed (two root causes)
+Owner: "the copy paste of dates is not working." Both defects in the cell clipboard's position-keyed
+`_CELL_META`, module-local in `modules/project-schedule/index.html`, no migration.
+- ⚠️ **Start/Finish copied the wrong field.** The grid Start/Finish cells show `dispStart`/`dispFin`
+  and edit `start_date`/`actual_start` (or `end_date`/`actual_finish`) per the row's state, but
+  `_CELL_META` hardcoded `actual_start`/`actual_finish` — so copying a Start/Finish cell of a
+  not-yet-actualized activity copied **empty**, and pasting wrote to the actual field (bypassing the
+  duration recompute + validation, wrongly marking it started/complete).
+- ⚠️ **`_CELL_META` was off-by-one from index 10** — the Duration % Complete column added to
+  `GRID_COLS` in July was never added to `_CELL_META`, silently shifting every cost column's
+  copy/paste field. Fixed too (latent since 2026-07-16).
+- **Fix:** `_CELL_META` rebuilt index-aligned with `GRID_COLS`; Start/Finish carry a `disp` marker so
+  copy reads the displayed date and paste routes through `_dateEditPatch` (same path as the inline
+  editor). **28/28 Node checks against the shipped functions**; inline script parses. ⚠️ Not verified
+  signed-in. `MODULE_V` → `20260818h`. See `modules/project-schedule/CLAUDE.md`.
 
 ### 2026-08-18 — Project Schedule: doubled trades closed, per-level-type trade sequencing, grouped roll-up
 Three owner asks in one prompt; all module-local in `modules/project-schedule/index.html`, no migration.
