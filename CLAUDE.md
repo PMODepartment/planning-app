@@ -77,6 +77,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Fix: the Project Schedule module would not load (my regression) + MODULE_V bump
+- ⚠️ **My regression, module-wide.** The Gantt-pane clamp patch deleted the line that reads the saved
+  pane width and left `if (saved && …)` behind, so init threw `ReferenceError: saved is not defined`
+  right before `loadProjects()` and every project opened as "— Select project —" with an empty grid.
+  Confirmed live at `index.html:19931` inside `requireLogin`'s callback. `node --check` cannot catch it
+  (valid syntax, runtime-only), and a regex-based undeclared-identifier scanner proved useless and was
+  discarded — the invariants are asserted in the harness instead.
+- **Guard:** the whole split-pane setup is now wrapped in try/catch. It is cosmetic and runs immediately
+  before `loadProjects()`, so a fault there must cost the layout, never the module.
+- ⚠️⚠️ **MODULE_V was never bumped all day.** `dashboard.html` appends it as `?v=` to every module link
+  and its own comment says to bump it on any module `index.html` deploy — warning that forgetting it gets
+  mis-diagnosed as a code bug. About ten deploys went out today without it, so the owner was testing a
+  cached page for much of the session. Bumped `20260818g` → `20260818h`.
+- **259 checks green**, and verified live: 0 console errors and the module loads its project (132
+  activities).
+
 ### 2026-08-18 — Project Schedule: the vanishing Gantt pane, and the header/body column drift
 - ⚠️ **The Gantt pane really was gone.** Confirmed from the owner's storage: `ps_grid_w = "1518"`. The
   divider drag writes an inline `flex-basis` and cleared the pane's `max-width`, and that pixel width is

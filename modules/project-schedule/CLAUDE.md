@@ -6769,3 +6769,35 @@ cell positions or see the Gantt come back. The Gantt diagnosis is nonetheless **
 stored 1518px), and the drift diagnosis follows from the two containers' geometry, but **both want the
 owner's eyes**: the Gantt should reappear on load, and the column lines should stay put at any scroll
 position.
+
+## ⚠️ I broke the module, and the cache hid a day of fixes (2026-08-18) — fmlozano
+
+### The module would not open at all — my regression
+The Project Schedule opened with "— Select project —" and an empty grid whatever the dashboard had
+selected. Cause: the patch that added the Gantt-pane clamp **deleted the line that READS the saved pane
+width** and left `if (saved && …)` behind. `saved` was then undeclared, so init threw right before
+`loadProjects()`.
+- **Confirmed live on the deployed build**, not inferred: `ReferenceError: saved is not defined` at
+  `index.html:19931`, inside `AppAuth.requireLogin`'s callback.
+- ⚠️ **`node --check` cannot catch this.** It is valid syntax that only fails at runtime, and the whole
+  harness is built on slicing functions out and executing them — which never exercises the init path.
+  I also tried writing a general undeclared-identifier scanner and **threw it away**: a regex over a
+  19k-line file produced garbage (`ge`, `nam`, `enumerabl`) and did not even flag `saved`. Do not
+  resurrect that idea; assert the invariant instead.
+- **Structural guard, which is the real protection:** the whole split-pane setup is now wrapped in
+  try/catch. It is cosmetic and sits immediately before `loadProjects()`, so anything throwing in it
+  costs the planner the entire module — indistinguishable from "the app is broken". A layout nicety may
+  now cost the layout, never the data. Six checks assert the read precedes the use, that the wrap exists
+  and closes before `loadProjects()`, and that the log says the schedule still loads.
+- ⚠️ One of those checks initially passed a false positive: the assertion compared positions of
+  `if (saved &&`, which my own COMMENT also contains. Compare against the code form, not prose.
+- **Verified live after the fix:** 0 console errors, `window.__psSetGridW` present (so init got past the
+  block), and the module loaded Bauhinia Residences with 132 activities.
+
+### ⚠️⚠️ And the reason several of today's fixes "did not work": MODULE_V
+`dashboard.html` defines `MODULE_V` and appends it as `?v=` to every module link, with a comment saying
+outright that it must be bumped on any deploy that changes a module's `index.html` — and warning that
+forgetting it has been **mis-diagnosed as a code bug more than once**.
+**I deployed `modules/project-schedule/index.html` about ten times today and never bumped it.** So
+`?v=20260818g` kept serving a cached page and the owner was testing stale builds for much of the session.
+Bumped `20260818g` → `20260818h`. Treat the bump as part of the same commit as the module change.
