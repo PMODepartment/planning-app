@@ -6331,3 +6331,72 @@ takt questions already use).
 - ⚠️ **Not verified signed in on a project.** The three things that need it: a re-push actually merging
   into the existing branches, the heal's toast firing on a project that already holds duplicates, and
   the grouped roll-up numbers read off the live grid.
+
+## Live test on AVR101 of the 2026-08-18 changes (2026-08-18) — fmlozano
+Owner asked for a live test. Run **signed in as the owner on the deployed GitHub Pages build**, against
+Avesta Residences (AVR101, 4,393 activities / 1,623 WBS nodes), querying Supabase from the page for the
+data-level checks. What passed, what could not be tested there, and one thing this run *disproved*.
+
+### Passed live
+- **No duplicated trade branches on AVR101, and the widened heal does not over-merge.** Queried the
+  whole tree (paged past PostgREST's 1,000-row cap): **1,623 `wbs_nodes`, 0 duplicate (parent, name)
+  sibling groups, 1,623 `WBS Summary` rows, exactly one per `wbs_node_id`, 0 rows with a null
+  `wbs_node_id`.** ⚠️ **The two "General Requirements" nodes are NOT duplicates** — one sits under
+  `Execution Phase`, the other under `Planning Phase › Procurement › Work Package Awarding › Tower 1 +
+  Gen Req***`. Different parents, so the (parent_id, name) key correctly leaves them alone. That is the
+  case that would have been destroyed by keying the heal on name alone.
+- **The location suffix renders, and says what the grouping does not.** Grouped by Discipline/Trade
+  (no location level), leaf rows read `Formworks · Bridge`, `Concrete, 3000 psi · Road Pavement`,
+  `SUBGRADE (100mm thk) · Sidewalk`, `Material Testing · Testing & Commissioning` — four rows that
+  previously all read just "Formworks" / "Concrete, 3000 psi" with nothing to tell them apart.
+  4,562 of the 4,393+ rows carry `location` on this project, over levels Tower / Level / Zone /
+  Orientation.
+- **Step 4's whole per-level-type flow**, exercised end to end (on **BAU101-TEST**, see below):
+  the Level type row offers exactly the categories the project builds (`All levels (default) ·
+  Basement · Typical`); selecting Basement shows the inherited default and the "first edit forks it"
+  hint with **no** reset button; Auto-chain (SS) on Basement forks it — `OWN` badge, "Basement levels
+  have their own sequence", reset button appears — and **the default is verifiably untouched**
+  (Links modal: Basement `SS, SS` vs All levels `FS, FS`); "Copy Structural sequence from…" offers
+  All levels + Basement (never the category being edited) and copying Basement→Typical gives Typical
+  `SS, SS`; "Follow the default here" drops the override and Typical reads `FS, FS` again while
+  Basement keeps its own. The Links modal title names the level type it is editing.
+  **Nothing persisted** — re-read `schedule_builder.config` afterwards: `actLinks` still all `FS`,
+  `actLinksKind` still absent, because the builder only writes on **Save setup**.
+
+### Could not be tested on AVR101
+- ⚠️ **AVR101 has no `schedule_builder` row at all** — step 4 correctly shows "No trades yet". The
+  builder work was therefore verified on **BAU101-TEST** (a sandbox project with 11 class codes,
+  7 links, basement + typical floors). Only 6 projects have a builder config: CDP101, MWD101, OPW101,
+  BAU101, BAU101-TEST, Test — none of them AVR101.
+- **The idempotent re-push and the heal's merge toast could not be observed**, because AVR101's tree
+  is already clean and there is no builder setup to push. Both remain code-level only.
+
+### ⚠️ Disproved by this run — do not repeat the claim
+- **The baseline roll-up fix makes NO observable difference on AVR101.** The changelog above says a
+  grouping ending in `wbs` "left every branch with blank BL Start / BL Finish". Checked live under
+  Discipline/Trade › WBS: the new build shows `Site Development (35)` = Jun 26 2026, `Bridge` = Jun 26,
+  `Road Pavement` = Jul 13, `Sidewalk` = Aug 6 — all correct roll-ups — **and the pre-change build
+  shows exactly the same values.** `wbsBlSpan` falls back to `_blSpanMap[w.wbs]`, and a real WBS row
+  always has a dotted code, so the global baseline map already served it. Adding `addBlSpan` to that
+  branch is still right (it is what feeds a group row, which has no dotted code), but it is **not**
+  a fix for a symptom anyone has seen. Claim it as belt-and-braces, not as a bug fixed.
+
+### ⚠️ Separate, PRE-EXISTING bug found while testing (not caused by these changes)
+**Grouping AVR101 by `Discipline / Trade › Level` freezes the tab.** The renderer stops responding
+(CDP `Runtime.evaluate` times out); at 74 s the grid is still empty with **no console error**, so it is
+a compute blow-up, not an exception.
+- **Proved pre-existing by a same-origin A/B**: the module as of `22103fc` (before any of the
+  2026-08-18 changes) was deployed alongside as `abold.html`, loaded in the same session against the
+  same project, and **froze identically on the same grouping**. The temp file has since been removed.
+- ⚠️ **Jekyll silently 404s any path starting with `_`** on GitHub Pages — `_ab-old.html` never
+  deployed and cost a wasted cycle. There is no `.nojekyll` in this repo. Worth knowing before adding
+  any underscore-prefixed path (it also means `modules/_template/` is not served).
+- Two red herrings this chase produced, recorded so the next pass does not repeat them: `.ps-row` is
+  **not** the grid row class (it is `.ps-grid-row`), and `#ps-grid-rows` stays empty in the **mobile
+  card layout** — which the app switches to whenever `innerWidth` is 0, i.e. whenever the Chrome
+  window is minimised. Several "0 rows rendered" readings were that, not a hang.
+
+### Housekeeping
+`ps_collapsed_AVR101` in localStorage is **1.5 MB** and holds 22 per-grouping collapse maps, one with
+8,199 entries. Not touched here beyond removing the `work` key, but it is a lot of state to parse on
+every load and is a plausible contributor to the slowness above.

@@ -77,6 +77,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Live test on AVR101 of the same-day Project Schedule changes
+Signed in as the owner on the deployed build, against Avesta Residences (4,393 activities / 1,623 WBS nodes).
+- **Passed live:** AVR101's WBS tree is clean (1,623 nodes, 0 duplicate sibling names, exactly one
+  summary row per node, 0 orphans) and the widened duplicate heal correctly does **not** merge the two
+  "General Requirements" nodes, which sit under different parents; the location suffix renders on leaf
+  rows (`Formworks · Bridge`, `SUBGRADE (100mm thk) · Sidewalk`); and Schedule Builder step 4's whole
+  per-level-type flow — inherit, fork on first edit, copy from another category, revert — works with the
+  default verifiably untouched.
+- ⚠️ **AVR101 has no Schedule Builder setup**, so step 4 was exercised on the BAU101-TEST sandbox
+  (nothing persisted — the builder only writes on Save setup). The idempotent re-push and the heal's
+  merge toast still have no live confirmation.
+- ⚠️ **Disproved:** the baseline roll-up change makes no observable difference on AVR101 — the
+  pre-change build shows the same correct BL dates, because a real WBS row always has a dotted code and
+  `_blSpanMap` already served it. Belt-and-braces, not a fixed symptom.
+- ⚠️ **Pre-existing bug found:** grouping AVR101 by Discipline / Trade › Level **freezes the tab** (no
+  console error, empty grid at 74 s). Proved pre-existing by deploying the `22103fc` module alongside and
+  reproducing the freeze on it; that temp file has been removed. Also learned: **Jekyll 404s any path
+  starting with `_`** on GitHub Pages (no `.nojekyll` here). See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-18 — Project Schedule: doubled trades closed, per-level-type trade sequencing, grouped roll-up
 Three owner asks in one prompt; all module-local in `modules/project-schedule/index.html`, no migration.
 - ⚠️ **The doubled trades are two bugs, and the "3 of 6 duplicate" split is what identified them.**
