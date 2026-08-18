@@ -288,7 +288,7 @@
     .ps-cols-corner .ps-cols-menu { right:0; left:auto; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-x:130px; }
+    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-task:124px; --c-x:130px; }
     /* Leading row-number (#) gutter + frozen Activity ID/Name columns: they stay put (and header/
        body stay aligned) while the rest of the grid scrolls. The "#" cell is DOM child 1 but not a
        data column, so column reorder (CSS `order`) must never move it — pin it with order:-1. Sticky
@@ -468,6 +468,13 @@
     .ps-grid-pane .ps-cell input { user-select:text; -webkit-user-select:text; }
     /* Drag-and-drop row reorder (within a WBS): dim the dragged row, show a red insertion line on the
        hovered target's top or bottom edge. */
+    /* "Task" column — the row's kind as a quiet pill (structure / work / milestone read apart at a
+       glance without shouting over the data columns). */
+    .ps-tk { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 7px;
+      border-radius:999px; border:1px solid var(--pd-line); color:var(--pd-muted); background:var(--pd-bg);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+    .ps-tk-wbs { color:var(--pd-ink); font-weight:800; }
+    .ps-tk-mile { color:var(--pd-red); border-color:var(--pd-red-mid, var(--pd-red)); background:var(--pd-red-light); }
     .ps-grid-row.ps-rowdragging { opacity:.45; }
     .ps-grid-row.ps-drop-above { box-shadow:inset 0 2px 0 0 var(--pd-red); }
     .ps-grid-row.ps-drop-below { box-shadow:inset 0 -2px 0 0 var(--pd-red); }
@@ -8593,7 +8600,11 @@
     ['cost','Planned IBB','c-cost'], ['cost','Actual IBB to date','c-cost'], ['cost','Earned Value IBB','c-cost'],
     ['cost','At Completion IBB','c-cost'], ['cost','BL Planned IBB','c-cost'],
     ['ctype','Percent Complete Type','c-ctype'],
-    ['flt','Float','c-flt'], ['var','Var (BL)','c-var']
+    ['flt','Float','c-flt'], ['var','Var (BL)','c-var'],
+    // What KIND of line this row is — WBS branch / grouping header vs Task vs Start/Finish
+    // Milestone. Appended rather than inserted mid-list so a saved column sort index (which is
+    // positional) keeps pointing at the column it was set on; drag it where you want it.
+    ['task','Task','c-task']
   ];
   // Dynamic columns (OPC "define columns"): the project's Activity Codes + User-Defined Fields become
   // real, choosable grid columns appended after the 18 built-ins. Tuple shape matches GRID_COLS
@@ -8766,6 +8777,28 @@
     var floorH = document.querySelector('.ps-grid-pane.ps-colf-on') ? 68 : 38;
     gh.style.height = Math.max(floorH, gHead.getBoundingClientRect().height) + 'px';
   }
+  // ⚠️ THE HEADER AND THE BODY MUST COME FROM ONE COLUMN SET. They are built by separate calls —
+  // renderHeader() from ~14 places, the rows from renderWindow() — so they can be generated from
+  // different extraColDefs() snapshots, and extraColDefs() depends on LOC_LEVELS / CODE_TYPES /
+  // UDF_DEFS, which arrive asynchronously and (measured, twice) sometimes come back EMPTY on a load.
+  // Measured on OPW101: the header carried 29 cells (9 extra columns, levels loaded) while every body
+  // row carried 21 (1 extra column, built before the levels arrived). Column order and hiding are
+  // implemented as `nth-child` CSS over the cells, so an 8-column offset puts body values under the
+  // wrong headings — the second half of the owner's "clashing data in the columns" report, and it
+  // shifts as you scroll because the frozen columns interact with the same `order` values.
+  // Guarding on a SIGNATURE (not a count) also catches a reorder or a rename that keeps the count.
+  var _colSig = null;
+  function gridColSig() { return gridCols().map(colKey).join('|'); }
+  // Re-assert the header + the order/hide CSS when the column set has moved under the body.
+  function syncGridColumns() {
+    var sig = gridColSig();
+    if (sig === _colSig) return false;
+    _colSig = sig;
+    renderHeader();
+    if (typeof applyColOrder === 'function') applyColOrder();
+    if (typeof applyColHidden === 'function') applyColHidden();
+    return true;
+  }
   function renderHeader() {
     var head = document.getElementById('ps-grid-head'); if (!head) return;
     seedExtraHidden();
@@ -8892,7 +8925,7 @@
     function up() {
       document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', up);
       syncHeadHeights();
-      try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var','x'].forEach(function (c) { w[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e2) {}
+      try { var w = {}; ['id','name','status','date','dur','poc','pct','cost','ctype','flt','var','task','x'].forEach(function (c) { w[c] = getComputedStyle(pane).getPropertyValue('--c-' + c).trim(); }); localStorage.setItem('ps_cols', JSON.stringify(w)); } catch (e2) {}
     }
     document.addEventListener('mousemove', mm); document.addEventListener('mouseup', up);
   }
@@ -9116,6 +9149,23 @@
   // OPC-style in-cell adornments: A = actual date, C = constrained date; a thin bar under % Complete.
   function _dateBadge(kind) { if (!kind) return ''; var tt = kind === 'A' ? 'Actual date' : (kind === 'P' ? 'Planned (no actual entered yet)' : 'Constrained date'); return '<span class="ps-dbadge" title="' + tt + '">' + kind + '</span>'; }
   function _pctBar(p) { if (p == null) return ''; var w = Math.max(0, Math.min(100, p)); return '<span class="ps-pctbar" style="width:' + w + '%"></span>'; }
+  // The KIND of line a row is, for the "Task" column. A grouping header and a WBS branch are both
+  // structure rather than work, so both read WBS. `isMile()` also matches a bare 'Milestone', which
+  // marks a start (only a Finish Milestone is anchored on the finish — see isFinishMile).
+  // Anything else P6 might carry (e.g. Level of Effort) is shown as stored rather than flattened to
+  // "Task", so the column never misdescribes a row it does not recognise.
+  function taskKindOf(r) {
+    if (r._dkind === 'group' || isWbsNode(r)) return 'WBS';
+    if (isFinishMile(r)) return 'Finish Milestone';
+    if (isMile(r)) return 'Start Milestone';
+    var t = (r.activity_type || '').trim();
+    return (!t || t === 'Task' || t === 'Task Dependent') ? 'Task' : t;
+  }
+  function taskCellHtml(r) {
+    var k = taskKindOf(r);
+    var cls = k === 'WBS' ? 'ps-tk-wbs' : (k === 'Task' ? 'ps-tk-task' : 'ps-tk-mile');
+    return '<div class="ps-cell c-task"><span class="ps-tk ' + cls + '">' + esc(k) + '</span></div>';
+  }
   function gridRowHTML(r, i) {
     // Zebra-stripe task rows only. WBS/group summary rows have their own solid background;
     // striping them makes odd-indexed summaries look different (the dark-mode .ps-alt overlay
@@ -9138,7 +9188,7 @@
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.e)) : '—') + '</div>' +
         sumDurCellHtml(r) + costCellsHtml(r) +
-        '<div class="ps-cell c-flt"></div>' + sumVarCellHtml(r) + gridExtraHtml(r) + '</div>';
+        '<div class="ps-cell c-flt"></div>' + sumVarCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + '</div>';
     }
     if (isWbsNode(r)) {
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
@@ -9154,7 +9204,7 @@
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.e)) : '—') + '</div>' +
         sumDurCellHtml(r) + costCellsHtml(r) +
-        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + sumVarCellHtml(r) + gridExtraHtml(r) + '</div>';
+        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + sumVarCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + '</div>';
     }
     // Planned (original) duration — baseline-based, always ≥0 and never disturbed by actuals/forecast.
     var dur = _origDurOf(r); if (dur == null) dur = '';
@@ -9185,7 +9235,7 @@
         ? '<div class="ps-cell c-dur" title="Planned Duration = baseline span (locked)">' + (dur !== '' ? dur + 'd' : '') + '</div>'
         : '<div class="ps-cell c-dur ps-editable" data-id="' + r.id + '" data-field="planned_duration" data-type="pdur">' + (dur !== '' ? dur + 'd' : '') + '</div>') +
       costCellsHtml(r) +
-      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + gridExtraHtml(r) + '</div>';
+      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + '</div>';
   }
 
   function doRender() {
@@ -9288,6 +9338,8 @@
     // ⚠️ ORDER MATTERS. This used to sit at the very END, after renderWindow() — so any throw while
     // building the Gantt bars took the legend down with it and it only recovered on a full page
     // reload ("the legend needs a refresh"). It needs nothing but DL, which is ready here.
+    // Same column set for the header and the rows about to be built — see syncGridColumns().
+    syncGridColumns();
     renderActLegend();
     renderWindow(true);
     syncHeadHeights();
@@ -15777,11 +15829,37 @@
             .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); })[0];
           return hit || null;
         }
+        // ⚠️⚠️ RETRY A NODE INSERT — DO NOT ABANDON THE TREE ON THE FIRST BLIP. Each node is its own
+        // round-trip (~100 ms measured), so a real build is dozens to hundreds of sequential
+        // requests, and a SINGLE transient failure used to abort the whole wbs_nodes tree and drop
+        // the push into the dotted-code fallback. That is not hypothetical and it is not a
+        // constraint problem: on OPW101 five nodes went in at 05:54:13.509–14.314 and the sixth
+        // failed, yet the byte-identical insert succeeds on demand. Left unretried it will keep
+        // happening at random on every push — which is why the rollback alone is not enough.
+        // ⚠️ The retry RE-READS before writing again. A failure can be the RESPONSE rather than the
+        // write, and a blind retry would then create the second copy of the very node this whole fix
+        // exists to prevent.
+        async function insertNodeSafe(payload) {
+          var last = null;
+          for (var at = 0; at < 3; at++) {
+            if (at > 0) {
+              var q = sb().from('wbs_nodes').select('*').eq('project_id', payload.project_id).eq('name', payload.name);
+              q = (payload.parent_id == null) ? q.is('parent_id', null) : q.eq('parent_id', payload.parent_id);
+              var chk = await q;
+              if (!chk.error && chk.data && chk.data.length) return { data: chk.data[0], error: null };
+            }
+            var r = await sb().from('wbs_nodes').insert(payload).select().single();
+            if (!r.error) return r;
+            last = r;
+            await new Promise(function (res) { setTimeout(res, 300 * (at + 1)); });
+          }
+          return last;
+        }
         for (var di = 0; di < nodeDescs.length; di++) {
           var nd = nodeDescs[di]; soByParent[nd.parentKey] = (soByParent[nd.parentKey] || 0);
           var ex = existingChild(keyToNodeId[nd.parentKey] || null, nd.name);
           if (ex) { keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++; soByParent[nd.parentKey]++; if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length); continue; }
-          var nres = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: keyToNodeId[nd.parentKey] || null, name: nd.name, sort_order: soByParent[nd.parentKey]++, created_by: UID }).select().single();
+          var nres = await insertNodeSafe({ project_id: pid, parent_id: keyToNodeId[nd.parentKey] || null, name: nd.name, sort_order: soByParent[nd.parentKey]++, created_by: UID });
           if (nres.error) { wbsOk = false; wbsMsg = nres.error.message; break; }
           keyToNodeId[nd.key] = nres.data.id; WBS_NODES.push(nres.data); createdNodeIds.push(nres.data.id);
           if (typeof setProgress === 'function') setProgress(0.35 * (di + 1) / nodeDescs.length);
@@ -15840,7 +15918,10 @@
             { n: cfg.links ? cfg.links.length : 0, l: 'Relationships' },
             { n: wbsCount, l: 'WBS branches' }
           ],
-          warnings: wbsMsg ? ['WBS Manager not updated — run the wbs-nodes migration.'] : [],
+          // ⚠️ Name the ACTUAL error. This used to read only "run the wbs-nodes migration", which is
+          // one possible cause among many — and it hid the reason the tree fell back to dotted codes,
+          // which is the same failure that used to leave duplicated WBS rows behind.
+          warnings: wbsMsg ? ['WBS Manager not updated, so this push filed under dotted WBS codes instead of WBS-Manager branches. Reason: ' + wbsMsg] : [],
           note: 'Filed ' + (base ? 'under <strong>' + e2(base) + '</strong>' : 'at the top level') + ' · ' + (basis === 'ext' ? 'External' : 'Internal') + ' durations. Opening the schedule…'
         });
       } else {
@@ -15929,7 +16010,7 @@
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
   //        row set (incl. WBS summaries), and OPC date formatting DD-Mon-YY + " A" flag) -----
   // Map an export header to the Schedule-grid column label (for the hidden-column check).
-  var EXP_TO_GRID = { 'ID': 'Activity ID', 'Name': 'Activity Name', 'BL0 Start': 'BL Start', 'BL0 Finish': 'BL Finish' };
+  var EXP_TO_GRID = { 'ID': 'Activity ID', 'Name': 'Activity Name', 'BL0 Start': 'BL Start', 'BL0 Finish': 'BL Finish', 'Task': 'Task' };
   function expHeaderHidden(h) { if (h === '#' || h === 'Name') return false; return !!colHidden[EXP_TO_GRID[h] || h]; }
   function exportExcel(includeHidden) {
     if (includeHidden === undefined) includeHidden = true;
@@ -15940,7 +16021,7 @@
     // (WYSIWYG — extras default hidden, so a plain schedule exports none). Header labels are made
     // unique against the built-ins and each other so json_to_sheet keys can't collide.
     var exCols = extraColDefs().filter(function (c) { return !colHidden[colKey(c)]; });
-    var _exSeen = { '#': 1 }, BUILTIN = ['#','ID','Name','Status','BL0 Start','BL0 Finish','Start','Finish','Planned Value POC','Earned Value POC','Planned IBB','Actual IBB to date','Earned Value IBB','At Completion IBB','BL Planned IBB','Percent Complete Type'];
+    var _exSeen = { '#': 1 }, BUILTIN = ['#','ID','Name','Task','Status','BL0 Start','BL0 Finish','Start','Finish','Planned Value POC','Earned Value POC','Planned IBB','Actual IBB to date','Earned Value IBB','At Completion IBB','BL Planned IBB','Percent Complete Type'];
     BUILTIN.forEach(function (h) { _exSeen[h] = 1; });
     exCols.forEach(function (c) { var base = colLabel(c) || c[1] || 'Column', lbl = base, k = 2; while (_exSeen[lbl]) lbl = base + ' (' + (k++) + ')'; _exSeen[lbl] = 1; c._expHdr = lbl; });
     var data = _sorted.map(function (r) {
@@ -15955,6 +16036,7 @@
       row['#'] = ++n;
       row['ID'] = wbs ? (r._realCode || r.wbs || '') : (r.activity_id || '');
       row['Name'] = r.activity_name || '';
+      row['Task'] = taskKindOf(r);
       row['Status'] = wbs ? '' : (r.status || '');
       row['BL0 Start'] = wbs ? '' : fmtOPCDate(r.bl_start);
       row['BL0 Finish'] = wbs ? '' : fmtOPCDate(r.bl_finish);
