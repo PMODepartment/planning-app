@@ -3733,11 +3733,16 @@
     collapsed = out;
   }
   function setGroupBys(list) {
-    saveCollapsedState();                 // remember the OUTGOING grouping's tree before switching
-    groupBys = list.slice(); normalizeGroupBys();
-    try { localStorage.setItem(_gbKey(), JSON.stringify(groupBys)); } catch (e) {}
-    restoreCollapsedFor(_gbSig(), false); // was: collapsed = {} — now restores this grouping's tree
-    populateGroupSelect(); renderCollapseMenu(); renderGrid(); renderGantt();
+    console.log('[PT] setGroupBys START -> ' + JSON.stringify(list));
+    _PT('sgb.saveCollapsedState', saveCollapsedState);
+    groupBys = list.slice(); _PT('sgb.normalizeGroupBys', normalizeGroupBys);
+    _PT('sgb.persistKey', function () { try { localStorage.setItem(_gbKey(), JSON.stringify(groupBys)); } catch (e) {} });
+    _PT('sgb.restoreCollapsedFor', function () { return restoreCollapsedFor(_gbSig(), false); });
+    _PT('sgb.populateGroupSelect', populateGroupSelect);
+    _PT('sgb.renderCollapseMenu', renderCollapseMenu);
+    _PT('sgb.renderGrid', renderGrid);
+    _PT('sgb.renderGantt', renderGantt);
+    console.log('[PT] setGroupBys DONE');
   }
   function loadGroupBys() {
     groupBys = ['wbs'];
