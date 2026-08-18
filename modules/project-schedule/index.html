@@ -14593,11 +14593,23 @@
         perZone.push({ loc: loc, days: d, start: addD(start, off), finish: addD(start, off + Math.max(0, d) - 1) });
       });
       var total = 0; locs.forEach(function (l) { total = Math.max(total, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
+      // ⚠️ DIAGNOSTIC — why a trade might be silently absent from the push. A row is dropped above when
+      // effDur() is 0, i.e. the activity has NO duration for the CHOSEN BASIS (Internal vs External).
+      // So a planner who filled only the Interior column, then pushed "External", gets an empty push —
+      // and someone who filled only one trade's durations gets "only <that trade> was pushed" (the
+      // reported Allied-Services-only surprise). Report which USED trades produced 0 rows and which
+      // activities were dropped for a zero duration on this basis, so the push can say so out loud.
+      var pushedTrades = {}; rows.forEach(function (r) { pushedTrades[r.group] = 1; });
+      var zeroDurByTrade = {};
+      usedGroups().forEach(function (tr) {
+        tradeActs(tr).forEach(function (a) { if (actDur(a, basis) <= 0) { (zeroDurByTrade[tr] = zeroDurByTrade[tr] || []).push(a.name || a.code || a.id); } });
+      });
+      var missingTrades = usedGroups().filter(function (tr) { return !pushedTrades[tr]; });
       // Total duration is the SCHEDULE SPAN (start → finish, the takt/critical span), not the sum of
       // every activity's duration — in a takt plan zones/trades overlap, so summing durations wildly
       // overstates it (e.g. 12,820 d for an ~981-day Nov-25→Jul-28 span). `total` already drives the
       // finish date, so totalDays === dayDiff(start, finish) + 1 and the KPI stays consistent with it.
-      return { rows: rows, perZone: perZone, totalDays: Math.max(0, total), start: start, finish: addD(start, Math.max(0, total - 1)), starts: starts, days: days, locs: locs };
+      return { rows: rows, perZone: perZone, totalDays: Math.max(0, total), start: start, finish: addD(start, Math.max(0, total - 1)), starts: starts, days: days, locs: locs, basis: basis, missingTrades: missingTrades, zeroDurByTrade: zeroDurByTrade };
     }
 
     // ---- drag reorder ----
@@ -15686,8 +15698,14 @@
       var pz = '<h4 style="font-size:12px;margin:4px 0 8px;color:var(--pd-muted);">Duration per zone</h4>' + g.perZone.map(function (z) { return '<div class="sbld-bargrp"><span class="lab">' + e2(z.loc.trade + ' · ' + locLabel(z.loc)) + '</span><div class="sbld-bar" style="width:' + Math.round(z.days / maxZ * 200) + 'px;background:' + gc(z.loc.trade) + '"></div><span>' + z.days + 'd</span></div>'; }).join('');
       var last = null, pv = '';
       g.rows.forEach(function (r) { var loc = r.loc.trade + ' · ' + locLabel(r.loc); if (loc !== last) { pv += '<tr class="grp"><td colspan="4">' + e2(loc) + '</td></tr>'; last = loc; } pv += '<tr><td>' + e2(r.act.code) + '</td><td>' + e2(r.act.name) + '</td><td class="num">' + r.dur + 'd</td><td>' + fmtD(r.start) + ' – ' + fmtD(r.finish) + '</td></tr>'; });
+      // ⚠️ Warn IN THE PREVIEW when a used trade produced no rows for this basis (all its activities are
+      // zero-length here), so "only <one trade> will be pushed" is visible before the push, not after.
+      var miss = (g.missingTrades && g.missingTrades.length)
+        ? '<div class="sbld-warn" style="margin:6px 0;padding:6px 9px;border:1px solid var(--pd-red);border-radius:6px;background:var(--pd-red-light);font-size:11.5px;">⚠️ No ' + e2(label) + ' duration for: <b>' +
+          g.missingTrades.map(function (t) { return e2(GLABEL[t] || t); }).join(', ') + '</b> — these trades will NOT be pushed with the ' + e2(label) + ' basis. Enter their durations in step 1.</div>'
+        : '';
       return '<div class="sbld-genpanel"><div class="sbld-genh" style="border-color:' + accent + ';color:' + accent + ';">' + e2(label) + ' schedule</div>' +
-        kpis + pz + '<div class="sbld-tablewrap" style="max-height:340px;margin-top:8px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div></div>';
+        kpis + miss + pz + '<div class="sbld-tablewrap" style="max-height:340px;margin-top:8px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div></div>';
     }
     function stGenerate(host) {
       if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>7 · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
@@ -16264,6 +16282,14 @@
               ? ['Some locations had no code or name, so their branch was named after its level instead: ' +
                  Object.keys(wbsUnnamed).map(function (k) { return (k === 'unknown' ? 'WBS' : dimLabelOf(k)) + ' \u00d7' + wbsUnnamed[k]; }).join(', ') +
                  '. Give those floors/zones/units a code in step 2 to name them properly.']
+              : [])
+            // \u26a0\ufe0f The silent-drop warning: a trade with activities but 0 pushed rows was dropped because
+            // its activities have no duration for the basis just pushed (this is the "only Allied
+            // Services was pushed" report \u2014 only that trade's durations were filled for this basis).
+            .concat((g.missingTrades && g.missingTrades.length)
+              ? ['Nothing was pushed for: ' + g.missingTrades.map(function (t) { return GLABEL[t] || t; }).join(', ') +
+                 '. Their activities have no ' + (basis === 'ext' ? 'External' : 'Internal') +
+                 ' duration in step 1, so every location came out zero-length and was skipped. Enter durations in that column, or push the other basis.']
               : []),
           note: 'Filed ' + (base ? 'under <strong>' + e2(base) + '</strong>' : 'at the top level') + ' · ' + (basis === 'ext' ? 'External' : 'Internal') + ' durations. Opening the schedule…'
         });

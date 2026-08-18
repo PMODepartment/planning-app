@@ -77,6 +77,17 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-18 — Schedule Builder: "only Allied Services was pushed" was a silent zero-duration drop
+Owner: pushing from the Schedule Builder pushed only Allied Services. Root cause: `generate()` drops
+any activity whose duration is **0 for the chosen basis** (`effDur → actDur` reads `durInt` on an
+Internal push, `durExt` on External), so a trade whose activities have no duration in the pushed
+column produces zero-length locations that are all skipped — and the trade vanishes with no message.
+So "only Allied" = only that trade's durations were filled for the pushed basis. The drop is correct
+(a 0-day activity shouldn't push); the silence was the bug. `generate()` now returns `missingTrades`;
+the step-7 preview shows a per-basis warning banner and the push completion summary names the dropped
+trades + basis and says to enter durations or push the other basis. Inline script parses; module-local,
+no migration. `MODULE_V` → `20260818l`. ⚠️ Not verified signed-in. See `modules/project-schedule/CLAUDE.md`.
+
 ### 2026-08-18 — Project Schedule: past data date + Schedule Builder floor-WBS naming
 Two owner asks, module-local in `modules/project-schedule/index.html`, no migration.
 - **Past data date reverted to today.** The Schedule dialog's date field only applies when the

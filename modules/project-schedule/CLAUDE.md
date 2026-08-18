@@ -1,5 +1,27 @@
 # Module: project-schedule
 
+## "Only Allied Services was pushed" — a zero-duration silent drop, now warned (2026-08-18) — eprobles
+Owner: pushing from Schedule Builder pushed only Allied Services. Root-caused, not guessed.
+- ⚠️ **`generate()` drops any activity whose duration is 0 for the CHOSEN BASIS.** Line ~14588:
+  `var dur = effDur(a, basis, loc); if (dur <= 0) return;` — and `effDur → actDur` reads `durInt` on
+  an Internal push, `durExt` on External. So a trade whose activities have no duration in the pushed
+  column produces zero-length locations that are all skipped, and the trade vanishes from the push
+  with **no message**. "Only Allied Services pushed" = only Allied's activities carry a duration for
+  the basis that was pushed (either only Allied's durations were filled, or the others were filled in
+  the OTHER of the Interior/Exterior columns).
+- ⚠️ This is distinct from the already-fixed "trade with codes but no floors" case (line ~14573,
+  which gives such a trade an un-located occurrence) — a zero-duration activity is dropped *after*
+  that, per location.
+- **Fix = make it visible, not silent** (the drop itself is correct — a 0-day activity shouldn't push):
+  `generate()` now returns `missingTrades` (used trades that produced 0 rows) + `zeroDurByTrade`.
+  The step-7 preview shows a per-basis warning banner in each `_genPanel` ("No Internal/External
+  duration for: <trades> — these will NOT be pushed"), and the push completion summary adds the same
+  warning naming the trades and the basis, telling the planner to enter durations or push the other
+  basis.
+- Verified: inline script parses (1 block, 0 fail); `missingTrades`/`zeroDurByTrade` wired through
+  generate → preview → push summary. ⚠️ **Not verified signed-in** — needs a push with one trade's
+  durations blank to see the banner. `MODULE_V` → `20260818l`.
+
 ## Schedule dialog: a PAST data date silently reverted to today (2026-08-18) — eprobles
 Owner: can't set a data date before today (e.g. 14-Nov-2025) — it reverts to today.
 - ⚠️ **Root cause was the radio UX, not a clamp.** The Schedule dialog (also opened by clicking the
