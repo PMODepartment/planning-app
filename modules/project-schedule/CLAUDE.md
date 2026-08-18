@@ -1,5 +1,22 @@
 # Module: project-schedule
 
+## Schedule Builder step 7: "Total duration" was the SUM of durations, not the span (2026-08-18) — eprobles
+Owner: Nov 14 '25 → Jul 22 '28 can't be 12,820 days. Correct — the Generate/preview KPI
+(`_genPanel` → `g.totalDays`) read `rows.reduce((t,r)=>t+r.dur,0)`, i.e. **every activity's duration
+summed**. In a takt schedule zones/trades overlap heavily, so that number (Internal 10,100 / External
+12,820) is meaningless as a project duration and contradicts the Start/Finish shown beside it.
+- **Fix (`generate()`, line ~14596):** `totalDays` now returns `total` — the schedule span already
+  computed as `max(start-offset + days)` across all locations, the same value that drives
+  `finish = addD(start, total-1)`. So `totalDays === dayDiff(start, finish) + 1` by construction and
+  the KPI can no longer disagree with the Finish date. External span is ~982 d, internal ~800 d
+  (matching GR·F1's 960 d / 800 d being the longest chains), not 12,820 / 10,100.
+- ⚠️ **Left alone:** the step-4 per-trade "Total duration — Internal/External" (`tradeTotalDays`,
+  line ~15015) is a *single trade's* own FS-chain length — a different, legitimate metric, not the
+  project span. Not touched.
+- Verified: the calendar span Nov 14 '25 → Jul 22 '28 inclusive = 982 d (Jan 22 '28 = 800 d) in Node;
+  the invariant `totalDays = finish − start + 1` holds by construction; inline script parses (1 block,
+  0 fail). ⚠️ Not verified signed-in. `MODULE_V` → `20260818j`.
+
 ## Grid cell copy/paste of DATES was broken — two root causes (2026-08-18) — eprobles
 Owner: *"In the project schedule, the copy paste of dates is not working."* Two independent defects in
 the cell clipboard, both found by comparing `_CELL_META` (the position-keyed copy/paste metadata) against

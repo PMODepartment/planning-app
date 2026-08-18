@@ -14593,7 +14593,11 @@
         perZone.push({ loc: loc, days: d, start: addD(start, off), finish: addD(start, off + Math.max(0, d) - 1) });
       });
       var total = 0; locs.forEach(function (l) { total = Math.max(total, (starts[l.uid] || 0) + (days[l.uid] || 0)); });
-      return { rows: rows, perZone: perZone, totalDays: rows.reduce(function (t, r) { return t + r.dur; }, 0), start: start, finish: addD(start, Math.max(0, total - 1)), starts: starts, days: days, locs: locs };
+      // Total duration is the SCHEDULE SPAN (start → finish, the takt/critical span), not the sum of
+      // every activity's duration — in a takt plan zones/trades overlap, so summing durations wildly
+      // overstates it (e.g. 12,820 d for an ~981-day Nov-25→Jul-28 span). `total` already drives the
+      // finish date, so totalDays === dayDiff(start, finish) + 1 and the KPI stays consistent with it.
+      return { rows: rows, perZone: perZone, totalDays: Math.max(0, total), start: start, finish: addD(start, Math.max(0, total - 1)), starts: starts, days: days, locs: locs };
     }
 
     // ---- drag reorder ----

@@ -95,6 +95,15 @@ developer, plug into one shared shell.
   now copy their displayed value — they were blank before, which defeats the point of copying to Excel.
 - **31 new checks** (`t2.js`) against the shipped resolver, plus the 259-check suite. ⚠️ Not verified
   live. MODULE_V → 20260818i. See `modules/project-schedule/CLAUDE.md`.
+### 2026-08-18 — Schedule Builder: "Total duration" KPI was summing durations, not the span
+Owner: Nov 14 '25 → Jul 22 '28 can't be 12,820 days. The Generate/preview KPI computed
+`g.totalDays` as the **sum of every activity's duration** (Internal 10,100 / External 12,820), which
+in a takt schedule (overlapping zones/trades) is meaningless and contradicts the Start/Finish shown.
+Fixed `generate()` to return the **schedule span** (`total`, the value that already drives the Finish
+date), so Total duration = finish − start + 1 by construction (~982 d external / ~800 d internal).
+The step-4 per-trade "Total duration" (a single trade's own chain length) is a different metric and
+was left alone. Module-local; inline script parses; `MODULE_V` → `20260818j`. ⚠️ Not verified
+signed-in. See `modules/project-schedule/CLAUDE.md`.
 
 ### 2026-08-18 — Fix: the Project Schedule module would not load (my regression) + MODULE_V bump
 - ⚠️ **My regression, module-wide.** The Gantt-pane clamp patch deleted the line that reads the saved
