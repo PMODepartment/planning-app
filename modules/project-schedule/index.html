@@ -2592,19 +2592,57 @@
   function _ddApprovedDr(s) { s = (s || '').trim(); return s === 'Approved' || s === 'Approved w/o comments' || s === 'Approved w/ comments'; }
   function _ddApprovedMs(s) { s = (s || '').trim(); return s === 'Approved' || s === 'Approved w/ Comments'; }
 
-  // Aggregate one register into { discipline: {tot, done, minPlan, maxAct, allDone} }.
-  // `tot`/`done` are SHEETS for drawings (the register's own POC basis) and ITEMS for
-  // material submittals — the two registers measure different things and are therefore
-  // kept as separate branches rather than summed into one meaningless total.
+  // ---- The four drawing types the register now groups by -----------------------
+  // ⚠️ The Drawing Register branch groups by DRAWING TYPE (Concept / Schematic / For
+  // Construction / Individual Services), not by discipline as it used to. That is what
+  // the register itself is structured around: the type is its fixed top level, and a
+  // discipline now appears under several of them at once, so one activity per
+  // discipline mixed unrelated design stages into a single percentage.
+  //
+  // ⚠️ This fold must stay identical to the register's own (engineering-app's
+  // foldTopLevel / migration 0017), or the schedule reports a different shape from the
+  // register it claims to mirror. Schematic Design 1 and 2 MERGE; Temporary Works,
+  // Combined Services and As-Built fold under For Construction; "(Scheme 2)" is a
+  // change order, not a stage.
+  var DD_TOP_ORDER = ['Concept Design', 'Schematic Design',
+                      'For Construction Drawings', 'Individual Services Drawings'];
+  function _ddTopLevel(s) {
+    var t = String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!t) return 'Unassigned';
+    if (/concept|\becd\b/.test(t)) return 'Concept Design';
+    if (/individual\s*service|\bisd\b/.test(t)) return 'Individual Services Drawings';
+    if (/temporary\s*works|\btw[dg]\b/.test(t)) return 'For Construction Drawings';
+    if (/combined\s*service|\bcsd\b/.test(t)) return 'For Construction Drawings';
+    if (/as[- ]?built|\babd\b/.test(t)) return 'For Construction Drawings';
+    if (/schematic|scheme|\bsd[12]?\b/.test(t)) return 'Schematic Design';
+    if (/construction|contract|\bfcd\b/.test(t)) return 'For Construction Drawings';
+    return 'Unassigned';
+  }
+  // ⚠️ TWO PROGRESS BASES, and they cannot be averaged into one number.
+  // Individual Services Drawings carry many sheets per drawing with partial credit (the
+  // register's real data has one item at 83 sheets / 50 approved). The other three are
+  // 0-or-100 per drawing — a drawing is approved or it is not — so counting their sheets
+  // would reintroduce exactly the partial credit the register forbids.
+  function _ddSheetBased(top) { return top === 'Individual Services Drawings'; }
+
+  // Aggregate one register into { group: {tot, done, minPlan, maxAct, allDone} }.
+  // Drawings group by drawing type; material submittals still group by discipline and
+  // are counted as ITEMS — the two registers measure different things and are kept as
+  // separate branches rather than summed into one meaningless total.
   function _ddAggregate(list, kind) {
     var by = {};
     list.forEach(function (d) {
-      var k = (d.discipline || '').trim() || 'Unassigned';
+      var k = kind === 'dr' ? _ddTopLevel(d.phase) : ((d.discipline || '').trim() || 'Unassigned');
       var b = by[k] || (by[k] = { tot: 0, done: 0, minPlan: null, maxPlan: null, maxAct: null, allDone: true, n: 0 });
       b.n++;
       if (kind === 'dr') {
-        var t = +d.no_of_sheets || 0, a = +d.approved_sheets || 0;
-        if (t <= 1) { t = 1; a = _ddApprovedDr(d.status) ? 1 : 0; }   // matches the register's approvedOf()
+        var t, a;
+        if (_ddSheetBased(k)) {
+          t = +d.no_of_sheets || 0; a = +d.approved_sheets || 0;
+          if (t <= 1) { t = 1; a = _ddApprovedDr(d.status) ? 1 : 0; }   // matches the register's approvedOf()
+        } else {
+          t = 1; a = _ddApprovedDr(d.status) ? 1 : 0;                   // 0-or-100, never partial
+        }
         b.tot += t; b.done += a;
         if (a < t) b.allDone = false;
       } else {
@@ -2660,8 +2698,10 @@
       // wrong-but-plausible POC against the register it claims to reproduce exactly.
       var drData;
       try {
+        // ⚠️ `phase` is the grouping key now, so it has to be selected — without it every
+        // drawing folds to 'Unassigned' and the branch collapses to one meaningless row.
         drData = await selectAllPaged('drawing_register',
-          'id,parent_id,node_kind,discipline,no_of_sheets,approved_sheets,status,planned_approval,actual_approval',
+          'id,parent_id,node_kind,phase,discipline,no_of_sheets,approved_sheets,status,planned_approval,actual_approval',
           function (q) { return q.is('parent_id', null); });
       } catch (e) { return; }   // can't safely mirror a partial register read
       var drawings = drData.filter(function (d) { return !d.node_kind || d.node_kind === 'drawing'; });
@@ -2681,9 +2721,19 @@
 
       var want = [];   // {activity_id, node, name, agg}
       if (drNode) { var da = _ddAggregate(drawings, 'dr');
-        Object.keys(da).sort().forEach(function (k) { want.push({ aid: DD_PREFIX.dr + _ddSlug(k), node: drNode, name: k, a: da[k], unit: 'sheets' }); }); }
+        // Lifecycle order, not alphabetical: Concept → Schematic → For Construction →
+        // Individual Services is the sequence the design actually runs in, and a WBS
+        // branch that reads "For Construction, Concept, Individual, Schematic" is not a
+        // programme. Anything unrecognised sorts after the four.
+        Object.keys(da).sort(function (x, y) {
+          var ix = DD_TOP_ORDER.indexOf(x), iy = DD_TOP_ORDER.indexOf(y);
+          return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy) || x.localeCompare(y);
+        }).forEach(function (k, i) {
+          want.push({ aid: DD_PREFIX.dr + _ddSlug(k), node: drNode, name: k, a: da[k],
+                      unit: _ddSheetBased(k) ? 'sheets' : 'drawings', seq: i });
+        }); }
       if (msNode) { var ma = _ddAggregate(submittals, 'ms');
-        Object.keys(ma).sort().forEach(function (k) { want.push({ aid: DD_PREFIX.ms + _ddSlug(k), node: msNode, name: k, a: ma[k], unit: 'items' }); }); }
+        Object.keys(ma).sort().forEach(function (k, i) { want.push({ aid: DD_PREFIX.ms + _ddSlug(k), node: msNode, name: k, a: ma[k], unit: 'items', seq: i }); }); }
 
       var wantIds = {}; want.forEach(function (w) { wantIds[w.aid] = 1; });
 
@@ -2692,7 +2742,7 @@
       // Realtime-storm reload, or a second tab's sync landing first), and trusting it here means two
       // overlapping syncs would both decide "doesn't exist yet" and both insert — duplicating the
       // mirrored activity with no dedupe to heal it (unlike WBS-Summary rows).
-      var patchFields = 'id,activity_id,activity_name,wbs,wbs_node_id,activity_type,percent_complete,status,start_date,end_date,actual_finish';
+      var patchFields = 'id,activity_id,activity_name,wbs,wbs_node_id,activity_type,percent_complete,status,start_date,end_date,actual_finish,seq_order';
       var wantAidList = Object.keys(wantIds), existingByAid = {};
       for (var ci = 0; ci < wantAidList.length; ci += 200) {
         var eq = await sb().from(TABLE).select(patchFields).eq('project_id', pid).in('activity_id', wantAidList.slice(ci, ci + 200));
@@ -2710,11 +2760,11 @@
         var patch = {
           activity_name: w.name + ' — ' + w.a.done + ' of ' + w.a.tot + ' ' + w.unit + ' approved',
           wbs: codeOf[w.node.id], wbs_node_id: w.node.id,
-          activity_type: 'Task', percent_complete: pct,
+          activity_type: 'Task', percent_complete: pct, seq_order: w.seq,
           status: pct >= 100 ? 'Completed' : (pct > 0 ? 'In Progress' : 'Not Started'),
           start_date: w.a.minPlan || null,
           // ⚠️ The finish is the LATEST planned approval — the commitment to have the whole
-          // discipline approved — replaced by the actual last approval once every item has
+          // group approved — replaced by the actual last approval once every item has
           // landed. It used to fall back to `minPlan`, which made start === finish and drew a
           // ZERO-DURATION bar: caught live on BAU101, where Architectural's approvals span
           // 2025-03-18 → 2026-05-11 but the row rendered as a single day on 2025-03-18.
