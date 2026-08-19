@@ -2644,18 +2644,22 @@
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
 
-  // ---- Project phase (Initiation / Planning / Construction / Close-out) -----
+  // ---- Project phase (Initiation / Planning / Execution) -----
   // Stored as a fixed code, displayed as a label. Fixed, not free text: unlike
   // work_package this drives roll-ups, so a typo would silently split a
   // project's phase S-curve in two. The DB carries the same 4-value CHECK.
+  // The phases OFFERED in the pickers. 'construction' is the stored code for the execution phase —
+  // see the note above; the label is what changed, not the value.
   var PHASES = [
-    { v: 'initiation',   l: 'Initiation' },
-    { v: 'planning',     l: 'Planning' },
-    { v: 'construction', l: 'Construction' },
-    { v: 'closeout',     l: 'Close-out' },
+    { v: 'initiation',   l: 'Initiation Phase' },
+    { v: 'planning',     l: 'Planning Phase' },
+    { v: 'construction', l: 'Execution Phase' },
   ];
+  // Every phase code that can EXIST, labelled. Wider than PHASES on purpose: 'closeout' is no longer
+  // offered, but rows already carrying it must still read as Close-out instead of going blank.
+  var PHASE_LABELS = { initiation: 'Initiation Phase', planning: 'Planning Phase', construction: 'Execution Phase', closeout: 'Close-out Phase' };
   var PHASE_OPTS = [{ v: '', l: '—' }].concat(PHASES);
-  function phaseLabel(v) { var p = PHASES.find(function (x) { return x.v === v; }); return p ? p.l : ''; }
+  function phaseLabel(v) { return PHASE_LABELS[v] || ''; }
 
   // An activity's OWN phase wins; otherwise it inherits the nearest tagged WBS
   // ancestor. Resolved at read time (not denormalized onto every row) so
@@ -5172,8 +5176,8 @@
     return ok;
   }
   async function persistScope(id, patch) {
-    var ok = await persist(id, patch);
-    if (!ok) UI.toast('Contract scope could not be saved — run migrations/2026-08-19-schedule-contract-scope.sql in Supabase.', 'error');
+    var ok = await persist(id, patch, false, true);   // quiet: this function owns the message
+    if (!ok) UI.toast('Contract scope could not be saved. This project\'s database is missing the scope columns — run migrations/2026-08-19-schedule-contract-scope.sql in the Supabase SQL editor, then reload.', 'error');
     return ok;
   }
   // Marking an activity as a change order asks for its CO reference straight away: a CO with no
@@ -5188,18 +5192,18 @@
     ref = String(ref).trim();
     persistScope(id, { change_order_ref: ref || null }).then(function (ok) { if (ok) { renderGrid(); renderDetails(); } });
   }
-  async function persist(id, patch, skipUndo) {
+  async function persist(id, patch, skipUndo, quiet) {
     var r = rows.find(function (x) { return x.id === id; });
     var before = null;
     if (r && !skipUndo) { before = {}; Object.keys(patch).forEach(function (k) { before[k] = (r[k] === undefined ? null : r[k]); }); }
     var prev = {}; if (r) Object.keys(patch).forEach(function (k) { prev[k] = (r[k] === undefined ? null : r[k]); });   // for audit
     if (window.PDSync) {
       var w = await PDSync.write({ table: TABLE, op: 'update', id: id, patch: patch });
-      if (!w.ok) { UI.toast((w.error && w.error.message) || 'Save failed', 'error'); return false; }
+      if (!w.ok) { if (!quiet) UI.toast((w.error && w.error.message) || 'Save failed', 'error'); return false; }
       // queued offline writes count as saved-locally (w.queued) — fall through to apply + rebuild
     } else {
       var res = await sb().from(TABLE).update(patch).eq('id', id);
-      if (res.error) { UI.toast(res.error.message, 'error'); return false; }
+      if (res.error) { if (!quiet) UI.toast(res.error.message, 'error'); return false; }
     }
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
     _myWrites[id] = { t: Date.now(), patch: patch };   // suppress the Realtime echo of MY OWN write (content-checked below)
@@ -9399,7 +9403,10 @@
   // explicit "No level" band rather than dropping them (see the note above).
   function _vsActs() {
     if (!LOC_LEVELS.length) return [];
-    return rows.filter(function (r) { return !isWbs(r) && r._dkind !== 'group' && rowMatches(r); });
+    // Execution phase ONLY — see the note above. Same predicate Contract Scope uses.
+    return rows.filter(function (r) {
+      return !isWbs(r) && r._dkind !== 'group' && isExecPhase(r) && rowMatches(r);
+    });
   }
   function _vsHasLevel(r) { return !!(LOC_LEVELS.length && locValOf(r, LOC_LEVELS[0].id)); }
   var VS_NOLEV = '— No level —';
@@ -9557,7 +9564,7 @@
       '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
       '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
       '<span style="flex:1 1 auto;"></span>' +
-      '<span class="ps-vs-note">' + acts.length + ' activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
+      '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
         (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
     var noTradeList = acts.filter(function (r) { return !workOf(r); });
     var noLevList = acts.filter(function (r) { return !_vsHasLevel(r); });
@@ -9576,7 +9583,7 @@
     _vsCells = {};
     var towers;
     if (!acts.length) {
-      towers = '<div class="ps-vs-empty">No activities match the current filters.</div>';
+      towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.</div>';
     } else if (_vsScope === 'all') {
       towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; all trades</span>' +
         '<span class="ct">' + acts.length + ' activities · ' + _vsPct(acts) + '% · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span></div>' +
@@ -9742,7 +9749,16 @@
         // Blank does NOT mean "no phase" — it means "inherit from the WBS
         // branch", which is what the label says so nobody reads an inherited
         // Construction activity as untagged.
-        _gf('Phase' + (!r.phase && phaseOf(r) ? ' (inherited: ' + phaseLabel(phaseOf(r)) + ')' : ''), 'phase', 'select', r, PHASE_OPTS) +
+        // ⚠️ Shows the EFFECTIVE phase (inherited from the WBS when the row carries none), because
+        // "blank" was being read as "untagged" — owner: activities under Execution Phase "do not have
+        // a tag of Classification of Execution Phase". They do; the field was just showing the row's
+        // own empty column instead of the answer. The label still says when it is inherited.
+        // A retired-but-stored value (closeout) is added back to the option list so opening the panel
+        // cannot blank it.
+        _gf('Phase' + (!r.phase && phaseOf(r) ? ' (inherited)' : ''), 'phase', 'select',
+            { phase: phaseOf(r) || '' },
+            (r.phase && !PHASES.some(function (x) { return x.v === r.phase; }))
+              ? PHASE_OPTS.concat([{ v: r.phase, l: phaseLabel(r.phase) || r.phase }]) : PHASE_OPTS) +
         // Execution phase only — outside it the pair is read-only "n/a" rather than an editable field
         // that would accept a value the rest of the app deliberately ignores.
         (isExecPhase(r)
@@ -9780,6 +9796,17 @@
         // Earned Value POC is an independent physical/EV progress figure (does NOT drive dates);
         // written tolerantly so it's safe before the ev_poc migration is run.
         if (f === 'ev_poc') { var ev = v === '' ? null : Math.max(0, Math.min(100, parseFloat(v) || 0)); _saveActField(r, 'ev_poc', ev); return; }
+        // Contract scope: the newest columns on this table, so a project whose database has not had
+        // 2026-08-19-schedule-contract-scope.sql run must get the REMEDY, not a schema-cache error.
+        if (f === 'scope_type' || f === 'change_order_ref') {
+          if (f === 'scope_type' && !isExecPhase(r)) { UI.toast('Contract scope applies to execution-phase activities only — set the Phase first.', 'warn'); renderDetails(); return; }
+          var _sv = (typeof v === 'string' ? v.trim() : v) || null;
+          var _sp = {}; _sp[f] = _sv;
+          // Dropping back to Main Contract drops the reference with it.
+          if (f === 'scope_type' && _sv !== 'change_order') _sp.change_order_ref = null;
+          persistScope(r.id, _sp).then(function (ok) { if (ok) { rebuild(true); renderGrid(); renderGantt(); renderDetails(); } });
+          return;
+        }
         if (t === 'pdur') { persist(r.id, _pdurPatch(r, v === '' ? 0 : Math.max(0, parseFloat(v) || 0))).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } }); return; }
         // Duration % Complete → set Remaining Duration only (schedule side); Physical % untouched.
         if (t === 'dpct') {
@@ -15190,7 +15217,7 @@
       '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Everything under this branch inherits this phase unless it sets its own.' +
       (inherited ? ' Leaving it blank inherits <strong>' + esc(phaseLabel(inherited)) + '</strong> from the parent.' : ' Leaving it blank leaves the branch unphased.') + '</p>' +
       '<div class="pd-field"><label class="pd-label">Phase</label>' +
-      '<select class="pd-select" id="wbsph-in">' + _genOpts(PHASE_OPTS, n.phase || '') + '</select></div>' +
+      '<select class="pd-select" id="wbsph-in">' + _genOpts((n.phase && !PHASES.some(function (x) { return x.v === n.phase; })) ? PHASE_OPTS.concat([{ v: n.phase, l: phaseLabel(n.phase) || n.phase }]) : PHASE_OPTS, n.phase || '') + '</select></div>' +
       '<div style="text-align:right;margin-top:8px;"><button class="pd-btn" id="wbsph-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="wbsph-save">Save</button></div>');
     var inp = m.el.querySelector('#wbsph-in'); inp.focus();
     m.el.querySelector('#wbsph-x').onclick = m.close;
@@ -23107,6 +23134,7 @@
       ScheduleBuilder: ScheduleBuilder,
       openDiagnose: openDiagnose,
       phaseOf: phaseOf,
+      phaseLabel: phaseLabel,
       scopeOf: scopeOf,
       workOf: workOf,
       isExecPhase: isExecPhase,
