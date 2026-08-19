@@ -2362,7 +2362,7 @@
         <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
         <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
         <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
-        <div><label class="pd-label">Discipline / Trade <small>(what this activity IS, e.g. Structural Works, Tiling Works — groups the same trade across locations)</small></label><input class="pd-input" id="ps-f-work" list="ps-f-work-list" autocomplete="off" /><datalist id="ps-f-work-list"></datalist></div>
+        <div><label class="pd-label">Trade <small>(what this activity IS, e.g. Structural Works, Tiling Works — groups the same trade across locations. Left blank, the WBS trade branch above it is used.)</small></label><input class="pd-input" id="ps-f-work" list="ps-f-work-list" autocomplete="off" /><datalist id="ps-f-work-list"></datalist></div>
         <div class="ps-form-full" id="ps-f-loc-wrap" style="display:none;"><label class="pd-label">Location</label><div id="ps-f-loc-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full" id="ps-f-codes-wrap" style="display:none;"><label class="pd-label">Activity Codes</label><div id="ps-f-codes-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
         <div class="ps-form-full" id="ps-f-udf-wrap" style="display:none;"><label class="pd-label">User-Defined Fields</label><div id="ps-f-udf-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
@@ -2522,7 +2522,7 @@
   // re-parenting a branch re-phases its work immediately, with no data fix-up.
   // Memoized per node id and cleared whenever the tree or a phase changes.
   var _phaseMemo = {};
-  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; }
+  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; }
   // The phase a branch NAME implies — the same rule migrations/2026-08-12-schedule-project-phase.sql
   // used to seed the column, applied at read time so branches created after it still classify.
   // ⚠️ Kept deliberately in step with that migration: change one, change the other.
@@ -2546,6 +2546,31 @@
     return _phaseMemo[nodeId];
   }
   function phaseOf(r) { return (r && r.phase) || _nodePhase(r && r.wbs_node_id) || null; }
+  // ---- Trade -------------------------------------------------------------------------------
+  // The branch that represents the TRADE for a node: the ancestor sitting directly under a phase
+  // root. Returns '' when the tree does not have that shape, so nothing is invented.
+  var _tradeMemo = {};
+  function _nodeTrade(nodeId) {
+    if (!nodeId) return '';
+    if (_tradeMemo[nodeId] !== undefined) return _tradeMemo[nodeId];
+    _tradeMemo[nodeId] = '';                       // cycle guard (a malformed tree must not hang)
+    var chain = [], n = WBS_NODES.find(function (x) { return x.id === nodeId; }), guard = 0;
+    while (n && guard++ < 60) { chain.push(n); n = n.parent_id ? WBS_NODES.find(function (x) { return x.id === n.parent_id; }) : null; }
+    var out = '';
+    if (chain.length >= 2) {
+      var root = chain[chain.length - 1];
+      // Only under a phase root — see the note above.
+      if (root.phase || phaseFromName(root.name)) out = String(chain[chain.length - 2].name || '').trim();
+    }
+    _tradeMemo[nodeId] = out;
+    return out;
+  }
+  // THE answer to "what trade is this activity?". Its own field wins; otherwise the WBS says.
+  function workOf(r) {
+    if (!r) return '';
+    var own = r.work_type ? String(r.work_type).trim() : '';
+    return own || _nodeTrade(r.wbs_node_id) || '';
+  }
   // ---- Contract scope (Main Contract vs Change Order) --------------------------------------
   // Owner 2026-08-19: the schedule has to say, per activity, whether the work is MAIN CONTRACT or a
   // CHANGE ORDER — and the grid has to filter to one, the other, or both ("blended").
@@ -4148,7 +4173,7 @@
       '<button data-gact="wizard"><span data-ico="layout" data-ico-size="14"></span> Match WBS to locations…</button>' +
       '<button data-gact="backfill"><span data-ico="download" data-ico-size="14"></span> Fill location from the WBS tree…</button>' +
       '<button data-gact="phases"><span data-ico="calendar" data-ico-size="14"></span> Tag project phases (T&amp;C / Handover…)…</button>' +
-      '<div class="ps-gm-sec">Discipline / Trade</div>' +
+      '<div class="ps-gm-sec">Trade</div>' +
       '<button data-gact="discwizard"><span data-ico="layout" data-ico-size="14"></span> Match WBS to Discipline/Trade…</button>';
     m.innerHTML = h;
     if (window.Icons && Icons.hydrate) Icons.hydrate(m);
@@ -4189,7 +4214,7 @@
     // and every Tower/Level/Zone it occurs in nests beneath it. Unlike 'work' (below), forming a
     // group of exactly one is the CORRECT outcome here for a one-off activity — the name IS the key.
     if (dim === 'act') return (r.activity_name || '').trim() || '— Unnamed activity —';
-    if (dim === 'work') return (r.work_type || '').trim() || '— No discipline/trade —';
+    if (dim === 'work') return workOf(r) || '— No trade —';
     if (dim === 'status') return r.status || 'Not Started';
     if (dim === 'responsible') return r.responsible_party || 'Unassigned';
     if (dim === 'type') return r.activity_type || 'Task';
@@ -4211,7 +4236,7 @@
   function dimRawOf(r, dim) {
     if (dim === 'wbs') return r.wbs || '';
     if (dim === 'act') return (r.activity_name || '').trim();
-    if (dim === 'work') return (r.work_type || '').trim();
+    if (dim === 'work') return workOf(r);
     if (dim === 'status') return r.status || '';
     if (dim === 'responsible') return r.responsible_party || '';
     if (dim === 'type') return r.activity_type || '';
@@ -4231,7 +4256,7 @@
   function dimLabel(dim) {
     if (dim === 'wbs') return 'WBS';
     if (dim === 'act') return 'Activity';
-    if (dim === 'work') return 'Discipline / Trade';
+    if (dim === 'work') return 'Trade';
     if (dim === 'status') return 'Status';
     if (dim === 'responsible') return 'Responsible';
     if (dim === 'type') return 'Activity Type';
@@ -5658,7 +5683,7 @@
         // activity under it agrees — a Tower holding all trades has no single discipline, and saying
         // one would be wrong. `_MIX` is the sentinel for "more than one value seen".
         var un = duni[codes[j]] || (duni[codes[j]] = {});
-        _uniPut(un, 'work', (a.work_type || '').trim());
+        _uniPut(un, 'work', workOf(a));
         for (var q = 0; q < LOC_LEVELS.length; q++) _uniPut(un, LOC_LEVELS[q].id, locValOf(a, LOC_LEVELS[q].id));
       }
     }
@@ -7018,7 +7043,7 @@
     // Search also covers work type, work package + every location value, so "Zone 3" or "Formworks"
     // finds the right activities even when the grid isn't currently grouped by them.
     if (search.trim()) {
-      var hay = [r.activity_id, r.activity_name, r.wbs, r.work_type, r.work_package, phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r)].concat(
+      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), r.work_package, phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r)].concat(
         r.location ? Object.keys(r.location).map(function (k) { return r.location[k]; }) : []
       ).join(' ').toLowerCase();
       if (hay.indexOf(search.trim().toLowerCase()) === -1) return false;
@@ -8953,7 +8978,7 @@
     var out = [];
     // Work type + one column per Location Breakdown level. These are ordinary editable activity
     // fields, so unlike codes/UDFs they carry `edit` and can be typed straight into the grid.
-    out.push(['work', 'Discipline / Trade', 'c-x', { kind: 'work', edit: true }]);
+    out.push(['work', 'Trade', 'c-x', { kind: 'work', edit: true }]);
     LOC_LEVELS.forEach(function (l) { out.push(['loc:' + l.id, l.name, 'c-x', { kind: 'loc', id: l.id, edit: true }]); });
     CODE_TYPES.forEach(function (ct) { out.push(['code:' + ct.id, ct.name, 'c-x', { kind: 'code', id: ct.id }]); });
     UDF_DEFS.forEach(function (d) { out.push(['udf:' + d.id, d.name, 'c-x', { kind: 'udf', def: d }]); });
@@ -8984,7 +9009,7 @@
   }
   function workTypeValues() {
     var seen = {}, out = [];
-    rows.forEach(function (r) { var v = r.work_type; if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    rows.forEach(function (r) { var v = workOf(r); if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
     return out.sort();
   }
   function gridCols() { return GRID_COLS.concat(extraColDefs()); }
@@ -8993,7 +9018,7 @@
   function colKey(c) { return c[3] ? c[0] : c[1]; }
   function extraCellVal(meta, r) {
     if (!meta) return '';
-    if (meta.kind === 'work') return r.work_type || '';
+    if (meta.kind === 'work') return workOf(r);
     if (meta.kind === 'loc') return locValOf(r, meta.id);
     if (meta.kind === 'code') { var vid = r.activity_codes && r.activity_codes[meta.id]; return vid ? (codeValueLabel(vid) || '') : ''; }
     var raw = r.udf && r.udf[meta.def.id]; return (raw == null || raw === '') ? '' : udfFmt(meta.def, raw);
@@ -13693,7 +13718,7 @@
     // Per TRADE (work_type) — the axis the owner is reading the screen by.
     var byTrade = {};
     acts.forEach(function (r) {
-      var k = (r.work_type || '— no trade —');
+      var k = (workOf(r) || '— no trade —');
       var t = byTrade[k] || (byTrade[k] = { n: 0, dated: 0, shown: 0, coded: 0, noded: 0, codes: {} });
       t.n++; if (dated(r)) t.dated++; if (shown[r.id]) t.shown++; if (r.wbs) t.coded++; if (r.wbs_node_id) t.noded++;
       if (r.wbs) { var top = String(r.wbs).split('.')[0]; t.codes[top] = (t.codes[top] || 0) + 1; }
@@ -13741,7 +13766,7 @@
       '<div style="font-size:13px;margin-bottom:10px;"><b>' + acts.length + '</b> activities · <b>' + wbsRows.length +
         '</b> WBS rows · <b>' + acts.filter(dated).length + '</b> dated · <b>' + Object.keys(shown).length + '</b> in the current view</div>' +
       verdict.join('') + filterState +
-      '<h3 style="font-size:13px;margin:14px 0 2px;">By trade (Discipline / Trade)</h3>' +
+      '<h3 style="font-size:13px;margin:14px 0 2px;">By trade</h3>' +
       tbl(['Trade', 'Activities', 'Dated', 'In view', 'With WBS code', 'Under WBS branch(es)'],
         Object.keys(byTrade).sort().map(function (k) {
           var t = byTrade[k], bad = (t.dated === 0 || t.shown === 0);
@@ -18230,7 +18255,7 @@
   // The category VALUE for a row. WBS/summary rows have none (they roll up several categories).
   function catValOf(r, field) {
     if (!r || isWbsNode(r)) return '';
-    if (field === 'work') return (r.work_type || '').trim();
+    if (field === 'work') return workOf(r);
     if (field === 'type') return (r.activity_type || '').trim();
     if (field && field.indexOf('code:') === 0) {
       var v = (r.activity_codes || {})[field.slice(5)];
@@ -18239,7 +18264,7 @@
     return (r.activity_name || '').trim();
   }
   function catFieldOptions() {
-    var out = [['name','Activity name'], ['work','Discipline / Trade'], ['type','Activity type']];
+    var out = [['name','Activity name'], ['work','Trade'], ['type','Activity type']];
     CODE_TYPES.forEach(function (t) { out.push(['code:' + t.id, t.name]); });
     return out;
   }
@@ -21222,6 +21247,7 @@
       openDiagnose: openDiagnose,
       phaseOf: phaseOf,
       scopeOf: scopeOf,
+      workOf: workOf,
       isExecPhase: isExecPhase,
       isChangeOrder: isChangeOrder,
       coRefOf: coRefOf,
