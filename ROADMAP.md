@@ -9,23 +9,23 @@ not a commitment; the owner picks what ships next.
 
 ## A. Shell & navigation
 
-### A1. Align UI with the Procurement (PRC) App — same icon/logo sizes
-- PRC `.sidebar-logo img` is `width:100%` with **no max-width**; Planners `.pd-brand-logo`
-  caps at `max-width:188px` inside the same 240px sidebar, so the wordmark reads smaller.
-  Drop the cap and match PRC's `18px 20px 16px` brand padding.
-- Audit the rest of the sidebar/topbar metrics against
-  `../../Procurement Dashboard/wpm/assets/css/dashboard.css` (section labels, nav row
-  padding, footer) and reconcile to PRC's values.
-- Files: `assets/css/dashboard.css`, every `*.html` brand block.
-- Shared CSS changes ⇒ bump `?v=` everywhere (see the cache-busting rule in `CLAUDE.md`).
+### A1. Align UI with the Procurement (PRC) App — same icon/logo sizes ✅ done 2026-08-19
+Reconciled to PRC's own values, verified in a browser against the shipped CSS:
+- `.pd-brand` is now full-bleed with PRC's `18px 20px 16px`, and `.pd-brand-logo` has **no
+  max-width** — the wordmark measures 200px in a 240px sidebar, identical to PRC. The old
+  `188px` cap was the whole reason it read smaller.
+- Nav rows `9px 12px` / 13px, nav icons **16px** with a 10px gap (`.pd-navico svg` now
+  scales the 18px glyph icons.js emits), section labels 9px at a 20px indent, topbar mark 26px.
 
-### A2. Remove project foldering — go straight to projects
-- `projects.html` currently groups projects under **group heads** (`add-gh`, `groupLabelOf`,
-  grouped list *and* card views). Requirement: a flat project list/grid, no folder layer.
-- Open question for the owner: is the group-head **data** retired too (a project attribute
-  kept only for filtering), or just the UI nesting? Answer changes whether a migration is
-  needed. Note WPM has `MIGRATION_project_group_head.sql` — keep the two apps consistent.
-- Files: `projects.html` (grouping helpers + both renderers), possibly `migrations/`.
+### A2. Remove project foldering — go straight to projects ✅ done 2026-08-19
+**Owner's decision: the group-head data stays, for filtering only.** No migration.
+- The left group-head pane and the topbar context chip are gone; `projects.html` opens
+  straight onto the project list.
+- Group head is now a toolbar `<select>` filter (`#gh-filter`) with counts, plus a gear
+  (`#gh-manage`) that edits the selected head — nothing that was reachable in the pane was
+  lost. "New Group Head" stays in the **+ Add** menu.
+- **Group by** defaults to `None` (was `Group Head`), so the landing view is flat. Grouping
+  by group head or status remains available as an opt-in lens.
 
 ### A3. Separate Project and Package — Package lives inside Project
 - Introduce a `packages` level between project and module data: Project → Package → module

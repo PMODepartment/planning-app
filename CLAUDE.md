@@ -6034,3 +6034,40 @@ and the dependency order. Findings worth noting from the scoping pass:
   retired too, or only the UI nesting? WPM carries `MIGRATION_project_group_head.sql`, so the
   two apps should stay consistent.
 No behaviour changed, so no `?v=` / `MODULE_V` bump.
+
+### 2026-08-19 — A1 PRC UI parity + A2 no more project foldering
+**A1 — the sidebar now matches the PRC App's metrics, not just its intent.** `.pd-brand-logo`
+carried a `max-width: 188px` inside an identically 240px sidebar; PRC's `.sidebar-logo img` has
+none, so our wordmark was ~6% narrower for no reason. The cap is gone and the brand block is
+full-bleed with PRC's own `18px 20px 16px` (it pulls back the sidebar's 18/16 padding). Also
+reconciled: nav rows `9px 12px`/13px (was `10px 12px`/13.5px), **nav icons 16px** with a 10px
+gap (was 18px/11px), section labels 9px at a 20px indent, topbar mark 26px (was 30px).
+- ⚠️ icons.js emits an **18px** `<svg>`, so shrinking the 18px box alone would have overflowed
+  it — `.pd-navico svg { width:100%; height:100% }` sizes the glyph to the box.
+- ⚠️ The full-bleed margins have to be **restated**, not inherited, in both the collapsed rail
+  (8px padding) and the ≤820px drawer (16px padding + safe-area top); the desktop collapsed
+  rule's `-8px` sides would otherwise inset the drawer's brand block by 8px on a phone.
+
+**A2 — `projects.html` opens straight onto the projects.** Owner's call: the group-head data
+**stays, for filtering only** — no migration, and WPM's `project_group_head` is untouched.
+- The left group-head pane and the topbar context chip are gone. Group head is a toolbar
+  `<select>` with counts, plus a gear that edits the selected head, so nothing the pane could
+  do was lost. **Group by** now defaults to `None` (was `Group Head`) — the landing view is a
+  flat list; grouping stays as an opt-in lens.
+- A retired ("inactive") head still lists **while projects are assigned to it** — dropping it
+  outright would strand those projects with no way to filter to them. Empty retired heads and
+  an empty unassigned bucket are not offered; an empty *active* head is (it is a real scope).
+- A dangling selection (head deleted elsewhere) resets to All rather than leaving the list
+  silently filtered against a scope the select can no longer show.
+- Dead CSS removed with the pane (`.pd-tree-*`, `.pd-proj-shell`, `.pd-ws-context`, and their
+  responsive/hover-gate rules). `.pd-tree-count` survives — it is the grouped list's count badge.
+
+Verified by executing the shipped `renderGhFilter`/`syncGhManage` (sliced out of the page, 12
+checks, all green) and in a real browser against the shipped CSS at 1280/375, light and dark,
+expanded + collapsed rail + drawer: sidebar 240, brand 240 full-bleed, logo **200** (= PRC's
+240−20−20), nav icon 16, topbar mark 26, toolbar gear aligned to the 34px selects, no
+horizontal overflow. Parse clean. ⚠️ Not verified signed-in.
+⚠️ **Trap for next time:** the Browser pane was not compositing, so CSS transitions never
+settled and layout intermittently reported a 32px sidebar / 0px logo. A fresh navigate (or
+killing transitions) gives the true numbers — don't chase it as a CSS bug. Shared CSS changed:
+`dashboard.css?v=` → `20260819a` across all 22 pages. `MODULE_V` untouched (no module changed).

@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Projects — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260813a" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260819a" />
 </head>
 <body>
   <div class="pd-app">
@@ -38,29 +38,12 @@
       <div class="pd-topbar">
         <img class="pd-topbar-mark" src="assets/img/favicon.png" alt="Megawide" />
         <h1>Projects</h1>
-        <button class="pd-ws-context" id="gh-context" type="button" title="Current group head filter">
-          <span class="pd-ws-context-ic" data-ico="group" data-ico-size="18"></span>
-          <span class="pd-ws-context-txt"><strong id="gh-context-name">All Projects</strong><small id="gh-context-sub">Every group head</small></span>
-        </button>
         <div id="user-bar"></div>
       </div>
 
-      <div class="pd-main pd-proj-shell">
-        <!-- Left: group heads. Flat by design — a group head is a TAG, not a
-             tree node, so this list is a filter, not a hierarchy to drill. -->
-        <aside class="pd-tree-pane">
-          <div class="pd-tree-head">
-            <span>Group Heads</span>
-            <span style="display:flex;align-items:center;gap:8px;">
-              <span class="pd-tree-head-count" id="gh-total"></span>
-              <button class="pd-icon-btn" id="add-gh" title="Add group head" style="display:none;"><span data-ico="plus" data-ico-size="18"></span></button>
-            </span>
-          </div>
-          <div class="pd-tree-search"><input class="pd-input pd-input-sm" id="gh-search" type="search" placeholder="Search group heads…" /></div>
-          <div class="pd-tree" id="gh-list"></div>
-        </aside>
-
-        <!-- Right: projects -->
+      <!-- Straight to the projects. A group head is a TAG used for filtering and
+           optional grouping - never a folder to open before reaching a project. -->
+      <div class="pd-main">
         <section class="pd-proj-pane">
           <div class="pd-toolbar">
             <div class="pd-toolbar-left">
@@ -74,10 +57,14 @@
               <span class="pd-proj-count" id="proj-count"></span>
             </div>
             <div class="pd-toolbar-right">
+              <select class="pd-select pd-input-sm" id="gh-filter" title="Filter by group head">
+                <option value="__all__">All group heads</option>
+              </select>
+              <button class="pd-icon-btn" id="gh-manage" title="Edit the selected group head" style="display:none;"><span data-ico="settings" data-ico-size="16"></span></button>
               <select class="pd-select pd-input-sm" id="group-by" title="Group projects by">
+                <option value="none">Group by: None</option>
                 <option value="grouphead">Group by: Group Head</option>
                 <option value="status">Group by: Status</option>
-                <option value="none">Group by: None</option>
               </select>
               <select class="pd-select pd-input-sm" id="sort-by" title="Sort projects by">
                 <option value="name">Sort: Name</option>
@@ -113,7 +100,9 @@
     var NONE = '__nogh__';
     var GH = [], PROJ = [], ghById = {};
     var selectedGh = null;          // null = all group heads
-    var view = 'list', groupBy = 'grouphead', sortBy = 'name';
+    // Flat by default - the landing view is the project list itself. Group-by
+    // is an opt-in lens, not a shape you have to navigate through.
+    var view = 'list', groupBy = 'none', sortBy = 'name';
     var canWrite = false;
     var IS_ADMIN = false;           // archive/delete are admin-only (also enforced in DB)
 
@@ -125,10 +114,7 @@
         document.getElementById('nav-admin').style.display = '';
         var ns = document.getElementById('nav-sys'); if (ns) ns.style.display = '';
       }
-      if (canWrite) {
-        document.getElementById('add-wrap').style.display = '';
-        document.getElementById('add-gh').style.display = '';
-      }
+      if (canWrite) document.getElementById('add-wrap').style.display = '';
       boot();
     });
 
@@ -138,7 +124,7 @@
         GH = res[0]; PROJ = res[1];
       } catch (e) { UI.toast('Load failed: ' + e.message, 'error'); return; }
       indexGh();
-      renderGhList();
+      renderGhFilter();
       render();
       wireToolbar();
     }
@@ -160,59 +146,41 @@
       return PROJ.filter(function (p) { return ghIdOf(p) === id; }).length;
     }
 
-    // ---- Group-head list (left pane) ----
-    function renderGhList() {
-      var q = (document.getElementById('gh-search').value || '').toLowerCase();
-      var host = document.getElementById('gh-list');
-      // `selectedGh === null` and the All row's id ('__all__') are the SAME state.
-      // Normalise before comparing, or the default scope renders unhighlighted.
-      var activeId = (selectedGh === null) ? '__all__' : selectedGh;
-      function row(id, label, count, extraCls) {
-        var cls = 'pd-tree-node' + (activeId === id ? ' active' : '') + (extraCls || '');
-        return '<div class="' + cls + '" data-gh="' + Fmt.esc(id) + '" style="padding-left:8px;">' +
-          '<span class="pd-tree-ic">' + Icons.svg(id === '__all__' ? 'org' : 'group', 15) + '</span>' +
-          '<span class="pd-tree-name">' + Fmt.esc(label) + '</span>' +
-          // Inactive group heads are retired, not deleted — projects assigned to
-          // one keep working and stay visible, so the row must still render.
-          (canWrite && id !== '__all__' && id !== NONE
-            ? '<button class="pd-tree-edit" data-ghedit="' + Fmt.esc(id) + '" title="Edit group head (rename, retire, delete)">' + Icons.svg('settings', 13) + '</button>' : '') +
-          '<span class="pd-tree-count' + (count ? '' : ' zero') + '">' + count + '</span></div>';
-      }
-      var shown = 0;
-      var html = row('__all__', 'All Projects', PROJ.length) + '<div class="pd-tree-sep"></div>';
+    // ---- Group-head filter (toolbar) ----
+    // Group heads are a filter only. A retired ("inactive") head still lists
+    // while projects are assigned to it - otherwise those projects become
+    // unreachable through the filter even though they are perfectly live.
+    function renderGhFilter() {
+      var sel = document.getElementById('gh-filter');
+      var opts = ['<option value="__all__">All group heads (' + PROJ.length + ')</option>'];
       GH.slice().sort(function (a, b) {
         return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name));
       }).forEach(function (g) {
-        if (q && g.name.toLowerCase().indexOf(q) === -1) return;
-        shown++;
-        html += row(g.id, g.name + (g.active === false ? ' (inactive)' : ''), countFor(g.id), g.active === false ? ' dim' : '');
+        var n = countFor(g.id);
+        if (g.active === false && !n) return;
+        opts.push('<option value="' + Fmt.esc(g.id) + '">' + Fmt.esc(g.name) +
+          (g.active === false ? ' (inactive)' : '') + ' (' + n + ')</option>');
       });
-      if (q && !shown) html += '<div class="pd-tree-empty">No group head matches “' + Fmt.esc(q) + '”.</div>';
+      // The unassigned bucket is a real scope, not a hidden state - but only
+      // offer it when something is actually in it.
       var nUn = countFor(NONE);
-      // The unassigned bucket is a different KIND of row from a real group head,
-      // so it is separated rather than sorted in among them.
-      if (nUn && !q) html += '<div class="pd-tree-sep"></div>' + row(NONE, '— No group head —', nUn);
-      host.innerHTML = html;
-      var tot = document.getElementById('gh-total');
-      if (tot) tot.textContent = GH.length;
-
-      host.querySelectorAll('[data-gh]').forEach(function (el) {
-        el.onclick = function () {
-          var id = el.dataset.gh;
-          selectedGh = (id === '__all__') ? null : id;
-          updateContext(); renderGhList(); render();
-        };
-      });
-      // Must stop propagation — the gear sits inside the [data-gh] row, whose click filters.
-      host.querySelectorAll('[data-ghedit]').forEach(function (b) {
-        b.onclick = function (e) { e.stopPropagation(); groupHeadModal(ghById[b.dataset.ghedit]); };
-      });
+      if (nUn) opts.push('<option value="' + NONE + '">\u2014 No group head \u2014 (' + nUn + ')</option>');
+      sel.innerHTML = opts.join('');
+      sel.value = (selectedGh === null) ? '__all__' : selectedGh;
+      // A dangling selection (its head deleted or retired-and-emptied) would
+      // leave the select blank while the list stayed silently filtered.
+      if (!sel.value) { selectedGh = null; sel.value = '__all__'; }
+      syncGhManage();
     }
 
-    function updateContext() {
-      var n = document.getElementById('gh-context-name'), s = document.getElementById('gh-context-sub');
-      if (selectedGh === null) { n.textContent = 'All Projects'; s.textContent = 'Every group head'; }
-      else { n.textContent = ghLabel(selectedGh); s.textContent = countFor(selectedGh) + ' project' + (countFor(selectedGh) === 1 ? '' : 's'); }
+    // Editing a group head used to hang off a gear inside each pane row. With
+    // the pane gone it acts on whichever head is currently selected.
+    function syncGhManage() {
+      var b = document.getElementById('gh-manage');
+      if (!b) return;
+      var editable = canWrite && selectedGh !== null && selectedGh !== NONE && !!ghById[selectedGh];
+      b.style.display = editable ? '' : 'none';
+      if (editable) b.title = 'Edit group head: ' + ghLabel(selectedGh);
     }
 
     // ---- Projects in scope + search + sort ----
@@ -374,7 +342,13 @@
       // ⚠️ 'input' alone is not enough: the native clear (×) and Esc fire 'search'
       // and 'change' but NOT 'input', which left the list filtered after clearing.
       bindSearch(document.getElementById('proj-search'), render);
-      bindSearch(document.getElementById('gh-search'), renderGhList);
+      document.getElementById('gh-filter').onchange = function () {
+        selectedGh = (this.value === '__all__') ? null : this.value;
+        syncGhManage(); render();
+      };
+      document.getElementById('gh-manage').onclick = function () {
+        if (ghById[selectedGh]) groupHeadModal(ghById[selectedGh]);
+      };
       document.getElementById('group-by').onchange = function () { groupBy = this.value; render(); };
       document.getElementById('sort-by').onchange = function () { sortBy = this.value; render(); };
       document.getElementById('vt-list').onclick = function () { view = 'list'; setVt(); render(); };
@@ -386,7 +360,6 @@
         menu.querySelectorAll('[data-add]').forEach(function (b) {
           b.onclick = function () { menu.classList.remove('open'); b.dataset.add === 'project' ? projectModal(null) : groupHeadModal(null); };
         });
-        document.getElementById('add-gh').onclick = function () { groupHeadModal(null); };
       }
     }
     function bindSearch(el, fn) {
@@ -566,7 +539,7 @@
       indexGh();
       // A group head that was just deleted must not stay as a dangling filter.
       if (selectedGh && selectedGh !== NONE && !ghById[selectedGh]) selectedGh = null;
-      updateContext(); renderGhList(); render();
+      renderGhFilter(); render();
     }
   })();
   </script>
