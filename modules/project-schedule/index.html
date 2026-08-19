@@ -927,6 +927,10 @@
     .ps-gantt-pane.ps-spotmode .ps-sum,
     .ps-gantt-pane.ps-spotmode .ps-mile:not(.ps-spot) { opacity:.22; }
     .ps-grid-scroll.ps-spotmode .ps-grid-row:not(.ps-spotrow):not(.ps-wbs-row):not(.ps-group-row) { opacity:.5; }
+    /* Every toolbar icon button shows its ON state the same way — see the note in the JS. */
+    .ps-toolbar .ps-icobtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    .ps-toolbar .ps-icobtn.active .pd-ico,
+    .ps-toolbar .ps-icobtn.active svg { color:#fff; stroke:#fff; }
     #ps-analyzebtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-analyzebtn.active .pd-ico { color:#fff; }
     /* ---- Activity Progress View ---- */
@@ -2683,8 +2687,9 @@
   }
   function phaseOf(r) { return (r && r.phase) || _nodePhase(r && r.wbs_node_id) || null; }
   // ---- Trade -------------------------------------------------------------------------------
-  // The branch that represents the TRADE for a node: the ancestor sitting directly under a phase
-  // root. Returns '' when the tree does not have that shape, so nothing is invented.
+  // The branch that names the TRADE for a node: the top-most branch under the root (so
+  // "Execution Phase › Structural Works › …" gives Structural Works), or the root itself when the
+  // activity is filed directly on one. See the note above the phase-gate removal.
   var _tradeMemo = {};
   function _nodeTrade(nodeId) {
     if (!nodeId) return '';
@@ -2692,12 +2697,11 @@
     _tradeMemo[nodeId] = '';                       // cycle guard (a malformed tree must not hang)
     var chain = [], n = WBS_NODES.find(function (x) { return x.id === nodeId; }), guard = 0;
     while (n && guard++ < 60) { chain.push(n); n = n.parent_id ? WBS_NODES.find(function (x) { return x.id === n.parent_id; }) : null; }
+    // The branch under the root is the trade; filed directly on a root, the root names it. No
+    // phase-root gate — every branch name is a classification (see the note above).
     var out = '';
-    if (chain.length >= 2) {
-      var root = chain[chain.length - 1];
-      // Only under a phase root — see the note above.
-      if (root.phase || phaseFromName(root.name)) out = String(chain[chain.length - 2].name || '').trim();
-    }
+    if (chain.length >= 2) out = String(chain[chain.length - 2].name || '').trim();
+    else if (chain.length === 1) out = String(chain[0].name || '').trim();
     _tradeMemo[nodeId] = out;
     return out;
   }
@@ -9370,6 +9374,7 @@
   var _vsDetail = 2;            // 1 = per level · 2 = per zone · 3 = per unit (capped at LOC_LEVELS)
   var _vsZoom = 1;
   var _vsTrade = 'ALL';         // focus a single trade's tower
+  var _vsDateMode = 'finish';   // 'finish' = when the cell completes · 'start' = when it begins
   var _vsCells = {};            // cell key -> the activities behind it, for the drill-down
   var NO_TRADE = '— No trade —';
   function _vsMaxDetail() { return Math.max(1, LOC_LEVELS.length); }
@@ -9409,11 +9414,20 @@
     });
     return wd > 0 ? Math.max(0, Math.min(100, Math.round(we / wd))) : 0;
   }
+  // A cell FINISHES when its last activity does, and STARTS when its first one does — so the two
+  // modes are a max and a min, not the same number read differently.
   function _vsFin(list) {
     var mx = null;
     list.forEach(function (r) { var f = pd(dispFin(r)); if (f && (!mx || f > mx)) mx = f; });
     return mx;
   }
+  function _vsStart(list) {
+    var mn = null;
+    list.forEach(function (r) { var d0 = pd(dispStart(r)); if (d0 && (!mn || d0 < mn)) mn = d0; });
+    return mn;
+  }
+  function _vsDate(list) { return _vsDateMode === 'start' ? _vsStart(list) : _vsFin(list); }
+  function _vsDateWord() { return _vsDateMode === 'start' ? 'starts' : 'finishes'; }
   // A trade's colour from the SAME category palette the Gantt bars use, so the stacking reads as a key
   // to the same picture. Falls back to a neutral hue when colouring is off or the trade is new.
   function _vsColor(trade) {
@@ -9470,7 +9484,7 @@
       var fcw = plotW / (cells.length || 1);
       cells.forEach(function (c, ci) {
         var cx = pad + labelW + ci * fcw, mid = cx + (fcw - 3) / 2;
-        var pct = _vsPct(c.list), fin = _vsFin(c.list);
+        var pct = _vsPct(c.list), fin = _vsDate(c.list);   // finish or start, per the switcher
         var op = 0.30 + 0.70 * (pct / 100);
         var key = keyPrefix + '|' + v + '|' + (c.label || '*');
         var isNo = (v === VS_NOLEV);   // project-wide band — drawn dashed, never as a storey
@@ -9479,7 +9493,7 @@
         // showing the level name twice on one row reads like two different things. With no label the
         // two remaining lines are re-centred rather than left sitting under an empty first line.
         var lbl = c.label, tip = c.label || String(v);
-        svg += '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="5" fill="' + baseColor + '" opacity="' + (isNo ? Math.min(op, 0.45).toFixed(2) : op.toFixed(2)) + '" stroke="' + (isNo ? baseColor : 'rgba(0,0,0,.18)') + '" stroke-width="1"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + (fin ? Fmt.date(dstr(fin)) : 'no finish')) + '</title></rect>' +
+        svg += '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="5" fill="' + baseColor + '" opacity="' + (isNo ? Math.min(op, 0.45).toFixed(2) : op.toFixed(2)) + '" stroke="' + (isNo ? baseColor : 'rgba(0,0,0,.18)') + '" stroke-width="1"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + _vsDateWord() + ' ' + (fin ? Fmt.date(dstr(fin)) : '—')) + '</title></rect>' +
           (lbl ? '<text x="' + mid + '" y="' + (y + 15) + '" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
           '<text x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '400' : '700') + '" fill="rgba(255,255,255,.97)" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
           '<text x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="700" fill="rgba(255,255,255,.92)" pointer-events="none">' + pct + '%</text>';
@@ -9505,7 +9519,7 @@
       }).join('') + '</tbody></table></div>';
     var m = UI.modal('<h2 style="margin-top:0;font-size:16px;">' + esc(title) + '</h2>' +
       '<div class="ps-vs-note" style="margin:-4px 0 10px;">' + d.list.length + ' activit' + (d.list.length === 1 ? 'y' : 'ies') +
-      ' · ' + d.pct + '% complete · finishes ' + esc(d.fin ? Fmt.date(dstr(d.fin)) : '—') + '</div>' + body +
+      ' · ' + d.pct + '% complete · ' + _vsDateWord() + ' ' + esc(d.fin ? Fmt.date(dstr(d.fin)) : '—') + '</div>' + body +
       '<div style="text-align:right;margin-top:12px;"><button class="pd-btn pd-btn-primary" id="ps-vs-x">Close</button></div>', { width: 860 });
     m.el.querySelector('#ps-vs-x').onclick = function () { m.close(); };
   }
@@ -9535,11 +9549,17 @@
       '<span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
       '<span class="ps-vs-note">' + esc(LOC_LEVELS.slice(0, detail).map(function (l) { return l.name; }).join(' › ')) + '</span>' +
       '<span class="ps-tb-div"></span>' +
+      '<span class="ps-vs-note">Show</span><span class="ps-vs-seg">' +
+        '<button data-vsdt="finish"' + (_vsDateMode === 'finish' ? ' class="on"' : '') + ' title="Each cell shows when it COMPLETES (its last activity\'s finish)">Finish</button>' +
+        '<button data-vsdt="start"' + (_vsDateMode === 'start' ? ' class="on"' : '') + ' title="Each cell shows when it BEGINS (its first activity\'s start)">Start</button>' +
+      '</span>' +
+      '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
       '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
       '<span style="flex:1 1 auto;"></span>' +
       '<span class="ps-vs-note">' + acts.length + ' activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
         (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
+    var noTradeList = acts.filter(function (r) { return !workOf(r); });
     var noLevList = acts.filter(function (r) { return !_vsHasLevel(r); });
     var noLevTrades = [];
     noLevList.forEach(function (r) { var t = _vsTradeOf(r); if (noLevTrades.indexOf(t) < 0) noLevTrades.push(t); });
@@ -9547,6 +9567,11 @@
       ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(LOC_LEVELS[0].name) + '</strong> — shown in the dashed <em>No level</em> band. ' +
       'These come from ' + esc(noLevTrades.join(', ')) + ': a trade with no floors in Schedule Builder step 2 is pushed as whole-trade work, ' +
       'so there is no ' + esc(LOC_LEVELS[0].name) + ' to place it on. Give the trade floors in step 2 and re-push to stack it.</div>' : '';
+    // Every activity with a WBS node now resolves a trade from its branch, so a leftover here means
+    // the row has no WBS node at all — a different problem, and worth naming rather than bucketing.
+    if (noTradeList.length) warn += '<div class="ps-vs-warn"><strong>' + noTradeList.length + ' activit' +
+      (noTradeList.length === 1 ? 'y has' : 'ies have') + ' no Trade and no WBS branch to infer one from</strong> — set their Trade, ' +
+      'or file them under a WBS branch. Actions → Diagnose data… lists them.</div>';
 
     _vsCells = {};
     var towers;
@@ -9570,6 +9595,7 @@
       '<div class="ps-vs-viewport"><div class="ps-vs-grid">' + towers + '</div></div>';
     host.querySelectorAll('[data-vssc]').forEach(function (b) { b.onclick = function () { _vsScope = b.dataset.vssc; renderVStack(); }; });
     host.querySelectorAll('[data-vsdet]').forEach(function (b) { b.onclick = function () { _vsDetail = parseInt(b.dataset.vsdet, 10) || 1; renderVStack(); }; });
+    host.querySelectorAll('[data-vsdt]').forEach(function (b) { b.onclick = function () { _vsDateMode = b.dataset.vsdt; renderVStack(); }; });
     host.querySelectorAll('[data-vstr]').forEach(function (b) { b.onclick = function () { _vsTrade = b.dataset.vstr; renderVStack(); }; });
     var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
     var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };
