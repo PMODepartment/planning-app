@@ -17,7 +17,14 @@ If you are a developer (or a developer's Claude) assigned ONE module, do this:
 3. **Copy a reference module** as your starting point:
    - `modules/risk-register/` — plain CRUD + filters + KPIs + a derived field.
    - `modules/drawing-register/` — same, PLUS the **file-upload** pattern
-     (private Supabase Storage bucket + signed-URL viewing).
+     (private Supabase Storage bucket + signed-URL viewing). ⚠️ **RETIRED as a live
+     module** (2026-08-19) — it and Material Submittal moved to the **Engineering
+     App**, which is now the single source for both registers; they are
+     `enabled:false` here and their tables are stale history. Still fine to copy
+     the upload pattern from; do NOT resume writing to them, and do not point
+     anything at their tables. The Project Schedule's Design Development branch
+     reads the `eng_design_progress` mirror instead (Edge Function `sync-eng`) —
+     see `modules/project-schedule/CLAUDE.md`.
    - `modules/_template/` — the minimal skeleton.
 4. **Do NOT edit** shared files (`assets/**`, other modules, the HTML shell).
    The only shared edits allowed: add YOUR table to `supabase-schema.sql`, and
