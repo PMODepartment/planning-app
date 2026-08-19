@@ -6018,3 +6018,19 @@ the owner's order, an unknown trade stays after the known ones but before the bl
 stays case-insensitive. Parse clean. ⚠️ Not verified signed-in. `MODULE_V` → `20260818e`.
 ⚠️ **Still open:** the duplicated WBS rows after a Schedule Builder push — investigated, not
 reproduced; ruled-out causes and the exact live query needed are in the module's CLAUDE.md.
+
+### 2026-08-19 — Requirement dump captured as `ROADMAP.md` (no code changed)
+Owner listed 11 requirements spanning the shell, Contracts & Claims, Project Schedule and
+Issues/Lessons. Recorded verbatim-faithfully in `ROADMAP.md`, broken into 11 scoped items
+(A1–A5 shell/nav, B1–B2 contracts, C1–C4 schedule, D1 issues) with the files each touches
+and the dependency order. Findings worth noting from the scoping pass:
+- **UI parity gap is concrete:** PRC's `.sidebar-logo img` has no `max-width`; ours caps at
+  `188px` in an identically 240px sidebar — that alone accounts for the smaller wordmark.
+- **"Landing page is a dashboard"** means replacing today's `dashboard.html` module-launcher
+  grid; the launcher moves to a secondary view.
+- **Project/Package separation (A3) blocks the contract-package vs change-order split (C1)**
+  and needs a migration + RLS review before UI work.
+- **Open question for the owner (A2):** removing project foldering — is the group-head *data*
+  retired too, or only the UI nesting? WPM carries `MIGRATION_project_group_head.sql`, so the
+  two apps should stay consistent.
+No behaviour changed, so no `?v=` / `MODULE_V` bump.
