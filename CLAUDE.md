@@ -6123,3 +6123,49 @@ paren-balanced, `$$`-paired, and every `create policy` has a preceding drop (re-
 panel shows a message naming the file to run. Shared assets changed: `dashboard.css?v=` →
 `20260819b`, `config.js?v=` / `db.js?v=` → `20260819a` across every page. `MODULE_V` untouched
 (no module `index.html` changed).
+
+### 2026-08-19 — C1: contract package on the schedule, as a SEPARATE axis from change orders
+Owner ran the packages migration. **`migrations/2026-08-19-schedule-package.sql` must be run too.**
+
+**The separation is the deliverable.** `scope_type` (main contract vs change order) already existed
+as an activity tag; what was missing was *which package* the work belongs to. They are now two
+columns, two filters and two grouping dimensions — because an activity can be **Package 2 AND a
+change order** (a variation raised against the MEPF package is exactly that), and modelling either
+with the other collapses a real distinction and makes the reports lie.
+- `package_id` on `project_schedule` **and** `wbs_nodes`, so a whole branch can be assigned once and
+  its activities inherit — the same resolution rule as `phase`/`scope_type`, memo + cycle guard
+  included. ⚠️ The memo is dropped in `_clearPhaseMemo()`, which already clears the phase, scope and
+  trade memos: all four are inherited through the WBS tree and go stale together. Hooking it
+  anywhere else would leave it stale after a reload or a re-parent.
+- ⚠️ **`packageOf()` has NO DEFAULT, deliberately unlike `scopeOf()`.** Untagged execution work
+  honestly *is* main contract until someone says otherwise; there is no equivalent for a package, so
+  guessing one would file real work under a contract lot nobody put it in. Unassigned stays
+  unassigned, and "— No package —" (a real, selectable filter scope) is the planner's worklist.
+- ⚠️ **The branch roll-up reads its DESCENDANTS, not its own tag** — a branch tagged Package 1 that
+  in fact holds Package 2 work reads **Mixed**, so the disagreement is visible instead of papered
+  over by the tag. Tested explicitly.
+- ⚠️ **`on delete set null` + a guarded RPC, not one or the other.** The FK is the backstop (deleting
+  a package must never delete the work), but on its own it would silently unassign a few hundred
+  activities with nobody noticing — so `admin_delete_package()` refuses while anything points at the
+  package and names the counts, and `PDb.deletePackage` now calls it. Archiving still retires a
+  package non-destructively.
+- ⚠️ **Package is offered in EVERY phase**, unlike Contract Scope which is execution-phase only: a
+  design or procurement activity can belong to a package just as much as construction work does.
+- ⚠️ The Package grid column is **copy-only** in the cell clipboard (`edit: 0`): the cell shows a
+  package *code* while the column stores a *uuid*, so a paste would have to resolve one to the
+  other. Until it does, pasting must not write.
+- Reads of the `packages` table are tolerant of the un-run migration exactly like `location_levels`
+  — no table means no packages, the column offers nothing to assign, and nothing else is affected.
+  Writes toast the exact filename to run.
+
+Verified by executing the shipped helpers and cell renderers (sliced out of the page, never
+stubbed): **33 checks green**, covering the inheritance chain, the no-default rule, a **cyclic WBS
+tree** (must not hang), archived packages being marked rather than hidden, the inherited-vs-own cell
+treatment, the Mixed roll-up including the tag-disagreement case, and a pre-packages cost-map entry
+degrading quietly. Column-count alignment: the header and both row branches each gained **exactly
+one** cell (each new emitter returns exactly one `ps-cell`, asserted), and the column is **appended**
+so saved positional column sorts/orders keep pointing where they were set. Inline script parses;
+**0 functions lost** against the pre-change file. ⚠️ **Not verified signed-in**, and the migration
+has not been run. `db.js?v=`/`modules-grid.js?v=` → `20260819b`; `MODULE_V` → `20260819c`.
+⚠️ **Not included:** the Schedule Builder push does not set a package, and the Dashboard's package
+rows show no activity counts yet.

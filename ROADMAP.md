@@ -81,10 +81,24 @@ shell never reaches into a module's tables. Tiles show a row count, an optional
 
 ## C. Project Schedule (`modules/project-schedule/`)
 
-### C1. Separate Contract Packages and Change Orders
-- The Schedule Builder already tags Main Contract (see the 2026-08-16 log). Formalise the
-  split: activities belong to a **contract package** or a **change order**, as distinct
-  first-class entities rather than a tag.
+### C1. Separate Contract Packages and Change Orders ✅ done 2026-08-19
+**The two axes are now separate columns and separately filterable — that separation *is* C1.**
+- `migrations/2026-08-19-schedule-package.sql` (**OWNER MUST RUN**) adds `package_id` to
+  `project_schedule` **and** `wbs_nodes` (FK to `packages`, `on delete set null`), plus
+  `admin_delete_package()` which refuses while activities/branches are still assigned and says
+  how many. `PDb.deletePackage` now calls that RPC.
+- The schedule gets a **Package** column (inline-editable, inherited down the WBS like `phase`
+  and `scope_type`, "Mixed" roll-up on branches), a **Contract package** filter including
+  "— Not assigned —", a **Contract Package** grouping dimension, a field in the activity form,
+  and a Package column in the Excel export.
+- ⚠️ **`scope_type` (main vs change order) is untouched and stays a separate column.** An
+  activity can be Package 2 **and** a change order — a variation raised against the MEPF package
+  is exactly that. Deriving either from the other would collapse a real distinction.
+- ⚠️ **No default package.** `scopeOf` can honestly fall back to "main contract"; there is no
+  equivalent for a package, so unassigned stays unassigned and the "— No package —" bucket is the
+  planner's worklist.
+- **Not included:** the Schedule Builder push does not set a package (it produces main-contract
+  work under no package), and the Dashboard's package rows do not yet show activity counts.
 
 ### C2. Change Order activities live inside the schedule, easily filtered
 - CO activities sit in the same WBS/network as contract activities (so logic and float are

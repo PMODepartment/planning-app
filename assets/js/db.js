@@ -130,12 +130,14 @@
       var { error } = await sb().from('packages').update(p).eq('id', id);
       if (error) throw error;
     },
-    // Plain delete: no module table references packages yet, so nothing can be
-    // orphaned. ⚠️ The first module to adopt `package_id` must replace this with
-    // a guarded RPC (like admin_delete_project) that names what is blocking —
-    // an FK violation surfaced raw tells the planner nothing.
+    // Guarded delete. The Project Schedule now carries `package_id` on activities
+    // and WBS nodes (2026-08-19-schedule-package.sql), so the RPC refuses while
+    // anything still points at the package and says how many — a raw FK error, or
+    // worse the ON DELETE SET NULL silently unassigning a few hundred activities,
+    // tells the planner nothing. Setting the package to archived retires it
+    // without touching the schedule.
     async deletePackage(id) {
-      var { error } = await sb().from('packages').delete().eq('id', id);
+      var { error } = await sb().rpc('admin_delete_package', { target: id });
       if (error) throw error;
     },
 

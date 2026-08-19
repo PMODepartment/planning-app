@@ -90,10 +90,10 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260819a"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260819a"></script>
+  <script src="assets/js/db.js?v=20260819b"></script>
   <script src="assets/js/ui.js?v=20260812b"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
-  <script src="assets/js/modules-grid.js?v=20260819a"></script>
+  <script src="assets/js/modules-grid.js?v=20260819b"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
@@ -308,9 +308,10 @@
     function deletePackageModal(k, parent) {
       var m = UI.modal(
         '<h2 style="margin-top:0;">Delete package ' + Fmt.esc(k.code) + '?</h2>' +
-        '<p style="color:var(--pd-muted);">This cannot be undone. Nothing is recorded against a package ' +
-        'yet, so no module data is affected — but the package itself, its dates and its contract amount ' +
-        'are gone. To retire one instead, set its status to <b>archived</b>.</p>' +
+        '<p style="color:var(--pd-muted);">This cannot be undone. It is refused while any <b>schedule ' +
+        'activity or WBS branch is still assigned</b> to this package, and the error says how many — ' +
+        'reassign them first. To retire a package that has history, set its status to <b>archived</b> ' +
+        'instead; it stays readable and keeps every assignment.</p>' +
         '<div class="pd-field"><label>Type <b>' + Fmt.esc(k.code) + '</b> to confirm</label>' +
         '<input class="pd-input" id="d-echo" autocomplete="off"></div>' +
         '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="d-cancel">Cancel</button> ' +

@@ -319,7 +319,7 @@
     .ps-cols-corner .ps-cols-menu { right:0; left:auto; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-task:124px; --c-con:150px; --c-condate:104px; --c-scope:146px; --c-x:130px; }
+    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-task:124px; --c-con:150px; --c-condate:104px; --c-scope:146px; --c-pkg:150px; --c-x:130px; }
     /* Leading row-number (#) gutter + frozen Activity ID/Name columns: they stay put (and header/
        body stay aligned) while the rest of the grid scrolls. The "#" cell is DOM child 1 but not a
        data column, so column reorder (CSS `order`) must never move it — pin it with order:-1. Sticky
@@ -432,6 +432,14 @@
     .c-task { width:var(--c-task); }
     .c-con { width:var(--c-con); } .c-condate { width:var(--c-condate); }
     .c-scope { width:var(--c-scope); }
+    .c-pkg { width:var(--c-pkg); }
+    /* A package tag is neutral by design: unlike CO/MC it carries no judgement,
+       it just names which contract lot the work belongs to. */
+    .ps-pkgtag { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      vertical-align:middle; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:700;
+      background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-ink); }
+    .ps-pkgtag.inherited { font-weight:600; color:var(--pd-muted); }
+    .ps-pkgtag.mixed { background:transparent; font-weight:600; color:var(--pd-muted); font-style:italic; }
     /* Constraint + Contract Scope in-cell tags. Deliberately quiet: these are classification, not
        alarm — the only loud one is the Change Order pill, which is the thing a planner scans for. */
     .ps-contag { display:inline-block; font-size:10px; font-weight:700; line-height:1.5; padding:0 5px; border-radius:3px;
@@ -2517,7 +2525,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260819a"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
-<script src="../../assets/js/db.js?v=20260819a"></script>
+<script src="../../assets/js/db.js?v=20260819b"></script>
 <script src="../../assets/js/ui.js?v=20260812b"></script>
 <script src="../../assets/js/icons.js?v=20260813a"></script>
 <script src="../../assets/js/calendar.js?v=20260812b"></script>
@@ -2542,6 +2550,7 @@
   var PROJECTS = [], GROUPHEADS = [], layoutMode = 'split', activeTab = 'schedule';
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
+  var PACKAGES = [];     // Contract packages for this project (2026-08-19-packages.sql)
   var LOC_LEVELS = [];   // Location Breakdown levels (ordered: Building > Level > Zone > …) for this project
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
@@ -2564,7 +2573,7 @@
   // re-parenting a branch re-phases its work immediately, with no data fix-up.
   // Memoized per node id and cleared whenever the tree or a phase changes.
   var _phaseMemo = {};
-  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; }
+  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; }
   // The phase a branch NAME implies — the same rule migrations/2026-08-12-schedule-project-phase.sql
   // used to seed the column, applied at read time so branches created after it still classify.
   // ⚠️ Kept deliberately in step with that migration: change one, change the other.
@@ -2666,6 +2675,58 @@
     WBS_NODES.forEach(function (n) { var v = n.change_order_ref; if (v && !seen[v]) { seen[v] = 1; out.push(String(v)); } });
     return out.sort();
   }
+  // ---- Contract PACKAGE (2026-08-19-schedule-package.sql) --------------------
+  // ⚠️ A DIFFERENT AXIS FROM scope_type, and the distinction is the point: scope_type says where
+  // the money comes from (main contract vs change order), package_id says which contract package
+  // the work belongs to. An activity can be Package 2 AND a change order — a variation raised
+  // against the MEPF package is exactly that. Never derive one from the other.
+  // Accumulate a branch's package roll-up. Lazily created so a cost-map entry built before this
+  // ever runs (or by code that doesn't know about packages) simply reports no package.
+  function _cmPkg(cm, id) {
+    if (!cm || !id) return;
+    var pk = cm.pkg || (cm.pkg = { id: null, n: 0, mixed: false, names: [] });
+    pk.n += 1;
+    if (!pk.id) { pk.id = id; }
+    else if (pk.id !== id) { pk.mixed = true; }
+    var nm = packageShort(id);
+    if (nm && pk.names.indexOf(nm) === -1) pk.names.push(nm);
+  }
+  function packageById(id) { return id ? PACKAGES.find(function (k) { return k.id === id; }) : null; }
+  function packageLabel(id) {
+    var k = packageById(id);
+    // A package assigned before its row loaded (or one deleted elsewhere) still reads as SOMETHING
+    // rather than blanking — the same rule ghId/groupHead resolution uses in the shell.
+    return k ? (k.code + ' — ' + k.name) : (id ? '(unknown package)' : '');
+  }
+  function packageShort(id) { var k = packageById(id); return k ? k.code : (id ? '(unknown)' : ''); }
+  // Options for the grid editor + the activity form. '' is a real choice: unassigning is how a
+  // planner corrects a mis-filed activity, so it must be reachable.
+  function packageSelOpts() {
+    return [{ v: '', l: '— No package —' }].concat(PACKAGES.map(function (k) {
+      return { v: k.id, l: k.code + ' — ' + k.name + (k.status === 'archived' ? ' (archived)' : '') };
+    }));
+  }
+  var _pkgMemo = {};
+  function _clearPkgMemo() { _pkgMemo = {}; }
+  function _nodePackage(nodeId) {
+    if (!nodeId) return null;
+    if (_pkgMemo[nodeId] !== undefined) return _pkgMemo[nodeId];
+    _pkgMemo[nodeId] = null;                         // cycle guard (a malformed tree must not hang)
+    var n = WBS_NODES.find(function (x) { return x.id === nodeId; });
+    var out = n ? (n.package_id || _nodePackage(n.parent_id)) : null;
+    _pkgMemo[nodeId] = out || null;
+    return _pkgMemo[nodeId];
+  }
+  // The EFFECTIVE package: the activity's own, else the nearest assigned WBS ancestor's.
+  // ⚠️ NO DEFAULT. scopeOf() can honestly fall back to 'main' because untagged execution work IS
+  // main contract until someone says otherwise; there is no equivalent for a package — guessing one
+  // would file real work under a contract lot nobody put it in. Unassigned stays unassigned, and
+  // the "— No package —" bucket is exactly the worklist a planner needs.
+  function packageOf(r) {
+    if (!r) return null;
+    return r.package_id || _nodePackage(r.wbs_node_id) || null;
+  }
+
   var _wbsCollapsed = {};   // WBS Manager: node id -> true means its children are hidden
   var _wbsSearch = '';      // WBS Manager: current search filter (code / name)
   var _wbsCollapseInit = false;   // have we applied the large-tree default-collapse once?
@@ -2706,7 +2767,7 @@
     return out;
   }
   async function loadResourcesAssignments() {
-    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; return; }
+    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; return; }
     try {
       // resources/resource_assignments reach tens of thousands of rows on a P6/XER import, so an
       // unpaginated select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost
@@ -2746,6 +2807,14 @@
       var r8 = await sb().from('location_levels').select('*').eq('project_id', pid).order('sort_order');
       LOC_LEVELS = (r8 && !r8.error && r8.data) || [];
     } catch (e) { LOC_LEVELS = []; }
+    try {
+      // Contract packages. Tolerant of the un-run 2026-08-19-packages.sql exactly like
+      // location_levels above: no table -> no packages -> the Package column offers nothing to
+      // assign and everything else is unaffected. Bounded by definition (a project has packages,
+      // not thousands of rows), so no pagination.
+      var r9 = await sb().from('packages').select('*').eq('project_id', pid).order('sort_order').order('code');
+      PACKAGES = (r9 && !r9.error && r9.data) || [];
+    } catch (e) { PACKAGES = []; }
     try {
       // Keyset-paginate: a plain select caps at Supabase's 1000-row limit, which silently TRUNCATED
       // the tree on big P6 imports (>1000 WBS nodes) — children whose parent fell past row 1000
@@ -3758,6 +3827,11 @@
   // 2026-08-19-schedule-contract-scope migration run yet fails with an instruction instead of a
   // raw PostgREST "column does not exist" — the same tolerance the contract_date / risk_* fields
   // already get in the Add/Edit save path.
+  async function persistPackage(id, patch) {
+    var ok = await persist(id, patch);
+    if (!ok) UI.toast('Contract package could not be saved — run migrations/2026-08-19-schedule-package.sql in Supabase.', 'error');
+    return ok;
+  }
   async function persistScope(id, patch) {
     var ok = await persist(id, patch);
     if (!ok) UI.toast('Contract scope could not be saved — run migrations/2026-08-19-schedule-contract-scope.sql in Supabase.', 'error');
@@ -4038,6 +4112,7 @@
         var cm = _costMap[codes2[j]] || (_costMap[codes2[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0, mc:0, co:0 });
         cm.total += 1; if (isComplete(r)) cm.done += 1; else if (r.actual_start || (r.percent_complete || 0) > 0) cm.prog += 1;
         var _sc = scopeOf(r); if (_sc === 'change_order') cm.co += 1; else if (_sc) cm.mc += 1;
+        _cmPkg(cm, packageOf(r));
         cm.pc += r.planned_cost || 0; cm.ac += r.actual_cost || 0; cm.ev += r.earned_value || 0; cm.bl += r.bl_cost || 0;
         cm.eac += eac(r, cpi);
         if (dur > 0) {
@@ -4263,6 +4338,9 @@
     // Work Package is free text (an OPC field), so it buckets like any other flat key. A typo silently
     // makes a second group — same trade-off as work_type / location values.
     if (dim === 'wp') return (r.work_package || '').trim() || '— No work package —';
+    // Contract package resolves through the WBS, so an activity under an assigned branch groups
+    // with its branch rather than falling into "— No package —".
+    if (dim === 'pkg') return packageLabel(packageOf(r)) || '— No package —';
     // Phase resolves through the WBS, so an untagged activity under a tagged
     // branch groups with its branch rather than falling into "— No phase —".
     if (dim === 'phase') return phaseLabel(phaseOf(r)) || '— No phase —';
@@ -4303,6 +4381,7 @@
     if (dim === 'responsible') return 'Responsible';
     if (dim === 'type') return 'Activity Type';
     if (dim === 'wp') return 'Work Package';
+    if (dim === 'pkg') return 'Contract Package';
     if (dim === 'phase') return 'Phase';
     if (dim.indexOf('loc:') === 0) return locLevelName(dim.slice(4)) || 'Location level';
     if (dim.indexOf('code:') === 0) { var ct = CODE_TYPES.find(function (c) { return 'code:' + c.id === dim; }); return ct ? ct.name : 'Activity code'; }
@@ -4313,6 +4392,9 @@
     var out = ['wbs', 'act', 'work'];
     LOC_LEVELS.forEach(function (l) { out.push('loc:' + l.id); });
     out.push('phase', 'status', 'responsible', 'type', 'wp');
+    // Only offered once the project actually has packages — a grouping level whose every row lands
+    // in "— No package —" is noise.
+    if (PACKAGES.length) out.push('pkg');
     CODE_TYPES.forEach(function (ct) { out.push('code:' + ct.id); });
     return out;
   }
@@ -5717,6 +5799,7 @@
         var cm = dcost[codes[j]] || (dcost[codes[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0, mc:0, co:0 });
         cm.total += 1; if (isComplete(a)) cm.done += 1; else if (a.actual_start || (a.percent_complete || 0) > 0) cm.prog += 1;
         var _sa = scopeOf(a); if (_sa === 'change_order') cm.co += 1; else if (_sa) cm.mc += 1;
+        _cmPkg(cm, packageOf(a));
         cm.pc += a.planned_cost || 0; cm.ac += a.actual_cost || 0; cm.ev += a.earned_value || 0; cm.bl += a.bl_cost || 0;
         cm.eac += eac(a, cpi);
         if (dur > 0) { cm.wd += dur; cm.wearn += dur * (a.percent_complete || 0); if (poc != null) { cm.wdPoc += dur; cm.wpoc += dur * poc; } }
@@ -7019,7 +7102,7 @@
   }
 
   // ---- Filter (OPC-style) ----
-  function anyFilter() { return search.trim() || filters.behind || filters.crit || filters.look || filters.scope || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}) || Object.keys(filters.col || {}).some(function(k){return (filters.col[k] || '').trim();}) || (filters.adv && filters.adv.rules && filters.adv.rules.length); }
+  function anyFilter() { return search.trim() || filters.behind || filters.crit || filters.look || filters.scope || filters.pkg || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}) || Object.keys(filters.col || {}).some(function(k){return (filters.col[k] || '').trim();}) || (filters.adv && filters.adv.rules && filters.adv.rules.length); }
   // Per-column filter helpers. _colByKey resolves a colKey to its column def; _colText returns the
   // displayed text for a column so the filter matches what the user sees in the cell.
   // Advanced-filter raw value + type per column (for numeric/date comparisons, not just text).
@@ -7035,6 +7118,7 @@
       case 'con': return r.primary_constraint;
       case 'condate': return r.primary_constraint_date;
       case 'scope': return scopeTypeLabel(scopeOf(r));
+      case 'pkg': return packageLabel(packageOf(r));
       case 'task': return taskKindOf(r);
       case 'dur': { var s = pd(r.start_date), e = pd(r.end_date); return (s && e) ? dayDiff(s, e) + 1 : (r.duration_days != null ? r.duration_days : null); }
       case 'poc': return plannedPOC(r);
@@ -7070,6 +7154,8 @@
       case 'condate': return r.primary_constraint_date ? Fmt.date(r.primary_constraint_date) : '';
       // Includes the CO reference so the per-column filter finds "VO-014", not just "Change Order".
       case 'scope': { var sv = scopeOf(r); if (!sv) return ''; var cr = sv === 'change_order' ? coRefOf(r) : ''; return scopeTypeLabel(sv) + (cr ? ' ' + cr : ''); }
+      // The full "CODE — Name", so the per-column filter finds either half.
+      case 'pkg': return packageLabel(packageOf(r));
       case 'task': return taskKindOf(r);
       case 'dur': { var s = pd(r.start_date), e = pd(r.end_date); var d = (s && e) ? dayDiff(s, e) + 1 : (r.duration_days || ''); return d ? d + 'd' : ''; }
       case 'poc': { var p = plannedPOC(r); return p == null ? '' : p + '%'; }
@@ -7085,7 +7171,7 @@
     // Search also covers work type, work package + every location value, so "Zone 3" or "Formworks"
     // finds the right activities even when the grid isn't currently grouped by them.
     if (search.trim()) {
-      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), r.work_package, phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r)].concat(
+      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), r.work_package, phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r), packageLabel(packageOf(r))].concat(
         r.location ? Object.keys(r.location).map(function (k) { return r.location[k]; }) : []
       ).join(' ').toLowerCase();
       if (hay.indexOf(search.trim().toLowerCase()) === -1) return false;
@@ -7105,6 +7191,12 @@
     // Summary + group rows pass through so a filtered view keeps the WBS headings that locate the
     // surviving activities — the same rule the critical-path filter uses.
     if (filters.scope && !isWbsNode(r)) { if (scopeOf(r) !== filters.scope) return false; }
+    // '__none__' is a real scope, not "no filter" — "show me what nobody has filed yet" is the
+    // whole reason a planner opens this filter.
+    if (filters.pkg && !isWbsNode(r)) {
+      var _pv = packageOf(r);
+      if (filters.pkg === '__none__' ? !!_pv : _pv !== filters.pkg) return false;
+    }
     if (filters.look) {
       var win = addDays(today(), filters.look * 7), t0 = today();
       var s = pd(r.start_date), ee = pd(r.actual_finish || r.end_date) || s;
@@ -7139,6 +7231,11 @@
       '<h4>Contract scope</h4>' +
       [['', 'Blended (main contract + change orders)'], ['main', 'Main contract only'], ['change_order', 'Change orders only']]
         .map(function (o) { return '<label><input type="radio" name="ps-f-scope" value="' + o[0] + '"' + ((filters.scope || '') === o[0] ? ' checked' : '') + '> ' + o[1] + '</label>'; }).join('') +
+      (PACKAGES.length ? '<h4>Contract package</h4><select id="ps-f-pkg" class="pd-select pd-input-sm" style="width:100%;">' +
+        [['', 'All packages'], ['__none__', '— Not assigned to a package —']]
+          .concat(PACKAGES.map(function (k) { return [k.id, k.code + ' — ' + k.name]; }))
+          .map(function (o) { return '<option value="' + esc(o[0]) + '"' + ((filters.pkg || '') === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') +
+        '</select>' : '') +
       '<label style="margin-top:4px;">Look-ahead: <select id="ps-f-look" class="pd-select pd-input-sm" style="max-width:150px;">' +
         [[0,'All'],[2,'Next 2 weeks'],[4,'Next 4 weeks'],[8,'Next 8 weeks'],[12,'Next 12 weeks']].map(function(o){return '<option value="'+o[0]+'"'+(filters.look===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('') + '</select></label>' +
       codesHTML +
@@ -7155,9 +7252,11 @@
     menu.querySelectorAll('input[name="ps-f-scope"]').forEach(function (rd) {
       rd.onchange = function () { if (rd.checked) { filters.scope = rd.value; renderGrid(); renderGantt(); } };
     });
+    var _fpk = menu.querySelector('#ps-f-pkg');
+    if (_fpk) _fpk.onchange = function (e) { filters.pkg = e.target.value; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-look').onchange = function (e) { filters.look = parseInt(e.target.value, 10) || 0; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-adv').onclick = function (e) { e.stopPropagation(); menu.classList.remove('open'); openAdvFilter(); };
-    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, crit:false, look:0, scope:'', codes:{}, col:{}, adv:{ match:'all', rules:[] } }; buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, crit:false, look:0, scope:'', pkg:'', codes:{}, col:{}, adv:{ match:'all', rules:[] } }; buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
     menu.querySelector('#ps-filter-done').onclick = function () { menu.classList.remove('open'); };
   }
   // Advanced multi-condition filter builder (OPC-style): field / operator / value rows combined
@@ -8255,6 +8354,13 @@
           ? _gf('Contract Scope' + (!r.scope_type && scopeOf(r) ? ' (inherited: ' + scopeTypeLabel(scopeOf(r)) + ')' : ''), 'scope_type', 'select', r, SCOPE_SEL_OPTS) +
             (isChangeOrder(r) ? _gf('Change Order Ref', 'change_order_ref', 'text', r) : '')
           : _gf('Contract Scope', 'scope_type', 'ro', { scope_type: 'n/a — execution phase only' })) +
+        // ⚠️ Sits beside Contract Scope because they read as one idea and are NOT: scope says where
+        // the money comes from, package says which lot the work belongs to. Both apply at once.
+        // Unlike scope this is offered in EVERY phase — a design or procurement activity can belong
+        // to a package just as much as construction work does.
+        (PACKAGES.length
+          ? _gf('Contract Package' + (!r.package_id && packageOf(r) ? ' (inherited: ' + packageShort(packageOf(r)) + ')' : ''), 'package_id', 'select', r, packageSelOpts())
+          : _gf('Contract Package', 'package_id', 'ro', { package_id: 'none defined — add one on the project Dashboard' })) +
         _gf('Type', 'activity_type', 'select', r, ['Task', 'WBS Summary', 'Start Milestone', 'Finish Milestone']) +
         _gf('Duration Type', 'duration_type', 'select', r, ['', 'Fixed Duration & Units/Time', 'Fixed Units/Time', 'Fixed Duration & Units', 'Fixed Work']) +
         _gf('% Complete Type', 'percent_complete_type', 'select', r, ['', 'Duration', 'Physical', 'Units'])) +
@@ -9245,7 +9351,11 @@
     // bwdConstrain); this is what makes them visible and editable at the scale a planner works at.
     ['con','Constraint','c-con'], ['condate','Constraint Date','c-condate'],
     // Contract scope — Main Contract vs Change Order. Execution phase only (see scopeOf).
-    ['scope','Scope','c-scope']
+    ['scope','Scope','c-scope'],
+    // Contract package — WHICH lot the work belongs to. Orthogonal to Scope: an activity can be
+    // Package 2 AND a change order. Appended (not inserted) so saved positional column sorts and
+    // orders keep pointing at the column they were set on.
+    ['pkg','Package','c-pkg']
   ];
   // Dynamic columns (OPC "define columns"): the project's Activity Codes + User-Defined Fields become
   // real, choosable grid columns appended after the 18 built-ins. Tuple shape matches GRID_COLS
@@ -9901,6 +10011,16 @@
       '<span class="ps-scopetag ' + (co ? (own ? 'co-strong' : 'co') : 'mc') + '">' + esc(co ? 'CO' : 'MC') + '</span>' +
       (ref ? '<span class="ps-coref">' + esc(ref) + '</span>' : '') + '</div>';
   }
+  function pkgCellHtml(r) {
+    var pv = packageOf(r), own = !!r.package_id;
+    if (!pv) {
+      return '<div class="ps-cell c-pkg ps-editable" data-id="' + r.id + '" data-field="package_id" data-type="enum" data-enum="pkg" title="Not assigned to a contract package">' +
+        '<span style="color:var(--pd-muted);">—</span></div>';
+    }
+    return '<div class="ps-cell c-pkg ps-editable" data-id="' + r.id + '" data-field="package_id" data-type="enum" data-enum="pkg" title="' +
+      esc(packageLabel(pv) + (own ? '' : ' (inherited from the WBS branch)')) + '">' +
+      '<span class="ps-pkgtag' + (own ? '' : ' inherited') + '">' + esc(packageShort(pv)) + '</span></div>';
+  }
   // Summary/group rows: the roll-up says what the branch CONTAINS — "CO" when every activity under it
   // is a change order, "Mixed" when it is a blend. A blank constraint lane (a summary has no dates of
   // its own to constrain) keeps the cell count identical, which the nth-child column machinery needs.
@@ -9910,7 +10030,18 @@
     else if (co && !mc) cell = '<span class="ps-scopetag co-strong">CO</span>';
     else if (co) cell = '<span class="ps-scopetag co" title="' + mc + ' main contract · ' + co + ' change order">Mixed</span>';
     else cell = '<span class="ps-scopetag mc">MC</span>';
-    return '<div class="ps-cell c-con"></div><div class="ps-cell c-condate"></div><div class="ps-cell c-scope">' + cell + '</div>';
+    return '<div class="ps-cell c-con"></div><div class="ps-cell c-condate"></div><div class="ps-cell c-scope">' + cell + '</div>' + sumPkgHtml(r);
+  }
+  // A branch's package roll-up: the package when everything under it agrees, "Mixed" when it does
+  // not. ⚠️ Read from the branch's OWN descendants rather than from its package_id, so a branch
+  // tagged Package 1 that in fact holds Package 2 work reads Mixed and the disagreement is visible
+  // instead of being papered over by the tag.
+  function sumPkgHtml(r) {
+    var cm = cmOf(r), pk = cm && cm.pkg, cell;
+    if (!pk || !pk.n) cell = '<span style="color:var(--pd-muted);">—</span>';
+    else if (pk.mixed) cell = '<span class="ps-pkgtag mixed" title="' + esc(pk.names.join(' · ')) + '">Mixed</span>';
+    else cell = '<span class="ps-pkgtag" title="' + esc(packageLabel(pk.id)) + '">' + esc(packageShort(pk.id)) + '</span>';
+    return '<div class="ps-cell c-pkg">' + cell + '</div>';
   }
   // The trailing lane the column-chooser "+" lives in — see the .c-plus note in the CSS. Emitted on
   // EVERY row kind so the header and the body stay cell-for-cell identical.
@@ -9984,7 +10115,7 @@
         ? '<div class="ps-cell c-dur" title="Planned Duration = baseline span (locked)">' + (dur !== '' ? dur + 'd' : '') + '</div>'
         : '<div class="ps-cell c-dur ps-editable" data-id="' + r.id + '" data-field="planned_duration" data-type="pdur">' + (dur !== '' ? dur + 'd' : '') + '</div>') +
       costCellsHtml(r) +
-      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + conCellsHtml(r) + scopeCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
+      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + conCellsHtml(r) + scopeCellHtml(r) + pkgCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
   }
 
   function doRender() {
@@ -10398,7 +10529,7 @@
     // ('work' or 'loc:<levelId>') and the location values live in the `location` jsonb map.
     if (type === 'xcol') raw = field === 'work' ? (r.work_type || '') : locValOf(r, field.slice(4));
     // Closed vocabularies get a real <select>, not a text box (see the note above the enum columns).
-    var _enum = type === 'enum' ? (cell.dataset.enum === 'scope' ? SCOPE_SEL_OPTS : CONSTRAINT_OPTS) : null;
+    var _enum = type === 'enum' ? (cell.dataset.enum === 'scope' ? SCOPE_SEL_OPTS : cell.dataset.enum === 'pkg' ? packageSelOpts() : CONSTRAINT_OPTS) : null;
     var inp;
     if (_enum) {
       inp = document.createElement('select');
@@ -10453,6 +10584,14 @@
           if (_ev !== 'change_order') _pt.change_order_ref = null;
           persistScope(id, _pt).then(function (ok) { if (ok) { rebuild(true); renderGrid(); renderGantt(); renderDetails();
             if (_ev === 'change_order' && !r.change_order_ref) promptCoRef(id); } });
+          return;
+        }
+        if (field === 'package_id') {
+          // ⚠️ No phase gate, unlike scope_type: a package can own work in any phase, so refusing
+          // outside the execution phase would block a legitimate assignment.
+          persistPackage(id, { package_id: _ev || null }).then(function (ok) {
+            if (ok) { rebuild(true); renderGrid(); renderGantt(); renderDetails(); }
+          });
           return;
         }
         var _cp = { primary_constraint: _ev || null };
@@ -14036,6 +14175,7 @@
       ? warn('⚠️ A filter or search is ACTIVE right now, so the grid is not showing everything. ' +
           (search.trim() ? 'Search: "' + esc(search.trim()) + '". ' : '') +
           (filters.scope ? 'Contract scope: ' + esc(scopeTypeLabel(filters.scope)) + ' only. ' : '') +
+          (filters.pkg ? 'Package: ' + esc(filters.pkg === '__none__' ? 'not assigned' : packageLabel(filters.pkg)) + ' only. ' : '') +
           (filters.crit ? 'Critical path only. ' : '') + (filters.behind ? 'Behind schedule only. ' : '') +
           (filters.look ? 'Look-ahead ' + filters.look + ' weeks. ' : ''))
       : note('No filter or search is active.');
@@ -17610,6 +17750,7 @@
       // Effective scope (own tag or inherited), blank outside the execution phase — the same thing
       // the grid cell shows, so an export can be reconciled against the screen it came from.
       row['Scope'] = wbs ? '' : scopeTypeLabel(scopeOf(r));
+      row['Package'] = wbs ? '' : packageLabel(packageOf(r));
       row['Change Order Ref'] = (!wbs && isChangeOrder(r)) ? coRefOf(r) : '';
       exCols.forEach(function (c) { row[c._expHdr] = wbs ? '' : extraCellVal(c[3], r); });
       return row;
@@ -20162,7 +20303,10 @@
     // of activities as one change order is exactly the bulk edit these columns exist for.
     'Constraint':            { f: 'primary_constraint', edit: 1, t: 'text' },
     'Constraint Date':       { f: 'primary_constraint_date', edit: 1, t: 'date' },
-    'Scope':                 { f: 'scope_type', edit: 1, t: 'text' }
+    'Scope':                 { f: 'scope_type', edit: 1, t: 'text' },
+    // Copy-only: the cell shows a package CODE while the column stores a uuid, so a paste would
+    // have to resolve the code back to an id. Until it does, pasting must not write.
+    'Package':               { f: 'package_id', edit: 0, t: 'text' }
   };
   var _CELL_RO = { f: null, edit: 0 };
   function cellMeta(ci) {
