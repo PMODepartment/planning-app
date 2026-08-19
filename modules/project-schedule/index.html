@@ -1956,6 +1956,10 @@
     /* A duration this LEVEL TYPE owns (forked from the default) — see t4Set. Marked so the planner
        can tell at a glance which numbers are this category's own and which are inherited. */
     .sbld-xl td.xl-cell.sbld-ownd { font-weight:700; box-shadow:inset 2px 0 0 var(--pd-red); }
+    /* Step-2 tower strip. With one tower it is a single quiet chip; with more it is the selector. */
+    .sbld-towerbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:2px 0 10px;
+      padding:8px 10px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
+    .sbld-towerbar-l { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); font-weight:700; margin-right:2px; }
     /* relationship dialog */
     .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.2); padding:10px; width:224px; }
     .sbld-ld-h { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-bottom:6px; }
@@ -16618,6 +16622,9 @@
     function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
     function daysBetween(a, b) { return Math.round((b.getTime() - a.getTime()) / 86400000); }
     function blankZoning() { var z = {}; GROUPS.forEach(function (g) { z[g] = { floors: [] }; }); return z; }
+    // One implicit tower becomes one EXPLICIT tower, so every existing config keeps behaving
+    // identically and nothing needs migrating.
+    function blankTowers() { return [{ id: uidv(), code: 'T1', name: 'Tower 1' }]; }
     var WBS_DIMS = ['trade', 'floor', 'zone', 'unit'];
     var DIM_LABEL = { trade: 'Trade', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
     // ⚠️ The builder's three location levels ARE the project's Location Breakdown levels — the push
@@ -16636,7 +16643,7 @@
       }
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       // ⚠ `> 0`, not `!= null`: a row seeded with an explicit 0 must still mirror the other column
@@ -16660,6 +16667,10 @@
       c = c && typeof c === 'object' ? c : {}; var d = blank();
       d.startDate = c.startDate || d.startDate;
       d.activities = Array.isArray(c.activities) ? c.activities.map(normActivity) : [];
+      // Towers. An older config has none, so it gets exactly one — see blankTowers().
+      d.towers = (Array.isArray(c.towers) && c.towers.length)
+        ? c.towers.map(function (t, i) { return { id: t.id || uidv(), code: String(t.code || ('T' + (i + 1))).trim(), name: String(t.name || ('Tower ' + (i + 1))).trim() }; })
+        : blankTowers();
       d.catalog = Array.isArray(c.catalog) ? c.catalog.map(normActivity) : [];   // holding-area class codes (not loaded into the build)
       // Per-trade zoning: each trade has its own floors, each floor its own zones.
       GROUPS.forEach(function (g) {
@@ -16670,6 +16681,9 @@
           // KIND_ORDER (declared later; `var` hoisting makes it available here at call time) so a
           // stale value from an older config can't create a category nothing else knows about.
           return { id: f.id || uidv(), code: f.code || '', name: f.name || '', sub: !!f.sub,
+            // ⚠️ Resolved against the tower list AFTER it is built above, so a stale id from a deleted
+            // tower falls back to the first tower instead of orphaning the floor out of every view.
+            towerId: (f.towerId && d.towers.some(function (t) { return t.id === f.towerId; })) ? f.towerId : d.towers[0].id,
             kind: (KIND_ORDER.indexOf(f.kind) >= 0 ? f.kind : null),
             zones: (Array.isArray(f.zones) ? f.zones : []).map(function (z) { return { id: z.id || uidv(), code: z.code || '', name: z.name || '',
               units: (Array.isArray(z.units) ? z.units : []).map(function (u) { return { id: u.id || uidv(), code: u.code || '', name: u.name || '' }; }) }; }) };
@@ -16794,7 +16808,9 @@
       });
       return out;
     }
-    function locList() { var out = []; GROUPS.forEach(function (tr) { cfg.zoning[tr].floors.forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { out.push(l); }); }); }); return out; }
+    // ⚠️ Each leaf carries its tower id + label, so the push and the stacking can use it in a later
+    // step without re-deriving it from the floor (which is how duplicate-derivation bugs start).
+    function locList() { var out = []; GROUPS.forEach(function (tr) { cfg.zoning[tr].floors.forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { l.towerId = towerIdOf(f); l.tower = towerLabel(l.towerId); out.push(l); }); }); }); return out; }
     function tradeActs(tr) { return cfg.activities.filter(function (a) { return a.group === tr; }); }
     // Trades actually assigned to a Step-1 activity, in GROUPS order — later steps only ever deal
     // with these, not the full discipline universe.
@@ -17168,6 +17184,24 @@
       });
     }
     function floorsOf(tr) { return cfg.zoning[tr].floors; }             // listed order: index 0 = lowest/ground
+    // ---- Towers -----------------------------------------------------------------------------
+    function towerList() { return (cfg && cfg.towers && cfg.towers.length) ? cfg.towers : blankTowers(); }
+    function towerById(id) { return towerList().filter(function (t) { return t.id === id; })[0] || null; }
+    function towerLabel(id) { var t = towerById(id); return t ? (t.name || t.code || 'Tower') : 'Tower'; }
+    function towerIdOf(f) { return (f && f.towerId) || towerList()[0].id; }
+    // A trade's floors WITHIN one tower, in listed (bottom-up) order.
+    function floorsOfTower(tr, towerId) {
+      return floorsOf(tr).filter(function (f) { return towerIdOf(f) === towerId; });
+    }
+    // Which tower step 2 is currently editing. UI state only — deliberately not persisted, so it
+    // cannot go stale against a deleted tower in someone else's saved config.
+    var uiTower = null;
+    function activeTower() {
+      var list = towerList();
+      if (!uiTower || !towerById(uiTower)) uiTower = list[0].id;
+      return uiTower;
+    }
+    function multiTower() { return towerList().length > 1; }
     // Floor CATEGORY — tagged per floor in step 2, drives per-category cross-trade linking in step 3.
     // A basement is also f.sub=true (tower grade line + ordering). Legacy floors with no kind derive one
     // from f.sub, so nothing needs migrating.
@@ -17194,7 +17228,23 @@
       // i-1 — e.g. a zoneless floor sitting between zoned floors, or two floors with different zone
       // counts — link from the FIRST cell of the floor below instead of leaving it with no
       // predecessor. So every floor always chains to the one beneath it, regardless of zoning.
-      present.forEach(function (tr) { var fl = floorsOf(tr); for (var i = 1; i < fl.length; i++) Object.keys(idx[tr][i]).forEach(function (ck) { var p = idx[tr][i - 1][ck] || firstOf(idx[tr][i - 1]); if (p) tryLink(p, idx[tr][i][ck], 'FS', 0); }); });
+      // ⚠️ PER TOWER. Chaining floorsOf(tr) straight through would make Tower A's roof drive Tower
+      // B's basement — see the note at the top of the tower work. Each tower is chained within
+      // itself; with one tower this is byte-for-byte the previous behaviour.
+      present.forEach(function (tr) {
+        var fl = floorsOf(tr);
+        towerList().forEach(function (tw) {
+          // Indices INTO fl, so idx[] lookups (which are keyed by that index) still line up.
+          var own = []; fl.forEach(function (f, i) { if (towerIdOf(f) === tw.id) own.push(i); });
+          for (var k = 1; k < own.length; k++) {
+            var iPrev = own[k - 1], iCur = own[k];
+            Object.keys(idx[tr][iCur]).forEach(function (ck) {
+              var pv = idx[tr][iPrev][ck] || firstOf(idx[tr][iPrev]);
+              if (pv) tryLink(pv, idx[tr][iCur][ck], 'FS', 0);
+            });
+          }
+        });
+      });
       // 1b) intra-floor sequencing — zones/units that DON'T run simultaneously are chained so only N
       //     run at once (sliding window: leaf[i] waits on leaf[i-N]). zoneSimul[tr]/unitSimul[tr] = how
       //     many zones-per-floor / units-per-zone run at once; 0/blank = all parallel (no links). Zones
@@ -17968,6 +18018,59 @@
       if (subs.length) svg += '<text x="' + (W - pad) + '" y="' + (gy - 4) + '" text-anchor="end" font-size="9" fill="var(--pd-muted)">grade</text>';
       return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="max-width:' + W + 'px;height:auto;">' + svg + '</svg>';
     }
+    // The tower strip for step 2. One tower reads as a single quiet chip (nothing new to learn);
+    // two or more turn it into a real selector. Floors below are filtered to the active tower.
+    function _towerBar() {
+      var list = towerList(), act = activeTower();
+      return '<div class="sbld-towerbar">' +
+        '<span class="sbld-towerbar-l">Tower</span>' +
+        list.map(function (t) {
+          return '<button class="sbld-chip' + (t.id === act ? ' on' : '') + '" data-twsel="' + e2(t.id) + '" title="' +
+            e2((t.code ? t.code + ' — ' : '') + (t.name || '')) + '">' + e2(t.name || t.code || 'Tower') + '</button>';
+        }).join('') +
+        '<button class="pd-btn sbld-mini" id="b-twadd" title="Add another tower">+ Tower</button>' +
+        '<button class="pd-btn sbld-mini" id="b-twren" title="Rename the active tower">Rename</button>' +
+        (list.length > 1 ? '<button class="pd-btn sbld-mini" id="b-twcopy" title="Copy another tower\'s floors, zones, units and sequencing into this one">Copy from…</button>' : '') +
+        (list.length > 1 ? '<button class="pd-btn sbld-mini sbld-del" id="b-twdel" title="Delete the active tower and its floors">Delete</button>' : '') +
+        '</div>';
+    }
+    // Copy one tower's LOCATIONS and its SEQUENCING into another (owner request). Floors/zones/units
+    // are deep-copied with fresh ids via cloneFloors, so the two towers are independent afterwards.
+    // ⚠️ The zone links are re-pointed by POSITION, not by id: a cloned floor is a different object, so
+    // a link that referenced the source leaf has to be rebuilt against the matching copied leaf.
+    // Activity (class-code) sequencing is per TRADE, not per tower, so it already applies to both and
+    // is deliberately not duplicated — duplicating it would create a second copy to drift.
+    function copyTower(fromId, toId) {
+      if (!fromId || !toId || fromId === toId) return { floors: 0, links: 0 };
+      var nFloors = 0;
+      // Map source-leaf uid -> copied-leaf uid so step-3 links survive the copy.
+      var uidMap = {};
+      GROUPS.forEach(function (tr) {
+        var src = floorsOfTower(tr, fromId);
+        if (!src.length) return;
+        // Drop whatever the destination tower had for this trade, then take a fresh copy.
+        cfg.zoning[tr].floors = floorsOf(tr).filter(function (f) { return towerIdOf(f) !== toId; });
+        var copies = cloneFloors(src);
+        copies.forEach(function (f) { f.towerId = toId; });
+        // Build the uid map by walking source and copy in lock-step (cloneFloors preserves order).
+        src.forEach(function (sf, i) {
+          var cf = copies[i]; if (!cf) return;
+          var sl = leavesOfFloor(tr, sf), cl = leavesOfFloor(tr, cf);
+          sl.forEach(function (leaf, j) { if (cl[j]) uidMap[leaf.uid] = cl[j].uid; });
+        });
+        cfg.zoning[tr].floors = floorsOf(tr).concat(copies);
+        nFloors += copies.length;
+      });
+      // Re-point the source tower's zone links onto the copies.
+      var added = 0;
+      (cfg.links || []).slice().forEach(function (k) {
+        var a = uidMap[k.from], b = uidMap[k.to];
+        if (a && b && !cfg.links.some(function (x) { return x.from === a && x.to === b; })) {
+          cfg.links.push({ from: a, to: b, type: k.type || 'FS', lag: k.lag || 0 }); added++;
+        }
+      });
+      return { floors: nFloors, links: added };
+    }
     function stLevels(host) {
       var used = usedGroups();
       if (!used.length) {
@@ -17977,6 +18080,7 @@
       }
       if (used.indexOf(uiTrade) < 0) uiTrade = used[0];
       var tr = uiTrade, zn = cfg.zoning[tr];
+      var _twAct = activeTower();
       // Only show the level of detail the chosen Activity level actually uses: Floor level ignores
       // zones + units, Zone level ignores units. Otherwise the editor shows level-4 (unit) controls
       // that have no effect, which reads as a bug when scheduling at level 3.
@@ -17995,7 +18099,10 @@
         (srcTr.length ? '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">or copy from <select class="pd-select sbld-mini" id="b-copyfrom" style="height:30px;"><option value="">choose trade…</option>' +
           srcTr.map(function (g) { return '<option value="' + g + '">' + e2(GLABEL[g]) + ' (' + leafCount(g) + ')</option>'; }).join('') + '</select></label>' : '') +
         '</div>' : '';
-      var floorsHtml = zn.floors.length ? zn.floors.map(function (f, i) {
+      var _twFloors = zn.floors.map(function (f, i) { return { f: f, i: i }; })
+        .filter(function (o) { return towerIdOf(o.f) === _twAct; });
+      var floorsHtml = _twFloors.length ? _twFloors.map(function (_o) {
+        var f = _o.f, i = _o.i;
         var zonesHtml = f.zones.length ? f.zones.map(function (z, zi) {
           return '<div class="sbld-znrow"><span class="sbld-zntag" style="border-color:' + gc(tr) + ';color:' + gc(tr) + '">ZONE</span>' +
             '<input class="pd-input" data-zk="code" data-f="' + i + '" data-z="' + zi + '" value="' + e2(z.code) + '" placeholder="Zone" style="width:96px;" />' +
@@ -18015,7 +18122,8 @@
           (showZones ? '<button class="pd-btn sbld-addzone" data-f="' + i + '">+ Zone</button>' : '') +
           '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
           (showZones ? '<div class="sbld-znwrap">' + zonesHtml + '</div>' : '<div class="sbld-znwrap"><div class="sbld-znhint">Floor level — zones &amp; units are ignored. Switch <b>Activity level</b> to Zone/Unit to split this floor.</div></div>') + '</div>';
-      }).join('') : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' yet.</div>';
+      }).join('') : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' in ' + e2(towerLabel(_twAct)) +
+        ' yet.' + (multiTower() ? ' Add them below, or use <b>Copy from…</b> to take another tower\'s layout.' : '') + '</div>';
       // Quick-generate inputs keep the counts the planner last generated with for THIS trade, so a
       // value they just typed (e.g. units) stays put instead of snapping back to 0 on re-render.
       var qd = quickN[tr] || { B: 0, F: 5, Z: 2, U: 0 };
@@ -18027,6 +18135,7 @@
         // intuitive order — so step 2 states which levels this project has (or that it has none yet)
         // and opens the breakdown editor right here, before any floors are typed in.
         _locBreakdownBar() +
+        _towerBar() +
         '<div class="sbld-sec-actions" style="margin-bottom:8px;"><label class="sbld-tag" style="padding:6px 10px;">Activity level (whole project)&nbsp; ' +
         '<select class="pd-select sbld-mini" id="b-loclevel" title="Which location level activities are scheduled at across the whole project. Auto = deepest level you define per floor.">' +
         [['auto', 'Auto (deepest defined)'], ['floor', 'Floor level'], ['zone', 'Zone level'], ['unit', 'Unit level']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.locLevel || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
@@ -18060,7 +18169,53 @@
         if (cfg.links.length && !confirm('Changing the Activity level rebuilds the locations, so the ' + cfg.links.length + ' zone link(s) from Step 3 will be cleared. Continue?')) { lvlSel.value = cfg.locLevel || 'auto'; return; }
         cfg.locLevel = lvlSel.value; cfg.links = []; markDirty(); render();
       };
-      host.querySelector('#b-addfloor').onclick = function () { var nf = zn.floors.filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', kind: 'typical', zones: [] }); markDirty(); render(); };
+      // ⚠️ Counts and codes are per TOWER, so adding F1 to Tower B does not become F21 because Tower
+      // A already has twenty floors.
+      host.querySelectorAll('[data-twsel]').forEach(function (b) { b.onclick = function () { uiTower = b.dataset.twsel; render(); }; });
+      var _twAdd = host.querySelector('#b-twadd');
+      if (_twAdd) _twAdd.onclick = function () {
+        var n = towerList().length + 1;
+        var nm = prompt('Name for the new tower:', 'Tower ' + n); if (nm == null) return;
+        nm = String(nm).trim() || ('Tower ' + n);
+        var cd = prompt('Short code for ' + nm + ' (used in codes and labels):', 'T' + n);
+        var t = { id: uidv(), code: String(cd == null ? ('T' + n) : cd).trim() || ('T' + n), name: nm };
+        cfg.towers = towerList().concat([t]); uiTower = t.id; markDirty(); render();
+      };
+      var _twRen = host.querySelector('#b-twren');
+      if (_twRen) _twRen.onclick = function () {
+        var t = towerById(_twAct); if (!t) return;
+        var nm = prompt('Tower name:', t.name || ''); if (nm == null) return;
+        var cd = prompt('Tower code:', t.code || ''); if (cd == null) return;
+        t.name = String(nm).trim() || t.name; t.code = String(cd).trim() || t.code; markDirty(); render();
+      };
+      var _twCopy = host.querySelector('#b-twcopy');
+      if (_twCopy) _twCopy.onclick = function () {
+        var others = towerList().filter(function (t) { return t.id !== _twAct; });
+        if (!others.length) return;
+        var pick = prompt('Copy floors, zones, units and zone sequencing INTO ' + towerLabel(_twAct) +
+          ' from which tower?\n\n' + others.map(function (t, i) { return (i + 1) + ') ' + (t.name || t.code); }).join('\n') +
+          '\n\nType a number:', '1');
+        if (pick == null) return;
+        var src = others[(parseInt(pick, 10) || 0) - 1];
+        if (!src) { UI.toast('No tower picked.', 'warn'); return; }
+        if (!confirm('This REPLACES everything currently under ' + towerLabel(_twAct) + ' with a copy of ' +
+          (src.name || src.code) + '. Continue?')) return;
+        var r = copyTower(src.id, _twAct);
+        markDirty(); render();
+        UI.toast('Copied ' + r.floors + ' floor' + (r.floors === 1 ? '' : 's') + ' and ' + r.links +
+          ' zone link' + (r.links === 1 ? '' : 's') + ' from ' + (src.name || src.code) + '.', 'success');
+      };
+      var _twDel = host.querySelector('#b-twdel');
+      if (_twDel) _twDel.onclick = function () {
+        if (towerList().length < 2) return;
+        var n = 0; GROUPS.forEach(function (g) { n += floorsOfTower(g, _twAct).length; });
+        if (!confirm('Delete ' + towerLabel(_twAct) + (n ? ' and its ' + n + ' floor' + (n === 1 ? '' : 's') : '') + '? This cannot be undone.')) return;
+        GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return towerIdOf(f) !== _twAct; }); });
+        cfg.towers = towerList().filter(function (t) { return t.id !== _twAct; });
+        uiTower = towerList()[0].id;
+        pruneLinks(); markDirty(); render();
+      };
+      host.querySelector('#b-addfloor').onclick = function () { var nf = floorsOfTower(tr, _twAct).filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', kind: 'typical', towerId: _twAct, zones: [] }); markDirty(); render(); };
       // Basements build bottom-up (deepest first), so a new basement is INSERTED at index 0 (deepest).
       host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, kind: 'basement', zones: [] }); markDirty(); render(); };
       host.querySelector('#b-quick').onclick = function () {
@@ -18069,8 +18224,8 @@
         if (zn.floors.length && !confirm('Replace the ' + zn.floors.length + ' existing floor(s) for ' + GLABEL[tr] + '?')) return;
         function mkZones() { var zs = []; for (var j = 1; j <= Z; j++) { var us = []; for (var k = 1; k <= U; k++) us.push({ id: uidv(), code: 'U' + k }); zs.push({ id: uidv(), code: 'Z' + j, units: us }); } return zs; }
         zn.floors = [];
-        for (var bi = B; bi >= 1; bi--) zn.floors.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, kind: 'basement', zones: mkZones() });   // deepest (B{B}) first
-        for (var i = 1; i <= F; i++) zn.floors.push({ id: uidv(), code: 'F' + i, name: '', kind: 'typical', zones: mkZones() });
+        for (var bi = B; bi >= 1; bi--) zn.floors.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, kind: 'basement', towerId: _twAct, zones: mkZones() });   // deepest (B{B}) first
+        for (var i = 1; i <= F; i++) zn.floors.push({ id: uidv(), code: 'F' + i, name: '', kind: 'typical', towerId: _twAct, zones: mkZones() });
         cfg.links = []; markDirty(); render();
       };
       host.querySelectorAll('.sbld-addzone').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.f]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1), units: [] }); markDirty(); render(); }; });
