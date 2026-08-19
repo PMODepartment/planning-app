@@ -967,8 +967,39 @@
     /* No per-tower scrollbar — the whole view scrolls as one (.ps-vs-viewport). */
     .ps-vs-scroll { padding:12px 14px 14px; }
     .ps-vs-scroll svg { display:block; height:auto; }
-    .ps-vs-cell { cursor:pointer; }
-    .ps-vs-cell:hover { filter:brightness(1.08); }
+    /* ---- Motion ---------------------------------------------------------------------------
+       ⚠️ ONLY THE TOWER CARDS ANIMATE, never the cells. At detail 3 a real project renders
+       thousands of <rect>s; giving each one an entrance animation and a staggered delay is a
+       guaranteed jank (and a repaint storm on every zoom step). Animating the handful of cards and
+       letting their contents ride along costs nothing and reads the same. */
+    @keyframes ps-vs-towerin { from { opacity:0; transform:translateY(14px) scale(.985); } to { opacity:1; transform:none; } }
+    @keyframes ps-vs-fade { from { opacity:.45; } to { opacity:1; } }
+    /* Entrance is opt-in per render (.ps-vs-in), because a re-render that only changes a VALUE —
+       Finish↔Start, or a zoom step — should not re-play an entrance. Those get the cheap cross-fade
+       below instead, on one element. */
+    .ps-vs-grid.ps-vs-in > .ps-vs-tower {
+      animation: ps-vs-towerin .34s cubic-bezier(.22,.61,.36,1) both;
+      animation-delay: calc(var(--i, 0) * 45ms);   /* index is capped in JS so late towers never crawl */
+    }
+    .ps-vs-grid.ps-vs-fade { animation: ps-vs-fade .18s ease; }
+    /* Cells: hover only, and on cheap properties. No transform — an SVG rect scaled mid-row shifts
+       its neighbours' apparent edges and the grade line reads crooked. */
+    .ps-vs-cell { cursor:pointer; transition:opacity .16s ease, filter .16s ease; }
+    .ps-vs-cell:hover { filter:brightness(1.12); }
+    .ps-vs-tower { transition:box-shadow .2s ease, border-color .2s ease; }
+    .ps-vs-tower:hover { box-shadow:0 2px 6px rgba(0,0,0,.10), 0 10px 26px rgba(0,0,0,.07); }
+    .ps-vs-seg > button, .ps-vs-chip { transition:background-color .16s ease, color .16s ease, border-color .16s ease; }
+    /* ⚠️ Honour a reduced-motion preference — the marching-ants marquee does the same. Nothing here
+       carries meaning through movement, so removing it costs the user nothing. */
+    @media (prefers-reduced-motion: reduce) {
+      .ps-vs-grid.ps-vs-in > .ps-vs-tower { animation:none; }
+      .ps-vs-grid.ps-vs-fade { animation:none; }
+      /* ⚠️ ID selector, not .ps-vstack.ps-anim: this block sits EARLIER in the sheet than the
+         shared `ps-viewin` rule, so at equal specificity the base rule would win and the panel
+         would still animate. Measured — it did. An id outranks it regardless of order. */
+      #ps-vstack.ps-anim { animation:none; }
+      .ps-vs-cell, .ps-vs-tower, .ps-vs-seg > button, .ps-vs-chip { transition:none; }
+    }
     .ps-vs-empty { padding:18px; color:var(--pd-muted); font-size:13px; text-align:center; }
     #ps-view-schedule.ps-vstack-mode .ps-split,
     #ps-view-schedule.ps-vstack-mode .ps-network,
@@ -981,7 +1012,7 @@
     #ps-view-schedule.ps-progress-mode .ps-grid-foot { display:none !important; }
     .ps-progress { flex:1 1 auto; overflow:auto; min-height:0; padding:4px 8px 12px; }
     @keyframes ps-viewin { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
-    .ps-progress.ps-anim, .ps-split.ps-anim, .ps-network.ps-anim { animation: ps-viewin .28s cubic-bezier(.22,.61,.36,1); }
+    .ps-progress.ps-anim, .ps-split.ps-anim, .ps-network.ps-anim, .ps-vstack.ps-anim { animation: ps-viewin .28s cubic-bezier(.22,.61,.36,1); }
     .ps-prog-table { border-collapse:collapse; font-size:12.5px; table-layout:fixed; }
     .ps-prog-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); padding:6px 10px; border-bottom:1px solid var(--pd-line); position:sticky; top:0; background:var(--pd-card); z-index:3; overflow:hidden; text-overflow:ellipsis; }
     .ps-prog-table td { padding:4px 10px; border-bottom:1px solid var(--pd-line); vertical-align:middle; position:relative; height:var(--prog-rh,38px); overflow:hidden; }
@@ -9379,6 +9410,10 @@
   var _vsZoom = 1;
   var _vsTrade = 'ALL';         // focus a single trade's tower
   var _vsDateMode = 'finish';   // 'finish' = when the cell completes · 'start' = when it begins
+  // What the NEXT render should animate: 'in' = towers enter (the set of towers changed),
+  // 'fade' = a value changed in place (Finish↔Start, zoom), null = repaint silently (a data or
+  // filter change arriving through doRender, where re-playing an entrance would be noise).
+  var _vsAnim = null;
   var _vsCells = {};            // cell key -> the activities behind it, for the drill-down
   var NO_TRADE = '— No trade —';
   function _vsMaxDetail() { return Math.max(1, LOC_LEVELS.length); }
@@ -9599,11 +9634,19 @@
       }).join('');
     }
     host.innerHTML = bar + (_vsScope === 'trade' ? chips : '') + warn +
-      '<div class="ps-vs-viewport"><div class="ps-vs-grid">' + towers + '</div></div>';
-    host.querySelectorAll('[data-vssc]').forEach(function (b) { b.onclick = function () { _vsScope = b.dataset.vssc; renderVStack(); }; });
-    host.querySelectorAll('[data-vsdet]').forEach(function (b) { b.onclick = function () { _vsDetail = parseInt(b.dataset.vsdet, 10) || 1; renderVStack(); }; });
-    host.querySelectorAll('[data-vsdt]').forEach(function (b) { b.onclick = function () { _vsDateMode = b.dataset.vsdt; renderVStack(); }; });
-    host.querySelectorAll('[data-vstr]').forEach(function (b) { b.onclick = function () { _vsTrade = b.dataset.vstr; renderVStack(); }; });
+      '<div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>';
+    // Stagger the entrance, capped: past the 8th tower the delay stops growing, so a trade-heavy
+    // project still settles in well under half a second instead of trickling in.
+    if (_vsAnim === 'in') {
+      var _tw = host.querySelectorAll('.ps-vs-grid > .ps-vs-tower');
+      for (var _ti = 0; _ti < _tw.length; _ti++) _tw[_ti].style.setProperty('--i', Math.min(_ti, 8));
+    }
+    _vsAnim = null;   // one-shot: the next repaint is silent unless a handler asks again
+    host.querySelectorAll('[data-vssc]').forEach(function (b) { b.onclick = function () { _vsScope = b.dataset.vssc; _vsAnim = 'in'; renderVStack(); }; });
+    host.querySelectorAll('[data-vsdet]').forEach(function (b) { b.onclick = function () { _vsDetail = parseInt(b.dataset.vsdet, 10) || 1; _vsAnim = 'fade'; renderVStack(); }; });
+    host.querySelectorAll('[data-vsdt]').forEach(function (b) { b.onclick = function () { _vsDateMode = b.dataset.vsdt; _vsAnim = 'fade'; renderVStack(); }; });
+    host.querySelectorAll('[data-vstr]').forEach(function (b) { b.onclick = function () { _vsTrade = b.dataset.vstr; _vsAnim = 'in'; renderVStack(); }; });
+    // Zoom repaints silently: a fade on every step of a held-down click would strobe.
     var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
     var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };
     host.querySelectorAll('.ps-vs-cell').forEach(function (el) { el.addEventListener('click', function () { openVsCell(el.getAttribute('data-vsk')); }); });
@@ -9615,7 +9658,7 @@
     var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-vstack-mode', on);
     var btn = document.getElementById('ps-vstackbtn'); if (btn) btn.classList.toggle('active', on);
     var host = document.getElementById('ps-vstack'); if (host) host.style.display = on ? 'block' : 'none';
-    if (on) { renderVStack(); _animIn(host); }
+    if (on) { _vsAnim = 'in'; renderVStack(); _animIn(host); }
     else { _animIn(document.querySelector('.ps-split')); }
   }
 
