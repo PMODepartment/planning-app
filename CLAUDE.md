@@ -6169,3 +6169,44 @@ so saved positional column sorts/orders keep pointing where they were set. Inlin
 has not been run. `db.js?v=`/`modules-grid.js?v=` → `20260819b`; `MODULE_V` → `20260819c`.
 ⚠️ **Not included:** the Schedule Builder push does not set a package, and the Dashboard's package
 rows show no activity counts yet.
+
+### 2026-08-19 — C2: change orders are visible in the Gantt, and findable from the toolbar
+Owner ran the package migration. C2 needed **no migration** — change-order activities already sat in
+the same WBS/network as main-contract work (that is exactly what `scope_type` being a *tag* rather
+than a branch buys: the logic and the float are real). What was missing was seeing them and finding
+them.
+- ⚠️ **`.ps-cobar` had been in the CSS since the contract-scope work shipped and was NEVER EMITTED**
+  — the Gantt carried no change-order treatment whatsoever. (The grid's `.ps-corow` left rail *was*
+  wired; only the bar was dead.) Found by grepping for the emitter rather than trusting the rule's
+  existence, and the suite now asserts rule-and-emitter together for all three classes so this
+  cannot recur silently.
+- ⚠️ **Re-cut from `outline` to `box-shadow`.** Critical path (solid red) and near-critical (dashed
+  amber) already use `outline` on the same element, so the original rule would have collided and one
+  of the two meanings would have disappeared with no error. The ring hugs the bar (offset 0) and the
+  critical outline sits 1px further out, so a **critical change order legibly shows both**.
+- Milestones ring the same way. A branch whose activities are **all** change orders rings too;
+  ⚠️ a **blended** branch deliberately does not — the Scope column already reports "Mixed", and
+  ringing a mostly-main-contract span would claim it is all variation work.
+- **A prominent toolbar switch** — Blended / Main / Change orders with live counts, beside the zoom
+  control. ⚠️ Deliberately not only in the Filter menu: "show me the change orders" is a top-level
+  question, and a filter three clicks deep is one nobody discovers. It stays in sync with the Filter
+  menu's radios **in both directions** (and with Clear, and with a restored saved layout), so the
+  control can never claim a scope that is not applied.
+- ⚠️ The counts are computed in `rebuild()`, **not per render**: `scopeOf()` walks the WBS tree per
+  row and the toolbar repaints far more often than the data changes. They count **leaf activities in
+  the execution phase only** (where contract scope means anything), so they will not match the
+  footer's total — stated in the code so the discrepancy is not read as a bug.
+- The switch **hides itself** when the project has no change orders: a control with nothing to find
+  is worse than no control.
+- The Gantt tooltip now names the change order + its CO reference, and the package — the amber ring
+  has to be explainable without hunting for a legend.
+
+Verified by executing the shipped `recountScope`/`syncScopeSwitch` against a DOM stub (19 checks
+green): counts exclude WBS summary rows and out-of-phase activities, each segment lights only for
+its own scope, the printed counts are right, the control hides/shows correctly, and a **missing
+toolbar is a no-op rather than a crash**. The C1 suite still passes 33/33. Structural assertions
+cover the rule-and-emitter pairing and the box-shadow-vs-outline split. Inline script parses;
+**0 functions lost**. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260819d`.
+⚠️ **Trap that cost time:** a `\n` written into the inline script through a shell heredoc landed as a
+REAL newline inside a JS string literal, which `grep` and a naive `str.replace` both failed to fix.
+Build such strings with explicit character codes, and always re-run the parse check after.

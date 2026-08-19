@@ -453,7 +453,20 @@
     /* A change-order activity is tinted across the whole row so it reads as "not in the original
        deal" wherever it sits in the sequence — which, by design, is in among main-contract work. */
     .ps-grid-row.ps-corow { box-shadow:inset 3px 0 0 #E08A3C; }
-    .ps-bar.ps-cobar { outline:2px solid #E08A3C; outline-offset:1px; }
+    /* ⚠️ box-shadow, NOT outline. Critical path (solid red) and near-critical (dashed amber)
+       already use `outline` on the same element, so an outline here would collide and one of the
+       two meanings would vanish. A ring hugging the bar (offset 0) sits INSIDE the critical
+       outline (offset 1px), so a critical change order legibly shows both. */
+    .ps-bar.ps-cobar { box-shadow:0 0 0 2px #E08A3C; }
+    .ps-mile.ps-cobar { box-shadow:0 0 0 2px #E08A3C; }
+    /* A branch every one of whose activities is a change order. A blended branch is deliberately
+       NOT marked — the Scope column already reports "Mixed", and ringing it here would claim the
+       whole span is variation work. */
+    .ps-sum.ps-cosum { box-shadow:0 0 0 2px #E08A3C; }
+    /* The toolbar scope switch. The CO segment is the loud one: finding the change orders is the
+       thing a planner comes to this control for. */
+    .ps-toolbar #ps-scope button[data-scope="change_order"].active { background:#E08A3C; }
+    .ps-scope-n { font-weight:700; opacity:.75; margin-left:5px; font-size:11px; }
     .c-x { width:var(--c-x); }
     .ps-cp-tag { background:var(--pd-red); color:#fff; font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; letter-spacing:.03em; }
     .ps-var-late { color:var(--pd-bad); font-weight:600; }
@@ -1949,6 +1962,15 @@
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-openbtn" title="Open schedule — Current, baselines &amp; what-if scenarios"><span data-ico="calendar" data-ico-size="15"></span> Open ▾</button><div class="ps-menu" id="ps-open-menu"></div></div>
           <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-groupbtn" title="Group activities — pick the levels and their order"><span data-ico="layers" data-ico-size="15"></span> <span id="ps-groupbtn-txt">Group: WBS</span> ▾</button><div class="ps-menu ps-group-menu" id="ps-group-menu"></div></div>
+          <span class="ps-tb-div"></span>
+          <!-- Contract scope switch. ⚠️ Deliberately in the toolbar and not only in the Filter
+               menu: "show me the change orders" is a top-level question a planner asks constantly,
+               and a filter three clicks deep is one nobody discovers. The two stay in sync. -->
+          <div class="ps-seg" id="ps-scope" title="Contract scope — main contract work, change orders, or both together in one sequence">
+            <button data-scope="" class="active">Blended</button>
+            <button data-scope="main">Main</button>
+            <button data-scope="change_order">Change orders</button>
+          </div>
           <span class="ps-tb-div"></span>
           <div class="ps-seg" id="ps-zoom" title="Timeline scale — drag a column edge in the date header, or Ctrl + scroll over the chart, to fine-tune column width">
             <button data-zoom="month" class="active">Month</button>
@@ -3973,6 +3995,37 @@
   // `false` to reuse the existing `_sorted` order — skipping the O(n log n) comparator sweep, the
   // dominant cost on 27k-activity schedules — while still refreshing the rollups + CPM below.
   // (`_sorted` holds live row references, so field edits show without re-sorting.)
+  // Activity counts per contract scope, for the toolbar switch. ⚠️ Computed in rebuild() and NOT
+  // on each render: scopeOf() walks the WBS tree per row, and the toolbar repaints far more often
+  // than the data changes. Leaf activities only — counting summary rows would double-count.
+  var _scopeCounts = { main: 0, change_order: 0 };
+  // Paint the toolbar switch from `filters.scope` + the current counts. Called from every place
+  // that can change either, so the control can never claim a scope that is not applied.
+  function syncScopeSwitch() {
+    var seg = document.getElementById('ps-scope'); if (!seg) return;
+    var cur = filters.scope || '';
+    seg.querySelectorAll('[data-scope]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.scope === cur);
+      var n = b.dataset.scope === 'main' ? _scopeCounts.main
+            : b.dataset.scope === 'change_order' ? _scopeCounts.change_order
+            : (_scopeCounts.main + _scopeCounts.change_order);
+      var lbl = b.dataset.scope === 'change_order' ? 'Change orders' : (b.dataset.scope === 'main' ? 'Main' : 'Blended');
+      // ⚠️ The count is of activities in the EXECUTION PHASE (scopeOf returns null elsewhere), which
+      // is the only place contract scope means anything — so it will not match the footer's total.
+      b.innerHTML = esc(lbl) + '<span class="ps-scope-n">' + n + '</span>';
+    });
+    // No change orders on this project yet: the switch would be a control with nothing to find.
+    seg.style.display = _scopeCounts.change_order ? '' : 'none';
+  }
+  function recountScope() {
+    var c = { main: 0, change_order: 0 };
+    rows.forEach(function (r) {
+      if (isWbsNode(r)) return;
+      var v = scopeOf(r);
+      if (v === 'change_order') c.change_order += 1; else if (v) c.main += 1;
+    });
+    _scopeCounts = c;
+  }
   function rebuild(structural) {
     if (structural === undefined) structural = true;
     _catCache = null;   // category legend is derived from the rows; recompute after any data change
@@ -4124,6 +4177,9 @@
     });
     _cpmDirty = true;
     computeCPM();   // auto-derive critical path on every data change
+    // The toolbar scope switch shows live counts, so it has to be refreshed with the data — not on
+    // every render (scopeOf walks the WBS tree per row).
+    recountScope(); syncScopeSwitch();
     var tc = document.getElementById('ps-total-count');
     if (tc) tc.textContent = rows.filter(function (r) { return !isWbs(r); }).length;
   }
@@ -7250,13 +7306,13 @@
     menu.querySelector('#ps-f-behind').onchange = function (e) { filters.behind = e.target.checked; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-crit').onchange = function (e) { filters.crit = e.target.checked; renderGrid(); renderGantt(); };
     menu.querySelectorAll('input[name="ps-f-scope"]').forEach(function (rd) {
-      rd.onchange = function () { if (rd.checked) { filters.scope = rd.value; renderGrid(); renderGantt(); } };
+      rd.onchange = function () { if (rd.checked) { filters.scope = rd.value; syncScopeSwitch(); renderGrid(); renderGantt(); } };
     });
     var _fpk = menu.querySelector('#ps-f-pkg');
     if (_fpk) _fpk.onchange = function (e) { filters.pkg = e.target.value; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-look').onchange = function (e) { filters.look = parseInt(e.target.value, 10) || 0; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-adv').onclick = function (e) { e.stopPropagation(); menu.classList.remove('open'); openAdvFilter(); };
-    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, crit:false, look:0, scope:'', pkg:'', codes:{}, col:{}, adv:{ match:'all', rules:[] } }; buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, crit:false, look:0, scope:'', pkg:'', codes:{}, col:{}, adv:{ match:'all', rules:[] } }; syncScopeSwitch(); buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
     menu.querySelector('#ps-filter-done').onclick = function () { menu.classList.remove('open'); };
   }
   // Advanced multi-condition filter builder (OPC-style): field / operator / value rows combined
@@ -9760,8 +9816,14 @@
   try { var _gs = JSON.parse(localStorage.getItem('ps_gset') || 'null'); if (_gs) _gset = Object.assign(_gset, _gs); } catch (e) {}
   function saveGset() { try { localStorage.setItem('ps_gset', JSON.stringify(_gset)); } catch (e) {} }
   function _barTip(r) {
+    // ⚠️ The amber ring on a bar has to be explainable without hunting for a legend — this is
+    // where a planner hovers to find out what a mark means. The CO reference rides along because a
+    // change order without its number is not traceable back to the client correspondence it came
+    // from, and the package answers the other half of "whose scope is this?".
+    var co = isChangeOrder(r) ? ('\nChange Order' + (coRefOf(r) ? ' · ' + coRefOf(r) : '')) : '';
+    var pk = packageOf(r) ? ('\nPackage: ' + packageLabel(packageOf(r))) : '';
     var sd = r.start_date ? Fmt.date(r.start_date) : '—', fd = r.end_date ? Fmt.date(r.end_date) : '—';
-    return esc((r.activity_id ? r.activity_id + ' · ' : '') + (r.activity_name || '') + '\n' + (r.status || '') + (r.percent_complete != null ? ' · ' + r.percent_complete + '%' : '') + '\nStart ' + sd + '  Finish ' + fd + (r._float != null ? '  Float ' + r._float + 'd' : ''));
+    return esc((r.activity_id ? r.activity_id + ' · ' : '') + (r.activity_name || '') + '\n' + (r.status || '') + (r.percent_complete != null ? ' · ' + r.percent_complete + '%' : '') + '\nStart ' + sd + '  Finish ' + fd + (r._float != null ? '  Float ' + r._float + 'd' : '') + co + pk);
   }
   // ⚠️ The label now carries % COMPLETE. Owner: "how should the viewers know what is the actual
   // progress per activity — that is the main weakness of the gantt view right now." They were right:
@@ -10842,6 +10904,10 @@
       var _stripMax = ROWH - o8 - _compH - 1 - 1 - _railH - 1;
       var _laneCap = Math.max(1, Math.floor(_stripMax / PS_LANE_MIN));
       var _segs = _sumSegsHTML(r, min, dayw, x, _laneCap);
+      // ⚠️ Only an ALL-CO branch is ringed. A blended branch is deliberately left alone — the Scope
+      // column already reports "Mixed", and ringing the whole bracket would claim a span that is
+      // mostly main-contract work is variation work.
+      var _coSum = (_cm && _cm.co > 0 && !_cm.mc) ? ' ps-cosum' : '';
       var sumH = _segs ? _compH : 9;                   // must match .ps-sum / .ps-sum-comp in CSS
       var _stripH = _segs ? _stripMax : 0;
       if (_segs) out += '<div class="ps-sum-strip" style="left:' + x + 'px;width:' + w + 'px;top:' + (sumTop + sumH + 1) + 'px;height:' + _stripH + 'px;">' + _segs + '</div>';
@@ -10873,7 +10939,7 @@
       if (r._dkind === 'group') sumPct = r._gpct || 0;
       var _gBg = _gce ? catTint(_gce.color) : (wcS ? 'background:' + wcS + ';' : '');
       var _fillStyle = _gce ? catStyle(_gce.color, _gce.tex) : '';
-      out += '<div class="ps-sum' + (_segs ? ' ps-sum-comp' : '') + (r._dkind === 'group' ? (_gce ? ' ps-sum-gcat' : ' ps-sum-group') : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + _gBg + '">' +
+      out += '<div class="ps-sum' + (_segs ? ' ps-sum-comp' : '') + _coSum + (r._dkind === 'group' ? (_gce ? ' ps-sum-gcat' : ' ps-sum-group') : '') + '" data-id="' + r.id + '" title="' + esc(((r._realCode || r.wbs || '') + ' ' + (r.activity_name || '')).trim()) + (sumPct ? ' — ' + sumPct + '%' : '') + '" style="left:' + x + 'px;width:' + w + 'px;top:' + sumTop + 'px;' + _gBg + '">' +
         ((sumPct > 0) ? '<i class="ps-sum-fill" style="width:' + sumPct + '%;' + _fillStyle + '"></i>' : '') + '</div>';
       if (showLbl && r.activity_name) out += '<div class="ps-bar-lbl" style="left:' + (x + w + 6) + 'px;top:' + (top + o8) + 'px;">' + esc(r.activity_name) + (sumPct > 0 ? ' <span style="color:var(--pd-muted);">' + sumPct + '%</span>' : '') + '</div>';
       return out;
@@ -10906,7 +10972,7 @@
       var curTop = top + (blMd ? Math.round(15 * oY) : o9);   // when a baseline is shown, the current diamond sits below it
       if (blMd) { var bmx = dayDiff(min, blMd) * dayw; out += '<div class="ps-mile-bl" title="Baseline (BL0) milestone" style="left:' + (bmx - 5) + 'px;top:' + (top + Math.round(3 * oY)) + 'px;"></div>'; }
       var mx = dayDiff(min, md) * dayw;
-      out += '<div class="ps-mile' + crit + _hlCls(r) + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + curTop + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
+      out += '<div class="ps-mile' + crit + _hlCls(r) + (isChangeOrder(r) ? ' ps-cobar' : '') + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + curTop + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
       if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (mx + 9) + 'px;top:' + curTop + 'px;">' + esc(lbl) + '</div>';
       return out;
     }
@@ -10928,7 +10994,9 @@
     } else {
       barH = ROWH - Math.round(8 * oY); barTop = top + Math.round(4 * oY);
     }
-    out += '<div class="ps-bar task' + crit + _hlCls(r) + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
+    // ⚠️ Composes with everything else on the bar rather than replacing it: a change order can be
+    // critical, categorised (LSM colour) and spotlighted all at once, and each of those still reads.
+    out += '<div class="ps-bar task' + crit + _hlCls(r) + (isChangeOrder(r) ? ' ps-cobar' : '') + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
     if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (barTop + Math.round(barH / 2) - 7) + 'px;">' + esc(lbl) + '</div>';
     return out;
   }
@@ -17839,6 +17907,7 @@
     if (v.charts && typeof setCharts === 'function') { setCharts(v.charts); if (progressMode) renderProgressView(); }   // restore the saved chart template
     var si = document.getElementById('ps-search'); if (si) si.value = search;
     document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.toggle('active', x.dataset.zoom === zoom); });
+    syncScopeSwitch();
     buildFilterMenu();
     applyColHidden();
     renderCollapseMenu(); renderHeader(); renderGrid(); renderGantt();
@@ -20726,6 +20795,15 @@
       if (!wasOpen) { renderGroupMenu(); mn.classList.add('open'); }
     };
     document.getElementById('ps-group-menu').addEventListener('click', function (e) { e.stopPropagation(); });
+    var _scSeg = document.getElementById('ps-scope');
+    if (_scSeg) _scSeg.querySelectorAll('[data-scope]').forEach(function (b) {
+      b.onclick = function () {
+        filters.scope = b.dataset.scope;
+        // The Filter menu carries the same three radios; rebuilding it is what keeps the two from
+        // disagreeing about what is currently filtered.
+        syncScopeSwitch(); buildFilterMenu(); renderGrid(); renderGantt();
+      };
+    });
     document.getElementById('ps-zoom').querySelectorAll('[data-zoom]').forEach(function (b) {
       b.onclick = function () { zoom = b.dataset.zoom; document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.remove('active'); }); b.classList.add('active'); renderGantt(); };
     });

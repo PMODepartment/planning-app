@@ -100,9 +100,19 @@ shell never reaches into a module's tables. Tiles show a row count, an optional
 - **Not included:** the Schedule Builder push does not set a package (it produces main-contract
   work under no package), and the Dashboard's package rows do not yet show activity counts.
 
-### C2. Change Order activities live inside the schedule, easily filtered
-- CO activities sit in the same WBS/network as contract activities (so logic and float are
-  real), with a prominent CO filter/toggle and a distinct visual treatment on the Gantt.
+### C2. Change Order activities live inside the schedule, easily filtered ✅ done 2026-08-19
+The activities already sat in the same WBS/network (that is what `scope_type` being a tag buys —
+logic and float are real). What was missing was seeing and finding them:
+- ⚠️ **`.ps-cobar` existed in the CSS and was never emitted** — the Gantt had no change-order
+  treatment at all. Now wired, re-cut as a **box-shadow ring** because critical-path (solid red)
+  and near-critical (dashed amber) already own `outline` on the same element; a critical change
+  order would have had both and one meaning would have vanished. Milestones ring too, and a branch
+  whose activities are **all** change orders rings as well (a blended one deliberately does not —
+  the Scope column already says "Mixed").
+- **A prominent toolbar switch**: Blended / Main / Change orders, each with a live count, sitting
+  beside the zoom control instead of three clicks deep in the Filter menu. It hides itself on a
+  project with no change orders, and stays in sync with the Filter menu's radios in both directions.
+- The bar tooltip now names the change order (with its CO reference) and the package.
 
 ### C3. Duration scenarios (e.g. rainy-day durations), connected to the Calendar
 - Named scenarios that re-derive activity durations (weather/rain-day allowance, resource
