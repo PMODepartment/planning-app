@@ -2029,6 +2029,12 @@
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-wbs-adopt" title="Build the tree from the project's existing WBS-Summary rows (imported / legacy)"><span data-ico="download" data-ico-size="15"></span> Adopt existing WBS</button>
           <span class="ps-tb-div"></span>
+          <!-- Design Development is MIRRORED from the Engineering App (drawing register +
+               material submittal log). This pulls a fresh roll-up through the sync-eng
+               Edge Function; the branch itself stays read-only. -->
+          <button class="pd-btn" id="ps-sync-eng" title="Refresh Design Development from the Engineering App's drawing register and material submittal log"><span data-ico="refresh" data-ico-size="15"></span> Sync Engineering</button>
+          <span id="ps-sync-eng-at" style="font-size:11.5px;color:var(--pd-muted);"></span>
+          <span class="ps-tb-div"></span>
           <button class="pd-btn ps-icobtn" id="ps-wbs-expand" title="Expand all"><span data-ico="chevronDown" data-ico-size="15"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-wbs-collapse" title="Collapse all"><span data-ico="chevronRight" data-ico-size="15"></span></button>
           <input class="pd-input" id="ps-wbs-search" placeholder="Search code / name…" style="height:32px;width:200px;">
@@ -2711,47 +2717,73 @@
   // DB — unused, and dropping them would be destructive for no gain.
   var DD_PREFIX = { dr: 'DD-DWG-', ms: 'DD-MAT-' };
   var _ddSyncing = false;
+  // When the mirror this branch reads was last refreshed — shown beside the
+  // Sync button so a stale roll-up is visible rather than assumed current.
+  var _ddLastSynced = null;
   function _ddSlug(s) { return String(s || 'UNASSIGNED').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'UNASSIGNED'; }
-  function _ddValidDate(d) { if (!d) return false; var y = +String(d).slice(0, 4); return y >= 2015 && y <= 2100; }
-  function _ddApprovedDr(s) { s = (s || '').trim(); return s === 'Approved' || s === 'Approved w/o comments' || s === 'Approved w/ comments'; }
-  function _ddApprovedMs(s) { s = (s || '').trim(); return s === 'Approved' || s === 'Approved w/ Comments'; }
 
-  // Aggregate one register into { discipline: {tot, done, minPlan, maxAct, allDone} }.
-  // `tot`/`done` are SHEETS for drawings (the register's own POC basis) and ITEMS for
-  // material submittals — the two registers measure different things and are therefore
-  // kept as separate branches rather than summed into one meaningless total.
-  function _ddAggregate(list, kind) {
-    var by = {};
-    list.forEach(function (d) {
-      var k = (d.discipline || '').trim() || 'Unassigned';
-      var b = by[k] || (by[k] = { tot: 0, done: 0, minPlan: null, maxPlan: null, maxAct: null, allDone: true, n: 0 });
-      b.n++;
-      if (kind === 'dr') {
-        var t = +d.no_of_sheets || 0, a = +d.approved_sheets || 0;
-        if (t <= 1) { t = 1; a = _ddApprovedDr(d.status) ? 1 : 0; }   // matches the register's approvedOf()
-        b.tot += t; b.done += a;
-        if (a < t) b.allDone = false;
-      } else {
-        b.tot += 1;
-        if (_ddApprovedMs(d.status)) b.done += 1; else b.allDone = false;
-      }
-      var pl = kind === 'dr' ? d.planned_approval : d.plan_approval_date;
-      var ac = kind === 'dr' ? d.actual_approval  : d.date_approved;
-      if (_ddValidDate(pl)) {
-        if (!b.minPlan || pl < b.minPlan) b.minPlan = pl;
-        if (!b.maxPlan || pl > b.maxPlan) b.maxPlan = pl;
-      }
-      if (_ddValidDate(ac) && (!b.maxAct || ac > b.maxAct)) b.maxAct = ac;
-    });
-    return by;
-  }
-
+  // ---- The four drawing types the register now groups by -----------------------
+  // ⚠️ The Drawing Register branch groups by DRAWING TYPE (Concept / Schematic / For
+  // Construction / Individual Services), not by discipline as it used to. That is what
+  // the register itself is structured around: the type is its fixed top level, and a
+  // discipline now appears under several of them at once, so one activity per
+  // discipline mixed unrelated design stages into a single percentage.
+  //
+  // ⚠️ The FOLD ITSELF NO LONGER LIVES HERE. Top levels arrive already folded from
+  // the Engineering App (migration 0017, and defensively again in the sync-eng
+  // function's aggregate.ts) — a second copy in this file was a second thing to keep
+  // in step. This list is only the ORDER they are presented in.
+  var DD_TOP_ORDER = ['Concept Design', 'Schematic Design',
+                      'For Construction Drawings', 'Individual Services Drawings'];
   // Ensure a locked child WBS node exists under Design Development, and return it.
   // ⚠️ Re-checks the DB fresh, not just the in-memory WBS_NODES, right before inserting — two
   // overlapping loads (two tabs, or a Realtime-storm reload racing this same sync) could otherwise
   // both pass the in-memory check and both insert a duplicate locked node. `_wbsDedupeSkeleton`
   // would eventually merge it (it's locked), but not before this sync has already filed activities
   // against whichever duplicate it happened to create.
+  // Refresh the mirror, then re-run the (now read-only) Design Development sync.
+  // ⚠️ The Edge Function is the ONLY thing that may write the mirror — the browser has
+  // no insert/update policy on it — so this is a request, not a client-side copy.
+  async function syncEngineering() {
+    if (!canWrite) { UI.toast('Only admins/planners can sync from the Engineering App.', 'error'); return; }
+    var btn = document.getElementById('ps-sync-eng');
+    if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+    try {
+      var res = await sb().functions.invoke('sync-eng', { body: { project_id: pid } });
+      if (res.error) throw res.error;
+      var d = res.data || {};
+      // Report what actually landed. A submittal read that failed upstream is called
+      // out rather than passed off as a clean sync — its activities were deliberately
+      // left untouched, so "synced" alone would be misleading.
+      var msg = 'Design progress synced — ' + (d.written || 0) + ' roll-up rows from ' +
+                (d.drawings_read || 0) + ' drawings';
+      if (d.submittals_ok === false) msg += ' (material submittals could not be read — left as they were)';
+      UI.toast(msg, d.submittals_ok === false ? 'warn' : 'success');
+      // The Design Development WBS nodes are already in memory; syncDesignDevelopment
+      // re-reads the MIRROR and patches the activities in place, so a full reload is
+      // not needed (and would lose the user's scroll/selection).
+      await syncDesignDevelopment();
+      renderAll();
+    } catch (e) {
+      var m = (e && (e.message || (e.context && e.context.error))) || 'Sync failed';
+      UI.toast('Engineering sync failed: ' + m, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span data-ico="refresh" data-ico-size="15"></span> Sync Engineering';
+        if (window.Icons) Icons.hydrate(btn);
+      }
+      _renderSyncEngAt();
+    }
+  }
+  function _renderSyncEngAt() {
+    var el = document.getElementById('ps-sync-eng-at');
+    if (!el) return;
+    el.textContent = _ddLastSynced ? ('synced ' + Fmt.date(_ddLastSynced)) : '';
+    el.title = _ddLastSynced ? 'Design Development reflects the Engineering App as of this time'
+                             : 'Design Development has never been synced from the Engineering App';
+  }
+
   async function _ddEnsureNode(parentId, name, order) {
     var found = WBS_NODES.find(function (n) { return n.parent_id === parentId && n.name === name; });
     if (found) return found;
@@ -2777,37 +2809,67 @@
     if (!ddNode) return;                                   // skeleton not seeded (or migration not run)
     _ddSyncing = true;
     try {
-      // ⚠️ Exclude structural nodes AND per-sheet child rows: a sheet's counters are already
-      // inside its parent drawing's, so counting both double-counts the whole register.
-      // Mirrors drawing-register's own drawingRows(). Keyset-paginated — an unpaginated select
-      // silently truncates past 1000 rows (BAU101 alone has 1,506 drawings), which would mirror a
-      // wrong-but-plausible POC against the register it claims to reproduce exactly.
-      var drData;
+      // ⚠️ SOURCED FROM THE ENGINEERING APP, via the `eng_design_progress` mirror that
+      // the `sync-eng` Edge Function maintains — NOT from this project's own
+      // drawing_register / material_submittal tables. Those are the pre-cutover
+      // originals and are retired; reading them would mirror a stale twin of the
+      // register the engineering team actually works in.
+      //
+      // ⚠️ THE MIRROR CARRIES THE ROLL-UP ALREADY COMPUTED. Do not re-derive the
+      // percentages here: the two progress bases (0-or-100 tracking units for Concept /
+      // Schematic / For Construction, partial sheet credit for Individual Services) are
+      // decided by the register's own engine, and a second implementation in this file
+      // is exactly how the schedule and the register come to disagree.
+      var mirror;
       try {
-        drData = await selectAllPaged('drawing_register',
-          'id,parent_id,node_kind,discipline,no_of_sheets,approved_sheets,status,planned_approval,actual_approval',
-          function (q) { return q.is('parent_id', null); });
-      } catch (e) { return; }   // can't safely mirror a partial register read
-      var drawings = drData.filter(function (d) { return !d.node_kind || d.node_kind === 'drawing'; });
-      // ⚠️ A failed submittal read must NOT be treated as "zero submittals" — that would make every
-      // EXISTING DD-MAT-* row look stale and get bulk-deleted below. Real incident risk: one timed-out
-      // query silently wipes the whole Material Submittal mirror branch. `msOk` gates both building
-      // `want` from submittals AND which prefix the stale-cleanup is allowed to touch.
-      var msOk = true, submittals = [];
-      try { submittals = await selectAllPaged('material_submittal', 'id,discipline,status,plan_approval_date,date_approved'); }
-      catch (e) { msOk = false; }
-      if (!drawings.length && !submittals.length) return;   // nothing to mirror — leave the branch alone
+        mirror = await selectAllPaged('eng_design_progress',
+          'source,top_level,basis,percent_complete,units_total,units_done,min_planned,max_planned,max_actual,synced_at');
+      } catch (e) { return; }   // can't safely mirror a partial read
+      // Never synced (or the project has no design work yet) — leave the branch exactly
+      // as it is rather than deleting every activity in it.
+      if (!mirror.length) return;
+
+      var drAgg = {}, msAgg = {};
+      mirror.forEach(function (m) {
+        var tot = +m.units_total || 0, done = +m.units_done || 0;
+        (m.source === 'submittal' ? msAgg : drAgg)[m.top_level] = {
+          tot: tot, done: done, minPlan: m.min_planned, maxPlan: m.max_planned,
+          maxAct: m.max_actual, allDone: tot > 0 && done >= tot, basis: m.basis
+        };
+      });
+      var drawings = Object.keys(drAgg), submittals = Object.keys(msAgg);
+      // ⚠️ A source absent from the mirror must NOT be read as "zero" — that would bulk-
+      // delete its existing activities as stale. `msOk` gates the cleanup below, exactly
+      // as the failed-read guard did when this read was local.
+      var msOk = submittals.length > 0;
+      _ddLastSynced = mirror[0] && mirror[0].synced_at || null;
+      if (!drawings.length && !submittals.length) return;
 
       var drNode = drawings.length   ? await _ddEnsureNode(ddNode.id, 'Drawing Register', 0)      : null;
-      var msNode = (msOk && submittals.length) ? await _ddEnsureNode(ddNode.id, 'Material Submittal Log', 1) : null;
+      var msNode = submittals.length ? await _ddEnsureNode(ddNode.id, 'Material Submittal Log', 1) : null;
       await _wbsEnsureSummaries();                          // each new node needs its projected WBS-Summary row
       var codeOf = computeWbsCodes();
 
       var want = [];   // {activity_id, node, name, agg}
-      if (drNode) { var da = _ddAggregate(drawings, 'dr');
-        Object.keys(da).sort().forEach(function (k) { want.push({ aid: DD_PREFIX.dr + _ddSlug(k), node: drNode, name: k, a: da[k], unit: 'sheets' }); }); }
-      if (msNode) { var ma = _ddAggregate(submittals, 'ms');
-        Object.keys(ma).sort().forEach(function (k) { want.push({ aid: DD_PREFIX.ms + _ddSlug(k), node: msNode, name: k, a: ma[k], unit: 'items' }); }); }
+      if (drNode) {
+        // Lifecycle order, not alphabetical: Concept → Schematic → For Construction →
+        // Individual Services is the sequence the design actually runs in, and a WBS
+        // branch that reads "For Construction, Concept, Individual, Schematic" is not a
+        // programme. Anything unrecognised sorts after the four.
+        drawings.slice().sort(function (x, y) {
+          var ix = DD_TOP_ORDER.indexOf(x), iy = DD_TOP_ORDER.indexOf(y);
+          return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy) || x.localeCompare(y);
+        }).forEach(function (k, i) {
+          want.push({ aid: DD_PREFIX.dr + _ddSlug(k), node: drNode, name: k, a: drAgg[k],
+                      unit: drAgg[k].basis === 'sheets' ? 'sheets' : 'drawings', seq: i });
+        });
+      }
+      if (msNode) {
+        submittals.slice().sort().forEach(function (k, i) {
+          want.push({ aid: DD_PREFIX.ms + _ddSlug(k), node: msNode, name: k, a: msAgg[k],
+                      unit: 'items', seq: i });
+        });
+      }
 
       var wantIds = {}; want.forEach(function (w) { wantIds[w.aid] = 1; });
 
@@ -2816,7 +2878,7 @@
       // Realtime-storm reload, or a second tab's sync landing first), and trusting it here means two
       // overlapping syncs would both decide "doesn't exist yet" and both insert — duplicating the
       // mirrored activity with no dedupe to heal it (unlike WBS-Summary rows).
-      var patchFields = 'id,activity_id,activity_name,wbs,wbs_node_id,activity_type,percent_complete,status,start_date,end_date,actual_finish';
+      var patchFields = 'id,activity_id,activity_name,wbs,wbs_node_id,activity_type,percent_complete,status,start_date,end_date,actual_finish,seq_order';
       var wantAidList = Object.keys(wantIds), existingByAid = {};
       for (var ci = 0; ci < wantAidList.length; ci += 200) {
         var eq = await sb().from(TABLE).select(patchFields).eq('project_id', pid).in('activity_id', wantAidList.slice(ci, ci + 200));
@@ -2834,11 +2896,11 @@
         var patch = {
           activity_name: w.name + ' — ' + w.a.done + ' of ' + w.a.tot + ' ' + w.unit + ' approved',
           wbs: codeOf[w.node.id], wbs_node_id: w.node.id,
-          activity_type: 'Task', percent_complete: pct,
+          activity_type: 'Task', percent_complete: pct, seq_order: w.seq,
           status: pct >= 100 ? 'Completed' : (pct > 0 ? 'In Progress' : 'Not Started'),
           start_date: w.a.minPlan || null,
           // ⚠️ The finish is the LATEST planned approval — the commitment to have the whole
-          // discipline approved — replaced by the actual last approval once every item has
+          // group approved — replaced by the actual last approval once every item has
           // landed. It used to fall back to `minPlan`, which made start === finish and drew a
           // ZERO-DURATION bar: caught live on BAU101, where Architectural's approvals span
           // 2025-03-18 → 2026-05-11 but the row rendered as a single day on 2025-03-18.
@@ -12521,7 +12583,7 @@
     WBS_NODES.filter(function (n) { return String(n.name || '').trim() !== ''; })
       .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); })
       .forEach(function (n) {
-        var key = (n.parent_id || '') + ' ' + String(n.name || '').trim().toLowerCase();
+        var key = (n.parent_id || '') + '\u0000' + String(n.name || '').trim().toLowerCase();
         if (byKey[key]) dupes.push({ keep: byKey[key], drop: n }); else byKey[key] = n;
       });
     if (!dupes.length) return 0;
@@ -16794,7 +16856,7 @@
         // create "Structural Works" as a SECOND branch beside it, which is a duplicate in every sense
         // that matters to the planner even though the two names differ.
         function ensureNode(key, parentKey, name, alt, code) { if (!nodeByKey[key]) { var d = { key: key, parentKey: parentKey, name: name, alt: alt || null, code: code || null }; nodeByKey[key] = d; nodeDescs.push(d); } }
-        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'floor') return (l.floor && l.floor._all) ? ' ' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : ' '; if (dim === 'unit') return l.unit ? l.unit.id : ' '; return ' '; }
+        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'floor') return (l.floor && l.floor._all) ? ' ' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
         // ⚠️ The trade BRANCH is named with GWORK (the canonical "Structural Works"), not GLABEL
         // ("Structural"). work_type on the pushed activities is already GWORK, so a branch named with
         // the short label made the same trade reachable under TWO different names - and for the three
@@ -16849,10 +16911,10 @@
             return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);   // anything unrecognised sorts last, stably
           });
           // whole group has no value for this dim → skip the level entirely
-          if (ord.length === 1 && ord[0] === ' ') { buildTree(rowsIn, rest, parentKey); return; }
+          if (ord.length === 1 && ord[0] === '\u0000') { buildTree(rowsIn, rest, parentKey); return; }
           ord.forEach(function (k) {
             var grpRows = m[k];
-            if (k === ' ') { buildTree(grpRows, rest, parentKey); return; }   // null-value rows attach to the parent
+            if (k === '\u0000') { buildTree(grpRows, rest, parentKey); return; }   // null-value rows attach to the parent
             var nkey = 'N' + (++nodeSeq); ensureNode(nkey, parentKey, dimName(dim, grpRows[0]), dimAltName(dim, grpRows[0]), dimCode(dim, grpRows[0]));
             buildTree(grpRows, rest, nkey);
           });
@@ -20739,6 +20801,7 @@
     };
     document.getElementById('ps-wbs-fromproj').onclick = function () { wbsFromProject(_wbsSel || null); };
     document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
+    document.getElementById('ps-sync-eng').onclick = syncEngineering;
     document.getElementById('ps-wbs-expand').onclick = function () { _wbsCollapsed = {}; renderWbsManager(); };
     document.getElementById('ps-wbs-collapse').onclick = function () {
       _wbsCollapsed = {}; WBS_NODES.forEach(function (n) { if ((n.parent_id || null) === null) _wbsCollapsed[n.id] = true; });

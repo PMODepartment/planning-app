@@ -1,5 +1,65 @@
 # Module: project-schedule
 
+## Design Development is sourced from the ENGINEERING APP, via a roll-up mirror (2026-08-19) — fmlozano
+User: *"The planning-app's engineering drawing register should be fully migrated to the engineering
+app… All data should be sourced from the engineering app."*
+
+`syncDesignDevelopment()` read **this project's own** `drawing_register` / `material_submittal` —
+the pre-cutover originals. The registers are authoritative in the Engineering App now, so the WBS
+branch was mirroring a stale twin of the register the engineering team actually works in.
+
+- **New mirror `eng_design_progress`** (`migrations/2026-08-19-eng-design-progress-mirror.sql`) fed by
+  a new Edge Function **`supabase/functions/sync-eng`**, same security model as `sync-wpm`: the
+  Engineering service key is an Edge Function secret, never in the browser (its anon key is public).
+- ⚠️ **It mirrors the ROLL-UP, not the rows** — one row per (project, source, top level), a handful
+  per project instead of 1,500+ drawings. Two deliberate divergences from the `wpm_work_packages`
+  mirror, both of which are its documented weaknesses:
+  - **It PRUNES.** That mirror only upserts, so a work package deleted upstream lives in it forever
+    and keeps contributing to cash-out. `sync-eng` deletes a project's rows and re-inserts them, so
+    pruning is structural rather than a step someone has to remember.
+  - **Its RLS is PROJECT-SCOPED** (`can_access_project`), not merely `is_approved()`. The WPM mirror
+    gates on approval alone because it carries no Planners project id; this one carries the real id,
+    so there is no reason to let every approved user read every project's design progress.
+- ⚠️ **The progress math now exists ONCE, upstream.** `_ddAggregate` / `_ddTopLevel` / `_ddSheetBased`
+  / `_ddApprovedDr` / `_ddApprovedMs` / `_ddValidDate` are **deleted** from this file. The two bases
+  are not interchangeable — Concept / Schematic / For Construction count 0-or-100 **tracking units**
+  at equal weight, Individual Services Drawings counts **sheets** with partial credit — and a second
+  implementation here was a second thing to keep in step with a register in another repo. The
+  function's `aggregate.ts` is a **port of the register's own engine**, and a harness runs both over
+  the same synthetic register and requires **identical** output (40 checks) — so a "tidy-up" there
+  fails a test rather than silently changing what the schedule reports.
+  - `DD_TOP_ORDER` stays: it is the **display order** (Concept → Schematic → For Construction →
+    Individual Services, the sequence design actually runs in), not a fold.
+  - The fold itself is applied upstream (migration 0017) and **again defensively** in `aggregate.ts`,
+    where an unrecognised top level keeps its **raw name** rather than collapsing to "Unassigned" —
+    a name is what makes it actionable.
+- **Everything downstream is untouched**: the deterministic `DD-DWG-<slug>` / `DD-MAT-<slug>` ids,
+  the fresh-from-DB insert-vs-update check, the stale-row sweep, the read-only gating, and the
+  `end_date = latest planned` rule that stopped the zero-duration bars.
+- ⚠️ **An empty mirror returns EARLY and leaves the branch exactly as it is.** Never synced (or a
+  project with no design work) must not read as "zero", which would bulk-delete every activity in the
+  branch. Same reasoning as the pre-existing `msOk` guard, which is kept: a source missing from the
+  mirror is excluded from the stale sweep rather than treated as empty.
+- **Sync Engineering** button in the WBS toolbar (`#ps-sync-eng`, gated on `canWrite`) invokes the
+  function and re-runs the sync in place; a `synced <date>` readout beside it makes a stale roll-up
+  visible instead of assumed current. A submittal read that failed upstream is **named in the toast**
+  rather than passed off as a clean sync.
+- **The twin modules are DISABLED** in `assets/js/config.js` (`enabled:false, retiredTo:`), not
+  deleted, and the tables are **not dropped** — that is a separate, deliberate step. Audit first: the
+  question is whether anything was edited in the local copies AFTER the cutover, and whether any row
+  still holds an uploaded file (dropping the table orphans the storage object).
+  - ⚠️ `dashboard.html` rendered every disabled module as **"In development"**, which is the opposite
+    story for a retired one — a user would wait for something that already exists elsewhere. A module
+    carrying `retiredTo` now reads **"Moved to …"**.
+- ⚠️ **Fixed while working here: this file contained 6 raw NUL bytes** (`'\x00'` sentinels written as
+  literal 0x00), which made it register as **binary** to `grep`/`diff` — the same trap the sibling
+  app's notes record. Replaced with the `'\u0000'` escape; proven byte-equivalent by resolving the
+  escape back and comparing. **Write `'\u0000'` in source, never paste the control character.**
+- **Verified**: 40 port checks against the register's own engine, 12 fold checks, 29 checks over the
+  repointed sync in the shipped source, migration idempotent on real Postgres 16 (two runs), page
+  parses. ⚠️ **NOT verified end-to-end signed-in** — the function is not deployed and its secrets
+  (`ENG_URL`, `ENG_SERVICE_KEY`) are not set, so no live sync has run.
+
 ## Contract scope (Main Contract / Change Order), constraint columns, and the REAL cause of "only Allied Services was pushed" (2026-08-19) — eprobles
 
 Five things in one pass: two owner features, two owner-reported bugs, and one correction to a

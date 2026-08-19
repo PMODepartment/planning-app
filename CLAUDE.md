@@ -17,7 +17,14 @@ If you are a developer (or a developer's Claude) assigned ONE module, do this:
 3. **Copy a reference module** as your starting point:
    - `modules/risk-register/` — plain CRUD + filters + KPIs + a derived field.
    - `modules/drawing-register/` — same, PLUS the **file-upload** pattern
-     (private Supabase Storage bucket + signed-URL viewing).
+     (private Supabase Storage bucket + signed-URL viewing). ⚠️ **RETIRED as a live
+     module** (2026-08-19) — it and Material Submittal moved to the **Engineering
+     App**, which is now the single source for both registers; they are
+     `enabled:false` here and their tables are stale history. Still fine to copy
+     the upload pattern from; do NOT resume writing to them, and do not point
+     anything at their tables. The Project Schedule's Design Development branch
+     reads the `eng_design_progress` mirror instead (Edge Function `sync-eng`) —
+     see `modules/project-schedule/CLAUDE.md`.
    - `modules/_template/` — the minimal skeleton.
 4. **Do NOT edit** shared files (`assets/**`, other modules, the HTML shell).
    The only shared edits allowed: add YOUR table to `supabase-schema.sql`, and
@@ -76,6 +83,27 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-08-19 — Merged PR #13 (Design Development sourced from the Engineering App) into main
+User: *"There is a pull request in the planning app. Merge without conflict."* PR #13
+(`Source Design Development from the Engineering App`, head `257a197`) was the only open PR; the
+other 12 refs were already ancestors of `origin/main`. Merged onto `origin/main` @ `71bd0d3`.
+
+- **One conflict**, in `modules/project-schedule/CLAUDE.md`: both sides prepended a 2026-08-19 entry
+  at the top of the same file. Purely additive documentation — resolved by **keeping both**, PR #13's
+  entry first (it is the later merge), then eprobles' contract-scope entry, with a blank line at the
+  seam. No prose from either side was dropped or reworded.
+- `modules/project-schedule/index.html` auto-merged: PR #13's deletions (`_ddAggregate`,
+  `_ddTopLevel`, `_ddSheetBased`, `_ddApprovedDr`, `_ddApprovedMs`, `_ddValidDate` — 0 references
+  left) and its additions (`eng_design_progress`, `#ps-sync-eng`) coexist with main's contract-scope
+  work (`scope_type` / `change_order_ref`, 32 references). Inline script **parses clean**
+  (`node --check`), as does `assets/js/config.js`.
+- **`MODULE_V` bumped `20260819a` → `20260819b`** in `dashboard.html` — a module `index.html` changed,
+  so the old cached copy must not survive the deploy.
+- ⚠️ Carried over from PR #13 and still **NOT done**: `migrations/2026-08-19-eng-design-progress-mirror.sql`
+  is not run, and `supabase/functions/sync-eng` is not deployed and has no `ENG_URL` /
+  `ENG_SERVICE_KEY` secrets set. Until both happen, **Sync Engineering** cannot succeed — the mirror
+  reads empty, which by design leaves the Design Development branch untouched rather than wiping it.
 
 ### 2026-08-18 — Schedule Builder: "only Allied Services was pushed" was a silent zero-duration drop
 Owner: pushing from the Schedule Builder pushed only Allied Services. Root cause: `generate()` drops
