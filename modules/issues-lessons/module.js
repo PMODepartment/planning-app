@@ -19,13 +19,37 @@ window.IssuesLessons = (function () {
   var TABLE = 'issues_lessons';
   var profile = null, UID = null;
   var pid = null, projName = '';
-  var canWrite = false;
+  // ⚠️ THREE different permissions, not one flag. The old single `canWrite` (planner+)
+  // was the actual thing stopping a department from raising an issue — the DATABASE
+  // already allowed it (`is_writer()` = approved AND not a viewer). These mirror
+  // migrations/2026-08-19-department-issues.sql exactly; where the UI and the RLS
+  // disagree, the user gets a silent failure and no way to tell why.
+  var canAdd = false;      // any approved non-viewer may raise an issue
+  var isSteward = false;   // planner+ — may edit anyone's, and may delete
+  var canWrite = false;    // kept as "can do SOMETHING here", for the toolbar
   var rows = [];
   var MOM_BY_ID = {};                  // meeting_minutes referenced by these issues (C4)
   var screen = 'issues';               // 'issues' | 'lessons'
   // "This came out of a meeting." Read-only here on purpose: the minutes are the record
   // of what was said and belong to the Project Schedule module — this register owns how
   // the issue is chased, not where it came from.
+  // Who may edit THIS row. A department maintains its own entries; a planner
+  // maintains the register. ⚠️ A row with no `created_by` (imported, or predating the
+  // stamp) is steward-only — there is no way to know whose it was, and guessing would
+  // hand someone edit rights over a record they never touched.
+  // ⚠️ Says WHOSE it is without naming a person. Resolving `created_by` to a name would
+  // need a read of `users`, which a department user has no business being granted for
+  // the sake of a caption — and the department column already carries the useful half.
+  function raisedByLabel(r) {
+    if (!r || !r.created_by) return 'Raised before entries recorded who logged them — only a planner can change it.';
+    if (UID && r.created_by === UID) return 'Raised by you' + (r.department ? ' · ' + r.department : '') + '.';
+    return 'Raised by ' + (r.department ? 'the ' + r.department + ' department' : 'someone else') +
+      '. Only they or a planner can change it.';
+  }
+  function canEditRow(r) {
+    if (isSteward) return true;
+    return !!(canAdd && r && r.created_by && UID && r.created_by === UID);
+  }
   function momTag(r) {
     if (!r.mom_id) return '';
     var m = MOM_BY_ID[r.mom_id];
@@ -94,7 +118,9 @@ window.IssuesLessons = (function () {
     profile = prof;
     UID = (user && user.id) || (prof && prof.id) || null;
     _collabSelf = { id: UID, name: (prof && (prof.name || prof.email)) || 'Someone' };
-    canWrite = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0;
+    isSteward = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0;
+    canAdd = !!prof && prof.status === 'approved' && prof.role !== 'viewer';
+    canWrite = canAdd;
 
     await loadProjects();
     wire();
@@ -331,8 +357,11 @@ window.IssuesLessons = (function () {
         '<td class="il-aging' + (hot ? ' is-hot' : '') + '" data-l="Aging">' + agingTxt + '</td>' +
         '<td data-l="Resolved">' + Fmt.date(r.date_resolved) + '</td>' +
         (canWrite ? '<td class="il-rowacts">' +
-          '<button class="il-iconbtn" title="Edit" data-edit="' + r.id + '">✎</button> ' +
-          '<button class="il-iconbtn is-danger" title="Delete" data-del="' + r.id + '">🗑</button></td>' : '') +
+          (canEditRow(r)
+            ? '<button class="il-iconbtn" title="Edit" data-edit="' + r.id + '">✎</button> '
+            : '<span class="il-noedit" title="Raised by someone else — a planner maintains the register as a whole">—</span>') +
+          (isSteward ? '<button class="il-iconbtn is-danger" title="Delete" data-del="' + r.id + '">🗑</button>' : '') +
+          '</td>' : '') +
       '</tr>';
     }).join('');
 
@@ -441,7 +470,14 @@ window.IssuesLessons = (function () {
   // ---------------------------------------------------------- Add / Edit -----
   function openForm(r) {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
-    if (!canWrite) return;
+    if (!canAdd) return;
+    // ⚠️ Checked here, not only on the row button: an edit the DATABASE will refuse must
+    // not open a form at all. Letting someone fill one in and bounce the save is how a
+    // permission boundary reads as a bug.
+    if (r && !canEditRow(r)) {
+      UI.toast('This issue was raised by someone else — ask a planner to change it.', 'warn');
+      return;
+    }
     var isNew = !r; r = r || {};
 
     function opts(list, val, blank) {
@@ -454,7 +490,11 @@ window.IssuesLessons = (function () {
 
       '<div class="il-form-sec">Details</div>' +
       '<div class="il-form-row">' +
-        '<div class="pd-field"><label>Department</label><select class="pd-select" id="f-dept">' + opts(DEPARTMENTS, r.department, '—') + '</select></div>' +
+        // ⚠️ Defaults from the raiser's PROFILE on a new issue (D1). Typing it every time
+        // invites the typo that silently splits the register's own Department filter in
+        // two — the same failure the group_heads lookup exists to prevent.
+        '<div class="pd-field"><label>Department</label><select class="pd-select" id="f-dept">' +
+          opts(DEPARTMENTS, isNew ? (r.department || (profile && profile.department) || '') : r.department, '—') + '</select></div>' +
         '<div class="pd-field"><label>Status</label><select class="pd-select" id="f-status">' + opts(STATUSES, r.status || 'Open') + '</select></div>' +
       '</div>' +
       '<div class="pd-field"><label>Champion(s)</label>' +
@@ -464,6 +504,7 @@ window.IssuesLessons = (function () {
         '<div class="pd-field"><label>Date Resolved</label><input class="pd-input" type="date" id="f-resolved" value="' + (dateVal(r.date_resolved)) + '"></div>' +
       '</div>' +
 
+      (isNew ? '' : '<p class="il-raisedby">' + Fmt.esc(raisedByLabel(r)) + '</p>') +
       '<div class="il-form-sec">Issue</div>' +
       '<div class="pd-field"><label>Issue</label><textarea class="pd-textarea" id="f-issue" rows="3" placeholder="Describe the issue or concern…">' + Fmt.esc(r.description) + '</textarea></div>' +
       '<div class="pd-field"><label>Caused By</label><textarea class="pd-textarea" id="f-cause" rows="2" placeholder="Root cause…">' + Fmt.esc(r.caused_by) + '</textarea></div>' +

@@ -6363,3 +6363,47 @@ field mapping, the vocabulary translation, idempotency, the empty-action refusal
 modes. C1 (33), C2 (19) and C3 (32) suites still green; **0 functions lost**; both files parse; CSS
 braces balanced. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260819f`; issues-lessons
 `module.css/js?v=` → `20260819a`.
+
+### 2026-08-19 — D1: departments can raise issues (and the register stops being a free-for-all)
+**`migrations/2026-08-19-department-issues.sql` MUST BE RUN.**
+
+⚠️ **The audit found the opposite of what the requirement assumed.** "Departments can also add
+issues" reads like a permission that needs opening up. It did not: `issues_lessons` is covered by the
+standard module-table policy `for all using (is_writer() and can_access_project(project_id))`, and
+`is_writer()` is "approved AND role <> 'viewer'" — so the **`user` role could already insert**. The
+block was entirely in the UI, which gated every write on `['super_admin','admin','planner']`.
+
+⚠️ **And the same policy was too LOOSE in the other direction:** it let any approved non-viewer
+UPDATE or DELETE *anyone else's* issue. Nobody intended a department to be able to rewrite another
+department's entry, and once the UI is opened that stops being theoretical. So this change **widens
+nothing at the DB and tightens the write side**:
+- **insert** — any approved non-viewer, on a project they can access, and only stamped as themselves
+  (`created_by = auth.uid()`). ⚠️ Planners are exempted from the stamp because C4's "raise as issue"
+  and any future import legitimately create rows on behalf of others.
+- **update** — planner on anything; everyone else only their own. ⚠️ Enforced in **both** `using` and
+  `with check`: with only `using`, a row could be updated *out of* your own ownership.
+- **delete** — planner only. A department must not be able to make a problem it raised disappear;
+  closing it is a status, and the record of a problem having existed is the point of a register.
+- ⚠️ The generic `issues_lessons_write` policy is **dropped**, not left alongside — Postgres ORs
+  permissive policies, so leaving it would keep the loose behaviour while the file looked like it had
+  fixed it. (Same trap as the 2026-07-16 `projects_write for all` leak.)
+
+**`users.department`** added, set from Admin (new column in the user table), and it **defaults a new
+issue's department** — typing it per issue invites the typo that silently splits the register's own
+Department filter, the same failure the `group_heads` lookup exists to prevent. ⚠️ The DEPARTMENTS
+list is duplicated in `admin.html` rather than shared: the module contract forbids a module editing
+shared assets, so promoting it to `config.js` is the module owner's call. Keep the two in step.
+
+**The UI now mirrors the RLS exactly** — three permissions where there was one flag: `canAdd` (any
+approved non-viewer), `canEditRow(r)` (steward or own row), `isSteward` (delete). `openForm` refuses
+a row the database would refuse rather than letting someone fill in a form whose save will bounce,
+and a row you cannot edit shows a quiet dash with the reason on hover. ⚠️ Rows with **no
+`created_by`** are steward-only — there is no way to know whose they were.
+- The "raised by" caption names the **department, never the person**: resolving `created_by` to a
+  name needs a read of `users` that a department user has no business being granted for a caption.
+
+Verified by executing the shipped helpers (25 checks green) covering every role × row-ownership
+combination, plus assertions that the UI's rules match the SQL policy file line for line — including
+that the old permissive policy is dropped and that `with check` is present. C4's suite still green
+(25). Both files parse; CSS braces balanced. ⚠️ **Not verified signed-in**, and the migration has not
+been run. `MODULE_V` → `20260819g`; issues-lessons `module.css/js?v=` → `20260819b`.

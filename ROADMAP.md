@@ -156,12 +156,23 @@ A new **Minutes of Meeting** view in the schedule's title switcher (tables ship 
 
 ## D. Issues & Lessons Learned (`modules/issues-lessons/`)
 
-### D1. Departments can also raise issues
-- Widen issue creation beyond planners: department-scoped submission with a routing/owner
-  field, so Lessons Learned collects input from the whole project org. Needs an RLS policy
-  change and a role/department attribute review.
-
----
+### D1. Departments can also raise issues ✅ done 2026-08-19
+`migrations/2026-08-19-department-issues.sql` (**OWNER MUST RUN**).
+- ⚠️ **The audit found the opposite of what the requirement assumed.** The DATABASE already let a
+  `user` insert (`is_writer()` = approved and not a viewer); the block was the **UI**, which gated
+  every write on planner+. But the same generic policy also let any approved non-viewer **edit or
+  delete anyone else's** issue — which nobody intended, and which stops being theoretical the moment
+  the UI opens up.
+- So the migration **widens nothing at the DB and tightens the write side**: insert = any approved
+  non-viewer, stamped as themselves; update = planner on anything, everyone else **only their own**;
+  delete = **planner only** (a department must not be able to make a problem it raised disappear —
+  closing it is a status, and the record is the point of a register).
+- `users.department` added and set in Admin; it **defaults a new issue's department**, so it is not
+  retyped — and mistyped — per issue, which would silently split the register's own filter.
+- The UI mirrors the RLS exactly (per-row edit button, steward-only delete, `openForm` refusing a
+  row the DB would refuse) — where the two disagree the user gets a silent failure.
+- ⚠️ Rows with no `created_by` (imported or predating the stamp) are **planner-only**: there is no way
+  to know whose they were, and guessing would hand someone rights over a record they never touched.
 
 ## Cross-cutting notes
 - A3 (Project/Package) blocks C1; B1 feeds B2, C2 and Cash Flow — sequence accordingly.

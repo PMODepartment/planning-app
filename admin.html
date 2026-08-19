@@ -104,7 +104,13 @@
       var users = await PDb.getAllUsers();
       ALL_PROJECTS = await PDb.getProjects();
       var t = document.getElementById('users-table');
-      t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Projects</th><th>Actions</th></tr></thead><tbody>' +
+      // ⚠️ DEPARTMENTS is duplicated from modules/issues-lessons/module.js rather than
+      // shared: the contract forbids a module editing shared assets, so promoting it to
+      // config.js is a change the module owner has to make. Keep the two lists in step —
+      // a value here that the register does not offer becomes an unselectable default.
+      var DEPARTMENTS = ['PMO', 'Operations', 'Engineering', 'Design', 'QA/QC', 'Safety',
+                         'Procurement', 'Commercial', 'Finance', 'Human Resources', 'MEP', 'External'];
+      t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th>Projects</th><th>Actions</th></tr></thead><tbody>' +
         users.map(function (u) {
           var canSuper = ME.role === 'super_admin';
           var roleOpts = AppAuth.ROLES
@@ -115,6 +121,12 @@
             '<td>'+Fmt.esc(u.name)+'</td>' +
             '<td>'+Fmt.esc(u.email)+'</td>' +
             '<td><select class="pd-select" style="min-width:130px;" data-role="'+u.id+'">'+roleOpts+'</select></td>' +
+            // The department a person raises issues for (D1). Defaults their entries in
+            // the Issues & Concerns register so it is not retyped — and mistyped — per issue.
+            '<td><select class="pd-select" style="min-width:140px;" data-dept="'+u.id+'">' +
+              '<option value="">—</option>' +
+              DEPARTMENTS.map(function(d){ return '<option'+(u.department===d?' selected':'')+'>'+d+'</option>'; }).join('') +
+            '</select></td>' +
             '<td class="pd-status-'+u.status+'">'+u.status+'</td>' +
             '<td>'+projChips+'</td>' +
             '<td style="white-space:nowrap;">' +
@@ -127,6 +139,7 @@
         }).join('') + '</tbody>';
 
       t.querySelectorAll('[data-role]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.role, { role: s.value }); }; });
+      t.querySelectorAll('[data-dept]').forEach(function(s){ s.onchange = function(){ setUser(s.dataset.dept, { department: s.value || null }); }; });
       t.querySelectorAll('[data-approve]').forEach(function(b){ b.onclick = function(){ setUser(b.dataset.approve, { status:'approved' }); }; });
       t.querySelectorAll('[data-reject]').forEach(function(b){ b.onclick = function(){ setUser(b.dataset.reject, { status:'rejected' }); }; });
       t.querySelectorAll('[data-projects]').forEach(function(b){ b.onclick = function(){ assignProjects(users.find(function(x){return x.id===b.dataset.projects;})); }; });
