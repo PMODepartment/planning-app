@@ -1,5 +1,136 @@
 # Module: project-schedule
 
+## The Schedule-Builder → Project-Schedule pipeline, and the WBS code that was secretly the tree (2026-08-19) — eprobles
+
+One long session, thirteen commits. Almost every defect in it — including two I caused
+myself — came from the same shape: **the same fact derived independently in several
+places, then drifting apart.** Recording that here because the individual fixes are
+small and the pattern is the useful part.
+
+### ⚠️⚠️ The root cause of "only Allied Services was migrated" — and my earlier entry got it wrong
+
+The entry below (2026-08-18) concluded the drop was correct behaviour and only added a
+warning. Then a second cause was found and fixed (`normActivity` mirrored durInt/durExt
+but guarded on `!= null`, while every row-creating path seeded `durExt: 0`, so the mirror
+never fired — real, but still not it). The actual cause was the **WBS code**:
+
+```js
+codeOf[n.id] = (n.code_custom && n.code) ? n.code : auto;   // parent path DISCARDED
+```
+
+A dotted WBS code is not a label. `rebuild()` derives ancestry by splitting it
+(`r._segs = segs(r.wbs)` → `r._anc`), so **the code IS the tree**. The builder gave each
+floor branch a readable custom code from its step-2 floor code ("ST-F1", "AR-F11"), and a
+custom code replaced the parent path outright — so those branches came out with no dot in
+them, i.e. as TOP-LEVEL branches, taking their whole subtree with them. On One Portwood
+Residences **2560 of 2561 activities were severed from Execution Phase**; every trade
+branch rolled up to nothing and displayed "—". The lone survivor was Allied Services,
+whose floors carried no code, so it kept an auto dotted code and stayed attached.
+
+Nothing was ever dropped from the push. The rows were detached.
+
+Fixing that spawned two regressions of my own, both worth reading before touching this area:
+
+* **A feedback loop.** Making the custom code NEST meant stripping dots out of it — and
+  `_wbsCommit()` writes the computed code back into `wbs_nodes.code` for every node without
+  checking `code_custom`. Harmless while the code was returned verbatim (identity write);
+  the moment it became `parentPath + '.' + code`, each commit baked another layer in:
+  `"AR-F11"` → `"4.5.AR-F11"` → `"4.4.4-5-AR-F11"`. Twelve orphaned codes on the owner's
+  project. Fixed by `ownCodeSeg()` (heals on read; strips a leading run of purely NUMERIC
+  segments only, so a deliberate `01.100` is left alone) plus never stamping a path onto a
+  custom node's code.
+* **Parent sorted below its own child.** Seeding `_seqByCode` from the WBS tree gave every
+  branch code an entry, which made the sort's manual-order lookup fire in a case it had
+  never reached: when one row has RUN OUT of segments it is an ANCESTOR of the other
+  (`"1.3"` vs `"1.3.ST-B3"`), so it compared Structural Works' sort_order against B3's and
+  returned the parent last. Fixed by consulting `_seqByCode` only when BOTH rows still have
+  a segment at the divergence index — i.e. only between genuine siblings.
+
+**The rule that ends this whole class:** the owner settled it — *"the WBS ID should not be
+dependent on the names defined in step 2 … they are just guide."* `dimCode()` now returns
+null and every ID is auto-numbered from tree position. Numeric segments cannot detach,
+have nothing to write back, and sort naturally. Step-2 names still NAME the branch; only
+the ID is structural. A re-push clears stale name-derived codes off reused branches.
+
+### Branch order was decided by whichever row happened to carry a seq_order
+
+Reported as "it is all jumbled": Ground Floor → 11TH → 12TH → 14TH → RD → Upper RD → 2ND,
+i.e. `F1, F10, F11, F12, F13, F14, F2` — an ASCII sort, with the Roof Deck mid-tower.
+
+`_seqByCode` was built ONLY from rows carrying a seq_order, and the push writes seq_order
+on activities but not on the summary rows it creates. So a branch got an entry only when an
+activity sat DIRECTLY under it — basements (unzoned) ordered correctly, floors (zoned, so
+their activities live a level deeper) fell through to text comparison. One schedule, two
+orderings, decided by whether a floor happened to be zoned. `wbs_nodes.sort_order` is the
+authority and now seeds it. The push also re-asserts sort_order on REUSED branches, which it
+previously threw away — so a branch kept its first-ever position forever and no re-push
+could fix it.
+
+### One function per fact
+
+* `workOf(r)` — the row's own `work_type`, else the WBS branch directly under the phase
+  root. Grouping/column/search/roll-up/formatting/diagnostic all read it. Fixes the report
+  that a trade WBS with activities directly under it (no sub-WBS, no location) lost its
+  trade: `dimNeedsValue('work')` DISSOLVES a valueless row, lifting it out of the Trade
+  level and re-grouping it by Activity — so "Elevators" appeared to BE a trade. Narrow on
+  purpose: the fallback applies only under a phase root, so an arbitrary WBS
+  ("Project › Area") invents nothing. Label unified to **"Trade"**.
+* `phaseOf` / `phaseFromName` — the phase column was seeded ONCE, by the 2026-08-12
+  migration, BY BRANCH NAME. Every branch created since carries null, so activities under a
+  root literally called "Execution Phase" resolved to no phase — the "—" in the Phase field,
+  which cascaded into Contract Scope reading "n/a". The migration's own rule now runs at read
+  time. A stored phase still wins.
+* `scopeOf` — an EXPLICIT tag always displays; only the DEFAULT is gated on the execution
+  phase. The builder states `phase:'construction'` + `scope_type:'main'` outright on every
+  row it writes.
+* `_phaseMemo` is cleared in `rebuild()` — it answers a question about the TREE (stored
+  phase, name, ancestry) and all three change without touching the phase editor.
+
+### Also landed
+
+Contract scope (Main Contract / Change Order) with CO splice-linking; Constraint and
+Constraint Date as grid columns; canonical trade order + **Site Development**; `.c-task` had
+no width rule at all, so every column after it sat 13.9px right of its heading (measured
+92/598 cell pairs misaligned → 0); square icon-only buttons were left-aligned because
+`.pd-btn` sets no `justify-content`; step-4 durations and level types fork per floor
+category; step-4 copy read the default instead of the selected level type; Ctrl+C/X/V
+ignored a multi-row selection because every row click leaves a 1×1 cell rect behind, making
+the row branch unreachable ("Cut 1 cell" with two rows selected). **Actions → Diagnose
+data…** is a read-only report that names which of orphaned codes / missing codes / undated /
+filtered-out / misfiled-vs-location is actually biting — it is what turned "2561 activities
+but every branch shows —" into a one-line answer.
+
+### ⚠️ The dissolve rule was investigated and deliberately LEFT ALONE
+
+Tempting to "simplify" `dimNeedsValue` / `_dissolve` next. Measured first, across four
+grouping orders on a mixed project (zoned trades + trades whose activities hang off the
+branch):
+
+* **no rows are lost** — 15/15 shown in every arrangement;
+* **no depth mixes headings from different dimensions** any more; `workOf` removed that.
+
+What remains is a location-less activity appearing beside Level headings instead of under a
+placeholder — which is dissolve doing exactly what the owner asked for
+(*"if there are activities under an unassigned WBS, dissolve it and reorganise the
+activities to the parent"*). Changing it would reintroduce the "— Unassigned —" buckets that
+request removed. Left as is by decision, not by omission.
+
+### Verification
+
+No signed-in run (the module redirects), so everything was checked by booting the module's
+own code in an iframe with the shared APIs stubbed — including through its real `init()` for
+the keyboard work — and asserting on the sorted model rather than rendered rows, because the
+grid virtualizes and a first attempt read false negatives off it. Roughly 120 assertions
+across the session, plus pre-fix/post-fix comparisons run side by side from `git show` for
+the WBS-code, ordering, alignment and button fixes.
+
+⚠️ **Still unverified against live data:** every Supabase write. In particular
+`migrations/2026-08-19-schedule-contract-scope.sql` MUST be run — until it is, `scope_type`
+does not exist and every Scope write fails with *"Could not find the 'scope_type' column …
+in the schema cache"*, while the column still DISPLAYS a computed default, which makes it
+look half-working.
+
+
 ## Design Development is sourced from the ENGINEERING APP, via a roll-up mirror (2026-08-19) — fmlozano
 User: *"The planning-app's engineering drawing register should be fully migrated to the engineering
 app… All data should be sourced from the engineering app."*
