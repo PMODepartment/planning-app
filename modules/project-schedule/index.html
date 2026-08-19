@@ -3768,6 +3768,16 @@
     // seq_order stands in (P6 imports often have one activity per WBS leaf with no summary row).
     _seqByCode = {};
     rows.forEach(function (r) { if (r.seq_order == null || !r.wbs) return; if (isWbs(r) || _seqByCode[r.wbs] == null) _seqByCode[r.wbs] = +r.seq_order; });
+    // ⚠️ The WBS tree WINS for branch codes — see the note above. A node's sort_order describes
+    // its position among its siblings directly, so it needs no row to stand in for it, and it is
+    // correct whether or not that branch happens to hold activities of its own.
+    if (WBS_NODES.length) {
+      var _seqCodeOf = computeWbsCodes();
+      for (var _si = 0; _si < WBS_NODES.length; _si++) {
+        var _sn = WBS_NODES[_si], _sc = _seqCodeOf[_sn.id];
+        if (_sc != null && _sn.sort_order != null) _seqByCode[_sc] = +_sn.sort_order;
+      }
+    }
     if (structural || _sorted.length !== rows.length)
     _sorted = rows.slice().sort(function (a, b) {
       // Column sort (OPC): reorder leaf siblings sharing the same WBS parent by the chosen
@@ -16667,7 +16677,11 @@
         var out = {}, parts = [loc.floor, loc.zone, loc.unit];
         for (var i = 0; i < parts.length && i < locIds.length; i++) {
           var p = parts[i]; if (!p) continue;
-          var v = p.code || p.name; if (v) out[locIds[i]] = String(v);
+          // ⚠️ Level 0 is the FLOOR, and dimName() names its WBS branch by NAME first. Storing the
+          // code here instead is what made an activity read "F11" under a branch called "12TH
+          // Floor". Match dimName exactly: floor = name||code, zone/unit = code||name.
+          var v = (i === 0) ? (p.name || p.code) : (p.code || p.name);
+          if (v) out[locIds[i]] = String(v);
         }
         return out;
       }
