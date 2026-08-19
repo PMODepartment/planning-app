@@ -319,7 +319,7 @@
     .ps-cols-corner .ps-cols-menu { right:0; left:auto; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-task:124px; --c-x:130px; }
+    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-task:124px; --c-con:150px; --c-condate:104px; --c-scope:146px; --c-x:130px; }
     /* Leading row-number (#) gutter + frozen Activity ID/Name columns: they stay put (and header/
        body stay aligned) while the rest of the grid scrolls. The "#" cell is DOM child 1 but not a
        data column, so column reorder (CSS `order`) must never move it — pin it with order:-1. Sticky
@@ -429,6 +429,22 @@
     .c-ctype { width:var(--c-ctype); }
     .c-flt { width:var(--c-flt); justify-content:flex-end; }
     .c-var { width:var(--c-var); justify-content:flex-end; }
+    .c-con { width:var(--c-con); } .c-condate { width:var(--c-condate); }
+    .c-scope { width:var(--c-scope); }
+    /* Constraint + Contract Scope in-cell tags. Deliberately quiet: these are classification, not
+       alarm — the only loud one is the Change Order pill, which is the thing a planner scans for. */
+    .ps-contag { display:inline-block; font-size:10px; font-weight:700; line-height:1.5; padding:0 5px; border-radius:3px;
+                 background:var(--pd-line); color:var(--pd-ink); letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+    .ps-contag.hard { background:#FDECEA; color:#A32013; }         /* Mandatory / On — pins the date, overrides logic */
+    .ps-scopetag { display:inline-block; font-size:10px; font-weight:700; line-height:1.5; padding:0 6px; border-radius:9px; white-space:nowrap; }
+    .ps-scopetag.mc { background:var(--pd-line); color:var(--pd-muted); }
+    .ps-scopetag.co { background:#FFF0D9; color:#8A5300; }
+    .ps-scopetag.co-strong { background:#E08A3C; color:#fff; }
+    .ps-coref { font-size:10.5px; color:var(--pd-muted); margin-left:5px; }
+    /* A change-order activity is tinted across the whole row so it reads as "not in the original
+       deal" wherever it sits in the sequence — which, by design, is in among main-contract work. */
+    .ps-grid-row.ps-corow { box-shadow:inset 3px 0 0 #E08A3C; }
+    .ps-bar.ps-cobar { outline:2px solid #E08A3C; outline-offset:1px; }
     .c-x { width:var(--c-x); }
     .ps-cp-tag { background:var(--pd-red); color:#fff; font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; letter-spacing:.03em; }
     .ps-var-late { color:var(--pd-bad); font-weight:600; }
@@ -1773,6 +1789,9 @@
     .sbld-help-body ul { margin:4px 0 4px 18px; padding:0; }
     .sbld-help-body kbd { display:inline-block; padding:1px 6px; border:1px solid var(--pd-line); border-bottom-width:2px; border-radius:4px; background:var(--pd-bg); font:600 11px/1.4 monospace; color:var(--pd-ink); }
     .sbld-tb-sep2 { width:1px; align-self:stretch; background:var(--pd-line); margin:2px 4px; }
+    /* A duration this LEVEL TYPE owns (forked from the default) — see t4Set. Marked so the planner
+       can tell at a glance which numbers are this category's own and which are inherited. */
+    .sbld-xl td.xl-cell.sbld-ownd { font-weight:700; box-shadow:inset 2px 0 0 var(--pd-red); }
     /* relationship dialog */
     .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.2); padding:10px; width:224px; }
     .sbld-ld-h { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-bottom:6px; }
@@ -2287,6 +2306,24 @@
         <div><label class="pd-label">WBS Code *</label><input class="pd-input" id="ps-f-wbs" placeholder="e.g. 1.2.3" required /></div>
         <div><label class="pd-label">Activity ID</label><input class="pd-input" id="ps-f-actid" placeholder="e.g. A1010" /></div>
         <div class="ps-form-full"><label class="pd-label">Activity Name *</label><input class="pd-input" id="ps-f-name" required /></div>
+        <!-- CONTRACT SCOPE — execution phase only. Placed high in the form deliberately: the planner
+             answers "main contract or change order?" while adding the activity, not three sections
+             later, because it decides how the row is reported, filtered and linked. -->
+        <div class="ps-form-full ps-form-sec" id="ps-f-scope-sec">Contract Scope</div>
+        <div class="ps-form-full" id="ps-f-scope-wrap">
+          <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="radio" name="ps-f-scope-r" id="ps-f-scope-main" value="main"> Main Contract</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="radio" name="ps-f-scope-r" id="ps-f-scope-co" value="change_order"> Change Order / Variation</label>
+            <span id="ps-f-scope-inherit" style="font-size:12px;color:var(--pd-muted);"></span>
+          </div>
+          <div id="ps-f-coref-wrap" style="display:none;margin-top:8px;">
+            <label class="pd-label">Change Order Reference <small>(e.g. VO-014, CO-2026-03 — pick an existing one rather than retyping it)</small></label>
+            <input class="pd-input" id="ps-f-coref" list="ps-f-coref-list" autocomplete="off" placeholder="e.g. VO-014" /><datalist id="ps-f-coref-list"></datalist>
+          </div>
+        </div>
+        <div class="ps-form-full" id="ps-f-scope-na" style="display:none;font-size:12px;color:var(--pd-muted);margin-top:-4px;">
+          Contract scope applies to <strong>execution-phase</strong> activities only. Place this activity under an execution-phase WBS branch (or set its Phase) to identify it as main contract or change order.
+        </div>
         <div><label class="pd-label">Activity Type</label><select class="pd-select" id="ps-f-type-sel"><option>Task</option><option>WBS Summary</option><option>Start Milestone</option><option>Finish Milestone</option></select></div>
         <div><label class="pd-label">Status</label><select class="pd-select" id="ps-f-status-sel"><option>Not Started</option><option>In Progress</option><option>Completed</option></select></div>
         <div><label class="pd-label">Baseline Start</label><input class="pd-input" id="ps-f-bls" type="date" /></div>
@@ -2458,7 +2495,7 @@
   // re-parenting a branch re-phases its work immediately, with no data fix-up.
   // Memoized per node id and cleared whenever the tree or a phase changes.
   var _phaseMemo = {};
-  function _clearPhaseMemo() { _phaseMemo = {}; }
+  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; }
   function _nodePhase(nodeId) {
     if (!nodeId) return null;
     if (_phaseMemo[nodeId] !== undefined) return _phaseMemo[nodeId];
@@ -2469,6 +2506,54 @@
     return _phaseMemo[nodeId];
   }
   function phaseOf(r) { return (r && r.phase) || _nodePhase(r && r.wbs_node_id) || null; }
+  // ---- Contract scope (Main Contract vs Change Order) --------------------------------------
+  // Owner 2026-08-19: the schedule has to say, per activity, whether the work is MAIN CONTRACT or a
+  // CHANGE ORDER — and the grid has to filter to one, the other, or both ("blended").
+  // ⚠ EXECUTION PHASE ONLY, by request. Initiation / planning / close-out work is project overhead,
+  // not contracted scope, so the column reads "—" there and refuses the edit rather than inviting a
+  // meaningless "is the design review a variation?" answer.
+  var SCOPES = [{ v: 'main', l: 'Main Contract' }, { v: 'change_order', l: 'Change Order' }];
+  var SCOPE_SEL_OPTS = [{ v: '', l: '—' }].concat(SCOPES);
+  function scopeTypeLabel(v) { var x = SCOPES.find(function (o) { return o.v === v; }); return x ? x.l : ''; }
+  // The phase the scope column is applicable in. 'construction' IS the execution phase — the
+  // 2026-08-12 phase migration seeds it from WBS branches named "Execution Phase" / "Construction".
+  var EXEC_PHASE = 'construction';
+  function isExecPhase(r) { return phaseOf(r) === EXEC_PHASE; }
+  var _scopeMemo = {};
+  function _clearScopeMemo() { _scopeMemo = {}; }
+  function _nodeScope(nodeId) {
+    if (!nodeId) return null;
+    if (_scopeMemo[nodeId] !== undefined) return _scopeMemo[nodeId];
+    _scopeMemo[nodeId] = null;                       // cycle guard (a malformed tree must not hang)
+    var n = WBS_NODES.find(function (x) { return x.id === nodeId; });
+    var out = n ? (n.scope_type || _nodeScope(n.parent_id)) : null;
+    _scopeMemo[nodeId] = out || null;
+    return _scopeMemo[nodeId];
+  }
+  // The EFFECTIVE scope: the activity's own tag, else the nearest tagged WBS ancestor, else
+  // 'main' — untagged execution work is main contract until someone says otherwise. Returns null
+  // outside the execution phase, which is how every caller says "not applicable" in one test.
+  function scopeOf(r) {
+    if (!r || !isExecPhase(r)) return null;
+    return r.scope_type || _nodeScope(r.wbs_node_id) || 'main';
+  }
+  function isChangeOrder(r) { return scopeOf(r) === 'change_order'; }
+  // The CO reference shown beside the pill — the activity's own, else its branch's.
+  function coRefOf(r) {
+    if (!r) return '';
+    if (r.change_order_ref) return String(r.change_order_ref);
+    var n = r.wbs_node_id && WBS_NODES.find(function (x) { return x.id === r.wbs_node_id; });
+    while (n) { if (n.change_order_ref) return String(n.change_order_ref); n = n.parent_id && WBS_NODES.find(function (x) { return x.id === n.parent_id; }); }
+    return '';
+  }
+  // Every CO reference in use on this project — feeds the grid editor's datalist and the Add form,
+  // so "VO-014" is picked rather than retyped (and mistyped, which silently splits a variation).
+  function coRefValues() {
+    var seen = {}, out = [];
+    rows.forEach(function (r) { var v = r.change_order_ref; if (v && !seen[v]) { seen[v] = 1; out.push(String(v)); } });
+    WBS_NODES.forEach(function (n) { var v = n.change_order_ref; if (v && !seen[v]) { seen[v] = 1; out.push(String(v)); } });
+    return out.sort();
+  }
   var _wbsCollapsed = {};   // WBS Manager: node id -> true means its children are hidden
   var _wbsSearch = '';      // WBS Manager: current search filter (code / name)
   var _wbsCollapseInit = false;   // have we applied the large-tree default-collapse once?
@@ -2805,7 +2890,7 @@
   // Drag-reorder is only meaningful in WBS grouping with no active column sort (otherwise order is
   // derived from the grouping / column sort, so a manual sequence wouldn't stick).
   function _reorderEnabled() { return groupBys.length === 1 && groupBys[0] === 'wbs' && !colSort && !window.__viewOnly && !window.__archived; }
-  var filters = { status: {}, type: {}, behind: false, crit: false, look: 0, codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; crit = critical-path only; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
+  var filters = { status: {}, type: {}, behind: false, crit: false, look: 0, scope: '', codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; crit = critical-path only; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
   var _colFilterOn = false; try { _colFilterOn = localStorage.getItem('ps_colfilter') === '1'; } catch (e) {}
   var _colfT = null;   // debounce timer for column-filter typing
   var _hideEmptyGroups = false; try { _hideEmptyGroups = localStorage.getItem('ps_hideempty') === '1'; } catch (e) {}
@@ -3467,6 +3552,27 @@
       });
     } catch (e) { /* non-writer roles can't update projects — ignore */ }
   }
+  // Contract-scope writes go through their own persist so a database that has not had the
+  // 2026-08-19-schedule-contract-scope migration run yet fails with an instruction instead of a
+  // raw PostgREST "column does not exist" — the same tolerance the contract_date / risk_* fields
+  // already get in the Add/Edit save path.
+  async function persistScope(id, patch) {
+    var ok = await persist(id, patch);
+    if (!ok) UI.toast('Contract scope could not be saved — run migrations/2026-08-19-schedule-contract-scope.sql in Supabase.', 'error');
+    return ok;
+  }
+  // Marking an activity as a change order asks for its CO reference straight away: a CO with no
+  // number is not traceable back to the client correspondence it came from, and a planner asked for
+  // it later never has it to hand.
+  function promptCoRef(id) {
+    var r = rows.find(function (x) { return x.id === id; }); if (!r) return;
+    var known = coRefValues();
+    var ref = prompt('Change order reference for "' + (r.activity_name || r.activity_id || 'this activity') + '"' +
+      (known.length ? '\n\nAlready used on this project: ' + known.join(', ') : '') + '\n\n(e.g. VO-014 — leave blank to fill in later)', r.change_order_ref || '');
+    if (ref == null) return;
+    ref = String(ref).trim();
+    persistScope(id, { change_order_ref: ref || null }).then(function (ok) { if (ok) { renderGrid(); renderDetails(); } });
+  }
   async function persist(id, patch, skipUndo) {
     var r = rows.find(function (x) { return x.id === id; });
     var before = null;
@@ -3705,8 +3811,9 @@
       var dpEarned = od * (_durPct(r) / 100);
       var codes2 = [r.wbs].concat(r._anc || []);
       for (var j = 0; j < codes2.length; j++) {
-        var cm = _costMap[codes2[j]] || (_costMap[codes2[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0 });
+        var cm = _costMap[codes2[j]] || (_costMap[codes2[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0, mc:0, co:0 });
         cm.total += 1; if (isComplete(r)) cm.done += 1; else if (r.actual_start || (r.percent_complete || 0) > 0) cm.prog += 1;
+        var _sc = scopeOf(r); if (_sc === 'change_order') cm.co += 1; else if (_sc) cm.mc += 1;
         cm.pc += r.planned_cost || 0; cm.ac += r.actual_cost || 0; cm.ev += r.earned_value || 0; cm.bl += r.bl_cost || 0;
         cm.eac += eac(r, cpi);
         if (dur > 0) {
@@ -5383,8 +5490,9 @@
       var poc = plannedPOC(a), cpi = a.actual_cost > 0 ? (a.earned_value || 0) / a.actual_cost : null;
       var od = _origDurOf(a) || 0, dpE = od * (_durPct(a) / 100);
       for (var j = 0; j < codes.length; j++) {
-        var cm = dcost[codes[j]] || (dcost[codes[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0 });
+        var cm = dcost[codes[j]] || (dcost[codes[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0, mc:0, co:0 });
         cm.total += 1; if (isComplete(a)) cm.done += 1; else if (a.actual_start || (a.percent_complete || 0) > 0) cm.prog += 1;
+        var _sa = scopeOf(a); if (_sa === 'change_order') cm.co += 1; else if (_sa) cm.mc += 1;
         cm.pc += a.planned_cost || 0; cm.ac += a.actual_cost || 0; cm.ev += a.earned_value || 0; cm.bl += a.bl_cost || 0;
         cm.eac += eac(a, cpi);
         if (dur > 0) { cm.wd += dur; cm.wearn += dur * (a.percent_complete || 0); if (poc != null) { cm.wdPoc += dur; cm.wpoc += dur * poc; } }
@@ -6687,11 +6795,11 @@
   }
 
   // ---- Filter (OPC-style) ----
-  function anyFilter() { return search.trim() || filters.behind || filters.crit || filters.look || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}) || Object.keys(filters.col || {}).some(function(k){return (filters.col[k] || '').trim();}) || (filters.adv && filters.adv.rules && filters.adv.rules.length); }
+  function anyFilter() { return search.trim() || filters.behind || filters.crit || filters.look || filters.scope || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}) || Object.keys(filters.col || {}).some(function(k){return (filters.col[k] || '').trim();}) || (filters.adv && filters.adv.rules && filters.adv.rules.length); }
   // Per-column filter helpers. _colByKey resolves a colKey to its column def; _colText returns the
   // displayed text for a column so the filter matches what the user sees in the cell.
   // Advanced-filter raw value + type per column (for numeric/date comparisons, not just text).
-  function _colType(c) { if (c[3]) return 'text'; var t = c[0]; if (t === 'date') return 'date'; if (t === 'dur' || t === 'poc' || t === 'pct' || t === 'flt' || t === 'var' || t === 'cost') return 'number'; return 'text'; }
+  function _colType(c) { if (c[3]) return 'text'; var t = c[0]; if (t === 'date' || t === 'condate') return 'date'; if (t === 'dur' || t === 'poc' || t === 'pct' || t === 'flt' || t === 'var' || t === 'cost') return 'number'; return 'text'; }
   function _colRaw(r, c) {
     if (c[3]) return extraCellVal(c[3], r);
     var t = c[0], lbl = c[1];
@@ -6700,6 +6808,10 @@
       case 'name': return r.activity_name;
       case 'status': return r.status || 'Not Started';
       case 'ctype': return r.percent_complete_type;
+      case 'con': return r.primary_constraint;
+      case 'condate': return r.primary_constraint_date;
+      case 'scope': return scopeTypeLabel(scopeOf(r));
+      case 'task': return taskKindOf(r);
       case 'dur': { var s = pd(r.start_date), e = pd(r.end_date); return (s && e) ? dayDiff(s, e) + 1 : (r.duration_days != null ? r.duration_days : null); }
       case 'poc': return plannedPOC(r);
       case 'pct': return r.percent_complete;
@@ -6730,6 +6842,11 @@
       case 'name': return r.activity_name || '';
       case 'status': return r.status || 'Not Started';
       case 'ctype': return r.percent_complete_type || '';
+      case 'con': return r.primary_constraint || '';
+      case 'condate': return r.primary_constraint_date ? Fmt.date(r.primary_constraint_date) : '';
+      // Includes the CO reference so the per-column filter finds "VO-014", not just "Change Order".
+      case 'scope': { var sv = scopeOf(r); if (!sv) return ''; var cr = sv === 'change_order' ? coRefOf(r) : ''; return scopeTypeLabel(sv) + (cr ? ' ' + cr : ''); }
+      case 'task': return taskKindOf(r);
       case 'dur': { var s = pd(r.start_date), e = pd(r.end_date); var d = (s && e) ? dayDiff(s, e) + 1 : (r.duration_days || ''); return d ? d + 'd' : ''; }
       case 'poc': { var p = plannedPOC(r); return p == null ? '' : p + '%'; }
       case 'pct': return r.percent_complete != null ? r.percent_complete + '%' : '';
@@ -6744,7 +6861,7 @@
     // Search also covers work type, work package + every location value, so "Zone 3" or "Formworks"
     // finds the right activities even when the grid isn't currently grouped by them.
     if (search.trim()) {
-      var hay = [r.activity_id, r.activity_name, r.wbs, r.work_type, r.work_package, phaseLabel(phaseOf(r))].concat(
+      var hay = [r.activity_id, r.activity_name, r.wbs, r.work_type, r.work_package, phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r)].concat(
         r.location ? Object.keys(r.location).map(function (k) { return r.location[k]; }) : []
       ).join(' ').toLowerCase();
       if (hay.indexOf(search.trim().toLowerCase()) === -1) return false;
@@ -6760,6 +6877,10 @@
     }
     // Critical-path only: exclude non-critical activities (WBS rows pass so ancestors are kept).
     if (filters.crit && !isWbs(r) && !r._critical) return false;
+    // Contract scope: Main contract only / Change orders only / blended (the '' default shows both).
+    // Summary + group rows pass through so a filtered view keeps the WBS headings that locate the
+    // surviving activities — the same rule the critical-path filter uses.
+    if (filters.scope && !isWbsNode(r)) { if (scopeOf(r) !== filters.scope) return false; }
     if (filters.look) {
       var win = addDays(today(), filters.look * 7), t0 = today();
       var s = pd(r.start_date), ee = pd(r.actual_finish || r.end_date) || s;
@@ -6791,6 +6912,9 @@
       '<h4>Type</h4>' + ['WBS Summary','Task','Start Milestone','Finish Milestone'].map(function(t){return cb('type',t);}).join('') +
       '<h4>Schedule</h4><label><input type="checkbox" id="ps-f-behind"' + (filters.behind?' checked':'') + '> Behind schedule (overdue / late vs baseline)</label>' +
       '<label><input type="checkbox" id="ps-f-crit"' + (filters.crit?' checked':'') + '> Critical path only</label>' +
+      '<h4>Contract scope</h4>' +
+      [['', 'Blended (main contract + change orders)'], ['main', 'Main contract only'], ['change_order', 'Change orders only']]
+        .map(function (o) { return '<label><input type="radio" name="ps-f-scope" value="' + o[0] + '"' + ((filters.scope || '') === o[0] ? ' checked' : '') + '> ' + o[1] + '</label>'; }).join('') +
       '<label style="margin-top:4px;">Look-ahead: <select id="ps-f-look" class="pd-select pd-input-sm" style="max-width:150px;">' +
         [[0,'All'],[2,'Next 2 weeks'],[4,'Next 4 weeks'],[8,'Next 8 weeks'],[12,'Next 12 weeks']].map(function(o){return '<option value="'+o[0]+'"'+(filters.look===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('') + '</select></label>' +
       codesHTML +
@@ -6804,9 +6928,12 @@
     });
     menu.querySelector('#ps-f-behind').onchange = function (e) { filters.behind = e.target.checked; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-crit').onchange = function (e) { filters.crit = e.target.checked; renderGrid(); renderGantt(); };
+    menu.querySelectorAll('input[name="ps-f-scope"]').forEach(function (rd) {
+      rd.onchange = function () { if (rd.checked) { filters.scope = rd.value; renderGrid(); renderGantt(); } };
+    });
     menu.querySelector('#ps-f-look').onchange = function (e) { filters.look = parseInt(e.target.value, 10) || 0; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-adv').onclick = function (e) { e.stopPropagation(); menu.classList.remove('open'); openAdvFilter(); };
-    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, crit:false, look:0, codes:{}, col:{}, adv:{ match:'all', rules:[] } }; buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, crit:false, look:0, scope:'', codes:{}, col:{}, adv:{ match:'all', rules:[] } }; buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
     menu.querySelector('#ps-filter-done').onclick = function () { menu.classList.remove('open'); };
   }
   // Advanced multi-condition filter builder (OPC-style): field / operator / value rows combined
@@ -7663,6 +7790,12 @@
         // branch", which is what the label says so nobody reads an inherited
         // Construction activity as untagged.
         _gf('Phase' + (!r.phase && phaseOf(r) ? ' (inherited: ' + phaseLabel(phaseOf(r)) + ')' : ''), 'phase', 'select', r, PHASE_OPTS) +
+        // Execution phase only — outside it the pair is read-only "n/a" rather than an editable field
+        // that would accept a value the rest of the app deliberately ignores.
+        (isExecPhase(r)
+          ? _gf('Contract Scope' + (!r.scope_type && scopeOf(r) ? ' (inherited: ' + scopeTypeLabel(scopeOf(r)) + ')' : ''), 'scope_type', 'select', r, SCOPE_SEL_OPTS) +
+            (isChangeOrder(r) ? _gf('Change Order Ref', 'change_order_ref', 'text', r) : '')
+          : _gf('Contract Scope', 'scope_type', 'ro', { scope_type: 'n/a — execution phase only' })) +
         _gf('Type', 'activity_type', 'select', r, ['Task', 'WBS Summary', 'Start Milestone', 'Finish Milestone']) +
         _gf('Duration Type', 'duration_type', 'select', r, ['', 'Fixed Duration & Units/Time', 'Fixed Units/Time', 'Fixed Duration & Units', 'Fixed Work']) +
         _gf('% Complete Type', 'percent_complete_type', 'select', r, ['', 'Duration', 'Physical', 'Units'])) +
@@ -8646,7 +8779,14 @@
     // What KIND of line this row is — WBS branch / grouping header vs Task vs Start/Finish
     // Milestone. Appended rather than inserted mid-list so a saved column sort index (which is
     // positional) keeps pointing at the column it was set on; drag it where you want it.
-    ['task','Task','c-task']
+    ['task','Task','c-task'],
+    // Date constraints, as OPC surfaces them: the constraint TYPE and its date are ordinary grid
+    // columns you can read, sort, filter and type straight into — not a field buried three clicks
+    // deep in a details panel. The CPM already honours them on both passes (see fwdConstrain /
+    // bwdConstrain); this is what makes them visible and editable at the scale a planner works at.
+    ['con','Constraint','c-con'], ['condate','Constraint Date','c-condate'],
+    // Contract scope — Main Contract vs Change Order. Execution phase only (see scopeOf).
+    ['scope','Scope','c-scope']
   ];
   // Dynamic columns (OPC "define columns"): the project's Activity Codes + User-Defined Fields become
   // real, choosable grid columns appended after the 18 built-ins. Tuple shape matches GRID_COLS
@@ -9268,6 +9408,51 @@
     var cls = k === 'WBS' ? 'ps-tk-wbs' : (k === 'Task' ? 'ps-tk-task' : 'ps-tk-mile');
     return '<div class="ps-cell c-task"><span class="ps-tk ' + cls + '">' + esc(k) + '</span></div>';
   }
+  // ---- Constraint + Contract Scope cells -----------------------------------------------------
+  // Constraints that PIN a date (Mandatory / "On") are the ones that can drive float negative and
+  // override relationship logic, so they read louder than the soft "or after" / "or before" ones.
+  var _HARD_CONS = { 'Mandatory Start': 1, 'Mandatory Finish': 1, 'Start On': 1, 'Finish On': 1 };
+  var CONSTRAINT_TYPES = ['Start On', 'Start On or After', 'Start On or Before', 'Finish On',
+    'Finish On or After', 'Finish On or Before', 'Mandatory Start', 'Mandatory Finish', 'As Late As Possible'];
+  var CONSTRAINT_OPTS = [{ v: '', l: 'None' }].concat(CONSTRAINT_TYPES.map(function (t) { return { v: t, l: t }; }));
+  // Short forms so the tag fits the lane — the full name stays in the title attribute.
+  var _CON_SHORT = { 'Start On': 'SO', 'Start On or After': 'SNET', 'Start On or Before': 'SNLT',
+    'Finish On': 'FO', 'Finish On or After': 'FNET', 'Finish On or Before': 'FNLT',
+    'Mandatory Start': 'MS', 'Mandatory Finish': 'MF', 'As Late As Possible': 'ALAP' };
+  function conCellsHtml(r) {
+    var c = r.primary_constraint || '';
+    var tag = c ? '<span class="ps-contag' + (_HARD_CONS[c] ? ' hard' : '') + '" title="' + esc(c) + '">' + esc(_CON_SHORT[c] || c) + '</span>' : '';
+    // ALAP takes no date (it seats the activity on its late dates), so its date cell stays blank
+    // rather than offering an entry the CPM would ignore.
+    var dateEditable = c && c !== 'As Late As Possible';
+    return '<div class="ps-cell c-con ps-editable" data-id="' + r.id + '" data-field="primary_constraint" data-type="enum" data-enum="con" title="Primary date constraint — honoured by the critical path on both passes">' + tag + '</div>' +
+      (dateEditable
+        ? '<div class="ps-cell c-condate ps-editable" data-id="' + r.id + '" data-field="primary_constraint_date" data-type="date">' + (r.primary_constraint_date ? Fmt.date(r.primary_constraint_date) : '—') + '</div>'
+        : '<div class="ps-cell c-condate" title="' + (c ? 'As Late As Possible takes no date' : 'Set a constraint type first') + '"></div>');
+  }
+  function scopeCellHtml(r) {
+    var sv = scopeOf(r);
+    // Not applicable outside the execution phase — and NOT editable there either, so the column can
+    // never quietly acquire a value that means nothing.
+    if (!sv) return '<div class="ps-cell c-scope" title="Contract scope applies to execution-phase activities only"><span style="color:var(--pd-muted);">—</span></div>';
+    var own = !!r.scope_type, co = sv === 'change_order';
+    var ref = co ? coRefOf(r) : '';
+    return '<div class="ps-cell c-scope ps-editable" data-id="' + r.id + '" data-field="scope_type" data-type="enum" data-enum="scope" title="' +
+      esc(scopeTypeLabel(sv) + (ref ? ' · ' + ref : '') + (own ? '' : ' (inherited)')) + '">' +
+      '<span class="ps-scopetag ' + (co ? (own ? 'co-strong' : 'co') : 'mc') + '">' + esc(co ? 'CO' : 'MC') + '</span>' +
+      (ref ? '<span class="ps-coref">' + esc(ref) + '</span>' : '') + '</div>';
+  }
+  // Summary/group rows: the roll-up says what the branch CONTAINS — "CO" when every activity under it
+  // is a change order, "Mixed" when it is a blend. A blank constraint lane (a summary has no dates of
+  // its own to constrain) keeps the cell count identical, which the nth-child column machinery needs.
+  function sumConScopeHtml(r) {
+    var cm = cmOf(r), co = (cm && cm.co) || 0, mc = (cm && cm.mc) || 0, cell;
+    if (!co && !mc) cell = '<span style="color:var(--pd-muted);">—</span>';            // nothing in the execution phase under here
+    else if (co && !mc) cell = '<span class="ps-scopetag co-strong">CO</span>';
+    else if (co) cell = '<span class="ps-scopetag co" title="' + mc + ' main contract · ' + co + ' change order">Mixed</span>';
+    else cell = '<span class="ps-scopetag mc">MC</span>';
+    return '<div class="ps-cell c-con"></div><div class="ps-cell c-condate"></div><div class="ps-cell c-scope">' + cell + '</div>';
+  }
   // The trailing lane the column-chooser "+" lives in — see the .c-plus note in the CSS. Emitted on
   // EVERY row kind so the header and the body stay cell-for-cell identical.
   var PLUS_CELL = '<div class="ps-cell c-plus"></div>';
@@ -9293,7 +9478,7 @@
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (gsp ? Fmt.date(dstr(gsp.e)) : '—') + '</div>' +
         sumDurCellHtml(r) + costCellsHtml(r) +
-        '<div class="ps-cell c-flt"></div>' + sumVarCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
+        '<div class="ps-cell c-flt"></div>' + sumVarCellHtml(r) + taskCellHtml(r) + sumConScopeHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
     }
     if (isWbsNode(r)) {
       var sp = wbsSpan(r), arrow = collapsed[code] ? '►' : '▼';
@@ -9309,7 +9494,7 @@
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.s)) : '—') + '</div>' +
         '<div class="ps-cell c-date">' + (sp ? Fmt.date(dstr(sp.e)) : '—') + '</div>' +
         sumDurCellHtml(r) + costCellsHtml(r) +
-        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + sumVarCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
+        '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : '') + '</div>' + sumVarCellHtml(r) + taskCellHtml(r) + sumConScopeHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
     }
     // Planned (original) duration — baseline-based, always ≥0 and never disturbed by actuals/forecast.
     var dur = _origDurOf(r); if (dur == null) dur = '';
@@ -9319,7 +9504,7 @@
     var durShown = durDone ? actualDurLive(r) : dur; if (durShown == null) durShown = '';
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
     var fmt = _fmtRules.length ? _rowFmt(r) : null;
-    return '<div class="ps-grid-row' + altc + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
+    return '<div class="ps-grid-row' + altc + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + (isChangeOrder(r)?' ps-corow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
       '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
       '<div class="ps-cell c-id ps-editable" data-id="' + r.id + '" data-field="activity_id" data-type="text" style="padding-left:' + idPad + 'px;">' + esc(r.activity_id || '') + '</div>' +
       // ⚠️ _dlabel = this row IS the deepest grouping level (a one-activity bucket merged into its
@@ -9340,7 +9525,7 @@
         ? '<div class="ps-cell c-dur" title="Planned Duration = baseline span (locked)">' + (dur !== '' ? dur + 'd' : '') + '</div>'
         : '<div class="ps-cell c-dur ps-editable" data-id="' + r.id + '" data-field="planned_duration" data-type="pdur">' + (dur !== '' ? dur + 'd' : '') + '</div>') +
       costCellsHtml(r) +
-      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
+      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + conCellsHtml(r) + scopeCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
   }
 
   function doRender() {
@@ -9751,9 +9936,18 @@
     // Work Type / Location-level columns aren't plain row fields: `field` is the column key
     // ('work' or 'loc:<levelId>') and the location values live in the `location` jsonb map.
     if (type === 'xcol') raw = field === 'work' ? (r.work_type || '') : locValOf(r, field.slice(4));
-    var inp = document.createElement('input');
-    inp.type = type === 'date' ? 'date' : (type === 'number' || type === 'money' || type === 'pdur' || type === 'dpct' ? 'number' : 'text');
-    inp.value = raw;
+    // Closed vocabularies get a real <select>, not a text box (see the note above the enum columns).
+    var _enum = type === 'enum' ? (cell.dataset.enum === 'scope' ? SCOPE_SEL_OPTS : CONSTRAINT_OPTS) : null;
+    var inp;
+    if (_enum) {
+      inp = document.createElement('select');
+      inp.className = 'ps-gedit';
+      inp.innerHTML = _enum.map(function (o) { return '<option value="' + esc(o.v) + '"' + (String(raw || '') === o.v ? ' selected' : '') + '>' + esc(o.l) + '</option>'; }).join('');
+    } else {
+      inp = document.createElement('input');
+      inp.type = type === 'date' ? 'date' : (type === 'number' || type === 'money' || type === 'pdur' || type === 'dpct' ? 'number' : 'text');
+      inp.value = raw;
+    }
     cell.innerHTML = '';
     // Suggest the values already used on this project, so "Tower A" is picked rather than retyped
     // (and mistyped — a typo silently creates a second group).
@@ -9765,7 +9959,7 @@
         cell.appendChild(_dl); inp.setAttribute('list', 'ps-xdl');
       }
     }
-    cell.appendChild(inp); inp.focus(); if (inp.select) inp.select();
+    cell.appendChild(inp); inp.focus(); if (!_enum && inp.select) inp.select();
     _editing = true;
     broadcastCollabSel(id, field, true);
     var done = false;
@@ -9787,6 +9981,23 @@
         if (!r.actual_start) { UI.toast('Start the activity first — enter an Actual Start before setting Duration % Complete.', 'error'); renderGrid(); return; }
         if (isComplete(r)) { UI.toast('Activity is complete — Duration % Complete is 100%.', 'info'); renderGrid(); return; }
         var _dp = val === '' ? 0 : Math.max(0, Math.min(100, parseFloat(val) || 0)); var _od = _origDurOf(r) || 0; persist(id, { remaining_duration: Math.max(0, Math.round(_od * (1 - _dp / 100))) }).then(function (ok) { if (ok) { renderGrid(); renderGantt(); renderDetails(); } }); return;
+      }
+      if (type === 'enum') {
+        var _ev = String(val || '');
+        if (field === 'scope_type') {
+          if (!isExecPhase(r)) { UI.toast('Contract scope applies to execution-phase activities only — set the Phase on this activity first.', 'warn'); renderGrid(); return; }
+          var _pt = { scope_type: _ev || null };
+          // Dropping back to Main Contract drops the CO reference with it — a "VO-014" left on a
+          // main-contract activity is worse than no reference at all.
+          if (_ev !== 'change_order') _pt.change_order_ref = null;
+          persistScope(id, _pt).then(function (ok) { if (ok) { rebuild(true); renderGrid(); renderGantt(); renderDetails();
+            if (_ev === 'change_order' && !r.change_order_ref) promptCoRef(id); } });
+          return;
+        }
+        var _cp = { primary_constraint: _ev || null };
+        if (!_ev || _ev === 'As Late As Possible') _cp.primary_constraint_date = null;   // no dangling date
+        persist(id, _cp).then(function (ok) { if (ok) { recomputeCPM(); renderDetails(); } });
+        return;
       }
       if (type === 'xcol') {
         var _v = String(val || '').trim();
@@ -9817,6 +10028,7 @@
       persist(id, patch).then(function (ok) { if (ok) { renderGrid(); renderGantt(); } });
     }
     inp.onblur = function () { commit(true); };
+    if (_enum) inp.onchange = function () { commit(true); };
     // Excel-style commit+advance: Enter commits and moves the active cell DOWN a row (Shift+Enter up),
     // Tab commits and moves to the next cell (Shift+Tab previous, wrapping rows). The column is kept.
     // The move runs after blur→commit; commit's DB write is async, so selId/_cellAnchor move now and
@@ -13165,6 +13377,7 @@
     }
     wnSel.onchange = _syncWbsFromNode;
     if (wnSel.value) _syncWbsFromNode();
+    setupScopeFields(row, wnSel);
     set('ps-f-name', row ? row.activity_name : ''); set('ps-f-type-sel', row ? (row.activity_type || 'Task') : 'Task');
     set('ps-f-status-sel', row ? (row.status || 'Not Started') : 'Not Started');
     set('ps-f-bls', row && row.bl_start ? String(row.bl_start).slice(0,10) : '');
@@ -13218,6 +13431,111 @@
     set('ps-f-scond', row && row.secondary_constraint_date ? String(row.secondary_constraint_date).slice(0,10) : '');
     set('ps-f-remarks', row ? row.remarks : '');
     document.getElementById('ps-modal').style.display = 'flex';
+  }
+  // ---- Add/Edit form: the Contract Scope section -------------------------------------------
+  // Applicability follows the PARENT WBS live, so choosing an execution-phase branch reveals the
+  // question and choosing (say) a Close-out branch hides it again — the planner never has to know
+  // the rule, they just see it apply.
+  function setupScopeFields(row, wnSel) {
+    var sec = document.getElementById('ps-f-scope-sec'), wrap = document.getElementById('ps-f-scope-wrap');
+    var na = document.getElementById('ps-f-scope-na'), refWrap = document.getElementById('ps-f-coref-wrap');
+    var mainR = document.getElementById('ps-f-scope-main'), coR = document.getElementById('ps-f-scope-co');
+    var refIn = document.getElementById('ps-f-coref'), inh = document.getElementById('ps-f-scope-inherit');
+    if (!sec) return;
+    document.getElementById('ps-f-coref-list').innerHTML = coRefValues().map(function (v) { return '<option value="' + esc(v) + '"></option>'; }).join('');
+    refIn.value = (row && row.change_order_ref) || '';
+    function applicable() {
+      // An unsaved activity has no phase of its own yet, so the parent WBS node decides.
+      if (row && row.phase) return row.phase === EXEC_PHASE;
+      var nid = wnSel && wnSel.value;
+      if (nid) return _nodePhase(nid) === EXEC_PHASE;
+      return row ? isExecPhase(row) : false;
+    }
+    function sync() {
+      var on = applicable();
+      sec.style.display = on ? '' : 'none';
+      wrap.style.display = on ? '' : 'none';
+      na.style.display = on ? 'none' : '';
+      if (!on) { refWrap.style.display = 'none'; return; }
+      // Show what the row would inherit from its branch, so "Main Contract" pre-selected inside a
+      // change-order branch can't quietly override the branch (the planner sees which is which).
+      var nid = wnSel && wnSel.value, inhSc = nid ? _nodeScope(nid) : null;
+      inh.textContent = inhSc ? '(this WBS branch is tagged ' + scopeTypeLabel(inhSc) + ')' : '';
+      refWrap.style.display = coR.checked ? '' : 'none';
+    }
+    var cur = (row && row.scope_type) || (row ? scopeOf(row) : null) || 'main';
+    mainR.checked = cur !== 'change_order'; coR.checked = cur === 'change_order';
+    mainR.onchange = coR.onchange = sync;
+    if (wnSel) { var prev = wnSel.onchange; wnSel.onchange = function () { if (prev) prev.call(this); sync(); }; }
+    sync();
+  }
+  // ---- Change-order LINKING: splice the CO into the chain it interrupts -----------------------
+  // The design question the owner posed: a change order is conceptually inserted BETWEEN main
+  // contract activities, so how should it be linked?
+  //
+  // Three options were on the table:
+  //   (a) Leave it dangling (no logic). Rejected: an unlinked activity has no float, never appears
+  //       on the critical path, and its delay effect on the contract programme is unprovable —
+  //       which is the single most important thing a change order has to demonstrate.
+  //   (b) Link it in PARALLEL to the work it sits beside (same predecessor, same successor).
+  //       Right when the CO genuinely runs alongside main-contract work and does not hold it up.
+  //   (c) SPLICE it into the chain: the CO takes over the predecessor, and everything that used to
+  //       follow that predecessor now follows the CO instead.
+  //
+  // (c) is the default offered here, because it is the case that changes the answer: it is the only
+  // arrangement in which the CO's duration actually pushes the downstream main-contract work, so the
+  // schedule shows the time impact of the variation instead of hiding it. (b) is offered as the
+  // alternative in the same prompt for the non-disruptive case; (a) is always available by declining.
+  //
+  // Nothing here is automatic. Re-pointing someone else's relationships is a big edit, so it names
+  // exactly which activities it will change and asks first.
+  function _predTokens(str) { return String(str || '').split(/[,;\n]+/).map(function (x) { return x.trim(); }).filter(Boolean); }
+  // Swap one predecessor's Activity ID for another INSIDE a predecessor string, keeping that entry's
+  // relationship type and lag — re-pointing the edge, not replacing it with a default FS.
+  function _repointPred(str, fromId, toId) {
+    return _predTokens(str).map(function (tok) {
+      var m = tok.match(/^([A-Za-z0-9._\-]+)([\s\S]*)$/);
+      return (m && m[1] === fromId) ? (toId + m[2]) : tok;
+    }).join(', ');
+  }
+  async function offerCoSplice(coRow) {
+    if (!coRow || !coRow.activity_id) return;
+    var preds = predIds(coRow.predecessors);
+    if (!preds.length) {
+      UI.toast('Change order added. Give it a predecessor to splice it into the main-contract chain.', 'info');
+      return;
+    }
+    // Everything that currently follows any of the CO's predecessors — excluding the CO itself, and
+    // excluding anything that already follows the CO (which would create a redundant double edge).
+    var predSet = {}; preds.forEach(function (x) { predSet[String(x)] = 1; });
+    var followers = rows.filter(function (r) {
+      if (isWbs(r) || !r.activity_id || r.id === coRow.id) return false;
+      var ps = predIds(r.predecessors);
+      return ps.some(function (x) { return predSet[String(x)]; }) && !ps.some(function (x) { return String(x) === String(coRow.activity_id); });
+    });
+    if (!followers.length) {
+      UI.toast('Change order linked after ' + preds.join(', ') + '. Nothing followed it, so nothing was re-pointed.', 'success');
+      return;
+    }
+    var names = followers.slice(0, 8).map(function (r) { return (r.activity_id || '') + ' ' + (r.activity_name || ''); });
+    var more = followers.length > 8 ? '\n  …and ' + (followers.length - 8) + ' more' : '';
+    var msg = 'Splice this change order into the main-contract chain?\n\n' +
+      coRow.activity_id + ' currently follows: ' + preds.join(', ') + '\n\n' +
+      'OK  — insert it BETWEEN: these ' + followers.length + ' activit' + (followers.length === 1 ? 'y' : 'ies') + ' will follow the change order instead of ' + preds.join('/') + '.\n' +
+      'The change order then DRIVES them, which is what makes the variation time impact visible on the critical path:\n  ' +
+      names.join('\n  ') + more + '\n\n' +
+      'Cancel — leave it in PARALLEL: the change order runs alongside that work without delaying it.';
+    if (!confirm(msg)) { UI.toast('Change order left running in parallel — nothing was re-pointed.', 'info'); return; }
+    showLoading('Re-pointing ' + followers.length + ' relationship' + (followers.length === 1 ? '' : 's') + '…');
+    for (var i = 0; i < followers.length; i++) {
+      var f = followers[i], next = f.predecessors;
+      preds.forEach(function (pidTok) { next = _repointPred(next, String(pidTok), String(coRow.activity_id)); });
+      if (next === f.predecessors) continue;
+      if (!(await persist(f.id, { predecessors: next }))) { hideLoading(); return; }
+    }
+    hideLoading();
+    recomputeCPM(); renderDetails();
+    UI.toast('Spliced ' + coRow.activity_id + ' into the chain — ' + followers.length + ' activit' + (followers.length === 1 ? 'y now follows' : 'ies now follow') + ' the change order.', 'success');
   }
   // Predecessors activity picker — lets the user select an activity from the schedule
   // (searchable ID — Name datalist) + relationship type + lag and append a correctly
@@ -13312,6 +13630,18 @@
     // contract_date / risk_*_pct / wbs_node_id written separately + tolerantly (own try/catch each),
     // so a not-yet-migrated DB (missing column) never breaks the main save OR the other field.
     if (savedId) { var cval = v('ps-f-contract') || null; try { var cr = await sb().from(TABLE).update({ contract_date: cval }).eq('id', savedId); if (!cr.error) { var rr = rows.find(function (x) { return x.id === savedId; }); if (rr) rr.contract_date = cval; } } catch (e) {} }
+    // Contract scope written separately + tolerantly, like contract_date / risk_* above, so a DB that
+    // has not had the 2026-08-19 migration run keeps saving everything else.
+    if (savedId) {
+      var _scOn = document.getElementById('ps-f-scope-wrap') && document.getElementById('ps-f-scope-wrap').style.display !== 'none';
+      var _scVal = _scOn ? (document.getElementById('ps-f-scope-co').checked ? 'change_order' : 'main') : null;
+      var _scRef = (_scVal === 'change_order') ? (v('ps-f-coref') || null) : null;
+      try {
+        var sr = await sb().from(TABLE).update({ scope_type: _scVal, change_order_ref: _scRef }).eq('id', savedId);
+        if (!sr.error) { var rrs = rows.find(function (x) { return x.id === savedId; }); if (rrs) { rrs.scope_type = _scVal; rrs.change_order_ref = _scRef; } }
+        else UI.toast('Contract scope not saved — run migrations/2026-08-19-schedule-contract-scope.sql in Supabase.', 'warn');
+      } catch (e) {}
+    }
     if (savedId) { try { var wr = await sb().from(TABLE).update({ wbs_node_id: wbsNodeId }).eq('id', savedId); if (!wr.error) { var rrw = rows.find(function (x) { return x.id === savedId; }); if (rrw) rrw.wbs_node_id = wbsNodeId; } } catch (e) {} }
     if (savedId) {
       var roVal = num('ps-f-risk-opt'), rpVal = num('ps-f-risk-pess');
@@ -13336,8 +13666,17 @@
       });
       try { var rr4 = await sb().from(TABLE).update({ udf: udfVal }).eq('id', savedId); if (!rr4.error) { var rrow3 = rows.find(function (x) { return x.id === savedId; }); if (rrow3) rrow3.udf = udfVal; } } catch (e) {}
     }
+    var _wasNew = !editId, _newCoId = savedId;
     UI.toast(editId ? 'Activity updated.' : 'Activity added.', 'success');
-    closeModal(); load();
+    closeModal();
+    await load();
+    // A change order is conceptually inserted BETWEEN main-contract activities, so offer to splice
+    // it into the chain now. See offerCoSplice for why splicing (rather than parallel or dangling)
+    // is the default. Runs after load() so the reloaded rows carry the saved scope + predecessors.
+    if (_wasNew && _newCoId) {
+      var _co = rows.find(function (x) { return x.id === _newCoId; });
+      if (_co && isChangeOrder(_co)) await offerCoSplice(_co);
+    }
   }
 
   // Autosave (edit only): debounced re-use of save() while the modal is open, editing an
@@ -13594,8 +13933,21 @@
     var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
     var xColW = {};     // step-1 grid: per-column pixel width overrides (drag the header edge to resize)
     var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
-    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Scope', w: 118, scope: true }, { k: 'durInt', label: 'Interior (d)', w: 90, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 90, num: true }];
+    var XL_COLS = [{ k: 'code', label: 'Code', w: 120 }, { k: 'name', label: 'Activity name', w: 0 }, { k: 'group', label: 'Trade', w: 150, trade: true }, { k: 'scope', label: 'Duration scope', w: 118, scope: true }, { k: 'contract', label: 'Contract', w: 138, contract: true }, { k: 'durInt', label: 'Interior (d)', w: 90, num: true }, { k: 'durExt', label: 'Exterior (d)', w: 90, num: true }];
     var SCOPE_OPTS = [['zone', 'Per zone'], ['floor', 'Per floor'], ['project', 'Whole project']];
+    // Contract scope (main contract vs change order), carried from step 1 straight onto every
+    // activity the push creates. Everything the builder produces lands in the EXECUTION phase, so
+    // the identifier is applicable to all of it — unlike in the schedule grid, where the column is
+    // gated on phase. Default 'main': a builder run is the original contract programme until the
+    // planner says a line is a variation.
+    var CONTRACT_OPTS = [['main', 'Main Contract'], ['change_order', 'Change Order']];
+    function contractLabel(c) { return c === 'change_order' ? 'Change Order' : 'Main Contract'; }
+    function parseContract(t) {
+      var x = String(t == null ? '' : t).trim().toLowerCase();
+      if (!x) return null;
+      if (x === 'change_order' || x.indexOf('change') === 0 || x === 'co' || x === 'vo' || x.indexOf('variation') === 0) return 'change_order';
+      return 'main';
+    }
     // Master class-code library (EPC. FIN. Class Code Mapping — Level 3 code + Description 3).
     // Loaded into the step-1 holding list on demand so a planner can pick from the standard
     // codes instead of retyping them; saved with the build once loaded + shuttled in.
@@ -13807,7 +14159,7 @@
       CLASS_CODE_DB.forEach(function (r) {
         var code = r[0], name = r[1].trim();
         if (have[code]) return;
-        cfg.catalog.push({ id: uidv(), code: code, name: name, group: r[2] || 'OT', durInt: 0, durExt: 0, scope: 'zone' });
+        cfg.catalog.push({ id: uidv(), code: code, name: name, group: r[2] || 'OT', durInt: null, durExt: null, scope: 'zone' });
         have[code] = 1; added++;
       });
       if (added) { markDirty(); UI.toast('Loaded ' + added + ' class code(s) into the list. Tick codes and press ← to add them to the build, then Save.', 'success'); }
@@ -13828,12 +14180,21 @@
       if (map[t]) return map[t];
       var up = t.toUpperCase(); return GROUPS.indexOf(up) >= 0 ? up : null;
     }
-    function xlGet(a, k) { if (!a) return ''; if (k === 'group') return GLABEL[a.group] || a.group || ''; if (k === 'scope') return scopeLabel(a.scope); if (k === 'durInt' || k === 'durExt') return a[k] ? String(a[k]) : ''; return a[k] || ''; }
+    function xlGet(a, k) { if (!a) return ''; if (k === 'group') return GLABEL[a.group] || a.group || ''; if (k === 'scope') return scopeLabel(a.scope); if (k === 'contract') return contractLabel(a.contract) + (a.contract === 'change_order' && a.coRef ? ' · ' + a.coRef : ''); if (k === 'durInt' || k === 'durExt') return a[k] ? String(a[k]) : ''; return a[k] || ''; }
     function xlSetCell(r, c, text) {
-      while (cfg.activities.length <= r) cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: 0, durExt: 0, scope: 'zone' });
+      while (cfg.activities.length <= r) cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: null, durExt: null, scope: 'zone', contract: 'main', coRef: '' });
       var a = cfg.activities[r], k = XL_COLS[c].k;
       if (k === 'group') { var g = parseTrade(text); if (g) a.group = g; }
       else if (k === 'scope') { var s = parseScope(text); if (s) a.scope = s; }
+      else if (k === 'contract') {
+        var ct = parseContract(text); if (!ct) return;
+        var was = a.contract; a.contract = ct;
+        if (ct === 'change_order' && was !== 'change_order' && !a.coRef) {
+          var ref = prompt('Change order reference for "' + (a.name || a.code || 'this activity') + '" (e.g. VO-014 — leave blank to fill in later):', '');
+          if (ref != null) a.coRef = String(ref).trim();
+        }
+        if (ct !== 'change_order') a.coRef = '';   // a ref on a main-contract line is worse than none
+      }
       else if (k === 'durInt' || k === 'durExt') a[k] = Math.max(0, parseInt(text, 10) || 0);
       else a[k] = String(text == null ? '' : text);
     }
@@ -13942,10 +14303,22 @@
     function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
-      var di = (a.durInt != null) ? Math.max(0, +a.durInt || 0) : legacy;
-      var de = (a.durExt != null) ? Math.max(0, +a.durExt || 0) : (a.durInt != null ? di : legacy);
+      // ⚠ `> 0`, not `!= null`: a row seeded with an explicit 0 must still mirror the other column
+      // (see actDur) — the `!= null` test is exactly what let a hard 0 survive and drop the row.
+      var di0 = Math.max(0, +a.durInt || 0), de0 = Math.max(0, +a.durExt || 0);
+      var di = di0 > 0 ? di0 : (de0 > 0 ? de0 : legacy);
+      var de = de0 > 0 ? de0 : (di0 > 0 ? di0 : legacy);
       var sc = (['zone', 'floor', 'project'].indexOf(a.scope) >= 0) ? a.scope : 'zone';
-      return { id: a.id || uidv(), code: a.code || '', name: a.name || '', group: GROUPS.indexOf(a.group) >= 0 ? a.group : 'ST', durInt: di, durExt: de, scope: sc };
+      var ct = (a.contract === 'change_order') ? 'change_order' : 'main';
+      // Per-level-type duration overrides. Only known categories survive, and a category whose
+      // numbers are both blank is dropped — it is indistinguishable from following the default.
+      var dk = null, srcDk = (a.durKind && typeof a.durKind === 'object') ? a.durKind : null;
+      if (srcDk) KIND_ORDER.forEach(function (k) {
+        var o = srcDk[k]; if (!o) return;
+        var ki = Math.max(0, +o.durInt || 0), ke = Math.max(0, +o.durExt || 0);
+        if (ki > 0 || ke > 0) { dk = dk || {}; dk[k] = { durInt: ki, durExt: ke }; }
+      });
+      return { id: a.id || uidv(), code: a.code || '', name: a.name || '', group: GROUPS.indexOf(a.group) >= 0 ? a.group : 'ST', durInt: di, durExt: de, durKind: dk, scope: sc, contract: ct, coRef: a.coRef || '' };
     }
     function normalize(c) {
       c = c && typeof c === 'object' ? c : {}; var d = blank();
@@ -13957,7 +14330,11 @@
         var src = (c.zoning && c.zoning[g]) || {};
         var floors = Array.isArray(src.floors) ? src.floors : [];
         d.zoning[g] = { floors: floors.map(function (f) {
+          // ⚠ `kind` MUST survive normalisation — see the note above this fix. Validated against
+          // KIND_ORDER (declared later; `var` hoisting makes it available here at call time) so a
+          // stale value from an older config can't create a category nothing else knows about.
           return { id: f.id || uidv(), code: f.code || '', name: f.name || '', sub: !!f.sub,
+            kind: (KIND_ORDER.indexOf(f.kind) >= 0 ? f.kind : null),
             zones: (Array.isArray(f.zones) ? f.zones : []).map(function (z) { return { id: z.id || uidv(), code: z.code || '', name: z.name || '',
               units: (Array.isArray(z.units) ? z.units : []).map(function (u) { return { id: u.id || uidv(), code: u.code || '', name: u.name || '' }; }) }; }) };
         }) };
@@ -14087,12 +14464,52 @@
     // with these, not the full discipline universe.
     function usedGroups() { var seen = {}; cfg.activities.forEach(function (a) { if (a.group) seen[a.group] = 1; }); return GROUPS.filter(function (g) { return seen[g]; }); }
     function included(uid, aid) { return !cfg.scopeOff[uid + '|' + aid]; }
-    function actDur(a, basis) { return Math.max(0, +(basis === 'ext' ? a.durExt : a.durInt) || 0); }
+    // ⚠⚠ CROSS-BASIS FALLBACK — this is the "only Allied Services was migrated" bug.
+    // Step 1 has two duration columns (Interior / Exterior) and the push runs on ONE of them. A row is
+    // dropped from generate() when its duration for the CHOSEN basis is 0, so a planner who filled only
+    // the Interior column and then pushed lost every activity — except the trades whose rows happened
+    // to carry both numbers, which is why the survivor looked arbitrary (Allied Services).
+    // normActivity() already MEANT to mirror one column onto the other, but its guard was
+    // `a.durExt != null`, and all three paths that CREATE a row (catalog import, the paste handler,
+    // "+ Add") seeded `durExt: 0`. 0 is not null, so the mirror never fired and the zero stood — the
+    // drop tracked which code path a row was born on, not anything the planner did.
+    // Fixed at the single choke point every caller (effDur / pDur / the push diagnostic) reads through:
+    // a basis with no duration falls back to the other one. An activity is dropped only when it has NO
+    // duration on EITHER basis — the one case where dropping it is right.
+    // The duration override a level type carries for this activity, or null when it follows the
+    // default. `kind` is a floor category ('basement' / 'typical' / …) or 'all'/null for the default.
+    function durKindOf(a, kind) {
+      if (!a || !kind || kind === 'all' || !a.durKind) return null;
+      return a.durKind[kind] || null;
+    }
+    function kindHasOwnDur(a, kind) {
+      var o = durKindOf(a, kind);
+      return !!o && (Math.max(0, +o.durInt || 0) > 0 || Math.max(0, +o.durExt || 0) > 0);
+    }
+    // Give `kind` its own copy of the default durations, so the first edit on a category forks it
+    // instead of silently editing the value every other category is still reading.
+    function forkKindDur(a, kind) {
+      if (!a || !kind || kind === 'all') return null;
+      a.durKind = a.durKind || {};
+      if (!a.durKind[kind]) a.durKind[kind] = { durInt: 0, durExt: 0 };   // empty — each column falls back on its own
+      return a.durKind[kind];
+    }
+    function clearKindDur(a, kind) { if (a && a.durKind && kind && kind !== 'all') delete a.durKind[kind]; }
+    function actDur(a, basis, kind) {
+      if (!a) return 0;
+      var fk = durKindOf(a, kind);
+      // Per COLUMN: this level type's own number if it typed one, otherwise the default's. A category
+      // that specialises only its Interior duration still inherits the default Exterior one.
+      function pick(col) { var v = fk ? Math.max(0, +fk[col] || 0) : 0; return v > 0 ? v : Math.max(0, +a[col] || 0); }
+      var want = pick(basis === 'ext' ? 'durExt' : 'durInt');
+      if (want > 0) return want;
+      return pick(basis === 'ext' ? 'durInt' : 'durExt');   // cross-basis mirror (see the note on actDur's caller)
+    }
     // Effective PER-ZONE duration for a class code inside a specific location, honoring its scope:
     // "zone" = entered as-is; "floor" = the entered number is a whole floor's work, split evenly across
     // that floor's zones/units; "project" = split evenly across all the trade's zones/units.
     function effDur(a, basis, loc) {
-      var raw = actDur(a, basis); if (raw <= 0) return 0;
+      var raw = actDur(a, basis, locKind(loc)); if (raw <= 0) return 0;
       var sc = a.scope || 'zone';
       if (sc === 'floor' && loc && loc.floor) { var n = leavesOfFloor(a.group, loc.floor).length || 1; return Math.max(1, Math.round(raw / n)); }
       if (sc === 'project') { var n2 = leafCount(a.group) || 1; return Math.max(1, Math.round(raw / n2)); }
@@ -14101,7 +14518,7 @@
     // Representative per-zone duration for the step-4 preview (no single location in context): project
     // splits over all the trade's leaves; floor over the average leaves-per-floor.
     function pDur(a, basis) {
-      var raw = actDur(a, basis); if (raw <= 0) return 0;
+      var raw = actDur(a, basis, uiSeqKind); if (raw <= 0) return 0;
       var sc = a.scope || 'zone';
       if (sc === 'project') { var n = leafCount(a.group) || 1; return Math.max(1, Math.round(raw / n)); }
       if (sc === 'floor') { var fl = floorsOf(a.group).length || 1, per = Math.max(1, Math.round((leafCount(a.group) || 1) / fl)); return Math.max(1, Math.round(raw / per)); }
@@ -14144,7 +14561,11 @@
       GROUPS.forEach(function (g) { ((cfg.zoning[g] && cfg.zoning[g].floors) || []).forEach(function (f) { seen[floorKind(f)] = 1; }); });
       KIND_ORDER.forEach(function (k) { if (kindHasOwn(k)) seen[k] = 1; });
       var out = KIND_ORDER.filter(function (k) { return seen[k]; });
-      return out.length ? out : KIND_ORDER.slice();
+      // ⚠ NO four-category fallback. Offering Podium and Roof Deck on a project that has neither
+      // is what made step 4 look like it had a fixed level-type list of its own. With no floors
+      // defined yet there is genuinely nothing to specialise, so the switcher shows only the
+      // default — step 2 is where level types come from.
+      return out;
     }
     // Copy ONE TRADE's sequence from another level type (or from the default) into `toKind`, replacing
     // that trade's links there and leaving every other trade's links alone.
@@ -14403,7 +14824,7 @@
     // Deep-copy a trade's floors/zones/units with FRESH ids, so the copy is independent of the source.
     function cloneFloors(floors) {
       return (floors || []).map(function (f) {
-        return { id: uidv(), code: f.code, name: f.name, sub: !!f.sub,
+        return { id: uidv(), code: f.code, name: f.name, sub: !!f.sub, kind: f.kind || null,
           zones: (f.zones || []).map(function (z) {
             return { id: uidv(), code: z.code, name: z.name,
               units: (z.units || []).map(function (u) { return { id: uidv(), code: u.code, name: u.name }; }) };
@@ -14718,7 +15139,7 @@
         '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
         '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT). Row order here is the fallback sequence; fine-tune links in step 4.</p>';
       // toolbar
-      host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: 0, durExt: 0 }); xf = { r: cfg.activities.length - 1, c: 0 }; xa = { r: xf.r, c: 0 }; xWantFocus = true; markDirty(); render(); };
+      host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: null, durExt: null, contract: 'main', coRef: '' }); xf = { r: cfg.activities.length - 1, c: 0 }; xa = { r: xf.r, c: 0 }; xWantFocus = true; markDirty(); render(); };
       host.querySelector('#b-tmpl').onclick = actTemplateCsv;
       var uf = host.querySelector('#b-uplfile');
       host.querySelector('#b-upl').onclick = function () { uf.click(); };
@@ -14801,12 +15222,15 @@
         } else if (col.scope) {
           ctl = document.createElement('select');
           ctl.innerHTML = SCOPE_OPTS.map(function (o) { return '<option value="' + o[0] + '"' + ((a.scope || 'zone') === o[0] ? ' selected' : '') + '>' + e2(o[1]) + '</option>'; }).join('');
+        } else if (col.contract) {
+          ctl = document.createElement('select');
+          ctl.innerHTML = CONTRACT_OPTS.map(function (o) { return '<option value="' + o[0] + '"' + ((a.contract || 'main') === o[0] ? ' selected' : '') + '>' + e2(o[1]) + '</option>'; }).join('');
         } else {
           ctl = document.createElement('input'); ctl.type = col.num ? 'number' : 'text'; if (col.num) ctl.min = '0';
           ctl.value = seed != null ? seed : xlGet(a, col.k);
         }
         td.textContent = ''; td.appendChild(ctl); ctl.focus();
-        if (ctl.select && !col.trade && !col.scope) ctl.select();
+        if (ctl.select && !col.trade && !col.scope && !col.contract) ctl.select();
         function commit(move) { if (!xEditing) return; xEditing = false; xlSetCell(r, c, ctl.value); if (move) { if (move === 'down') xf = { r: clampR(r + 1), c: c }; else if (move === 'right') xf = { r: r, c: clampC(c + 1) }; xa = { r: xf.r, c: xf.c }; } commitRender(); }
         ctl.addEventListener('keydown', function (e) {
           if (e.key === 'Enter') { e.preventDefault(); commit('down'); }
@@ -14815,7 +15239,7 @@
           e.stopPropagation();
         });
         ctl.addEventListener('blur', function () { commit(null); });
-        if (col.trade) ctl.addEventListener('change', function () { commit(null); });
+        if (col.trade || col.contract) ctl.addEventListener('change', function () { commit(null); });
       }
 
       // mouse: click to select, drag / shift-click to extend a range
@@ -14868,8 +15292,29 @@
     // for the 2-phase linking (source → destination). No paste-beyond-rows: adding codes is step 1's job.
     function t4Set(a, k, text) {
       if (!a) return;
-      if (k === 'durInt' || k === 'durExt') { a[k] = Math.max(0, parseInt(text, 10) || 0); a.scope = 'zone'; }   // an explicit per-zone value (matches the old inline editor)
-      else a[k] = String(text == null ? '' : text);
+      if (k === 'durInt' || k === 'durExt') {
+        var n = Math.max(0, parseInt(text, 10) || 0);
+        a.scope = 'zone';                                   // an explicit per-zone value (matches the old inline editor)
+        if (uiSeqKind && uiSeqKind !== 'all') {
+          var o = forkKindDur(a, uiSeqKind);                // fork the default first, then edit the fork
+          o[k] = n;
+          // Both columns back to blank = "follow the default again", so a category is never left
+          // holding a pair of zeros that would read as a real (and impossible) zero-day duration.
+          if (!(o.durInt > 0) && !(o.durExt > 0)) clearKindDur(a, uiSeqKind);
+          return;
+        }
+        a[k] = n;                                           // 'All levels' edits the default every category inherits
+        return;
+      }
+      a[k] = String(text == null ? '' : text);
+    }
+    // Step-4 READ: show what the SELECTED level type actually uses — the fork if it has one, else
+    // the inherited default. Reading xlGet here (the step-1 reader) is what made the grid show the
+    // same number under every category even once the forks existed.
+    function t4Get(a, k) {
+      if (k !== 'durInt' && k !== 'durExt') return xlGet(a, k);
+      var src = durKindOf(a, uiSeqKind) || a, v = Math.max(0, +src[k] || 0);
+      return v ? String(v) : '';
     }
     function t4GridHTML(acts, tr) {
       if (!acts.length) return '<div class="sbld-empty">No class codes assigned to ' + e2(GLABEL[tr]) + ' yet — assign a trade to your activities in step 1.</div>';
@@ -14882,7 +15327,12 @@
       var body = acts.map(function (a, r) {
         var cls = (inPendAct(a.id) ? 'pend' : (inActDst(a.id) ? 'pend-dst' : '')) + (isActFocus(a.id) ? ' sbld-focus' : '');
         return '<tr class="' + cls.trim() + '"><td class="xl-rn" data-r="' + r + '">' + (r + 1) + '</td>' +
-          cols.map(function (c, ci) { return '<td class="xl-cell" data-r="' + r + '" data-c="' + ci + '">' + e2(xlGet(a, c.k)) + '</td>'; }).join('') + '</tr>';
+          cols.map(function (c, ci) {
+            var own = (c.k === 'durInt' || c.k === 'durExt') && kindHasOwnDur(a, uiSeqKind);
+            return '<td class="xl-cell' + (own ? ' sbld-ownd' : '') + '" data-r="' + r + '" data-c="' + ci + '"' +
+              (own ? ' title="Own duration for ' + e2(KIND_LABEL[uiSeqKind] || uiSeqKind) + ' levels (the default is ' + e2(String(Math.max(0, +a[c.k] || 0) || '—')) + 'd)"' : '') +
+              '>' + e2(t4Get(a, c.k)) + '</td>';
+          }).join('') + '</tr>';
       }).join('');
       return '<div class="sbld-xlwrap" tabindex="0" id="b-t4"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
     }
@@ -14906,7 +15356,7 @@
       function beginEdit(seed) {
         if (!nR()) return; var r = t4f.r, c = t4f.c, a = acts[r], col = cols[c], td = cellEl(r, c); if (!td) return;
         t4edit = true; var ctl = document.createElement('input'); ctl.type = col.num ? 'number' : 'text'; if (col.num) ctl.min = '0';
-        ctl.value = seed != null ? seed : xlGet(a, col.k);
+        ctl.value = seed != null ? seed : t4Get(a, col.k);
         td.textContent = ''; td.appendChild(ctl); ctl.focus(); if (ctl.select) ctl.select();
         function commit(move) { if (!t4edit) return; t4edit = false; t4Set(a, col.k, ctl.value); if (move === 'down') t4f = { r: clampR(r + 1), c: c }; else if (move === 'right') t4f = { r: r, c: clampC(c + 1) }; if (move) t4a = { r: t4f.r, c: t4f.c }; commitRender(); }
         ctl.addEventListener('keydown', function (e) {
@@ -14931,7 +15381,7 @@
         else if (k === 'Tab') { e.preventDefault(); setFocus(t4f.r, t4f.c + (e.shiftKey ? -1 : 1), false); }
         else if (k === 'Enter' || k === 'F2') { e.preventDefault(); beginEdit(); }
         else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); var b = bounds(); for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) t4Set(acts[r], cols[c].k, ''); commitRender(); }
-        else if ((e.ctrlKey || e.metaKey) && (k === 'd' || k === 'D')) { e.preventDefault(); var bd = bounds(); for (var c2 = bd.c0; c2 <= bd.c1; c2++) { var v = xlGet(acts[bd.r0], cols[c2].k); for (var r2 = bd.r0 + 1; r2 <= bd.r1; r2++) t4Set(acts[r2], cols[c2].k, v); } commitRender(); }
+        else if ((e.ctrlKey || e.metaKey) && (k === 'd' || k === 'D')) { e.preventDefault(); var bd = bounds(); for (var c2 = bd.c0; c2 <= bd.c1; c2++) { var v = t4Get(acts[bd.r0], cols[c2].k); for (var r2 = bd.r0 + 1; r2 <= bd.r1; r2++) t4Set(acts[r2], cols[c2].k, v); } commitRender(); }
         else if ((e.ctrlKey || e.metaKey) && (k === 'a' || k === 'A')) { e.preventDefault(); if (nR()) { t4a = { r: 0, c: 0 }; t4f = { r: nR() - 1, c: cols.length - 1 }; paint(); } }
         else if (!e.ctrlKey && !e.metaKey && !e.altKey && k.length === 1) { beginEdit(k); }
       });
@@ -14969,10 +15419,13 @@
         var n = tradeActs(g).length;
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
-      // LEVEL TYPE selector. The sequence a trade follows is not the same on every kind of floor, so
-      // each category can define its own; "All levels" is the default the others inherit until they
-      // do. A category that has forked shows an "own" badge, can be copied from any other defined
-      // category (or from the default), and can be reverted to the default in one click.
+      // LEVEL TYPE selector. Neither the sequence NOR the durations are the same on every kind of
+      // floor, so each category can define its own of both; "All levels" is the default the others
+      // inherit until they do. A category that has forked its sequence shows an "own" badge, can be
+      // copied from any other defined category (or the default), and reverts in one click; a forked
+      // DURATION is marked on the cell itself (.sbld-ownd), since it is per activity, not per trade.
+      // ⚠ The list comes from kindsInProject() — i.e. from the categories STEP 2 assigned to this
+      // project's floors. There is no level-type list of step 4's own to drift out of step with it.
       var kindRow = (function () {
         var btns = [['all', 'All levels (default)']].concat(kindsInProject().map(function (k) { return [k, KIND_LABEL[k]]; }))
           .map(function (o) {
@@ -14987,11 +15440,15 @@
           ? '<select class="pd-select sbld-mini" id="b-seqcopy" title="Copy this trade\'s sequence from another level type"><option value="">Copy ' + e2(GLABEL[tr]) + ' sequence from…</option>' +
             srcs.map(function (o) { return '<option value="' + o[0] + '">' + e2(o[1]) + '</option>'; }).join('') + '</select>'
           : '';
+        var noKinds = !kindsInProject().length;
         var state = uiSeqKind === 'all'
-          ? '<span class="sbld-hint">Every level type follows this unless it defines its own.</span>'
+          ? '<span class="sbld-hint">Editing the default every level type follows &mdash; sequence <b>and</b> durations. ' +
+            (noKinds
+              ? 'No level types yet: tag your floors (Basement / Podium / Typical / Roof Deck) in <b>step 2</b> and they appear here.'
+              : 'Pick a level type above to give it its own.') + '</span>'
           : (kindHasOwn(uiSeqKind)
-            ? '<span class="sbld-hint"><b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> levels have their own sequence.</span><button class="pd-btn" id="b-seqreset">Follow the default here</button>'
-            : '<span class="sbld-hint">Showing the default — the first edit gives <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> its own sequence.</span>');
+            ? '<span class="sbld-hint"><b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> levels have their own sequence. Durations typed here apply to <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> levels only (marked cells).</span><button class="pd-btn" id="b-seqreset">Follow the default here</button>'
+            : '<span class="sbld-hint">Showing the default &mdash; the first edit gives <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> its own sequence, and any duration typed here applies to <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> levels only.</span>');
         return '<div class="sbld-seqkind"><span class="sbld-seqkind-l">Level type</span>' + btns + copy + state + '</div>';
       })();
       // Left: this trade's class codes as an EXCEL-STYLE grid (Code / Name / Interior / Exterior) with
@@ -15006,7 +15463,7 @@
           ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Create ' + pendActDst.length + ' link' + (pendActDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
       host.innerHTML = '<h2>4 · Trade sequence — connect the class codes, per level type</h2>' +
-        '<p class="sbld-lede">Pick a <b>trade</b>, then the <b>level type</b> the sequence applies to (basements, podium, typical floors and the roof deck are not built in the same order). <b>All levels</b> is the default; any category can define its own, or <b>copy</b> one already defined. Its class codes are an <b>Excel-style grid</b> — click/drag or Shift-click to select cells, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste, <b>Ctrl+D</b> fill-down, <b>Delete</b> clears. To connect codes, switch to <b>Edit mode</b> and click the <b>schedule bars</b> on the right: <b>1)</b> click one or more <b>source</b> bars, <b>2)</b> <b>right-click</b>, <b>3)</b> click <b>destination</b> bars, <b>4)</b> right-click, <b>5)</b> choose FS/SS/FF/SF + lag. In <b>View mode</b> a click just shows a bar\'s links. Open <b>Links</b> to edit them in a table; <b>Auto-chain</b> links every code back-to-back.</p>' +
+        '<p class="sbld-lede">Pick a <b>trade</b>, then the <b>level type</b> it applies to &mdash; the level types are the ones you tagged your floors with in <b>step 2</b>. A basement is not built in the same order, or at the same pace, as a typical floor, so <b>both the sequence and the durations</b> are per level type: <b>All levels</b> holds the default, and typing a duration while a category is selected applies to that category only (its cells are marked). Any category can also <b>copy</b> a sequence already defined elsewhere. Its class codes are an <b>Excel-style grid</b> — click/drag or Shift-click to select cells, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste, <b>Ctrl+D</b> fill-down, <b>Delete</b> clears. To connect codes, switch to <b>Edit mode</b> and click the <b>schedule bars</b> on the right: <b>1)</b> click one or more <b>source</b> bars, <b>2)</b> <b>right-click</b>, <b>3)</b> click <b>destination</b> bars, <b>4)</b> right-click, <b>5)</b> choose FS/SS/FF/SF + lag. In <b>View mode</b> a click just shows a bar\'s links. Open <b>Links</b> to edit them in a table; <b>Auto-chain</b> links every code back-to-back.</p>' +
         chips + kindRow +
         '<div class="sbld-sec-actions">' +
         '<button class="pd-btn' + (aEditing ? ' pd-btn-primary' : '') + '" id="b-amode">' + (aEditing ? '✎ Edit mode — click to View' : '◉ View mode — click to Edit') + '</button>' +
@@ -16011,7 +16468,9 @@
       // grouping detects it. It used to be the activity's own NAME (a unique value per row), which is
       // why grouping by trade showed hundreds of one-off buckets instead of the real trades.
       function tradeOf(r) { var tr = (r.loc && r.loc.trade) || (r.act && r.act.group); return tr ? (GWORK[tr] || GLABEL[tr] || tr) : null; }
-      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq }; }
+            // scope_type / change_order_ref come straight off the step-1 row, so a change order built here
+      // arrives in the schedule already identified — no second pass to re-tag it after the push.
+      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null }; }
       var payloads = [], taskN = g.rows.length, wbsMsg = '', wbsUnnamed = {};
 
       if (!grouped) {
@@ -16255,10 +16714,23 @@
         }
       }
 
-      var CH = 500, ok = true, msg = '';
+      var CH = 500, ok = true, msg = '', scopeDropped = false;
+      // ⚠ The two contract-scope columns are the newest thing on this payload. If the project's
+      // database has not had 2026-08-19-schedule-contract-scope.sql run yet, PostgREST rejects the
+      // WHOLE insert for an unknown column — which would turn a missing migration into a total push
+      // failure. Drop the two fields and push everything else instead, and say so in the summary.
+      function _dropScope() {
+        scopeDropped = true;
+        payloads.forEach(function (pl) { delete pl.scope_type; delete pl.change_order_ref; });
+      }
       for (var i = 0; i < payloads.length; i += CH) {
         if (typeof showLoading === 'function') showLoading('Pushing to the project schedule… (' + Math.min(i + CH, payloads.length) + ' of ' + payloads.length + ' rows)');
-        var res = await sb().from(TABLE).insert(payloads.slice(i, i + CH)); if (res.error) { ok = false; msg = res.error.message; break; }
+        var res = await sb().from(TABLE).insert(payloads.slice(i, i + CH));
+        if (res.error && !scopeDropped && /scope_type|change_order_ref/.test(res.error.message || '')) {
+          _dropScope();
+          res = await sb().from(TABLE).insert(payloads.slice(i, i + CH));
+        }
+        if (res.error) { ok = false; msg = res.error.message; break; }
         if (typeof setProgress === 'function') setProgress(0.4 + 0.6 * Math.min(i + CH, payloads.length) / payloads.length);
       }
       if (typeof hideLoading === 'function') hideLoading();
@@ -16277,7 +16749,8 @@
           // ⚠️ Name the ACTUAL error. This used to read only "run the wbs-nodes migration", which is
           // one possible cause among many — and it hid the reason the tree fell back to dotted codes,
           // which is the same failure that used to leave duplicated WBS rows behind.
-          warnings: (wbsMsg ? ['WBS Manager not updated, so this push filed under dotted WBS codes instead of WBS-Manager branches. Reason: ' + wbsMsg] : [])
+          warnings: (scopeDropped ? ['Contract scope (Main Contract / Change Order) was NOT written — this project database is missing those columns. Run migrations/2026-08-19-schedule-contract-scope.sql in Supabase, then re-tag from the schedule grid Scope column.'] : [])
+            .concat(wbsMsg ? ['WBS Manager not updated, so this push filed under dotted WBS codes instead of WBS-Manager branches. Reason: ' + wbsMsg] : [])
             .concat(Object.keys(wbsUnnamed || {}).length
               ? ['Some locations had no code or name, so their branch was named after its level instead: ' +
                  Object.keys(wbsUnnamed).map(function (k) { return (k === 'unknown' ? 'WBS' : dimLabelOf(k)) + ' \u00d7' + wbsUnnamed[k]; }).join(', ') +
@@ -16352,7 +16825,18 @@
       _prevStep = step;
     }
 
-    return { open: open, save: save, isDirty: isDirty };
+    return { open: open, save: save, isDirty: isDirty,
+      // Test surface — pure cfg-level decisions, no DOM. See PS.fn for the same idea module-side.
+      _t: {
+        normalize: normalize,
+        actDur: actDur, effDur: effDur, floorKind: floorKind, locKind: locKind,
+        kindsInProject: kindsInProject, kindHasOwnDur: kindHasOwnDur,
+        setCfg: function (c) { cfg = normalize(c); },
+        getCfg: function () { return cfg; },
+        setKind: function (k) { uiSeqKind = k; },
+        getKind: function () { return uiSeqKind; },
+        t4Set: t4Set, t4Get: t4Get, generate: generate
+      } };
   })();
 
   function switchTab(tab) {
@@ -16379,7 +16863,7 @@
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
   //        row set (incl. WBS summaries), and OPC date formatting DD-Mon-YY + " A" flag) -----
   // Map an export header to the Schedule-grid column label (for the hidden-column check).
-  var EXP_TO_GRID = { 'ID': 'Activity ID', 'Name': 'Activity Name', 'BL0 Start': 'BL Start', 'BL0 Finish': 'BL Finish', 'Task': 'Task' };
+  var EXP_TO_GRID = { 'ID': 'Activity ID', 'Name': 'Activity Name', 'BL0 Start': 'BL Start', 'BL0 Finish': 'BL Finish', 'Task': 'Task', 'Change Order Ref': 'Scope' };
   function expHeaderHidden(h) { if (h === '#' || h === 'Name') return false; return !!colHidden[EXP_TO_GRID[h] || h]; }
   function exportExcel(includeHidden) {
     if (includeHidden === undefined) includeHidden = true;
@@ -16390,7 +16874,7 @@
     // (WYSIWYG — extras default hidden, so a plain schedule exports none). Header labels are made
     // unique against the built-ins and each other so json_to_sheet keys can't collide.
     var exCols = extraColDefs().filter(function (c) { return !colHidden[colKey(c)]; });
-    var _exSeen = { '#': 1 }, BUILTIN = ['#','ID','Name','Task','Status','BL0 Start','BL0 Finish','Start','Finish','Planned Value POC','Earned Value POC','Planned IBB','Actual IBB to date','Earned Value IBB','At Completion IBB','BL Planned IBB','Percent Complete Type'];
+    var _exSeen = { '#': 1 }, BUILTIN = ['#','ID','Name','Task','Status','BL0 Start','BL0 Finish','Start','Finish','Planned Value POC','Earned Value POC','Planned IBB','Actual IBB to date','Earned Value IBB','At Completion IBB','BL Planned IBB','Percent Complete Type','Constraint','Constraint Date','Scope','Change Order Ref'];
     BUILTIN.forEach(function (h) { _exSeen[h] = 1; });
     exCols.forEach(function (c) { var base = colLabel(c) || c[1] || 'Column', lbl = base, k = 2; while (_exSeen[lbl]) lbl = base + ' (' + (k++) + ')'; _exSeen[lbl] = 1; c._expHdr = lbl; });
     var data = _sorted.map(function (r) {
@@ -16419,6 +16903,12 @@
       row['At Completion IBB'] = eacV;
       row['BL Planned IBB'] = wbs ? '' : (r.bl_cost != null ? r.bl_cost : '');
       row['Percent Complete Type'] = wbs ? '' : (r.percent_complete_type || '');
+      row['Constraint'] = wbs ? '' : (r.primary_constraint || '');
+      row['Constraint Date'] = wbs ? '' : fmtOPCDate(r.primary_constraint_date);
+      // Effective scope (own tag or inherited), blank outside the execution phase — the same thing
+      // the grid cell shows, so an export can be reconciled against the screen it came from.
+      row['Scope'] = wbs ? '' : scopeTypeLabel(scopeOf(r));
+      row['Change Order Ref'] = (!wbs && isChangeOrder(r)) ? coRefOf(r) : '';
       exCols.forEach(function (c) { row[c._expHdr] = wbs ? '' : extraCellVal(c[3], r); });
       return row;
     });
@@ -18835,12 +19325,20 @@
   var _FIELD_LABELS = { activity_name: 'Activity Name', activity_id: 'Activity ID', status: 'Status',
     start_date: 'Start', end_date: 'Finish', bl_start: 'BL Start', bl_finish: 'BL Finish',
     percent_complete: '% Complete', planned_cost: 'Planned Cost', actual_cost: 'Actual Cost',
-    earned_value: 'Earned Value', responsible_party: 'Responsible' };
+    earned_value: 'Earned Value', responsible_party: 'Responsible',
+    primary_constraint: 'Constraint', primary_constraint_date: 'Constraint Date',
+    scope_type: 'Scope', change_order_ref: 'Change Order Ref' };
   async function fillDown(field, srcRow) {
     if (window.__viewOnly || window.__archived || !field || !srcRow) return;
     var rs = _selectedTaskRows().filter(function (r) { return r.id !== srcRow.id; });
     if (!rs.length) { UI.toast('Select the rows to fill (Ctrl/Shift-click), then Fill down.', 'warn'); return; }
     var val = (srcRow[field] === undefined ? null : srcRow[field]);
+    if (field === 'scope_type' || field === 'change_order_ref') {
+      var _skipped = rs.length; rs = rs.filter(isExecPhase);
+      _skipped -= rs.length;
+      if (!rs.length) { UI.toast('Contract scope applies to execution-phase activities only — none of the selected rows are in it.', 'warn'); return; }
+      if (_skipped) UI.toast('Skipping ' + _skipped + ' row' + (_skipped === 1 ? '' : 's') + ' outside the execution phase.', 'info');
+    }
     showLoading('Filling ' + rs.length + ' row' + (rs.length === 1 ? '' : 's') + '…');
     for (var i = 0; i < rs.length; i++) { var patch = {}; patch[field] = val; patch.updated_at = new Date().toISOString(); if (!(await persist(rs[i].id, patch))) { hideLoading(); return; } }
     hideLoading(); renderGrid(); renderGantt(); renderDetails();
@@ -18957,7 +19455,12 @@
     'Percent Complete Type': { f: 'percent_complete_type', edit: 0, t: 'text' },
     'Float':                 { f: null, edit: 0 },                          // computed
     'Var (BL)':              { f: null, edit: 0 },                          // computed
-    'Task':                  { f: null, edit: 0 }                           // row-kind pill; computed
+    'Task':                  { f: null, edit: 0 },                          // row-kind pill; computed
+    // Constraint + Scope ARE fill-down/paste targets — setting the same constraint or marking a run
+    // of activities as one change order is exactly the bulk edit these columns exist for.
+    'Constraint':            { f: 'primary_constraint', edit: 1, t: 'text' },
+    'Constraint Date':       { f: 'primary_constraint_date', edit: 1, t: 'date' },
+    'Scope':                 { f: 'scope_type', edit: 1, t: 'text' }
   };
   var _CELL_RO = { f: null, edit: 0 };
   function cellMeta(ci) {
@@ -20311,7 +20814,19 @@
       isWbs: isWbs,
       isMile: isMile,
       ensureCPM: ensureCPM,
-      computeCPM: computeCPM
+      computeCPM: computeCPM,
+      // Contract scope + change-order linking. Exposed for the same reason as the rest of PS.fn:
+      // these are pure decision functions (what scope does this row report? where does a spliced
+      // relationship point?) and they are the ones worth asserting on outside the UI.
+      ScheduleBuilder: ScheduleBuilder,
+      phaseOf: phaseOf,
+      scopeOf: scopeOf,
+      isExecPhase: isExecPhase,
+      isChangeOrder: isChangeOrder,
+      coRefOf: coRefOf,
+      scopeTypeLabel: scopeTypeLabel,
+      _repointPred: _repointPred,
+      rowMatches: rowMatches
     };
     // Self-check: read every accessor once so a mis-generated name fails LOUDLY here rather than
     // silently at some later access. Reading a binding has no side effects.

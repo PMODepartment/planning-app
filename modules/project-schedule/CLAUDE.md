@@ -1,5 +1,139 @@
 # Module: project-schedule
 
+## Contract scope (Main Contract / Change Order), constraint columns, and the REAL cause of "only Allied Services was pushed" (2026-08-19) — eprobles
+
+Five things in one pass: two owner features, two owner-reported bugs, and one correction to a
+previous entry in this file.
+
+### 1. ⚠️⚠️ "Only Allied Services was migrated" — the 2026-08-18 entry above got the cause wrong
+
+That entry concluded the drop was *correct behaviour* ("a 0-day activity shouldn't push") and fixed
+it by adding a warning banner. The drop is real; the diagnosis of WHY those durations were zero is
+not. The owner reported it again, so it was re-root-caused:
+
+- `normActivity()` already MEANT to mirror one duration column onto the other:
+  `var de = (a.durExt != null) ? … : (a.durInt != null ? di : legacy);`
+- But every path that CREATES a step-1 row — the catalog import (`cfg.catalog.push`), the paste
+  handler (`xlSetCell`'s row-extension) and "+ Add" — seeded `durExt: 0`.
+- **`0` is not `null`.** The mirror never fired, the zero stood, and pushing "External" dropped every
+  row born on those paths. Whichever trade happened to carry both numbers survived — which is why
+  the survivor looked arbitrary, and why it was Allied Services on the owner's project.
+
+So the planner had not "left a column blank": the app had silently written a 0 into it on their
+behalf, and then dropped their work for containing it.
+
+**Fix**, at the single choke point every caller (`effDur` / `pDur` / the push diagnostic) reads
+through — plus the seeds, which now write `null`:
+
+    function actDur(a, basis, kind) { … }   // a basis with no duration falls back to the OTHER column
+
+An activity is now dropped only when it has no duration on *either* basis — the one case where
+dropping it is right. The warning banner from the previous entry stays: it is still the correct
+report for that genuinely-empty case.
+
+### 2. Step 4: durations were shared across level types (owner-reported)
+
+Step 4 already forked the *sequence* per level type (`actLinksKind`), but durations lived on the one
+shared `cfg.activities` row — so typing a duration while "Typical" was selected changed Basement too.
+
+Durations now fork by the same rule the links use: `cfg.activities` holds the DEFAULT every category
+follows, and a category gets its own number only when the planner types one there
+(`a.durKind[<kind>]`). Resolution is **per column**, so a category may specialise its Interior
+duration and still inherit the default Exterior one.
+
+⚠️ The fork is created EMPTY, not as a copy of the default. The first version copied the default into
+both columns, which made the fork unclearable — blanking the cell you had typed left the other column
+holding a copy of the default, which still counted as "this category has its own durations". Forking
+empty means blanking the last number drops the fork, so "follow the default again" is just clearing
+the cell. (Caught by the test below, not by reading it.)
+
+Forked cells are marked (`.sbld-ownd`) with the default in their tooltip.
+
+### 3. Step 4's level types were Basement/Typical no matter what step 2 said (owner-reported)
+
+Root cause: **`normalize()` silently dropped `f.kind`.** Step 2 has a per-floor category selector
+writing `f.kind`, but normalize rebuilds each floor field by field and never copied it — so
+`floorKind()` always fell through to its legacy guess (`f.sub ? 'basement' : 'typical'`), and
+`kindsInProject()` (which reads floorKind over the floors) could only ever return those two.
+
+`kind` now survives normalisation, validated against `KIND_ORDER`. Also removed
+`kindsInProject()`'s four-category fallback: offering Podium and Roof Deck on a project that has
+neither is the other half of "step 4 has its own list". With no floors tagged, step 4 now shows only
+the default and says where level types come from.
+
+### 4. Constraint columns (owner: "a constraint type function, similar to the OPC features")
+
+The constraint *engine* was already there and is genuinely OPC-grade — `fwdConstrain` /
+`bwdConstrain` honour all 9 types on both CPM passes, including driving float negative when the
+schedule is over-constrained. What was missing was reach: the fields were buried in the Add/Edit
+modal, so setting them at scale was impractical.
+
+Added **Constraint** and **Constraint Date** as real grid columns — sortable, filterable,
+per-column-filterable, exportable, and editable in place. Constraint type uses a new `enum` inline
+editor (a real `<select>`; a closed vocabulary must not be typed free-hand). Clearing the type clears
+its date, and As Late As Possible takes no date at all, so a dangling constraint date the CPM would
+ignore cannot exist. Both are fill-down / paste targets — setting one constraint across a run of
+activities is exactly the bulk edit these columns are for.
+
+### 5. Contract scope — Main Contract vs Change Order (owner)
+
+New `scope_type` + `change_order_ref` on `project_schedule` and `wbs_nodes`
+(`migrations/2026-08-19-schedule-contract-scope.sql`), inherited down the WBS the same way `phase`
+is. **Execution phase only**, by request: outside it the column reads "—" and refuses the edit rather
+than inviting a meaningless "is the design review a variation?" answer.
+
+- **Grid**: a `Scope` column (MC / CO pill + the CO reference), a left rail on change-order rows, and
+  a Mixed roll-up on summary rows — computed in the same pass as cost, so a branch's scope and its
+  % / cost can never disagree.
+- **Filter**: Blended (default) / Main contract only / Change orders only. Summary rows pass through
+  so a filtered view keeps the headings that locate the surviving activities.
+- **Add Activity**: a Contract Scope section high in the form (it decides how the row is reported,
+  not a late detail), which appears and disappears as the chosen parent WBS changes phase.
+- **Schedule Builder**: a `Contract` column in step 1, carried onto every pushed activity — a change
+  order built here arrives already identified. ⚠️ The push tolerates a database without the
+  migration: it drops the two fields and pushes everything else rather than failing wholesale.
+
+**Linking — the design question the owner asked to have proposed.** Three options:
+
+  (a) leave the CO dangling — rejected: an unlinked activity has no float, never reaches the critical
+      path, and its delay effect is unprovable, which is the one thing a variation must demonstrate;
+  (b) link it in parallel — right when the CO genuinely does not hold up main-contract work;
+  (c) **splice it into the chain** — the CO takes over the predecessor, and everything that used to
+      follow that predecessor now follows the CO.
+
+(c) is the default offered, because it is the only arrangement where the CO's duration actually
+pushes the downstream work. Adding a change order now offers the splice, naming exactly which
+activities it will re-point; Cancel leaves it in parallel. Re-pointing preserves each edge's
+relationship type and lag rather than flattening it to a default FS.
+
+### Copy/paste & fill-down (owner asked whether it exists)
+
+It already does, in the Schedule grid: Ctrl+C/X/V over a cell range or whole rows, Ctrl+D fill-down,
+drag/Shift-click range select, type-to-edit, and a right-click "Fill down". No change needed beyond
+teaching the three new columns to participate.
+
+### Verified
+
+Not signed in (the module redirects), so verification was done by booting the module's own code in an
+iframe with the shared APIs stubbed — it evaluates top to bottom with **zero runtime errors** and
+reaches its `requireLogin` boot call. On top of that, 42 assertions through `PS.fn` and the builder's
+new `_t` test surface, all passing:
+
+- scope inheritance (own tag > WBS branch > 'main'), CO-reference inheritance, non-execution-phase
+  returning null, and the three filter modes;
+- the splice re-pointer keeping type+lag, not matching an ID prefix (`A10` must not hit `A100`);
+- the cross-basis fallback: External now pushes 3/3 rows where it pushed 0, with `missingTrades`
+  empty;
+- per-level-type durations: basement 12d / podium 4d / roof 4d out of `generate()`, one-column
+  specialisation, no leakage between categories, and clearing a fork restoring the default;
+- step-2 `kind` surviving normalize, and step 4 offering exactly `[basement, podium, roof]`;
+- a full grid render: **26 header cells, 26 cells on every row** (the positional-drift invariant this
+  file has been bitten by repeatedly), correct pills, tags, editability and the Mixed roll-up.
+
+⚠️ Still unverified signed-in: the actual Supabase writes (the new columns need the migration run),
+the Add-Activity scope section against a real WBS tree, and the splice prompt end to end.
+
+
 ## "Only Allied Services was pushed" — a zero-duration silent drop, now warned (2026-08-18) — eprobles
 Owner: pushing from Schedule Builder pushed only Allied Services. Root-caused, not guessed.
 - ⚠️ **`generate()` drops any activity whose duration is 0 for the CHOSEN BASIS.** Line ~14588:
