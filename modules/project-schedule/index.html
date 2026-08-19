@@ -862,6 +862,40 @@
     /* ---- Activity Progress View ---- */
     #ps-progressbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-progressbtn.active .pd-ico { color:#fff; }
+    /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
+       Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
+       deliberately close to the Schedule Builder's step 6 so the two read as one idea. */
+    .ps-vstack { padding:12px 14px 20px; }
+    .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+    .ps-vs-note { font-size:12px; color:var(--pd-muted); }
+    .ps-vs-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 9px; }
+    .ps-vs-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .ps-vs-seg > button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:12.5px;
+      padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
+    .ps-vs-seg > button:last-child { border-right:0; }
+    .ps-vs-seg > button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; font-weight:700; }
+    .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
+    .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
+      color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
+    .ps-vs-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
+    .ps-vs-dot { width:9px; height:9px; border-radius:50%; flex:none; }
+    .ps-vs-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:18px; align-items:start; }
+    .ps-vs-tower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px;
+      background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
+    .ps-vs-towerh { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:10px 14px;
+      background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:13.5px; font-weight:800; }
+    .ps-vs-towerh .n { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-vs-towerh .ct { font-size:11px; font-weight:600; color:var(--pd-muted); flex:none; }
+    .ps-vs-scroll { overflow-x:auto; max-width:100%; padding:12px 14px 14px; }
+    .ps-vs-scroll svg { display:block; height:auto; }
+    .ps-vs-cell { cursor:pointer; }
+    .ps-vs-cell:hover { filter:brightness(1.08); }
+    .ps-vs-empty { padding:18px; color:var(--pd-muted); font-size:13px; text-align:center; }
+    #ps-view-schedule.ps-vstack-mode .ps-split,
+    #ps-view-schedule.ps-vstack-mode .ps-network,
+    #ps-view-schedule.ps-vstack-mode .ps-legend,
+    #ps-view-schedule.ps-vstack-mode .ps-progress,
+    #ps-view-schedule.ps-vstack-mode .ps-grid-foot { display:none !important; }
     #ps-view-schedule.ps-progress-mode .ps-split,
     #ps-view-schedule.ps-progress-mode .ps-network,
     #ps-view-schedule.ps-progress-mode .ps-legend,
@@ -1914,6 +1948,7 @@
           <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" data-label="Layout" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <button class="pd-btn ps-icobtn" id="ps-progressbtn" data-label="Progress" title="Activity Progress — per-activity Physical vs Planned progress bars (no dates)"><span data-ico="trendingUp" data-ico-size="16"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-vstackbtn" data-label="Stacking" title="Vertical Stacking — the building model per trade or consolidated, one cell per level / zone / unit with its completion date. Honours the current filters and search."><span data-ico="layers" data-ico-size="16"></span></button>
           <span class="ps-tb-div"></span>
           <!-- Analyze: critical path, dependencies, link mode, progress spotlight -->
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-analyzebtn" data-label="Analyze" title="Analyze — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="16"></span></button>
@@ -1974,6 +2009,8 @@
 
         <!-- Activity Progress View — per-activity Physical vs Planned progress (no dates) -->
         <div class="ps-progress" id="ps-progress" style="display:none;"></div>
+        <!-- Vertical Stacking (toolbar button). Separate from the #ps-stack-back pane. -->
+        <div class="ps-vstack" id="ps-vstack" style="display:none;"></div>
 
         <!-- OPC-style grid footer: activity count + Download (mirrors OPC's strip under its grid) -->
         <div class="ps-grid-foot">
@@ -7841,6 +7878,213 @@
     if (on) { renderProgressView(); _animIn(host); }
     else { _animIn(document.querySelector('.ps-split')); }
   }
+
+  // ===================== VERTICAL STACKING (toolbar) =====================
+  // The Schedule Builder's step 6 shows the building model per trade, one cell per zone carrying its
+  // completion date. This is that view over the LIVE schedule instead of the generated preview, plus
+  // the two things step 6 does not have: a CONSOLIDATED tower (all trades in one model) and a
+  // level-of-detail control (1 = per level, 2 = per zone, 3 = per unit) like step 3's Detail 1-2-3-4.
+  //
+  // ⚠️ NOT the same feature as the "Vertical stacking pane" (#ps-stack-back) reached by clicking a
+  // month in the Gantt header. Owner asked for that one to be left untouched, so this shares none of
+  // its state (_stkFrom / _stkTo / _stkLevel) and none of its rendering.
+  //
+  // Everything it draws comes from rows that pass rowMatches() — the SAME predicate the grid uses —
+  // so the filter menu, per-column filters, the advanced filter and the search box all narrow the
+  // stacking too. Deliberate: a second filter UI here would be one more thing to drift out of step.
+  var vstackMode = false;
+  var _vsScope = 'trade';       // 'trade' = one tower per trade · 'all' = one consolidated tower
+  var _vsDetail = 2;            // 1 = per level · 2 = per zone · 3 = per unit (capped at LOC_LEVELS)
+  var _vsZoom = 1;
+  var _vsTrade = 'ALL';         // focus a single trade's tower
+  var _vsCells = {};            // cell key -> the activities behind it, for the drill-down
+  var NO_TRADE = '— No trade —';
+  function _vsMaxDetail() { return Math.max(1, LOC_LEVELS.length); }
+  function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
+  function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
+  // The activities this view is about: real tasks, currently filtered in, and locatable.
+  function _vsActs() {
+    if (!LOC_LEVELS.length) return [];
+    var lvl0 = LOC_LEVELS[0].id;
+    return rows.filter(function (r) {
+      return !isWbs(r) && r._dkind !== 'group' && rowMatches(r) && locValOf(r, lvl0);
+    });
+  }
+  // Duration-weighted % complete — the same weighting the WBS roll-ups use, so a stacking cell and a
+  // summary row covering the same activities can never disagree.
+  function _vsPct(list) {
+    var wd = 0, we = 0;
+    list.forEach(function (r) {
+      var sd = pd(r.start_date), ed = pd(r.end_date);
+      var dur = (sd && ed) ? (dayDiff(sd, ed) + 1) : 0;
+      if (dur > 0) { wd += dur; we += dur * (r.percent_complete || 0); }
+    });
+    return wd > 0 ? Math.max(0, Math.min(100, Math.round(we / wd))) : 0;
+  }
+  function _vsFin(list) {
+    var mx = null;
+    list.forEach(function (r) { var f = pd(dispFin(r)); if (f && (!mx || f > mx)) mx = f; });
+    return mx;
+  }
+  // A trade's colour from the SAME category palette the Gantt bars use, so the stacking reads as a key
+  // to the same picture. Falls back to a neutral hue when colouring is off or the trade is new.
+  function _vsColor(trade) {
+    var e = (typeof catEntryByValue === 'function') ? catEntryByValue(trade) : null;
+    return (e && e.color) || '#6f7276';
+  }
+  // Cells of one level row, grouped by the location path BELOW that level, as deep as the detail asks.
+  // Detail 1 keeps the whole row as a single cell (the level itself).
+  function _vsRowCells(list, detail) {
+    if (detail <= 1) return [{ label: '', list: list }];
+    var ids = LOC_LEVELS.slice(1, detail).map(function (l) { return l.id; });
+    var order = [], by = {};
+    list.forEach(function (r) {
+      var key = ids.map(function (id) { return locValOf(r, id) || '—'; }).join(' · ');
+      if (!(key in by)) { by[key] = order.length; order.push({ label: key, list: [] }); }
+      order[by[key]].list.push(r);
+    });
+    order.sort(function (a, b) { return cmpGroupName(a.label, b.label); });
+    return order;
+  }
+  // One tower: level rows top-down (highest first), basements under a grade line — the same shape as
+  // step 6, ordered by levelRank like the rest of the module, never alphabetically.
+  function _vsTowerSVG(list, baseColor, keyPrefix) {
+    var lvl0 = LOC_LEVELS[0].id, detail = _vsDetailNow();
+    var byLevel = {}, levels = [];
+    list.forEach(function (r) {
+      var v = locValOf(r, lvl0); if (!v) return;
+      if (!(v in byLevel)) { byLevel[v] = []; levels.push(v); }
+      byLevel[v].push(r);
+    });
+    if (!levels.length) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
+    levels.sort(cmpLevelValue);   // build order (bottom-up); display flips it below
+    var below = levels.filter(function (v) { var rk = levelRank(v); return rk != null && rk < 0; });
+    var above = levels.filter(function (v) { return below.indexOf(v) < 0; });
+    var disp = above.slice().reverse().concat(below.slice().reverse()), groundAt = above.length;
+    var fh = 44, gap = 6, pad = 14, labelW = 92;
+    var maxCells = disp.reduce(function (m, v) { return Math.max(m, _vsRowCells(byLevel[v], detail).length || 1); }, 1);
+    var cw = Math.max(56, Math.round(78 * _vsZoom));
+    var plotW = maxCells * cw, W = labelW + pad * 2 + plotW;
+    var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
+    disp.forEach(function (v, i) {
+      var y = pad + i * (fh + gap);
+      svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="11.5" font-weight="700" fill="var(--pd-muted)">' + esc(String(v).slice(0, 16)) + '</text>';
+      var cells = _vsRowCells(byLevel[v], detail);
+      var fcw = plotW / (cells.length || 1);
+      cells.forEach(function (c, ci) {
+        var cx = pad + labelW + ci * fcw, mid = cx + (fcw - 3) / 2;
+        var pct = _vsPct(c.list), fin = _vsFin(c.list);
+        var op = 0.30 + 0.70 * (pct / 100);
+        var key = keyPrefix + '|' + v + '|' + (c.label || '*');
+        _vsCells[key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: fin };
+        // At detail 1 the row label already names the level, so the cell prints only its dates —
+        // showing the level name twice on one row reads like two different things. With no label the
+        // two remaining lines are re-centred rather than left sitting under an empty first line.
+        var lbl = c.label, tip = c.label || String(v);
+        svg += '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="5" fill="' + baseColor + '" opacity="' + op.toFixed(2) + '" stroke="rgba(0,0,0,.18)" stroke-width="1"><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + (fin ? Fmt.date(dstr(fin)) : 'no finish')) + '</title></rect>' +
+          (lbl ? '<text x="' + mid + '" y="' + (y + 15) + '" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
+          '<text x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '400' : '700') + '" fill="rgba(255,255,255,.97)" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
+          '<text x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="700" fill="rgba(255,255,255,.92)" pointer-events="none">' + pct + '%</text>';
+      });
+    });
+    var gy = pad + groundAt * (fh + gap) - gap / 2 + (groundAt === disp.length ? 3 : 0);
+    svg += '<line x1="' + pad + '" y1="' + gy + '" x2="' + (W - pad) + '" y2="' + gy + '" stroke="var(--pd-line)" stroke-width="2.5"/>';
+    if (below.length) svg += '<text x="' + (W - pad) + '" y="' + (gy - 4) + '" text-anchor="end" font-size="9" fill="var(--pd-muted)">grade</text>';
+    return '<div class="ps-vs-scroll"><svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + svg + '</svg></div>';
+  }
+  // Click a cell to see which activities are behind it — step 6's drill-down idea, but over live rows,
+  // so the dates and percentages are the real ones rather than a generated preview's.
+  function openVsCell(key) {
+    var d = _vsCells[key]; if (!d) return;
+    var title = String(d.level) + (d.cell ? ' · ' + d.cell : '');
+    var body = '<div style="max-height:60vh;overflow:auto;"><table class="ps-table" style="width:100%;"><thead><tr>' +
+      ['Activity ID', 'Activity', 'Trade', 'Start', 'Finish', '%'].map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
+      '</tr></thead><tbody>' +
+      d.list.slice().sort(function (a, b) { var x = pd(dispFin(a)), y = pd(dispFin(b)); return (x ? +x : 0) - (y ? +y : 0); }).map(function (r) {
+        return '<tr><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td><td>' + esc(_vsTradeOf(r)) +
+          '</td><td>' + esc(dispStart(r) ? Fmt.date(dispStart(r)) : '—') + '</td><td>' + esc(dispFin(r) ? Fmt.date(dispFin(r)) : '—') +
+          '</td><td>' + (r.percent_complete || 0) + '%</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    var m = UI.modal('<h2 style="margin-top:0;font-size:16px;">' + esc(title) + '</h2>' +
+      '<div class="ps-vs-note" style="margin:-4px 0 10px;">' + d.list.length + ' activit' + (d.list.length === 1 ? 'y' : 'ies') +
+      ' · ' + d.pct + '% complete · finishes ' + esc(d.fin ? Fmt.date(dstr(d.fin)) : '—') + '</div>' + body +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn pd-btn-primary" id="ps-vs-x">Close</button></div>', { width: 860 });
+    m.el.querySelector('#ps-vs-x').onclick = function () { m.close(); };
+  }
+  function renderVStack() {
+    var host = document.getElementById('ps-vstack'); if (!host) return;
+    if (!pid) { host.innerHTML = '<div class="ps-vs-empty">Select a project to see its vertical stacking.</div>'; return; }
+    if (!LOC_LEVELS.length) {
+      host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Builder push does that for you.</div>';
+      return;
+    }
+    var acts = _vsActs(), detail = _vsDetailNow();
+    // Honest accounting: say how many filtered activities cannot be placed, rather than dropping them silently.
+    var placeable = rows.filter(function (r) { return !isWbs(r) && r._dkind !== 'group' && rowMatches(r); });
+    var noLoc = placeable.length - acts.length;
+    var trades = [], seen = {};
+    acts.forEach(function (r) { var t = _vsTradeOf(r); if (!seen[t]) { seen[t] = 1; trades.push(t); } });
+    trades.sort(cmpGroupName);
+    if (_vsTrade !== 'ALL' && trades.indexOf(_vsTrade) < 0) _vsTrade = 'ALL';
+
+    var detailBtns = '';
+    for (var dlv = 1; dlv <= _vsMaxDetail(); dlv++) {
+      detailBtns += '<button data-vsdet="' + dlv + '"' + (detail === dlv ? ' class="on"' : '') +
+        ' title="' + esc(LOC_LEVELS.slice(0, dlv).map(function (l) { return l.name; }).join(' › ')) + '">' + dlv + '</button>';
+    }
+    var chips = '<div class="ps-vs-chips"><button class="ps-vs-chip' + (_vsTrade === 'ALL' ? ' on' : '') + '" data-vstr="ALL">All trades</button>' +
+      trades.map(function (t) { return '<button class="ps-vs-chip' + (_vsTrade === t ? ' on' : '') + '" data-vstr="' + esc(t) + '"><span class="ps-vs-dot" style="background:' + _vsColor(t) + '"></span>' + esc(t) + '</button>'; }).join('') + '</div>';
+    var bar = '<div class="ps-vs-bar">' +
+      '<span class="ps-vs-seg"><button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
+      '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button></span>' +
+      '<span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
+      '<span class="ps-vs-note">' + esc(LOC_LEVELS.slice(0, detail).map(function (l) { return l.name; }).join(' › ')) + '</span>' +
+      '<span class="ps-tb-div"></span>' +
+      '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
+      '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
+      '<span style="flex:1 1 auto;"></span>' +
+      '<span class="ps-vs-note">' + acts.length + ' activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
+        (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
+    var warn = noLoc > 0 ? '<div class="ps-vs-warn">' + noLoc + ' filtered activit' + (noLoc === 1 ? 'y has' : 'ies have') +
+      ' no ' + esc(LOC_LEVELS[0].name) + ', so ' + (noLoc === 1 ? 'it is' : 'they are') + ' not stacked.</div>' : '';
+
+    _vsCells = {};
+    var towers;
+    if (!acts.length) {
+      towers = '<div class="ps-vs-empty">No activities match the current filters, or none carry a ' + esc(LOC_LEVELS[0].name) + '.</div>';
+    } else if (_vsScope === 'all') {
+      towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; all trades</span>' +
+        '<span class="ct">' + acts.length + ' activities · ' + _vsPct(acts) + '% · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span></div>' +
+        _vsTowerSVG(acts, 'var(--pd-red)', 'ALL') + '</div>';
+    } else {
+      towers = trades.filter(function (t) { return _vsTrade === 'ALL' || t === _vsTrade; }).map(function (t) {
+        var list = acts.filter(function (r) { return _vsTradeOf(r) === t; });
+        var col = _vsColor(t);
+        return '<div class="ps-vs-tower" style="--tc:' + col + '"><div class="ps-vs-towerh">' +
+          '<span class="n"><span class="ps-vs-dot" style="background:' + col + '"></span>' + esc(t) + '</span>' +
+          '<span class="ct">' + list.length + ' activities · ' + _vsPct(list) + '%</span></div>' +
+          _vsTowerSVG(list, col, t) + '</div>';
+      }).join('');
+    }
+    host.innerHTML = bar + (_vsScope === 'trade' ? chips : '') + warn + '<div class="ps-vs-grid">' + towers + '</div>';
+    host.querySelectorAll('[data-vssc]').forEach(function (b) { b.onclick = function () { _vsScope = b.dataset.vssc; renderVStack(); }; });
+    host.querySelectorAll('[data-vsdet]').forEach(function (b) { b.onclick = function () { _vsDetail = parseInt(b.dataset.vsdet, 10) || 1; renderVStack(); }; });
+    host.querySelectorAll('[data-vstr]').forEach(function (b) { b.onclick = function () { _vsTrade = b.dataset.vstr; renderVStack(); }; });
+    var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
+    var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };
+    host.querySelectorAll('.ps-vs-cell').forEach(function (el) { el.addEventListener('click', function () { openVsCell(el.getAttribute('data-vsk')); }); });
+    if (window.Icons) Icons.hydrate(host);
+  }
+  function setVStackMode(on) {
+    vstackMode = on;
+    if (on && progressMode) setProgressMode(false);   // one full-width panel at a time
+    var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-vstack-mode', on);
+    var btn = document.getElementById('ps-vstackbtn'); if (btn) btn.classList.toggle('active', on);
+    var host = document.getElementById('ps-vstack'); if (host) host.style.display = on ? 'block' : 'none';
+    if (on) { renderVStack(); _animIn(host); }
+    else { _animIn(document.querySelector('.ps-split')); }
+  }
+
   function renderNetwork() {
     var host = document.getElementById('ps-network'); if (!host) return;
     computeCPM();   // populates _relObjs / _succObjs so we can detect linked activities
@@ -9711,7 +9955,9 @@
   }
 
   function doRender() {
-    if (_editing) { _pendingWin = true; return; }   // defer full repaint while an inline editor is open
+    if (_editing) { _pendingWin = true; return; }
+    // The stacking panel is derived from the same filtered rows as the grid, so it repaints with it.
+    if (vstackMode) renderVStack();   // defer full repaint while an inline editor is open
     // Safety net: scheduleRender()/doRender() is the single choke point every
     // grid+Gantt build funnels through, and it is also poked by scroll, edit and
     // load-reconcile paths. At phone width the split is hidden and only the
@@ -20509,7 +20755,8 @@
     document.getElementById('ps-undo').onclick = function (e) { e.stopPropagation(); undo(); };
     document.getElementById('ps-redo').onclick = function (e) { e.stopPropagation(); redo(); };
     document.getElementById('ps-layoutbtn').onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { renderLayoutMenu(); lMenu.classList.add('open'); } };
-    var pgBtn = document.getElementById('ps-progressbtn'); if (pgBtn) pgBtn.onclick = function (e) { e.stopPropagation(); closeMenus(); setProgressMode(!progressMode); };
+    var pgBtn = document.getElementById('ps-progressbtn'); if (pgBtn) pgBtn.onclick = function (e) { e.stopPropagation(); closeMenus(); if (!progressMode && vstackMode) setVStackMode(false); setProgressMode(!progressMode); };
+    var vsBtn = document.getElementById('ps-vstackbtn'); if (vsBtn) vsBtn.onclick = function (e) { e.stopPropagation(); closeMenus(); setVStackMode(!vstackMode); };
     lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     // `.ps-split` sets overflow:hidden, and the chooser is absolutely positioned inside
     // `.ps-grid-pane` within it — so the menu was CLIPPED at the split's bottom edge, which is
