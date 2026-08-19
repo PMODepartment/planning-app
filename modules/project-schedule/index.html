@@ -14048,16 +14048,16 @@
   //  Generated preview stays here; pushing into project_schedule is a later step.
   // ======================================================================
   var ScheduleBuilder = (function () {
-    var GROUPS = ['GR', 'SW', 'ST', 'AR', 'MEPF', 'ALLIED', 'OT'];
-    var GLABEL = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', ALLIED: 'Allied Services', OT: 'Others' };
+    var GROUPS = ['GR', 'SW', 'ST', 'AR', 'MEPF', 'SD', 'ALLIED', 'OT'];
+    var GLABEL = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural', AR: 'Architectural', MEPF: 'MEPF', SD: 'Site Development', ALLIED: 'Allied Services', OT: 'Others' };
     // GWORK = the CANONICAL discipline/trade label written to project_schedule.work_type, so a pushed
     // activity groups into the SAME Discipline/Trade bucket as imported activities (which use WORK_CANON's
     // "Structural Works"/"Architectural Works"/"MEPF Works"/"Site Works"/"Allied Services"). GLABEL is the
     // builder's own short UI label ("Structural"); using it for work_type produced TWO buckets per trade
     // (a "Structural" from the builder beside "Structural Works" from the import). GR/OT have no WORK_CANON
     // entry, so they keep their GLABEL name.
-    var GWORK = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural Works', AR: 'Architectural Works', MEPF: 'MEPF Works', ALLIED: 'Allied Services', OT: 'Others' };
-    var GCOLOR = { GR: '#8a5cd1', SW: '#c07f2c', ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', ALLIED: '#1f8f4e', OT: '#0d9488' };
+    var GWORK = { GR: 'General Requirements', SW: 'Site Works', ST: 'Structural Works', AR: 'Architectural Works', MEPF: 'MEPF Works', SD: 'Site Development', ALLIED: 'Allied Services', OT: 'Others' };
+    var GCOLOR = { GR: '#8a5cd1', SW: '#c07f2c', ST: '#2B2C2B', AR: '#EE3124', MEPF: '#3a6098', SD: '#b8860b', ALLIED: '#1f8f4e', OT: '#0d9488' };
     // ⚠️ Structural's brand Dark Gray (#2B2C2B) is EXACTLY the dark-mode card colour, so on a dark
     // surface the trade name rendered dark-on-dark and was unreadable (reported on the Auto-trace
     // dialog, where the whole question read "How many ___ floors…"). The deep MEPF blue is nearly
@@ -14349,7 +14349,7 @@
     }
     function parseTrade(text) {
       var t = String(text == null ? '' : text).trim().toLowerCase();
-      var map = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'allied services': 'ALLIED', 'allied': 'ALLIED', 'others': 'OT', 'other': 'OT', 'ot': 'OT' };
+      var map = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'site development': 'SD', 'sitedevelopment': 'SD', 'site dev': 'SD', 'allied services': 'ALLIED', 'allied': 'ALLIED', 'others': 'OT', 'other': 'OT', 'ot': 'OT' };
       if (map[t]) return map[t];
       var up = t.toUpperCase(); return GROUPS.indexOf(up) >= 0 ? up : null;
     }
@@ -15257,7 +15257,7 @@
       var hdr = rows2d[0].map(function (h) { return String(h == null ? '' : h).trim().toLowerCase(); });
       function idx(names) { for (var i = 0; i < hdr.length; i++) for (var j = 0; j < names.length; j++) if (hdr[i].indexOf(names[j]) >= 0) return i; return -1; }
       var ci = idx(['code']), ni = idx(['activity name', 'name', 'activity']), gi = idx(['trade', 'discipline', 'group']), si = idx(['scope']), ii = idx(['interior', 'internal', 'int']), ei = idx(['exterior', 'external', 'ext']);
-      var tmap = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'genreq': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'allied services': 'ALLIED', 'allied': 'ALLIED' };
+      var tmap = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'genreq': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'site development': 'SD', 'sitedevelopment': 'SD', 'site dev': 'SD', 'allied services': 'ALLIED', 'allied': 'ALLIED' };
       var out = [];
       for (var r = 1; r < rows2d.length; r++) {
         var row = rows2d[r]; if (!row) continue;
@@ -16740,6 +16740,12 @@
           if (!dims.length) { rowsIn.forEach(function (r) { taskAssign.push({ k: parentKey, r: r, name: r.act.name }); }); return; }
           var dim = dims[0], rest = dims.slice(1), m = {}, ord = [];
           rowsIn.forEach(function (r) { var k = dimKey(dim, r); if (!m[k]) { m[k] = []; ord.push(k); } m[k].push(r); });
+          // Trade branches follow the canonical GROUPS order — see the note above. Without this the
+          // branch order is whichever trade started earliest, which is not an order at all.
+          if (dim === 'trade') ord.sort(function (a, b) {
+            var ia = GROUPS.indexOf(a), ib = GROUPS.indexOf(b);
+            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);   // anything unrecognised sorts last, stably
+          });
           // whole group has no value for this dim → skip the level entirely
           if (ord.length === 1 && ord[0] === ' ') { buildTree(rowsIn, rest, parentKey); return; }
           ord.forEach(function (k) {
@@ -16764,6 +16770,7 @@
         // `reused` also suppresses the WBS-Summary payload below: the surviving node already has one,
         // and writing another is exactly the "two rows for one wbs_node_id" duplication.
         var keyToNodeId = { '__base__': baseNodeId }, soByParent = {}, wbsOk = true, reused = {}, reusedN = 0, createdNodeIds = [];
+        var reorder = [];   // reused branches sitting at the wrong position — see the note below
         function existingChild(parentId, name) {
           var key = String(name || '').trim().toLowerCase();
           if (!key) return null;
@@ -16823,7 +16830,12 @@
             soByParent[nd.parentKey] = (soByParent[nd.parentKey] || 0);
             var parentId = keyToNodeId[nd.parentKey] || null;
             var ex = existingChild(parentId, nd.name) || (nd.alt ? existingChild(parentId, nd.alt) : null);
-            if (ex) { keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++; soByParent[nd.parentKey]++; doneN++; continue; }
+            if (ex) {
+              keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++;
+              var _want = soByParent[nd.parentKey]++;
+              if ((ex.sort_order || 0) !== _want) reorder.push({ id: ex.id, sort_order: _want, node: ex });
+              doneN++; continue;
+            }
             // ⚠️ Last-ditch coalesce: whatever happens upstream, this column is NOT NULL and one bad
             // row must not cost the planner the whole WBS tree.
             var _nm = (nd.name == null) ? '' : String(nd.name).trim();
@@ -16887,6 +16899,17 @@
           var _rbDead = {}; createdNodeIds.forEach(function (i2) { _rbDead[i2] = 1; });
           WBS_NODES = WBS_NODES.filter(function (n) { return !_rbDead[n.id]; });
         }
+        // ⚠️ BEFORE computeWbsCodes(): a dotted code is derived from a node's position among its
+        // siblings, so re-ordering must land first or the pushed rows would carry codes computed
+        // from the old order.
+        if (wbsOk && reorder.length) {
+          for (var ro = 0; ro < reorder.length; ro++) {
+            var _r = reorder[ro];
+            var _ur = await sb().from('wbs_nodes').update({ sort_order: _r.sort_order }).eq('id', _r.id);
+            if (!_ur.error) { _r.node.sort_order = _r.sort_order;   // mirror in memory for computeWbsCodes below
+              var _live = WBS_NODES.find(function (n) { return n.id === _r.id; }); if (_live) _live.sort_order = _r.sort_order; }
+          }
+        }
         if (wbsOk) {
           // codes computed from the now-updated WBS_NODES tree, so the pushed rows carry their correct
           // dotted WBS code immediately (load() heals summaries but doesn't re-sync codes).
@@ -16932,7 +16955,8 @@
           tiles: [
             { n: taskN, l: 'Activities added' },
             { n: cfg.links ? cfg.links.length : 0, l: 'Relationships' },
-            { n: wbsCount, l: 'WBS branches' }
+            { n: wbsCount, l: 'WBS branches' },
+            { n: reorder.length, l: 'Branches re-ordered' }
           ],
           // ⚠️ Name the ACTUAL error. This used to read only "run the wbs-nodes migration", which is
           // one possible cause among many — and it hid the reason the tree fell back to dotted codes,
