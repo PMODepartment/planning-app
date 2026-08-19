@@ -2875,6 +2875,21 @@
   }
   // Auto-numbered dotted codes from tree position; a code_custom node keeps its own code and its
   // subtree is prefixed by it. Returns { id: code }.
+  // A custom node's OWN code segment, healed of any computed path a previous _wbsCommit baked into
+  // it (see the note on _wbsCommit). "4.5.AR-F11" → "AR-F11".
+  // ⚠️ Heals ONLY a leading run of purely NUMERIC segments, and only when something non-numeric
+  // survives. That is the signature of an auto-numbered path prefix. A deliberately dotted code like
+  // "01.100" is all-numeric, so it is left alone rather than silently truncated to "100".
+  function ownCodeSeg(code) {
+    var raw = String(code == null ? '' : code).trim();
+    if (!raw) return '';
+    if (raw.indexOf('.') >= 0) {
+      var segs = raw.split('.'), i = 0;
+      while (i < segs.length - 1 && /^\d+$/.test(segs[i])) i++;
+      if (i > 0 && segs.slice(i).some(function (x) { return !/^\d+$/.test(x); })) raw = segs.slice(i).join('.');
+    }
+    return raw.replace(/\./g, '-').trim();   // whatever remains must still be ONE path segment
+  }
   function computeWbsCodes() {
     // Build a parent -> sorted-children index once (O(N log N)) instead of re-scanning WBS_NODES
     // per tree level via wbsChildren (which made this O(N²·log N) on big P6 trees). Same ordering.
@@ -2905,7 +2920,7 @@
         // "only Allied Services" report: nothing was ever dropped — the rows were detached.
         // ⚠️ Dots are stripped from the custom code: it must be ONE segment. A code containing a dot
         // would silently invent extra tree levels, which is the same class of bug in a new costume.
-        var custom = (n.code_custom && n.code) ? String(n.code).replace(/\./g, '-').trim() : '';
+        var custom = (n.code_custom && n.code) ? ownCodeSeg(n.code) : '';
         codeOf[n.id] = custom ? ((parentCode ? parentCode + '.' : '') + custom) : auto;
         walk(n.id, codeOf[n.id]);
       });
@@ -12747,11 +12762,20 @@
       else (actsByNode[_nid] || (actsByNode[_nid] = [])).push(_rr);
     }
     WBS_NODES.forEach(function (n) {
-      var newCode = codeOf[n.id], oldCode = n.code;
-      if (n.code !== newCode) { n.code = newCode; nodeUp.push({ id: n.id, patch: { code: newCode } }); }
+      var newCode = codeOf[n.id];
+      // ⚠️ NEVER write the computed PATH into a custom node's own code — that is the feedback
+      // loop documented above. `wbs_nodes.code` holds the node's own SEGMENT; the full path lives
+      // on the schedule rows (`wbs`). Writing the healed segment back repairs data already bitten.
+      if (n.code_custom) {
+        var seg = ownCodeSeg(n.code);
+        if (seg && seg !== n.code) { n.code = seg; nodeUp.push({ id: n.id, patch: { code: seg } }); }
+      } else if (n.code !== newCode) { n.code = newCode; nodeUp.push({ id: n.id, patch: { code: newCode } }); }
       var sr = sumByNode[n.id];
+      // The summary row's stored code is the reliable record of the PATH this node last had —
+      // n.code no longer is, for custom nodes. Captured before it is overwritten just below.
+      var pathChanged = !sr || sr.wbs !== newCode;
       if (sr && (sr.wbs !== newCode || sr.activity_name !== n.name)) { sr.wbs = newCode; sr.activity_name = n.name; schedUp.push({ id: sr.id, patch: { wbs: newCode, activity_name: n.name } }); }
-      if (oldCode !== newCode) (actsByNode[n.id] || []).forEach(function (r) { if (r.wbs !== newCode) { r.wbs = newCode; schedUp.push({ id: r.id, patch: { wbs: newCode } }); } });
+      if (pathChanged) (actsByNode[n.id] || []).forEach(function (r) { if (r.wbs !== newCode) { r.wbs = newCode; schedUp.push({ id: r.id, patch: { wbs: newCode } }); } });
     });
     await _batchUpdate('wbs_nodes', nodeUp);
     await _batchUpdate(TABLE, schedUp);
