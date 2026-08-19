@@ -6318,3 +6318,48 @@ terminating on a real date. C1 (33) and C2 (19) suites still green; **0 function
 ⚠️ **Trap, third time this session:** a `\n` written into the inline script through a shell heredoc
 lands as a REAL newline inside a JS string literal. Build such strings with explicit character codes
 and always re-run the parse check.
+
+### 2026-08-19 — C4: Minutes of Meeting in the schedule, raised into Issues & Concerns
+Owner ran the migration. New **Minutes of Meeting** view in the title switcher, beside Working
+Calendars — the owner asked for this module's features to live in that dropdown.
+
+**A meeting produces two different things, and collapsing them is the mistake this design avoids:**
+the **record** of what was said (`meeting_minutes` — stays true forever, whatever happens next) and
+**action items** (`mom_items` — each with an owner, a due date and a life of its own). The record is
+not a container for the actions; the actions are rows that can each point at an `issues_lessons`
+entry once someone raises it. ⚠️ That is why the items are a table and not jsonb on the minutes: a
+blob can hold the text but cannot be filtered by owner, or referenced by the issue it raised.
+
+- ⚠️ **The link is ONE-WAY, deliberately.** Raising copies the action into the register and links the
+  two; from then on the **register** is authoritative for how the issue is chased and the minute
+  keeps saying what the meeting said. Two-way sync would mean two screens both claiming to own a
+  status, and "why did this close?" would depend on which one you opened.
+- ⚠️ **Raising is idempotent by construction** — the button only renders when `issue_id` is null and
+  the handler re-checks before writing. Two raises would put two competing issues in the register
+  with no way to tell which one anybody is working.
+- ⚠️ **The link is written only AFTER the insert succeeds.** Writing it first and failing the insert
+  would leave an action pointing at nothing, rendering as "Raised" while nobody chases it. Tested by
+  injecting both failure modes: a failed insert changes nothing at all, and a failed *link* leaves
+  the action honestly un-raised and warns the planner to check for a duplicate.
+- ⚠️ **The two tables' `status` columns are NOT the same vocabulary** (`mom_items` has In Progress,
+  `issues_lessons` has On Hold) — translated on the way across, not copied.
+- ⚠️ **Deleting an action, or the whole minutes, never deletes an issue already raised.** Both
+  confirmations say so, because the opposite is a reasonable thing to assume.
+- ⚠️ **Loaded on first open, not with the schedule** — minutes are a side register most sessions never
+  look at, and two extra round-trips on every project switch is a cost paid by everyone for a screen
+  few open.
+- Action-item edits save per field on change rather than under the header's Save: a planner typing
+  into a table expects it to stick, and one Save covering the header *and* every row is how a
+  half-typed action gets written.
+
+**The register side** (`modules/issues-lessons/`) gained the reciprocal **From MOM** tag, naming the
+meeting and its date. ⚠️ It fetches **titles only, for the meetings actually referenced** — this
+register does not own minutes and must not start loading them wholesale — and is tolerant of the
+un-run migration, so no table simply means no tag.
+
+Verified by executing the shipped MOM code against an in-memory Supabase stub that models the real
+client (chained builders, `{data,error}`, injectable failures): **25 checks green**, covering the
+field mapping, the vocabulary translation, idempotency, the empty-action refusal, and both failure
+modes. C1 (33), C2 (19) and C3 (32) suites still green; **0 functions lost**; both files parse; CSS
+braces balanced. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260819f`; issues-lessons
+`module.css/js?v=` → `20260819a`.

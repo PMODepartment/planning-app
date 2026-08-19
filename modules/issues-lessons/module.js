@@ -21,7 +21,19 @@ window.IssuesLessons = (function () {
   var pid = null, projName = '';
   var canWrite = false;
   var rows = [];
+  var MOM_BY_ID = {};                  // meeting_minutes referenced by these issues (C4)
   var screen = 'issues';               // 'issues' | 'lessons'
+  // "This came out of a meeting." Read-only here on purpose: the minutes are the record
+  // of what was said and belong to the Project Schedule module — this register owns how
+  // the issue is chased, not where it came from.
+  function momTag(r) {
+    if (!r.mom_id) return '';
+    var m = MOM_BY_ID[r.mom_id];
+    var label = m ? (m.title || 'a meeting') : 'a meeting';
+    var when = m && m.meeting_date ? ' · ' + Fmt.date(m.meeting_date) : '';
+    return '<span class="il-momtag" title="' + Fmt.esc('Raised at: ' + label + when) + '">' +
+      '<span data-ico="clipboard" data-ico-size="12"></span>From MOM</span>';
+  }
 
   var iFilters = { search: '', status: '', department: '', champion: '', aging: '' };
   var lFilters = { search: '', department: '', category: '' };
@@ -197,6 +209,20 @@ window.IssuesLessons = (function () {
       UI.toast(res.error.message, 'error'); return;
     }
     rows = res.data || [];
+    // The reciprocal half of the schedule module's Minutes of Meeting (C4): an issue
+    // raised out of a meeting carries `mom_id`, and the register says so.
+    // ⚠️ Titles only, and only the meetings actually referenced — this register does not
+    // own minutes and must not start loading them wholesale. Tolerant of the un-run
+    // 2026-08-19 migration: no table -> no tag, everything else unaffected.
+    try {
+      var momIds = rows.map(function (r) { return r.mom_id; }).filter(Boolean)
+        .filter(function (v, i, a2) { return a2.indexOf(v) === i; });
+      if (momIds.length) {
+        var mres = await sb().from('meeting_minutes').select('id,title,meeting_date').in('id', momIds);
+        MOM_BY_ID = {};
+        ((mres && !mres.error && mres.data) || []).forEach(function (m) { MOM_BY_ID[m.id] = m; });
+      } else { MOM_BY_ID = {}; }
+    } catch (e) { MOM_BY_ID = {}; }
     rows.sort(function (a, b) {   // date_presented desc (blanks last), then created_at desc
       var x = a.date_presented || '', y = b.date_presented || '';
       if (!x !== !y) return x ? -1 : 1;
@@ -295,6 +321,7 @@ window.IssuesLessons = (function () {
         '<td data-l="Department">' + Fmt.esc(r.department) + '</td>' +
         '<td class="il-cell-wrap il-cell-issue" data-l="Issue"><div class="il-clip">' + Fmt.esc(r.description) + '</div>' +
           (hasLesson(r) ? '<span class="il-lessontag"><span data-ico="bulb" data-ico-size="12"></span>Lesson captured</span>' : '') +
+          momTag(r) +
         '</td>' +
         '<td class="il-cell-wrap" data-l="Caused by"><div class="il-clip">' + Fmt.esc(r.caused_by) + '</div></td>' +
         '<td class="il-cell-wrap" data-l="Corrective action"><div class="il-clip">' + Fmt.esc(r.corrective_action) + '</div></td>' +

@@ -135,9 +135,22 @@ calendars but never create or edit one — the editor lived in Resource & Role M
 unusable at the moment a planner needs it. Includes extra non-working days and **bulk-assign a
 calendar to a trade**, which is what makes multi-calendar projects practical.
 
-### C4. MOM (minutes of meeting), connected to Issues and Concerns
-- Capture MOM records against the schedule, with action items that create/link to entries
-  in `modules/issues-lessons/`.
+### C4. MOM (minutes of meeting), connected to Issues and Concerns ✅ done 2026-08-19
+A new **Minutes of Meeting** view in the schedule's title switcher (tables ship in the same
+`2026-08-19-duration-scenarios-and-mom.sql` migration).
+- A meeting produces two different things and they are modelled apart: the **record** of what was
+  said (`meeting_minutes`, which stays true forever) and **action items** (`mom_items`, each with an
+  owner, a due date and a life of its own). Minutes can optionally name the schedule activity
+  discussed.
+- **Raise as issue** copies an action into the Issues & Concerns register and links the two; the
+  register then shows a **From MOM** tag with the meeting it came from.
+- ⚠️ **One-way on purpose.** After raising, the register is authoritative for how the issue is
+  chased and the minute keeps saying what the meeting said. Two-way sync would give two screens a
+  claim on one status.
+- ⚠️ Raising is **idempotent**, an empty action is refused, and a failed link never leaves an action
+  falsely marked "Raised".
+- ⚠️ Deleting an action or the whole minutes **never deletes issues already raised** — said out loud
+  in both confirmations, because the opposite is a reasonable thing to assume.
 
 ---
 

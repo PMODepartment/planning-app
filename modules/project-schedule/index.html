@@ -448,6 +448,19 @@
     .ps-ds-presets small { font-size:11px; color:var(--pd-muted); }
     .ps-ds-raingrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(64px,1fr)); gap:6px; }
     .ps-ds-raingrid label { display:flex; flex-direction:column; gap:2px; font-size:11px; font-weight:700; color:var(--pd-muted); }
+    .ps-mom-wrap { display:flex; gap:14px; align-items:flex-start; }
+    .ps-mom-list { flex:0 0 260px; }
+    .ps-mom-detail { flex:1 1 auto; min-width:0; }
+    .ps-mom-head { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+      color:var(--pd-muted); margin-bottom:6px; display:flex; justify-content:space-between; }
+    .ps-mom-item { display:block; width:100%; text-align:left; background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:6px; padding:7px 10px; margin-bottom:6px; cursor:pointer; font:inherit; font-size:13px; color:var(--pd-ink); }
+    .ps-mom-item.on { border-color:var(--pd-red); background:var(--pd-red-light); }
+    .ps-mom-item small { display:block; color:var(--pd-muted); font-size:11px; margin-top:2px; }
+    .ps-mom-actions { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-top:12px; background:var(--pd-bg); }
+    .ps-mom-actions h4 { margin:0 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); }
+    .ps-mom-actions p { margin:0 0 8px; font-size:12px; color:var(--pd-muted); }
+    .ps-mom-actions td { vertical-align:middle; }
     .ps-cal-wrap { display:flex; gap:14px; align-items:flex-start; }
     .ps-cal-list { flex:0 0 240px; }
     .ps-cal-edit { flex:1 1 auto; min-width:0; }
@@ -1936,6 +1949,7 @@
           <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Builder</button>
           <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost / EVM</button>
           <button data-tab="calendars"><span data-ico="calendar" data-ico-size="14"></span> Working Calendars</button>
+          <button data-tab="mom"><span data-ico="clipboard" data-ico-size="14"></span> Minutes of Meeting</button>
         </div>
       </div>
       <!-- Project context sits next to the title (OPC-style), name over workspace, left-aligned.
@@ -2201,6 +2215,9 @@
            which days a duration is counted in, so it is edited where the schedule is
            read, and it is what duration scenarios resolve their dates through. -->
       <div id="ps-view-calendars" style="display:none;padding:16px 0;"></div>
+      <!-- Minutes of Meeting — the record of what was said, plus action items that can
+           be raised into the Issues & Concerns register (one way, on purpose). -->
+      <div id="ps-view-mom" style="display:none;padding:16px 0;"></div>
       <div id="ps-view-planner" style="display:none;">
         <div class="ps-ck-bar">
           <button class="pd-btn pd-btn-primary" id="ps-ck-update"><span data-ico="check" data-ico-size="15"></span> Update progress…</button>
@@ -3034,6 +3051,252 @@
 
 
 
+
+  // ==========================================================================
+  // C4 — MINUTES OF MEETING, connected to the Issues & Concerns register
+  // --------------------------------------------------------------------------
+  // A meeting produces two different kinds of thing and they must not be collapsed
+  // into one: a RECORD of what was said (which stays true forever, whatever happens
+  // next) and ACTION ITEMS (which have an owner, a due date and a life of their own).
+  // The record is `meeting_minutes`; the actions are `mom_items` rows that can each
+  // point at an `issues_lessons` entry once someone raises it there.
+  //
+  // ⚠️ ONE-WAY, AND DELIBERATELY SO. Raising an action item into the register COPIES
+  // it there and links the two; from that moment the REGISTER is authoritative for how
+  // the issue is being chased, and the minute keeps saying what the meeting said.
+  // Two-way sync would mean two places both claiming to own a status, and the answer
+  // to "why did this close?" would depend on which screen you happened to open.
+  // ==========================================================================
+  var MOMS = [], MOM_ITEMS = [], MOM_ISSUES = [], _momSel = null;
+
+  async function loadMoms() {
+    if (!pid) { MOMS = []; MOM_ITEMS = []; MOM_ISSUES = []; return; }
+    try {
+      var a = await sb().from('meeting_minutes').select('*').eq('project_id', pid).order('meeting_date', { ascending: false });
+      if (a.error) throw a.error;
+      MOMS = a.data || [];
+      var b = await sb().from('mom_items').select('*').eq('project_id', pid).order('seq');
+      MOM_ITEMS = (b && !b.error && b.data) || [];
+      // The linked issues, read-only, so the view can show what the register now says
+      // about an action without pretending to own it.
+      var ids = MOM_ITEMS.map(function (x) { return x.issue_id; }).filter(Boolean);
+      if (ids.length) {
+        var c = await sb().from('issues_lessons').select('id,status,description,type').in('id', ids);
+        MOM_ISSUES = (c && !c.error && c.data) || [];
+      } else { MOM_ISSUES = []; }
+    } catch (e) {
+      MOMS = []; MOM_ITEMS = []; MOM_ISSUES = [];
+      _momErr = e && e.message ? e.message : 'load failed';
+    }
+  }
+  var _momErr = '';
+  function momItemsOf(id) { return MOM_ITEMS.filter(function (x) { return x.mom_id === id; }); }
+  function momIssue(item) { return item.issue_id && MOM_ISSUES.find(function (x) { return x.id === item.issue_id; }); }
+
+  function renderMomView() {
+    var host = document.getElementById('ps-view-mom'); if (!host) return;
+    var cur = MOMS.find(function (x) { return x.id === _momSel; }) || null;
+    host.innerHTML =
+      '<div class="ps-mom-wrap"><div class="ps-mom-list">' +
+        '<div class="ps-mom-head">Meetings <span>' + MOMS.length + '</span></div>' +
+        (MOMS.length ? MOMS.map(function (x) {
+          var open = momItemsOf(x.id).filter(function (i) { return i.status !== 'Closed'; }).length;
+          return '<button class="ps-mom-item' + (cur && cur.id === x.id ? ' on' : '') + '" data-mom="' + esc(x.id) + '">' +
+            esc(x.title || '(untitled)') +
+            '<small>' + (x.meeting_date ? Fmt.date(x.meeting_date) : 'no date') +
+            ' · ' + momItemsOf(x.id).length + ' action(s)' +
+            (open ? ' · <b>' + open + ' open</b>' : '') + '</small></button>';
+        }).join('') : '<div class="pd-empty" style="padding:14px;">' +
+            (_momErr ? 'Could not load minutes: ' + esc(_momErr) + '<br><small>If this says the relation does not exist, run <code>migrations/2026-08-19-duration-scenarios-and-mom.sql</code>.</small>'
+                     : 'No minutes recorded on this project yet.') + '</div>') +
+        '<button class="pd-btn pd-btn-sm pd-btn-primary" id="ps-mom-new" style="width:100%;margin-top:8px;">+ New minutes</button>' +
+      '</div><div class="ps-mom-detail">' + (cur ? momDetailHTML(cur) : '<div class="pd-empty" style="padding:28px;">Pick a meeting, or record a new one.</div>') + '</div></div>';
+    wireMom();
+  }
+
+  function momDetailHTML(mom) {
+    var items = momItemsOf(mom.id);
+    return '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+        '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="ps-mom-title" value="' + esc(mom.title || '') + '"></div>' +
+        '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="ps-mom-date" value="' + (mom.meeting_date || '') + '"></div>' +
+        '<div class="pd-field" style="flex:1 1 140px;"><label>Location</label><input class="pd-input" id="ps-mom-loc" value="' + esc(mom.location || '') + '"></div>' +
+      '</div>' +
+      '<div class="pd-field"><label>Attendees</label><input class="pd-input" id="ps-mom-att" value="' + esc(mom.attendees || '') + '" placeholder="Names, comma separated"></div>' +
+      '<div class="pd-field"><label>Activity discussed <small style="font-weight:400;color:var(--pd-muted);">— optional; links these minutes to the schedule</small></label>' +
+        '<input class="pd-input" id="ps-mom-act" list="ps-mom-actdl" value="' + esc(mom.schedule_activity_id || '') + '" placeholder="Activity ID">' +
+        '<datalist id="ps-mom-actdl">' + rows.filter(function (r) { return !isWbs(r) && r.activity_id; }).slice(0, 400)
+          .map(function (r) { return '<option value="' + esc(r.activity_id) + '">' + esc(r.activity_name || '') + '</option>'; }).join('') + '</datalist></div>' +
+      '<div class="pd-field"><label>Notes / discussion</label><textarea class="pd-input" id="ps-mom-notes" rows="4" style="resize:vertical;">' + esc(mom.notes || '') + '</textarea></div>' +
+      '<div class="ps-mom-actions"><h4>Action items</h4>' +
+        '<p>An action item lives here. <b>Raise</b> it to put a copy in the Issues &amp; Concerns register and link the two — after that the register is where it is chased, and these minutes keep saying what the meeting said.</p>' +
+        (items.length ? '<table class="pd-table"><thead><tr><th>Action</th><th>Owner</th><th>Due</th><th>Status</th><th>In the register</th><th></th></tr></thead><tbody>' +
+          items.map(function (it) {
+            var iss = momIssue(it);
+            return '<tr data-item="' + esc(it.id) + '">' +
+              '<td><input class="pd-input pd-input-sm ps-mi" data-f="description" value="' + esc(it.description || '') + '"></td>' +
+              '<td><input class="pd-input pd-input-sm ps-mi" data-f="owner" value="' + esc(it.owner || '') + '" style="max-width:130px;"></td>' +
+              '<td><input class="pd-input pd-input-sm ps-mi" data-f="due_date" type="date" value="' + (it.due_date || '') + '" style="max-width:145px;"></td>' +
+              '<td><select class="pd-select pd-input-sm ps-mi" data-f="status" style="max-width:120px;">' +
+                ['Open', 'In Progress', 'Closed'].map(function (o) { return '<option' + (it.status === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
+              '</select></td>' +
+              '<td>' + (it.issue_id
+                  ? '<span class="pd-pill pd-pill-ok" title="' + esc(iss ? (iss.description || '') : '') + '">Raised' + (iss && iss.status ? ' · ' + esc(iss.status) : '') + '</span>'
+                  : '<button class="pd-btn pd-btn-sm ps-mi-raise">Raise as issue</button>') + '</td>' +
+              '<td><button class="pd-btn pd-btn-sm pd-btn-danger ps-mi-del" title="Remove this action">✕</button></td></tr>';
+          }).join('') + '</tbody></table>'
+          : '<div class="pd-empty" style="padding:14px;">No action items yet.</div>') +
+        '<button class="pd-btn pd-btn-sm" id="ps-mom-additem" style="margin-top:8px;">+ Add action item</button>' +
+      '</div>' +
+      '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;">' +
+        '<button class="pd-btn pd-btn-sm pd-btn-danger" id="ps-mom-del">Delete minutes…</button>' +
+        '<div style="flex:1;"></div>' +
+        '<a class="pd-btn pd-btn-sm" href="../issues-lessons/index.html" target="_blank" rel="noopener">Open Issues &amp; Concerns</a>' +
+        '<button class="pd-btn pd-btn-primary pd-btn-sm" id="ps-mom-save">Save minutes</button></div>';
+  }
+
+  async function momSaveHeader() {
+    var mom = MOMS.find(function (x) { return x.id === _momSel; }); if (!mom) return false;
+    var g = function (id) { var e = document.getElementById(id); return e ? e.value : ''; };
+    var payload = {
+      title: g('ps-mom-title').trim() || '(untitled)',
+      meeting_date: g('ps-mom-date') || null,
+      location: g('ps-mom-loc').trim() || null,
+      attendees: g('ps-mom-att').trim() || null,
+      notes: g('ps-mom-notes').trim() || null,
+      schedule_activity_id: g('ps-mom-act').trim() || null,
+    };
+    try {
+      var u = await sb().from('meeting_minutes').update(payload).eq('id', mom.id);
+      if (u.error) throw u.error;
+      Object.assign(mom, payload);
+      return true;
+    } catch (e) { UI.toast(e.message, 'error'); return false; }
+  }
+
+  // Action-item edits save on change, one field at a time — a planner typing into a
+  // table expects it to stick, and a single Save that silently covers the header AND
+  // every row is how a half-typed action gets written.
+  async function momSaveItem(id, patch) {
+    try {
+      var u = await sb().from('mom_items').update(patch).eq('id', id);
+      if (u.error) throw u.error;
+      var it = MOM_ITEMS.find(function (x) { return x.id === id; });
+      if (it) Object.assign(it, patch);
+      return true;
+    } catch (e) { UI.toast(e.message, 'error'); return false; }
+  }
+
+  // ⚠️ Raising is IDEMPOTENT by construction: the button is only rendered when
+  // `issue_id` is null, and this re-checks before writing. Raising the same action
+  // twice would put two competing issues in the register with no way to tell which one
+  // anybody is working.
+  async function momRaiseIssue(itemId) {
+    var it = MOM_ITEMS.find(function (x) { return x.id === itemId; }); if (!it) return;
+    if (it.issue_id) { UI.toast('Already raised — open it in Issues & Concerns.', 'info'); return; }
+    if (!String(it.description || '').trim()) { UI.toast('Describe the action before raising it.', 'warn'); return; }
+    var mom = MOMS.find(function (x) { return x.id === it.mom_id; }) || {};
+    // The register's own vocabulary, not this table's — mom_items and issues_lessons
+    // both have a "status" and they are NOT the same list.
+    var st = it.status === 'Closed' ? 'Closed' : (it.status === 'In Progress' ? 'On Hold' : 'Open');
+    var payload = {
+      project_id: pid, type: 'Issue',
+      description: it.description,
+      champion: it.owner || null,
+      status: st,
+      date_presented: mom.meeting_date || null,
+      caused_by: mom.title ? ('Raised at: ' + mom.title) : null,
+      mom_id: it.mom_id,
+      created_by: UID,
+    };
+    try {
+      var ins = await sb().from('issues_lessons').insert(payload).select().single();
+      if (ins.error) throw ins.error;
+      // ⚠️ Link the action to the issue only AFTER the insert succeeded. Writing the
+      // link first and failing the insert would leave an action pointing at nothing,
+      // which renders as "Raised" and hides the fact that nobody is chasing it.
+      var ok = await momSaveItem(itemId, { issue_id: ins.data.id });
+      if (!ok) throw new Error('Issue created but the link could not be saved — check Issues & Concerns for a duplicate before raising again.');
+      MOM_ISSUES.push(ins.data);
+      UI.toast('Raised in Issues & Concerns', 'ok');
+      renderMomView();
+    } catch (e) { UI.toast(e.message, 'error'); }
+  }
+
+  function wireMom() {
+    var host = document.getElementById('ps-view-mom'); if (!host) return;
+    host.querySelectorAll('[data-mom]').forEach(function (b) {
+      b.onclick = function () { _momSel = b.dataset.mom; renderMomView(); };
+    });
+    var nb = host.querySelector('#ps-mom-new');
+    if (nb) nb.onclick = async function () {
+      try {
+        var ins = await sb().from('meeting_minutes').insert({
+          project_id: pid, title: 'Meeting ' + Fmt.date(dstr(new Date())),
+          meeting_date: dstr(new Date()), created_by: UID }).select().single();
+        if (ins.error) throw ins.error;
+        MOMS.unshift(ins.data); _momSel = ins.data.id; _momErr = ''; renderMomView();
+      } catch (e) {
+        UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
+          ? 'Run migrations/2026-08-19-duration-scenarios-and-mom.sql in Supabase first.' : e.message, 'error');
+      }
+    };
+    if (!_momSel) return;
+    var sv = host.querySelector('#ps-mom-save');
+    if (sv) sv.onclick = async function () { if (await momSaveHeader()) { UI.toast('Minutes saved', 'ok'); renderMomView(); } };
+    var ai = host.querySelector('#ps-mom-additem');
+    if (ai) ai.onclick = async function () {
+      // The header is saved first: adding a row re-renders, and an unsaved title typed
+      // a moment ago would be thrown away by that repaint.
+      await momSaveHeader();
+      try {
+        var seq = momItemsOf(_momSel).length;
+        var ins = await sb().from('mom_items').insert({ mom_id: _momSel, project_id: pid, seq: seq, description: '', status: 'Open' }).select().single();
+        if (ins.error) throw ins.error;
+        MOM_ITEMS.push(ins.data); renderMomView();
+      } catch (e) { UI.toast(e.message, 'error'); }
+    };
+    host.querySelectorAll('.ps-mi').forEach(function (f) {
+      f.onchange = function () {
+        var id = f.closest('[data-item]').dataset.item, patch = {};
+        patch[f.dataset.f] = f.dataset.f === 'due_date' ? (f.value || null) : (f.value.trim ? f.value.trim() : f.value);
+        momSaveItem(id, patch);
+      };
+    });
+    host.querySelectorAll('.ps-mi-raise').forEach(function (b) {
+      b.onclick = function () { momRaiseIssue(b.closest('[data-item]').dataset.item); };
+    });
+    host.querySelectorAll('.ps-mi-del').forEach(function (b) {
+      b.onclick = async function () {
+        var id = b.closest('[data-item]').dataset.item;
+        var it = MOM_ITEMS.find(function (x) { return x.id === id; });
+        // ⚠️ Removing the action does NOT remove the issue it raised — the register is
+        // its own record and someone may already be working it. Said out loud, because
+        // the opposite is a reasonable thing to assume.
+        if (!confirm('Remove this action item?' + (it && it.issue_id
+          ? '\n\nThe issue it raised STAYS in Issues & Concerns — this only removes the line from these minutes.' : ''))) return;
+        try {
+          var d = await sb().from('mom_items').delete().eq('id', id);
+          if (d.error) throw d.error;
+          MOM_ITEMS = MOM_ITEMS.filter(function (x) { return x.id !== id; });
+          renderMomView();
+        } catch (e) { UI.toast(e.message, 'error'); }
+      };
+    });
+    var db = host.querySelector('#ps-mom-del');
+    if (db) db.onclick = async function () {
+      var items = momItemsOf(_momSel), raised = items.filter(function (i) { return i.issue_id; }).length;
+      if (!confirm('Delete these minutes and their ' + items.length + ' action item(s)?' +
+        (raised ? '\n\n' + raised + ' issue(s) already raised in Issues & Concerns will REMAIN — they simply stop pointing back at a meeting.' : ''))) return;
+      try {
+        var d = await sb().from('meeting_minutes').delete().eq('id', _momSel);
+        if (d.error) throw d.error;
+        MOM_ITEMS = MOM_ITEMS.filter(function (x) { return x.mom_id !== _momSel; });
+        MOMS = MOMS.filter(function (x) { return x.id !== _momSel; });
+        _momSel = null; UI.toast('Minutes deleted', 'ok'); renderMomView();
+      } catch (e) { UI.toast(e.message, 'error'); }
+    };
+  }
+
   // ---- Working calendars, editable from the schedule -------------------------
   // ⚠️ This module could READ calendars and ASSIGN one per activity, but it could
   // never CREATE or EDIT one — the only insert was the XER importer building them
@@ -3582,7 +3845,7 @@
     return out;
   }
   async function loadResourcesAssignments() {
-    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; DSCN = []; return; }
+    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; DSCN = []; MOMS = []; MOM_ITEMS = []; MOM_ISSUES = []; _momSel = null; _momErr = ''; return; }
     try {
       // resources/resource_assignments reach tens of thousands of rows on a P6/XER import, so an
       // unpaginated select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost
@@ -18565,17 +18828,23 @@
     document.getElementById('ps-view-wbs').style.display = tab === 'wbs' ? '' : 'none';
     var vb = document.getElementById('ps-view-builder'); if (vb) vb.style.display = tab === 'builder' ? '' : 'none';
     var vc = document.getElementById('ps-view-calendars'); if (vc) vc.style.display = tab === 'calendars' ? '' : 'none';
+    var vm = document.getElementById('ps-view-mom'); if (vm) vm.style.display = tab === 'mom' ? '' : 'none';
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Cockpit or Cost table.
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Builder' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule'))));
+    var name = tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Builder' : (tab === 'calendars' ? 'Working Calendars' : (tab === 'mom' ? 'Minutes of Meeting' : 'Project Schedule')))));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
     // Planner Cockpit now hosts the Last Planner weekly section too — render both.
-    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'wbs') renderWbsManager(); else if (tab === 'builder') ScheduleBuilder.open(pid, UID); else if (tab === 'calendars') renderCalendarsView(); else { renderPlanner(); openLastPlanner(); }
+    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'wbs') renderWbsManager(); else if (tab === 'builder') ScheduleBuilder.open(pid, UID); else if (tab === 'calendars') renderCalendarsView();
+    // ⚠️ Loaded on first open, not with the schedule: minutes are a side register and
+    // most sessions never look at them — two extra round-trips on every project switch
+    // is a cost paid by everyone for a screen few open.
+    else if (tab === 'mom') { if (!MOMS.length && !_momErr) loadMoms().then(renderMomView); else renderMomView(); }
+    else { renderPlanner(); openLastPlanner(); }
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
