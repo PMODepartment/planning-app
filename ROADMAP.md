@@ -27,23 +27,40 @@ Reconciled to PRC's own values, verified in a browser against the shipped CSS:
 - **Group by** defaults to `None` (was `Group Head`), so the landing view is flat. Grouping
   by group head or status remains available as an opt-in lens.
 
-### A3. Separate Project and Package — Package lives inside Project
-- Introduce a `packages` level between project and module data: Project → Package → module
-  records. Affects the project switcher (`pd-projsw`), `sessionStorage.pd_project`
-  (needs a companion `pd_package`), and every module's project-scoped queries.
-- This is the largest structural item and is a prerequisite for C1 (contract packages vs
-  change orders). Needs a schema migration + an RLS review before any UI work.
+### A3. Separate Project and Package — Package lives inside Project ⚠️ partly done 2026-08-19
+**The entity exists; module adoption does not.**
+- `migrations/2026-08-19-packages.sql` (**OWNER MUST RUN**) creates `packages`
+  (project_id, code unique-per-project, name, status, dates, contract_amount) with the
+  same RLS shape as every project-scoped module table, plus an `updated_at` trigger.
+- `PDb.getPackages/createPackage/updatePackage/deletePackage`; the Dashboard manages them
+  and selects one into `pd_package` / `pd_package_name` (cleared on any project switch).
+- ⚠️ **A package is NOT the Main-Contract/Change-Order split** — that is `scope_type`, an
+  activity-level tag from `2026-08-19-schedule-contract-scope.sql`. Orthogonal axes; an
+  activity can be "Package 2" *and* "change_order". C1 builds on both, not on one.
+- **Still open:** no module table carries `package_id` yet, so selecting a package does not
+  filter module data. Adoption is per module — the column and the UI that sets it must land
+  together. Contract documented in `MODULE_CONTRACT.md` §6b.
 
-### A4. Project landing page is a **dashboard**, not the module launcher
-- `dashboard.html` today is a module-launcher grid (`#module-grid`) titled "Project Home".
-- Requirement: landing shows a real dashboard. The module grid moves to a secondary
-  "Modules" view (or a sidebar entry); the landing surfaces KPIs instead.
+### A4. Project landing page is a **dashboard** ✅ done 2026-08-19
+`dashboard.html` is now a real dashboard: project KPIs (status/group head, budget vs estimate,
+forecast dates, location), the Packages panel, and the module tiles. The launcher moved to a new
+**`modules.html`**, reachable from the sidebar and from a button on the dashboard; module
+back-links point at it. `MODULE_V` moved out of `dashboard.html` into the new shared
+`assets/js/modules-grid.js` — **bump it there from now on**.
 
-### A5. Dashboard for all modules
-- Each module contributes a summary tile/widget to A4's dashboard (schedule health,
-  open issues, risk count, drawing register status, claims exposure, cash-flow position, …).
-- Extend `MODULE_CONTRACT.md` with a documented "dashboard tile" hook so each module
-  publishes its own summary rather than the shell reaching into module tables.
+### A5. Dashboard for all modules ✅ done 2026-08-19
+Each module publishes its own tile spec as `dash` on its `config.js` entry
+(`{table, unit, attention?}`); `PDb.moduleSummary` reads only what the module declared — the
+shell never reaches into a module's tables. Tiles show a row count, an optional
+"needs attention" figure, and last-updated.
+- ⚠️ Counts use a HEAD `count:'exact'` request, **not** `select().length` — PostgREST caps a
+  read at 1000 rows, so a big project's schedule would report 1000 activities forever.
+- ⚠️ `attention` is declared **only where the schema fixes the vocabulary** (risk_register
+  `Open`; issues_lessons `Open`/`On Hold`). Contracts & Claims has a `status` column with no
+  fixed vocabulary, so it claims no attention figure — a guessed one reads 0 forever and looks
+  like good news. Fixing that is part of B2.
+- One module's broken spec (or an unmigrated table) degrades to "Summary unavailable" on that
+  tile only.
 
 ---
 

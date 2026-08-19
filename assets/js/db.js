@@ -109,6 +109,75 @@
       if (error) throw error;
     },
 
+    // ---- Packages (a contract package INSIDE a project) ----
+    // Project -> Package -> module records. See migrations/2026-08-19-packages.sql.
+    // ⚠️ A package is NOT the Main-Contract/Change-Order split — that is
+    // `scope_type`, a tag on the activity itself, so a CO can sit inside the
+    // construction sequence where the work is. The two axes are orthogonal.
+    async getPackages(projectId) {
+      var q = sb().from('packages').select('*');
+      if (projectId) q = q.eq('project_id', projectId);
+      var { data, error } = await q.order('sort_order').order('code');
+      if (error) throw error;
+      return data || [];
+    },
+    async createPackage(p) {
+      var { data, error } = await sb().from('packages').insert(p).select().single();
+      if (error) throw error;
+      return data;
+    },
+    async updatePackage(id, p) {
+      var { error } = await sb().from('packages').update(p).eq('id', id);
+      if (error) throw error;
+    },
+    // Plain delete: no module table references packages yet, so nothing can be
+    // orphaned. ⚠️ The first module to adopt `package_id` must replace this with
+    // a guarded RPC (like admin_delete_project) that names what is blocking —
+    // an FK violation surfaced raw tells the planner nothing.
+    async deletePackage(id) {
+      var { error } = await sb().from('packages').delete().eq('id', id);
+      if (error) throw error;
+    },
+
+    // ---- Dashboard tiles (A5) ----
+    // One project-scoped summary per module, driven by the `dash` spec each
+    // module declares in config.js (see MODULE_CONTRACT.md). The shell never
+    // hard-codes a module's tables here — it reads what the module published.
+    //
+    // ⚠️ Counts use a HEAD request with count:'exact'. Do not "simplify" this to
+    // selecting the rows and taking .length: PostgREST caps a read at 1000 rows
+    // server-side, so a big project's schedule would report exactly 1000
+    // activities forever, with no error to notice (the same trap PDb.selectAll
+    // exists for).
+    async moduleSummary(spec, projectId) {
+      if (!spec || !spec.table || !projectId) return null;
+      var col = spec.projectCol || 'project_id';
+      async function count(apply) {
+        var q = sb().from(spec.table).select('id', { count: 'exact', head: true }).eq(col, projectId);
+        if (apply) q = apply(q);
+        var res = await q;
+        if (res.error) throw res.error;
+        return res.count || 0;
+      }
+      var out = { total: await count(null) };
+      // The "needs attention" figure is optional and only declared where the
+      // status vocabulary is actually known from the schema. A tile that
+      // invented one would read 0 forever and look like good news.
+      if (spec.attention && spec.attention.column && spec.attention.values) {
+        out.attention = await count(function (q) { return q.in(spec.attention.column, spec.attention.values); });
+        out.attentionLabel = spec.attention.label || 'open';
+      }
+      if (spec.updatedCol !== null) {
+        var uc = spec.updatedCol || 'updated_at';
+        var res = await sb().from(spec.table).select(uc).eq(col, projectId)
+          .order(uc, { ascending: false }).limit(1);
+        // A missing column is a spec bug, not a reason to fail the whole
+        // dashboard — the tile just loses its timestamp.
+        if (!res.error && res.data && res.data.length) out.lastActivity = res.data[0][uc];
+      }
+      return out;
+    },
+
     // ---- Users (admin screens) ----
     async getAllUsers() {
       var { data, error } = await sb().from('users').select('*').order('name');

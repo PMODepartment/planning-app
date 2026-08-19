@@ -162,6 +162,43 @@ Read it on load; if empty, show a project picker using `PDb.getProjects()` and
 write the chosen id back to `pd_project`. Always scope your queries with
 `.eq('project_id', pid)`.
 
+### 6b. Packages (Project → Package)
+
+A **package** is a contract package/lot inside a project (`packages` table, see
+`migrations/2026-08-19-packages.sql`). The shell exposes the selected one as
+**`pd_package`** (+ `pd_package_name`) alongside `pd_project`.
+
+- ⚠️ **A package is NOT the Main-Contract vs Change-Order split.** That is
+  `scope_type`, a tag on the schedule activity itself, so a change order can sit
+  inside the construction sequence where the work is. The two axes are orthogonal
+  — an activity can be "Package 2" *and* "change_order".
+- **Read `pd_package` as an optional narrowing, never as a requirement.** It is
+  empty whenever the planner has not picked one, and most projects have no
+  packages at all. `project_id` remains the scope every module must handle.
+- Adopting `package_id` on your own table is a deliberate, per-module step: add
+  the column *and* the UI that sets it in the same change, or you create rows
+  belonging to no package that vanish from any package-filtered view.
+
+### 6c. Publishing a dashboard tile
+
+The project Dashboard (`dashboard.html`) shows one tile per module. It reads
+**only** what your module declares as `dash` on its `config.js` entry — the shell
+never reaches into your tables on its own:
+
+```js
+{ key: 'risk-register', …, dash: {
+    table: 'risk_register',        // your main project-scoped table
+    unit: 'risks',                 // what ONE ROW is, for the caption
+    // OPTIONAL — declare only if the status vocabulary is actually fixed.
+    // A guessed one reads 0 forever and looks like good news.
+    attention: { column: 'status', values: ['Open'], label: 'open' },
+  } }
+```
+
+Optional keys: `projectCol` (default `project_id`), `updatedCol` (default
+`updated_at`; pass `null` to skip the "last updated" line). No `dash` is fine —
+the tile then says no summary is published, which is honest.
+
 ---
 
 ## 7. Git workflow

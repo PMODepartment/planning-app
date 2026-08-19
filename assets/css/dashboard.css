@@ -894,6 +894,50 @@ body { overflow-x: clip; }
    Group-head scope pane + grouped card view
    --------------------------------------------------------------------------- */
 
+/* ============================================================================
+   PROJECT DASHBOARD (A4/A5) — KPI strip, packages panel, module tile figures.
+   ========================================================================== */
+
+/* Project facts. auto-fit rather than a fixed column count: the strip carries
+   five short values, and a fixed grid leaves a ragged empty cell on the widths
+   where six would fit. */
+.pd-kpis {
+  display: grid; gap: 12px; margin-bottom: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+.pd-kpi {
+  background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); padding: 12px 14px; box-shadow: var(--pd-shadow);
+  display: flex; flex-direction: column; gap: 4px; min-width: 0;
+}
+.pd-kpi-label { font-size: 10px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--pd-muted); }
+.pd-kpi-value { font-size: 18px; font-weight: 800; letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pd-kpi-sub { color: var(--pd-muted); font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Section header: title left, one action right. */
+.pd-sec-head { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.pd-sec-head h3 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: 8px; }
+.pd-sec-head > :last-child { margin-left: auto; }
+.pd-sec-note { margin: 10px 0 0; color: var(--pd-muted); font-size: 12.5px; }
+.pd-pkg-card { margin-bottom: 22px; }
+/* The table is the widest thing on the page on a phone — let it scroll inside
+   its own card instead of pushing the whole document sideways. */
+.pd-pkg-card > div { overflow-x: auto; }
+
+/* Module tile figures. A tile without a published `dash` spec says so rather
+   than showing a zero it never measured. */
+.pd-module-figs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
+  margin-top: 4px; font-size: 13px; color: var(--pd-muted); }
+.pd-module-figs .pd-fig b { color: var(--pd-ink); font-size: 15px; font-weight: 800; margin-right: 3px; }
+/* Amber, not red: an open item is normal work in progress, not an error. */
+.pd-module-figs .pd-fig.warn b { color: var(--pd-warn); }
+.pd-fig-when { font-size: 11.5px; }
+.pd-fig-load, .pd-fig-none { font-size: 12.5px; font-style: italic; }
+
 /* Grouped CARD view. The list view groups by the Group-by selection; the card
    view used to ignore it entirely and render one flat run of cards, silently
    discarding the grouping the user had just chosen. Same headers, both views. */

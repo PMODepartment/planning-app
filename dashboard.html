@@ -6,8 +6,8 @@
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
   <script src="assets/js/theme.js?v=20260812b"></script>
-  <title>Project Home — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260819a" />
+  <title>Dashboard — Planners Dashboard</title>
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260819b" />
 </head>
 <body>
   <div class="pd-app">
@@ -18,7 +18,8 @@
         <a href="projects.html" title="Projects"><span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>
         <a href="modules/portfolio-overview/index.html" title="Portfolio Overview"><span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Overview</span></a>
         <div class="pd-navsec">Project</div>
-        <a href="dashboard.html" class="active" title="Project Home"><span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Project Home<small class="pd-nav-sub" id="nav-proj">None selected</small></span></a>
+        <a href="dashboard.html" class="active" title="Dashboard"><span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard<small class="pd-nav-sub" id="nav-proj">None selected</small></span></a>
+        <a href="modules.html" title="Modules"><span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Modules</span></a>
         <div class="pd-navsec" id="nav-sys" style="display:none;">System</div>
         <a href="admin.html" id="nav-admin" style="display:none;" title="Admin"><span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>
       </nav>
@@ -50,41 +51,67 @@
       </div>
 
       <div class="pd-main">
-        <!-- Project Home: module launcher for the selected project -->
-        <section class="pd-tabpanel" data-panel="project">
-          <div class="pd-home-head">
-            <h2 id="welcome">Project Home</h2>
-            <p>Select a module to begin working on this project.</p>
+        <div class="pd-home-head">
+          <h2 id="welcome">Dashboard</h2>
+          <p id="dash-sub">Loading this project…</p>
+        </div>
+
+        <!-- ---- Project facts ------------------------------------------- -->
+        <div class="pd-kpis" id="kpis"></div>
+
+        <!-- ---- Packages (A3): a contract package lives inside a project -->
+        <section class="pd-card pd-pkg-card">
+          <div class="pd-sec-head">
+            <h3>Packages <span class="pd-tree-count" id="pkg-count">0</span></h3>
+            <button class="pd-btn pd-btn-primary pd-btn-sm" id="pkg-add" style="display:none;">
+              <span data-ico="plus" data-ico-size="14"></span> New Package
+            </button>
           </div>
-          <div class="pd-module-grid" id="module-grid"></div>
+          <div id="pkg-body"></div>
+          <!-- Said plainly rather than implied: a planner who picks a package and
+               sees the module figures stay put would otherwise assume a bug. -->
+          <p class="pd-sec-note">Packages break this project into contract lots. Module data is still
+            recorded against the <strong>project</strong> — package-level scoping is being adopted
+            one module at a time (roadmap A3).</p>
+        </section>
+
+        <!-- ---- Module summaries (A5) ----------------------------------- -->
+        <section>
+          <div class="pd-sec-head">
+            <h3>Modules</h3>
+            <a class="pd-btn pd-btn-sm" href="modules.html">Open module launcher</a>
+          </div>
+          <div class="pd-module-grid" id="tile-grid"></div>
         </section>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260812b"></script>
+  <script src="assets/js/config.js?v=20260819a"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260816a"></script>
+  <script src="assets/js/db.js?v=20260819a"></script>
   <script src="assets/js/ui.js?v=20260812b"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
+  <script src="assets/js/modules-grid.js?v=20260819a"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
     // No project chosen yet → go pick one first (Primavera-style entry).
     if (!pid) { location.replace('projects.html'); return; }
 
-    var PROJ = [], GH = [], ghById = {}, curProj = null;
+    var PROJ = [], GH = [], ghById = {}, curProj = null, PKG = [], canWrite = false;
 
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       var first = (profile.name || profile.email || '').split(' ')[0];
-      document.getElementById('welcome').textContent = first ? ('Welcome, ' + first) : 'Project Home';
+      document.getElementById('welcome').textContent = first ? ('Welcome, ' + first) : 'Dashboard';
+      canWrite = ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1;
       if (profile.role === 'admin' || profile.role === 'super_admin') {
         document.getElementById('nav-admin').style.display = '';
         var ns = document.getElementById('nav-sys'); if (ns) ns.style.display = '';
       }
-      renderModules();
+      if (canWrite) document.getElementById('pkg-add').style.display = '';
       boot();
     });
 
@@ -94,9 +121,15 @@
         PROJ = res[0]; GH = res[1];
       } catch (e) { /* still show cached header */ }
       GH.forEach(function (g) { ghById[g.id] = g; });
-      curProj = PROJ.find(function (p) { return p.id === pid; }) || { id: pid, name: sessionStorage.getItem('pd_project_name') || pid };
+      curProj = PROJ.find(function (p) { return p.id === pid; }) ||
+        { id: pid, name: sessionStorage.getItem('pd_project_name') || pid };
       renderHeader();
       renderSwitcherMenu();
+      renderKpis();
+      // Independent of one another: a packages failure must not blank the tiles.
+      loadPackages();
+      renderTiles();
+      document.getElementById('pkg-add').onclick = function () { packageModal(null); };
     }
 
     // The project's own tag — there is no workspace ancestry to walk any more.
@@ -108,9 +141,12 @@
       return g ? g.name : p.group_head_id;
     }
     function renderHeader() {
-      document.getElementById('projsw-name').textContent = (curProj.name || curProj.id) + ' (' + curProj.id + ')';
+      var label = (curProj.name || curProj.id) + ' (' + curProj.id + ')';
+      document.getElementById('projsw-name').textContent = label;
       var gh = groupHead(curProj);
       document.getElementById('projsw-path').textContent = gh ? ('Group Head: ' + gh) : '';
+      document.getElementById('nav-proj').textContent = curProj.name || curProj.id;
+      document.getElementById('dash-sub').textContent = label;
     }
 
     function renderSwitcherMenu() {
@@ -128,6 +164,10 @@
           sessionStorage.setItem('pd_project', np.id);
           sessionStorage.setItem('pd_project_name', np.name || np.id);
           sessionStorage.setItem('pd_group_head', np.group_head_id || '');
+          // ⚠️ The package belongs to the OLD project. Carrying it across would
+          // leave the shell scoped to a package this project does not contain.
+          sessionStorage.removeItem('pd_package');
+          sessionStorage.removeItem('pd_package_name');
           location.reload();
         };
       });
@@ -136,39 +176,207 @@
       document.addEventListener('click', function (e) { if (!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove('open'); });
     }
 
-    // ⚠️ Cache-busting for the MODULE PAGES themselves. Every shared asset carries a ?v=, but each
-    // module's own index.html did not — so a returning user kept serving the cached page and none of
-    // that module's fixes reached them until a hard refresh. That has been mis-diagnosed as a code
-    // bug more than once (a "broken import" that was simply an old parser still executing).
-    // Bump MODULE_V on any deploy that changes a module's index.html. It is defined here, not in
-    // config.js, deliberately: config.js is itself cache-busted from 22 HTML files, so versioning it
-    // there would mean a 22-file bump to make a one-module change visible.
-    var MODULE_V = '20260819b';
-    function renderModules() {
-      var grid = document.getElementById('module-grid');
-      grid.innerHTML = (APP_CONFIG.MODULES || []).map(function (m) {
-        if (m.enabled) {
-          return '<a class="pd-module-card" href="' + m.path + (m.path.indexOf('?') === -1 ? '?v=' : '&v=') + MODULE_V + '">' +
-            '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
-            '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
-            '<div class="pd-module-sub">Open module ' + Icons.svg('arrowRight', 14) + '</div></div></a>';
-        }
-        // ⚠️ "Disabled" covers two OPPOSITE situations and they must not read the same.
-        // A module that has not been built yet is "In development"; one that has MOVED
-        // to another app is retired, and labelling it "In development" would send a
-        // user waiting for something that already exists elsewhere.
-        var sub = m.retiredTo
-          ? '<span class="pd-badge-soon">Moved to ' + Fmt.esc(m.retiredTo) + '</span>'
-          : '<span class="pd-badge-soon">In development</span>';
-        return '<div class="pd-module-card disabled" title="' +
-          Fmt.esc(m.retiredTo ? m.name + ' is maintained in ' + m.retiredTo + ' — this copy is read-only history.'
-                              : m.name + ' is not built yet.') + '">' +
-          '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
-          '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
-          '<div class="pd-module-sub">' + sub + '</div></div></div>';
-      }).join('');
+    // ---- Project facts ----
+    function kpi(label, value, sub) {
+      return '<div class="pd-kpi"><span class="pd-kpi-label">' + Fmt.esc(label) + '</span>' +
+        '<strong class="pd-kpi-value">' + value + '</strong>' +
+        (sub ? '<small class="pd-kpi-sub">' + sub + '</small>' : '') + '</div>';
+    }
+    function renderKpis() {
+      var p = curProj;
+      var gh = groupHead(p);
+      document.getElementById('kpis').innerHTML =
+        kpi('Status', '<span class="pd-pill ' + ((p.status || 'active') === 'archived' ? 'pd-pill-muted' : 'pd-pill-ok') + '">' +
+          Fmt.esc(((p.status || 'active').charAt(0).toUpperCase() + (p.status || 'active').slice(1))) + '</span>',
+          gh ? Fmt.esc(gh) : 'No group head') +
+        kpi('Original Budget', p.original_budget != null ? Fmt.moneyShort(p.original_budget) : '—',
+          p.estimated_cost != null ? 'Est. cost ' + Fmt.moneyShort(p.estimated_cost) : '') +
+        kpi('Forecast Start', Fmt.date(p.forecast_start || p.start_date), '') +
+        kpi('Forecast Finish', Fmt.date(p.forecast_finish || p.end_date), '') +
+        kpi('Location', p.location ? Fmt.esc(p.location) : '—', '');
     }
 
+    // ---- Packages (A3) ----
+    async function loadPackages() {
+      var body = document.getElementById('pkg-body');
+      body.innerHTML = '<div class="pd-empty">Loading packages…</div>';
+      try {
+        PKG = await PDb.getPackages(pid);
+      } catch (e) {
+        // ⚠️ Names the likely cause. Before the migration runs, this table does
+        // not exist, and a bare "failed" would send someone hunting in the app.
+        body.innerHTML = '<div class="pd-empty">Could not load packages: ' + Fmt.esc(e.message) +
+          '<br><small>If this says the relation does not exist, run <code>migrations/2026-08-19-packages.sql</code>.</small></div>';
+        return;
+      }
+      renderPackages();
+    }
+
+    function renderPackages() {
+      var body = document.getElementById('pkg-body');
+      document.getElementById('pkg-count').textContent = PKG.length;
+      var sel = sessionStorage.getItem('pd_package') || '';
+      if (!PKG.length) {
+        body.innerHTML = '<div class="pd-empty">No packages yet — this project is tracked as a single scope.' +
+          (canWrite ? ' Use <strong>New Package</strong> to break it into contract lots.' : '') + '</div>';
+        return;
+      }
+      var rows = PKG.map(function (k) {
+        var cur = k.id === sel;
+        return '<tr class="pd-proj-row' + (cur ? ' cur' : '') + '" data-pkg="' + Fmt.esc(k.id) + '">' +
+          '<td class="pd-proj-name"><span class="pd-proj-ic">' + Icons.svg('box', 16) + '</span>' + Fmt.esc(k.code) + '</td>' +
+          '<td>' + Fmt.esc(k.name) + '</td>' +
+          '<td><span class="pd-pill ' + (k.status === 'archived' ? 'pd-pill-muted' : 'pd-pill-ok') + '">' +
+            Fmt.esc((k.status || 'active').charAt(0).toUpperCase() + (k.status || 'active').slice(1)) + '</span></td>' +
+          '<td>' + Fmt.date(k.start_date) + '</td><td>' + Fmt.date(k.end_date) + '</td>' +
+          '<td class="num">' + (k.contract_amount != null ? Fmt.moneyShort(k.contract_amount) : '—') + '</td>' +
+          '<td>' + (cur ? '<span class="pd-pill pd-pill-ok">Selected</span>' : '<button class="pd-btn pd-btn-sm" data-select="' + Fmt.esc(k.id) + '">Select</button>') + '</td>' +
+          (canWrite ? '<td><button class="pd-btn pd-btn-sm" data-edit="' + Fmt.esc(k.id) + '">Edit</button></td>' : '') +
+        '</tr>';
+      }).join('');
+      body.innerHTML = '<table class="pd-table"><thead><tr><th>Code</th><th>Name</th><th>Status</th>' +
+        '<th>Start</th><th>Finish</th><th class="num">Contract Amount</th><th></th>' +
+        (canWrite ? '<th></th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table>' +
+        (sel ? '<div class="pd-sec-note"><button class="pd-btn pd-btn-sm" id="pkg-clear">Clear package selection</button></div>' : '');
+
+      body.querySelectorAll('[data-select]').forEach(function (b) {
+        b.onclick = function () {
+          var k = PKG.find(function (x) { return x.id === b.dataset.select; });
+          sessionStorage.setItem('pd_package', k.id);
+          sessionStorage.setItem('pd_package_name', k.code + ' — ' + k.name);
+          renderPackages();
+        };
+      });
+      var clear = document.getElementById('pkg-clear');
+      if (clear) clear.onclick = function () {
+        sessionStorage.removeItem('pd_package');
+        sessionStorage.removeItem('pd_package_name');
+        renderPackages();
+      };
+      if (canWrite) body.querySelectorAll('[data-edit]').forEach(function (b) {
+        b.onclick = function () { packageModal(PKG.find(function (x) { return x.id === b.dataset.edit; })); };
+      });
+    }
+
+    function packageModal(k) {
+      var isNew = !k; k = k || {};
+      var m = UI.modal(
+        '<h2 style="margin-top:0;">' + (isNew ? 'New Package' : 'Edit Package') + '</h2>' +
+        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Code (e.g. PKG-01)</label>' +
+        '<input class="pd-input" id="k-code" value="' + Fmt.esc(k.code) + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label>Status</label><select class="pd-select" id="k-status">' +
+        ['active', 'archived'].map(function (s) { return '<option' + (k.status === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
+        '</select></div></div>' +
+        '<div class="pd-field"><label>Name</label><input class="pd-input" id="k-name" value="' + Fmt.esc(k.name) + '"></div>' +
+        '<div class="pd-field"><label>Description</label><input class="pd-input" id="k-desc" value="' + Fmt.esc(k.description) + '"></div>' +
+        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Start</label>' +
+        '<input class="pd-input" type="date" id="k-fs" value="' + (k.start_date || '') + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label>Finish</label>' +
+        '<input class="pd-input" type="date" id="k-ff" value="' + (k.end_date || '') + '"></div></div>' +
+        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Contract Amount (₱)</label>' +
+        '<input class="pd-input" type="number" id="k-amt" value="' + (k.contract_amount != null ? k.contract_amount : '') + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label>Sort order</label>' +
+        '<input class="pd-input" type="number" id="k-sort" value="' + (k.sort_order != null ? k.sort_order : 0) + '"></div></div>' +
+        '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">' +
+        (isNew ? '<div style="flex:1;"></div>' :
+          '<button class="pd-btn pd-btn-danger" id="k-del">Delete…</button><div style="flex:1;"></div>') +
+        '<button class="pd-btn" id="k-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="k-save">Save</button></div>');
+      m.el.querySelector('#k-cancel').onclick = m.close;
+      if (!isNew) m.el.querySelector('#k-del').onclick = function () { deletePackageModal(k, m); };
+      m.el.querySelector('#k-save').onclick = async function () {
+        var num = function (id) { var v = m.el.querySelector(id).value; return v === '' ? null : Number(v); };
+        var data = {
+          project_id: pid,
+          code: m.el.querySelector('#k-code').value.trim(),
+          name: m.el.querySelector('#k-name').value.trim(),
+          description: m.el.querySelector('#k-desc').value.trim() || null,
+          status: m.el.querySelector('#k-status').value,
+          start_date: m.el.querySelector('#k-fs').value || null,
+          end_date: m.el.querySelector('#k-ff').value || null,
+          contract_amount: num('#k-amt'), sort_order: num('#k-sort') || 0,
+        };
+        if (!data.code) { UI.toast('Code required', 'warn'); return; }
+        if (!data.name) { UI.toast('Name required', 'warn'); return; }
+        try {
+          if (isNew) await PDb.createPackage(data);
+          else await PDb.updatePackage(k.id, data);
+          UI.toast('Saved', 'ok'); m.close(); await loadPackages();
+        } catch (e) { UI.toast(e.message, 'error'); }
+      };
+    }
+
+    function deletePackageModal(k, parent) {
+      var m = UI.modal(
+        '<h2 style="margin-top:0;">Delete package ' + Fmt.esc(k.code) + '?</h2>' +
+        '<p style="color:var(--pd-muted);">This cannot be undone. Nothing is recorded against a package ' +
+        'yet, so no module data is affected — but the package itself, its dates and its contract amount ' +
+        'are gone. To retire one instead, set its status to <b>archived</b>.</p>' +
+        '<div class="pd-field"><label>Type <b>' + Fmt.esc(k.code) + '</b> to confirm</label>' +
+        '<input class="pd-input" id="d-echo" autocomplete="off"></div>' +
+        '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="d-cancel">Cancel</button> ' +
+        '<button class="pd-btn pd-btn-danger" id="d-go" disabled>Delete permanently</button></div>');
+      var echo = m.el.querySelector('#d-echo'), go = m.el.querySelector('#d-go');
+      echo.oninput = function () { go.disabled = echo.value.trim() !== k.code; };
+      m.el.querySelector('#d-cancel').onclick = m.close;
+      go.onclick = async function () {
+        go.disabled = true;
+        try {
+          await PDb.deletePackage(k.id);
+          // A deleted package must not stay as the shell's selected scope.
+          if (sessionStorage.getItem('pd_package') === k.id) {
+            sessionStorage.removeItem('pd_package');
+            sessionStorage.removeItem('pd_package_name');
+          }
+          UI.toast('Package deleted', 'ok'); m.close(); parent.close(); await loadPackages();
+        } catch (e) { UI.toast(e.message, 'error'); go.disabled = false; }
+      };
+      echo.focus();
+    }
+
+    // ---- Module tiles (A5) ----
+    // Each enabled module gets a tile. Figures come from the module's own `dash`
+    // spec in config.js — the shell does not know any module's tables.
+    function renderTiles() {
+      var grid = document.getElementById('tile-grid');
+      var mods = APP_CONFIG.MODULES || [];
+      grid.innerHTML = mods.map(function (m) {
+        if (!m.enabled) {
+          var sub = m.retiredTo
+            ? '<span class="pd-badge-soon">Moved to ' + Fmt.esc(m.retiredTo) + '</span>'
+            : '<span class="pd-badge-soon">In development</span>';
+          return '<div class="pd-module-card disabled">' +
+            '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
+            '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
+            '<div class="pd-module-sub">' + sub + '</div></div></div>';
+        }
+        return '<a class="pd-module-card" href="' + ModulesGrid.href(m) + '">' +
+          '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
+          '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
+          '<div class="pd-module-figs" data-fig="' + Fmt.esc(m.key) + '">' +
+            (m.dash ? '<span class="pd-fig-load">Loading…</span>'
+                    : '<span class="pd-fig-none">No summary published</span>') + '</div>' +
+          '</div></a>';
+      }).join('');
+
+      mods.forEach(function (m) {
+        if (!m.enabled || !m.dash) return;
+        var host = grid.querySelector('[data-fig="' + m.key + '"]');
+        PDb.moduleSummary(m.dash, pid).then(function (s) {
+          if (!host) return;
+          var html = '<span class="pd-fig"><b>' + s.total + '</b> ' + Fmt.esc(m.dash.unit || 'records') + '</span>';
+          if (s.attention != null) {
+            html += '<span class="pd-fig' + (s.attention ? ' warn' : '') + '"><b>' + s.attention + '</b> ' +
+              Fmt.esc(s.attentionLabel) + '</span>';
+          }
+          if (s.lastActivity) html += '<span class="pd-fig-when">updated ' + Fmt.date(s.lastActivity) + '</span>';
+          host.innerHTML = html;
+        }).catch(function (e) {
+          // One module's broken spec (or a table that has not been migrated yet)
+          // must not take the rest of the dashboard down with it.
+          if (host) host.innerHTML = '<span class="pd-fig-none" title="' + Fmt.esc(e.message) + '">Summary unavailable</span>';
+        });
+      });
+    }
   })();
   </script>
 </body>

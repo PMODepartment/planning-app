@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Projects — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260819a" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260819b" />
 </head>
 <body>
   <div class="pd-app">
@@ -18,7 +18,8 @@
         <a href="projects.html" class="active" title="Projects"><span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>
         <a href="modules/portfolio-overview/index.html" title="Portfolio Overview"><span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Overview</span></a>
         <div class="pd-navsec">Project</div>
-        <a href="dashboard.html" title="Project Home"><span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Project Home<small class="pd-nav-sub" id="nav-proj">None selected</small></span></a>
+        <a href="dashboard.html" title="Dashboard"><span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard<small class="pd-nav-sub" id="nav-proj">None selected</small></span></a>
+        <a href="modules.html" title="Modules"><span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Modules</span></a>
         <div class="pd-navsec" id="nav-sys" style="display:none;">System</div>
         <a href="admin.html" id="nav-admin" style="display:none;" title="Admin"><span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>
       </nav>
@@ -87,9 +88,9 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260812b"></script>
+  <script src="assets/js/config.js?v=20260819a"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260816a"></script>
+  <script src="assets/js/db.js?v=20260819a"></script>
   <script src="assets/js/ui.js?v=20260812b"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
   <script>
@@ -334,6 +335,10 @@
       sessionStorage.setItem('pd_project', p.id);
       sessionStorage.setItem('pd_project_name', p.name || p.id);
       sessionStorage.setItem('pd_group_head', p.group_head_id || '');
+      // ⚠️ A package belongs to ONE project. Carrying a previous selection across
+      // would scope the shell to a package this project does not contain.
+      sessionStorage.removeItem('pd_package');
+      sessionStorage.removeItem('pd_package_name');
       location.href = 'dashboard.html';
     }
 

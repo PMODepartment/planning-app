@@ -6071,3 +6071,55 @@ horizontal overflow. Parse clean. ⚠️ Not verified signed-in.
 settled and layout intermittently reported a 32px sidebar / 0px logo. A fresh navigate (or
 killing transitions) gives the true numbers — don't chase it as a CSS bug. Shared CSS changed:
 `dashboard.css?v=` → `20260819a` across all 22 pages. `MODULE_V` untouched (no module changed).
+
+### 2026-08-19 — A3 packages, A4 dashboard landing, A5 per-module tiles
+**A3 — `packages` exists as a real entity; module adoption is deliberately NOT included.**
+`migrations/2026-08-19-packages.sql` (**OWNER MUST RUN**) creates the table with the same RLS
+shape as every project-scoped module table (read = `can_access_project`, write additionally
+`is_planner`), a per-project case-insensitive unique `code`, and an `updated_at` trigger — the
+dashboard reports "last activity" from those timestamps, and an updated_at that only records the
+INSERT would report a package edited this morning as untouched.
+- ⚠️ **A package is NOT the Main-Contract/Change-Order split.** That axis already exists as
+  `scope_type` on the activity (2026-08-19-schedule-contract-scope.sql), deliberately a tag so a
+  CO can sit inside the construction sequence where the work is. Packages are the orthogonal
+  axis. Forcing one to model the other is what the migration's header note exists to prevent.
+- ⚠️ **No module table gets `package_id` yet and nothing is back-filled** — a `package_id` added
+  before that module's UI can set it produces rows belonging to no package that vanish from any
+  package-filtered view. So selecting a package currently scopes the shell only; the Packages
+  panel says so in plain text rather than letting a planner assume a filter that isn't there.
+- ⚠️ **No seeded "Main Package".** A project with no packages is a truthful state; a placeholder
+  would assert a breakdown no planner agreed to.
+- `pd_package` / `pd_package_name` are cleared on **every** project switch (both the dashboard
+  switcher and `projects.html`) — a package belongs to one project.
+
+**A4 — `dashboard.html` is the dashboard; the launcher moved to `modules.html`.** Landing now
+shows project KPIs, the Packages panel and the module tiles. ⚠️ **`MODULE_V` moved out of
+`dashboard.html` into the new shared `assets/js/modules-grid.js`** — two pages render the
+launcher now, so the version and the card markup live in one place. **Bump it there from now on**
+(the old instruction to bump it in `dashboard.html` is dead). Module "Back to modules" links
+repointed at `modules.html`; sidebars on all four sidebar-carrying pages gained a Modules entry
+and "Project Home" became "Dashboard".
+
+**A5 — tiles are published by the module, not scraped by the shell.** Each module declares
+`dash: {table, unit, attention?}` on its `config.js` entry and `PDb.moduleSummary` reads only
+that. Documented in `MODULE_CONTRACT.md` §6c.
+- ⚠️ **Counts are a HEAD request with `count:'exact'`, never `select().length`** — PostgREST caps
+  a read at 1000 rows server-side, so a large project's schedule would report exactly 1000
+  activities forever with no error. Same trap `PDb.selectAll` exists for.
+- ⚠️ **`attention` is declared only where the schema fixes the vocabulary** (`risk_register` →
+  `Open`; `issues_lessons` → `Open`/`On Hold`). `contracts_claims` has a `status` column whose
+  vocabulary the schema does not constrain, so it claims **no** attention figure — an invented
+  one would read 0 forever and look like good news.
+- A failing spec (or an unmigrated table) degrades to "Summary unavailable" on that tile alone;
+  packages and tiles load independently so neither can blank the other.
+
+Verified in a real browser against the shipped CSS/JS at 1280 and 375, light and dark: 5 KPI
+tiles (5 cols → 2 on phone), 3 package rows with the table scrolling **inside itself** (926 →
+329px) and no page overflow, 12 module tiles (10 with figures, 2 retired), the attention figure
+amber not red, dark mode entirely on tokens, and `ModulesGrid.render` producing all 12 cards with
+`MODULE_V` intact in the hrefs. All inline scripts + the three JS files parse; the migration is
+paren-balanced, `$$`-paired, and every `create policy` has a preceding drop (re-runnable).
+⚠️ **Not verified signed-in, and the migration has not been run** — until it is, the Packages
+panel shows a message naming the file to run. Shared assets changed: `dashboard.css?v=` →
+`20260819b`, `config.js?v=` / `db.js?v=` → `20260819a` across every page. `MODULE_V` untouched
+(no module `index.html` changed).

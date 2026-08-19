@@ -31,12 +31,21 @@ window.APP_CONFIG = {
   // NOTE: Portfolio Overview is intentionally NOT a per-project module — it's a
   // cross-project view reached from the Projects selector (projects.html), so the
   // module grid never implies it belongs to the currently-open project.
+  // ⚠️ `dash` is the Project Dashboard tile spec (A5). A module without one
+  // still gets a tile — it just shows no figures, which is honest. The shell
+  // reads ONLY what is declared here; it never reaches into a module's tables
+  // on its own. See MODULE_CONTRACT.md.
+  //   table      — the module's main project-scoped table
+  //   unit       — what one row IS ("risks", "activities"), for the tile caption
+  //   attention  — OPTIONAL {column, values, label}. Declare it only where the
+  //                vocabulary is known from the schema; a guessed one reads 0
+  //                forever and looks like good news.
   MODULES: [
-    { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: true },
-    { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true },
-    { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true },
-    { key: 'risk-register',     name: 'Risk Register',                         path: 'modules/risk-register/index.html',     icon: 'risk',       enabled: true },
-    { key: 'stakeholder-map',   name: 'Stakeholder Map',                       path: 'modules/stakeholder-map/index.html',   icon: 'compass',    enabled: true },
+    { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: true, dash: { table: 'progress_photos', unit: 'photos' } },
+    { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' } } },
+    { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records' } },
+    { key: 'risk-register',     name: 'Risk Register',                         path: 'modules/risk-register/index.html',     icon: 'risk',       enabled: true, dash: { table: 'risk_register', unit: 'risks', attention: { column: 'status', values: ['Open'], label: 'open' } } },
+    { key: 'stakeholder-map',   name: 'Stakeholder Map',                       path: 'modules/stakeholder-map/index.html',   icon: 'compass',    enabled: true, dash: { table: 'stakeholder_map', unit: 'stakeholders' } },
     // ⚠️ RETIRED — these two moved to the ENGINEERING APP, which is now the single
     // source for both registers. The modules and their tables are still here, and the
     // rows in them are the pre-cutover originals: readable, but STALE the moment
@@ -53,10 +62,10 @@ window.APP_CONFIG = {
     { key: 'drawing-register',  name: 'Drawing Register',                      path: 'modules/drawing-register/index.html',  icon: 'ruler',      enabled: false, retiredTo: 'the Engineering App' },
     { key: 'material-submittal',name: 'Material Submittal Log',                path: 'modules/material-submittal/index.html',icon: 'box',        enabled: false, retiredTo: 'the Engineering App' },
     // ---- Phase 2 ----
-    { key: 'project-schedule',  name: 'Project Schedule & Cost Loading',       path: 'modules/project-schedule/index.html', icon: 'calendar',    enabled: true },
-    { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true },
-    { key: 'resource-loading',  name: 'Resource & Role Master',                path: 'modules/resource-loading/index.html',  icon: 'users',      enabled: true },
-    { key: 'productivity-rates',name: 'Productivity Rates',                    path: 'modules/productivity-rates/index.html',icon: 'barChart',   enabled: true },
-    { key: 'cash-flow',         name: 'Cash Flow',                             path: 'modules/cash-flow/index.html',         icon: 'cash',       enabled: true },
+    { key: 'project-schedule',  name: 'Project Schedule & Cost Loading',       path: 'modules/project-schedule/index.html', icon: 'calendar',    enabled: true, dash: { table: 'project_schedule', unit: 'activities' } },
+    { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true, dash: { table: 's_curve', unit: 'points' } },
+    { key: 'resource-loading',  name: 'Resource & Role Master',                path: 'modules/resource-loading/index.html',  icon: 'users',      enabled: true, dash: { table: 'resources', unit: 'resources' } },
+    { key: 'productivity-rates',name: 'Productivity Rates',                    path: 'modules/productivity-rates/index.html',icon: 'barChart',   enabled: true, dash: { table: 'productivity_entries', unit: 'entries' } },
+    { key: 'cash-flow',         name: 'Cash Flow',                             path: 'modules/cash-flow/index.html',         icon: 'cash',       enabled: true, dash: { table: 'cash_flow_rollup', unit: 'periods' } },
   ],
 };
