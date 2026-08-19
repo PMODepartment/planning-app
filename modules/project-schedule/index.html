@@ -2517,12 +2517,25 @@
   // Memoized per node id and cleared whenever the tree or a phase changes.
   var _phaseMemo = {};
   function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; }
+  // The phase a branch NAME implies — the same rule migrations/2026-08-12-schedule-project-phase.sql
+  // used to seed the column, applied at read time so branches created after it still classify.
+  // ⚠️ Kept deliberately in step with that migration: change one, change the other.
+  function phaseFromName(name) {
+    var t = String(name == null ? '' : name).trim().toLowerCase();
+    if (!t) return null;
+    if (t.indexOf('execution phase') >= 0 || t.indexOf('construction') >= 0) return 'construction';
+    if (t.indexOf('initiation') >= 0) return 'initiation';
+    if (t.indexOf('planning phase') >= 0) return 'planning';
+    if (t.indexOf('close-out') >= 0 || t.indexOf('closeout') >= 0 || t.indexOf('close out') >= 0) return 'closeout';
+    return null;
+  }
   function _nodePhase(nodeId) {
     if (!nodeId) return null;
     if (_phaseMemo[nodeId] !== undefined) return _phaseMemo[nodeId];
     _phaseMemo[nodeId] = null;                       // cycle guard (a malformed tree must not hang)
     var n = WBS_NODES.find(function (x) { return x.id === nodeId; });
-    var out = n ? (n.phase || _nodePhase(n.parent_id)) : null;
+    // Stored phase wins; otherwise the branch's own NAME decides; otherwise inherit from the parent.
+    var out = n ? (n.phase || phaseFromName(n.name) || _nodePhase(n.parent_id)) : null;
     _phaseMemo[nodeId] = out || null;
     return _phaseMemo[nodeId];
   }
@@ -3756,6 +3769,7 @@
   function rebuild(structural) {
     if (structural === undefined) structural = true;
     _catCache = null;   // category legend is derived from the rows; recompute after any data change
+    _clearPhaseMemo();  // inherited phase/scope depend on the tree — see the note above this function
     // WBS-derived fields are cached per row (`_segsWbs`) and recomputed only when `wbs` changes.
     rows.forEach(function (r) {
       if (r._segsWbs === r.wbs && r._segs) return;
@@ -16752,7 +16766,10 @@
       function tradeOf(r) { var tr = (r.loc && r.loc.trade) || (r.act && r.act.group); return tr ? (GWORK[tr] || GLABEL[tr] || tr) : null; }
             // scope_type / change_order_ref come straight off the step-1 row, so a change order built here
       // arrives in the schedule already identified — no second pass to re-tag it after the push.
-      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null }; }
+      // ⚠️ phase + scope_type are stated OUTRIGHT, not left to inheritance. The builder produces
+      // execution-phase, main-contract work by definition, and a row that says so cannot be
+      // mis-read later if the tree above it is re-parented or was never phase-tagged.
+      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null }; }
       var payloads = [], taskN = g.rows.length, wbsMsg = '', wbsUnnamed = {};
 
       if (!grouped) {
@@ -16816,20 +16833,11 @@
           v = (v == null) ? '' : String(v).trim();
           return v || _dimFallback(dim);
         }
-        // A readable, UNIQUE custom WBS code for a floor branch — "<TRADE>-<floorcode>" (e.g. "ST-F1"),
-        // so the floor node reads code "ST-F1" / Name "Ground Floor" instead of an opaque dotted number
-        // (owner request). Only floors get one; other levels keep auto dotted codes, which under a
-        // custom-coded floor read "ST-F1.1" etc. (computeWbsCodes prefixes a custom code onto its
-        // subtree). De-duped within the push so two floors sharing a code can't collide into one code.
-        var _usedCode = {};
-        function dimCode(dim, r) {
-          if (dim !== 'floor') return null;
-          var l = r.loc || {}; if (!l.floor || l.floor._all) return null;
-          var fc = String(l.floor.code || '').trim(); if (!fc) return null;   // no code → auto dotted
-          var b = (l.trade ? l.trade + '-' : '') + fc, c = b, n = 2;
-          while (_usedCode[c]) { c = b + '-' + n; n++; }
-          _usedCode[c] = 1; return c;
-        }
+        // ⚠️ NO CUSTOM CODES. See the note above this function: the WBS ID is structural and is
+        // auto-numbered from tree position. Step-2 codes and names are a guide; they name the branch
+        // (dimName) and nothing else. Kept as a function returning null rather than deleted, so the
+        // buildTree call sites keep their shape and the rule stays visible where it is enforced.
+        function dimCode(/* dim, r */) { return null; }
         function buildTree(rowsIn, dims, parentKey) {
           if (!dims.length) { rowsIn.forEach(function (r) { taskAssign.push({ k: parentKey, r: r, name: r.act.name }); }); return; }
           var dim = dims[0], rest = dims.slice(1), m = {}, ord = [];
@@ -16864,7 +16872,10 @@
         // `reused` also suppresses the WBS-Summary payload below: the surviving node already has one,
         // and writing another is exactly the "two rows for one wbs_node_id" duplication.
         var keyToNodeId = { '__base__': baseNodeId }, soByParent = {}, wbsOk = true, reused = {}, reusedN = 0, createdNodeIds = [];
-        var reorder = [];   // reused branches sitting at the wrong position — see the note below
+        // Reused branches needing a write: a wrong sibling position, and/or a stale name-derived
+        // custom code from before the auto-numbering rule (clearing it lets computeWbsCodes
+        // re-derive a correct dotted path, which _wbsResyncCodes then pushes onto every row).
+        var reorder = [];
         function existingChild(parentId, name) {
           var key = String(name || '').trim().toLowerCase();
           if (!key) return null;
@@ -16926,8 +16937,13 @@
             var ex = existingChild(parentId, nd.name) || (nd.alt ? existingChild(parentId, nd.alt) : null);
             if (ex) {
               keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++;
-              var _want = soByParent[nd.parentKey]++;
-              if ((ex.sort_order || 0) !== _want) reorder.push({ id: ex.id, sort_order: _want, node: ex });
+              var _want = soByParent[nd.parentKey]++, _fix = {};
+              if ((ex.sort_order || 0) !== _want) _fix.sort_order = _want;
+              // ⚠️ Drop a name-derived code left by an older push. The builder owns these branches
+              // and their IDs are auto-numbered now; leaving one behind keeps the whole subtree on
+              // the old text-sorted, detachment-prone path.
+              if (ex.code_custom) { _fix.code_custom = false; _fix.code = null; }
+              if (Object.keys(_fix).length) reorder.push({ id: ex.id, patch: _fix, node: ex });
               doneN++; continue;
             }
             // ⚠️ Last-ditch coalesce: whatever happens upstream, this column is NOT NULL and one bad
@@ -16935,7 +16951,6 @@
             var _nm = (nd.name == null) ? '' : String(nd.name).trim();
             if (!_nm) { _nm = 'WBS'; _unnamedDims.unknown = (_unnamedDims.unknown || 0) + 1; }
             var _row = { project_id: pid, parent_id: parentId, name: _nm, sort_order: soByParent[nd.parentKey]++, created_by: UID };
-            if (nd.code) { _row.code = nd.code; _row.code_custom = true; }   // readable floor code, e.g. "ST-F1"
             batch.push(_row);
             batchDescs.push(nd);
           }
@@ -16999,9 +17014,12 @@
         if (wbsOk && reorder.length) {
           for (var ro = 0; ro < reorder.length; ro++) {
             var _r = reorder[ro];
-            var _ur = await sb().from('wbs_nodes').update({ sort_order: _r.sort_order }).eq('id', _r.id);
-            if (!_ur.error) { _r.node.sort_order = _r.sort_order;   // mirror in memory for computeWbsCodes below
-              var _live = WBS_NODES.find(function (n) { return n.id === _r.id; }); if (_live) _live.sort_order = _r.sort_order; }
+            var _ur = await sb().from('wbs_nodes').update(_r.patch).eq('id', _r.id);
+            if (!_ur.error) {
+              // Mirror in memory so computeWbsCodes() below sees the corrected tree.
+              var _live = WBS_NODES.find(function (n) { return n.id === _r.id; }) || _r.node;
+              Object.keys(_r.patch).forEach(function (k) { _r.node[k] = _r.patch[k]; if (_live) _live[k] = _r.patch[k]; });
+            }
           }
         }
         if (wbsOk) {
@@ -17010,13 +17028,13 @@
           var codeOf = computeWbsCodes();
           // scope_type on the summary rows as well — the builder only ever produces main-contract
           // scope, so every row it writes says so rather than leaving the column blank.
-          nodeDescs.forEach(function (nd) { if (reused[nd.key]) return; var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, scope_type: 'main', created_by: UID }); });
+          nodeDescs.forEach(function (nd) { if (reused[nd.key]) return; var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, phase: 'construction', scope_type: 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; var nidt = keyToNodeId[t.k] || baseNodeId || null; p.wbs_node_id = nidt; p.wbs = nidt ? (codeOf[nidt] || null) : null; payloads.push(p); });
         } else {
           // fallback: dotted WBS-Summary + task rows (old behavior), so the push still works pre-migration
           var codeByKey = {}, so2 = {};
           function childCode(pk) { var pc = pk === '__base__' ? base : codeByKey[pk]; if (so2[pk] == null) so2[pk] = nextChildIndex(pc); return code(pc, so2[pk]++); }
-          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', scope_type: 'main', created_by: UID }); });
+          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', phase: 'construction', scope_type: 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; p.wbs = childCode(t.k); payloads.push(p); });
         }
       }
@@ -17028,12 +17046,12 @@
       // failure. Drop the two fields and push everything else instead, and say so in the summary.
       function _dropScope() {
         scopeDropped = true;
-        payloads.forEach(function (pl) { delete pl.scope_type; delete pl.change_order_ref; });
+        payloads.forEach(function (pl) { delete pl.scope_type; delete pl.change_order_ref; delete pl.phase; });
       }
       for (var i = 0; i < payloads.length; i += CH) {
         if (typeof showLoading === 'function') showLoading('Pushing to the project schedule… (' + Math.min(i + CH, payloads.length) + ' of ' + payloads.length + ' rows)');
         var res = await sb().from(TABLE).insert(payloads.slice(i, i + CH));
-        if (res.error && !scopeDropped && /scope_type|change_order_ref/.test(res.error.message || '')) {
+        if (res.error && !scopeDropped && /scope_type|change_order_ref|phase/.test(res.error.message || '')) {
           _dropScope();
           res = await sb().from(TABLE).insert(payloads.slice(i, i + CH));
         }
@@ -17052,7 +17070,7 @@
             { n: taskN, l: 'Activities added' },
             { n: cfg.links ? cfg.links.length : 0, l: 'Relationships' },
             { n: wbsCount, l: 'WBS branches' },
-            { n: reorder.length, l: 'Branches re-ordered' }
+            { n: reorder.length, l: 'Branches corrected' }
           ],
           // ⚠️ Name the ACTUAL error. This used to read only "run the wbs-nodes migration", which is
           // one possible cause among many — and it hid the reason the tree fell back to dotted codes,
