@@ -1742,7 +1742,7 @@
     .sbld-wbsrows { display:flex; flex-direction:column; gap:5px; }
     .sbld-wbsrow { display:flex; align-items:center; gap:6px; padding:5px 8px; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card); font-size:13px; }
     .sbld-wbslvl { display:inline-block; min-width:22px; text-align:center; font-size:10.5px; font-weight:700; color:var(--pd-red); }
-    .sbld-wbsmv { width:28px; height:26px; padding:0; font-size:13px; }
+    .sbld-wbsmv { width:28px; height:26px; padding:0; font-size:13px; justify-content:center; line-height:1; }
     /* step 1 — Excel-style grid */
     .sbld-xlwrap { border:1px solid var(--pd-line); border-radius:8px; overflow:auto; max-height:58vh; outline:none; }
     .sbld-xlwrap:focus { box-shadow:inset 0 0 0 2px var(--pd-red-light); }
@@ -1762,7 +1762,7 @@
     table.sbld-xl td.xl-rowact .sbld-del { padding:2px 6px; }
     table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
     /* step-4 grid: link-select button + pending/focus row states (don't fight the cell selection tint) */
-    table.sbld-xl .t4-link { width:26px; height:24px; padding:0; font-size:13px; line-height:1; }
+    table.sbld-xl .t4-link { width:26px; height:24px; padding:0; font-size:13px; line-height:1; justify-content:center; }
     table.sbld-xl tr.pend .t4-link { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     table.sbld-xl tr.pend-dst .t4-link { background:#2f6fed; color:#fff; border-color:#2f6fed; }
     table.sbld-xl tr.sbld-focus > td.xl-rn { color:var(--pd-red); font-weight:800; }
@@ -1773,7 +1773,7 @@
     svg.sbld-sched .sbld-schedrowhi { fill:rgba(245,166,35,.15); pointer-events:none; }
     .sbld-schedbar.pend { stroke:var(--pd-red); stroke-width:2; }
     .sbld-linklbl { fill:var(--pd-muted); pointer-events:none; }
-    .sbld-zbtn { width:28px; height:28px; padding:0; font-size:15px; font-weight:700; }
+    .sbld-zbtn { width:28px; height:28px; padding:0; font-size:15px; font-weight:700; justify-content:center; line-height:1; }
     .sbld-mini { width:62px; height:30px; padding:2px 6px; font-size:12px; font-weight:700; }
     .sbld-at-q { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--pd-line); font-size:13px; }
     .sbld-at-q:last-child { border-bottom:none; }
@@ -1783,7 +1783,7 @@
     .sbld-zord { display:flex; flex-direction:column; gap:4px; }
     .sbld-zord-item { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 8px; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card); font-size:13px; font-weight:700; }
     .sbld-zord-btns { display:flex; gap:4px; }
-    .sbld-help-btn { width:30px; height:30px; padding:0; border-radius:50%; font-weight:700; font-size:14px; flex:none; }
+    .sbld-help-btn { width:30px; height:30px; padding:0; border-radius:50%; font-weight:700; font-size:14px; flex:none; justify-content:center; line-height:1; }
     .sbld-help-body h4 { margin:14px 0 6px; font-size:13px; color:var(--pd-ink); }
     .sbld-help-body p, .sbld-help-body li { font-size:12.5px; color:var(--pd-muted); line-height:1.5; }
     .sbld-help-body ul { margin:4px 0 4px 18px; padding:0; }
