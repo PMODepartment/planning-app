@@ -9403,6 +9403,9 @@
   var _vsAnim = null;
   var _vsCells = {};            // cell key -> the activities behind it, for the drill-down
   var NO_TRADE = '— No trade —';
+  // Labels sit over solid, hatched AND tinted areas depending on progress, so they carry their own
+  // outline (stroke painted UNDER the fill) instead of assuming a dark background.
+  var VS_TXT = 'paint-order="stroke" stroke="rgba(0,0,0,.55)" stroke-width="2.4" stroke-linejoin="round"';
   function _vsMaxDetail() { return Math.max(1, LOC_LEVELS.length); }
   function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
@@ -9490,6 +9493,24 @@
   }
   // A trade's colour from the SAME category palette the Gantt bars use, so the stacking reads as a key
   // to the same picture. Falls back to a neutral hue when colouring is off or the trade is new.
+  // A hatch pattern per colour in use — bounded by the number of trades plus the four slip colours,
+  // so this is a handful of defs, not one per cell. Ids are derived from the colour so the same
+  // colour reuses one pattern.
+  var _vsHatchSeen = {};
+  function _vsHatchId(color) { return 'psvs-h-' + String(color).replace(/[^a-zA-Z0-9]/g, ''); }
+  function _vsHatchDefs() {
+    var ids = Object.keys(_vsHatchSeen);
+    if (!ids.length) return '';
+    return '<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>' +
+      '<pattern id="psvs-legend-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
+      '<line x1="0" y1="0" x2="0" y2="6" stroke="var(--pd-muted)" stroke-width="2.6" opacity="0.55"/></pattern>' +
+      ids.map(function (col) {
+        // 45° lines. The remaining area also carries a faint wash of the same colour, so a cell never
+        // reads as empty background — see the tint rect in the cell renderer.
+        return '<pattern id="' + _vsHatchId(col) + '" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
+          '<line x1="0" y1="0" x2="0" y2="6" stroke="' + col + '" stroke-width="2.6" opacity="0.55"/></pattern>';
+      }).join('') + '</defs></svg>';
+  }
   function _vsColor(trade) {
     var e = (typeof catEntryByValue === 'function') ? catEntryByValue(trade) : null;
     return (e && e.color) || '#6f7276';
@@ -9548,8 +9569,11 @@
         var slip = _vsSlip(c.list), cmp = (_vsBasis === 'compare');
         // ⚠️ Compare is filled by SLIP, not progress — see the note on the basis switcher. A late
         // cell must look late however complete it is.
+        // The cell's colour still means its CATEGORY (trade, or slip in Compare). Progress is carried
+        // by how much of the cell is solid, so the two read independently: in Compare you can see
+        // "late AND only 40% done" at once, which an opacity ramp could never show.
         var fill = cmp ? _vsSlipColor(slip) : baseColor;
-        var op = cmp ? (slip == null ? 0.38 : 0.92) : (0.30 + 0.70 * (pct / 100));
+        _vsHatchSeen[fill] = 1;
         var key = keyPrefix + '|' + v + '|' + (c.label || '*');
         var isNo = (v === VS_NOLEV);   // project-wide band — drawn dashed, never as a storey
         _vsCells[key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: fin };
@@ -9557,18 +9581,32 @@
         // showing the level name twice on one row reads like two different things. With no label the
         // two remaining lines are re-centred rather than left sitting under an empty first line.
         var lbl = c.label, tip = c.label || String(v);
-        svg += '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="5" fill="' + fill + '" opacity="' + (isNo ? Math.min(op, 0.45).toFixed(2) : op.toFixed(2)) + '" stroke="' + (isNo ? baseColor : 'rgba(0,0,0,.18)') + '" stroke-width="1"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + _vsBasisWord() + ' · ' + _vsDateWord() + ' ' + (fin ? Fmt.date(dstr(fin)) : '—') +
+        var cw2 = fcw - 3;
+        // Solid width = POC. Inset by 1px so the bar sits inside the cell's own outline, and clamped
+        // so 1% still shows a sliver rather than nothing and 100% never overruns the stroke.
+        var doneW = pct <= 0 ? 0 : Math.max(2, Math.min(cw2 - 2, (cw2 - 2) * pct / 100));
+        svg +=
+          // 1) faint wash of the category colour — a 0% cell is never blank background
+          '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="' + fill + '" opacity="' + (isNo ? '0.10' : '0.16') + '" pointer-events="none"></rect>' +
+          // 2) hatch over the whole cell = the REMAINING work
+          '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="url(#' + _vsHatchId(fill) + ')" opacity="' + (isNo ? '0.55' : '1') + '" pointer-events="none"></rect>' +
+          // 3) solid bar to POC = the work DONE. Square-ish inner corners on purpose: a rounded right
+          //    edge would make the boundary between done and remaining hard to read against the hatch.
+          (doneW > 0 ? '<rect x="' + (cx + 1) + '" y="' + (y + 1) + '" width="' + doneW.toFixed(1) + '" height="' + (fh - 2) + '" rx="3" fill="' + fill + '" opacity="' + (isNo ? '0.75' : '0.97') + '" pointer-events="none"></rect>' : '') +
+          // 4) the interactive outline last, so it owns the pointer and sits above the fills
+          '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="transparent" stroke="' + (isNo ? baseColor : 'rgba(0,0,0,.28)') + '" stroke-width="1"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + _vsBasisWord() + ' · ' + _vsDateWord() + ' ' + (fin ? Fmt.date(dstr(fin)) : '—') +
           (cmp ? (' · planned ' + (_vsPlanDate(c.list) ? Fmt.date(dstr(_vsPlanDate(c.list))) : '—') +
-                  ' · ' + (slip == null ? 'no baseline' : (slip > 0 ? slip + 'd late' : (slip < 0 ? (-slip) + 'd early' : 'on time')))) : '')) + '</title></rect>' +
-          (lbl ? '<text x="' + mid + '" y="' + (y + 13) + '" text-anchor="middle" font-size="10.5" font-weight="800" fill="#fff" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
+                  ' · ' + (slip == null ? 'no baseline' : (slip > 0 ? slip + 'd late' : (slip < 0 ? (-slip) + 'd early' : 'on time')))) : '') +
+          ' · ' + (pct >= 100 ? 'complete' : (pct <= 0 ? 'not started' : pct + '% done, ' + (100 - pct) + '% remaining'))) + '</title></rect>' +
+          (lbl ? '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + 13) + '" text-anchor="middle" font-size="10.5" font-weight="800" fill="#fff" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
           (cmp
             // Compare: planned above, actual below, then the slip — three values, so the label line
             // is tightened and the % is dropped (the fill already carries the slip).
-            ? '<text x="' + mid + '" y="' + (y + (lbl ? 24 : 16)) + '" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,.88)" pointer-events="none">P ' + esc(_vsPlanDate(c.list) ? Fmt.date(dstr(_vsPlanDate(c.list))) : '—') + '</text>' +
-              '<text x="' + mid + '" y="' + (y + (lbl ? 34 : 27)) + '" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" pointer-events="none">A ' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
-              '<text x="' + mid + '" y="' + (y + (lbl ? 43 : 38)) + '" text-anchor="middle" font-size="9" font-weight="800" fill="rgba(255,255,255,.96)" pointer-events="none">' + esc(slip == null ? 'no BL' : (slip > 0 ? '+' + slip + 'd' : (slip < 0 ? slip + 'd' : 'on time'))) + '</text>'
-            : '<text x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '400' : '700') + '" fill="rgba(255,255,255,.97)" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
-              '<text x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="700" fill="rgba(255,255,255,.92)" pointer-events="none">' + pct + '%</text>');
+            ? '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + (lbl ? 24 : 16)) + '" text-anchor="middle" font-size="8.5" fill="#fff" pointer-events="none">P ' + esc(_vsPlanDate(c.list) ? Fmt.date(dstr(_vsPlanDate(c.list))) : '—') + '</text>' +
+              '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + (lbl ? 34 : 27)) + '" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" pointer-events="none">A ' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
+              '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + (lbl ? 43 : 38)) + '" text-anchor="middle" font-size="9" font-weight="800" fill="#fff" pointer-events="none">' + esc(slip == null ? 'no BL' : (slip > 0 ? '+' + slip + 'd' : (slip < 0 ? slip + 'd' : 'on time'))) + '</text>'
+            : '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '500' : '700') + '" fill="#fff" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
+              '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="800" fill="#fff" pointer-events="none">' + pct + '%</text>');
       });
     });
     var gy = pad + groundAt * (fh + gap) - gap / 2 + (groundAt === disp.length ? 3 : 0);
@@ -9647,6 +9685,12 @@
               .map(function (o) { return '<span style="display:inline-flex;align-items:center;gap:4px;"><span class="ps-vs-dot" style="background:' + o[0] + '"></span>' + o[1] + '</span>'; }).join('') +
           '</span>'
         : '') +
+      '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:6px;" title="Each cell is a progress bar: the solid part is what is complete, the hatched part is what remains.">' +
+        '<svg width="34" height="12" style="vertical-align:middle;"><rect x="0" y="0" width="34" height="12" rx="3" fill="var(--pd-muted)" opacity="0.16"></rect>' +
+        '<rect x="0" y="0" width="34" height="12" rx="3" fill="url(#psvs-legend-h)"></rect>' +
+        '<rect x="0.5" y="0.5" width="13" height="11" rx="2" fill="var(--pd-muted)" opacity="0.95"></rect></svg>' +
+        'solid = done · hatched = remaining</span>' +
+      '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
         (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
     var noTradeList = acts.filter(function (r) { return !workOf(r); });
@@ -9663,7 +9707,7 @@
       (noTradeList.length === 1 ? 'y has' : 'ies have') + ' no Trade and no WBS branch to infer one from</strong> — set their Trade, ' +
       'or file them under a WBS branch. Actions → Diagnose data… lists them.</div>';
 
-    _vsCells = {};
+    _vsCells = {}; _vsHatchSeen = {};
     var towers;
     if (!acts.length) {
       towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.</div>';
@@ -9681,7 +9725,9 @@
           _vsTowerSVG(list, col, t) + '</div>';
       }).join('');
     }
-    host.innerHTML = bar + (_vsScope === 'trade' ? chips : '') + warn +
+    // ⚠️ The defs must be in the DOM before the towers that reference them are laid out, so they are
+    // prepended rather than appended.
+    host.innerHTML = bar + (_vsScope === 'trade' ? chips : '') + warn + _vsHatchDefs() +
       '<div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>';
     // Stagger the entrance, capped: past the 8th tower the delay stops growing, so a trade-heavy
     // project still settles in well under half a second instead of trickling in.
