@@ -2555,8 +2555,13 @@
   // 'main' — untagged execution work is main contract until someone says otherwise. Returns null
   // outside the execution phase, which is how every caller says "not applicable" in one test.
   function scopeOf(r) {
-    if (!r || !isExecPhase(r)) return null;
-    return r.scope_type || _nodeScope(r.wbs_node_id) || 'main';
+    if (!r) return null;
+    // An explicit tag on the row, or inherited from a tagged branch, is reported ALWAYS — a value
+    // someone (or the push) deliberately set must never be hidden by a phase it does not have.
+    var own = r.scope_type || _nodeScope(r.wbs_node_id);
+    if (own) return own;
+    // Untagged: default to Main Contract, but only where contract scope means anything.
+    return isExecPhase(r) ? 'main' : null;
   }
   function isChangeOrder(r) { return scopeOf(r) === 'change_order'; }
   // The CO reference shown beside the pill — the activity's own, else its branch's.
@@ -13533,6 +13538,33 @@
     var orphan = acts.filter(function (r) { return r.wbs && !codeSet[String(r.wbs)]; });
     var hiddenByView = acts.filter(function (r) { return !shown[r.id]; });
 
+    // ---- Filed under the wrong branch for its location -------------------------------------
+    // An activity tagged Level = "B3" should sit under a branch named (or coded) B3. If no node in
+    // its ancestor chain matches any of its location values, it has been filed higher up the tree —
+    // which is exactly what "not located under the basement 3 WBS" looks like.
+    function nodeChainOf(nodeId) {
+      var out = [], n = nodeId && WBS_NODES.find(function (x) { return x.id === nodeId; }), guard = 0;
+      while (n && guard++ < 50) { out.push(n); n = n.parent_id && WBS_NODES.find(function (x) { return x.id === n.parent_id; }); }
+      return out;
+    }
+    function norm(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+    var misfiled = [];
+    if (LOC_LEVELS.length && WBS_NODES.length) {
+      acts.forEach(function (r) {
+        var locVals = [];
+        LOC_LEVELS.forEach(function (l) { var v = locValOf(r, l.id); if (v) locVals.push(v); });
+        if (!locVals.length || !r.wbs_node_id) return;
+        var chain = nodeChainOf(r.wbs_node_id);
+        if (!chain.length) return;
+        var names = {};
+        chain.forEach(function (n) { names[norm(n.name)] = 1; if (n.code) { names[norm(n.code)] = 1;
+          // the push codes a floor branch "<TRADE>-<floor>", so match the tail too
+          var tail = String(n.code).split('-').pop(); if (tail) names[norm(tail)] = 1; } });
+        var matched = locVals.some(function (v) { return names[norm(v)]; });
+        if (!matched) misfiled.push({ r: r, loc: locVals.join(' · '), under: chain[0].name, chain: chain.map(function (n) { return n.name; }).reverse().join(' › ') });
+      });
+    }
+
     // Per TRADE (work_type) — the axis the owner is reading the screen by.
     var byTrade = {};
     acts.forEach(function (r) {
@@ -13565,6 +13597,9 @@
     if (orphan.length) verdict.push(warn('⚠️ ' + orphan.length + ' activit' + (orphan.length === 1 ? 'y has a WBS code' : 'ies have WBS codes') + ' that match NO WBS row on this project. Nothing rolls them up, so every branch above them shows "—" however many activities are really there. This is the most likely cause of what you are seeing.'));
     if (noCode.length) verdict.push(warn('⚠️ ' + noCode.length + ' activit' + (noCode.length === 1 ? 'y has' : 'ies have') + ' NO WBS code at all — they cannot roll up into any branch.'));
     if (noDates.length) verdict.push(warn('⚠️ ' + noDates.length + ' activit' + (noDates.length === 1 ? 'y has' : 'ies have') + ' no Start/Finish, so they contribute nothing to a branch span even when correctly filed.'));
+    if (misfiled.length) verdict.push(warn('⚠️ ' + misfiled.length + ' activit' + (misfiled.length === 1 ? 'y carries a location but is' : 'ies carry a location but are') +
+      ' filed under a WBS branch that does not match it — e.g. an activity tagged "' + esc(misfiled[0].loc) + '" sitting under "' + esc(misfiled[0].under) +
+      '". They render after that branch\'s sub-branches instead of inside the one they belong to.'));
     if (hiddenByView.length && !orphan.length && !noCode.length) verdict.push(warn('⚠️ ' + hiddenByView.length + ' activit' + (hiddenByView.length === 1 ? 'y is' : 'ies are') + ' filed and dated but NOT in the current view — a filter, a search or the grouping is hiding them. Clear the filter (funnel) and the search box.'));
     if (!verdict.length) verdict.push('<div style="background:#E8F6EF;color:#1B6E4F;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;font-weight:600;">Every activity is filed under a real WBS row, dated, and visible in the current view. If a branch still reads "—", capture this report and the grouping you are using.</div>');
 
@@ -13596,6 +13631,13 @@
           return '<tr' + (bad ? ' style="background:#FDECEA;"' : '') + '><td><b>' + esc(b.name) + '</b></td><td>' + esc(b.code) +
             '</td><td>' + b.n + '</td><td>' + b.dated + '</td><td>' + b.shown + '</td></tr>';
         }).join('')) +
+      (misfiled.length ? '<h3 style="font-size:13px;margin:14px 0 2px;">Filed under the wrong branch for their location (first 25 of ' + misfiled.length + ')</h3>' +
+        note('The activity says one place; its WBS branch says another. "Filed under" is the branch it is actually attached to.') +
+        tbl(['Activity ID', 'Name', 'Location says', 'Filed under', 'Full branch path'],
+          misfiled.slice(0, 25).map(function (m) {
+            return '<tr><td>' + esc(m.r.activity_id || '') + '</td><td>' + esc(m.r.activity_name || '') + '</td><td><b>' +
+              esc(m.loc) + '</b></td><td><b>' + esc(m.under) + '</b></td><td>' + esc(m.chain) + '</td></tr>';
+          }).join('')) : '') +
       (orphan.length ? '<h3 style="font-size:13px;margin:14px 0 2px;">Orphaned WBS codes (first 20)</h3>' +
         note('These codes appear on activities but on no WBS row.') +
         tbl(['Activity ID', 'Name', 'WBS code', 'Trade'],
@@ -13613,12 +13655,14 @@
     m.el.querySelector('#ps-diag-copy').onclick = function () {
       var lines = ['Diagnose data — ' + (projName(pid) || ''),
         acts.length + ' activities, ' + wbsRows.length + ' WBS rows, ' + acts.filter(dated).length + ' dated, ' + Object.keys(shown).length + ' in view',
-        'no WBS code: ' + noCode.length + ' | orphan code: ' + orphan.length + ' | no wbs_node_id: ' + noNode.length + ' | undated: ' + noDates.length + ' | hidden by view: ' + hiddenByView.length,
+        'no WBS code: ' + noCode.length + ' | orphan code: ' + orphan.length + ' | no wbs_node_id: ' + noNode.length + ' | undated: ' + noDates.length + ' | hidden by view: ' + hiddenByView.length + ' | misfiled vs location: ' + misfiled.length,
         'filter active: ' + (anyFilter() ? 'YES' : 'no'), '', 'BY TRADE  (trade | n | dated | inView | coded | branches)'];
       Object.keys(byTrade).sort().forEach(function (k) { var t = byTrade[k];
         lines.push('  ' + k + ' | ' + t.n + ' | ' + t.dated + ' | ' + t.shown + ' | ' + t.coded + ' | ' + Object.keys(t.codes).sort().join(',')); });
       lines.push('', 'BY BRANCH  (name | code | n | dated | inView)');
       byTop.forEach(function (b) { lines.push('  ' + b.name + ' | ' + b.code + ' | ' + b.n + ' | ' + b.dated + ' | ' + b.shown); });
+      if (misfiled.length) { lines.push('', 'MISFILED vs LOCATION (first 25)  (id | name | locationSays | filedUnder | path)');
+        misfiled.slice(0, 25).forEach(function (m) { lines.push('  ' + (m.r.activity_id || '') + ' | ' + (m.r.activity_name || '') + ' | ' + m.loc + ' | ' + m.under + ' | ' + m.chain); }); }
       if (orphan.length) { lines.push('', 'ORPHAN CODES (first 20)');
         orphan.slice(0, 20).forEach(function (r) { lines.push('  ' + (r.activity_id || '') + ' | ' + (r.activity_name || '') + ' | ' + (r.wbs || '') + ' | ' + (r.work_type || '')); }); }
       var txt = lines.join('\n');
@@ -16915,13 +16959,15 @@
           // codes computed from the now-updated WBS_NODES tree, so the pushed rows carry their correct
           // dotted WBS code immediately (load() heals summaries but doesn't re-sync codes).
           var codeOf = computeWbsCodes();
-          nodeDescs.forEach(function (nd) { if (reused[nd.key]) return; var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, created_by: UID }); });
+          // scope_type on the summary rows as well — the builder only ever produces main-contract
+          // scope, so every row it writes says so rather than leaving the column blank.
+          nodeDescs.forEach(function (nd) { if (reused[nd.key]) return; var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, scope_type: 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; var nidt = keyToNodeId[t.k] || baseNodeId || null; p.wbs_node_id = nidt; p.wbs = nidt ? (codeOf[nidt] || null) : null; payloads.push(p); });
         } else {
           // fallback: dotted WBS-Summary + task rows (old behavior), so the push still works pre-migration
           var codeByKey = {}, so2 = {};
           function childCode(pk) { var pc = pk === '__base__' ? base : codeByKey[pk]; if (so2[pk] == null) so2[pk] = nextChildIndex(pc); return code(pc, so2[pk]++); }
-          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', created_by: UID }); });
+          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', scope_type: 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; p.wbs = childCode(t.k); payloads.push(p); });
         }
       }
@@ -20849,6 +20895,9 @@
       ASSIGN: { get: function () { return ASSIGN; }, set: function (v) { ASSIGN = v; }, enumerable: true },
       CALS: { get: function () { return CALS; }, set: function (v) { CALS = v; }, enumerable: true },
       WBS_NODES: { get: function () { return WBS_NODES; }, set: function (v) { WBS_NODES = v; }, enumerable: true },
+      // Location Breakdown levels — read by extraColDefs() and by the Diagnose report's
+      // filed-under-the-wrong-branch check, so the scaffold has to carry it like the rest.
+      LOC_LEVELS: { get: function () { return LOC_LEVELS; }, set: function (v) { LOC_LEVELS = v; }, enumerable: true },
       WBS_ROWH: { get: function () { return WBS_ROWH; }, set: function (v) { WBS_ROWH = v; }, enumerable: true },
       _wbsSel: { get: function () { return _wbsSel; }, set: function (v) { _wbsSel = v; }, enumerable: true },
       DD_PREFIX: { get: function () { return DD_PREFIX; }, set: function (v) { DD_PREFIX = v; }, enumerable: true },
