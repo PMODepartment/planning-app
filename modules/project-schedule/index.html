@@ -3792,11 +3792,22 @@
         var diff = (isNaN(x) && isNaN(y)) ? ((A[i]||'') === (B[i]||'') ? 0 : ((A[i]||'') < (B[i]||'') ? -1 : 1))
                                           : ((x = isNaN(x) ? -1 : x), (y = isNaN(y) ? -1 : y), (x === y ? 0 : x - y));
         if (diff !== 0) {
-          // rows diverge into different sibling nodes at this level — if those nodes carry a manual
-          // seq_order (drag-reorder), order by it; otherwise fall back to the natural code order.
-          var na = A.slice(0, i + 1).join('.'), nb = B.slice(0, i + 1).join('.');
-          var sa = _seqByCode[na], sb = _seqByCode[nb];
-          if (sa != null && sb != null && sa !== sb) return sa - sb;
+          // ⚠️⚠️ SIBLINGS ONLY. The manual-order lookup below compares two nodes' sort_order, which is
+          // only meaningful when the two rows really are SIBLINGS at this level — i.e. both still have
+          // a segment here. When one row has RUN OUT of segments it is an ANCESTOR of the other
+          // ("4.3" = Structural Works vs "4.3.ST-B3" = its basement), and `na` is then that
+          // ancestor's OWN code, not a sibling's. Comparing Structural Works' sort_order (2) with
+          // B3's (0) returned +2 and sorted the parent BELOW its own child — the reported jumble
+          // where "Structural Works" sat under B3 and B2 and the zones scattered across floors.
+          // This never fired before branch codes were seeded from the WBS tree, because a trade's own
+          // code had no entry: summary rows carry no seq_order and no activity sits directly on it.
+          // `diff` is already correct for the ancestor case — the missing segment reads as '' and
+          // sorts before any real one, i.e. parent first — so falling through is the right answer.
+          if (i < A.length && i < B.length) {
+            var na = A.slice(0, i + 1).join('.'), nb = B.slice(0, i + 1).join('.');
+            var sa = _seqByCode[na], sb = _seqByCode[nb];
+            if (sa != null && sb != null && sa !== sb) return sa - sb;
+          }
           return diff;
         }
       }
