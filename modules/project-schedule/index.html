@@ -16613,7 +16613,12 @@
       return '<div class="sbld-twr-col"><div class="sbld-twr-tradehead" style="color:' + gc(tr) + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' +
         floorsOf(tr).slice().reverse().map(function (f) {
           var nodes = towerNodesFor(tr, f);
-          return '<div class="sbld-twr-floor"><span class="sbld-twr-lab">' + e2(f.code || f.name || 'F') + '</span><div class="sbld-twr-trade">' + nodes.map(function (n) { return towerNode(tr, n); }).join('') + '</div></div>';
+          // ⚠️ With more than one tower this column holds BOTH towers' floors, so each row names its
+          // tower. Deliberately labelled rather than filtered: a zone-level link ACROSS towers is
+          // legitimate here (step 3 states the coarse tower relationship; this is the fine one), so
+          // hiding the other tower would remove a real capability. It just has to be readable.
+          var _twPfx = multiTower() ? ((towerById(towerIdOf(f)) || {}).code || towerLabel(towerIdOf(f))) + ' · ' : '';
+          return '<div class="sbld-twr-floor"><span class="sbld-twr-lab" title="' + e2(towerLabel(towerIdOf(f))) + '">' + e2(_twPfx + (f.code || f.name || 'F')) + '</span><div class="sbld-twr-trade">' + nodes.map(function (n) { return towerNode(tr, n); }).join('') + '</div></div>';
         }).join('') + '</div>';
     }
     function sbc() { return AppAuth.getSB(); }
@@ -17190,7 +17195,10 @@
     // Deep-copy a trade's floors/zones/units with FRESH ids, so the copy is independent of the source.
     function cloneFloors(floors) {
       return (floors || []).map(function (f) {
-        return { id: uidv(), code: f.code, name: f.name, sub: !!f.sub, kind: f.kind || null,
+        // ⚠️ towerId must survive the clone. Without it, "copy to all trades" / "copy from another
+        // trade" dropped every floor into the first tower through towerIdOf()'s fallback, silently
+        // collapsing a multi-tower project into one. (copyTower overrides it afterwards on purpose.)
+        return { id: uidv(), code: f.code, name: f.name, sub: !!f.sub, kind: f.kind || null, towerId: f.towerId || null,
           zones: (f.zones || []).map(function (z) {
             return { id: uidv(), code: z.code, name: z.name,
               units: (z.units || []).map(function (u) { return { id: uidv(), code: u.code, name: u.name }; }) };
@@ -18039,9 +18047,11 @@
     }
     function leafCount(tr) { return cfg.zoning[tr].floors.reduce(function (t, f) { return t + leavesOfFloor(tr, f).length; }, 0); }
     // Tower visual: floors stacked (ground at bottom), each split into zones, each zone into units.
-    function towerSVG(tr) {
-      var floors = cfg.zoning[tr].floors;
-      if (!floors.length) return '<div class="sbld-empty">No floors yet for ' + e2(GLABEL[tr]) + '. Add floors or basements on the left.</div>';
+    // ⚠️ towerId is REQUIRED, not optional: an optional argument here is how the leak happened in the
+    // first place — a caller that forgets it silently draws every tower's floors as one building.
+    function towerSVG(tr, towerId) {
+      var floors = floorsOfTower(tr, towerId || activeTower());
+      if (!floors.length) return '<div class="sbld-empty">No floors yet for ' + e2(GLABEL[tr]) + ' in ' + e2(towerLabel(towerId || activeTower())) + '. Add floors or basements on the left.</div>';
       var fh = 52, gap = 6, pad = 14, labelW = 40, col = gc(tr);
       // Display order top→bottom: superstructure (highest floor first … ground last), then a GROUND
       // line, then basements (B1 first … deepest last). Grade sits between the two blocks.
@@ -18227,7 +18237,8 @@
       var lvl = cfg.locLevel || 'auto', showZones = lvl !== 'floor', showUnits = (lvl === 'auto' || lvl === 'unit');
       function qv(id, def) { var v = +host.querySelector(id).value; return isNaN(v) ? def : v; }
       var chips = '<div class="sbld-tradechips">' + used.map(function (g) {
-        var n = leafCount(g);
+        // Per TOWER: a count of the whole project beside a list showing one tower reads as a bug.
+        var n = floorsOfTower(g, _twAct).reduce(function (t, f) { return t + (leavesOfFloor(g, f).length || 0); }, 0);
         return '<button class="sbld-chip' + (g === tr ? ' on' : '') + '" data-trade="' + g + '"><span class="sbld-dot" style="background:' + gc(g) + '"></span>' + e2(GLABEL[g]) + (n ? ' <b>' + n + '</b>' : '') + '</button>';
       }).join('') + '</div>';
       // Most towers share the same floors/zones across trades — copy this trade's zoning to the others
@@ -18286,7 +18297,8 @@
         '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
         '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
         floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
-        '<div class="sbld-tower" style="zoom:' + towerZoom + ';"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</div>' + towerSVG(tr) + '</div>' +
+        '<div class="sbld-tower" style="zoom:' + towerZoom + ';"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
+          (multiTower() ? ' <span style="font-weight:600;color:var(--pd-muted);">· ' + e2(towerLabel(_twAct)) + '</span>' : '') + '</div>' + towerSVG(tr, _twAct) + '</div>' +
         '</div>';
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; render(); }; });
       var applyAll = host.querySelector('#b-applyall'); if (applyAll) applyAll.onclick = function () {
@@ -18364,10 +18376,15 @@
         quickN[tr] = { B: B, F: F, Z: Z, U: U };
         if (zn.floors.length && !confirm('Replace the ' + zn.floors.length + ' existing floor(s) for ' + GLABEL[tr] + '?')) return;
         function mkZones() { var zs = []; for (var j = 1; j <= Z; j++) { var us = []; for (var k = 1; k <= U; k++) us.push({ id: uidv(), code: 'U' + k }); zs.push({ id: uidv(), code: 'Z' + j, units: us }); } return zs; }
-        zn.floors = [];
-        for (var bi = B; bi >= 1; bi--) zn.floors.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, kind: 'basement', towerId: _twAct, zones: mkZones() });   // deepest (B{B}) first
-        for (var i = 1; i <= F; i++) zn.floors.push({ id: uidv(), code: 'F' + i, name: '', kind: 'typical', towerId: _twAct, zones: mkZones() });
-        cfg.links = []; markDirty(); render();
+        // ⚠️ Replace only THIS tower's floors. This was `zn.floors = []`, which wiped every other
+        // tower's floors too — generating Tower 2 destroyed Tower 1.
+        var _kept = zn.floors.filter(function (f) { return towerIdOf(f) !== _twAct; });
+        var _gen = [];
+        for (var bi = B; bi >= 1; bi--) _gen.push({ id: uidv(), code: 'B' + bi, name: '', sub: true, kind: 'basement', towerId: _twAct, zones: mkZones() });   // deepest (B{B}) first
+        for (var i = 1; i <= F; i++) _gen.push({ id: uidv(), code: 'F' + i, name: '', kind: 'typical', towerId: _twAct, zones: mkZones() });
+        zn.floors = _kept.concat(_gen);
+        // Only the regenerated tower's links are stale; the other towers' stay valid.
+        pruneLinks(); markDirty(); render();
       };
       host.querySelectorAll('.sbld-addzone').forEach(function (b) { b.onclick = function () { var f = zn.floors[+b.dataset.f]; f.zones.push({ id: uidv(), code: 'Z' + (f.zones.length + 1), units: [] }); markDirty(); render(); }; });
       host.querySelectorAll('.sbld-delzone').forEach(function (b) { b.onclick = function () { zn.floors[+b.dataset.f].zones.splice(+b.dataset.z, 1); pruneLinks(); markDirty(); render(); }; });
