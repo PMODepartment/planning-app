@@ -1888,6 +1888,7 @@
               <button id="ps-udfbtn"><span data-ico="listView" data-ico-size="14"></span> User-Defined Fields…</button>
               <button id="ps-costacctbtn"><span data-ico="cash" data-ico-size="14"></span> Cost Accounts…</button>
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
+              <button id="ps-diagnose" title="Where did my activities go? Read-only report on this project's data"><span data-ico="risk" data-ico-size="14"></span> Diagnose data…</button>
               <button id="ps-leveling"><span data-ico="users" data-ico-size="14"></span> Resource leveling…</button>
               <button id="ps-thresholds"><span data-ico="risk" data-ico-size="14"></span> Threshold monitoring…</button>
               <button id="ps-fmtbtn"><span data-ico="palette" data-ico-size="14"></span> Conditional formatting…</button>
@@ -13488,6 +13489,127 @@
     if (wnSel) { var prev = wnSel.onchange; wnSel.onchange = function () { if (prev) prev.call(this); sync(); }; }
     sync();
   }
+  // ---- "Where did my activities go?" — a READ-ONLY data report -------------------------------
+  // Owner 2026-08-19: the Project Schedule shows 2561 activities, but five of the six trade branches
+  // report no dates while Allied Services reports a span — and the colour legend simultaneously says
+  // those five trades DO exist on the project ("none of their activities are among the rows currently
+  // shown"). Those two facts together mean the activities exist but are not reachable under the
+  // branches that should hold them, which can happen for several quite different reasons.
+  //
+  // ⚠️ This is deliberately a REPORT, not a repair. Each cause below needs a DIFFERENT fix, and
+  // guessing wrong on a 2561-activity schedule is worse than not acting: a summary row shows "—"
+  // when it has no dated descendants IN THE CURRENT DISPLAY SET, and that set is narrowed by the WBS
+  // link (wbs_node_id / the dotted wbs code), by the active filters, and by search — independently.
+  // So the report separates them and names the one that is actually biting.
+  function openDiagnose() {
+    if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
+    var acts = rows.filter(function (r) { return !isWbs(r); });
+    var wbsRows = rows.filter(isWbs);
+    var shown = {}; (_sorted || []).forEach(function (r) { if (!isWbs(r)) shown[r.id] = 1; });
+
+    function dated(r) { return !!(pd(r.start_date) && pd(r.end_date)); }
+    var noDates = acts.filter(function (r) { return !dated(r); });
+    var noCode  = acts.filter(function (r) { return !r.wbs; });
+    var noNode  = acts.filter(function (r) { return !r.wbs_node_id; });
+    // An activity whose dotted code names no WBS row is an ORPHAN: nothing rolls it up, so every
+    // branch above it reads "—" no matter how many activities are really there.
+    var codeSet = {}; wbsRows.forEach(function (w) { if (w.wbs) codeSet[String(w.wbs)] = 1; });
+    var orphan = acts.filter(function (r) { return r.wbs && !codeSet[String(r.wbs)]; });
+    var hiddenByView = acts.filter(function (r) { return !shown[r.id]; });
+
+    // Per TRADE (work_type) — the axis the owner is reading the screen by.
+    var byTrade = {};
+    acts.forEach(function (r) {
+      var k = (r.work_type || '— no trade —');
+      var t = byTrade[k] || (byTrade[k] = { n: 0, dated: 0, shown: 0, coded: 0, noded: 0, codes: {} });
+      t.n++; if (dated(r)) t.dated++; if (shown[r.id]) t.shown++; if (r.wbs) t.coded++; if (r.wbs_node_id) t.noded++;
+      if (r.wbs) { var top = String(r.wbs).split('.')[0]; t.codes[top] = (t.codes[top] || 0) + 1; }
+    });
+
+    // Per TOP-LEVEL WBS branch — the rows the owner is actually looking at.
+    var tops = wbsRows.filter(function (w) { return w.wbs && String(w.wbs).indexOf('.') === -1; })
+      .sort(function (a, b) { return (parseInt(a.wbs, 10) || 0) - (parseInt(b.wbs, 10) || 0); });
+    var byTop = tops.map(function (w) {
+      var pre = String(w.wbs) + '.';
+      var kids = acts.filter(function (r) { return r.wbs && (String(r.wbs) === String(w.wbs) || String(r.wbs).indexOf(pre) === 0); });
+      return { name: w.activity_name || w.wbs, code: w.wbs,
+        n: kids.length, dated: kids.filter(dated).length, shown: kids.filter(function (r) { return shown[r.id]; }).length };
+    });
+
+    function tbl(head, body) {
+      return '<table class="ps-table" style="width:100%;margin:6px 0 14px;"><thead><tr>' +
+        head.map(function (h) { return '<th style="text-align:left;">' + esc(h) + '</th>'; }).join('') +
+        '</tr></thead><tbody>' + body + '</tbody></table>';
+    }
+    function warn(t) { return '<div style="background:#FDECEA;color:#A32013;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;font-weight:600;">' + t + '</div>'; }
+    function note(t) { return '<div style="color:var(--pd-muted);font-size:12px;margin:4px 0 12px;">' + t + '</div>'; }
+
+    // The verdict — say which cause is biting, in the order that matters.
+    var verdict = [];
+    if (orphan.length) verdict.push(warn('⚠️ ' + orphan.length + ' activit' + (orphan.length === 1 ? 'y has a WBS code' : 'ies have WBS codes') + ' that match NO WBS row on this project. Nothing rolls them up, so every branch above them shows "—" however many activities are really there. This is the most likely cause of what you are seeing.'));
+    if (noCode.length) verdict.push(warn('⚠️ ' + noCode.length + ' activit' + (noCode.length === 1 ? 'y has' : 'ies have') + ' NO WBS code at all — they cannot roll up into any branch.'));
+    if (noDates.length) verdict.push(warn('⚠️ ' + noDates.length + ' activit' + (noDates.length === 1 ? 'y has' : 'ies have') + ' no Start/Finish, so they contribute nothing to a branch span even when correctly filed.'));
+    if (hiddenByView.length && !orphan.length && !noCode.length) verdict.push(warn('⚠️ ' + hiddenByView.length + ' activit' + (hiddenByView.length === 1 ? 'y is' : 'ies are') + ' filed and dated but NOT in the current view — a filter, a search or the grouping is hiding them. Clear the filter (funnel) and the search box.'));
+    if (!verdict.length) verdict.push('<div style="background:#E8F6EF;color:#1B6E4F;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;font-weight:600;">Every activity is filed under a real WBS row, dated, and visible in the current view. If a branch still reads "—", capture this report and the grouping you are using.</div>');
+
+    var filterState = anyFilter()
+      ? warn('⚠️ A filter or search is ACTIVE right now, so the grid is not showing everything. ' +
+          (search.trim() ? 'Search: "' + esc(search.trim()) + '". ' : '') +
+          (filters.scope ? 'Contract scope: ' + esc(scopeTypeLabel(filters.scope)) + ' only. ' : '') +
+          (filters.crit ? 'Critical path only. ' : '') + (filters.behind ? 'Behind schedule only. ' : '') +
+          (filters.look ? 'Look-ahead ' + filters.look + ' weeks. ' : ''))
+      : note('No filter or search is active.');
+
+    var html = '<h2 style="margin-top:0;">Diagnose data — ' + esc(projName(pid) || '') + '</h2>' +
+      note('Read-only. Nothing here changes your schedule.') +
+      '<div style="font-size:13px;margin-bottom:10px;"><b>' + acts.length + '</b> activities · <b>' + wbsRows.length +
+        '</b> WBS rows · <b>' + acts.filter(dated).length + '</b> dated · <b>' + Object.keys(shown).length + '</b> in the current view</div>' +
+      verdict.join('') + filterState +
+      '<h3 style="font-size:13px;margin:14px 0 2px;">By trade (Discipline / Trade)</h3>' +
+      tbl(['Trade', 'Activities', 'Dated', 'In view', 'With WBS code', 'Under WBS branch(es)'],
+        Object.keys(byTrade).sort().map(function (k) {
+          var t = byTrade[k], bad = (t.dated === 0 || t.shown === 0);
+          return '<tr' + (bad ? ' style="background:#FDECEA;"' : '') + '><td><b>' + esc(k) + '</b></td><td>' + t.n + '</td><td>' + t.dated +
+            '</td><td>' + t.shown + '</td><td>' + t.coded + '</td><td>' +
+            (Object.keys(t.codes).length ? esc(Object.keys(t.codes).sort().join(', ')) : '<i>none</i>') + '</td></tr>';
+        }).join('')) +
+      '<h3 style="font-size:13px;margin:14px 0 2px;">By top-level WBS branch</h3>' +
+      tbl(['Branch', 'Code', 'Activities beneath', 'Dated', 'In view'],
+        byTop.map(function (b) {
+          var bad = (b.n === 0 || b.dated === 0);
+          return '<tr' + (bad ? ' style="background:#FDECEA;"' : '') + '><td><b>' + esc(b.name) + '</b></td><td>' + esc(b.code) +
+            '</td><td>' + b.n + '</td><td>' + b.dated + '</td><td>' + b.shown + '</td></tr>';
+        }).join('')) +
+      (orphan.length ? '<h3 style="font-size:13px;margin:14px 0 2px;">Orphaned WBS codes (first 20)</h3>' +
+        note('These codes appear on activities but on no WBS row.') +
+        tbl(['Activity ID', 'Name', 'WBS code', 'Trade'],
+          orphan.slice(0, 20).map(function (r) {
+            return '<tr><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td><td>' +
+              esc(r.wbs || '') + '</td><td>' + esc(r.work_type || '') + '</td></tr>';
+          }).join('')) : '') +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">' +
+        '<button class="pd-btn" id="ps-diag-copy">Copy report</button>' +
+        '<button class="pd-btn pd-btn-primary" id="ps-diag-done">Close</button></div>';
+
+    var m = UI.modal(html, { width: 900 });
+    m.el.querySelector('#ps-diag-done').onclick = function () { m.close(); };
+    // Plain-text copy, so the report can be pasted straight back to whoever is fixing it.
+    m.el.querySelector('#ps-diag-copy').onclick = function () {
+      var lines = ['Diagnose data — ' + (projName(pid) || ''),
+        acts.length + ' activities, ' + wbsRows.length + ' WBS rows, ' + acts.filter(dated).length + ' dated, ' + Object.keys(shown).length + ' in view',
+        'no WBS code: ' + noCode.length + ' | orphan code: ' + orphan.length + ' | no wbs_node_id: ' + noNode.length + ' | undated: ' + noDates.length + ' | hidden by view: ' + hiddenByView.length,
+        'filter active: ' + (anyFilter() ? 'YES' : 'no'), '', 'BY TRADE  (trade | n | dated | inView | coded | branches)'];
+      Object.keys(byTrade).sort().forEach(function (k) { var t = byTrade[k];
+        lines.push('  ' + k + ' | ' + t.n + ' | ' + t.dated + ' | ' + t.shown + ' | ' + t.coded + ' | ' + Object.keys(t.codes).sort().join(',')); });
+      lines.push('', 'BY BRANCH  (name | code | n | dated | inView)');
+      byTop.forEach(function (b) { lines.push('  ' + b.name + ' | ' + b.code + ' | ' + b.n + ' | ' + b.dated + ' | ' + b.shown); });
+      if (orphan.length) { lines.push('', 'ORPHAN CODES (first 20)');
+        orphan.slice(0, 20).forEach(function (r) { lines.push('  ' + (r.activity_id || '') + ' | ' + (r.activity_name || '') + ' | ' + (r.wbs || '') + ' | ' + (r.work_type || '')); }); }
+      var txt = lines.join('\n');
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function () { UI.toast('Report copied.', 'success'); }, function () { UI.toast('Copy failed — select the text manually.', 'warn'); });
+      else UI.toast('Clipboard unavailable in this browser.', 'warn');
+    };
+  }
   // ---- Change-order LINKING: splice the CO into the chain it interrupts -----------------------
   // The design question the owner posed: a change order is conceptually inserted BETWEEN main
   // contract activities, so how should it be linked?
@@ -20433,6 +20555,7 @@
     document.getElementById('ps-udf-back').onclick = function (e) { if (e.target === this) closeUdf(); };
     document.getElementById('ps-udf-add').onclick = addUdfDef;
     document.getElementById('ps-globalchange').onclick = function () { aMenu.classList.remove('open'); openGlobalChange(); };
+    document.getElementById('ps-diagnose').onclick = function () { aMenu.classList.remove('open'); openDiagnose(); };
     document.getElementById('ps-leveling').onclick = function () { aMenu.classList.remove('open'); openLeveling(); };
     document.getElementById('ps-lvl-x').onclick = closeLeveling;
     document.getElementById('ps-lvl-back').onclick = function (e) { if (e.target === this) closeLeveling(); };
@@ -20873,6 +20996,7 @@
       // these are pure decision functions (what scope does this row report? where does a spliced
       // relationship point?) and they are the ones worth asserting on outside the UI.
       ScheduleBuilder: ScheduleBuilder,
+      openDiagnose: openDiagnose,
       phaseOf: phaseOf,
       scopeOf: scopeOf,
       isExecPhase: isExecPhase,
