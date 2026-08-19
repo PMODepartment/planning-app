@@ -3012,6 +3012,10 @@
   // values. Independent of the row selection/clipboard above (a click sets both, but Ctrl+C/X/V and
   // the context menu treat cells and whole rows as distinct operations).
   var _cellSel = null, _cellAnchor = null, _cellClip = null;
+  // Does the clipboard act on ROWS rather than the cell range? See the Ctrl+C/X/V handler.
+  // Selecting more than one row is the only gesture that unambiguously means "these rows", and it
+  // has to beat _cellSel because every row click leaves a 1x1 cell rect behind.
+  function _clipRows() { return _selectedTaskRows().length > 1; }
   // Excel-style data-entry anchor: the column where the current row's entry began. Tab walks across
   // columns keeping this; Enter drops a row and returns to it. Reset (null) by any navigation that
   // isn't Tab/Enter (arrows, clicks, Escape), so the next fresh edit re-anchors.
@@ -20607,11 +20611,11 @@
       if (!sv || sv.offsetParent === null) return;           // Schedule view not visible
       if (window.__viewOnly || window.__archived) return;
       var k = e.key, ctrl = e.ctrlKey || e.metaKey;
-      // Ctrl+C/X/V act on the cell selection when one exists (Excel-style); otherwise they fall back
-      // to the whole-row clipboard. Paste prefers whichever clipboard was filled last.
-      if (ctrl && (k === 'c' || k === 'C')) { if (_cellSel) { e.preventDefault(); copyCells('copy'); } else if (_selectedTaskRows().length) { e.preventDefault(); copyRows('copy'); } }
-      else if (ctrl && (k === 'x' || k === 'X')) { if (_cellSel) { e.preventDefault(); copyCells('cut'); } else if (_selectedTaskRows().length) { e.preventDefault(); copyRows('cut'); } }
-      else if (ctrl && (k === 'v' || k === 'V')) { if (_cellClip || (!_clip && _cellSel)) { e.preventDefault(); pasteCells(); } else if (_clip) { e.preventDefault(); pasteRows(); } }
+      // Which subject the clipboard acts on — see the note above this handler. `_clipRows()` is the
+      // single place that decides, so copy, cut and paste can never disagree about it.
+      if (ctrl && (k === 'c' || k === 'C')) { if (_clipRows()) { e.preventDefault(); copyRows('copy'); } else if (_cellSel) { e.preventDefault(); copyCells('copy'); } }
+      else if (ctrl && (k === 'x' || k === 'X')) { if (_clipRows()) { e.preventDefault(); copyRows('cut'); } else if (_cellSel) { e.preventDefault(); copyCells('cut'); } }
+      else if (ctrl && (k === 'v' || k === 'V')) { if (_clip) { e.preventDefault(); pasteRows(); } else if (_cellClip) { e.preventDefault(); pasteCells(); } }
       else if (ctrl && (k === 'd' || k === 'D')) {
         // Fill down: use the active cell's field + row (Excel Ctrl+D), filling the selected rows.
         if (_cellSel) { var _ci = _cellSel.c0, _meta = cellMeta(_ci); var _src = DL[_cellSel.r0];
