@@ -2885,7 +2885,22 @@
     (function walk(parentId, parentCode) {
       (childrenOf.get(parentId) || []).forEach(function (n, i) {
         var auto = (parentCode ? parentCode + '.' : '') + (i + 1);
-        codeOf[n.id] = (n.code_custom && n.code) ? n.code : auto;
+        // ⚠️⚠️ A CUSTOM CODE IS A SEGMENT OF THE PATH, NOT A REPLACEMENT FOR IT.
+        // This line used to read `codeOf[n.id] = n.code` — the parent's path was DISCARDED. The
+        // dotted code is not decoration: `_anc` is derived by splitting it (see rebuild(),
+        // `r._segs = segs(r.wbs)`), so it IS the hierarchy as far as sorting, ancestry, _spanMap and
+        // every roll-up are concerned.
+        // Consequence, measured on One Portwood Residences: the Schedule Builder gives each floor
+        // branch a readable custom code ("ST-F1", "AR-F4"), so those nodes came out as codes with NO
+        // dot in them — i.e. as TOP-LEVEL branches — and their whole subtree went with them. 2560 of
+        // 2561 activities were severed from Execution Phase and every trade branch under it rolled up
+        // to nothing and displayed "—". The single survivor was Allied Services, whose floors had no
+        // code to make custom, so it kept an auto dotted code and stayed attached. That is the entire
+        // "only Allied Services" report: nothing was ever dropped — the rows were detached.
+        // ⚠️ Dots are stripped from the custom code: it must be ONE segment. A code containing a dot
+        // would silently invent extra tree levels, which is the same class of bug in a new costume.
+        var custom = (n.code_custom && n.code) ? String(n.code).replace(/\./g, '-').trim() : '';
+        codeOf[n.id] = custom ? ((parentCode ? parentCode + '.' : '') + custom) : auto;
         walk(n.id, codeOf[n.id]);
       });
     })(null, '');
