@@ -800,19 +800,6 @@
     .ps-stk-ovtable thead th i { width:9px; height:9px; border-radius:50%; display:inline-block; }
     .ps-stk-ovtable tbody th { text-align:right; font-weight:700; color:var(--pd-ink); padding-right:10px; white-space:nowrap; }
 
-    /* Docked stacking pane — a third column of .ps-split, row-aligned with the grid + Gantt. */
-    .ps-stackpane { position:relative; flex:0 0 250px; display:none; flex-direction:column; min-width:0;
-      border-left:2px solid var(--pd-line); background:var(--pd-card); }
-    .ps-split.ps-stack-on .ps-stackpane { display:flex; }
-    /* Drag handle on the pane's left edge to resize its width. */
-    .ps-stkp-grip { position:absolute; left:-4px; top:0; bottom:0; width:8px; cursor:col-resize; z-index:6; }
-    .ps-stkp-grip::after { content:''; position:absolute; left:3px; top:0; bottom:0; width:2px; background:transparent; }
-    .ps-stkp-grip:hover::after, .ps-stkp-grip.drag::after { background:var(--pd-red); }
-    .ps-stackpane-head { flex:none; height:38px; border-bottom:2px solid var(--pd-line); background:var(--pd-bg);
-      display:flex; align-items:center; gap:6px; padding:0 8px; font-size:11px; font-weight:700;
-      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); overflow:hidden; }
-    .ps-stackpane-body { flex:1 1 auto; position:relative; overflow:hidden; min-height:0; }
-    .ps-stackpane-inner { position:absolute; left:0; right:0; top:0; }
     .ps-sp-row { position:absolute; left:8px; right:8px; display:flex; align-items:center; gap:6px; }
     .ps-sp-band { flex:1 1 auto; height:20px; border:1px solid var(--pd-line); border-radius:2px; position:relative;
       overflow:hidden; min-width:0; background:var(--pd-bg); }
@@ -2118,13 +2105,6 @@
           <div class="ps-gantt-pane">
             <div class="ps-gantt-head" id="ps-gantt-head"></div>
             <div class="ps-gantt-scroll" id="ps-gantt-scroll"><div class="ps-tl" id="ps-tl"></div></div>
-          </div>
-          <!-- Docked vertical-stacking pane: one band per location level, row-aligned with the
-               grid + Gantt so the stack and the bars read side by side (renderStackPane()). -->
-          <div class="ps-stackpane" id="ps-stackpane">
-            <div class="ps-stkp-grip" id="ps-stkp-grip" title="Drag to resize the stacking pane"></div>
-            <div class="ps-stackpane-head" id="ps-stkp-head"></div>
-            <div class="ps-stackpane-body"><div class="ps-stackpane-inner" id="ps-stkp-inner"></div></div>
           </div>
         </div>
 
@@ -7390,15 +7370,9 @@
           if (!fa && fb) return 1;
           return cmpGroupName(a, b);
         } : (dims[di] === 'work' ? cmpWorkName : (_isLoc ? cmpLevelValue : cmpGroupName)));
-      // ⚠️ The grid keeps its natural BUILD order (bottom-up) unless the planner explicitly asks the
-      // rows to line up with the vertical stacking pane — and only while that pane is actually open.
-      // Flipping the grid whenever _stkTopFirst is set (its old behaviour) silently reversed every
-      // location grouping even with the stack closed, which read as the grid "flipping by itself".
-      if (_isLoc && _stkPaneOn && _gridMatchStack && _stkTopFirst) {   // same rule as the stack: reverse the storeys, keep non-levels last
-        var _rk = _keys.filter(function (k) { return levelRank(k) != null; });
-        var _ot = _keys.filter(function (k) { return levelRank(k) == null; });
-        _rk.reverse(); _keys = _rk.concat(_ot);
-      }
+      // ⚠️ The grid keeps its natural BUILD order (bottom-up), always. It used to be reversible to
+      // line up with the docked stacking pane; that pane is gone, and the toolbar Vertical Stacking
+      // view has its own display order, so nothing reorders the grid behind the planner's back.
       var _lastDim = (di === dims.length - 1);
       _keys.forEach(function (g) {
         var gcode = parentCode + '§' + g;
@@ -9407,9 +9381,11 @@
   // the two things step 6 does not have: a CONSOLIDATED tower (all trades in one model) and a
   // level-of-detail control (1 = per level, 2 = per zone, 3 = per unit) like step 3's Detail 1-2-3-4.
   //
-  // ⚠️ NOT the same feature as the "Vertical stacking pane" (#ps-stack-back) reached by clicking a
-  // month in the Gantt header. Owner asked for that one to be left untouched, so this shares none of
-  // its state (_stkFrom / _stkTo / _stkLevel) and none of its rendering.
+  // ⚠️ NOT the same feature as the PERIOD STACKING VIEW (#ps-stack-back) reached by clicking a month
+  // in the Gantt header — that answers "what is the planned status as of this date". This shares none
+  // of its state (_stkFrom / _stkTo / _stkLevel) and none of its rendering.
+  // (The third one, a docked side pane behind a "Vertical stacking pane" button, was removed once this
+  // view superseded it — see the removal note in the git history.)
   //
   // Everything it draws comes from rows that pass rowMatches() — the SAME predicate the grid uses —
   // so the filter menu, per-column filters, the advanced filter and the search box all narrow the
@@ -11772,9 +11748,8 @@
     // has to be re-measured after the rows are in — see syncHeadGutter().
     syncHeadHeights();
     syncHeadHeights();
-    // Isolated: the stacking pane is an optional side panel and must never be able to blank the grid
+    // Isolated: an optional side panel must never be able to blank the grid
     // or the Gantt that were just painted.
-    try { renderStackPane(); } catch (e) { console.error('[ps] renderStackPane failed', e); }
   }
 
   // One-time delegated handlers for the windowed grid. Every selector here matches the element the
@@ -11945,9 +11920,10 @@
       // ⚠️ Per-row try/catch, and the assignment happens even if a row fails. `bars` is accumulated
       // in a loop and was assigned only AFTER it finished, so a single throwing row left
       // #ps-tl-bars empty — a blank Gantt — and the exception escaped renderWindow, which also
-      // skipped renderStackPane() and (when it still sat at the end) renderActLegend(). One bad row
-      // could take out the bars, the side pane and the legend at once, with nothing on screen
-      // saying why. Now it costs exactly one bar and logs which row it was.
+      // skipped everything after it in renderWindow — at the time the docked stacking pane and
+      // (when it still sat at the end) renderActLegend(). One bad row could take out the bars and
+      // the legend at once, with nothing on screen saying why. Now it costs exactly one bar and
+      // logs which row it was.
       var bars = '', _rowErr = null, _rowErrN = 0;
       for (var j = first; j < last; j++) {
         try { bars += ganttRowHTML(DL[j], j, _rMin, _rDayw); }
@@ -20876,7 +20852,6 @@
         (cfg.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (cfg.tex ? ' checked' : '') + '> Textures</label>' : '') +
         (cfg.on ? '<button class="pd-btn" id="ps-alg-keys" style="min-height:32px;font-size:12px;" title="Choose the handful of trades worth keying, LSM-style. Everything else still draws, in grey.">Key trades' + (catKeySet() ? ' (' + catKeyList().length + ')' : '…') + '</button>' : '') +
         (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="min-height:32px;font-size:12px;">Reset colours</button>' : '') +
-        (cfg.on ? '<button class="pd-btn" id="ps-alg-stack" style="min-height:32px;font-size:12px;">Vertical stacking pane</button>' : '') +
         (_hlCat ? '<span class="ps-alg-hl">Highlighting: ' + esc(_hlCat) + '<button type="button" id="ps-alg-hlclear" title="Clear the highlight">✕</button></span>' : '') +
         // Tip line removed — it was a permanent paragraph of instructions competing with the legend
         // it sat next to. Both behaviours it described are already discoverable (a bar and a month
@@ -20894,8 +20869,6 @@
     if (tex) tex.onchange = function () { var c = catCfg(); c.tex = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var rst = host.querySelector('#ps-alg-reset');
     if (rst) rst.onclick = function () { var c = catCfg(); c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
-    var stk = host.querySelector('#ps-alg-stack');
-    if (stk) stk.onclick = function () { toggleStackPane(); };
     var kys = host.querySelector('#ps-alg-keys');
     if (kys) kys.onclick = function () { openKeyTrades(); };
     var hlc = host.querySelector('#ps-alg-hlclear');
@@ -21618,7 +21591,7 @@
         LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === _stkLevel ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
       '</select></label>' + allTowersToggle + scopeSel +
       '<span>Cut-off: <strong>' + esc(Fmt.date(dstr(D))) + '</strong></span>' +
-      '<label title="Display order of THIS stack. The grid + Gantt keep their own build order unless &quot;Match grid&quot; is ticked in the docked stacking pane."><input type="checkbox" id="ps-stk-top"' + (_stkTopFirst ? ' checked' : '') + '> Highest level at the top</label>' +
+      '<label title="Display order of THIS view only. The grid and Gantt always keep their own build order (bottom-up)."><input type="checkbox" id="ps-stk-top"' + (_stkTopFirst ? ' checked' : '') + '> Highest level at the top</label>' +
       '<button class="pd-btn" id="ps-stk-tagphases" style="height:28px;font-size:12px;" title="Assign Testing/Commissioning, Punchlisting, Handover, Closeout & Defects activities a Level value so they persist across the app">Tag phases…</button>' +
       '<span style="margin-left:auto;">Actual dates where recorded, else planned.</span></div>';
     if (!LOC_LEVELS.length) {
@@ -21736,13 +21709,13 @@
     var fld = body.querySelector('#ps-stk-field');
     if (fld) fld.onchange = function () {
       var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c);
-      renderStackView(); renderStackPane();
+      renderStackView();
       renderActLegend(); renderGantt();   // keep the Gantt behind the window in step
     };
     var sel = body.querySelector('#ps-stk-level');
-    if (sel) sel.onchange = function () { _stkLevel = this.value; renderStackView(); renderStackPane(); };
+    if (sel) sel.onchange = function () { _stkLevel = this.value; renderStackView(); };
     body.querySelectorAll('.ps-stk-scope').forEach(function (s) {
-      s.onchange = function () { _stkScope[s.dataset.lvl] = this.value; renderStackView(); renderStackPane(); };
+      s.onchange = function () { _stkScope[s.dataset.lvl] = this.value; renderStackView(); };
     });
     var allTow = body.querySelector('#ps-stk-alltow');
     if (allTow) allTow.onchange = function () {
@@ -21761,146 +21734,12 @@
     if (tagp) tagp.onclick = function () { if (typeof openPhaseWizard === 'function') openPhaseWizard(); };
   }
 
-  // ---- Docked stacking pane (side-by-side with the grid + Gantt) -------------------------------
+  // ---- Period stacking view (opened by clicking a month in the Gantt header) --------------------
   // ⚠️ Alignment is the whole point, and it is only meaningful when the grid is GROUPED by the
   // location level: each level's group row then occupies one row of the display list, so the pane
   // can put that level's band at exactly that row's y. It never reorders the WBS view — it offers
   // to switch the grouping (and it is the location dimension's own group sort, `cmpLevelValue`,
   // that puts the levels in building order, so the Gantt reads bottom-up like the stack does).
-  var _stkPaneOn = false, _stkPaneCut = null, _stkPaneW = 250, _stkGripWired = false;
-  // Opt-in: make the GRID's location groups read in the same direction as the stacking pane.
-  // Off by default, and inert while the pane is closed — the grid otherwise keeps build order.
-  var _gridMatchStack = false;
-  try { _gridMatchStack = localStorage.getItem('ps_grid_matchstack') === '1'; } catch (e) {}
-  try { _stkPaneOn = localStorage.getItem('ps_stackpane') === '1'; } catch (e) {}
-  try { _stkPaneCut = localStorage.getItem('ps_stackpane_cut') || null; } catch (e) {}
-  try { var _w = parseInt(localStorage.getItem('ps_stackpane_w'), 10); if (_w >= 150 && _w <= 700) _stkPaneW = _w; } catch (e) {}
-  function stackPaneOn() { return _stkPaneOn; }
-  function applyStackPaneWidth() { var p = document.getElementById('ps-stackpane'); if (p) p.style.flexBasis = _stkPaneW + 'px'; }
-  // Drag the pane's left edge to resize. Wired once; moving the mouse LEFT widens the pane.
-  function wireStackGrip() {
-    if (_stkGripWired) return; var grip = document.getElementById('ps-stkp-grip'); if (!grip) return; _stkGripWired = true;
-    grip.addEventListener('mousedown', function (ev) {
-      ev.preventDefault(); grip.classList.add('drag');
-      var startX = ev.clientX, startW = _stkPaneW;
-      function mm(e) { _stkPaneW = Math.max(150, Math.min(700, startW - (e.clientX - startX))); applyStackPaneWidth(); }
-      function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); grip.classList.remove('drag'); try { localStorage.setItem('ps_stackpane_w', String(_stkPaneW)); } catch (e) {} }
-      document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
-    });
-  }
-  function toggleStackPane(force) {
-    _stkPaneOn = (force === undefined) ? !_stkPaneOn : !!force;
-    try { localStorage.setItem('ps_stackpane', _stkPaneOn ? '1' : '0'); } catch (e) {}
-    var sp = document.querySelector('.ps-split'); if (sp) sp.classList.toggle('ps-stack-on', _stkPaneOn);
-    var b = document.getElementById('ps-stackbtn'); if (b) b.classList.toggle('active', _stkPaneOn);
-    if (_stkPaneOn && !_stkLevel) _stkLevel = stkDefaultLevel();
-    applyStackPaneWidth(); wireStackGrip();
-    renderStackPane();
-    // Opening/closing the pane changes the grid's location order when the match toggle is on.
-    if (_gridMatchStack) { renderGrid(); renderGantt(); }
-  }
-  // The level dimension currently being grouped by, if any.
-  function stkGroupedDim() {
-    for (var i = 0; i < groupBys.length; i++) {
-      if (groupBys[i].indexOf('loc:') === 0 && groupBys[i].slice(4) === _stkLevel) return groupBys[i];
-    }
-    return null;
-  }
-  // Collapse everything under each level group so the grid shows one row per level.
-  function stkCollapseToLevels(dim) {
-    (DL || []).forEach(function (nd) {
-      if (nd._dkind === 'group' && nd._gdim === dim) collapsed[nd._dcode] = true;
-    });
-    renderGrid(); renderGantt();
-  }
-  function renderStackPane() {
-    var pane = document.getElementById('ps-stackpane'); if (!pane) return;
-    var head = document.getElementById('ps-stkp-head'), inner = document.getElementById('ps-stkp-inner');
-    if (!_stkPaneOn) { if (inner) inner.innerHTML = ''; return; }
-    applyStackPaneWidth(); wireStackGrip();
-    if (!_stkLevel) _stkLevel = stkDefaultLevel();
-    // Cut-off date — when none is chosen, default to the project's planned FINISH (not the data date):
-    // most projects here start after the data date, so an as-of-today stack is all "not started" and
-    // looks empty. Showing the full planned end-state makes the stack visible; scrub the date earlier
-    // to see it build up.
-    var D = _stkPaneCut && pd(_stkPaneCut);
-    if (!D) { var mx = null; rows.forEach(function (r) { if (isWbs(r)) return; var f = pd(dispFin(r)); if (f && (!mx || f > mx)) mx = f; }); D = mx || today(); }
-    stkEnsureScope(_stkLevel);
-    var sc = stkScopeLabel(_stkLevel);
-    head.innerHTML = '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(stkLevelName(_stkLevel) || 'Stacking') + (sc ? ' · ' + esc(sc) : '') + '</span>' +
-      '<input type="date" id="ps-stkp-cut" class="pd-input" value="' + esc(dstr(D)) + '" title="Cut-off — planned status as of this date" style="margin-left:auto;height:24px;font-size:10px;padding:1px 3px;width:118px;text-transform:none;letter-spacing:0;">' +
-      '<label id="ps-stkp-match" title="Also order the grid + Gantt location groups to match this stack (only while this pane is open)" ' +
-      'style="margin-left:6px;display:inline-flex;align-items:center;gap:3px;font-size:10px;white-space:nowrap;cursor:pointer;text-transform:none;letter-spacing:0;">' +
-      '<input type="checkbox" id="ps-stkp-match-cb"' + (_gridMatchStack ? ' checked' : '') + '> Match grid</label>' +
-      '<button class="ps-bulk-x" id="ps-stkp-x" style="margin-left:4px;" title="Hide the stacking pane">&#215;</button>';
-    var x = head.querySelector('#ps-stkp-x'); if (x) x.onclick = function () { toggleStackPane(false); };
-    var mcb = head.querySelector('#ps-stkp-match-cb');
-    if (mcb) mcb.onchange = function () {
-      _gridMatchStack = this.checked;
-      try { localStorage.setItem('ps_grid_matchstack', _gridMatchStack ? '1' : '0'); } catch (e) {}
-      renderGrid(); renderGantt();
-    };
-    var cut = head.querySelector('#ps-stkp-cut'); if (cut) cut.onchange = function () { _stkPaneCut = this.value || null; try { localStorage.setItem('ps_stackpane_cut', _stkPaneCut || ''); } catch (e) {} renderStackPane(); };
-    if (!LOC_LEVELS.length || !catCfg().on) {
-      inner.innerHTML = '<div class="ps-sp-note">' + (!LOC_LEVELS.length
-        ? 'Define a <strong>Location Breakdown</strong> (Group ▸ Location Breakdown…) to stack by level.'
-        : 'Turn on <strong>Colour activities by</strong> in the legend below — the stack uses those colours.') + '</div>';
-      return;
-    }
-    var dim = stkGroupedDim();
-    if (!dim) {
-      inner.innerHTML = '<div class="ps-sp-note">Group the schedule by <strong>' + esc(stkLevelName(_stkLevel)) +
-        '</strong> to line the stack up with the bars.<br><br><button class="pd-btn" id="ps-sp-group" style="height:28px;font-size:12px;">Group by ' + esc(stkLevelName(_stkLevel)) + '</button></div>';
-      var g = inner.querySelector('#ps-sp-group');
-      // ⚠️ normalizeGroupBys() silently DROPS a loc: dimension whose level isn't in LOC_LEVELS —
-      // which is exactly what happens if this is clicked before the project's levels have finished
-      // loading. Say so rather than appearing to do nothing (observed live on AVR101).
-      if (g) g.onclick = function () {
-        var dim = 'loc:' + _stkLevel;
-        if (allDims().indexOf(dim) === -1) { UI.toast('Location levels are still loading — try again in a moment.', 'warn'); return; }
-        setGroupBys([dim].concat(groupBys.filter(function (d) { return d !== dim; })));
-        renderStackPane();
-      };
-      return;
-    }
-    // Row-align: every group node of this dimension in the display list gets its band at that row.
-    var model = stackModel(_stkLevel, D), byLoc = {};
-    model.forEach(function (b) { byLoc[b.loc] = b; });
-    var html = '', shown = 0;
-    (DL || []).forEach(function (nd, i) {
-      if (nd._dkind !== 'group' || nd._gdim !== dim) return;
-      var b = byLoc[nd.activity_name]; if (!b) return;
-      shown++;
-      html += '<div class="ps-sp-row" style="top:' + (i * ROWH) + 'px;height:' + ROWH + 'px;" title="' +
-        esc(b.loc + ' — ' + b.text) + '">' +
-        '<span class="ps-sp-lvl">' + esc(b.loc) + '</span>' +
-        stkBandHTML(b, 'ps-sp-band') + '</div>';
-    });
-    // ⚠️ Grouping by the level is not enough to make this READ as a stack. Each level group is
-    // followed by its whole subtree, so on Avesta two level rows sit hundreds of rows apart and the
-    // pane looks empty at any scroll position. Collapsing the level groups puts every level on its
-    // own single row — which is the side-by-side the reference sheet shows.
-    var expanded = (DL || []).filter(function (nd) { return nd._dkind === 'group' && nd._gdim === dim && !collapsed[nd._dcode]; }).length;
-    if (expanded) {
-      html = '<div class="ps-sp-note">Collapse the level groups so each ' + esc(stkLevelName(_stkLevel)) +
-        ' is one row — then the stack lines up with the bars.<br><br>' +
-        '<button class="pd-btn" id="ps-sp-fit" style="height:28px;font-size:12px;">Collapse to one row per ' + esc(stkLevelName(_stkLevel)) + '</button></div>' + html;
-    }
-    inner.style.height = ((DL || []).length * ROWH) + 'px';
-    inner.innerHTML = html || '<div class="ps-sp-note">No ' + esc(stkLevelName(_stkLevel)) +
-      ' rows in view — clear the filter, or check that the activities carry a ' + esc(stkLevelName(_stkLevel)) + ' value.</div>';
-    var fit = inner.querySelector('#ps-sp-fit');
-    if (fit) fit.onclick = function () { stkCollapseToLevels(dim); };
-    syncStackPaneScroll();
-  }
-  function syncStackPaneScroll() {
-    var inner = document.getElementById('ps-stkp-inner'); if (!inner || !_stkPaneOn) return;
-    var gz = document.getElementById('ps-gantt-scroll'), gs = document.getElementById('ps-grid-scroll');
-    var scr = (gz && gz.clientHeight > 0) ? gz : gs;
-    inner.style.transform = 'translateY(' + (-(scr ? scr.scrollTop : 0)) + 'px)';
-  }
-  // Right-click color picker on a Gantt bar / milestone / WBS summary. Replaces the old Colors button:
-  // an activity bar sets its own override; a WBS summary sets a branch color (cascades to descendants).
   function closeBarColorMenu() { var m = document.getElementById('ps-barctx'); if (m) m.remove(); document.removeEventListener('click', closeBarColorMenu); }
   function openBarColorMenu(e, r) {
     e.preventDefault(); e.stopPropagation(); closeBarColorMenu(); closeColMenu();
@@ -23047,7 +22886,6 @@
     vMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.addEventListener('click', closeMenus);
     applyColors();
-    if (_stkPaneOn) toggleStackPane(true);   // restore the docked stacking pane
     document.getElementById('ps-refresh').onclick = function () { load(); };
     document.getElementById('ps-export').onclick = exportExcel;
     document.getElementById('ps-download').onclick = downloadSchedule;
@@ -23240,7 +23078,7 @@
     // scroll sync (vertical grid<->gantt, horizontal head<->body)
     var gs = document.getElementById('ps-grid-scroll'), gz = document.getElementById('ps-gantt-scroll'), gh = document.getElementById('ps-gantt-head'), gHead = document.getElementById('ps-grid-head');
     var lock = false, winRaf = false;
-    function onVScroll() { syncStackPaneScroll(); if (winRaf) return; winRaf = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { winRaf = false; renderWindow(); }); }
+    function onVScroll() { if (winRaf) return; winRaf = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { winRaf = false; renderWindow(); }); }
     gs.addEventListener('scroll', function () { if (gHead) gHead.scrollLeft = gs.scrollLeft; if (!lock) { lock = true; gz.scrollTop = gs.scrollTop; lock = false; } onVScroll(); });
     gz.addEventListener('scroll', function () { if (!lock) { lock = true; gs.scrollTop = gz.scrollTop; lock = false; } gh.scrollLeft = gz.scrollLeft; onVScroll(); });
     // Ctrl + mouse-wheel over the Gantt zooms the timeline, keeping the date under the cursor fixed.
