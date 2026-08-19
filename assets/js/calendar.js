@@ -93,6 +93,62 @@
     return n;
   }
 
+  // The date on which the n-th WORKING day lands, counting the start date itself as
+  // day 1 when it is a working day. This is what turns a duration into a finish date,
+  // and it is the whole reason a duration scenario has to name a calendar: stretching
+  // an activity by 25% only moves its finish if something knows which days are
+  // workable. ⚠️ Capped at 20 years of calendar days so a calendar with every day
+  // marked non-working (a real mis-configuration) cannot spin forever.
+  function addWorkingDays(cal, start, n) {
+    cal = cal || defaultCalendar();
+    n = Math.max(1, Math.round(n || 1));
+    var d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    var counted = 0, guard = 0;
+    // Roll forward to the first working day; a start on a Sunday means the activity
+    // begins on the Monday, not that Sunday counts as worked.
+    while (!isWorkDay(cal, d) && guard++ < 7300) d.setDate(d.getDate() + 1);
+    for (; guard < 7300; guard++) {
+      if (isWorkDay(cal, d)) { counted++; if (counted >= n) return d; }
+      d.setDate(d.getDate() + 1);
+    }
+    return d;
+  }
+
+  // Like addWorkingDays, but a number of working days per CALENDAR MONTH are lost to
+  // weather. `rainByMonth` is { 1..12 -> days }. ⚠️ The lost days are spread EVENLY
+  // through each month rather than taken off the front: taking them off the front
+  // would model a monsoon that stops on a fixed date, and would make an activity's
+  // slip depend on which day of the month it happened to start.
+  // ⚠️ Never removes more than the month actually has — 31 rain days in a 26-working-day
+  // month is a data-entry error, and treating it as "this month does not exist" would
+  // silently push the whole schedule out with nothing on screen to explain it.
+  function addWorkingDaysWithRain(cal, start, n, rainByMonth) {
+    cal = cal || defaultCalendar();
+    if (!rainByMonth) return addWorkingDays(cal, start, n);
+    n = Math.max(1, Math.round(n || 1));
+    var d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    var counted = 0, guard = 0, seenInMonth = 0, curMonth = -1, lost = 0, avail = 0;
+    while (!isWorkDay(cal, d) && guard++ < 7300) d.setDate(d.getDate() + 1);
+    for (; guard < 7300; guard++) {
+      if (isWorkDay(cal, d)) {
+        if (d.getMonth() !== curMonth) {
+          curMonth = d.getMonth(); seenInMonth = 0;
+          avail = workingDaysInMonth(cal, d.getFullYear(), curMonth);
+          lost = Math.max(0, Math.min(avail, Math.round(Number(rainByMonth[curMonth + 1]) || 0)));
+        }
+        seenInMonth++;
+        // Even spread: this working day is lost when the running quota crosses an
+        // integer. With lost=0 the test never fires, so a dry month is untouched.
+        var quotaBefore = Math.floor((seenInMonth - 1) * lost / avail);
+        var quotaNow = Math.floor(seenInMonth * lost / avail);
+        var isRained = quotaNow > quotaBefore;
+        if (!isRained) { counted++; if (counted >= n) return d; }
+      }
+      d.setDate(d.getDate() + 1);
+    }
+    return d;
+  }
+
   function workingDaysInMonth(cal, y, mo) {
     return workingDaysInRange(cal, new Date(y, mo, 1), new Date(y, mo + 1, 0));
   }
@@ -103,6 +159,8 @@
     isWorkDay: isWorkDay,
     workingDaysInRange: workingDaysInRange,
     workingDaysInMonth: workingDaysInMonth,
+    addWorkingDays: addWorkingDays,
+    addWorkingDaysWithRain: addWorkingDaysWithRain,
     iso: iso
   };
 })(window);

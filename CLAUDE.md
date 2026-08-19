@@ -6258,3 +6258,63 @@ with a 3px red left border at 10px/700, 4 group rows rendering "N projects"; on 
 brand and footer both sit **inside** the 290px drawer with the logo at 250px and 44px nav rows; no
 horizontal overflow anywhere. CSS braces balanced; every edited page has matched `<aside>` tags and
 parses. ⚠️ **Not verified signed-in.** `dashboard.css?v=` → `20260819c`.
+
+### 2026-08-19 — C3: season-aware duration scenarios + Working Calendars as a real view
+**`migrations/2026-08-19-duration-scenarios-and-mom.sql` MUST BE RUN** (it also carries C4's tables).
+
+Owner pushed back twice during the build, and both challenges were right.
+
+**1. "Is there a calendar setter in the project schedule?" — there was not.** Verified: the module
+could READ `calendars` and ASSIGN one per activity, but the only `insert` was the **XER importer**
+building them from a P6 file. The editor lived in **Resource & Role Master**. That is fatal for C3 —
+the calendar *is* the model, so being sent to another module to change it and back to see the effect
+makes the feature unusable at the moment it is needed. **Working Calendars is now a first-class view
+in the title switcher** (the owner asked for that dropdown specifically), with day pattern, hours,
+project default, **extra non-working days**, and **bulk-assign this calendar to a trade** — which is
+what makes multi-calendar projects practical. ⚠️ One implementation, two hosts (the view and a modal
+opened from the scenario dialog, so a planner mid-way through rules does not lose them); a second
+copy would drift the moment either was touched. ⚠️ Deleting a calendar is refused while activities or
+scenarios point at it: the FK is `on delete set null`, so the delete would otherwise SUCCEED and
+quietly move every one of those activities onto a different calendar.
+
+**2. "A project lasts multiple seasons" — the first cut was wrong, and this was the important one.**
+`dsRuleMatches` tested the activity's **start month**, so:
+- an activity spanning **Feb → Nov** got **no** wet-season allowance (it started in February), and
+- a Jun–Jul activity got the allowance applied to its **dry** days too.
+
+Durations are now **split month by month across the activity's span** (`dsMonthSegs`) and a rule
+stretches **only the months it names**. Measured on a 260-day Feb→Nov activity with "wet season ×2":
+**419 days**, not 260 (the old answer) and not 520 (stretch-the-whole-thing) — its six wet months
+doubled, its four dry months untouched.
+- ⚠️ **Two mechanisms, deliberately not one.** A **rule** makes work slower; a **rain day** removes a
+  working day outright. They compose in that order — 10 days × 1.25 = 13 days of work, then laid onto
+  a calendar that gives up 8 of July's working days. Doing it the other way round would scale the
+  weather loss by the slowdown, which is not what either number means.
+- ⚠️ **Rain is per EXPOSURE, not per project.** One project-wide figure was wrong for the same reason
+  the start-month test was: excavation and exterior concrete lose half a wet month; interior fit-out
+  in a topped-out building loses nothing. Profiles match by trade with a no-trade default, and the
+  preview names which profile each activity used.
+- ⚠️ **A flat "+N days" is a one-off**, applied to the last matching month — adding it per month would
+  multiply it by however many months the activity happens to straddle.
+- ⚠️ **The headline rain total is the DEFAULT profile's**, not a sum across profiles — summing would
+  report a number of rain days no single activity ever experiences.
+- ⚠️ **Rain days live on the SCENARIO, never in the calendar's `extra_holidays`.** A calendar is shared
+  by every activity and every scenario, so baking one scenario's weather into it would silently move
+  the live schedule.
+- ⚠️ **First-order, and the dialog says so:** the month split is taken from current dates, and the
+  preview does **not** push the change through predecessor logic. Solving either needs iteration, and
+  each pass compounds an assumption nobody made. It always **under**-states a slip, never overstates.
+- Wet/Dry presets (Jun–Nov) on both rules and profiles; Preview writes nothing and **Apply** is a
+  separate confirmed act that goes through `persist()` (so Ctrl+Z works).
+
+Verified by executing the shipped engine against the **shipped PDCal** (loaded, not stubbed — the
+calendar link is the feature): **32 checks green**, including the multi-season split, the dry-season
+activity correctly untouched, the wholly-wet one correctly doubled, exposure profiles diverging on
+the same month, the legacy single-map shape still loading, and an absurd rain figure still
+terminating on a real date. C1 (33) and C2 (19) suites still green; **0 functions lost**; parses.
+⚠️ The earlier `t_c3.js` suite is **retired** — its assertions encoded the start-month defect.
+⚠️ **Not verified signed-in**, and the migration has not been run. `calendar.js?v=` → `20260819a`;
+`MODULE_V` → `20260819e`.
+⚠️ **Trap, third time this session:** a `\n` written into the inline script through a shell heredoc
+lands as a REAL newline inside a JS string literal. Build such strings with explicit character codes
+and always re-run the parse check.

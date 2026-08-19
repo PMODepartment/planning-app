@@ -114,10 +114,26 @@ logic and float are real). What was missing was seeing and finding them:
   project with no change orders, and stays in sync with the Filter menu's radios in both directions.
 - The bar tooltip now names the change order (with its CO reference) and the package.
 
-### C3. Duration scenarios (e.g. rainy-day durations), connected to the Calendar
-- Named scenarios that re-derive activity durations (weather/rain-day allowance, resource
-  scenarios) against `assets/js/calendar.js` working calendars, comparable side by side
-  against the baseline without overwriting it.
+### C3. Duration scenarios (rain days), connected to the Calendar ✅ done 2026-08-19
+`migrations/2026-08-19-duration-scenarios-and-mom.sql` (**OWNER MUST RUN**). A scenario is a set of
+**rules**, not a copy of the durations — a copy is stale the moment anyone edits an activity.
+- ⚠️ **Season-aware, because a PH project spans many seasons.** The first cut matched a rule against
+  the activity's **start month**, which was wrong twice over: a Feb→Nov activity got no wet-season
+  allowance at all, and a Jun–Jul one got it applied to its dry days too. Durations are now split
+  **month by month across the span**, and a rule stretches only the months it names.
+- ⚠️ **Two mechanisms, not one.** A **rule** makes work slower (×1.25); a **rain day** removes a
+  working day outright. They compose, in that order.
+- ⚠️ **Rain is per exposure, not per project** — excavation loses half a wet month, interior fit-out
+  loses nothing. Profiles are matched by trade, with a no-trade default.
+- **Wet/Dry season presets** (Jun–Nov) so months are not retyped on every rule and profile.
+- Preview writes nothing; **Apply** is a separate confirmed act and is undoable.
+- ⚠️ **First-order by design and stated in the UI:** the month split comes from current dates and the
+  preview does not push the change through predecessor logic. It always under-states a slip.
+
+**Working Calendars became a first-class view** (title switcher). The schedule could read and assign
+calendars but never create or edit one — the editor lived in Resource & Role Master, which made C3
+unusable at the moment a planner needs it. Includes extra non-working days and **bulk-assign a
+calendar to a trade**, which is what makes multi-calendar projects practical.
 
 ### C4. MOM (minutes of meeting), connected to Issues and Concerns
 - Capture MOM records against the schedule, with action items that create/link to entries

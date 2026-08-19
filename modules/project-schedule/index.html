@@ -439,6 +439,42 @@
       vertical-align:middle; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:700;
       background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-ink); }
     .ps-pkgtag.inherited { font-weight:600; color:var(--pd-muted); }
+    .ps-ds-rain { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-top:12px; background:var(--pd-bg); }
+    .ps-ds-rain h4 { margin:0 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); }
+    .ps-ds-rain p { margin:0 0 8px; font-size:12px; color:var(--pd-muted); }
+    .ps-ds-rain small { display:block; margin-top:6px; font-size:11.5px; color:var(--pd-muted); }
+    .ps-ds-prof { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-bottom:10px; background:var(--pd-card); }
+    .ps-ds-presets { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:6px; }
+    .ps-ds-presets small { font-size:11px; color:var(--pd-muted); }
+    .ps-ds-raingrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(64px,1fr)); gap:6px; }
+    .ps-ds-raingrid label { display:flex; flex-direction:column; gap:2px; font-size:11px; font-weight:700; color:var(--pd-muted); }
+    .ps-cal-wrap { display:flex; gap:14px; align-items:flex-start; }
+    .ps-cal-list { flex:0 0 240px; }
+    .ps-cal-edit { flex:1 1 auto; min-width:0; }
+    .ps-cal-item { display:block; width:100%; text-align:left; background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:6px; padding:7px 10px; margin-bottom:6px; cursor:pointer; font:inherit; font-size:13px; color:var(--pd-ink); }
+    .ps-cal-item.on { border-color:var(--pd-red); background:var(--pd-red-light); }
+    .ps-cal-item small { display:block; color:var(--pd-muted); font-size:11px; margin-top:2px; }
+    .ps-cal-def { float:right; font-size:9px; font-weight:700; color:var(--pd-red); letter-spacing:.06em; }
+    .ps-cal-days { display:flex; flex-wrap:wrap; gap:4px 12px; }
+    .ps-cal-days label { display:inline-flex; align-items:center; gap:4px; font-size:12.5px; }
+    .ps-cal-hols { display:flex; flex-wrap:wrap; gap:6px; }
+    .ps-cal-hol { display:inline-flex; align-items:center; gap:4px; background:var(--pd-bg); border:1px solid var(--pd-line);
+      border-radius:999px; padding:1px 4px 1px 9px; font-size:11.5px; }
+    .ps-cal-hol button { border:0; background:transparent; cursor:pointer; color:var(--pd-muted); font-size:11px; padding:0 3px; }
+    .ps-cal-hol button:hover { color:var(--pd-red); }
+    .ps-ds-rule { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-bottom:10px; background:var(--pd-bg); }
+    .ps-ds-rulehead { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+    .ps-ds-rulehead input { flex:1; }
+    .ps-ds-rulegrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+    .ps-ds-rulegrid > label { display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--pd-muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+    .ps-ds-rulegrid small { font-weight:400; text-transform:none; letter-spacing:0; font-size:11px; }
+    .ps-ds-months { display:flex; flex-wrap:wrap; gap:2px 8px; }
+    .ps-ds-mo { display:inline-flex; align-items:center; gap:3px; font-size:11.5px; color:var(--pd-ink); font-weight:500; text-transform:none; letter-spacing:0; }
+    .ps-ds-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
+    .ps-ds-kpis > div { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:6px; padding:8px 10px; display:flex; flex-direction:column; gap:2px; }
+    .ps-ds-kpis span { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--pd-muted); }
+    .ps-ds-kpis strong { font-size:16px; font-weight:800; }
     .ps-pkgtag.mixed { background:transparent; font-weight:600; color:var(--pd-muted); font-style:italic; }
     /* Constraint + Contract Scope in-cell tags. Deliberately quiet: these are classification, not
        alarm — the only loud one is the Change Order pill, which is the thing a planner scans for. */
@@ -1899,6 +1935,7 @@
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
           <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Builder</button>
           <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost / EVM</button>
+          <button data-tab="calendars"><span data-ico="calendar" data-ico-size="14"></span> Working Calendars</button>
         </div>
       </div>
       <!-- Project context sits next to the title (OPC-style), name over workspace, left-aligned.
@@ -2160,6 +2197,10 @@
       </div>
 
       <!-- PLANNER COCKPIT -->
+      <!-- Working Calendars — a first-class view, not a dialog. The calendar decides
+           which days a duration is counted in, so it is edited where the schedule is
+           read, and it is what duration scenarios resolve their dates through. -->
+      <div id="ps-view-calendars" style="display:none;padding:16px 0;"></div>
       <div id="ps-view-planner" style="display:none;">
         <div class="ps-ck-bar">
           <button class="pd-btn pd-btn-primary" id="ps-ck-update"><span data-ico="check" data-ico-size="15"></span> Update progress…</button>
@@ -2550,7 +2591,7 @@
 <script src="../../assets/js/db.js?v=20260819b"></script>
 <script src="../../assets/js/ui.js?v=20260812b"></script>
 <script src="../../assets/js/icons.js?v=20260813a"></script>
-<script src="../../assets/js/calendar.js?v=20260812b"></script>
+<script src="../../assets/js/calendar.js?v=20260819a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -2749,6 +2790,758 @@
     return r.package_id || _nodePackage(r.wbs_node_id) || null;
   }
 
+
+  // ==========================================================================
+  // C3 — DURATION SCENARIOS ("what does this schedule look like in a wet season?")
+  // --------------------------------------------------------------------------
+  // ⚠️ NOT `schedule_scenarios`, which already exists in this module as the Open ▾
+  // menu's what-if SNAPSHOTS. A snapshot answers "what did it look like on Tuesday"
+  // and is stale the moment anyone edits an activity. A duration scenario is a set of
+  // RULES evaluated against the live schedule, so a wet-season assumption stays true
+  // as the schedule changes underneath it.
+  //
+  // ⚠️ THE CALENDAR IS NOT DECORATION. A duration is a count of working days; the
+  // finish date it implies depends entirely on which days are workable. Stretching an
+  // activity by 25% and then adding calendar days would silently schedule work on
+  // Sundays and public holidays, which is exactly the error a rainy-season model is
+  // supposed to expose rather than commit.
+  // ==========================================================================
+  var DSCN = [];              // duration_scenarios rows for this project
+  var _dsActive = null;       // the scenario currently previewed (never auto-applied)
+
+  function dsBlankRule() {
+    return { id: 'r' + Math.random().toString(36).slice(2, 8), label: '', months: [],
+             trades: [], phases: [], scope: '', factor: 1, add_days: 0 };
+  }
+  function dsRules(scn) { return (scn && Array.isArray(scn.rules)) ? scn.rules : []; }
+  // Rain profiles. ⚠️ ONE project-wide rain figure was wrong for the same reason the
+  // start-month test was: exposure is not uniform. Excavation and exterior concrete lose
+  // half a wet month; interior fit-out inside a topped-out building loses nothing. A
+  // profile is { label, trades: [], months: {6:8, …} }; the FIRST profile whose trades
+  // match wins, and a profile with no trades is the project default.
+  // Legacy shape (a bare month->days map) is still read, so a scenario saved before
+  // profiles existed keeps working.
+  function dsProfiles(scn) {
+    if (!scn) return [];
+    var rd = scn.rain_days;
+    if (Array.isArray(rd)) return rd;
+    if (rd && typeof rd === 'object' && Object.keys(rd).length) {
+      return [{ label: 'All work', trades: [], months: rd }];
+    }
+    return [];
+  }
+  function dsProfileFor(scn, r) {
+    var w = workOf(r) || '';
+    var ps = dsProfiles(scn);
+    var specific = ps.find(function (p) { return p.trades && p.trades.length && p.trades.indexOf(w) !== -1; });
+    if (specific) return specific;
+    return ps.find(function (p) { return !p.trades || !p.trades.length; }) || null;
+  }
+  function dsRainMonths(scn, r) { var p = dsProfileFor(scn, r); return (p && p.months) || {}; }
+  function dsProfileTotal(p) {
+    var m = (p && p.months) || {};
+    return Object.keys(m).reduce(function (a, k) { return a + (Number(m[k]) || 0); }, 0);
+  }
+  function dsHasRain(scn) { return dsProfiles(scn).some(function (p) { return dsProfileTotal(p) > 0; }); }
+  function dsRainTotal(scn) {
+    // The headline figure is the DEFAULT profile's — summing every profile would report
+    // a number of rain days that no single activity ever experiences.
+    var ps = dsProfiles(scn);
+    var def = ps.find(function (p) { return !p.trades || !p.trades.length; });
+    return dsProfileTotal(def || ps[0]);
+  }
+  function dsBlankProfile(isDefault) {
+    return { id: 'p' + Math.random().toString(36).slice(2, 8),
+             label: isDefault ? 'All work' : '', trades: [], months: {} };
+  }
+  // The Philippine wet season, as the preset a planner would otherwise retype on every
+  // rule and profile. June–November; the dry months are simply the rest.
+  var PH_WET_MONTHS = [6, 7, 8, 9, 10, 11];
+
+  // Does `rule` apply to activity `r` on the NON-MONTH facets? Every declared facet
+  // must match; an EMPTY facet means "any", never "none" — a rule with no trades listed
+  // is a whole-project rule, which is the common case and must not silently match
+  // nothing.
+  // ⚠️ MONTHS ARE DELIBERATELY NOT TESTED HERE. A Philippine project runs for years and
+  // therefore crosses the wet and dry seasons repeatedly; an activity that spans
+  // February to November is partly in each. Asking "does this rule apply to this
+  // activity" as a yes/no on its START month was the wrong question and gave two wrong
+  // answers: a Feb–Nov activity got NO wet-season allowance at all, and a Jun–Jul
+  // activity that started in June got the allowance applied to its dry-season days too.
+  // Months are resolved per MONTH SEGMENT in dsMonthSegs/dsAdjustedDur instead.
+  function dsRuleMatches(rule, r) {
+    if (!rule) return false;
+    if (rule.trades && rule.trades.length) {
+      var w = workOf(r) || '';
+      if (rule.trades.indexOf(w) === -1) return false;
+    }
+    if (rule.phases && rule.phases.length) {
+      if (rule.phases.indexOf(phaseOf(r) || '') === -1) return false;
+    }
+    if (rule.scope) {
+      if (scopeOf(r) !== rule.scope) return false;
+    }
+    return true;
+  }
+  function dsRuleInMonth(rule, month) {
+    return !(rule.months && rule.months.length) || rule.months.indexOf(month) !== -1;
+  }
+
+  // Split an activity's working days across the CALENDAR MONTHS it spans:
+  // [{ m: 1..12, y: 2026, days: 12 }, …]. This is what makes the model season-aware —
+  // the wet-season allowance lands on the wet-season part of a long activity and
+  // nowhere else.
+  // ⚠️ FIRST-ORDER by design, and this is the honest limit of the model: the split is
+  // taken from the activity's CURRENT dates. Stretching its early months in reality
+  // pushes its later work further into the year, which would re-split it — solving that
+  // needs iteration to a fixed point, and every extra pass compounds an assumption the
+  // planner did not make. One pass, stated plainly, beats a number nobody can reason
+  // about. It always UNDER-states a slip, never overstates it.
+  function dsMonthSegs(r, cal) {
+    var sd = pd(dispStart(r)) || pd(r.start_date);
+    var fd = pd(dispFin(r)) || pd(r.end_date);
+    if (!sd) return [];
+    var segs = [], cur = null, guard = 0;
+    if (!fd || fd < sd) fd = sd;
+    var d = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
+    for (; d <= fd && guard < 7300; guard++, d.setDate(d.getDate() + 1)) {
+      if (window.PDCal && !PDCal.isWorkDay(cal, d)) continue;
+      if (!cur || cur.m !== d.getMonth() + 1 || cur.y !== d.getFullYear()) {
+        cur = { m: d.getMonth() + 1, y: d.getFullYear(), days: 0 };
+        segs.push(cur);
+      }
+      cur.days += 1;
+    }
+    // An activity whose dates yield no working day at all (a one-day activity landing on
+    // a Sunday, or missing dates) still has to be adjustable — file its whole duration
+    // in its start month rather than dropping it out of the model silently.
+    if (!segs.length) segs.push({ m: sd.getMonth() + 1, y: sd.getFullYear(), days: 0 });
+    return segs;
+  }
+
+  // The adjusted duration for one activity, resolved MONTH BY MONTH.
+  // Rules COMPOUND in list order — "wet season +25%" then "high-rise +2 days" is a
+  // different and intended answer from taking only the larger. Never below 1 day: a
+  // scenario models slower work, not vanished work.
+  function dsAdjustedDur(scn, r, cal) {
+    var base = _origDurOf(r);
+    if (base == null) {
+      var s0 = pd(r.start_date), e0 = pd(r.end_date);
+      base = (s0 && e0) ? dayDiff(s0, e0) + 1 : (r.duration_days || 0);
+    }
+    if (!base) return { base: 0, dur: 0, hits: [], segs: [] };
+
+    var segs = dsMonthSegs(r, cal || dsCalendarFor(scn, r));
+    var spanDays = segs.reduce(function (a, x) { return a + x.days; }, 0);
+    // ⚠️ The month split is derived from the activity's DATES, the duration from its
+    // duration field, and on a real schedule the two disagree (an activity edited to
+    // 10 days whose dates still span 12). Scale the split onto the duration so the parts
+    // always sum to the whole; with no usable span, treat it as one block in its start
+    // month rather than inventing a distribution.
+    var work = spanDays > 0
+      ? segs.map(function (x) { return { m: x.m, y: x.y, days: base * (x.days / spanDays) }; })
+      : [{ m: segs[0].m, y: segs[0].y, days: base }];
+
+    var hits = [];
+    dsRules(scn).forEach(function (rule) {
+      if (!dsRuleMatches(rule, r)) return;
+      var touched = false;
+      work.forEach(function (seg) {
+        if (!dsRuleInMonth(rule, seg.m)) return;
+        seg.days = seg.days * (rule.factor == null ? 1 : Number(rule.factor) || 0);
+        touched = true;
+      });
+      if (!touched) return;
+      // A flat "+N days" is a one-off allowance for the activity, not per month — adding
+      // it to every matching month would multiply it by however many months the activity
+      // happens to straddle.
+      var add = Number(rule.add_days) || 0;
+      if (add) {
+        for (var i = work.length - 1; i >= 0; i--) {
+          if (dsRuleInMonth(rule, work[i].m)) { work[i].days += add; break; }
+        }
+      }
+      hits.push(rule.label || 'rule');
+    });
+    var d = Math.max(1, Math.round(work.reduce(function (a, x) { return a + x.days; }, 0)));
+    return { base: base, dur: d, hits: hits, segs: work };
+  }
+
+  // The calendar a scenario resolves an activity's dates through: the scenario's own
+  // when it names one, else the activity's, else the project default, else PDCal's.
+  function dsCalendarFor(scn, r) {
+    var id = (scn && scn.calendar_id) || (r && r.calendar_id) || null;
+    var c = id && CALS.find(function (x) { return x.id === id; });
+    if (!c) c = CALS.find(function (x) { return x.is_default; });
+    return c || (window.PDCal ? PDCal.defaultCalendar() : null);
+  }
+
+  // Preview: what the scenario does, WITHOUT writing anything.
+  // ⚠️ Reports each affected activity's own new finish, and the project's new finish as
+  // the latest of them. It deliberately does NOT re-run the CPM: pushing the logic
+  // through predecessors would be a second, much larger claim, and presenting a
+  // half-propagated network as "the scenario finish" would understate the slip in a way
+  // nobody could see. What this says is exactly what it computes — per-activity impact —
+  // and the dialog says so in as many words.
+  function dsPreview(scn) {
+    var out = { items: [], affected: 0, total: 0, finishOld: null, finishNew: null, maxSlip: 0 };
+    if (!window.PDCal) return out;
+    rows.forEach(function (r) {
+      if (isWbs(r) || isMile(r)) return;
+      out.total += 1;
+      var cal = dsCalendarFor(scn, r);
+      var a = dsAdjustedDur(scn, r, cal);
+      var sd = pd(dispStart(r)) || pd(r.start_date);
+      var oldFin = pd(dispFin(r)) || pd(r.end_date);
+      if (oldFin && (!out.finishOld || oldFin > out.finishOld)) out.finishOld = oldFin;
+      // ⚠️ Rain days move EVERY activity that runs through a wet month, not only the
+      // ones a rule matched — losing 8 days in July does not care which trade you are.
+      // So an activity is skipped only when neither mechanism can touch it.
+      if ((!a.hits.length && !Object.keys(dsRainMonths(scn, r)).length) || !sd || !a.dur) {
+        if (oldFin && (!out.finishNew || oldFin > out.finishNew)) out.finishNew = oldFin;
+        return;
+      }
+      // ⚠️ Two mechanisms, composed in the right order: the RULES have already
+      // stretched the day-count above; the RAIN DAYS now remove working days as that
+      // count is laid onto the calendar. Doing it the other way round (removing days
+      // first, then multiplying) would scale the weather loss by the slowdown, which
+      // is not what either number means.
+      var rainM = dsRainMonths(scn, r);
+      var newFin = Object.keys(rainM).length
+        ? PDCal.addWorkingDaysWithRain(cal, sd, a.dur, rainM)
+        : PDCal.addWorkingDays(cal, sd, a.dur);
+      if (!out.finishNew || newFin > out.finishNew) out.finishNew = newFin;
+      var slip = oldFin ? dayDiff(oldFin, newFin) : 0;
+      // An activity the rain never actually touched (a dry month) has no slip and no
+      // rule hit — reporting it as "affected" would inflate the headline number with
+      // rows whose dates did not move.
+      if (!a.hits.length && slip <= 0) {
+        if (oldFin && (!out.finishNew || oldFin > out.finishNew)) out.finishNew = oldFin;
+        return;
+      }
+      if (slip > out.maxSlip) out.maxSlip = slip;
+      out.affected += 1;
+      var _pf = dsProfileFor(scn, r);
+      out.items.push({ id: r.id, aid: r.activity_id, name: r.activity_name,
+                       base: a.base, dur: a.dur, hits: a.hits,
+                       profile: _pf ? (_pf.label || 'Default') : '',
+                       start: sd, oldFin: oldFin, newFin: newFin, slip: slip });
+    });
+    // Worst slip first — the reason to open this dialog is to find what breaks.
+    out.items.sort(function (x, y) { return y.slip - x.slip; });
+    return out;
+  }
+
+
+
+  // ---- Working calendars, editable from the schedule -------------------------
+  // ⚠️ This module could READ calendars and ASSIGN one per activity, but it could
+  // never CREATE or EDIT one — the only insert was the XER importer building them
+  // from a P6 file. The editor lived in the Resource & Role Master module. That is a
+  // real gap for duration scenarios: the calendar IS the model (which days are
+  // workable, which public holidays are off), so being sent to another module to
+  // change it — and back again to see the effect — makes the feature unusable at the
+  // moment a planner actually needs it.
+  // ⚠️ Same table, same columns, same shape as Resource & Role Master's Calendars tab.
+  // This is a second door onto one calendar, NOT a second calendar model.
+  var _CAL_DAYS = [['work_mon','Mon'],['work_tue','Tue'],['work_wed','Wed'],['work_thu','Thu'],
+                   ['work_fri','Fri'],['work_sat','Sat'],['work_sun','Sun']];
+
+  // ⚠️ ONE implementation, two hosts. The Calendars VIEW (title switcher) and the
+  // modal opened from the duration-scenario dialog render exactly the same editor into
+  // different containers — a second copy would drift the moment either was touched.
+  function renderCalendarsInto(host, opts) {
+    opts = opts || {};
+    var m = { el: host, close: opts.close || function () {} };
+    var draft = null;
+
+    function blank() {
+      // The Philippine 6-day week is the honest default here — it is what
+      // PDCal.defaultCalendar() assumes and what every existing project was seeded with.
+      return { name: '', hours_per_day: 8, work_mon: true, work_tue: true, work_wed: true,
+               work_thu: true, work_fri: true, work_sat: true, work_sun: false,
+               extra_holidays: [], is_default: false };
+    }
+
+    function render() {
+      var body = m.el.querySelector('#ps-cal-body') || m.el;
+      body.innerHTML =
+        '<h2 style="margin-top:0;">Working calendars</h2>' +
+        '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 12px;">Which days are workable. ' +
+        'Durations are counts of these days, so this is what turns a duration into a finish date — ' +
+        'for the live schedule and for every duration scenario. Philippine regular holidays are ' +
+        'built in and always non-working; the list below is for the movable ones (Eid’l Fitr, Eid’l ' +
+        'Adha, proclamation-moved dates) and any site-specific shutdown.</p>' +
+        '<div class="ps-cal-wrap"><div class="ps-cal-list">' +
+          (CALS.length ? CALS.map(function (c) {
+            return '<button class="ps-cal-item' + (draft && draft.id === c.id ? ' on' : '') + '" data-cal="' + esc(c.id) + '">' +
+              esc(c.name) + (c.is_default ? '<span class="ps-cal-def">DEFAULT</span>' : '') +
+              '<small>' + _CAL_DAYS.filter(function (d) { return c[d[0]]; }).map(function (d) { return d[1]; }).join(' ') +
+              ' · ' + (c.hours_per_day || 8) + 'h' +
+              ((c.extra_holidays || []).length ? ' · ' + c.extra_holidays.length + ' extra holiday(s)' : '') + '</small></button>';
+          }).join('') : '<div class="pd-empty" style="padding:16px;">No calendars on this project yet.</div>') +
+          '<button class="pd-btn pd-btn-sm" id="ps-cal-new" style="margin-top:8px;width:100%;">+ New calendar</button>' +
+        '</div><div class="ps-cal-edit">' + (draft ? editHTML() : '<div class="pd-empty" style="padding:24px;">Pick a calendar to edit, or create one.</div>') + '</div></div>' +
+        (opts.showClose === false ? '' : '<div style="margin-top:12px;text-align:right;"><button class="pd-btn" id="ps-cal-close">Close</button></div>');
+      wire();
+    }
+
+    function editHTML() {
+      return '<div class="pd-field"><label>Name</label><input class="pd-input" id="ps-cal-name" value="' + esc(draft.name || '') + '" placeholder="Philippine Standard (6-day, 8h)"></div>' +
+        '<div class="pd-field"><label>Working days</label><div class="ps-cal-days">' +
+          _CAL_DAYS.map(function (d) {
+            return '<label><input type="checkbox" data-day="' + d[0] + '"' + (draft[d[0]] ? ' checked' : '') + '>' + d[1] + '</label>';
+          }).join('') + '</div></div>' +
+        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Hours per day</label>' +
+          '<input class="pd-input" id="ps-cal-hpd" type="number" min="1" max="24" step="0.5" value="' + (draft.hours_per_day || 8) + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label>Project default</label>' +
+          '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;"><input type="checkbox" id="ps-cal-def"' + (draft.is_default ? ' checked' : '') + '> Use for activities with none set</label></div></div>' +
+        '<div class="pd-field"><label>Extra non-working days</label>' +
+          '<div class="ps-cal-hols" id="ps-cal-hols">' +
+            ((draft.extra_holidays || []).length
+              ? draft.extra_holidays.slice().sort().map(function (h) {
+                  return '<span class="ps-cal-hol">' + esc(h) + '<button data-rmhol="' + esc(h) + '" title="Remove">✕</button></span>'; }).join('')
+              : '<span style="color:var(--pd-muted);font-size:12px;">None.</span>') +
+          '</div>' +
+          '<div style="display:flex;gap:6px;margin-top:6px;"><input class="pd-input pd-input-sm" type="date" id="ps-cal-holnew" style="flex:1;">' +
+          '<button class="pd-btn pd-btn-sm" id="ps-cal-holadd">Add day</button></div></div>' +
+        (draft.id ? '<div class="pd-field"><label>Assign this calendar to activities</label>' +
+          '<p style="margin:0 0 6px;font-size:12px;color:var(--pd-muted);">A real project runs several calendars at once — exposed trades on one, interior and off-site work on another. This is how you put a trade on this calendar without editing activities one at a time.</p>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+          '<select class="pd-select pd-input-sm" id="ps-cal-asg" style="flex:1;min-width:180px;"><option value="__all__">Every activity in this project</option>' +
+          workTypeValues().map(function (t) { return '<option value="' + esc(t) + '">Trade: ' + esc(t) + '</option>'; }).join('') + '</select>' +
+          '<button class="pd-btn pd-btn-sm" id="ps-cal-asgbtn">Assign…</button></div>' +
+          '<small style="color:var(--pd-muted);font-size:11.5px;">Counts are shown before anything is written.</small></div>' : '') +
+        '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;">' +
+          (draft.id ? '<button class="pd-btn pd-btn-sm pd-btn-danger" id="ps-cal-del">Delete…</button>' : '') +
+          '<div style="flex:1;"></div><button class="pd-btn pd-btn-primary pd-btn-sm" id="ps-cal-save">Save calendar</button></div>';
+    }
+
+    function readDraft() {
+      var root = m.el;
+      draft.name = root.querySelector('#ps-cal-name').value.trim();
+      draft.hours_per_day = parseFloat(root.querySelector('#ps-cal-hpd').value) || 8;
+      draft.is_default = root.querySelector('#ps-cal-def').checked;
+      root.querySelectorAll('[data-day]').forEach(function (c) { draft[c.dataset.day] = c.checked; });
+    }
+
+    function wire() {
+      var root = m.el;
+      root.querySelectorAll('[data-cal]').forEach(function (b) {
+        b.onclick = function () { draft = JSON.parse(JSON.stringify(CALS.find(function (c) { return c.id === b.dataset.cal; }))); render(); };
+      });
+      root.querySelector('#ps-cal-new').onclick = function () { draft = blank(); render(); };
+      var cl = root.querySelector('#ps-cal-close');
+      if (cl) cl.onclick = function () { m.close(); if (opts.onDone) opts.onDone(); };
+      if (!draft) return;
+      root.querySelector('#ps-cal-holadd').onclick = function () {
+        var v = root.querySelector('#ps-cal-holnew').value;
+        if (!v) return;
+        readDraft();
+        draft.extra_holidays = (draft.extra_holidays || []).concat(v).filter(function (x, i, a) { return a.indexOf(x) === i; });
+        render();
+      };
+      root.querySelectorAll('[data-rmhol]').forEach(function (b) {
+        b.onclick = function () {
+          readDraft();
+          draft.extra_holidays = (draft.extra_holidays || []).filter(function (x) { return x !== b.dataset.rmhol; });
+          render();
+        };
+      });
+      root.querySelector('#ps-cal-save').onclick = async function () {
+        readDraft();
+        if (!draft.name) { UI.toast('Name the calendar first', 'warn'); return; }
+        // ⚠️ A calendar with no working day at all would make every date computation
+        // run to its guard limit and report nonsense finishes. Refused at the door.
+        if (!_CAL_DAYS.some(function (d) { return draft[d[0]]; })) {
+          UI.toast('Tick at least one working day — a calendar with none can never finish anything.', 'warn'); return;
+        }
+        var payload = { project_id: pid, name: draft.name, hours_per_day: draft.hours_per_day,
+          extra_holidays: draft.extra_holidays || [], is_default: !!draft.is_default };
+        _CAL_DAYS.forEach(function (d) { payload[d[0]] = !!draft[d[0]]; });
+        try {
+          // ⚠️ Only ONE default per project. Clearing the others first, not after, so a
+          // failure part-way leaves zero defaults (recoverable) rather than two
+          // (silently ambiguous — whichever loaded first would win).
+          if (payload.is_default) {
+            await sb().from('calendars').update({ is_default: false }).eq('project_id', pid);
+            CALS.forEach(function (c) { c.is_default = false; });
+          }
+          if (draft.id) {
+            var u = await sb().from('calendars').update(payload).eq('id', draft.id);
+            if (u.error) throw u.error;
+            var idx = CALS.findIndex(function (c) { return c.id === draft.id; });
+            if (idx >= 0) CALS[idx] = Object.assign({}, CALS[idx], payload);
+          } else {
+            payload.created_by = UID;
+            var i2 = await sb().from('calendars').insert(payload).select().single();
+            if (i2.error) throw i2.error;
+            CALS.push(i2.data); draft.id = i2.data.id;
+          }
+          CALS.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+          _wdCache = {};   // capacity maths caches working days per calendar+month
+          UI.toast('Calendar saved', 'ok'); render();
+        } catch (e) { UI.toast(e.message, 'error'); }
+      };
+      var asg = root.querySelector('#ps-cal-asgbtn');
+      if (asg) asg.onclick = async function () {
+        var pickv = root.querySelector('#ps-cal-asg').value;
+        // ⚠️ Leaf activities only. A WBS summary has no duration of its own — its dates
+        // are rolled up from its children — so putting a calendar on one would suggest a
+        // control that does nothing.
+        var targets = rows.filter(function (r) {
+          if (isWbs(r)) return false;
+          return pickv === '__all__' ? true : (workOf(r) || '') === pickv;
+        });
+        var already = targets.filter(function (r) { return r.calendar_id === draft.id; }).length;
+        if (!targets.length) { UI.toast('No activities match that selection.', 'warn'); return; }
+        if (!confirm('Put ' + targets.length + ' activity/activities on "' + draft.name + '"?\n\n' +
+            already + ' already use it. This changes which days their durations are counted in, so ' +
+            'forecast dates will move on the next schedule run. Undoable (Ctrl+Z).')) return;
+        var ok = 0, bad = 0;
+        for (var i = 0; i < targets.length; i++) {
+          if (targets[i].calendar_id === draft.id) { ok++; continue; }
+          var good = await persist(targets[i].id, { calendar_id: draft.id });
+          good ? ok++ : bad++;
+        }
+        rebuild(true); renderAll();
+        UI.toast(ok + ' activities on "' + draft.name + '"' + (bad ? ', ' + bad + ' failed' : ''), bad ? 'warn' : 'ok');
+        render();
+      };
+      var del = root.querySelector('#ps-cal-del');
+      if (del) del.onclick = async function () {
+        // ⚠️ Refused while anything points at it. The FK is `on delete set null`, so the
+        // delete would otherwise SUCCEED and quietly move every one of those activities
+        // onto a different calendar — a schedule-wide date change with nothing on screen
+        // to explain it.
+        var used = rows.filter(function (r) { return r.calendar_id === draft.id; }).length;
+        var usedByScn = DSCN.filter(function (x) { return x.calendar_id === draft.id; }).length;
+        if (used || usedByScn) {
+          UI.toast('In use by ' + used + ' activity/activities and ' + usedByScn + ' scenario(s) — reassign them first.', 'warn');
+          return;
+        }
+        if (!confirm('Delete the calendar "' + draft.name + '"?')) return;
+        try {
+          var d = await sb().from('calendars').delete().eq('id', draft.id);
+          if (d.error) throw d.error;
+          CALS = CALS.filter(function (c) { return c.id !== draft.id; });
+          draft = null; _wdCache = {}; UI.toast('Calendar deleted', 'ok'); render();
+        } catch (e) { UI.toast(e.message, 'error'); }
+      };
+    }
+    render();
+  }
+  // Modal host — used from inside the duration-scenario dialog, where sending the
+  // planner to another VIEW would abandon the rules they are part-way through.
+  function openCalendars(onDone) {
+    var m = UI.modal('<div id="ps-cal-body"></div>');
+    var panel = m.el.querySelector('.pd-modal');
+    if (panel) { panel.style.width = 'min(760px, 94vw)'; panel.style.maxWidth = 'none'; }
+    renderCalendarsInto(m.el, { close: m.close, onDone: onDone });
+  }
+  // View host — the title switcher's "Working Calendars" entry.
+  function renderCalendarsView() {
+    var host = document.getElementById('ps-view-calendars');
+    if (host) renderCalendarsInto(host, { showClose: false });
+  }
+
+  // ---- C3 dialog: manage scenarios, preview, apply ---------------------------
+  var _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function dsMigrationHint(e) {
+    return 'Duration scenarios need migrations/2026-08-19-duration-scenarios-and-mom.sql — ' + (e && e.message ? e.message : 'table not found');
+  }
+  async function dsSave(scn) {
+    var payload = { project_id: pid, name: scn.name, description: scn.description || null,
+                    calendar_id: scn.calendar_id || null, rules: dsRules(scn), rain_days: dsProfiles(scn) };
+    try {
+      if (scn.id) {
+        var u = await sb().from('duration_scenarios').update(payload).eq('id', scn.id);
+        if (u.error) throw u.error;
+      } else {
+        payload.created_by = UID;
+        var i = await sb().from('duration_scenarios').insert(payload).select().single();
+        if (i.error) throw i.error;
+        scn.id = i.data.id; DSCN.push(i.data);
+      }
+      UI.toast('Scenario saved', 'ok');
+      return true;
+    } catch (e) { UI.toast(dsMigrationHint(e), 'error'); return false; }
+  }
+
+  function openDurScenarios(preselectId) {
+    var cur = DSCN.find(function (x) { return x.id === preselectId; }) || DSCN[0] || null;
+    var draft = cur ? JSON.parse(JSON.stringify(cur)) : { name: '', description: '', calendar_id: '', rules: [], rain_days: {} };
+    var m = UI.modal('<div id="ps-ds-body"></div>');
+    // ⚠️ UI.modal takes no width (see CLAUDE.md, 2026-07-17) — passing one is inert.
+    // The rule editor is a grid and needs the room, so set it on the panel itself.
+    var _panel = m.el.querySelector('.pd-modal');
+    if (_panel) { _panel.style.width = 'min(900px, 94vw)'; _panel.style.maxWidth = 'none'; }
+
+    function calOpts(sel) {
+      // "Each activity's own calendar" is a real, correct choice on a project with
+      // several — not a fallback for a missing selection.
+      return '<option value="">Each activity’s own calendar</option>' +
+        CALS.map(function (c) { return '<option value="' + esc(c.id) + '"' + (sel === c.id ? ' selected' : '') + '>' + esc(c.name) + (c.is_default ? ' (default)' : '') + '</option>'; }).join('');
+    }
+    function ruleHTML(rule, i) {
+      var trades = workTypeValues();
+      return '<div class="ps-ds-rule" data-ri="' + i + '">' +
+        '<div class="ps-ds-rulehead"><input class="pd-input pd-input-sm ps-ds-f" data-f="label" placeholder="Rule name (e.g. Wet season — exterior)" value="' + esc(rule.label || '') + '">' +
+          '<button class="pd-btn pd-btn-sm pd-btn-danger ps-ds-del" title="Remove this rule">✕</button></div>' +
+        '<div class="ps-ds-rulegrid">' +
+          '<label>Months<span class="ps-ds-months">' + _MONTHS.map(function (mn, k) {
+            return '<label class="ps-ds-mo"><input type="checkbox" class="ps-ds-mochk" data-mo="' + (k + 1) + '"' + ((rule.months || []).indexOf(k + 1) !== -1 ? ' checked' : '') + '>' + mn + '</label>';
+          }).join('') + '</span>' +
+          '<span class="ps-ds-presets"><button class="pd-btn pd-btn-sm ps-ds-wet">Wet season</button>' +
+          '<button class="pd-btn pd-btn-sm ps-ds-dry">Dry season</button></span>' +
+          '<small>None ticked = all year round. A rule applies only to the part of an activity that falls in these months.</small></label>' +
+          '<label>Trades<select class="pd-select pd-input-sm ps-ds-f" data-f="trades" multiple size="4">' +
+            trades.map(function (t) { return '<option value="' + esc(t) + '"' + ((rule.trades || []).indexOf(t) !== -1 ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') +
+            '</select><small>None selected = every trade.</small></label>' +
+          '<label>Contract scope<select class="pd-select pd-input-sm ps-ds-f" data-f="scope">' +
+            [['', 'Any'], ['main', 'Main contract'], ['change_order', 'Change orders']].map(function (o) {
+              return '<option value="' + o[0] + '"' + ((rule.scope || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+            '</select></label>' +
+          '<label>Duration ×<input class="pd-input pd-input-sm ps-ds-f" data-f="factor" type="number" step="0.05" min="0.1" value="' + (rule.factor != null ? rule.factor : 1) + '"><small>1.25 = 25% slower.</small></label>' +
+          '<label>then + days<input class="pd-input pd-input-sm ps-ds-f" data-f="add_days" type="number" step="1" value="' + (rule.add_days || 0) + '"></label>' +
+        '</div></div>';
+    }
+
+    function profileHTML(prof, i) {
+      var trades = workTypeValues();
+      var isDefault = !prof.trades || !prof.trades.length;
+      return '<div class="ps-ds-prof" data-pi="' + i + '">' +
+        '<div class="ps-ds-rulehead">' +
+          '<input class="pd-input pd-input-sm ps-ds-pf" data-f="label" placeholder="Exposure (e.g. Exposed / exterior works)" value="' + esc(prof.label || '') + '">' +
+          (isDefault ? '<span class="ps-pkgtag" title="Applies to any activity no other profile claims">DEFAULT</span>' : '') +
+          '<button class="pd-btn pd-btn-sm pd-btn-danger ps-ds-profdel" title="Remove this profile">✕</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">' +
+          '<label style="flex:0 0 200px;display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:700;color:var(--pd-muted);text-transform:uppercase;letter-spacing:.04em;">Trades' +
+            '<select class="pd-select pd-input-sm ps-ds-pf" data-f="trades" multiple size="4">' +
+            trades.map(function (t) { return '<option value="' + esc(t) + '"' + ((prof.trades || []).indexOf(t) !== -1 ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') +
+            '</select><small style="font-weight:400;text-transform:none;letter-spacing:0;">None = the default profile.</small></label>' +
+          '<div style="flex:1 1 320px;min-width:260px;">' +
+            '<div class="ps-ds-raingrid">' + _MONTHS.map(function (mn, k) {
+              return '<label>' + mn + '<input class="pd-input pd-input-sm ps-ds-rain-in" type="number" min="0" max="31" step="1" ' +
+                'data-mo="' + (k + 1) + '" value="' + (Number((prof.months || {})[k + 1]) || 0) + '"></label>';
+            }).join('') + '</div>' +
+            '<div class="ps-ds-presets"><button class="pd-btn pd-btn-sm ps-ds-preset" data-days="8">PH wet season · 8 d/mo</button>' +
+              '<button class="pd-btn pd-btn-sm ps-ds-preset" data-days="4">PH wet season · 4 d/mo</button>' +
+              '<button class="pd-btn pd-btn-sm ps-ds-preset" data-days="0">Clear</button>' +
+              '<small>Wet season = Jun–Nov.</small></div>' +
+          '</div>' +
+        '</div></div>';
+    }
+
+    function readDraft(root) {
+      draft.name = root.querySelector('#ps-ds-name').value.trim();
+      draft.description = root.querySelector('#ps-ds-desc').value.trim();
+      draft.calendar_id = root.querySelector('#ps-ds-cal').value || null;
+      // ⚠️ Normalise to the ARRAY shape on every read, so a scenario saved under the old
+      // single-map shape is migrated the first time it is edited rather than half-and-half.
+      var profs = dsProfiles(draft).slice();
+      root.querySelectorAll('.ps-ds-prof').forEach(function (el) {
+        var prof = profs[+el.dataset.pi]; if (!prof) return;
+        el.querySelectorAll('.ps-ds-pf').forEach(function (f) {
+          if (f.dataset.f === 'trades') prof.trades = [].slice.call(f.selectedOptions).map(function (o) { return o.value; });
+          else prof[f.dataset.f] = f.value;
+        });
+        var months = {};
+        el.querySelectorAll('.ps-ds-rain-in').forEach(function (f) {
+          var v = Math.max(0, Math.min(31, parseInt(f.value, 10) || 0));
+          if (v) months[f.dataset.mo] = v;   // only non-zero months stored — a wall of 0s is noise
+        });
+        prof.months = months;
+      });
+      draft.rain_days = profs;
+      root.querySelectorAll('.ps-ds-rule').forEach(function (el) {
+        var rule = draft.rules[+el.dataset.ri]; if (!rule) return;
+        el.querySelectorAll('.ps-ds-f').forEach(function (f) {
+          var k = f.dataset.f;
+          if (k === 'trades') rule.trades = [].slice.call(f.selectedOptions).map(function (o) { return o.value; });
+          else if (k === 'factor') rule.factor = parseFloat(f.value) || 1;
+          else if (k === 'add_days') rule.add_days = parseInt(f.value, 10) || 0;
+          else rule[k] = f.value;
+        });
+        rule.months = [].slice.call(el.querySelectorAll('.ps-ds-mochk')).filter(function (c) { return c.checked; })
+          .map(function (c) { return +c.dataset.mo; });
+      });
+    }
+
+    function render() {
+      var root = m.el;
+      root.querySelector('#ps-ds-body').innerHTML =
+        '<h2 style="margin-top:0;">Duration scenarios</h2>' +
+        '<p style="color:var(--pd-muted);margin:0 0 12px;font-size:12.5px;">A scenario is a set of rules that stretches durations — a rainy season, a slow trade, a constrained shift. Rules apply <b>in order and compound</b>, and finishes are re-derived through a <b>working calendar</b>, so weekends and holidays are respected.</p>' +
+        (DSCN.length ? '<div class="pd-field"><label>Scenario</label><select class="pd-select" id="ps-ds-pick">' +
+          DSCN.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === draft.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') +
+          '<option value="__new__">— New scenario —</option></select></div>' : '') +
+        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Name</label><input class="pd-input" id="ps-ds-name" value="' + esc(draft.name || '') + '" placeholder="Wet season 2027"></div>' +
+        '<div class="pd-field" style="flex:1;"><label>Working calendar <button class="pd-btn pd-btn-sm" id="ps-ds-editcal" style="float:right;padding:0 8px;" title="Same editor as the Working Calendars view — opened here so you do not lose these rules">Edit calendars…</button></label>' +
+        '<select class="pd-select" id="ps-ds-cal">' + calOpts(draft.calendar_id) + '</select></div></div>' +
+        '<div class="pd-field"><label>Notes</label><input class="pd-input" id="ps-ds-desc" value="' + esc(draft.description || '') + '"></div>' +
+        '<div class="ps-ds-rules">' + dsRules(draft).map(ruleHTML).join('') +
+          (dsRules(draft).length ? '' : '<div class="pd-empty" style="padding:18px;">No rules yet — add one to describe what slows down, and when.</div>') + '</div>' +
+        '<button class="pd-btn pd-btn-sm" id="ps-ds-addrule">+ Add rule</button>' +
+        '<div class="ps-ds-rain">' +
+          '<h4>Rain days lost per month, by exposure</h4>' +
+          '<p>A different mechanism from the rules above, and they compose: a <b>rule</b> makes work slower, ' +
+          'a <b>rain day</b> removes a working day outright. Days are spread evenly through each month and ' +
+          'are applied <b>month by month across the activity’s span</b> — so an activity running Feb→Nov gets ' +
+          'the wet-season allowance only on its wet-season part. Nothing is written to the shared calendar: ' +
+          'this assumption belongs to this scenario alone.</p>' +
+          '<p><b>Exposure differs by trade.</b> Excavation and exterior concrete lose half a wet month; ' +
+          'interior fit-out in a topped-out building loses nothing. The first profile whose trades match an ' +
+          'activity wins; a profile with no trades is the project default.</p>' +
+          dsProfiles(draft).map(profileHTML).join('') +
+          (dsProfiles(draft).length ? '' : '<div class="pd-empty" style="padding:14px;">No rain profile yet.</div>') +
+          '<button class="pd-btn pd-btn-sm" id="ps-ds-addprof">+ Add exposure profile</button>' +
+        '</div>' +
+        '<div id="ps-ds-preview" style="margin-top:14px;"></div>' +
+        '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;">' +
+          (draft.id ? '<button class="pd-btn pd-btn-danger pd-btn-sm" id="ps-ds-delete">Delete…</button>' : '') +
+          '<div style="flex:1;"></div>' +
+          '<button class="pd-btn" id="ps-ds-close">Close</button>' +
+          '<button class="pd-btn" id="ps-ds-prev">Preview impact</button>' +
+          '<button class="pd-btn pd-btn-primary" id="ps-ds-save">Save scenario</button></div>';
+      wire();
+    }
+
+    function renderPreview() {
+      readDraft(m.el);
+      var pv = dsPreview(draft);
+      var host = m.el.querySelector('#ps-ds-preview');
+      if (!pv.affected) {
+        host.innerHTML = '<div class="pd-empty" style="padding:16px;">No activity matches these rules. Remember an empty facet means <b>any</b>, so a rule that matches nothing is usually a month or trade filter that no activity satisfies.</div>';
+        return;
+      }
+      var slip = (pv.finishOld && pv.finishNew) ? dayDiff(pv.finishOld, pv.finishNew) : 0;
+      host.innerHTML =
+        '<div class="ps-ds-kpis">' +
+          '<div><span>Activities affected</span><strong>' + pv.affected + ' of ' + pv.total + '</strong></div>' +
+          (dsRainTotal(draft) ? '<div><span>Rain days a year</span><strong>' + dsRainTotal(draft) + '</strong></div>' : '') +
+          '<div><span>Latest finish now</span><strong>' + (pv.finishOld ? Fmt.date(dstr(pv.finishOld)) : '—') + '</strong></div>' +
+          '<div><span>Latest finish in scenario</span><strong>' + (pv.finishNew ? Fmt.date(dstr(pv.finishNew)) : '—') + '</strong></div>' +
+          '<div><span>Slip</span><strong class="' + (slip > 0 ? 'ps-var-late' : 'ps-var-early') + '">' + (slip > 0 ? '+' : '') + slip + 'd</strong></div>' +
+        '</div>' +
+        '<p style="color:var(--pd-muted);font-size:12px;margin:8px 0 6px;">⚠️ This is the <b>direct</b> impact on each activity, re-derived through the calendar. It does <b>not</b> push the change through predecessor logic — the knock-on slip along the network will be at least this much, never less.</p>' +
+        '<div style="max-height:220px;overflow:auto;"><table class="pd-table"><thead><tr><th>Activity</th><th>Rules</th><th>Exposure</th><th class="num">Days</th><th>Finish now</th><th>Scenario finish</th><th class="num">Slip</th></tr></thead><tbody>' +
+        pv.items.slice(0, 200).map(function (it) {
+          return '<tr><td>' + esc((it.aid ? it.aid + ' · ' : '') + (it.name || '')) + '</td>' +
+            '<td style="color:var(--pd-muted);font-size:12px;">' + esc(it.hits.join(', ')) + '</td>' +
+            '<td style="color:var(--pd-muted);font-size:12px;">' + esc(it.profile || '—') + '</td>' +
+            '<td class="num">' + it.base + ' → <b>' + it.dur + '</b></td>' +
+            '<td>' + (it.oldFin ? Fmt.date(dstr(it.oldFin)) : '—') + '</td>' +
+            '<td>' + Fmt.date(dstr(it.newFin)) + '</td>' +
+            '<td class="num ' + (it.slip > 0 ? 'ps-var-late' : '') + '">' + (it.slip > 0 ? '+' : '') + it.slip + 'd</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (pv.items.length > 200 ? '<p style="color:var(--pd-muted);font-size:12px;">Showing the 200 worst of ' + pv.items.length + '.</p>' : '') +
+        '<button class="pd-btn pd-btn-sm" id="ps-ds-apply" style="margin-top:10px;">Apply these durations to the schedule…</button>';
+      m.el.querySelector('#ps-ds-apply').onclick = function () { dsApply(pv); };
+    }
+
+    // ⚠️ Applying WRITES durations and finish dates. It is a separate, explicitly
+    // confirmed act — never a side effect of previewing — and it goes through
+    // persist(), so it lands on the undo stack like any other edit.
+    async function dsApply(pv) {
+      if (!pv.affected) return;
+      if (!confirm('Apply ' + pv.affected + ' adjusted duration(s) to the live schedule?\n\nThis rewrites Duration and Finish on those activities. It is undoable (Ctrl+Z), but it is a real edit — not a preview.')) return;
+      var ok = 0, failed = 0;
+      for (var i = 0; i < pv.items.length; i++) {
+        var it = pv.items[i];
+        var good = await persist(it.id, { duration_days: it.dur, end_date: dstr(it.newFin) });
+        good ? ok++ : failed++;
+      }
+      rebuild(true); renderAll();
+      UI.toast(ok + ' activities updated' + (failed ? ', ' + failed + ' failed' : ''), failed ? 'warn' : 'ok');
+      m.close();
+    }
+
+    function wire() {
+      var root = m.el;
+      var pick = root.querySelector('#ps-ds-pick');
+      if (pick) pick.onchange = function () {
+        var v = pick.value;
+        draft = v === '__new__' ? { name: '', description: '', calendar_id: '', rules: [], rain_days: {} }
+              : JSON.parse(JSON.stringify(DSCN.find(function (x) { return x.id === v; })));
+        render();
+      };
+      root.querySelector('#ps-ds-addrule').onclick = function () { readDraft(root); draft.rules = dsRules(draft).concat([dsBlankRule()]); render(); };
+      root.querySelectorAll('.ps-ds-del').forEach(function (b) {
+        b.onclick = function () {
+          readDraft(root);
+          var i = +b.closest('.ps-ds-rule').dataset.ri;
+          draft.rules = dsRules(draft).filter(function (_, k) { return k !== i; });
+          render();
+        };
+      });
+      root.querySelector('#ps-ds-addprof').onclick = function () {
+        readDraft(root);
+        var have = dsProfiles(draft);
+        // The first profile added is the default (no trades); later ones are exposures.
+        draft.rain_days = have.concat([dsBlankProfile(!have.length)]);
+        render();
+      };
+      root.querySelectorAll('.ps-ds-profdel').forEach(function (b) {
+        b.onclick = function () {
+          readDraft(root);
+          var i = +b.closest('.ps-ds-prof').dataset.pi;
+          draft.rain_days = dsProfiles(draft).filter(function (_, k) { return k !== i; });
+          render();
+        };
+      });
+      root.querySelectorAll('.ps-ds-preset').forEach(function (b) {
+        b.onclick = function () {
+          var host = b.closest('.ps-ds-prof'), n = parseInt(b.dataset.days, 10) || 0;
+          host.querySelectorAll('.ps-ds-rain-in').forEach(function (f) {
+            f.value = (n && PH_WET_MONTHS.indexOf(+f.dataset.mo) !== -1) ? n : 0;
+          });
+          readDraft(root); renderPreview();
+        };
+      });
+      root.querySelector('#ps-ds-editcal').onclick = function () {
+        // Read the draft first: opening the calendar editor must not cost the planner
+        // the rules they have just typed.
+        readDraft(root);
+        openCalendars(function () { render(); });
+      };
+      root.querySelectorAll('.ps-ds-wet, .ps-ds-dry').forEach(function (b) {
+        b.onclick = function () {
+          var wet = b.classList.contains('ps-ds-wet'), host = b.closest('.ps-ds-rule');
+          host.querySelectorAll('.ps-ds-mochk').forEach(function (c) {
+            var inWet = PH_WET_MONTHS.indexOf(+c.dataset.mo) !== -1;
+            c.checked = wet ? inWet : !inWet;
+          });
+          readDraft(root); renderPreview();
+        };
+      });
+      root.querySelector('#ps-ds-close').onclick = m.close;
+      root.querySelector('#ps-ds-prev').onclick = renderPreview;
+      root.querySelector('#ps-ds-save').onclick = async function () {
+        readDraft(root);
+        if (!draft.name) { UI.toast('Name the scenario first', 'warn'); return; }
+        if (await dsSave(draft)) {
+          var idx = DSCN.findIndex(function (x) { return x.id === draft.id; });
+          if (idx >= 0) DSCN[idx] = JSON.parse(JSON.stringify(draft));
+          render();
+        }
+      };
+      var del = root.querySelector('#ps-ds-delete');
+      if (del) del.onclick = async function () {
+        if (!confirm('Delete the scenario "' + draft.name + '"? The schedule itself is untouched — only the rules go.')) return;
+        try {
+          var d = await sb().from('duration_scenarios').delete().eq('id', draft.id);
+          if (d.error) throw d.error;
+          DSCN = DSCN.filter(function (x) { return x.id !== draft.id; });
+          draft = DSCN[0] ? JSON.parse(JSON.stringify(DSCN[0])) : { name: '', description: '', calendar_id: '', rules: [], rain_days: {} };
+          UI.toast('Scenario deleted', 'ok'); render();
+        } catch (e) { UI.toast(e.message, 'error'); }
+      };
+    }
+    render();
+  }
+
   var _wbsCollapsed = {};   // WBS Manager: node id -> true means its children are hidden
   var _wbsSearch = '';      // WBS Manager: current search filter (code / name)
   var _wbsCollapseInit = false;   // have we applied the large-tree default-collapse once?
@@ -2789,7 +3582,7 @@
     return out;
   }
   async function loadResourcesAssignments() {
-    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; return; }
+    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; DSCN = []; return; }
     try {
       // resources/resource_assignments reach tens of thousands of rows on a P6/XER import, so an
       // unpaginated select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost
@@ -2837,6 +3630,11 @@
       var r9 = await sb().from('packages').select('*').eq('project_id', pid).order('sort_order').order('code');
       PACKAGES = (r9 && !r9.error && r9.data) || [];
     } catch (e) { PACKAGES = []; }
+    try {
+      // Duration scenarios (C3). Tolerant of the un-run migration like the two above.
+      var r10 = await sb().from('duration_scenarios').select('*').eq('project_id', pid).order('name');
+      DSCN = (r10 && !r10.error && r10.data) || [];
+    } catch (e) { DSCN = []; }
     try {
       // Keyset-paginate: a plain select caps at Supabase's 1000-row limit, which silently TRUNCATED
       // the tree on big P6 imports (>1000 WBS nodes) — children whose parent fell past row 1000
@@ -11691,7 +12489,15 @@
     html += sep + hdr('What-if scenarios');
     html += sc.length ? sc.map(function (s) { return '<button data-scn="' + esc(s.id) + '"><span data-ico="box" data-ico-size="14"></span> ' + esc(s.name || '(unnamed)') + '</button>'; }).join('') : none;
     html += sep + '<button data-open="mng-bl"><span data-ico="layers" data-ico-size="14"></span> Manage baselines…</button>' +
-                  '<button data-open="mng-scn"><span data-ico="box" data-ico-size="14"></span> Manage scenarios…</button>';
+                  '<button data-open="mng-scn"><span data-ico="box" data-ico-size="14"></span> Manage what-if scenarios…</button>' +
+                  // ⚠️ Named "Duration scenarios" and kept visibly apart from the what-if snapshots
+                  // above it: they are different things (rules vs a restorable copy) and sharing the
+                  // bare word "scenario" between them is exactly how a planner restores a snapshot
+                  // when they meant to model a wet season.
+                  // Working calendars are a VIEW (title switcher), not a menu entry — two
+                  // doors from two different menus to one editor is how a planner ends up
+                  // unsure which one is authoritative.
+                  '<button data-open="dur-scn"><span data-ico="calendar" data-ico-size="14"></span> Duration scenarios (rain days)…</button>';
     m.innerHTML = html;
     m.querySelectorAll('button[data-open],button[data-bl],button[data-scn]').forEach(function (b) { b.onclick = function (e) {
       e.stopPropagation(); m.classList.remove('open');
@@ -11700,6 +12506,7 @@
       else if (b.dataset.open === 'current') { load(); }
       else if (b.dataset.open === 'mng-bl') { openBaselines(); }
       else if (b.dataset.open === 'mng-scn') { openScenarios(); }
+      else if (b.dataset.open === 'dur-scn') { openDurScenarios(); }
     }; });
   }
   async function deleteBaseline(id) {
@@ -17757,17 +18564,18 @@
     document.getElementById('ps-view-planner').style.display = tab === 'planner' ? '' : 'none';
     document.getElementById('ps-view-wbs').style.display = tab === 'wbs' ? '' : 'none';
     var vb = document.getElementById('ps-view-builder'); if (vb) vb.style.display = tab === 'builder' ? '' : 'none';
+    var vc = document.getElementById('ps-view-calendars'); if (vc) vc.style.display = tab === 'calendars' ? '' : 'none';
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Cockpit or Cost table.
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Builder' : 'Project Schedule')));
+    var name = tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Builder' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule'))));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
     // Planner Cockpit now hosts the Last Planner weekly section too — render both.
-    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'wbs') renderWbsManager(); else if (tab === 'builder') ScheduleBuilder.open(pid, UID); else { renderPlanner(); openLastPlanner(); }
+    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'wbs') renderWbsManager(); else if (tab === 'builder') ScheduleBuilder.open(pid, UID); else if (tab === 'calendars') renderCalendarsView(); else { renderPlanner(); openLastPlanner(); }
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
