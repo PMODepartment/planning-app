@@ -31,6 +31,12 @@
   --pd-radius: 4px;
   --pd-shadow: 0 1px 3px rgba(35,31,32,.08), 0 1px 2px rgba(35,31,32,.04);
   --pd-sidebar-w: 240px;
+  /* ⚠️ The sidebar surface is its OWN token, not --pd-ink. PRC paints its panel
+     --mw-black (#231F20) and --pd-ink happens to be that same value in light
+     mode — but --pd-ink is the TEXT token and dark mode remaps it to #F0EFEF,
+     which turned the whole panel near-white. Caught in a dark-mode measurement.
+     A surface never borrows a text token. */
+  --pd-sidebar-bg: #231F20;
 }
 
 * { box-sizing: border-box; }
@@ -50,19 +56,20 @@ a:hover { text-decoration: underline; }
 .pd-app { display: flex; min-height: 100vh; }
 .pd-sidebar {
   width: var(--pd-sidebar-w); flex: 0 0 var(--pd-sidebar-w);
-  background: var(--pd-dark); color: #fff; padding: 18px 16px;
-  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  background: var(--pd-sidebar-bg); color: #fff; padding: 0;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column;
   transition: width .2s ease, flex-basis .2s ease, padding .2s ease;
 }
-/* Brand block: white Megawide wordmark filling the width + red app label,
-   with a divider beneath — matches the PRC-App sidebar header (.sidebar-logo).
-   ⚠️ Full-bleed by design: .pd-sidebar carries 18px/16px padding, so the block
-   pulls that back out and re-applies PRC's own 18px 20px 16px. The logo has NO
-   max-width — the 188px cap that used to sit here made the wordmark visibly
-   smaller than PRC's inside an identically 240px sidebar. */
+/* Brand block — PRC's .sidebar-logo, value for value. The sidebar itself carries
+   no padding (see above), so this needs no negative margins: it is a plain block
+   with PRC's own 18px 20px 16px. The logo has NO max-width — the 188px cap that
+   used to sit here made the wordmark visibly smaller than PRC's inside an
+   identically 240px sidebar. */
 .pd-sidebar .pd-brand {
   font-size: 0;                                  /* hides the inline text node beside the logo */
-  display: block; margin: -18px -16px 0; padding: 18px 20px 16px;
+  display: block; margin: 0; padding: 18px 20px 16px;
+  background: var(--pd-sidebar-bg);
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
 .pd-brand-logo {
@@ -73,49 +80,77 @@ a:hover { text-decoration: underline; }
   display: block; font-size: 9px; font-weight: 700; letter-spacing: .14em;   /* PRC .app-label */
   color: var(--pd-red); text-transform: uppercase; opacity: 1;
 }
-.pd-sidebar nav { margin-top: 18px; display: flex; flex-direction: column; gap: 2px; }
+/* PRC .sidebar-section — 16px 12px 4px around the rows. */
+.pd-sidebar nav { margin: 0; padding: 16px 12px 4px; display: flex; flex-direction: column; gap: 2px; }
 .pd-sidebar nav a {
-  color: #cbd2dd; padding: 9px 12px; border-radius: 8px; font-size: 13px;   /* PRC .nav-item */
+  /* PRC .nav-item, exactly: rgba white (not a blue-grey), 500 weight, 8px radius. */
+  color: rgba(255,255,255,.65); padding: 9px 12px; border-radius: 8px;
+  font-size: 13px; font-weight: 500;
   display: flex; align-items: center; gap: 10px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  transition: background .15s, color .15s;
 }
+.pd-sidebar nav a:hover { background: rgba(255,255,255,.06); color: rgba(255,255,255,.9); text-decoration: none; }
 .pd-sidebar nav a:hover { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
-.pd-sidebar nav a.active { background: var(--pd-red); color: #fff; }
+.pd-sidebar nav a.active { background: var(--pd-red); color: #fff; font-weight: 600; }
 .pd-content { flex: 1; min-width: 0; }
 /* Section labels grouping the nav by scope (Portfolio / Project / System) */
 .pd-sidebar .pd-navsec {
+  /* PRC .sidebar-section-label: rgba(255,255,255,.3), 0 8px inside the section's
+     own 12px, hence the 8px here (nav already supplies the 12). */
   font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-  color: #7c8698; padding: 16px 20px 4px;        /* PRC 16px 12px 4px + label's own 0 8px */
+  color: rgba(255,255,255,.3); padding: 16px 8px 4px; margin: 0;
 }
-.pd-sidebar nav .pd-navsec:first-child { padding-top: 2px; }
+/* PRC's first .sidebar-section still gets its full 16px above the label; nav already
+   supplies that, so the first label adds none of its own. */
+.pd-sidebar nav .pd-navsec:first-child { padding-top: 0; }
 /* Stacked label + optional sub-caption (e.g. current project under Project Home) */
 .pd-sidebar .pd-navtxt { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .pd-sidebar .pd-nav-sub { font-size: 10.5px; font-weight: 400; color: #96a0b0; margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
 .pd-sidebar nav a.active .pd-nav-sub { color: rgba(255,255,255,.82); }
-/* Sidebar footer: cross-app link to the Engineering App. Sidebar markup is
-   repeated per page here (no shared nav.js), so this block is repeated
-   verbatim in every page that carries .pd-sidebar — see CLAUDE.md. */
-.pd-nav-foot { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.12); }
+/* Cross-app links to the sibling apps. Sidebar markup is repeated per page here
+   (no shared nav.js), so this block is repeated verbatim in every page that
+   carries .pd-sidebar — see CLAUDE.md.
+   ⚠️ margin-top:auto pins this AND the company footer below it to the bottom of
+   the panel, which is how PRC's .sidebar-footer sits. Without it a short nav
+   leaves them floating in the middle. */
+.pd-nav-foot { margin-top: auto; padding: 14px 12px 4px; border-top: 1px solid rgba(255,255,255,.08); }
 .pd-nav-sibling {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px;
   border-radius: 8px; font-size: 12.5px; color: #96a0b0;
 }
 .pd-nav-sibling:hover { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
 .pd-nav-sibling .pd-navico { opacity: .75; }
+/* PRC .sidebar-footer, value for value. */
+.pd-sidebar-foot {
+  padding: 14px 20px; border-top: 1px solid rgba(255,255,255,.06);
+  font-size: 10px; color: rgba(255,255,255,.25); line-height: 1.6;
+}
+/* PRC keeps the sidebar as its ONLY scroll container and makes the bar thin and
+   subtle, so it doesn't read as a second UI. */
+.pd-sidebar { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
+.pd-sidebar::-webkit-scrollbar { width: 6px; }
+.pd-sidebar::-webkit-scrollbar-track { background: transparent; }
+.pd-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 3px; }
+.pd-sidebar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.3); }
 .pd-nav-sibling:hover .pd-navico { opacity: 1; }
 
 /* Collapsible sidebar (desktop): the toggle adds .pd-collapsed on .pd-app, which
    shrinks the sidebar to a slim ICON RAIL (labels/sections hide; hover title = tooltip)
    instead of hiding it entirely. font-size:0 collapses the bare-text labels while the
    fixed-size SVG icons stay, so it works whether or not a label is wrapped in a span. */
-.pd-app.pd-collapsed .pd-sidebar { width: 64px; flex-basis: 64px; padding-left: 8px; padding-right: 8px; }
+.pd-app.pd-collapsed .pd-sidebar { width: 64px; flex-basis: 64px; }
+.pd-app.pd-collapsed .pd-sidebar nav { padding-left: 8px; padding-right: 8px; }
+.pd-app.pd-collapsed .pd-nav-foot { padding-left: 8px; padding-right: 8px; }
+.pd-app.pd-collapsed .pd-sidebar-foot { display: none; }   /* no room for prose on a 64px rail */
 .pd-app.pd-collapsed .pd-sidebar nav a,
 .pd-app.pd-collapsed .pd-nav-sibling { justify-content: center; padding: 11px 0; gap: 0; font-size: 0; }
 .pd-app.pd-collapsed .pd-navtxt { display: none; }   /* wrapped labels (with sub-captions whose own font-size ignores the font-size:0 trick) */
 .pd-app.pd-collapsed .pd-navico { margin-right: 0; }
 .pd-app.pd-collapsed .pd-navsec { display: none; }
 .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: none; }
-.pd-app.pd-collapsed .pd-brand { margin: -18px -8px 8px; padding: 18px 8px 8px; }
+.pd-app.pd-collapsed .pd-brand { padding: 18px 8px; }
 .pd-sidebar-toggle {
   display: inline-flex; flex-direction: column; justify-content: center; gap: 4px;
   width: 40px; height: 40px; padding: 0 10px; flex: 0 0 40px;
@@ -372,7 +407,8 @@ html.pd-dark {
   --pd-line: rgba(255,255,255,0.12);  /* borders */
   --pd-bg: #1C1C1C;                   /* app background */
   --pd-card: #2B2C2B;                 /* surfaces (brand Dark Gray) */
-  --pd-dark: #161717;                 /* sidebar/topbar-dark/toast — darker than cards */
+  --pd-dark: #161717;                 /* topbar-dark/toast — darker than cards */
+  --pd-sidebar-bg: #161717;           /* the panel goes darker still on dark, as it always has */
   --pd-red-light: #3D1A19;            /* red tint on dark */
   --pd-red-mid: #6E2A25;
   --pd-ok: #34D27B; --pd-warn: #E0A008; --pd-bad: #EF5350;
@@ -439,8 +475,22 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 /* projects table */
 .pd-proj-table { border: 1px solid var(--pd-line); border-radius: var(--pd-radius); overflow: hidden; }
 .pd-proj-table code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
-.pd-group-row td { background: var(--pd-bg); font-weight: 700; font-size: 12.5px;
-  color: var(--pd-ink); text-transform: none; letter-spacing: 0; }
+/* PRC's grouped-table header (_ghHeadCells): a tinted chip with a RED LEFT
+   BORDER, then a muted "N projects" beside it. ⚠️ Deliberately NOT a solid-red
+   pill — PRC's own note records that as user feedback ("no red overlay behind
+   the Group Head tag"); red is reserved for the project-code pill.
+   ⚠️ PRC hardcodes #f0f0f0 / #231F20 / #FDECEA because it has no dark mode.
+   Ours must be tokens (--pd-bg / --pd-ink / --pd-red-light are the same values
+   in light mode), or the chip turns into a white slab on the dark theme. */
+.pd-ghchip {
+  display: inline-block; font-size: 10px; font-weight: 700; color: var(--pd-ink);
+  background: var(--pd-red-light); border-left: 3px solid var(--pd-red);
+  padding: 2px 8px; border-radius: 4px; vertical-align: middle;
+}
+.pd-ghcount { font-size: 10px; color: var(--pd-muted); margin-left: 8px; }
+.pd-group-row td { background: var(--pd-bg); color: var(--pd-ink);
+  padding: 6px 10px; border-top: 2px solid var(--pd-line);
+  text-transform: none; letter-spacing: 0; }
 .pd-proj-row { cursor: pointer; }
 .pd-proj-row:hover td { background: var(--pd-red-light); }
 .pd-proj-name { font-weight: 600; }
@@ -607,29 +657,32 @@ body { overflow-x: clip; }
     width: var(--pd-drawer-w); flex-basis: var(--pd-drawer-w);
     transform: translateX(-100%); transition: transform .22s ease;
     z-index: 70; box-shadow: 0 0 40px rgba(0,0,0,.35);
-    padding-top: max(18px, env(safe-area-inset-top));
+    /* ⚠️ NO padding-top here any more — the brand block owns the safe-area inset
+       now (see the .pd-brand rule below). Padding here would stack with it and
+       leave a gap above the wordmark on a notched phone. */
     padding-bottom: max(18px, env(safe-area-inset-bottom));
   }
   .pd-sidebar.open { transform: none; }
 
   /* Re-assert the FULL drawer even when .pd-collapsed is set (see note 2 above).
      On mobile the hamburger opens/closes the drawer; it never icon-rails. */
-  .pd-app.pd-collapsed .pd-sidebar { width: var(--pd-drawer-w); flex-basis: var(--pd-drawer-w); padding-left: 16px; padding-right: 16px; }
+  .pd-app.pd-collapsed .pd-sidebar { width: var(--pd-drawer-w); flex-basis: var(--pd-drawer-w); }
+  .pd-app.pd-collapsed .pd-sidebar nav, .pd-app.pd-collapsed .pd-nav-foot { padding-left: 12px; padding-right: 12px; }
+  .pd-app.pd-collapsed .pd-sidebar-foot { display: block; }
   .pd-app.pd-collapsed .pd-sidebar nav a,
   .pd-app.pd-collapsed .pd-nav-sibling { justify-content: flex-start; padding: 12px; gap: 10px; font-size: 13px; }
   .pd-app.pd-collapsed .pd-navtxt { display: flex; }
   .pd-app.pd-collapsed .pd-navsec { display: block; }
   .pd-app.pd-collapsed .pd-navico { margin-right: 10px; }
   .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: block; }
-  /* ⚠️ Must restate the WHOLE margin, not just the bottom: the desktop collapsed
-     rule sets -8px sides for the 8px icon rail, and the drawer is padded 16px —
-     inheriting those sides would inset the brand block by 8px on a phone. The
-     top pull-back has to track the sidebar's own safe-area padding for the same
-     reason (a notch makes it larger than 18px). */
+  /* ⚠️ The negative side margins this rule used to carry are GONE with the
+     padding model: .pd-sidebar has no padding of its own any more (it matches
+     PRC, where each child pads itself), so a negative margin here would drag the
+     brand block outside the drawer. Only the safe-area top needs restating —
+     a notch makes the drawer's own top padding larger than 18px. */
   .pd-app.pd-collapsed .pd-brand,
   .pd-sidebar .pd-brand {
-    margin: calc(-1 * max(18px, env(safe-area-inset-top))) -16px 14px;
-    padding: 18px 20px 14px;
+    margin: 0; padding: max(18px, env(safe-area-inset-top)) 20px 14px;
   }
 
   /* Nav rows are the primary touch targets on a phone. */

@@ -6210,3 +6210,51 @@ cover the rule-and-emitter pairing and the box-shadow-vs-outline split. Inline s
 ⚠️ **Trap that cost time:** a `\n` written into the inline script through a shell heredoc landed as a
 REAL newline inside a JS string literal, which `grep` and a naive `str.replace` both failed to fix.
 Build such strings with explicit character codes, and always re-run the parse check after.
+
+### 2026-08-19 — Sidebar matched to the PRC App value-for-value + PRC's group-head header row
+Two owner asks off live screenshots: *"significant difference in the look of the side panel from
+prc-app… follow the prc-app to the dot"* and *"a header group for the group heads similar to how
+prc-app implements it"*.
+
+**Sidebar — the difference was structural, not decorative.** A1 matched PRC's *metrics*; the panel
+still read as a different product because of the surface colour and the padding model.
+- **Surface**: PRC paints its panel `--mw-black` **#231F20**; ours was `--pd-dark` **#2B2C2B**. That
+  single value is most of what made them look like two apps.
+- ⚠️ **Caught by measuring dark mode, not by eye:** the first cut used `var(--pd-ink)`, which IS
+  #231F20 in light mode — but `--pd-ink` is the **text** token and dark mode remaps it to `#F0EFEF`,
+  which turned the whole panel **near-white**. A surface must never borrow a text token. Now a
+  dedicated `--pd-sidebar-bg`, remapped to `#161717` on dark exactly as the panel always was.
+- **Padding model**: PRC's `.sidebar` has **no padding** — each child pads itself (`.sidebar-logo`
+  18/20/16, `.sidebar-section` 16/12/4, `.sidebar-footer` 14/20). Ours padded the panel and then
+  clawed it back with negative margins on the brand block. Adopted PRC's model, so the negative
+  margins are gone everywhere, including the ≤820px drawer — where they would now have dragged the
+  brand block **outside** the drawer.
+- **Nav rows** are PRC's `.nav-item` exactly: `rgba(255,255,255,.65)` at 500 (was the blue-grey
+  `#cbd2dd`), hover `rgba(255,255,255,.06)` → `.9`, active red at 600. Section labels
+  `rgba(255,255,255,.3)` (was `#7c8698`).
+- **A real footer**, PRC's `.sidebar-footer` — 14/20 padding, 10px, `rgba(255,255,255,.25)`, top
+  border — on all five sidebar pages. ⚠️ It pins to the bottom via `margin-top:auto` on the
+  cross-app links block, which required making `.pd-sidebar` a **flex column**; without that a short
+  nav leaves the footer floating mid-panel. Hidden on the 64px collapsed rail (no room for prose).
+- PRC's thin, subtle scrollbar styling adopted too.
+
+**Group-head header row** — PRC's own `_ghHeadCells`: a tinted chip with a **red LEFT BORDER**, then
+a muted "N projects" beside it, on a tinted row with a 2px top rule. ⚠️ Deliberately **not** a
+solid-red pill — PRC's code records that as user feedback ("no red overlay behind the Group Head
+tag"); red is reserved for the code pill. Applied to both the list and the card views.
+- ⚠️ **One deliberate deviation from "to the dot":** PRC hardcodes `#f0f0f0` / `#231F20` / `#FDECEA`
+  because it has no dark mode. Ours must use tokens (`--pd-bg` / `--pd-ink` / `--pd-red-light` — the
+  same values in light mode) or the chip becomes a white slab on the dark theme. The only visible
+  difference is the row tint, `#F4F4F4` vs PRC's `#f0f0f0`.
+- **`projects.html` now lands grouped by Group Head** (Group by: None is one selection away).
+  ⚠️ This is **not** the folder tree A2 removed — every project is still on screen and one click
+  away; the headers only label the runs, which is exactly how PRC's Portfolio Overview reads.
+
+Verified in a real browser against the shipped CSS, at 1280 and 375, light and dark, expanded +
+collapsed rail + drawer: sidebar #231F20 / padding 0 / flex column, brand 18-20-16 with a 200px
+wordmark, nav 16-12-4, inactive row `rgba(255,255,255,.65)`/500 and active red/white/600, first
+section label exactly 16px below the brand, footer pinned flush to the panel bottom, chip #FDECEA
+with a 3px red left border at 10px/700, 4 group rows rendering "N projects"; on the phone drawer the
+brand and footer both sit **inside** the 290px drawer with the logo at 250px and 44px nav rows; no
+horizontal overflow anywhere. CSS braces balanced; every edited page has matched `<aside>` tags and
+parses. ⚠️ **Not verified signed-in.** `dashboard.css?v=` → `20260819c`.
