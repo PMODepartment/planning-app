@@ -2158,6 +2158,11 @@
           <button class="pd-btn" id="ps-sync-eng" title="Refresh Design Development from the Engineering App's drawing register and material submittal log"><span data-ico="refresh" data-ico-size="15"></span> Sync Engineering</button>
           <span id="ps-sync-eng-at" style="font-size:11.5px;color:var(--pd-muted);"></span>
           <span class="ps-tb-div"></span>
+          <!-- Procurement is MIRRORED from the Procurement (WPM) app: one branch per
+               trade, one activity per work package. Read-only here. -->
+          <button class="pd-btn" id="ps-sync-prc" title="Refresh Procurement from the Procurement (WPM) app's work packages"><span data-ico="refresh" data-ico-size="15"></span> Sync Procurement</button>
+          <span id="ps-sync-prc-at" style="font-size:11.5px;color:var(--pd-muted);"></span>
+          <span class="ps-tb-div"></span>
           <button class="pd-btn ps-icobtn" id="ps-wbs-expand" title="Expand all"><span data-ico="chevronDown" data-ico-size="15"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-wbs-collapse" title="Collapse all"><span data-ico="chevronRight" data-ico-size="15"></span></button>
           <input class="pd-input" id="ps-wbs-search" placeholder="Search code / name…" style="height:32px;width:200px;">
@@ -3982,6 +3987,8 @@
       // re-reads the MIRROR and patches the activities in place, so a full reload is
       // not needed (and would lose the user's scroll/selection).
       await syncDesignDevelopment();
+    await syncProcurement();
+    _renderSyncPrcAt();
       renderAll();
     } catch (e) {
       var m = (e && (e.message || (e.context && e.context.error))) || 'Sync failed';
@@ -4017,6 +4024,249 @@
     if (res.error) return null;
     WBS_NODES.push(res.data);
     return res.data;
+  }
+
+
+  // ==========================================================================
+  // PROCUREMENT branch — mirrored from the Procurement (WPM) app
+  // --------------------------------------------------------------------------
+  //   Procurement
+  //     └ <Trade>            (one locked node per trade that has work packages)
+  //         └ <WP number>    (Activity ID = the WP no., name = its description)
+  //
+  // ⚠️ SOURCED FROM THE `wpm_work_packages` MIRROR, never from the WPM app directly.
+  // Procurement budgets live in a separate Supabase project whose anon key is public
+  // (it ships in that app's client JS), so reading it from this browser would expose
+  // every work package's cost. The `sync-wpm` Edge Function copies what we need
+  // server-side using the WPM service-role key; this reads the copy under normal RLS.
+  // The same rule Cash Flow follows — see 2026-07-14-wpm-work-packages-mirror.sql.
+  //
+  // ⚠️ The `Procurement` skeleton node has existed since 2026-08-03 with
+  // `source_kind: 'procurement'` and a comment saying it "rolls up the WPM mirror" —
+  // and NOTHING EVER POPULATED IT. Exactly the empty-promise state Design Development
+  // was in before syncDesignDevelopment was built. This is that writer.
+  // ==========================================================================
+
+  // The owner's stated order — the sequence trades are actually procured and built in,
+  // not alphabetical. ⚠️ An unlisted trade is NOT dropped: it sorts after these under
+  // its own name, because a work package vanishing from the schedule because nobody
+  // updated a list here is worse than an out-of-order heading.
+  var PRC_TRADE_ORDER = ['General Requirements', 'Site Works', 'Structural Works',
+    'Architectural Works', 'Mechanical Works', 'Electrical and Auxiliary Works',
+    'Plumbing Works', 'Fire Protection Works', 'Allied Services', 'Site Development Works'];
+  var PRC_UNTRADED = 'Unassigned trade';
+  var _prcSyncing = false, _prcLastSynced = null;
+
+  function _prcTradeOf(w) {
+    var t = String((w && w.trade) || '').trim();
+    return t || PRC_UNTRADED;
+  }
+  function _prcTradeRank(t) {
+    var i = PRC_TRADE_ORDER.indexOf(t);
+    // Known trades first in the owner's order, then anything else, then the
+    // no-trade bucket last — it is a data-quality signal, not a trade.
+    if (i >= 0) return i;
+    return t === PRC_UNTRADED ? 999 : 500;
+  }
+  // Which WPM project this one maps to. ⚠️ Reuses Cash Flow's own mapping
+  // (`cash_flow_settings.wpm_project_id`) rather than inventing a second one — two
+  // modules disagreeing about which WPM project a schedule belongs to would show
+  // different work packages for the same job. Falls back to the project id, which is
+  // the convention when the ids already match.
+  async function _prcWpmProjectId() {
+    try {
+      var r = await sb().from('cash_flow_settings').select('wpm_project_id').eq('project_id', pid).limit(1);
+      var v = (!r.error && r.data && r.data[0] && r.data[0].wpm_project_id) || null;
+      return v || pid;
+    } catch (e) { return pid; }
+  }
+
+  async function _prcEnsureNode(parentId, name, order) {
+    var found = WBS_NODES.find(function (n) { return n.parent_id === parentId && n.name === name; });
+    if (found) return found;
+    var chk = await sb().from('wbs_nodes').select('*').eq('project_id', pid).eq('parent_id', parentId).eq('name', name).limit(1);
+    if (!chk.error && chk.data && chk.data.length) {
+      var existing = chk.data[0];
+      if (!WBS_NODES.some(function (n) { return n.id === existing.id; })) WBS_NODES.push(existing);
+      return existing;
+    }
+    var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId, name: name,
+      sort_order: order, created_by: UID, is_locked: true, source_kind: 'procurement' }).select().single();
+    if (res.error) return null;
+    WBS_NODES.push(res.data);
+    return res.data;
+  }
+
+  // Rebuild the Procurement branch from the mirror. Idempotent: a work package's
+  // Activity ID is its WP number, so a re-sync patches in place.
+  async function syncProcurement() {
+    if (!pid || !canWrite || _prcSyncing || window.__viewOnly || window.__archived) return;
+    var prcNode = WBS_NODES.find(function (n) { return n.source_kind === 'procurement'; });
+    if (!prcNode) return;                                  // skeleton not seeded
+    _prcSyncing = true;
+    try {
+      var wpmId = await _prcWpmProjectId();
+      var mirror;
+      try {
+        mirror = await PDb.selectAll('wpm_work_packages', function (q) { return q.eq('wpm_project_id', wpmId); },
+          'wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
+      } catch (e) { return; }   // a partial read must not be mirrored as the truth
+      // ⚠️ Never synced, or this project has no work packages yet — leave the branch
+      // exactly as it is. Reading "no rows" as "delete everything" is how a failed or
+      // mis-mapped sync silently wipes a branch someone is working from.
+      if (!mirror.length) return;
+      _prcLastSynced = mirror[0] && mirror[0].synced_at || null;
+
+      // Group by trade, and order the packages inside each by their own WP number.
+      var byTrade = {};
+      mirror.forEach(function (w) {
+        if (!w.wp_no) return;                              // a WP with no number has no Activity ID
+        var t = _prcTradeOf(w);
+        (byTrade[t] = byTrade[t] || []).push(w);
+      });
+      var trades = Object.keys(byTrade).sort(function (a, b) {
+        return _prcTradeRank(a) - _prcTradeRank(b) || a.localeCompare(b);
+      });
+      if (!trades.length) return;
+
+      var nodeOf = {};
+      for (var ti = 0; ti < trades.length; ti++) {
+        var nd = await _prcEnsureNode(prcNode.id, trades[ti], ti);
+        if (nd) nodeOf[trades[ti]] = nd;
+      }
+      await _wbsEnsureSummaries();                         // each new node needs its projected WBS-Summary row
+      var codeOf = computeWbsCodes();
+
+      var want = [];
+      trades.forEach(function (t) {
+        var nd = nodeOf[t]; if (!nd) return;
+        byTrade[t].slice().sort(function (a, b) {
+          return String(a.wp_no).localeCompare(String(b.wp_no), undefined, { numeric: true });
+        }).forEach(function (w, i) {
+          want.push({ aid: String(w.wp_no), node: nd, w: w, seq: i });
+        });
+      });
+      var wantIds = {}; want.forEach(function (x) { wantIds[x.aid] = 1; });
+
+      // ⚠️ Existing rows are found by WBS NODE, not by a `LIKE 'PRC-%'` prefix the way
+      // Design Development does it — because the owner asked for the Activity ID to be
+      // the bare WP number, which carries no prefix to match on. Scoping the lookup to
+      // the procurement subtree also means a real schedule activity that happens to
+      // share a WP number can never be mistaken for a mirrored row and overwritten.
+      // ⚠️ EVERY existing child of Procurement, not just the trades in this pass.
+      // Scoping it to the current mirror looked right and was wrong: when a trade loses
+      // its LAST work package it stops appearing in `trades`, so its node is never
+      // queried, its activities are never seen as stale, and they sit in the branch
+      // forever showing packages that no longer exist in WPM. Caught by a test that
+      // removed the only Mechanical Works package.
+      var prcNodeIds = WBS_NODES.filter(function (n) { return n.parent_id === prcNode.id; })
+        .map(function (n) { return n.id; });
+      trades.forEach(function (t) {
+        var nd = nodeOf[t];
+        if (nd && prcNodeIds.indexOf(nd.id) === -1) prcNodeIds.push(nd.id);
+      });
+      var existingByAid = {}, allPrcRows = [];
+      var patchFields = 'id,activity_id,activity_name,wbs,wbs_node_id,activity_type,status,start_date,end_date,seq_order';
+      for (var ci = 0; ci < prcNodeIds.length; ci += 100) {
+        var eq = await sb().from(TABLE).select(patchFields).eq('project_id', pid).in('wbs_node_id', prcNodeIds.slice(ci, ci + 100));
+        if (eq.error) return;   // can't tell insert from update — bail rather than duplicate
+        (eq.data || []).forEach(function (r) { existingByAid[String(r.activity_id)] = r; allPrcRows.push(r); });
+      }
+
+      var inserts = [], updates = [];
+      want.forEach(function (x) {
+        var w = x.w;
+        // ⚠️ The finish is the LATEST of the target dates, not the first non-null.
+        // Delivery precedes installation precedes completion, so taking whichever
+        // happened to be filled first drew the package as finishing at its earliest
+        // milestone — the same zero-length/short-bar mistake the Design Development
+        // roll-up made before its finish was changed to the max.
+        var ends = [w.target_completion, w.target_installation, w.target_delivery]
+          .filter(Boolean).sort();
+        var fin = ends.length ? ends[ends.length - 1] : null;
+        var start = w.awarding_date || w.actual_awarding_date || fin || null;
+        // ⚠️ Status only says whether it is AWARDED. The mirror carries no measure of
+        // how far a package has progressed after award, so anything past "In Progress"
+        // would be invented — and a schedule that invents completion is worse than one
+        // that admits it does not know.
+        var awarded = !!(w.actual_awarding_date || /award/i.test(String(w.award_status || '')));
+        var patch = {
+          activity_name: String(w.description || '').trim() || ('Work package ' + w.wp_no),
+          wbs: codeOf[x.node.id], wbs_node_id: x.node.id,
+          activity_type: 'Task', seq_order: x.seq,
+          status: awarded ? 'In Progress' : 'Not Started',
+          start_date: start, end_date: fin || start || null
+        };
+        var ex = existingByAid[x.aid];
+        if (!ex) inserts.push(Object.assign({ project_id: pid, created_by: UID, activity_id: x.aid }, patch));
+        else {
+          var diff = {};
+          Object.keys(patch).forEach(function (f) {
+            if ((ex[f] == null ? null : ex[f]) !== (patch[f] == null ? null : patch[f])) diff[f] = patch[f];
+          });
+          if (Object.keys(diff).length) updates.push({ id: ex.id, patch: diff });
+        }
+      });
+
+      // A package that has left the WPM project must not linger. Scoped to rows already
+      // under the procurement branch, so nothing outside it can ever be deleted here.
+      var stale = allPrcRows.filter(function (r) { return !wantIds[String(r.activity_id)]; })
+        .map(function (r) { return r.id; });
+
+      if (inserts.length) {
+        var ins = await sb().from(TABLE).insert(inserts).select();
+        if (!ins.error && ins.data) ins.data.forEach(function (d) { rows.push(d); });
+      }
+      for (var u = 0; u < updates.length; u++) {
+        var up = updates[u];
+        var ur = await sb().from(TABLE).update(up.patch).eq('id', up.id);
+        if (!ur.error) { var rr = rows.find(function (y) { return y.id === up.id; }); if (rr) Object.assign(rr, up.patch); }
+      }
+      if (stale.length) {
+        var dr2 = await sb().from(TABLE).delete().in('id', stale);
+        if (!dr2.error) { var kill = {}; stale.forEach(function (i) { kill[i] = 1; }); rows = rows.filter(function (r) { return !kill[r.id]; }); }
+      }
+      if (inserts.length || updates.length || stale.length) rebuild(true);
+    } catch (e) { /* a mirror must never break the schedule load */ }
+    finally { _prcSyncing = false; }
+  }
+
+  // Ask the Edge Function for a fresh copy, then re-mirror. ⚠️ The browser has no write
+  // policy on wpm_work_packages, so this is a request to the server, not a client copy.
+  async function syncProcurementApp() {
+    if (!canWrite) { UI.toast('Only admins/planners can sync from the Procurement app.', 'error'); return; }
+    var btn = document.getElementById('ps-sync-prc');
+    if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+    try {
+      // ⚠️ The function's body key is `wpm_project_id`, NOT `project_id` — it scopes the
+      // sync to one WPM project and IGNORES anything else, so sending the wrong key
+      // silently re-syncs every project in the WPM database instead of this one. Same
+      // key Cash Flow sends. Checked against supabase/functions/sync-wpm/index.ts.
+      var wpmPid = await _prcWpmProjectId();
+      var res = await sb().functions.invoke('sync-wpm', { body: { wpm_project_id: wpmPid } });
+      if (res.error) throw res.error;
+      var d = res.data || {};
+      UI.toast('Procurement synced — ' + (d.written != null ? d.written : 0) + ' work packages', 'success');
+      await syncProcurement();
+      renderAll();
+    } catch (e) {
+      var m = (e && (e.message || (e.context && e.context.error))) || 'Sync failed';
+      UI.toast('Procurement sync failed: ' + m, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span data-ico="refresh" data-ico-size="15"></span> Sync Procurement';
+        if (window.Icons) Icons.hydrate(btn);
+      }
+      _renderSyncPrcAt();
+    }
+  }
+  function _renderSyncPrcAt() {
+    var el = document.getElementById('ps-sync-prc-at');
+    if (!el) return;
+    el.textContent = _prcLastSynced ? ('synced ' + Fmt.date(_prcLastSynced)) : '';
+    el.title = _prcLastSynced ? 'Procurement reflects the WPM app as of this time'
+                              : 'Procurement has never been synced from the WPM app';
   }
 
   // Rebuild the Design Development branch from the registers. Idempotent: every generated
@@ -4880,6 +5130,8 @@
     // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
     // leaves the branch as it was rather than blocking the schedule.
     await syncDesignDevelopment();
+    await syncProcurement();
+    _renderSyncPrcAt();
     if (gen !== _loadGen) return;
     loadGroupBys();       // per-project grouping order (needs LOC_LEVELS loaded to validate against)
     populateGroupSelect();
@@ -22413,6 +22665,7 @@
     document.getElementById('ps-wbs-fromproj').onclick = function () { wbsFromProject(_wbsSel || null); };
     document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
     document.getElementById('ps-sync-eng').onclick = syncEngineering;
+    var _pb = document.getElementById('ps-sync-prc'); if (_pb) _pb.onclick = syncProcurementApp;
     document.getElementById('ps-wbs-expand').onclick = function () { _wbsCollapsed = {}; renderWbsManager(); };
     document.getElementById('ps-wbs-collapse').onclick = function () {
       _wbsCollapsed = {}; WBS_NODES.forEach(function (n) { if ((n.parent_id || null) === null) _wbsCollapsed[n.id] = true; });

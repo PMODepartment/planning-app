@@ -174,6 +174,26 @@ A new **Minutes of Meeting** view in the schedule's title switcher (tables ship 
 - ⚠️ Rows with no `created_by` (imported or predating the stamp) are **planner-only**: there is no way
   to know whose they were, and guessing would hand someone rights over a record they never touched.
 
+## E. Cross-app mirrors
+
+### E1. Procurement in the Project Schedule ✅ done 2026-08-19
+`Procurement → <Trade> → <Work package>` inside the schedule's WBS, sourced from the Procurement
+(WPM) app. Activity ID = the WP number, name = its description, dates from the WP's award/target
+milestones.
+- ⚠️ **The `Procurement` skeleton node has existed since 2026-08-03** with
+  `source_kind: 'procurement'` and a comment saying it "rolls up the WPM mirror" — and **nothing ever
+  populated it**. Exactly the empty-promise state Design Development was in before its writer was
+  built. This is that writer; **no migration needed**.
+- ⚠️ Reads the `wpm_work_packages` **mirror**, never the WPM app directly — its anon key is public,
+  so a browser read would expose every work package's cost. The `sync-wpm` Edge Function does the
+  server-side copy. Same rule Cash Flow follows.
+- Idempotent (re-sync patches in place), read-only in the grid, and an empty or failed read leaves
+  the branch untouched rather than wiping it.
+- **Not included:** budgets/awarded cost are deliberately not surfaced on the schedule rows — Cash
+  Flow is where procurement money is reported.
+
+---
+
 ## Cross-cutting notes
 - A3 (Project/Package) blocks C1; B1 feeds B2, C2 and Cash Flow — sequence accordingly.
 - Every schema item needs a numbered file in `migrations/` plus an RLS check.

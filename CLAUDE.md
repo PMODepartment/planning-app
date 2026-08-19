@@ -6407,3 +6407,58 @@ combination, plus assertions that the UI's rules match the SQL policy file line 
 that the old permissive policy is dropped and that `with check` is present. C4's suite still green
 (25). Both files parse; CSS braces balanced. ⚠️ **Not verified signed-in**, and the migration has not
 been run. `MODULE_V` → `20260819g`; issues-lessons `module.css/js?v=` → `20260819b`.
+
+### 2026-08-19 — Procurement mirrored into the schedule's WBS (from the WPM app)
+Owner: show the project's procurement inside the Project Schedule, as
+`Procurement → <Trade> → <Work package>`, with the WP number as the Activity ID, its description as
+the name, and its planned dates. **No migration** — every table involved already exists.
+
+⚠️ **The `Procurement` skeleton node has existed since 2026-08-03**, carrying
+`source_kind: 'procurement'` and a comment stating it "rolls up the WPM/Procurement mirror
+(`wpm_work_packages`)" — and **nothing ever wrote to it**. Precisely the empty-promise state Design
+Development was in before `syncDesignDevelopment` was built (documented 2026-08-05). This is that
+writer, built to the same shape so the two mirrors behave identically.
+
+- ⚠️ **Sourced from the `wpm_work_packages` MIRROR, never from the WPM app directly.** Procurement
+  budgets live in a separate Supabase project whose anon key ships in that app's client JS, so a
+  browser read would expose every package's cost. The `sync-wpm` Edge Function copies server-side
+  with the service-role key; this reads the copy under normal RLS — the rule Cash Flow already
+  follows.
+- ⚠️ **The WPM project mapping is Cash Flow's** (`cash_flow_settings.wpm_project_id`, falling back to
+  the project id), not a second one. Two modules disagreeing about which WPM project a schedule
+  belongs to would show different work packages for the same job.
+- ⚠️ **REAL BUG, caught by a test rather than by reading:** the stale-row scan collected node ids
+  from the trades present in *this* pass. When a trade loses its **last** work package it stops
+  appearing, so its node was never queried, its activities were never seen as stale, and they sat in
+  the branch forever advertising packages that no longer exist in WPM. Now scans **every** existing
+  child of Procurement.
+- ⚠️ **Existing rows are matched by WBS NODE, not by an activity-id prefix.** Design Development can
+  use `LIKE 'DD-%'` because it invents its ids; the owner asked for the bare WP number here, which
+  has no prefix to match on. Scoping to the procurement subtree also means a real schedule activity
+  that happens to share a WP number can never be mistaken for a mirrored row and overwritten —
+  asserted in the suite.
+- ⚠️ **The finish is the LATEST target** (completion / installation / delivery), not the first
+  non-null. Taking whichever was filled first drew a package as finishing at its earliest milestone —
+  the same short-bar mistake the Design Development roll-up made before its finish was changed to a max.
+- ⚠️ **Status says only that a package is awarded.** The mirror carries no measure of progress after
+  award, so anything beyond In Progress would be invented, and a schedule that invents completion is
+  worse than one that admits it does not know.
+- ⚠️ **An empty or failed mirror read leaves the branch alone.** Reading "no rows" as "delete
+  everything" is how a mis-mapped or failed sync silently wipes a branch someone is working from.
+- ⚠️ **`sync-wpm`'s body key is `wpm_project_id`, not `project_id`** — it scopes the sync and ignores
+  anything else, so the wrong key silently re-syncs *every* project in the WPM database. Caught by
+  reading the function rather than assuming; the call now matches Cash Flow's.
+- An unlisted trade is **not dropped** — it sorts after the owner's ten under its own name, and a
+  blank trade lands in an "Unassigned trade" bucket. A work package vanishing because nobody updated
+  a list in this file would be worse than an out-of-order heading.
+- Budgets are deliberately **not** surfaced on the schedule rows; Cash Flow reports procurement money.
+- New **Sync Procurement** button beside Sync Engineering in the WBS toolbar; rows are read-only via
+  the existing `isSyncedRow` (the node's `source_kind` already covers them).
+
+Verified by executing the shipped `syncProcurement` against an in-memory Supabase stub modelling the
+real client (chained builders, `{data,error}`, injectable failures): **28 checks green**, covering the
+per-trade tree, ids/names/dates, idempotency across three passes, patch-not-reinsert, stale cleanup
+**including the trade-loses-its-last-package case**, the unrelated-activity-survives case, empty and
+failed reads, the missing-skeleton no-op, trade ordering, and the shared WPM mapping. C1 (33), C2
+(19), C3 (32), C4 (25) suites still green; **0 functions lost**; parses. ⚠️ **Not verified signed-in**,
+and no live sync has been run. `MODULE_V` → `20260819h`.
