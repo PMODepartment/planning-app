@@ -1956,6 +1956,12 @@
     /* A duration this LEVEL TYPE owns (forked from the default) — see t4Set. Marked so the planner
        can tell at a glance which numbers are this category's own and which are inherited. */
     .sbld-xl td.xl-cell.sbld-ownd { font-weight:700; box-shadow:inset 2px 0 0 var(--pd-red); }
+    /* Step-3 tower relationships — one readable sentence per row. */
+    .sbld-tllist { display:flex; flex-direction:column; gap:6px; margin:6px 0 12px; }
+    .sbld-tlrow { display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid var(--pd-line);
+      border-left:3px solid var(--pd-red); border-radius:8px; background:var(--pd-card); }
+    .sbld-tltxt { flex:1 1 auto; font-size:13px; }
+    .sbld-tllag { font-size:11px; font-weight:700; color:var(--pd-red); background:var(--pd-red-light); padding:1px 6px; border-radius:4px; }
     /* Step-2 tower strip. With one tower it is a single quiet chip; with more it is the selector. */
     .sbld-towerbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:2px 0 10px;
       padding:8px 10px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
@@ -16643,7 +16649,7 @@
       }
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       // ⚠ `> 0`, not `!= null`: a row seeded with an explicit 0 must still mirror the other column
@@ -16668,6 +16674,12 @@
       d.startDate = c.startDate || d.startDate;
       d.activities = Array.isArray(c.activities) ? c.activities.map(normActivity) : [];
       // Towers. An older config has none, so it gets exactly one — see blankTowers().
+      // Tower-to-tower relationships (step 3). Kept only where both endpoints still exist, so
+      // deleting a tower cannot leave a link pointing at nothing.
+      d.towerLinks = (Array.isArray(c.towerLinks) ? c.towerLinks : []).filter(function (k) { return k && k.from && k.to && k.from !== k.to; })
+        .map(function (k) { return { from: k.from, to: k.to, fromFloorId: k.fromFloorId || null,
+          type: (['FS', 'SS', 'FF', 'SF'].indexOf(k.type) >= 0 ? k.type : 'FS'),
+          lag: (typeof k.lag === 'number' ? k.lag : (parseInt(k.lag, 10) || 0)) }; });
       d.towers = (Array.isArray(c.towers) && c.towers.length)
         ? c.towers.map(function (t, i) { return { id: t.id || uidv(), code: String(t.code || ('T' + (i + 1))).trim(), name: String(t.name || ('Tower ' + (i + 1))).trim() }; })
         : blankTowers();
@@ -17142,7 +17154,9 @@
     // longest-path earliest start (days) honoring each link's type (FS/SS/FF/SF) + lag
     function computeStarts(locs, days) {
       var incoming = {}; locs.forEach(function (l) { incoming[l.uid] = []; });
-      cfg.links.forEach(function (k) { if (incoming[k.to]) incoming[k.to].push(k); });
+      // The planner's zone links PLUS the tower relationships, expanded — see towerLinkEdges. Tower
+      // links are applied here so they hold whether or not step 4 has ever been opened.
+      cfg.links.concat(towerLinkEdges(locs)).forEach(function (k) { if (incoming[k.to]) incoming[k.to].push(k); });
       var memo = {}, stack = {};
       function st(uid) {
         if (memo[uid] != null) return memo[uid]; if (stack[uid]) return 0; stack[uid] = 1;
@@ -17202,6 +17216,63 @@
       return uiTower;
     }
     function multiTower() { return towerList().length > 1; }
+    function towerLinks() { return (cfg && Array.isArray(cfg.towerLinks)) ? cfg.towerLinks : []; }
+    // Every floor across all trades in one tower, de-duplicated by code so the anchor picker offers
+    // "Podium L4" once rather than once per trade that happens to define it.
+    function towerFloorChoices(towerId) {
+      var seen = {}, out = [];
+      GROUPS.forEach(function (tr) {
+        floorsOfTower(tr, towerId).forEach(function (f) {
+          var k = (f.code || f.name || f.id);
+          if (!seen[k]) { seen[k] = 1; out.push({ key: k, label: (f.name ? (f.code ? f.code + ' — ' + f.name : f.name) : (f.code || 'Floor')) }); }
+        });
+      });
+      return out;
+    }
+    // The leaves a link hands off FROM: the anchor floor's, or the whole tower's.
+    function _twAnchorLeaves(k) {
+      return locList().filter(function (l) {
+        if (l.towerId !== k.from) return false;
+        if (!k.fromFloorId) return true;
+        var f = l.floor; return (f.code || f.name || f.id) === k.fromFloorId;
+      });
+    }
+    function _twDestLeaves(k) { return locList().filter(function (l) { return l.towerId === k.to; }); }
+    // Tower relationships expanded into leaf-to-leaf links. A tower-level statement means nothing to
+    // computeStarts(), which only understands links between leaf locations.
+    // ⚠️ HOW MANY anchor leaves to link depends on the relationship, because computeStarts takes the
+    // MAX over a node's incoming links and that is the only aggregate it can express:
+    //   FS / FF  — "after the podium FINISHES" means after the LAST of it finishes, so every anchor
+    //              leaf is linked and the max falls out naturally.
+    //   SS / SF  — "starts WITH Tower A" means with Tower A's FIRST work. Linking every leaf would
+    //              take the max instead and reference the LATEST-starting one — measured: an SS +30d
+    //              came out as +38d because Tower A's top floor starts on day 8. So a start-based
+    //              relationship anchors on the FIRST leaf in build order, which is the earliest by
+    //              construction (the vertical chain runs bottom-up).
+    // ⚠️ Derived on every call rather than stored: cfg.links is rebuilt from scratch by autoTrace(),
+    // so anything persisted there would be wiped, and re-zoning a tower would strand the handoff.
+    function towerLinkEdges(locs) {
+      var out = [];
+      if (towerList().length < 2) return out;
+      var byTower = {};
+      locs.forEach(function (l) { (byTower[l.towerId] = byTower[l.towerId] || []).push(l); });
+      towerLinks().forEach(function (k) {
+        var src = (byTower[k.from] || []).filter(function (l) {
+          if (!k.fromFloorId) return true;
+          var f = l.floor; return (f.code || f.name || f.id) === k.fromFloorId;
+        });
+        var dst = byTower[k.to] || [];
+        if (!src.length || !dst.length) return;
+        var firstByTrade = {};
+        dst.forEach(function (l) { if (!(l.trade in firstByTrade)) firstByTrade[l.trade] = l.uid; });
+        var ty = k.type || 'FS';
+        var anchors = (ty === 'SS' || ty === 'SF') ? [src[0]] : src;   // see the note above
+        Object.keys(firstByTrade).forEach(function (tr) {
+          anchors.forEach(function (sl) { out.push({ from: sl.uid, to: firstByTrade[tr], type: ty, lag: k.lag || 0 }); });
+        });
+      });
+      return out;
+    }
     // Floor CATEGORY — tagged per floor in step 2, drives per-category cross-trade linking in step 3.
     // A basement is also f.sub=true (tower grade line + ordering). Legacy floors with no kind derive one
     // from f.sub, so nothing needs migrating.
@@ -17440,9 +17511,13 @@
     // cfg.activities in place (other trades keep their positions). This trade order = the sequence the
     // activities run in within every zone of that trade (consumed by generate()).
 
+    // The 1-based number of a step, by its rail title — see the note above. Returns '' for an
+    // unknown title rather than a wrong number, so a typo shows up as a missing digit, not as a lie.
+    function _stepNo(t) { var i = STEPS.map(function (x) { return x.t; }).indexOf(t); return i < 0 ? '' : (i + 1); }
     var STEPS = [
       { t: 'Activities', s: 'Class-code list + duration', fn: stActivities },
       { t: 'Floors & Zones', s: 'Location breakdown', fn: stLevels },
+      { t: 'Tower links', s: 'How towers interface', fn: stTowerLinks },
       { t: 'Zone sequence', s: 'Order of locations', fn: stSequence },
       { t: 'Trade sequence', s: 'Order codes per level type', fn: stTradeSeq },
       { t: 'Scope per zone', s: 'Activities per location', fn: stScope },
@@ -17514,7 +17589,7 @@
         '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') + '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
         '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty" style="padding:10px;font-size:11.5px;">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
-      host.innerHTML = '<h2>1 · Activities &amp; required duration</h2>' +
+      host.innerHTML = '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
         '<p class="sbld-lede">Your class-code list as a <b>spreadsheet</b> (left) beside a <b>holding list</b> of all class codes (right). The grid works like Excel — <b>click</b> a cell, <b>drag</b>/<b>Shift-click</b> to select a range, <b>double-click</b> or type to edit, <b>Ctrl+C/Ctrl+V</b> copy &amp; paste (paste one cell into a selection to fill), <b>Ctrl+D</b> fill-down, <b>Delete</b> clears, or paste a block from Excel. Use <b>&larr;</b> to load ticked codes from the list into the build and <b>&rarr;</b> to send selected grid rows out to the list. <b>Scope</b> says whether a duration is per zone, per floor, or the whole project (auto-split per zone, editable in step 4).</p>' +
         '<div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-add">+ Add row</button><button class="pd-btn" id="b-seed">Load typical set</button>' +
         '<button class="pd-btn" id="b-delrows">Delete selected rows</button>' +
@@ -17809,7 +17884,7 @@
     function stTradeSeq(host) {
       var used = usedGroups();
       if (!used.length) {
-        host.innerHTML = '<h2>4 · Trade sequence — connect the class codes, per level type</h2>' +
+        host.innerHTML = '<h2>' + _stepNo('Trade sequence') + ' · Trade sequence — connect the class codes, per level type</h2>' +
           '<div class="sbld-empty">No trades yet — add activities in step 1 and assign each one a trade. The trades you use there will show up here to sequence.</div>';
         return;
       }
@@ -17863,7 +17938,7 @@
         : (actLinkPhase === 'dst' && pendActDst.length)
           ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Create ' + pendActDst.length + ' link' + (pendActDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
-      host.innerHTML = '<h2>4 · Trade sequence — connect the class codes, per level type</h2>' +
+      host.innerHTML = '<h2>' + _stepNo('Trade sequence') + ' · Trade sequence — connect the class codes, per level type</h2>' +
         '<p class="sbld-lede">Pick a <b>trade</b>, then the <b>level type</b> it applies to &mdash; the level types are the ones you tagged your floors with in <b>step 2</b>. A basement is not built in the same order, or at the same pace, as a typical floor, so <b>both the sequence and the durations</b> are per level type: <b>All levels</b> holds the default, and typing a duration while a category is selected applies to that category only (its cells are marked). Any category can also <b>copy</b> a sequence already defined elsewhere. Its class codes are an <b>Excel-style grid</b> — click/drag or Shift-click to select cells, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste, <b>Ctrl+D</b> fill-down, <b>Delete</b> clears. To connect codes, switch to <b>Edit mode</b> and click the <b>schedule bars</b> on the right: <b>1)</b> click one or more <b>source</b> bars, <b>2)</b> <b>right-click</b>, <b>3)</b> click <b>destination</b> bars, <b>4)</b> right-click, <b>5)</b> choose FS/SS/FF/SF + lag. In <b>View mode</b> a click just shows a bar\'s links. Open <b>Links</b> to edit them in a table; <b>Auto-chain</b> links every code back-to-back.</p>' +
         chips + kindRow +
         '<div class="sbld-sec-actions">' +
@@ -18071,10 +18146,75 @@
       });
       return { floors: nFloors, links: added };
     }
+    // ---- Step 3: how the towers interface -------------------------------------------------
+    // Reads as sentences, not as a matrix: "Tower B starts after Tower A · Podium L4, +0d". A
+    // relationship a planner cannot read back in words is one they cannot check.
+    var VS_TL_TYPES = [['FS', 'starts after'], ['SS', 'starts with'], ['FF', 'finishes with'], ['SF', 'finishes before']];
+    function _tlWord(t) { var o = VS_TL_TYPES.filter(function (x) { return x[0] === t; })[0]; return o ? o[1] : 'starts after'; }
+    function stTowerLinks(host) {
+      var list = towerList();
+      var head = '<h2>' + _stepNo('Tower links') + ' · How the towers interface</h2>';
+      if (list.length < 2) {
+        host.innerHTML = head +
+          '<p class="sbld-lede">With one tower there is nothing to interface. Add a second tower in step ' + _stepNo('Floors & Zones') +
+          ' and this step lets you say how they relate in time — for example <b>Tower B starts after Tower A · Podium L4</b>.</p>' +
+          '<div class="sbld-empty">Only <b>' + e2(towerLabel(list[0].id)) + '</b> is defined. Towers run in parallel until a relationship is stated here.</div>';
+        return;
+      }
+      var links = towerLinks();
+      var rowsHtml = links.length ? links.map(function (k, i) {
+        var anchor = k.fromFloorId ? (' · ' + k.fromFloorId) : '';
+        return '<div class="sbld-tlrow">' +
+          '<span class="sbld-tltxt"><b>' + e2(towerLabel(k.to)) + '</b> ' + e2(_tlWord(k.type)) + ' <b>' + e2(towerLabel(k.from)) + e2(anchor) + '</b>' +
+            (k.lag ? ' <span class="sbld-tllag">' + (k.lag > 0 ? '+' : '') + k.lag + 'd</span>' : '') + '</span>' +
+          '<button class="pd-btn sbld-del" data-tldel="' + i + '" title="Remove this relationship"><span data-ico="trash" data-ico-size="15"></span></button>' +
+          '</div>';
+      }).join('') : '<div class="sbld-empty">No relationships yet — the towers all start together. Add one below.</div>';
+
+      function towerOpts(sel) { return list.map(function (t) { return '<option value="' + e2(t.id) + '"' + (sel === t.id ? ' selected' : '') + '>' + e2(t.name || t.code) + '</option>'; }).join(''); }
+      var firstFrom = list[0].id;
+      host.innerHTML = head +
+        '<p class="sbld-lede">Say how each tower relates to another in time. A <b>shared podium</b> is modelled as floors belonging to <b>one</b> tower that the other <b>references</b> — so pick the podium level as the anchor and the second tower hands off from it. Leave the anchor as <b>whole tower</b> to wait on everything. Anything with no relationship simply starts on the project start date.</p>' +
+        '<div class="sbld-tllist">' + rowsHtml + '</div>' +
+        '<div class="sbld-sec-actions" style="flex-wrap:wrap;align-items:center;">' +
+          '<select class="pd-select sbld-mini" id="b-tlto" title="The tower that waits">' + towerOpts(list[1].id) + '</select>' +
+          '<select class="pd-select sbld-mini" id="b-tltype">' + VS_TL_TYPES.map(function (o) { return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join('') + '</select>' +
+          '<select class="pd-select sbld-mini" id="b-tlfrom" title="The tower it waits on">' + towerOpts(firstFrom) + '</select>' +
+          '<select class="pd-select sbld-mini" id="b-tlanchor" title="Narrow the handoff to one level of that tower — this is how a shared podium is referenced"></select>' +
+          '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">lag <input class="pd-input sbld-mini" id="b-tllag" type="number" step="1" value="0" style="width:70px;height:30px;" title="Days (negative = lead)"></label>' +
+          '<button class="pd-btn pd-btn-primary" id="b-tladd">Add relationship</button>' +
+        '</div>' +
+        '<p class="sbld-hint">Relationships are applied when the schedule is traced, so re-zoning a tower keeps them pointing at the right place. A relationship that would create a loop is refused.</p>';
+
+      function fillAnchors() {
+        var fromId = host.querySelector('#b-tlfrom').value;
+        var ch = towerFloorChoices(fromId);
+        host.querySelector('#b-tlanchor').innerHTML = '<option value="">whole tower</option>' +
+          ch.map(function (c) { return '<option value="' + e2(c.key) + '">' + e2(c.label) + '</option>'; }).join('');
+      }
+      fillAnchors();
+      host.querySelector('#b-tlfrom').onchange = fillAnchors;
+      host.querySelectorAll('[data-tldel]').forEach(function (b) {
+        b.onclick = function () { cfg.towerLinks.splice(+b.dataset.tldel, 1); markDirty(); render(); };
+      });
+      host.querySelector('#b-tladd').onclick = function () {
+        var to = host.querySelector('#b-tlto').value, from = host.querySelector('#b-tlfrom').value;
+        if (!to || !from || to === from) { UI.toast('Pick two different towers.', 'warn'); return; }
+        var type = host.querySelector('#b-tltype').value || 'FS';
+        var lag = parseInt(host.querySelector('#b-tllag').value, 10); if (isNaN(lag)) lag = 0;
+        var anchor = host.querySelector('#b-tlanchor').value || null;
+        // ⚠️ Refuse a duplicate and refuse a direct contradiction (a link back the other way) here,
+        // where it can be explained. tryLink() would silently drop it at trace time instead.
+        if (towerLinks().some(function (k) { return k.from === from && k.to === to; })) { UI.toast('Those two towers already have a relationship.', 'warn'); return; }
+        if (towerLinks().some(function (k) { return k.from === to && k.to === from; })) { UI.toast(towerLabel(from) + ' already waits on ' + towerLabel(to) + ' — one of the two has to lead.', 'error'); return; }
+        cfg.towerLinks = towerLinks().concat([{ from: from, to: to, fromFloorId: anchor, type: type, lag: lag }]);
+        markDirty(); render();
+      };
+    }
     function stLevels(host) {
       var used = usedGroups();
       if (!used.length) {
-        host.innerHTML = '<h2>2 · Substructure &amp; Superstructure — per trade</h2>' +
+        host.innerHTML = '<h2>' + _stepNo('Floors & Zones') + ' · Substructure &amp; Superstructure — per trade</h2>' +
           '<div class="sbld-empty">No trades yet — add activities in step 1 and assign each one a trade. The trades you use there will show up here.</div>';
         return;
       }
@@ -18127,7 +18267,7 @@
       // Quick-generate inputs keep the counts the planner last generated with for THIS trade, so a
       // value they just typed (e.g. units) stays put instead of snapping back to 0 on re-render.
       var qd = quickN[tr] || { B: 0, F: 5, Z: 2, U: 0 };
-      host.innerHTML = '<h2>2 · Substructure &amp; Superstructure — per trade</h2>' +
+      host.innerHTML = '<h2>' + _stepNo('Floors & Zones') + ' · Substructure &amp; Superstructure — per trade</h2>' +
         '<p class="sbld-lede">Pick a trade, add its <b>' + e2(dimLabelOf('floor').toLowerCase()) + 's</b> (superstructure) and any <b>basements</b> (substructure), then optionally split each into <b>' + e2(dimLabelOf('zone').toLowerCase()) + 's</b> and <b>' + e2(dimLabelOf('unit').toLowerCase()) + 's</b>. These are optional. The tower on the right shows superstructure above the grade line and basements below.</p>' +
         // ⚠️ THE LOCATION BREAKDOWN COMES FIRST. The builder's three location levels ARE the project's
         // Location Breakdown levels, and until now the only way to get them was to push and let the
@@ -18212,6 +18352,7 @@
         if (!confirm('Delete ' + towerLabel(_twAct) + (n ? ' and its ' + n + ' floor' + (n === 1 ? '' : 's') : '') + '? This cannot be undone.')) return;
         GROUPS.forEach(function (g) { cfg.zoning[g].floors = floorsOf(g).filter(function (f) { return towerIdOf(f) !== _twAct; }); });
         cfg.towers = towerList().filter(function (t) { return t.id !== _twAct; });
+        cfg.towerLinks = (cfg.towerLinks || []).filter(function (k) { return k.from !== _twAct && k.to !== _twAct; });
         uiTower = towerList()[0].id;
         pruneLinks(); markDirty(); render();
       };
@@ -18403,7 +18544,7 @@
       var lede = editing
         ? '<p class="sbld-lede"><b>Edit mode:</b> <b>1)</b> click one or more <b>source</b> zones, <b>2)</b> right-click (or press <b>Confirm sources</b>), <b>3)</b> click one or more <b>destination</b> zones, <b>4)</b> right-click (or <b>Create links</b>), <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Every source links to every destination. <b>Auto-trace logic</b> builds the whole takt flow for you.</p>'
         : '<p class="sbld-lede"><b>View mode:</b> click any bar or zone to <b>highlight / inspect</b> its relationships (predecessors + successors). Switch to <b>Edit</b> to connect zones, or open <b>Links</b> to edit them in a table.</p>';
-      host.innerHTML = '<h2>3 · Zone sequence — connect the flow</h2>' +
+      host.innerHTML = '<h2>' + _stepNo('Zone sequence') + ' · Zone sequence — connect the flow</h2>' +
         lede +
         tradeChips +
         '<div class="sbld-sec-actions">' +
@@ -18620,7 +18761,7 @@
 
     function stScope(host) {
       var locs = locList();
-      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>5 · Scope per zone</h2><div class="sbld-empty">Add activities (step 1) and per-trade floors/zones (step 2) first.</div>'; return; }
+      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2><div class="sbld-empty">Add activities (step 1) and per-trade floors/zones (step 2) first.</div>'; return; }
       var sections = '';
       usedGroups().forEach(function (tr) {
         var tlocs = locs.filter(function (l) { return l.trade === tr; }), acts = tradeActs(tr);
@@ -18630,7 +18771,7 @@
         sections += '<h3 style="font-size:13px;margin:14px 0 6px;"><span class="sbld-dot" style="background:' + gc(tr) + '"></span> ' + e2(GLABEL[tr]) + '</h3><div class="sbld-tablewrap"><table class="sbld-tbl">' + head + '<tbody>' + body + '</tbody></table></div>';
       });
       function tocs(tlocs, acts) { return tlocs.map(function (l) { return '<tr><td class="sbld-scope-row" data-tr="' + l.trade + '" data-uid="' + l.uid + '" title="Click to toggle every activity at ' + e2(locLabel(l)) + '">' + e2(locLabel(l)) + '</td>' + acts.map(function (a) { return '<td style="text-align:center;"><input type="checkbox" data-uid="' + l.uid + '" data-act="' + a.id + '"' + (included(l.uid, a.id) ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join(''); }
-      host.innerHTML = '<h2>5 · Scope per zone</h2>' +
+      host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2>' +
         '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations (all on by default). Untick where a trade doesn\'t occur. Click an <b>activity header</b> to toggle that activity across every location, or a <b>location label</b> to toggle all its activities.</p>' +
         '<div class="sbld-sec-actions"><button class="pd-btn" id="b-all">All on</button><button class="pd-btn" id="b-none">All off</button></div>' +
         (sections || '<div class="sbld-empty">Assign activities to trades (step 1) and give those trades floors/zones (step 2).</div>');
@@ -18671,9 +18812,9 @@
         kpis + miss + pz + '<div class="sbld-tablewrap" style="max-height:340px;margin-top:8px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div></div>';
     }
     function stGenerate(host) {
-      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>7 · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
+      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Generate') + ' · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
       var gInt = generate('int'), gExt = generate('ext');
-      host.innerHTML = '<h2>7 · Generate &amp; preview — Internal vs External</h2>' +
+      host.innerHTML = '<h2>' + _stepNo('Generate') + ' · Generate &amp; preview — Internal vs External</h2>' +
         '<p class="sbld-lede">Both schedules are built from the same zoning + links (steps 2–3), each using its own activity durations: <b>Internal</b> (target) and <b>External</b> (contract). Use <b>Push to Project Schedule</b> to add one of them to the live schedule (with its relationships).</p>' +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Project start&nbsp; <input class="pd-input" type="date" id="b-start" value="' + e2(cfg.startDate) + '" style="height:30px;"></label>' +
         '<button class="pd-btn" id="b-csv-int">CSV · Internal</button><button class="pd-btn" id="b-csv-ext">CSV · External</button>' +
@@ -18753,7 +18894,7 @@
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
     }
     function stStacking(host) {
-      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>6 · Vertical stacking</h2><div class="sbld-empty">Complete steps 1–5 first (activities + per-trade floors/zones + scope).</div>'; return; }
+      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking</h2><div class="sbld-empty">Complete steps 1–5 first (activities + per-trade floors/zones + scope).</div>'; return; }
       var g = generate(stackBasis);
       var finBy = {}; g.perZone.forEach(function (z) { finBy[z.loc.uid] = z.finish; });
       var used = usedGroups();
@@ -18771,7 +18912,7 @@
           '<span class="sbld-stkh-ct">' + nf + ' floor' + (nf === 1 ? '' : 's') + '</span></div>' +
           stackTowerSVG(tr, finBy) + '</div>';
       }).join('');
-      host.innerHTML = '<h2>6 · Vertical stacking — completion by zone</h2>' +
+      host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking — completion by zone</h2>' +
         '<p class="sbld-lede">From steps 1–5, this is the <b>vertical stacking</b>: each trade\'s building model, one cell per <b>zone</b> with its <b>zone number</b> and <b>completion date</b> (a zone completes when its last unit does). A zone marked <b>“N units ▾”</b> is <b>clickable</b> to see each unit\'s date. Superstructure sits above the grade line, basements below. Pick a <b>trade</b> to focus it; switch Internal (target) / External (contract); push it into the live schedule next.</p>' +
         tradeChips +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Schedule&nbsp; ' +
@@ -19379,6 +19520,7 @@
         setKind: function (k) { uiSeqKind = k; },
         getKind: function () { return uiSeqKind; },
         t4Set: t4Set, t4Get: t4Get, generate: generate,
+        autoTrace: autoTrace, towerLinkEdges: towerLinkEdges, locList: locList,
         setStep: function (n) { step = n; }, render: function () { render(); },
         setPid: function (id) { curPid = id; curUid = 'u1'; },
         setTrade: function (t) { uiTrade = t; }
