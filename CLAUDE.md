@@ -84,6 +84,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-19 — sync-eng deployed; ENG_URL set; ENG_SERVICE_KEY is the last blocker
+User: *"Ran the migration"* (`migrations/2026-08-19-eng-design-progress-mirror.sql`). Followed it
+with the two deploy steps that were still outstanding from the PR #13 merge above.
+
+- **`supabase functions deploy sync-eng --project-ref bgupuqnkqhixpuctyder`** — deployed
+  (`index.ts` + `aggregate.ts`). `OPTIONS` returns 200 and an unauthenticated `POST` is rejected by
+  the gateway (`UNAUTHORIZED_NO_AUTH_HEADER`), i.e. `verify_jwt` is on, as intended.
+- **`ENG_URL` set** to `https://zkxzaijznutmiueeurbb.supabase.co` — the `engineering-app` project
+  (ap-southeast-2). Not a credential, so it was set here.
+- ⚠️ **`ENG_SERVICE_KEY` is NOT set and was not set by Claude** — it is a service-role credential, so
+  the owner sets it. It must be the Engineering project's **new `sb_secret_` key**: the function
+  rejects a legacy `service_role` JWT up front (`eng_key_kind: "legacy-jwt"`) precisely because that
+  key silently degrades to `anon` over there and the read comes back empty rather than failing.
+- Until it is set, every invocation returns `500 {"error":"ENG_URL / ENG_SERVICE_KEY not
+  configured"}` — a fail-fast, not a partial sync. The mirror stays empty, and an empty mirror leaves
+  the Design Development branch untouched by design.
+- ⚠️ **Still unverified end-to-end**: no live sync has run, so the migration's tables, the RLS
+  (`can_access_project`), the prune-and-reinsert, and the Design Development roll-up against real
+  Engineering App data are all still unproven in practice.
+
 ### 2026-08-19 — Merged PR #13 (Design Development sourced from the Engineering App) into main
 User: *"There is a pull request in the planning app. Merge without conflict."* PR #13
 (`Source Design Development from the Engineering App`, head `257a197`) was the only open PR; the
