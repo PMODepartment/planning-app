@@ -879,14 +879,19 @@
       color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
     .ps-vs-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
     .ps-vs-dot { width:9px; height:9px; border-radius:50%; flex:none; }
-    .ps-vs-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:18px; align-items:start; }
+    /* One scroller around everything; towers keep their natural (building) width side by side. */
+    .ps-vs-viewport { overflow-x:auto; overflow-y:visible; padding-bottom:6px; }
+    .ps-vs-grid { display:flex; gap:18px; align-items:flex-start; }
+    .ps-vs-grid > .ps-vs-tower { flex:0 0 auto; }
+    .ps-vs-grid > .ps-vs-empty { flex:1 1 auto; }
     .ps-vs-tower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px;
       background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
     .ps-vs-towerh { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:10px 14px;
       background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:13.5px; font-weight:800; }
     .ps-vs-towerh .n { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-vs-towerh .ct { font-size:11px; font-weight:600; color:var(--pd-muted); flex:none; }
-    .ps-vs-scroll { overflow-x:auto; max-width:100%; padding:12px 14px 14px; }
+    /* No per-tower scrollbar — the whole view scrolls as one (.ps-vs-viewport). */
+    .ps-vs-scroll { padding:12px 14px 14px; }
     .ps-vs-scroll svg { display:block; height:auto; }
     .ps-vs-cell { cursor:pointer; }
     .ps-vs-cell:hover { filter:brightness(1.08); }
@@ -7902,14 +7907,29 @@
   function _vsMaxDetail() { return Math.max(1, LOC_LEVELS.length); }
   function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
+  // Canonical trade order, straight from the Schedule Builder's GROUPS — see tradeLabels(). Anything
+  // it does not know (a hand-typed trade) sorts after, by name, so nothing is hidden or reordered
+  // arbitrarily.
+  function _vsTradeRank(name) {
+    var list = [];
+    try { list = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.tradeLabels) ? ScheduleBuilder.tradeLabels() : []; } catch (e) { list = []; }
+    var i = list.indexOf(String(name == null ? '' : name).trim());
+    return i < 0 ? 9999 : i;
+  }
+  function _vsCmpTrade(a, b) {
+    var ra = _vsTradeRank(a), rb = _vsTradeRank(b);
+    if (ra !== rb) return ra - rb;
+    return cmpGroupName(a, b);
+  }
   // The activities this view is about: real tasks, currently filtered in, and locatable.
+  // Every filtered activity, located or not — the tower places what it can and shows the rest in an
+  // explicit "No level" band rather than dropping them (see the note above).
   function _vsActs() {
     if (!LOC_LEVELS.length) return [];
-    var lvl0 = LOC_LEVELS[0].id;
-    return rows.filter(function (r) {
-      return !isWbs(r) && r._dkind !== 'group' && rowMatches(r) && locValOf(r, lvl0);
-    });
+    return rows.filter(function (r) { return !isWbs(r) && r._dkind !== 'group' && rowMatches(r); });
   }
+  function _vsHasLevel(r) { return !!(LOC_LEVELS.length && locValOf(r, LOC_LEVELS[0].id)); }
+  var VS_NOLEV = '— No level —';
   // Duration-weighted % complete — the same weighting the WBS roll-ups use, so a stacking cell and a
   // summary row covering the same activities can never disagree.
   function _vsPct(list) {
@@ -7950,19 +7970,28 @@
   // step 6, ordered by levelRank like the rest of the module, never alphabetically.
   function _vsTowerSVG(list, baseColor, keyPrefix) {
     var lvl0 = LOC_LEVELS[0].id, detail = _vsDetailNow();
-    var byLevel = {}, levels = [];
+    var byLevel = {}, levels = [], noLev = [];
     list.forEach(function (r) {
-      var v = locValOf(r, lvl0); if (!v) return;
+      var v = locValOf(r, lvl0);
+      if (!v) { noLev.push(r); return; }                 // project-wide work — banded at the bottom
       if (!(v in byLevel)) { byLevel[v] = []; levels.push(v); }
       byLevel[v].push(r);
     });
-    if (!levels.length) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
+    if (!levels.length && !noLev.length) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
     levels.sort(cmpLevelValue);   // build order (bottom-up); display flips it below
     var below = levels.filter(function (v) { var rk = levelRank(v); return rk != null && rk < 0; });
     var above = levels.filter(function (v) { return below.indexOf(v) < 0; });
     var disp = above.slice().reverse().concat(below.slice().reverse()), groundAt = above.length;
+    // The un-levelled band is a real row, below grade, so it is impossible to miss and still clickable.
+    if (noLev.length) { byLevel[VS_NOLEV] = noLev; disp = disp.concat([VS_NOLEV]); }
     var fh = 44, gap = 6, pad = 14, labelW = 92;
-    var maxCells = disp.reduce(function (m, v) { return Math.max(m, _vsRowCells(byLevel[v], detail).length || 1); }, 1);
+    // How many cells the widest row holds at a given detail — the tower's width in "zone units".
+    function cellsAt(k) { return disp.reduce(function (m, v) { return Math.max(m, _vsRowCells(byLevel[v], k).length || 1); }, 1); }
+    // ⚠️ The building's width comes from the ZONE breakdown, not from the detail being viewed, and
+    // never shrinks below it — see the note above. Detail 3 may need more room, so take whichever is
+    // wider; detail 1 then spans the full building instead of collapsing to one narrow column.
+    var zoneCells = cellsAt(Math.min(2, _vsMaxDetail()));
+    var maxCells = Math.max(zoneCells, cellsAt(detail));
     var cw = Math.max(56, Math.round(78 * _vsZoom));
     var plotW = maxCells * cw, W = labelW + pad * 2 + plotW;
     var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
@@ -7976,12 +8005,13 @@
         var pct = _vsPct(c.list), fin = _vsFin(c.list);
         var op = 0.30 + 0.70 * (pct / 100);
         var key = keyPrefix + '|' + v + '|' + (c.label || '*');
+        var isNo = (v === VS_NOLEV);   // project-wide band — drawn dashed, never as a storey
         _vsCells[key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: fin };
         // At detail 1 the row label already names the level, so the cell prints only its dates —
         // showing the level name twice on one row reads like two different things. With no label the
         // two remaining lines are re-centred rather than left sitting under an empty first line.
         var lbl = c.label, tip = c.label || String(v);
-        svg += '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="5" fill="' + baseColor + '" opacity="' + op.toFixed(2) + '" stroke="rgba(0,0,0,.18)" stroke-width="1"><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + (fin ? Fmt.date(dstr(fin)) : 'no finish')) + '</title></rect>' +
+        svg += '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="5" fill="' + baseColor + '" opacity="' + (isNo ? Math.min(op, 0.45).toFixed(2) : op.toFixed(2)) + '" stroke="' + (isNo ? baseColor : 'rgba(0,0,0,.18)') + '" stroke-width="1"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + (fin ? Fmt.date(dstr(fin)) : 'no finish')) + '</title></rect>' +
           (lbl ? '<text x="' + mid + '" y="' + (y + 15) + '" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
           '<text x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '400' : '700') + '" fill="rgba(255,255,255,.97)" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
           '<text x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="700" fill="rgba(255,255,255,.92)" pointer-events="none">' + pct + '%</text>';
@@ -8019,12 +8049,9 @@
       return;
     }
     var acts = _vsActs(), detail = _vsDetailNow();
-    // Honest accounting: say how many filtered activities cannot be placed, rather than dropping them silently.
-    var placeable = rows.filter(function (r) { return !isWbs(r) && r._dkind !== 'group' && rowMatches(r); });
-    var noLoc = placeable.length - acts.length;
     var trades = [], seen = {};
     acts.forEach(function (r) { var t = _vsTradeOf(r); if (!seen[t]) { seen[t] = 1; trades.push(t); } });
-    trades.sort(cmpGroupName);
+    trades.sort(_vsCmpTrade);   // canonical trade order, not alphabetical
     if (_vsTrade !== 'ALL' && trades.indexOf(_vsTrade) < 0) _vsTrade = 'ALL';
 
     var detailBtns = '';
@@ -8045,13 +8072,18 @@
       '<span style="flex:1 1 auto;"></span>' +
       '<span class="ps-vs-note">' + acts.length + ' activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
         (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
-    var warn = noLoc > 0 ? '<div class="ps-vs-warn">' + noLoc + ' filtered activit' + (noLoc === 1 ? 'y has' : 'ies have') +
-      ' no ' + esc(LOC_LEVELS[0].name) + ', so ' + (noLoc === 1 ? 'it is' : 'they are') + ' not stacked.</div>' : '';
+    var noLevList = acts.filter(function (r) { return !_vsHasLevel(r); });
+    var noLevTrades = [];
+    noLevList.forEach(function (r) { var t = _vsTradeOf(r); if (noLevTrades.indexOf(t) < 0) noLevTrades.push(t); });
+    var warn = noLevList.length ? '<div class="ps-vs-warn"><strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
+      ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(LOC_LEVELS[0].name) + '</strong> — shown in the dashed <em>No level</em> band. ' +
+      'These come from ' + esc(noLevTrades.join(', ')) + ': a trade with no floors in Schedule Builder step 2 is pushed as whole-trade work, ' +
+      'so there is no ' + esc(LOC_LEVELS[0].name) + ' to place it on. Give the trade floors in step 2 and re-push to stack it.</div>' : '';
 
     _vsCells = {};
     var towers;
     if (!acts.length) {
-      towers = '<div class="ps-vs-empty">No activities match the current filters, or none carry a ' + esc(LOC_LEVELS[0].name) + '.</div>';
+      towers = '<div class="ps-vs-empty">No activities match the current filters.</div>';
     } else if (_vsScope === 'all') {
       towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; all trades</span>' +
         '<span class="ct">' + acts.length + ' activities · ' + _vsPct(acts) + '% · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span></div>' +
@@ -8066,7 +8098,8 @@
           _vsTowerSVG(list, col, t) + '</div>';
       }).join('');
     }
-    host.innerHTML = bar + (_vsScope === 'trade' ? chips : '') + warn + '<div class="ps-vs-grid">' + towers + '</div>';
+    host.innerHTML = bar + (_vsScope === 'trade' ? chips : '') + warn +
+      '<div class="ps-vs-viewport"><div class="ps-vs-grid">' + towers + '</div></div>';
     host.querySelectorAll('[data-vssc]').forEach(function (b) { b.onclick = function () { _vsScope = b.dataset.vssc; renderVStack(); }; });
     host.querySelectorAll('[data-vsdet]').forEach(function (b) { b.onclick = function () { _vsDetail = parseInt(b.dataset.vsdet, 10) || 1; renderVStack(); }; });
     host.querySelectorAll('[data-vstr]').forEach(function (b) { b.onclick = function () { _vsTrade = b.dataset.vstr; renderVStack(); }; });
@@ -17489,6 +17522,9 @@
     }
 
     return { open: open, save: save, isDirty: isDirty,
+      // The canonical trade order (GROUPS), as the labels written to work_type. The single source
+      // of truth for anything outside this closure that needs to order trades.
+      tradeLabels: function () { return GROUPS.map(function (g) { return GWORK[g] || GLABEL[g] || g; }); },
       // Test surface — pure cfg-level decisions, no DOM. See PS.fn for the same idea module-side.
       _t: {
         normalize: normalize,
