@@ -1789,6 +1789,25 @@
     .sbld-help-body ul { margin:4px 0 4px 18px; padding:0; }
     .sbld-help-body kbd { display:inline-block; padding:1px 6px; border:1px solid var(--pd-line); border-bottom-width:2px; border-radius:4px; background:var(--pd-bg); font:600 11px/1.4 monospace; color:var(--pd-ink); }
     .sbld-tb-sep2 { width:1px; align-self:stretch; background:var(--pd-line); margin:2px 4px; }
+    /* Copied cells — Excel's marching ants, so a Ctrl+C is visibly a Ctrl+C. Drawn as an inset
+       box-shadow rather than an outline so it survives the cell's own borders and never shifts
+       layout, and animated on background-position so it costs no layout/paint work per frame.
+       Sits UNDER .xl-sel/.xl-active in the cascade — the selection is where you are now, the
+       marquee is where the data came from, and both must be readable at once. */
+    @keyframes ps-ants { to { background-position: 14px 0, -14px 0, 0 -14px, 0 14px; } }
+    .sbld-xl td.xl-cell.xl-copied {
+      background-image:
+        repeating-linear-gradient(90deg, var(--pd-red) 0 6px, transparent 6px 14px),
+        repeating-linear-gradient(90deg, var(--pd-red) 0 6px, transparent 6px 14px),
+        repeating-linear-gradient(0deg,  var(--pd-red) 0 6px, transparent 6px 14px),
+        repeating-linear-gradient(0deg,  var(--pd-red) 0 6px, transparent 6px 14px);
+      background-size: 100% 2px, 100% 2px, 2px 100%, 2px 100%;
+      background-position: 0 0, 0 100%, 0 0, 100% 0;
+      background-repeat: no-repeat;
+      animation: ps-ants .6s linear infinite;
+    }
+    /* Respect a reduced-motion preference: keep the marquee, drop the crawl. */
+    @media (prefers-reduced-motion: reduce) { .sbld-xl td.xl-cell.xl-copied { animation: none; } }
     /* A duration this LEVEL TYPE owns (forked from the default) — see t4Set. Marked so the planner
        can tell at a glance which numbers are this category's own and which are inherited. */
     .sbld-xl td.xl-cell.sbld-ownd { font-weight:700; box-shadow:inset 2px 0 0 var(--pd-red); }
@@ -13930,6 +13949,23 @@
     function inActDst(u) { return pendActDst.indexOf(u) >= 0; }
     // step-1 Excel-style grid state (anchor/focus cell, edit flag, focus-restore across re-renders)
     var xa = { r: 0, c: 0 }, xf = { r: 0, c: 0 }, xEditing = false, xWantFocus = false;
+    // The rect Ctrl+C last copied, per grid — drawn with marching ants so a copy is visibly a copy.
+    // Lives out here (not in the wiring closure) so it survives the re-render every commit triggers.
+    var xCopied = null, t4Copied = null;
+    function markCopied(rect, isCut) {
+      if (!rect) return;
+      var n = (rect.r1 - rect.r0 + 1) * (rect.c1 - rect.c0 + 1);
+      UI.toast((isCut ? 'Cut ' : 'Copied ') + n + ' cell' + (n === 1 ? '' : 's') + ' — select where to paste, then Ctrl+V.', 'success');
+    }
+    // Paint the marching-ants rect onto whichever grid owns it. Shared by both grids' paint().
+    function paintCopied(wrap, rect) {
+      wrap.querySelectorAll('td.xl-cell.xl-copied').forEach(function (td) { td.classList.remove('xl-copied'); });
+      if (!rect) return;
+      for (var r = rect.r0; r <= rect.r1; r++) for (var c = rect.c0; c <= rect.c1; c++) {
+        var td = wrap.querySelector('td.xl-cell[data-r="' + r + '"][data-c="' + c + '"]');
+        if (td) td.classList.add('xl-copied');
+      }
+    }
     var catSel = [];   // step-1 holding-area: ids of catalog items ticked for loading
     var xColW = {};     // step-1 grid: per-column pixel width overrides (drag the header edge to resize)
     var holdW = 320;    // step-1: width of the "All class codes" library pane (drag its left edge to resize)
@@ -15203,6 +15239,7 @@
       function bounds() { return { r0: Math.min(xa.r, xf.r), r1: Math.max(xa.r, xf.r), c0: Math.min(xa.c, xf.c), c1: Math.max(xa.c, xf.c) }; }
       function paint() {
         wrap.querySelectorAll('td.xl-cell.xl-sel,td.xl-cell.xl-active').forEach(function (td) { td.classList.remove('xl-sel', 'xl-active'); });
+        paintCopied(wrap, xCopied);
         if (!nR()) return; var b = bounds();
         for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) { var td = cellEl(r, c); if (td) td.classList.add('xl-sel'); }
         var af = cellEl(xf.r, xf.c); if (af) { af.classList.add('xl-active'); af.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
@@ -15262,6 +15299,7 @@
         else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); var b = bounds(); for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) xlSetCell(r, c, ''); commitRender(); }
         else if ((e.ctrlKey || e.metaKey) && (k === 'd' || k === 'D')) { e.preventDefault(); var bd = bounds(); for (var c2 = bd.c0; c2 <= bd.c1; c2++) { var v = xlGet(cfg.activities[bd.r0], cols[c2].k); for (var r2 = bd.r0 + 1; r2 <= bd.r1; r2++) xlSetCell(r2, c2, v); } commitRender(); }
         else if ((e.ctrlKey || e.metaKey) && (k === 'a' || k === 'A')) { e.preventDefault(); if (nR()) { xa = { r: 0, c: 0 }; xf = { r: nR() - 1, c: cols.length - 1 }; paint(); } }
+        else if (k === 'Escape' && xCopied) { e.preventDefault(); xCopied = null; paint(); }   // Excel: Esc cancels the copy marquee
         else if (!e.ctrlKey && !e.metaKey && !e.altKey && k.length === 1) { beginEdit(k); }
       });
       // native copy/paste (container is focusable, so these fire on Ctrl+C / Ctrl+V)
@@ -15269,6 +15307,8 @@
         if (xEditing || !nR()) return; e.preventDefault(); var b = bounds(), out = [];
         for (var r = b.r0; r <= b.r1; r++) { var row = []; for (var c = b.c0; c <= b.c1; c++) row.push(xlGet(cfg.activities[r], cols[c].k)); out.push(row.join('\t')); }
         e.clipboardData.setData('text/plain', out.join('\n'));
+        markCopied(xCopied = { r0: b.r0, r1: b.r1, c0: b.c0, c1: b.c1 }, false);
+        paint();
       });
       wrap.addEventListener('paste', function (e) {
         if (xEditing) return; e.preventDefault();
@@ -15278,6 +15318,8 @@
         var b = bounds();
         if (grid.length === 1 && grid[0].length === 1) { var v = grid[0][0]; for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) xlSetCell(r, c, v); }
         else { var sr = b.r0, sc = b.c0; grid.forEach(function (row, i) { row.forEach(function (val, j) { if (sc + j < cols.length) xlSetCell(sr + i, sc + j, val); }); }); xf = { r: sr + grid.length - 1, c: Math.min(cols.length - 1, sc + grid[0].length - 1) }; xa = { r: sr, c: sc }; }
+        xCopied = null;                       // the copy has been used — stop marching
+        UI.toast('Pasted ' + (grid.length * grid[0].length) + ' value' + (grid.length * grid[0].length === 1 ? '' : 's') + '.', 'success');
         commitRender();
       });
       // row delete buttons
@@ -15345,6 +15387,7 @@
       function bounds() { return { r0: Math.min(t4a.r, t4f.r), r1: Math.max(t4a.r, t4f.r), c0: Math.min(t4a.c, t4f.c), c1: Math.max(t4a.c, t4f.c) }; }
       function paint() {
         wrap.querySelectorAll('td.xl-cell.xl-sel,td.xl-cell.xl-active').forEach(function (td) { td.classList.remove('xl-sel', 'xl-active'); });
+        paintCopied(wrap, t4Copied);
         if (!nR()) return; var b = bounds();
         for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) { var td = cellEl(r, c); if (td) td.classList.add('xl-sel'); }
         var af = cellEl(t4f.r, t4f.c); if (af) { af.classList.add('xl-active'); af.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
@@ -15383,12 +15426,17 @@
         else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); var b = bounds(); for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) t4Set(acts[r], cols[c].k, ''); commitRender(); }
         else if ((e.ctrlKey || e.metaKey) && (k === 'd' || k === 'D')) { e.preventDefault(); var bd = bounds(); for (var c2 = bd.c0; c2 <= bd.c1; c2++) { var v = t4Get(acts[bd.r0], cols[c2].k); for (var r2 = bd.r0 + 1; r2 <= bd.r1; r2++) t4Set(acts[r2], cols[c2].k, v); } commitRender(); }
         else if ((e.ctrlKey || e.metaKey) && (k === 'a' || k === 'A')) { e.preventDefault(); if (nR()) { t4a = { r: 0, c: 0 }; t4f = { r: nR() - 1, c: cols.length - 1 }; paint(); } }
+        else if (k === 'Escape' && t4Copied) { e.preventDefault(); t4Copied = null; paint(); }   // Excel: Esc cancels the copy marquee
         else if (!e.ctrlKey && !e.metaKey && !e.altKey && k.length === 1) { beginEdit(k); }
       });
       wrap.addEventListener('copy', function (e) {
         if (t4edit || !nR()) return; e.preventDefault(); var b = bounds(), out = [];
-        for (var r = b.r0; r <= b.r1; r++) { var row = []; for (var c = b.c0; c <= b.c1; c++) row.push(xlGet(acts[r], cols[c].k)); out.push(row.join('\t')); }
+        // ⚠️ t4Get, NOT xlGet — see the note above this handler's fix. Copy must read exactly what
+        // the cell shows and what paste would write, i.e. the selected level type's value.
+        for (var r = b.r0; r <= b.r1; r++) { var row = []; for (var c = b.c0; c <= b.c1; c++) row.push(t4Get(acts[r], cols[c].k)); out.push(row.join('\t')); }
         e.clipboardData.setData('text/plain', out.join('\n'));
+        markCopied(t4Copied = { r0: b.r0, r1: b.r1, c0: b.c0, c1: b.c1 }, e.type === 'cut');
+        paint();
       });
       wrap.addEventListener('paste', function (e) {
         if (t4edit) return; e.preventDefault();
@@ -15397,6 +15445,9 @@
         var grid = lines.map(function (l) { return l.split('\t'); }), b = bounds();
         if (grid.length === 1 && grid[0].length === 1) { var v = grid[0][0]; for (var r = b.r0; r <= b.r1; r++) for (var c = b.c0; c <= b.c1; c++) t4Set(acts[r], cols[c].k, v); }
         else { var sr = b.r0, sc = b.c0; grid.forEach(function (row, i) { row.forEach(function (val, j) { if (sr + i < nR() && sc + j < cols.length) t4Set(acts[sr + i], cols[sc + j].k, val); }); }); t4f = { r: clampR(sr + grid.length - 1), c: Math.min(cols.length - 1, sc + grid[0].length - 1) }; t4a = { r: clampR(sr), c: sc }; }
+        t4Copied = null;                      // the copy has been used — stop marching
+        UI.toast('Pasted ' + (grid.length * grid[0].length) + ' value' + (grid.length * grid[0].length === 1 ? '' : 's') +
+          (uiSeqKind && uiSeqKind !== 'all' ? ' into ' + (KIND_LABEL[uiSeqKind] || uiSeqKind) + ' levels.' : '.'), 'success');
         commitRender();
       });
       // (class-code linking moved to the schedule bars on the right — view/edit toggle, like step 3)
@@ -16835,7 +16886,10 @@
         getCfg: function () { return cfg; },
         setKind: function (k) { uiSeqKind = k; },
         getKind: function () { return uiSeqKind; },
-        t4Set: t4Set, t4Get: t4Get, generate: generate
+        t4Set: t4Set, t4Get: t4Get, generate: generate,
+        setStep: function (n) { step = n; }, render: function () { render(); },
+        setPid: function (id) { curPid = id; curUid = 'u1'; },
+        setTrade: function (t) { uiTrade = t; }
       } };
   })();
 
