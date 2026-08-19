@@ -9410,6 +9410,7 @@
   var _vsZoom = 1;
   var _vsTrade = 'ALL';         // focus a single trade's tower
   var _vsDateMode = 'finish';   // 'finish' = when the cell completes · 'start' = when it begins
+  var _vsBasis = 'actual';      // 'actual' = actual/forecast · 'planned' = baseline · 'compare' = both + slip
   // What the NEXT render should animate: 'in' = towers enter (the set of towers changed),
   // 'fade' = a value changed in place (Finish↔Start, zoom), null = repaint silently (a data or
   // filter change arriving through doRender, where re-playing an entrance would be noise).
@@ -9468,8 +9469,39 @@
     list.forEach(function (r) { var d0 = pd(dispStart(r)); if (d0 && (!mn || d0 < mn)) mn = d0; });
     return mn;
   }
-  function _vsDate(list) { return _vsDateMode === 'start' ? _vsStart(list) : _vsFin(list); }
+  // The PLANNED (baseline) equivalents. A row with no baseline contributes nothing, so a cell whose
+  // activities are all un-baselined reports null rather than a misleading date.
+  function _vsPlanFin(list) {
+    var mx = null;
+    list.forEach(function (r) { var f = pd(r.bl_finish); if (f && (!mx || f > mx)) mx = f; });
+    return mx;
+  }
+  function _vsPlanStart(list) {
+    var mn = null;
+    list.forEach(function (r) { var d0 = pd(r.bl_start); if (d0 && (!mn || d0 < mn)) mn = d0; });
+    return mn;
+  }
+  function _vsActualDate(list) { return _vsDateMode === 'start' ? _vsStart(list) : _vsFin(list); }
+  function _vsPlanDate(list) { return _vsDateMode === 'start' ? _vsPlanStart(list) : _vsPlanFin(list); }
+  // The date a cell PRINTS, given the basis. Compare prints the actual and shows the plan beside it.
+  function _vsDate(list) { return _vsBasis === 'planned' ? _vsPlanDate(list) : _vsActualDate(list); }
+  // Slip in days: + = later than planned (behind), - = earlier. null when there is no baseline to
+  // compare against, which must read as "unknown", never as zero.
+  function _vsSlip(list) {
+    var pl = _vsPlanDate(list), ac = _vsActualDate(list);
+    if (!pl || !ac) return null;
+    return dayDiff(pl, ac);
+  }
   function _vsDateWord() { return _vsDateMode === 'start' ? 'starts' : 'finishes'; }
+  function _vsBasisWord() { return _vsBasis === 'planned' ? 'planned' : (_vsBasis === 'compare' ? 'planned vs actual' : 'actual/forecast'); }
+  // Compare colours by slip, so the fill answers "are we behind here?" at a glance.
+  var VS_SLIP_LATE = '#C0392B', VS_SLIP_EARLY = '#1F8F4E', VS_SLIP_ONTIME = '#3A6098', VS_SLIP_NONE = '#6f7276';
+  function _vsSlipColor(sl) {
+    if (sl == null) return VS_SLIP_NONE;
+    if (sl > 0) return VS_SLIP_LATE;
+    if (sl < 0) return VS_SLIP_EARLY;
+    return VS_SLIP_ONTIME;
+  }
   // A trade's colour from the SAME category palette the Gantt bars use, so the stacking reads as a key
   // to the same picture. Falls back to a neutral hue when colouring is off or the trade is new.
   function _vsColor(trade) {
@@ -9508,7 +9540,7 @@
     var disp = above.slice().reverse().concat(below.slice().reverse()), groundAt = above.length;
     // The un-levelled band is a real row, below grade, so it is impossible to miss and still clickable.
     if (noLev.length) { byLevel[VS_NOLEV] = noLev; disp = disp.concat([VS_NOLEV]); }
-    var fh = 44, gap = 6, pad = 14, labelW = 92;
+    var fh = (_vsBasis === 'compare') ? 52 : 44, gap = 6, pad = 14, labelW = 92;
     // How many cells the widest row holds at a given detail — the tower's width in "zone units".
     function cellsAt(k) { return disp.reduce(function (m, v) { return Math.max(m, _vsRowCells(byLevel[v], k).length || 1); }, 1); }
     // ⚠️ The building's width comes from the ZONE breakdown, not from the detail being viewed, and
@@ -9527,7 +9559,11 @@
       cells.forEach(function (c, ci) {
         var cx = pad + labelW + ci * fcw, mid = cx + (fcw - 3) / 2;
         var pct = _vsPct(c.list), fin = _vsDate(c.list);   // finish or start, per the switcher
-        var op = 0.30 + 0.70 * (pct / 100);
+        var slip = _vsSlip(c.list), cmp = (_vsBasis === 'compare');
+        // ⚠️ Compare is filled by SLIP, not progress — see the note on the basis switcher. A late
+        // cell must look late however complete it is.
+        var fill = cmp ? _vsSlipColor(slip) : baseColor;
+        var op = cmp ? (slip == null ? 0.38 : 0.92) : (0.30 + 0.70 * (pct / 100));
         var key = keyPrefix + '|' + v + '|' + (c.label || '*');
         var isNo = (v === VS_NOLEV);   // project-wide band — drawn dashed, never as a storey
         _vsCells[key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: fin };
@@ -9535,10 +9571,18 @@
         // showing the level name twice on one row reads like two different things. With no label the
         // two remaining lines are re-centred rather than left sitting under an empty first line.
         var lbl = c.label, tip = c.label || String(v);
-        svg += '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="5" fill="' + baseColor + '" opacity="' + (isNo ? Math.min(op, 0.45).toFixed(2) : op.toFixed(2)) + '" stroke="' + (isNo ? baseColor : 'rgba(0,0,0,.18)') + '" stroke-width="1"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + _vsDateWord() + ' ' + (fin ? Fmt.date(dstr(fin)) : '—')) + '</title></rect>' +
-          (lbl ? '<text x="' + mid + '" y="' + (y + 15) + '" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
-          '<text x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '400' : '700') + '" fill="rgba(255,255,255,.97)" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
-          '<text x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="700" fill="rgba(255,255,255,.92)" pointer-events="none">' + pct + '%</text>';
+        svg += '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="5" fill="' + fill + '" opacity="' + (isNo ? Math.min(op, 0.45).toFixed(2) : op.toFixed(2)) + '" stroke="' + (isNo ? baseColor : 'rgba(0,0,0,.18)') + '" stroke-width="1"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + _vsBasisWord() + ' · ' + _vsDateWord() + ' ' + (fin ? Fmt.date(dstr(fin)) : '—') +
+          (cmp ? (' · planned ' + (_vsPlanDate(c.list) ? Fmt.date(dstr(_vsPlanDate(c.list))) : '—') +
+                  ' · ' + (slip == null ? 'no baseline' : (slip > 0 ? slip + 'd late' : (slip < 0 ? (-slip) + 'd early' : 'on time')))) : '')) + '</title></rect>' +
+          (lbl ? '<text x="' + mid + '" y="' + (y + 13) + '" text-anchor="middle" font-size="10.5" font-weight="800" fill="#fff" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
+          (cmp
+            // Compare: planned above, actual below, then the slip — three values, so the label line
+            // is tightened and the % is dropped (the fill already carries the slip).
+            ? '<text x="' + mid + '" y="' + (y + (lbl ? 24 : 16)) + '" text-anchor="middle" font-size="8.5" fill="rgba(255,255,255,.88)" pointer-events="none">P ' + esc(_vsPlanDate(c.list) ? Fmt.date(dstr(_vsPlanDate(c.list))) : '—') + '</text>' +
+              '<text x="' + mid + '" y="' + (y + (lbl ? 34 : 27)) + '" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" pointer-events="none">A ' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
+              '<text x="' + mid + '" y="' + (y + (lbl ? 43 : 38)) + '" text-anchor="middle" font-size="9" font-weight="800" fill="rgba(255,255,255,.96)" pointer-events="none">' + esc(slip == null ? 'no BL' : (slip > 0 ? '+' + slip + 'd' : (slip < 0 ? slip + 'd' : 'on time'))) + '</text>'
+            : '<text x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '400' : '700') + '" fill="rgba(255,255,255,.97)" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
+              '<text x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="700" fill="rgba(255,255,255,.92)" pointer-events="none">' + pct + '%</text>');
       });
     });
     var gy = pad + groundAt * (fh + gap) - gap / 2 + (groundAt === disp.length ? 3 : 0);
@@ -9552,17 +9596,22 @@
     var d = _vsCells[key]; if (!d) return;
     var title = String(d.level) + (d.cell ? ' · ' + d.cell : '');
     var body = '<div style="max-height:60vh;overflow:auto;"><table class="ps-table" style="width:100%;"><thead><tr>' +
-      ['Activity ID', 'Activity', 'Trade', 'Start', 'Finish', '%'].map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
+      ['Activity ID', 'Activity', 'Trade', 'BL Start', 'BL Finish', 'Start', 'Finish', 'Var', '%'].map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
       '</tr></thead><tbody>' +
       d.list.slice().sort(function (a, b) { var x = pd(dispFin(a)), y = pd(dispFin(b)); return (x ? +x : 0) - (y ? +y : 0); }).map(function (r) {
+        var _v = finVar(r);
         return '<tr><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td><td>' + esc(_vsTradeOf(r)) +
+          '</td><td>' + esc(r.bl_start ? Fmt.date(r.bl_start) : '—') + '</td><td>' + esc(r.bl_finish ? Fmt.date(r.bl_finish) : '—') +
           '</td><td>' + esc(dispStart(r) ? Fmt.date(dispStart(r)) : '—') + '</td><td>' + esc(dispFin(r) ? Fmt.date(dispFin(r)) : '—') +
+          '</td><td' + (_v != null && _v !== 0 ? ' style="color:' + (_v > 0 ? VS_SLIP_LATE : VS_SLIP_EARLY) + ';font-weight:700;"' : '') + '>' +
+          (_v == null ? '—' : (_v > 0 ? '+' + _v + 'd' : (_v < 0 ? _v + 'd' : 'on time'))) +
           '</td><td>' + (r.percent_complete || 0) + '%</td></tr>';
       }).join('') + '</tbody></table></div>';
     var m = UI.modal('<h2 style="margin-top:0;font-size:16px;">' + esc(title) + '</h2>' +
       '<div class="ps-vs-note" style="margin:-4px 0 10px;">' + d.list.length + ' activit' + (d.list.length === 1 ? 'y' : 'ies') +
-      ' · ' + d.pct + '% complete · ' + _vsDateWord() + ' ' + esc(d.fin ? Fmt.date(dstr(d.fin)) : '—') + '</div>' + body +
-      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn pd-btn-primary" id="ps-vs-x">Close</button></div>', { width: 860 });
+      ' · ' + d.pct + '% complete · ' + _vsDateWord() + ' ' + esc(d.fin ? Fmt.date(dstr(d.fin)) : '—') +
+      (function () { var sl = _vsSlip(d.list); return sl == null ? '' : (' · ' + (sl > 0 ? sl + 'd late' : (sl < 0 ? (-sl) + 'd early' : 'on time')) + ' vs baseline'); })() + '</div>' + body +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn pd-btn-primary" id="ps-vs-x">Close</button></div>', { width: 1040 });
     m.el.querySelector('#ps-vs-x').onclick = function () { m.close(); };
   }
   function renderVStack() {
@@ -9591,6 +9640,13 @@
       '<span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
       '<span class="ps-vs-note">' + esc(LOC_LEVELS.slice(0, detail).map(function (l) { return l.name; }).join(' › ')) + '</span>' +
       '<span class="ps-tb-div"></span>' +
+      '<span class="ps-vs-note">Dates</span><span class="ps-vs-seg">' +
+        [['actual', 'Actual', 'Actual where recorded, forecast where not — the dates the grid shows'],
+         ['planned', 'Planned', 'The baseline (BL Start / BL Finish)'],
+         ['compare', 'Planned vs Actual', 'Both, with the slip in days. Cells are coloured by slip, not by progress']]
+          .map(function (o) { return '<button data-vsbasis="' + o[0] + '"' + (_vsBasis === o[0] ? ' class="on"' : '') + ' title="' + esc(o[2]) + '">' + o[1] + '</button>'; }).join('') +
+      '</span>' +
+      '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">Show</span><span class="ps-vs-seg">' +
         '<button data-vsdt="finish"' + (_vsDateMode === 'finish' ? ' class="on"' : '') + ' title="Each cell shows when it COMPLETES (its last activity\'s finish)">Finish</button>' +
         '<button data-vsdt="start"' + (_vsDateMode === 'start' ? ' class="on"' : '') + ' title="Each cell shows when it BEGINS (its first activity\'s start)">Start</button>' +
@@ -9599,6 +9655,12 @@
       '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
       '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
       '<span style="flex:1 1 auto;"></span>' +
+      (_vsBasis === 'compare'
+        ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:8px;">' +
+            [[VS_SLIP_EARLY, 'early'], [VS_SLIP_ONTIME, 'on time'], [VS_SLIP_LATE, 'late'], [VS_SLIP_NONE, 'no baseline']]
+              .map(function (o) { return '<span style="display:inline-flex;align-items:center;gap:4px;"><span class="ps-vs-dot" style="background:' + o[0] + '"></span>' + o[1] + '</span>'; }).join('') +
+          '</span>'
+        : '') +
       '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
         (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
     var noTradeList = acts.filter(function (r) { return !workOf(r); });
@@ -9645,6 +9707,7 @@
     host.querySelectorAll('[data-vssc]').forEach(function (b) { b.onclick = function () { _vsScope = b.dataset.vssc; _vsAnim = 'in'; renderVStack(); }; });
     host.querySelectorAll('[data-vsdet]').forEach(function (b) { b.onclick = function () { _vsDetail = parseInt(b.dataset.vsdet, 10) || 1; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vsdt]').forEach(function (b) { b.onclick = function () { _vsDateMode = b.dataset.vsdt; _vsAnim = 'fade'; renderVStack(); }; });
+    host.querySelectorAll('[data-vsbasis]').forEach(function (b) { b.onclick = function () { _vsBasis = b.dataset.vsbasis; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vstr]').forEach(function (b) { b.onclick = function () { _vsTrade = b.dataset.vstr; _vsAnim = 'in'; renderVStack(); }; });
     // Zoom repaints silently: a fade on every step of a held-down click would strobe.
     var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
