@@ -9711,6 +9711,10 @@
   // Labels sit over solid, hatched AND tinted areas depending on progress, so they carry their own
   // outline (stroke painted UNDER the fill) instead of assuming a dark background.
   var VS_TXT = 'paint-order="stroke" stroke="rgba(0,0,0,.55)" stroke-width="2.4" stroke-linejoin="round"';
+  // Level-1 building width: a fixed span so every card is the same size regardless of how many
+  // zones the trade happens to have. In cell-units, so the zoom still works; the floor stops it
+  // getting thin at the smallest zoom. See the note in _vsTowerSVG.
+  var VS_L1_SPAN = 4, VS_L1_MIN_W = 260;
   function _vsMaxDetail() { return Math.max(1, LOC_LEVELS.length); }
   function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
@@ -9952,13 +9956,19 @@
     var fh = (_vsBasis === 'compare') ? 52 : 44, gap = 6, pad = 14, labelW = 92;
     // How many cells the widest row holds at a given detail — the tower's width in "zone units".
     function cellsAt(k) { return disp.reduce(function (m, v) { return Math.max(m, _vsRowCells(byLevel[v], k).length || 1); }, 1); }
-    // ⚠️ The building's width comes from the ZONE breakdown, not from the detail being viewed, and
-    // never shrinks below it — see the note above. Detail 3 may need more room, so take whichever is
-    // wider; detail 1 then spans the full building instead of collapsing to one narrow column.
+    // ⚠️ At detail >= 2 the building's width comes from the ZONE breakdown and never shrinks below
+    // it — every zone cell needs room for its date. Detail 3 may need more than the zone count, so
+    // take whichever is wider.
     var zoneCells = cellsAt(Math.min(2, _vsMaxDetail()));
     var maxCells = Math.max(zoneCells, cellsAt(detail));
     var cw = Math.max(56, Math.round(78 * _vsZoom));
-    var plotW = maxCells * cw, W = labelW + pad * 2 + plotW;
+    // ⚠️ DETAIL 1 IS A FIXED WIDTH, THE SAME FOR EVERY BUILDING — see the note above. Every row is
+    // a single cell here, so deriving the width from the zone count made the box size report the
+    // zone count instead, and two cards side by side looked like different-sized buildings.
+    // VS_L1_SPAN is in cell-units so it still scales with the zoom, and the absolute floor keeps it
+    // readable ("not too thin") when zoomed all the way out.
+    var plotW = (detail === 1) ? Math.max(VS_L1_MIN_W, VS_L1_SPAN * cw) : maxCells * cw;
+    var W = labelW + pad * 2 + plotW;
     var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
     disp.forEach(function (v, i) {
       var y = pad + i * (fh + gap);
