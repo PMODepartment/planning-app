@@ -47,6 +47,29 @@ Verified by extracting the shipped source text of `dimKey`/`dimName`/`buildTree`
 `locMapOf` and running them against synthetic configs, rather than paraphrasing the logic
 into a test that could agree with a wrong assumption.
 
+### Open-start activities did not follow the data date (2026-08-20)
+
+Data date 01-Jul-26, every activity still starting 24-Aug-26. The shift existed but was
+**one-directional** — `shiftUnstartedToDataDate` pulled un-started work forward out of the past and
+bailed on everything else (`if (!s || s >= dd) return;`). So a data date *behind* the planned start
+left open-start work stranded in the future, with nothing to bring it back. In this case 24-Aug was
+the Schedule Builder's project start, carried in by the push.
+
+The correct rule was **already in the same function**, applied only to no-predecessor *milestones*,
+which "ride the data date (either direction)". That is not a milestone property — no predecessor
+means the data date is the only thing driving the activity, whether it is a zero-duration marker or
+six days of works. Generalised rather than duplicated, and the milestone case falls out of it as the
+zero-duration instance. Activities that genuinely belong later say so with a predecessor or a date
+constraint; that is what those are for.
+
+⚠️ `cpmLogic`'s open-start anchor (`es = A(t.start_date)`) has arguably the same defect and was left
+alone **deliberately**. It feeds float and criticality for every project, so re-anchoring every
+unlinked activity to the data date there would silently redraw critical paths across the board. The
+behaviour change stays in the function whose documented job is writing dates. Worth revisiting as
+its own change, with its own verification, if the float numbers ever look wrong.
+
+Both gates (`ps_useactuals`, `ps_ddretain`) default to on, so no new setting was needed.
+
 ### Follow-ups the same day: the builder's own stacking, and floor order vs the WBS manager
 
 **Step 6 merged the towers.** `stackTowerSVG` read `cfg.zoning[tr].floors` — every tower's floors —

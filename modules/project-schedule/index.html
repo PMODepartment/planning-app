@@ -20227,30 +20227,42 @@
   // Retained-Logic vs Progress-Override. Completed activities (with an actual finish) keep
   // their historical dates; started-but-unfinished activities keep their Start (pinned by the
   // actual start) and only their Finish moves. Bulk + not per-row undoable, so it confirms first.
-  // Retained logic on a data-date move: any un-started activity (0% / no actual start) whose planned
-  // start is before the data date is shifted forward so it starts on the data date, KEEPING its
-  // duration (finish moves by the same delta). Runs for every task regardless of relationships, so it
-  // covers schedules that don't use links (the CPM path handles linked ones). Bulk write, confirms.
+  // Retained logic on a data-date move, KEEPING each activity's duration (the finish moves by the
+  // same delta). Two rules, by whether anything else drives the activity:
+  //   · NO PREDECESSOR → the data date is the only driver, so it rides the data date in EITHER
+  //     direction. An activity that should start later says so with a predecessor or a constraint.
+  //   · HAS PREDECESSORS → only pulled FORWARD out of the past; its logic decides the rest, and
+  //     the CPM path (applyScheduleDates) is what moves it.
+  // Runs for every task regardless of relationships, so it covers schedules that don't use links.
+  // Bulk write, confirms.
   async function shiftUnstartedToDataDate(silent) {
     var dd = today(); var patches = [];
     rows.forEach(function (t) {
       if (isWbs(t) || !t.activity_id) return;
       if (t.actual_start || t.actual_finish || (t.percent_complete || 0) > 0) return;   // started/done — leave
       var s = pd(t.start_date);
-      // A no-predecessor, unstarted MILESTONE has nothing driving its date, so it rides the data date
-      // (a start/finish anchor "you are here"). Snap it exactly to the data date (either direction).
-      if (isMile(t) && relPreds(t).length === 0) {
-        if (!s || dstr(s) !== dstr(dd)) patches.push({ id: t.id, patch: { start_date: dstr(dd), end_date: dstr(dd), updated_at: new Date().toISOString() }, row: t });
+      // ⚠️ NO PREDECESSOR = nothing but the data date drives this activity, so it rides the data
+      // date in EITHER direction, keeping its duration. This used to apply to MILESTONES only,
+      // which is why a data date BEHIND the planned start left ordinary open-start activities
+      // stranded in the future — the `s >= dd` bail-out below caught them.
+      // A milestone is just the zero-duration case of this: its finish rides along with its start.
+      if (relPreds(t).length === 0) {
+        if (!s) { patches.push({ id: t.id, patch: { start_date: dstr(dd), end_date: dstr(dd), updated_at: new Date().toISOString() }, row: t }); return; }
+        if (dstr(s) === dstr(dd)) return;                      // already exactly there
+        var d0 = dayDiff(s, dd), e0 = pd(t.end_date);
+        patches.push({ id: t.id, patch: { start_date: dstr(dd), end_date: e0 ? dstr(addDays(e0, d0)) : dstr(dd), updated_at: new Date().toISOString() }, row: t });
         return;
       }
+      // Has predecessors: only pull it forward off the past. Its logic decides where it really
+      // belongs, and applyScheduleDates is what applies that.
       if (!s || s >= dd) return;                               // already at/after DD
       var delta = dayDiff(s, dd);
       var e = pd(t.end_date);
       patches.push({ id: t.id, patch: { start_date: dstr(dd), end_date: e ? dstr(addDays(e, delta)) : dstr(dd), updated_at: new Date().toISOString() }, row: t });
     });
-    if (!patches.length) { if (!silent) UI.toast('No un-started activities to shift — all start on/after the data date.', 'info'); return 0; }
-    if (!silent && !confirm('Shift ' + patches.length + ' un-started activit' + (patches.length === 1 ? 'y' : 'ies') + ' to the data date (' + Fmt.date(dstr(dd)) + '), keeping their durations?')) return 0;
-    showLoading('Shifting ' + patches.length + ' activities…');
+    if (!patches.length) { if (!silent) UI.toast('No un-started activities to move — they already sit correctly against the data date.', 'info'); return 0; }
+    if (!silent && !confirm('Move ' + patches.length + ' un-started activit' + (patches.length === 1 ? 'y' : 'ies') + ' to the data date (' + Fmt.date(dstr(dd)) + '), keeping their durations?\n\nActivities with no predecessor are placed ON the data date; those with predecessors are only pulled forward out of the past.')) return 0;
+    showLoading('Moving ' + patches.length + ' activities…');
     var ok = 0, err = null, CH = 40;
     for (var i = 0; i < patches.length && !err; i += CH) {
       var slice = patches.slice(i, i + CH);
@@ -20260,7 +20272,7 @@
     hideLoading();
     if (ok) { logAudit(null, 'reschedule', { count: ok, kind: 'data-date-retained' }); resetUndo(); rebuild(false); ensureCPM(); renderAll(); }
     if (err) UI.toast('Shift error after ' + ok + ': ' + err, 'error');
-    else if (!silent) UI.toast('Shifted ' + ok + ' un-started activit' + (ok === 1 ? 'y' : 'ies') + ' to the data date.', 'success');
+    else if (!silent) UI.toast('Moved ' + ok + ' un-started activit' + (ok === 1 ? 'y' : 'ies') + ' to the data date.', 'success');
     return ok;
   }
   async function applyScheduleDates() {
@@ -20605,7 +20617,7 @@
         '<div class="fld"><span>Dates</span><label><input type="checkbox" id="ps-useact"' + (useActuals ? ' checked' : '') + '><span>Use actual dates &amp; data date<small>Actual start/finish pin the schedule; future work can’t precede the data date.</small></span></label></div>' +
         '<div class="fld"><span>Progress intelligence</span>' +
         '<label><input type="checkbox" id="ps-progdriven"' + (progressDriven ? ' checked' : '') + '><span>Progress-driven dates<small>Editing Duration POC recomputes remaining duration &amp; finish from the data date.</small></span></label>' +
-        '<label><input type="checkbox" id="ps-ddretain"' + (ddRetainOn ? ' checked' : '') + '><span>Retain un-started work at the data date<small>On Schedule, shift activities with 0% POC (that should have started) forward to the data date, keeping their duration.</small></span></label></div>';
+        '<label><input type="checkbox" id="ps-ddretain"' + (ddRetainOn ? ' checked' : '') + '><span>Retain un-started work at the data date<small>On Schedule, move activities with 0% POC to the data date, keeping their duration. No predecessor → placed on the data date; with predecessors → only pulled forward out of the past.</small></span></label></div>';
     } else {
       b.innerHTML = '<div class="fld"><span>Multiple Float Paths</span>' +
         '<label><input type="checkbox" id="ps-mfp"' + (mfpOn ? ' checked' : '') + '><span>Highlight near-critical paths<small>When Critical Path is on, activities with total float at or below the threshold are flagged (amber) alongside the critical path.</small></span></label></div>' +
