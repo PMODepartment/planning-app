@@ -11939,6 +11939,26 @@
     var opts = STATUS_OPTS.map(function (o) { return '<option value="' + esc(o) + '"' + (o === s ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
     return '<div class="ps-cell c-status" data-field="status"><select class="ps-status-sel ps-status-pill ' + cls + '" data-id="' + esc(r.id) + '" title="Change status">' + opts + '</select></div>';
   }
+  // A rolled-up percentage, formatted so it cannot claim zero for work that has started.
+  // ⚠️ Deliberately NOT Math.round for small values — see the note above. Below 1% a decimal is
+  // shown, below 0.05% the "<0.1%" marker, and only a true zero prints "0%".
+  function _rollPctTxt(num, den) {
+    if (!(den > 0)) return '';
+    var v = Math.max(0, Math.min(100, num / den));
+    if (v <= 0) return '0%';
+    if (v < 0.05) return '<0.1%';
+    if (v < 1) return v.toFixed(1) + '%';
+    return Math.round(v) + '%';
+  }
+  // Hover text for a roll-up cell: the exact figure and how many activities are behind it, so a
+  // surprising number can be checked without exporting anything.
+  function _rollPctTip(label, num, den, cm) {
+    if (!(den > 0)) return '';
+    var v = Math.max(0, Math.min(100, num / den));
+    return label + ' ' + v.toFixed(2) + '% — duration-weighted over ' + (cm ? cm.total : 0) +
+      ' activit' + ((cm && cm.total === 1) ? 'y' : 'ies') +
+      (cm && cm.prog != null ? ' · ' + cm.done + ' complete, ' + cm.prog + ' in progress' : '');
+  }
   // POC/IBB cell block shared by the WBS-summary and task branches. For summaries the values
   // are the _costMap roll-ups (sums + duration-weighted %s); for tasks they're the row's own
   // fields, with the cost cells inline-editable ('money' type — like 'number' but not clamped
@@ -11953,11 +11973,13 @@
     // A group row now reports the same roll-ups a WBS summary does, over its own bucket.
     if (isWbsNode(r)) {
       var cm = cmOf(r);
-      var wPoc = (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) + '%' : '';
-      var wEarn = (cm && cm.wd > 0) ? Math.round(cm.wearn / cm.wd) + '%' : '';
+      var wPoc = cm ? _rollPctTxt(cm.wpoc, cm.wdPoc) : '';
+      var wEarn = cm ? _rollPctTxt(cm.wearn, cm.wd) : '';
       function s(v) { return (cm && v) ? Fmt.money(v) : ''; }
-      var wDur = (cm && cm.wdur > 0) ? Math.round(cm.wdurE / cm.wdur * 100) + '%' : '';
-      return '<div class="ps-cell c-poc">' + wPoc + '</div><div class="ps-cell c-pct">' + wEarn + '</div><div class="ps-cell c-durpct">' + wDur + '</div>' +
+      var wDur = cm ? _rollPctTxt(cm.wdurE * 100, cm.wdur) : '';
+      return '<div class="ps-cell c-poc" title="' + esc(cm ? _rollPctTip('Planned value', cm.wpoc, cm.wdPoc, cm) : '') + '">' + wPoc + '</div>' +
+        '<div class="ps-cell c-pct" title="' + esc(cm ? _rollPctTip('Activity % complete', cm.wearn, cm.wd, cm) : '') + '">' + wEarn + '</div>' +
+        '<div class="ps-cell c-durpct" title="' + esc(cm ? _rollPctTip('Duration % complete', cm.wdurE * 100, cm.wdur, cm) : '') + '">' + wDur + '</div>' +
         '<div class="ps-cell c-cost">' + s(cm && cm.pc) + '</div>' +
         '<div class="ps-cell c-cost">' + s(cm && cm.ac) + '</div>' +
         '<div class="ps-cell c-cost">' + s(cm && cm.ev) + '</div>' +
