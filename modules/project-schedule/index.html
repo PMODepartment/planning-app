@@ -2360,6 +2360,7 @@
       <button class="pd-btn pd-btn-primary" id="ps-bl-capture" style="margin-left:14px;"><span data-ico="plus" data-ico-size="14"></span> Capture current as baseline</button>
       <button class="pd-btn" id="ps-bl-import" style="margin-left:8px;" title="Import a baseline from an Excel (OPC) export, matched to activities by Activity ID"><span data-ico="download" data-ico-size="14"></span> Import baseline (Excel)…</button>
       <input type="file" id="ps-bl-import-file" accept=".xlsx,.xls,.csv" style="display:none;" />
+      <button class="pd-btn" id="ps-bl-clear" style="margin-left:8px;" title="Empty BL Start / BL Finish / BL Cost on every activity. Unlocks Planned Duration and clears baseline variances. Saved baselines are kept."><span data-ico="x" data-ico-size="14"></span> Clear baseline from activities</button>
       <span class="ps-bulk-count" id="ps-bl-count"></span>
       <button class="ps-bulk-x" id="ps-bl-x">&#215;</button>
     </div>
@@ -10050,9 +10051,9 @@
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;">' + fieldsHtml + '</div></div>';
   }
   // Read-only computed display field (matches _gf's look; not wired to persist).
-  function _gro(label, valStr, full) {
+  function _gro(label, valStr, full, hint) {
     return '<div style="display:flex;flex-direction:column;gap:3px;' + (full ? 'grid-column:1/-1;' : '') + '"><label style="font-size:11px;color:var(--pd-muted);">' + esc(label) + '</label>' +
-      '<input class="pd-input" value="' + esc(String(valStr)) + '" readonly title="Computed" style="width:100%;box-sizing:border-box;font-size:12.5px;background:var(--pd-bg);color:var(--pd-muted);"></div>';
+      '<input class="pd-input" value="' + esc(String(valStr)) + '" readonly title="' + esc(hint || 'Computed') + '" style="width:100%;box-sizing:border-box;font-size:12.5px;background:var(--pd-bg);color:var(--pd-muted);"></div>';
   }
   // Editable date field with an EXPLICIT display value (so Start/Finish in the detail show the same
   // dispStart/dispFin the grid shows — actual → forecast → scheduled — and edit the same field).
@@ -10198,7 +10199,7 @@
         (forecastFin(r) && !r.actual_finish ? _gro('Forecast Finish', Fmt.date(forecastFin(r))) : '') +
         '<div style="grid-column:1/-1;font-size:10.5px;color:var(--pd-muted);margin-top:2px;">Tip: right-click a Start/Finish cell to actualize / un-actualize (works on multiple selected rows).</div>') +
       _gGroup('Duration & Float',
-        (_durLocked(r) ? _gro('Planned Duration (d)', _origDurOf(r) + ' — baseline (locked)') : _gfPdur(r)) +
+        (_durLocked(r) ? _gro('Planned Duration (d)', _origDurOf(r) + ' — baseline (locked)', false, 'Fixed by the baseline. To edit it: Actions › Baselines › Clear baseline from activities.') : _gfPdur(r)) +
         _gro('Actual Duration (d)', dd(actualDurLive(r))) +
         _gf('Remaining Duration (d)', 'remaining_duration', 'num', r) +
         _gro('At Completion', dd(_atCompletion(r))) +
@@ -13275,7 +13276,12 @@
   function _auditSummary(a) {
     if (a.action === 'insert') return 'Added activity';
     if (a.action === 'delete') return 'Deleted activity';
-    if (a.action === 'reschedule') return 'Rescheduled ' + ((a.changes && a.changes.count) || '') + ' activities from relationships';
+    if (a.action === 'reschedule') {
+      var _rn = (a.changes && a.changes.count) || '', _rk = (a.changes && a.changes.kind) || null;
+      if (_rk === 'baseline-cleared') return 'Cleared the baseline from ' + _rn + ' activities';
+      if (_rk === 'data-date-retained') return 'Moved ' + _rn + ' un-started activities to the data date';
+      return 'Rescheduled ' + _rn + ' activities from relationships';
+    }
     var c = a.changes || {}, ks = Object.keys(c); if (!ks.length) return '—';
     return ks.map(function (k) { return '<b>' + esc(_auditFieldLabel(k)) + '</b>: ' + esc(_auditFmtVal(c[k].from)) + ' → ' + esc(_auditFmtVal(c[k].to)); }).join('; ');
   }
@@ -13356,6 +13362,30 @@
     hideLoading();
     if (res.error) { UI.toast('Import failed: ' + res.error.message + ' — run the schedule-baselines migration.', 'error'); return; }
     UI.toast('Baseline imported (' + n + ' activities matched by ID). Set it primary to apply.', 'success'); loadBaselines();
+  }
+  // Clear the baseline DATES from the activities (BL0), which is what unlocks Planned Duration and
+  // clears the variance columns. Distinct from deleting a baseline SNAPSHOT: the snapshot is a saved
+  // record and stays, this is the stamp it applied to the live rows.
+  // ⚠️ bl_cost goes too. setPrimaryBaseline writes bl_start/bl_finish/bl_cost as one act, so
+  // clearing two of the three would leave a cost variance measured against a baseline whose dates no
+  // longer exist — a half-cleared baseline is harder to reason about than either state.
+  async function clearBaselineDates() {
+    if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
+    var n = rows.filter(function (r) { return !isWbs(r) && (r.bl_start || r.bl_finish || r.bl_cost != null); }).length;
+    if (!n) { UI.toast('No activity carries baseline dates — nothing to clear.', 'info'); return; }
+    if (!confirm('Clear the baseline from ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '?\n\n' +
+      'BL Start, BL Finish and BL Cost are emptied, which unlocks Planned Duration and clears the ' +
+      'baseline variance columns. The current schedule (Start / Finish) is NOT touched.\n\n' +
+      'Saved baselines are kept — you can re-apply one with "Set primary" at any time.')) return;
+    showLoading('Clearing baseline…');
+    // One filtered write for the whole project: the same value is going to every row.
+    var res = await sb().from(TABLE).update({ bl_start: null, bl_finish: null, bl_cost: null }).eq('project_id', pid);
+    if (!res.error) await sb().from('schedule_baselines').update({ is_primary: false }).eq('project_id', pid);
+    hideLoading();
+    if (res.error) { UI.toast('Could not clear the baseline: ' + res.error.message, 'error'); return; }
+    logAudit(null, 'reschedule', { count: n, kind: 'baseline-cleared' });
+    UI.toast('Baseline cleared from ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '. Planned Duration is editable again.', 'success');
+    await load(); loadBaselines();
   }
   async function setPrimaryBaseline(id) {
     var b = _bls.find(function (x) { return x.id === id; }); if (!b) return;
@@ -23233,6 +23263,7 @@
     document.getElementById('ps-audit-back').onclick = function (e) { if (e.target === this) closeAudit(); };
     document.getElementById('ps-baselines').onclick = function () { aMenu.classList.remove('open'); openBaselines(); };
     document.getElementById('ps-bl-capture').onclick = captureBaseline;
+    document.getElementById('ps-bl-clear').onclick = clearBaselineDates;
     (function () {
       var ib = document.getElementById('ps-bl-import'), ibf = document.getElementById('ps-bl-import-file');
       if (ib && ibf) {
