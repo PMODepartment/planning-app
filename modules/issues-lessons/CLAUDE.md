@@ -1,5 +1,70 @@
 # Module: issues-lessons
 
+## Minutes of Meeting moved IN from the Project Schedule (2026-08-20) — fmlozano
+
+Owner: *"There is a minutes of the meeting within the project schedule module. Let's move this
+out and connect it to issues and concerns module. Lessons Learned, departments can also add
+issues."* A meeting's action items are chased as entries in THIS register, so the minutes now
+sit beside it: a third topbar screen — **Issues & Concerns | Lessons Learned | Minutes of
+Meeting** — reading the same `meeting_minutes` / `mom_items` tables. **No migration.**
+
+### What the move actually bought
+- ⚠️ **The linked issue is read out of `rows`**, the register this module already holds, so there
+  is no second fetch of `issues_lessons` and no second copy of a status to drift. The schedule
+  module had to fetch them separately (`MOM_ISSUES`) precisely because it did not own the
+  register; that whole round-trip is gone.
+- **A raised action appears in the register immediately** — the new row is pushed into `rows` and
+  the filter options refreshed, instead of making the planner reload to find what they just filed.
+- The action item's status pill now shows the **register's** status, not the action's own, because
+  the register is what owns it after raising.
+
+### What was deliberately preserved
+- **Still one-way.** Raising COPIES the action into the register and links the two; from then on
+  the register is authoritative and the minute keeps saying what the meeting said.
+- **Raising is idempotent** (button rendered only when `issue_id` is null, re-checked before the
+  write), the **insert happens before the link** (a link written first + a failed insert = an
+  action that reads "Raised" while nobody chases it), and a failed *link* leaves the action
+  honestly unraised with a warning to check for a duplicate.
+- ⚠️ `mom_items.status` and `issues_lessons.status` are **not the same list** — In Progress
+  translates to On Hold on the way across. Tested as a table: Open→Open, In Progress→On Hold,
+  Closed→Closed, blank→Open.
+- Deleting an action or the whole minutes never deletes an issue already raised, and both
+  confirmations say so.
+
+### Two things that had to change with the address
+- ⚠️ **The activity picker searches the server.** The schedule module could offer a `<datalist>`
+  over its own loaded rows; this module does not own the schedule and must not pull 40k
+  activities into a side screen. And a datalist could not have served it anyway — it filters on
+  each option's VALUE (which has to be the `activity_id` we store), so typing part of a NAME
+  would match nothing (the trap documented when the drawing register's picker was built). It is
+  now an `ilike` on id **and** name, capped at 25 with a "keep typing to narrow" note, debounced
+  250ms, WBS summaries excluded. ⚠️ PostgREST's `or()` is comma/paren delimited, so those
+  characters are stripped from the term or they would corrupt the filter instead of being searched.
+- ⚠️ **`canMinutes` (planner+) mirrors the RLS, and that is the database talking, not a
+  preference:** `meeting_minutes` / `mom_items` are written under `is_planner()`. A department
+  user gets the minutes read-only — same fields, disabled, tinted — with a note pointing them at
+  the Issues & Concerns screen, where **`canAdd` still lets any approved non-viewer raise an
+  issue** (D1, unchanged). Handing them a Save or Raise button whose write the DB refuses is the
+  exact mistake D1 fixed for issues. **If departments should be able to record minutes too, that
+  is an RLS change (`is_writer()` + own-rows), not a UI one — flagged, not taken.**
+
+### Verified
+- **79 checks green** against the MOM section **sliced verbatim out of the shipped `module.js`**
+  (the slice asserts all eleven functions are present, so it cannot silently test nothing):
+  keyset paging via `PDb.selectAll`, display order with blanks last, the load-error path naming
+  the migration, all four status translations, the four raise failure modes, idempotency, the
+  empty-action refusal, the `or()` sanitiser, the picker's min-length/WBS/limit rules, the
+  name-cache, escaping, and `momReset` on a project switch.
+- **Real browser, 8 combos** (planner/read-only × desktop/phone × light/dark) against the shipped
+  CSS: two panes at 1280 (260px list), stacked at 375, no page h-scroll, the action grid scrolling
+  inside its own box, and the read-only render carrying **no** write control and 13 disabled fields.
+- ⚠️ **One real defect found by measuring, not by reading:** at 375px the detail pane came out
+  **1123px wide** and gave the whole page a horizontal scroll — turning the flex row into a column
+  left `align-items:flex-start` sizing each pane to its content, and `min-width:0` does not
+  constrain a column item. Fixed with `align-items:stretch` + an explicit width.
+- ⚠️ **Not verified signed-in** — no live click-through of a real raise against the live tables.
+  Assets `module.css/js?v=20260820a`.
+
 ## Live collaboration + offline (Phase 1 & 2) (2026-07-26) — fmlozano
 Same "◑ register" recipe as risk-register (see that module's CLAUDE.md): presence (`#il-presence`),
 row-level cursor on Edit-modal open (`wireModalCursor`/`paintRemote`), live rows via postgres_changes,

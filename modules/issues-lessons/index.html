@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260819c" />
-  <link rel="stylesheet" href="module.css?v=20260819b" />
+  <link rel="stylesheet" href="module.css?v=20260820a" />
 </head>
 <body>
   <div class="pd-app">
@@ -29,6 +29,7 @@
         <div class="il-tabs" role="tablist">
           <button class="il-tab active" data-screen="issues">Issues &amp; Concerns</button>
           <button class="il-tab" data-screen="lessons">Lessons Learned</button>
+          <button class="il-tab" data-screen="mom">Minutes of Meeting</button>
         </div>
 
         <!-- Tool cluster beside the profile: one labelled primary + icon tools -->
@@ -93,6 +94,22 @@
           <div class="il-kpis il-kpis-2" id="il-lkpis"></div>
           <div id="il-lessons-view"></div>
         </div>
+
+        <!-- ================= Minutes of Meeting ================= -->
+        <!-- Moved here out of the Project Schedule module: a meeting's action items
+             become entries in THIS register, so the minutes belong beside it. -->
+        <div id="il-screen-mom" hidden>
+          <div class="il-lead pd-card">
+            <span class="il-lead-ico" data-ico="clipboard" data-ico-size="20"></span>
+            <div>
+              <strong>Minutes of Meeting.</strong>
+              <span class="il-lead-sub">The record of what was said, plus the action items it produced.
+              <em>Raise</em> an action item to put it in the Issues &amp; Concerns register and link the two —
+              after that the register is where it is chased, and these minutes keep saying what the meeting said.</span>
+            </div>
+          </div>
+          <div id="il-mom-view"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -106,7 +123,7 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260819b"></script>
+  <script src="module.js?v=20260820a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

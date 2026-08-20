@@ -13,6 +13,11 @@
 //               date_presented / date_resolved / lesson_learned /
 //               lesson_category / recommendation
 // Days Aging is DERIVED in the app (0 when Closed, else today − date_presented).
+//
+// A THIRD screen, Minutes of Meeting, was moved here out of the Project Schedule
+// module (tables `meeting_minutes` / `mom_items`): a meeting's action items are
+// chased as entries in THIS register, so the minutes belong beside it. See the
+// MINUTES OF MEETING section at the foot of this file.
 // ============================================================================
 
 window.IssuesLessons = (function () {
@@ -27,12 +32,19 @@ window.IssuesLessons = (function () {
   var canAdd = false;      // any approved non-viewer may raise an issue
   var isSteward = false;   // planner+ — may edit anyone's, and may delete
   var canWrite = false;    // kept as "can do SOMETHING here", for the toolbar
+  // ⚠️ Minutes are PLANNER-AUTHORED, and that is the RLS talking, not a preference:
+  // `meeting_minutes` / `mom_items` are written under `is_planner()`
+  // (migrations/2026-08-19-duration-scenarios-and-mom.sql). Mirrored here so a
+  // department user is never handed a Save or a Raise button whose write the database
+  // will refuse — the same mistake D1 fixed for issues. It does NOT narrow who may add
+  // an ISSUE: that is `canAdd`, and any approved non-viewer still has it.
+  var canMinutes = false;  // planner+ — may record minutes and raise their actions
   var rows = [];
   var MOM_BY_ID = {};                  // meeting_minutes referenced by these issues (C4)
-  var screen = 'issues';               // 'issues' | 'lessons'
-  // "This came out of a meeting." Read-only here on purpose: the minutes are the record
-  // of what was said and belong to the Project Schedule module — this register owns how
-  // the issue is chased, not where it came from.
+  var screen = 'issues';               // 'issues' | 'lessons' | 'mom'
+  // "This came out of a meeting." The tag is read-only in the log: the minute is the
+  // record of what was said, this register owns how the issue is chased. Both now live
+  // in this module (the Minutes of Meeting screen), but they stay separate records.
   // Who may edit THIS row. A department maintains its own entries; a planner
   // maintains the register. ⚠️ A row with no `created_by` (imported, or predating the
   // stamp) is steward-only — there is no way to know whose it was, and guessing would
@@ -121,6 +133,7 @@ window.IssuesLessons = (function () {
     isSteward = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0;
     canAdd = !!prof && prof.status === 'approved' && prof.role !== 'viewer';
     canWrite = canAdd;
+    canMinutes = isSteward;
 
     await loadProjects();
     wire();
@@ -150,7 +163,9 @@ window.IssuesLessons = (function () {
       var opt = this.options[this.selectedIndex];
       projName = opt ? opt.textContent : '';
       if (pid) sessionStorage.setItem('pd_project', pid);
+      momReset();          // minutes belong to a project — never carry them across a switch
       load();
+      if (screen === 'mom') renderMom();
       joinCollab();
     };
 
@@ -192,14 +207,19 @@ window.IssuesLessons = (function () {
     };
 
     $('il-new').onclick = function () { openForm(null); };
-    $('il-refresh').onclick = function () { load(); };
+    $('il-refresh').onclick = function () {
+      if (screen === 'mom') { momReset(); renderMom(); }   // renderMom re-fetches when unloaded
+      load();
+    };
   }
 
   function switchScreen(s) {
     screen = s;
     $('il-screen-issues').hidden = s !== 'issues';
     $('il-screen-lessons').hidden = s !== 'lessons';
-    $('il-screen-title').textContent = s === 'lessons' ? 'Lessons Learned' : 'Issues & Concerns';
+    $('il-screen-mom').hidden = s !== 'mom';
+    $('il-screen-title').textContent =
+      s === 'lessons' ? 'Lessons Learned' : (s === 'mom' ? 'Minutes of Meeting' : 'Issues & Concerns');
     Array.prototype.forEach.call(document.querySelectorAll('.il-tab[data-screen]'), function (b) {
       b.classList.toggle('active', b.dataset.screen === s);
     });
@@ -284,7 +304,9 @@ window.IssuesLessons = (function () {
   }
 
   function render() {
-    if (screen === 'lessons') renderLessons(); else renderIssues();
+    if (screen === 'mom') renderMom();
+    else if (screen === 'lessons') renderLessons();
+    else renderIssues();
     if (window.Icons && Icons.hydrate) Icons.hydrate($('il-screen-' + screen));
     paintRemote();
   }
@@ -594,6 +616,460 @@ window.IssuesLessons = (function () {
     var res = await sb().from(TABLE).delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     UI.toast('Deleted', 'ok'); load();
+  }
+
+
+  // ==========================================================================
+  // MINUTES OF MEETING — moved here out of the Project Schedule module
+  // --------------------------------------------------------------------------
+  // WHY IT LIVES HERE NOW: a meeting produces two different kinds of thing and they
+  // must not be collapsed into one — a RECORD of what was said (which stays true
+  // forever, whatever happens next) and ACTION ITEMS, which have an owner, a due date
+  // and a life of their own. The actions are chased in THIS register, so the minutes
+  // belong beside it rather than inside the schedule.
+  //
+  // ⚠️ STILL ONE-WAY, AND DELIBERATELY SO. Raising an action item COPIES it into the
+  // register and links the two; from that moment the register is authoritative for how
+  // the issue is chased, and the minute keeps saying what the meeting said. Two-way
+  // sync would mean two places both claiming to own a status, and the answer to "why
+  // did this close?" would depend on which screen you happened to open.
+  //
+  // ⚠️ THE ONE REAL GAIN FROM THE MOVE: the linked issue is read straight out of
+  // `rows` — this module already holds the register for this project — so there is no
+  // second fetch of `issues_lessons` and no second copy of an issue's status to drift.
+  // The schedule module had to fetch them separately because it did not own the register.
+  //
+  // ⚠️ `schedule_activity_id` is KEPT (existing minutes carry it) but is now searched
+  // against the server, never listed. This module does not own the schedule and must
+  // not pull 40k activities into a side screen; and a <datalist> could not have served
+  // it anyway — a datalist filters on each option's VALUE, which has to be the
+  // activity_id we store, so typing part of a NAME would match nothing (the same trap
+  // documented when the drawing register's activity picker was built).
+  // ==========================================================================
+  var MOMS = [], MOM_ITEMS = [], _momSel = null, _momErr = '', _momLoaded = false;
+  var MOM_ACT_NAME = {};        // activity_id -> activity_name, resolved on demand
+  var _momActTimer = null;      // debounce for the activity search
+  var _momDocClick = null;      // the one outside-click handler for the picker
+  var MOM_STATUSES = ['Open', 'In Progress', 'Closed'];   // mom_items' own CHECK list
+
+  function momReset() {
+    MOMS = []; MOM_ITEMS = []; _momSel = null; _momErr = ''; _momLoaded = false;
+    MOM_ACT_NAME = {};   // activity ids are project-scoped — this cache is too
+  }
+
+  // ⚠️ Loaded on first open of this screen, not with the register: most sessions never
+  // look at the minutes, and two extra round-trips on every project switch is a cost
+  // paid by everyone for a screen few open.
+  async function loadMoms() {
+    _momLoaded = true;
+    if (!pid) { MOMS = []; MOM_ITEMS = []; return; }
+    // ⚠️ Keyset-paginated (PDb.selectAll): a plain .select() truncates at 1000 rows
+    // server-side with no error, and both of these accumulate for the life of the
+    // project — one row per meeting, and one per action item on every meeting.
+    try {
+      MOMS = await PDb.selectAll('meeting_minutes', function (q) { return q.eq('project_id', pid); });
+      MOM_ITEMS = await PDb.selectAll('mom_items', function (q) { return q.eq('project_id', pid); });
+      _momErr = '';
+    } catch (e) {
+      MOMS = []; MOM_ITEMS = [];
+      _momErr = (e && e.message) || 'load failed';
+      return;
+    }
+    // selectAll returns id order — the display order is applied here.
+    MOMS.sort(function (a, b) {                       // meeting_date desc, blanks last
+      var x = a.meeting_date || '', y = b.meeting_date || '';
+      if (!x !== !y) return x ? -1 : 1;
+      if (x !== y) return y.localeCompare(x);
+      return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+    });
+    MOM_ITEMS.sort(function (a, b) {
+      return (a.seq || 0) - (b.seq || 0) ||
+        String(a.created_at || '').localeCompare(String(b.created_at || ''));
+    });
+    // The log's "From MOM" tag reads MOM_BY_ID. Now that the real minutes are in hand,
+    // feed it from them rather than leaving it on the narrower fetch load() does.
+    MOMS.forEach(function (m) { MOM_BY_ID[m.id] = m; });
+  }
+
+  function momItemsOf(id) { return MOM_ITEMS.filter(function (x) { return x.mom_id === id; }); }
+  // The register this module already loaded IS the source of truth for a raised issue.
+  function momIssueOf(item) {
+    return item.issue_id && rows.find(function (x) { return x.id === item.issue_id; });
+  }
+  function momToday() {
+    // Local date, not toISOString().slice(0,10) — east of Greenwich that is yesterday.
+    var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+
+  // ------------------------------------------------------------------ render ---
+  function renderMom() {
+    var host = $('il-mom-view'); if (!host) return;
+    if (!pid) {
+      host.innerHTML = '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">Select a project to see its minutes.</div>';
+      return;
+    }
+    if (!_momLoaded) {
+      host.innerHTML = '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">Loading minutes…</div>';
+      loadMoms().then(renderMom);   // _momLoaded is already true, so this cannot loop
+      return;
+    }
+    var cur = MOMS.find(function (x) { return x.id === _momSel; }) || null;
+    host.innerHTML =
+      (canMinutes ? '' : '<p class="il-mom-note">You can read the minutes of this project. ' +
+        'Recording minutes and raising their action items is a planner action — raising an ' +
+        'issue of your own is on the <b>Issues &amp; Concerns</b> screen.</p>') +
+      '<div class="il-mom-wrap"><div class="il-mom-list">' +
+        '<div class="il-mom-head">Meetings <span>' + MOMS.length + '</span></div>' +
+        (MOMS.length ? MOMS.map(function (x) {
+          var items = momItemsOf(x.id);
+          var open = items.filter(function (i) { return i.status !== 'Closed'; }).length;
+          return '<button class="il-mom-item' + (cur && cur.id === x.id ? ' on' : '') + '" data-mom="' + Fmt.esc(x.id) + '">' +
+            Fmt.esc(x.title || '(untitled)') +
+            '<small>' + (x.meeting_date ? Fmt.date(x.meeting_date) : 'no date') +
+            ' · ' + items.length + ' action' + (items.length === 1 ? '' : 's') +
+            (open ? ' · <b>' + open + ' open</b>' : '') + '</small></button>';
+        }).join('') : '<div class="il-empty" style="padding:14px;">' +
+            (_momErr ? 'Could not load minutes: ' + Fmt.esc(_momErr) +
+                       '<br><small>If this says the relation does not exist, run <code>migrations/2026-08-19-duration-scenarios-and-mom.sql</code>.</small>'
+                     : 'No minutes recorded on this project yet.') + '</div>') +
+        (canMinutes ? '<button class="pd-btn pd-btn-sm pd-btn-primary" id="il-mom-new" style="width:100%;margin-top:8px;">+ New minutes</button>' : '') +
+      '</div><div class="il-mom-detail">' +
+        (cur ? momDetailHTML(cur)
+             : '<div class="il-empty" style="padding:28px;">' +
+               (MOMS.length ? 'Pick a meeting to read it.' : 'Nothing to show yet.') + '</div>') +
+      '</div></div>';
+    wireMom();
+    if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+  }
+
+  // ⚠️ ONE detail renderer, read-only by disabling its fields rather than a second
+  // read-only markup path — two paths drift the moment either is touched, and a
+  // disabled input already reads as "you cannot change this".
+  function momDetailHTML(mom) {
+    var ro = !canMinutes, d = ro ? ' disabled' : '';
+    var items = momItemsOf(mom.id);
+    var act = mom.schedule_activity_id || '';
+    return '<div class="il-mom-detail-card">' +
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 140px;"><label>Location</label><input class="pd-input" id="il-mom-loc" value="' + Fmt.esc(mom.location || '') + '"' + d + '></div>' +
+      '</div>' +
+      '<div class="pd-field"><label>Attendees</label><input class="pd-input" id="il-mom-att" value="' + Fmt.esc(mom.attendees || '') + '" placeholder="Names, comma separated"' + d + '></div>' +
+      '<div class="pd-field il-mom-act"><label>Activity discussed ' +
+        '<small style="font-weight:400;color:var(--pd-muted);">— optional; links these minutes to a schedule activity</small></label>' +
+        '<input type="hidden" id="il-mom-act" value="' + Fmt.esc(act) + '">' +
+        '<div id="il-mom-actsel">' + momActChipHTML(act) + '</div>' +
+        (ro ? '' :
+          '<input class="pd-input pd-input-sm" id="il-mom-actq" placeholder="Search the schedule by Activity ID or name…" autocomplete="off">' +
+          '<div class="il-mom-acres" id="il-mom-acres" hidden></div>') +
+      '</div>' +
+      '<div class="pd-field"><label>Notes / discussion</label>' +
+        '<textarea class="pd-textarea" id="il-mom-notes" rows="4"' + d + '>' + Fmt.esc(mom.notes || '') + '</textarea>' +
+      '</div>' +
+
+      '<div class="il-mom-actions"><h4>Action items</h4>' +
+        '<p>An action item lives here. <b>Raise</b> it to put a copy in the Issues &amp; Concerns ' +
+        'register and link the two — after that the register is where it is chased, and these ' +
+        'minutes keep saying what the meeting said.</p>' +
+        (items.length ? '<div class="il-mom-tablewrap"><table class="pd-table">' +
+          '<thead><tr><th>Action</th><th>Owner</th><th>Due</th><th>Status</th><th>In the register</th>' +
+          (ro ? '' : '<th></th>') + '</tr></thead><tbody>' +
+          items.map(function (it) { return momItemRowHTML(it, ro, d); }).join('') +
+          '</tbody></table></div>'
+          : '<div class="il-empty" style="padding:14px;">No action items on these minutes.</div>') +
+        (ro ? '' : '<button class="pd-btn pd-btn-sm" id="il-mom-additem" style="margin-top:8px;">+ Add action item</button>') +
+      '</div>' +
+
+      (ro ? '' :
+        '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;">' +
+          '<button class="pd-btn pd-btn-sm pd-btn-danger" id="il-mom-del">Delete minutes…</button>' +
+          '<div style="flex:1;"></div>' +
+          '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-mom-save">Save minutes</button></div>') +
+    '</div>';
+  }
+
+  function momItemRowHTML(it, ro, d) {
+    var iss = momIssueOf(it);
+    return '<tr data-item="' + Fmt.esc(it.id) + '">' +
+      '<td><input class="pd-input pd-input-sm il-mi" data-f="description" value="' + Fmt.esc(it.description || '') + '"' + d + '></td>' +
+      '<td><input class="pd-input pd-input-sm il-mi" data-f="owner" value="' + Fmt.esc(it.owner || '') + '"' + d + '></td>' +
+      '<td><input class="pd-input pd-input-sm il-mi" data-f="due_date" type="date" value="' + dateVal(it.due_date) + '"' + d + '></td>' +
+      '<td><select class="pd-select pd-input-sm il-mi" data-f="status"' + d + '>' +
+        MOM_STATUSES.map(function (o) { return '<option' + (it.status === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
+      '</select></td>' +
+      '<td>' + (it.issue_id
+        // The status shown is the REGISTER's, read from `rows` — the minute does not keep
+        // its own copy of it, so the two can never disagree.
+        ? (iss
+            ? '<span class="il-pill ' + statusClass(iss.status) + '" title="' + Fmt.esc(iss.description || '') + '">Raised · ' + Fmt.esc(iss.status || 'Open') + '</span>'
+            // Linked, but not in the loaded register — say only what is known rather than
+            // colouring it with a status we do not have.
+            : '<span style="font-size:12px;color:var(--pd-muted);" title="Raised in the register">Raised</span>')
+        : (ro ? '<span class="il-noedit" title="A planner raises an action item into the register">—</span>'
+              : '<button class="pd-btn pd-btn-sm il-mi-raise">Raise as issue</button>')) + '</td>' +
+      (ro ? '' : '<td><button class="pd-btn pd-btn-sm pd-btn-danger il-mi-del" title="Remove this action">✕</button></td>') +
+    '</tr>';
+  }
+
+  function momActChipHTML(id) {
+    if (!id) return '<span style="font-size:12px;color:var(--pd-muted);">Not linked to an activity.</span>';
+    var nm = MOM_ACT_NAME[id];
+    return '<span class="il-mom-chip"><code>' + Fmt.esc(id) + '</code>' +
+      '<span id="il-mom-actname">' + (nm ? Fmt.esc(nm) : '') + '</span>' +
+      (canMinutes ? '<button type="button" id="il-mom-actclear" title="Unlink">✕</button>' : '') + '</span>';
+  }
+
+  // ------------------------------------------------------- activity search ----
+  // Server-side, capped, and it says when it capped. A schedule can hold 40k
+  // activities; this screen must not load them to offer a picker.
+  async function momActSearch(q) {
+    // ⚠️ PostgREST's or() is comma/parenthesis delimited, so those characters in the
+    // query would corrupt the filter rather than search for themselves.
+    q = String(q || '').replace(/[,()%*\\]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (q.length < 2 || !pid) return null;
+    var like = '%' + q + '%';
+    var res = await sb().from('project_schedule')
+      .select('activity_id,activity_name,activity_type')
+      .eq('project_id', pid)
+      .not('activity_id', 'is', null)
+      .or('activity_id.ilike.' + like + ',activity_name.ilike.' + like)
+      .limit(26);
+    if (res.error) throw res.error;
+    // A WBS summary is not an activity anyone holds a meeting about; the schedule
+    // module's own picker excluded them too.
+    return (res.data || []).filter(function (r) { return r.activity_type !== 'WBS Summary'; });
+  }
+
+  async function momResolveActName(id) {
+    if (!id || MOM_ACT_NAME[id] !== undefined) return;
+    try {
+      var res = await sb().from('project_schedule').select('activity_name')
+        .eq('project_id', pid).eq('activity_id', id).limit(1);
+      MOM_ACT_NAME[id] = (res && !res.error && res.data && res.data[0] && res.data[0].activity_name) || '';
+    } catch (e) { MOM_ACT_NAME[id] = ''; }
+    // ⚠️ Patch the chip in place instead of re-rendering: a re-render here would throw
+    // away whatever the planner has typed into the form while this was in flight.
+    var el = $('il-mom-actname');
+    if (el && $('il-mom-act') && $('il-mom-act').value === id) el.textContent = MOM_ACT_NAME[id] ? '· ' + MOM_ACT_NAME[id] : '';
+  }
+
+  // -------------------------------------------------------------- persist -----
+  async function momSaveHeader() {
+    var mom = MOMS.find(function (x) { return x.id === _momSel; });
+    if (!mom || !canMinutes) return false;
+    var g = function (id) { var e = $(id); return e ? e.value : ''; };
+    var payload = {
+      title: g('il-mom-title').trim() || '(untitled)',
+      meeting_date: g('il-mom-date') || null,
+      location: g('il-mom-loc').trim() || null,
+      attendees: g('il-mom-att').trim() || null,
+      notes: g('il-mom-notes').trim() || null,
+      schedule_activity_id: g('il-mom-act').trim() || null,
+    };
+    try {
+      var u = await sb().from('meeting_minutes').update(payload).eq('id', mom.id);
+      if (u.error) throw u.error;
+      Object.assign(mom, payload);
+      return true;
+    } catch (e) { UI.toast(e.message, 'error'); return false; }
+  }
+
+  // Action-item edits save on change, one field at a time — a planner typing into a
+  // table expects it to stick, and a single Save that silently covers the header AND
+  // every row is how a half-typed action gets written.
+  async function momSaveItem(id, patch) {
+    try {
+      var u = await sb().from('mom_items').update(patch).eq('id', id);
+      if (u.error) throw u.error;
+      var it = MOM_ITEMS.find(function (x) { return x.id === id; });
+      if (it) Object.assign(it, patch);
+      return true;
+    } catch (e) { UI.toast(e.message, 'error'); return false; }
+  }
+
+  // ⚠️ Raising is IDEMPOTENT by construction: the button is only rendered when
+  // `issue_id` is null, and this re-checks before writing. Raising the same action
+  // twice would put two competing issues in the register with no way to tell which one
+  // anybody is working.
+  async function momRaiseIssue(itemId) {
+    var it = MOM_ITEMS.find(function (x) { return x.id === itemId; });
+    if (!it || !canMinutes) return;
+    if (it.issue_id) { UI.toast('Already raised — it is on the Issues & Concerns screen.', 'info'); return; }
+    if (!String(it.description || '').trim()) { UI.toast('Describe the action before raising it.', 'warn'); return; }
+    var mom = MOMS.find(function (x) { return x.id === it.mom_id; }) || {};
+    // ⚠️ The register's own vocabulary, not this table's — `mom_items.status` and
+    // `issues_lessons.status` both exist and are NOT the same list (In Progress vs On Hold).
+    var st = it.status === 'Closed' ? 'Closed' : (it.status === 'In Progress' ? 'On Hold' : 'Open');
+    var payload = {
+      project_id: pid, type: 'Issue',
+      description: it.description,
+      champion: it.owner || null,
+      status: st,
+      date_presented: mom.meeting_date || null,
+      caused_by: mom.title ? ('Raised at: ' + mom.title) : null,
+      // Defaulted from the raiser's profile, exactly as a new issue is (D1) — the
+      // register groups by department, and it stays editable afterwards.
+      department: (profile && profile.department) || null,
+      mom_id: it.mom_id,
+      created_by: UID,
+    };
+    try {
+      var ins = await sb().from(TABLE).insert(payload).select().single();
+      if (ins.error) throw ins.error;
+      // ⚠️ Link the action to the issue only AFTER the insert succeeded. Writing the
+      // link first and failing the insert would leave an action pointing at nothing,
+      // which renders as "Raised" and hides the fact that nobody is chasing it.
+      var ok = await momSaveItem(itemId, { issue_id: ins.data.id });
+      if (!ok) throw new Error('Issue created but the link could not be saved — check Issues & Concerns for a duplicate before raising again.');
+      // The register is loaded in this very module, so show the new issue immediately
+      // rather than making the planner reload to find it.
+      rows.unshift(ins.data);
+      MOM_BY_ID[it.mom_id] = mom;
+      if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
+      populateFilterOptions();
+      UI.toast('Raised in Issues & Concerns', 'ok');
+      renderMom();
+    } catch (e) { UI.toast(e.message, 'error'); }
+  }
+
+  // ---------------------------------------------------------------- wire ------
+  function wireMom() {
+    var host = $('il-mom-view'); if (!host) return;
+    host.querySelectorAll('[data-mom]').forEach(function (b) {
+      b.onclick = function () { _momSel = b.dataset.mom; renderMom(); };
+    });
+    var nb = host.querySelector('#il-mom-new');
+    if (nb) nb.onclick = async function () {
+      try {
+        var ins = await sb().from('meeting_minutes').insert({
+          project_id: pid, title: 'Meeting ' + Fmt.date(momToday()),
+          meeting_date: momToday(), created_by: UID }).select().single();
+        if (ins.error) throw ins.error;
+        MOMS.unshift(ins.data); _momSel = ins.data.id; _momErr = ''; renderMom();
+      } catch (e) {
+        UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
+          ? 'Run migrations/2026-08-19-duration-scenarios-and-mom.sql in Supabase first.' : e.message, 'error');
+      }
+    };
+    if (!_momSel) return;
+    momResolveActName(($('il-mom-act') || {}).value);
+
+    var sv = host.querySelector('#il-mom-save');
+    if (sv) sv.onclick = async function () { if (await momSaveHeader()) { UI.toast('Minutes saved', 'ok'); renderMom(); } };
+
+    var ai = host.querySelector('#il-mom-additem');
+    if (ai) ai.onclick = async function () {
+      // The header is saved first: adding a row re-renders, and a title typed a moment
+      // ago would be thrown away by that repaint.
+      await momSaveHeader();
+      try {
+        var seq = momItemsOf(_momSel).length;
+        var ins = await sb().from('mom_items').insert({
+          mom_id: _momSel, project_id: pid, seq: seq, description: '', status: 'Open' }).select().single();
+        if (ins.error) throw ins.error;
+        MOM_ITEMS.push(ins.data); renderMom();
+      } catch (e) { UI.toast(e.message, 'error'); }
+    };
+
+    host.querySelectorAll('.il-mi').forEach(function (f) {
+      f.onchange = function () {
+        var id = f.closest('[data-item]').dataset.item, patch = {};
+        patch[f.dataset.f] = f.dataset.f === 'due_date'
+          ? (f.value || null)
+          : (f.value.trim ? f.value.trim() : f.value);
+        momSaveItem(id, patch);
+      };
+    });
+    host.querySelectorAll('.il-mi-raise').forEach(function (b) {
+      b.onclick = function () { momRaiseIssue(b.closest('[data-item]').dataset.item); };
+    });
+    host.querySelectorAll('.il-mi-del').forEach(function (b) {
+      b.onclick = async function () {
+        var id = b.closest('[data-item]').dataset.item;
+        var it = MOM_ITEMS.find(function (x) { return x.id === id; });
+        // ⚠️ Removing the action does NOT remove the issue it raised — the register is
+        // its own record and someone may already be working it. Said out loud, because
+        // the opposite is a reasonable thing to assume.
+        if (!confirm('Remove this action item?' + (it && it.issue_id
+          ? '\n\nThe issue it raised STAYS in Issues & Concerns — this only removes the line from these minutes.' : ''))) return;
+        try {
+          var dl = await sb().from('mom_items').delete().eq('id', id);
+          if (dl.error) throw dl.error;
+          MOM_ITEMS = MOM_ITEMS.filter(function (x) { return x.id !== id; });
+          renderMom();
+        } catch (e) { UI.toast(e.message, 'error'); }
+      };
+    });
+
+    var db = host.querySelector('#il-mom-del');
+    if (db) db.onclick = async function () {
+      var items = momItemsOf(_momSel), raised = items.filter(function (i) { return i.issue_id; }).length;
+      if (!confirm('Delete these minutes and their ' + items.length + ' action item(s)?' +
+        (raised ? '\n\n' + raised + ' issue(s) already raised in Issues & Concerns will REMAIN — they simply stop pointing back at a meeting.' : ''))) return;
+      try {
+        var dl = await sb().from('meeting_minutes').delete().eq('id', _momSel);
+        if (dl.error) throw dl.error;
+        MOM_ITEMS = MOM_ITEMS.filter(function (x) { return x.mom_id !== _momSel; });
+        MOMS = MOMS.filter(function (x) { return x.id !== _momSel; });
+        _momSel = null; UI.toast('Minutes deleted', 'ok'); renderMom();
+      } catch (e) { UI.toast(e.message, 'error'); }
+    };
+
+    // ---- the activity picker ----
+    var clr = host.querySelector('#il-mom-actclear');
+    if (clr) clr.onclick = function () {
+      $('il-mom-act').value = '';
+      $('il-mom-actsel').innerHTML = momActChipHTML('');
+      wireMom();
+    };
+    var q = host.querySelector('#il-mom-actq'), res = host.querySelector('#il-mom-acres');
+    if (q && res) {
+      var close = function () { res.hidden = true; res.innerHTML = ''; };
+      q.oninput = function () {
+        var term = q.value;
+        if (_momActTimer) clearTimeout(_momActTimer);
+        if (String(term).trim().length < 2) { close(); return; }
+        _momActTimer = setTimeout(async function () {
+          try {
+            var hits = await momActSearch(term);
+            if (hits === null) { close(); return; }
+            res.hidden = false;
+            res.innerHTML = hits.length
+              ? hits.slice(0, 25).map(function (r) {
+                  return '<button type="button" data-act="' + Fmt.esc(r.activity_id) + '" data-actn="' + Fmt.esc(r.activity_name || '') + '">' +
+                    '<b>' + Fmt.esc(r.activity_id) + '</b> — ' + Fmt.esc(r.activity_name || '(unnamed)') + '</button>';
+                }).join('') + (hits.length > 25 ? '<div class="il-mom-acnote">More than 25 match — keep typing to narrow.</div>' : '')
+              : '<div class="il-mom-acnote">No activity in this project matches.</div>';
+            res.querySelectorAll('[data-act]').forEach(function (b) {
+              b.onclick = function () {
+                var id = b.dataset.act;
+                MOM_ACT_NAME[id] = b.dataset.actn || '';
+                $('il-mom-act').value = id;
+                $('il-mom-actsel').innerHTML = momActChipHTML(id);
+                var nm = $('il-mom-actname'); if (nm && MOM_ACT_NAME[id]) nm.textContent = '· ' + MOM_ACT_NAME[id];
+                q.value = ''; close(); wireMom();
+              };
+            });
+          } catch (e) {
+            res.hidden = false;
+            res.innerHTML = '<div class="il-mom-acnote">Could not search the schedule: ' + Fmt.esc(e.message || 'failed') + '</div>';
+          }
+        }, 250);
+      };
+      q.onkeydown = function (e) { if (e.key === 'Escape') { close(); e.stopPropagation(); } };
+      // ⚠️ Bound ONCE for the life of the page, not per wireMom() call — wireMom runs on
+      // every render and on every picker interaction, so a listener added here would
+      // accumulate. It looks the picker up by id each time instead of closing over it.
+      if (!_momDocClick) {
+        _momDocClick = function (e) {
+          var r = $('il-mom-acres'), i = $('il-mom-actq');
+          if (r && !r.hidden && !r.contains(e.target) && e.target !== i) { r.hidden = true; r.innerHTML = ''; }
+        };
+        document.addEventListener('click', _momDocClick);
+      }
+    }
   }
 
   return { init: init };

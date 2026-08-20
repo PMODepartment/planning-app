@@ -84,6 +84,60 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-20 — Minutes of Meeting moved OUT of the schedule and into Issues & Concerns
+Owner: *"There is a minutes of the meeting within the project schedule module. Let's move this out
+and connect it to issues and concerns module. Lessons Learned, departments can also add issues."*
+The C4 feature is gone from `modules/project-schedule/` and is now a third screen in
+`modules/issues-lessons/` — **Issues & Concerns | Lessons Learned | Minutes of Meeting** — on the
+same `meeting_minutes` / `mom_items` tables. **No migration; every existing minute, action item and
+issue link is untouched.** Nothing was rewritten: the renderer, the raise-into-the-register flow and
+every ⚠️ decision comment moved with the code.
+- **Why it belongs here:** a meeting produces a RECORD of what was said and ACTION ITEMS that are
+  chased as entries in this register. The actions were always going to end up here; only the screen
+  that edits them was in the wrong module.
+- ⚠️ **The move removed a whole round-trip and a second source of truth.** The linked issue is now
+  read straight out of `rows` — the register this module already holds — so the schedule module's
+  separate `MOM_ISSUES` fetch is gone, and an action's pill shows the **register's** status rather
+  than a copy that could drift. A raised action also appears in the register immediately (pushed
+  into `rows`, filters refreshed) instead of needing a reload to find.
+- **Still one-way, on purpose.** Raising COPIES the action into the register and links the two; from
+  then on the register owns how it is chased and the minute keeps saying what the meeting said.
+  Raising stays idempotent, the insert still precedes the link, and a failed link leaves the action
+  honestly unraised. ⚠️ `mom_items.status` and `issues_lessons.status` are still **not** the same
+  list — In Progress → On Hold on the way across.
+- ⚠️ **"Departments can also add issues" was already true and stays true** — `canAdd` (any approved
+  non-viewer) has governed the register since D1, and the DB agrees (`issues_lessons_ins`). What the
+  move forced was the *other* half: `meeting_minutes` / `mom_items` are written under
+  `is_planner()`, so authoring minutes and raising their actions is planner+, mirrored in the UI as
+  `canMinutes`. A department user reads the minutes (same fields, disabled) and is pointed at the
+  Issues & Concerns screen, where they can raise their own. **Letting departments record minutes too
+  is an RLS decision (`is_writer()` + own-rows), not a UI one — flagged for the owner, not taken.**
+- ⚠️ **The activity link had to change mechanism, not disappear.** `schedule_activity_id` is kept
+  (existing minutes carry it), but this module does not own the schedule and must not pull 40k
+  activities in to offer a picker — and a `<datalist>` could not have served it anyway, since it
+  filters on each option's VALUE (the stored `activity_id`), so typing part of a NAME would match
+  nothing. It is now a server-side `ilike` on id **and** name, capped at 25 with a "keep typing"
+  note. ⚠️ PostgREST's `or()` is comma/paren delimited, so those characters are stripped from the
+  term or they corrupt the filter rather than being searched for.
+- **Verified: 79 checks green** against the MOM section **sliced verbatim from the shipped
+  `module.js`** (the slice asserts all eleven functions are present, so it cannot pass by testing
+  nothing) — paging, ordering, all four status translations, four raise failure modes, idempotency,
+  the `or()` sanitiser, the picker rules, escaping, project-switch reset. Plus **8 real-browser
+  combos** (planner/read-only × desktop/phone × light/dark) on the shipped CSS. On the removal side,
+  the `function NAME(` set diffed against the pre-change file shows **exactly 9 removed, 0 added**
+  (the standing guard against the region-replace failure mode that blanked the Gantt twice), both
+  inline scripts parse, and **0** `ps-mom` / `MOM_*` references remain.
+- ⚠️ **One real defect found by measuring, not reading:** at 375px the detail pane came out **1123px
+  wide** and gave the page a horizontal scroll — turning the flex row into a column left
+  `align-items:flex-start` sizing each pane to its content, and `min-width:0` does not constrain a
+  column item. Fixed with `align-items:stretch` + an explicit width. Two smaller ones the same way:
+  a disabled `.pd-input` is nearly indistinguishable from a live one (read-only fields are now
+  tinted), and an inline `max-width` on the action inputs set no FLOOR, so Owner was crushed to 56px
+  where it needs 83.
+- ⚠️ **Not verified signed-in** — no live click-through of a real raise. `MODULE_V` → `20260820a`
+  (a module `index.html` changed); issues-lessons `module.css/js?v=20260820a`.
+
+
 ### 2026-08-19 — sync-eng deployed; ENG_URL set; ENG_SERVICE_KEY is the last blocker
 User: *"Ran the migration"* (`migrations/2026-08-19-eng-design-progress-mirror.sql`). Followed it
 with the two deploy steps that were still outstanding from the PR #13 merge above.

@@ -1,5 +1,27 @@
 # Module: project-schedule
 
+## Minutes of Meeting REMOVED — it moved to Issues & Concerns (2026-08-20) — fmlozano
+
+Owner: *"There is a minutes of the meeting within the project schedule module. Let's move this
+out and connect it to issues and concerns module."* The whole C4 feature is gone from this
+module and now lives in `modules/issues-lessons/` as a third screen. Nothing was rewritten —
+the renderer, the raise-into-the-register flow and every ⚠️ decision comment moved with it.
+
+**Removed here:** the `mom` entry in the title switcher, `#ps-view-mom`, the eleven `.ps-mom-*`
+CSS rules, the nine functions (`loadMoms`, `momItemsOf`, `momIssue`, `renderMomView`,
+`momDetailHTML`, `momSaveHeader`, `momSaveItem`, `momRaiseIssue`, `wireMom`), the `switchTab`
+branches and the per-project reset of `MOMS`/`MOM_ITEMS`/`MOM_ISSUES`. 244 lines of script.
+
+- **No migration.** `meeting_minutes` / `mom_items` are unchanged and every existing minute,
+  action item and issue link is intact — only the screen that edits them changed address.
+- `meeting_minutes.schedule_activity_id` stays, so minutes still point at an activity in THIS
+  schedule; the register resolves it by a server-side search rather than by holding the schedule.
+- **Verified:** the removal is exactly the nine functions and nothing else — the
+  `function NAME(` set diffed against the pre-change file shows **9 removed, 0 added** (the
+  standing check for the region-replace failure mode that blanked the Gantt twice), inline
+  script parses, and **0** references to `ps-mom` / `ps-view-mom` / `MOM_*` remain.
+- ⚠️ `MODULE_V` → `20260820a`: a module `index.html` changed, so the cached copy must not survive.
+
 ## Towers: a WBS level, a location tag, and a stacking filter (2026-08-20) — eprobles
 
 Multi-tower projects pushed five towers' floors into **one** flat floor list, because

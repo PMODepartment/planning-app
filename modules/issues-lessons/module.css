@@ -248,3 +248,95 @@
   .il-kpis, .il-kpis-2 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .il-lessons { grid-template-columns: 1fr; }
 }
+
+/* =========================================================================
+   MINUTES OF MEETING — moved here out of the Project Schedule module.
+   A meeting produces two things and the layout keeps them apart: the RECORD
+   (left list + header fields) and its ACTION ITEMS (the boxed table), which is
+   the half that can be raised into the register.
+   ========================================================================= */
+.il-mom-wrap { display: flex; gap: 14px; align-items: flex-start; }
+.il-mom-list { flex: 0 0 260px; }
+.il-mom-detail { flex: 1 1 auto; min-width: 0; }
+.il-mom-head {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--pd-muted); margin: 0 0 6px;
+}
+.il-mom-head span { color: var(--pd-ink); }
+.il-mom-item {
+  display: block; width: 100%; text-align: left; background: var(--pd-card);
+  border: 1px solid var(--pd-line); border-radius: 8px; padding: 8px 10px;
+  margin-bottom: 6px; cursor: pointer; font-size: 13px; color: var(--pd-ink);
+}
+.il-mom-item:hover { border-color: var(--pd-red-mid); }
+.il-mom-item.on { border-color: var(--pd-red); background: var(--pd-red-light); }
+.il-mom-item small { display: block; color: var(--pd-muted); font-size: 11px; margin-top: 2px; }
+.il-mom-detail-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px; padding: 14px 16px; }
+.il-mom-actions {
+  border: 1px solid var(--pd-line); border-radius: 8px; padding: 10px 12px;
+  margin-top: 12px; background: var(--pd-bg);
+}
+.il-mom-actions h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--pd-muted); }
+.il-mom-actions p { margin: 0 0 8px; font-size: 12px; color: var(--pd-muted); }
+.il-mom-actions td { vertical-align: middle; }
+/* The action table is an editable grid — it scrolls inside its own box rather
+   than widening the page (same call as the two editable registers). */
+.il-mom-tablewrap { overflow-x: auto; }
+/* The action text is the column that matters, so it takes the slack — but the
+   others must keep their natural width or the inputs get crushed to "R. Lo" / "In".
+   nowrap + a min-width that fits every column is what holds them. */
+.il-mom-actions table { min-width: 760px; }
+/* width:100% on the first cell is the table-layout way of saying "take whatever
+   slack is left" — the other columns are nowrap with their own floors, so the
+   action text gets the remainder and never less than 240px. */
+.il-mom-actions td:first-child, .il-mom-actions th:first-child { width: 100%; }
+.il-mom-actions td:first-child .pd-input { width: 100%; min-width: 190px; }
+.il-mom-actions td:not(:first-child), .il-mom-actions th:not(:first-child) { white-space: nowrap; }
+/* A FLOOR, not a ceiling: an inline max-width let the browser crush Owner to 56px
+   (it needs 83) once the first column claimed 40%. */
+.il-mom-actions td:nth-child(2) .pd-input { min-width: 120px; }
+.il-mom-actions td:nth-child(3) .pd-input { min-width: 148px; }
+.il-mom-actions td:nth-child(4) .pd-select { min-width: 128px; }
+
+/* Activity picker: this module does not own the schedule, so the field searches
+   the server instead of listing every activity. */
+.il-mom-act { position: relative; }
+.il-mom-acres {
+  position: absolute; z-index: 40; left: 0; right: 0; top: 100%; margin-top: 2px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.14); max-height: 240px; overflow-y: auto;
+}
+.il-mom-acres button {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  border-bottom: 1px solid var(--pd-line); padding: 7px 10px; cursor: pointer;
+  font-size: 12.5px; color: var(--pd-ink);
+}
+.il-mom-acres button:last-child { border-bottom: 0; }
+.il-mom-acres button:hover { background: var(--pd-bg); }
+.il-mom-acres button b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.il-mom-acres .il-mom-acnote { padding: 6px 10px; font-size: 11px; color: var(--pd-muted); }
+.il-mom-chip {
+  display: inline-flex; align-items: center; gap: 6px; background: var(--pd-bg);
+  border: 1px solid var(--pd-line); border-radius: 999px; padding: 3px 6px 3px 10px;
+  font-size: 12px; margin-bottom: 4px;
+}
+.il-mom-chip code { font-size: 11.5px; }
+.il-mom-chip button { background: none; border: 0; cursor: pointer; color: var(--pd-muted); font-size: 13px; line-height: 1; padding: 2px 4px; }
+.il-mom-chip button:hover { color: var(--pd-red); }
+.il-mom-note { font-size: 12px; color: var(--pd-muted); margin: 0 0 10px; }
+/* A disabled .pd-input is almost indistinguishable from a live one, so the
+   read-only minutes get a tinted field. The text stays at full contrast — the
+   point of the screen is reading it. */
+.il-mom-detail-card :disabled { background: var(--pd-bg); opacity: 1; cursor: default; }
+
+@media (max-width: 820px) {
+  /* Stack the two panes: a 260px list beside a form is unusable on a narrow screen.
+     ⚠️ `align-items` MUST be reset with the direction. Turning a row into a column
+     leaves `align-items:flex-start` sizing each pane to its own CONTENT on the cross
+     axis, and `min-width:0` does not constrain a column item — measured at 375px the
+     detail pane came out 1123px wide and gave the whole page a horizontal scroll.
+     Stretch + an explicit width is what actually holds it to the viewport. */
+  .il-mom-wrap { flex-direction: column; align-items: stretch; }
+  .il-mom-list, .il-mom-detail { flex: 0 0 auto; width: 100%; max-width: 100%; }
+  .il-mom-detail-card { padding: 12px; }
+}
