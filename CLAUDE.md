@@ -84,6 +84,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-20 — Activities link to procurement work packages; need-by pushed back to the WPM app
+Owner: *"The activities should have a connection for which procurement work package it's connected to.
+Currently there is a work package field per field."* Then: *"The need-by will be the installation date
+field in the prc app."*
+- ⚠️ **`project_schedule.work_package` pointed at nothing.** Plain text, hand-typed, read by the
+  grouping dimension / search / Global Change — with no validation and no relationship to WPM. And
+  unusable rather than merely unvalidated: WPM strips its prefixes, so the values are bare ordinals
+  (`'1'`, `'12'`, `'147'`) nobody types from memory. The importers never mapped the column either.
+- **Repurposed rather than replaced** (owner's call), so **no Planners migration**: the column now
+  holds a WPM `wp_no`, chosen from a picker sourced from the existing `wpm_work_packages` mirror and
+  grouped by trade. Grouping labels, search and the filter all resolve the description through the
+  mirror at read time. ⚠️ **Budget columns are deliberately not loaded** — Cash Flow is where
+  procurement money is reported (ROADMAP E1), and the schedule must not hold it where a picker,
+  report or export could leak it.
+- ⚠️ **An unresolved value is flagged as UNLINKED, never blanked** — legacy text and a package that
+  has left WPM are different problems, and both must be visible. The picker keeps the current value as
+  an option even when it resolves to nothing, because **a `<select>` whose value is absent from its
+  options reads back as `''`** and would silently wipe the link on the next unrelated edit.
+- **Need-by = the earliest start among a package's linked activities**, compared against WPM's
+  **Target Installation** per the owner. Drives three new Health checks and a **Procurement Alignment**
+  report (need-by vs target install, worst slip first). ⚠️ Packages with no linked activity are listed
+  too — dropping them would make an unlinked schedule look perfectly aligned.
+- **Write-back:** new Edge Function `supabase/functions/push-need-by` + a new `planners_need_by` table
+  in the **WPM** project (`wpm/MIGRATION_planners_need_by.sql`). ⚠️ **It does NOT write
+  `work_packages.target_installation`** — that field is procurement-owned; one app silently overwriting
+  another team's authoritative dates is unrecoverable and unauditable. The schedule proposes, the buyer
+  adopts via a *Use this date* button that only fills the input. Keyset-paginated (a plain select would
+  compute the whole project's need-by dates from its first 1000 activities), and it prunes — but a push
+  computing zero rows does not wipe the table.
+- ⚠️ The function reimplements the need-by rule server-side, so a harness runs **both** it and the
+  client's `wpNeedByIndex` over the same activities and requires them to agree.
+- **WPM side** (`prc-app`): `Sched. Need-by` + `Slip (d)` columns, a detail block, and an advisory
+  panel in the WP form. Read-only; `WPDb.getNeedBy` returns `{}` on any failure incl. a missing table.
+- 46 checks green; all four modified files parse. ⚠️ **Not verified signed-in**, and **the WPM
+  migration must be run + the function deployed** — until then both surfaces say what to run.
+  `MODULE_V` → `20260820a`.
+
 ### 2026-08-19 — sync-eng deployed; ENG_URL set; ENG_SERVICE_KEY is the last blocker
 User: *"Ran the migration"* (`migrations/2026-08-19-eng-design-progress-mirror.sql`). Followed it
 with the two deploy steps that were still outstanding from the PR #13 merge above.
