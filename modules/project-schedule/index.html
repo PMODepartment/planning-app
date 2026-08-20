@@ -9411,6 +9411,21 @@
   var VS_NOTOWER = '— No tower —';
   var _vsDateMode = 'finish';   // 'finish' = when the cell completes · 'start' = when it begins
   var _vsBasis = 'actual';      // 'actual' = actual/forecast · 'planned' = baseline · 'compare' = both + slip
+  // Colour of the planned-progress marker drawn across each cell in Planned vs Actual. A stored
+  // preference, not a constant: it sits on top of the trade's own colour, so no single value works
+  // for every project. Persisted globally (like ps_ganttscale) — it is a viewing preference, not
+  // project data.
+  var VS_PLAN_LINE_DEF = '#FFFFFF';
+  var _vsPlanLine = VS_PLAN_LINE_DEF;
+  try { var _vpl = localStorage.getItem('ps_vsplanline'); if (_vpl && /^#[0-9a-fA-F]{6}$/.test(_vpl)) _vsPlanLine = _vpl; } catch (e) {}
+  function _saveVsPlanLine() { try { localStorage.setItem('ps_vsplanline', _vsPlanLine); } catch (e) {} }
+  // The marker itself: a full-height line across the zone at the planned percentage, haloed so the
+  // chosen colour is legible over any category colour or hatch. See the note above.
+  function _vsPlanMark(x, y, h) {
+    var xs = x.toFixed(1);
+    return '<line x1="' + xs + '" y1="' + y + '" x2="' + xs + '" y2="' + (y + h) + '" stroke="rgba(0,0,0,.55)" stroke-width="3.6" stroke-linecap="round" pointer-events="none"></line>' +
+      '<line x1="' + xs + '" y1="' + y + '" x2="' + xs + '" y2="' + (y + h) + '" stroke="' + _vsPlanLine + '" stroke-width="2" stroke-linecap="round" pointer-events="none"></line>';
+  }
   // What the NEXT render should animate: 'in' = towers enter (the set of towers changed),
   // 'fade' = a value changed in place (Finish↔Start, zoom), null = repaint silently (a data or
   // filter change arriving through doRender, where re-playing an entrance would be noise).
@@ -9708,15 +9723,14 @@
           // In Compare, mark where the BASELINE says progress should be, so "behind by this much" is
           // visible as a gap rather than something to work out from two numbers.
           ((cmp && planPct != null)
-            ? (function () { var px = cx + 1 + (cw2 - 2) * Math.max(0, Math.min(100, planPct)) / 100;
-                return '<line x1="' + px.toFixed(1) + '" y1="' + (y + 1) + '" x2="' + px.toFixed(1) + '" y2="' + (y + fh - 1) + '" stroke="#fff" stroke-width="1.6" opacity="0.9" pointer-events="none"></line>'; })()
+            ? _vsPlanMark(cx + 1 + (cw2 - 2) * Math.max(0, Math.min(100, planPct)) / 100, y + 1, fh - 2)
             : '') +
           // 4) the interactive outline last, so it owns the pointer and sits above the fills
           '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="transparent" stroke="' + (isNo ? baseColor : 'rgba(0,0,0,.28)') + '" stroke-width="1"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + _vsBasisWord() + ' · ' + _vsDateWord() + ' ' + (fin ? Fmt.date(dstr(fin)) : '—') +
           (cmp ? (' · planned ' + (_vsPlanDate(c.list) ? Fmt.date(dstr(_vsPlanDate(c.list))) : '—') +
                   ' · ' + (slip == null ? 'no baseline' : (slip > 0 ? slip + 'd late' : (slip < 0 ? (-slip) + 'd early' : 'on time')))) : '') +
           ' · ' + _vsProgressWord() + ' ' + (pct >= 100 ? 'complete' : (pct <= 0 ? (_vsBasis === 'planned' ? 'not due to start yet' : 'not started') : pct + '%' + (_vsBasis === 'planned' ? ' due' : ' done, ' + (100 - pct) + '% remaining'))) +
-          (cmp && planPct != null ? ' · planned ' + planPct + '% by today (white mark)' : '')) + '</title></rect>' +
+          (cmp && planPct != null ? ' · planned ' + planPct + '% by today (the marker line)' : '')) + '</title></rect>' +
           (lbl ? '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + 13) + '" text-anchor="middle" font-size="10.5" font-weight="800" fill="#fff" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
           (cmp
             // Compare: planned above, actual below, then the slip — three values, so the label line
@@ -9836,13 +9850,22 @@
         ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:8px;">' +
             [[VS_SLIP_EARLY, 'early'], [VS_SLIP_ONTIME, 'on time'], [VS_SLIP_LATE, 'late'], [VS_SLIP_NONE, 'no baseline']]
               .map(function (o) { return '<span style="display:inline-flex;align-items:center;gap:4px;"><span class="ps-vs-dot" style="background:' + o[0] + '"></span>' + o[1] + '</span>'; }).join('') +
+          '</span>' +
+          // The planned marker is only drawn in this basis, so the control that colours it lives here.
+          '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:6px;" title="Colour of the line drawn across each zone at its PLANNED progress. The line is haloed, so any colour stays readable over the trade colour.">' +
+            '<svg width="26" height="14" style="vertical-align:middle;" aria-hidden="true"><rect x="0" y="1" width="26" height="12" rx="3" fill="var(--pd-muted)" opacity="0.22"></rect>' +
+            '<line x1="15" y1="1" x2="15" y2="13" stroke="rgba(0,0,0,.55)" stroke-width="3.6" stroke-linecap="round"></line>' +
+            '<line x1="15" y1="1" x2="15" y2="13" stroke="' + _vsPlanLine + '" stroke-width="2" stroke-linecap="round"></line></svg>' +
+            'Planned marker <input type="color" id="ps-vs-planclr" value="' + _vsPlanLine + '" style="width:26px;height:20px;padding:0;border:none;background:none;cursor:pointer;vertical-align:middle;">' +
+            (_vsPlanLine.toUpperCase() === VS_PLAN_LINE_DEF ? '' : '<button class="pd-btn ps-vs-chip" id="ps-vs-planclrx" title="Back to the default colour">Reset</button>') +
           '</span>'
         : '') +
       '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:6px;" title="Each cell is a progress bar: the solid part is what is complete, the hatched part is what remains.">' +
         '<svg width="34" height="12" style="vertical-align:middle;"><rect x="0" y="0" width="34" height="12" rx="3" fill="var(--pd-muted)" opacity="0.16"></rect>' +
         '<rect x="0" y="0" width="34" height="12" rx="3" fill="url(#psvs-legend-h)"></rect>' +
         '<rect x="0.5" y="0.5" width="13" height="11" rx="2" fill="var(--pd-muted)" opacity="0.95"></rect></svg>' +
-        (_vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due' : 'solid = done · hatched = remaining') + '</span>' +
+        (_vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due' : 'solid = done · hatched = remaining') +
+        (_vsBasis === 'compare' ? ' · line = planned' : '') + '</span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
         (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
@@ -9912,6 +9935,12 @@
     host.querySelectorAll('[data-vsbasis]').forEach(function (b) { b.onclick = function () { _vsBasis = b.dataset.vsbasis; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vstr]').forEach(function (b) { b.onclick = function () { _vsTrade = b.dataset.vstr; _vsAnim = 'in'; renderVStack(); }; });
     host.querySelectorAll('[data-vstw]').forEach(function (b) { b.onclick = function () { _vsTower = b.dataset.vstw; _vsAnim = 'in'; renderVStack(); }; });
+    // 'input' rather than 'change', so dragging through the picker previews on the real cells.
+    // Repaints silently: an entrance animation on every step of a colour drag would strobe.
+    var _pc = host.querySelector('#ps-vs-planclr');
+    if (_pc) _pc.oninput = function () { if (!/^#[0-9a-fA-F]{6}$/.test(_pc.value)) return; _vsPlanLine = _pc.value.toUpperCase(); _saveVsPlanLine(); renderVStack(); };
+    var _pcx = host.querySelector('#ps-vs-planclrx');
+    if (_pcx) _pcx.onclick = function () { _vsPlanLine = VS_PLAN_LINE_DEF; _saveVsPlanLine(); renderVStack(); };
     // Zoom repaints silently: a fade on every step of a held-down click would strobe.
     var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
     var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };
