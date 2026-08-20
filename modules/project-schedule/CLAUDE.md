@@ -1,5 +1,52 @@
 # Module: project-schedule
 
+## Towers: a WBS level, a location tag, and a stacking filter (2026-08-20) — eprobles
+
+Multi-tower projects pushed five towers' floors into **one** flat floor list, because
+`tower` existed only inside the Schedule Builder's `cfg`. Nothing downstream knew about
+it. Two separate gaps, both worth naming:
+
+**1. The WBS had no tower level.** Fixed by making `tower` a first-class entry in
+`WBS_DIMS`, so it slots into the user-orderable `wbsOrder` like every other level
+(default `trade > tower > floor > zone > unit`).
+
+⚠️ **The level is skipped when there is only one tower.** `dimKey('tower')` returns the
+"no value" sentinel unless `multiTower()`, so `buildTree` treats it as transparent and a
+single-tower project keeps a **byte-identical** tree. Every existing project is
+single-tower; a redundant "Tower 1" node above every floor would have been a regression
+for all of them. `normalize()` also back-fills `tower` into an order saved before towers
+existed — dropping an unknown dimension silently is how the level would have gone missing
+again.
+
+⚠️ **The sentinel is the escape `\u0000`, not a space.** A terminal renders it as blank,
+and I mis-read it as a space on the first attempt — the patch anchor did not match and
+applied nothing. Worse, this turned out to be a **live bug**: `dimKey`'s own `floor`
+branch returned a literal space for an `_all` floor, which never equalled `buildTree`'s
+`\u0000`. So a trade with no floors did *not* skip the level as the comment claimed; it
+got a node, and `dimName` has no name for an `_all` floor, so it fell back to the level
+label — a WBS branch literally called **"Floor"**. Both now use the same sentinel. When a
+sentinel is produced in one function and compared in another, assert they are the same
+value; do not eyeball it.
+
+**2. A pushed activity did not record its tower at all.** `locMapOf` writes only
+floor/zone/unit into the Location Breakdown levels, so Project Schedule could not tell a
+Tower A activity from a Tower B one. The tower now goes into the location map under the
+reserved key `'tower'`. Level ids are UUIDs, so it cannot collide, and the only code
+reading that map generically is the search haystack (where "Tower B" finding its
+activities is a feature). Deliberately **not** a new `LOC_LEVELS` row: that is per-project
+DB data, and inserting a level at the top would renumber every existing project's levels.
+
+Note the pre-existing ambiguity this exposed: "tower" in the Vertical Stacking view meant
+"one building model card", which is not a project tower. The new `_vsTowerOf` /
+`_vsTowersIn` / `_vsTowerColor` are named for the real thing, and the tower filter is
+applied **before** trades are collected, so focusing Tower B lists the trades actually in
+Tower B. Untagged rows get an explicit "— No tower —" band rather than disappearing —
+same rule as the "No level" band.
+
+Verified by extracting the shipped source text of `dimKey`/`dimName`/`buildTree` and
+`locMapOf` and running them against synthetic configs, rather than paraphrasing the logic
+into a test that could agree with a wrong assumption.
+
 ## The Schedule-Builder → Project-Schedule pipeline, and the WBS code that was secretly the tree (2026-08-19) — eprobles
 
 One long session, thirteen commits. Almost every defect in it — including two I caused

@@ -9405,6 +9405,10 @@
   var _vsDetail = 2;            // 1 = per level · 2 = per zone · 3 = per unit (capped at LOC_LEVELS)
   var _vsZoom = 1;
   var _vsTrade = 'ALL';         // focus a single trade's tower
+  var _vsTower = 'ALL';         // focus a single PROJECT tower (Tower A / Tower B / …)
+  // Reserved key in an activity's location map holding its project tower. See locMapOf().
+  var VS_LOC_TOWER = 'tower';
+  var VS_NOTOWER = '— No tower —';
   var _vsDateMode = 'finish';   // 'finish' = when the cell completes · 'start' = when it begins
   var _vsBasis = 'actual';      // 'actual' = actual/forecast · 'planned' = baseline · 'compare' = both + slip
   // What the NEXT render should animate: 'in' = towers enter (the set of towers changed),
@@ -9419,6 +9423,16 @@
   function _vsMaxDetail() { return Math.max(1, LOC_LEVELS.length); }
   function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
+  // The activity's PROJECT tower (Tower A / Tower B), not the per-trade card this view draws.
+  function _vsTowerOf(r) { return (r && r.location && r.location[VS_LOC_TOWER]) || ''; }
+  // Distinct towers present in a set, in first-seen order — which is the builder's tower order,
+  // since the push walks the towers in sequence. Untagged rows are NOT counted here; they get
+  // their own band so they are never silently dropped.
+  function _vsTowersIn(list) {
+    var out = [], seen = {};
+    list.forEach(function (r) { var t = _vsTowerOf(r); if (t && !seen[t]) { seen[t] = 1; out.push(t); } });
+    return out;
+  }
   // Canonical trade order, straight from the Schedule Builder's GROUPS — see tradeLabels(). Anything
   // it does not know (a hand-typed trade) sorts after, by name, so nothing is hidden or reordered
   // arbitrarily.
@@ -9542,6 +9556,16 @@
         return '<pattern id="' + _vsHatchId(col) + '" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
           '<line x1="0" y1="0" x2="0" y2="6" stroke="' + col + '" stroke-width="2.6" opacity="0.55"/></pattern>';
       }).join('') + '</defs></svg>';
+  }
+  // Towers are not a code category, so catEntryByValue has no colour for them and _vsColor would
+  // return the same grey for every one — a per-tower view in which every tower looks identical.
+  // A fixed palette indexed by the tower's position keeps them distinguishable and STABLE: a tower
+  // keeps its colour across renders, across the chips, and across the Per-tower cards.
+  var VS_TOWER_COLORS = ['#4f8ef7', '#e0803a', '#43a86b', '#b3559b', '#3fb0c4', '#c9a227', '#7a6ff0', '#d1603d'];
+  function _vsTowerColor(name, names) {
+    if (name === VS_NOTOWER) return 'var(--pd-muted)';
+    var i = (names || []).indexOf(name);
+    return VS_TOWER_COLORS[(i < 0 ? 0 : i) % VS_TOWER_COLORS.length];
   }
   function _vsColor(trade) {
     var e = (typeof catEntryByValue === 'function') ? catEntryByValue(trade) : null;
@@ -9694,7 +9718,18 @@
       host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Builder push does that for you.</div>';
       return;
     }
-    var acts = _vsActs(), detail = _vsDetailNow();
+    var _actsAll = _vsActs(), detail = _vsDetailNow();
+    // ⚠️ The tower filter is applied BEFORE the trades are collected, so focusing Tower B lists the
+    // trades that are actually in Tower B rather than every trade in the project.
+    var towerNames = _vsTowersIn(_actsAll);
+    var _untowered = _actsAll.filter(function (r) { return !_vsTowerOf(r); });
+    if (_vsTower !== 'ALL' && _vsTower !== VS_NOTOWER && towerNames.indexOf(_vsTower) < 0) _vsTower = 'ALL';
+    if (_vsTower === VS_NOTOWER && !_untowered.length) _vsTower = 'ALL';
+    var acts = (_vsTower === 'ALL') ? _actsAll : _actsAll.filter(function (r) {
+      return (_vsTower === VS_NOTOWER) ? !_vsTowerOf(r) : _vsTowerOf(r) === _vsTower;
+    });
+    // "Per tower" is only a meaningful view when there is more than one tower to compare.
+    if (_vsScope === 'tower' && towerNames.length < 2) _vsScope = 'trade';
     var trades = [], seen = {};
     acts.forEach(function (r) { var t = _vsTradeOf(r); if (!seen[t]) { seen[t] = 1; trades.push(t); } });
     trades.sort(_vsCmpTrade);   // canonical trade order, not alphabetical
@@ -9707,8 +9742,22 @@
     }
     var chips = '<div class="ps-vs-chips"><button class="ps-vs-chip' + (_vsTrade === 'ALL' ? ' on' : '') + '" data-vstr="ALL">All trades</button>' +
       trades.map(function (t) { return '<button class="ps-vs-chip' + (_vsTrade === t ? ' on' : '') + '" data-vstr="' + esc(t) + '"><span class="ps-vs-dot" style="background:' + _vsColor(t) + '"></span>' + esc(t) + '</button>'; }).join('') + '</div>';
+    // Tower chips only when there is a choice to make. A single-tower project sees no new control.
+    var twChips = (towerNames.length > 1 || (towerNames.length && _untowered.length))
+      ? '<div class="ps-vs-chips"><span class="ps-vs-note">Tower</span>' +
+        '<button class="ps-vs-chip' + (_vsTower === 'ALL' ? ' on' : '') + '" data-vstw="ALL">All towers</button>' +
+        towerNames.map(function (t) {
+          var n = _actsAll.filter(function (r) { return _vsTowerOf(r) === t; }).length;
+          return '<button class="ps-vs-chip' + (_vsTower === t ? ' on' : '') + '" data-vstw="' + esc(t) + '" title="' + n + ' activities">' +
+            '<span class="ps-vs-dot" style="background:' + _vsTowerColor(t, towerNames) + '"></span>' + esc(t) + '</button>';
+        }).join('') +
+        (_untowered.length ? '<button class="ps-vs-chip' + (_vsTower === VS_NOTOWER ? ' on' : '') + '" data-vstw="' + esc(VS_NOTOWER) +
+          '" title="' + _untowered.length + ' activities with no tower — pushed before towers existed, or whole-trade work">' + esc(VS_NOTOWER) + '</button>' : '') +
+        '</div>'
+      : '';
     var bar = '<div class="ps-vs-bar">' +
       '<span class="ps-vs-seg"><button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
+      (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
       '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button></span>' +
       '<span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
       '<span class="ps-vs-note">' + esc(LOC_LEVELS.slice(0, detail).map(function (l) { return l.name; }).join(' › ')) + '</span>' +
@@ -9760,8 +9809,25 @@
     var towers;
     if (!acts.length) {
       towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.</div>';
+    } else if (_vsScope === 'tower') {
+      // One model per tower, every trade combined inside it — the side-by-side comparison the
+      // owner asked for. Untagged rows get their own card rather than vanishing.
+      var _twList = towerNames.filter(function (t) { return _vsTower === 'ALL' || t === _vsTower; });
+      if ((_vsTower === 'ALL' || _vsTower === VS_NOTOWER) && _untowered.length) _twList = _twList.concat([VS_NOTOWER]);
+      towers = _twList.map(function (t) {
+        var list = acts.filter(function (r) { return (t === VS_NOTOWER) ? !_vsTowerOf(r) : _vsTowerOf(r) === t; });
+        var tt = [], ts = {};
+        list.forEach(function (r) { var x = _vsTradeOf(r); if (!ts[x]) { ts[x] = 1; tt.push(x); } });
+        var col = _vsTowerColor(t, towerNames);
+        return '<div class="ps-vs-tower" style="--tc:' + col + '"><div class="ps-vs-towerh">' +
+          '<span class="n"><span class="ps-vs-dot" style="background:' + col + '"></span>' + esc(t) + '</span>' +
+          '<span class="ct">' + list.length + ' activities · ' + _vsProgress(list) + '% ' + _vsProgressWord() +
+          ' · ' + tt.length + ' trade' + (tt.length === 1 ? '' : 's') + '</span></div>' +
+          _vsTowerSVG(list, col, 'TW:' + t) + '</div>';
+      }).join('');
     } else if (_vsScope === 'all') {
-      towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; all trades</span>' +
+      towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; all trades' +
+        (_vsTower === 'ALL' ? '' : ' &middot; ' + esc(_vsTower)) + '</span>' +
         '<span class="ct">' + acts.length + ' activities · ' + _vsProgress(acts) + '% ' + _vsProgressWord() + ' · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span></div>' +
         _vsTowerSVG(acts, 'var(--pd-red)', 'ALL') + '</div>';
     } else {
@@ -9776,7 +9842,7 @@
     }
     // ⚠️ The defs must be in the DOM before the towers that reference them are laid out, so they are
     // prepended rather than appended.
-    host.innerHTML = bar + (_vsScope === 'trade' ? chips : '') + warn + _vsHatchDefs() +
+    host.innerHTML = bar + twChips + (_vsScope === 'trade' ? chips : '') + warn + _vsHatchDefs() +
       '<div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>';
     // Stagger the entrance, capped: past the 8th tower the delay stops growing, so a trade-heavy
     // project still settles in well under half a second instead of trickling in.
@@ -9790,6 +9856,7 @@
     host.querySelectorAll('[data-vsdt]').forEach(function (b) { b.onclick = function () { _vsDateMode = b.dataset.vsdt; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vsbasis]').forEach(function (b) { b.onclick = function () { _vsBasis = b.dataset.vsbasis; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vstr]').forEach(function (b) { b.onclick = function () { _vsTrade = b.dataset.vstr; _vsAnim = 'in'; renderVStack(); }; });
+    host.querySelectorAll('[data-vstw]').forEach(function (b) { b.onclick = function () { _vsTower = b.dataset.vstw; _vsAnim = 'in'; renderVStack(); }; });
     // Zoom repaints silently: a fade on every step of a held-down click would strobe.
     var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
     var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };
@@ -16707,8 +16774,8 @@
     // One implicit tower becomes one EXPLICIT tower, so every existing config keeps behaving
     // identically and nothing needs migrating.
     function blankTowers() { return [{ id: uidv(), code: 'T1', name: 'Tower 1' }]; }
-    var WBS_DIMS = ['trade', 'floor', 'zone', 'unit'];
-    var DIM_LABEL = { trade: 'Trade', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
+    var WBS_DIMS = ['trade', 'tower', 'floor', 'zone', 'unit'];
+    var DIM_LABEL = { trade: 'Trade', tower: 'Tower', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
     // ⚠️ The builder's three location levels ARE the project's Location Breakdown levels — the push
     // even creates them when a project has none. Owner 2026-08-18: "the location breakdown should be
     // intuitive to define … first, then do the schedule builder". So the labels now come from the
@@ -16725,7 +16792,7 @@
       }
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'floor', 'zone', 'unit'] }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'tower', 'floor', 'zone', 'unit'] }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       // ⚠ `> 0`, not `!= null`: a row seeded with an explicit 0 must still mirror the other column
@@ -16790,7 +16857,20 @@
       d.tradeLeads = (c.tradeLeads && typeof c.tradeLeads === 'object') ? c.tradeLeads : {};  // per cross-trade transition: floors of the leading trade done before the following one starts
       // WBS structure: ordered list of location dimensions used when pushing into the schedule
       // (level 1 = first entry). De-duplicated; only known dims; falls back to the default order.
-      d.wbsOrder = (function () { var seen = {}, out = []; (Array.isArray(c.wbsOrder) ? c.wbsOrder : []).forEach(function (k) { if (WBS_DIMS.indexOf(k) >= 0 && !seen[k]) { seen[k] = 1; out.push(k); } }); return out.length ? out : ['trade', 'floor', 'zone', 'unit']; })();
+      d.wbsOrder = (function () {
+        var seen = {}, out = [];
+        (Array.isArray(c.wbsOrder) ? c.wbsOrder : []).forEach(function (k) { if (WBS_DIMS.indexOf(k) >= 0 && !seen[k]) { seen[k] = 1; out.push(k); } });
+        if (!out.length) return ['trade', 'tower', 'floor', 'zone', 'unit'];
+        // ⚠️ An order SAVED BEFORE towers existed has no 'tower' entry, and leaving it out would keep
+        // collapsing every tower's floors into one list — the reported mismatch. Insert it just above
+        // 'floor' (or at the end), which is where a tower sits in a building: under the trade, over
+        // the floors. The planner can still drag it anywhere afterwards.
+        if (out.indexOf('tower') < 0) {
+          var fi = out.indexOf('floor');
+          if (fi < 0) out.push('tower'); else out.splice(fi, 0, 'tower');
+        }
+        return out;
+      })();
       d.floorLead = (c.floorLead >= 1 && c.floorLead <= 40) ? c.floorLead : 4;
       d.tradeBatch = (c.tradeBatch && typeof c.tradeBatch === 'object') ? c.tradeBatch : {};  // per-trade: floors done at a time before the next trade follows
       d.tradeParallel = (c.tradeParallel && typeof c.tradeParallel === 'object') ? c.tradeParallel : {};  // per-leading-trade: the next trade may start at the same time (run in parallel)
@@ -19143,6 +19223,10 @@
       // floor -> level 1, zone -> level 2, unit -> level 3 (only as far as the project has levels).
       function locMapOf(loc) {
         var out = {}, parts = [loc.floor, loc.zone, loc.unit];
+        // The tower, under a reserved key — see the note at the vertical-stacking tower filter.
+        // ⚠️ Only for genuinely multi-tower projects: stamping "Tower 1" on every row of a
+        // single-tower project would light up a filter that has nothing to choose between.
+        if (multiTower() && loc.towerId) out.tower = towerLabel(loc.towerId);
         for (var i = 0; i < parts.length && i < locIds.length; i++) {
           var p = parts[i]; if (!p) continue;
           // ⚠️ Level 0 is the FLOOR, and dimName() names its WBS branch by NAME first. Storing the
@@ -19237,7 +19321,10 @@
         // create "Structural Works" as a SECOND branch beside it, which is a duplicate in every sense
         // that matters to the planner even though the two names differ.
         function ensureNode(key, parentKey, name, alt, code) { if (!nodeByKey[key]) { var d = { key: key, parentKey: parentKey, name: name, alt: alt || null, code: code || null }; nodeByKey[key] = d; nodeDescs.push(d); } }
-        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'floor') return (l.floor && l.floor._all) ? ' ' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
+        // ⚠️ '\u0000' is buildTree's "no value at this level" sentinel — a row returning it skips the
+        // level entirely. That is how a single-tower project keeps exactly the tree it has today:
+        // with one tower there is nothing to distinguish, so the level is not worth a node.
+        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'tower') return multiTower() ? (l.towerId || '\u0000') : '\u0000'; if (dim === 'floor') return (l.floor && l.floor._all) ? '\u0000' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
         // ⚠️ The trade BRANCH is named with GWORK (the canonical "Structural Works"), not GLABEL
         // ("Structural"). work_type on the pushed activities is already GWORK, so a branch named with
         // the short label made the same trade reachable under TWO different names - and for the three
@@ -19250,6 +19337,9 @@
         // that change holds it under the floor CODE ("F1"), so alias to the code to find that node.
         function dimAltName(dim, r) {
           if (dim === 'trade') return GLABEL[r.loc.trade] || null;
+          // A tower branch may already exist under its CODE from an earlier push; alias to it so a
+          // re-push adopts that node instead of creating a second one beside it.
+          if (dim === 'tower') { var _t = towerById(r.loc.towerId); return (_t && _t.code && _t.code !== _t.name) ? _t.code : null; }
           if (dim === 'floor') { var f = r.loc.floor; return (f && !f._all && f.code) ? String(f.code) : null; }
           return null;
         }
@@ -19267,6 +19357,7 @@
         function dimName(dim, r) {
           var l = r.loc || {}, v = null;
           if (dim === 'trade') v = GWORK[l.trade] || GLABEL[l.trade] || l.trade;
+          else if (dim === 'tower') v = towerLabel(l.towerId);
           // ⚠️ Floor branch is named by the floor's NAME ("Ground Floor"), falling back to its code —
           // owner: "utilize the names of the floors as the name of the WBS". Its unique code comes from
           // dimCode() below. Zone/unit still prefer their code (no name convention there).
