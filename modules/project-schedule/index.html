@@ -9587,6 +9587,48 @@
   }
   // One tower: level rows top-down (highest first), basements under a grade line — the same shape as
   // step 6, ordered by levelRank like the rest of the module, never alphabetically.
+  // Where a level VALUE sits according to the WBS MANAGER — the planner's own stated order, which
+  // is what the owner compares this view against. Walks each activity's WBS ancestry for the branch
+  // named after this level and reports its sort_order. Takes the MINIMUM when several match (the
+  // same floor name under two towers, in a consolidated view), so the row has one stable position.
+  // Returns null when the tree cannot answer, and the name heuristic then decides.
+  function _vsWbsLevelPos(v, list) {
+    var want = String(v == null ? '' : v).trim().toLowerCase();
+    if (!want || !WBS_NODES.length) return null;
+    var best = null;
+    for (var i = 0; i < list.length; i++) {
+      var n = WBS_NODES.find(function (x) { return x.id === list[i].wbs_node_id; }), guard = 0;
+      while (n && guard++ < 60) {
+        if (String(n.name || '').trim().toLowerCase() === want) {
+          var so = (n.sort_order == null) ? null : +n.sort_order;
+          if (so != null && isFinite(so) && (best === null || so < best)) best = so;
+          break;
+        }
+        n = n.parent_id ? WBS_NODES.find(function (x) { return x.id === n.parent_id; }) : null;
+      }
+    }
+    return best;
+  }
+  // ⚠️ Only used when the tree resolves EVERY level in the tower AND actually distinguishes them.
+  // A partial answer is worse than none: mixing tree positions with heuristic ranks in one
+  // comparator produces an order that matches neither view.
+  function _vsOrderLevels(levels, byLevel) {
+    var pos = {}, ok = levels.length > 0, seen = {};
+    for (var i = 0; i < levels.length; i++) {
+      var pv = _vsWbsLevelPos(levels[i], byLevel[levels[i]]);
+      if (pv === null) { ok = false; break; }
+      pos[levels[i]] = pv; seen[pv] = (seen[pv] || 0) + 1;
+    }
+    // All on the same sort_order means the tree is not describing an order here (e.g. the levels
+    // are not siblings at all) — fall back rather than sort by the tie-break alone.
+    if (ok && Object.keys(seen).length < 2 && levels.length > 1) ok = false;
+    if (!ok) { levels.sort(cmpLevelValue); return false; }
+    levels.sort(function (a, b) {
+      if (pos[a] !== pos[b]) return pos[a] - pos[b];
+      return cmpLevelValue(a, b);   // stable tie-break for a genuine sort_order collision
+    });
+    return true;
+  }
   function _vsTowerSVG(list, baseColor, keyPrefix) {
     var lvl0 = LOC_LEVELS[0].id, detail = _vsDetailNow();
     var byLevel = {}, levels = [], noLev = [];
@@ -9597,8 +9639,21 @@
       byLevel[v].push(r);
     });
     if (!levels.length && !noLev.length) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
-    levels.sort(cmpLevelValue);   // build order (bottom-up); display flips it below
-    var below = levels.filter(function (v) { var rk = levelRank(v); return rk != null && rk < 0; });
+    // Build order (bottom-up); the display flips it below. The WBS manager's sort_order decides
+    // when it can — see _vsOrderLevels — so this view and the WBS tree cannot disagree.
+    var _byWbs = _vsOrderLevels(levels, byLevel);
+    // ⚠️ The grade line stays a PHYSICAL question, answered by levelRank, not by tree position:
+    // sort_order says what comes first, never what is underground. With the tree ordering in
+    // charge, "below grade" is the run of below-grade levels at the BOTTOM of that order, so the
+    // line cannot cut through the middle of a tree-ordered stack.
+    var below;
+    if (_byWbs) {
+      var _cut = 0;
+      while (_cut < levels.length) { var _rk = levelRank(levels[_cut]); if (_rk == null || _rk >= 0) break; _cut++; }
+      below = levels.slice(0, _cut);
+    } else {
+      below = levels.filter(function (v) { var rk = levelRank(v); return rk != null && rk < 0; });
+    }
     var above = levels.filter(function (v) { return below.indexOf(v) < 0; });
     var disp = above.slice().reverse().concat(below.slice().reverse()), groundAt = above.length;
     // The un-levelled band is a real row, below grade, so it is impossible to miss and still clickable.
@@ -19000,6 +19055,7 @@
     var stackBasis = 'int';
     var stackZoom = 1;   // step-6 stacking: cell-width multiplier so many-unit floors still show the date
     var stackTrade = 'ALL';   // step-6 stacking: which trade's tower(s) are shown ('ALL' = every trade)
+    var stackTower = 'ALL';   // step-6 stacking: which PROJECT tower is shown ('ALL' = every tower)
     var _stkUnits = {};  // zone key -> {trade, floor, zone, units:[{code,fin}]} for the unit drill-down
     // The stacking shows one cell per ZONE (a zone completes when its LAST unit does), so a floor with
     // many units isn't compressed. A zone that HAS units under it is clickable to reveal each unit.
@@ -19014,9 +19070,11 @@
       });
       return order;
     }
-    function stackTowerSVG(tr, finBy) {
-      var floors = cfg.zoning[tr].floors;
-      if (!floors.length) return '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + '.</div>';
+    // ⚠️ towerId is REQUIRED — see the note above. One model per (trade × tower), never merged.
+    function stackTowerSVG(tr, finBy, towerId) {
+      var floors = floorsOfTower(tr, towerId);
+      if (!floors.length) return '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) +
+        (multiTower() ? ' in ' + e2(towerLabel(towerId)) : '') + '.</div>';
       var fh = 46, gap = 6, pad = 14, labelW = 44, col = gc(tr);
       var supers = floors.filter(function (f) { return !f.sub; }), subs = floors.filter(function (f) { return f.sub; });
       var disp = supers.slice().reverse().concat(subs.slice().reverse()), groundAt = supers.length;
@@ -19036,7 +19094,7 @@
         var fcw = plotW / (zcells.length || 1);   // this floor's cells fill the full building width
         zcells.forEach(function (z, ci) {
           var cx = pad + labelW + ci * fcw, mid = cx + (fcw - 3) / 2, hasU = z.units.length > 0;
-          if (hasU) _stkUnits[z.key] = { trade: tr, floor: (f.code || f.name || 'F'), zone: z.label, units: z.units };
+          if (hasU) _stkUnits[z.key] = { trade: tr, tower: multiTower() ? towerLabel(towerId) : '', floor: (f.code || f.name || 'F'), zone: z.label, units: z.units };
           svg += '<rect' + (hasU ? ' class="sbld-stkcell" data-zk="' + e2(z.key) + '" style="cursor:pointer"' : '') + ' x="' + cx + '" y="' + y + '" width="' + (fcw - 3) + '" height="' + fh + '" rx="5" fill="' + col + '" opacity="' + (f.sub ? (ci % 2 ? 0.5 : 0.62) : (ci % 2 ? 0.82 : 0.96)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : ' stroke="rgba(0,0,0,.16)" stroke-width="1"') + '>' + (hasU ? '<title>' + z.units.length + ' units — click to see each</title>' : '') + '</rect>' +
             '<text x="' + mid + '" y="' + (y + (hasU ? 15 : 18)) + '" text-anchor="middle" font-size="12" font-weight="800" fill="#fff" pointer-events="none">' + e2(z.label) + '</text>' +
             '<text x="' + mid + '" y="' + (y + (hasU ? 28 : 34)) + '" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,.95)" pointer-events="none">' + e2(z.fin ? fmtD(z.fin) : '—') + '</text>' +
@@ -19052,7 +19110,7 @@
     function openStackUnits(key) {
       var d = _stkUnits[key]; if (!d) return;
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
-      ov.innerHTML = '<div class="pd-modal" style="max-width:420px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:15px;">' + e2(GLABEL[d.trade] + ' · ' + d.floor + ' · ' + d.zone) + ' — units</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+      ov.innerHTML = '<div class="pd-modal" style="max-width:420px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:15px;">' + e2(GLABEL[d.trade] + (d.tower ? ' · ' + d.tower : '') + ' · ' + d.floor + ' · ' + d.zone) + ' — units</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:14px;max-height:60vh;overflow:auto;"><table class="sbld-tbl" style="width:100%;"><thead><tr><th style="text-align:left;">Unit</th><th style="text-align:left;">Completion</th></tr></thead><tbody>' +
         d.units.map(function (u) { return '<tr><td>' + e2(u.code) + '</td><td>' + e2(u.fin ? fmtD(u.fin) : '—') + '</td></tr>'; }).join('') +
         '</tbody></table></div><div class="pd-modal-footer"><button class="pd-btn pd-btn-primary" data-x>Close</button></div></div>';
@@ -19072,25 +19130,49 @@
         '<button class="sbld-chip' + (stackTrade === 'ALL' ? ' on' : '') + '" data-stktr="ALL">All trades</button>' +
         used.map(function (tr) { return '<button class="sbld-chip' + (stackTrade === tr ? ' on' : '') + '" data-stktr="' + tr + '"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</button>'; }).join('') +
         '</div>' : '';
+      // A tower chip row appears only when there is more than one tower, so a single-tower project
+      // sees the step exactly as it is today.
+      if (stackTower !== 'ALL' && !towerById(stackTower)) stackTower = 'ALL';
+      var towerChips = multiTower() ? '<div class="sbld-tradechips">' +
+        '<button class="sbld-chip' + (stackTower === 'ALL' ? ' on' : '') + '" data-stktw="ALL">All towers</button>' +
+        towerList().map(function (t) {
+          var n = 0; used.forEach(function (tr) { n += floorsOfTower(tr, t.id).length; });
+          return '<button class="sbld-chip' + (stackTower === t.id ? ' on' : '') + '" data-stktw="' + e2(t.id) +
+            '" title="' + n + ' floor' + (n === 1 ? '' : 's') + ' across ' + used.length + ' trade(s)">' + e2(towerLabel(t.id)) + '</button>';
+        }).join('') + '</div>' : '';
       _stkUnits = {};   // repopulated by stackTowerSVG below
-      var towers = showTr.map(function (tr) {
-        var nf = (cfg.zoning[tr] && cfg.zoning[tr].floors ? cfg.zoning[tr].floors.length : 0);
-        return '<div class="sbld-stacktower" style="--tc:' + gc(tr) + '">' +
-          '<div class="sbld-towerh"><span class="sbld-stkh-name"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) + '</span>' +
-          '<span class="sbld-stkh-ct">' + nf + ' floor' + (nf === 1 ? '' : 's') + '</span></div>' +
-          stackTowerSVG(tr, finBy) + '</div>';
+      // ⚠️ TOWER-MAJOR, one card per (tower × trade) — never one card per trade holding every
+      // tower's floors. Tower-major so a tower's trades sit together rather than a trade's towers.
+      var showTw = towerList().filter(function (t) { return stackTower === 'ALL' || t.id === stackTower; });
+      var towers = showTw.map(function (tw) {
+        return showTr.map(function (tr) {
+          var fl = floorsOfTower(tr, tw.id);
+          // A trade with no floors in THIS tower gets no card. An empty placeholder per missing
+          // combination would be most of the grid on a project where trades differ by tower.
+          if (!fl.length) return '';
+          return '<div class="sbld-stacktower" style="--tc:' + gc(tr) + '">' +
+            '<div class="sbld-towerh"><span class="sbld-stkh-name"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
+            (multiTower() ? '<span style="font-weight:600;color:var(--pd-muted);"> · ' + e2(towerLabel(tw.id)) + '</span>' : '') + '</span>' +
+            '<span class="sbld-stkh-ct">' + fl.length + ' floor' + (fl.length === 1 ? '' : 's') + '</span></div>' +
+            stackTowerSVG(tr, finBy, tw.id) + '</div>';
+        }).join('');
       }).join('');
       host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking — completion by zone</h2>' +
-        '<p class="sbld-lede">From steps 1–5, this is the <b>vertical stacking</b>: each trade\'s building model, one cell per <b>zone</b> with its <b>zone number</b> and <b>completion date</b> (a zone completes when its last unit does). A zone marked <b>“N units ▾”</b> is <b>clickable</b> to see each unit\'s date. Superstructure sits above the grade line, basements below. Pick a <b>trade</b> to focus it; switch Internal (target) / External (contract); push it into the live schedule next.</p>' +
-        tradeChips +
+        '<p class="sbld-lede">From steps 1–5, this is the <b>vertical stacking</b>: each trade\'s building model, one cell per <b>zone</b> with its <b>zone number</b> and <b>completion date</b> (a zone completes when its last unit does). A zone marked <b>“N units ▾”</b> is <b>clickable</b> to see each unit\'s date. Superstructure sits above the grade line, basements below. Pick a <b>tower</b> and a <b>trade</b> to focus; switch Internal (target) / External (contract); push it into the live schedule next.</p>' +
+        towerChips + tradeChips +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Schedule&nbsp; ' +
         '<select class="pd-select sbld-mini" id="b-stackbasis">' +
         [['int', 'Internal (target)'], ['ext', 'External (contract)']].map(function (o) { return '<option value="' + o[0] + '"' + (stackBasis === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
         '<span class="sbld-quick">Zoom <button class="pd-btn sbld-zbtn" id="b-stkzout" title="Narrower cells">−</button><button class="pd-btn sbld-zbtn" id="b-stkzin" title="Wider cells — more room for dates">+</button></span>' +
-        '<span class="sbld-hint">Project finish ' + fmtD(g.finish) + ' · ' + used.length + ' trade(s). Zoom in if a floor\'s dates are cramped.</span></div>' +
-        '<div class="sbld-stackgrid">' + (towers || '<div class="sbld-empty">No trades with floors yet.</div>') + '</div>';
+        '<span class="sbld-hint">Project finish ' + fmtD(g.finish) + ' · ' + used.length + ' trade(s)' +
+        (multiTower() ? ' · ' + showTw.length + ' of ' + towerList().length + ' tower(s)' : '') +
+        '. Zoom in if a floor\'s dates are cramped.</span></div>' +
+        '<div class="sbld-stackgrid">' + (towers || '<div class="sbld-empty">' +
+          (multiTower() && stackTower !== 'ALL' ? 'No floors for this selection in ' + e2(towerLabel(stackTower)) + '. Pick another tower or trade, or add floors in step 2.' : 'No trades with floors yet.') +
+          '</div>') + '</div>';
       host.querySelectorAll('[data-stktr]').forEach(function (b) { b.onclick = function () { stackTrade = b.dataset.stktr; render(); }; });
+      host.querySelectorAll('[data-stktw]').forEach(function (b) { b.onclick = function () { stackTower = b.dataset.stktw; render(); }; });
       var sel = host.querySelector('#b-stackbasis'); if (sel) sel.onchange = function () { stackBasis = sel.value; render(); };
       var zo = host.querySelector('#b-stkzout'); if (zo) zo.onclick = function () { stackZoom = Math.max(0.6, Math.round((stackZoom - 0.2) * 10) / 10); render(); };
       var zi = host.querySelector('#b-stkzin'); if (zi) zi.onclick = function () { stackZoom = Math.min(4, Math.round((stackZoom + 0.2) * 10) / 10); render(); };
@@ -21095,8 +21177,15 @@
     // measured on AVR101 it was the value that made the stack read wrong: unranked, it floated to
     // the top of a tower whose other values are ordinary floors.
     if (/\b(substructure|sub structure|foundation|footing|pile cap|piling|raft)\b/.test(t)) return -50;
+    // ⚠️ The ground FAMILY, tested BEFORE the plain ground-floor rule below. Order is load-bearing:
+    // "Lower Ground Floor" and "Upper Ground Floor" both contain "ground floor", so without these
+    // two lines they collapsed onto rank 0 together with the real Ground Floor — and a bare "Lower
+    // Ground" matched nothing at all, which put it at the TOP of the BOH stack.
+    if (/\b(?:lower\s*ground|lgf|lg)\b/.test(t)) return -0.5;
+    if (/\b(?:upper\s*ground|ugf)\b/.test(t)) return 0.4;
     // ⚠️ "ground" must be the FLOOR sense — AVR101 has a "Ground Reservoir", which is not level 0.
-    if (/\bground\s*(floor|flr|level|lvl)\b|^ground$|\b(gf|g f|lgf|ugf)\b/.test(t)) return 0;
+    // lgf/ugf deliberately no longer appear here; they are ranked above.
+    if (/\bground\s*(floor|flr|level|lvl)\b|^ground$|\b(gf|g f)\b/.test(t)) return 0;
     if (/\b(mezz|mezzanine)\b/.test(t)) return 0.5;
     if ((m = t.match(/\b(?:f|fl|flr|floor|l|lvl|level|storey|story)\s*(\d+)\b/))) return parseInt(m[1], 10);
     if ((m = t.match(/\b(\d+)\s*(?:st|nd|rd|th)?\s*(?:floor|flr|level|storey|story)\b/))) return parseInt(m[1], 10);

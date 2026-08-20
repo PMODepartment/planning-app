@@ -47,6 +47,42 @@ Verified by extracting the shipped source text of `dimKey`/`dimName`/`buildTree`
 `locMapOf` and running them against synthetic configs, rather than paraphrasing the logic
 into a test that could agree with a wrong assumption.
 
+### Follow-ups the same day: the builder's own stacking, and floor order vs the WBS manager
+
+**Step 6 merged the towers.** `stackTowerSVG` read `cfg.zoning[tr].floors` — every tower's floors —
+so a five-tower project drew one model per trade containing all five buildings stacked in one
+column: floor codes repeating, the grade line in the wrong place, dates from unrelated buildings
+side by side. This is the *same shape* as the step-5 `towerSVG` leak fixed a few commits earlier;
+that fix made `towerId` a **required** parameter precisely so a call site cannot silently draw the
+wrong building, and `stackTowerSVG` never got the same treatment. It now takes a required `towerId`
+and the step renders one card per (tower × trade), tower-major, with tower chips.
+
+**The stack's floor order disagreed with the WBS manager**, which the owner spotted by putting the
+two views side by side: the WBS read `Lower Ground · Ground Floor · Upper Ground Floor · Level 1`,
+the stack drew `Lower Ground · Level 1 · Upper Ground Floor · Ground Floor`. Two defects in
+`levelRank`:
+
+- `"Lower Ground"` matched **no** rule and returned `null`. Unrankable values sort last in build
+  order, and the display **reverses** that list — so the lowest floor in the building rendered at
+  the very top. An unrankable value is not a neutral outcome here; it is actively misplaced.
+- `"Upper Ground Floor"` matched the plain `ground floor` rule and collided with the real Ground
+  Floor at rank `0`. `lgf` and `ugf` were both listed in that same rule, so the abbreviations were
+  wrong too.
+
+Fixed by ranking the ground family before the plain rule (`lower ground`/`lg`/`lgf` → `-0.5`,
+`upper ground`/`ugf` → `0.4`). But the deeper fix is the second layer: **the WBS tree is now the
+ordering authority.** A name heuristic can only rank names it was taught, and floor names are
+arbitrary ("Transfer Plate", "BOH Podium"). The WBS manager already holds the planner's own stated
+order as `sort_order`, and it is the view the owner compares against — so `_vsOrderLevels` sorts by
+tree position when the tree resolves **every** level and actually distinguishes them, and falls back
+to the heuristic otherwise. A partial answer is refused deliberately: mixing tree positions with
+heuristic ranks in one comparator yields an order matching neither view.
+
+⚠️ The grade line stays a **physical** question answered by `levelRank`, never by tree position —
+`sort_order` says what comes first, not what is underground. Under tree ordering it is the run of
+below-grade levels at the *bottom* of that order, so the line cannot cut through the middle of a
+tree-ordered stack.
+
 ## The Schedule-Builder → Project-Schedule pipeline, and the WBS code that was secretly the tree (2026-08-19) — eprobles
 
 One long session, thirteen commits. Almost every defect in it — including two I caused
