@@ -19407,7 +19407,11 @@
       // ⚠️ phase + scope_type are stated OUTRIGHT, not left to inheritance. The builder produces
       // execution-phase, main-contract work by definition, and a row that says so cannot be
       // mis-read later if the tree above it is re-parented or was never phase-tagged.
-      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), bl_start: iso2(r.start), bl_finish: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null }; }
+      // ⚠️ NO bl_start / bl_finish. The push fills the CURRENT schedule only — see the note above.
+      // Stamping the baseline here baselined the project against its own first draft (every variance
+      // zero) and, through _durLocked, made Planned Duration read-only on arrival. Baselining is a
+      // deliberate act: Actions -> Baselines -> "Capture current as baseline", then set it primary.
+      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null }; }
       var payloads = [], taskN = g.rows.length, wbsMsg = '', wbsUnnamed = {};
 
       if (!grouped) {
@@ -19735,7 +19739,11 @@
                  '. Their activities have no ' + (basis === 'ext' ? 'External' : 'Internal') +
                  ' duration in step 1, so every location came out zero-length and was skipped. Enter durations in that column, or push the other basis.']
               : []),
-          note: 'Filed ' + (base ? 'under <strong>' + e2(base) + '</strong>' : 'at the top level') + ' · ' + (basis === 'ext' ? 'External' : 'Internal') + ' durations. Opening the schedule…'
+          note: 'Filed ' + (base ? 'under <strong>' + e2(base) + '</strong>' : 'at the top level') + ' · ' + (basis === 'ext' ? 'External' : 'Internal') + ' durations. ' +
+            // The empty BL columns are deliberate, and saying so here is what stops them being
+            // reported as a defect — which is how the opposite behaviour was reported.
+            'This fills the <strong>current schedule</strong> only — no baseline is set, so durations stay editable. ' +
+            'When the schedule is agreed, use <strong>Actions › Baselines › Capture current as baseline</strong>. Opening the schedule…'
         });
       } else {
         UI.toast('Added ' + taskN + ' activities to the schedule.', 'success');
