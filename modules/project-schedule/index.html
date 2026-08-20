@@ -5341,6 +5341,10 @@
   // ---- WBS-code helpers + precomputed caches (rebuilt only when rows change) ----
   function segs(c) { return String(c == null ? '' : c).split('.'); }
   var _sorted = [], _min = null, _max = null, _spanMap = {}, _blSpanMap = {}, _costMap = {}, _seqByCode = {};
+  // ⚠️ The SAME roll-up, keyed by wbs_node_id instead of by dotted code — see the note at the
+  // _costMap build. This one follows wbs_nodes.parent_id, so it is the tree the WBS Manager shows
+  // rather than whatever the code strings currently happen to spell.
+  var _costMapN = {};
   function parentCodeOf(wbs) { var s = String(wbs == null ? '' : wbs).split('.'); return s.slice(0, -1).join('.'); }
   // rebuild(structural): `structural` (default true) means the row SET or ORDER may have changed
   // (add/delete/import, WBS/Activity-ID edit, column-sort or grouping change) → re-sort. Pure field
@@ -5506,6 +5510,24 @@
     // rows). Costs sum; POC %s are duration-weighted (planned POC only over rows that have a
     // baseline, hence the separate wdPoc denominator).
     _costMap = {};
+    _costMapN = {};
+    // Parent chain per node, resolved once. Walking WBS_NODES.find() per row per level would be
+    // O(rows x depth x nodes) — measurably slow on the 4k-activity projects this runs on.
+    var _parentOfNode = {}; WBS_NODES.forEach(function (n) { _parentOfNode[n.id] = n.parent_id || null; });
+    var _ancNodeMemo = {};
+    function _ancNodes(nodeId) {
+      if (!nodeId) return [];
+      if (_ancNodeMemo[nodeId]) return _ancNodeMemo[nodeId];
+      var out = [], seen = {}, cur = nodeId, guard = 0;
+      // Includes the node ITSELF, so an activity filed directly on a branch counts toward that
+      // branch as well as its ancestors.
+      // ⚠️ The `seen` set, not just the depth cap: on a cyclic parent chain a cap alone keeps
+      // walking and accumulates the same activity once per level (measured: 100x on a 2-node
+      // cycle), turning a malformed tree into a wildly INFLATED roll-up. Each node counts once.
+      while (cur && !seen[cur] && guard++ < 200) { seen[cur] = 1; out.push(cur); cur = _parentOfNode[cur]; }
+      _ancNodeMemo[nodeId] = out;
+      return out;
+    }
     rows.forEach(function (r) {
       if (isWbs(r)) return;
       var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : 0;
@@ -5514,11 +5536,13 @@
       var od = _origDurOf(r) || 0;                  // for the Duration % Complete roll-up (duration-weighted)
       var dpEarned = od * (_durPct(r) / 100);
       var codes2 = [r.wbs].concat(r._anc || []);
-      for (var j = 0; j < codes2.length; j++) {
-        var cm = _costMap[codes2[j]] || (_costMap[codes2[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0, mc:0, co:0 });
+      var _sc = scopeOf(r), _pk = packageOf(r);
+      // One accumulator, applied to a dotted-code bucket and a node-id bucket alike, so the two
+      // maps can never drift into reporting different arithmetic for the same activity.
+      function _accum(cm) {
         cm.total += 1; if (isComplete(r)) cm.done += 1; else if (r.actual_start || (r.percent_complete || 0) > 0) cm.prog += 1;
-        var _sc = scopeOf(r); if (_sc === 'change_order') cm.co += 1; else if (_sc) cm.mc += 1;
-        _cmPkg(cm, packageOf(r));
+        if (_sc === 'change_order') cm.co += 1; else if (_sc) cm.mc += 1;
+        _cmPkg(cm, _pk);
         cm.pc += r.planned_cost || 0; cm.ac += r.actual_cost || 0; cm.ev += r.earned_value || 0; cm.bl += r.bl_cost || 0;
         cm.eac += eac(r, cpi);
         if (dur > 0) {
@@ -5527,6 +5551,13 @@
         }
         if (od > 0) { cm.wdur += od; cm.wdurE += dpEarned; }
       }
+      function _blank() { return { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0, mc:0, co:0 }; }
+      for (var j = 0; j < codes2.length; j++) _accum(_costMap[codes2[j]] || (_costMap[codes2[j]] = _blank()));
+      // ⚠️ And up the REAL tree. This is the half that fixes the reported bug: when a branch code
+      // is not the dotted prefix of its children's codes, the loop above misses them and this one
+      // does not.
+      var _an = _ancNodes(r.wbs_node_id);
+      for (var k = 0; k < _an.length; k++) _accum(_costMapN[_an[k]] || (_costMapN[_an[k]] = _blank()));
     });
     _cpmDirty = true;
     computeCPM();   // auto-derive critical path on every data change
@@ -5548,7 +5579,16 @@
   // (wbsSpan already reads the display-scoped `_dspan`). That mismatch is the reported "roll-up
   // WBS information is wrong when the groupings are altered". `_dcost` is built in buildNodes from
   // exactly the rows emitted beneath each display code, so both halves now agree.
-  function cmOf(nd) { return (_dcost && _dcost[dcode(nd)]) || _costMap[nd._realCode || nd.wbs]; }
+  // ⚠️ Order matters. A display-scoped entry still wins: in a grouped view a branch holds only the
+  // subset of its activities that landed in this group, and reporting its whole subtree there is the
+  // mismatch _dcost exists to fix. Below that, the wbs_nodes tree beats the dotted code, because the
+  // code is a label that can drift while the tree is the hierarchy. The dotted map remains the
+  // fallback for rows with no wbs_node_id — imports, hand-typed WBS, pre-wbs_nodes projects.
+  function cmOf(nd) {
+    if (_dcost) { var d = _dcost[dcode(nd)]; if (d) return d; }
+    var byNode = nd.wbs_node_id ? _costMapN[nd.wbs_node_id] : null;
+    return byNode || _costMap[nd._realCode || nd.wbs];
+  }
   var _MIX = '\u0000mixed';
   // First value wins; a second, different value poisons the key to _MIX for good. A blank is not a
   // value — an activity with no zone must not veto the zone its siblings agree on.
