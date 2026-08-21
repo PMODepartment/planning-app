@@ -344,3 +344,7 @@
   .il-mom-list, .il-mom-detail { flex: 0 0 auto; width: 100%; max-width: 100%; }
   .il-mom-detail-card { padding: 12px; }
 }
+
+/* Minutes toolbar — the export button sits above the form, right-aligned, and is
+   present for read-only viewers too (exporting is a read). */
+.il-mom-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; }

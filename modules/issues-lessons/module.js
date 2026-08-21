@@ -775,6 +775,11 @@ window.IssuesLessons = (function () {
     var items = momItemsOf(mom.id);
     var act = mom.schedule_activity_id || '';
     return '<div class="il-mom-detail-card">' +
+      // Export is a READ, so it is offered to everyone who can see the minute —
+      // unlike every other control on this card, which is gated on canEditMinute().
+      '<div class="il-mom-toolbar">' +
+        '<button class="pd-btn pd-btn-sm" id="il-mom-pdf" title="Download these minutes as a PDF">⬇ PDF</button>' +
+      '</div>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
@@ -968,6 +973,143 @@ window.IssuesLessons = (function () {
     } catch (e) { UI.toast(e.message, 'error'); }
   }
 
+
+  // ------------------------------------------------------------------- pdf ----
+  // ⚠️ The layout below is the standalone mom-app's `downloadPDF()` reproduced field
+  // for field — same red header band, same six-column meta grid, same grey field
+  // blocks, same badge palette, same html2pdf/jsPDF settings — so a minute exported
+  // from here and one exported from that app are the SAME sheet. Do not "tidy" the
+  // inline styles into module.css: html2canvas rasterises this DOM, and the module's
+  // own stylesheet deliberately does not reach it (a themed export would come out dark).
+  var MOM_PDF_BADGE = {
+    'open': 'background:#d4f5d4;color:#1a8f3a;',
+    'closed': 'background:#e5e5ea;color:#666;',
+    'on hold': 'background:#fff3cd;color:#b06800;',
+    // ⚠️ Not in mom-app's palette, because mom-app has no such status. `mom_items`
+    // does (Open | In Progress | Closed), and leaving it out would print the most
+    // common mid-flight status in the default grey — the same grey as Closed.
+    'in progress': 'background:#fff3cd;color:#b06800;',
+    'issue': 'background:#fde8e8;color:#b40000;',
+    'fyi': 'background:#e8f0fe;color:#1a56db;',
+    'report': 'background:#f3e8ff;color:#6b21a8;'
+  };
+  function momPdfBadge(val) {
+    var s = MOM_PDF_BADGE[String(val || '').toLowerCase()] || 'background:#eee;color:#333;';
+    return '<span style="' + s + ';font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;' +
+      'display:inline-block;">' + Fmt.esc(val || '-') + '</span>';
+  }
+  function momPdfCell(label, val, mono) {
+    return '<div style="background:#f7f7f8;border-radius:5px;padding:6px 8px;border:1px solid #e5e5ea;">' +
+      '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;margin-bottom:2px;">' + label + '</div>' +
+      '<div style="font-size:10px;' + (mono ? 'font-family:monospace;' : '') + '">' + Fmt.esc(val || '-') + '</div></div>';
+  }
+  function momPdfField(label, val) {
+    // Newlines survive as <br> — the notes field is multi-line, and a flattened
+    // paragraph is not the record of what was said.
+    var safe = Fmt.esc(val || '-').replace(/\n/g, '<br>');
+    return '<div style="margin-bottom:6px;background:#f7f7f8;border-radius:6px;padding:7px 10px;border:1px solid #e5e5ea;">' +
+      '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">' + label + '</div>' +
+      '<div style="font-size:10px;color:#1c1c1e;word-break:break-word;">' + safe + '</div></div>';
+  }
+
+  async function momDownloadPDF(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    if (typeof html2pdf !== 'function') {
+      UI.toast('The PDF library did not load — check the connection and reload.', 'error');
+      return;
+    }
+    var btn = $('il-mom-pdf'), orig = btn ? btn.innerHTML : '';
+    if (btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
+    var wrap = null;
+    try {
+      var items = momItemsOf(mom.id);
+      var filename = (mom.title || 'Meeting').replace(/[^a-zA-Z0-9_]/g, '_') + '_MOM.pdf';
+
+      var cards = items.map(function (it, i) {
+        var iss = momIssueOf(it);
+        return '<div style="margin-bottom:14px;padding:12px;border:1px solid #ddd;border-radius:8px;break-inside:avoid;">' +
+          '<div style="display:grid;grid-template-columns:0.4fr 1.5fr 0.9fr 0.9fr 1.2fr 1fr;gap:5px;margin-bottom:8px;">' +
+            momPdfCell('No.', String((it.seq == null ? i : it.seq) + 1), true) +
+            // `mom_items` has no `category`. The nearest TRUE statement about an action
+            // is where it is being chased, so that is what this column says — rather
+            // than a dash in every row of every export.
+            momPdfCell('Category', it.issue_id ? 'Raised in register' : 'Held in minutes') +
+            '<div style="background:#f7f7f8;border-radius:5px;padding:6px 8px;border:1px solid #e5e5ea;">' +
+              '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;margin-bottom:2px;">Type</div>' +
+              momPdfBadge(it.issue_id ? 'Issue' : 'FYI') + '</div>' +
+            '<div style="background:#f7f7f8;border-radius:5px;padding:6px 8px;border:1px solid #e5e5ea;">' +
+              '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;margin-bottom:2px;">Status</div>' +
+              // ⚠️ Once raised, the REGISTER owns the status — the same rule the screen
+              // follows. Printing `mom_items.status` for a raised action would put a
+              // stale status on paper that outlives the screen showing the live one.
+              momPdfBadge(iss ? (iss.status || 'Open') : (it.status || 'Open')) + '</div>' +
+            momPdfCell('Responsible', it.owner) +
+            momPdfCell('Target Date', it.due_date ? Fmt.date(it.due_date) : '', true) +
+          '</div>' +
+          // mom-app's three text blocks, mapped onto this module's single action text:
+          // the issue it became, the action itself, and what the register now says.
+          momPdfField('Issue / Agenda', iss ? iss.description : '') +
+          momPdfField('Action Item', it.description) +
+          momPdfField('Description', iss ? ('Raised in Issues & Concerns · ' + (iss.status || 'Open') +
+            (iss.champion ? ' · champion ' + iss.champion : '')) : '') +
+        '</div>';
+      }).join('');
+
+      // ⚠️ A plain detached element, not a full document string: html2canvas renders
+      // whatever DOM it is handed, and reusing the module's own markup would drag the
+      // dark-theme variables in with it.
+      wrap = document.createElement('div');
+      wrap.style.cssText = 'font-family:Arial,sans-serif;font-size:9px;color:#1c1c1e;width:190mm;' +
+        'padding:15mm 10mm;box-sizing:border-box;background:#fff;position:fixed;left:-10000px;top:0;';
+
+      // Header fields this module records and mom-app does not. They are the minute's
+      // substance — dropping them to match a narrower app would export a worse record —
+      // so they print in the same field blocks, above the actions.
+      var head = '';
+      if (mom.attendees) head += momPdfField('Attendees', mom.attendees);
+      if (mom.schedule_activity_id) {
+        head += momPdfField('Activity discussed', mom.schedule_activity_id +
+          (MOM_ACT_NAME[mom.schedule_activity_id] ? ' · ' + MOM_ACT_NAME[mom.schedule_activity_id] : ''));
+      }
+      if (mom.notes) head += momPdfField('Notes / discussion', mom.notes);
+      if (head) head = '<div style="margin-bottom:14px;">' + head + '</div>';
+
+      wrap.innerHTML =
+        '<div style="background:#b40000;padding:14px 20px;margin:-20px -20px 18px -20px;display:flex;justify-content:space-between;align-items:center;">' +
+          '<img src="../../assets/img/logo-white.png" style="height:26px;width:auto;" crossorigin="anonymous"/>' +
+          '<div style="text-align:right;">' +
+            '<div style="font-size:12px;font-weight:700;color:#fff;">' + Fmt.esc(projName) + ' — ' + Fmt.esc(mom.title || 'Meeting') + '</div>' +
+            '<div style="font-size:9px;color:rgba(255,255,255,0.85);margin-top:3px;">📅 ' +
+              Fmt.esc(mom.meeting_date ? Fmt.date(mom.meeting_date) : '-') + '   📍 ' + Fmt.esc(mom.location || '-') +
+              '   (' + items.length + ' item' + (items.length !== 1 ? 's' : '') + ')</div>' +
+          '</div>' +
+        '</div>' + head +
+        (items.length ? cards : momPdfField('Action items', 'No action items were recorded on these minutes.'));
+
+      // ⚠️ Must be IN the document: html2canvas measures a laid-out element, and an
+      // orphan node has no box. Parked off-screen so the page does not jump.
+      document.body.appendChild(wrap);
+
+      await html2pdf().set({
+        margin: [10, 10, 10, 10],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      }).from(wrap).save();
+
+      UI.toast('PDF downloaded', 'ok');
+    } catch (e) {
+      UI.toast('PDF error: ' + ((e && e.message) || e), 'error');
+    } finally {
+      // ⚠️ In `finally`: a throw mid-render would otherwise leave the off-screen node
+      // in the document, and every later export would stack another one.
+      if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      if (btn) { btn.innerHTML = orig; btn.disabled = false; }
+    }
+  }
+
   // ---------------------------------------------------------------- wire ------
   function wireMom() {
     var host = $('il-mom-view'); if (!host) return;
@@ -990,6 +1132,14 @@ window.IssuesLessons = (function () {
     if (!_momSel) return;
     momResolveActName(($('il-mom-act') || {}).value);
 
+    var pb = host.querySelector('#il-mom-pdf');
+    // ⚠ Saves the header first when the user may edit: the export reads MOMS, not
+    // the form, so a title typed and not saved would be missing from the sheet.
+    if (pb) pb.onclick = async function () {
+      var cur = MOMS.find(function (x) { return x.id === _momSel; });
+      if (cur && canEditMinute(cur)) await momSaveHeader();
+      await momDownloadPDF(_momSel);
+    };
     var sv = host.querySelector('#il-mom-save');
     if (sv) sv.onclick = async function () { if (await momSaveHeader()) { UI.toast('Minutes saved', 'ok'); renderMom(); } };
 

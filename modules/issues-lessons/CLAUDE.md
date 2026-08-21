@@ -1,5 +1,47 @@
 # Module: issues-lessons
 
+## Minutes of Meeting exports a PDF in mom-app's exact format (2026-08-21) — fmlozano
+Owner: *"There is a minutes of the meeting app of the same github account of a different repository.
+Let's implement the download pdf feature following exactly the same format of the exported pdf."*
+(`PMODepartment/mom-app`, a single 3341-line `index.html`.) **No migration.** A `⬇ PDF` button on
+every minute in `modules/issues-lessons` renders the same sheet that app produces: the `#b40000`
+header band with the white logo and project — title / date / location / item count, then one bordered
+card per action with the six-column meta grid (`0.4fr 1.5fr 0.9fr 0.9fr 1.2fr 1fr`), the grey field
+blocks, the same badge palette, and the same html2pdf/jsPDF options (A4 portrait, 10mm margins,
+scale 2, JPEG q0.98).
+
+- **Verified against the real source, not a re-implementation.** The exporter was executed by
+  slicing its own text out of `module.js` in a throwaway harness and stubbing only the closure it
+  reads. The rendered node measured `rgb(180,0,0)` on the band, `718.1px` (= 190mm at 96dpi) wide,
+  the six grid tracks in the ratios above, and every badge colour byte-identical to mom-app's map.
+- ⚠️ **The export is offered to READ-ONLY viewers**, unlike every other control on the detail card.
+  Exporting is a read, and the person who most needs the sheet — someone who attended the meeting
+  but did not record it — is exactly the one `canEditMinute()` says no to.
+- ⚠️ **Field mapping is lossy in one direction and richer in the other**, because the two apps do
+  not share a schema. `mom_items` has no `category` / `type` / `issue` / `action_item`; it has one
+  free-text `description`. So `Action Item` ← `description`; `Issue / Agenda` ← the linked
+  register issue's description; `Description` ← what the register now says; `Type` ← Issue when
+  raised else FYI; `Category` ← "Raised in register" / "Held in minutes" — a true statement about
+  the action rather than a dash in every row of every export. Going the other way, `attendees`,
+  `notes` and the linked schedule activity exist HERE and not in mom-app, and they print in the
+  same field blocks above the actions: dropping the minute's substance to match a narrower app
+  would export a worse record.
+- ⚠️ **A raised action prints the REGISTER's status, not `mom_items.status`** — the same rule the
+  screen follows. Printing the minute's own copy would put a stale status on paper that outlives
+  the screen showing the live one.
+- ⚠️ **`in progress` was ADDED to mom-app's badge palette.** mom-app has no such status; `mom_items`
+  does, and without an entry the most common mid-flight status would have printed in the default
+  grey — the same grey as Closed.
+- ⚠️ **The export node is built as detached inline-styled DOM, parked at `left:-10000px`, and
+  removed in `finally`.** html2canvas rasterises real laid-out DOM, so an orphan node has no box and
+  renders blank; and a throw mid-render would otherwise leave the node behind, stacking one more on
+  every later export. The inline styles are deliberate — `module.css` must not reach this element or
+  a dark-theme session would export a dark sheet.
+- **Header is saved before rendering** when the user may edit: the exporter reads `MOMS`, not the
+  form, so a title typed and not saved would have been missing from the sheet.
+- Library is the same `html2pdf.js@0.10.1` bundle mom-app loads. `MODULE_V` → `20260821a`, and the
+  module's own `?v=` → `20260821a`.
+
 ## Departments record minutes too — per-MINUTE permissions (2026-08-20) — fmlozano
 
 Owner: *"Let departments record minutes too."* **Run
