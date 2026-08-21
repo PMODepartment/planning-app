@@ -7800,7 +7800,12 @@
           // Only when every activity in the group carries the SAME category — a mixed group
           // (e.g. a Tower holding all trades) has no one colour and must stay neutral.
           _gcat: gcatMixed ? null : (gcat || null),
-          activity_name: g, _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
+          // ⚠️ The HEADING is spoken in words; the bucket key and gcode above stay the RAW value, so
+          // collapse state, spans and roll-ups are all keyed on unchanged strings. _graw carries the
+          // code for the hover title.
+          activity_name: (dims[di].indexOf('loc:') === 0 ? locPretty(g, locLevelName(dims[di].slice(4))) : g),
+          _graw: (dims[di].indexOf('loc:') === 0 ? g : null),
+          _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
         walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
       });
       // Lift the dissolved (no-value-at-this-level) activities to the parent — grouped by the next
@@ -11591,12 +11596,30 @@
   // zoning / unit information in that data (e.g. Precast Works B3 - Z1 - U1)". A level that IS a
   // grouping dimension is already a heading above the row, so repeating it there would be noise —
   // hence `dims` is subtracted rather than the whole location being printed unconditionally.
+  // Words for the codes that mean the same thing on every construction project. Short on purpose:
+  // a token that could mean two things does not belong here — see the note above.
+  var LOC_WORDS = { b: 'Basement', z: 'Zone', u: 'Unit', f: 'Floor', l: 'Level' };
+  var LOC_FIXED = { gf: 'Ground Floor', lgf: 'Lower Ground Floor', ugf: 'Upper Ground Floor' };
+  // DISPLAY ONLY. Never write the result back to a row, a grouping key or a WBS name.
+  function locPretty(v, levelName) {
+    var t = String(v == null ? '' : v).trim();
+    if (!t) return t;
+    var fx = LOC_FIXED[t.toLowerCase()]; if (fx) return fx;
+    var m = t.match(/^([A-Za-z]{1,3})[\s-]?(\d{1,3})$/);
+    if (!m) return t;                                  // not a bare code — leave it exactly as it is
+    var pfx = m[1].toLowerCase(), n = String(parseInt(m[2], 10));
+    // The project's own level name wins: their configuration, not our guess.
+    var ln = String(levelName || '').trim();
+    if (ln && ln.toLowerCase().indexOf(pfx) === 0) return ln + ' ' + n;
+    var w = LOC_WORDS[pfx];
+    return w ? (w + ' ' + n) : t;                      // unrecognised prefix: say nothing new
+  }
   function locSuffixOf(r, dims) {
     if (!r || !r.location || !LOC_LEVELS.length) return null;
     var shown = {};
     (dims || []).forEach(function (d) { if (String(d).indexOf('loc:') === 0) shown[String(d).slice(4)] = 1; });
     var parts = [];
-    LOC_LEVELS.forEach(function (l) { if (shown[l.id]) return; var v = locValOf(r, l.id); if (v) parts.push(String(v)); });
+    LOC_LEVELS.forEach(function (l) { if (shown[l.id]) return; var v = locValOf(r, l.id); if (v) parts.push(locPretty(v, l.name)); });
     return parts.length ? parts.join(' - ') : null;
   }
   // Every distinct value already used at a level — feeds the grid editor's datalist and the
@@ -12325,7 +12348,7 @@
       return '<div class="ps-grid-row ps-wbs-row ps-group-row' + altc + (code === _selGroup ? ' ps-row-sel' : '') + '" data-i="' + i + '" data-code="' + esc(code) + '">' +
         '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
         '<div class="ps-cell c-id"></div>' +
-        '<div class="ps-cell c-name" style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + garr + '</span><strong>' + esc(r.activity_name || '') + '</strong> <span style="color:var(--pd-muted);font-weight:400;">(' + r._gcount + ')</span></div>' +
+        '<div class="ps-cell c-name"' + ((r._graw && r._graw !== r.activity_name) ? ' title="' + esc(r._graw) + '"' : '') + ' style="padding-left:' + (6 + depth*14) + 'px;"><span class="ps-toggle" data-toggle="' + esc(code) + '">' + garr + '</span><strong>' + esc(r.activity_name || '') + '</strong> <span style="color:var(--pd-muted);font-weight:400;">(' + r._gcount + ')</span></div>' +
         // Rolled up from the group's own bucket in buildNodes, so a COLLAPSED level still reports
         // its status and baseline dates instead of three blank cells.
         '<div class="ps-cell c-status">' + _groupStatusPill(r) + '</div>' +
