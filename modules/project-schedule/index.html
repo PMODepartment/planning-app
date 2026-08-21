@@ -2756,6 +2756,23 @@
   // 2026-08-12 phase migration seeds it from WBS branches named "Execution Phase" / "Construction".
   var EXEC_PHASE = 'construction';
   function isExecPhase(r) { return phaseOf(r) === EXEC_PHASE; }
+  // Why this row is not in the execution phase, in words a planner can act on: the phase that was
+  // detected, and whether it came from the row itself or was inherited from the WBS tree.
+  function _phaseWhy(r) {
+    var ph = phaseOf(r);
+    var own = r && r.phase ? 'set on this activity' : (ph ? 'inherited from its WBS branch' : 'not set anywhere');
+    return (ph ? '“' + (phaseLabel(ph) || ph) + '” (' + own + ')' : 'no phase at all (' + own + ')');
+  }
+  // Offer the way out. Returns true when the caller may proceed with the scope edit.
+  async function _ensureExecPhase(r) {
+    if (!r || isExecPhase(r)) return true;
+    if (!confirm('Contract scope applies to the Execution Phase only.\n\n' +
+      'This activity\'s phase is ' + _phaseWhy(r) + '.\n\n' +
+      'Set this activity to the Execution Phase now and continue?')) return false;
+    var ok = await persist(r.id, { phase: EXEC_PHASE });
+    if (ok) { _clearPhaseMemo(); _clearScopeMemo(); }
+    return ok;
+  }
   var _scopeMemo = {};
   function _clearScopeMemo() { _scopeMemo = {}; }
   function _nodeScope(nodeId) {
@@ -5153,7 +5170,30 @@
   }
   async function persistScope(id, patch) {
     var ok = await persist(id, patch, false, true);   // quiet: this function owns the message
-    if (!ok) UI.toast('Contract scope could not be saved. This project\'s database is missing the scope columns — run migrations/2026-08-19-schedule-contract-scope.sql in the Supabase SQL editor, then reload.', 'error');
+    if (!ok) {
+      var e = _lastPersistErr || '';
+      // ⚠️ Only blame the migration when the error actually names those columns. Telling a planner
+      // to re-run a migration they have already run is a confident wrong answer that no amount of
+      // re-running can fix — see the note above this function.
+      // ⚠️ Keyed on the PHRASING that means a missing column, not on the column NAME. A CHECK
+      // violation reads violates check constraint "project_schedule_scope_type_chk" — which
+      // contains "scope_type" — so matching the name sent the planner to re-run a migration that
+      // was already applied. That is the exact failure this function exists to remove.
+      if (/does not exist|could not find|schema cache/i.test(e)) {
+        UI.toast('Contract scope could not be saved: this project\'s database has no scope columns. ' +
+          'Run migrations/2026-08-19-schedule-contract-scope.sql in the Supabase SQL editor, then reload. ' +
+          '(Actions → Diagnose data → Database features shows whether it is applied.)', 'error');
+      } else if (/violates check constraint/i.test(e)) {
+        UI.toast('Contract scope could not be saved: the database rejected the value. Only "main" and ' +
+          '"change_order" are allowed. Original error: ' + e, 'error');
+      } else if (/row-level security|permission|policy/i.test(e)) {
+        UI.toast('Contract scope could not be saved: you do not have permission to edit this activity ' +
+          '(row-level security). Original error: ' + e, 'error');
+      } else {
+        UI.toast('Contract scope could not be saved: ' + (e || 'no error message was returned.') +
+          ' — Actions → Diagnose data → Database features shows whether the migration is applied.', 'error');
+      }
+    }
     return ok;
   }
   // Marking an activity as a change order asks for its CO reference straight away: a CO with no
@@ -5168,18 +5208,22 @@
     ref = String(ref).trim();
     persistScope(id, { change_order_ref: ref || null }).then(function (ok) { if (ok) { renderGrid(); renderDetails(); } });
   }
+  // The last error persist() saw, so a caller that passed quiet:true can still report the truth
+  // instead of guessing at it. Cleared on every attempt so a stale message can never be shown.
+  var _lastPersistErr = null;
   async function persist(id, patch, skipUndo, quiet) {
+    _lastPersistErr = null;
     var r = rows.find(function (x) { return x.id === id; });
     var before = null;
     if (r && !skipUndo) { before = {}; Object.keys(patch).forEach(function (k) { before[k] = (r[k] === undefined ? null : r[k]); }); }
     var prev = {}; if (r) Object.keys(patch).forEach(function (k) { prev[k] = (r[k] === undefined ? null : r[k]); });   // for audit
     if (window.PDSync) {
       var w = await PDSync.write({ table: TABLE, op: 'update', id: id, patch: patch });
-      if (!w.ok) { if (!quiet) UI.toast((w.error && w.error.message) || 'Save failed', 'error'); return false; }
+      if (!w.ok) { _lastPersistErr = (w.error && w.error.message) || 'Save failed'; if (!quiet) UI.toast(_lastPersistErr, 'error'); return false; }
       // queued offline writes count as saved-locally (w.queued) — fall through to apply + rebuild
     } else {
       var res = await sb().from(TABLE).update(patch).eq('id', id);
-      if (res.error) { if (!quiet) UI.toast(res.error.message, 'error'); return false; }
+      if (res.error) { _lastPersistErr = res.error.message; if (!quiet) UI.toast(_lastPersistErr, 'error'); return false; }
     }
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
     _myWrites[id] = { t: Date.now(), patch: patch };   // suppress the Realtime echo of MY OWN write (content-checked below)
@@ -5202,7 +5246,11 @@
   // (updated_at aside) is cosmetic and needs no rebuild.
   var _RECOMPUTE_FIELDS = { wbs: 1, activity_id: 1, activity_type: 1, start_date: 1, end_date: 1,
     actual_start: 1, actual_finish: 1, bl_start: 1, bl_finish: 1, planned_cost: 1, actual_cost: 1,
-    earned_value: 1, bl_cost: 1, percent_complete: 1, predecessors: 1, duration_days: 1 };
+    earned_value: 1, bl_cost: 1, percent_complete: 1, predecessors: 1, duration_days: 1,
+    // ⚠️ Contract scope feeds recountScope(), the scope filter and the main/CO roll-up counters, so
+    // an inline Scope edit MUST rebuild. Without these two an edit saved correctly and then looked
+    // like it had done nothing, which is how "not saving" gets reported.
+    scope_type: 1, change_order_ref: 1 };
   // ---- Change audit (fire-and-forget, tolerant of a not-yet-migrated DB) ----
   function _auditChanges(prev, patch) {
     var c = {}; Object.keys(patch || {}).forEach(function (k) { if (k === 'updated_at') return; var from = prev ? prev[k] : undefined; if (JSON.stringify(from == null ? null : from) !== JSON.stringify(patch[k] == null ? null : patch[k])) c[k] = { from: from == null ? null : from, to: patch[k] == null ? null : patch[k] }; });
@@ -10200,7 +10248,13 @@
         // Contract scope: the newest columns on this table, so a project whose database has not had
         // 2026-08-19-schedule-contract-scope.sql run must get the REMEDY, not a schema-cache error.
         if (f === 'scope_type' || f === 'change_order_ref') {
-          if (f === 'scope_type' && !isExecPhase(r)) { UI.toast('Contract scope applies to execution-phase activities only — set the Phase first.', 'warn'); renderDetails(); return; }
+          if (f === 'scope_type' && !isExecPhase(r)) {
+            _ensureExecPhase(r).then(function (okp) {
+              if (!okp) { renderDetails(); return; }
+              rebuild(true); persistScope(r.id, { scope_type: v || null }).then(function (ok) { if (ok) { rebuild(true); renderGrid(); renderGantt(); renderDetails(); } });
+            });
+            return;
+          }
           var _sv = (typeof v === 'string' ? v.trim() : v) || null;
           var _sp = {}; _sp[f] = _sv;
           // Dropping back to Main Contract drops the reference with it.
@@ -11860,7 +11914,7 @@
     var sv = scopeOf(r);
     // Not applicable outside the execution phase — and NOT editable there either, so the column can
     // never quietly acquire a value that means nothing.
-    if (!sv) return '<div class="ps-cell c-scope" title="Contract scope applies to execution-phase activities only"><span style="color:var(--pd-muted);">—</span></div>';
+    if (!sv) return '<div class="ps-cell c-scope" title="' + esc('Contract scope applies to the Execution Phase only. This activity\'s phase is ' + _phaseWhy(r) + '. Right-click → Edit activity to change it.') + '"><span style="color:var(--pd-muted);">—</span></div>';
     var own = !!r.scope_type, co = sv === 'change_order';
     var ref = co ? coRefOf(r) : '';
     return '<div class="ps-cell c-scope ps-editable" data-id="' + r.id + '" data-field="scope_type" data-type="enum" data-enum="scope" title="' +
@@ -12434,7 +12488,17 @@
       if (type === 'enum') {
         var _ev = String(val || '');
         if (field === 'scope_type') {
-          if (!isExecPhase(r)) { UI.toast('Contract scope applies to execution-phase activities only — set the Phase on this activity first.', 'warn'); renderGrid(); return; }
+          if (!isExecPhase(r)) {
+            _ensureExecPhase(r).then(function (okp) {
+              if (!okp) { renderGrid(); return; }
+              rebuild(true);
+              var _pt0 = { scope_type: _ev || null };
+              if (_ev !== 'change_order') _pt0.change_order_ref = null;
+              persistScope(id, _pt0).then(function (ok) { if (ok) { rebuild(true); renderGrid(); renderGantt(); renderDetails();
+                if (_ev === 'change_order' && !r.change_order_ref) promptCoRef(id); } });
+            });
+            return;
+          }
           var _pt = { scope_type: _ev || null };
           // Dropping back to Main Contract drops the CO reference with it — a "VO-014" left on a
           // main-contract activity is worse than no reference at all.
@@ -22809,7 +22873,8 @@
     if (field === 'scope_type' || field === 'change_order_ref') {
       var _skipped = rs.length; rs = rs.filter(isExecPhase);
       _skipped -= rs.length;
-      if (!rs.length) { UI.toast('Contract scope applies to execution-phase activities only — none of the selected rows are in it.', 'warn'); return; }
+      if (!rs.length) { UI.toast('Contract scope applies to the Execution Phase only, and none of the selected rows are in it. ' +
+        'The first one\'s phase is ' + _phaseWhy(_selectedTaskRows()[0] || null) + '. Set their Phase, then tag the scope.', 'warn'); return; }
       if (_skipped) UI.toast('Skipping ' + _skipped + ' row' + (_skipped === 1 ? '' : 's') + ' outside the execution phase.', 'info');
     }
     showLoading('Filling ' + rs.length + ' row' + (rs.length === 1 ? '' : 's') + '…');
