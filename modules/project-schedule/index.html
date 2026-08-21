@@ -4810,7 +4810,28 @@
     if (f < as) f = as;
     return dstr(f);
   }
+  // Is the Main-contract-only filter hiding this row's change orders? Then a split host must read as
+  // one bar. Kept as its own predicate so the two places that need it cannot drift apart.
+  function _mainOnlyUnsplit() { return filters.scope === 'main'; }
+  // The finish a split host WOULD have had with no change order in it: its own start plus every
+  // segment's own duration. Null unless this row is segment 1 of a real split and the filter is on.
+  function _unsplitFin(r) {
+    if (!_mainOnlyUnsplit() || !r || !r.split_group || (r.split_seq || 0) !== 1) return null;
+    var segs = splitSegsOf(r.split_group);
+    if (segs.length < 2) return null;
+    var s = pd(r.start_date); if (!s) return null;
+    var total = 0;
+    for (var i = 0; i < segs.length; i++) {
+      var d = segs[i].duration_days;
+      if (d == null) { var ss = pd(segs[i].start_date), se = pd(segs[i].end_date); d = (ss && se) ? (dayDiff(ss, se) + 1) : 0; }
+      total += Math.max(0, +d || 0);
+    }
+    return total > 0 ? dstr(addDays(s, total - 1)) : null;
+  }
   function dispFin(r) {
+    // ⚠️ Before the actual/forecast chain: under Main-contract-only a split host reads as one bar
+    // ending where it would have ended without the variation. See _unsplitFin.
+    var u = _unsplitFin(r); if (u) return u;
     var f = r.actual_finish || forecastFin(r) || r.end_date || null;
     // Never render a finish earlier than the start (guards against inconsistent stored dates, e.g. an
     // end_date left before a later start_date) — otherwise the bar and its relationship arrows draw
@@ -5601,6 +5622,18 @@
   var _scopeCounts = { main: 0, change_order: 0 };
   // Paint the toolbar switch from `filters.scope` + the current counts. Called from every place
   // that can change either, so the control can never claim a scope that is not applied.
+  // What Main-contract-only does to a split activity, and — just as important — what it does not do
+  // to the work that follows it. Left implicit, a planner reads the un-split bar as "the variation has
+  // been backed out of the whole schedule", which is not what a filter can do.
+  function _scopeSwitchTitle() {
+    if (filters.scope !== 'main') return '';
+    var n = rows.filter(function (r) { return !isWbs(r) && r.split_group && (r.split_seq || 0) === 1; }).length;
+    if (!n) return '';
+    return n + ' activit' + (n === 1 ? 'y is' : 'ies are') + ' split around a change order. ' +
+      'Main contract only shows each of them as ONE bar ending on its original main-contract finish. ' +
+      'Note that the activities FOLLOWING them keep their real dates, which still include the delay the ' +
+      'change order caused — backing that out of the whole chain is a what-if, not a filter.';
+  }
   function syncScopeSwitch() {
     var seg = document.getElementById('ps-scope'); if (!seg) return;
     var cur = filters.scope || '';
@@ -5613,6 +5646,9 @@
       // ⚠️ The count is of activities in the EXECUTION PHASE (scopeOf returns null elsewhere), which
       // is the only place contract scope means anything — so it will not match the footer's total.
       b.innerHTML = esc(lbl) + '<span class="ps-scope-n">' + n + '</span>';
+      // Explain what Main-contract-only does to a split activity, and what it does not do to the
+      // work that follows it — see _scopeSwitchTitle.
+      if (b.dataset.scope === 'main') { var _t = _scopeSwitchTitle(); if (_t) b.title = _t; else b.removeAttribute('title'); }
     });
     // No change orders on this project yet: the switch would be a control with nothing to find.
     seg.style.display = _scopeCounts.change_order ? '' : 'none';
@@ -8977,6 +9013,10 @@
     // Summary + group rows pass through so a filtered view keeps the WBS headings that locate the
     // surviving activities — the same rule the critical-path filter uses.
     if (filters.scope && !isWbsNode(r)) { if (scopeOf(r) !== filters.scope) return false; }
+    // ⚠️ Main-contract-only folds a split host back into ONE bar (see _unsplitFin), so its
+    // continuation segments must not also appear — their days are already inside segment 1's bar and
+    // showing them would double-count the work on screen.
+    if (_mainOnlyUnsplit() && !isWbsNode(r) && r.split_group && (r.split_seq || 0) > 1) return false;
     // '__none__' is a real scope, not "no filter" — "show me what nobody has filed yet" is the
     // whole reason a planner opens this filter.
     if (filters.pkg && !isWbsNode(r)) {
