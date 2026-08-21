@@ -5847,7 +5847,12 @@
     return (v === undefined || v === _MIX) ? '' : v;
   }
   function hiddenRow(nd) {
-    if (collapsed[dcode(nd)] && nd._dkind === 'task') return true;
+    // ⚠️ `_dsolo` = this task row REPLACED a group heading and carries that heading's code. It must
+    // NOT be hidden by its own code: a task row has no caret, so nothing could ever un-hide it, and
+    // `collapsed` is pre-loaded with those very codes by _applyBigCollapse and by the planner's own
+    // saved state from earlier groupings. Its ancestors still hide it on the next line, which is the
+    // part that actually means something — collapsing the floor still hides its zones.
+    if (collapsed[dcode(nd)] && nd._dkind === 'task' && !nd._dsolo) return true;
     var a = danc(nd); for (var i = 0; i < a.length; i++) if (collapsed[a[i]]) return true;
     // Hide empty groups: a WBS summary node with no visible activity anywhere below it.
     if (_hideEmptyGroups && nd._dkind === 'wbs' && !_nonEmptyCodes[dcode(nd)]) return true;
@@ -7554,7 +7559,10 @@
         var _nameN = {};
         list.forEach(function (a) { var k = (a.activity_name || '').trim(); _nameN[k] = (_nameN[k] || 0) + 1; });
         list.slice().sort(function (x, y) { return cmpCodeStr(x.wbs, y.wbs); }).forEach(function (a) {
-          a._dcode = base + SEP + a.wbs; a._ddepth = depth; a._danc = baseAnc; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null;
+          // ⚠️ _dsolo is CLEARED here on purpose. These row objects are shared and mutated in place
+          // across renders, so a flag left over from a grouping where this row replaced a heading
+          // would exempt it from a collapse it should now obey.
+          a._dcode = base + SEP + a.wbs; a._ddepth = depth; a._danc = baseAnc; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null; a._dsolo = 0;
           // Location first: it is the identity the owner asked every line item to carry. The
           // repeated-name WBS-parent qualifier is the FALLBACK for rows that have no location.
           a._dsuffix = locSuffixOf(a, shownDims);
@@ -7607,7 +7615,9 @@
           node._dkind = 'wbs'; node._dcode = dc; node._ddepth = depth + rdepth; node._danc = da; node._realCode = en.real;
           out.push(node);
         } else {
-          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null;
+          // _dsolo cleared for the same reason as the other leaf path: these row objects are shared
+          // and mutated in place, so a stale flag would exempt this row from a real collapse.
+          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null; a._dsolo = 0;
           a._dsuffix = locSuffixOf(a, shownDims);
           out.push(a);
           var s = pd(dispStart(a)), e = pd(dispFin(a));   // displayed dates — see the note above
@@ -7735,6 +7745,10 @@
           var solo = buckets[g][0];
           solo._dcode = gcode; solo._ddepth = parentAnc.length; solo._danc = parentAnc;
           solo._dkind = 'task'; solo._realCode = solo.wbs;
+          // ⚠️ Marks this row as "a task standing in for a heading" — see hiddenRow(). Without it the
+          // row hides itself as soon as its old heading's code is in `collapsed`, with no caret to
+          // reopen it, which is how a whole floor's worth of zones can silently vanish.
+          solo._dsolo = 1;
           // This row IS the deepest grouping level, so it carries that level's identity - but as a
           // QUALIFIER, not as the name. Replacing the name with the bucket value (its old behaviour)
           // showed "U1" where the planner needs to read "Precast Works B3 - Z1 - U1": the merged row
