@@ -1,5 +1,63 @@
 # Module: issues-lessons
 
+## Departments record minutes too — per-MINUTE permissions (2026-08-20) — fmlozano
+
+Owner: *"Let departments record minutes too."* **Run
+`migrations/2026-08-20-department-minutes.sql`.** This is the other half of D1: it does to
+minutes what D1 did to issues, and for the same reason — the screen is department-facing now.
+
+⚠️ **It is NOT a blanket widening, and that is the whole design.** The tables were created
+under `for all using (is_planner())` — one rule for four commands. Swapping `is_writer()` into
+that same shape would let any approved non-viewer rewrite or delete **another** department's
+minutes: a record of a meeting they may not have attended. So three commands, three rules:
+- **insert** — any approved non-viewer on an accessible project, stamped as themselves
+  (planners exempt, for minutes typed up on someone else's behalf).
+- **update** — planner+ on anything; everyone else only minutes they recorded. ⚠️ Asserted in
+  **both** `using` and `with check`: with `using` alone a row can be updated *out of* your own
+  ownership, leaving you neither the right to fix it nor the record of having written it.
+- **delete** — planner+ on anything; everyone else their own, **and only while nothing has been
+  raised from them**.
+
+⚠️ **Why own-delete exists here when the register's does not:** "+ New minutes" INSERTs
+immediately and then lets you type, so a mis-click leaves a real empty row — without own-delete
+every stray draft would need a planner. ⚠️ **And why it is guarded:** once an action is raised,
+issues in the register point back at the minute for provenance ("Raised at: …", the From MOM
+tag), and `on delete set null` means deleting it *silently strips that* rather than failing.
+Stripping provenance is a planner's call, not a side effect of tidying your own drafts.
+
+⚠️ **`mom_items` ownership is DERIVED, not stored, and is not getting a `created_by`.** An
+action item belongs to its minute (already `on delete cascade`), so "may I touch this action?"
+is the same question as "may I edit the minute it is on?" — `mom_is_mine(mom_id)`, a
+SECURITY DEFINER helper with a pinned `search_path` like every other helper here (a policy whose
+sub-select is itself RLS-filtered is how this schema got a stack-depth recursion bug once).
+A second ownership column would be a second answer to that question, free to disagree — someone
+else's action sitting inside minutes you own.
+
+**The UI mirrors it per minute, not per screen** (`canEditMinute` / `canDeleteMinute`): the
+single `canMinutes` flag is gone, because no one flag can say "yes for this row, no for that
+one", and a flag that says yes where the DB says no is the silent failure D1 removed. A
+department sees "+ New minutes"; its own minutes fully editable; another department's read-only
+with **who recorded it** (department-level, never a person — resolving `created_by` to a name
+would need a read of `users` for a caption); and where delete is unavailable it says why instead
+of just missing a button. A minute with no `created_by` is planner-only and says so.
+
+- **103 checks green** (was 79) against the section sliced verbatim from the shipped `module.js`,
+  incl. the full matrix — planner/department/viewer × own/another's/unauthored minute, delete
+  before and after something is raised, and both write paths refusing what the policy refuses
+  (`momSaveItem` on another department's action, `momRaiseIssue` out of their minutes) while the
+  same calls succeed on your own. ⚠️ The suite **cannot pass against the pre-change file** — it
+  dies on `canEditMinute is not defined`. **12 browser combos** (planner / dept-own / dept-other
+  × desktop/phone × light/dark).
+- ⚠️ **A stale harness option silently became a PASS**: `build({ canMinutes: false })` kept
+  "asserting" a read-only case after the option stopped existing, so it was really testing a
+  planner. Renaming a flag invalidates every test that named it — the chip's unlink rule is now
+  asserted through its argument instead.
+- ⚠️ Migration structurally checked only (parens/`$$`/every policy preceded by a drop/the generic
+  `*_write` dropped). **The policies themselves are NOT verified against a live database** — and
+  `admin_*`-style checks cannot be run from the SQL editor anyway, since `auth.uid()` is NULL for
+  the `postgres` role. Neither MOM table is in `supabase-schema.sql` / `supabase-setup.sql`
+  (pre-existing drift, same as its predecessor), so `/migrations` remains their only definition.
+
 ## Minutes of Meeting moved IN from the Project Schedule (2026-08-20) — fmlozano
 
 Owner: *"There is a minutes of the meeting within the project schedule module. Let's move this
@@ -40,13 +98,10 @@ Meeting** — reading the same `meeting_minutes` / `mom_items` tables. **No migr
   now an `ilike` on id **and** name, capped at 25 with a "keep typing to narrow" note, debounced
   250ms, WBS summaries excluded. ⚠️ PostgREST's `or()` is comma/paren delimited, so those
   characters are stripped from the term or they would corrupt the filter instead of being searched.
-- ⚠️ **`canMinutes` (planner+) mirrors the RLS, and that is the database talking, not a
-  preference:** `meeting_minutes` / `mom_items` are written under `is_planner()`. A department
-  user gets the minutes read-only — same fields, disabled, tinted — with a note pointing them at
-  the Issues & Concerns screen, where **`canAdd` still lets any approved non-viewer raise an
-  issue** (D1, unchanged). Handing them a Save or Raise button whose write the DB refuses is the
-  exact mistake D1 fixed for issues. **If departments should be able to record minutes too, that
-  is an RLS change (`is_writer()` + own-rows), not a UI one — flagged, not taken.**
+- ⚠️ **Write permission mirrors the RLS, and that is the database talking, not a preference.**
+  At the move it was planner-only (`meeting_minutes` / `mom_items` were created under
+  `is_planner()`); the owner then asked for departments to record minutes, so it is now
+  per-minute — see the entry above.
 
 ### Verified
 - **79 checks green** against the MOM section **sliced verbatim out of the shipped `module.js`**

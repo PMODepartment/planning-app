@@ -32,13 +32,12 @@ window.IssuesLessons = (function () {
   var canAdd = false;      // any approved non-viewer may raise an issue
   var isSteward = false;   // planner+ — may edit anyone's, and may delete
   var canWrite = false;    // kept as "can do SOMETHING here", for the toolbar
-  // ⚠️ Minutes are PLANNER-AUTHORED, and that is the RLS talking, not a preference:
-  // `meeting_minutes` / `mom_items` are written under `is_planner()`
-  // (migrations/2026-08-19-duration-scenarios-and-mom.sql). Mirrored here so a
-  // department user is never handed a Save or a Raise button whose write the database
-  // will refuse — the same mistake D1 fixed for issues. It does NOT narrow who may add
-  // an ISSUE: that is `canAdd`, and any approved non-viewer still has it.
-  var canMinutes = false;  // planner+ — may record minutes and raise their actions
+  // ⚠️ Minutes have NO screen-wide write flag, deliberately — see canEditMinute() in the
+  // MINUTES OF MEETING section. Departments record minutes now
+  // (migrations/2026-08-20-department-minutes.sql) under the same rules as the register:
+  // you maintain what you wrote, a planner maintains all of it. A single flag could not
+  // express that, and a flag that said "yes" for a minute the DB will refuse is exactly
+  // the silent failure D1 removed from issues.
   var rows = [];
   var MOM_BY_ID = {};                  // meeting_minutes referenced by these issues (C4)
   var screen = 'issues';               // 'issues' | 'lessons' | 'mom'
@@ -133,7 +132,6 @@ window.IssuesLessons = (function () {
     isSteward = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0;
     canAdd = !!prof && prof.status === 'approved' && prof.role !== 'viewer';
     canWrite = canAdd;
-    canMinutes = isSteward;
 
     await loadProjects();
     wire();
@@ -696,6 +694,31 @@ window.IssuesLessons = (function () {
   function momIssueOf(item) {
     return item.issue_id && rows.find(function (x) { return x.id === item.issue_id; });
   }
+  // ⚠️ PER MINUTE, not per screen. These mirror
+  // migrations/2026-08-20-department-minutes.sql line for line; where the UI and the RLS
+  // disagree the user fills in a form and the save bounces with nothing to explain it.
+  function canEditMinute(m) {
+    if (isSteward) return true;
+    // ⚠️ A minute with no `created_by` (recorded before the stamp, or imported) is
+    // planner-only: there is no way to know whose it was, and guessing would hand
+    // someone edit rights over a meeting record they never wrote.
+    return !!(canAdd && m && m.created_by && UID && m.created_by === UID);
+  }
+  // ⚠️ Your own DRAFT you may delete — "+ New minutes" inserts immediately and then lets
+  // you type, so a mis-click leaves a real row. But once an action has been raised, the
+  // issues in the register point back here for their provenance and `on delete set null`
+  // strips that SILENTLY rather than failing, so that deletion is a planner's call.
+  function canDeleteMinute(m) {
+    if (isSteward) return true;
+    return canEditMinute(m) && !momItemsOf(m.id).some(function (i) { return i.issue_id; });
+  }
+  // Says whose it is without naming a person — same rule as the register's caption: a
+  // department user has no business being granted a read of `users` for a caption.
+  function minuteByLabel(m) {
+    if (!m || !m.created_by) return 'Recorded before minutes noted who wrote them — a planner maintains it.';
+    if (UID && m.created_by === UID) return 'Recorded by you.';
+    return 'Recorded by someone else — they or a planner can change it.';
+  }
   function momToday() {
     // Local date, not toISOString().slice(0,10) — east of Greenwich that is yesterday.
     var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
@@ -716,9 +739,10 @@ window.IssuesLessons = (function () {
     }
     var cur = MOMS.find(function (x) { return x.id === _momSel; }) || null;
     host.innerHTML =
-      (canMinutes ? '' : '<p class="il-mom-note">You can read the minutes of this project. ' +
-        'Recording minutes and raising their action items is a planner action — raising an ' +
-        'issue of your own is on the <b>Issues &amp; Concerns</b> screen.</p>') +
+      (isSteward ? '' : (canAdd
+        ? '<p class="il-mom-note">You can record minutes and maintain the ones you recorded. ' +
+          'A planner maintains the rest — everyone on the project can read them all.</p>'
+        : '<p class="il-mom-note">You can read the minutes of this project.</p>')) +
       '<div class="il-mom-wrap"><div class="il-mom-list">' +
         '<div class="il-mom-head">Meetings <span>' + MOMS.length + '</span></div>' +
         (MOMS.length ? MOMS.map(function (x) {
@@ -733,7 +757,7 @@ window.IssuesLessons = (function () {
             (_momErr ? 'Could not load minutes: ' + Fmt.esc(_momErr) +
                        '<br><small>If this says the relation does not exist, run <code>migrations/2026-08-19-duration-scenarios-and-mom.sql</code>.</small>'
                      : 'No minutes recorded on this project yet.') + '</div>') +
-        (canMinutes ? '<button class="pd-btn pd-btn-sm pd-btn-primary" id="il-mom-new" style="width:100%;margin-top:8px;">+ New minutes</button>' : '') +
+        (canAdd ? '<button class="pd-btn pd-btn-sm pd-btn-primary" id="il-mom-new" style="width:100%;margin-top:8px;">+ New minutes</button>' : '') +
       '</div><div class="il-mom-detail">' +
         (cur ? momDetailHTML(cur)
              : '<div class="il-empty" style="padding:28px;">' +
@@ -747,7 +771,7 @@ window.IssuesLessons = (function () {
   // read-only markup path — two paths drift the moment either is touched, and a
   // disabled input already reads as "you cannot change this".
   function momDetailHTML(mom) {
-    var ro = !canMinutes, d = ro ? ' disabled' : '';
+    var ro = !canEditMinute(mom), d = ro ? ' disabled' : '';
     var items = momItemsOf(mom.id);
     var act = mom.schedule_activity_id || '';
     return '<div class="il-mom-detail-card">' +
@@ -760,11 +784,12 @@ window.IssuesLessons = (function () {
       '<div class="pd-field il-mom-act"><label>Activity discussed ' +
         '<small style="font-weight:400;color:var(--pd-muted);">— optional; links these minutes to a schedule activity</small></label>' +
         '<input type="hidden" id="il-mom-act" value="' + Fmt.esc(act) + '">' +
-        '<div id="il-mom-actsel">' + momActChipHTML(act) + '</div>' +
+        '<div id="il-mom-actsel">' + momActChipHTML(act, ro) + '</div>' +
         (ro ? '' :
           '<input class="pd-input pd-input-sm" id="il-mom-actq" placeholder="Search the schedule by Activity ID or name…" autocomplete="off">' +
           '<div class="il-mom-acres" id="il-mom-acres" hidden></div>') +
       '</div>' +
+      (ro ? '<p class="il-raisedby il-mom-by">' + Fmt.esc(minuteByLabel(mom)) + '</p>' : '') +
       '<div class="pd-field"><label>Notes / discussion</label>' +
         '<textarea class="pd-textarea" id="il-mom-notes" rows="4"' + d + '>' + Fmt.esc(mom.notes || '') + '</textarea>' +
       '</div>' +
@@ -783,8 +808,12 @@ window.IssuesLessons = (function () {
       '</div>' +
 
       (ro ? '' :
-        '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;">' +
-          '<button class="pd-btn pd-btn-sm pd-btn-danger" id="il-mom-del">Delete minutes…</button>' +
+        '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+          (canDeleteMinute(mom)
+            ? '<button class="pd-btn pd-btn-sm pd-btn-danger" id="il-mom-del">Delete minutes…</button>'
+            // Says why rather than showing a button the database would refuse.
+            : '<span class="il-raisedby" style="margin:0;">An action has been raised from these ' +
+              'minutes, so only a planner can delete them.</span>') +
           '<div style="flex:1;"></div>' +
           '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-mom-save">Save minutes</button></div>') +
     '</div>';
@@ -813,12 +842,12 @@ window.IssuesLessons = (function () {
     '</tr>';
   }
 
-  function momActChipHTML(id) {
+  function momActChipHTML(id, ro) {
     if (!id) return '<span style="font-size:12px;color:var(--pd-muted);">Not linked to an activity.</span>';
     var nm = MOM_ACT_NAME[id];
     return '<span class="il-mom-chip"><code>' + Fmt.esc(id) + '</code>' +
       '<span id="il-mom-actname">' + (nm ? Fmt.esc(nm) : '') + '</span>' +
-      (canMinutes ? '<button type="button" id="il-mom-actclear" title="Unlink">✕</button>' : '') + '</span>';
+      (ro ? '' : '<button type="button" id="il-mom-actclear" title="Unlink">✕</button>') + '</span>';
   }
 
   // ------------------------------------------------------- activity search ----
@@ -858,7 +887,7 @@ window.IssuesLessons = (function () {
   // -------------------------------------------------------------- persist -----
   async function momSaveHeader() {
     var mom = MOMS.find(function (x) { return x.id === _momSel; });
-    if (!mom || !canMinutes) return false;
+    if (!mom || !canEditMinute(mom)) return false;
     var g = function (id) { var e = $(id); return e ? e.value : ''; };
     var payload = {
       title: g('il-mom-title').trim() || '(untitled)',
@@ -880,6 +909,10 @@ window.IssuesLessons = (function () {
   // table expects it to stick, and a single Save that silently covers the header AND
   // every row is how a half-typed action gets written.
   async function momSaveItem(id, patch) {
+    // ⚠️ The action item has no owner of its own — it belongs to its minute, so the
+    // question is whether that MINUTE is mine. Same derivation as the policy.
+    var it0 = MOM_ITEMS.find(function (x) { return x.id === id; });
+    if (!it0 || !canEditMinute(MOMS.find(function (m) { return m.id === it0.mom_id; }))) return false;
     try {
       var u = await sb().from('mom_items').update(patch).eq('id', id);
       if (u.error) throw u.error;
@@ -895,7 +928,8 @@ window.IssuesLessons = (function () {
   // anybody is working.
   async function momRaiseIssue(itemId) {
     var it = MOM_ITEMS.find(function (x) { return x.id === itemId; });
-    if (!it || !canMinutes) return;
+    if (!it) return;
+    if (!canEditMinute(MOMS.find(function (m) { return m.id === it.mom_id; }))) return;
     if (it.issue_id) { UI.toast('Already raised — it is on the Issues & Concerns screen.', 'info'); return; }
     if (!String(it.description || '').trim()) { UI.toast('Describe the action before raising it.', 'warn'); return; }
     var mom = MOMS.find(function (x) { return x.id === it.mom_id; }) || {};
@@ -1021,7 +1055,7 @@ window.IssuesLessons = (function () {
     var clr = host.querySelector('#il-mom-actclear');
     if (clr) clr.onclick = function () {
       $('il-mom-act').value = '';
-      $('il-mom-actsel').innerHTML = momActChipHTML('');
+      $('il-mom-actsel').innerHTML = momActChipHTML('', false);
       wireMom();
     };
     var q = host.querySelector('#il-mom-actq'), res = host.querySelector('#il-mom-acres');
@@ -1047,7 +1081,7 @@ window.IssuesLessons = (function () {
                 var id = b.dataset.act;
                 MOM_ACT_NAME[id] = b.dataset.actn || '';
                 $('il-mom-act').value = id;
-                $('il-mom-actsel').innerHTML = momActChipHTML(id);
+                $('il-mom-actsel').innerHTML = momActChipHTML(id, false);
                 var nm = $('il-mom-actname'); if (nm && MOM_ACT_NAME[id]) nm.textContent = '· ' + MOM_ACT_NAME[id];
                 q.value = ''; close(); wireMom();
               };

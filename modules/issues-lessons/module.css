@@ -324,6 +324,10 @@
 .il-mom-chip button { background: none; border: 0; cursor: pointer; color: var(--pd-muted); font-size: 13px; line-height: 1; padding: 2px 4px; }
 .il-mom-chip button:hover { color: var(--pd-red); }
 .il-mom-note { font-size: 12px; color: var(--pd-muted); margin: 0 0 10px; }
+/* The byline describes the whole record, so it needs air under it — without the
+   bottom margin it butts against the next field's label and reads as that field's
+   hint rather than as "who recorded these minutes". */
+.il-mom-by { margin: 2px 0 12px; }
 /* A disabled .pd-input is almost indistinguishable from a live one, so the
    read-only minutes get a tinted field. The text stays at full contrast — the
    point of the screen is reading it. */

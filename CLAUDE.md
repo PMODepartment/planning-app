@@ -84,6 +84,54 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-20 — Departments record minutes too: per-MINUTE permissions, not one flag
+Owner: *"Let departments record minutes too."* **Run `migrations/2026-08-20-department-minutes.sql`.**
+The other half of D1 — it does to `meeting_minutes` / `mom_items` what D1 did to `issues_lessons`,
+and for the same reason: the screen is department-facing now that Minutes of Meeting lives in the
+register.
+- ⚠️ **NOT a blanket widening, and that is the design.** The tables were created under
+  `for all using (is_planner())` — one rule for four commands. Dropping `is_writer()` into that
+  same shape would let any approved non-viewer rewrite or **delete another department's minutes**:
+  the record of a meeting they may not have attended. Three commands, three rules — insert: any
+  approved non-viewer, stamped as themselves; update: planner+ on anything, everyone else only
+  minutes they recorded; delete: planner+ on anything, everyone else their own **and only while
+  nothing has been raised from them**.
+- ⚠️ **Own-delete exists here but not in the register, and it is guarded.** "+ New minutes"
+  INSERTs immediately and then lets you type, so a mis-click leaves a real empty row — without
+  own-delete every stray draft would need a planner. But once an action is raised, issues in the
+  register point back at the minute for provenance, and `on delete set null` means deleting it
+  **silently strips that** rather than failing. Stripping provenance is a planner's call.
+- ⚠️ **`with check` as well as `using` on update.** With `using` alone a row can be updated *out
+  of* your own ownership, leaving you neither the right to fix it nor the record of writing it.
+- ⚠️ **`mom_items` ownership is DERIVED and is not getting a `created_by`.** An action item belongs
+  to its minute (already `on delete cascade`), so "may I touch this action?" is the same question
+  as "may I edit the minute it is on?" — `mom_is_mine(mom_id)`, SECURITY DEFINER with a pinned
+  `search_path` like every helper here (an RLS-filtered sub-select inside a policy is how this
+  schema got a stack-depth recursion bug once). A second ownership column would be a second answer
+  to that question, free to disagree with the first.
+- **The UI mirrors it per minute** (`canEditMinute` / `canDeleteMinute`); the screen-wide
+  `canMinutes` flag is gone, because no single flag can say "yes for this row, no for that one" —
+  and a flag saying yes where the DB says no is the silent failure D1 removed. A department sees
+  "+ New minutes", its own minutes fully editable, another department's read-only **with who
+  recorded it** (department-level, never a person), and where delete is unavailable it says why
+  rather than just missing a button. An unauthored minute is planner-only and says so.
+- **Verified: 103 checks** (was 79) against the section sliced verbatim from the shipped
+  `module.js` — the full matrix of planner/department/viewer × own/another's/unauthored, delete
+  before and after a raise, and both write paths refusing exactly what the policy refuses while
+  the same calls succeed on your own minutes. ⚠️ The suite **cannot pass against the pre-change
+  file** (`canEditMinute is not defined`). Plus **12 browser combos** (planner / dept-own /
+  dept-other × desktop/phone × light/dark).
+- ⚠️ **A stale harness option silently became a PASS:** `build({ canMinutes: false })` went on
+  "asserting" a read-only case after that option stopped existing — it was really testing a
+  planner. Renaming a flag invalidates every test that named it.
+- ⚠️ **The migration is structurally checked only** (parens, `$$` pairing, every policy preceded by
+  a drop, the generic `*_write` policies dropped so they cannot OR back in). **The policies are not
+  verified against a live database**, and RLS helpers can't be exercised from the SQL editor anyway
+  (`auth.uid()` is NULL for the `postgres` role). Neither MOM table is in `supabase-schema.sql` /
+  `supabase-setup.sql` — pre-existing drift, same as its predecessor — so `/migrations` stays their
+  only definition.
+
+
 ### 2026-08-20 — Minutes of Meeting moved OUT of the schedule and into Issues & Concerns
 Owner: *"There is a minutes of the meeting within the project schedule module. Let's move this out
 and connect it to issues and concerns module. Lessons Learned, departments can also add issues."*
@@ -112,6 +160,7 @@ every ⚠️ decision comment moved with the code.
   `canMinutes`. A department user reads the minutes (same fields, disabled) and is pointed at the
   Issues & Concerns screen, where they can raise their own. **Letting departments record minutes too
   is an RLS decision (`is_writer()` + own-rows), not a UI one — flagged for the owner, not taken.**
+  (The owner then said yes; done in the entry above, same day.)
 - ⚠️ **The activity link had to change mechanism, not disappear.** `schedule_activity_id` is kept
   (existing minutes carry it), but this module does not own the schedule and must not pull 40k
   activities in to offer a picker — and a `<datalist>` could not have served it anyway, since it
