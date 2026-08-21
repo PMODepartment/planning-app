@@ -16009,6 +16009,55 @@
   // when it has no dated descendants IN THE CURRENT DISPLAY SET, and that set is narrowed by the WBS
   // link (wbs_node_id / the dotted wbs code), by the active filters, and by search — independently.
   // So the report separates them and names the one that is actually biting.
+  // What each optional migration adds, and how to detect it. Ordered most-asked-about first.
+  // ⚠️ Keep this list in step with the migrations/ folder — a feature that silently fails with no
+  // entry here sends the planner straight back to guessing.
+  var DIAG_FEATURES = [
+    { label: 'Contract Scope (Main contract / Change order)', file: '2026-08-19-schedule-contract-scope.sql',
+      probes: [['project_schedule', 'scope_type'], ['project_schedule', 'change_order_ref'], ['wbs_nodes', 'scope_type']] },
+    { label: 'Activity Codes (incl. Class Code from Schedule Builder)', file: '2026-07-07-activity-codes.sql',
+      probes: [['project_schedule', 'activity_codes'], ['activity_code_types', 'id'], ['activity_code_values', 'id']] },
+    { label: 'WBS Manager tree', file: '2026-07-07-wbs-nodes.sql',
+      probes: [['wbs_nodes', 'id'], ['project_schedule', 'wbs_node_id']] },
+    { label: 'Baselines', file: '2026-07-07-schedule-baselines.sql', probes: [['schedule_baselines', 'id']] },
+    { label: 'Weighted Steps', file: '2026-07-07-activity-steps.sql', probes: [['activity_steps', 'id']] },
+    { label: 'Location Breakdown', file: '2026-08-12-progress-photos-location-breakdown.sql', probes: [['location_levels', 'id'], ['project_schedule', 'location']] }
+  ];
+  // Is this column readable? PostgREST rejects an unknown column (and an unknown table) outright,
+  // which is exactly the signal. limit(1) on a single column so the check costs nothing.
+  async function _diagHasCol(table, col) {
+    try {
+      var r = await sb().from(table).select(col).limit(1);
+      return !r.error;
+    } catch (e) { return false; }
+  }
+  async function _diagProbeDb(host) {
+    if (!host) return;
+    var rowsOut = [];
+    for (var i = 0; i < DIAG_FEATURES.length; i++) {
+      var f = DIAG_FEATURES[i], missing = [];
+      for (var j = 0; j < f.probes.length; j++) {
+        var ok = await _diagHasCol(f.probes[j][0], f.probes[j][1]);
+        if (!ok) missing.push(f.probes[j][0] + '.' + f.probes[j][1]);
+      }
+      rowsOut.push({ f: f, missing: missing });
+    }
+    host.innerHTML = '<table class="ps-table" style="width:100%;font-size:12.5px;"><thead><tr>' +
+      ['Feature', 'Status', 'To enable it'].map(function (h) { return '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--pd-line);">' + h + '</th>'; }).join('') +
+      '</tr></thead><tbody>' +
+      rowsOut.map(function (o) {
+        var bad = o.missing.length > 0, part = bad && o.missing.length < o.f.probes.length;
+        return '<tr' + (bad ? ' style="background:#FDECEA;"' : '') + '>' +
+          '<td style="padding:4px 8px;"><b>' + esc(o.f.label) + '</b></td>' +
+          '<td style="padding:4px 8px;white-space:nowrap;">' + (bad
+            ? '<span style="color:var(--pd-red);font-weight:700;">' + (part ? 'Partly applied' : 'Not applied') + '</span>'
+            : '<span style="color:#2e7d32;font-weight:700;">Applied</span>') + '</td>' +
+          '<td style="padding:4px 8px;">' + (bad
+            ? 'Run <code>migrations/' + esc(o.f.file) + '</code> in the Supabase SQL editor, then reload.' +
+              '<div style="color:var(--pd-muted);font-size:11px;margin-top:2px;">Missing: ' + esc(o.missing.join(', ')) + '</div>'
+            : '<span style="color:var(--pd-muted);">—</span>') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
   function openDiagnose() {
     if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
     var acts = rows.filter(function (r) { return !isWbs(r); });
@@ -16105,6 +16154,9 @@
       '<div style="font-size:13px;margin-bottom:10px;"><b>' + acts.length + '</b> activities · <b>' + wbsRows.length +
         '</b> WBS rows · <b>' + acts.filter(dated).length + '</b> dated · <b>' + Object.keys(shown).length + '</b> in the current view</div>' +
       verdict.join('') + filterState +
+      '<h3 style="font-size:13px;margin:14px 0 2px;">Database features</h3>' +
+      note('Each row is an optional migration this module uses. A missing one is not a bug in the schedule — the feature simply has nowhere to store its data, and saving it fails.') +
+      '<div id="ps-diag-db" style="font-size:12.5px;color:var(--pd-muted);padding:4px 0;">Checking…</div>' +
       '<h3 style="font-size:13px;margin:14px 0 2px;">By trade</h3>' +
       tbl(['Trade', 'Activities', 'Dated', 'In view', 'With WBS code', 'Under WBS branch(es)'],
         Object.keys(byTrade).sort().map(function (k) {
@@ -16139,6 +16191,9 @@
         '<button class="pd-btn pd-btn-primary" id="ps-diag-done">Close</button></div>';
 
     var m = UI.modal(html, { width: 900 });
+    // Fill the database section once the modal exists — the probes are round-trips and the rest of
+    // the report must not wait on them.
+    _diagProbeDb(m.el.querySelector('#ps-diag-db'));
     m.el.querySelector('#ps-diag-done').onclick = function () { m.close(); };
     // Plain-text copy, so the report can be pasted straight back to whoever is fixing it.
     m.el.querySelector('#ps-diag-copy').onclick = function () {
