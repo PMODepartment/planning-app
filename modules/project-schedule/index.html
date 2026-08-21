@@ -7732,16 +7732,17 @@
         // Emit the ACTIVITY itself carrying the group's label, so every one of those columns is
         // populated by the normal task-row rendering and the deepest row really is the last level
         // that was ticked.
-        // ⚠️ ONE ACTIVITY IN THE BUCKET = ONE ROW. No test of what later dimensions hold, because a
-        // heading over a single activity states nothing the row cannot state itself, and the
-        // qualifier below (locSuffixOf) already carries every location level the headings above have
-        // not said. Requiring the later dimensions to be empty as well is what produced B2(1) + its
-        // activity, and Basement(1) + Zone 1(1) + its activity: duplicate rows whose heading copy is
-        // the one missing Status / BL Start / BL Finish / %.
-        // Two floors side by side therefore still CAN render differently — Roof Deck as a row,
-        // Ground Floor as a heading — because one holds one activity and the other holds six. That
-        // difference is the information. See the note above about the uniformity override.
-        if (!showWbs && buckets[g].length === 1) {
+        // ⚠️ ONE ACTIVITY IN A **LOCATION** BUCKET = ONE ROW. A heading over a single activity states
+        // nothing the row cannot state itself, and locSuffixOf already carries every location level
+        // the headings above have not said — so the deepest populated location level IS the activity
+        // row ("Basement 3", "Zone 1", "Zone 1 - Unit 1").
+        // ⚠️⚠️ LOCATION DIMENSIONS ONLY. Applying this to a CLASSIFICATION dimension dissolved the
+        // trade headings of every trade that happened to hold one activity — General Requirements and
+        // Site Works vanished into suffixes on their own activity rows while Structural Works kept
+        // its heading, which is unreadable. Trade / Activity / Status / Phase / code answer WHAT and
+        // WHO; they earn a heading whatever they contain. Location answers WHERE, which is exactly
+        // what a row can say about itself.
+        if (!showWbs && dims[di].indexOf('loc:') === 0 && buckets[g].length === 1) {
           var solo = buckets[g][0];
           solo._dcode = gcode; solo._ddepth = parentAnc.length; solo._danc = parentAnc;
           solo._dkind = 'task'; solo._realCode = solo.wbs;
@@ -7755,9 +7756,11 @@
           // dimension is still included too, which is what lets one row carry "Z1 - U1" when the
           // whole chain below it holds a single activity — including a level the planner left out of
           // the groupings entirely (Trade > Activity > Level > Unit still states the Zone here).
-          var _soloLoc = locSuffixOf(solo, dims.slice(0, di));
-          var _soloExtra = (dims[di].indexOf('loc:') === 0 || dims[di] === 'act') ? null : g;
-          var _soloId = [_soloExtra, _soloLoc].filter(Boolean).join(' - ') || null;
+          // ⚠️ No non-location branch any more: this block is reached only for a 'loc:' dimension, so
+          // the old _soloExtra (which prefixed the bucket value for classification dimensions, and is
+          // how "General Requirements - F1" came to be an activity row's name) cannot arise. The
+          // location suffix alone IS this row's identity.
+          var _soloId = locSuffixOf(solo, dims.slice(0, di));
           // ⚠️ Is the activity's NAME already stated by a heading above this row? If it is, the row's
           // job is to say WHERE, and repeating the name would crowd that out — so the location
           // becomes the row's name. If it is NOT (a grouping with no Activity dimension), the name is
