@@ -6058,6 +6058,20 @@
       dim === 'cc1' || dim === 'cc2' || dim === 'cc3' ||
       dim.indexOf('loc:') === 0 || dim.indexOf('code:') === 0;
   }
+  // Do any of these later dimensions still add a level for this bucket?
+  // ⚠️ A dimension that does NOT dissolve on a blank (status / type / act / responsible / wbs) always
+  // produces a bucket — 'Not Started', 'Task', the activity's own name — so it is never exhausted,
+  // whatever the data looks like. Only a dissolving dimension (trade / work package / phase /
+  // location level / activity code) can be genuinely absent, and then only when EVERY row in the
+  // bucket lacks it: one row with a zone means the Zone level is real for this branch.
+  function _dimsExhausted(bucket, rest) {
+    for (var q = 0; q < rest.length; q++) {
+      var d = rest[q];
+      if (!dimNeedsValue(d)) return false;
+      for (var w = 0; w < bucket.length; w++) if (dimRawOf(bucket[w], d)) return false;
+    }
+    return true;
+  }
   function dimLabel(dim) {
     if (dim === 'wbs') return 'WBS';
     if (dim === 'act') return 'Activity';
@@ -7669,6 +7683,9 @@
       // line up with the docked stacking pane; that pane is gone, and the toolbar Vertical Stacking
       // view has its own display order, so nothing reorders the grid behind the planner's back.
       var _lastDim = (di === dims.length - 1);
+      // Dimensions still to come after this one — tested per bucket below, because "is this the
+      // bottom?" is a question about the DATA in that branch, not about the picker's length.
+      var _restDims = dims.slice(di + 1);
       _keys.forEach(function (g) {
         var gcode = parentCode + '§' + g;
         // ⚠️ DEEPEST LEVEL HOLDING EXACTLY ONE ACTIVITY = one row, not two. Without this, an
@@ -7678,7 +7695,10 @@
         // Emit the ACTIVITY itself carrying the group's label, so every one of those columns is
         // populated by the normal task-row rendering and the deepest row really is the last level
         // that was ticked.
-        if (_lastDim && !showWbs && buckets[g].length === 1) {
+        // Terminal for THIS bucket: either the picker has run out, or every remaining dimension is
+        // empty for every row here — see _dimsExhausted and the note above this function.
+        var _terminal = _lastDim || _dimsExhausted(buckets[g], _restDims);
+        if (_terminal && !showWbs && buckets[g].length === 1) {
           var solo = buckets[g][0];
           solo._dcode = gcode; solo._ddepth = parentAnc.length; solo._danc = parentAnc;
           solo._dkind = 'task'; solo._realCode = solo.wbs;

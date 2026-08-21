@@ -174,6 +174,59 @@ A new **Minutes of Meeting** view in the schedule's title switcher (tables ship 
 - ⚠️ Rows with no `created_by` (imported or predating the stamp) are **planner-only**: there is no way
   to know whose they were, and guessing would hand someone rights over a record they never touched.
 
+### D2. Minutes of Meeting — PDF export ✅ done 2026-08-21 (commit `fff2d0e`)
+Reproduces `PMODepartment/mom-app`'s `downloadPDF()` field for field via the same html2pdf.js
+0.10.1. Offered to read-only viewers too, since exporting is a read. See
+`modules/issues-lessons/CLAUDE.md` for the field mapping.
+- ⚠️ **Independently re-verified 2026-08-21**: the MOM test suite (sliced from the shipped
+  `module.js`, 121 checks) was pointed at this implementation — library-not-loaded and
+  no-selection guards, exactly one render at A4/portrait, filename sanitisation across
+  punctuation and blank titles, the register-status rule, escaping, and DOM cleanup + button
+  re-enable on **both** the success and the thrown-mid-render path. All green.
+- ⚠️ Still **not verified signed-in** — no one has opened a generated PDF. The render call
+  arguments and the DOM lifecycle are what is proven, not the visual output.
+
+### D3. What mom-app has that this screen doesn't (comparison, not a commitment)
+Cloned and read `PMODepartment/mom-app` (a single-file PWA on its own Supabase project, no
+relation to this app's schema). The real gaps, roughly in the order they'd likely matter:
+
+1. **Draft → Distributed workflow.** A meeting starts editable; a "Distribute" action locks its
+   items against further edit/delete and is the moment lower-permission users can see it at all —
+   a genuine publish/finalize gate, reversible back to draft. Our minutes stay editable
+   indefinitely by their author or a planner, and read access is already project-wide rather than
+   gated on distribution. **This is the biggest single difference**, and it is what makes minutes
+   a *record* rather than a live document.
+2. **Carry-forward.** Creating a meeting can pull every Open/On-Hold item from a prior meeting of
+   the same project in as fresh rows (preserving no./category/responsible/target date) — the
+   standard "review last meeting's open items" opening move. We have no equivalent; every meeting
+   starts empty.
+3. **Item Category + Type.** Each action carries a taxonomy (Commercial/Contracts, Engineering,
+   Procurement, Risk, Quality, …) and a Type (Issue / FYI / Report) separating actionable items
+   from purely informational ones. `mom_items` has neither — every row is implicitly "an action",
+   which is why the PDF export has to synthesise both columns.
+4. **Attachments per action item.** File/photo upload straight onto the item (Supabase Storage).
+   We have none, and a raised issue in our register carries no attachment either.
+5. **SBU org layer above Project**, with a scoped "SBU Admin" role. Out of scope: this app already
+   has Group Head + `is_planner`/`is_writer` covering the same need differently. Adopting SBUs
+   would be a second parallel org model, not a small addition.
+6. **Self-service password reset** (security question) and signup with no admin approval — new
+   accounts land as `viewer` and an admin grants more. Ours requires admin approval to activate an
+   account at all. A deliberate difference in this app's access model, not an oversight.
+
+**What we have that mom-app doesn't**, so none of this reads as "catch up on everything":
+attendees, an activity link into the real schedule (searched server-side rather than a
+40k-option `<datalist>`), a one-way raise into a genuine Issues & Concerns register with
+idempotency and rollback guarantees, and per-minute ownership permissions (D1's model) instead of
+four flat roles.
+
+⚠️ **A bug in mom-app worth NOT copying:** its item-Category options differ between the filter
+dropdown and the add-item dropdown (`Finance` exists in one and not the other) — two
+hand-maintained lists that have drifted. If items 3 is ever built here, the vocabulary belongs in
+one place.
+
+⚠️ **Nothing in D3 is scheduled.** Items 1–4 are genuine gaps worth doing if the owner wants them;
+5–6 are different design choices. Listed so the comparison is complete, not as a queue.
+
 ## E. Cross-app mirrors
 
 ### E1. Procurement in the Project Schedule ✅ done 2026-08-19
