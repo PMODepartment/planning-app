@@ -61,6 +61,14 @@
         <!-- ---- Project facts ------------------------------------------- -->
         <div class="pd-kpis" id="kpis"></div>
 
+        <!-- ---- Project status (management band) ------------------------
+             Four cards + a decisions strip, every figure from a module's own
+             declared dash.metrics. See renderStatus() below. -->
+        <section class="pd-stat-band" id="stat-band" aria-label="Project status">
+          <div class="pd-stat-grid" id="stat-grid"></div>
+          <div class="pd-stat-strip" id="stat-strip"></div>
+        </section>
+
         <!-- ---- Packages (A3): a contract package lives inside a project -->
         <section class="pd-card pd-pkg-card">
           <div class="pd-sec-head">
@@ -89,10 +97,51 @@
     </div>
   </div>
 
+  <style>
+    /* Project status band. Uses the shared tokens throughout so it follows the theme switch and
+       never hard-codes a colour that only works on one background. */
+    .pd-stat-band { margin:0 0 18px; }
+    .pd-stat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(228px, 1fr)); gap:12px; }
+    .pd-stat {
+      position:relative; overflow:hidden; padding:14px 16px 13px; border-radius:12px;
+      background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line);
+    }
+    /* A 3px spine in the card's own accent — enough to group the four at a glance without four
+       competing filled panels shouting at each other. */
+    .pd-stat::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--sc, var(--pd-muted)); }
+    .pd-stat-k { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--pd-muted); font-weight:700; }
+    .pd-stat-v { font-size:25px; font-weight:800; line-height:1.15; margin-top:5px; letter-spacing:-.02em; }
+    .pd-stat-v.sm { font-size:17px; font-weight:700; }
+    /* ⚠️ The basis line is not decoration: a number with no stated basis gets trusted further than
+       it deserves. Every card carries one, including the empty ones. */
+    .pd-stat-b { font-size:11.5px; color:var(--pd-muted); margin-top:5px; line-height:1.45; }
+    .pd-stat-none .pd-stat-v { color:var(--pd-muted); font-weight:700; font-size:17px; }
+    .pd-stat-bar { height:5px; border-radius:3px; background:var(--pd-line); margin-top:9px; overflow:hidden; }
+    .pd-stat-bar > i { display:block; height:100%; border-radius:3px; background:var(--sc, var(--pd-muted)); }
+    /* The planned marker on the progress bar — where the plan says we should be. */
+    .pd-stat-bar { position:relative; }
+    .pd-stat-bar > u { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--pd-fg); opacity:.55; }
+    .pd-stat-d { font-size:11px; font-weight:700; margin-top:6px; }
+    .pd-stat-late { color:#E5534B; } .pd-stat-early { color:#2FA36B; } .pd-stat-flat { color:var(--pd-muted); }
+
+    /* Decisions strip: only what is non-zero, so an empty strip is a real "nothing waiting". */
+    .pd-stat-strip { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; }
+    .pd-stat-chip {
+      display:inline-flex; align-items:center; gap:7px; padding:6px 11px; border-radius:999px;
+      border:1px solid var(--pd-line); background:var(--pd-card, var(--pd-bg));
+      font-size:12px; color:var(--pd-fg); text-decoration:none; white-space:nowrap;
+    }
+    .pd-stat-chip:hover { border-color:var(--pd-muted); }
+    .pd-stat-chip b { font-size:13px; }
+    .pd-stat-chip .dot { width:7px; height:7px; border-radius:50%; background:var(--cc, var(--pd-muted)); flex:none; }
+    .pd-stat-ok { font-size:12px; color:var(--pd-muted); }
+    .pd-stat-warn { font-size:11.5px; color:var(--pd-muted); }
+    @media (max-width:640px) { .pd-stat-v { font-size:21px; } }
+  </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260819a"></script>
+  <script src="assets/js/config.js?v=20260821f"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260819b"></script>
+  <script src="assets/js/db.js?v=20260821f"></script>
   <script src="assets/js/ui.js?v=20260812b"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
   <script src="assets/js/modules-grid.js?v=20260821c"></script>
@@ -128,6 +177,7 @@
       renderHeader();
       renderSwitcherMenu();
       renderKpis();
+      loadStatus();
       // Independent of one another: a packages failure must not blank the tiles.
       loadPackages();
       renderTiles();
@@ -339,6 +389,151 @@
     // ---- Module tiles (A5) ----
     // Each enabled module gets a tile. Figures come from the module's own `dash`
     // spec in config.js — the shell does not know any module's tables.
+    // ---- Project status band -----------------------------------------------------------------
+    // Every figure below comes from a module's own declared dash.metrics. Nothing here knows a
+    // module's table or column names; if a module declares no metrics it simply contributes nothing.
+    var MET = {};   // module key -> metrics object
+
+    function _n(v) { return (v == null || v === '' || !isFinite(+v)) ? null : +v; }
+    function _days(a, b) {
+      var x = a && new Date(a + 'T00:00:00Z'), y = b && new Date(b + 'T00:00:00Z');
+      if (!x || !y || isNaN(+x) || isNaN(+y)) return null;
+      return Math.round((y - x) / 86400000);
+    }
+    function statCard(o) {
+      var none = !o.value;
+      return '<div class="pd-stat' + (none ? ' pd-stat-none' : '') + '" style="--sc:' + (o.color || 'var(--pd-muted)') + '">' +
+        '<div class="pd-stat-k">' + Fmt.esc(o.label) + '</div>' +
+        '<div class="pd-stat-v' + (o.small ? ' sm' : '') + '">' + (o.value || o.empty || '—') + '</div>' +
+        (o.bar != null
+          ? '<div class="pd-stat-bar"><i style="width:' + Math.max(0, Math.min(100, o.bar)) + '%"></i>' +
+            (o.mark != null ? '<u style="left:' + Math.max(0, Math.min(100, o.mark)) + '%"></u>' : '') + '</div>'
+          : '') +
+        (o.delta ? '<div class="pd-stat-d ' + o.deltaCls + '">' + Fmt.esc(o.delta) + '</div>' : '') +
+        '<div class="pd-stat-b">' + o.basis + '</div>' +
+        '</div>';
+    }
+
+    function renderStatus() {
+      var grid = document.getElementById('stat-grid'), strip = document.getElementById('stat-strip');
+      if (!grid) return;
+      var sch = MET['project-schedule'] || {};
+      var acts = sch.__rows || 0;
+
+      // ---- 1. Schedule -----------------------------------------------------------------------
+      var start = sch.start || null, finish = sch.finish || null;
+      var dur = _days(start, finish);
+      var card1;
+      if (!finish) {
+        card1 = statCard({ label: 'Schedule', value: '', empty: 'No schedule yet', color: 'var(--pd-muted)',
+          basis: acts ? 'Activities exist but carry no dates.' : 'Push a programme from Schedule Builder, or add activities.' });
+      } else {
+        // ⚠️ Measured against the CONTRACT date when the project record has one — that is the date
+        // that costs money. Falls back to stating the span, never to a silent comparison.
+        var cd = curProj && (curProj.forecast_finish || curProj.end_date) || null;
+        var slip = cd ? _days(cd, finish) : null;
+        card1 = statCard({ label: 'Schedule', value: Fmt.date(finish), small: false, color: '#4F8EF7',
+          delta: slip == null ? '' : (slip > 0 ? slip + ' days past the project finish date'
+                 : slip < 0 ? (-slip) + ' days inside the project finish date' : 'on the project finish date'),
+          deltaCls: slip == null ? 'pd-stat-flat' : (slip > 0 ? 'pd-stat-late' : slip < 0 ? 'pd-stat-early' : 'pd-stat-flat'),
+          basis: 'Forecast finish of ' + acts + ' activit' + (acts === 1 ? 'y' : 'ies') +
+                 (start ? ', from ' + Fmt.esc(Fmt.date(start)) : '') +
+                 (dur ? ' · ' + dur + ' days' : '') +
+                 (cd ? '' : '<br>No project finish date set, so there is nothing to compare against.') });
+      }
+
+      // ---- 2. Progress -----------------------------------------------------------------------
+      var poc = _n(sch.poc);
+      var blN = _n(sch.baselined) || 0;
+      var card2;
+      if (poc == null) {
+        card2 = statCard({ label: 'Progress', value: '', empty: acts ? 'Not started' : 'No activities',
+          color: 'var(--pd-muted)', bar: acts ? 0 : null,
+          basis: acts ? 'No progress recorded against any activity yet.' : 'Nothing to report on.' });
+      } else {
+        // ⚠️ No planned marker without baselines. Comparing progress to the current dates would be
+        // comparing the schedule with itself — the module holds the same line for Planned Value %.
+        var cover = acts ? Math.round(blN / acts * 100) : 0;
+        card2 = statCard({ label: 'Progress', value: Math.round(poc) + '%', color: '#2FA36B', bar: poc,
+          basis: 'Duration-weighted across ' + acts + ' activities.<br>' +
+                 (blN === 0
+                   ? '<span class="pd-stat-warn">No baseline captured — there is no planned % to compare this against.</span>'
+                   : cover < 100
+                     ? '<span class="pd-stat-warn">' + cover + '% of activities are baselined.</span>'
+                     : 'All activities baselined.') });
+      }
+
+      // ---- 3. Cost ---------------------------------------------------------------------------
+      var bud = _n(sch.budget), act = _n(sch.actual);
+      var card3;
+      if (bud == null) {
+        card3 = statCard({ label: 'Cost', value: '', empty: 'Not cost-loaded', color: 'var(--pd-muted)',
+          basis: 'No planned cost on any activity. Load costs in Project Schedule to see a position here.' });
+      } else {
+        var spent = act || 0, pctSpent = bud > 0 ? (spent / bud * 100) : 0;
+        card3 = statCard({ label: 'Cost', value: Fmt.moneyShort(bud), color: '#C9A227', bar: pctSpent,
+          delta: act == null ? '' : Fmt.moneyShort(spent) + ' recorded (' + Math.round(pctSpent) + '%)',
+          deltaCls: 'pd-stat-flat',
+          basis: 'Planned cost loaded on the schedule.' +
+                 (act == null ? '<br><span class="pd-stat-warn">No actual cost recorded yet.</span>' : '') });
+      }
+
+      // ---- 4. Attention ----------------------------------------------------------------------
+      // ⚠️ A register with NO ROWS is reported as "not in use", never as "0 open". "0 risks" on an
+      // unused register is the most dangerous figure a dashboard can show: it reads as good news.
+      var srcs = [
+        { key: 'risk-register',    label: 'risks',  color: '#E5534B' },
+        { key: 'issues-lessons',   label: 'issues', color: '#E08A3C' },
+        { key: 'contracts-claims', label: 'claims', color: '#7A6FF0' }
+      ];
+      var live = 0, unused = [];
+      srcs.forEach(function (x) {
+        var m = MET[x.key] || {};
+        if (!m.__rows) { unused.push(x.label); return; }
+        live += (_n(m.open) != null ? _n(m.open) : (_n(m.records) || 0));
+      });
+      var card4 = statCard({
+        label: 'Needs attention', value: live ? String(live) : '', empty: unused.length === 3 ? 'Registers not in use' : 'Nothing open',
+        color: live ? '#E5534B' : 'var(--pd-muted)',
+        basis: live ? 'Open items across the risk, issue and claim registers.'
+             : unused.length
+               ? '<span class="pd-stat-warn">No entries in: ' + Fmt.esc(unused.join(', ')) + '. An empty register is not the same as a clear one.</span>'
+               : 'Nothing open across risks, issues and claims.' });
+
+      grid.innerHTML = card1 + card2 + card3 + card4;
+
+      // ---- the decisions strip ---------------------------------------------------------------
+      // Only non-zero entries, so an empty strip genuinely means nothing is waiting.
+      var chips = [];
+      srcs.forEach(function (x) {
+        var m = MET[x.key] || {};
+        var n = _n(m.open) != null ? _n(m.open) : _n(m.records);
+        if (!m.__rows || !n) return;
+        var mod = (APP_CONFIG.MODULES || []).find(function (mm) { return mm.key === x.key; });
+        chips.push('<a class="pd-stat-chip" style="--cc:' + x.color + '"' +
+          (mod ? ' href="' + ModulesGrid.href(mod) + '"' : '') + '>' +
+          '<span class="dot"></span><b>' + n + '</b> open ' + Fmt.esc(x.label) + '</a>');
+      });
+      if (_n(sch.active)) {
+        var ms = (APP_CONFIG.MODULES || []).find(function (mm) { return mm.key === 'project-schedule'; });
+        chips.push('<a class="pd-stat-chip" style="--cc:#4F8EF7"' + (ms ? ' href="' + ModulesGrid.href(ms) + '"' : '') + '>' +
+          '<span class="dot"></span><b>' + _n(sch.active) + '</b> activities in progress</a>');
+      }
+      strip.innerHTML = chips.length ? chips.join('')
+        : '<span class="pd-stat-ok">Nothing flagged for a decision right now.</span>';
+    }
+
+    // Load every module's declared metrics in parallel, then draw once. A module that fails or
+    // declares nothing contributes nothing — one bad spec must not blank the band.
+    function loadStatus() {
+      var mods = (APP_CONFIG.MODULES || []).filter(function (m) { return m.enabled && m.dash && m.dash.metrics; });
+      if (!mods.length) { var b = document.getElementById('stat-band'); if (b) b.style.display = 'none'; return; }
+      Promise.all(mods.map(function (m) {
+        return PDb.moduleMetrics(m.dash, pid).then(function (r) { MET[m.key] = r || {}; },
+          function () { MET[m.key] = {}; });
+      })).then(renderStatus, renderStatus);
+    }
+
     function renderTiles() {
       var grid = document.getElementById('tile-grid');
       var mods = APP_CONFIG.MODULES || [];

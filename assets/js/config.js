@@ -42,9 +42,12 @@ window.APP_CONFIG = {
   //                forever and looks like good news.
   MODULES: [
     { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: true, dash: { table: 'progress_photos', unit: 'photos' } },
-    { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' } } },
-    { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records' } },
-    { key: 'risk-register',     name: 'Risk Register',                         path: 'modules/risk-register/index.html',     icon: 'risk',       enabled: true, dash: { table: 'risk_register', unit: 'risks', attention: { column: 'status', values: ['Open'], label: 'open' } } },
+    { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' },
+      metrics: [ { key: 'open', agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] } ] } },
+    { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
+      metrics: [ { key: 'records', agg: 'countWhere', column: 'id' } ] } },
+    { key: 'risk-register',     name: 'Risk Register',                         path: 'modules/risk-register/index.html',     icon: 'risk',       enabled: true, dash: { table: 'risk_register', unit: 'risks', attention: { column: 'status', values: ['Open'], label: 'open' },
+      metrics: [ { key: 'open', agg: 'countWhere', column: 'status', values: ['Open'] } ] } },
     { key: 'stakeholder-map',   name: 'Stakeholder Map',                       path: 'modules/stakeholder-map/index.html',   icon: 'compass',    enabled: true, dash: { table: 'stakeholder_map', unit: 'stakeholders' } },
     // ⚠️ RETIRED — these two moved to the ENGINEERING APP, which is now the single
     // source for both registers. The modules and their tables are still here, and the
@@ -62,7 +65,23 @@ window.APP_CONFIG = {
     { key: 'drawing-register',  name: 'Drawing Register',                      path: 'modules/drawing-register/index.html',  icon: 'ruler',      enabled: false, retiredTo: 'the Engineering App' },
     { key: 'material-submittal',name: 'Material Submittal Log',                path: 'modules/material-submittal/index.html',icon: 'box',        enabled: false, retiredTo: 'the Engineering App' },
     // ---- Phase 2 ----
-    { key: 'project-schedule',  name: 'Project Schedule & Cost Loading',       path: 'modules/project-schedule/index.html', icon: 'calendar',    enabled: true, dash: { table: 'project_schedule', unit: 'activities' } },
+    { key: 'project-schedule',  name: 'Project Schedule & Cost Loading',       path: 'modules/project-schedule/index.html', icon: 'calendar',    enabled: true, dash: { table: 'project_schedule', unit: 'activities',
+      // ⚠️ WBS Summary rows are roll-up headings, not work. Counting them would inflate every figure
+      // on the card (a 500-activity project reads as 800) and drag the weighted % toward whatever
+      // the branches happen to store.
+      exclude: { column: 'activity_type', values: ['WBS Summary'] },
+      metrics: [
+        { key: 'start',   agg: 'min',  column: 'start_date' },
+        { key: 'finish',  agg: 'max',  column: 'end_date' },
+        // Duration-weighted, matching the roll-ups inside the module — a plain average would let a
+        // one-day activity count as much as a six-month one.
+        { key: 'poc',     agg: 'wavg', column: 'percent_complete', weight: 'duration_days' },
+        { key: 'budget',  agg: 'sum',  column: 'planned_cost' },
+        { key: 'actual',  agg: 'sum',  column: 'actual_cost' },
+        { key: 'baselined', agg: 'countWhere', column: 'bl_finish' },
+        { key: 'done',    agg: 'countWhere', column: 'status', values: ['Completed'] },
+        { key: 'active',  agg: 'countWhere', column: 'status', values: ['In Progress'] }
+      ] } },
     { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true, dash: { table: 's_curve', unit: 'points' } },
     { key: 'resource-loading',  name: 'Resource & Role Master',                path: 'modules/resource-loading/index.html',  icon: 'users',      enabled: true, dash: { table: 'resources', unit: 'resources' } },
     { key: 'productivity-rates',name: 'Productivity Rates',                    path: 'modules/productivity-rates/index.html',icon: 'barChart',   enabled: true, dash: { table: 'productivity_entries', unit: 'entries' } },

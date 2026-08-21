@@ -141,6 +141,72 @@
       if (error) throw error;
     },
 
+    // ---- Dashboard metrics (management band) ----
+    // Aggregate a module's rows into the named figures IT declared. Returns {} when the module
+    // declares no metrics, so a caller can treat "no spec" and "no data" the same way.
+    //
+    //   dash: { table: 'project_schedule', metrics: [
+    //     { key:'finish', agg:'max', column:'end_date' },
+    //     { key:'poc',    agg:'wavg', column:'percent_complete', weight:'duration_days' } ] }
+    //
+    async moduleMetrics(spec, projectId) {
+      if (!spec || !spec.table || !projectId || !spec.metrics || !spec.metrics.length) return {};
+      var col = spec.projectCol || 'project_id';
+      // Only what the spec asked for — plus id, which selectAll paginates on.
+      var want = { id: 1 };
+      spec.metrics.forEach(function (m) {
+        if (m.column) want[m.column] = 1;
+        if (m.weight) want[m.weight] = 1;
+      });
+      if (spec.exclude && spec.exclude.column) want[spec.exclude.column] = 1;
+      var rows;
+      try {
+        rows = await PDb.selectAll(spec.table, function (q) { return q.eq(col, projectId); },
+          Object.keys(want).join(','));
+      } catch (e) {
+        // A metric spec naming a column the project's database does not have yet is a spec/migration
+        // problem, not a reason to blank the whole band. Report nothing for this module and let the
+        // others render.
+        return { __error: (e && e.message) || String(e) };
+      }
+      // ⚠️ Rows the module says are not real records — a WBS summary row is not an activity, and
+      // counting it would inflate every figure on the card.
+      if (spec.exclude && spec.exclude.column && spec.exclude.values) {
+        rows = rows.filter(function (r) { return spec.exclude.values.indexOf(r[spec.exclude.column]) === -1; });
+      }
+      var out = { __rows: rows.length };
+      spec.metrics.forEach(function (m) {
+        var vals = [], wsum = 0, wacc = 0, n = 0, sum = 0;
+        for (var i = 0; i < rows.length; i++) {
+          var r = rows[i];
+          if (m.agg === 'countWhere') {
+            if (m.values ? m.values.indexOf(r[m.column]) !== -1 : !!r[m.column]) n++;
+            continue;
+          }
+          var v = r[m.column];
+          if (v == null || v === '') continue;
+          if (m.agg === 'min' || m.agg === 'max') { vals.push(v); continue; }
+          var num = +v; if (!isFinite(num)) continue;
+          if (m.agg === 'wavg') {
+            var w = +r[m.weight]; if (!isFinite(w) || w <= 0) continue;
+            wsum += w; wacc += w * num;
+            continue;
+          }
+          sum += num; n++;
+        }
+        if (m.agg === 'min') out[m.key] = vals.length ? vals.reduce(function (a, b) { return a < b ? a : b; }) : null;
+        else if (m.agg === 'max') out[m.key] = vals.length ? vals.reduce(function (a, b) { return a > b ? a : b; }) : null;
+        else if (m.agg === 'countWhere') out[m.key] = n;
+        else if (m.agg === 'sum') out[m.key] = n ? sum : null;      // null, not 0 — see below
+        else if (m.agg === 'avg') out[m.key] = n ? (sum / n) : null;
+        else if (m.agg === 'wavg') out[m.key] = wsum > 0 ? (wacc / wsum) : null;
+      });
+      // ⚠️ An empty sum returns null rather than 0 deliberately. "Budget 0" reads as a costed project
+      // worth nothing; "Budget —" reads as "not cost-loaded yet", which is the truth. The dashboard
+      // renders the two differently and must be able to tell them apart.
+      return out;
+    },
+
     // ---- Dashboard tiles (A5) ----
     // One project-scoped summary per module, driven by the `dash` spec each
     // module declares in config.js (see MODULE_CONTRACT.md). The shell never
