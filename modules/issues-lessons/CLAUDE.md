@@ -1,5 +1,75 @@
 # Module: issues-lessons
 
+## MoM: last mom-app gaps closed — filters, meeting type, attachments (2026-08-21) — fmlozano
+Owner: *"close the gaps by starting with the ongoing session."* **Run
+`migrations/2026-08-21-mom-type-and-attachments.sql`** (after the schema/carry-over/distribute one
+from earlier today). This finishes the mom-app parity list — nothing from the gap study is left open.
+
+**Two things in mom-app were deliberately NOT copied, and both are the interesting decisions.**
+- ⚠️ **Its attachment bucket is PUBLIC and it stores `/object/public/…` URLs**, so anybody holding a
+  link reads the file with no login at all. Minutes attachments are site photos and commercial
+  documents. This bucket is **private**, `attachment_url` holds the object **PATH**, and the URL is
+  signed on demand — the same construction as `drawing_register.file_url`, including keeping the
+  misleading column name for parity and documenting it rather than storing a URL that has expired.
+- ⚠️ **Its category list has drifted between two hand-maintained dropdowns** — the edit form offers
+  `Finance`, the filter does not, so an item categorised Finance there can never be filtered to.
+  `MOM_CATEGORIES` is the UNION of both, read by the editor *and* the filter, so that defect cannot
+  reproduce here.
+
+**The category free-text I shipped this morning was a latent version of the same bug.** It is now a
+select. ⚠️ Built through `momOptions()` = canonical ∪ values already used on this project ∪ **the
+row's own current value** — the select-value trap this app has been bitten by twice (the drawing
+register's type field silently WIPED a value on save; the schedule's work-package picker read back
+`''`). A `<select>` whose value is absent from its options reports the FIRST option instead.
+
+**Action-item filters** (search / category / type / status) with a count and a clear.
+- ⚠️ **The status filter tests the REGISTER's status for a raised action**, because that is what the
+  row displays — otherwise filtering to Closed would hide a row the screen is showing as Closed. Its
+  options are the union of both vocabularies: `On Hold` exists only in the register and `In Progress`
+  only on the minute, so offering one list would make the other unreachable.
+- ⚠️ Offered only past 4 actions, and the filtered set drives the TABLE while the full set still
+  drives the count and the empty state — rendering the filtered rows as if they were everything is
+  how a hidden row gets mistaken for a deleted one. Filters clear when you switch minutes.
+
+**`meeting_type` — not decoration.** In mom-app it is what the meetings list GROUPS by, and that is
+the point: a project runs several standing meetings at once, so a flat date-ordered list puts last
+week's client meeting between two weekly coordinations. The list now groups by type (untyped in its
+own trailing bucket — every pre-migration minute is untyped, so that bucket is the whole list until
+someone fills it in) and gains a search past 6 meetings.
+- ⚠️ **No CHECK constraint, the opposite call from `mom_items.type` this morning.** `type` has three
+  fixed values the PDF badges by name; a meeting type is project vocabulary nobody can enumerate up
+  front, and mom-app lets an admin add one at runtime. The fragmentation a CHECK would have covered
+  is handled by `momOptions()` offering what the project already uses.
+
+**Attachments — the ordering rules are the whole feature**, each one because the opposite order
+leaves a real mess: upload BEFORE the row write (a failed upload must never leave a row pointing at
+nothing); roll the object back if the row write then fails; on replace delete the old object only
+AFTER the row points at the new one; on remove null the row FIRST (a failed delete leaves a
+recoverable orphan, the reverse leaves an attachment that will not open). Deleting an action or a
+whole minute captures the paths BEFORE the rows leave memory — after the cascade they cannot be
+queried at all. The PDF names the file but never links it: the bucket is private, so a link would be
+dead for whoever opens the sheet.
+- ⚠️ **The bucket's INSERT policy is `is_writer()`, not the `is_approved()` the 2026-06-18 buckets
+  use.** That older rule predates viewer-readonly and lets a VIEWER upload into a register they
+  cannot write a row to — an orphan by construction. A new bucket has no legacy uploads to protect,
+  so it starts on the correct rule instead of inheriting the drift. DELETE keeps the `owner` branch
+  beside `is_planner()`, matching the settled rule on the other three.
+
+**Verified by executing the shipped code, sliced not stubbed: 42 new checks** (75 across the three
+MoM suites) — the select-value round-trip, every filter incl. the register-status rule, the grouping
+and its untyped/single-group cases, and all four attachment ordering rules driven with injected
+failures. Header/row cells align 11/11 writer, 10/10 read-only. **0 functions lost, 16 added.**
+- ⚠️ **A real layout defect the harness caught and reading would not have:** the filter bar rendered
+  **203px tall** — the shared `.pd-select` is `width:100%` (built for stacked `.pd-field` forms), so
+  every select claimed the whole bar and landed on its own row. Fixed to 52px, one row. Every filter
+  bar in this app has to override that; it is not decoration.
+- ⚠️ **A literal NUL byte** got written into a patch script where a space belonged, truncating a JS
+  string at the sentinel. `module.js` was checked byte-wise for NULs (0) after every patch.
+- ⚠️ **Not verified signed-in, and neither migration has been run** — the module redirects to login
+  and I do not enter credentials, so upload/distribute/carry-over click paths are unexercised against
+  real data and the bucket policies are structurally checked only. `MODULE_V` → `20260821e` (another
+  session had taken `d`); the module's own `?v=` → `20260821c`.
+
 ## MoM: mom-app item schema, carry-over keeping the register link, draft→distribute (2026-08-21) — fmlozano
 Owner: *"Let's proceed with all 3. But I like how our minutes of the meeting can push action items to
 issues & concerns. Let's consider that with the carry-over. I also like the new formatting we have.

@@ -376,6 +376,38 @@
 /* ⚠️ The action table is now 9-10 columns. It scrolls inside .il-mom-tablewrap
    (which is already overflow-x:auto) rather than widening the page; the min-width
    is what forces that instead of letting every input crush to unusable. */
-.il-mom-table { min-width: 1080px; }
+.il-mom-table { min-width: 1180px; }   /* grew by the File column */
 .il-mom-table .il-mi-no { white-space: nowrap; width: 78px; }
 .il-mom-table .il-mi-no .pd-input { width: 62px; }
+
+/* --- Meetings list: search + type groups --------------------------------- */
+.il-mom-search { width: 100%; margin-bottom: 8px; }
+/* ⚠️ Sticky so the group a long list is scrolled into stays named. `top:0` works
+   because .il-mom-list is the scroll container, not the page. */
+.il-mom-group {
+  position: sticky; top: 0; z-index: 1;
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--pd-muted); background: var(--pd-card);
+  padding: 8px 2px 4px; margin-top: 6px; border-bottom: 1px solid var(--pd-line);
+}
+.il-mom-group:first-child { margin-top: 0; }
+.il-mom-group span { color: var(--pd-muted); font-weight: 600; }
+
+/* --- Action-item filter bar ---------------------------------------------- */
+.il-mom-filters {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 10px;
+}
+/* ⚠️ The shared `.pd-select` / `.pd-input` are `width:100%` (they are built for
+   stacked .pd-field forms), so without an explicit basis every select claims the whole
+   bar and each one lands on its own row — measured 203px tall before this. Every
+   filter bar in this app has to override it; this is not decoration. */
+.il-mom-filters .pd-input, .il-mom-filters .pd-select { min-height: 34px; width: auto; }
+.il-mom-filters .pd-select { flex: 0 1 auto; min-width: 130px; max-width: 190px; }
+.il-mom-filters #il-momf-q { flex: 1 1 200px; min-width: 0; width: auto; }
+.il-mom-count { margin-left: auto; font-size: 12px; color: var(--pd-muted); white-space: nowrap; }
+
+/* --- Attachment cell ------------------------------------------------------ */
+.il-mom-table .il-mi-file { white-space: nowrap; width: 92px; }
+.il-mom-file { display: inline-flex; gap: 4px; align-items: center; }

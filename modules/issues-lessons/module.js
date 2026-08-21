@@ -653,9 +653,93 @@ window.IssuesLessons = (function () {
   // migrations/2026-08-21-mom-schema-carryover-distribute.sql. A value outside this
   // list is refused by the database, so the control is a <select>, never free text.
   var MOM_TYPES = ['Issue', 'FYI', 'Report'];
+  // mom-app's own category list. ⚠️ Taken as the UNION of the two lists that app
+  // carries, because they disagree: its edit form offers `Finance` and its filter
+  // does not — so an item categorised Finance there can never be filtered to. One
+  // list, read by both the editor and the filter, is what stops that recurring here.
+  var MOM_CATEGORIES = [
+    'Commercial / Contracts', 'Organizational Hr', 'Engineering', 'Procurement',
+    'Operations', 'Risk', 'Stakeholder Management', 'Quality',
+    'Project Execution Plan', 'Finance', 'Other Matters'
+  ];
+  // A starting vocabulary, NOT a closed list — see the migration's note on why
+  // `meeting_type` carries no CHECK. Whatever a project actually uses joins it
+  // through momOptions().
+  var MOM_MEETING_TYPES = [
+    'Weekly Coordination', 'Client Progress Meeting', 'Technical Coordination',
+    'Kick-off', 'Safety Toolbox', 'Site Inspection', 'Management Review'
+  ];
+  var _momF = { q: '', cat: '', type: '', status: '' };   // action-item filters
+  var _momQ = '';                                          // meetings-list search
+
+  // ⚠️ THE SELECT-VALUE TRAP, which this app has been bitten by twice (the drawing
+  // register's drawing-type field silently WIPED a value on save; the schedule's
+  // work-package picker read back ''). A <select> whose value is absent from its
+  // options reports the FIRST option instead — so a legacy or hand-entered value
+  // would be silently rewritten the next time anything saved the row.
+  //
+  // Options are therefore canonical ∪ values already in use on this project ∪ the
+  // row's own current value, so whatever is on screen always round-trips.
+  function momOptions(canon, present, cur, blank) {
+    var seen = {}, out = [];
+    canon.concat(present || []).concat(cur ? [cur] : []).forEach(function (v) {
+      v = String(v == null ? '' : v).trim();
+      if (!v || seen[v.toLowerCase()]) return;
+      seen[v.toLowerCase()] = 1; out.push(v);
+    });
+    return '<option value="">' + (blank || '—') + '</option>' +
+      out.map(function (v) {
+        return '<option' + (cur === v ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>';
+      }).join('');
+  }
+  // What this project actually uses, so one planner's spelling is offered to the next.
+  function momUsedCategories() {
+    return MOM_ITEMS.map(function (x) { return x.category; }).filter(Boolean);
+  }
+  function momUsedMeetingTypes() {
+    return MOMS.map(function (x) { return x.meeting_type; }).filter(Boolean);
+  }
+
+  // ------------------------------------------------ action-item filters -----
+  function momFilterOn() {
+    return !!(_momF.q || _momF.cat || _momF.type || _momF.status);
+  }
+  // ⚠️ For a RAISED action the REGISTER's status is what the row displays, so it is
+  // what the status filter must test — otherwise filtering to Closed would hide a row
+  // the screen is showing as Closed. Same rule as the PDF and carry-over.
+  function momItemStatus(it) {
+    var iss = momIssueOf(it);
+    return iss ? (iss.status || 'Open') : (it.status || 'Open');
+  }
+  function momVisibleItems(momId) {
+    var all = momItemsOf(momId);
+    if (!momFilterOn()) return all;
+    var q = _momF.q.toLowerCase();
+    return all.filter(function (it) {
+      if (_momF.cat && (it.category || '') !== _momF.cat) return false;
+      if (_momF.type && (it.type || '') !== _momF.type) return false;
+      if (_momF.status && momItemStatus(it) !== _momF.status) return false;
+      if (!q) return true;
+      // Everything the row shows as text, so a search finds what the eye can see.
+      return [it.item_no, it.category, it.issue, it.description, it.action_item, it.owner]
+        .join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  // ⚠️ The status filter offers the REGISTER's vocabulary alongside the minute's,
+  // because momItemStatus() can return either. `On Hold` exists only in the register
+  // and `In Progress` only on the minute; offering one list would make the other
+  // unreachable.
+  function momStatusFilterOpts() {
+    var seen = {}, out = [];
+    MOM_STATUSES.concat(['On Hold']).forEach(function (v) {
+      if (!seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out;
+  }
 
   function momReset() {
     MOMS = []; MOM_ITEMS = []; _momSel = null; _momErr = ''; _momLoaded = false;
+    _momQ = ''; _momF = { q: '', cat: '', type: '', status: '' };
     MOM_ACT_NAME = {};   // activity ids are project-scoped — this cache is too
   }
 
@@ -756,6 +840,7 @@ window.IssuesLessons = (function () {
       return;
     }
     var cur = MOMS.find(function (x) { return x.id === _momSel; }) || null;
+    var shown = momSearchList();
     host.innerHTML =
       (isSteward ? '' : (canAdd
         ? '<p class="il-mom-note">You can record minutes and maintain the ones you recorded. ' +
@@ -763,22 +848,17 @@ window.IssuesLessons = (function () {
         : '<p class="il-mom-note">You can read the minutes of this project.</p>')) +
       '<div class="il-mom-wrap"><div class="il-mom-list">' +
         '<div class="il-mom-head">Meetings <span>' + MOMS.length + '</span></div>' +
-        (MOMS.length ? MOMS.map(function (x) {
-          var items = momItemsOf(x.id);
-          var open = items.filter(function (i) { return i.status !== 'Closed'; }).length;
-          return '<button class="il-mom-item' + (cur && cur.id === x.id ? ' on' : '') + '" data-mom="' + Fmt.esc(x.id) + '">' +
-            // ⚠️ Marked in the LIST, not only on the open minute: a recorder with three
-            // drafts among a dozen issued meetings needs to see which are still unissued
-            // without opening each one. Nobody else can see a draft at all (RLS).
-            (momLocked(x) ? '' : '<span class="il-mom-draft">Draft</span>') +
-            Fmt.esc(x.title || '(untitled)') +
-            '<small>' + (x.meeting_date ? Fmt.date(x.meeting_date) : 'no date') +
-            ' · ' + items.length + ' action' + (items.length === 1 ? '' : 's') +
-            (open ? ' · <b>' + open + ' open</b>' : '') + '</small></button>';
-        }).join('') : '<div class="il-empty" style="padding:14px;">' +
+        // A project accumulates one minute per meeting for its whole life, so the list
+        // is the thing that gets long. Offered only once it actually is.
+        (MOMS.length > 6
+          ? '<input class="pd-input pd-input-sm il-mom-search" id="il-mom-q" ' +
+            'placeholder="Search meetings…" value="' + Fmt.esc(_momQ) + '">' : '') +
+        (shown.length ? momListHTML(shown, cur)
+          : '<div class="il-empty" style="padding:14px;">' +
             (_momErr ? 'Could not load minutes: ' + Fmt.esc(_momErr) +
                        '<br><small>If this says the relation does not exist, run <code>migrations/2026-08-19-duration-scenarios-and-mom.sql</code>.</small>'
-                     : 'No minutes recorded on this project yet.') + '</div>') +
+                     : (MOMS.length ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.'
+                                    : 'No minutes recorded on this project yet.')) + '</div>') +
         (canAdd ? '<button class="pd-btn pd-btn-sm pd-btn-primary" id="il-mom-new" style="width:100%;margin-top:8px;">+ New minutes</button>' : '') +
       '</div><div class="il-mom-detail">' +
         (cur ? momDetailHTML(cur)
@@ -787,6 +867,60 @@ window.IssuesLessons = (function () {
       '</div></div>';
     wireMom();
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+  }
+
+  function momSearchList() {
+    var q = _momQ.trim().toLowerCase();
+    if (!q) return MOMS;
+    return MOMS.filter(function (x) {
+      return [x.title, x.location, x.meeting_type, x.attendees, x.meeting_date]
+        .join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
+  // ⚠️ GROUPED BY MEETING TYPE, which is what that field is FOR in mom-app — it is
+  // not decoration on the form. A project runs several standing meetings at once, and
+  // a flat date-ordered list interleaves them, so last week's client meeting sits
+  // between two weekly coordinations. MOMS is already sorted by date desc, so pushing
+  // into buckets in order keeps each group date-ordered without a second sort.
+  //
+  // ⚠️ Untyped minutes get their own trailing bucket rather than being hidden or
+  // spread through the typed ones — every minute predating the meeting_type column is
+  // untyped, so that bucket is the whole list until someone starts filling it in.
+  function momListHTML(list, cur) {
+    var groups = {}, order = [];
+    list.forEach(function (x) {
+      var k = (x.meeting_type || '').trim() || ' untyped';
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(x);
+    });
+    order.sort(function (a, b) {
+      if ((a === ' untyped') !== (b === ' untyped')) return a === ' untyped' ? 1 : -1;
+      return a.localeCompare(b);
+    });
+    // A single group is not a grouping — the header would just be a label over the
+    // whole list, which is the common case on a project that types nothing.
+    var oneGroup = order.length < 2;
+    return order.map(function (k) {
+      return (oneGroup ? '' : '<div class="il-mom-group">' +
+                (k === ' untyped' ? 'No meeting type' : Fmt.esc(k)) +
+                ' <span>' + groups[k].length + '</span></div>') +
+        groups[k].map(function (x) { return momListRowHTML(x, cur); }).join('');
+    }).join('');
+  }
+
+  function momListRowHTML(x, cur) {
+    var items = momItemsOf(x.id);
+    var open = items.filter(function (i) { return momItemStatus(i) !== 'Closed'; }).length;
+    return '<button class="il-mom-item' + (cur && cur.id === x.id ? ' on' : '') + '" data-mom="' + Fmt.esc(x.id) + '">' +
+      // ⚠️ Marked in the LIST, not only on the open minute: a recorder with three
+      // drafts among a dozen issued meetings needs to see which are still unissued
+      // without opening each one. Nobody else can see a draft at all (RLS).
+      (momLocked(x) ? '' : '<span class="il-mom-draft">Draft</span>') +
+      Fmt.esc(x.title || '(untitled)') +
+      '<small>' + (x.meeting_date ? Fmt.date(x.meeting_date) : 'no date') +
+      ' · ' + items.length + ' action' + (items.length === 1 ? '' : 's') +
+      (open ? ' · <b>' + open + ' open</b>' : '') + '</small></button>';
   }
 
   // ⚠️ ONE detail renderer, read-only by disabling its fields rather than a second
@@ -800,9 +934,15 @@ window.IssuesLessons = (function () {
     var mayEdit = canEditMinute(mom), locked = momLocked(mom);
     var ro = !mayEdit || locked, d = ro ? ' disabled' : '';
     var items = momItemsOf(mom.id);
+    // ⚠️ `vis` drives the TABLE; `items` still drives the count, the filter bar and
+    // the empty state. Rendering the filtered set as if it were everything is how a
+    // hidden row gets mistaken for a deleted one.
+    var vis = momVisibleItems(mom.id);
     var act = mom.schedule_activity_id || '';
     var others = MOMS.filter(function (x) { return x.id !== mom.id && momCarryable(x).length; });
     return '<div class="il-mom-detail-card">' +
+      (ro ? '' : '<input type="file" id="il-mom-fileinput" hidden ' +
+        'accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx">') +
       '<div class="il-mom-toolbar">' +
         '<span class="il-mom-state' + (locked ? ' on' : '') + '">' +
           (locked ? 'Distributed' : 'Draft — only you and planners can see this') + '</span>' +
@@ -821,6 +961,10 @@ window.IssuesLessons = (function () {
         '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Location</label><input class="pd-input" id="il-mom-loc" value="' + Fmt.esc(mom.location || '') + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 170px;"><label>Meeting type</label>' +
+          '<select class="pd-select" id="il-mom-type"' + d + '>' +
+            momOptions(MOM_MEETING_TYPES, momUsedMeetingTypes(), mom.meeting_type || '', '— none —') +
+          '</select></div>' +
       '</div>' +
       '<div class="pd-field"><label>Attendees</label><input class="pd-input" id="il-mom-att" value="' + Fmt.esc(mom.attendees || '') + '" placeholder="Names, comma separated"' + d + '></div>' +
       '<div class="pd-field il-mom-act"><label>Activity discussed ' +
@@ -840,13 +984,20 @@ window.IssuesLessons = (function () {
         '<p>An action item lives here. <b>Raise</b> it to put a copy in the Issues &amp; Concerns ' +
         'register and link the two — after that the register is where it is chased, and these ' +
         'minutes keep saying what the meeting said.</p>' +
-        (items.length ? '<div class="il-mom-tablewrap"><table class="pd-table il-mom-table">' +
+        // ⚠️ Offered only when there is enough to filter. A filter bar over three
+        // rows is noise, and a "Showing 0 of 3" that a stale filter caused is how a
+        // planner concludes their minutes have lost data.
+        (items.length > 4 ? momFilterBarHTML(items) : '') +
+        (items.length && !vis.length
+          ? '<div class="il-empty" style="padding:14px;">No action item on these minutes matches the filter.</div>'
+          : '') +
+        (vis.length ? '<div class="il-mom-tablewrap"><table class="pd-table il-mom-table">' +
           '<thead><tr><th>No.</th><th>Category</th><th>Type</th><th>Issue / Agenda</th>' +
-          '<th>Action item</th><th>Owner</th><th>Due</th><th>Status</th><th>In the register</th>' +
+          '<th>Action item</th><th>Owner</th><th>Due</th><th>Status</th><th>File</th><th>In the register</th>' +
           (ro ? '' : '<th></th>') + '</tr></thead><tbody>' +
-          items.map(function (it) { return momItemRowHTML(it, ro, d); }).join('') +
+          vis.map(function (it) { return momItemRowHTML(it, ro, d); }).join('') +
           '</tbody></table></div>'
-          : '<div class="il-empty" style="padding:14px;">No action items on these minutes.</div>') +
+          : (items.length ? '' : '<div class="il-empty" style="padding:14px;">No action items on these minutes.</div>')) +
         (ro ? '' :
           '<div class="il-mom-addrow">' +
             '<button class="pd-btn pd-btn-sm" id="il-mom-additem">+ Add action item</button>' +
@@ -882,6 +1033,27 @@ window.IssuesLessons = (function () {
     '</div>';
   }
 
+  // mom-app keeps these in a collapsible drawer; here they sit inline above the
+  // table, matching the filter bars the rest of this app already uses.
+  function momFilterBarHTML(items) {
+    var on = momFilterOn();
+    return '<div class="il-mom-filters">' +
+      '<span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
+      '<input class="pd-input pd-input-sm" id="il-momf-q" placeholder="Search agenda, action, owner…" value="' + Fmt.esc(_momF.q) + '">' +
+      '<select class="pd-select pd-input-sm" id="il-momf-cat">' +
+        momOptions(MOM_CATEGORIES, momUsedCategories(), _momF.cat, 'All categories') + '</select>' +
+      '<select class="pd-select pd-input-sm" id="il-momf-type">' +
+        momOptions(MOM_TYPES, [], _momF.type, 'All types') + '</select>' +
+      '<select class="pd-select pd-input-sm" id="il-momf-status">' +
+        momOptions(momStatusFilterOpts(), [], _momF.status, 'All statuses') + '</select>' +
+      (on ? '<button class="il-clear" id="il-momf-clear" title="Clear all filters">' +
+            '<span data-ico="x" data-ico-size="14"></span>Clear</button>' : '') +
+      '<span class="il-mom-count">' +
+        (on ? 'Showing ' + momVisibleItems(_momSel).length + ' of ' + items.length
+            : items.length + ' action' + (items.length === 1 ? '' : 's')) + '</span>' +
+    '</div>';
+  }
+
   function momItemRowHTML(it, ro, d) {
     var iss = momIssueOf(it);
     return '<tr data-item="' + Fmt.esc(it.id) + '">' +
@@ -892,7 +1064,8 @@ window.IssuesLessons = (function () {
         // tag it reads as something someone re-typed, and the two would be chased twice.
         (it.carried_from_item_id ? '<span class="il-mom-carried" title="Carried over from an earlier meeting">carried</span>' : '') +
       '</td>' +
-      '<td><input class="pd-input pd-input-sm il-mi" data-f="category" value="' + Fmt.esc(it.category || '') + '"' + d + '></td>' +
+      '<td><select class="pd-select pd-input-sm il-mi" data-f="category"' + d + '>' +
+        momOptions(MOM_CATEGORIES, momUsedCategories(), it.category || '') + '</select></td>' +
       '<td><select class="pd-select pd-input-sm il-mi" data-f="type"' + d + '>' +
         // ⚠️ A blank option is offered because the column is nullable — without it an
         // untyped legacy row would silently read as the first option while the database
@@ -907,6 +1080,7 @@ window.IssuesLessons = (function () {
       '<td><select class="pd-select pd-input-sm il-mi" data-f="status"' + d + '>' +
         MOM_STATUSES.map(function (o) { return '<option' + (it.status === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
       '</select></td>' +
+      '<td class="il-mi-file">' + momAttachCellHTML(it, ro) + '</td>' +
       '<td>' + (it.issue_id
         // The status shown is the REGISTER's, read from `rows` — the minute does not keep
         // its own copy of it, so the two can never disagree.
@@ -1086,6 +1260,7 @@ window.IssuesLessons = (function () {
       title: g('il-mom-title').trim() || '(untitled)',
       meeting_date: g('il-mom-date') || null,
       location: g('il-mom-loc').trim() || null,
+      meeting_type: g('il-mom-type').trim() || null,
       attendees: g('il-mom-att').trim() || null,
       notes: g('il-mom-notes').trim() || null,
       schedule_activity_id: g('il-mom-act').trim() || null,
@@ -1173,6 +1348,111 @@ window.IssuesLessons = (function () {
   }
 
 
+  // ------------------------------------------------------------ attachments ---
+  // ⚠️ PRIVATE BUCKET. `attachment_url` stores the object PATH and the URL is signed
+  // on demand, never stored — a stored signed URL is one that has already expired.
+  // mom-app uses a PUBLIC bucket and stores the public URL, so anyone holding the
+  // link reads the file with no login; that is deliberately not copied. Same
+  // construction as the drawing register's `file_url`.
+  var MOM_BUCKET = 'mom-attachments';
+
+  function momAttachCellHTML(it, ro) {
+    if (it.attachment_url) {
+      return '<span class="il-mom-file">' +
+        '<button class="pd-btn pd-btn-sm il-mi-fview" title="' + Fmt.esc(it.attachment_name || 'Open the attachment') + '">' +
+          '<span data-ico="eye" data-ico-size="14"></span></button>' +
+        (ro ? '' : '<button class="pd-btn pd-btn-sm pd-btn-danger il-mi-fdel" title="Remove the attachment">' +
+          '<span data-ico="x" data-ico-size="13"></span></button>') +
+      '</span>';
+    }
+    return ro ? '<span class="il-noedit">—</span>'
+      : '<button class="pd-btn pd-btn-sm il-mi-fadd" title="Attach a photo or document">+ File</button>';
+  }
+
+  // ⚠️ ORDERING IS THE WHOLE GAME HERE, and each rule exists because the opposite
+  // order leaves a real mess behind. The same four rules the material-submittal and
+  // drawing-register attachment work settled on:
+  //   1. UPLOAD FIRST, then write the row — a failed upload must never leave a row
+  //      pointing at an object that does not exist.
+  //   2. If the row write then fails, DELETE WHAT WAS JUST UPLOADED — otherwise the
+  //      object is orphaned in the bucket with nothing referencing it.
+  //   3. On replace, delete the OLD object only AFTER the row points at the new one.
+  //   4. On remove, null the row FIRST, then delete the object — a failed delete
+  //      leaves an orphan (recoverable), where the reverse leaves a row pointing at
+  //      nothing (renders as an attachment that will not open).
+  async function momAttachUpload(itemId, file) {
+    var it = MOM_ITEMS.find(function (x) { return x.id === itemId; });
+    if (!it || !file) return;
+    var mom = MOMS.find(function (m) { return m.id === it.mom_id; });
+    if (!canEditMinute(mom) || momLocked(mom)) return;
+    // 25 MB: a site photo or a tabled PDF, not a drawing set. Refused before the
+    // upload rather than after, so nobody waits for a transfer that will be rejected.
+    if (file.size > 25 * 1024 * 1024) {
+      UI.toast('That file is ' + Math.round(file.size / 1048576) + ' MB — attachments are capped at 25 MB.', 'warn');
+      return;
+    }
+    var old = it.attachment_url || null;
+    // Path is scoped by project and item so two meetings cannot collide, and the
+    // timestamp keeps a re-upload from overwriting the object a row still points at.
+    var safe = String(file.name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
+    var path = pid + '/' + it.mom_id + '/' + itemId + '-' + Date.now() + '-' + safe;
+    UI.toast('Uploading ' + safe + '…', 'info');
+    try {
+      var up = await sb().storage.from(MOM_BUCKET).upload(path, file, { upsert: false });
+      if (up.error) throw up.error;
+      var okRow = await momSaveItem(itemId, { attachment_url: path, attachment_name: file.name || safe });
+      if (!okRow) {
+        // Rule 2 — roll the object back rather than orphan it.
+        try { await sb().storage.from(MOM_BUCKET).remove([path]); } catch (e) {}
+        return;
+      }
+      // Rule 3 — the row already points at the new object, so the old one is safe
+      // to drop. A failure here is an orphan, not data loss, so it does not throw.
+      if (old) { try { await sb().storage.from(MOM_BUCKET).remove([old]); } catch (e) {} }
+      UI.toast('Attached', 'ok');
+      renderMom();
+    } catch (e) {
+      UI.toast(/bucket|not found/i.test(e.message || '')
+        ? 'Run migrations/2026-08-21-mom-type-and-attachments.sql in Supabase first.'
+        : 'Upload failed: ' + ((e && e.message) || e), 'error');
+    }
+  }
+
+  async function momAttachRemove(itemId) {
+    var it = MOM_ITEMS.find(function (x) { return x.id === itemId; });
+    if (!it || !it.attachment_url) return;
+    var mom = MOMS.find(function (m) { return m.id === it.mom_id; });
+    if (!canEditMinute(mom) || momLocked(mom)) return;
+    if (!confirm('Remove "' + (it.attachment_name || 'this file') + '" from this action?\n\nThe file is deleted.')) return;
+    var path = it.attachment_url;
+    // Rule 4 — the row stops pointing at it first.
+    if (!await momSaveItem(itemId, { attachment_url: null, attachment_name: null })) return;
+    try { await sb().storage.from(MOM_BUCKET).remove([path]); } catch (e) {}
+    UI.toast('Attachment removed', 'ok');
+    renderMom();
+  }
+
+  // ⚠️ Signed on demand and opened immediately. 60s is plenty to hand the URL to the
+  // browser and is the same window the other registers use — the link is not meant to
+  // be copied out and shared, which is the point of the bucket being private.
+  async function momAttachOpen(itemId) {
+    var it = MOM_ITEMS.find(function (x) { return x.id === itemId; });
+    if (!it || !it.attachment_url) return;
+    try {
+      var r = await sb().storage.from(MOM_BUCKET).createSignedUrl(it.attachment_url, 60);
+      if (r.error) throw r.error;
+      window.open(r.data.signedUrl, '_blank', 'noopener');
+    } catch (e) {
+      UI.toast('Could not open the attachment: ' + ((e && e.message) || e), 'error');
+    }
+  }
+
+  // Every attachment under a set of action items — used before a delete, while the
+  // rows are still in memory to read the paths from.
+  function momPathsOf(items) {
+    return items.map(function (x) { return x.attachment_url; }).filter(Boolean);
+  }
+
   // ------------------------------------------------------------------- pdf ----
   // ⚠️ The layout below is the standalone mom-app's `downloadPDF()` reproduced field
   // for field — same red header band, same six-column meta grid, same grey field
@@ -1259,6 +1539,9 @@ window.IssuesLessons = (function () {
           momPdfField('Description', it.description !== actText ? it.description : '') +
           // Not a mom-app block: mom-app has no register to point at. Printed only when
           // the action has actually been raised, so it never adds an empty row.
+          // Named, never embedded: the bucket is private, so a link in the sheet would
+          // be dead for whoever opens the PDF. Saying a file exists is the useful half.
+          (it.attachment_name ? momPdfField('Attachment', it.attachment_name) : '') +
           (iss ? momPdfField('Status in Issues & Concerns',
             (iss.status || 'Open') + (iss.champion ? ' · champion ' + iss.champion : '') +
             (it.carried_from_item_id ? ' · carried over from an earlier meeting' : '')) : '') +
@@ -1330,7 +1613,13 @@ window.IssuesLessons = (function () {
   function wireMom() {
     var host = $('il-mom-view'); if (!host) return;
     host.querySelectorAll('[data-mom]').forEach(function (b) {
-      b.onclick = function () { _momSel = b.dataset.mom; renderMom(); };
+      // ⚠️ Filters are cleared on switching minutes. They belong to the set of actions
+      // being looked at, and carrying one across would open the next meeting already
+      // filtered — showing "no action items" on a minute that has plenty.
+      b.onclick = function () {
+        if (_momSel !== b.dataset.mom) _momF = { q: '', cat: '', type: '', status: '' };
+        _momSel = b.dataset.mom; renderMom();
+      };
     });
     var nb = host.querySelector('#il-mom-new');
     if (nb) nb.onclick = async function () {
@@ -1347,6 +1636,31 @@ window.IssuesLessons = (function () {
     };
     if (!_momSel) return;
     momResolveActName(($('il-mom-act') || {}).value);
+
+    // ⚠️ Re-rendering on every keystroke would destroy the input and its focus, so
+    // the value is kept in module state and the caret is restored after the repaint.
+    // The list is already in memory — there is no request to debounce.
+    var mq = host.querySelector('#il-mom-q');
+    if (mq) mq.oninput = function () {
+      _momQ = mq.value; var at = mq.selectionStart;
+      renderMom();
+      var again = $('il-mom-q');
+      if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch (e) {} }
+    };
+
+    var fq = host.querySelector('#il-momf-q');
+    if (fq) fq.oninput = function () {
+      _momF.q = fq.value; var at = fq.selectionStart;
+      renderMom();
+      var again = $('il-momf-q');
+      if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch (e) {} }
+    };
+    [['il-momf-cat', 'cat'], ['il-momf-type', 'type'], ['il-momf-status', 'status']].forEach(function (pair) {
+      var el = host.querySelector('#' + pair[0]);
+      if (el) el.onchange = function () { _momF[pair[1]] = el.value; renderMom(); };
+    });
+    var fc = host.querySelector('#il-momf-clear');
+    if (fc) fc.onclick = function () { _momF = { q: '', cat: '', type: '', status: '' }; renderMom(); };
 
     var dist = host.querySelector('#il-mom-dist');
     if (dist) dist.onclick = function () {
@@ -1366,7 +1680,9 @@ window.IssuesLessons = (function () {
     // the form, so a title typed and not saved would be missing from the sheet.
     if (pb) pb.onclick = async function () {
       var cur = MOMS.find(function (x) { return x.id === _momSel; });
-      if (cur && canEditMinute(cur)) await momSaveHeader();
+      // ⚠️ Not when locked: the form is disabled, so this would be a pointless write
+      // to a distributed minute — and one that bumps its updated_at for nothing.
+      if (cur && canEditMinute(cur) && !momLocked(cur)) await momSaveHeader();
       await momDownloadPDF(_momSel);
     };
     var sv = host.querySelector('#il-mom-save');
@@ -1403,6 +1719,30 @@ window.IssuesLessons = (function () {
         momSaveItem(id, patch);
       };
     });
+    // ⚠️ ONE hidden <input type=file> reused by every row, not one per row: a table of
+    // 40 actions would otherwise carry 40 file inputs, and the row that owns the
+    // pending pick is tracked instead.
+    var fin = host.querySelector('#il-mom-fileinput');
+    host.querySelectorAll('.il-mi-fadd').forEach(function (b) {
+      b.onclick = function () {
+        if (!fin) return;
+        fin.dataset.item = b.closest('[data-item]').dataset.item;
+        fin.value = '';            // so re-picking the same file still fires change
+        fin.click();
+      };
+    });
+    if (fin) fin.onchange = function () {
+      var id = fin.dataset.item, f = fin.files && fin.files[0];
+      fin.value = '';
+      if (id && f) momAttachUpload(id, f);
+    };
+    host.querySelectorAll('.il-mi-fview').forEach(function (b) {
+      b.onclick = function () { momAttachOpen(b.closest('[data-item]').dataset.item); };
+    });
+    host.querySelectorAll('.il-mi-fdel').forEach(function (b) {
+      b.onclick = function () { momAttachRemove(b.closest('[data-item]').dataset.item); };
+    });
+
     host.querySelectorAll('.il-mi-raise').forEach(function (b) {
       b.onclick = function () { momRaiseIssue(b.closest('[data-item]').dataset.item); };
     });
@@ -1413,11 +1753,17 @@ window.IssuesLessons = (function () {
         // ⚠️ Removing the action does NOT remove the issue it raised — the register is
         // its own record and someone may already be working it. Said out loud, because
         // the opposite is a reasonable thing to assume.
-        if (!confirm('Remove this action item?' + (it && it.issue_id
+        if (!confirm('Remove this action item?' +
+          (it && it.attachment_url ? '\n\nIts attached file is deleted too.' : '') +
+          (it && it.issue_id
           ? '\n\nThe issue it raised STAYS in Issues & Concerns — this only removes the line from these minutes.' : ''))) return;
+        // ⚠️ Read the path BEFORE the row leaves memory, or there is nothing left to
+        // name the object with and it is orphaned in the bucket forever.
+        var paths = momPathsOf(it ? [it] : []);
         try {
           var dl = await sb().from('mom_items').delete().eq('id', id);
           if (dl.error) throw dl.error;
+          if (paths.length) { try { await sb().storage.from(MOM_BUCKET).remove(paths); } catch (e) {} }
           MOM_ITEMS = MOM_ITEMS.filter(function (x) { return x.id !== id; });
           renderMom();
         } catch (e) { UI.toast(e.message, 'error'); }
@@ -1427,11 +1773,16 @@ window.IssuesLessons = (function () {
     var db = host.querySelector('#il-mom-del');
     if (db) db.onclick = async function () {
       var items = momItemsOf(_momSel), raised = items.filter(function (i) { return i.issue_id; }).length;
+      // ⚠️ Same rule as the single-action delete: capture the paths first. The action
+      // rows go by `on delete cascade`, so after this they cannot be queried at all.
+      var paths = momPathsOf(items);
       if (!confirm('Delete these minutes and their ' + items.length + ' action item(s)?' +
+        (paths.length ? '\n\n' + paths.length + ' attached file(s) are deleted too.' : '') +
         (raised ? '\n\n' + raised + ' issue(s) already raised in Issues & Concerns will REMAIN — they simply stop pointing back at a meeting.' : ''))) return;
       try {
         var dl = await sb().from('meeting_minutes').delete().eq('id', _momSel);
         if (dl.error) throw dl.error;
+        if (paths.length) { try { await sb().storage.from(MOM_BUCKET).remove(paths); } catch (e) {} }
         MOM_ITEMS = MOM_ITEMS.filter(function (x) { return x.mom_id !== _momSel; });
         MOMS = MOMS.filter(function (x) { return x.id !== _momSel; });
         _momSel = null; UI.toast('Minutes deleted', 'ok'); renderMom();
