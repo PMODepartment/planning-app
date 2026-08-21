@@ -7433,6 +7433,11 @@
   // Build the full annotated node list for the current groupBys + filters (no collapse).
   function buildNodes() {
     normalizeGroupBys();
+    // ⚠️ THE ONE PLACE _dsolo IS CLEARED. It is per-render state living on a shared, reused row
+    // object, and it must not survive into a render that did not set it — a stale flag exempts an
+    // ordinary activity from its branch's collapse, which reads as "the WBS won't collapse". Swept
+    // here, before any branch below runs, so no emit path can forget. See hiddenRow().
+    for (var _dsi = 0; _dsi < rows.length; _dsi++) if (rows[_dsi]._dsolo) rows[_dsi]._dsolo = 0;
     // Hoisted: the group-category roll-up below resolves one value PER ACTIVITY, and catCfg()
     // re-reads storage on every call — reading it per row would make this O(rows) storage hits.
     var _catField = catCfg().field;
@@ -7559,10 +7564,7 @@
         var _nameN = {};
         list.forEach(function (a) { var k = (a.activity_name || '').trim(); _nameN[k] = (_nameN[k] || 0) + 1; });
         list.slice().sort(function (x, y) { return cmpCodeStr(x.wbs, y.wbs); }).forEach(function (a) {
-          // ⚠️ _dsolo is CLEARED here on purpose. These row objects are shared and mutated in place
-          // across renders, so a flag left over from a grouping where this row replaced a heading
-          // would exempt it from a collapse it should now obey.
-          a._dcode = base + SEP + a.wbs; a._ddepth = depth; a._danc = baseAnc; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null; a._dsolo = 0;
+          a._dcode = base + SEP + a.wbs; a._ddepth = depth; a._danc = baseAnc; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null;
           // Location first: it is the identity the owner asked every line item to carry. The
           // repeated-name WBS-parent qualifier is the FALLBACK for rows that have no location.
           a._dsuffix = locSuffixOf(a, shownDims);
@@ -7615,9 +7617,7 @@
           node._dkind = 'wbs'; node._dcode = dc; node._ddepth = depth + rdepth; node._danc = da; node._realCode = en.real;
           out.push(node);
         } else {
-          // _dsolo cleared for the same reason as the other leaf path: these row objects are shared
-          // and mutated in place, so a stale flag would exempt this row from a real collapse.
-          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null; a._dsolo = 0;
+          var a = en.a; a._dcode = dc; a._ddepth = depth + rdepth; a._danc = da; a._dkind = 'task'; a._realCode = a.wbs; a._dlabel = null;
           a._dsuffix = locSuffixOf(a, shownDims);
           out.push(a);
           var s = pd(dispStart(a)), e = pd(dispFin(a));   // displayed dates — see the note above
