@@ -7686,6 +7686,13 @@
       // Dimensions still to come after this one — tested per bucket below, because "is this the
       // bottom?" is a question about the DATA in that branch, not about the picker's length.
       var _restDims = dims.slice(di + 1);
+      // ⚠️ Decided ONCE for the whole sibling set — see the note below. A bucket is "solo" when it
+      // holds a single activity AND no later dimension adds anything for it; the level collapses
+      // only when every sibling is solo, so a list of floors can never be part headings and part
+      // activity rows.
+      var _allSolo = !showWbs && _keys.length > 0 && _keys.every(function (g) {
+        return buckets[g].length === 1 && (_lastDim || _dimsExhausted(buckets[g], _restDims));
+      });
       _keys.forEach(function (g) {
         var gcode = parentCode + '§' + g;
         // ⚠️ DEEPEST LEVEL HOLDING EXACTLY ONE ACTIVITY = one row, not two. Without this, an
@@ -7695,10 +7702,11 @@
         // Emit the ACTIVITY itself carrying the group's label, so every one of those columns is
         // populated by the normal task-row rendering and the deepest row really is the last level
         // that was ticked.
-        // Terminal for THIS bucket: either the picker has run out, or every remaining dimension is
-        // empty for every row here — see _dimsExhausted and the note above this function.
-        var _terminal = _lastDim || _dimsExhausted(buckets[g], _restDims);
-        if (_terminal && !showWbs && buckets[g].length === 1) {
+        // ⚠️ NOT a per-bucket test. Whether this level is a heading or an activity row is a property
+        // of the SIBLING SET (_allSolo, above): the reader is comparing this row against the ones
+        // either side of it, so "Ground Floor" cannot render differently from "Roof Deck" just
+        // because one holds six activities and the other holds one.
+        if (_allSolo) {
           var solo = buckets[g][0];
           solo._dcode = gcode; solo._ddepth = parentAnc.length; solo._danc = parentAnc;
           solo._dkind = 'task'; solo._realCode = solo.wbs;
