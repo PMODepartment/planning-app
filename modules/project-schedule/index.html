@@ -319,7 +319,7 @@
     .ps-cols-corner .ps-cols-menu { right:0; left:auto; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-task:124px; --c-con:150px; --c-condate:104px; --c-scope:146px; --c-pkg:150px; --c-x:130px; }
+    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-task:124px; --c-con:150px; --c-condate:104px; --c-scope:146px; --c-pkg:150px; --c-ccode:190px; --c-x:130px; }
     /* Leading row-number (#) gutter + frozen Activity ID/Name columns: they stay put (and header/
        body stay aligned) while the rest of the grid scrolls. The "#" cell is DOM child 1 but not a
        data column, so column reorder (CSS `order`) must never move it — pin it with order:-1. Sticky
@@ -433,6 +433,9 @@
     .c-con { width:var(--c-con); } .c-condate { width:var(--c-condate); }
     .c-scope { width:var(--c-scope); }
     .c-pkg { width:var(--c-pkg); }
+    .c-ccode { width:var(--c-ccode); }
+    .ps-cctag { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; }
+    .ps-cctag.unknown { color:var(--pd-red); }
     /* A package tag is neutral by design: unlike CO/MC it carries no judgement,
        it just names which contract lot the work belongs to. */
     .ps-pkgtag { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -2548,6 +2551,9 @@
              A <select> populated from the mirror in openForm (exactly like Calendar
              above), not a text box: the stored value is a bare wp_no nobody can type. -->
         <div><label class="pd-label">Work Package <span style="font-weight:400;color:var(--pd-muted);">(Procurement app)</span></label><select class="pd-select" id="ps-f-wp"></select><div id="ps-f-wp-hint" style="font-size:11px;color:var(--pd-muted);margin-top:3px;"></div></div>
+        <!-- Finance class code (Level 3). A <select> populated in openForm from the chart, not a
+             text box: 015051 and 15051 are DIFFERENT codes, so it must be picked, not typed. -->
+        <div><label class="pd-label">Class Code <span style="font-weight:400;color:var(--pd-muted);">(Finance)</span></label><select class="pd-select" id="ps-f-ccode"></select><div id="ps-f-ccode-hint" style="font-size:11px;color:var(--pd-muted);margin-top:3px;"></div></div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:22px;"><input type="checkbox" id="ps-f-progms" /><label class="pd-label" for="ps-f-progms" style="margin:0;">Program Milestone</label></div>
 
         <div class="ps-form-full ps-form-sec">Status &mdash; Dates &amp; Duration</div>
@@ -2668,6 +2674,14 @@
   // `wp_no` of the work package that supplies it, so "which procurement package feeds this
   // work?" is answerable instead of being a hand-typed string nothing validates.
   var WPM_WPS = [];
+  // Finance's class-code chart (migrations/2026-08-21-class-codes.sql) — 702 Level-3 codes under
+  // 42 divisions and 205 groups. ORG-WIDE reference data, not per project, so it is loaded once
+  // and reused across project switches.
+  //
+  // ⚠️ This is the ONLY vocabulary this app and the Procurement (WPM) app genuinely share: WPM's
+  // `work_packages.cost_code` is the same Finance code. It is what lets a work package's scope be
+  // DERIVED from the schedule (group activities by code × location) rather than hand-linked.
+  var CLASS_CODES = [];
   var LOC_LEVELS = [];   // Location Breakdown levels (ordered: Building > Level > Zone > …) for this project
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
@@ -2829,6 +2843,18 @@
     var nm = packageShort(id);
     if (nm && pk.names.indexOf(nm) === -1) pk.names.push(nm);
   }
+  // Same shape for the class-code roll-up: a branch states its code only when every activity
+  // beneath agrees. ⚠️ Accumulated on the RAW stored code, so an unresolved code still counts as
+  // its own distinct value rather than folding into the resolved ones and faking agreement.
+  function _cmCc(cm, code) {
+    var k = String(code == null ? '' : code).trim();
+    if (!cm || !k) return;
+    var cc = cm.cc || (cm.cc = { code: null, n: 0, mixed: false, names: [] });
+    cc.n += 1;
+    if (!cc.code) cc.code = k;
+    else if (cc.code !== k) cc.mixed = true;
+    if (cc.names.indexOf(k) === -1) cc.names.push(k);
+  }
   function packageById(id) { return id ? PACKAGES.find(function (k) { return k.id === id; }) : null; }
   function packageLabel(id) {
     var k = packageById(id);
@@ -2843,6 +2869,21 @@
     return [{ v: '', l: '— No package —' }].concat(PACKAGES.map(function (k) {
       return { v: k.id, l: k.code + ' — ' + k.name + (k.status === 'archived' ? ' (archived)' : '') };
     }));
+  }
+  // Flat {v,l} list for the inline enum editor (which builds a plain <select>, no optgroups).
+  // ⚠️ Code FIRST in the label so a native select's type-ahead jumps on the code a planner knows;
+  // the division is trailing context. ⚠️ `cur` is appended when it resolves to nothing, or the
+  // select would read back as '' and the next edit would silently clear an unrecognised code.
+  function ccodeSelOpts(cur) {
+    var k = String(cur == null ? '' : cur).trim(), seen = false;
+    var opts = [{ v: '', l: '— No class code —' }];
+    (CLASS_CODES || []).forEach(function (c) {
+      var code = String(c.code);
+      if (code.trim() === k) seen = true;
+      opts.push({ v: code, l: code + ' — ' + (c.desc_l3 || '') + '  (' + (c.code_l1 || '') + ' ' + (c.desc_l1 || '') + ')' });
+    });
+    if (k && !seen) opts.splice(1, 0, { v: k, l: '⚠ ' + k + ' — not in the class-code chart' });
+    return opts;
   }
   var _pkgMemo = {};
   function _clearPkgMemo() { _pkgMemo = {}; }
@@ -3708,6 +3749,7 @@
       PACKAGES = (r9 && !r9.error && r9.data) || [];
     } catch (e) { PACKAGES = []; }
     await loadWpmWorkPackages();
+    await loadClassCodes();
     try {
       // Duration scenarios (C3). Tolerant of the un-run migration like the two above.
       var r10 = await sb().from('duration_scenarios').select('*').eq('project_id', pid).order('name');
@@ -3918,6 +3960,99 @@
   // drew that line and this keeps it.
   // Bounded by definition (a project has hundreds of packages, not thousands), so one select is
   // enough; tolerant of an un-run mirror migration exactly like PACKAGES / LOC_LEVELS.
+  // ---- Finance class codes -------------------------------------------------
+  // ⚠️ Keyset-paginated by `code`, NOT via PDb.selectAll. The shared helper paginates by `id`
+  // and this table's primary key IS the code (there is no id column), so selectAll would throw.
+  // A plain select would also serve today's 702 rows — but PostgREST caps a read at 1000
+  // server-side with no error, so the chart silently truncating the day Finance adds 300 codes
+  // is exactly the bug class this repo keeps rediscovering.
+  //
+  // Loaded once per session: it is org-wide, so a project switch must not refetch it.
+  var _ccLoaded = false;
+  async function loadClassCodes() {
+    if (_ccLoaded) return;
+    try {
+      var out = [], last = null;
+      for (;;) {
+        var q = sb().from('class_codes')
+          .select('code,code_l1,code_l2,desc_l1,desc_l2,desc_l3,sort_order')
+          .eq('active', true).order('code', { ascending: true }).limit(1000);
+        if (last) q = q.gt('code', last);
+        var r = await q;
+        if (r.error) throw r.error;
+        var page = r.data || [];
+        out = out.concat(page);
+        if (page.length < 1000) break;
+        last = page[page.length - 1].code;
+      }
+      // Finance's own sequence, so every picker reads in chart order rather than alphabetically.
+      out.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+      CLASS_CODES = out;
+      _ccLoaded = true;
+    } catch (e) { CLASS_CODES = []; }   // migration not run → the field simply offers nothing
+  }
+
+  // ⚠️ Keyed on the PADDED code. Never strip leading zeros: '015051' (General Requirement ›
+  // Earthmoving) and '15051' (Metal Works › Railings) are DIFFERENT codes, and de-zeroing merges
+  // them silently — the merge looks like a successful match, so nothing errors. Same reason the
+  // code must be picked from the chart rather than typed.
+  var _ccMap = null, _ccMapSrc = null;
+  function _ccIndex() {
+    if (_ccMap && _ccMapSrc === CLASS_CODES) return _ccMap;
+    _ccMap = {}; _ccMapSrc = CLASS_CODES;
+    (CLASS_CODES || []).forEach(function (c) { if (c.code) _ccMap[String(c.code).trim()] = c; });
+    return _ccMap;
+  }
+  function ccByCode(code) { var k = String(code == null ? '' : code).trim(); return k ? (_ccIndex()[k] || null) : null; }
+  function ccOf(r) { return ccByCode(r && r.class_code); }
+  // "015051 — Earthmoving". Falls back to the bare stored value so an unresolved code still shows
+  // what it was pointing at.
+  function ccLabel(code) {
+    var k = String(code == null ? '' : code).trim(); if (!k) return '';
+    var c = ccByCode(k); if (!c) return k;
+    return c.code + ' — ' + (c.desc_l3 || '');
+  }
+  function ccIsUnknown(r) {
+    var k = String((r && r.class_code) || '').trim();
+    return !!k && !!CLASS_CODES.length && !_ccIndex()[k];
+  }
+  // The picker body: one <optgroup> per DIVISION (42), each option labelled with its group so the
+  // Level-2 context is readable without 205 optgroups. Divisions follow Finance's chart order.
+  // ⚠️ The current value is kept as an option even when it resolves to nothing — a <select> whose
+  // value is absent from its options reads back as '', so a form opened on an unrecognised code
+  // (an older P6 import, a template revision) would silently clear it on the next unrelated edit.
+  function ccOptsHTML(cur) {
+    var curK = String(cur == null ? '' : cur).trim(), seen = false;
+    var byDiv = {}, order = [];
+    (CLASS_CODES || []).forEach(function (c) {
+      var d = (c.code_l1 || '') + ' — ' + (c.desc_l1 || '');
+      if (!byDiv[d]) { byDiv[d] = []; order.push(d); }
+      byDiv[d].push(c);
+      if (String(c.code).trim() === curK) seen = true;
+    });
+    var html = '<option value="">— None —</option>';
+    if (curK && !seen) {
+      html += '<option value="' + esc(curK) + '" selected>⚠ ' + esc(curK) + ' — not in the class-code chart</option>';
+    }
+    order.forEach(function (d) {
+      html += '<optgroup label="' + esc(d) + '">' + byDiv[d].map(function (c) {
+        var lbl = c.code + ' — ' + (c.desc_l3 || '') + (c.desc_l2 && c.desc_l2 !== c.desc_l3 ? '  (' + c.desc_l2 + ')' : '');
+        return '<option value="' + esc(String(c.code)) + '"' +
+          (String(c.code).trim() === curK ? ' selected' : '') + '>' + esc(lbl) + '</option>';
+      }).join('') + '</optgroup>';
+    });
+    return html;
+  }
+
+  // What the search box matches on: the code AND all three description levels, so "rebar" finds the
+  // activities coded to it and "015051" finds it by number. Matching the raw column alone would make
+  // the code unsearchable by name, which is the only way most people know it.
+  function ccSearchText(r) {
+    var k = String((r && r.class_code) || '').trim(); if (!k) return '';
+    var c = ccByCode(k);
+    return c ? (c.code + ' ' + c.desc_l3 + ' ' + c.desc_l2 + ' ' + c.desc_l1) : k;
+  }
+
   async function loadWpmWorkPackages() {
     if (!pid) { WPM_WPS = []; return; }
     try {
@@ -5535,6 +5670,7 @@
         cm.total += 1; if (isComplete(r)) cm.done += 1; else if (r.actual_start || (r.percent_complete || 0) > 0) cm.prog += 1;
         if (_sc === 'change_order') cm.co += 1; else if (_sc) cm.mc += 1;
         _cmPkg(cm, _pk);
+        _cmCc(cm, r.class_code);
         cm.pc += r.planned_cost || 0; cm.ac += r.actual_cost || 0; cm.ev += r.earned_value || 0; cm.bl += r.bl_cost || 0;
         cm.eac += eac(r, cpi);
         if (dur > 0) {
@@ -5790,6 +5926,22 @@
     // Contract package resolves through the WBS, so an activity under an assigned branch groups
     // with its branch rather than falling into "— No package —".
     if (dim === 'pkg') return packageLabel(packageOf(r)) || '— No package —';
+    // ---- Class code, at any of Finance's THREE levels ----------------------------------------
+    // ⚠️ This is what makes procurement's packaging granularity a SELECTABLE level rather than a
+    // rule baked into a query — the owner's answer to "how do you package?" was "it varies per
+    // package", so Division / Group / Item are all offered and cross freely with the location
+    // levels. ⚠️ Resolved through the chart, never by slicing the code string: code_l1 is NOT
+    // reliably the first two characters (5 chart rows break that), so a substring would mis-file
+    // them into a division they do not belong to.
+    if (dim === 'cc1' || dim === 'cc2' || dim === 'cc3') {
+      var ccv = String(r.class_code || '').trim();
+      if (!ccv) return '— No class code —';
+      var cc = ccByCode(ccv);
+      if (!cc) return '⚠ ' + ccv + ' — not in the class-code chart';
+      if (dim === 'cc1') return cc.code_l1 + ' — ' + cc.desc_l1;
+      if (dim === 'cc2') return cc.code_l2 + ' — ' + cc.desc_l2;
+      return cc.code + ' — ' + cc.desc_l3;
+    }
     // Phase resolves through the WBS, so an untagged activity under a tagged
     // branch groups with its branch rather than falling into "— No phase —".
     if (dim === 'phase') return phaseLabel(phaseOf(r)) || '— No phase —';
@@ -5810,6 +5962,7 @@
     if (dim === 'responsible') return r.responsible_party || '';
     if (dim === 'type') return r.activity_type || '';
     if (dim === 'wp') return (r.work_package || '').trim();
+    if (dim === 'cc1' || dim === 'cc2' || dim === 'cc3') return String(r.class_code || '').trim();
     if (dim === 'phase') return phaseOf(r) ? (phaseLabel(phaseOf(r)) || '') : '';
     if (dim.indexOf('loc:') === 0) return locValOf(r, dim.slice(4)) || '';
     if (dim.indexOf('code:') === 0) { var v = r.activity_codes && r.activity_codes[dim.slice(5)]; return (v && codeValueLabel(v)) || ''; }
@@ -5820,6 +5973,7 @@
   // a genuine state a planner needs to SEE — hiding those rows would be silent data loss, not tidying.
   function dimNeedsValue(dim) {
     return dim === 'work' || dim === 'wp' || dim === 'phase' ||
+      dim === 'cc1' || dim === 'cc2' || dim === 'cc3' ||
       dim.indexOf('loc:') === 0 || dim.indexOf('code:') === 0;
   }
   function dimLabel(dim) {
@@ -5830,6 +5984,9 @@
     if (dim === 'responsible') return 'Responsible';
     if (dim === 'type') return 'Activity Type';
     if (dim === 'wp') return 'Work Package';
+    if (dim === 'cc1') return 'Class Code: Division';
+    if (dim === 'cc2') return 'Class Code: Group';
+    if (dim === 'cc3') return 'Class Code: Item';
     if (dim === 'pkg') return 'Contract Package';
     if (dim === 'phase') return 'Phase';
     if (dim.indexOf('loc:') === 0) return locLevelName(dim.slice(4)) || 'Location level';
@@ -5841,6 +5998,10 @@
     var out = ['wbs', 'act', 'work'];
     LOC_LEVELS.forEach(function (l) { out.push('loc:' + l.id); });
     out.push('phase', 'status', 'responsible', 'type', 'wp');
+    // Only once Finance's chart is loaded: three grouping levels that would every one of them
+    // land in "— No class code —" are noise, and it also keeps a project whose
+    // migration has not been run from offering levels it cannot resolve.
+    if (CLASS_CODES.length) out.push('cc1', 'cc2', 'cc3');
     // Only offered once the project actually has packages — a grouping level whose every row lands
     // in "— No package —" is noise.
     if (PACKAGES.length) out.push('pkg');
@@ -7249,6 +7410,7 @@
         cm.total += 1; if (isComplete(a)) cm.done += 1; else if (a.actual_start || (a.percent_complete || 0) > 0) cm.prog += 1;
         var _sa = scopeOf(a); if (_sa === 'change_order') cm.co += 1; else if (_sa) cm.mc += 1;
         _cmPkg(cm, packageOf(a));
+        _cmCc(cm, a.class_code);
         cm.pc += a.planned_cost || 0; cm.ac += a.actual_cost || 0; cm.ev += a.earned_value || 0; cm.bl += a.bl_cost || 0;
         cm.eac += eac(a, cpi);
         if (dur > 0) { cm.wd += dur; cm.wearn += dur * (a.percent_complete || 0); if (poc != null) { cm.wdPoc += dur; cm.wpoc += dur * poc; } }
@@ -8617,7 +8779,7 @@
       // ⚠️ `wpLabel` not `r.work_package`: the stored value is a bare ordinal, so searching the
       // raw column meant "steel" could never find the activities fed by the steel package. The
       // label is "12 — Structural Steel Supply", which matches both the number and the description.
-      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), wpLabel(r.work_package), phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r), packageLabel(packageOf(r))].concat(
+      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), wpLabel(r.work_package), ccSearchText(r), phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r), packageLabel(packageOf(r))].concat(
         r.location ? Object.keys(r.location).map(function (k) { return r.location[k]; }) : []
       ).join(' ').toLowerCase();
       if (hay.indexOf(search.trim().toLowerCase()) === -1) return false;
@@ -10159,6 +10321,18 @@
       '<select class="pd-select ps-gedit" data-f="work_package" data-t="select" style="width:100%;box-sizing:border-box;font-size:12.5px;">' +
       wpOptsHTML(r.work_package) + '</select>' + note + '</div>';
   }
+  // Class code for the detail panel. Persists through the standard ps-gedit / data-t="select"
+  // wiring, like every other field here.
+  function _gfCc(r) {
+    var unk = ccIsUnknown(r);
+    var note = !CLASS_CODES.length
+      ? '<div style="font-size:11px;color:var(--pd-muted);">Chart not loaded — run the class-codes migration.</div>'
+      : (unk ? '<div style="font-size:11px;color:var(--pd-red);">Not in the class-code chart — re-pick or clear.</div>' : '');
+    return '<div style="display:flex;flex-direction:column;gap:3px;">' +
+      '<label style="font-size:11px;color:var(--pd-muted);">Class Code <span style="opacity:.8;">(Finance)</span></label>' +
+      '<select class="pd-select ps-gedit" data-f="class_code" data-t="select" style="width:100%;box-sizing:border-box;font-size:12.5px;">' +
+      ccOptsHTML(r.class_code) + '</select>' + note + '</div>';
+  }
   // Read-only Procurement facts for the linked package, straight from the mirror. Dates
   // and status only — budgets stay in Cash Flow (ROADMAP E1).
   function detProcurementCard(r) {
@@ -10192,7 +10366,8 @@
         _gf('WBS (parent)', 'wbs', 'ro', r) +
         _gf('Activity ID', 'activity_id', 'text', r) +
         _gf('Activity Name', 'activity_name', 'text', r, null, true) +
-        _gfWp(r)) +
+        _gfWp(r) +
+        _gfCc(r)) +
       detProcurementCard(r) +
       _gGroup('Classification',
         // Blank does NOT mean "no phase" — it means "inherit from the WBS
@@ -11232,7 +11407,11 @@
     // Contract package — WHICH lot the work belongs to. Orthogonal to Scope: an activity can be
     // Package 2 AND a change order. Appended (not inserted) so saved positional column sorts and
     // orders keep pointing at the column they were set on.
-    ['pkg','Package','c-pkg']
+    ['pkg','Package','c-pkg'],
+    // Finance's class code (Level 3). The one term this app and the Procurement app share, so it
+    // is what a work package's scope gets derived from. Appended, like the columns above, so a
+    // saved positional column sort/order keeps pointing at the column it was set on.
+    ['ccode','Class Code','c-ccode']
   ];
   // Dynamic columns (OPC "define columns"): the project's Activity Codes + User-Defined Fields become
   // real, choosable grid columns appended after the 18 built-ins. Tuple shape matches GRID_COLS
@@ -11952,7 +12131,28 @@
     if (!pk || !pk.n) cell = '<span style="color:var(--pd-muted);">—</span>';
     else if (pk.mixed) cell = '<span class="ps-pkgtag mixed" title="' + esc(pk.names.join(' · ')) + '">Mixed</span>';
     else cell = '<span class="ps-pkgtag" title="' + esc(packageLabel(pk.id)) + '">' + esc(packageShort(pk.id)) + '</span>';
-    return '<div class="ps-cell c-pkg">' + cell + '</div>';
+    return '<div class="ps-cell c-pkg">' + cell + '</div>' + sumCcodeHtml(r);
+  }
+  // The activity's own class code. Editable in place as an enum, because the code must be PICKED
+  // (015051 vs 15051 are different codes — see the migration's note) and 702 options is far too
+  // many to type against.
+  function ccodeCellHtml(r) {
+    var c = ccOf(r), raw = String(r.class_code || '').trim();
+    var inner, ttl;
+    if (!raw) { inner = '<span style="color:var(--pd-muted);">—</span>'; ttl = 'No class code'; }
+    else if (!c) { inner = '<span class="ps-cctag unknown">⚠ ' + esc(raw) + '</span>'; ttl = raw + ' is not in the class-code chart'; }
+    else { inner = '<span class="ps-cctag">' + esc(c.code) + '</span> ' + esc(c.desc_l3 || ''); ttl = c.code + ' — ' + c.desc_l1 + ' › ' + c.desc_l2 + ' › ' + c.desc_l3; }
+    return '<div class="ps-cell c-ccode ps-editable" data-id="' + r.id + '" data-field="class_code" data-type="enum" data-enum="ccode" title="' + esc(ttl) + '">' + inner + '</div>';
+  }
+  // Summary/group rows: state the code only when EVERY activity beneath agrees — a branch holding
+  // several codes has no single one, and printing one of them would be a lie. Same rule the
+  // Discipline / Level / Zone roll-ups use.
+  function sumCcodeHtml(r) {
+    var cm = cmOf(r), cc = cm && cm.cc, cell;
+    if (!cc || !cc.n) cell = '<span style="color:var(--pd-muted);">—</span>';
+    else if (cc.mixed) cell = '<span style="color:var(--pd-muted);" title="' + esc(cc.names.slice(0, 12).join(' · ')) + '">Mixed (' + cc.n + ')</span>';
+    else cell = '<span class="ps-cctag" title="' + esc(ccLabel(cc.code)) + '">' + esc(cc.code) + '</span>';
+    return '<div class="ps-cell c-ccode">' + cell + '</div>';
   }
   // The trailing lane the column-chooser "+" lives in — see the .c-plus note in the CSS. Emitted on
   // EVERY row kind so the header and the body stay cell-for-cell identical.
@@ -12026,7 +12226,7 @@
         ? '<div class="ps-cell c-dur" title="Planned Duration = baseline span (locked)">' + (dur !== '' ? dur + 'd' : '') + '</div>'
         : '<div class="ps-cell c-dur ps-editable" data-id="' + r.id + '" data-field="planned_duration" data-type="pdur">' + (dur !== '' ? dur + 'd' : '') + '</div>') +
       costCellsHtml(r) +
-      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + conCellsHtml(r) + scopeCellHtml(r) + pkgCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
+      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + conCellsHtml(r) + scopeCellHtml(r) + pkgCellHtml(r) + ccodeCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
   }
 
   function doRender() {
@@ -12440,7 +12640,7 @@
     // ('work' or 'loc:<levelId>') and the location values live in the `location` jsonb map.
     if (type === 'xcol') raw = field === 'work' ? (r.work_type || '') : locValOf(r, field.slice(4));
     // Closed vocabularies get a real <select>, not a text box (see the note above the enum columns).
-    var _enum = type === 'enum' ? (cell.dataset.enum === 'scope' ? SCOPE_SEL_OPTS : cell.dataset.enum === 'pkg' ? packageSelOpts() : CONSTRAINT_OPTS) : null;
+    var _enum = type === 'enum' ? (cell.dataset.enum === 'scope' ? SCOPE_SEL_OPTS : cell.dataset.enum === 'pkg' ? packageSelOpts() : cell.dataset.enum === 'ccode' ? ccodeSelOpts(raw) : CONSTRAINT_OPTS) : null;
     var inp;
     if (_enum) {
       inp = document.createElement('select');
@@ -14044,6 +14244,7 @@
     { k: 'responsible_party', label: 'Responsible Party', type: 'text' },
     { k: 'owner', label: 'Owner', type: 'text' },
     { k: 'work_package', label: 'Work Package (WPM wp_no)', type: 'text', wp: true },
+    { k: 'class_code', label: 'Class Code (Finance L3)', type: 'text', cc: true },
     { k: 'remarks', label: 'Remarks', type: 'text' },
     { k: 'percent_complete', label: '% Complete', type: 'num' },
     { k: 'duration_days', label: 'Duration (days)', type: 'num' },
@@ -14068,6 +14269,13 @@
       return '<option value="' + esc(String(w.wp_no)) + '" label="' + esc(String(w.description || '').trim()) + '"></option>';
     }).join('') + '</datalist>';
   }
+  // Same reasoning as the work-package datalist: Global Change's text operators are legitimate here,
+  // so the input stays free-form while showing which codes exist and what they are.
+  function _gcCcDatalist() {
+    return '<datalist id="ps-cc-dl">' + (CLASS_CODES || []).map(function (c) {
+      return '<option value="' + esc(String(c.code)) + '" label="' + esc(String(c.desc_l3 || '').trim()) + '"></option>';
+    }).join('') + '</datalist>';
+  }
   var GC_WHERE_OPS = { text: ['is', 'is not', 'contains', 'is empty', 'is not empty'], num: ['=', '≠', '≥', '≤', 'is empty', 'is not empty'], date: ['on', 'before', 'after', 'is empty', 'is not empty'] };
   var GC_THEN_OPS = { text: ['Set to', 'Clear'], num: ['Set to', 'Add', 'Subtract', 'Multiply by', 'Clear'], date: ['Set to', 'Shift by (days)', 'Clear'] };
   var _gcWhere = [{}, {}, {}], _gcThen = [{}];   // condition/action rows (blank field = ignored)
@@ -14080,13 +14288,13 @@
     wh.innerHTML = _gcWhere.map(function (c, i) {
       var f = gcField(c.field), ops = f ? GC_WHERE_OPS[f.type] : [];
       var opSel = f ? '<select class="pd-select gc-w-op" style="min-width:120px;">' + ops.map(function (o) { return '<option' + (c.op === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' : '';
-      var valInp = (f && _gcNeedsValue(c.op || ops[0])) ? '<input class="pd-input gc-w-val" ' + (f.type === 'date' ? 'type="date"' : (f.type === 'num' ? 'type="number" step="any"' : '')) + (f.wp ? ' list="ps-wp-dl" placeholder="wp_no — e.g. 12"' : '') + ' value="' + esc(c.val != null ? c.val : '') + '" style="flex:1;min-width:120px;">' : '';
+      var valInp = (f && _gcNeedsValue(c.op || ops[0])) ? '<input class="pd-input gc-w-val" ' + (f.type === 'date' ? 'type="date"' : (f.type === 'num' ? 'type="number" step="any"' : '')) + (f.wp ? ' list="ps-wp-dl" placeholder="wp_no — e.g. 12"' : f.cc ? ' list="ps-cc-dl" placeholder="class code — e.g. 015051"' : '') + ' value="' + esc(c.val != null ? c.val : '') + '" style="flex:1;min-width:120px;">' : '';
       return '<div class="ps-risk-cfg" data-gcw="' + i + '" style="margin-bottom:6px;align-items:center;">' + _gcFieldSelect(c.field, 'gc-w-field') + opSel + valInp + '</div>';
-    }).join('') + _gcWpDatalist();
+    }).join('') + _gcWpDatalist() + _gcCcDatalist();
     th.innerHTML = _gcThen.map(function (a, i) {
       var f = gcField(a.field), ops = f ? GC_THEN_OPS[f.type] : [];
       var opSel = f ? '<select class="pd-select gc-t-op" style="min-width:130px;">' + ops.map(function (o) { return '<option' + (a.op === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' : '';
-      var valInp = (f && _gcNeedsValue(a.op || ops[0])) ? '<input class="pd-input gc-t-val" ' + ((f.type === 'date' && (a.op || ops[0]) === 'Set to') ? 'type="date"' : (f.type === 'num' || ((a.op || '') === 'Shift by (days)') ? 'type="number" step="any"' : '')) + (f.wp ? ' list="ps-wp-dl" placeholder="wp_no — e.g. 12"' : '') + ' value="' + esc(a.val != null ? a.val : '') + '" style="flex:1;min-width:120px;">' : '';
+      var valInp = (f && _gcNeedsValue(a.op || ops[0])) ? '<input class="pd-input gc-t-val" ' + ((f.type === 'date' && (a.op || ops[0]) === 'Set to') ? 'type="date"' : (f.type === 'num' || ((a.op || '') === 'Shift by (days)') ? 'type="number" step="any"' : '')) + (f.wp ? ' list="ps-wp-dl" placeholder="wp_no — e.g. 12"' : f.cc ? ' list="ps-cc-dl" placeholder="class code — e.g. 015051"' : '') + ' value="' + esc(a.val != null ? a.val : '') + '" style="flex:1;min-width:120px;">' : '';
       return '<div class="ps-risk-cfg" data-gct="' + i + '" style="margin-bottom:6px;align-items:center;">' + _gcFieldSelect(a.field, 'gc-t-field') + opSel + valInp +
         (i === _gcThen.length - 1 ? '<button class="pd-btn pd-btn-sm" id="ps-gc-addthen">+ change</button>' : '') + '</div>';
     }).join('');
@@ -16010,6 +16218,20 @@
         _wpHint.style.color = (row && wpIsUnlinked(row)) ? 'var(--pd-red)' : 'var(--pd-muted)';
       }
     }
+    // Class Code picker — same rule as the Work Package one above: ccOptsHTML marks the current
+    // value selected (including an unrecognised one), so no set() is needed and none is safe.
+    var _ccSel = document.getElementById('ps-f-ccode');
+    if (_ccSel) {
+      _ccSel.innerHTML = ccOptsHTML(row ? row.class_code : '');
+      _ccSel.disabled = !CLASS_CODES.length && !(row && row.class_code);
+      var _ccHint = document.getElementById('ps-f-ccode-hint');
+      if (_ccHint) {
+        _ccHint.textContent = !CLASS_CODES.length
+          ? 'Class-code chart not loaded — run migrations/2026-08-21-class-codes.sql.'
+          : (row && ccIsUnknown(row) ? 'This code is not in the chart (an older import, or a template revision).' : '');
+        _ccHint.style.color = (row && ccIsUnknown(row)) ? 'var(--pd-red)' : 'var(--pd-muted)';
+      }
+    }
     document.getElementById('ps-f-progms').checked = !!(row && row.program_milestone);
     // OPC — Status: dates & duration
     set('ps-f-astart', row && row.actual_start ? String(row.actual_start).slice(0,10) : '');
@@ -16656,6 +16878,7 @@
       calendar_id: document.getElementById('ps-f-cal').value || null,
       owner: v('ps-f-owner') || null,
       work_package: v('ps-f-wp') || null,
+      class_code: v('ps-f-ccode') || null,
       program_milestone: document.getElementById('ps-f-progms').checked,
       // OPC — Status: dates & duration
       actual_start: v('ps-f-astart') || null,
@@ -19929,7 +20152,12 @@
         var m = {}; m[_ccTypeId] = _ccValueId[cc.toLowerCase()];
         return m;
       }
-      function taskPayload(r, name) { var _cc = classCodesOf(r); return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), duration_days: r.dur, activity_codes: _cc || {}, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null }; }
+      function taskPayload(r, name) { var _cc = classCodesOf(r); return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), duration_days: r.dur, activity_codes: _cc || {},
+        // ⚠️ Finance's class code as a first-class column, in ADDITION to the activity-code
+        // mirror above. The column is the canonical value (org-wide chart, hierarchy, shared with
+        // the Procurement app's cost_code); the activity-code mirror is per-project and flat. Two
+        // representations of one fact is a drift risk -- see this module's CLAUDE.md.
+        class_code: (r.act && r.act.code) ? String(r.act.code).trim() : null, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null }; }
       // ---- Class codes -> activity codes ------------------------------------------------------
       // ⚠️ Ensured BEFORE the payloads are built, because taskPayload needs the value ids. Reuses an
       // existing "Class Code" type and any values already present, so a re-push adds nothing.

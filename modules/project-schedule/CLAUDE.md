@@ -1,5 +1,93 @@
 # Module: project-schedule
 
+## Finance's class code becomes first-class schedule data (2026-08-21) — fmlozano
+Step A of the schedule → procurement packaging flow the owner set out: planner builds the schedule →
+procurement derives work-package scope and target installation FROM it → procurement backtracks the
+awarding date. Owner picked A first, and answered the granularity question with **"it varies per
+package"** — which the class-code hierarchy turns out to answer exactly.
+
+### Why the direction question ("do activities point at packages, or the reverse?") had no good answer
+There are **two** links and they are different relationships. **Formation** (schedule → procurement,
+once per package): procurement decides a package's scope and need-by from the schedule. **Consumption**
+(activity → package, ongoing, many-to-one): each activity records which package supplies it, which is
+what drives the need-by push and the alignment report. The 2026-08-20 work built the second; the second
+**presupposes** the first, which is why picking a package felt backwards — the packages don't exist yet.
+- ⚠️ **But the real blocker was neither direction: there was no shared key.** Verified before designing:
+  `project_schedule` had **no** cost/class code column; the Schedule Builder **had** the class code
+  (`cfg.catalog[].code`, seeded from a hardcoded 197-code subset) and `taskPayload` **discarded** it; and
+  WPM's `work_packages.cost_code` is a free-text `<input>` with no library. Both apps nominally speak
+  Finance's vocabulary and in practice shared nothing. You cannot decide which way a key points when
+  there is no common term underneath it.
+
+### The chart, and the two traps in it
+Read the owner's `EPC. FIN. Class Code Mapping Template_1164.xlsx` (sheet "Excel Temp", header row 9).
+**702 Level-3 codes / 205 Level-2 groups / 42 Level-1 divisions.** Migration
+`migrations/2026-08-21-class-codes.sql` (**MUST BE RUN**) creates a `class_codes` master + seeds it, and
+adds `project_schedule.class_code`.
+- ⚠️⚠️ **DE-ZEROING THE CODE MERGES UNRELATED ITEMS.** The template also carries a de-zeroed column, and
+  it is NOT unique — two real collisions:
+  `015051` General Requirement › Support Equipment › **Earthmoving** vs `15051` Metal Works › Railings ›
+  **Railings**; and `017151` Gen Req › Bonds/Permits › **Misc. LGU and Estate Tax** vs `17151` Aluminum
+  Glass › **Aluminum Swing Windows**. The **padded** Level 3 is the key (702 distinct of 704 rows).
+  A de-zeroing "tidy-up" silently merges two unrelated cost codes, and because the merge looks like a
+  successful match nothing errors. It is also why the code must be **picked, never typed** — both
+  columns and both pickers are enums for this reason.
+- ⚠️ **LEVELS ARE STORED, NOT PARSED.** `code_l1` is not reliably the code's first two characters —
+  5 chart rows break it (the unpadded `1102x` rows sit under division `01`, `NOBDT` under `61`).
+  Slicing the string to get a division mis-files them. Grouping resolves through the chart instead,
+  which is also what makes granularity a **selectable level**.
+- Two source rows dropped as duplicates of the padded code: `51000` (exact repeat) and a placeholder
+  `NOBDT` under a non-numeric division `NO` (the real `61 / No Budget` row is kept). Deterministic:
+  on a duplicate the numeric-division row wins.
+- ⚠️ **Org-wide, not per project.** The template's header block has a "Project Name" field, but the
+  chart is Finance's standard — 702 rows × 20 projects of identical data would be pure duplication.
+  Loaded once per session, so a project switch does not refetch it.
+- ⚠️ **No FK from `project_schedule.class_code`.** An imported P6/OPC schedule can carry a code that
+  predates a template revision; rejecting the import (or nulling the value) is worse than holding a
+  code that does not resolve — an unresolved code is a visible data-quality signal, and it renders
+  flagged rather than blank everywhere.
+- ⚠️ Named `class_code`, **not** `cost_code`: this module already has `cost_accounts` +
+  `cost_account_id`, which are the internal CBS and a different concept. It joins to WPM's `cost_code`;
+  the differing names are documented on both sides rather than risking a local confusion.
+
+### What it gives the schedule
+Grid column (editable as an enum, roll-up on summary/group rows stating the code only when **every**
+activity beneath agrees, "Mixed (n)" otherwise), the field in the Add/Edit modal and the General tab,
+search matching the code **and all three description levels** ("rebar" finds it, `015051` finds it),
+a Global Change field with a datalist, and the builder push carrying it.
+- **Three grouping dimensions — Division / Group / Item** (`cc1` / `cc2` / `cc3`), which cross freely
+  with the location levels. **This is the owner's "it varies per package" answer**: a candidate package
+  can be grouped at whichever level that package is actually bought at, instead of a rule baked into a
+  query. Offered only once the chart is loaded, and they filter uncoded rows like every other
+  `dimNeedsValue` dimension (toggleable, with the footer count).
+- ⚠️ **Keyset-paginated by `code`, NOT via `PDb.selectAll`** — the shared helper paginates by `id` and
+  this table's PK *is* the code, so it would throw. A plain select would serve today's 702 rows, but
+  PostgREST caps a read at 1000 with no error, which is the bug class this repo keeps rediscovering.
+
+### ⚠️ COLLISION WITH A CONCURRENT SESSION — needs a decision
+While this was being built, another session solved the same problem differently: `classCodesOf()` in
+the builder writes the class code into `project_schedule.activity_codes` as a **P6-style Activity Code**
+under a per-project code type named "Class Code", creating the type and values on the fly. Both are now
+in the file. Theirs needs no migration and reuses the existing `code:<id>` grouping; but it is
+**per-project** (the same Finance code becomes a different uuid in every project, so nothing joins
+across projects or to WPM), **flat** (no Division/Group, so the granularity answer is unreachable),
+seeded from the **197-code subset** rather than the 702-code chart, and reaches **builder pushes only**
+— not imports or manual entry. `taskPayload` now writes **both**, which is two representations of one
+fact and exactly the drift this file's notes keep warning about. **Recommendation: keep the column +
+chart as canonical and retire the activity-code mirror** — but it is the other author's work and the
+owner's call, so nothing of theirs was removed.
+
+### Verified
+**53 checks green** by slicing the shipped helpers out of index.html and executing them (nothing under
+test stubbed): both collision pairs staying distinct, the never-silently-wipe-a-code invariant incl.
+against an empty chart, escaping, the roll-up refusing to fake agreement when a code is unresolved,
+**one `c-ccode` cell on every row kind** (the column-alignment invariant this module has been bitten by
+repeatedly), and all three grouping levels. Migration structurally checked (702 tuples, balanced,
+policies dropped before create, re-runnable). Inline script parses; **function-set diff vs HEAD: 0
+lost, 14 added.**
+⚠️ **Not verified signed-in**, and the migration is not run — until it is, the field and the grouping
+levels simply offer nothing and the form says which file to run.
+
 ## Minutes of Meeting REMOVED — it moved to Issues & Concerns (2026-08-20) — fmlozano
 
 Owner: *"There is a minutes of the meeting within the project schedule module. Let's move this
