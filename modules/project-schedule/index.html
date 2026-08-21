@@ -496,6 +496,13 @@
        already use `outline` on the same element, so an outline here would collide and one of the
        two meanings would vanish. A ring hugging the bar (offset 0) sits INSIDE the critical
        outline (offset 1px), so a critical change order legibly shows both. */
+    /* "Change orders" mode: main-contract work stays readable as context but gives up the emphasis.
+       ⚠️ Opacity, not display:none and not a colour change — the row keeps its position, its dates and
+       its relationship arrows, so a change order's driver is still there to be read. Pointer events
+       stay on: a dimmed row is still selectable and editable, it is just not the subject. */
+    .ps-grid-row.ps-dim { opacity:.28; }
+    .ps-grid-row.ps-dim:hover { opacity:1; }
+    .ps-bar.ps-dim, .ps-mile.ps-dim { opacity:.2; }
     .ps-bar.ps-cobar { box-shadow:0 0 0 2px #E08A3C; }
     .ps-mile.ps-cobar { box-shadow:0 0 0 2px #E08A3C; }
     /* A branch every one of whose activities is a change order. A blended branch is deliberately
@@ -4794,7 +4801,14 @@
   function applyGanttScale(v) { ganttScale = Math.min(6, Math.max(0.35, v)); _saveGanttScale(); renderGantt(); }
   // The grid Start/Finish columns + Gantt bar show the ACTUAL date when set, else the planned date.
   // (Editing those columns writes the actual date; planned start_date/end_date remain the basis.)
-  function dispStart(r) { return r.actual_start || r.start_date || null; }
+  function dispStart(r) {
+    var d = r.actual_start || r.start_date || null;
+    // ⚠️ Main-contract-only pulls the row back past the change-order days upstream of it, so the bar
+    // stands where it would have stood had the variations never been instructed. 0 for everything
+    // with no change order in its chain, which is almost every row on almost every project.
+    if (d && _mainOnlyUnsplit()) { var sh = _mainOnlyShiftOf(r); if (sh > 0) return dstr(addDays(pd(d), -sh)); }
+    return d;
+  }
   // Finish shown in the grid/Gantt: actual finish once done; else, for a STARTED activity, the
   // FORECAST finish (retained logic — remaining work scheduled from the data date: data date +
   // remaining − 1); else the planned finish. Computed live so it slides as the data date moves.
@@ -4813,6 +4827,55 @@
   // Is the Main-contract-only filter hiding this row's change orders? Then a split host must read as
   // one bar. Kept as its own predicate so the two places that need it cannot drift apart.
   function _mainOnlyUnsplit() { return filters.scope === 'main'; }
+  // In "Change orders" mode the main-contract work stays on screen but recedes, so the change orders
+  // read as the subject and their drivers read as context. Execution phase only — a row with no
+  // contract scope is not being contrasted with anything and must not be dimmed.
+  function _scopeDimCls(r) {
+    if (filters.scope !== 'change_order' || !r || isWbs(r)) return '';
+    if (!isExecPhase(r)) return '';
+    return scopeOf(r) === 'change_order' ? '' : ' ps-dim';
+  }
+  // Days of change-order work on this activity's predecessor chain — how much earlier it would sit
+  // if the variations were never instructed. Memoised per render pass; the map is thrown away by
+  // rebuild() so it can never outlive the dates it was computed from.
+  var _moShift = null;
+  function _clearMainOnlyShift() { _moShift = null; }
+  function _mainOnlyShiftOf(r) {
+    if (!_mainOnlyUnsplit() || !r || !r.activity_id) return 0;
+    if (!_moShift) {
+      var byId = {}, i;
+      for (i = 0; i < rows.length; i++) if (rows[i].activity_id && !isWbs(rows[i])) byId[String(rows[i].activity_id)] = rows[i];
+      var memo = {}, busy = {};
+      // ⚠️ Recursive with a visiting guard rather than a topological sort: the predecessor graph is
+      // planner-entered and can contain a cycle, and a cycle here must yield 0 rather than hang the
+      // grid. Depth is bounded by the chain length, which is small next to the row count.
+      var walk = function (id) {
+        if (memo[id] !== undefined) return memo[id];
+        if (busy[id]) return 0;
+        busy[id] = 1;
+        var row = byId[id], best = 0;
+        if (row) {
+          var ps = predIds(row.predecessors);
+          for (var k = 0; k < ps.length; k++) {
+            var pr = byId[String(ps[k])]; if (!pr) continue;
+            var own = walk(String(ps[k]));
+            // A change order contributes its OWN duration on top of whatever it inherited.
+            if (scopeOf(pr) === 'change_order') {
+              var pd0 = pr.duration_days;
+              if (pd0 == null) { var a = pd(pr.start_date), b = pd(pr.end_date); pd0 = (a && b) ? (dayDiff(a, b) + 1) : 0; }
+              own += Math.max(0, +pd0 || 0);
+            }
+            if (own > best) best = own;
+          }
+        }
+        busy[id] = 0; memo[id] = best;
+        return best;
+      };
+      for (i = 0; i < rows.length; i++) if (rows[i].activity_id && !isWbs(rows[i])) walk(String(rows[i].activity_id));
+      _moShift = memo;
+    }
+    return _moShift[String(r.activity_id)] || 0;
+  }
   // The finish a split host WOULD have had with no change order in it: its own start plus every
   // segment's own duration. Null unless this row is segment 1 of a real split and the filter is on.
   function _unsplitFin(r) {
@@ -4831,8 +4894,12 @@
   function dispFin(r) {
     // ⚠️ Before the actual/forecast chain: under Main-contract-only a split host reads as one bar
     // ending where it would have ended without the variation. See _unsplitFin.
-    var u = _unsplitFin(r); if (u) return u;
+    var u = _unsplitFin(r);
+    // ⚠️ The un-split finish is measured from the host's REAL start, so it needs the same pull-back
+    // as everything else once there are change orders upstream of the host itself.
+    if (u) { var us = _mainOnlyShiftOf(r); return us > 0 ? dstr(addDays(pd(u), -us)) : u; }
     var f = r.actual_finish || forecastFin(r) || r.end_date || null;
+    if (f && _mainOnlyUnsplit()) { var sh2 = _mainOnlyShiftOf(r); if (sh2 > 0) f = dstr(addDays(pd(f), -sh2)); }
     // Never render a finish earlier than the start (guards against inconsistent stored dates, e.g. an
     // end_date left before a later start_date) — otherwise the bar and its relationship arrows draw
     // backwards. Clamp the DISPLAY to the start; the stored values are untouched.
@@ -5630,9 +5697,11 @@
     var n = rows.filter(function (r) { return !isWbs(r) && r.split_group && (r.split_seq || 0) === 1; }).length;
     if (!n) return '';
     return n + ' activit' + (n === 1 ? 'y is' : 'ies are') + ' split around a change order. ' +
-      'Main contract only shows each of them as ONE bar ending on its original main-contract finish. ' +
-      'Note that the activities FOLLOWING them keep their real dates, which still include the delay the ' +
-      'change order caused — backing that out of the whole chain is a what-if, not a filter.';
+      'Main contract only shows each as ONE bar on its original finish, and pulls everything downstream ' +
+      'back by the change-order days on its chain — the dates the schedule would show if the variations ' +
+      'had never been instructed. It removes their DURATION only: calendars, constraints and float are ' +
+      'not re-scheduled, so treat it as the main-contract picture rather than a full what-if. Nothing is ' +
+      'written — Blended restores the real dates.';
   }
   function syncScopeSwitch() {
     var seg = document.getElementById('ps-scope'); if (!seg) return;
@@ -5750,6 +5819,9 @@
     //     bands inside it and the grid's Start/Finish column must all describe the same dates; they
     //     did not, so on any STARTED branch (foundations, in the report) the bands were offset from
     //     their own bracket by the actual-vs-planned slip and the clip-path ate the overflow.
+    // ⚠️ Cleared with the spans: the shift map is derived from the very dates and relationships this
+    // pass is about to recompute, so carrying it over would date the display from the previous state.
+    _clearMainOnlyShift();
     _spanMap = {}; _blSpanMap = {}; _spanMapN = {}; _blSpanMapN = {};
     // ⚠️ Hoisted so the span pass and the cost pass below share ONE parent map and one memo. Walking
     // WBS_NODES.find() per row per level is O(rows x depth x nodes), and this runs on 4k-activity
@@ -9022,7 +9094,13 @@
     // Contract scope: Main contract only / Change orders only / blended (the '' default shows both).
     // Summary + group rows pass through so a filtered view keeps the WBS headings that locate the
     // surviving activities — the same rule the critical-path filter uses.
-    if (filters.scope && !isWbsNode(r)) { if (scopeOf(r) !== filters.scope) return false; }
+    // ⚠️ Execution phase ONLY: a row with no contract scope (Initiation / Planning / Close-out) is
+    // not "the wrong scope", it is out of scope's reach entirely, and hiding it was silent data loss.
+    // ⚠️ And "Change orders" does not FILTER — it dims the main contract (see _scopeDimCls), because
+    // a change order linked to main-contract work cannot be read without that work beside it.
+    if (filters.scope && filters.scope !== 'change_order' && !isWbsNode(r) && isExecPhase(r)) {
+      if (scopeOf(r) !== filters.scope) return false;
+    }
     // ⚠️ Main-contract-only folds a split host back into ONE bar (see _unsplitFin), so its
     // continuation segments must not also appear — their days are already inside segment 1's bar and
     // showing them would double-count the work on screen.
@@ -9103,7 +9181,7 @@
     menu.querySelector('#ps-f-behind').onchange = function (e) { filters.behind = e.target.checked; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-crit').onchange = function (e) { filters.crit = e.target.checked; renderGrid(); renderGantt(); };
     menu.querySelectorAll('input[name="ps-f-scope"]').forEach(function (rd) {
-      rd.onchange = function () { if (rd.checked) { filters.scope = rd.value; syncScopeSwitch(); renderGrid(); renderGantt(); } };
+      rd.onchange = function () { if (rd.checked) { filters.scope = rd.value; _clearMainOnlyShift(); syncScopeSwitch(); renderGrid(); renderGantt(); } };
     });
     var _fpk = menu.querySelector('#ps-f-pkg');
     if (_fpk) _fpk.onchange = function (e) { filters.pkg = e.target.value; renderGrid(); renderGantt(); };
@@ -12456,7 +12534,7 @@
     var durShown = durDone ? actualDurLive(r) : dur; if (durShown == null) durShown = '';
     var mile = isMile(r) ? '<span class="ps-mile-badge">◆ </span>' : '';
     var fmt = _fmtRules.length ? _rowFmt(r) : null;
-    return '<div class="ps-grid-row' + altc + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + (isChangeOrder(r)?' ps-corow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
+    return '<div class="ps-grid-row' + altc + _scopeDimCls(r) + (fmt ? ' ps-fmt' : '') + (r.id===selId?' ps-row-sel':'') + ((critMode && r._critical)?' ps-critrow':'') + ((critMode && mfpOn && r._near && !r._critical)?' ps-nearrow':'') + (spotlightRow(r)?' ps-spotrow':'') + (isChangeOrder(r)?' ps-corow':'') + '" data-i="' + i + '" data-rowid="' + r.id + '"' + (fmt ? ' style="' + _fmtStyleStr(fmt) + '"' : '') + '>' +
       '<div class="ps-cell c-num">' + (i + 1) + '</div>' +
       '<div class="ps-cell c-id ps-editable" data-id="' + r.id + '" data-field="activity_id" data-type="text" style="padding-left:' + idPad + 'px;">' + esc(r.activity_id || '') + '</div>' +
       // ⚠️ _dlabel = this row IS the deepest grouping level (a one-activity bucket merged into its
@@ -13282,7 +13360,7 @@
       var curTop = top + (blMd ? Math.round(15 * oY) : o9);   // when a baseline is shown, the current diamond sits below it
       if (blMd) { var bmx = dayDiff(min, blMd) * dayw; out += '<div class="ps-mile-bl" title="Baseline (BL0) milestone" style="left:' + (bmx - 5) + 'px;top:' + (top + Math.round(3 * oY)) + 'px;"></div>'; }
       var mx = dayDiff(min, md) * dayw;
-      out += '<div class="ps-mile' + crit + _hlCls(r) + (isChangeOrder(r) ? ' ps-cobar' : '') + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + curTop + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
+      out += '<div class="ps-mile' + crit + _hlCls(r) + _scopeDimCls(r) + (isChangeOrder(r) ? ' ps-cobar' : '') + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + (mx-6) + 'px;top:' + curTop + 'px;' + (wc ? 'background:' + wc + ';' : '') + '"></div>';
       if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (mx + 9) + 'px;top:' + curTop + 'px;">' + esc(lbl) + '</div>';
       return out;
     }
@@ -13311,7 +13389,7 @@
     }
     // ⚠️ Composes with everything else on the bar rather than replacing it: a change order can be
     // critical, categorised (LSM colour) and spotlighted all at once, and each of those still reads.
-    out += '<div class="ps-bar task' + crit + _hlCls(r) + (isChangeOrder(r) ? ' ps-cobar' : '') + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
+    out += '<div class="ps-bar task' + crit + _hlCls(r) + _scopeDimCls(r) + (isChangeOrder(r) ? ' ps-cobar' : '') + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
     if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (barTop + Math.round(barH / 2) - 7) + 'px;">' + esc(lbl) + '</div>';
     return out;
   }
@@ -23922,7 +24000,7 @@
     var _scSeg = document.getElementById('ps-scope');
     if (_scSeg) _scSeg.querySelectorAll('[data-scope]').forEach(function (b) {
       b.onclick = function () {
-        filters.scope = b.dataset.scope;
+        filters.scope = b.dataset.scope; _clearMainOnlyShift();
         // The Filter menu carries the same three radios; rebuilding it is what keeps the two from
         // disagreeing about what is currently filtered.
         syncScopeSwitch(); buildFilterMenu(); renderGrid(); renderGantt();
