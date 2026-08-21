@@ -348,3 +348,34 @@
 /* Minutes toolbar — the export button sits above the form, right-aligned, and is
    present for read-only viewers too (exporting is a read). */
 .il-mom-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; }
+
+/* --- Draft / Distributed state ------------------------------------------
+   The badge is the workflow state, not a permission. A draft is visible only
+   to its recorder and to planners (enforced by RLS), so the wording says who
+   can see it rather than just naming the state. */
+.il-mom-state {
+  font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+  background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line);
+}
+.il-mom-state.on { background: #d4f5d4; color: #1a8f3a; border-color: #b6e8b6; }
+/* Marks an unissued minute in the meetings list. Absolute so it cannot push the
+   title's own layout around on a narrow list column. */
+.il-mom-draft {
+  float: right; font-size: 9px; font-weight: 800; letter-spacing: .06em;
+  padding: 1px 6px; border-radius: 3px; margin-left: 6px;
+  background: var(--pd-red-light); color: var(--pd-red);
+}
+/* --- Action items: carry-over + the wider table -------------------------- */
+.il-mom-addrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.il-mom-carry { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.il-mom-carry .pd-select { max-width: 320px; }
+.il-mom-carried {
+  display: inline-block; font-size: 9px; font-weight: 700; margin-top: 3px;
+  padding: 1px 5px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
+}
+/* ⚠️ The action table is now 9-10 columns. It scrolls inside .il-mom-tablewrap
+   (which is already overflow-x:auto) rather than widening the page; the min-width
+   is what forces that instead of letting every input crush to unusable. */
+.il-mom-table { min-width: 1080px; }
+.il-mom-table .il-mi-no { white-space: nowrap; width: 78px; }
+.il-mom-table .il-mi-no .pd-input { width: 62px; }

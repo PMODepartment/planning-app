@@ -84,6 +84,77 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-21 — Minutes of Meeting: mom-app's item schema, carry-over that keeps the register link, draft→distribute
+Owner: *"Let's proceed with all 3. But I like how our minutes of the meeting can push action items to
+issues & concerns. Let's consider that with the carry-over. I also like the new formatting we have.
+Let's keep."* **Run `migrations/2026-08-21-mom-schema-carryover-distribute.sql`.** The PDF format
+shipped earlier today is **unchanged** — re-measured after the schema change: band `rgb(180,0,0)`,
+wrap `718.1px` (= 190mm), the same six grid tracks, the same badge palette.
+
+- ⚠️ **ONE migration, not three, and the header says why.** Carry-over copies `issue_id`, which
+  changes what `mom_has_raised()` means (the delete guard written in the department-minutes
+  migration); distribution gates both what can be READ and what may be RAISED. Split apart, any one
+  of them leaves the other two describing rules that are no longer true.
+- ⚠️ **The action text MOVES out of `description` into `action_item`, once.** `mom_items.description`
+  has always held the action ("Resequence L4 formworks"), which is why the PDF already printed it as
+  Action Item. Leaving it there would mean the same column means the action on old rows and the
+  elaboration on new ones, with no query able to tell which. **Guarded on the column not having
+  existed, not on the data** — the obvious "backfill where action_item is null" would silently refill
+  from a now-different field the first time a user legitimately clears one.
+
+**Carry-over — the owner's specific interest, and it drove three decisions.**
+- ⚠️ **It COPIES the register link rather than re-raising.** A carried action is the same issue,
+  discussed again, so `issue_id` comes across and the new minute shows the register's live status.
+  Re-raising would put two competing issues in the register for one problem — and because the Raise
+  button only renders when `issue_id` is null, copying the link also makes double-raising by hand
+  impossible. **One issue, N meetings.**
+- ⚠️ **What is "still open" is decided by the REGISTER for a raised action**, the same rule the screen
+  and the PDF already follow. An action raised months ago and since closed in the register must not
+  be dragged into next week's agenda because nobody went back to tick the box on the old minute.
+- ⚠️ **`mom_has_raised()` had to be re-defined or carry-over would have broken own-delete.** A carried
+  item has an `issue_id`, so the old test said "something was raised here" and turned every
+  brand-new draft seeded from an old meeting into a planner-delete-only row. Nobody raised anything —
+  `issues_lessons.mom_id` still names the meeting the issue was FIRST raised from, and carry-over
+  never moves it, so deleting a meeting that merely carried the action destroys no provenance. The
+  test now excludes carried links, and `canDeleteMinute()` mirrors it.
+- Idempotent by construction (already-carried source items are skipped) and it **says so** rather
+  than silently doing nothing; `carried_from_mom_id` records the first seeding only.
+
+**Draft → Distribute.**
+- ⚠️ **Only the READ narrowing is enforced in the database, deliberately** — that is the part that is
+  a security boundary (a draft is visible only to its recorder and planners; `mom_items` had to match
+  or a draft's action items leak while its heading does not, which is the leak, not a lesser version
+  of it). The "distributed minutes are locked for editing" half is **UI-only**: it is a workflow
+  guard, not a permission, and the person it stops may legally revert two clicks later. UI stricter
+  than RLS is safe; the reverse is the silent-failure trap.
+- ⚠️ **An action cannot be raised out of a draft, and THAT is enforced in the DB** (`issues_lessons_ins`
+  now tests `mom_is_distributed`) — unlike the edit lock, this one leaves a permanent row behind if
+  it slips through, whose "Raised at: …" provenance would point at a minute the reader cannot open.
+- ⚠️ **Existing minutes backfill to DISTRIBUTED**; the column defaults false only for new rows. They
+  were written in a world with no draft concept and already have actions raised off them — letting
+  the default apply would retroactively hide the entire history from everyone but each recorder.
+  Guarded on the column not having existed, **not** on "nothing is distributed yet", which is also
+  true of a project that reverted everything to draft.
+- The PDF **prints a DRAFT chip and appends `_DRAFT` to the filename** on an undistributed minute: a
+  PDF outlives the screen that knew it was a draft, and that is the one way this export could mislead.
+
+**Smaller things that were still defects.**
+- ⚠️ The inline-edit handler wrote `''` on an empty field. `type` carries a CHECK, so clearing it
+  would have been **refused by the database**; the other new columns would have stored `''` where
+  every read tests null. Empty is now NULL on the nullable columns.
+- ⚠️ A legacy row printed its action text under **both** Action Item and Description in the PDF —
+  caught by the harness, fixed by blanking Description when the action text came from it.
+
+**Verified by executing the shipped code, sliced not stubbed: 33 checks** — 23 on carry-over
+(register-decides-openness, link copied, not re-raised, seq/idempotency, all four refusals, failed
+insert leaves the minute unstamped, and both halves of the carried-vs-raised delete rule) and 10 on
+the raise guard (draft refused, action text not description, link after insert). Header/row cell
+counts align exactly (9 read-only / 10 writer, both sides). **0 functions lost, 4 added.** Migration
+is paren-balanced, `$$`-paired, every policy preceded by a drop. ⚠️ **Not verified signed-in, and the
+migration has not been run** — the module redirects to login and I do not enter credentials, so the
+new controls' click paths are unexercised against real data. `MODULE_V` → `20260821b`; the module's
+own `?v=` → `20260821b`.
+
 ### 2026-08-21 — Finance's class code is now first-class schedule data (packaging step A)
 Owner set out the real flow: planner builds the schedule -> **procurement derives work-package scope and
 target installation FROM it** -> procurement backtracks the awarding date from lead time. Then asked

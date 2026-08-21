@@ -649,6 +649,10 @@ window.IssuesLessons = (function () {
   var _momActTimer = null;      // debounce for the activity search
   var _momDocClick = null;      // the one outside-click handler for the picker
   var MOM_STATUSES = ['Open', 'In Progress', 'Closed'];   // mom_items' own CHECK list
+  // ⚠️ Mirrors the `mom_items_type_chk` CHECK added by
+  // migrations/2026-08-21-mom-schema-carryover-distribute.sql. A value outside this
+  // list is refused by the database, so the control is a <select>, never free text.
+  var MOM_TYPES = ['Issue', 'FYI', 'Report'];
 
   function momReset() {
     MOMS = []; MOM_ITEMS = []; _momSel = null; _momErr = ''; _momLoaded = false;
@@ -710,8 +714,22 @@ window.IssuesLessons = (function () {
   // strips that SILENTLY rather than failing, so that deletion is a planner's call.
   function canDeleteMinute(m) {
     if (isSteward) return true;
-    return canEditMinute(m) && !momItemsOf(m.id).some(function (i) { return i.issue_id; });
+    // ⚠️ `carried_from_item_id` is excluded, matching mom_has_raised() in the
+    // migration. A carried action has an `issue_id` — it is the same issue, still being
+    // chased — but the register's provenance points at the minute it was FIRST raised
+    // from, which carry-over never moves. Deleting a minute that merely carried it
+    // destroys no provenance, so counting it would make every new draft seeded from an
+    // old meeting planner-delete-only the moment it was created.
+    return canEditMinute(m) && !momItemsOf(m.id).some(function (i) {
+      return i.issue_id && !i.carried_from_item_id;
+    });
   }
+  // "Has this been issued?" — the workflow state, NOT a permission. Distribution locks
+  // the form in the UI only; the DATABASE enforces the half that is a security boundary
+  // (a draft is readable only by its recorder and planners) and the half that leaves a
+  // permanent row behind (an action cannot be raised out of a draft). See section 5 of
+  // migrations/2026-08-21-mom-schema-carryover-distribute.sql.
+  function momLocked(m) { return !!(m && m.is_distributed); }
   // Says whose it is without naming a person — same rule as the register's caption: a
   // department user has no business being granted a read of `users` for a caption.
   function minuteByLabel(m) {
@@ -749,6 +767,10 @@ window.IssuesLessons = (function () {
           var items = momItemsOf(x.id);
           var open = items.filter(function (i) { return i.status !== 'Closed'; }).length;
           return '<button class="il-mom-item' + (cur && cur.id === x.id ? ' on' : '') + '" data-mom="' + Fmt.esc(x.id) + '">' +
+            // ⚠️ Marked in the LIST, not only on the open minute: a recorder with three
+            // drafts among a dozen issued meetings needs to see which are still unissued
+            // without opening each one. Nobody else can see a draft at all (RLS).
+            (momLocked(x) ? '' : '<span class="il-mom-draft">Draft</span>') +
             Fmt.esc(x.title || '(untitled)') +
             '<small>' + (x.meeting_date ? Fmt.date(x.meeting_date) : 'no date') +
             ' · ' + items.length + ' action' + (items.length === 1 ? '' : 's') +
@@ -771,15 +793,30 @@ window.IssuesLessons = (function () {
   // read-only markup path — two paths drift the moment either is touched, and a
   // disabled input already reads as "you cannot change this".
   function momDetailHTML(mom) {
-    var ro = !canEditMinute(mom), d = ro ? ' disabled' : '';
+    // ⚠️ THREE states, not two. `mayEdit` is the PERMISSION (whose minute is this);
+    // `locked` is the WORKFLOW state (has it been issued). A distributed minute is
+    // read-only even to the person who wrote it — they revert it to draft first, which
+    // is a deliberate act rather than a silent edit to a sheet already circulated.
+    var mayEdit = canEditMinute(mom), locked = momLocked(mom);
+    var ro = !mayEdit || locked, d = ro ? ' disabled' : '';
     var items = momItemsOf(mom.id);
     var act = mom.schedule_activity_id || '';
+    var others = MOMS.filter(function (x) { return x.id !== mom.id && momCarryable(x).length; });
     return '<div class="il-mom-detail-card">' +
-      // Export is a READ, so it is offered to everyone who can see the minute —
-      // unlike every other control on this card, which is gated on canEditMinute().
       '<div class="il-mom-toolbar">' +
+        '<span class="il-mom-state' + (locked ? ' on' : '') + '">' +
+          (locked ? 'Distributed' : 'Draft — only you and planners can see this') + '</span>' +
+        '<div style="flex:1;"></div>' +
+        // Export is a READ, so it is offered to everyone who can see the minute —
+        // unlike every other control on this card, which is gated on canEditMinute().
         '<button class="pd-btn pd-btn-sm" id="il-mom-pdf" title="Download these minutes as a PDF">⬇ PDF</button>' +
+        (mayEdit ? '<button class="pd-btn pd-btn-sm' + (locked ? '' : ' pd-btn-primary') + '" id="il-mom-dist">' +
+          (locked ? '↩ Revert to draft' : '📤 Distribute') + '</button>' : '') +
       '</div>' +
+      (locked && mayEdit
+        ? '<p class="il-mom-note" style="margin-top:0;">These minutes have been issued, so the form is ' +
+          'locked. Revert to draft to change them — everyone on the project can already read this version.</p>'
+        : '') +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
@@ -803,13 +840,34 @@ window.IssuesLessons = (function () {
         '<p>An action item lives here. <b>Raise</b> it to put a copy in the Issues &amp; Concerns ' +
         'register and link the two — after that the register is where it is chased, and these ' +
         'minutes keep saying what the meeting said.</p>' +
-        (items.length ? '<div class="il-mom-tablewrap"><table class="pd-table">' +
-          '<thead><tr><th>Action</th><th>Owner</th><th>Due</th><th>Status</th><th>In the register</th>' +
+        (items.length ? '<div class="il-mom-tablewrap"><table class="pd-table il-mom-table">' +
+          '<thead><tr><th>No.</th><th>Category</th><th>Type</th><th>Issue / Agenda</th>' +
+          '<th>Action item</th><th>Owner</th><th>Due</th><th>Status</th><th>In the register</th>' +
           (ro ? '' : '<th></th>') + '</tr></thead><tbody>' +
           items.map(function (it) { return momItemRowHTML(it, ro, d); }).join('') +
           '</tbody></table></div>'
           : '<div class="il-empty" style="padding:14px;">No action items on these minutes.</div>') +
-        (ro ? '' : '<button class="pd-btn pd-btn-sm" id="il-mom-additem" style="margin-top:8px;">+ Add action item</button>') +
+        (ro ? '' :
+          '<div class="il-mom-addrow">' +
+            '<button class="pd-btn pd-btn-sm" id="il-mom-additem">+ Add action item</button>' +
+            // Carry-over is offered on ANY minute, not only a brand-new one — a recurring
+            // meeting often has its agenda seeded after the fact. Only meetings that
+            // actually still have something open are listed; an empty dropdown would
+            // invite a click that does nothing.
+            (others.length
+              ? '<span class="il-mom-carry">' +
+                  '<select class="pd-select pd-input-sm" id="il-mom-carryfrom">' +
+                    '<option value="">Carry over still-open actions from…</option>' +
+                    others.map(function (x) {
+                      return '<option value="' + Fmt.esc(x.id) + '">' + Fmt.esc(x.title || '(untitled)') +
+                        (x.meeting_date ? ' · ' + Fmt.esc(Fmt.date(x.meeting_date)) : '') +
+                        ' · ' + momCarryable(x).length + ' open</option>';
+                    }).join('') +
+                  '</select>' +
+                  '<button class="pd-btn pd-btn-sm" id="il-mom-carrygo">Carry over</button>' +
+                '</span>'
+              : '') +
+          '</div>') +
       '</div>' +
 
       (ro ? '' :
@@ -827,7 +885,23 @@ window.IssuesLessons = (function () {
   function momItemRowHTML(it, ro, d) {
     var iss = momIssueOf(it);
     return '<tr data-item="' + Fmt.esc(it.id) + '">' +
-      '<td><input class="pd-input pd-input-sm il-mi" data-f="description" value="' + Fmt.esc(it.description || '') + '"' + d + '></td>' +
+      '<td class="il-mi-no"><input class="pd-input pd-input-sm il-mi" data-f="item_no" value="' + Fmt.esc(it.item_no || '') +
+        '" placeholder="' + ((it.seq == null ? 0 : it.seq) + 1) + '"' + d + '>' +
+        // Says the action came in from an earlier meeting. ⚠️ Not a status: a carried
+        // action is the SAME action, and its register link came with it — without the
+        // tag it reads as something someone re-typed, and the two would be chased twice.
+        (it.carried_from_item_id ? '<span class="il-mom-carried" title="Carried over from an earlier meeting">carried</span>' : '') +
+      '</td>' +
+      '<td><input class="pd-input pd-input-sm il-mi" data-f="category" value="' + Fmt.esc(it.category || '') + '"' + d + '></td>' +
+      '<td><select class="pd-select pd-input-sm il-mi" data-f="type"' + d + '>' +
+        // ⚠️ A blank option is offered because the column is nullable — without it an
+        // untyped legacy row would silently read as the first option while the database
+        // still holds null, the select-value trap the drawing register documents.
+        '<option value="">—</option>' +
+        MOM_TYPES.map(function (o) { return '<option' + (it.type === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
+      '</select></td>' +
+      '<td><input class="pd-input pd-input-sm il-mi" data-f="issue" value="' + Fmt.esc(it.issue || '') + '" placeholder="What was raised" ' + d + '></td>' +
+      '<td><input class="pd-input pd-input-sm il-mi" data-f="action_item" value="' + Fmt.esc(it.action_item || '') + '" placeholder="What will be done" ' + d + '></td>' +
       '<td><input class="pd-input pd-input-sm il-mi" data-f="owner" value="' + Fmt.esc(it.owner || '') + '"' + d + '></td>' +
       '<td><input class="pd-input pd-input-sm il-mi" data-f="due_date" type="date" value="' + dateVal(it.due_date) + '"' + d + '></td>' +
       '<td><select class="pd-select pd-input-sm il-mi" data-f="status"' + d + '>' +
@@ -853,6 +927,120 @@ window.IssuesLessons = (function () {
     return '<span class="il-mom-chip"><code>' + Fmt.esc(id) + '</code>' +
       '<span id="il-mom-actname">' + (nm ? Fmt.esc(nm) : '') + '</span>' +
       (ro ? '' : '<button type="button" id="il-mom-actclear" title="Unlink">✕</button>') + '</span>';
+  }
+
+  // ---------------------------------------------------------- carry-over -----
+  // "What is still open on that meeting?" — the set carry-over would bring forward.
+  // ⚠️ For a RAISED action the REGISTER's status decides, not `mom_items.status`, which
+  // is the same rule the screen and the PDF already follow. An action raised months ago
+  // and since closed in the register must not be dragged into next week's agenda
+  // because nobody went back to tick the box on the old minute.
+  function momCarryable(mom) {
+    return momItemsOf(mom.id).filter(function (it) {
+      var iss = momIssueOf(it);
+      return (iss ? (iss.status || 'Open') : (it.status || 'Open')) !== 'Closed';
+    });
+  }
+
+  // ⚠️ CARRY-OVER COPIES THE REGISTER LINK RATHER THAN RE-RAISING. A carried action is
+  // the SAME issue, discussed again — so `issue_id` comes across and the new minute
+  // shows the register's live status. Re-raising would put a second competing issue in
+  // the register for one problem, and copying the link also means the carried row has
+  // no "Raise" button, so it cannot be double-raised by hand either.
+  //
+  // ⚠️ `issues_lessons.mom_id` is NOT moved: provenance names the meeting an issue was
+  // FIRST raised from. That is what lets canDeleteMinute() ignore carried links.
+  async function momCarryOver(fromId) {
+    var target = MOMS.find(function (x) { return x.id === _momSel; });
+    var src = MOMS.find(function (x) { return x.id === fromId; });
+    if (!target || !src || !canEditMinute(target) || momLocked(target)) return;
+    // The header is saved first: this re-renders, and a title typed a moment ago would
+    // otherwise be thrown away by that repaint. Same reason as "+ Add action item".
+    await momSaveHeader();
+
+    // ⚠️ Idempotent by construction. Carrying twice from the same meeting must not
+    // duplicate the agenda, so anything already carried from one of these source items
+    // is skipped — and the button reports that rather than silently doing nothing.
+    var already = {};
+    momItemsOf(target.id).forEach(function (it) {
+      if (it.carried_from_item_id) already[it.carried_from_item_id] = 1;
+    });
+    var take = momCarryable(src).filter(function (it) { return !already[it.id]; });
+    if (!take.length) {
+      UI.toast(momCarryable(src).length
+        ? 'Every still-open action from those minutes has already been carried over.'
+        : 'Nothing is still open on those minutes.', 'info');
+      return;
+    }
+    var seq = momItemsOf(target.id).length;
+    var payload = take.map(function (it, i) {
+      return {
+        mom_id: target.id, project_id: pid, seq: seq + i,
+        item_no: it.item_no || null, category: it.category || null, type: it.type || null,
+        issue: it.issue || null, description: it.description || '', action_item: it.action_item || null,
+        owner: it.owner || null, due_date: it.due_date || null,
+        // ⚠️ The status carried is the minute's own, not the register's. Where the two
+        // differ the register is authoritative and the row displays ITS status anyway
+        // (momItemRowHTML reads the linked issue), so copying the register's value here
+        // would freeze a snapshot that goes stale the moment the issue moves.
+        status: it.status || 'Open',
+        issue_id: it.issue_id || null,
+        carried_from_item_id: it.id
+      };
+    });
+    try {
+      var ins = await sb().from('mom_items').insert(payload).select();
+      if (ins.error) throw ins.error;
+      (ins.data || []).forEach(function (r) { MOM_ITEMS.push(r); });
+      // Records where the agenda came from, once — a minute can be topped up from several
+      // meetings, and only the first seeding is what "carried from" means.
+      if (!target.carried_from_mom_id) {
+        var u = await sb().from('meeting_minutes').update({ carried_from_mom_id: src.id }).eq('id', target.id);
+        if (!u.error) target.carried_from_mom_id = src.id;
+      }
+      var linked = take.filter(function (it) { return it.issue_id; }).length;
+      UI.toast('Carried over ' + take.length + ' action' + (take.length === 1 ? '' : 's') +
+        (linked ? ' — ' + linked + ' still linked to the register' : ''), 'ok');
+      renderMom();
+    } catch (e) {
+      UI.toast(/column|schema cache/i.test(e.message || '')
+        ? 'Run migrations/2026-08-21-mom-schema-carryover-distribute.sql in Supabase first.'
+        : e.message, 'error');
+    }
+  }
+
+  // ------------------------------------------------------------- distribute ---
+  // ⚠️ Distribution is the point the minutes become everyone's. Reverting does NOT
+  // retract anything already raised into the register — those are their own rows and
+  // someone may already be working them — so the confirmation says so rather than
+  // letting a planner assume "revert" undoes the meeting's consequences.
+  async function momSetDistributed(momId, on) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom || !canEditMinute(mom)) return;
+    if (on) {
+      if (!confirm('Distribute "' + (mom.title || 'these minutes') +
+        '"?\n\nEveryone on the project will be able to read them, and the form locks ' +
+        'until you revert it to draft.')) return;
+    } else {
+      var raised = momItemsOf(momId).filter(function (i) { return i.issue_id; }).length;
+      if (!confirm('Revert "' + (mom.title || 'these minutes') + '" to draft?' +
+        '\n\nOnly you and planners will see them again.' +
+        (raised ? '\n\n' + raised + ' issue(s) already raised in Issues & Concerns STAY there — ' +
+          'reverting does not retract them.' : ''))) return;
+    }
+    var patch = { is_distributed: on, distributed_at: on ? new Date().toISOString() : null,
+                  distributed_by: on ? UID : null };
+    try {
+      var u = await sb().from('meeting_minutes').update(patch).eq('id', momId);
+      if (u.error) throw u.error;
+      Object.assign(mom, patch);
+      UI.toast(on ? 'Minutes distributed' : 'Reverted to draft', 'ok');
+      renderMom();
+    } catch (e) {
+      UI.toast(/column|schema cache/i.test(e.message || '')
+        ? 'Run migrations/2026-08-21-mom-schema-carryover-distribute.sql in Supabase first.'
+        : e.message, 'error');
+    }
   }
 
   // ------------------------------------------------------- activity search ----
@@ -936,14 +1124,25 @@ window.IssuesLessons = (function () {
     if (!it) return;
     if (!canEditMinute(MOMS.find(function (m) { return m.id === it.mom_id; }))) return;
     if (it.issue_id) { UI.toast('Already raised — it is on the Issues & Concerns screen.', 'info'); return; }
-    if (!String(it.description || '').trim()) { UI.toast('Describe the action before raising it.', 'warn'); return; }
     var mom = MOMS.find(function (x) { return x.id === it.mom_id; }) || {};
+    // ⚠️ Refused on a DRAFT, and the database refuses it too (issues_lessons_ins now
+    // tests mom_is_distributed). The register is the shared artefact: an issue raised
+    // out of an unissued minute would carry "Raised at: …" provenance pointing at a
+    // meeting record the reader is not allowed to open.
+    if (!momLocked(mom)) {
+      UI.toast('Distribute these minutes first — an issue in the register must come from a meeting record everyone can read.', 'warn');
+      return;
+    }
+    // The ACTION is what gets chased, so that is what the register entry says. ⚠️ Not
+    // `description`, which since the migration is the optional elaboration.
+    var act = String(it.action_item || '').trim();
+    if (!act) { UI.toast('Describe the action before raising it.', 'warn'); return; }
     // ⚠️ The register's own vocabulary, not this table's — `mom_items.status` and
     // `issues_lessons.status` both exist and are NOT the same list (In Progress vs On Hold).
     var st = it.status === 'Closed' ? 'Closed' : (it.status === 'In Progress' ? 'On Hold' : 'Open');
     var payload = {
       project_id: pid, type: 'Issue',
-      description: it.description,
+      description: act,
       champion: it.owner || null,
       status: st,
       date_presented: mom.meeting_date || null,
@@ -1024,20 +1223,23 @@ window.IssuesLessons = (function () {
     var wrap = null;
     try {
       var items = momItemsOf(mom.id);
-      var filename = (mom.title || 'Meeting').replace(/[^a-zA-Z0-9_]/g, '_') + '_MOM.pdf';
+      var filename = (mom.title || 'Meeting').replace(/[^a-zA-Z0-9_]/g, '_') +
+        (momLocked(mom) ? '' : '_DRAFT') + '_MOM.pdf';
 
       var cards = items.map(function (it, i) {
         var iss = momIssueOf(it);
+        // ⚠️ Rows written before the migration hold their action text in `description`.
+        var actText = it.action_item || it.description;
         return '<div style="margin-bottom:14px;padding:12px;border:1px solid #ddd;border-radius:8px;break-inside:avoid;">' +
           '<div style="display:grid;grid-template-columns:0.4fr 1.5fr 0.9fr 0.9fr 1.2fr 1fr;gap:5px;margin-bottom:8px;">' +
-            momPdfCell('No.', String((it.seq == null ? i : it.seq) + 1), true) +
-            // `mom_items` has no `category`. The nearest TRUE statement about an action
-            // is where it is being chased, so that is what this column says — rather
-            // than a dash in every row of every export.
-            momPdfCell('Category', it.issue_id ? 'Raised in register' : 'Held in minutes') +
+            momPdfCell('No.', it.item_no || String((it.seq == null ? i : it.seq) + 1), true) +
+            momPdfCell('Category', it.category) +
             '<div style="background:#f7f7f8;border-radius:5px;padding:6px 8px;border:1px solid #e5e5ea;">' +
               '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;margin-bottom:2px;">Type</div>' +
-              momPdfBadge(it.issue_id ? 'Issue' : 'FYI') + '</div>' +
+              // ⚠️ Falls back to the register link only when the row is untyped — legacy
+              // rows predate the `type` column, and printing a dash for every one of them
+              // would lose a true statement the export can still make about them.
+              momPdfBadge(it.type || (it.issue_id ? 'Issue' : 'FYI')) + '</div>' +
             '<div style="background:#f7f7f8;border-radius:5px;padding:6px 8px;border:1px solid #e5e5ea;">' +
               '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;margin-bottom:2px;">Status</div>' +
               // ⚠️ Once raised, the REGISTER owns the status — the same rule the screen
@@ -1047,12 +1249,19 @@ window.IssuesLessons = (function () {
             momPdfCell('Responsible', it.owner) +
             momPdfCell('Target Date', it.due_date ? Fmt.date(it.due_date) : '', true) +
           '</div>' +
-          // mom-app's three text blocks, mapped onto this module's single action text:
-          // the issue it became, the action itself, and what the register now says.
-          momPdfField('Issue / Agenda', iss ? iss.description : '') +
-          momPdfField('Action Item', it.description) +
-          momPdfField('Description', iss ? ('Raised in Issues & Concerns · ' + (iss.status || 'Open') +
-            (iss.champion ? ' · champion ' + iss.champion : '')) : '') +
+          // mom-app's three text blocks, now backed by three real columns.
+          // ⚠️ Each falls back to what the row can still truthfully say, because rows
+          // written before the migration hold their action text in `description`.
+          momPdfField('Issue / Agenda', it.issue) +
+          momPdfField('Action Item', actText) +
+          // Blank when the action text CAME from description (a legacy row), or the
+          // sheet prints the same sentence twice under two different headings.
+          momPdfField('Description', it.description !== actText ? it.description : '') +
+          // Not a mom-app block: mom-app has no register to point at. Printed only when
+          // the action has actually been raised, so it never adds an empty row.
+          (iss ? momPdfField('Status in Issues & Concerns',
+            (iss.status || 'Open') + (iss.champion ? ' · champion ' + iss.champion : '') +
+            (it.carried_from_item_id ? ' · carried over from an earlier meeting' : '')) : '') +
         '</div>';
       }).join('');
 
@@ -1079,7 +1288,14 @@ window.IssuesLessons = (function () {
         '<div style="background:#b40000;padding:14px 20px;margin:-20px -20px 18px -20px;display:flex;justify-content:space-between;align-items:center;">' +
           '<img src="../../assets/img/logo-white.png" style="height:26px;width:auto;" crossorigin="anonymous"/>' +
           '<div style="text-align:right;">' +
-            '<div style="font-size:12px;font-weight:700;color:#fff;">' + Fmt.esc(projName) + ' — ' + Fmt.esc(mom.title || 'Meeting') + '</div>' +
+            '<div style="font-size:12px;font-weight:700;color:#fff;">' +
+              // ⚠️ An undistributed minute MUST say so on paper. A PDF outlives the screen
+              // that knows it was a draft, and a sheet that reads as issued minutes when
+              // nobody has issued them is the one way this export can mislead.
+              (momLocked(mom) ? '' : '<span style="background:#fff;color:#b40000;font-size:9px;' +
+                'font-weight:800;padding:2px 7px;border-radius:3px;letter-spacing:0.08em;' +
+                'margin-right:8px;vertical-align:middle;">DRAFT</span>') +
+              Fmt.esc(projName) + ' — ' + Fmt.esc(mom.title || 'Meeting') + '</div>' +
             '<div style="font-size:9px;color:rgba(255,255,255,0.85);margin-top:3px;">📅 ' +
               Fmt.esc(mom.meeting_date ? Fmt.date(mom.meeting_date) : '-') + '   📍 ' + Fmt.esc(mom.location || '-') +
               '   (' + items.length + ' item' + (items.length !== 1 ? 's' : '') + ')</div>' +
@@ -1132,6 +1348,19 @@ window.IssuesLessons = (function () {
     if (!_momSel) return;
     momResolveActName(($('il-mom-act') || {}).value);
 
+    var dist = host.querySelector('#il-mom-dist');
+    if (dist) dist.onclick = function () {
+      var cur = MOMS.find(function (x) { return x.id === _momSel; });
+      momSetDistributed(_momSel, !momLocked(cur));
+    };
+
+    var cgo = host.querySelector('#il-mom-carrygo');
+    if (cgo) cgo.onclick = function () {
+      var sel = host.querySelector('#il-mom-carryfrom');
+      if (!sel || !sel.value) { UI.toast('Pick the meeting to carry actions from.', 'warn'); return; }
+      momCarryOver(sel.value);
+    };
+
     var pb = host.querySelector('#il-mom-pdf');
     // ⚠ Saves the header first when the user may edit: the export reads MOMS, not
     // the form, so a title typed and not saved would be missing from the sheet.
@@ -1151,7 +1380,11 @@ window.IssuesLessons = (function () {
       try {
         var seq = momItemsOf(_momSel).length;
         var ins = await sb().from('mom_items').insert({
-          mom_id: _momSel, project_id: pid, seq: seq, description: '', status: 'Open' }).select().single();
+          mom_id: _momSel, project_id: pid, seq: seq, description: '', action_item: '',
+          // ⚠️ Defaults to FYI, not Issue: most minuted lines are information, and a row
+          // that defaults to Issue would have every new action pre-classified as a
+          // problem before anyone typed what it was.
+          type: 'FYI', status: 'Open' }).select().single();
         if (ins.error) throw ins.error;
         MOM_ITEMS.push(ins.data); renderMom();
       } catch (e) { UI.toast(e.message, 'error'); }
@@ -1159,10 +1392,14 @@ window.IssuesLessons = (function () {
 
     host.querySelectorAll('.il-mi').forEach(function (f) {
       f.onchange = function () {
-        var id = f.closest('[data-item]').dataset.item, patch = {};
-        patch[f.dataset.f] = f.dataset.f === 'due_date'
-          ? (f.value || null)
-          : (f.value.trim ? f.value.trim() : f.value);
+        var id = f.closest('[data-item]').dataset.item, fld = f.dataset.f, patch = {};
+        var v = f.value.trim ? f.value.trim() : f.value;
+        // ⚠️ Empty means NULL on every nullable column, not the empty string.
+        // `type` carries a CHECK (Issue | FYI | Report); writing '' when the planner
+        // picks the blank option would be REFUSED by the database, and the other new
+        // columns would silently store '' where every read tests for null.
+        patch[fld] = (fld === 'due_date' || !v) && fld !== 'description' && fld !== 'status'
+          ? (v || null) : v;
         momSaveItem(id, patch);
       };
     });
