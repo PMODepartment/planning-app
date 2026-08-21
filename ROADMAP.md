@@ -192,6 +192,20 @@ milestones.
 - **Not included:** budgets/awarded cost are deliberately not surfaced on the schedule rows — Cash
   Flow is where procurement money is reported.
 
+### E2. Activity → work-package link, and need-by back to Procurement ✅ done 2026-08-20
+`project_schedule.work_package` now holds a WPM `wp_no`, picked from the `wpm_work_packages` mirror
+instead of hand-typed. Need-by (earliest start among a package's linked activities) is compared
+against WPM's **Target Installation** and pushed back into the Procurement app.
+- **No Planners migration** — the existing column was repurposed, so grouping / filter / search /
+  Global Change keep working on the same field.
+- ⚠️ **Requires `wpm/MIGRATION_planners_need_by.sql` in the WPM project** + deploying
+  `supabase/functions/push-need-by` (it reuses `sync-wpm`'s secrets). Both surfaces state what to run
+  until then.
+- ⚠️ **The write-back does NOT touch `work_packages.target_installation`** — that field is
+  procurement-owned. The schedule proposes into a separate table; the buyer adopts it in their own
+  form. Anything else silently overwrites another team's authoritative dates.
+- **Not included:** budgets stay out of the schedule (Cash Flow reports procurement money, per E1).
+
 ---
 
 ## Cross-cutting notes

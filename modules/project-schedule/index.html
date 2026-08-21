@@ -2183,6 +2183,10 @@
                trade, one activity per work package. Read-only here. -->
           <button class="pd-btn" id="ps-sync-prc" title="Refresh Procurement from the Procurement (WPM) app's work packages"><span data-ico="refresh" data-ico-size="15"></span> Sync Procurement</button>
           <span id="ps-sync-prc-at" style="font-size:11.5px;color:var(--pd-muted);"></span>
+          <!-- The one place this app WRITES to the Procurement app. Deliberately a separate
+               button from Sync Procurement: a read-only refresh must never also push data
+               into another team's database as a side effect nobody asked for. -->
+          <button class="pd-btn" id="ps-push-needby" title="Send each work package's need-by date (earliest linked activity start) to the Procurement app"><span data-ico="upload" data-ico-size="15"></span> Push need-by → Procurement</button>
           <span class="ps-tb-div"></span>
           <button class="pd-btn ps-icobtn" id="ps-wbs-expand" title="Expand all"><span data-ico="chevronDown" data-ico-size="15"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-wbs-collapse" title="Collapse all"><span data-ico="chevronRight" data-ico-size="15"></span></button>
@@ -2540,7 +2544,10 @@
         <div><label class="pd-label">% Complete Type</label><select class="pd-select" id="ps-f-pcttype"><option>Duration</option><option>Physical</option><option>Units</option></select></div>
         <div><label class="pd-label">Calendar</label><select class="pd-select" id="ps-f-cal"></select></div>
         <div><label class="pd-label">Owner</label><input class="pd-input" id="ps-f-owner" /></div>
-        <div><label class="pd-label">Work Package</label><input class="pd-input" id="ps-f-wp" /></div>
+        <!-- Work Package = the Procurement (WPM) package that supplies this activity.
+             A <select> populated from the mirror in openForm (exactly like Calendar
+             above), not a text box: the stored value is a bare wp_no nobody can type. -->
+        <div><label class="pd-label">Work Package <span style="font-weight:400;color:var(--pd-muted);">(Procurement app)</span></label><select class="pd-select" id="ps-f-wp"></select><div id="ps-f-wp-hint" style="font-size:11px;color:var(--pd-muted);margin-top:3px;"></div></div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:22px;"><input type="checkbox" id="ps-f-progms" /><label class="pd-label" for="ps-f-progms" style="margin:0;">Program Milestone</label></div>
 
         <div class="ps-form-full ps-form-sec">Status &mdash; Dates &amp; Duration</div>
@@ -2655,6 +2662,12 @@
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
   var PACKAGES = [];     // Contract packages for this project (2026-08-19-packages.sql)
+  // The Procurement (WPM) app's work packages for this project, read from the
+  // `wpm_work_packages` MIRROR — never from the WPM app directly (its anon key is public).
+  // This is what `project_schedule.work_package` now points at: an activity carries the
+  // `wp_no` of the work package that supplies it, so "which procurement package feeds this
+  // work?" is answerable instead of being a hand-typed string nothing validates.
+  var WPM_WPS = [];
   var LOC_LEVELS = [];   // Location Breakdown levels (ordered: Building > Level > Zone > …) for this project
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
@@ -3629,7 +3642,7 @@
     return out;
   }
   async function loadResourcesAssignments() {
-    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; DSCN = []; return; }
+    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; WPM_WPS = []; DSCN = []; return; }
     try {
       // resources/resource_assignments reach tens of thousands of rows on a P6/XER import, so an
       // unpaginated select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost
@@ -3677,6 +3690,7 @@
       var r9 = await sb().from('packages').select('*').eq('project_id', pid).order('sort_order').order('code');
       PACKAGES = (r9 && !r9.error && r9.data) || [];
     } catch (e) { PACKAGES = []; }
+    await loadWpmWorkPackages();
     try {
       // Duration scenarios (C3). Tolerant of the un-run migration like the two above.
       var r10 = await sb().from('duration_scenarios').select('*').eq('project_id', pid).order('name');
@@ -3860,6 +3874,138 @@
     } catch (e) { return pid; }
   }
 
+  // ==========================================================================
+  // ACTIVITY → WORK PACKAGE LINK
+  // --------------------------------------------------------------------------
+  // `project_schedule.work_package` holds a WPM `wp_no`. It used to be a free-text
+  // box, which was decorative rather than wrong-in-a-useful-way: WPM strips the
+  // prefix from its numbers (UPDATE_wpno_strip_prefix.sql), so the values are bare
+  // ordinals — '1', '12', '147'. Nobody can type those correctly from memory, and a
+  // typo silently formed a second group in the Work Package roll-up. The column now
+  // carries the same key the mirror is unique on, and every display resolves the
+  // description through the mirror rather than storing a label that would go stale.
+  //
+  // ⚠️ A value that does not resolve is shown as UNLINKED, never blanked. Legacy
+  // hand-typed text predates the picker and is a data-quality signal a planner must
+  // see; and a work package really can leave the WPM project, which must read as
+  // "this link is broken" rather than as "this activity was never linked".
+  // ==========================================================================
+  // The Procurement (WPM) work packages an activity can be linked to. Read from the MIRROR
+  // under normal RLS — the WPM app's own database is never touched from the browser (its anon
+  // key is public, so every package's cost would be exposed). Same source the Procurement WBS
+  // branch and Cash Flow read.
+  // ⚠️ BUDGET COLUMNS ARE DELIBERATELY NOT SELECTED. The mirror carries approved_budget_bcb /
+  // awarded_cost / total_awarded and an approved user CAN read them, but the schedule has no
+  // business holding procurement money in memory where a picker, report or Excel export could
+  // leak it into a schedule view. Cash Flow is where procurement cost is reported — ROADMAP E1
+  // drew that line and this keeps it.
+  // Bounded by definition (a project has hundreds of packages, not thousands), so one select is
+  // enough; tolerant of an un-run mirror migration exactly like PACKAGES / LOC_LEVELS.
+  async function loadWpmWorkPackages() {
+    if (!pid) { WPM_WPS = []; return; }
+    try {
+      var wpmId = await _prcWpmProjectId();
+      var r = await sb().from('wpm_work_packages')
+        .select('wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at')
+        .eq('wpm_project_id', wpmId).limit(2000);
+      var list = (r && !r.error && r.data) || [];
+      // Trade order then WP number, so every picker and report shows packages in the order
+      // they are actually procured rather than in mirror-id order.
+      list.sort(function (a, b) {
+        return _prcTradeRank(_prcTradeOf(a)) - _prcTradeRank(_prcTradeOf(b)) ||
+          _prcTradeOf(a).localeCompare(_prcTradeOf(b)) ||
+          String(a.wp_no).localeCompare(String(b.wp_no), undefined, { numeric: true });
+      });
+      WPM_WPS = list;   // reassignment invalidates _wpIndex()'s cache by identity
+    } catch (e) { WPM_WPS = []; }
+  }
+
+  function _wpKey(no) { return String(no == null ? '' : no).trim().toUpperCase(); }
+  var _wpMap = null, _wpMapSrc = null;
+  function _wpIndex() {
+    // Rebuilt whenever WPM_WPS is reassigned (identity check) — a per-call scan would
+    // run once per grid row per render on a 17k-activity schedule.
+    if (_wpMap && _wpMapSrc === WPM_WPS) return _wpMap;
+    _wpMap = {}; _wpMapSrc = WPM_WPS;
+    (WPM_WPS || []).forEach(function (w) { var k = _wpKey(w.wp_no); if (k) _wpMap[k] = w; });
+    return _wpMap;
+  }
+  // The mirror row an activity points at, or null when it points at nothing that exists.
+  function wpOf(r) { var k = _wpKey(r && r.work_package); return k ? (_wpIndex()[k] || null) : null; }
+  function wpByNo(no) { var k = _wpKey(no); return k ? (_wpIndex()[k] || null) : null; }
+  // "12 — Structural Steel Supply". Falls back to the bare stored value so an unresolved
+  // link still shows what it was pointing at.
+  function wpLabel(no) {
+    var k = String(no == null ? '' : no).trim(); if (!k) return '';
+    var w = wpByNo(k); if (!w) return k;
+    var d = String(w.description || '').trim();
+    return d ? (w.wp_no + ' — ' + d) : String(w.wp_no);
+  }
+  function wpIsUnlinked(r) { var k = _wpKey(r && r.work_package); return !!k && !_wpIndex()[k]; }
+  // The <select> body for the Work Package picker: one <optgroup> per trade, in the
+  // owner's procurement order. `cur` is kept as an option even when it resolves to
+  // nothing, so opening a form on a legacy value and changing an unrelated field can
+  // never silently wipe the link (a select whose value isn't in its option list reads
+  // back as '').
+  function wpOptsHTML(cur) {
+    var curK = _wpKey(cur), seen = false;
+    var byTrade = {}, order = [];
+    (WPM_WPS || []).forEach(function (w) {
+      var t = _prcTradeOf(w);
+      if (!byTrade[t]) { byTrade[t] = []; order.push(t); }
+      byTrade[t].push(w);
+      if (_wpKey(w.wp_no) === curK) seen = true;
+    });
+    // ⚠️ Sort HERE rather than trusting WPM_WPS to arrive sorted. loadWpmWorkPackages does sort
+    // it, but taking the trade order from first-appearance made this function silently
+    // order-dependent on its caller — a picker whose headings are in procurement order only by
+    // luck. Caught by a test that passed the packages in mirror order.
+    order.sort(function (a, b) { return _prcTradeRank(a) - _prcTradeRank(b) || a.localeCompare(b); });
+    order.forEach(function (t) {
+      byTrade[t].sort(function (a, b) {
+        return String(a.wp_no).localeCompare(String(b.wp_no), undefined, { numeric: true });
+      });
+    });
+    var html = '<option value="">— None —</option>';
+    if (curK && !seen) {
+      html += '<option value="' + esc(String(cur).trim()) + '" selected>⚠ ' + esc(String(cur).trim()) +
+        ' — not in the Procurement app</option>';
+    }
+    order.forEach(function (t) {
+      html += '<optgroup label="' + esc(t) + '">' + byTrade[t].map(function (w) {
+        var lbl = wpLabel(w.wp_no);
+        return '<option value="' + esc(String(w.wp_no)) + '"' +
+          (_wpKey(w.wp_no) === curK ? ' selected' : '') + '>' + esc(lbl) + '</option>';
+      }).join('') + '</optgroup>';
+    });
+    return html;
+  }
+
+  // ---- Need-by: what the SCHEDULE says a work package is required for -------
+  // The earliest start among the activities linked to a package — the day work that
+  // consumes it begins. Per the owner: that date is the procurement app's
+  // TARGET INSTALLATION, so it is compared against (and pushed to) that field, not
+  // target_delivery.
+  // ⚠️ WBS-Summary rows are excluded: they are projections of their children, so
+  // counting them would double-count and, worse, a summary's rolled-up start could
+  // pull the need-by earlier than any real activity needs it.
+  function wpNeedByIndex() {
+    var out = {};
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      var k = _wpKey(r.work_package); if (!k) return;
+      var e = out[k] || (out[k] = { date: null, driver: null, linked: 0, dated: 0 });
+      e.linked++;
+      // An activity with no start cannot drive a need-by, but it IS linked — counted
+      // separately so a package whose activities are all undated reads as "linked, no
+      // date" instead of as unlinked.
+      var s = pd(dispStart(r)); if (!s) return;
+      e.dated++;
+      if (!e.date || s < e.date) { e.date = s; e.driver = r; }
+    });
+    return out;
+  }
+
   async function _prcEnsureNode(parentId, name, order) {
     var found = WBS_NODES.find(function (n) { return n.parent_id === parentId && n.name === name; });
     if (found) return found;
@@ -3945,7 +4091,10 @@
         if (nd && prcNodeIds.indexOf(nd.id) === -1) prcNodeIds.push(nd.id);
       });
       var existingByAid = {}, allPrcRows = [];
-      var patchFields = 'id,activity_id,activity_name,wbs,wbs_node_id,activity_type,status,start_date,end_date,seq_order';
+      // ⚠️ `work_package` MUST be selected here even though nothing below reads it directly:
+      // the diff loop compares `ex[f]` against the patch, and an unselected column reads as
+      // undefined → always different → every sync issues a pointless UPDATE for every package.
+      var patchFields = 'id,activity_id,activity_name,wbs,wbs_node_id,activity_type,status,start_date,end_date,seq_order,work_package';
       for (var ci = 0; ci < prcNodeIds.length; ci += 100) {
         var eq = await sb().from(TABLE).select(patchFields).eq('project_id', pid).in('wbs_node_id', prcNodeIds.slice(ci, ci + 100));
         if (eq.error) return;   // can't tell insert from update — bail rather than duplicate
@@ -3974,7 +4123,14 @@
           wbs: codeOf[x.node.id], wbs_node_id: x.node.id,
           activity_type: 'Task', seq_order: x.seq,
           status: awarded ? 'In Progress' : 'Not Started',
-          start_date: start, end_date: fin || start || null
+          start_date: start, end_date: fin || start || null,
+          // ⚠️ Link the mirrored row to its OWN package. Its activity_id already IS the wp_no,
+          // so this is redundant as identity — but `work_package` is what the Work Package
+          // grouping, filter and Procurement Alignment report read, and leaving it null made
+          // the procurement branch the one place in the schedule that showed no work-package
+          // link at all. Written here rather than backfilled by a migration so it self-heals
+          // on every sync.
+          work_package: String(w.wp_no)
         };
         var ex = existingByAid[x.aid];
         if (!ex) inserts.push(Object.assign({ project_id: pid, created_by: UID, activity_id: x.aid }, patch));
@@ -4026,7 +4182,11 @@
       if (res.error) throw res.error;
       var d = res.data || {};
       UI.toast('Procurement synced — ' + (d.written != null ? d.written : 0) + ' work packages', 'success');
+      // Refresh the in-memory package list too, or the Work Package picker and the alignment
+      // report keep offering the pre-sync set until the next full project load.
+      await loadWpmWorkPackages();
       await syncProcurement();
+      buildFilterMenu();
       renderAll();
     } catch (e) {
       var m = (e && (e.message || (e.context && e.context.error))) || 'Sync failed';
@@ -4040,6 +4200,51 @@
       _renderSyncPrcAt();
     }
   }
+  // Send each work package's need-by date (earliest start among its linked activities)
+  // to the Procurement app. ⚠️ The ONLY outbound write in this module.
+  //
+  // ⚠️ It writes `planners_need_by`, NOT work_packages.target_installation. The buyer's
+  // Target Installation stays theirs; this proposes a date beside it and they adopt it in
+  // the WP form if they agree. See supabase/functions/push-need-by/index.ts.
+  //
+  // ⚠️ Confirmed before sending. Everything else in this toolbar changes only this
+  // schedule; this one is visible to another department the moment it lands, so it is not
+  // something to trigger by mis-clicking next to "Sync Procurement".
+  async function pushNeedByToWpm() {
+    if (!canWrite || window.__viewOnly || window.__archived) {
+      UI.toast('Only admins/planners can push need-by dates to the Procurement app.', 'error'); return;
+    }
+    var nb = wpNeedByIndex(), keys = Object.keys(nb);
+    if (!keys.length) {
+      UI.toast('No activities are linked to a work package yet — nothing to push.', 'warn'); return;
+    }
+    var dated = keys.filter(function (k) { return nb[k].date; }).length;
+    if (!confirm('Send need-by dates for ' + keys.length + ' work package(s) (' + dated +
+        ' with a date) to the Procurement app?\n\nBuyers will see these next to their Target ' +
+        'Installation. Nothing they own is overwritten.')) return;
+    var btn = document.getElementById('ps-push-needby');
+    if (btn) { btn.disabled = true; btn.textContent = 'Pushing…'; }
+    try {
+      var res = await sb().functions.invoke('push-need-by', {
+        body: { project_id: pid, data_date: dataDate ? dstr(dataDate) : null }
+      });
+      if (res.error) throw res.error;
+      var d = res.data || {};
+      if (d.error) throw new Error(d.error + (d.hint ? ' — ' + d.hint : ''));
+      UI.toast('Pushed ' + (d.written != null ? d.written : 0) + ' need-by date(s) to the Procurement app' +
+        (d.pruned ? ' · ' + d.pruned + ' stale removed' : ''), 'success');
+    } catch (e) {
+      var m = (e && (e.message || (e.context && e.context.error))) || 'Push failed';
+      UI.toast('Need-by push failed: ' + m, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span data-ico="upload" data-ico-size="15"></span> Push need-by → Procurement';
+        if (window.Icons) Icons.hydrate(btn);
+      }
+    }
+  }
+
   function _renderSyncPrcAt() {
     var el = document.getElementById('ps-sync-prc-at');
     if (!el) return;
@@ -4273,7 +4478,7 @@
   // Drag-reorder is only meaningful in WBS grouping with no active column sort (otherwise order is
   // derived from the grouping / column sort, so a manual sequence wouldn't stick).
   function _reorderEnabled() { return groupBys.length === 1 && groupBys[0] === 'wbs' && !colSort && !window.__viewOnly && !window.__archived; }
-  var filters = { status: {}, type: {}, behind: false, crit: false, look: 0, scope: '', codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; crit = critical-path only; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
+  var filters = { status: {}, type: {}, behind: false, crit: false, look: 0, scope: '', wp: '', codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; crit = critical-path only; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
   var _colFilterOn = false; try { _colFilterOn = localStorage.getItem('ps_colfilter') === '1'; } catch (e) {}
   var _colfT = null;   // debounce timer for column-filter typing
   var _hideEmptyGroups = false; try { _hideEmptyGroups = localStorage.getItem('ps_hideempty') === '1'; } catch (e) {}
@@ -5080,6 +5285,10 @@
   // ---- WBS-code helpers + precomputed caches (rebuilt only when rows change) ----
   function segs(c) { return String(c == null ? '' : c).split('.'); }
   var _sorted = [], _min = null, _max = null, _spanMap = {}, _blSpanMap = {}, _costMap = {}, _seqByCode = {};
+  // ⚠️ The SAME roll-up, keyed by wbs_node_id instead of by dotted code — see the note at the
+  // _costMap build. This one follows wbs_nodes.parent_id, so it is the tree the WBS Manager shows
+  // rather than whatever the code strings currently happen to spell.
+  var _costMapN = {};
   function parentCodeOf(wbs) { var s = String(wbs == null ? '' : wbs).split('.'); return s.slice(0, -1).join('.'); }
   // rebuild(structural): `structural` (default true) means the row SET or ORDER may have changed
   // (add/delete/import, WBS/Activity-ID edit, column-sort or grouping change) → re-sort. Pure field
@@ -5245,6 +5454,24 @@
     // rows). Costs sum; POC %s are duration-weighted (planned POC only over rows that have a
     // baseline, hence the separate wdPoc denominator).
     _costMap = {};
+    _costMapN = {};
+    // Parent chain per node, resolved once. Walking WBS_NODES.find() per row per level would be
+    // O(rows x depth x nodes) — measurably slow on the 4k-activity projects this runs on.
+    var _parentOfNode = {}; WBS_NODES.forEach(function (n) { _parentOfNode[n.id] = n.parent_id || null; });
+    var _ancNodeMemo = {};
+    function _ancNodes(nodeId) {
+      if (!nodeId) return [];
+      if (_ancNodeMemo[nodeId]) return _ancNodeMemo[nodeId];
+      var out = [], seen = {}, cur = nodeId, guard = 0;
+      // Includes the node ITSELF, so an activity filed directly on a branch counts toward that
+      // branch as well as its ancestors.
+      // ⚠️ The `seen` set, not just the depth cap: on a cyclic parent chain a cap alone keeps
+      // walking and accumulates the same activity once per level (measured: 100x on a 2-node
+      // cycle), turning a malformed tree into a wildly INFLATED roll-up. Each node counts once.
+      while (cur && !seen[cur] && guard++ < 200) { seen[cur] = 1; out.push(cur); cur = _parentOfNode[cur]; }
+      _ancNodeMemo[nodeId] = out;
+      return out;
+    }
     rows.forEach(function (r) {
       if (isWbs(r)) return;
       var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : 0;
@@ -5253,11 +5480,13 @@
       var od = _origDurOf(r) || 0;                  // for the Duration % Complete roll-up (duration-weighted)
       var dpEarned = od * (_durPct(r) / 100);
       var codes2 = [r.wbs].concat(r._anc || []);
-      for (var j = 0; j < codes2.length; j++) {
-        var cm = _costMap[codes2[j]] || (_costMap[codes2[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0, mc:0, co:0 });
+      var _sc = scopeOf(r), _pk = packageOf(r);
+      // One accumulator, applied to a dotted-code bucket and a node-id bucket alike, so the two
+      // maps can never drift into reporting different arithmetic for the same activity.
+      function _accum(cm) {
         cm.total += 1; if (isComplete(r)) cm.done += 1; else if (r.actual_start || (r.percent_complete || 0) > 0) cm.prog += 1;
-        var _sc = scopeOf(r); if (_sc === 'change_order') cm.co += 1; else if (_sc) cm.mc += 1;
-        _cmPkg(cm, packageOf(r));
+        if (_sc === 'change_order') cm.co += 1; else if (_sc) cm.mc += 1;
+        _cmPkg(cm, _pk);
         cm.pc += r.planned_cost || 0; cm.ac += r.actual_cost || 0; cm.ev += r.earned_value || 0; cm.bl += r.bl_cost || 0;
         cm.eac += eac(r, cpi);
         if (dur > 0) {
@@ -5266,6 +5495,13 @@
         }
         if (od > 0) { cm.wdur += od; cm.wdurE += dpEarned; }
       }
+      function _blank() { return { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0, mc:0, co:0 }; }
+      for (var j = 0; j < codes2.length; j++) _accum(_costMap[codes2[j]] || (_costMap[codes2[j]] = _blank()));
+      // ⚠️ And up the REAL tree. This is the half that fixes the reported bug: when a branch code
+      // is not the dotted prefix of its children's codes, the loop above misses them and this one
+      // does not.
+      var _an = _ancNodes(r.wbs_node_id);
+      for (var k = 0; k < _an.length; k++) _accum(_costMapN[_an[k]] || (_costMapN[_an[k]] = _blank()));
     });
     _cpmDirty = true;
     computeCPM();   // auto-derive critical path on every data change
@@ -5287,7 +5523,16 @@
   // (wbsSpan already reads the display-scoped `_dspan`). That mismatch is the reported "roll-up
   // WBS information is wrong when the groupings are altered". `_dcost` is built in buildNodes from
   // exactly the rows emitted beneath each display code, so both halves now agree.
-  function cmOf(nd) { return (_dcost && _dcost[dcode(nd)]) || _costMap[nd._realCode || nd.wbs]; }
+  // ⚠️ Order matters. A display-scoped entry still wins: in a grouped view a branch holds only the
+  // subset of its activities that landed in this group, and reporting its whole subtree there is the
+  // mismatch _dcost exists to fix. Below that, the wbs_nodes tree beats the dotted code, because the
+  // code is a label that can drift while the tree is the hierarchy. The dotted map remains the
+  // fallback for rows with no wbs_node_id — imports, hand-typed WBS, pre-wbs_nodes projects.
+  function cmOf(nd) {
+    if (_dcost) { var d = _dcost[dcode(nd)]; if (d) return d; }
+    var byNode = nd.wbs_node_id ? _costMapN[nd.wbs_node_id] : null;
+    return byNode || _costMap[nd._realCode || nd.wbs];
+  }
   var _MIX = '\u0000mixed';
   // First value wins; a second, different value poisons the key to _MIX for good. A blank is not a
   // value — an activity with no zone must not veto the zone its siblings agree on.
@@ -5483,9 +5728,17 @@
     if (dim === 'status') return r.status || 'Not Started';
     if (dim === 'responsible') return r.responsible_party || 'Unassigned';
     if (dim === 'type') return r.activity_type || 'Task';
-    // Work Package is free text (an OPC field), so it buckets like any other flat key. A typo silently
-    // makes a second group — same trade-off as work_type / location values.
-    if (dim === 'wp') return (r.work_package || '').trim() || '— No work package —';
+    // Work Package buckets on the stored WPM `wp_no` but LABELS the group with the package's
+    // description from the mirror — grouping by a bare ordinal ('1', '12', '147') is unreadable.
+    // ⚠️ Resolves at read time rather than storing the label, so renaming a package in the
+    // Procurement app re-labels the group on the next sync instead of leaving a stale caption.
+    // An unresolved value keeps its raw text and is flagged, not merged into the blank bucket:
+    // "points at a package that no longer exists" and "was never linked" are different problems.
+    if (dim === 'wp') {
+      var wpv = (r.work_package || '').trim();
+      if (!wpv) return '— No work package —';
+      return wpByNo(wpv) ? wpLabel(wpv) : ('⚠ ' + wpv + ' — not in the Procurement app');
+    }
     // Contract package resolves through the WBS, so an activity under an assigned branch groups
     // with its branch rather than falling into "— No package —".
     if (dim === 'pkg') return packageLabel(packageOf(r)) || '— No package —';
@@ -8244,7 +8497,7 @@
   }
 
   // ---- Filter (OPC-style) ----
-  function anyFilter() { return search.trim() || filters.behind || filters.crit || filters.look || filters.scope || filters.pkg || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}) || Object.keys(filters.col || {}).some(function(k){return (filters.col[k] || '').trim();}) || (filters.adv && filters.adv.rules && filters.adv.rules.length); }
+  function anyFilter() { return search.trim() || filters.behind || filters.crit || filters.look || filters.scope || filters.pkg || filters.wp || Object.keys(filters.status).some(function(k){return filters.status[k];}) || Object.keys(filters.type).some(function(k){return filters.type[k];}) || Object.keys(filters.codes).some(function(ct){return Object.keys(filters.codes[ct]).some(function(v){return filters.codes[ct][v];});}) || Object.keys(filters.col || {}).some(function(k){return (filters.col[k] || '').trim();}) || (filters.adv && filters.adv.rules && filters.adv.rules.length); }
   // Per-column filter helpers. _colByKey resolves a colKey to its column def; _colText returns the
   // displayed text for a column so the filter matches what the user sees in the cell.
   // Advanced-filter raw value + type per column (for numeric/date comparisons, not just text).
@@ -8313,7 +8566,10 @@
     // Search also covers work type, work package + every location value, so "Zone 3" or "Formworks"
     // finds the right activities even when the grid isn't currently grouped by them.
     if (search.trim()) {
-      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), r.work_package, phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r), packageLabel(packageOf(r))].concat(
+      // ⚠️ `wpLabel` not `r.work_package`: the stored value is a bare ordinal, so searching the
+      // raw column meant "steel" could never find the activities fed by the steel package. The
+      // label is "12 — Structural Steel Supply", which matches both the number and the description.
+      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), wpLabel(r.work_package), phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r), packageLabel(packageOf(r))].concat(
         r.location ? Object.keys(r.location).map(function (k) { return r.location[k]; }) : []
       ).join(' ').toLowerCase();
       if (hay.indexOf(search.trim().toLowerCase()) === -1) return false;
@@ -8338,6 +8594,15 @@
     if (filters.pkg && !isWbsNode(r)) {
       var _pv = packageOf(r);
       if (filters.pkg === '__none__' ? !!_pv : _pv !== filters.pkg) return false;
+    }
+    // Procurement work package. '__none__' = not linked to any package, '__unlinked__' = points at
+    // one the Procurement app doesn't have — the two data-quality questions a planner asks after a
+    // sync, and neither is answerable from the package list alone.
+    if (filters.wp && !isWbsNode(r)) {
+      var _wv = _wpKey(r.work_package);
+      if (filters.wp === '__none__') { if (_wv) return false; }
+      else if (filters.wp === '__unlinked__') { if (!wpIsUnlinked(r)) return false; }
+      else if (_wv !== _wpKey(filters.wp)) return false;
     }
     if (filters.look) {
       var win = addDays(today(), filters.look * 7), t0 = today();
@@ -8378,6 +8643,14 @@
           .concat(PACKAGES.map(function (k) { return [k.id, k.code + ' — ' + k.name]; }))
           .map(function (o) { return '<option value="' + esc(o[0]) + '"' + ((filters.pkg || '') === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') +
         '</select>' : '') +
+      // Procurement work package — offered whenever anything is mirrored OR a stale link exists,
+      // so the "not in the Procurement app" bucket is reachable even on a project whose mirror
+      // has since been emptied.
+      ((WPM_WPS.length || rows.some(wpIsUnlinked)) ? '<h4>Procurement work package</h4><select id="ps-f-wp-filter" class="pd-select pd-input-sm" style="width:100%;">' +
+        [['', 'All work packages'], ['__none__', '— Not linked to a work package —'], ['__unlinked__', '⚠ Linked to a package the Procurement app does not have']]
+          .concat(WPM_WPS.map(function (w) { return [String(w.wp_no), wpLabel(w.wp_no)]; }))
+          .map(function (o) { return '<option value="' + esc(o[0]) + '"' + ((filters.wp || '') === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') +
+        '</select>' : '') +
       '<label style="margin-top:4px;">Look-ahead: <select id="ps-f-look" class="pd-select pd-input-sm" style="max-width:150px;">' +
         [[0,'All'],[2,'Next 2 weeks'],[4,'Next 4 weeks'],[8,'Next 8 weeks'],[12,'Next 12 weeks']].map(function(o){return '<option value="'+o[0]+'"'+(filters.look===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('') + '</select></label>' +
       codesHTML +
@@ -8396,9 +8669,11 @@
     });
     var _fpk = menu.querySelector('#ps-f-pkg');
     if (_fpk) _fpk.onchange = function (e) { filters.pkg = e.target.value; renderGrid(); renderGantt(); };
+    var _fwp = menu.querySelector('#ps-f-wp-filter');
+    if (_fwp) _fwp.onchange = function (e) { filters.wp = e.target.value; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-look').onchange = function (e) { filters.look = parseInt(e.target.value, 10) || 0; renderGrid(); renderGantt(); };
     menu.querySelector('#ps-f-adv').onclick = function (e) { e.stopPropagation(); menu.classList.remove('open'); openAdvFilter(); };
-    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, crit:false, look:0, scope:'', pkg:'', codes:{}, col:{}, adv:{ match:'all', rules:[] } }; syncScopeSwitch(); buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
+    menu.querySelector('#ps-filter-clear').onclick = function () { filters = { status:{}, type:{}, behind:false, crit:false, look:0, scope:'', pkg:'', wp:'', codes:{}, col:{}, adv:{ match:'all', rules:[] } }; syncScopeSwitch(); buildFilterMenu(); renderHeader(); renderGrid(); renderGantt(); };
     menu.querySelector('#ps-filter-done').onclick = function () { menu.classList.remove('open'); };
   }
   // Advanced multi-condition filter builder (OPC-style): field / operator / value rows combined
@@ -9175,6 +9450,10 @@
   // Labels sit over solid, hatched AND tinted areas depending on progress, so they carry their own
   // outline (stroke painted UNDER the fill) instead of assuming a dark background.
   var VS_TXT = 'paint-order="stroke" stroke="rgba(0,0,0,.55)" stroke-width="2.4" stroke-linejoin="round"';
+  // Level-1 building width: a fixed span so every card is the same size regardless of how many
+  // zones the trade happens to have. In cell-units, so the zoom still works; the floor stops it
+  // getting thin at the smallest zoom. See the note in _vsTowerSVG.
+  var VS_L1_SPAN = 4, VS_L1_MIN_W = 260;
   function _vsMaxDetail() { return Math.max(1, LOC_LEVELS.length); }
   function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
@@ -9416,13 +9695,19 @@
     var fh = (_vsBasis === 'compare') ? 52 : 44, gap = 6, pad = 14, labelW = 92;
     // How many cells the widest row holds at a given detail — the tower's width in "zone units".
     function cellsAt(k) { return disp.reduce(function (m, v) { return Math.max(m, _vsRowCells(byLevel[v], k).length || 1); }, 1); }
-    // ⚠️ The building's width comes from the ZONE breakdown, not from the detail being viewed, and
-    // never shrinks below it — see the note above. Detail 3 may need more room, so take whichever is
-    // wider; detail 1 then spans the full building instead of collapsing to one narrow column.
+    // ⚠️ At detail >= 2 the building's width comes from the ZONE breakdown and never shrinks below
+    // it — every zone cell needs room for its date. Detail 3 may need more than the zone count, so
+    // take whichever is wider.
     var zoneCells = cellsAt(Math.min(2, _vsMaxDetail()));
     var maxCells = Math.max(zoneCells, cellsAt(detail));
     var cw = Math.max(56, Math.round(78 * _vsZoom));
-    var plotW = maxCells * cw, W = labelW + pad * 2 + plotW;
+    // ⚠️ DETAIL 1 IS A FIXED WIDTH, THE SAME FOR EVERY BUILDING — see the note above. Every row is
+    // a single cell here, so deriving the width from the zone count made the box size report the
+    // zone count instead, and two cards side by side looked like different-sized buildings.
+    // VS_L1_SPAN is in cell-units so it still scales with the zoom, and the absolute floor keeps it
+    // readable ("not too thin") when zoomed all the way out.
+    var plotW = (detail === 1) ? Math.max(VS_L1_MIN_W, VS_L1_SPAN * cw) : maxCells * cw;
+    var W = labelW + pad * 2 + plotW;
     var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
     disp.forEach(function (v, i) {
       var y = pad + i * (fh + gap);
@@ -9813,6 +10098,43 @@
     return '<div style="display:flex;flex-direction:column;gap:3px;"><label style="font-size:11px;color:var(--pd-muted);">Planned Duration (d)</label>' +
       '<input class="pd-input ps-gedit" data-f="planned_duration" data-t="pdur" type="number" min="0" step="1" value="' + esc(String(v)) + '" style="width:100%;box-sizing:border-box;font-size:12.5px;"></div>';
   }
+  // Work Package picker for the detail panel — a select over the WPM mirror, grouped by
+  // trade. Uses the standard `ps-gedit`/`data-t="select"` wiring, so it persists through
+  // the same path every other field does.
+  function _gfWp(r) {
+    var unl = wpIsUnlinked(r);
+    var note = !WPM_WPS.length
+      ? '<div style="font-size:11px;color:var(--pd-muted);">Nothing mirrored yet — Sync Procurement in the WBS Manager.</div>'
+      : (unl ? '<div style="font-size:11px;color:var(--pd-red);">Not in the Procurement app — re-pick or clear.</div>' : '');
+    return '<div style="display:flex;flex-direction:column;gap:3px;">' +
+      '<label style="font-size:11px;color:var(--pd-muted);">Work Package <span style="opacity:.8;">(Procurement app)</span></label>' +
+      '<select class="pd-select ps-gedit" data-f="work_package" data-t="select" style="width:100%;box-sizing:border-box;font-size:12.5px;">' +
+      wpOptsHTML(r.work_package) + '</select>' + note + '</div>';
+  }
+  // Read-only Procurement facts for the linked package, straight from the mirror. Dates
+  // and status only — budgets stay in Cash Flow (ROADMAP E1).
+  function detProcurementCard(r) {
+    var w = wpOf(r); if (!w) return '';
+    var nb = wpNeedByIndex()[_wpKey(r.work_package)];
+    var need = nb && nb.date ? dstr(nb.date) : null;
+    var inst = w.target_installation || null;
+    // Positive slip = procurement plans to install AFTER the schedule needs it.
+    var slip = (need && inst) ? dayDiff(pd(need), pd(inst)) : null;
+    var slipTxt = slip == null ? '—'
+      : slip > 0 ? (slip + 'd LATE vs need-by') : slip < 0 ? (-slip + 'd earlier than need-by') : 'on the need-by date';
+    var slipCol = slip == null ? 'var(--pd-muted)' : slip > 0 ? 'var(--pd-red)' : 'var(--pd-ok)';
+    return _gGroup('Procurement — ' + esc(wpLabel(w.wp_no)),
+      _gro('Trade', _prcTradeOf(w)) +
+      _gro('Award status', w.award_status || '—') +
+      _gro('Procurement status', w.procurement_status || '—') +
+      _gro('Delivery status', w.delivery_status || '—') +
+      _gro('Awarding (plan / actual)', (Fmt.date(w.awarding_date) || '—') + ' / ' + (Fmt.date(w.actual_awarding_date) || '—')) +
+      _gro('Target delivery', Fmt.date(w.target_delivery) || '—') +
+      _gro('Target installation', Fmt.date(w.target_installation) || '—') +
+      _gro('Schedule need-by', (Fmt.date(need) || '—') + (nb && nb.linked > 1 ? ' (earliest of ' + nb.linked + ' linked)' : '')) +
+      '<div style="grid-column:1/-1;font-size:11.5px;color:' + slipCol + ';font-weight:600;">Installation vs need-by: ' + esc(slipTxt) + '</div>' +
+      '<div style="grid-column:1/-1;font-size:11px;color:var(--pd-muted);">Read-only — from the Procurement (WPM) app. Costs are reported in Cash Flow.</div>');
+  }
   function detGeneralEdit(r) {
     var codeRows = CODE_TYPES.map(function (ct) { var vid = r.activity_codes && r.activity_codes[ct.id]; return [esc(ct.name), esc(vid ? (codeValueLabel(vid) || '—') : '—')]; });
     var udfRows = UDF_DEFS.map(function (d) { return [esc(d.name), esc(udfFmt(d, r.udf && r.udf[d.id]))]; });
@@ -9822,7 +10144,8 @@
         _gf('WBS (parent)', 'wbs', 'ro', r) +
         _gf('Activity ID', 'activity_id', 'text', r) +
         _gf('Activity Name', 'activity_name', 'text', r, null, true) +
-        _gf('Work Package', 'work_package', 'text', r)) +
+        _gfWp(r)) +
+      detProcurementCard(r) +
       _gGroup('Classification',
         // Blank does NOT mean "no phase" — it means "inherit from the WBS
         // branch", which is what the label says so nobody reads an inherited
@@ -11365,6 +11688,26 @@
     var opts = STATUS_OPTS.map(function (o) { return '<option value="' + esc(o) + '"' + (o === s ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
     return '<div class="ps-cell c-status" data-field="status"><select class="ps-status-sel ps-status-pill ' + cls + '" data-id="' + esc(r.id) + '" title="Change status">' + opts + '</select></div>';
   }
+  // A rolled-up percentage, formatted so it cannot claim zero for work that has started.
+  // ⚠️ Deliberately NOT Math.round for small values — see the note above. Below 1% a decimal is
+  // shown, below 0.05% the "<0.1%" marker, and only a true zero prints "0%".
+  function _rollPctTxt(num, den) {
+    if (!(den > 0)) return '';
+    var v = Math.max(0, Math.min(100, num / den));
+    if (v <= 0) return '0%';
+    if (v < 0.05) return '<0.1%';
+    if (v < 1) return v.toFixed(1) + '%';
+    return Math.round(v) + '%';
+  }
+  // Hover text for a roll-up cell: the exact figure and how many activities are behind it, so a
+  // surprising number can be checked without exporting anything.
+  function _rollPctTip(label, num, den, cm) {
+    if (!(den > 0)) return '';
+    var v = Math.max(0, Math.min(100, num / den));
+    return label + ' ' + v.toFixed(2) + '% — duration-weighted over ' + (cm ? cm.total : 0) +
+      ' activit' + ((cm && cm.total === 1) ? 'y' : 'ies') +
+      (cm && cm.prog != null ? ' · ' + cm.done + ' complete, ' + cm.prog + ' in progress' : '');
+  }
   // POC/IBB cell block shared by the WBS-summary and task branches. For summaries the values
   // are the _costMap roll-ups (sums + duration-weighted %s); for tasks they're the row's own
   // fields, with the cost cells inline-editable ('money' type — like 'number' but not clamped
@@ -11379,11 +11722,13 @@
     // A group row now reports the same roll-ups a WBS summary does, over its own bucket.
     if (isWbsNode(r)) {
       var cm = cmOf(r);
-      var wPoc = (cm && cm.wdPoc > 0) ? Math.round(cm.wpoc / cm.wdPoc) + '%' : '';
-      var wEarn = (cm && cm.wd > 0) ? Math.round(cm.wearn / cm.wd) + '%' : '';
+      var wPoc = cm ? _rollPctTxt(cm.wpoc, cm.wdPoc) : '';
+      var wEarn = cm ? _rollPctTxt(cm.wearn, cm.wd) : '';
       function s(v) { return (cm && v) ? Fmt.money(v) : ''; }
-      var wDur = (cm && cm.wdur > 0) ? Math.round(cm.wdurE / cm.wdur * 100) + '%' : '';
-      return '<div class="ps-cell c-poc">' + wPoc + '</div><div class="ps-cell c-pct">' + wEarn + '</div><div class="ps-cell c-durpct">' + wDur + '</div>' +
+      var wDur = cm ? _rollPctTxt(cm.wdurE * 100, cm.wdur) : '';
+      return '<div class="ps-cell c-poc" title="' + esc(cm ? _rollPctTip('Planned value', cm.wpoc, cm.wdPoc, cm) : '') + '">' + wPoc + '</div>' +
+        '<div class="ps-cell c-pct" title="' + esc(cm ? _rollPctTip('Activity % complete', cm.wearn, cm.wd, cm) : '') + '">' + wEarn + '</div>' +
+        '<div class="ps-cell c-durpct" title="' + esc(cm ? _rollPctTip('Duration % complete', cm.wdurE * 100, cm.wdur, cm) : '') + '">' + wDur + '</div>' +
         '<div class="ps-cell c-cost">' + s(cm && cm.pc) + '</div>' +
         '<div class="ps-cell c-cost">' + s(cm && cm.ac) + '</div>' +
         '<div class="ps-cell c-cost">' + s(cm && cm.ev) + '</div>' +
@@ -13628,7 +13973,7 @@
     { k: 'activity_type', label: 'Activity Type', type: 'text' },
     { k: 'responsible_party', label: 'Responsible Party', type: 'text' },
     { k: 'owner', label: 'Owner', type: 'text' },
-    { k: 'work_package', label: 'Work Package', type: 'text' },
+    { k: 'work_package', label: 'Work Package (WPM wp_no)', type: 'text', wp: true },
     { k: 'remarks', label: 'Remarks', type: 'text' },
     { k: 'percent_complete', label: '% Complete', type: 'num' },
     { k: 'duration_days', label: 'Duration (days)', type: 'num' },
@@ -13644,6 +13989,15 @@
     { k: 'contract_date', label: 'Contract Date', type: 'date' }
   ];
   function gcField(k) { return GC_FIELDS.find(function (f) { return f.k === k; }); }
+  // Suggestion list for the Work Package value boxes. A <datalist>, not a <select>, because
+  // Global Change's text operators (contains / is not / …) are legitimate here — a buyer may
+  // want "clear every link that contains 4" — so the input must stay free-form while still
+  // showing which numbers exist and what they are.
+  function _gcWpDatalist() {
+    return '<datalist id="ps-wp-dl">' + (WPM_WPS || []).map(function (w) {
+      return '<option value="' + esc(String(w.wp_no)) + '" label="' + esc(String(w.description || '').trim()) + '"></option>';
+    }).join('') + '</datalist>';
+  }
   var GC_WHERE_OPS = { text: ['is', 'is not', 'contains', 'is empty', 'is not empty'], num: ['=', '≠', '≥', '≤', 'is empty', 'is not empty'], date: ['on', 'before', 'after', 'is empty', 'is not empty'] };
   var GC_THEN_OPS = { text: ['Set to', 'Clear'], num: ['Set to', 'Add', 'Subtract', 'Multiply by', 'Clear'], date: ['Set to', 'Shift by (days)', 'Clear'] };
   var _gcWhere = [{}, {}, {}], _gcThen = [{}];   // condition/action rows (blank field = ignored)
@@ -13656,13 +14010,13 @@
     wh.innerHTML = _gcWhere.map(function (c, i) {
       var f = gcField(c.field), ops = f ? GC_WHERE_OPS[f.type] : [];
       var opSel = f ? '<select class="pd-select gc-w-op" style="min-width:120px;">' + ops.map(function (o) { return '<option' + (c.op === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' : '';
-      var valInp = (f && _gcNeedsValue(c.op || ops[0])) ? '<input class="pd-input gc-w-val" ' + (f.type === 'date' ? 'type="date"' : (f.type === 'num' ? 'type="number" step="any"' : '')) + ' value="' + esc(c.val != null ? c.val : '') + '" style="flex:1;min-width:120px;">' : '';
+      var valInp = (f && _gcNeedsValue(c.op || ops[0])) ? '<input class="pd-input gc-w-val" ' + (f.type === 'date' ? 'type="date"' : (f.type === 'num' ? 'type="number" step="any"' : '')) + (f.wp ? ' list="ps-wp-dl" placeholder="wp_no — e.g. 12"' : '') + ' value="' + esc(c.val != null ? c.val : '') + '" style="flex:1;min-width:120px;">' : '';
       return '<div class="ps-risk-cfg" data-gcw="' + i + '" style="margin-bottom:6px;align-items:center;">' + _gcFieldSelect(c.field, 'gc-w-field') + opSel + valInp + '</div>';
-    }).join('');
+    }).join('') + _gcWpDatalist();
     th.innerHTML = _gcThen.map(function (a, i) {
       var f = gcField(a.field), ops = f ? GC_THEN_OPS[f.type] : [];
       var opSel = f ? '<select class="pd-select gc-t-op" style="min-width:130px;">' + ops.map(function (o) { return '<option' + (a.op === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' : '';
-      var valInp = (f && _gcNeedsValue(a.op || ops[0])) ? '<input class="pd-input gc-t-val" ' + ((f.type === 'date' && (a.op || ops[0]) === 'Set to') ? 'type="date"' : (f.type === 'num' || ((a.op || '') === 'Shift by (days)') ? 'type="number" step="any"' : '')) + ' value="' + esc(a.val != null ? a.val : '') + '" style="flex:1;min-width:120px;">' : '';
+      var valInp = (f && _gcNeedsValue(a.op || ops[0])) ? '<input class="pd-input gc-t-val" ' + ((f.type === 'date' && (a.op || ops[0]) === 'Set to') ? 'type="date"' : (f.type === 'num' || ((a.op || '') === 'Shift by (days)') ? 'type="number" step="any"' : '')) + (f.wp ? ' list="ps-wp-dl" placeholder="wp_no — e.g. 12"' : '') + ' value="' + esc(a.val != null ? a.val : '') + '" style="flex:1;min-width:120px;">' : '';
       return '<div class="ps-risk-cfg" data-gct="' + i + '" style="margin-bottom:6px;align-items:center;">' + _gcFieldSelect(a.field, 'gc-t-field') + opSel + valInp +
         (i === _gcThen.length - 1 ? '<button class="pd-btn pd-btn-sm" id="ps-gc-addthen">+ change</button>' : '') + '</div>';
     }).join('');
@@ -15570,7 +15924,22 @@
       return '<option value="' + esc(c.id) + '"' + (calSel === c.id ? ' selected' : '') + '>' + esc(c.name) + (c.is_default ? ' (Default)' : '') + '</option>';
     }).join('');
     set('ps-f-owner', row ? row.owner : '');
-    set('ps-f-wp', row ? row.work_package : '');
+    // Work Package picker — rebuilt per open so a Sync Procurement mid-session is
+    // reflected. wpOptsHTML marks the current value selected (including an unresolved
+    // legacy one), so no set() is needed and none is safe: setting a value that isn't
+    // an option would silently clear the link.
+    var _wpSel = document.getElementById('ps-f-wp');
+    if (_wpSel) {
+      _wpSel.innerHTML = wpOptsHTML(row ? row.work_package : '');
+      _wpSel.disabled = !WPM_WPS.length && !(row && row.work_package);
+      var _wpHint = document.getElementById('ps-f-wp-hint');
+      if (_wpHint) {
+        _wpHint.textContent = !WPM_WPS.length
+          ? 'No work packages mirrored yet — run Sync Procurement in the WBS Manager.'
+          : (row && wpIsUnlinked(row) ? 'This activity points at a work package that is not in the Procurement app.' : '');
+        _wpHint.style.color = (row && wpIsUnlinked(row)) ? 'var(--pd-red)' : 'var(--pd-muted)';
+      }
+    }
     document.getElementById('ps-f-progms').checked = !!(row && row.program_milestone);
     // OPC — Status: dates & duration
     set('ps-f-astart', row && row.actual_start ? String(row.actual_start).slice(0,10) : '');
@@ -15726,6 +16095,7 @@
           (search.trim() ? 'Search: "' + esc(search.trim()) + '". ' : '') +
           (filters.scope ? 'Contract scope: ' + esc(scopeTypeLabel(filters.scope)) + ' only. ' : '') +
           (filters.pkg ? 'Package: ' + esc(filters.pkg === '__none__' ? 'not assigned' : packageLabel(filters.pkg)) + ' only. ' : '') +
+          (filters.wp ? 'Work package: ' + esc(filters.wp === '__none__' ? 'not linked' : filters.wp === '__unlinked__' ? 'stale links' : wpLabel(filters.wp)) + ' only. ' : '') +
           (filters.crit ? 'Critical path only. ' : '') + (filters.behind ? 'Behind schedule only. ' : '') +
           (filters.look ? 'Look-ahead ' + filters.look + ' weeks. ' : ''))
       : note('No filter or search is active.');
@@ -20132,6 +20502,23 @@
       return { key: key, label: label, desc: desc, items: items, denom: denom.length, count: items.length,
         pct: denom.length ? Math.round(items.length / denom.length * 100) : 0 };
     }
+    // ---- Procurement alignment -------------------------------------------------
+    // Only meaningful on activities that ARE linked, so every denominator here is the
+    // linked set — not `tasks`. A project that links nothing scores exactly as before
+    // (mk() gives denom 0 → pct 0, and the score averages only denom > 0 metrics), so
+    // this cannot quietly punish a schedule that doesn't use the link yet.
+    var wpLinked = tasks.filter(function (r) { return !!_wpKey(r.work_package); });
+    var wpStale = wpLinked.filter(wpIsUnlinked);
+    // Per the owner: TARGET INSTALLATION is the need-by date. An activity is only eligible
+    // if its package actually carries one and the activity itself has a start to compare.
+    var wpInstElig = wpLinked.filter(function (r) {
+      var w = wpOf(r); return !!(w && w.target_installation && pd(dispStart(r)));
+    });
+    var wpLate = wpInstElig.filter(function (r) {
+      return pd(wpOf(r).target_installation) > pd(dispStart(r));
+    });
+    var wpNoInst = wpLinked.filter(function (r) { var w = wpOf(r); return !!w && !w.target_installation; });
+
     var metrics = [
       mk('open', 'Open Ends', 'No predecessor and no successor', openEnds, tasks),
       mk('dstart', 'Dangling Start', 'No predecessor', dangStart, tasks),
@@ -20145,7 +20532,10 @@
       mk('late', 'Late Activity', 'Finishing later than its baseline', late, lateElig),
       mk('negfloat', 'Negative Float', 'Total float is negative', negFloat, floatElig),
       mk('largefloat', 'Large Float (> ' + HEALTH_LARGE_FLOAT + 'd)', 'Total float exceeds ' + HEALTH_LARGE_FLOAT + ' days', largeFloat, floatElig),
-      mk('largedur', 'Large Duration (> ' + HEALTH_LARGE_DUR + 'd)', 'Duration exceeds ' + HEALTH_LARGE_DUR + ' days', largeDur, durElig)
+      mk('largedur', 'Large Duration (> ' + HEALTH_LARGE_DUR + 'd)', 'Duration exceeds ' + HEALTH_LARGE_DUR + ' days', largeDur, durElig),
+      mk('wplate', 'Procurement Behind Need-by', 'Its work package installs after this activity starts', wpLate, wpInstElig),
+      mk('wpnoinst', 'Work Package Has No Install Date', 'Linked package carries no Target Installation to check against', wpNoInst, wpLinked),
+      mk('wpstale', 'Stale Work-Package Link', 'Points at a work package the Procurement app does not have', wpStale, wpLinked)
     ];
     var scoredPcts = metrics.filter(function (m) { return m.denom > 0; }).map(function (m) { return m.pct; });
     var avgBad = scoredPcts.length ? scoredPcts.reduce(function (s, p) { return s + p; }, 0) / scoredPcts.length : 0;
@@ -20258,12 +20648,74 @@
     return { headers: ['ID', 'Activity Name', 'Status', 'Start', 'Finish', '%', 'Responsible'], align: ['l','l','l','l','l','r','l'],
       note: 'Activities active within the next ' + weeks + ' weeks (from ' + Fmt.date(dstr(t0)) + ').', rows: rws };
   }
+  // ---- PROCUREMENT ALIGNMENT -------------------------------------------------------
+  // One row per work package, answering the question the link exists to answer: does
+  // procurement plan to install this package by the day the schedule needs it?
+  //   Need-by  = earliest start among the activities linked to the package (the day work
+  //              that consumes it begins).
+  //   Target   = the package's TARGET INSTALLATION in the Procurement app — per the owner,
+  //              that field IS the need-by date, so it is the one compared.
+  //   Slip     = target installation − need-by. POSITIVE = procurement is late.
+  // ⚠️ Packages with NO linked activity are listed too, with a blank need-by. Dropping them
+  // would make an unlinked schedule look perfectly aligned — the most dangerous possible
+  // reading of this report. Same reason the "no target installation" case says so instead of
+  // being scored as on-time.
+  // ⚠️ No cost columns. Procurement money is reported in Cash Flow (ROADMAP E1) and the
+  // mirror's budget columns are not even loaded into this module.
+  function repProcurement(opts) {
+    var nb = wpNeedByIndex();
+    var onlyLate = !!(opts && opts.onlyLate);
+    var out = [], late = 0, linked = 0;
+    (WPM_WPS || []).forEach(function (w) {
+      var k = _wpKey(w.wp_no), e = nb[k];
+      var need = e && e.date ? e.date : null;
+      var inst = w.target_installation ? pd(w.target_installation) : null;
+      var slip = (need && inst) ? dayDiff(need, inst) : null;
+      if (e) linked++;
+      if (slip != null && slip > 0) late++;
+      if (onlyLate && !(slip != null && slip > 0)) return;
+      out.push([
+        String(w.wp_no || ''),
+        String(w.description || '').trim(),
+        _prcTradeOf(w),
+        e ? String(e.linked) : '0',
+        need ? Fmt.date(dstr(need)) : (e ? '— no dates —' : '— not linked —'),
+        e && e.driver ? ((e.driver.activity_id || '') + ' — ' + (e.driver.activity_name || '')) : '',
+        w.target_installation ? Fmt.date(w.target_installation) : '— none set —',
+        slip == null ? '' : (slip > 0 ? '+' + slip : String(slip)),
+        slip == null ? (need ? 'No install date' : 'Not linked') : (slip > 0 ? 'LATE' : slip < 0 ? 'Early' : 'On date'),
+        w.award_status || '', w.procurement_status || ''
+      ]);
+    });
+    // Worst slip first — a report a buyer reads top-down should open on the problem.
+    out.sort(function (a, b) {
+      var sa = a[7] === '' ? -1e9 : parseInt(a[7], 10), sb2 = b[7] === '' ? -1e9 : parseInt(b[7], 10);
+      return sb2 - sa || String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true });
+    });
+    // Activities pointing at a package that isn't in the mirror never appear above (there is
+    // no package row to hang them on), so they are counted in the note instead of vanishing.
+    var staleActs = rows.filter(function (r) { return !isWbs(r) && wpIsUnlinked(r); }).length;
+    var note = (WPM_WPS.length || 0) + ' work package(s) mirrored from the Procurement app · ' +
+      linked + ' with linked activities · ' + late + ' installing AFTER the schedule needs them' +
+      (staleActs ? ' · ⚠️ ' + staleActs + ' activit' + (staleActs === 1 ? 'y points' : 'ies point') +
+        ' at a work package that is not in the Procurement app' : '') +
+      (WPM_WPS.length ? '' : ' — nothing is mirrored yet; run Sync Procurement in the WBS Manager.') +
+      ' Need-by = earliest start of the linked activities; slip = Target Installation − need-by.';
+    return { headers: ['WP', 'Description', 'Trade', 'Linked', 'Need-by (schedule)', 'Driver activity',
+        'Target Install (PRC)', 'Slip (d)', 'Verdict', 'Award', 'Procurement'],
+      align: ['l', 'l', 'l', 'r', 'l', 'l', 'l', 'r', 'l', 'l', 'l'], note: note, rows: out };
+  }
+
   var REPORT_TEMPLATES = [
     { id: 'schedule',  name: 'Schedule Report',                 desc: 'WBS, dates, duration & % complete',            build: repSchedule },
     { id: 'cost',      name: 'Cost / EVM Report',               desc: 'IBB planned/actual/earned, EAC & CPI + totals', build: repCost },
     { id: 'rels',      name: 'Predecessor & Successor Report',   desc: 'Activity relationships (FS/SS/FF/SF + lag)',   build: repRels },
     { id: 'critical',  name: 'Critical Path Report',             desc: 'Critical activities, float & dates',           build: repCritical },
-    { id: 'lookahead', name: 'Look-ahead Report',                desc: 'Activities active within the next N weeks',    build: repLookahead, opts: { weeks: 4, includeCompleted: false } }
+    { id: 'lookahead', name: 'Look-ahead Report',                desc: 'Activities active within the next N weeks',    build: repLookahead, opts: { weeks: 4, includeCompleted: false } },
+    // ⚠️ No `opts`: the report-options form (#ps-rep-f-weeks / #ps-rep-f-inc) is hardcoded to the
+    // look-ahead's two settings, so any option declared here would be un-settable in the UI. The
+    // report sorts worst-slip-first and states the late count in its note instead.
+    { id: 'procurement', name: 'Procurement Alignment Report',   desc: 'Need-by vs Target Installation per work package', build: repProcurement }
   ];
   function tplById(id) { return REPORT_TEMPLATES.filter(function (t) { return t.id === id; })[0]; }
   function loadReports() { try { return JSON.parse(localStorage.getItem('ps_reports') || '[]') || []; } catch (e) { return []; } }
@@ -23066,6 +23518,7 @@
     document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
     document.getElementById('ps-sync-eng').onclick = syncEngineering;
     var _pb = document.getElementById('ps-sync-prc'); if (_pb) _pb.onclick = syncProcurementApp;
+    var _nb = document.getElementById('ps-push-needby'); if (_nb) _nb.onclick = pushNeedByToWpm;
     document.getElementById('ps-wbs-expand').onclick = function () { _wbsCollapsed = {}; renderWbsManager(); };
     document.getElementById('ps-wbs-collapse').onclick = function () {
       _wbsCollapsed = {}; WBS_NODES.forEach(function (n) { if ((n.parent_id || null) === null) _wbsCollapsed[n.id] = true; });

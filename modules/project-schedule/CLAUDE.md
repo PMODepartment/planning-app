@@ -22,6 +22,115 @@ branches and the per-project reset of `MOMS`/`MOM_ITEMS`/`MOM_ISSUES`. 244 lines
   script parses, and **0** references to `ps-mom` / `ps-view-mom` / `MOM_*` remain.
 - ⚠️ `MODULE_V` → `20260820a`: a module `index.html` changed, so the cached copy must not survive.
 
+<!-- Merge seam (2026-08-21): entries below landed on `main` while the Minutes-of-Meeting removal was in progress. Both sides kept whole and unreworded. -->
+
+## Activities are LINKED to procurement work packages, and the schedule pushes its need-by back (2026-08-20) — fmlozano
+Owner: *"The activities should have a connection for which procurement work package it's connected to.
+Currently there is a work package field per field."* Then, mid-build: *"The need-by will be the
+installation date field in the prc app."*
+
+### What was already there, and what was decorative
+The app-to-app pipe has existed since 2026-07-14 and is sound: `sync-wpm` reads the WPM app's
+`work_packages` with its **service-role key server-side** and upserts the columns we need into the
+`wpm_work_packages` mirror, which the browser then reads under normal RLS. The WPM anon key ships in
+that app's client JS, so a browser read there would expose every package's cost — that rule is why
+the mirror exists, and this work keeps it.
+
+⚠️ **`project_schedule.work_package` was the one part that pointed at nothing.** Plain `text`,
+hand-typed in the modal and the General tab, read by the `'wp'` grouping dimension, search, row copy
+and Global Change — with **no validation and no relationship to WPM whatsoever**. And it was not
+merely unvalidated, it was **unusable**: WPM strips the prefix from its numbers
+(`UPDATE_wpno_strip_prefix.sql`), so the values are bare ordinals — `'1'`, `'12'`, `'147'`. Nobody
+types those correctly from memory. Confirmed the OPC/XER importers never map the column either, so
+every value in it was hand-entered here.
+
+### The link
+Owner chose to **repurpose the existing column** rather than add one, so there is no migration on the
+Planners side and grouping / filter / search / Global Change keep working on the same field.
+- **`loadWpmWorkPackages()`** loads the mirror into `WPM_WPS`, sorted by the owner's trade order then
+  WP number, tolerant of an un-run mirror migration exactly like `PACKAGES` / `LOC_LEVELS`.
+  ⚠️ **Budget columns are deliberately NOT selected.** The mirror carries `approved_budget_bcb` /
+  `awarded_cost` / `total_awarded` and an approved user *can* read them — but the schedule has no
+  business holding procurement money in memory where a picker, a report or an Excel export could leak
+  it into a schedule view. **Cash Flow is where procurement cost is reported** (ROADMAP E1 drew that
+  line).
+- **`wpOf` / `wpByNo` / `wpLabel` / `wpIsUnlinked` / `wpOptsHTML`**, with `_wpIndex()` memoised on
+  `WPM_WPS`'s **identity** — a per-call scan would run once per grid row per render on a 17k-activity
+  schedule, and the identity check means a reassignment (a re-sync) drops the cache by itself.
+- ⚠️ **An unresolved value is shown as UNLINKED, never blanked.** Legacy hand-typed text predates the
+  picker and is a data-quality signal a planner must see; and a package really can leave the WPM
+  project, which must read as "this link is broken" rather than "this was never linked".
+  `wpOptsHTML` therefore keeps the current value as a flagged option even when it resolves to
+  nothing — **a `<select>` whose value is absent from its option list reads back as `''`**, so
+  without that, opening a form on a legacy value and changing an unrelated field would silently wipe
+  the link. Asserted, including with an empty mirror.
+- ⚠️ **`wpOptsHTML` sorts its own optgroups.** The loader sorts too, but taking the trade order from
+  first-appearance made the function silently order-dependent on its caller — a picker whose headings
+  are in procurement order only by luck. Caught by a test that passed the packages in mirror order.
+- The picker is a `<select>` populated per open, following the **Calendar field's** existing
+  precedent; the detail panel uses the standard `ps-gedit` / `data-t="select"` wiring, so it persists
+  through the same path every other field does. Grouping labels resolve through the mirror at read
+  time (renaming a package in WPM re-labels the group on the next sync instead of leaving a stale
+  caption), and search matches `wpLabel` so "steel" finds the activities fed by the steel package —
+  searching the raw column never could.
+- **Filter panel** gains a work-package select with two data-quality scopes — *not linked* and
+  *linked to a package the Procurement app does not have* — the two questions asked after a sync.
+- **Global Change** gets a `<datalist>`, not a select: its text operators (contains / is not) are
+  legitimate there, so the input stays free-form while showing which numbers exist.
+- **The mirrored Procurement branch now links to its own package** (`work_package: wp_no` in
+  `syncProcurement`'s patch). ⚠️ `patchFields` had to gain `work_package` as well — the diff loop
+  compares `ex[f]`, and an unselected column reads `undefined`, so every sync would have issued a
+  pointless UPDATE for every package.
+
+### Need-by = TARGET INSTALLATION
+Per the owner. `wpNeedByIndex()` takes the **earliest start among a package's linked activities** —
+the day work that consumes it begins.
+- ⚠️ **WBS-Summary rows are excluded.** They are projections of their children, so counting them
+  would double-count and, worse, a rolled-up summary start could pull the need-by *earlier* than any
+  real activity needs it — telling a buyer to expedite for no reason.
+- ⚠️ `linked` and `dated` are counted separately, so a package whose activities are all undated reads
+  as "linked, no date" instead of as unlinked.
+- **Health checks** (`computeHealth`): *Procurement Behind Need-by* (the package installs after the
+  activity starts), *Work Package Has No Install Date*, *Stale Work-Package Link*. Every denominator
+  is the **linked** set, not `tasks` — a project that links nothing scores exactly as before, so this
+  cannot quietly punish a schedule that has not adopted the link.
+- **Procurement Alignment report**: WP, trade, need-by, driver activity, target installation, slip,
+  verdict, award + procurement status, worst slip first. ⚠️ **Packages with NO linked activity are
+  listed too**, with a blank need-by — dropping them would make an unlinked schedule look perfectly
+  aligned, the most dangerous possible reading. No cost columns.
+
+### The write-back (Planners → WPM)
+New Edge Function **`supabase/functions/push-need-by`** (deploy it; it reuses `sync-wpm`'s existing
+secrets, so there is nothing new to set) writing a new **`planners_need_by`** table in the WPM project
+(`wpm/MIGRATION_planners_need_by.sql` — **must be run**).
+- ⚠️ **It does NOT write `work_packages.target_installation`.** That field is procurement-owned — a
+  buyer types it and Saves it in `wp-form.html`. One app silently overwriting another team's
+  authoritative dates is unrecoverable and unauditable, and there would be no way to tell a buyer's
+  date from a robot's. **The schedule proposes; the buyer adopts** with a one-click *Use this date*
+  that only fills the input. Same reasoning that makes the Planners app mirror WPM rather than read it
+  live.
+- ⚠️ **Keyset-paginated.** A plain select caps at 1000 rows, so a 17k-activity schedule would push
+  need-by dates computed from the first 1000 — silently too late for everything else.
+- ⚠️ **It PRUNES**, unlike the `wpm_work_packages` mirror (which only upserts, so a deleted package
+  lives in it forever). A stale need-by is worse than a stale package row: it tells a buyer to
+  expedite work that is no longer linked. But **a push computing zero rows does not wipe the table** —
+  zero is indistinguishable from a mis-mapped project id, the same rule `syncProcurement` follows.
+- ⚠️ The function's own reduce is a **second implementation of the need-by rule**, so a harness runs
+  it and `wpNeedByIndex` over the same activities and requires them to agree — otherwise the
+  Procurement app and the alignment report could report different dates for the same package.
+- The data date lives in **localStorage**, not the DB, so the client passes it; the button is separate
+  from *Sync Procurement* because a read-only refresh must never also write into another team's
+  database as a side effect, and it confirms first.
+
+### Verified
+33 checks by extracting the shipped helpers and running them against stubs (resolution, the
+never-wipe-a-link invariant, optgroup order, escaping, the need-by reduce, and the slip sign
+convention read out of WPM's own `_needSlip`), plus 13 more proving `push-need-by`'s reduce agrees
+with `wpNeedByIndex` on every case incl. padded keys, undated activities, actual-beats-planned and a
+legacy free-text link. All four modified files parse.
+⚠️ **Not verified signed-in**, and neither migration is run nor the function deployed — so the
+Procurement panel and the push both report what to run until then. `MODULE_V` → `20260820a`.
+
 ## Towers: a WBS level, a location tag, and a stacking filter (2026-08-20) — eprobles
 
 Multi-tower projects pushed five towers' floors into **one** flat floor list, because
