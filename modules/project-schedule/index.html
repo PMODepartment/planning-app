@@ -7717,6 +7717,14 @@
       // Dimensions still to come after this one — tested per bucket below, because "is this the
       // bottom?" is a question about the DATA in that branch, not about the picker's length.
       var _restDims = dims.slice(di + 1);
+      // ⚠️ UNIFORMITY OVERRIDE (owner's call, 2026-08-21): the per-bucket solo-merge below is correct
+      // in isolation but produces a visually broken list when SIBLING buckets at this same level
+      // disagree — some floors show as "Floor(6)" group headers, others collapse straight to a flat
+      // "Concrete· B3" row with no heading at all. If ANY sibling at this level still has real data on
+      // a deeper dimension, force every bucket at this level (including solo ones) to render as a
+      // normal group header, so the floor list reads uniformly. Only when EVERY sibling is equally
+      // terminal (nothing anywhere goes deeper) does the flat one-row-per-leaf shape apply.
+      var _forceGroup = !_lastDim && _keys.some(function (k) { return !_dimsExhausted(buckets[k], _restDims); });
       _keys.forEach(function (g) {
         var gcode = parentCode + '§' + g;
         // ⚠️ DEEPEST LEVEL HOLDING EXACTLY ONE ACTIVITY = one row, not two. Without this, an
@@ -7733,7 +7741,7 @@
         // and that difference is the information — it is how the tree shows that one has zones and
         // the other does not.
         var _terminal = _lastDim || _dimsExhausted(buckets[g], _restDims);
-        if (_terminal && !showWbs && buckets[g].length === 1) {
+        if (_terminal && !_forceGroup && !showWbs && buckets[g].length === 1) {
           var solo = buckets[g][0];
           solo._dcode = gcode; solo._ddepth = parentAnc.length; solo._danc = parentAnc;
           solo._dkind = 'task'; solo._realCode = solo.wbs;
