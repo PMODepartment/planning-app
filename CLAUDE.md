@@ -84,6 +84,37 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-21 — mom-app feature-gap study; the PDF export was already shipped (duplicate avoided)
+Owner: *"There is an mom-app (minutes of meeting) app in the same github account… Let's get the
+feature of downloading via pdf. Let's also study what features we are lacking."* Cloned
+`PMODepartment/mom-app` read-only and did both halves.
+- ⚠️ **The PDF export already existed on `main` — built independently in `fff2d0e` while this work
+  was in progress.** Same library, same pinned version, same read-only-viewers reasoning. Rather
+  than merge two implementations of one feature, **the shipped one was kept and mine was dropped**
+  (tagged `my-duplicate-pdf-f7ac340` locally, recoverable) — the precedent this repo already set:
+  rebase onto the other session's work, don't resolve in your own favour.
+- **Theirs is better than mine in two ways worth naming**: cleanup runs in a `finally` (mine ran it
+  after the try/catch, so a throw in an unexpected place could have leaked the off-DOM node), and it
+  **saves the header before exporting** — the export reads `MOMS`, not the form, so a title typed
+  and not saved would otherwise be missing from the sheet. I had missed both.
+- **What my work contributed instead:** the shipped implementation was **independently verified**
+  by pointing the MOM suite (sliced from the shipped `module.js`) at it — **121 checks green**,
+  covering the library-not-loaded and no-selection guards, exactly one render at A4/portrait,
+  filename sanitisation across punctuation and blank titles, the register-status rule, escaping, and
+  cleanup + button re-enable on both the success and the thrown-mid-render path.
+  ⚠️ One initial failure was **my assertion, not their code** — it encoded my own toast wording; the
+  check is now wording-agnostic.
+- **The gap study is in `ROADMAP.md` D3**, not built unasked. The real gaps: a **draft→distributed
+  publish gate** that locks items and gates viewer access (the biggest difference — it is what makes
+  minutes a record rather than a live document), **carry-forward** of open items into a new meeting,
+  a **Category + Type** taxonomy per action item, and **per-item attachments**. The SBU org layer and
+  self-service signup/reset are different design choices this app already covers differently, not
+  omissions. ⚠️ Also noted: mom-app's own item-category list has **drifted between two
+  hand-maintained dropdowns** — a bug not to copy if item 3 is ever built here.
+- ⚠️ **Still not verified signed-in**: nobody has opened a generated PDF. What is proven is the
+  render call and the DOM lifecycle, not the visual output.
+
+
 ### 2026-08-21 — Minutes of Meeting exports a PDF in the standalone mom-app's exact format
 Owner: *"There is a minutes of the meeting app of the same github account of a different repository.
 Let's implement the download pdf feature following exactly the same format of the exported pdf."*
