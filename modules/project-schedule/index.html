@@ -3872,7 +3872,7 @@
       return existing;
     }
     var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId, name: name,
-      sort_order: order, created_by: UID, is_locked: true, source_kind: 'design_development' }).select().single();
+      sort_order: order, created_by: UID, is_locked: true, source_kind: 'design_development_child' }).select().single();
     if (res.error) return null;
     WBS_NODES.push(res.data);
     return res.data;
@@ -4158,6 +4158,83 @@
     return out;
   }
 
+  // ⚠️⚠️ THE SKELETON ROOT, RESOLVED UNAMBIGUOUSLY — this is a bug fix, not a tidy-up.
+  //
+  // Both syncs used to find their root with `WBS_NODES.find(n => n.source_kind === '<kind>')`, while
+  // ALSO stamping that same `source_kind` onto every node they generated underneath it. So after the
+  // first sync a project held one root plus N generated children all carrying the identical marker,
+  // and `find` returns whichever comes FIRST IN ARRAY ORDER. `WBS_NODES` is loaded by
+  // selectAllPaged, which orders by `id` (a uuid) — i.e. effectively at random relative to the tree.
+  //
+  // So the next sync could resolve its "root" to a generated TRADE node and build the whole branch
+  // inside it: Procurement › Site Works › Allied Services, with the work packages filed under the
+  // deepest one. Reported on One Portwood as "sync placed all work packages under Allied Services",
+  // with the codes to match (3.3.2 Site Works, 3.3.2.9 Allied Services). Each sync could nest another
+  // level deeper, and nothing errored — the tree was internally consistent, just wrong.
+  //
+  // Generated children now carry their own marker ('procurement_trade' / 'design_development_child'),
+  // so new data is unambiguous by construction. This resolver additionally heals EXISTING data: the
+  // root is the marked node with no marked ANCESTOR, which is true whether the children carry the old
+  // marker or the new one. Every other `source_kind` consumer only tests truthiness (the read-only
+  // gate, the WBS badge, the Schedule Builder's push-target filter), so the extra values are safe.
+  function _skeletonRoot(kind) {
+    var marked = WBS_NODES.filter(function (n) {
+      return n.source_kind === kind || n.source_kind === kind + '_trade' || n.source_kind === kind + '_child';
+    });
+    if (!marked.length) return null;
+    var byId = {}; WBS_NODES.forEach(function (n) { byId[n.id] = n; });
+    var isMarked = {}; marked.forEach(function (n) { isMarked[n.id] = 1; });
+    // No marked ancestor = the shallowest one = the skeleton node itself. Cycle-guarded, because a
+    // corrupt parent chain must not hang the load.
+    function hasMarkedAncestor(n) {
+      var seen = {}, p = n.parent_id;
+      while (p && !seen[p]) { if (isMarked[p]) return true; seen[p] = 1; p = byId[p] ? byId[p].parent_id : null; }
+      return false;
+    }
+    var roots = marked.filter(function (n) { return !hasMarkedAncestor(n); });
+    if (!roots.length) return marked[0];   // fully cyclic: better a wrong root than no branch at all
+    // Prefer the one still carrying the exact skeleton marker; then the earliest created, so the
+    // choice is stable across loads rather than depending on uuid order.
+    roots.sort(function (a, b) {
+      var ea = a.source_kind === kind ? 0 : 1, eb = b.source_kind === kind ? 0 : 1;
+      return ea - eb || String(a.created_at || '').localeCompare(String(b.created_at || ''));
+    });
+    return roots[0];
+  }
+
+  // Re-parent the mis-nested nodes the old resolver created. The correct shape is exactly two levels
+  // (root › generated child › activities), so any marked node that is neither the root nor a direct
+  // child of it is mis-nested and is lifted back onto the root.
+  //
+  // ⚠️ Re-parenting, NOT deleting: those nodes hold the mirrored activities, and their ids are what
+  // the activities point at. Lifting them keeps that intact, and the existing same-name-sibling
+  // dedupe then merges the duplicates it creates (losslessly — it re-points children, activities and
+  // summary rows onto the survivor). Deleting instead would orphan live rows.
+  // ⚠️ Runs only for a writer, and only when there is something to fix, so a healthy project pays
+  // one array scan and no round-trips.
+  async function _healSkeletonNesting(kind) {
+    if (!pid || !canWrite || window.__viewOnly || window.__archived) return 0;
+    var root = _skeletonRoot(kind);
+    if (!root) return 0;
+    var bad = WBS_NODES.filter(function (n) {
+      if (n.id === root.id) return false;
+      if (n.source_kind !== kind && n.source_kind !== kind + '_trade' && n.source_kind !== kind + '_child') return false;
+      return n.parent_id !== root.id;
+    });
+    if (!bad.length) return 0;
+    var moved = 0;
+    for (var i = 0; i < bad.length; i++) {
+      var n = bad[i];
+      var res = await sb().from('wbs_nodes').update({ parent_id: root.id }).eq('id', n.id);
+      if (!res.error) { n.parent_id = root.id; moved++; }
+    }
+    if (moved) {
+      console.warn('[ps] healed ' + moved + ' mis-nested ' + kind + ' node(s) back onto the skeleton root');
+      try { await _wbsDedupeSkeleton(); } catch (e) {}
+    }
+    return moved;
+  }
+
   async function _prcEnsureNode(parentId, name, order) {
     var found = WBS_NODES.find(function (n) { return n.parent_id === parentId && n.name === name; });
     if (found) return found;
@@ -4168,7 +4245,7 @@
       return existing;
     }
     var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId, name: name,
-      sort_order: order, created_by: UID, is_locked: true, source_kind: 'procurement' }).select().single();
+      sort_order: order, created_by: UID, is_locked: true, source_kind: 'procurement_trade' }).select().single();
     if (res.error) return null;
     WBS_NODES.push(res.data);
     return res.data;
@@ -4178,7 +4255,11 @@
   // Activity ID is its WP number, so a re-sync patches in place.
   async function syncProcurement() {
     if (!pid || !canWrite || _prcSyncing || window.__viewOnly || window.__archived) return;
-    var prcNode = WBS_NODES.find(function (n) { return n.source_kind === 'procurement'; });
+    var prcNode = _skeletonRoot('procurement');
+    // Lift back anything the old ambiguous resolver mis-nested, THEN re-resolve: the heal can
+    // merge nodes (including, in principle, the one we just picked), so the root must be read
+    // again rather than trusted across it.
+    if (prcNode) { await _healSkeletonNesting('procurement'); prcNode = _skeletonRoot('procurement') || prcNode; }
     if (!prcNode) return;                                  // skeleton not seeded
     _prcSyncing = true;
     try {
@@ -4410,7 +4491,8 @@
   // duplicating (the trap that produced duplicate WBS rows before — see _wbsEnsureSummaries).
   async function syncDesignDevelopment() {
     if (!pid || !canWrite || _ddSyncing || window.__viewOnly || window.__archived) return;
-    var ddNode = WBS_NODES.find(function (n) { return n.source_kind === 'design_development'; });
+    var ddNode = _skeletonRoot('design_development');
+    if (ddNode) { await _healSkeletonNesting('design_development'); ddNode = _skeletonRoot('design_development') || ddNode; }
     if (!ddNode) return;                                   // skeleton not seeded (or migration not run)
     _ddSyncing = true;
     try {
@@ -15269,7 +15351,10 @@
     }
   }
   function wbsSourceKind(id) { var n = wbsById(id); return n ? (n.source_kind || null) : null; }
-  var SOURCE_KIND_LABEL = { design_development: 'Design Development — synced from Drawing Register + Material Submittal Log', procurement: 'Procurement — synced from the Procurement (WPM) app' };
+  var SOURCE_KIND_LABEL = { design_development: 'Design Development — synced from Drawing Register + Material Submittal Log', procurement: 'Procurement — synced from the Procurement (WPM) app',
+    procurement_trade: 'Trade — generated by the Procurement sync', design_development_child: 'Register — generated by the Engineering sync' };
+  // The two skeleton ROOTS, as opposed to the nodes their syncs generate underneath them.
+  var SOURCE_KIND_ROOTS = { design_development: 1, procurement: 1 };
   // ⚠️ Duplicate WBS-Summary rows that share the same dotted `wbs` CODE. A dotted code identifies
   // exactly one branch, so two summary rows on one code always draw that branch twice — and this is
   // the shape `_wbsEnsureSummaries()`' dedupe cannot see, because that one keys on `wbs_node_id` and
