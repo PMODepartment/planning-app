@@ -7494,9 +7494,19 @@
         if (ecW) list = list.filter(function (r) { return r.wbs === ecW || locCodeUnder(r.wbs, ecW); });
       }
       if (anyFilter()) {
+        // Which BRANCHES have to survive so a matching activity still shows the tree above it.
+        // ⚠️ Ancestors only — never the matching row's own code. Keying an activity's own wbs into
+        // this map is what let every other activity sharing that code through the filter unmatched
+        // (see the note above), and activities sharing a code is the normal case: anything added
+        // under a branch takes that branch's code.
         var keep = {};
-        list.forEach(function (r) { if (rowMatches(r)) { keep[r.wbs] = true; for (var i = 0; i < r._anc.length; i++) keep[r._anc[i]] = true; } });
-        list = list.filter(function (r) { return keep[r.wbs] || rowMatches(r); });
+        list.forEach(function (r) {
+          if (isWbs(r) || !rowMatches(r)) return;
+          for (var i = 0; i < (r._anc || []).length; i++) keep[r._anc[i]] = true;
+        });
+        // An ACTIVITY is kept only if it matches. A BRANCH is kept when it leads to a match, or when
+        // it matches in its own right — so searching for a branch by name still finds it.
+        list = list.filter(function (r) { return isWbs(r) ? (!!keep[r.wbs] || rowMatches(r)) : rowMatches(r); });
       }
       // Plain WBS view groups by nothing, so NO location level is expressed as a heading — every
       // level an activity has belongs on the line item itself (see locSuffixOf).
@@ -13284,15 +13294,20 @@
     // 2026-08-15): nothing about them says one is the plan for the other. A slim, muted rail hugging
     // the bar's underside reads as "where this bar was planned", and the slip is the offset between
     // their left/right edges. The current (real) bar keeps the visual weight, as it should.
-    var barTop, barH;
+    // ⚠️ ONE height for the task bar, baseline or not — see the note above. The rail's space is
+    // reserved either way, so capturing or clearing a baseline no longer resizes every bar in the
+    // project; only the rail itself appears or disappears.
+    var blH = Math.max(4, Math.round(5 * oY));
+    var barH = Math.max(9, ROWH - Math.round(8 * oY) - blH - 1);
+    var barTop;
     if (hasBL) {
-      var blH = Math.max(4, Math.round(5 * oY));
       barTop = top + Math.round(4 * oY);
-      barH = Math.max(9, ROWH - Math.round(8 * oY) - blH - 1);
       var bx = dayDiff(min, bs) * dayw, bw = Math.max((dayDiff(bs, be) + 1) * dayw, 3);
       out += '<div class="ps-bl" title="Baseline (BL0) — planned span for this activity" style="left:' + bx + 'px;width:' + bw + 'px;top:' + (barTop + barH + 1) + 'px;height:' + blH + 'px;"></div>';
     } else {
-      barH = ROWH - Math.round(8 * oY); barTop = top + Math.round(4 * oY);
+      // No rail beneath it, so CENTRE the bar in the row rather than hanging it from the top — the
+      // reserved space is split above and below instead of all landing under the bar.
+      barTop = top + Math.round((ROWH - barH) / 2);
     }
     // ⚠️ Composes with everything else on the bar rather than replacing it: a change order can be
     // critical, categorised (LSM colour) and spotlighted all at once, and each of those still reads.
