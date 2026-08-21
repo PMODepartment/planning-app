@@ -2,6 +2,49 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Works: exclude floor-completion milestones, scope choices to the selected Trade
+## (2026-08-13c)
+Owner tested the previous entry live and flagged two remaining defects in the same Works
+datalist: floor-level milestones ("10th Floor", "11th Floor", …) were showing up as if they were
+real work activities, and picking a Trade did nothing to narrow the choices — the screenshot
+showed "Structural Works" selected while the Works dropdown still offered unrelated floor names
+and only one genuine activity.
+- **Floor markers excluded.** They weren't WBS Summary rows (already excluded) — they're real
+  Project Schedule rows with `activity_type` **`Start Milestone`/`Finish Milestone`**, and a
+  schedule commonly names a floor-completion milestone after the floor itself. `distinctScheduleWorks()`
+  now excludes both milestone types explicitly, leaving only genuine `Task` rows (and anything with
+  no/other type, so a legacy row that predates consistent typing isn't hidden by accident).
+- **Works now scoped to the picked Trade**, per the owner's explicit ask ("all activity under that
+  trade will be the choices for the works, to avoid wrong selection of works under a specific
+  trade"). Project Schedule's own Discipline/Trade grouping lives in `project_schedule.work_type`
+  (added to `loadSchedule()`'s select) as one of **8 canonical buckets** — General Requirements /
+  Site Works / Structural Works / Architectural Works / MEPF Works / Site Development / Allied
+  Services / Others (see `modules/project-schedule/index.html`'s `GWORK`/`WORK_ORDER`). This
+  module's own Trade vocabulary is **finer-grained** — it mirrors the WPM procurement list and
+  splits MEPF into Mechanical / Electrical and Auxiliary / Plumbing and Sanitary / Fire Protection —
+  so one Trade maps to several `work_type` keywords, matched case-insensitively (`workTypeMatchesTrade`
+  + `TRADE_WORK_TERMS`) rather than by exact string equality, so a schedule using slightly different
+  wording still matches on its own vocabulary. Picking any of the four MEPF-side trades correctly
+  offers the SAME activities (the schedule doesn't discriminate further than "MEPF Works") — this
+  is the honest limit of the real data, not a bug.
+- **New `wireTradeWorks(idPrefix)`**: seeds the Works datalist from the modal's current Trade value
+  on open (so the Edit modal, which pre-fills an existing photo's Trade, is correctly scoped from
+  the moment it opens, with no re-touch needed) and re-scopes it live on every Trade change in both
+  the Add and Edit modals. `worksOptions(tradeFilter)` also scopes the union half (values already
+  typed on this project's own captured photos) to photos captured under that same Trade
+  (`distinctCapturedWorks`), so a stale unrelated free-text entry from a different trade doesn't
+  leak into a newly-scoped list. Leaving Trade blank still shows everything (unchanged from before).
+- Harness-verified (fresh v9 fixture, 10 schedule rows incl. 2 floor milestones, 1 WBS Summary, and
+  Task rows spanning Structural/Site/Architectural/MEPF `work_type`s): no-trade-selected datalist
+  showed exactly the 6 real activities (milestones and the summary row absent); selecting
+  "Structural Works" narrowed to exactly its 2 activities; "Electrical and Auxiliary Works" and
+  "Fire Protection Works" both correctly resolved to the same 2 MEPF-bucketed activities;
+  "Architectural Works" isolated to its own 1 activity; clearing back to blank restored all 6; the
+  Edit modal on a photo already tagged "Structural Works" opened already scoped to its 2 activities
+  with no extra interaction. No functional console errors (only the same harmless stub artifacts
+  noted in the prior entry).
+- Assets bumped `module.js?v=20260813c` (module.css unchanged this round).
+
 ## Live-app follow-up: Works had no choices, capture fields weren't actually required
 ## (2026-08-13b)
 Two bugs found testing the previous entry's rebuild against the real deployed app on Avesta

@@ -212,7 +212,7 @@ window.ProgressPhotos = (function () {
 
     try {
       var ares = await fetchAllPages('project_schedule',
-        'id,activity_id,activity_name,location,activity_type,status,start_date,end_date',
+        'id,activity_id,activity_name,location,activity_type,status,start_date,end_date,work_type',
         function (q) { return q.neq('activity_type', 'WBS Summary'); });
       if (!ares.error) SCHED_ACTS = ares.data || [];
     } catch (e) {}
@@ -435,26 +435,85 @@ window.ProgressPhotos = (function () {
     });
     return out.sort();
   }
-  // "Works" suggestions = the project's own schedule activities (deduplicated
-  // by name -- a schedule commonly repeats the same activity name across many
-  // WBS branches/floors, e.g. "Rebar Installation" on every level, so this
-  // must dedupe by name, not by activity row) UNION any values already typed
-  // on captured photos (so a planner's own past free-text entries stay
-  // suggested even if they don't match a schedule activity name).
-  function distinctScheduleWorks() {
+  // Maps THIS module's own Trade vocabulary onto Project Schedule's canonical
+  // work_type buckets (see project-schedule's CLAUDE.md, GWORK: work_type is
+  // one of General Requirements / Site Works / Structural Works /
+  // Architectural Works / MEPF Works / Site Development / Allied Services /
+  // Others). This module's Trade list is finer-grained -- it splits MEPF into
+  // Mechanical/Electrical/Plumbing/Fire Protection to match the WPM
+  // procurement vocabulary -- so one Trade maps to several schedule work_type
+  // keywords. Matched by case-insensitive keyword, not exact equality, so a
+  // schedule that predates the canonical resolver (or was hand-edited) still
+  // matches on its own wording.
+  var TRADE_WORK_TERMS = {
+    'Site Works': ['site work', 'site development'],
+    'Civil Works': ['civil', 'site development', 'earthwork'],
+    'Structural Works': ['structural'],
+    'Architectural Works': ['architectural'],
+    'Mechanical Works': ['mepf', 'mechanical'],
+    'Electrical and Auxiliary Works': ['mepf', 'electrical'],
+    'Plumbing and Sanitary Works': ['mepf', 'plumbing', 'sanitary'],
+    'Fire Protection Works': ['mepf', 'fire'],
+    'General Requirements': ['general requirement']
+  };
+  function workTypeMatchesTrade(workType, trade) {
+    if (!trade) return true;   // no Trade picked yet -- don't narrow anything
+    if (!workType) return false;
+    var terms = TRADE_WORK_TERMS[trade] || [trade.toLowerCase()];
+    var wt = String(workType).toLowerCase();
+    return terms.some(function (t) { return wt.indexOf(t) >= 0; });
+  }
+  // "Works" suggestions = the project's own schedule activities, scoped to the
+  // Trade currently selected in the modal (so picking "Structural" only
+  // offers structural activities as Works, preventing a planner from
+  // attaching an MEPF activity name to a Structural photo by mistake) --
+  // deduplicated by NAME, not by row (a schedule commonly repeats the same
+  // activity name across many WBS branches/floors, e.g. "Rebar Installation"
+  // on every level) -- UNION any values already typed on this project's own
+  // captured photos under the same Trade (so a planner's past free-text entry
+  // stays suggested even if it doesn't match a schedule activity name).
+  // ⚠️ Start/Finish Milestones are excluded -- schedules commonly name a
+  // floor-completion milestone after the floor itself ("10th Floor"), which
+  // read as a bogus "activity" choice; only real Task rows are offered.
+  function distinctScheduleWorks(tradeFilter) {
     var seen = {}, out = [];
     SCHED_ACTS.forEach(function (a) {
+      if (a.activity_type === 'Start Milestone' || a.activity_type === 'Finish Milestone') return;
+      if (!workTypeMatchesTrade(a.work_type, tradeFilter)) return;
       var v = (a.activity_name || '').trim();
       if (v && !seen[v]) { seen[v] = 1; out.push(v); }
     });
     return out.sort();
   }
-  function worksOptions() {
+  function distinctCapturedWorks(tradeFilter) {
     var seen = {}, out = [];
-    distinctScheduleWorks().concat(distinct('works')).forEach(function (v) {
+    rows.forEach(function (r) {
+      if (tradeFilter && r.trade !== tradeFilter) return;
+      var v = (r.works || '').trim();
+      if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out.sort();
+  }
+  function worksOptions(tradeFilter) {
+    var seen = {}, out = [];
+    distinctScheduleWorks(tradeFilter).concat(distinctCapturedWorks(tradeFilter)).forEach(function (v) {
       if (!seen[v]) { seen[v] = 1; out.push(v); }
     });
     return out.sort();
+  }
+  function refreshWorksDatalist(tradeVal) {
+    var dl = $('pp-works-list');
+    if (dl) dl.innerHTML = worksOptions(tradeVal || '').map(function (v) {
+      return '<option value="' + Fmt.esc(v) + '"></option>'; }).join('');
+  }
+  // Re-scopes the shared Works datalist to whichever Trade is picked in the
+  // currently-open modal (Add or Edit -- idPrefix's own -trade select), live
+  // on every change, seeded once from its current value on open.
+  function wireTradeWorks(idPrefix) {
+    var trade = $(idPrefix + '-trade');
+    if (!trade) return;
+    refreshWorksDatalist(trade.value);
+    trade.onchange = function () { refreshWorksDatalist(this.value); };
   }
   function fillFilterOptions() {
     function fill(id, list, blank) {
@@ -468,9 +527,8 @@ window.ProgressPhotos = (function () {
     fill('pp-f-trade', distinct('trade'), 'Filter by Trade');
     fill('pp-f-works', distinct('works'), 'Filter by Works');
     renderLocFilterSelects();
-    var dl = $('pp-works-list');
-    if (dl) dl.innerHTML = worksOptions().map(function (v) {
-      return '<option value="' + Fmt.esc(v) + '"></option>'; }).join('');
+    refreshWorksDatalist('');   // unfiltered baseline; the open modal's own Trade
+                                // select re-scopes this live (see wireTradeWorks)
   }
   // Distinct values already captured at this level, across this project's
   // own photos.
@@ -894,6 +952,7 @@ window.ProgressPhotos = (function () {
 
     var m = openModal(html, 640);
     wireLocationField('pp');
+    wireTradeWorks('pp');
     hydrate(m.el);
     if (preset.walk && $('pp-skip')) $('pp-skip').onclick = function () { m.close(); advanceWalkthrough(); };
     if (preset.walk && $('pp-endwalk')) $('pp-endwalk').onclick = function () {
@@ -1136,6 +1195,7 @@ window.ProgressPhotos = (function () {
       c.checked = (r.tags || []).indexOf(c.value) >= 0;
     });
     wireLocationField('pp-e', true);
+    wireTradeWorks('pp-e');
     hydrate(m.el);
     // Clear the "editing this photo" cursor on every close path (× / Cancel).
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
