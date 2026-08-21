@@ -164,7 +164,8 @@ window.ProgressPhotos = (function () {
     syncChrome();
     await load();
     await loadSchedule();
-    renderLocFilterSelects();   // load() ran before location_levels existed — refresh once it's here
+    fillFilterOptions();   // load() ran before location_levels/SCHED_ACTS existed — refresh the Works
+                            // datalist + location filters now that the schedule is in
     await refreshQueueBadge();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
     joinCollab();
@@ -320,7 +321,7 @@ window.ProgressPhotos = (function () {
       restoreUI(); syncChrome(); notifyProject();
       await load();
       await loadSchedule();
-      renderLocFilterSelects();
+      fillFilterOptions();
       await refreshQueueBadge();
       refreshRoundsIfVisible();
       joinCollab();
@@ -434,6 +435,27 @@ window.ProgressPhotos = (function () {
     });
     return out.sort();
   }
+  // "Works" suggestions = the project's own schedule activities (deduplicated
+  // by name -- a schedule commonly repeats the same activity name across many
+  // WBS branches/floors, e.g. "Rebar Installation" on every level, so this
+  // must dedupe by name, not by activity row) UNION any values already typed
+  // on captured photos (so a planner's own past free-text entries stay
+  // suggested even if they don't match a schedule activity name).
+  function distinctScheduleWorks() {
+    var seen = {}, out = [];
+    SCHED_ACTS.forEach(function (a) {
+      var v = (a.activity_name || '').trim();
+      if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out.sort();
+  }
+  function worksOptions() {
+    var seen = {}, out = [];
+    distinctScheduleWorks().concat(distinct('works')).forEach(function (v) {
+      if (!seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out.sort();
+  }
   function fillFilterOptions() {
     function fill(id, list, blank) {
       var el = $(id); if (!el) return;
@@ -447,7 +469,7 @@ window.ProgressPhotos = (function () {
     fill('pp-f-works', distinct('works'), 'Filter by Works');
     renderLocFilterSelects();
     var dl = $('pp-works-list');
-    if (dl) dl.innerHTML = distinct('works').map(function (v) {
+    if (dl) dl.innerHTML = worksOptions().map(function (v) {
       return '<option value="' + Fmt.esc(v) + '"></option>'; }).join('');
   }
   // Distinct values already captured at this level, across this project's
@@ -687,10 +709,25 @@ window.ProgressPhotos = (function () {
   }
 
   // --------------------------------------------------------------- upload ---
+  function reqMark() { return ' <span class="pp-req">*</span>'; }
   function tradeOptions(val) {
     return '<option value="">—</option>' + TRADES.map(function (t) {
       return '<option' + (val === t ? ' selected' : '') + '>' + Fmt.esc(t) + '</option>';
     }).join('');
+  }
+  // Capture date / Trade / Works / Location Breakdown are required. These
+  // fields live in a plain <div>, not a <form>, so the native `required`
+  // attribute is a visual/semantic cue only -- this is the actual gate,
+  // called before either the Add or Edit save handler proceeds.
+  function requiredFieldsMissing(idPrefix) {
+    var date = $(idPrefix + '-date'), trade = $(idPrefix + '-trade'), works = $(idPrefix + '-works');
+    if (!date || !date.value) return 'Capture date is required.';
+    if (!trade || !trade.value) return 'Trade is required.';
+    if (!works || !works.value.trim()) return 'Works is required.';
+    if (LOC_LEVELS.length && !Object.keys(currentLocValues(idPrefix)).length) {
+      return 'Select at least one Location Breakdown value.';
+    }
+    return null;
   }
 
   // ------------------------------------------------- Location Breakdown picker
@@ -757,7 +794,8 @@ window.ProgressPhotos = (function () {
   }
   function locationFieldHTML(idPrefix, existingValues, locText) {
     return (
-      '<div class="pp-span2 pp-wbssection"><label>Location Breakdown</label>' +
+      '<div class="pp-span2 pp-wbssection"><label>Location Breakdown' +
+        (LOC_LEVELS.length ? reqMark() + ' <span class="pp-optnote">(at least one level)</span>' : '') + '</label>' +
         '<div class="pp-wbscascade" id="' + idPrefix + '-loclevels">' + locFieldsHTML(idPrefix, existingValues) + '</div>' +
         '<div class="pp-wbscrumb" id="' + idPrefix + '-crumb"></div>' +
       '</div>' +
@@ -839,12 +877,12 @@ window.ProgressPhotos = (function () {
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
             '<input class="pd-input" id="pp-desc" placeholder="e.g. Model Unit" /></div>' +
-          '<div class="pd-field"><label>Capture date</label>' +
-            '<input class="pd-input" type="date" id="pp-date" value="' + today + '" /></div>' +
-          '<div class="pd-field"><label>Trade</label>' +
-            '<select class="pd-select" id="pp-trade">' + tradeOptions('') + '</select></div>' +
-          '<div class="pd-field"><label>Works</label>' +
-            '<input class="pd-input" id="pp-works" list="pp-works-list" placeholder="e.g. Temporary Facilities" /></div>' +
+          '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
+            '<input class="pd-input" type="date" id="pp-date" value="' + today + '" required /></div>' +
+          '<div class="pd-field"><label>Trade' + reqMark() + '</label>' +
+            '<select class="pd-select" id="pp-trade" required>' + tradeOptions('') + '</select></div>' +
+          '<div class="pd-field"><label>Works' + reqMark() + '</label>' +
+            '<input class="pd-input" id="pp-works" list="pp-works-list" placeholder="e.g. Temporary Facilities" required /></div>' +
           locationFieldHTML('pp', preset.locationValues || {}, preset.location || '') +
         '</div>' +
         '<div class="pp-progress" id="pp-prog" hidden></div>' +
@@ -865,6 +903,8 @@ window.ProgressPhotos = (function () {
     $('pp-save').onclick = async function () {
       var files = $('pp-files').files;
       if (!files || !files.length) { UI.toast('Choose at least one photo', 'warn'); return; }
+      var reqErr = requiredFieldsMissing('pp');
+      if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
       var act = resolveActivity(locVals);
       var shared = {
@@ -1077,12 +1117,12 @@ window.ProgressPhotos = (function () {
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
             '<input class="pd-input" id="pp-e-desc" value="' + Fmt.esc(r.description || '') + '" /></div>' +
-          '<div class="pd-field"><label>Capture date</label>' +
-            '<input class="pd-input" type="date" id="pp-e-date" value="' + Fmt.esc(r.taken_at || '') + '" /></div>' +
-          '<div class="pd-field"><label>Trade</label>' +
-            '<select class="pd-select" id="pp-e-trade">' + tradeOptions(r.trade || '') + '</select></div>' +
-          '<div class="pd-field"><label>Works</label>' +
-            '<input class="pd-input" id="pp-e-works" list="pp-works-list" value="' + Fmt.esc(r.works || '') + '" /></div>' +
+          '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
+            '<input class="pd-input" type="date" id="pp-e-date" value="' + Fmt.esc(r.taken_at || '') + '" required /></div>' +
+          '<div class="pd-field"><label>Trade' + reqMark() + '</label>' +
+            '<select class="pd-select" id="pp-e-trade" required>' + tradeOptions(r.trade || '') + '</select></div>' +
+          '<div class="pd-field"><label>Works' + reqMark() + '</label>' +
+            '<input class="pd-input" id="pp-e-works" list="pp-works-list" value="' + Fmt.esc(r.works || '') + '" required /></div>' +
           locationFieldHTML('pp-e', r.location_values || {}, r.location || '') +
         '</div>' +
       '</div>' +
@@ -1102,6 +1142,8 @@ window.ProgressPhotos = (function () {
       b.onclick = function () { broadcastCollabSel(null); m.close(); };
     });
     $('pp-e-save').onclick = async function () {
+      var reqErr = requiredFieldsMissing('pp-e');
+      if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       this.disabled = true;
       var locVals = currentLocValues('pp-e');
       var act = resolveActivity(locVals);

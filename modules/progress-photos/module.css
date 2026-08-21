@@ -291,6 +291,7 @@
   font-size: 13px; color: var(--pd-ink); font-weight: 600;
 }
 .pp-optnote { font-weight: 400; color: var(--pd-muted); font-size: 11.5px; }
+.pp-req { color: var(--pd-bad); font-weight: 700; }
 .pp-actctx { font-size: 12.5px; color: var(--pd-muted); margin-top: -2px; }
 .pp-actline { margin-top: 4px; }
 .pp-actline strong { color: var(--pd-ink); }

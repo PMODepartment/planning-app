@@ -2,6 +2,56 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Live-app follow-up: Works had no choices, capture fields weren't actually required
+## (2026-08-13b)
+Two bugs found testing the previous entry's rebuild against the real deployed app on Avesta
+Residences: the Works field's datalist was empty (screenshot showed only "e.g. Temporary
+Facilities" placeholder text with no suggestions), and Capture date / Trade / Works / Location
+Breakdown were all skippable despite reading as important fields.
+- **Works datalist was scoped to the wrong source.** It only ever built from `distinct('works')`
+  — values already typed on this project's OWN captured photos — so a brand-new project (or one
+  where nobody had typed a Works value yet) showed nothing at all. New `distinctScheduleWorks()`
+  reads distinct `activity_name` values off `SCHED_ACTS` (the same Project Schedule activities
+  already loaded for the Location Breakdown feature) and `worksOptions()` unions it with the
+  existing captured-values list, so both sources suggest and neither is lost.
+  ⚠️ **Deduplicated by NAME, not by row** — a real schedule commonly repeats an activity name
+  across many WBS branches/floors (e.g. "Rebar Installation" on every level of every tower), and
+  offering one option per *row* would flood the datalist with hundreds of duplicate strings.
+  WBS Summary rows are already excluded upstream (`loadSchedule`'s `.neq('activity_type','WBS
+  Summary')`), so they don't leak into Works either.
+- ⚠️ **Fixed a load-order gap that would have silently limited this on the FIRST page view.**
+  `init()`/the project-switch handler called `renderLocFilterSelects()` after `loadSchedule()`
+  finished, but never re-ran `fillFilterOptions()` (which builds the Works datalist) — so
+  `SCHED_ACTS` would be populated in memory but the Works datalist would still reflect whatever
+  it was built from during `load()`, which runs *before* `loadSchedule()`. Both call sites now
+  call `fillFilterOptions()` (a superset — it already calls `renderLocFilterSelects()` internally)
+  after `loadSchedule()`.
+- **Capture date, Trade, Works, and Location Breakdown (at least one level) are now required**
+  in both the Add-photos and Edit-photo modals. These fields live in a plain `<div>`, not a
+  `<form>`, so the native `required` attribute (added for semantics/accessibility) has no
+  automatic enforcement — the actual gate is a new `requiredFieldsMissing(idPrefix)` check called
+  at the top of both save handlers, returning a specific message ("Capture date is required." /
+  "Trade is required." / "Works is required." / "Select at least one Location Breakdown value.")
+  shown via `UI.toast('...', 'warn')`, save aborted (row untouched, modal stays open).
+  ⚠️ **Location Breakdown requires only ONE filled level, not every level** — a capture legitimately
+  stopping at "Tower B" with no Level/Zone picked is still valid per the design in the entry below
+  ("a capture can stop at any depth is a deliberate choice"); the new rule only forbids submitting
+  with **zero** Location Breakdown values at all. The section header now shows a red `*` + "(at
+  least one level)" hint; Description stays optional (unchanged).
+- Harness-verified (fresh v8 fixture, 3 location levels, 6 schedule activities including a
+  repeated-name pair across two WBS branches and one WBS-Summary row to prove exclusion, run via
+  a real local HTTP server rather than `file://` — this environment's Browser pane renders
+  `file://` pages as inert static snapshots this session, unlike earlier rounds, so a throwaway
+  PowerShell `HttpListener` static server was used instead): Works datalist showed exactly
+  `Formworks / MEP Rough-in / Rebar Installation / Site Grading` (4 options, not 5 — the repeated
+  name deduped, the WBS Summary row excluded); Add-modal save sequentially blocked on Trade →
+  Works → Location Breakdown with the correct message each time, then succeeded once all four were
+  filled (row persisted with correct `trade`/`works`/`location_values`/`activity_id`/
+  `activity_name`); Edit-modal save blocked identically when Works was cleared. No functional
+  console errors (only expected stub artifacts — fake `blob:` image URLs and one cosmetic 404 for
+  a shared stylesheet outside the throwaway server's root).
+- Assets bumped `module.css/js?v=20260813b`.
+
 ## Rebuilt the location picker onto Project Schedule's real "Location Breakdown" system, not
 ## wbs_nodes (2026-08-13)
 Owner's correction after confirming the full WBS tree now renders (previous entry): **"it should
