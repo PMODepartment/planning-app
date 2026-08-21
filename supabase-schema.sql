@@ -657,3 +657,44 @@ insert into workspaces (id, name, code, parent_id, node_type, group_head, sort_o
   ('FLORES','Flores Group','FLO','OPS','group','Flores Group',4)
 on conflict (id) do nothing;
 update projects set workspace_id='PMO' where id='DEMO01' and workspace_id is null;
+
+-- ---- project-schedule: Contract Scope (main contract vs change order) -------
+-- Idempotent, per MODULE_CONTRACT section 8. These were only ever shipped as
+-- migrations/2026-08-19-schedule-contract-scope.sql, so a project rebuilt from
+-- this file alone had no Contract Scope columns and every scope edit failed.
+-- Full rationale (why a tag and not a WBS branch, why execution phase only,
+-- why no back-fill) lives in that migration file.
+alter table project_schedule add column if not exists scope_type       text;
+alter table project_schedule add column if not exists change_order_ref text;
+alter table wbs_nodes        add column if not exists scope_type       text;
+alter table wbs_nodes        add column if not exists change_order_ref text;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'project_schedule_scope_type_chk') then
+    alter table project_schedule add constraint project_schedule_scope_type_chk
+      check (scope_type is null or scope_type in ('main', 'change_order'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'wbs_nodes_scope_type_chk') then
+    alter table wbs_nodes add constraint wbs_nodes_scope_type_chk
+      check (scope_type is null or scope_type in ('main', 'change_order'));
+  end if;
+end $$;
+create index if not exists project_schedule_scope_type_idx on project_schedule (project_id, scope_type);
+create index if not exists wbs_nodes_scope_type_idx        on wbs_nodes (project_id, scope_type);
+
+-- ---- project-schedule: split a main-contract activity around a change order --
+-- Idempotent, per MODULE_CONTRACT section 8. Rationale (why two activities and
+-- not one activity that knows it is split; why the finish extends) lives in
+-- migrations/2026-08-21-schedule-split-change-orders.sql.
+alter table project_schedule add column if not exists split_group text;
+alter table project_schedule add column if not exists split_seq   int;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'project_schedule_split_pair_chk') then
+    alter table project_schedule add constraint project_schedule_split_pair_chk
+      check ((split_group is null and split_seq is null)
+          or (split_group is not null and split_seq is not null and split_seq >= 1));
+  end if;
+end $$;
+create index if not exists project_schedule_split_group_idx
+  on project_schedule (project_id, split_group, split_seq);

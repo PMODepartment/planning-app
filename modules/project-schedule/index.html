@@ -2770,6 +2770,23 @@
   // 2026-08-12 phase migration seeds it from WBS branches named "Execution Phase" / "Construction".
   var EXEC_PHASE = 'construction';
   function isExecPhase(r) { return phaseOf(r) === EXEC_PHASE; }
+  // Why this row is not in the execution phase, in words a planner can act on: the phase that was
+  // detected, and whether it came from the row itself or was inherited from the WBS tree.
+  function _phaseWhy(r) {
+    var ph = phaseOf(r);
+    var own = r && r.phase ? 'set on this activity' : (ph ? 'inherited from its WBS branch' : 'not set anywhere');
+    return (ph ? '“' + (phaseLabel(ph) || ph) + '” (' + own + ')' : 'no phase at all (' + own + ')');
+  }
+  // Offer the way out. Returns true when the caller may proceed with the scope edit.
+  async function _ensureExecPhase(r) {
+    if (!r || isExecPhase(r)) return true;
+    if (!confirm('Contract scope applies to the Execution Phase only.\n\n' +
+      'This activity\'s phase is ' + _phaseWhy(r) + '.\n\n' +
+      'Set this activity to the Execution Phase now and continue?')) return false;
+    var ok = await persist(r.id, { phase: EXEC_PHASE });
+    if (ok) { _clearPhaseMemo(); _clearScopeMemo(); }
+    return ok;
+  }
   var _scopeMemo = {};
   function _clearScopeMemo() { _scopeMemo = {}; }
   function _nodeScope(nodeId) {
@@ -5288,7 +5305,30 @@
   }
   async function persistScope(id, patch) {
     var ok = await persist(id, patch, false, true);   // quiet: this function owns the message
-    if (!ok) UI.toast('Contract scope could not be saved. This project\'s database is missing the scope columns — run migrations/2026-08-19-schedule-contract-scope.sql in the Supabase SQL editor, then reload.', 'error');
+    if (!ok) {
+      var e = _lastPersistErr || '';
+      // ⚠️ Only blame the migration when the error actually names those columns. Telling a planner
+      // to re-run a migration they have already run is a confident wrong answer that no amount of
+      // re-running can fix — see the note above this function.
+      // ⚠️ Keyed on the PHRASING that means a missing column, not on the column NAME. A CHECK
+      // violation reads violates check constraint "project_schedule_scope_type_chk" — which
+      // contains "scope_type" — so matching the name sent the planner to re-run a migration that
+      // was already applied. That is the exact failure this function exists to remove.
+      if (/does not exist|could not find|schema cache/i.test(e)) {
+        UI.toast('Contract scope could not be saved: this project\'s database has no scope columns. ' +
+          'Run migrations/2026-08-19-schedule-contract-scope.sql in the Supabase SQL editor, then reload. ' +
+          '(Actions → Diagnose data → Database features shows whether it is applied.)', 'error');
+      } else if (/violates check constraint/i.test(e)) {
+        UI.toast('Contract scope could not be saved: the database rejected the value. Only "main" and ' +
+          '"change_order" are allowed. Original error: ' + e, 'error');
+      } else if (/row-level security|permission|policy/i.test(e)) {
+        UI.toast('Contract scope could not be saved: you do not have permission to edit this activity ' +
+          '(row-level security). Original error: ' + e, 'error');
+      } else {
+        UI.toast('Contract scope could not be saved: ' + (e || 'no error message was returned.') +
+          ' — Actions → Diagnose data → Database features shows whether the migration is applied.', 'error');
+      }
+    }
     return ok;
   }
   // Marking an activity as a change order asks for its CO reference straight away: a CO with no
@@ -5303,18 +5343,22 @@
     ref = String(ref).trim();
     persistScope(id, { change_order_ref: ref || null }).then(function (ok) { if (ok) { renderGrid(); renderDetails(); } });
   }
+  // The last error persist() saw, so a caller that passed quiet:true can still report the truth
+  // instead of guessing at it. Cleared on every attempt so a stale message can never be shown.
+  var _lastPersistErr = null;
   async function persist(id, patch, skipUndo, quiet) {
+    _lastPersistErr = null;
     var r = rows.find(function (x) { return x.id === id; });
     var before = null;
     if (r && !skipUndo) { before = {}; Object.keys(patch).forEach(function (k) { before[k] = (r[k] === undefined ? null : r[k]); }); }
     var prev = {}; if (r) Object.keys(patch).forEach(function (k) { prev[k] = (r[k] === undefined ? null : r[k]); });   // for audit
     if (window.PDSync) {
       var w = await PDSync.write({ table: TABLE, op: 'update', id: id, patch: patch });
-      if (!w.ok) { if (!quiet) UI.toast((w.error && w.error.message) || 'Save failed', 'error'); return false; }
+      if (!w.ok) { _lastPersistErr = (w.error && w.error.message) || 'Save failed'; if (!quiet) UI.toast(_lastPersistErr, 'error'); return false; }
       // queued offline writes count as saved-locally (w.queued) — fall through to apply + rebuild
     } else {
       var res = await sb().from(TABLE).update(patch).eq('id', id);
-      if (res.error) { if (!quiet) UI.toast(res.error.message, 'error'); return false; }
+      if (res.error) { _lastPersistErr = res.error.message; if (!quiet) UI.toast(_lastPersistErr, 'error'); return false; }
     }
     if (r) Object.keys(patch).forEach(function (k) { r[k] = patch[k]; });
     _myWrites[id] = { t: Date.now(), patch: patch };   // suppress the Realtime echo of MY OWN write (content-checked below)
@@ -5337,7 +5381,11 @@
   // (updated_at aside) is cosmetic and needs no rebuild.
   var _RECOMPUTE_FIELDS = { wbs: 1, activity_id: 1, activity_type: 1, start_date: 1, end_date: 1,
     actual_start: 1, actual_finish: 1, bl_start: 1, bl_finish: 1, planned_cost: 1, actual_cost: 1,
-    earned_value: 1, bl_cost: 1, percent_complete: 1, predecessors: 1, duration_days: 1 };
+    earned_value: 1, bl_cost: 1, percent_complete: 1, predecessors: 1, duration_days: 1,
+    // ⚠️ Contract scope feeds recountScope(), the scope filter and the main/CO roll-up counters, so
+    // an inline Scope edit MUST rebuild. Without these two an edit saved correctly and then looked
+    // like it had done nothing, which is how "not saving" gets reported.
+    scope_type: 1, change_order_ref: 1 };
   // ---- Change audit (fire-and-forget, tolerant of a not-yet-migrated DB) ----
   function _auditChanges(prev, patch) {
     var c = {}; Object.keys(patch || {}).forEach(function (k) { if (k === 'updated_at') return; var from = prev ? prev[k] : undefined; if (JSON.stringify(from == null ? null : from) !== JSON.stringify(patch[k] == null ? null : patch[k])) c[k] = { from: from == null ? null : from, to: patch[k] == null ? null : patch[k] }; });
@@ -10375,7 +10423,13 @@
         // Contract scope: the newest columns on this table, so a project whose database has not had
         // 2026-08-19-schedule-contract-scope.sql run must get the REMEDY, not a schema-cache error.
         if (f === 'scope_type' || f === 'change_order_ref') {
-          if (f === 'scope_type' && !isExecPhase(r)) { UI.toast('Contract scope applies to execution-phase activities only — set the Phase first.', 'warn'); renderDetails(); return; }
+          if (f === 'scope_type' && !isExecPhase(r)) {
+            _ensureExecPhase(r).then(function (okp) {
+              if (!okp) { renderDetails(); return; }
+              rebuild(true); persistScope(r.id, { scope_type: v || null }).then(function (ok) { if (ok) { rebuild(true); renderGrid(); renderGantt(); renderDetails(); } });
+            });
+            return;
+          }
           var _sv = (typeof v === 'string' ? v.trim() : v) || null;
           var _sp = {}; _sp[f] = _sv;
           // Dropping back to Main Contract drops the reference with it.
@@ -11854,7 +11908,13 @@
   // The qualifier printed after a leaf row's name: the location levels the current grouping does
   // not already state (locSuffixOf), or - for a row with no location - its immediate WBS parent.
   function _dsuffixHtml(r) {
-    return r._dsuffix ? ' <span class="ps-dsuffix" title="Level / zone / unit not shown as a grouping">· ' + esc(r._dsuffix) + '</span>' : '';
+    return (r._dsuffix ? ' <span class="ps-dsuffix" title="Level / zone / unit not shown as a grouping">· ' + esc(r._dsuffix) + '</span>' : '') + _splitSuffixHtml(r);
+  }
+  // A split segment says which part of its line item it is. Without this, two rows carrying the
+  // SAME activity name and different dates read as duplicate data rather than one interrupted bar.
+  function _splitSuffixHtml(r) {
+    var lb = splitLabel(r);
+    return lb ? ' <span class="ps-dsuffix" title="This activity is split around a change order. Right-click → Merge split to undo.">· ' + esc(lb) + '</span>' : '';
   }
   function statusCellHtml(r) {
     var s = r.status || 'Not Started';
@@ -12033,7 +12093,7 @@
     var sv = scopeOf(r);
     // Not applicable outside the execution phase — and NOT editable there either, so the column can
     // never quietly acquire a value that means nothing.
-    if (!sv) return '<div class="ps-cell c-scope" title="Contract scope applies to execution-phase activities only"><span style="color:var(--pd-muted);">—</span></div>';
+    if (!sv) return '<div class="ps-cell c-scope" title="' + esc('Contract scope applies to the Execution Phase only. This activity\'s phase is ' + _phaseWhy(r) + '. Right-click → Edit activity to change it.') + '"><span style="color:var(--pd-muted);">—</span></div>';
     var own = !!r.scope_type, co = sv === 'change_order';
     var ref = co ? coRefOf(r) : '';
     return '<div class="ps-cell c-scope ps-editable" data-id="' + r.id + '" data-field="scope_type" data-type="enum" data-enum="scope" title="' +
@@ -12628,7 +12688,17 @@
       if (type === 'enum') {
         var _ev = String(val || '');
         if (field === 'scope_type') {
-          if (!isExecPhase(r)) { UI.toast('Contract scope applies to execution-phase activities only — set the Phase on this activity first.', 'warn'); renderGrid(); return; }
+          if (!isExecPhase(r)) {
+            _ensureExecPhase(r).then(function (okp) {
+              if (!okp) { renderGrid(); return; }
+              rebuild(true);
+              var _pt0 = { scope_type: _ev || null };
+              if (_ev !== 'change_order') _pt0.change_order_ref = null;
+              persistScope(id, _pt0).then(function (ok) { if (ok) { rebuild(true); renderGrid(); renderGantt(); renderDetails();
+                if (_ev === 'change_order' && !r.change_order_ref) promptCoRef(id); } });
+            });
+            return;
+          }
           var _pt = { scope_type: _ev || null };
           // Dropping back to Main Contract drops the CO reference with it — a "VO-014" left on a
           // main-contract activity is worse than no reference at all.
@@ -16231,6 +16301,57 @@
   // when it has no dated descendants IN THE CURRENT DISPLAY SET, and that set is narrowed by the WBS
   // link (wbs_node_id / the dotted wbs code), by the active filters, and by search — independently.
   // So the report separates them and names the one that is actually biting.
+  // What each optional migration adds, and how to detect it. Ordered most-asked-about first.
+  // ⚠️ Keep this list in step with the migrations/ folder — a feature that silently fails with no
+  // entry here sends the planner straight back to guessing.
+  var DIAG_FEATURES = [
+    { label: 'Contract Scope (Main contract / Change order)', file: '2026-08-19-schedule-contract-scope.sql',
+      probes: [['project_schedule', 'scope_type'], ['project_schedule', 'change_order_ref'], ['wbs_nodes', 'scope_type']] },
+    { label: 'Activity Codes (incl. Class Code from Schedule Builder)', file: '2026-07-07-activity-codes.sql',
+      probes: [['project_schedule', 'activity_codes'], ['activity_code_types', 'id'], ['activity_code_values', 'id']] },
+    { label: 'WBS Manager tree', file: '2026-07-07-wbs-nodes.sql',
+      probes: [['wbs_nodes', 'id'], ['project_schedule', 'wbs_node_id']] },
+    { label: 'Split around a change order', file: '2026-08-21-schedule-split-change-orders.sql',
+      probes: [['project_schedule', 'split_group'], ['project_schedule', 'split_seq']] },
+    { label: 'Baselines', file: '2026-07-07-schedule-baselines.sql', probes: [['schedule_baselines', 'id']] },
+    { label: 'Weighted Steps', file: '2026-07-07-activity-steps.sql', probes: [['activity_steps', 'id']] },
+    { label: 'Location Breakdown', file: '2026-08-12-progress-photos-location-breakdown.sql', probes: [['location_levels', 'id'], ['project_schedule', 'location']] }
+  ];
+  // Is this column readable? PostgREST rejects an unknown column (and an unknown table) outright,
+  // which is exactly the signal. limit(1) on a single column so the check costs nothing.
+  async function _diagHasCol(table, col) {
+    try {
+      var r = await sb().from(table).select(col).limit(1);
+      return !r.error;
+    } catch (e) { return false; }
+  }
+  async function _diagProbeDb(host) {
+    if (!host) return;
+    var rowsOut = [];
+    for (var i = 0; i < DIAG_FEATURES.length; i++) {
+      var f = DIAG_FEATURES[i], missing = [];
+      for (var j = 0; j < f.probes.length; j++) {
+        var ok = await _diagHasCol(f.probes[j][0], f.probes[j][1]);
+        if (!ok) missing.push(f.probes[j][0] + '.' + f.probes[j][1]);
+      }
+      rowsOut.push({ f: f, missing: missing });
+    }
+    host.innerHTML = '<table class="ps-table" style="width:100%;font-size:12.5px;"><thead><tr>' +
+      ['Feature', 'Status', 'To enable it'].map(function (h) { return '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--pd-line);">' + h + '</th>'; }).join('') +
+      '</tr></thead><tbody>' +
+      rowsOut.map(function (o) {
+        var bad = o.missing.length > 0, part = bad && o.missing.length < o.f.probes.length;
+        return '<tr' + (bad ? ' style="background:#FDECEA;"' : '') + '>' +
+          '<td style="padding:4px 8px;"><b>' + esc(o.f.label) + '</b></td>' +
+          '<td style="padding:4px 8px;white-space:nowrap;">' + (bad
+            ? '<span style="color:var(--pd-red);font-weight:700;">' + (part ? 'Partly applied' : 'Not applied') + '</span>'
+            : '<span style="color:#2e7d32;font-weight:700;">Applied</span>') + '</td>' +
+          '<td style="padding:4px 8px;">' + (bad
+            ? 'Run <code>migrations/' + esc(o.f.file) + '</code> in the Supabase SQL editor, then reload.' +
+              '<div style="color:var(--pd-muted);font-size:11px;margin-top:2px;">Missing: ' + esc(o.missing.join(', ')) + '</div>'
+            : '<span style="color:var(--pd-muted);">—</span>') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
   function openDiagnose() {
     if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
     var acts = rows.filter(function (r) { return !isWbs(r); });
@@ -16327,6 +16448,9 @@
       '<div style="font-size:13px;margin-bottom:10px;"><b>' + acts.length + '</b> activities · <b>' + wbsRows.length +
         '</b> WBS rows · <b>' + acts.filter(dated).length + '</b> dated · <b>' + Object.keys(shown).length + '</b> in the current view</div>' +
       verdict.join('') + filterState +
+      '<h3 style="font-size:13px;margin:14px 0 2px;">Database features</h3>' +
+      note('Each row is an optional migration this module uses. A missing one is not a bug in the schedule — the feature simply has nowhere to store its data, and saving it fails.') +
+      '<div id="ps-diag-db" style="font-size:12.5px;color:var(--pd-muted);padding:4px 0;">Checking…</div>' +
       '<h3 style="font-size:13px;margin:14px 0 2px;">By trade</h3>' +
       tbl(['Trade', 'Activities', 'Dated', 'In view', 'With WBS code', 'Under WBS branch(es)'],
         Object.keys(byTrade).sort().map(function (k) {
@@ -16361,6 +16485,9 @@
         '<button class="pd-btn pd-btn-primary" id="ps-diag-done">Close</button></div>';
 
     var m = UI.modal(html, { width: 900 });
+    // Fill the database section once the modal exists — the probes are round-trips and the rest of
+    // the report must not wait on them.
+    _diagProbeDb(m.el.querySelector('#ps-diag-db'));
     m.el.querySelector('#ps-diag-done').onclick = function () { m.close(); };
     // Plain-text copy, so the report can be pasted straight back to whoever is fixing it.
     m.el.querySelector('#ps-diag-copy').onclick = function () {
@@ -16402,6 +16529,120 @@
   // Nothing here is automatic. Re-pointing someone else's relationships is a big edit, so it names
   // exactly which activities it will change and asks first.
   function _predTokens(str) { return String(str || '').split(/[,;\n]+/).map(function (x) { return x.trim(); }).filter(Boolean); }
+  // ---- Split around a change order: the pure arithmetic ---------------------------------------
+  function splitGroupOf(r) { return (r && r.split_group) || null; }
+  function isSplitSeg(r) { return !!(r && r.split_group); }
+  // Every segment of a group, in stated order. Ordered by split_seq and NOT by date on purpose:
+  // dates move when the schedule is recalculated, and "part 2 of 3" must not silently become part 1.
+  function splitSegsOf(group) {
+    if (!group) return [];
+    return rows.filter(function (r) { return r.split_group === group; })
+      .sort(function (a, b) { return (a.split_seq || 0) - (b.split_seq || 0); });
+  }
+  // How a segment is labelled inside its line item. Derived, never stored: renaming the rows would
+  // make "(2 of 3)" wrong the moment a third CO is inserted, and would corrupt the real name.
+  function splitLabel(r) {
+    var g = splitGroupOf(r); if (!g) return '';
+    var segs = splitSegsOf(g); if (segs.length < 2) return '';
+    var i = segs.findIndex(function (x) { return x.id === r.id; });
+    return (i < 0) ? '' : ('part ' + (i + 1) + ' of ' + segs.length);
+  }
+  // THE DATE ARITHMETIC. `cut` is the first day the host STOPS working: the host keeps
+  // start..cut-1, the CO runs cut..cut+coDur-1, and the host's remaining days resume after it.
+  // ⚠️ The host's own work is NOT shortened — its remaining days move later, so the line item
+  // finishes coDur days further out. That is the owner's "extend the finish" decision and the
+  // honest CPM result: the variation's time impact is the thing a CO claim has to evidence.
+  // Returns null with a reason when the cut cannot produce two workable halves.
+  function splitPlan(hostStart, hostEnd, cut, coDur) {
+    if (!hostStart || !hostEnd || !cut) return { err: 'This activity has no start and finish to split.' };
+    var dur = dayDiff(hostStart, hostEnd) + 1;
+    if (dur < 2) return { err: 'A 1-day activity cannot be split — there is no point inside it. Lengthen it, or add the change order as its own activity.' };
+    if (cut <= hostStart) return { err: 'Pick a date AFTER the activity starts (' + Fmt.date(dstr(hostStart)) + ') — the first part needs at least one day.' };
+    if (cut > hostEnd) return { err: 'Pick a date on or before the activity finishes (' + Fmt.date(dstr(hostEnd)) + ') — the second part needs at least one day.' };
+    var d1 = dayDiff(hostStart, cut) ;              // days worked before the interruption
+    var d2 = dur - d1;                              // the host's remaining days, moved later
+    var co = Math.max(1, Math.round(coDur || 1));
+    var coStart = cut, coEnd = addDays(coStart, co - 1);
+    var s2 = addDays(coEnd, 1), e2 = addDays(s2, d2 - 1);
+    return {
+      seg1: { start: hostStart, end: addDays(cut, -1), dur: d1 },
+      co:   { start: coStart, end: coEnd, dur: co },
+      seg2: { start: s2, end: e2, dur: d2 },
+      shift: co                                     // how much later the line item now finishes
+    };
+  }
+  // Inserting a segment after `afterSeq` pushes every later segment down one. Returns the patches
+  // to apply, so the caller can write them in one pass and the ordering stays a pure function.
+  // A unique Activity ID, checked against everything currently in the project.
+  function splitFreeId(cand) {
+    var taken = {}; rows.forEach(function (r) { if (r.activity_id) taken[String(r.activity_id)] = 1; });
+    if (!taken[cand]) return cand;
+    for (var n = 2; n < 999; n++) if (!taken[cand + '-' + n]) return cand + '-' + n;
+    return cand + '-' + Date.now();
+  }
+  // THE WHOLE EDIT, as data. Returns { hostPatch, coRow, segRow, renumber, repoint } — nothing is
+  // written here, so the arithmetic and the relationship rewiring can be tested without a database.
+  // ⚠️ REWIRING IS THE PART THAT MATTERS. Whatever followed the host must now follow the host's
+  // REMAINDER, or the successor would start while the second half of the work is still going —
+  // silently, and looking perfectly normal on screen.
+  //   · the host keeps its own predecessors (it still starts when it always did)
+  //   · the CO follows the host                    (FS)
+  //   · the remainder follows the CO               (FS)
+  //   · everything that followed the host now follows the remainder, KEEPING its type and lag
+  function splitBuild(host, plan, co) {
+    var grp = host.split_group || ('SG-' + (host.activity_id || host.id) + '-' + rows.length);
+    var seq = host.split_seq || 1;
+    var coId = splitFreeId(co.ref ? String(co.ref).trim() : ((host.activity_id || 'CO') + '-CO'));
+    var segId = splitFreeId((host.activity_id || 'A') + '-P' + (seq + 1));
+    // The remainder is the SAME line item: same name, same WBS, same trade, same location, same
+    // scope. Only its dates, its id and its position in the group differ.
+    var segRow = {
+      activity_id: segId, activity_name: host.activity_name, activity_type: 'Task',
+      status: 'Not Started', percent_complete: 0,
+      start_date: dstr(plan.seg2.start), end_date: dstr(plan.seg2.end), duration_days: plan.seg2.dur,
+      predecessors: coId, wbs: host.wbs || null, wbs_node_id: host.wbs_node_id || null,
+      work_type: host.work_type || null, location: host.location || null,
+      phase: host.phase || null, scope_type: host.scope_type || null,
+      change_order_ref: host.change_order_ref || null,
+      activity_codes: host.activity_codes || {},
+      split_group: grp, split_seq: seq + 1
+    };
+    var coRow = {
+      activity_id: coId, activity_name: co.name || 'Change order', activity_type: 'Task',
+      status: 'Not Started', percent_complete: 0,
+      start_date: dstr(plan.co.start), end_date: dstr(plan.co.end), duration_days: plan.co.dur,
+      predecessors: host.activity_id || null, wbs: host.wbs || null, wbs_node_id: host.wbs_node_id || null,
+      work_type: host.work_type || null, location: host.location || null,
+      phase: host.phase || 'construction',
+      scope_type: 'change_order', change_order_ref: co.ref ? String(co.ref).trim() : null
+      // ⚠️ No split_group. The CO is its own line item that happens to sit in the gap — it is not
+      // part of the host's work, and folding it into the group would report its days as the host's.
+    };
+    // Successors of the host, excluding the two rows being created.
+    var repoint = [];
+    if (host.activity_id) {
+      rows.forEach(function (r) {
+        if (r.id === host.id || isWbs(r) || !r.predecessors) return;
+        if (_predTokens(r.predecessors).some(function (t) { return t.split(/\s+/)[0] === String(host.activity_id); })) {
+          repoint.push({ id: r.id, predecessors: _repointPred(r.predecessors, String(host.activity_id), segId) });
+        }
+      });
+    }
+    return {
+      hostPatch: { end_date: dstr(plan.seg1.end), duration_days: plan.seg1.dur, split_group: grp, split_seq: seq },
+      coRow: coRow, segRow: segRow,
+      renumber: splitRenumber(splitSegsOf(host.split_group), seq),
+      repoint: repoint
+    };
+  }
+  function splitRenumber(segs, afterSeq) {
+    var out = [];
+    segs.forEach(function (r) {
+      var q = r.split_seq || 0;
+      if (q > afterSeq) out.push({ id: r.id, split_seq: q + 1 });
+    });
+    return out;
+  }
   // Swap one predecessor's Activity ID for another INSIDE a predecessor string, keeping that entry's
   // relationship type and lag — re-pointing the edge, not replacing it with a default FS.
   function _repointPred(str, fromId, toId) {
@@ -16409,6 +16650,135 @@
       var m = tok.match(/^([A-Za-z0-9._\-]+)([\s\S]*)$/);
       return (m && m[1] === fromId) ? (toId + m[2]) : tok;
     }).join(', ');
+  }
+  // Right-click a main-contract activity -> "Insert change order here…". Asks for the date the work
+  // is interrupted, and the CO's name / reference / duration.
+  function openSplitDialog(hostId) {
+    var host = rows.find(function (x) { return x.id === hostId; });
+    if (!host || isWbs(host)) { UI.toast('Pick an activity to split.', 'warn'); return; }
+    var hs = pd(host.start_date), he = pd(host.end_date);
+    var probe = splitPlan(hs, he, hs ? addDays(hs, 1) : null, 1);
+    if (probe.err) { UI.toast(probe.err, 'warn'); return; }
+    // Default the cut to the middle of the activity — the least surprising place, and always valid.
+    var mid = addDays(hs, Math.max(1, Math.floor((dayDiff(hs, he) + 1) / 2)));
+    var m = UI.modal(
+      '<h3 style="margin:0 0 4px;font-size:15px;">Insert a change order into “' + esc(host.activity_name || host.activity_id || '') + '”</h3>' +
+      '<p style="margin:0 0 12px;font-size:12px;color:var(--pd-muted);">' +
+        'This activity keeps all ' + (dayDiff(hs, he) + 1) + ' of its own days. Its remaining work moves after the change order, so the line item finishes later — the variation\'s time impact.' +
+      '</p>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
+        '<label class="pd-label" style="grid-column:1/-1;">Work stops on<input class="pd-input" type="date" id="ps-sp-date" value="' + esc(dstr(mid)) + '"></label>' +
+        '<label class="pd-label">Change order name<input class="pd-input" id="ps-sp-name" placeholder="e.g. Additional slab openings" value=""></label>' +
+        '<label class="pd-label">Reference<input class="pd-input" id="ps-sp-ref" placeholder="e.g. VO-014" value=""></label>' +
+        '<label class="pd-label">Duration (days)<input class="pd-input" type="number" min="1" id="ps-sp-dur" value="1"></label>' +
+      '</div>' +
+      '<div id="ps-sp-prev" style="margin-top:10px;font-size:12px;color:var(--pd-muted);"></div>' +
+      '<div style="text-align:right;margin-top:14px;"><button class="pd-btn" id="ps-sp-x">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="ps-sp-go" style="margin-left:6px;">Insert change order</button></div>');
+    var $ = function (id) { return m.el.querySelector(id); };
+    // Live preview, so the three resulting spans are visible BEFORE anything is written.
+    function preview() {
+      var pl = splitPlan(hs, he, pd($('#ps-sp-date').value), parseInt($('#ps-sp-dur').value, 10) || 1);
+      if (pl.err) { $('#ps-sp-prev').innerHTML = '<span style="color:var(--pd-red);">' + esc(pl.err) + '</span>'; $('#ps-sp-go').disabled = true; return null; }
+      $('#ps-sp-go').disabled = false;
+      $('#ps-sp-prev').innerHTML =
+        '<b>part 1</b> ' + esc(Fmt.date(dstr(pl.seg1.start))) + ' → ' + esc(Fmt.date(dstr(pl.seg1.end))) + ' (' + pl.seg1.dur + 'd) · ' +
+        '<b>change order</b> ' + esc(Fmt.date(dstr(pl.co.start))) + ' → ' + esc(Fmt.date(dstr(pl.co.end))) + ' (' + pl.co.dur + 'd) · ' +
+        '<b>part 2</b> ' + esc(Fmt.date(dstr(pl.seg2.start))) + ' → ' + esc(Fmt.date(dstr(pl.seg2.end))) + ' (' + pl.seg2.dur + 'd)' +
+        '<div style="margin-top:3px;">Finishes ' + pl.shift + ' day' + (pl.shift === 1 ? '' : 's') + ' later than now.</div>';
+      return pl;
+    }
+    preview();
+    ['#ps-sp-date', '#ps-sp-dur'].forEach(function (sel) { $(sel).oninput = preview; });
+    $('#ps-sp-x').onclick = function () { m.close(); };
+    $('#ps-sp-go').onclick = async function () {
+      var pl = preview(); if (!pl) return;
+      m.close();
+      await applySplit(host, pl, { name: $('#ps-sp-name').value, ref: $('#ps-sp-ref').value });
+    };
+  }
+  async function applySplit(host, plan, co) {
+    var b = splitBuild(host, plan, co);
+    var n = 2 + b.renumber.length + b.repoint.length;
+    if (!confirm('Insert the change order into “' + (host.activity_name || host.activity_id) + '”?\n\n' +
+      '· this activity finishes ' + plan.seg1.dur + ' day(s) in, then resumes after the change order\n' +
+      '· 2 activities are created (the change order, and the remaining work)\n' +
+      (b.repoint.length ? '· ' + b.repoint.length + ' successor(s) will follow the remaining work instead of this row\n' : '') +
+      '\nThe line item finishes ' + plan.shift + ' day(s) later. Not per-step undoable.')) return;
+    showLoading('Inserting change order…');
+    var err = null;
+    try {
+      var ins = await sb().from(TABLE).insert([
+        Object.assign({ project_id: pid, created_by: UID }, b.coRow),
+        Object.assign({ project_id: pid, created_by: UID }, b.segRow)
+      ]).select();
+      if (ins.error) throw ins.error;
+      var up = await sb().from(TABLE).update(b.hostPatch).eq('id', host.id);
+      if (up.error) throw up.error;
+      for (var i = 0; i < b.renumber.length; i++) {
+        var rn = await sb().from(TABLE).update({ split_seq: b.renumber[i].split_seq }).eq('id', b.renumber[i].id);
+        if (rn.error) throw rn.error;
+      }
+      for (var j = 0; j < b.repoint.length; j++) {
+        var rp = await sb().from(TABLE).update({ predecessors: b.repoint[j].predecessors }).eq('id', b.repoint[j].id);
+        if (rp.error) throw rp.error;
+      }
+    } catch (e) { err = (e && e.message) ? e.message : String(e); }
+    hideLoading();
+    if (err) {
+      // ⚠️ Name the migration when the columns are the problem — this is the same failure mode the
+      // contract-scope columns had, and "could not save" with no cause is what sent the owner
+      // guessing for days.
+      UI.toast(/split_group|split_seq/.test(err)
+        ? 'Could not split: this project\'s database has no split columns. Run migrations/2026-08-21-schedule-split-change-orders.sql in the Supabase SQL editor, then reload.'
+        : 'Could not split: ' + err, 'error');
+      await load(); return;
+    }
+    logAudit(null, 'reschedule', { count: n, kind: 'split-change-order' });
+    resetUndo();
+    UI.toast('Change order inserted. “' + (host.activity_name || host.activity_id) + '” now finishes ' + plan.shift + ' day(s) later.', 'success');
+    await load();
+  }
+  // Undo a split: delete the remaining-work segments, give the host its full duration back, and
+  // send its successors back to it. The change orders themselves are LEFT ALONE — they are real
+  // scope and deleting them is never implied by "stop splitting the bar".
+  async function mergeSplit(hostId) {
+    var host = rows.find(function (x) { return x.id === hostId; }); if (!host) return;
+    var grp = splitGroupOf(host); if (!grp) { UI.toast('This activity is not split.', 'info'); return; }
+    var segs = splitSegsOf(grp); if (segs.length < 2) { UI.toast('This activity is not split.', 'info'); return; }
+    var first = segs[0], rest = segs.slice(1);
+    var totalDur = segs.reduce(function (t, r) { return t + (r.duration_days || 0); }, 0);
+    var fs = pd(first.start_date); if (!fs) { UI.toast('The first part has no start date.', 'warn'); return; }
+    var newEnd = addDays(fs, totalDur - 1);
+    if (!confirm('Merge “' + (first.activity_name || '') + '” back into one bar?\n\n' +
+      '· ' + rest.length + ' continuation row(s) are deleted\n' +
+      '· the activity becomes ' + totalDur + ' day(s), ending ' + Fmt.date(dstr(newEnd)) + '\n' +
+      '· its change order(s) are KEPT — delete them separately if that is what you want\n\nNot per-step undoable.')) return;
+    showLoading('Merging…');
+    var err = null;
+    try {
+      // Successors of the LAST segment come back to the surviving row before it disappears.
+      var lastId = String(segs[segs.length - 1].activity_id || '');
+      if (lastId && first.activity_id) {
+        for (var i = 0; i < rows.length; i++) {
+          var r = rows[i];
+          if (isWbs(r) || !r.predecessors || r.split_group === grp) continue;
+          if (!_predTokens(r.predecessors).some(function (t) { return t.split(/\s+/)[0] === lastId; })) continue;
+          var rp = await sb().from(TABLE).update({ predecessors: _repointPred(r.predecessors, lastId, String(first.activity_id)) }).eq('id', r.id);
+          if (rp.error) throw rp.error;
+        }
+      }
+      var del = await sb().from(TABLE).delete().in('id', rest.map(function (r) { return r.id; }));
+      if (del.error) throw del.error;
+      var up = await sb().from(TABLE).update({ end_date: dstr(newEnd), duration_days: totalDur, split_group: null, split_seq: null }).eq('id', first.id);
+      if (up.error) throw up.error;
+    } catch (e) { err = (e && e.message) ? e.message : String(e); }
+    hideLoading();
+    if (err) { UI.toast('Merge failed: ' + err, 'error'); await load(); return; }
+    logAudit(null, 'reschedule', { count: rest.length + 1, kind: 'split-merged' });
+    resetUndo();
+    UI.toast('Merged back into one ' + totalDur + '-day activity.', 'success');
+    await load();
   }
   async function offerCoSplice(coRow) {
     if (!coRow || !coRow.activity_id) return;
@@ -22731,7 +23101,8 @@
     if (field === 'scope_type' || field === 'change_order_ref') {
       var _skipped = rs.length; rs = rs.filter(isExecPhase);
       _skipped -= rs.length;
-      if (!rs.length) { UI.toast('Contract scope applies to execution-phase activities only — none of the selected rows are in it.', 'warn'); return; }
+      if (!rs.length) { UI.toast('Contract scope applies to the Execution Phase only, and none of the selected rows are in it. ' +
+        'The first one\'s phase is ' + _phaseWhy(_selectedTaskRows()[0] || null) + '. Set their Phase, then tag the scope.', 'warn'); return; }
       if (_skipped) UI.toast('Skipping ' + _skipped + ' row' + (_skipped === 1 ? '' : 's') + ' outside the execution phase.', 'info');
     }
     showLoading('Filling ' + rs.length + ' row' + (rs.length === 1 ? '' : 's') + '…');
@@ -23063,6 +23434,15 @@
     var nSel = _selSet.size || (r && r.id ? 1 : 0), selSfx = nSel > 1 ? ' (' + nSel + ')' : '';
     items.push('<button data-act="add"><span data-ico="plus" data-ico-size="14"></span> Add activity below <span style="color:var(--pd-muted);font-size:10px;">Insert</span></button>');
     if (r && !isW && r._dkind !== 'group') items.push('<button data-act="edit"><span data-ico="edit" data-ico-size="14"></span> Edit activity…</button>');
+    // Splitting a bar around a change order. Offered on a real dated activity only — and "Merge"
+    // only once there is something to merge, so the menu never advertises a no-op.
+    if (r && !isW && r._dkind !== 'group' && r.activity_id && !isMile(r)) {
+      items.push(sep);
+      items.push('<button data-act="splitco"><span data-ico="link" data-ico-size="14"></span> Insert change order here…</button>');
+      if (splitGroupOf(r) && splitSegsOf(splitGroupOf(r)).length > 1) {
+        items.push('<button data-act="mergeco">Merge split back into one bar…</button>');
+      }
+    }
     // Cell clipboard (Ctrl+C/X/V operate on cells) — shown whenever a cell is active.
     var rcCell = _cellRect(), nCell = rcCell ? ((rcCell.r1 - rcCell.r0 + 1) * (rcCell.c1 - rcCell.c0 + 1)) : 0;
     if (nCell) {
@@ -23109,6 +23489,8 @@
       var a = b.dataset.act; closeRowMenu();
       if (a === 'add') { if (r && r.id) { selId = r.id; quickAddActivity(r); } else { if (node) _wbsSel = node; openForm(null); } }
       else if (a === 'edit') { openForm(r); }
+      else if (a === 'splitco') { openSplitDialog(r && r.id); }
+      else if (a === 'mergeco') { mergeSplit(r && r.id); }
       else if (a === 'childwbs') { wbsAddChild(node); }
       else if (a === 'siblingwbs') { wbsAddChild(pnode ? pnode.parent_id : null); }
       else if (a === 'rootwbs') { wbsAddChild(null); }
