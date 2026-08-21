@@ -84,6 +84,49 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-21 — Both MoM migrations verified live (13 columns + 4 functions); the bucket cannot be probed
+Owner ran `2026-08-21-mom-schema-carryover-distribute.sql` and `2026-08-21-mom-type-and-attachments.sql`.
+Checked against the live database rather than trusting the success messages. **No code changed.**
+
+**Verified present** — all 13 columns and all 4 helper functions:
+- `mom_items`: `item_no`, `category`, `type`, `issue`, `action_item`, `carried_from_item_id`,
+  `attachment_url`, `attachment_name`
+- `meeting_minutes`: `is_distributed`, `distributed_at`, `distributed_by`, `carried_from_mom_id`,
+  `meeting_type`
+- functions `mom_is_visible`, `mom_is_distributed`, `mom_has_raised`, `mom_is_mine`
+
+**The oracles, calibrated — worth keeping, because two of the three are traps.**
+- ⚠️ **The column oracle works, but only on the HTTP STATUS, and only after calibration.** With the
+  publishable key `meeting_minutes`/`mom_items` return **42501 permission denied**, so the naive read
+  ("did it error?") says nothing. Against a deliberately fake column and a fake table the three cases
+  separate cleanly: **42703 = column absent · 42501 = column PRESENT (grant-blocked) · PGRST205 =
+  table absent.** Every reading above is a 42501, i.e. PostgREST resolved the column before the grant
+  check refused it.
+- **The RPC oracle works**: `PGRST202` = function absent, anything else = present. Confirmed by a
+  `zzz_no_such_fn` control that correctly reported missing.
+- ⚠️⚠️ **The storage-bucket oracle DOES NOT WORK AND MUST NOT BE USED.** Both
+  `/storage/v1/bucket/<b>` and `/storage/v1/object/public/<b>/x` return an identical
+  `404 NoSuchBucket` for **`drawing-register`, `progress-photos` and `material-submittal` — three
+  buckets that have existed since 2026-06-18 — and for two invented names.** The endpoint is blind to
+  anon. A first pass read `mom-attachments` → "Bucket not found" and would have been reported as *the
+  migration failed*; the control caught it. **This is the third time in this repo a probe has produced
+  a confident false negative** (after the `eyJ…` key regex and the REST-root "0 tables" reading) — the
+  rule holds: a probe result means nothing until a known-good control passes through the same path.
+
+⚠️ **Therefore still UNVERIFIED, and not claimed:**
+1. **The `mom-attachments` bucket and its three storage policies.** Not evidence of a problem — the
+   migration is `on conflict do nothing` + guarded, and its columns landed — simply unprobeable here.
+   **One-click check: Supabase Dashboard → Storage → `mom-attachments` should be listed with Public
+   OFF.** If it is missing, re-running section 3 of the file alone is safe.
+2. **The two one-shot backfills**, which need row access the anon key does not have: the action text
+   moved `description` → `action_item`, and every pre-existing minute set `is_distributed = true`.
+   ⚠️ If the second did NOT run, existing minutes default to `false` and become invisible to everyone
+   but their recorder — the loudest possible symptom, so it will not hide.
+3. **The RLS policies themselves.** Structurally checked only; they cannot be exercised from the SQL
+   editor either, since `auth.uid()` is NULL for the `postgres` role.
+4. **Every new control's click path** — upload, distribute/revert, carry-over, the filters — remains
+   unexercised against real data.
+
 ### 2026-08-21 — Minutes of Meeting: the last mom-app gaps closed (filters, meeting type, attachments)
 Owner: *"close the gaps by starting with the ongoing session."* **Run
 `migrations/2026-08-21-mom-type-and-attachments.sql`** (after the schema/carry-over/distribute one
