@@ -19550,7 +19550,62 @@
       // Stamping the baseline here baselined the project against its own first draft (every variance
       // zero) and, through _durLocked, made Planned Duration read-only on arrival. Baselining is a
       // deliberate act: Actions -> Baselines -> "Capture current as baseline", then set it primary.
-      function taskPayload(r, name) { return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), duration_days: r.dur, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null }; }
+      // The activity's CLASS CODE, resolved to an activity-code value id once the dictionaries
+      // below have been ensured. Left off entirely when there is no code or no dictionary — an
+      // empty map is what the column defaults to anyway.
+      function classCodesOf(r) {
+        var cc = r && r.act && r.act.code ? String(r.act.code).trim() : '';
+        if (!cc || !_ccTypeId || !_ccValueId[cc.toLowerCase()]) return null;
+        var m = {}; m[_ccTypeId] = _ccValueId[cc.toLowerCase()];
+        return m;
+      }
+      function taskPayload(r, name) { var _cc = classCodesOf(r); return { activity_id: r._id, activity_name: name, activity_type: 'Task', status: 'Not Started', start_date: iso2(r.start), end_date: iso2(r.finish), duration_days: r.dur, activity_codes: _cc || {}, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null }; }
+      // ---- Class codes -> activity codes ------------------------------------------------------
+      // ⚠️ Ensured BEFORE the payloads are built, because taskPayload needs the value ids. Reuses an
+      // existing "Class Code" type and any values already present, so a re-push adds nothing.
+      var _ccTypeId = null, _ccValueId = {}, _ccMsg = '', _ccNew = 0;
+      var CLASS_CODE_TYPE = 'Class Code';
+      var _ccWanted = {};
+      g.rows.forEach(function (r) {
+        var cc = r.act && r.act.code ? String(r.act.code).trim() : '';
+        if (cc) _ccWanted[cc.toLowerCase()] = cc;   // first spelling wins; the map dedupes by case
+      });
+      var _ccList = Object.keys(_ccWanted).map(function (k) { return _ccWanted[k]; }).sort();
+      if (_ccList.length) {
+        try {
+          // ⚠️ Project-scoped. CODE_TYPES holds whatever was last loaded, and activity_code_values is
+          // fetched WITHOUT a project filter, so matching on the name alone could adopt another
+          // project's 'Class Code' type and file every activity against its values.
+          var _ccT = (CODE_TYPES || []).filter(function (t) { return String(t.project_id) === String(pid) && String(t.name || '').trim().toLowerCase() === CLASS_CODE_TYPE.toLowerCase(); })[0];
+          if (!_ccT) {
+            var _ctr = await sb().from('activity_code_types').insert({ project_id: pid, name: CLASS_CODE_TYPE, sort_order: (CODE_TYPES || []).length, created_by: UID }).select().single();
+            if (_ctr.error) throw _ctr.error;
+            _ccT = _ctr.data; CODE_TYPES.push(_ccT);
+          }
+          _ccTypeId = _ccT.id;
+          // Keyed off the type id, which is already project-scoped — so the unfiltered CODE_VALUES
+          // fetch cannot leak another project's values in here.
+          (CODE_VALUES || []).forEach(function (v) {
+            if (v.code_type_id === _ccTypeId) _ccValueId[String(v.value || '').trim().toLowerCase()] = v.id;
+          });
+          var _ccMissing = _ccList.filter(function (c) { return !_ccValueId[c.toLowerCase()]; });
+          // Chunked, and matched back by value rather than by insert order — PostgREST does not
+          // promise the returned rows come back in the order sent (same caveat as the importer).
+          for (var _ci = 0; _ci < _ccMissing.length; _ci += 200) {
+            var _slice = _ccMissing.slice(_ci, _ci + 200);
+            var _vr = await sb().from('activity_code_values').insert(_slice.map(function (c, ix) {
+              return { code_type_id: _ccTypeId, project_id: pid, value: c, sort_order: _ci + ix };
+            })).select();
+            if (_vr.error) throw _vr.error;
+            (_vr.data || []).forEach(function (d) { _ccValueId[String(d.value || '').trim().toLowerCase()] = d.id; CODE_VALUES.push(d); _ccNew++; });
+          }
+        } catch (e) {
+          // The tables are missing (migration not run) or the write was refused. Push the schedule
+          // anyway — losing 2600 activities over a code dictionary would be a terrible trade.
+          _ccTypeId = null; _ccValueId = {};
+          _ccMsg = (e && e.message) ? e.message : String(e);
+        }
+      }
       var payloads = [], taskN = g.rows.length, wbsMsg = '', wbsUnnamed = {};
 
       if (!grouped) {
@@ -19827,7 +19882,7 @@
         }
       }
 
-      var CH = 500, ok = true, msg = '', scopeDropped = false;
+      var CH = 500, ok = true, msg = '', scopeDropped = false, codesDropped = false;
       // ⚠ The two contract-scope columns are the newest thing on this payload. If the project's
       // database has not had 2026-08-19-schedule-contract-scope.sql run yet, PostgREST rejects the
       // WHOLE insert for an unknown column — which would turn a missing migration into a total push
@@ -19836,11 +19891,22 @@
         scopeDropped = true;
         payloads.forEach(function (pl) { delete pl.scope_type; delete pl.change_order_ref; delete pl.phase; });
       }
+      // ⚠️ Same treatment for activity_codes: a project whose database predates
+      // 2026-07-07-activity-codes.sql has no such column, and PostgREST rejects the WHOLE insert
+      // for one unknown field. The class codes are worth having, not worth losing the push over.
+      function _dropCodes() {
+        codesDropped = true;
+        payloads.forEach(function (pl) { delete pl.activity_codes; });
+      }
       for (var i = 0; i < payloads.length; i += CH) {
         if (typeof showLoading === 'function') showLoading('Pushing to the project schedule… (' + Math.min(i + CH, payloads.length) + ' of ' + payloads.length + ' rows)');
         var res = await sb().from(TABLE).insert(payloads.slice(i, i + CH));
         if (res.error && !scopeDropped && /scope_type|change_order_ref|phase/.test(res.error.message || '')) {
           _dropScope();
+          res = await sb().from(TABLE).insert(payloads.slice(i, i + CH));
+        }
+        if (res.error && !codesDropped && /activity_codes/.test(res.error.message || '')) {
+          _dropCodes();
           res = await sb().from(TABLE).insert(payloads.slice(i, i + CH));
         }
         if (res.error) { ok = false; msg = res.error.message; break; }
@@ -19858,12 +19924,15 @@
             { n: taskN, l: 'Activities added' },
             { n: cfg.links ? cfg.links.length : 0, l: 'Relationships' },
             { n: wbsCount, l: 'WBS branches' },
-            { n: reorder.length, l: 'Branches corrected' }
+            { n: reorder.length, l: 'Branches corrected' },
+            { n: _ccList.length, l: 'Class codes' }
           ],
           // ⚠️ Name the ACTUAL error. This used to read only "run the wbs-nodes migration", which is
           // one possible cause among many — and it hid the reason the tree fell back to dotted codes,
           // which is the same failure that used to leave duplicated WBS rows behind.
           warnings: (scopeDropped ? ['Contract scope (Main Contract / Change Order) was NOT written — this project database is missing those columns. Run migrations/2026-08-19-schedule-contract-scope.sql in Supabase, then re-tag from the schedule grid Scope column.'] : [])
+            .concat(codesDropped ? ['Class codes were NOT written — this project database has no project_schedule.activity_codes column. Run migrations/2026-07-07-activity-codes.sql in Supabase and push again.'] : [])
+            .concat((_ccMsg && !codesDropped) ? ['Class codes were NOT written — the activity-code dictionaries could not be created. Reason: ' + _ccMsg + '. Run migrations/2026-07-07-activity-codes.sql in Supabase and push again.'] : [])
             .concat(wbsMsg ? ['WBS Manager not updated, so this push filed under dotted WBS codes instead of WBS-Manager branches. Reason: ' + wbsMsg] : [])
             .concat(Object.keys(wbsUnnamed || {}).length
               ? ['Some locations had no code or name, so their branch was named after its level instead: ' +
@@ -19879,6 +19948,11 @@
                  ' duration in step 1, so every location came out zero-length and was skipped. Enter durations in that column, or push the other basis.']
               : []),
           note: 'Filed ' + (base ? 'under <strong>' + e2(base) + '</strong>' : 'at the top level') + ' · ' + (basis === 'ext' ? 'External' : 'Internal') + ' durations. ' +
+            ((_ccList.length && _ccTypeId && !codesDropped)
+              ? 'Class codes arrived as the <strong>Class Code</strong> activity code' +
+                (_ccNew ? ' (' + _ccNew + ' new value' + (_ccNew === 1 ? '' : 's') + ')' : '') +
+                ' — group, filter or add a column by it. '
+              : '') +
             // The empty BL columns are deliberate, and saying so here is what stops them being
             // reported as a defect — which is how the opposite behaviour was reported.
             'This fills the <strong>current schedule</strong> only — no baseline is set, so durations stay editable. ' +
