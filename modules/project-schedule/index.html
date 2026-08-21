@@ -7749,18 +7749,23 @@
           // row hides itself as soon as its old heading's code is in `collapsed`, with no caret to
           // reopen it, which is how a whole floor's worth of zones can silently vanish.
           solo._dsolo = 1;
-          // This row IS the deepest grouping level, so it carries that level's identity - but as a
-          // QUALIFIER, not as the name. Replacing the name with the bucket value (its old behaviour)
-          // showed "U1" where the planner needs to read "Precast Works B3 - Z1 - U1": the merged row
-          // is the only row for this leaf, so losing the activity name loses it from the schedule.
-          // The bucket's own value is included here because this row replaced its heading; every
-          // shallower dimension is still a heading above and is subtracted by locSuffixOf. Anything
-          // DEEPER than this dimension is still included too, which is what lets one row carry
-          // "Basement - Zone 1" when the whole chain below it holds a single activity.
+          // This row IS the deepest grouping level, so it carries that level's identity. The bucket's
+          // own value is included because this row replaced its heading; every shallower dimension is
+          // still a heading above and is subtracted by locSuffixOf. Anything DEEPER than this
+          // dimension is still included too, which is what lets one row carry "Z1 - U1" when the
+          // whole chain below it holds a single activity — including a level the planner left out of
+          // the groupings entirely (Trade > Activity > Level > Unit still states the Zone here).
           var _soloLoc = locSuffixOf(solo, dims.slice(0, di));
           var _soloExtra = (dims[di].indexOf('loc:') === 0 || dims[di] === 'act') ? null : g;
-          solo._dlabel = null;
-          solo._dsuffix = [_soloExtra, _soloLoc].filter(Boolean).join(' - ') || null;
+          var _soloId = [_soloExtra, _soloLoc].filter(Boolean).join(' - ') || null;
+          // ⚠️ Is the activity's NAME already stated by a heading above this row? If it is, the row's
+          // job is to say WHERE, and repeating the name would crowd that out — so the location
+          // becomes the row's name. If it is NOT (a grouping with no Activity dimension), the name is
+          // the only statement of what the work is and MUST stay: losing it would lose it from the
+          // schedule. See the note above this block for the decision this reverses, and when.
+          var _actAbove = dims.slice(0, di).indexOf('act') >= 0;
+          if (_actAbove && _soloId) { solo._dlabel = _soloId; solo._dsuffix = null; }
+          else { solo._dlabel = null; solo._dsuffix = _soloId; }
           out.push(solo);
           var ss = pd(dispStart(solo)), se = pd(dispFin(solo));   // displayed dates — see the note above
           addSpan(gcode, ss, se); parentAnc.forEach(function (x) { addSpan(x, ss, se); });
