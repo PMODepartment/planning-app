@@ -681,3 +681,20 @@ begin
 end $$;
 create index if not exists project_schedule_scope_type_idx on project_schedule (project_id, scope_type);
 create index if not exists wbs_nodes_scope_type_idx        on wbs_nodes (project_id, scope_type);
+
+-- ---- project-schedule: split a main-contract activity around a change order --
+-- Idempotent, per MODULE_CONTRACT section 8. Rationale (why two activities and
+-- not one activity that knows it is split; why the finish extends) lives in
+-- migrations/2026-08-21-schedule-split-change-orders.sql.
+alter table project_schedule add column if not exists split_group text;
+alter table project_schedule add column if not exists split_seq   int;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'project_schedule_split_pair_chk') then
+    alter table project_schedule add constraint project_schedule_split_pair_chk
+      check ((split_group is null and split_seq is null)
+          or (split_group is not null and split_seq is not null and split_seq >= 1));
+  end if;
+end $$;
+create index if not exists project_schedule_split_group_idx
+  on project_schedule (project_id, split_group, split_seq);
