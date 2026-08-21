@@ -12037,7 +12037,12 @@
     if (_gset.labels === 'none') return '';
     var pct = _barPct(r), suf = pct == null ? '' : '  ' + pct + '%';
     if (_gset.labels === 'dates') return (r.start_date ? Fmt.date(r.start_date) : '') + (r.end_date && r.end_date !== r.start_date ? ' – ' + Fmt.date(r.end_date) : '') + suf;
-    return (r.activity_name || '') + suf;
+    // ⚠️ _dlabel FIRST — the same name the grid cell shows on this row. A row whose cell reads
+    // "Basement 3" while its own bar reads "Concrete" is one record answering to two names on one
+    // screen. The grid is the side that got this right (see the note above _dlabel's assignment):
+    // repeating the activity name under a heading of that name says nothing. The real activity name
+    // stays in the cell's title and in _barTip.
+    return (r._dlabel || r.activity_name || '') + suf;
   }
   function openGanttSettings() {
     var m = UI.modal('<h2 style="margin-top:0;">Gantt settings</h2>' +
