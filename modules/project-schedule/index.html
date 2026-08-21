@@ -9886,11 +9886,7 @@
     var wd = 0, we = 0;
     list.forEach(function (r) {
       var poc = plannedPOC(r); if (poc == null) return;
-      // ⚠️ The WEIGHT falls back with the figure. Weighting only by baseline duration left this at
-      // null for every un-baselined schedule even once plannedPOC had an answer, so the Planned and
-      // Planned-vs-Actual stacking views stayed empty.
       var bs = pd(r.bl_start), bf = pd(r.bl_finish);
-      if (!bs || !bf) { bs = pd(r.start_date); bf = pd(r.end_date); }
       var dur = (bs && bf) ? (dayDiff(bs, bf) + 1) : 0;
       if (dur > 0) { wd += dur; we += dur * poc; }
     });
@@ -12168,7 +12164,7 @@
       var v = r[field];
       return '<div class="ps-cell c-cost ps-editable" data-id="' + r.id + '" data-field="' + field + '" data-type="money">' + (v != null ? Fmt.money(v) : '') + '</div>';
     }
-    return '<div class="ps-cell c-poc"' + (poc != null ? ' title="' + esc('Planned ' + poc + '% by ' + Fmt.date(dstr(today())) + ' — ' + plannedPOCLabel(r)) + '"' : '') + '>' + (poc != null ? poc + '%' : '') + '</div>' +
+    return '<div class="ps-cell c-poc">' + (poc != null ? poc + '%' : '') + '</div>' +
       '<div class="ps-cell c-pct ps-editable" data-id="' + r.id + '" data-field="percent_complete" data-type="number">' + (r.percent_complete != null ? r.percent_complete + '%' : '') + _pctBar(r.percent_complete) + '</div>' +
       '<div class="ps-cell c-durpct ps-editable" data-id="' + r.id + '" data-field="dur_pct" data-type="dpct" title="Duration % Complete — sets Remaining Duration; independent of Physical % Complete">' + _durPct(r) + '%</div>' +
       money('planned_cost') + money('actual_cost') + money('earned_value') +
@@ -13295,25 +13291,9 @@
   }
 
   // ----- COST TAB -----
-  // Which dates a planned figure was measured against — 'baseline' when one has been captured,
-  // 'current' when it falls back to the working plan, null when the row has no dates at all.
-  // Every cell that shows a planned figure states this, so the two are never confused.
-  function plannedPOCBasis(r) {
-    if (!r) return null;
-    if (pd(r.bl_start) && pd(r.bl_finish)) return 'baseline';
-    return (pd(r.start_date) && pd(r.end_date)) ? 'current' : null;
-  }
-  function plannedPOCLabel(r) {
-    var b = plannedPOCBasis(r);
-    return b === 'baseline' ? 'vs the baseline (BL Start → BL Finish)'
-      : b === 'current' ? 'vs the current planned dates — no baseline captured yet' : '';
-  }
-  // Schedule-expected % complete by today (matches OPC's "Planned Value POC").
-  // ⚠️ Falls back from the baseline to the CURRENT planned dates — see the note above. Returning null
-  // for an un-baselined activity emptied this column on every freshly pushed schedule.
+  // Schedule-expected % complete by today, from baseline dates (matches OPC's "Planned Value POC").
   function plannedPOC(r) {
     var bs = pd(r.bl_start), bf = pd(r.bl_finish);
-    if (!bs || !bf) { bs = pd(r.start_date); bf = pd(r.end_date); }
     if (!bs || !bf) return null;
     var t0 = today();
     if (t0 <= bs) return 0;
