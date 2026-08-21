@@ -84,6 +84,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-21 — Finance's class code is now first-class schedule data (packaging step A)
+Owner set out the real flow: planner builds the schedule -> **procurement derives work-package scope and
+target installation FROM it** -> procurement backtracks the awarding date from lead time. Then asked
+which way the activity <-> work-package link should point.
+- ⚠️ **The answer: there are TWO links.** *Formation* (schedule -> procurement, once per package) decides
+  a package's scope and need-by. *Consumption* (activity -> package, ongoing) records which package
+  supplies an activity and drives the need-by push. 2026-08-20 built the second, which **presupposes** the
+  first — hence picking a package felt backwards, because the packages do not exist yet.
+- ⚠️ **But the blocker was neither direction: there was no shared key.** Verified: `project_schedule` had
+  no cost/class code column at all; the Schedule Builder **had** the class code and threw it away on push;
+  WPM's `work_packages.cost_code` is free text with no library. Both apps nominally speak Finance's
+  vocabulary and shared nothing in practice.
+- Read the owner's **Class Code Mapping Template**: 702 Level-3 codes / 205 groups / 42 divisions.
+  New `migrations/2026-08-21-class-codes.sql` (**MUST BE RUN**) seeds a `class_codes` master and adds
+  `project_schedule.class_code`.
+- ⚠️⚠️ **Never de-zero the code.** The template's de-zeroed column is not unique: `015051` (Gen Req >
+  Earthmoving) vs `15051` (Metal Works > Railings), and `017151` vs `17151`. De-zeroing merges unrelated
+  cost codes, and the merge looks like a successful match so nothing errors. The padded code is the key,
+  and the field is an enum everywhere — it must be picked, not typed.
+- ⚠️ **Levels are stored, not parsed** — `code_l1` is not reliably the first two characters (5 rows break
+  it), so a substring would mis-file them into the wrong division.
+- Gives the schedule a grid column with a roll-up (a branch states a code only when every activity beneath
+  agrees), the form field, search across the code and all three description levels, Global Change, the
+  builder push, and **three grouping levels — Division / Group / Item** that cross with the location
+  levels. That last part is the owner's "packaging varies per package" answer: candidate scope can be
+  grouped at whichever level a package is actually bought at.
+- ⚠️ **Collides with concurrent work.** Another session simultaneously wrote the builder's class code into
+  `activity_codes` as a per-project P6-style code type. Both are in the file and `taskPayload` writes both
+  — two representations of one fact. Theirs needs no migration but is per-project, flat, from the 197-code
+  subset, and builder-only. Recommend keeping the column + chart as canonical and retiring the mirror;
+  left in place as it is the other author's work. See `modules/project-schedule/CLAUDE.md`.
+- 53 checks green against the shipped helpers; migration structurally verified; 0 functions lost.
+  ⚠️ **Not verified signed-in** and the migration is not run. `MODULE_V` -> `20260821a` (and
+  `modules-grid.js?v=` bumped to match — it was still served as `20260820c`, so the MODULE_V bump inside
+  it could not reach anyone).
+
+
 ### 2026-08-21 — Minutes of Meeting exports a PDF in the standalone mom-app's exact format
 Owner: *"There is a minutes of the meeting app of the same github account of a different repository.
 Let's implement the download pdf feature following exactly the same format of the exported pdf."*
