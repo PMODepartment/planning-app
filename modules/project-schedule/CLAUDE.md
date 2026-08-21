@@ -1,5 +1,29 @@
 # Module: project-schedule
 
+## Procurement trades kept re-mis-nesting on every reload — duplicate skeleton roots (2026-08-21) — fmlozano
+User: *"The trades are not showing properly in the procurement dashboard."* Screenshot showed the
+console printing a DIFFERENT `[ps] healed N mis-nested procurement node(s) back onto the skeleton
+root` count on successive loads (18, then 17) instead of converging to 0 — the heal was never
+finishing, so `syncProcurement`'s trade branches kept shifting parent.
+- ⚠️ **`_wbsDedupeSkeletonPass` cannot merge two ROOT markers.** It keys duplicates by
+  `(parent_id, name)`, but if two nodes both carry `source_kind === 'procurement'` (the root marker
+  itself) under DIFFERENT parents — one from the original skeleton seed, one re-created by an
+  earlier version of the resolver — they key differently and are invisible to it.
+- With two root candidates present, `_skeletonRoot`'s tie-break (exact-kind match, then earliest
+  `created_at`) can pick a **different** one across loads as `WBS_NODES`' ordering shifts (concurrent
+  tabs, ongoing syncs) — so `_healSkeletonNesting` re-parents one root's children onto the OTHER root
+  on one load, and the reverse on the next. That is the fluctuating heal count; it was never going
+  to settle.
+- **Fix: `_dedupeSkeletonRoots(kind)`**, run at the top of `_healSkeletonNesting` before
+  `_skeletonRoot` is consulted. Merges every extra `source_kind === kind` node into the earliest one
+  (re-parenting children, moving activities' `wbs_node_id`, dropping the duplicate's own WBS-Summary
+  row before deleting it — the same lossless pattern `_wbsDedupeSkeletonPass` already uses), so there
+  is exactly one root candidate left. `_healSkeletonNesting`'s existing per-child heal + the general
+  dedupe pass then have a stable target and should converge to 0 on the next load.
+- Verified: inline script parses (1 block, 0 fail). ⚠️ **Not verified signed-in** — needs a live
+  reload of the affected project to confirm the heal count drops to 0 and the trade branches stop
+  moving. `MODULE_V` → `20260821c` (dashboard.html + modules.html + modules-grid.js's own `?v=`).
+
 ## Finance's class code becomes first-class schedule data (2026-08-21) — fmlozano
 Step A of the schedule → procurement packaging flow the owner set out: planner builds the schedule →
 procurement derives work-package scope and target installation FROM it → procurement backtracks the

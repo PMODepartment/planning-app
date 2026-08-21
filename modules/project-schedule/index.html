@@ -4212,8 +4212,39 @@
   // summary rows onto the survivor). Deleting instead would orphan live rows.
   // ⚠️ Runs only for a writer, and only when there is something to fix, so a healthy project pays
   // one array scan and no round-trips.
+  // ⚠️ There must only ever be ONE node with `source_kind === kind` (the root marker itself) per
+  // project — but `_wbsDedupeSkeletonPass` keys on (parent_id, name), so two root-marked nodes
+  // under DIFFERENT parents (e.g. one still under its original skeleton parent, one re-created
+  // elsewhere by an earlier bug) are invisible to it. `_skeletonRoot`'s tie-break then oscillates
+  // across loads as WBS_NODES' creation-time ordering shifts (concurrent tabs, re-syncs), which is
+  // what produced a different "healed N mis-nested node(s)" count on every reload instead of
+  // converging to 0. Merge every extra root marker into the earliest one FIRST, so there is exactly
+  // one candidate left for `_skeletonRoot` to resolve.
+  async function _dedupeSkeletonRoots(kind) {
+    if (!pid || !canWrite) return 0;
+    var marks = WBS_NODES.filter(function (n) { return n.source_kind === kind; })
+      .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); });
+    if (marks.length < 2) return 0;
+    var keep = marks[0], merged = 0;
+    for (var i = 1; i < marks.length; i++) {
+      var dropId = marks[i].id;
+      await sb().from('wbs_nodes').update({ parent_id: keep.id }).eq('parent_id', dropId);
+      await sb().from(TABLE).delete().eq('wbs_node_id', dropId).eq('activity_type', 'WBS Summary');
+      await sb().from(TABLE).update({ wbs_node_id: keep.id }).eq('wbs_node_id', dropId);
+      var dres = await sb().from('wbs_nodes').delete().eq('id', dropId);
+      if (dres.error) continue;
+      WBS_NODES = WBS_NODES.filter(function (n) { return n.id !== dropId; });
+      WBS_NODES.forEach(function (n) { if (n.parent_id === dropId) n.parent_id = keep.id; });
+      rows.forEach(function (r) { if (r.wbs_node_id === dropId) r.wbs_node_id = keep.id; });
+      merged++;
+    }
+    if (merged) console.warn('[ps] merged ' + merged + ' duplicate ' + kind + ' root node(s)');
+    return merged;
+  }
+
   async function _healSkeletonNesting(kind) {
     if (!pid || !canWrite || window.__viewOnly || window.__archived) return 0;
+    await _dedupeSkeletonRoots(kind);
     var root = _skeletonRoot(kind);
     if (!root) return 0;
     var bad = WBS_NODES.filter(function (n) {
