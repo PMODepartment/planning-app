@@ -6089,20 +6089,6 @@
       dim === 'cc1' || dim === 'cc2' || dim === 'cc3' ||
       dim.indexOf('loc:') === 0 || dim.indexOf('code:') === 0;
   }
-  // Do any of these later dimensions still add a level for this bucket?
-  // ⚠️ A dimension that does NOT dissolve on a blank (status / type / act / responsible / wbs) always
-  // produces a bucket — 'Not Started', 'Task', the activity's own name — so it is never exhausted,
-  // whatever the data looks like. Only a dissolving dimension (trade / work package / phase /
-  // location level / activity code) can be genuinely absent, and then only when EVERY row in the
-  // bucket lacks it: one row with a zone means the Zone level is real for this branch.
-  function _dimsExhausted(bucket, rest) {
-    for (var q = 0; q < rest.length; q++) {
-      var d = rest[q];
-      if (!dimNeedsValue(d)) return false;
-      for (var w = 0; w < bucket.length; w++) if (dimRawOf(bucket[w], d)) return false;
-    }
-    return true;
-  }
   function dimLabel(dim) {
     if (dim === 'wbs') return 'WBS';
     if (dim === 'act') return 'Activity';
@@ -7713,18 +7699,20 @@
       // ⚠️ The grid keeps its natural BUILD order (bottom-up), always. It used to be reversible to
       // line up with the docked stacking pane; that pane is gone, and the toolbar Vertical Stacking
       // view has its own display order, so nothing reorders the grid behind the planner's back.
-      var _lastDim = (di === dims.length - 1);
-      // Dimensions still to come after this one — tested per bucket below, because "is this the
-      // bottom?" is a question about the DATA in that branch, not about the picker's length.
-      var _restDims = dims.slice(di + 1);
-      // ⚠️ UNIFORMITY OVERRIDE (owner's call, 2026-08-21): the per-bucket solo-merge below is correct
-      // in isolation but produces a visually broken list when SIBLING buckets at this same level
-      // disagree — some floors show as "Floor(6)" group headers, others collapse straight to a flat
-      // "Concrete· B3" row with no heading at all. If ANY sibling at this level still has real data on
-      // a deeper dimension, force every bucket at this level (including solo ones) to render as a
-      // normal group header, so the floor list reads uniformly. Only when EVERY sibling is equally
-      // terminal (nothing anywhere goes deeper) does the flat one-row-per-leaf shape apply.
-      var _forceGroup = !_lastDim && _keys.some(function (k) { return !_dimsExhausted(buckets[k], _restDims); });
+      // ⚠️⚠️ A UNIFORMITY OVERRIDE WAS ADDED HERE AND HAS BEEN REMOVED — c5790fe, "force uniform
+      // group headers for sibling location levels", and my own 67ede52 before it. Both said: if any
+      // sibling at this level still has data on a deeper dimension, force EVERY bucket here to
+      // render as a group header so the floor list reads uniformly. The reasoning is sound in the
+      // abstract and the intent was the owner's, but it is what produced the list the owner then
+      // reported as still wrong: B3(1), B2(1), B1(1), Roof Deck(1), Upper Roof Deck(1) — five
+      // heading rows each followed by their one activity, ten rows for five records, the heading
+      // being the copy without Status / BL Start / BL Finish / %.
+      // The owner settled it with two worked examples (2026-08-21, after that commit):
+      //     Roof Deck, no zones      Structural > Activity > "Concrete · Roof Deck"
+      //     Basement, with zones     Structural > Activity > Basement > "Concrete · Zone 1"
+      // i.e. siblings SHOULD differ when their data differs. A uniform list is not the goal; an
+      // honest one is. Anyone re-opening this: the uniformity rule has now been tried twice and
+      // reverted twice — take it to the owner with those two examples before trying a third.
       _keys.forEach(function (g) {
         var gcode = parentCode + '§' + g;
         // ⚠️ DEEPEST LEVEL HOLDING EXACTLY ONE ACTIVITY = one row, not two. Without this, an
@@ -7734,14 +7722,16 @@
         // Emit the ACTIVITY itself carrying the group's label, so every one of those columns is
         // populated by the normal task-row rendering and the deepest row really is the last level
         // that was ticked.
-        // ⚠️ PER BUCKET, deliberately — and this is the reverse of what the previous commit did.
-        // The owner's rule: the deepest level that a BRANCH actually populates becomes the activity
-        // row. Basement keeps its heading because Zone has values below it; Roof Deck, with nothing
-        // below it, IS the activity row. Two floors side by side therefore CAN render differently,
-        // and that difference is the information — it is how the tree shows that one has zones and
-        // the other does not.
-        var _terminal = _lastDim || _dimsExhausted(buckets[g], _restDims);
-        if (_terminal && !_forceGroup && !showWbs && buckets[g].length === 1) {
+        // ⚠️ ONE ACTIVITY IN THE BUCKET = ONE ROW. No test of what later dimensions hold, because a
+        // heading over a single activity states nothing the row cannot state itself, and the
+        // qualifier below (locSuffixOf) already carries every location level the headings above have
+        // not said. Requiring the later dimensions to be empty as well is what produced B2(1) + its
+        // activity, and Basement(1) + Zone 1(1) + its activity: duplicate rows whose heading copy is
+        // the one missing Status / BL Start / BL Finish / %.
+        // Two floors side by side therefore still CAN render differently — Roof Deck as a row,
+        // Ground Floor as a heading — because one holds one activity and the other holds six. That
+        // difference is the information. See the note above about the uniformity override.
+        if (!showWbs && buckets[g].length === 1) {
           var solo = buckets[g][0];
           solo._dcode = gcode; solo._ddepth = parentAnc.length; solo._danc = parentAnc;
           solo._dkind = 'task'; solo._realCode = solo.wbs;
@@ -7750,7 +7740,9 @@
           // showed "U1" where the planner needs to read "Precast Works B3 - Z1 - U1": the merged row
           // is the only row for this leaf, so losing the activity name loses it from the schedule.
           // The bucket's own value is included here because this row replaced its heading; every
-          // shallower dimension is still a heading above and is subtracted by locSuffixOf.
+          // shallower dimension is still a heading above and is subtracted by locSuffixOf. Anything
+          // DEEPER than this dimension is still included too, which is what lets one row carry
+          // "Basement - Zone 1" when the whole chain below it holds a single activity.
           var _soloLoc = locSuffixOf(solo, dims.slice(0, di));
           var _soloExtra = (dims[di].indexOf('loc:') === 0 || dims[di] === 'act') ? null : g;
           solo._dlabel = null;
