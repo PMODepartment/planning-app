@@ -5581,6 +5581,9 @@
   // ---- WBS-code helpers + precomputed caches (rebuilt only when rows change) ----
   function segs(c) { return String(c == null ? '' : c).split('.'); }
   var _sorted = [], _min = null, _max = null, _spanMap = {}, _blSpanMap = {}, _costMap = {}, _seqByCode = {};
+  // The same two span roll-ups keyed by wbs_node_id instead of by dotted code — the tree the WBS
+  // Manager shows, rather than whatever the code strings currently spell. See the note in rebuild().
+  var _spanMapN = {}, _blSpanMapN = {};
   // ⚠️ The SAME roll-up, keyed by wbs_node_id instead of by dotted code — see the note at the
   // _costMap build. This one follows wbs_nodes.parent_id, so it is the tree the WBS Manager shows
   // rather than whatever the code strings currently happen to spell.
@@ -5711,7 +5714,24 @@
     //     bands inside it and the grid's Start/Finish column must all describe the same dates; they
     //     did not, so on any STARTED branch (foundations, in the report) the bands were offset from
     //     their own bracket by the actual-vs-planned slip and the clip-path ate the overflow.
-    _spanMap = {}; _blSpanMap = {};
+    _spanMap = {}; _blSpanMap = {}; _spanMapN = {}; _blSpanMapN = {};
+    // ⚠️ Hoisted so the span pass and the cost pass below share ONE parent map and one memo. Walking
+    // WBS_NODES.find() per row per level is O(rows x depth x nodes), and this runs on 4k-activity
+    // projects; building it twice was pure waste on top of that.
+    var _parentOfNode = {}; WBS_NODES.forEach(function (n) { _parentOfNode[n.id] = n.parent_id || null; });
+    var _ancNodeMemo = {};
+    function _ancNodes(nodeId) {
+      if (!nodeId) return [];
+      if (_ancNodeMemo[nodeId]) return _ancNodeMemo[nodeId];
+      var out = [], seen = {}, cur = nodeId, guard = 0;
+      // Includes the node ITSELF, so an activity filed directly on a branch counts toward it.
+      // ⚠️ The `seen` set, not just the depth cap: on a cyclic parent chain a cap alone keeps walking
+      // and accumulates the same activity once per level, turning a malformed tree into a wildly
+      // INFLATED roll-up. Each node counts once.
+      while (cur && !seen[cur] && guard++ < 200) { seen[cur] = 1; out.push(cur); cur = _parentOfNode[cur]; }
+      _ancNodeMemo[nodeId] = out;
+      return out;
+    }
     function _mergeSpan(map, codes, a, b) {
       for (var i = 0; i < codes.length; i++) { var m = map[codes[i]];
         if (!m) map[codes[i]] = { s: a, e: b }; else { if (a < m.s) m.s = a; if (b > m.e) m.e = b; } }
@@ -5719,12 +5739,15 @@
     rows.forEach(function (r) {
       if (isWbs(r)) return;
       var codes = [r.wbs].concat(r._anc || []);
+      // ⚠️ And up the REAL tree. This is the half that makes a branch report its descendants when the
+      // codes have drifted — see the note above this function.
+      var nodes = _ancNodes(r.wbs_node_id);
       var s = pd(dispStart(r)), e = pd(dispFin(r)); if (s || e) { if (!s) s = e; if (!e) e = s;
-        _mergeSpan(_spanMap, codes, +s, +e); }
+        _mergeSpan(_spanMap, codes, +s, +e); _mergeSpan(_spanMapN, nodes, +s, +e); }
       // Baseline roll-up (BL0) — same tree walk, from bl_start/bl_finish, so WBS summaries get a
       // planned-baseline span too (keyed by real dotted code; used in the default WBS grouping).
       var bs = pd(r.bl_start), be = pd(r.bl_finish); if (bs || be) { if (!bs) bs = be; if (!be) be = bs;
-        _mergeSpan(_blSpanMap, codes, +bs, +be); }
+        _mergeSpan(_blSpanMap, codes, +bs, +be); _mergeSpan(_blSpanMapN, nodes, +bs, +be); }
     });
     // Fallback for a branch that holds no activities at all: seed it from the summary row's own
     // stored dates, so an empty branch still draws a bracket instead of silently vanishing.
@@ -5751,23 +5774,6 @@
     // baseline, hence the separate wdPoc denominator).
     _costMap = {};
     _costMapN = {};
-    // Parent chain per node, resolved once. Walking WBS_NODES.find() per row per level would be
-    // O(rows x depth x nodes) — measurably slow on the 4k-activity projects this runs on.
-    var _parentOfNode = {}; WBS_NODES.forEach(function (n) { _parentOfNode[n.id] = n.parent_id || null; });
-    var _ancNodeMemo = {};
-    function _ancNodes(nodeId) {
-      if (!nodeId) return [];
-      if (_ancNodeMemo[nodeId]) return _ancNodeMemo[nodeId];
-      var out = [], seen = {}, cur = nodeId, guard = 0;
-      // Includes the node ITSELF, so an activity filed directly on a branch counts toward that
-      // branch as well as its ancestors.
-      // ⚠️ The `seen` set, not just the depth cap: on a cyclic parent chain a cap alone keeps
-      // walking and accumulates the same activity once per level (measured: 100x on a 2-node
-      // cycle), turning a malformed tree into a wildly INFLATED roll-up. Each node counts once.
-      while (cur && !seen[cur] && guard++ < 200) { seen[cur] = 1; out.push(cur); cur = _parentOfNode[cur]; }
-      _ancNodeMemo[nodeId] = out;
-      return out;
-    }
     rows.forEach(function (r) {
       if (isWbs(r)) return;
       var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : 0;
@@ -8804,14 +8810,22 @@
   }
 
   // rolled-up span for a WBS row (over descendants)
+  // ⚠️ Precedence, same as cmOf(): a DISPLAY-scoped entry wins (in a grouped view a branch holds only
+  // the activities that landed in this group), then the wbs_nodes TREE, then the dotted code as the
+  // fallback for rows with no wbs_node_id — imports, hand-typed WBS, pre-wbs_nodes projects.
   function wbsSpan(w) {
-    var m = _dspan[dcode(w)]; if (!m) return null;
+    var m = _dspan[dcode(w)] || (w.wbs_node_id ? _spanMapN[w.wbs_node_id] : null); if (!m) return null;
     return { s: new Date(m.s), e: new Date(m.e) };
   }
-  // Rolled-up BASELINE span for a WBS summary (keyed by real dotted code; WBS grouping).
+  // Rolled-up BASELINE span for a WBS summary.
   function wbsBlSpan(w) {
-    // Grouped mode: the roll-up is keyed by DISPLAY code (a group has no dotted WBS code of its own).
-    var m = (_dblspan && _dblspan[dcode(w)]) || (w.wbs ? _blSpanMap[w.wbs] : null); if (!m) return null;
+    // ⚠️ Still NO fallback to the summary row's own stored bl_* — that is stale imported data and it
+    // drew a pane-wide rail beside a two-week bar. A branch whose descendants carry no baseline must
+    // render no rail. What changed is only that the descendants are now FOUND when the codes drifted.
+    var m = (_dblspan && _dblspan[dcode(w)]) ||
+            (w.wbs_node_id ? _blSpanMapN[w.wbs_node_id] : null) ||
+            (w.wbs ? _blSpanMap[w.wbs] : null);
+    if (!m) return null;
     return { s: new Date(m.s), e: new Date(m.e) };
   }
 
