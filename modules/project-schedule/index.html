@@ -592,6 +592,9 @@
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
     .ps-tk-wbs { color:var(--pd-ink); font-weight:800; }
     .ps-tk-mile { color:var(--pd-red); border-color:var(--pd-red-mid, var(--pd-red)); background:var(--pd-red-light); }
+    /* A Work Package is work like a Task, so it reads in the same family — just weightier, since it
+       is the contractual/procurement unit the Tasks under it roll into. */
+    .ps-tk-wp { color:var(--pd-ink); font-weight:800; border-color:var(--pd-line); }
     .ps-grid-row.ps-rowdragging { opacity:.45; }
     .ps-grid-row.ps-drop-above { box-shadow:inset 0 2px 0 0 var(--pd-red); }
     .ps-grid-row.ps-drop-below { box-shadow:inset 0 -2px 0 0 var(--pd-red); }
@@ -2556,7 +2559,7 @@
         <div class="ps-form-full" id="ps-f-scope-na" style="display:none;font-size:12px;color:var(--pd-muted);margin-top:-4px;">
           Contract scope applies to <strong>execution-phase</strong> activities only. Place this activity under an execution-phase WBS branch (or set its Phase) to identify it as main contract or change order.
         </div>
-        <div><label class="pd-label">Activity Type</label><select class="pd-select" id="ps-f-type-sel"><option>Task</option><option>WBS Summary</option><option>Start Milestone</option><option>Finish Milestone</option></select></div>
+        <div><label class="pd-label">Activity Type</label><select class="pd-select" id="ps-f-type-sel"><option>Task</option><option>Work Package</option><option>WBS Summary</option><option>Start Milestone</option><option>Finish Milestone</option></select></div>
         <div><label class="pd-label">Status</label><select class="pd-select" id="ps-f-status-sel"><option>Not Started</option><option>In Progress</option><option>Completed</option></select></div>
         <div><label class="pd-label">Baseline Start</label><input class="pd-input" id="ps-f-bls" type="date" /></div>
         <div><label class="pd-label">Baseline Finish</label><input class="pd-input" id="ps-f-blf" type="date" /></div>
@@ -9196,7 +9199,7 @@
       return '<h4>' + esc(ct.name) + '</h4>' + (vals.length ? vals.map(function (v) { return cbCode(ct.id, v); }).join('') : '<span style="color:var(--pd-muted);font-size:12px;">No values defined yet.</span>');
     }).join('');
     menu.innerHTML = '<h4>Status</h4>' + ['Not Started','In Progress','Completed'].map(function(s){return cb('status',s);}).join('') +
-      '<h4>Type</h4>' + ['WBS Summary','Task','Start Milestone','Finish Milestone'].map(function(t){return cb('type',t);}).join('') +
+      '<h4>Type</h4>' + ['WBS Summary','Task','Work Package','Start Milestone','Finish Milestone'].map(function(t){return cb('type',t);}).join('') +
       '<h4>Schedule</h4><label><input type="checkbox" id="ps-f-behind"' + (filters.behind?' checked':'') + '> Behind schedule (overdue / late vs baseline)</label>' +
       '<label><input type="checkbox" id="ps-f-crit"' + (filters.crit?' checked':'') + '> Critical path only</label>' +
       '<h4>Contract scope</h4>' +
@@ -10750,7 +10753,7 @@
         (PACKAGES.length
           ? _gf('Contract Package' + (!r.package_id && packageOf(r) ? ' (inherited: ' + packageShort(packageOf(r)) + ')' : ''), 'package_id', 'select', r, packageSelOpts())
           : _gf('Contract Package', 'package_id', 'ro', { package_id: 'none defined — add one on the project Dashboard' })) +
-        _gf('Type', 'activity_type', 'select', r, ['Task', 'WBS Summary', 'Start Milestone', 'Finish Milestone']) +
+        _gf('Type', 'activity_type', 'select', r, ['Task', 'Work Package', 'WBS Summary', 'Start Milestone', 'Finish Milestone']) +
         _gf('Duration Type', 'duration_type', 'select', r, ['', 'Fixed Duration & Units/Time', 'Fixed Units/Time', 'Fixed Duration & Units', 'Fixed Work']) +
         _gf('% Complete Type', 'percent_complete_type', 'select', r, ['', 'Duration', 'Physical', 'Units'])) +
       _gGroup('Assignment',
@@ -12441,7 +12444,7 @@
   }
   function taskCellHtml(r) {
     var k = taskKindOf(r);
-    var cls = k === 'WBS' ? 'ps-tk-wbs' : (k === 'Task' ? 'ps-tk-task' : 'ps-tk-mile');
+    var cls = k === 'WBS' ? 'ps-tk-wbs' : (k === 'Task' ? 'ps-tk-task' : (k === 'Work Package' ? 'ps-tk-wp' : 'ps-tk-mile'));
     return '<div class="ps-cell c-task"><span class="ps-tk ' + cls + '">' + esc(k) + '</span></div>';
   }
   // ---- Constraint + Contract Scope cells -----------------------------------------------------

@@ -7057,3 +7057,21 @@ geometry and DOM lifecycle and explicitly recorded that no generated PDF had eve
 Verified on a real produced file: **216,539 bytes with a 1438×1406 image** (was 3,058 and none),
 and the extracted page shows mom-app's format exactly. 77/77 suite checks green; 0 functions lost.
 `MODULE_V` → `20260822e`. ⚠️ Not verified signed-in.
+
+## 2026-08-22 — "Work Package" is now a first-class activity type
+
+Owner: procurement lines under General Requirements were showing **TASK** in the Task column when
+they are really work packages. `activity_type` only offered Task / WBS Summary / Start Milestone /
+Finish Milestone, so there was no accurate value to store.
+
+`Work Package` added to all four type pickers (Add-activity form, details panel, filter menu, and
+it was already free-text in Global Change), plus its own quiet pill `.ps-tk-wp`.
+
+⚠️ **It schedules exactly like a Task on purpose.** `taskKindOf()` already echoes any type it does
+not recognise, and `isWbs()` / `isMile()` are the only gates the engine uses — grep confirms no
+other code compares `activity_type === 'Task'`, so the new value changes the *label* and nothing
+about CPM, roll-up, or float. Bulk-apply it with **Actions → Global Change** (Activity Type →
+`Work Package`) over the rows you want.
+
+⚠️ **Not verified against the DB.** If `schedule_activities.activity_type` carries a CHECK
+constraint, saving will 400 until `Work Package` is added to it. `MODULE_V` → `20260822f`.
