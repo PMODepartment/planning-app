@@ -1,3 +1,64 @@
+## The heal is now a BACKSTOP, not the mechanism — creators project their own rows (2026-08-22) — fmlozano
+Owner, after the sweep fix landed: *"Check there are cases that this happens then the heal makes it
+disappear. Let's track the root cause so that the heal becomes a backup not the main solution."* Right
+call — the sweep was the acute bug, this is the structural one behind it.
+
+**Audit 1 — every delete that touches `project_schedule`** (18 sites). Only ONE could ever take out a
+projection, and it is the one already fixed: `syncProcurement`'s stale sweep, which scoped candidates
+**by WBS node** and so pulled the trade nodes' own summary rows into the sweep.
+- `syncDesignDevelopment`'s sweep scopes by `.like('activity_id','DD-%')` — a projection has no
+  `activity_id`, so it can never match. **Safe.**
+- The split-merge (`rest.map`), undo/redo, row delete, bulk delete, Clear and the two import-replace
+  paths are all deliberate, confirmed, user-initiated. **Safe.**
+- `_wbsDedupeSummariesByCode` and the heal's own `dupIds` pass delete only *duplicate* rows, and the
+  former already refuses a group whose rows are backed by **different** nodes (two real branches whose
+  dotted codes merely collided). **Safe.** ⚠️ One residual noted, not changed: a group where **no** row
+  carries a `wbs_node_id` scores `distinct === 0` and passes that guard. Import-generated codes are
+  unique per branch so it should be unreachable, but it is the one path that could delete an unlinked
+  row that was not a duplicate.
+
+**Audit 2 — every `wbs_nodes` creator, and whether it projects its own summary row.** This is where the
+root cause actually lives. Six of nine already projected (`_seedSkeleton`, `wbsAddChild`, `wbsQuickAdd`,
+copy-from-project, the bulk `_wbsInsertNodes`/`_insertWbsSummaries` pair, and the builder push);
+`wbsAdopt` links pre-existing legacy rows so it has nothing to project. **Three did not** —
+`_prcEnsureNode`, `_ddEnsureNode` and `_wbsBackfillSkeleton`, whose comment said so outright:
+*"Summary-row projection is left to `_wbsEnsureSummaries()`."*
+- ⚠️⚠️ **That made the heal load-bearing, and the heal has SIX bail paths:** the `_ensuringSummaries`
+  re-entrancy guard, `!WBS_NODES.length`, a failed existence read (`if (eq.error) return 0`), two
+  `switched()` project-switch returns, and an insert error that `break`s the loop. **Hit any one and
+  the just-created trade nodes are left unprojected — no heading, children render flat, the first child
+  is mistaken for the heading.** That is the reported symptom reached with no sweep involved at all.
+- ⚠️ The re-entrancy path is not theoretical: **`syncProcurementApp` (the Sync button) calls
+  `syncProcurement` directly**, so a sync fired while a `load()` is still inside `_wbsEnsureSummaries`
+  gets `return 0` from the nested call and creates nodes with no rows.
+- **Fix: `_ensureNodeSummary(node)`** — idempotent projection at creation, wired into all three. Both
+  mirror creators call it on **every** return path, adoption included: an adopted node is precisely the
+  one whose heading may already be missing on live data, so returning it unprojected re-creates the bug.
+- ⚠️ **Idempotent in two stages, and the order matters for cost.** The in-memory `rows` check
+  short-circuits with **zero round-trips** on a healthy project (asserted), so the common case is free;
+  the targeted read behind it covers `rows` being stale against the server (a second tab, a mid-reload
+  storm) where a blind insert would duplicate the heading — the failure mode that once ran AVR101 to
+  2,000+ duplicate rows. A failed read or a failed insert is **tolerated, never forced**: it falls back
+  to the heal rather than risking a duplicate.
+- ⚠️ **`computeWbsCodes()` is called per node.** O(tree) each, but the callers create ≤9 (procurement),
+  2 (DD) or ≤8 (backfill) nodes, and only when one is genuinely missing. Any code drift afterwards is
+  already `_wbsResyncCodes()`'s job, which runs before the dedupe on every load.
+- ⚠️ **`_seedSkeleton` deliberately NOT changed** — it projects every node in one pass after inserting
+  the whole tree, which is correct for the seed-from-empty path. Its child-insert line is a byte-for-byte
+  twin of the backfill's; the patch anchors on indentation to tell them apart. **Do not "unify" them.**
+
+**Verified by EXECUTING the shipped code**, sliced verbatim (`isWbs`, `_insertWbsSummary`,
+`_ensureNodeSummary`), nothing under test reimplemented — `scratchpad/check-ensuresummary.js`, **18/18**:
+zero round-trips when the row is already in memory; no duplicate when the server has it but `rows` is
+stale; a correct projection when genuinely missing (type, node id, dotted code, name, and **landing in
+`rows`** — without which the heal would insert a second one); no insert on a read error; no insert when
+the project switches mid-read; the read-only / no-project / null-node guards; a tolerated insert failure;
+and idempotency across two back-to-back calls. The sweep suite still passes 8/8. Parse clean;
+**function-set diff vs HEAD: 0 lost, 1 added (`_ensureNodeSummary`).**
+⚠️ One failure on the first run was **my harness, not the code** — `pid: o.pid == null ? 'OPW101' : o.pid`
+turned the `pid: null` case back into a real project, so the guard looked broken.
+⚠️ **Not verified signed-in.** `MODULE_V` → `20260822g` (+ `modules-grid.js`'s own `?v=`).
+
 ## ⚠️⚠️ Sync Procurement DELETED the trade headings it had just created (2026-08-22) — fmlozano
 Owner: *"The trades are not showing properly in the procurement dashboard"*, then the decisive clue —
 *"when re-syncing from procurement in the WBS it shows for a brief moment but disappears completely."*

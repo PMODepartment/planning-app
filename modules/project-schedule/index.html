@@ -3910,18 +3910,23 @@
   }
 
   async function _ddEnsureNode(parentId, name, order) {
+    // ⚠️ EVERY return path projects the node's summary row (see _ensureNodeSummary) — including the
+    // two that ADOPT an existing node. An adopted node is precisely the one whose heading may already
+    // be missing on live data, so returning it unprojected would leave the branch headless again.
     var found = WBS_NODES.find(function (n) { return n.parent_id === parentId && n.name === name; });
-    if (found) return found;
+    if (found) { await _ensureNodeSummary(found); return found; }
     var chk = await sb().from('wbs_nodes').select('*').eq('project_id', pid).eq('parent_id', parentId).eq('name', name).limit(1);
     if (!chk.error && chk.data && chk.data.length) {
       var existing = chk.data[0];
       if (!WBS_NODES.some(function (n) { return n.id === existing.id; })) WBS_NODES.push(existing);
+      await _ensureNodeSummary(existing);
       return existing;
     }
     var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId, name: name,
       sort_order: order, created_by: UID, is_locked: true, source_kind: 'design_development_child' }).select().single();
     if (res.error) return null;
     WBS_NODES.push(res.data);
+    await _ensureNodeSummary(res.data);
     return res.data;
   }
 
@@ -4314,18 +4319,23 @@
   }
 
   async function _prcEnsureNode(parentId, name, order) {
+    // ⚠️ EVERY return path projects the node's summary row (see _ensureNodeSummary) — including the
+    // two that ADOPT an existing node. An adopted node is precisely the one whose heading may already
+    // be missing on live data, so returning it unprojected would leave the branch headless again.
     var found = WBS_NODES.find(function (n) { return n.parent_id === parentId && n.name === name; });
-    if (found) return found;
+    if (found) { await _ensureNodeSummary(found); return found; }
     var chk = await sb().from('wbs_nodes').select('*').eq('project_id', pid).eq('parent_id', parentId).eq('name', name).limit(1);
     if (!chk.error && chk.data && chk.data.length) {
       var existing = chk.data[0];
       if (!WBS_NODES.some(function (n) { return n.id === existing.id; })) WBS_NODES.push(existing);
+      await _ensureNodeSummary(existing);
       return existing;
     }
     var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId, name: name,
       sort_order: order, created_by: UID, is_locked: true, source_kind: 'procurement_trade' }).select().single();
     if (res.error) return null;
     WBS_NODES.push(res.data);
+    await _ensureNodeSummary(res.data);
     return res.data;
   }
 
@@ -15504,8 +15514,10 @@
   // nodes as targets wasn't enough on its own.)
   // Backfills any missing top-level skeleton phase, LOCKED, in its constant position.
   // ⚠️ Additive + idempotent: matched by `_wbsNameKey`, so an existing locked OR unlocked node of that
-  // name is adopted, never duplicated. Summary-row projection is left to `_wbsEnsureSummaries()`,
-  // which runs straight after this in `load()` and is already the one idempotent projector.
+  // name is adopted, never duplicated. It now PROJECTS each node it creates (`_ensureNodeSummary`)
+  // rather than leaving that to `_wbsEnsureSummaries()` — a backfilled phase the heal then failed to
+  // project would sit in the WBS Manager with no row in the schedule at all, which is the very orphan
+  // state the heal exists to repair. Creator owns the projection; the heal is only the backstop.
   async function _wbsBackfillSkeleton() {
     var tops = WBS_NODES.filter(function (n) { return !n.parent_id; });
     // ⚠️ ONLY complete a skeleton this project already has — never impose one.
@@ -15538,6 +15550,7 @@
       }).select().single();
       if (res.error) continue;   // tolerant — a DB without the skeleton migration simply gets no backfill
       WBS_NODES.push(res.data); have[key] = res.data; used[so] = 1; if (so > maxSo) maxSo = so;
+      await _ensureNodeSummary(res.data);
       added++;
       var kids = spec.children || [];
       for (var j = 0; j < kids.length; j++) {
@@ -15545,7 +15558,7 @@
           project_id: pid, parent_id: res.data.id, name: kids[j].name, sort_order: j,
           created_by: UID, is_locked: true, source_kind: kids[j].source_kind || null
         }).select().single();
-        if (!kres.error) WBS_NODES.push(kres.data);
+        if (!kres.error) { WBS_NODES.push(kres.data); await _ensureNodeSummary(kres.data); }
       }
     }
     return added;
@@ -15900,6 +15913,32 @@
   // on a DB where that column was never migrated, including it in the payload fails the WHOLE
   // insert — which used to leave the node in the tree with no Project Schedule row. Retry without
   // it so the row (and the grid) still works; the link is then re-established by Adopt existing WBS.
+  // ⚠️⚠️ ROOT-CAUSE FIX for the "heading flashes and vanishes" class (2026-08-22). Project a node's
+  // WBS-Summary row AT CREATION, idempotently, so `_wbsEnsureSummaries()` is a BACKSTOP rather than
+  // the mechanism. The mirror syncs and the skeleton backfill used to create a node and leave the
+  // projection entirely to the heal — but the heal has SIX bail paths (`_ensuringSummaries`
+  // re-entrancy, an empty WBS_NODES, a failed existence read, two project-switch checks and an
+  // insert error). Hit any one and the node renders NO HEADING, its children render flat, and the
+  // first child is mistaken for the heading — which is exactly what the procurement branch looked
+  // like. A creator must own its own projection; the heal then only ever repairs history.
+  // ⚠️ Idempotent in two stages: the in-memory check costs nothing on a healthy project (no
+  // round-trip at all), and the targeted read covers `rows` being stale relative to the server —
+  // a second tab, or a mid-reload storm — where a blind insert would duplicate the heading.
+  async function _ensureNodeSummary(node) {
+    if (!node || !node.id || !pid || !canWrite) return null;
+    if (rows.some(function (r) { return isWbs(r) && r.wbs_node_id === node.id; })) return null;
+    var ownPid = pid;
+    var chk = await sb().from(TABLE).select('id').eq('project_id', ownPid)
+      .eq('activity_type', 'WBS Summary').eq('wbs_node_id', node.id).limit(1);
+    if (chk.error) return null;                 // can't tell insert from duplicate — leave it to the heal
+    if (chk.data && chk.data.length) return null;
+    if (pid !== ownPid) return null;            // project switched under us mid-read
+    var res = await _insertWbsSummary({ project_id: ownPid, wbs_node_id: node.id, activity_type: 'WBS Summary',
+      wbs: computeWbsCodes()[node.id], activity_name: node.name, created_by: UID });
+    if (res.error || !res.data) return null;    // tolerant — the heal still gets its turn on the next load
+    if (pid === ownPid && !rows.some(function (r) { return r.id === res.data.id; })) rows.push(res.data);
+    return res.data;
+  }
   async function _insertWbsSummary(payload) {
     var res = await sb().from(TABLE).insert(payload).select().single();
     if (res.error && payload.wbs_node_id && /wbs_node_id/.test(res.error.message || '')) {

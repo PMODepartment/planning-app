@@ -84,6 +84,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-22 — The WBS heal is a backstop now, not the mechanism
+Follow-up to the procurement sweep fix, on the owner's instruction to *"track the root cause so that the
+heal becomes a backup not the main solution."*
+- **Audited all 18 schedule-row deletes:** only the procurement sweep (already fixed) could ever destroy
+  a WBS-Summary projection. Design Development's sweep is prefix-scoped and safe; the rest are deliberate
+  user actions or true duplicate cleanups.
+- ⚠️ **Audited all 9 `wbs_nodes` creators — three left projection to `_wbsEnsureSummaries()`**
+  (`_prcEnsureNode`, `_ddEnsureNode`, `_wbsBackfillSkeleton`). That made the heal load-bearing, and the
+  heal has **six bail paths** (re-entrancy, empty node list, a failed read, two project-switch checks, an
+  insert error). Any one leaves a node with no heading — the same headless-branch symptom, reached with
+  no sweep involved. The re-entrancy path is reachable in practice: the Sync button calls the sync
+  directly, so a sync during a load gets a no-op heal.
+- **Fix:** new idempotent `_ensureNodeSummary(node)`, called on every return path of all three creators
+  (adoption included). Costs **zero round-trips** on a healthy project; falls back to the heal on any
+  error rather than risking a duplicate.
+- **Verified by executing the shipped code** (sliced, not reimplemented): **18/18**, plus the sweep suite
+  8/8, parse clean, function-set diff 0 lost / 1 added. ⚠️ Not verified signed-in. `MODULE_V` →
+  `20260822g`.
+
 ### 2026-08-22 — Sync Procurement was deleting the trade headings it had just created
 Owner: the trades don't show properly, and *"when re-syncing from procurement in the WBS it shows for a
 brief moment but disappears completely."* That flash was the bug, not a symptom of one.
