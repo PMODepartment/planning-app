@@ -2,6 +2,45 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Works dropdown still empty on the second live test — loosened the phase-name match + added diagnostics (2026-08-13f)
+Owner tested the WBS-code fix live and the Works dropdown was **still empty**, same screenshot
+shape as before (Trade = "Structural Works", red-outlined empty Works field). Two failures in a
+row on the same symptom is not something to wave off as "just a cache issue" without also
+hardening the code, so this pass does both: makes the phase-name matching itself more forgiving,
+and adds console diagnostics so a third occurrence (if the cause is something else entirely) is
+debuggable from devtools instead of another guess-and-redeploy cycle.
+- ⚠️ **The previous fix's `EXEC_PHASE_RE`/`CLOSEOUT_PHASE_RE` were ANCHORED (`^...$`)** — an exact
+  whole-string match against the WBS branch's `activity_name`. If Avesta's real branch is named
+  anything other than the literal strings "Execution Phase" / "Closeout Phase" (e.g. a numeric
+  prefix from the WBS Manager's auto-numbering, a trailing qualifier, different capitalization
+  the anchors didn't tolerate), the anchored regex would find nothing and both root codes would
+  stay `null` — silently reproducing the exact "no options" symptom, indistinguishable from a
+  stale cache from the outside.
+- **Replaced with `branchPhaseFromName()`, copied verbatim (not re-derived) from Project
+  Schedule's own `phaseFromName()`** — the identical substring-based rule that module already
+  uses to classify a WBS branch by name (`t.indexOf('execution phase') >= 0 ||
+  t.indexOf('construction') >= 0` → construction; `t.indexOf('close-out'/'closeout'/'close out')`
+  → closeout). Reusing the sister module's own proven function, rather than inventing a stricter
+  pattern a second time, is the point — it tolerates exactly the naming variations that module's
+  own WBS Manager can produce (e.g. "4. Execution Phase (Construction)", "5. Close-Out Phase").
+- **Added console diagnostics** in `loadSchedule()`: if the WBS-Summary query itself errors or
+  throws, it's now logged (`console.warn`) instead of silently swallowed like every other
+  tolerant fetch in this module; if the query succeeds but resolves **neither** an Execution nor
+  a Closeout root code, a warning names the WBS-Summary row count found and says the Works picker
+  is falling back to the raw `phase` column alone — turning a silent empty dropdown into an
+  actionable console message naming the real cause the next time this is tested live.
+- Harness-verified against a fixture using deliberately non-exact branch names —
+  `"4. Execution Phase (Construction)"` and `"5. Close-Out Phase"` (numeric prefix + parenthetical
+  + hyphenated capitalization) instead of the previous fixture's exact strings: the Works
+  datalist still resolved correctly to the 4 Execution/Close-out activities with **no console
+  warning fired** (confirming resolution succeeded, not silently degrading to the empty-fallback
+  path); Trade-scoping still composed correctly on top. No functional console errors.
+- ⚠️ **If the dropdown is still empty on Avesta after this deploy**, the browser console will now
+  say why — either a WBS-Summary fetch error/exception, or "Could not find an Execution Phase /
+  Closeout Phase WBS branch among N WBS-Summary row(s)" naming the row count actually found. That
+  message is the next diagnostic input, not a guess.
+- Assets bumped `module.js?v=20260813f` (module.css unchanged this round).
+
 ## Fix: live "Works" dropdown was EMPTY on Avesta — phase scoping needed the WBS code, not the raw column (2026-08-13e)
 Owner tested the previous entry live: the Works field had **no options at all** on Avesta
 Residences with "Structural Works" selected — worse than the prior "too many options" bug,

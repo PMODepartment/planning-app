@@ -59,8 +59,18 @@ window.ProgressPhotos = (function () {
   // is more reliable than the raw `phase` column, which on a real imported
   // project (e.g. Avesta) is blank on nearly every leaf activity.
   var EXEC_WBS_CODE = null, CLOSEOUT_WBS_CODE = null;
-  var EXEC_PHASE_RE = /^execution\s*phase$/i;
-  var CLOSEOUT_PHASE_RE = /^close[\s-]?out\s*phase$/i;
+  // Substring match (not anchored to the whole name), the same rule Project
+  // Schedule's own `phaseFromName()` uses to classify a WBS branch by name —
+  // reused deliberately rather than re-deriving a stricter pattern, so a
+  // branch named "4. Execution Phase" or "Execution Phase (Construction)"
+  // still resolves the same way it would inside that module.
+  function branchPhaseFromName(name) {
+    var t = String(name == null ? '' : name).trim().toLowerCase();
+    if (!t) return null;
+    if (t.indexOf('execution phase') >= 0 || t.indexOf('construction') >= 0) return 'construction';
+    if (t.indexOf('close-out') >= 0 || t.indexOf('closeout') >= 0 || t.indexOf('close out') >= 0) return 'closeout';
+    return null;
+  }
   var migrationWarned = false;             // warn once per session, not per save
   var roundsFilter = '';
   var roundsSelected = {};                 // location-combo key -> true (walkthrough queue)
@@ -239,24 +249,33 @@ window.ProgressPhotos = (function () {
     // comment above) -- the raw `phase` column alone is not reliable enough
     // on an imported schedule that never had every activity re-stamped.
     try {
-      var wres = await fetchAllPages('project_schedule', 'wbs,activity_name',
+      var wres = await fetchAllPages('project_schedule', 'wbs,activity_name,activity_type',
         function (q) { return q.eq('activity_type', 'WBS Summary'); });
       if (!wres.error) {
+        var execBest = null, closeoutBest = null, wbsRowCount = (wres.data || []).length;
         (wres.data || []).forEach(function (w) {
-          var name = (w.activity_name || '').trim();
           var code = w.wbs;
           if (!code) return;
+          var ph = branchPhaseFromName(w.activity_name);
+          if (!ph) return;
           var depth = (code.match(/\./g) || []).length;
-          if (EXEC_PHASE_RE.test(name) && (EXEC_WBS_CODE == null || depth < EXEC_WBS_CODE.depth)) {
-            EXEC_WBS_CODE = { code: code, depth: depth };
-          } else if (CLOSEOUT_PHASE_RE.test(name) && (CLOSEOUT_WBS_CODE == null || depth < CLOSEOUT_WBS_CODE.depth)) {
-            CLOSEOUT_WBS_CODE = { code: code, depth: depth };
-          }
+          if (ph === 'construction' && (!execBest || depth < execBest.depth)) execBest = { code: code, depth: depth };
+          if (ph === 'closeout' && (!closeoutBest || depth < closeoutBest.depth)) closeoutBest = { code: code, depth: depth };
         });
+        EXEC_WBS_CODE = execBest ? execBest.code : null;
+        CLOSEOUT_WBS_CODE = closeoutBest ? closeoutBest.code : null;
+        if (!EXEC_WBS_CODE && !CLOSEOUT_WBS_CODE) {
+          console.warn('[progress-photos] Could not find an Execution Phase / Closeout Phase WBS ' +
+            'branch among ' + wbsRowCount + ' WBS-Summary row(s) for project ' + pid + ' -- the ' +
+            'Works picker will fall back to the raw project_schedule.phase column only, which is ' +
+            'often blank on an imported schedule. Check the WBS Manager for the exact branch names.');
+        }
+      } else {
+        console.warn('[progress-photos] WBS-Summary fetch failed for project ' + pid + ':', wres.error);
       }
-    } catch (e) {}
-    EXEC_WBS_CODE = EXEC_WBS_CODE ? EXEC_WBS_CODE.code : null;
-    CLOSEOUT_WBS_CODE = CLOSEOUT_WBS_CODE ? CLOSEOUT_WBS_CODE.code : null;
+    } catch (e) {
+      console.warn('[progress-photos] WBS-Summary fetch threw for project ' + pid + ':', e);
+    }
 
     try {
       var tres = await sb().from('activity_code_types').select('id,name').eq('project_id', pid);
