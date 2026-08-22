@@ -2,6 +2,52 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Fix: live "Works" dropdown was EMPTY on Avesta — phase scoping needed the WBS code, not the raw column (2026-08-13e)
+Owner tested the previous entry live: the Works field had **no options at all** on Avesta
+Residences with "Structural Works" selected — worse than the prior "too many options" bug,
+because now there were none. Screenshot of the WBS Manager showed exactly why: the project's
+Execution Phase / Closeout Phase are real top-level WBS branches, but that says nothing about
+whether the raw `project_schedule.phase` column is populated on the LEAF activities under them.
+- ⚠️ **Root cause, confirmed against Project Schedule's own code, not guessed**: that module
+  resolves an activity's phase by **inheriting from the nearest tagged WBS ancestor at read
+  time** (`phaseOf()` in `modules/project-schedule/index.html`) — phase is deliberately *not*
+  denormalized onto every row, per that module's own documented design ("resolved at read time
+  ... so re-parenting a branch re-phases its work with no data fix-up"). The 2026-08-12 migration
+  back-filled `phase` onto activities **once**, from branch names, and newer schedule-generating
+  paths (Schedule Builder push) stamp it directly — but a real imported P6 schedule like Avesta's
+  never went through either of those, so `phase` reads **NULL on nearly every leaf activity** even
+  though the activity is unambiguously under the Execution Phase branch. The previous entry's
+  "known limitation" note called this out as a risk; it was live within one test.
+- **Fix: resolve the Execution Phase / Closeout Phase WBS-Summary rows and test each activity's
+  own dotted `wbs` code against them** — the exact mechanism Project Schedule's own
+  `execPhaseCode()`/`locCodeUnder()` use for this identical scoping problem (its Location Wizard
+  and "Execution Phase only" toggle). `loadSchedule()` now also fetches WBS-Summary rows
+  (`activity_type = 'WBS Summary'`) and, from those, finds the row named "Execution Phase" (regex
+  `/^execution\s*phase$/i`) and "Closeout Phase"/"Close-out Phase" (`/^close[\s-]?out\s*phase$/i`,
+  case/spacing-tolerant — Avesta's WBS Manager literally shows "Closeout Phase", one word),
+  preferring the **shallowest** match if more than one name collides. `inExecOrCloseout(a)` then
+  accepts an activity if **either** its own `phase` column says construction/closeout **or** its
+  `wbs` code is at-or-under one of those two root codes (`wbsUnderRoot`, a boundary-safe prefix
+  test — `"4"` matches `"4.1"` but never `"40.1"`).
+  ⚠️ **Both checks are kept, not just the WBS one** — a Schedule-Builder-pushed activity that
+  already carries `phase:'construction'` directly (per that module's own push payloads) should
+  not have to also resolve through a WBS lookup that a hand-typed activity outside any tracked
+  branch might not have.
+- `SCHED_ACTS` now also selects `wbs` (the activity's own dotted code) alongside `phase`.
+- Harness-verified against an Avesta-shaped fixture (5 top-level WBS-Summary phase branches named
+  exactly as the screenshot — Milestones / Initiation Phase / Planning Phase / Execution Phase /
+  Closeout Phase — plus 2 sub-branches under Execution Phase, and every LEAF Task activity carrying
+  `phase: null`, matching the real bug): Works datalist showed exactly the 4 correct activities
+  (`Formworks`, `Painting Works`, `Punchlist Repairs`, `Rebar Installation`) resolved purely from
+  WBS-code ancestry with zero activities carrying a populated `phase`; a deliberately-planted
+  `wbs: '40.1'` "Unrelated Branch 40" row (the boundary-safety trap for code `"4"` vs `"40"`)
+  correctly excluded; Design Review (Planning, `3.1`), Bid Submission (Initiation, `2.1`), Key
+  Handover Event (Milestones, `1.1`) and the Finish-Milestone-typed "10th Floor" all correctly
+  absent; Trade-scoping (Structural → Formworks + Rebar Installation, Architectural → Painting
+  Works + Punchlist Repairs) still composes correctly on top of the phase scope. No functional
+  console errors.
+- Assets bumped `module.js?v=20260813e` (module.css unchanged this round).
+
 ## Works scoped to Execution + Close-out phase; Tower & Level required (2026-08-13d)
 Owner, confirming the Trade-scoped Works fix: two polish asks on the same picker.
 - **Works now excludes Milestones / Initiation Phase / Planning Phase — only Execution Phase and

@@ -45,6 +45,22 @@ window.ProgressPhotos = (function () {
   var LOC_LEVELS = [];                     // [{id, name, sort_order}], sort_order ascending
   var SCHED_ACTS = [];                     // project_schedule rows: {id, activity_id, activity_name, location, activity_type, status, start_date, end_date}
   var CODE_TYPES = [], CODE_VALUES = [];   // optional Activity-Code overlay (unrelated code types)
+  // Execution/Close-out phase scoping for the Works picker. Project Schedule's
+  // `project_schedule.phase` column is often BLANK on individual activities --
+  // that module resolves phase by walking up the WBS ancestry at read time
+  // (its own `phaseOf()`), inheriting from the nearest tagged branch, rather
+  // than storing it on every row. Progress Photos doesn't load the WBS tree
+  // (a deliberate call after the wbs_nodes/Location-Breakdown correction), so
+  // it resolves the SAME "is this under Execution Phase / Close-out Phase"
+  // question the way Project Schedule's own `execPhaseCode()`/`locCodeUnder()`
+  // do it for the identical scoping problem: find the top-level WBS-Summary
+  // row named "Execution Phase" / "Closeout Phase" and test the activity's
+  // OWN dotted `wbs` code for a boundary-safe prefix match against it. This
+  // is more reliable than the raw `phase` column, which on a real imported
+  // project (e.g. Avesta) is blank on nearly every leaf activity.
+  var EXEC_WBS_CODE = null, CLOSEOUT_WBS_CODE = null;
+  var EXEC_PHASE_RE = /^execution\s*phase$/i;
+  var CLOSEOUT_PHASE_RE = /^close[\s-]?out\s*phase$/i;
   var migrationWarned = false;             // warn once per session, not per save
   var roundsFilter = '';
   var roundsSelected = {};                 // location-combo key -> true (walkthrough queue)
@@ -203,6 +219,7 @@ window.ProgressPhotos = (function () {
   async function loadSchedule() {
     LOC_LEVELS = []; SCHED_ACTS = [];
     CODE_TYPES = []; CODE_VALUES = [];
+    EXEC_WBS_CODE = null; CLOSEOUT_WBS_CODE = null;
     if (!pid) return;
     try {
       var lres = await sb().from('location_levels').select('id,name,sort_order')
@@ -212,10 +229,34 @@ window.ProgressPhotos = (function () {
 
     try {
       var ares = await fetchAllPages('project_schedule',
-        'id,activity_id,activity_name,location,activity_type,status,start_date,end_date,work_type,phase',
+        'id,activity_id,activity_name,location,activity_type,status,start_date,end_date,work_type,phase,wbs',
         function (q) { return q.neq('activity_type', 'WBS Summary'); });
       if (!ares.error) SCHED_ACTS = ares.data || [];
     } catch (e) {}
+
+    // Resolve the Execution Phase / Close-out Phase WBS-Summary rows so the
+    // Works picker can scope by dotted-code ancestry (see the EXEC_WBS_CODE
+    // comment above) -- the raw `phase` column alone is not reliable enough
+    // on an imported schedule that never had every activity re-stamped.
+    try {
+      var wres = await fetchAllPages('project_schedule', 'wbs,activity_name',
+        function (q) { return q.eq('activity_type', 'WBS Summary'); });
+      if (!wres.error) {
+        (wres.data || []).forEach(function (w) {
+          var name = (w.activity_name || '').trim();
+          var code = w.wbs;
+          if (!code) return;
+          var depth = (code.match(/\./g) || []).length;
+          if (EXEC_PHASE_RE.test(name) && (EXEC_WBS_CODE == null || depth < EXEC_WBS_CODE.depth)) {
+            EXEC_WBS_CODE = { code: code, depth: depth };
+          } else if (CLOSEOUT_PHASE_RE.test(name) && (CLOSEOUT_WBS_CODE == null || depth < CLOSEOUT_WBS_CODE.depth)) {
+            CLOSEOUT_WBS_CODE = { code: code, depth: depth };
+          }
+        });
+      }
+    } catch (e) {}
+    EXEC_WBS_CODE = EXEC_WBS_CODE ? EXEC_WBS_CODE.code : null;
+    CLOSEOUT_WBS_CODE = CLOSEOUT_WBS_CODE ? CLOSEOUT_WBS_CODE.code : null;
 
     try {
       var tres = await sb().from('activity_code_types').select('id,name').eq('project_id', pid);
@@ -226,6 +267,16 @@ window.ProgressPhotos = (function () {
         if (!vres.error) CODE_VALUES = vres.data || [];
       }
     } catch (e) {}
+  }
+  // Boundary-safe "is this WBS code at or under that root code" test --
+  // "4" matches "4.1" but never "40.1" (a naive startsWith would).
+  function wbsUnderRoot(code, root) {
+    if (!code || !root) return false;
+    return code === root || code.indexOf(root + '.') === 0;
+  }
+  function inExecOrCloseout(a) {
+    if (a.phase === 'construction' || a.phase === 'closeout') return true;
+    return wbsUnderRoot(a.wbs, EXEC_WBS_CODE) || wbsUnderRoot(a.wbs, CLOSEOUT_WBS_CODE);
   }
 
   // Value of one level for any {location: {...}} bearing record (an activity
@@ -475,20 +526,18 @@ window.ProgressPhotos = (function () {
   // ⚠️ Start/Finish Milestones are excluded -- schedules commonly name a
   // floor-completion milestone after the floor itself ("10th Floor"), which
   // read as a bogus "activity" choice; only real Task rows are offered.
-  // ⚠️ Scoped to Execution Phase + Close-out ('construction'/'closeout' in
-  // Project Schedule's own phase vocabulary -- 'construction' IS the label
-  // shown there as "Execution Phase") -- design/bidding/planning activities
-  // (Initiation, Planning) and the un-phased "Milestones" WBS branch describe
-  // pre-construction work or point-in-time markers, neither of which is a
-  // "Works" a site photo is capturing. An activity with no phase stamped at
-  // all (imported before the phase migration, or filed under Milestones with
-  // nothing inherited) is excluded too -- an unphased activity is not known
-  // to be construction work, so it is left out rather than guessed in.
+  // ⚠️ Scoped to Execution Phase + Close-out via `inExecOrCloseout()` --
+  // design/bidding/planning activities (Initiation, Planning) and the
+  // un-phased "Milestones" WBS branch describe pre-construction work or
+  // point-in-time markers, neither of which is a "Works" a site photo is
+  // capturing. An activity that resolves to NEITHER a stamped phase NOR a
+  // WBS code under the Execution/Close-out root is excluded -- it is not
+  // known to be construction work, so it is left out rather than guessed in.
   function distinctScheduleWorks(tradeFilter) {
     var seen = {}, out = [];
     SCHED_ACTS.forEach(function (a) {
       if (a.activity_type === 'Start Milestone' || a.activity_type === 'Finish Milestone') return;
-      if (a.phase !== 'construction' && a.phase !== 'closeout') return;
+      if (!inExecOrCloseout(a)) return;
       if (!workTypeMatchesTrade(a.work_type, tradeFilter)) return;
       var v = (a.activity_name || '').trim();
       if (v && !seen[v]) { seen[v] = 1; out.push(v); }
