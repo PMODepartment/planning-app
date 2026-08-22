@@ -212,7 +212,7 @@ window.ProgressPhotos = (function () {
 
     try {
       var ares = await fetchAllPages('project_schedule',
-        'id,activity_id,activity_name,location,activity_type,status,start_date,end_date,work_type',
+        'id,activity_id,activity_name,location,activity_type,status,start_date,end_date,work_type,phase',
         function (q) { return q.neq('activity_type', 'WBS Summary'); });
       if (!ares.error) SCHED_ACTS = ares.data || [];
     } catch (e) {}
@@ -475,10 +475,20 @@ window.ProgressPhotos = (function () {
   // ⚠️ Start/Finish Milestones are excluded -- schedules commonly name a
   // floor-completion milestone after the floor itself ("10th Floor"), which
   // read as a bogus "activity" choice; only real Task rows are offered.
+  // ⚠️ Scoped to Execution Phase + Close-out ('construction'/'closeout' in
+  // Project Schedule's own phase vocabulary -- 'construction' IS the label
+  // shown there as "Execution Phase") -- design/bidding/planning activities
+  // (Initiation, Planning) and the un-phased "Milestones" WBS branch describe
+  // pre-construction work or point-in-time markers, neither of which is a
+  // "Works" a site photo is capturing. An activity with no phase stamped at
+  // all (imported before the phase migration, or filed under Milestones with
+  // nothing inherited) is excluded too -- an unphased activity is not known
+  // to be construction work, so it is left out rather than guessed in.
   function distinctScheduleWorks(tradeFilter) {
     var seen = {}, out = [];
     SCHED_ACTS.forEach(function (a) {
       if (a.activity_type === 'Start Milestone' || a.activity_type === 'Finish Milestone') return;
+      if (a.phase !== 'construction' && a.phase !== 'closeout') return;
       if (!workTypeMatchesTrade(a.work_type, tradeFilter)) return;
       var v = (a.activity_name || '').trim();
       if (v && !seen[v]) { seen[v] = 1; out.push(v); }
@@ -782,8 +792,14 @@ window.ProgressPhotos = (function () {
     if (!date || !date.value) return 'Capture date is required.';
     if (!trade || !trade.value) return 'Trade is required.';
     if (!works || !works.value.trim()) return 'Works is required.';
-    if (LOC_LEVELS.length && !Object.keys(currentLocValues(idPrefix)).length) {
-      return 'Select at least one Location Breakdown value.';
+    var need = locRequiredLevels();
+    if (need.length) {
+      var vals = currentLocValues(idPrefix);
+      var missing = need.filter(function (l) { return !vals[l.id]; });
+      if (missing.length) {
+        return missing.map(function (l) { return l.name; }).join(' and ') + ' ' +
+          (missing.length > 1 ? 'are' : 'is') + ' required.';
+      }
     }
     return null;
   }
@@ -804,11 +820,18 @@ window.ProgressPhotos = (function () {
       return '<option value="' + Fmt.esc(v) + '"></option>';
     }).join('');
   }
-  function locLevelFieldHTML(idPrefix, level, priorVals, curVal) {
+  // The first two configured levels (by sort_order -- typically Tower/Building
+  // then Level/Floor) are required; deeper levels (Zone, Orientation, ...) stay
+  // optional, matching the "a capture can stop at any depth" design elsewhere
+  // in this picker.
+  function locRequiredLevels() { return LOC_LEVELS.slice(0, 2); }
+  function locLevelFieldHTML(idPrefix, level, priorVals, curVal, isRequired) {
     var dlid = idPrefix + '-loclvl-' + level.id + '-dl';
-    return '<div class="pd-field pp-wbslevel"><label>' + Fmt.esc(level.name) + '</label>' +
+    return '<div class="pd-field pp-wbslevel"><label>' + Fmt.esc(level.name) +
+      (isRequired ? reqMark() : '') + '</label>' +
       '<input class="pd-input" id="' + idPrefix + '-loclvl-' + level.id + '" list="' + dlid + '" ' +
-      'data-lvl="' + level.id + '" value="' + Fmt.esc(curVal || '') + '" placeholder="e.g. ..." />' +
+      'data-lvl="' + level.id + '" value="' + Fmt.esc(curVal || '') + '" placeholder="e.g. ..."' +
+      (isRequired ? ' required' : '') + ' />' +
       '<datalist id="' + dlid + '">' + locOptionsHTML(level.id, priorVals) + '</datalist>' +
       '</div>';
   }
@@ -816,8 +839,10 @@ window.ProgressPhotos = (function () {
     existingValues = existingValues || {};
     if (!LOC_LEVELS.length) return '<p class="pp-hint">No Location Breakdown set up for this project yet -- build it in Project Schedule (Group menu &rarr; Location Breakdown...).</p>';
     var prior = {};
+    var reqIds = {};
+    locRequiredLevels().forEach(function (l) { reqIds[l.id] = true; });
     return LOC_LEVELS.map(function (l) {
-      var html = locLevelFieldHTML(idPrefix, l, prior, existingValues[l.id]);
+      var html = locLevelFieldHTML(idPrefix, l, prior, existingValues[l.id], !!reqIds[l.id]);
       if (existingValues[l.id]) prior[l.id] = existingValues[l.id];
       return html;
     }).join('');
@@ -853,7 +878,9 @@ window.ProgressPhotos = (function () {
   function locationFieldHTML(idPrefix, existingValues, locText) {
     return (
       '<div class="pp-span2 pp-wbssection"><label>Location Breakdown' +
-        (LOC_LEVELS.length ? reqMark() + ' <span class="pp-optnote">(at least one level)</span>' : '') + '</label>' +
+        (locRequiredLevels().length ? reqMark() + ' <span class="pp-optnote">(' +
+          Fmt.esc(locRequiredLevels().map(function (l) { return l.name; }).join(' & ')) +
+          ' required)</span>' : '') + '</label>' +
         '<div class="pp-wbscascade" id="' + idPrefix + '-loclevels">' + locFieldsHTML(idPrefix, existingValues) + '</div>' +
         '<div class="pp-wbscrumb" id="' + idPrefix + '-crumb"></div>' +
       '</div>' +

@@ -2,6 +2,51 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Works scoped to Execution + Close-out phase; Tower & Level required (2026-08-13d)
+Owner, confirming the Trade-scoped Works fix: two polish asks on the same picker.
+- **Works now excludes Milestones / Initiation Phase / Planning Phase — only Execution Phase and
+  Close-out activities are offered.** Project Schedule stores a `phase` column on every activity
+  (its own vocabulary: `initiation` / `planning` / `construction` — labelled "Execution Phase" in
+  that module's UI — / `closeout`). `phase` was added to `loadSchedule()`'s select and
+  `distinctScheduleWorks()` now requires `phase === 'construction' || phase === 'closeout'`.
+  ⚠️ **An activity with NO phase stamped at all is excluded too, not guessed in** — e.g. work filed
+  under the top-level "Milestones" WBS branch (which has no phase in the four-value vocabulary)
+  reads as un-phased and is left out, matching the owner's third exclusion ("Milestone"). This is
+  in addition to, not instead of, the existing `activity_type` exclusion of Start/Finish Milestone
+  rows (a floor-completion milestone stamped `phase:'construction'` is still excluded by type).
+  ⚠️ **Known limitation, stated rather than hidden:** this reads the RAW `phase` column directly.
+  Project Schedule's own UI additionally *inherits* phase from the nearest tagged WBS ancestor when
+  a row's own `phase` is blank (`phaseOf()`), which this module cannot replicate without loading the
+  WBS tree — deliberately out of scope per the Location Breakdown correction earlier this week. In
+  practice this is a narrow gap: the phase-tagging migration back-filled `phase` directly onto every
+  activity, and every schedule-generating path since (Schedule Builder push, imports) stamps
+  `phase:'construction'` directly rather than relying on inheritance — so an Execution-phase
+  activity lacking its own stamped phase is the exception, not the rule.
+- **Tower and Level are now specifically required** in the Location Breakdown (was "at least one
+  level, any level"). `locRequiredLevels()` = the first two `location_levels` by `sort_order` —
+  generalizes across projects since level *names* are per-project free text and not guaranteed to
+  literally be "Tower"/"Level", but the ordering convention (Tower/Building first, then Level/Floor,
+  then Zone/Orientation as optional finer detail) matches every project referenced in this module's
+  design. Both Add and Edit modals show a red `*` on each required level's own label (native
+  `required` attribute too, cosmetic only — these fields aren't in a `<form>`) plus a dynamic hint
+  naming the required levels ("Tower & Level required"); `requiredFieldsMissing` names exactly which
+  of the two is missing ("Tower and Level are required." / "Level is required."). Zone (and any
+  level beyond the first two) stays optional — a capture stopping at Tower+Level with no Zone picked
+  is still valid, per the existing "a capture can stop at any depth" design.
+- ⚠️ **Fixed a pre-existing display artifact while touching this code**: a Grep-tool rendering quirk
+  had made a comment look like it contained `<\span>`; verified against the actual file bytes via
+  Read — the real content was always the correct `</span>`, no code change needed there.
+- Harness-verified (fresh v10 fixture: 8 schedule activities spanning `construction` / `closeout` /
+  `planning` / `initiation` / null phase, plus a `construction`-phase Finish Milestone to prove the
+  activity_type exclusion still applies on top of the phase filter): Works datalist showed exactly
+  the 4 Execution/Close-out activities (`Final Cleaning`, `MEP Rough-in`, `Punchlist Repairs`,
+  `Rebar Installation`) with Planning/Initiation/un-phased/milestone activities all correctly absent;
+  Tower+Level both required (`*` on both labels, Zone unmarked); save blocked with "Tower and Level
+  are required." with both blank, "Level is required." with only Tower filled, succeeded with both
+  filled and Zone left blank; Edit modal mirrors the same required markers. No functional console
+  errors (only the usual harmless stub artifacts — fake `blob:` URLs, one cosmetic 404).
+- Assets bumped `module.js?v=20260813d` (module.css unchanged this round).
+
 ## Works: exclude floor-completion milestones, scope choices to the selected Trade
 ## (2026-08-13c)
 Owner tested the previous entry live and flagged two remaining defects in the same Works
