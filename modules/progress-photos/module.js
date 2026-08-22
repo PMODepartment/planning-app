@@ -286,6 +286,20 @@ window.ProgressPhotos = (function () {
         if (!vres.error) CODE_VALUES = vres.data || [];
       }
     } catch (e) {}
+
+    // Unconditional summary -- logged every load (not just on failure) so a
+    // live report of "the Works dropdown is empty" can be diagnosed from
+    // whatever this prints, instead of guessing which stage failed. Safe to
+    // leave in: one console.info per project load, not per render.
+    try {
+      var inScopeCount = SCHED_ACTS.filter(inExecOrCloseout).length;
+      var eligibleNames = distinctScheduleWorks();
+      console.info('[progress-photos] loadSchedule(' + pid + '): ' + SCHED_ACTS.length +
+        ' non-summary activities loaded, Execution root=' + JSON.stringify(EXEC_WBS_CODE) +
+        ', Closeout root=' + JSON.stringify(CLOSEOUT_WBS_CODE) + ', ' + inScopeCount +
+        ' in Execution/Close-out scope, ' + eligibleNames.length +
+        ' distinct Works name(s) eligible: ' + JSON.stringify(eligibleNames.slice(0, 20)));
+    } catch (e) { console.warn('[progress-photos] diagnostic summary threw:', e); }
   }
   // Boundary-safe "is this WBS code at or under that root code" test --
   // "4" matches "4.1" but never "40.1" (a naive startsWith would).

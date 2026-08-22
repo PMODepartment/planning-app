@@ -2,6 +2,46 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Third live "Works dropdown still empty" report, no diagnostic fired — added an unconditional load summary (2026-08-13g)
+Owner tested the 2026-08-13f diagnostics live and reported the dropdown **still empty**, this time
+with a DevTools console screenshot as evidence — but the console showed only browser-level Tracking
+Prevention warnings for the Supabase CDN and a generic Intervention notice. **No
+`[progress-photos]`-prefixed line at all**, not even the `console.warn` the previous fix added for
+a failed root-code resolution. That absence is itself informative: either `loadSchedule()` never
+actually resolved to that warning branch (something else is failing earlier/differently than either
+of the last two fixes assumed), or DevTools was opened after the relevant console output had
+already scrolled past on an earlier page load.
+- Reviewed `sw.js` (the repo's app-wide service worker) as a possible stale-cache culprit before
+  touching module code again — it is network-first for same-origin requests and passes cross-origin
+  Supabase calls straight through uncached, so it's an unlikely explanation on its own.
+- Rather than guess at a fourth increasingly specific failure mode, added an **unconditional
+  diagnostic summary** at the end of every `loadSchedule()` call — `console.info`, fires on every
+  successful load regardless of whether resolution succeeds or fails, not gated behind an error
+  branch like the previous `console.warn`. Logs: how many non-summary activities loaded, the
+  resolved `EXEC_WBS_CODE`/`CLOSEOUT_WBS_CODE` values (or `null`), how many activities fall in
+  Execution/Close-out scope, and the count + first 20 names of distinct eligible Works values.
+- This makes the **next** live test self-diagnosing no matter which stage is actually failing —
+  the one console line says whether the schedule fetch itself returned rows, whether either root
+  code resolved, how many activities survived the phase scope, and what Works values (if any) are
+  actually eligible — instead of requiring another guess-fix-redeploy cycle blind to which of those
+  four things is wrong on the real Avesta data.
+- Harness-verified in a fresh fixture (Avesta-shaped: 5 phase branches, 2 Execution sub-branches, a
+  boundary-safety trap row, all leaf activities carrying `phase: null` to match the real-data
+  condition): the new `console.info` line fires exactly once per `loadSchedule()` call with the
+  expected shape — `SCHED_ACTS.length`, both resolved root codes, the in-scope count, and the
+  eligible Works name list all matched the fixture's known values (2 non-summary activities, roots
+  `"4"`/`"5"`, 1 in scope, `["Rebar Installation"]`) — confirming the format string is correct and
+  the summary does not throw. No console errors. `console.info` is wrapped in its own try/catch so a
+  failure computing the summary itself (e.g. a bad `SCHED_ACTS` shape) can only warn, never break
+  the rest of the load.
+- ⚠️ **Next step is on the owner**: reproduce with DevTools open from before the "+ Add photos" click
+  (or "Preserve log" enabled) and share the exact `[progress-photos] loadSchedule(...)` line. That
+  single line now distinguishes a genuine data-shape difference on the real Avesta project (e.g. WBS
+  code drift, an unexpected `activity_type` value, zero rows in Execution/Close-out scope) from a
+  stale-deploy/cache issue, which three rounds of harness-verified-but-still-failing-live fixes have
+  not been able to rule out from a screenshot alone.
+- `MODULE_V`/module `?v=` bumped: `20260813f` → `20260813g`.
+
 ## Works dropdown still empty on the second live test — loosened the phase-name match + added diagnostics (2026-08-13f)
 Owner tested the WBS-code fix live and the Works dropdown was **still empty**, same screenshot
 shape as before (Trade = "Structural Works", red-outlined empty Works field). Two failures in a
