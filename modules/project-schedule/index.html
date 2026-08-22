@@ -1000,6 +1000,40 @@
     #ps-view-schedule.ps-vstack-mode .ps-legend,
     #ps-view-schedule.ps-vstack-mode .ps-progress,
     #ps-view-schedule.ps-vstack-mode .ps-grid-foot { display:none !important; }
+    /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
+       Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
+       deliberately close to the Schedule Builder's step 6 so the two read as one idea. */
+    .ps-vstack { padding:12px 14px 20px; }
+    .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+    .ps-vs-note { font-size:12px; color:var(--pd-muted); }
+    .ps-vs-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 9px; }
+    .ps-vs-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .ps-vs-seg > button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:12.5px;
+      padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
+    .ps-vs-seg > button:last-child { border-right:0; }
+    .ps-vs-seg > button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; font-weight:700; }
+    .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
+    .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
+      color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
+    .ps-vs-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
+    .ps-vs-dot { width:9px; height:9px; border-radius:50%; flex:none; }
+    .ps-vs-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:18px; align-items:start; }
+    .ps-vs-tower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px;
+      background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
+    .ps-vs-towerh { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:10px 14px;
+      background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:13.5px; font-weight:800; }
+    .ps-vs-towerh .n { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-vs-towerh .ct { font-size:11px; font-weight:600; color:var(--pd-muted); flex:none; }
+    .ps-vs-scroll { overflow-x:auto; max-width:100%; padding:12px 14px 14px; }
+    .ps-vs-scroll svg { display:block; height:auto; }
+    .ps-vs-cell { cursor:pointer; }
+    .ps-vs-cell:hover { filter:brightness(1.08); }
+    .ps-vs-empty { padding:18px; color:var(--pd-muted); font-size:13px; text-align:center; }
+    #ps-view-schedule.ps-vstack-mode .ps-split,
+    #ps-view-schedule.ps-vstack-mode .ps-network,
+    #ps-view-schedule.ps-vstack-mode .ps-legend,
+    #ps-view-schedule.ps-vstack-mode .ps-progress,
+    #ps-view-schedule.ps-vstack-mode .ps-grid-foot { display:none !important; }
     #ps-view-schedule.ps-progress-mode .ps-split,
     #ps-view-schedule.ps-progress-mode .ps-network,
     #ps-view-schedule.ps-progress-mode .ps-legend,
@@ -2073,6 +2107,7 @@
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" data-label="Layout" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <button class="pd-btn ps-icobtn" id="ps-progressbtn" data-label="Progress" title="Activity Progress — per-activity Physical vs Planned progress bars (no dates)"><span data-ico="trendingUp" data-ico-size="16"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-vstackbtn" data-label="Stacking" title="Vertical Stacking — the building model per trade or consolidated, one cell per level / zone / unit with its completion date. Honours the current filters and search."><span data-ico="layers" data-ico-size="16"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-vstackbtn" data-label="Stacking" title="Vertical Stacking — the building model per trade or consolidated, one cell per level / zone / unit with its completion date. Honours the current filters and search."><span data-ico="layers" data-ico-size="16"></span></button>
           <span class="ps-tb-div"></span>
           <!-- Analyze: critical path, dependencies, link mode, progress spotlight -->
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-analyzebtn" data-label="Analyze" title="Analyze — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="16"></span></button>
@@ -2126,6 +2161,8 @@
 
         <!-- Activity Progress View — per-activity Physical vs Planned progress (no dates) -->
         <div class="ps-progress" id="ps-progress" style="display:none;"></div>
+        <!-- Vertical Stacking (toolbar button). Separate from the #ps-stack-back pane. -->
+        <div class="ps-vstack" id="ps-vstack" style="display:none;"></div>
         <!-- Vertical Stacking (toolbar button). Separate from the #ps-stack-back pane. -->
         <div class="ps-vstack" id="ps-vstack" style="display:none;"></div>
 

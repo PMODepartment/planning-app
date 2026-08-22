@@ -150,15 +150,24 @@
     //     { key:'poc',    agg:'wavg', column:'percent_complete', weight:'duration_days' } ] }
     //
     async moduleMetrics(spec, projectId) {
-      if (!spec || !spec.table || !projectId || !spec.metrics || !spec.metrics.length) return {};
+      if (!spec || !spec.table || !projectId || (!(spec.metrics && spec.metrics.length) && !spec.recent)) return {};
       var col = spec.projectCol || 'project_id';
       // Only what the spec asked for — plus id, which selectAll paginates on.
       var want = { id: 1 };
-      spec.metrics.forEach(function (m) {
+      (spec.metrics || []).forEach(function (m) {
         if (m.column) want[m.column] = 1;
         if (m.weight) want[m.weight] = 1;
       });
       if (spec.exclude && spec.exclude.column) want[spec.exclude.column] = 1;
+      (spec.metrics || []).forEach(function (m) {
+        [m.x, m.y, m.group, m.from, m.to, m.pct, m.doneCol].forEach(function (c) { if (c) want[c] = 1; });
+        (m.where || []).forEach(function (w) { if (w && w.column) want[w.column] = 1; });
+      });
+      if (spec.recent) {
+        (spec.recent.columns || []).forEach(function (c) { want[c] = 1; });
+        if (spec.recent.orderBy) want[spec.recent.orderBy] = 1;
+        if (spec.recent.pathCol) want[spec.recent.pathCol] = 1;
+      }
       var rows;
       try {
         rows = await PDb.selectAll(spec.table, function (q) { return q.eq(col, projectId); },
@@ -175,10 +184,87 @@
         rows = rows.filter(function (r) { return spec.exclude.values.indexOf(r[spec.exclude.column]) === -1; });
       }
       var out = { __rows: rows.length };
-      spec.metrics.forEach(function (m) {
+      // A metric may narrow the rows it looks at: [{column, values}] — every clause must match.
+      // ⚠️ Declared by the module, because only the module knows that record_type 'Contract' and
+      // 'Change Order' are different things. The shell just applies the clauses it was given.
+      function keep(r, where) {
+        if (!where) return true;
+        for (var w = 0; w < where.length; w++) {
+          var c = where[w];
+          if (!c || !c.column) continue;
+          var v = r[c.column];
+          if (c.values) { if (c.values.indexOf(v) === -1) return false; }
+          // ⚠️ `absent` is how a module says "not yet resolved" without the shell knowing what
+          // resolution means — an unresolved claim is one with no date_resolved.
+          else if (c.absent) { if (!(v == null || v === '')) return false; }
+          else if (v == null || v === '') return false;         // "has a value at all"
+        }
+        return true;
+      }
+      function numOf(v) { var n = +v; return isFinite(n) ? n : null; }
+      (spec.metrics || []).forEach(function (m) {
+        // ---- 2x2 matrix: counts in four quadrants from two numeric columns -------------------
+        // ⚠️ The SPLIT is declared, not assumed. likelihood/impact run 1..5 and influence/interest
+        // 1..4, so a hard-coded midpoint would be wrong for one of them.
+        if (m.agg === 'matrix2') {
+          var q = { hh: 0, hl: 0, lh: 0, ll: 0, n: 0 };
+          for (var mi = 0; mi < rows.length; mi++) {
+            var mr = rows[mi]; if (!keep(mr, m.where)) continue;
+            var xv = numOf(mr[m.x]), yv = numOf(mr[m.y]);
+            if (xv == null || yv == null) continue;
+            var hiX = xv >= m.split, hiY = yv >= m.split;
+            q[(hiY ? 'h' : 'l') + (hiX ? 'h' : 'l')]++; q.n++;
+          }
+          out[m.key] = q;
+          return;
+        }
+        // ---- per-group spans: min start / max finish for each value of a column ---------------
+        if (m.agg === 'groupSpan') {
+          var g = {}, order = [];
+          for (var gi = 0; gi < rows.length; gi++) {
+            var gr = rows[gi]; if (!keep(gr, m.where)) continue;
+            var key = gr[m.group]; if (key == null || key === '') continue;
+            var a0 = gr[m.from], b0 = gr[m.to];
+            if (!g[key]) { g[key] = { key: key, from: a0 || null, to: b0 || null, n: 0, done: 0, sum: 0, wsum: 0 }; order.push(key); }
+            var e = g[key];
+            if (a0 && (!e.from || a0 < e.from)) e.from = a0;
+            if (b0 && (!e.to || b0 > e.to)) e.to = b0;
+            e.n++;
+            var pv = numOf(gr[m.pct]), wv = numOf(gr[m.weight]);
+            if (pv != null && wv != null && wv > 0) { e.sum += pv * wv; e.wsum += wv; }
+            if (m.doneValues && m.doneCol && m.doneValues.indexOf(gr[m.doneCol]) !== -1) e.done++;
+          }
+          out[m.key] = order.map(function (k) {
+            var e = g[k];
+            e.pct = e.wsum > 0 ? (e.sum / e.wsum) : null;
+            return e;
+          });
+          return;
+        }
+        // ---- weighted % of TIME elapsed between two date columns, as at today -----------------
+        // This is how a planned value is expressed without the shell knowing what a baseline is:
+        // the module names the two date columns and the weight, and gets back "where the plan says
+        // this should be". ⚠️ Rows missing either date are EXCLUDED, not counted as 0 — the same
+        // rule the schedule module applies to its own planned figures.
+        if (m.agg === 'elapsed') {
+          var ew = 0, ea = 0, today = new Date(); today.setHours(0, 0, 0, 0);
+          for (var ei = 0; ei < rows.length; ei++) {
+            var er = rows[ei]; if (!keep(er, m.where)) continue;
+            var f0 = er[m.from], t0 = er[m.to]; if (!f0 || !t0) continue;
+            var wv2 = numOf(er[m.weight]); if (wv2 == null || wv2 <= 0) continue;
+            var fd = new Date(f0 + 'T00:00:00'), td = new Date(t0 + 'T00:00:00');
+            if (isNaN(+fd) || isNaN(+td)) continue;
+            var frac = (today <= fd) ? 0 : (today >= td) ? 1 : ((today - fd) / (td - fd));
+            ew += wv2; ea += wv2 * frac * 100;
+          }
+          out[m.key] = ew > 0 ? (ea / ew) : null;
+          return;
+        }
         var vals = [], wsum = 0, wacc = 0, n = 0, sum = 0;
         for (var i = 0; i < rows.length; i++) {
           var r = rows[i];
+          if (!keep(r, m.where)) continue;
+          if (m.agg === 'sumWhere') { var sv = numOf(r[m.column]); if (sv != null) { sum += sv; n++; } continue; }
           if (m.agg === 'countWhere') {
             if (m.values ? m.values.indexOf(r[m.column]) !== -1 : !!r[m.column]) n++;
             continue;
@@ -197,10 +283,35 @@
         if (m.agg === 'min') out[m.key] = vals.length ? vals.reduce(function (a, b) { return a < b ? a : b; }) : null;
         else if (m.agg === 'max') out[m.key] = vals.length ? vals.reduce(function (a, b) { return a > b ? a : b; }) : null;
         else if (m.agg === 'countWhere') out[m.key] = n;
+        else if (m.agg === 'sumWhere') out[m.key] = n ? sum : null;
         else if (m.agg === 'sum') out[m.key] = n ? sum : null;      // null, not 0 — see below
         else if (m.agg === 'avg') out[m.key] = n ? (sum / n) : null;
         else if (m.agg === 'wavg') out[m.key] = wsum > 0 ? (wacc / wsum) : null;
       });
+      // ---- the most recent N rows, for a module that has something to SHOW rather than count ----
+      // ⚠️ Declared columns only, and the module names its own storage bucket — the shell does not
+      // know that progress photos live in a private bucket, only that this spec asked for signing.
+      if (spec.recent && spec.recent.orderBy && spec.recent.columns) {
+        var rc = rows.slice().sort(function (a, b) {
+          var x = a[spec.recent.orderBy] || '', y = b[spec.recent.orderBy] || '';
+          return x < y ? 1 : x > y ? -1 : 0;                      // newest first
+        }).slice(0, spec.recent.limit || 6);
+        out.recent = rc;
+        if (spec.recent.bucket && spec.recent.pathCol && rc.length) {
+          try {
+            var paths = rc.map(function (r) { return r[spec.recent.pathCol]; }).filter(Boolean);
+            if (paths.length) {
+              var sg = await sb().storage.from(spec.recent.bucket)
+                .createSignedUrls(paths, spec.recent.ttl || 3600);
+              if (!sg.error && sg.data) {
+                var byPath = {};
+                sg.data.forEach(function (d) { if (d && d.path) byPath[d.path] = d.signedUrl || d.signedURL; });
+                out.recent.forEach(function (r) { r.__url = byPath[r[spec.recent.pathCol]] || null; });
+              }
+            }
+          } catch (e) { /* a signing failure costs the thumbnails, not the whole band */ }
+        }
+      }
       // ⚠️ An empty sum returns null rather than 0 deliberately. "Budget 0" reads as a costed project
       // worth nothing; "Budget —" reads as "not cost-loaded yet", which is the truth. The dashboard
       // renders the two differently and must be able to tell them apart.

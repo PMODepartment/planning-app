@@ -41,14 +41,45 @@ window.APP_CONFIG = {
   //                vocabulary is known from the schema; a guessed one reads 0
   //                forever and looks like good news.
   MODULES: [
-    { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: true, dash: { table: 'progress_photos', unit: 'photos' } },
+    { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: true, dash: { table: 'progress_photos', unit: 'photos',
+      // ⚠️ The bucket is named HERE, by the module that owns it. The shell signs whatever bucket it
+      // is told about and knows nothing about where progress photos live.
+      recent: { orderBy: 'taken_at', limit: 6, columns: ['title', 'works', 'taken_at', 'location'],
+                bucket: 'progress-photos', pathCol: 'photo_url', ttl: 3600 } } },
     { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' },
       metrics: [ { key: 'open', agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] } ] } },
     { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
-      metrics: [ { key: 'records', agg: 'countWhere', column: 'id' } ] } },
+      metrics: [
+        { key: 'records', agg: 'countWhere', column: 'id' },
+        // The flow the dashboard draws: original contract value, then change orders by state, then
+        // the revised total. record_type is a fixed vocabulary in this schema (Contract | Claim |
+        // Change Order), which is what makes these safe to declare.
+        { key: 'contractAmt', agg: 'sumWhere', column: 'amount', where: [{ column: 'record_type', values: ['Contract'] }] },
+        { key: 'coApprovedAmt', agg: 'sumWhere', column: 'amount',
+          where: [{ column: 'record_type', values: ['Change Order'] }, { column: 'status', values: ['Approved'] }] },
+        { key: 'coApprovedN', agg: 'countWhere', column: 'id',
+          where: [{ column: 'record_type', values: ['Change Order'] }, { column: 'status', values: ['Approved'] }] },
+        // ⚠️ "Pending" is everything that is a change order and NOT approved. Listing the pending
+        // words instead would silently drop any status nobody thought of.
+        { key: 'coOtherAmt', agg: 'sumWhere', column: 'amount', where: [{ column: 'record_type', values: ['Change Order'] }] },
+        { key: 'coAllN', agg: 'countWhere', column: 'id', where: [{ column: 'record_type', values: ['Change Order'] }] },
+        { key: 'claimN', agg: 'countWhere', column: 'id', where: [{ column: 'record_type', values: ['Claim'] }] },
+        // ⚠️ The figure the dashboard's attention count uses. A record COUNT cannot answer "what is
+        // outstanding": an unresolved claim is one with no date_resolved.
+        { key: 'claimOpen', agg: 'countWhere', column: 'id',
+          where: [{ column: 'record_type', values: ['Claim'] }, { column: 'date_resolved', absent: true }] }
+      ] } },
     { key: 'risk-register',     name: 'Risk Register',                         path: 'modules/risk-register/index.html',     icon: 'risk',       enabled: true, dash: { table: 'risk_register', unit: 'risks', attention: { column: 'status', values: ['Open'], label: 'open' },
-      metrics: [ { key: 'open', agg: 'countWhere', column: 'status', values: ['Open'] } ] } },
-    { key: 'stakeholder-map',   name: 'Stakeholder Map',                       path: 'modules/stakeholder-map/index.html',   icon: 'compass',    enabled: true, dash: { table: 'stakeholder_map', unit: 'stakeholders' } },
+      metrics: [
+        { key: 'open', agg: 'countWhere', column: 'status', values: ['Open'] },
+        // likelihood and impact are 1..5 in this schema, so the high/low split is 3.
+        { key: 'matrix', agg: 'matrix2', x: 'impact', y: 'likelihood', split: 3,
+          where: [{ column: 'status', values: ['Open'] }] }
+      ] } },
+    { key: 'stakeholder-map',   name: 'Stakeholder Map',                       path: 'modules/stakeholder-map/index.html',   icon: 'compass',    enabled: true, dash: { table: 'stakeholder_map', unit: 'stakeholders',
+      // ⚠️ influence and interest are 1..4 here (and stored as TEXT), so the split is 3, not the
+      // risk register's midpoint. Declaring it per module is why one engine can serve both.
+      metrics: [ { key: 'matrix', agg: 'matrix2', x: 'interest', y: 'influence', split: 3 } ] } },
     // ⚠️ RETIRED — these two moved to the ENGINEERING APP, which is now the single
     // source for both registers. The modules and their tables are still here, and the
     // rows in them are the pre-cutover originals: readable, but STALE the moment
@@ -80,7 +111,18 @@ window.APP_CONFIG = {
         { key: 'actual',  agg: 'sum',  column: 'actual_cost' },
         { key: 'baselined', agg: 'countWhere', column: 'bl_finish' },
         { key: 'done',    agg: 'countWhere', column: 'status', values: ['Completed'] },
-        { key: 'active',  agg: 'countWhere', column: 'status', values: ['In Progress'] }
+        { key: 'active',  agg: 'countWhere', column: 'status', values: ['In Progress'] },
+        // EVM. CPI = EV / AC, both real columns. SPI = EV / planned value, and the planned value is
+        // "where the baseline says the money should be by today" — expressed generically as a
+        // time-elapsed % between the two BASELINE date columns, weighted by planned cost.
+        // ⚠️ Rows with no baseline are excluded from 'pv' (the elapsed shape skips them), so SPI is
+        // reported only when there is a baseline to measure against — the same rule the module
+        // applies to its own Planned Value % column.
+        { key: 'ev', agg: 'sum', column: 'earned_value' },
+        { key: 'pv', agg: 'elapsed', from: 'bl_start', to: 'bl_finish', weight: 'planned_cost' },
+        // The programme view: one bar per trade, its span, its weighted % and how many are done.
+        { key: 'program', agg: 'groupSpan', group: 'work_type', from: 'start_date', to: 'end_date',
+          pct: 'percent_complete', weight: 'duration_days', doneCol: 'status', doneValues: ['Completed'] }
       ] } },
     { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true, dash: { table: 's_curve', unit: 'points' } },
     { key: 'resource-loading',  name: 'Resource & Role Master',                path: 'modules/resource-loading/index.html',  icon: 'users',      enabled: true, dash: { table: 'resources', unit: 'resources' } },
