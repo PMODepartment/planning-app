@@ -282,21 +282,47 @@
 /* The action table is an editable grid — it scrolls inside its own box rather
    than widening the page (same call as the two editable registers). */
 .il-mom-tablewrap { overflow-x: auto; }
-/* The action text is the column that matters, so it takes the slack — but the
-   others must keep their natural width or the inputs get crushed to "R. Lo" / "In".
-   nowrap + a min-width that fits every column is what holds them. */
-.il-mom-actions table { min-width: 760px; }
-/* width:100% on the first cell is the table-layout way of saying "take whatever
-   slack is left" — the other columns are nowrap with their own floors, so the
-   action text gets the remainder and never less than 240px. */
-.il-mom-actions td:first-child, .il-mom-actions th:first-child { width: 100%; }
-.il-mom-actions td:first-child .pd-input { width: 100%; min-width: 190px; }
-.il-mom-actions td:not(:first-child), .il-mom-actions th:not(:first-child) { white-space: nowrap; }
-/* A FLOOR, not a ceiling: an inline max-width let the browser crush Owner to 56px
-   (it needs 83) once the first column claimed 40%. */
-.il-mom-actions td:nth-child(2) .pd-input { min-width: 120px; }
-.il-mom-actions td:nth-child(3) .pd-input { min-width: 148px; }
-.il-mom-actions td:nth-child(4) .pd-select { min-width: 128px; }
+/* ⚠️⚠️ NEVER SIZE THIS TABLE'S COLUMNS BY POSITION. These rules used to be
+   `td:first-child { width:100% }` + `td:nth-child(2..4)`, written when the columns
+   were Action | Owner | Due | Status. Inserting No. / Category / Type / Issue in
+   front re-aimed every one of them at the wrong column WITH NO ERROR: "take all the
+   slack" landed on the No. field (which grew to ~540px) while Category was crushed
+   to "Com" and Status to "C". Same failure mode as the schedule's _CELL_META index
+   drift. Every cell now carries its own class and the rules key off that, so adding
+   a column can never silently re-target them again.
+
+   The table scrolls inside .il-mom-tablewrap rather than widening the page — the
+   established call for this app's editable registers. min-width is the sum of the
+   floors below, so the columns stay legible and the box scrolls instead. */
+.il-mom-actions td, .il-mom-actions th { white-space: nowrap; }
+.il-mom-actions table { min-width: 1400px; }
+
+/* Action item is the column that matters, so it absorbs the slack. width:100% on
+   exactly one cell is the table-layout way of saying "take whatever is left". */
+.il-c-act { width: 100%; }
+.il-c-act .pd-input { width: 100%; min-width: 240px; }
+
+/* ⚠️ FLOORS, not ceilings. Each is the measured width the control needs to show its
+   real content — a select must fit its longest option ("Commercial / Contracts",
+   "In Progress") or it silently renders as an unreadable stub, which is exactly what
+   the owner reported. Do not shrink these to make the table narrower; let it scroll. */
+.il-c-no    { width: 96px; }
+.il-c-no    .pd-input  { width: 72px; }
+.il-c-cat   { width: 172px; }
+.il-c-cat   .pd-select { width: 100%; min-width: 160px; }
+.il-c-type  { width: 116px; }
+.il-c-type  .pd-select { width: 100%; min-width: 104px; }
+.il-c-issue { width: 220px; }
+.il-c-issue .pd-input  { width: 100%; min-width: 200px; }
+.il-c-owner { width: 148px; }
+.il-c-owner .pd-input  { width: 100%; min-width: 130px; }
+.il-c-due   { width: 158px; }
+.il-c-due   .pd-input  { width: 100%; min-width: 142px; }
+.il-c-status{ width: 140px; }
+.il-c-status .pd-select{ width: 100%; min-width: 128px; }
+.il-c-file  { width: 96px; }
+.il-c-reg   { width: 150px; white-space: normal; }
+.il-c-del   { width: 48px; }
 
 /* Activity picker: this module does not own the schedule, so the field searches
    the server instead of listing every activity. */
@@ -373,12 +399,9 @@
   display: inline-block; font-size: 9px; font-weight: 700; margin-top: 3px;
   padding: 1px 5px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
 }
-/* ⚠️ The action table is now 9-10 columns. It scrolls inside .il-mom-tablewrap
-   (which is already overflow-x:auto) rather than widening the page; the min-width
-   is what forces that instead of letting every input crush to unusable. */
-.il-mom-table { min-width: 1180px; }   /* grew by the File column */
-.il-mom-table .il-mi-no { white-space: nowrap; width: 78px; }
-.il-mom-table .il-mi-no .pd-input { width: 62px; }
+/* ⚠️ The carried badge goes UNDER the number, not beside it. Inline it overflowed
+   the nowrap cell and rendered clipped as "carr" against the next column. */
+.il-c-no .il-mom-carried { display: block; margin-left: 1px; }
 
 /* --- Meetings list: search + type groups --------------------------------- */
 .il-mom-search { width: 100%; margin-bottom: 8px; }
@@ -409,5 +432,41 @@
 .il-mom-count { margin-left: auto; font-size: 12px; color: var(--pd-muted); white-space: nowrap; }
 
 /* --- Attachment cell ------------------------------------------------------ */
-.il-mom-table .il-mi-file { white-space: nowrap; width: 92px; }
 .il-mom-file { display: inline-flex; gap: 4px; align-items: center; }
+
+/* --- Reporting view -------------------------------------------------------
+   Follows the Project Schedule's precedent exactly: hide the AUTHORING controls
+   and neutralise the edit affordances; keep every VIEW control (filters, search,
+   PDF, distribute state, and the toggle itself — the way back out).
+   ⚠️ Presentation only. Nothing here disables a write path, so this must never be
+   mistaken for a permission: the real gates stay canEditMinute() + RLS. */
+
+/* Inputs and selects become plain text. This is what makes the screen presentable
+   — a wall of bordered boxes is exactly what stops a live grid reading as a record. */
+.il-mom-report .pd-input,
+.il-mom-report .pd-select,
+.il-mom-report .pd-textarea {
+  border-color: transparent; background: transparent; box-shadow: none;
+  padding-left: 2px; pointer-events: none;
+  /* kills the dropdown arrow, which otherwise still reads as "editable" */
+  -webkit-appearance: none; -moz-appearance: none; appearance: none;
+}
+.il-mom-report .pd-textarea { resize: none; }
+/* ⚠️ Placeholders are hidden: "What will be done" is prompt text, and in a report
+   it would read as though it were the content. An empty cell reads as empty, which is
+   honest. (No ::after em-dash here — pseudo-elements do not render on <input>.) */
+.il-mom-report .pd-input::placeholder { color: transparent; }
+
+/* Authoring controls only. The toggle, PDF, filters and the distribute state stay. */
+.il-mom-report #il-mom-additem,
+.il-mom-report .il-mom-carry,
+.il-mom-report #il-mom-save,
+.il-mom-report #il-mom-del,
+.il-mom-report .il-mi-del,
+.il-mom-report .il-mi-fadd,
+.il-mom-report .il-c-del,
+.il-mom-report .il-mom-note { display: none !important; }
+
+/* Rows breathe — this is read across a room, not scanned at a desk. */
+.il-mom-report .il-mom-table td { padding-top: 7px; padding-bottom: 7px; }
+.il-mom-report .il-mom-detail-card { padding: 18px 20px; }

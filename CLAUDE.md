@@ -6952,3 +6952,29 @@ per-trade tree, ids/names/dates, idempotency across three passes, patch-not-rein
 failed reads, the missing-skeleton no-op, trade ordering, and the shared WPM mapping. C1 (33), C2
 (19), C3 (32), C4 (25) suites still green; **0 functions lost**; parses. ⚠️ **Not verified signed-in**,
 and no live sync has been run. `MODULE_V` → `20260819h`.
+
+## 2026-08-22 — Issues & Lessons: MoM UI fixes + module audit
+
+Fixed two owner-reported defects in the Minutes of Meeting screen and audited the module.
+
+⚠️ **Never size the MoM action table's columns by position.** `td:first-child { width:100% }`
++ `td:nth-child(2..4)`, written when the columns were `Action | Owner | Due | Status`, silently
+re-aimed at the wrong columns once No. / Category / Type / Issue were inserted in front — the
+No. field ballooned while Category rendered "Com" and Status "C". Every cell now carries an
+`il-c-*` class. Same class as the schedule's `_CELL_META` index drift. Page horizontal scroll
+is back to **0** and the table scrolls inside its own wrap.
+
+⚠️ **A deadlock of my own making:** "Raise as issue" was gated on `ro` (= `!mayEdit || locked`),
+but raising *requires* a distributed minute. Draft showed a button the DB always refused;
+distributing removed the button. **No state could raise an action.** `mayEdit` and `locked` are
+now separate; verified across all three states.
+
+Added a **Reporting view** — a session-only, never-persisted presentation mode scoped to the
+MoM host element (not `<body>`), so it cannot leak into the register screen.
+
+Audit: 0 functions lost (77=77), parses, 0 NUL bytes, CSS braces balanced, all reads via
+`PDb.selectAll`. **One real find fixed** — the item status select could silently report 'Open'
+for an off-list legacy value (select-value trap); an off-list value is now carried through, and
+it deliberately avoids `momOptions()` because that helper's blank option would write `''` into a
+CHECK-constrained column. 75/75 checks green. `MODULE_V` → `20260822b`.
+⚠️ **Not verified signed-in.**

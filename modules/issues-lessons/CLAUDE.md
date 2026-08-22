@@ -385,3 +385,59 @@ in this env, as noted in earlier prompts):
 ## Pending
 - Live click-through against a real login + the live `issues_lessons` table (needs the
   migration run first).
+
+## 2026-08-22 — MoM UI clash, raise deadlock, Reporting view, module audit
+
+**The UI clash (owner-reported, screenshot).** `.il-mom-actions td:first-child { width:100% }`
+plus `td:nth-child(2..4)` were written when the columns were `Action | Owner | Due | Status`.
+Inserting No. / Category / Type / Issue in front silently re-aimed "take all the slack" at the
+**No.** column (~247px cell, 223px input) while Category crushed to "Com" and Status to "C".
+Specificity (0,2,1) also beat the `.il-mom-table .il-mi-no` (0,2,0) rule meant to hold it.
+Same failure class as the schedule's `_CELL_META` index drift.
+⚠️ **Never size this table by position.** Every `<th>`/`<td>` now carries its own `il-c-*`
+class and the CSS keys off that, so inserting a column cannot re-target a rule again.
+Measured after the fix: No. 96 (input 72), Cat 184, Type 128, Issue 224, Action 264, Owner 154,
+Due 169, Status 152, File 76, Register 137, Del 56; header 11 cells = body 11 cells; the
+`carried` badge is `display:block` and unclipped; table 1639px scrolling **inside**
+`.il-mom-tablewrap` (887 visible) with **page horizontal scroll 0** (was 198).
+
+**⚠️ THE RAISE DEADLOCK (mine, owner-reported).** `ro = !mayEdit || locked` conflated
+*permission* with the *workflow lock*. Raising requires the minute to be DISTRIBUTED (the DB
+enforces it in `issues_lessons_ins`) — but the cell was gated on `ro`, which is true the moment
+a minute is distributed. So a **draft** rendered a button the database always refused, and
+**distributing made the button disappear**: there was no state in which an action could be
+raised at all. Fixed by passing `mayEdit` and `locked` separately. Verified in all three states:
+`!mayEdit` → dash; writer + draft → **disabled** button whose title says to distribute first;
+writer + distributed → **live `.il-mi-raise`** — the state that was previously unreachable.
+
+**Reporting view** (owner asked for a presentable read-only record). Session-only `_momReport`,
+never persisted — it is how the record is being *looked at* right now, not a property of the
+minute. The class is toggled on `#il-mom-view`, **not `<body>`**, so switching to Issues &
+Concerns cannot leave the register in report mode. Verified: controls go transparent and
+`pointer-events:none`, add-item / carry-over / save / delete / row-delete / delete-column all
+hide, and toggling back restores the DOM **byte-identical** to before.
+
+**Audit of the whole module.** 0 NUL bytes, parses, CSS braces 189/189, **0 functions lost**
+(77 = 77 vs HEAD), no positional column selectors left (the only `:first-child` matches are a
+warning comment and `.il-mom-group:first-child`), every read goes through `PDb.selectAll`
+(no raw `.select()` — the 1000-row truncation class), and both `mom_items` inserts supply
+`description` and an explicit `status`. `description`'s original `not null` was already dropped
+by the 2026-08-21 migration, so the action-text move cannot break inserts.
+
+⚠️ **One real find, fixed:** the item **status** select rendered `MOM_STATUSES` with no
+off-list fallback, so a legacy row holding anything else would silently report **'Open'** —
+the select-value trap. It is deliberately **not** routed through `momOptions()`, because that
+helper always emits a blank first option and picking it would write `''` into a CHECK-constrained
+column and be refused; an off-list value is appended instead. Verified: in-list selects
+correctly, `'Deferred'` survives and is selected, no blank option in any of the three cases.
+
+📌 **Noted, not changed** (a design call, not a defect): `MOM_STATUSES` (Open | In Progress |
+Closed) and the register's `STATUSES` (Open | On Hold | Closed) differ. The item's own select
+shows `it.status` while the filter (`momItemStatus`) and the register pill show the *linked
+issue's* status, so a raised item can be filtered by "On Hold" while its select reads its own
+value. The "Raised · <status>" pill makes the register's value visible on the row.
+
+Suites re-run green after every edit: carry-over **23**, raise **10**, gaps **42** = **75**.
+`MODULE_V` → `20260822b`; module assets → `?v=20260822a`.
+⚠️ **Not verified signed-in** — measured in a harness against the real CSS and the shipped
+functions, not through a live login.

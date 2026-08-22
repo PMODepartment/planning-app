@@ -669,6 +669,11 @@ window.IssuesLessons = (function () {
     'Weekly Coordination', 'Client Progress Meeting', 'Technical Coordination',
     'Kick-off', 'Safety Toolbox', 'Site Inspection', 'Management Review'
   ];
+  // ⚠️ SESSION-ONLY and never persisted or written anywhere. Reporting view is how
+  // the record is being LOOKED AT right now — on a projector in the meeting — not a
+  // property of the minute. Persisting it would have one planner's presentation mode
+  // greet the next person who opens the screen.
+  var _momReport = false;
   var _momF = { q: '', cat: '', type: '', status: '' };   // action-item filters
   var _momQ = '';                                          // meetings-list search
 
@@ -841,6 +846,9 @@ window.IssuesLessons = (function () {
     }
     var cur = MOMS.find(function (x) { return x.id === _momSel; }) || null;
     var shown = momSearchList();
+    // Scoped to this screen's host, not <body> — switching to Issues & Concerns must
+    // not leave the register rendered as a read-only report.
+    host.classList.toggle('il-mom-report', _momReport);
     host.innerHTML =
       (isSteward ? '' : (canAdd
         ? '<p class="il-mom-note">You can record minutes and maintain the ones you recorded. ' +
@@ -949,6 +957,11 @@ window.IssuesLessons = (function () {
         '<div style="flex:1;"></div>' +
         // Export is a READ, so it is offered to everyone who can see the minute —
         // unlike every other control on this card, which is gated on canEditMinute().
+        // A VIEW control, so — like PDF — it is offered to everyone who can see the
+        // minute, not only to whoever may edit it.
+        '<button class="pd-btn pd-btn-sm' + (_momReport ? ' is-active' : '') + '" id="il-mom-report" ' +
+          'title="Present these minutes as a clean read-only record — hides the editing controls">' +
+          (_momReport ? '\u2713 Reporting view' : 'Reporting view') + '</button>' +
         '<button class="pd-btn pd-btn-sm" id="il-mom-pdf" title="Download these minutes as a PDF">⬇ PDF</button>' +
         (mayEdit ? '<button class="pd-btn pd-btn-sm' + (locked ? '' : ' pd-btn-primary') + '" id="il-mom-dist">' +
           (locked ? '↩ Revert to draft' : '📤 Distribute') + '</button>' : '') +
@@ -992,10 +1005,22 @@ window.IssuesLessons = (function () {
           ? '<div class="il-empty" style="padding:14px;">No action item on these minutes matches the filter.</div>'
           : '') +
         (vis.length ? '<div class="il-mom-tablewrap"><table class="pd-table il-mom-table">' +
-          '<thead><tr><th>No.</th><th>Category</th><th>Type</th><th>Issue / Agenda</th>' +
-          '<th>Action item</th><th>Owner</th><th>Due</th><th>Status</th><th>File</th><th>In the register</th>' +
-          (ro ? '' : '<th></th>') + '</tr></thead><tbody>' +
-          vis.map(function (it) { return momItemRowHTML(it, ro, d); }).join('') +
+          // ⚠️ EVERY cell carries its own column class, header and body alike, and the
+          // CSS keys off those — never off :first-child / :nth-child. The previous
+          // positional rules were written when Action was column 1; adding No. /
+          // Category / Type / Issue in front silently re-aimed "take all the slack" at
+          // the No. field, which is why Category rendered as "Com" and Status as "C".
+          // Same failure as the schedule's _CELL_META index drift. Position-based
+          // column CSS breaks the moment a column is inserted; class-based does not.
+          '<thead><tr>' +
+            '<th class="il-c-no">No.</th><th class="il-c-cat">Category</th>' +
+            '<th class="il-c-type">Type</th><th class="il-c-issue">Issue / Agenda</th>' +
+            '<th class="il-c-act">Action item</th><th class="il-c-owner">Owner</th>' +
+            '<th class="il-c-due">Due</th><th class="il-c-status">Status</th>' +
+            '<th class="il-c-file">File</th><th class="il-c-reg">In the register</th>' +
+            (ro ? '' : '<th class="il-c-del"></th>') +
+          '</tr></thead><tbody>' +
+          vis.map(function (it) { return momItemRowHTML(it, ro, d, mayEdit, locked); }).join('') +
           '</tbody></table></div>'
           : (items.length ? '' : '<div class="il-empty" style="padding:14px;">No action items on these minutes.</div>')) +
         (ro ? '' :
@@ -1054,34 +1079,49 @@ window.IssuesLessons = (function () {
     '</div>';
   }
 
-  function momItemRowHTML(it, ro, d) {
+  // ⚠️ `ro` is "can this row's FIELDS be typed into" = permission AND not-locked.
+  // Raising needs a DIFFERENT test, so `mayEdit` and `locked` are passed separately.
+  // Collapsing them into `ro` created a deadlock — see the register cell below.
+  function momItemRowHTML(it, ro, d, mayEdit, locked) {
     var iss = momIssueOf(it);
     return '<tr data-item="' + Fmt.esc(it.id) + '">' +
-      '<td class="il-mi-no"><input class="pd-input pd-input-sm il-mi" data-f="item_no" value="' + Fmt.esc(it.item_no || '') +
+      '<td class="il-c-no"><input class="pd-input pd-input-sm il-mi" data-f="item_no" value="' + Fmt.esc(it.item_no || '') +
         '" placeholder="' + ((it.seq == null ? 0 : it.seq) + 1) + '"' + d + '>' +
         // Says the action came in from an earlier meeting. ⚠️ Not a status: a carried
         // action is the SAME action, and its register link came with it — without the
         // tag it reads as something someone re-typed, and the two would be chased twice.
         (it.carried_from_item_id ? '<span class="il-mom-carried" title="Carried over from an earlier meeting">carried</span>' : '') +
       '</td>' +
-      '<td><select class="pd-select pd-input-sm il-mi" data-f="category"' + d + '>' +
+      '<td class="il-c-cat"><select class="pd-select pd-input-sm il-mi" data-f="category"' + d + '>' +
         momOptions(MOM_CATEGORIES, momUsedCategories(), it.category || '') + '</select></td>' +
-      '<td><select class="pd-select pd-input-sm il-mi" data-f="type"' + d + '>' +
+      '<td class="il-c-type"><select class="pd-select pd-input-sm il-mi" data-f="type"' + d + '>' +
         // ⚠️ A blank option is offered because the column is nullable — without it an
         // untyped legacy row would silently read as the first option while the database
         // still holds null, the select-value trap the drawing register documents.
         '<option value="">—</option>' +
         MOM_TYPES.map(function (o) { return '<option' + (it.type === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
       '</select></td>' +
-      '<td><input class="pd-input pd-input-sm il-mi" data-f="issue" value="' + Fmt.esc(it.issue || '') + '" placeholder="What was raised" ' + d + '></td>' +
-      '<td><input class="pd-input pd-input-sm il-mi" data-f="action_item" value="' + Fmt.esc(it.action_item || '') + '" placeholder="What will be done" ' + d + '></td>' +
-      '<td><input class="pd-input pd-input-sm il-mi" data-f="owner" value="' + Fmt.esc(it.owner || '') + '"' + d + '></td>' +
-      '<td><input class="pd-input pd-input-sm il-mi" data-f="due_date" type="date" value="' + dateVal(it.due_date) + '"' + d + '></td>' +
-      '<td><select class="pd-select pd-input-sm il-mi" data-f="status"' + d + '>' +
-        MOM_STATUSES.map(function (o) { return '<option' + (it.status === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
+      '<td class="il-c-issue"><input class="pd-input pd-input-sm il-mi" data-f="issue" value="' + Fmt.esc(it.issue || '') + '" placeholder="What was raised" ' + d + '></td>' +
+      '<td class="il-c-act"><input class="pd-input pd-input-sm il-mi" data-f="action_item" value="' + Fmt.esc(it.action_item || '') + '" placeholder="What will be done" ' + d + '></td>' +
+      '<td class="il-c-owner"><input class="pd-input pd-input-sm il-mi" data-f="owner" value="' + Fmt.esc(it.owner || '') + '"' + d + '></td>' +
+      '<td class="il-c-due"><input class="pd-input pd-input-sm il-mi" data-f="due_date" type="date" value="' + dateVal(it.due_date) + '"' + d + '></td>' +
+      '<td class="il-c-status"><select class="pd-select pd-input-sm il-mi" data-f="status"' + d + '>' +
+        // ⚠️ No blank option: `status` carries a CHECK and the handler deliberately
+        // does NOT null-convert it, so an empty pick would write '' and be refused.
+        // `present` carries any off-list legacy value through so the select shows the
+        // truth instead of silently reporting 'Open' — the select-value trap.
+        // ⚠️ Deliberately NOT momOptions(): that helper always emits a blank first
+        // option, and picking it here would write '' into a CHECK-constrained column and
+        // be refused by the database. The list is closed, so an off-list LEGACY value is
+        // appended instead of being swallowed — otherwise the select silently reports
+        // 'Open' while the row holds something else (the select-value trap).
+        MOM_STATUSES.concat(it.status && MOM_STATUSES.indexOf(it.status) < 0 ? [it.status] : [])
+          .map(function (o) {
+            return '<option' + (it.status === o ? ' selected' : '') + '>' + Fmt.esc(o) + '</option>';
+          }).join('') +
       '</select></td>' +
-      '<td class="il-mi-file">' + momAttachCellHTML(it, ro) + '</td>' +
-      '<td>' + (it.issue_id
+      '<td class="il-c-file">' + momAttachCellHTML(it, ro) + '</td>' +
+      '<td class="il-c-reg">' + (it.issue_id
         // The status shown is the REGISTER's, read from `rows` — the minute does not keep
         // its own copy of it, so the two can never disagree.
         ? (iss
@@ -1089,9 +1129,24 @@ window.IssuesLessons = (function () {
             // Linked, but not in the loaded register — say only what is known rather than
             // colouring it with a status we do not have.
             : '<span style="font-size:12px;color:var(--pd-muted);" title="Raised in the register">Raised</span>')
-        : (ro ? '<span class="il-noedit" title="A planner raises an action item into the register">—</span>'
+        // ⚠⚠ THE DEADLOCK THIS FIXES. Raising requires the minute to be DISTRIBUTED
+        // (enforced in the DB by issues_lessons_ins), but this cell used to be gated on
+        // `ro` — which is true the moment a minute is distributed. So a draft showed a
+        // button that always refused, and distributing made the button disappear: there
+        // was NO state in which an action could be raised at all.
+        //
+        // Raising is not an edit of the minute. It writes a REGISTER row (plus the
+        // link), so the right test is "may I write the link" (mayEdit — the same rule
+        // RLS applies to mom_items) AND "has it been issued" (locked). It is
+        // deliberately AVAILABLE while locked, which is the whole point.
+        : (!mayEdit
+            ? '<span class="il-noedit" title="The recorder or a planner raises an action into the register">—</span>'
+            : !locked
+              // A disabled control that says why beats a live button that toasts an
+              // error on every click — the state is visible before the click, not after.
+              ? '<button class="pd-btn pd-btn-sm" disabled title="Distribute these minutes first — an issue in the register must come from a meeting record everyone can read.">Raise as issue</button>'
               : '<button class="pd-btn pd-btn-sm il-mi-raise">Raise as issue</button>')) + '</td>' +
-      (ro ? '' : '<td><button class="pd-btn pd-btn-sm pd-btn-danger il-mi-del" title="Remove this action">✕</button></td>') +
+      (ro ? '' : '<td class="il-c-del"><button class="pd-btn pd-btn-sm pd-btn-danger il-mi-del" title="Remove this action">✕</button></td>') +
     '</tr>';
   }
 
@@ -1661,6 +1716,9 @@ window.IssuesLessons = (function () {
     });
     var fc = host.querySelector('#il-momf-clear');
     if (fc) fc.onclick = function () { _momF = { q: '', cat: '', type: '', status: '' }; renderMom(); };
+
+    var rep = host.querySelector('#il-mom-report');
+    if (rep) rep.onclick = function () { _momReport = !_momReport; renderMom(); };
 
     var dist = host.querySelector('#il-mom-dist');
     if (dist) dist.onclick = function () {
