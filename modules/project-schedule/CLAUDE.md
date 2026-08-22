@@ -1,3 +1,50 @@
+## ⚠️⚠️ Sync Procurement DELETED the trade headings it had just created (2026-08-22) — fmlozano
+Owner: *"The trades are not showing properly in the procurement dashboard"*, then the decisive clue —
+*"when re-syncing from procurement in the WBS it shows for a brief moment but disappears completely."*
+That is not a rendering fault. `syncProcurement()` was deleting its own work, in the same function call.
+
+- ⚠️ **ROOT CAUSE — the stale-row sweep swept the trade nodes' WBS-Summary rows.** `allPrcRows` is
+  *every* row whose `wbs_node_id` sits in the procurement subtree, and a node's projected summary row
+  is one of those. A projection carries **no `activity_id`**, so `wantIds[String(r.activity_id)]` was
+  never true and every trade heading was classed stale and deleted — **immediately after the
+  `_wbsEnsureSummaries()` call a few lines above had just created it.** Create, render, delete: the
+  brief flash the owner saw, on every single sync.
+- ⚠️ **The comment above the sweep explains how it got there, and it is worth reading before touching
+  it again.** Design Development scopes its sweep with `.like('activity_id','DD-%')` — a projection can
+  never match a prefix. The owner asked for procurement's Activity ID to be the **bare WP number**,
+  which has no prefix, so this sweep was scoped **by WBS node** instead. That scoping is correct for
+  finding departed packages and is exactly what pulled the projections into the candidate set.
+- **Fix:** only a **mirrored activity** can be stale here. A projection is owned by its node, never by
+  the mirror — `isWbs(r)` and a missing `activity_id` both exclude a row from the sweep. Checked
+  `syncDesignDevelopment` for the same class: **safe**, for the prefix reason above.
+- **This is the whole of the reported "corruption", and nothing was actually corrupt.** With no summary
+  row a trade node renders no heading, so the 8 Electrical work packages rendered flat and the first of
+  them (activity **79**) was mistaken for the "Electrical and Auxiliary Works System" heading. The rest
+  looked like duplicates of it. Their repeated `In Progress`, their dashed BL Start/BL Finish and their
+  shared `wbs 3.3.6` are all **by design** — the mirror only encodes "awarded", mirrored rows carry no
+  baseline, and every package under one trade shares that trade's code.
+- ⚠️ **Two earlier hypotheses were WRONG and were disproved by live data, not by reading.** (a) Duplicate
+  `source_kind='procurement'` skeleton roots (the 2026-08-21 bug): OPW101 has **exactly one**, with all
+  9 trades correctly parented. (b) The importer clashing with the sync: a replace-import does delete
+  every summary row while `_clearWbsTree()` keeps the locked nodes, but `_wbsEnsureSummaries()`
+  reprojects them correctly — the sync then deleted them again. **The import was never involved.**
+- **Live audit of OPW101 that pinned it** (run from `projects.html`, which carries the same session —
+  ⚠️ the ~1.2 MB module page freezes on a large row scan): 460 nodes, 451 WBS-Summary rows, **0 orphans,
+  0 duplicates**, and `nodesMissingSummary: 9` — *exactly* the 9 `procurement_trade` nodes, with
+  `missingPlainCount: 0`. ⚠️ The **Procurement root keeps its own summary row**, which corroborates the
+  mechanism precisely: `prcNodeIds` holds the root's **children**, never the root itself.
+- **Self-healing, no cleanup needed.** `_wbsEnsureSummaries()` runs on every `load()` and reprojects any
+  node missing a row; with the sweep fixed, they now survive the sync that follows.
+- **Verified by EXECUTING the shipped predicate** — the stale block and `isWbs` sliced verbatim out of
+  index.html, nothing reimplemented (`scratchpad/check-prcstale.js`, **8/8**): projections survive with
+  a null *and* a blank `activity_id`, wanted packages survive, a departed package is still swept, an
+  emptied trade keeps its heading while losing its package, and projections are safe against an empty
+  want set. ⚠️ It carries a **contrast assertion proving the pre-fix predicate DID sweep both summary
+  rows**, so the suite fails against HEAD. Inline script parses (1 block, rc 0).
+- ⚠️ **Not verified signed-in** — the next real Sync Procurement is the test: the 9 trade headings should
+  appear and **stay**. `MODULE_V` → `20260822a` (and `modules-grid.js`'s own `?v=` bumped with it — that
+  file *contains* MODULE_V, so a cached copy would go on serving the old token).
+
 # Module: project-schedule
 
 ## Procurement trades kept re-mis-nesting on every reload — duplicate skeleton roots (2026-08-21) — fmlozano

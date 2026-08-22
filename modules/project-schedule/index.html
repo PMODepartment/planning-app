@@ -4416,8 +4416,19 @@
 
       // A package that has left the WPM project must not linger. Scoped to rows already
       // under the procurement branch, so nothing outside it can ever be deleted here.
-      var stale = allPrcRows.filter(function (r) { return !wantIds[String(r.activity_id)]; })
-        .map(function (r) { return r.id; });
+      // ⚠️⚠️ EXCLUDE the trade nodes' own WBS-Summary rows. `allPrcRows` is every row
+      // whose `wbs_node_id` is in the procurement subtree, and a node's projected summary row
+      // is one of those — it carries no `activity_id`, so it is never in `wantIds` and the
+      // sweep deleted it on EVERY sync, immediately after `_wbsEnsureSummaries()` above had
+      // just created it. Symptom: the trade headings appear for a moment and then vanish, the
+      // trade nodes end up with no summary row at all, and their work packages render flat
+      // under the first one (which is then mistaken for the heading). Only a MIRRORED ACTIVITY
+      // can be stale here — a projection is owned by its node, never by the mirror.
+      var stale = allPrcRows.filter(function (r) {
+        if (isWbs(r)) return false;
+        if (!r.activity_id) return false;
+        return !wantIds[String(r.activity_id)];
+      }).map(function (r) { return r.id; });
 
       if (inserts.length) {
         var ins = await sb().from(TABLE).insert(inserts).select();

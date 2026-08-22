@@ -84,6 +84,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-22 — Sync Procurement was deleting the trade headings it had just created
+Owner: the trades don't show properly, and *"when re-syncing from procurement in the WBS it shows for a
+brief moment but disappears completely."* That flash was the bug, not a symptom of one.
+- ⚠️ **`syncProcurement()`'s stale-row sweep deleted the trade nodes' own WBS-Summary rows** — in the
+  same call that created them. `allPrcRows` is every row whose `wbs_node_id` is in the procurement
+  subtree, and a projection carries **no `activity_id`**, so it was never in `wantIds` and was classed
+  stale on every sync. Only a mirrored **activity** can be stale there; a projection is owned by its
+  node. `syncDesignDevelopment` is safe — it scopes its sweep by the `DD-` prefix, which a projection
+  can never match.
+- **Nothing was actually corrupt.** With no summary row a trade renders no heading, so the 8 Electrical
+  work packages rendered flat and the first of them was mistaken for the heading; the rest read as
+  duplicates. Their repeated `In Progress`, dashed baselines and shared WBS code are all by design.
+- ⚠️ **Two hypotheses disproved by live data:** duplicate procurement skeleton roots (OPW101 has exactly
+  one, 9 trades correctly parented) and an importer/sync clash (the import was never involved).
+  The live audit was decisive: 460 nodes, 451 summary rows, 0 orphans, 0 duplicates, and
+  `nodesMissingSummary: 9` — exactly the 9 `procurement_trade` nodes.
+- **Verified by executing the shipped predicate** (sliced, not reimplemented): **8/8**, including a
+  contrast assertion proving the pre-fix predicate swept both summary rows, so it fails against HEAD.
+  Parses clean. ⚠️ **Not verified signed-in** — the next Sync Procurement is the test. Self-heals: the
+  missing rows are reprojected on the next load and now survive. `MODULE_V` → `20260822a`
+  (+ `modules-grid.js?v=`, since that file *contains* MODULE_V).
+
 ### 2026-08-21 — Both MoM migrations verified live (13 columns + 4 functions); the bucket cannot be probed
 Owner ran `2026-08-21-mom-schema-carryover-distribute.sql` and `2026-08-21-mom-type-and-attachments.sql`.
 Checked against the live database rather than trusting the success messages. **No code changed.**
