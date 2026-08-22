@@ -504,3 +504,67 @@ and that the options are a copy). **0 functions lost** (77 = 77). Parses; 0 NUL 
 
 `MODULE_V` → `20260822c`; module assets → `?v=20260822b`.
 ⚠️ **Not verified signed-in, and the migration has not been run.**
+
+## 2026-08-22 — Action items are CARDS, not a table (the reporting rework)
+
+Owner, on the live screen: *"The UI needs a big rework since I need to have all of the details
+for the action items to be read in one view especially during reporting"* — then, decisively:
+*"this is true when viewing the minutes of meeting in the mom-app."*
+
+That second message settled the design. **No migration.**
+
+⚠️ **NEVER PUT THE COLUMNS BACK.** The action items were an 11-column table with
+`min-width: 1400px` scrolling inside `.il-mom-tablewrap`. On the owner's own screen (a ~1490px
+detail pane) the table still needed 1639px, so **Owner, Due, Status, File and the register link
+all sat off the right edge behind a horizontal scrollbar** — precisely the columns someone
+reporting from the screen needs to read.
+
+⚠️ **Re-tuning the widths could not have fixed this, which is why the previous pass didn't.**
+An action item has more fields than a screen has columns: any set of widths that fits them all
+crushes the text fields, and any set that keeps the text readable overflows. The layout had to
+stop being a row. Yesterday's per-column class work was a correct fix to the *wrong* problem —
+it made the columns aim at the right cells, but eleven columns were never going to fit.
+
+**The card mirrors mom-app's own layout — the same structure `momDownloadPDF()` already
+renders:** a six-cell meta grid (No. / Category / Type / Status / Responsible / Target date)
+above full-width text blocks. That is deliberate and worth preserving: the screen and the export
+are now **one document**, so what a planner reads on screen is what the PDF prints. A third
+bespoke on-screen layout would let the two drift, which is the drift this module has already
+been bitten by twice (the mom-app category dropdowns, the two status vocabularies).
+
+**Reporting view now renders values, not controls** (`momFieldHTML`). ⚠️ This is not cosmetic:
+a single-line `<input>` **clips its own value** — measured, a 659px value inside a 416px box —
+so a long Issue / Agenda was unreadable in the one mode that exists for reading it. Text wraps;
+an input cannot be made to. It also stops a printed-looking record being built out of form
+widgets. `overflow-wrap: anywhere` on the value means an unspaced run can never widen the card
+and reintroduce the scrollbar this whole change removes.
+
+**`description` is now on screen.** It has been a real column since the 2026-08-21 migration and
+the PDF has always printed it, but the table had no column for it — so the export carried a field
+the screen could not show. In reporting it appears only when it has something to say, and it is
+blank when the action text *came from* `description` (a legacy row), the same rule the PDF applies.
+
+⚠️ **Grid columns are stepped COUNTS (6 → 3 → 2), not `auto-fit`.** auto-fit with a minmax floor
+packed five tracks into the pane and stranded Target date alone on a second row — never clipped,
+but a 5+1 split reads as a mistake. Every step divides six exactly. At full width the tracks are
+the PDF's own fractions (`0.6fr 1.5fr 0.9fr 0.9fr 1.2fr 1fr`) so Category gets the room its
+longest option needs (measured 202px for "Commercial / Contracts") instead of an equal share.
+
+⚠️ **A bug caught in my own patch before it shipped:** the No. field keeps the `carried` badge
+inside its block, and my first cut did that by stripping a `</div>` off the helper's output. In
+reporting the body *itself* contains a `</div>`, so it would have closed the wrong element and
+broken the card. The badge is passed as an explicit `extra` argument instead.
+
+**Verified in a browser against the real CSS**, gated on a sane viewport (⚠️ two readings were
+thrown away first — one taken while the window was not compositing, reporting `clientWidth: 0`,
+and one under leftover mobile emulation pinning the layout viewport at 980px; both produced
+confident nonsense like "139 elements offscreen"). At 1265px: **0 fields offscreen, 0 clipped,
+0 page horizontal scroll, 0 inner scroll** in both edit and reporting; all 11 fields present;
+reporting = 9 values / 0 controls and the long Issue / Agenda fully wrapped; toggling back
+restores the DOM byte-identical. Reflow verified at 805px (3 columns, 2 rows) and 520px
+(2 columns, 3 rows) with all 11 fields still present and nothing offscreen.
+
+Suites green — carry-over **23**, raise **10**, gaps **44**. **0 functions lost**, 1 added
+(`momFieldHTML`). Parses; 0 NUL bytes; CSS braces 190/190.
+`MODULE_V` → `20260822d`; module assets → `?v=20260822c`.
+⚠️ **Not verified signed-in.**

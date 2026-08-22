@@ -281,51 +281,78 @@
 .il-mom-actions td { vertical-align: middle; }
 /* The action table is an editable grid — it scrolls inside its own box rather
    than widening the page (same call as the two editable registers). */
-.il-mom-tablewrap { overflow-x: auto; }
-/* ⚠️⚠️ NEVER SIZE THIS TABLE'S COLUMNS BY POSITION. These rules used to be
-   `td:first-child { width:100% }` + `td:nth-child(2..4)`, written when the columns
-   were Action | Owner | Due | Status. Inserting No. / Category / Type / Issue in
-   front re-aimed every one of them at the wrong column WITH NO ERROR: "take all the
-   slack" landed on the No. field (which grew to ~540px) while Category was crushed
-   to "Com" and Status to "C". Same failure mode as the schedule's _CELL_META index
-   drift. Every cell now carries its own class and the rules key off that, so adding
-   a column can never silently re-target them again.
+/* ⚠️⚠️ AN ACTION ITEM IS A CARD, NOT A TABLE ROW. Do not put the columns back.
+   This was an 11-column table with `min-width: 1400px` scrolling inside a wrap. On a
+   real pane that meant Owner, Due, Status, File and the register link sat off the
+   right edge behind a scrollbar — the owner reported it as "I need all the details in
+   one view, especially during reporting", and they were right: a reporter cannot read
+   a record whose second half is behind a horizontal scroll.
 
-   The table scrolls inside .il-mom-tablewrap rather than widening the page — the
-   established call for this app's editable registers. min-width is the sum of the
-   floors below, so the columns stay legible and the box scrolls instead. */
-.il-mom-actions td, .il-mom-actions th { white-space: nowrap; }
-.il-mom-actions table { min-width: 1400px; }
+   Columns could not be re-tuned to fix it. An action item has more fields than a
+   screen has columns, so any width that fits them all crushes the text fields, and
+   any width that keeps the text readable overflows. The layout has to WRAP.
 
-/* Action item is the column that matters, so it absorbs the slack. width:100% on
-   exactly one cell is the table-layout way of saying "take whatever is left". */
-.il-c-act { width: 100%; }
-.il-c-act .pd-input { width: 100%; min-width: 240px; }
+   The card mirrors mom-app's own layout — the same structure momDownloadPDF() renders
+   — so the screen and the export are one document. Keep them in step. */
+.il-mi-cards { display: flex; flex-direction: column; gap: 10px; }
 
-/* ⚠️ FLOORS, not ceilings. Each is the measured width the control needs to show its
-   real content — a select must fit its longest option ("Commercial / Contracts",
-   "On Hold") or it silently renders as an unreadable stub, which is exactly what
-   the owner reported. Do not shrink these to make the table narrower; let it scroll.
-   ⚠️ The status floor is NOT retuned down now that "In Progress" is gone: the column
-   also renders an off-list legacy value carried through by momItemRowHTML, and a floor
-   set to the shortest possible list is a floor that crushes the first surprise. */
-.il-c-no    { width: 96px; }
-.il-c-no    .pd-input  { width: 72px; }
-.il-c-cat   { width: 172px; }
-.il-c-cat   .pd-select { width: 100%; min-width: 160px; }
-.il-c-type  { width: 116px; }
-.il-c-type  .pd-select { width: 100%; min-width: 104px; }
-.il-c-issue { width: 220px; }
-.il-c-issue .pd-input  { width: 100%; min-width: 200px; }
-.il-c-owner { width: 148px; }
-.il-c-owner .pd-input  { width: 100%; min-width: 130px; }
-.il-c-due   { width: 158px; }
-.il-c-due   .pd-input  { width: 100%; min-width: 142px; }
-.il-c-status{ width: 140px; }
-.il-c-status .pd-select{ width: 100%; min-width: 128px; }
-.il-c-file  { width: 96px; }
-.il-c-reg   { width: 150px; white-space: normal; }
-.il-c-del   { width: 48px; }
+.il-mi-card {
+  border: 1px solid var(--pd-line); border-radius: 10px;
+  padding: 12px; background: var(--pd-card);
+}
+
+/* The six-cell meta grid, in the PDF's own order: No. / Category / Type / Status /
+   Responsible / Target date.
+   ⚠️ Stepped column COUNTS, not `auto-fit`. auto-fit with a minmax floor packed 5
+   tracks into the pane and left Target date stranded alone on a second row — it never
+   clipped, but a 5+1 split reads as a mistake. Fixed counts wrap evenly (6 → 3 → 2)
+   and every step divides six exactly.
+   ⚠️ At full width the tracks are the PDF's own fractions, so Category gets the room
+   its longest option needs ("Commercial / Contracts") instead of an equal share. */
+.il-mi-meta { display: grid; gap: 8px; margin-bottom: 8px; grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 700px)  { .il-mi-meta { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1100px) { .il-mi-meta { grid-template-columns: 0.6fr 1.5fr 0.9fr 0.9fr 1.2fr 1fr; } }
+
+/* A labelled field block — the same shape as the PDF's grey cells. */
+.il-mi-f { min-width: 0; }          /* ⚠️ or a long value stretches its grid track */
+.il-mi-f + .il-mi-f { margin-top: 8px; }
+.il-mi-meta .il-mi-f + .il-mi-f { margin-top: 0; }   /* the grid owns that spacing */
+.il-mi-f > label {
+  display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--pd-muted); margin-bottom: 3px;
+}
+.il-mi-f > label span { font-weight: 500; text-transform: none; letter-spacing: 0; opacity: .75; }
+/* ⚠️ Shared .pd-input/.pd-select are width:100% already, but .pd-select carries a
+   min-width in some themes — pinned here so a select can never widen its own track. */
+.il-mi-f .pd-input, .il-mi-f .pd-select, .il-mi-f .pd-textarea {
+  width: 100%; min-width: 0; max-width: 100%;
+}
+.il-mi-f .pd-textarea { resize: vertical; }
+
+/* Reporting view renders a field's VALUE instead of its control (see momFieldHTML).
+   ⚠️ It must WRAP — that is the entire point. A single-line <input> clips its own
+   value, which is why a long Issue / Agenda was unreadable in the one mode meant for
+   reading it. `overflow-wrap` also breaks an unspaced run so it can never widen the
+   card and reintroduce a horizontal scroll. */
+.il-mi-val {
+  font-size: 13px; line-height: 1.45; color: var(--pd-ink);
+  white-space: pre-wrap; overflow-wrap: anywhere; padding: 2px 0; min-height: 19px;
+}
+.il-mi-val.is-empty { color: var(--pd-muted); }
+
+/* The No. field is a number, not a sentence — it should not eat a full track. */
+.il-c-no .pd-input { max-width: 96px; }
+/* ⚠️ The carried badge sits UNDER the number: inline it overflowed and rendered
+   clipped as "carr" against the next field. */
+.il-c-no .il-mom-carried { display: block; margin: 3px 0 0 1px; }
+
+.il-mi-foot {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--pd-line);
+}
+.il-mi-foot .il-mi-f { margin-top: 0; }
+.il-c-reg { flex: 1 1 auto; }
+.il-c-del { margin-left: auto; }     /* the destructive control sits apart */
 
 /* Activity picker: this module does not own the schedule, so the field searches
    the server instead of listing every activity. */
@@ -470,6 +497,14 @@
 .il-mom-report .il-c-del,
 .il-mom-report .il-mom-note { display: none !important; }
 
-/* Rows breathe — this is read across a room, not scanned at a desk. */
-.il-mom-report .il-mom-table td { padding-top: 7px; padding-bottom: 7px; }
+/* Cards breathe — this is read across a room, not scanned at a desk. */
+.il-mom-report .il-mi-card { padding: 14px 16px; }
+.il-mom-report .il-mi-cards { gap: 12px; }
 .il-mom-report .il-mom-detail-card { padding: 18px 20px; }
+/* ⚠️ A dashed rule above the footer is an editing affordance; in a printed-looking
+   record it reads as a tear line. The footer still shows the file and the register
+   link — those are part of the record — just without the seam. */
+.il-mom-report .il-mi-foot { border-top-style: solid; }
+/* ⚠️ Reporting no longer renders form controls inside a card at all (momFieldHTML
+   emits the value as text), so the control-neutralising rules above do not reach the
+   action items — they still cover the minute's own header fields, which are inputs. */

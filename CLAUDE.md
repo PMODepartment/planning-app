@@ -7007,3 +7007,32 @@ would render in the same grey as Closed.
 
 77/77 checks green (gaps suite grew 42 → 44); 0 functions lost. `MODULE_V` → `20260822c`.
 ⚠️ **Not verified signed-in, and the migration has not been run.**
+
+## 2026-08-22 — MoM action items reworked into cards (reporting readability)
+
+Owner: all the details of an action item must be readable in one view, especially when
+reporting — and mom-app already does this. **No migration.**
+
+⚠️ **The 11-column table could not be saved by re-tuning widths, which is why yesterday's
+per-column fix didn't solve it.** It needed 1639px inside a ~1490px pane, so Owner, Due,
+Status, File and the register link were behind a horizontal scrollbar. An action item has
+more fields than a screen has columns: any widths that fit them all crush the text, any
+that keep the text readable overflow. The layout had to stop being a row.
+
+Each action is now a **card mirroring mom-app's own layout — the same structure the PDF
+export already renders**: a six-cell meta grid above full-width text blocks. The screen and
+the export are one document, so they cannot drift (this module has already been bitten twice
+by exactly that, on the category dropdowns and the status vocabularies).
+
+⚠️ **Reporting view renders values as text, not form controls.** A single-line `<input>`
+clips its own value — measured, 659px of text in a 416px box — so a long Issue / Agenda was
+unreadable in the mode that exists for reading it. `description` also appears on screen for
+the first time: it has been a real column since 2026-08-21 and the PDF printed it, but the
+table had no column for it.
+
+Verified in-browser at 1265 / 805 / 520px: 0 fields offscreen, 0 clipped, 0 page scroll,
+all 11 fields present at every width. ⚠️ Two earlier readings were discarded as environment
+artefacts (a non-compositing window reporting `clientWidth: 0`, and leftover mobile emulation
+pinning the layout viewport at 980px) — **gate viewport measurements or they lie confidently.**
+75/75 suite checks green; 0 functions lost. `MODULE_V` → `20260822d`.
+⚠️ **Not verified signed-in.**

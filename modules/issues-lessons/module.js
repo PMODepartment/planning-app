@@ -1004,24 +1004,21 @@ window.IssuesLessons = (function () {
         (items.length && !vis.length
           ? '<div class="il-empty" style="padding:14px;">No action item on these minutes matches the filter.</div>'
           : '') +
-        (vis.length ? '<div class="il-mom-tablewrap"><table class="pd-table il-mom-table">' +
-          // ⚠️ EVERY cell carries its own column class, header and body alike, and the
-          // CSS keys off those — never off :first-child / :nth-child. The previous
-          // positional rules were written when Action was column 1; adding No. /
-          // Category / Type / Issue in front silently re-aimed "take all the slack" at
-          // the No. field, which is why Category rendered as "Com" and Status as "C".
-          // Same failure as the schedule's _CELL_META index drift. Position-based
-          // column CSS breaks the moment a column is inserted; class-based does not.
-          '<thead><tr>' +
-            '<th class="il-c-no">No.</th><th class="il-c-cat">Category</th>' +
-            '<th class="il-c-type">Type</th><th class="il-c-issue">Issue / Agenda</th>' +
-            '<th class="il-c-act">Action item</th><th class="il-c-owner">Owner</th>' +
-            '<th class="il-c-due">Due</th><th class="il-c-status">Status</th>' +
-            '<th class="il-c-file">File</th><th class="il-c-reg">In the register</th>' +
-            (ro ? '' : '<th class="il-c-del"></th>') +
-          '</tr></thead><tbody>' +
-          vis.map(function (it) { return momItemRowHTML(it, ro, d, mayEdit, locked); }).join('') +
-          '</tbody></table></div>'
+        // ⚠️⚠️ THIS IS A CARD LIST, NOT A TABLE, AND IT MUST STAY ONE.
+        // It was an 11-column table needing 1400px+, so on a real screen Owner, Due,
+        // Status, File and the register link all sat off the right edge behind a
+        // horizontal scrollbar — exactly the columns a reporter reads. An action item
+        // has more fields than any screen has columns, so widening or re-tuning the
+        // columns cannot fix that; the layout has to WRAP instead of scroll.
+        //
+        // The card deliberately mirrors mom-app's own layout — the same one
+        // momDownloadPDF() already renders: a six-cell meta grid (No. / Category /
+        // Type / Status / Responsible / Target date) above full-width text blocks.
+        // Keeping the two identical means what you read on screen IS what the export
+        // prints; a third bespoke layout would let the screen and the PDF drift.
+        (vis.length ? '<div class="il-mi-cards">' +
+          vis.map(function (it, i) { return momItemRowHTML(it, ro, d, mayEdit, locked, i); }).join('') +
+          '</div>'
           : (items.length ? '' : '<div class="il-empty" style="padding:14px;">No action items on these minutes.</div>')) +
         (ro ? '' :
           '<div class="il-mom-addrow">' +
@@ -1082,30 +1079,58 @@ window.IssuesLessons = (function () {
   // ⚠️ `ro` is "can this row's FIELDS be typed into" = permission AND not-locked.
   // Raising needs a DIFFERENT test, so `mayEdit` and `locked` are passed separately.
   // Collapsing them into `ro` created a deadlock — see the register cell below.
-  function momItemRowHTML(it, ro, d, mayEdit, locked) {
+  // ⚠️ `i` is the position among the VISIBLE items and is used only for the fallback
+  // number placeholder, exactly as the PDF does it — never as an identity.
+  // ⚠️ In Reporting view a field renders as TEXT, not as a control. This is not
+  // cosmetic: a single-line <input> CLIPS its own value (measured — a 659px value in a
+  // 416px box), so a long Issue / Agenda was unreadable in exactly the mode meant for
+  // reading it. Text wraps; an input cannot be made to. It also stops a printed-looking
+  // record being built out of form widgets.
+  // ⚠️ `raw` is the value to SHOW; it is escaped here, and newlines survive as <br>
+  // because the record is what was said, not a flattened paragraph.
+  // ⚠️ `extra` is appended INSIDE the block (the carried badge needs to sit under the
+  // number in both modes). It is a separate argument rather than something the caller
+  // splices onto the result, because the reporting body itself contains a </div> and a
+  // string-surgery approach would close the wrong one.
+  function momFieldHTML(label, cls, control, raw, extra) {
+    var body = _momReport
+      ? '<div class="il-mi-val' + (raw ? '' : ' is-empty') + '">' +
+          (raw ? Fmt.esc(raw).replace(/\n/g, '<br>') : '—') + '</div>'
+      : control;
+    return '<div class="il-mi-f ' + cls + '"><label>' + label + '</label>' +
+      body + (extra || '') + '</div>';
+  }
+
+  function momItemRowHTML(it, ro, d, mayEdit, locked, i) {
     var iss = momIssueOf(it);
-    return '<tr data-item="' + Fmt.esc(it.id) + '">' +
-      '<td class="il-c-no"><input class="pd-input pd-input-sm il-mi" data-f="item_no" value="' + Fmt.esc(it.item_no || '') +
-        '" placeholder="' + ((it.seq == null ? 0 : it.seq) + 1) + '"' + d + '>' +
+    // ⚠️ Rows written before the 2026-08-21 migration hold their action text in
+    // `description`, the same fallback the PDF applies.
+    var actText = it.action_item || it.description || '';
+    return '<div class="il-mi-card" data-item="' + Fmt.esc(it.id) + '">' +
+      // ---- the six-cell meta grid, in mom-app's own order --------------------
+      '<div class="il-mi-meta">' +
+      momFieldHTML('No.', 'il-c-no',
+        '<input class="pd-input pd-input-sm il-mi" data-f="item_no" value="' + Fmt.esc(it.item_no || '') +
+        '" placeholder="' + ((it.seq == null ? (i || 0) : it.seq) + 1) + '"' + d + '>',
+        it.item_no || String((it.seq == null ? (i || 0) : it.seq) + 1),
         // Says the action came in from an earlier meeting. ⚠️ Not a status: a carried
         // action is the SAME action, and its register link came with it — without the
         // tag it reads as something someone re-typed, and the two would be chased twice.
-        (it.carried_from_item_id ? '<span class="il-mom-carried" title="Carried over from an earlier meeting">carried</span>' : '') +
-      '</td>' +
-      '<td class="il-c-cat"><select class="pd-select pd-input-sm il-mi" data-f="category"' + d + '>' +
-        momOptions(MOM_CATEGORIES, momUsedCategories(), it.category || '') + '</select></td>' +
-      '<td class="il-c-type"><select class="pd-select pd-input-sm il-mi" data-f="type"' + d + '>' +
+        (it.carried_from_item_id ? '<span class="il-mom-carried" title="Carried over from an earlier meeting">carried</span>' : '')) +
+      momFieldHTML('Category', 'il-c-cat',
+        '<select class="pd-select pd-input-sm il-mi" data-f="category"' + d + '>' +
+        momOptions(MOM_CATEGORIES, momUsedCategories(), it.category || '') + '</select>',
+        it.category) +
+      momFieldHTML('Type', 'il-c-type',
+        '<select class="pd-select pd-input-sm il-mi" data-f="type"' + d + '>' +
         // ⚠️ A blank option is offered because the column is nullable — without it an
         // untyped legacy row would silently read as the first option while the database
         // still holds null, the select-value trap the drawing register documents.
         '<option value="">—</option>' +
         MOM_TYPES.map(function (o) { return '<option' + (it.type === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
-      '</select></td>' +
-      '<td class="il-c-issue"><input class="pd-input pd-input-sm il-mi" data-f="issue" value="' + Fmt.esc(it.issue || '') + '" placeholder="What was raised" ' + d + '></td>' +
-      '<td class="il-c-act"><input class="pd-input pd-input-sm il-mi" data-f="action_item" value="' + Fmt.esc(it.action_item || '') + '" placeholder="What will be done" ' + d + '></td>' +
-      '<td class="il-c-owner"><input class="pd-input pd-input-sm il-mi" data-f="owner" value="' + Fmt.esc(it.owner || '') + '"' + d + '></td>' +
-      '<td class="il-c-due"><input class="pd-input pd-input-sm il-mi" data-f="due_date" type="date" value="' + dateVal(it.due_date) + '"' + d + '></td>' +
-      '<td class="il-c-status"><select class="pd-select pd-input-sm il-mi" data-f="status"' + d + '>' +
+      '</select>', it.type) +
+      momFieldHTML('Status', 'il-c-status',
+        '<select class="pd-select pd-input-sm il-mi" data-f="status"' + d + '>' +
         // ⚠️ No blank option: `status` carries a CHECK and the handler deliberately
         // does NOT null-convert it, so an empty pick would write '' and be refused.
         // `present` carries any off-list legacy value through so the select shows the
@@ -1119,9 +1144,42 @@ window.IssuesLessons = (function () {
           .map(function (o) {
             return '<option' + (it.status === o ? ' selected' : '') + '>' + Fmt.esc(o) + '</option>';
           }).join('') +
-      '</select></td>' +
-      '<td class="il-c-file">' + momAttachCellHTML(it, ro) + '</td>' +
-      '<td class="il-c-reg">' + (it.issue_id
+      '</select>',
+        // ⚠️ Once raised, the REGISTER owns the status — the same rule the PDF follows.
+        // Showing `mom_items.status` on a raised action would put a stale word in the
+        // record beside a register pill saying something else.
+        iss ? (iss.status || 'Open') : (it.status || 'Open')) +
+      momFieldHTML('Responsible', 'il-c-owner',
+        '<input class="pd-input pd-input-sm il-mi" data-f="owner" value="' + Fmt.esc(it.owner || '') + '" placeholder="Who owns it" ' + d + '>',
+        it.owner) +
+      momFieldHTML('Target date', 'il-c-due',
+        '<input class="pd-input pd-input-sm il-mi" data-f="due_date" type="date" value="' + dateVal(it.due_date) + '"' + d + '>',
+        it.due_date ? Fmt.date(it.due_date) : '') +
+      '</div>' +
+      // ---- the text blocks, full width so nothing is clipped ----------------
+      momFieldHTML('Issue / Agenda', 'il-c-issue',
+        '<input class="pd-input pd-input-sm il-mi" data-f="issue" value="' + Fmt.esc(it.issue || '') + '" placeholder="What was raised" ' + d + '>',
+        it.issue) +
+      momFieldHTML('Action item', 'il-c-act',
+        '<input class="pd-input pd-input-sm il-mi" data-f="action_item" value="' + Fmt.esc(actText) + '" placeholder="What will be done" ' + d + '>',
+        actText) +
+      // ⚠️ Description is rendered here but was NOT on the old table, so it was a
+      // column the screen could never show — the PDF printed it and the screen did
+      // not. In reporting/read-only it appears only when it has something to say;
+      // an empty labelled block on every action is noise in a printed record.
+      // ⚠️ Blank when the action text CAME from `description` (a legacy row), or the
+      // card shows the same sentence twice under two headings — the same rule the PDF
+      // applies.
+      ((ro && (!it.description || it.description === actText))
+        ? ''
+        : momFieldHTML('Description <span>optional</span>', 'il-c-desc',
+            '<textarea class="pd-textarea il-mi" data-f="description" rows="2" placeholder="Any elaboration"' + d + '>' +
+            Fmt.esc(it.description === actText ? '' : (it.description || '')) + '</textarea>',
+            it.description === actText ? '' : it.description)) +
+      // ---- the footer: the two things the PDF has no equivalent for ----------
+      '<div class="il-mi-foot">' +
+      '<div class="il-mi-f il-c-file"><label>File</label>' + momAttachCellHTML(it, ro) + '</div>' +
+      '<div class="il-mi-f il-c-reg"><label>In the register</label>' + (it.issue_id
         // The status shown is the REGISTER's, read from `rows` — the minute does not keep
         // its own copy of it, so the two can never disagree.
         ? (iss
@@ -1145,9 +1203,10 @@ window.IssuesLessons = (function () {
               // A disabled control that says why beats a live button that toasts an
               // error on every click — the state is visible before the click, not after.
               ? '<button class="pd-btn pd-btn-sm" disabled title="Distribute these minutes first — an issue in the register must come from a meeting record everyone can read.">Raise as issue</button>'
-              : '<button class="pd-btn pd-btn-sm il-mi-raise">Raise as issue</button>')) + '</td>' +
-      (ro ? '' : '<td class="il-c-del"><button class="pd-btn pd-btn-sm pd-btn-danger il-mi-del" title="Remove this action">✕</button></td>') +
-    '</tr>';
+              : '<button class="pd-btn pd-btn-sm il-mi-raise">Raise as issue</button>')) + '</div>' +
+      (ro ? '' : '<div class="il-mi-f il-c-del"><button class="pd-btn pd-btn-sm pd-btn-danger il-mi-del" title="Remove this action">Remove</button></div>') +
+      '</div>' +
+    '</div>';
   }
 
   function momActChipHTML(id, ro) {
