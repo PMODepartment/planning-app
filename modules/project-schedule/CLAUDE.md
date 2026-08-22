@@ -1,3 +1,56 @@
+## VERIFIED SIGNED-IN on live data — and a pre-existing cross-project row found (2026-08-22) — fmlozano
+Both 2026-08-22 fixes verified against the deployed build in the owner's signed-in browser. This closes
+the "not verified signed-in" caveat on the sweep fix and the creator-projection fix.
+
+- **Deployed build confirmed** by fetching the live file: 12 `_ensureNodeSummary` references and the
+  sweep's `isWbs(r)` guard both present on GitHub Pages.
+- **OPW101 — the reported project: repaired.** `nodesMissingSummary` **9 → 0**; 460 nodes / 460 summary
+  rows, 0 orphans, 0 duplicates, and all 9 trades holding exactly one heading (`3.3.1`–`3.3.9`).
+- ⚠️ **The decisive test: heading row IDs captured before, compared after.** A full module load (which
+  runs `syncProcurement`) plus a button-triggered **Sync Procurement**, then a second full load:
+  **0 deleted, 0 recreated, IDs byte-identical**. Before the fix that sweep deleted all 9 every time.
+  Recreated-vs-survived matters — identical IDs prove the rows were never touched, rather than deleted
+  and re-made by the new projection.
+- **SLN101 was an unplanned natural experiment and the best evidence of the pair working together.** It
+  still carried the old damage (**5 of 10 trades with no heading**) because it had not been opened since
+  the fix. One load: row count **254 → 259** — exactly the five — ending at **65 nodes / 65 headings, 0
+  missing, 0 duplicates**. So the heal repairs history while the creators stop producing it.
+- **Sync Engineering exercised on SLN101** (the only project whose `eng_design_progress` mirror has
+  rows): completed, **0 DD headings deleted, IDs unchanged, 0 duplicates**, integrity still 65/65.
+  ⚠️ On OPW101 that mirror is **empty**, so Sync Engineering there only ever hits the documented
+  "an empty mirror leaves the branch untouched" guard — nothing to verify, which is why SLN101 was used.
+- **AVR101 healed the same way on one load** (10 missing → 0).
+- ⚠️ **Still carrying the old damage, un-fixed because they have not been opened since:** **BAU101** and
+  **GPR101**, 10 trades each. They self-heal on the next load, exactly as SLN101 and AVR101 just did.
+  GPR101 (17k activities) was deliberately not driven from automation — see the freeze note below.
+
+### ⚠️ Pre-existing defect found while verifying — NOT caused by these changes, NOT fixed
+A cross-project scan (`.in('wbs_node_id', …)` **without** a `project_id` filter) reported OPW101 as
+having a duplicate heading; the project-filtered query said 11 nodes / 11 rows / 0 duplicates. The
+difference is the bug:
+- **A `project_schedule` row belonging to BAU101 carries a `wbs_node_id` pointing at OPW101's
+  "Design Development" node**, with `wbs: null`, created **2026-08-19T08:30:02Z** — three days before
+  today's work.
+- ⚠️ **A NULL `wbs` on a summary row is the fingerprint**: `computeWbsCodes()` is built from the CURRENT
+  project's tree, so a node from a *different* project has no entry and the code writes as null. Scanning
+  for it found **83 such rows, all created 2026-08-18 → 2026-08-19** — **BAU101 82, MWD101 1** — with
+  names like `U1`/`U3`/`Z2`, i.e. Schedule Builder push artefacts.
+- ⚠️ **Invisible to every existing repair, by construction.** The heal fetches `.in('wbs_node_id', <this
+  project's ids>)`, which matches neither a foreign node id nor a NULL; `_wbsDedupeSummariesByCode` skips
+  a blank code outright (`if (!k) return`). This is the same class as the 2026-08-17 cross-project
+  incident, and it post-dates the `ownPid`/`ownNodes` pinning fix — so **the pinning did not close every
+  path**. The builder push is the likeliest remaining writer, on the timestamps and the node names.
+- **Deliberately NOT cleaned up.** Deleting rows is destructive, this environment cannot create the
+  backup table the precedent requires, and 82 of the 83 sit in one project — it wants the owner's
+  sign-off and its own pass.
+
+⚠️ **Method notes.** Two `Runtime.evaluate` calls died at the 45s CDP cap — **my own long polling loops**,
+not a frozen renderer; both times the aborted eval left the page's fetch context broken
+(`Failed to execute 'forEach' on 'Headers': The provided callback is no longer runnable`), which reads
+exactly like a data error and is fixed by a reload. Poll in short separate calls, and **run queries from
+`projects.html`, not the ~1.2 MB module page**. One query also failed on a column I guessed at
+(`eng_design_progress.total` does not exist) — check the shape with `select('*')` first.
+
 ## The heal is now a BACKSTOP, not the mechanism — creators project their own rows (2026-08-22) — fmlozano
 Owner, after the sweep fix landed: *"Check there are cases that this happens then the heal makes it
 disappear. Let's track the root cause so that the heal becomes a backup not the main solution."* Right

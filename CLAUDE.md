@@ -84,6 +84,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-22 — Signed-in verification of both WBS fixes (+ a pre-existing cross-project row found)
+- **OPW101 repaired:** missing headings **9 → 0**, 460 nodes / 460 rows, 0 orphans, 0 duplicates. Across a
+  load, a button-triggered Sync Procurement and a second load, the 9 heading rows are **byte-identical —
+  0 deleted, 0 recreated** (identical IDs prove they were never touched, not deleted-and-remade).
+- **SLN101** still held the old damage (5 of 10 trades headless) and repaired itself on one load,
+  254 → 259 rows, ending 65/65. **Sync Engineering** exercised there — 0 deleted, 0 duplicates.
+  **AVR101** likewise healed 10 → 0. ⚠️ **BAU101 and GPR101 still carry it** and will self-heal when
+  next opened.
+- ⚠️ **Pre-existing defect found, NOT caused by this work and NOT fixed:** a BAU101 row points at an
+  OPW101 WBS node with a NULL `wbs` — the fingerprint of cross-project contamination, since
+  `computeWbsCodes()` has no code for a foreign node. **83 such rows exist (BAU101 82, MWD101 1), all
+  dated 18–19 Aug**, and they are invisible to both the heal and the code-dedupe by construction. It
+  post-dates the 2026-08-17 pinning fix, so that fix did not close every path. Needs owner sign-off.
+
 ### 2026-08-22 — The WBS heal is a backstop now, not the mechanism
 Follow-up to the procurement sweep fix, on the owner's instruction to *"track the root cause so that the
 heal becomes a backup not the main solution."*
