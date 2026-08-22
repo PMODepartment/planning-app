@@ -1615,7 +1615,7 @@ window.IssuesLessons = (function () {
     }
     var btn = $('il-mom-pdf'), orig = btn ? btn.innerHTML : '';
     if (btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
-    var wrap = null;
+    var wrap = null, holder = null;
     try {
       var items = momItemsOf(mom.id);
       var filename = (mom.title || 'Meeting').replace(/[^a-zA-Z0-9_]/g, '_') +
@@ -1666,9 +1666,26 @@ window.IssuesLessons = (function () {
       // ⚠️ A plain detached element, not a full document string: html2canvas renders
       // whatever DOM it is handed, and reusing the module's own markup would drag the
       // dark-theme variables in with it.
+      // ⚠️⚠️ THE EXPORTED NODE MUST BE IN NORMAL FLOW. DO NOT PUT `position:fixed`
+      // (or absolute) BACK ON `wrap`. It used to carry `position:fixed;left:-10000px`
+      // to park itself off-screen, and that produced a COMPLETELY BLANK PDF — every
+      // sheet was an empty A4 page whose content stream held nothing but a line width.
+      //
+      // Why: html2pdf clones the source into its own container and measures it there.
+      // An out-of-flow element contributes NOTHING to that container's height, so
+      // html2canvas got the right width and a height of ZERO and rendered no image at
+      // all (measured: canvas 1438x0, and `/XObject <<>>` empty in the produced file).
+      // An explicit `height` does not save it — the clone is still out of flow.
+      //
+      // So the OFF-SCREEN PARKING MOVES TO A HOLDER and the captured element stays in
+      // normal flow inside it. The holder is what hides the node; `wrap` is what gets
+      // rendered. Measured after the change: canvas 1438x360 with real content.
+      holder = document.createElement('div');
+      holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:190mm;';
+
       wrap = document.createElement('div');
       wrap.style.cssText = 'font-family:Arial,sans-serif;font-size:9px;color:#1c1c1e;width:190mm;' +
-        'padding:15mm 10mm;box-sizing:border-box;background:#fff;position:fixed;left:-10000px;top:0;';
+        'padding:15mm 10mm;box-sizing:border-box;background:#fff;';
 
       // Header fields this module records and mom-app does not. They are the minute's
       // substance — dropping them to match a narrower app would export a worse record —
@@ -1702,8 +1719,10 @@ window.IssuesLessons = (function () {
         (items.length ? cards : momPdfField('Action items', 'No action items were recorded on these minutes.'));
 
       // ⚠️ Must be IN the document: html2canvas measures a laid-out element, and an
-      // orphan node has no box. Parked off-screen so the page does not jump.
-      document.body.appendChild(wrap);
+      // orphan node has no box. The HOLDER is parked off-screen so the page does not
+      // jump; `wrap` sits in normal flow inside it (see the warning above).
+      holder.appendChild(wrap);
+      document.body.appendChild(holder);
 
       await html2pdf().set({
         margin: [10, 10, 10, 10],
@@ -1719,7 +1738,8 @@ window.IssuesLessons = (function () {
     } finally {
       // ⚠️ In `finally`: a throw mid-render would otherwise leave the off-screen node
       // in the document, and every later export would stack another one.
-      if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      // Removing the holder takes `wrap` with it.
+      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
       if (btn) { btn.innerHTML = orig; btn.disabled = false; }
     }
   }

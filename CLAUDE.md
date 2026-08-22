@@ -7036,3 +7036,24 @@ artefacts (a non-compositing window reporting `clientWidth: 0`, and leftover mob
 pinning the layout viewport at 980px) — **gate viewport measurements or they lie confidently.**
 75/75 suite checks green; 0 functions lost. `MODULE_V` → `20260822d`.
 ⚠️ **Not verified signed-in.**
+
+## 2026-08-22 — The MoM PDF export was producing a blank page (fixed)
+
+Owner reported the PDF "format isn't working". ⚠️ **It was not formatting — every sheet was an
+empty A4 page.** All four samples were byte-identical at 3,058 bytes, their whole content stream
+was `0.567 w / 0 G`, and `/XObject <<>>` was empty: html2pdf rasterises to a JPEG, so no image
+means nothing rendered.
+
+⚠️ **Cause: the export node carried `position:fixed;left:-10000px` to park itself off-screen.**
+html2pdf clones the source into its own container, and an out-of-flow element contributes nothing
+to that container's height — so html2canvas got the right width and a height of **zero**. An
+explicit height does not help; the clone is still out of flow. The off-screen parking now lives on
+a **holder** and the captured element stays in normal flow inside it.
+
+⚠️ **Why it survived since the feature shipped:** the original verification measured the node's
+geometry and DOM lifecycle and explicitly recorded that no generated PDF had ever been opened.
+**Measuring the source of a render is not verifying the render** — open the artifact.
+
+Verified on a real produced file: **216,539 bytes with a 1438×1406 image** (was 3,058 and none),
+and the extracted page shows mom-app's format exactly. 77/77 suite checks green; 0 functions lost.
+`MODULE_V` → `20260822e`. ⚠️ Not verified signed-in.

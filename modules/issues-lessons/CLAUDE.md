@@ -568,3 +568,55 @@ Suites green — carry-over **23**, raise **10**, gaps **44**. **0 functions los
 (`momFieldHTML`). Parses; 0 NUL bytes; CSS braces 190/190.
 `MODULE_V` → `20260822d`; module assets → `?v=20260822c`.
 ⚠️ **Not verified signed-in.**
+
+## 2026-08-22 — ⚠️ THE PDF EXPORT HAD BEEN PRODUCING A BLANK PAGE ALL ALONG
+
+Owner: *"PDF download works but format isn't working"*, with four sample files. **No migration.**
+
+**It was not a formatting problem. Every sheet was an empty A4 page.** All four samples were
+byte-identical at 3,058 bytes; the page's entire content stream was `0.567 w / 0 G` — a line
+width and a stroke colour — and `/XObject <<>>` was **empty**. `html2pdf` rasterises to a JPEG,
+so a file with no image is a blank page. Nothing about the layout was ever reaching paper.
+
+⚠️ **THE EXPORTED NODE MUST BE IN NORMAL FLOW. Do not put `position:fixed` (or absolute) back
+on `wrap`.** It carried `position:fixed;left:-10000px` to park itself off-screen. html2pdf clones
+the source into its own container and measures it there, and **an out-of-flow element contributes
+nothing to that container's height** — so html2canvas got the correct width and a height of
+**zero** and rendered no image at all. Measured across positioning modes on the real library:
+
+| `wrap` positioning        | canvas    |
+|---------------------------|-----------|
+| in normal flow            | 1438×360 ✅ |
+| `position:fixed` off-screen  | 1438×**0** ❌ |
+| `position:absolute` off-screen | 1438×**0** ❌ |
+| `fixed` + explicit `height:400px` | 1438×**0** ❌ |
+
+⚠️ An explicit height does **not** rescue it — the clone is still out of flow. That is the trap:
+the element measures fine in the page (`offsetHeight` 179), so every check short of rendering it
+says it is healthy.
+
+**Fix: the off-screen parking moved to a HOLDER; the captured element stays in normal flow inside
+it.** The holder hides the node, `wrap` is what gets rendered, and removing the holder still takes
+`wrap` with it in the `finally`.
+
+⚠️ **Why this survived since the export shipped:** the original verification measured the *node's*
+geometry (band colour, 190mm width, grid tracks) and the DOM lifecycle, and the log said so
+honestly — *"nobody has opened a generated PDF… what is proven is the render call and the DOM
+lifecycle, not the visual output."* That gap was exactly where the bug lived. **Measuring the
+source of a render is not verifying the render.**
+
+**Verified end-to-end on a real produced file**, which is the check that was missing before: the
+shipped `momDownloadPDF` run against the real `html2pdf@0.10.1` now writes **216,539 bytes with a
+1438×1406 DCTDecode image** (was 3,058 bytes, no image), and the extracted JPEG shows mom-app's
+format exactly — the `#b40000` band with the logo, project — title, date / location / item count,
+the attendees and notes blocks, then one bordered card per action with the six-cell meta grid and
+the coloured Type/Status badges.
+- ⚠️ Two harness attempts failed silently first and neither was the module's fault: `html2canvas`
+  is **not** a global in the html2pdf bundle, and intercepting `.save()` on the object returned by
+  `html2pdf()` misses, because `.set()` returns a **different** worker — the interception has to
+  patch the worker **prototype**. The first failed attempt wrote a real file to Downloads.
+
+Suites green — carry-over **23**, raise **10**, gaps **44**. **0 functions lost** (78 = 78).
+Parses; 0 NUL bytes. `MODULE_V` → `20260822e`; `module.js?v=20260822d`.
+⚠️ **Not verified signed-in** — proven against the shipped exporter and the real library with
+fixture data, not through a live login on real minutes.
