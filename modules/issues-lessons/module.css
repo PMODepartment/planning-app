@@ -304,8 +304,11 @@
 
 /* ⚠️ FLOORS, not ceilings. Each is the measured width the control needs to show its
    real content — a select must fit its longest option ("Commercial / Contracts",
-   "In Progress") or it silently renders as an unreadable stub, which is exactly what
-   the owner reported. Do not shrink these to make the table narrower; let it scroll. */
+   "On Hold") or it silently renders as an unreadable stub, which is exactly what
+   the owner reported. Do not shrink these to make the table narrower; let it scroll.
+   ⚠️ The status floor is NOT retuned down now that "In Progress" is gone: the column
+   also renders an off-list legacy value carried through by momItemRowHTML, and a floor
+   set to the shortest possible list is a floor that crushes the first surprise. */
 .il-c-no    { width: 96px; }
 .il-c-no    .pd-input  { width: 72px; }
 .il-c-cat   { width: 172px; }

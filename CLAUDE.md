@@ -6978,3 +6978,32 @@ for an off-list legacy value (select-value trap); an off-list value is now carri
 it deliberately avoids `momOptions()` because that helper's blank option would write `''` into a
 CHECK-constrained column. 75/75 checks green. `MODULE_V` → `20260822b`.
 ⚠️ **Not verified signed-in.**
+
+## 2026-08-22 — One status vocabulary across minutes and the register
+
+Owner: unify the status lists, following **On Hold** rather than **In Progress**.
+**⚠️ Run `migrations/2026-08-22-unify-mom-status.sql`.**
+
+`mom_items` said `Open | In Progress | Closed`; `issues_lessons` said `Open | On Hold | Closed`.
+The drift was doing real damage: raising an action **translated** the value on the way across, the
+minute's filter had to offer **both** vocabularies (because the filter reads the register's status
+for a raised action), and a raised row could be filtered by a word its own dropdown did not
+contain. The register's words win — it is the authoritative record of what is chased, and its
+vocabulary is what the dashboard's attention band already reads.
+
+⚠️ **The migration's order is the risk, not the SQL.** The old CHECK forbids `On Hold` and the new
+one forbids `In Progress`: **drop the old CHECK → move the rows → add the new CHECK.** Adding the
+new constraint before moving the rows fails on every in-flight action. The old one is dropped **by
+definition, not by name** (it came from an inline `check`, so its generated name is not guaranteed).
+`issues_lessons` is deliberately untouched — it already holds this vocabulary and carries no CHECK,
+and adding one is a separate decision that could fail on historical rows.
+
+`MOM_STATUSES` is deleted; the module now has one `STATUSES`. ⚠️ **A wrong turn worth recording:**
+the first cut routed the item select through `momOptions()`, which always emits a blank first
+option — picking it would write `''` into the CHECK-constrained column and be refused by the
+database. The PDF's `'in progress'` badge key is kept on purpose: an export runs against rows in
+memory, so a tab opened before the migration can still print a stale value, and without the key it
+would render in the same grey as Closed.
+
+77/77 checks green (gaps suite grew 42 → 44); 0 functions lost. `MODULE_V` → `20260822c`.
+⚠️ **Not verified signed-in, and the migration has not been run.**

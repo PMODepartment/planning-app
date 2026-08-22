@@ -441,3 +441,66 @@ Suites re-run green after every edit: carry-over **23**, raise **10**, gaps **42
 `MODULE_V` → `20260822b`; module assets → `?v=20260822a`.
 ⚠️ **Not verified signed-in** — measured in a harness against the real CSS and the shipped
 functions, not through a live login.
+
+## 2026-08-22 — One status vocabulary: the register's words win
+
+Owner: unify the status lists, and **follow On Hold instead of In Progress**.
+**⚠️ Run `migrations/2026-08-22-unify-mom-status.sql`.**
+
+The two lists had drifted since the tables were created:
+
+    mom_items        Open | In Progress | Closed
+    issues_lessons   Open | On Hold     | Closed
+
+That was visible to the owner, not cosmetic: raising an action had to **translate** the value
+(`In Progress` → `On Hold`) on the way into the register; `momStatusFilterOpts()` had to offer
+**both** vocabularies because `momItemStatus()` could return either; and a raised action could be
+filtered by a word its own dropdown did not contain. The register's vocabulary wins — it is the
+authoritative record of what is being chased, minutes feed it, and its word is the one the
+dashboard's attention band already reads (`config.js` → `attention.values = ['Open','On Hold']`).
+
+⚠️ **The migration's ORDER is the whole risk.** The old CHECK forbids `On Hold` and the new one
+forbids `In Progress`, so neither can be added while the rows or the other constraint disagree:
+**(1) drop the old CHECK → (2) move the rows → (3) add the new CHECK.** Doing (3) before (2) fails
+on every in-flight action in the database. The old constraint is dropped **by definition, not by
+name** — it came from an inline `check` in the create-table, so its generated name is not
+guaranteed to be `mom_items_status_check` on an instance that has been through a table rewrite.
+Nulls are settled to `Open` in the same pass (the column is nullable and a null renders as `Open`
+in a select with no blank option, so the data is made to agree with what the screen already claims).
+
+⚠️ **`issues_lessons` is deliberately left alone.** It already holds exactly this vocabulary and
+carries **no CHECK of its own** (the column predates these migrations). Adding one is a separate
+decision about a separate table and would fail on any historical row holding a word neither list
+anticipated. Verify first: `select status, count(*) from issues_lessons group by 1 order by 2 desc;`
+
+**Code: `MOM_STATUSES` is gone.** `STATUSES` (declared at the top of the same IIFE — confirmed by
+checking the scope: one IIFE opens at line 23 and never closes before line 780) is now the single
+list, read by the register's filter, the register's edit modal, the MoM filter and the MoM item
+select. Do **not** reintroduce a MoM-only list; the CHECK now refuses `In Progress`.
+- `momStatusFilterOpts()` collapses to `STATUSES.slice()` — kept as a function because it is the
+  seam the filter bar and its tests both call, and `.slice()` so a caller cannot mutate the shared
+  array (asserted in the suite).
+- Raising no longer translates: `var st = it.status || 'Open';`
+- ⚠️ **The PDF's `'in progress'` badge key is RETAINED on purpose.** An export runs against
+  `MOM_ITEMS` **in memory**, so a tab opened before the migration can still print a stale value —
+  and dropping the key would render it in the default grey, the same grey as Closed. One line, and
+  it fails safe.
+- ⚠️ The status column's **width floor was not retuned down** now that the longest option is
+  shorter: the column also renders an off-list legacy value carried through by `momItemRowHTML`,
+  and a floor set to the shortest possible list is a floor that crushes the first surprise.
+
+**Verified** by executing the shipped functions: the item select offers exactly `Open, On Hold,
+Closed` with **no blank option**, a legacy `In Progress` row is carried through and selected rather
+than silently reporting `Open`, and the filter returns the one list. Suites re-run green — carry-over
+**23**, raise **10**, gaps **44** (the gaps suite's "offers BOTH vocabularies" assertion encoded the
+old behaviour and was rewritten to assert the single list, plus that `In Progress` cannot leak back
+and that the options are a copy). **0 functions lost** (77 = 77). Parses; 0 NUL bytes.
+- ⚠️ **`t_gaps.js` seeds `STATUSES` now, not `MOM_STATUSES`** — the harness slices the MoM region,
+  and the shared list is declared 570 lines above it, outside the slice.
+- ⚠️ **A wrong turn worth recording:** the first cut routed the item select through `momOptions()`.
+  That helper **always emits a blank first option**, and picking it would write `''` into the
+  CHECK-constrained column and be refused by the database. The select builds its options inline and
+  must stay that way.
+
+`MODULE_V` → `20260822c`; module assets → `?v=20260822b`.
+⚠️ **Not verified signed-in, and the migration has not been run.**

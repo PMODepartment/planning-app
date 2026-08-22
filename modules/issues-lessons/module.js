@@ -648,7 +648,13 @@ window.IssuesLessons = (function () {
   var MOM_ACT_NAME = {};        // activity_id -> activity_name, resolved on demand
   var _momActTimer = null;      // debounce for the activity search
   var _momDocClick = null;      // the one outside-click handler for the picker
-  var MOM_STATUSES = ['Open', 'In Progress', 'Closed'];   // mom_items' own CHECK list
+  // ⚠️ There is ONE status vocabulary, shared with the register: STATUSES
+  // (Open | On Hold | Closed), declared at the top of this module. `mom_items` used to
+  // have its own list with `In Progress` where the register says `On Hold`, which meant
+  // raising an action had to TRANSLATE the value, the minute's filter had to offer both
+  // vocabularies, and a raised row could be filtered by a word its own dropdown did not
+  // contain. The 2026-08-22 migration moved the rows and rewrote the CHECK to match.
+  // Do not reintroduce a MoM-only list: the CHECK on mom_items now refuses 'In Progress'.
   // ⚠️ Mirrors the `mom_items_type_chk` CHECK added by
   // migrations/2026-08-21-mom-schema-carryover-distribute.sql. A value outside this
   // list is refused by the database, so the control is a <select>, never free text.
@@ -730,17 +736,11 @@ window.IssuesLessons = (function () {
         .join(' ').toLowerCase().indexOf(q) >= 0;
     });
   }
-  // ⚠️ The status filter offers the REGISTER's vocabulary alongside the minute's,
-  // because momItemStatus() can return either. `On Hold` exists only in the register
-  // and `In Progress` only on the minute; offering one list would make the other
-  // unreachable.
-  function momStatusFilterOpts() {
-    var seen = {}, out = [];
-    MOM_STATUSES.concat(['On Hold']).forEach(function (v) {
-      if (!seen[v]) { seen[v] = 1; out.push(v); }
-    });
-    return out;
-  }
+  // momItemStatus() returns the register's status for a raised action and the item's
+  // own otherwise — since the vocabularies were unified those are the same three words,
+  // so the filter no longer has to union two lists to keep either reachable. Kept as a
+  // function because it is the seam the filter bar and its tests both call.
+  function momStatusFilterOpts() { return STATUSES.slice(); }
 
   function momReset() {
     MOMS = []; MOM_ITEMS = []; _momSel = null; _momErr = ''; _momLoaded = false;
@@ -1115,7 +1115,7 @@ window.IssuesLessons = (function () {
         // be refused by the database. The list is closed, so an off-list LEGACY value is
         // appended instead of being swallowed — otherwise the select silently reports
         // 'Open' while the row holds something else (the select-value trap).
-        MOM_STATUSES.concat(it.status && MOM_STATUSES.indexOf(it.status) < 0 ? [it.status] : [])
+        STATUSES.concat(it.status && STATUSES.indexOf(it.status) < 0 ? [it.status] : [])
           .map(function (o) {
             return '<option' + (it.status === o ? ' selected' : '') + '>' + Fmt.esc(o) + '</option>';
           }).join('') +
@@ -1367,9 +1367,9 @@ window.IssuesLessons = (function () {
     // `description`, which since the migration is the optional elaboration.
     var act = String(it.action_item || '').trim();
     if (!act) { UI.toast('Describe the action before raising it.', 'warn'); return; }
-    // ⚠️ The register's own vocabulary, not this table's — `mom_items.status` and
-    // `issues_lessons.status` both exist and are NOT the same list (In Progress vs On Hold).
-    var st = it.status === 'Closed' ? 'Closed' : (it.status === 'In Progress' ? 'On Hold' : 'Open');
+    // No translation any more — the two tables share one vocabulary. The fallback is
+    // for a legacy row still holding null, which the migration also settles.
+    var st = it.status || 'Open';
     var payload = {
       project_id: pid, type: 'Issue',
       description: act,
@@ -1519,9 +1519,10 @@ window.IssuesLessons = (function () {
     'open': 'background:#d4f5d4;color:#1a8f3a;',
     'closed': 'background:#e5e5ea;color:#666;',
     'on hold': 'background:#fff3cd;color:#b06800;',
-    // ⚠️ Not in mom-app's palette, because mom-app has no such status. `mom_items`
-    // does (Open | In Progress | Closed), and leaving it out would print the most
-    // common mid-flight status in the default grey — the same grey as Closed.
+    // ⚠️ RETAINED although no row can hold 'In Progress' since the 2026-08-22
+    // migration. An export runs against MOM_ITEMS in memory, so a tab opened before the
+    // migration can still print a stale value — and dropping the key would render it in
+    // the default grey, the same grey as Closed. One line, and it fails safe.
     'in progress': 'background:#fff3cd;color:#b06800;',
     'issue': 'background:#fde8e8;color:#b40000;',
     'fyi': 'background:#e8f0fe;color:#1a56db;',
