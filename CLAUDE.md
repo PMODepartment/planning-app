@@ -84,6 +84,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-24 — Vertical Stacking: both windows resizable, and the tower card stops padding itself
+Owner asked for the stacking window and the magnifier window to be resizable, and for the stacking
+card's width to match the width its information actually needs.
+- ⚠️ **The card really was mostly dead space, and it was a `1fr` grid track.** `auto-fit … 1fr`
+  STRETCHES a tower to fill the row, so a one-zone-wide building sat in a card **851px wide around
+  180px of drawing** (measured at a 1200px viewport). Flex with `flex:0 0 auto` makes the card exactly
+  as wide as the drawing — 240px, the `min-width` floor that stops a narrow tower ellipsising its own
+  name.
+- **One drag handle resizes both panes**, because they share a row: the panel's width is set directly
+  and the stacking pane takes the remainder (851/307 → 671/487, sum preserved). A second grip sets the
+  magnified view's height.
+- ⚠️ **The stored width is clamped against the CURRENT stage width and the corrected value is saved** —
+  the `ps_grid_w` trap that once made the Gantt pane vanish. A stored 900px in a 560px stage heals to
+  310px rather than collapsing the other pane.
+- ⚠️ **`_vsLoupeMaxW` also mirrors the CSS `max-width:72%`**, or the drag stores a width the panel
+  cannot render (938 stored vs 852 shown — caught by measuring, not reading).
+- Also shipped: **At Completion** is now the span of the dates the grid shows (`dispStart → dispFin`)
+  rather than `actual + remaining`, which omitted the retained-logic gap and reported **6d for a 60d
+  activity**. Planned Duration stays the locked baseline span on purpose — the difference is the
+  variance. ⚠️ Flagged to the owner: that activity's actual start is later than the data date, which
+  the module refuses on manual edit, so it likely arrived by import or a builder push.
+- Verified in a real browser against the module's own stylesheet and the shipped handlers (sliced, not
+  reimplemented); parse clean; **0 functions lost, 5 added**. ⚠️ Not verified signed-in.
+  `MODULE_V` → `20260824m`.
+
 ### 2026-08-24 — Modal chrome: form content was bleeding through the pinned header and footer
 Owner reported the popup's top and bottom edges clashing with the title and the Save button — a defect
 in the pinning shipped an hour earlier.

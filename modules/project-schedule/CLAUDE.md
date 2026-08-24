@@ -1,3 +1,72 @@
+## Both stacking windows are resizable, and the tower card hugs its own drawing (2026-08-24) — fmlozano
+Owner, on the vertical stacking: *"can the window size containing the vertical stacking be resizable…
+the total width of the vertical stacking based on information must also be same with the width of the
+window containing the vertical stacking. In addition, the window of the magnifier should also be
+resizeable."* Two separate faults, and the first is a real layout bug, not a preference.
+- ⚠️ **The tower card was ~590px of dead space.** `.ps-vs-grid` was
+  `grid-template-columns: repeat(auto-fit, minmax(360px, 1fr))`, and a **`1fr` track STRETCHES its item
+  to fill the row** — so a short building (one zone wide, 180px of SVG) sat in a card the full width of
+  the viewport. **Measured in a real browser at 1200px: 851px of card around 180px of drawing → 240px.**
+  Now `display:flex; flex-wrap:wrap` with `.ps-vs-tower { flex:0 0 auto }`, so the card's width IS the
+  information's width, and several towers wrap instead of each claiming a full-width row.
+  ⚠️ `min-width:min(100%,240px)` is not padding for its own sake — without it a one-cell tower
+  ellipsises its own name in the header, which is worse than the 32px of slack it costs.
+  ⚠️ This re-activates the earlier (block A) flex rules, dead since block B's grid overrode them; block
+  B is still the one that wins, so put new stacking CSS there.
+- **One handle resizes BOTH windows, because they share one row.** The panel is right-docked, so its
+  left edge is the only edge that can move: a `.ps-vs-loupe-res` gutter riding in the stage's existing
+  14px gap (negative margins, so it steals width from neither pane) sets the panel's width directly and
+  the stacking pane takes the remainder — it is `flex:1 1 0`. **Verified: 851/307 → 671/487, the sum
+  preserved at 1158px in both.** A second grip under the magnified drawing sets the panel's height
+  (245 → 395px). Double-click either to return to the responsive CSS default.
+- ⚠️ **The stored width is CLAMPED against the stage's current width on every apply, and the corrected
+  value is what gets saved.** This is the `ps_grid_w` trap that once made the Gantt pane vanish with no
+  way back but editing localStorage: a width dragged on a wide monitor, restored verbatim on a narrow
+  one, collapses the other pane to nothing. **Verified: a stored 900px in a 560px stage heals to 310px
+  with the stacking pane still at 208px.**
+- ⚠️ **`_vsLoupeMaxW` mirrors the CSS `max-width:72%` as well as the pane floor, so the width we STORE is
+  one that can actually be displayed.** Without the 72% term the drag stored **938px while the panel
+  rendered 852px** — a number in localStorage describing a layout nobody had seen. Caught by measuring
+  stored-vs-rendered, not by reading. **Verified equal (852/852) after the fix.**
+- ⚠️ **Pointer events with `setPointerCapture`, not mouse events** — the drag survives the pointer
+  leaving the 6px strip mid-gesture, and a touch screen gets the same handle for free. The
+  `ps-loupe-rz` class is held on `<body>` for the duration, or the cursor flickers back to the default
+  the moment the pointer leaves the strip and text selects as you drag.
+- ⚠️ **A resize repaints the panel** (`_vsLoupeRepaint`, from the remembered last-hovered cell). The
+  clone is sized by its BOX, so a resized panel would otherwise keep the previous box's aspect ratio —
+  which reads as a rendering fault rather than a resize. Silent when nothing has been hovered yet.
+- Below 1100px the stage stacks and the horizontal handle is **hidden** — both panes are full-width
+  there, so a horizontal drag has nothing to divide. **Verified at 900px: handle `display:none`, stage
+  `column`, height grip still live, no page h-scroll.**
+- **Verified in a real browser against the module's REAL `<style>` block and the SHIPPED handlers**
+  (`_vsLoupeMaxW` / `_vsApplyLoupeSize` / `_vsWireLoupeResize` sliced out of index.html, not
+  reimplemented), gitignored harness, deleted after: every number above, plus the drag classes being
+  cleared on pointerup, the double-click reset nulling both stored values, and both handles resolving
+  to real token colours in **dark** mode (grip `rgb(61,26,25)` against the card's `rgb(43,44,43)`) as
+  well as light. ⚠️ **The sanity gate earned its keep again** — it asserts the shared `dashboard.css`
+  loaded (`--pd-red` resolves) and the stage computes to `flex`, without which every measurement is
+  meaningless. ⚠️ One run died on `_vsLoupeMaxW is not defined` — a **harness** gap (the new function
+  was not in the slice list), not a code fault.
+- Parse clean (1 block); **function-set diff vs HEAD: 0 lost, 5 added.** ⚠️ **Not verified signed-in.**
+  `MODULE_V` → `20260824m`.
+
+## At Completion is measured from the dates the schedule shows (2026-08-24) — fmlozano
+Owner: Close-Out & Acceptance runs 24-Sep-2026 → 22-Nov-2026 and At Completion read **6 days**.
+- ⚠️ **`actual + remaining` silently omits the GAP between the two.** Under retained logic an activity
+  whose remaining work waits on a predecessor has elapsed nothing yet and 6d of work left, so the sum
+  reported 6d against a 60d span. It also read `0 + remaining` whenever the actual start is later than
+  the data date, since `actualDurLive` is elapsed-to-date.
+- Now `dispStart → dispFin` inclusive — the same dates the Start and Finish columns beside it show, so
+  the three can no longer disagree. Milestones are 0 (point events); with no usable pair of dates it
+  falls back to the old sum, then to the planned duration.
+- ⚠️ **Planned Duration deliberately stays the locked BASELINE span.** The two differing IS the
+  variance, not a bug — do not "reconcile" them.
+- ⚠️ **Data anomaly to raise with the owner, not worked around:** that activity's actual start
+  (24-Sep-2026) is LATER than the data date (24-Aug-2026), which is why Actual Duration reads 0d. The
+  module refuses that on a manual edit ("Actual Start can't be later than the Data Date"), so it most
+  likely arrived via an import or a Schedule Builder push.
+- Verified against the shipped function; **0 functions lost**. ⚠️ **Not verified signed-in.**
+
 ## Modal chrome: content was bleeding through the pinned header and footer (2026-08-24) — fmlozano
 Owner, with a screenshot: *"The ends of the pop-up window are clashing with the edit activity title
 … and risk - 3point estimate are clashing with the save activity below."* Correct, and it was a defect

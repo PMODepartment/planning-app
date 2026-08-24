@@ -1055,7 +1055,13 @@
     /* The swatch must not be squeezed by the wrapping text beside it. */
     .ps-vs-legendnote > svg { flex:0 0 auto; margin-top:1px; }
     .ps-vs-legendtxt { min-width:0; white-space:normal; overflow-wrap:break-word; }
-    .ps-vs-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:18px; align-items:start; }
+    /* ⚠️ FLEX with a 0-basis, not an `auto-fit … 1fr` grid. A `1fr` track STRETCHES a tower to fill
+       the row, so a short building (one zone wide) sat in a card ~660px of which ~590px was dead
+       space — owner-reported. A flex item at `0 0 auto` is exactly as wide as the drawing inside it,
+       so the card's width IS the information's width. `min-width` only stops a one-cell tower
+       ellipsising its own name in the header. */
+    .ps-vs-grid { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
+    .ps-vs-grid > .ps-vs-tower { flex:0 0 auto; min-width:min(100%,240px); max-width:100%; }
     .ps-vs-tower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px;
       background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
     .ps-vs-towerh { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:10px 14px;
@@ -1078,15 +1084,29 @@
        how the magnifier ended up hanging off the right edge of the screen. A zero basis makes the
        viewport take only the space LEFT OVER after the panel, so the panel is always fully on screen. */
     .ps-vs-stage > .ps-vs-viewport { flex:1 1 0%; min-width:0; max-width:100%; }
-    .ps-vs-loupe { flex:0 0 clamp(260px, 24vw, 400px); max-width:40%; box-sizing:border-box;
+    /* Width is a CSS var so the drag handle can set it without rewriting the flex shorthand.
+       ⚠️ The panel is right-docked, so its LEFT edge is the only one that can move — dragging it
+       left widens the panel and narrows the stacking pane in the SAME gesture, which is why one
+       handle resizes both windows. */
+    .ps-vs-loupe { flex:0 0 var(--ps-loupe-w, clamp(260px, 24vw, 400px)); max-width:72%; box-sizing:border-box;
       position:sticky; top:6px; border:1px solid var(--pd-line);
       border-radius:12px; background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
+    /* Rides in the stage's 14px gap (negative margins), so it steals no width from either pane. */
+    .ps-vs-loupe-res { flex:0 0 6px; align-self:stretch; min-height:70px; margin:0 -4px; border-radius:4px;
+      cursor:col-resize; background:transparent; }
+    .ps-vs-loupe-res:hover, .ps-vs-loupe-res.drag { background:var(--pd-red-light); }
+    .ps-vs-loupe-resb { height:7px; cursor:row-resize; background:transparent; }
+    .ps-vs-loupe-resb:hover, .ps-vs-loupe-resb.drag { background:var(--pd-red-light); }
+    /* Held on <body> for the duration of a drag: without it the cursor flickers back to the
+       default the moment the pointer leaves the 6px handle, and text selects as you drag. */
+    body.ps-loupe-rz { cursor:col-resize !important; user-select:none; }
+    body.ps-loupe-rzv { cursor:row-resize !important; user-select:none; }
     .ps-vs-loupe-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px;
       background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:12.5px; font-weight:800; }
     .ps-vs-loupe-head .t { display:inline-flex; align-items:center; gap:6px; min-width:0; }
     .ps-vs-loupe-head .ps-vs-seg > button { padding:3px 9px; }
     .ps-vs-loupebtn { display:inline-flex; align-items:center; gap:6px; }
-    .ps-vs-loupe-stage { height:clamp(220px, 34vh, 400px); background:var(--pd-bg); overflow:hidden;
+    .ps-vs-loupe-stage { height:var(--ps-loupe-h, clamp(220px, 34vh, 400px)); background:var(--pd-bg); overflow:hidden;
       display:flex; align-items:center; justify-content:center; }
     /* The clone is sized by the box, never by its own width/height attributes - those are stripped. */
     .ps-vs-loupe-stage > svg { width:100%; height:100%; display:block; }
@@ -1109,6 +1129,8 @@
     @media (max-width: 1100px) {
       .ps-vs-stage { flex-direction:column; }
       .ps-vs-loupe { position:static; flex:1 1 auto; width:100%; max-width:100%; }
+      /* Stacked layout: both panes are full-width, so a horizontal drag has nothing to divide. */
+      .ps-vs-loupe-res { display:none; }
     }
     .ps-vs-empty { padding:18px; color:var(--pd-muted); font-size:13px; text-align:center; }
     #ps-view-schedule.ps-vstack-mode .ps-split,
@@ -5434,10 +5456,22 @@
   // Actual duration = data date − actual start (elapsed), or actual finish − actual start once finished.
   // Computed LIVE so it tracks the data date. Null when there's no actual start.
   function actualDurLive(r) { return actualDurOf(r.actual_start, r.actual_finish); }
-  // At Completion = actual duration + remaining duration (or the planned duration when not started).
+  // At Completion = the duration this activity will have TAKEN, measured on the dates the schedule
+  // CURRENTLY shows: effective start → actual/forecast finish. So it always agrees with the Start and
+  // Finish columns beside it.
+  // ⚠️ NOT 'actual + remaining'. That sum silently omits any GAP between the two, so a retained-logic
+  // activity whose remaining work waits on a predecessor reported 6d while its own dates spanned
+  // 24-Sep → 22-Nov (60d) — owner-reported. It also read 0 + remaining whenever the actual start is
+  // later than the data date, since nothing has elapsed yet.
+  // ⚠️ Distinct from Planned Duration on purpose: that one is the BASELINE span (locked), this one is
+  // the forecast total. The two differing is the variance, not a bug.
   function _atCompletion(r) {
-    if (!r.actual_start) return _origDurOf(r);
-    return Math.max(0, (actualDurLive(r) || 0)) + Math.max(0, (r.remaining_duration || 0));
+    if (isMile(r)) return 0;                       // point events have no duration
+    var s = pd(dispStart(r)), e = pd(dispFin(r));
+    if (s && e) return Math.max(0, dayDiff(s, e) + 1);
+    // No usable pair of dates: fall back to the old sum, then to the planned duration.
+    if (r.actual_start) return Math.max(0, (actualDurLive(r) || 0)) + Math.max(0, (r.remaining_duration || 0));
+    return _origDurOf(r);
   }
   // Planned-Duration edit: keep the (effective) start, move the scheduled finish so the span = n.
   function _pdurPatch(r, n) {
@@ -10473,12 +10507,52 @@
   // of the same svg into the right-hand panel. Both the on/off state and the magnification are
   // viewing preferences (like ps_ganttscale), so they persist globally rather than per project.
   var _vsLoupe = false, _vsLoupeZ = 3;
+  // Floors for the two panes. The stacking pane keeps enough room for one zone column plus the
+  // tower header; the panel keeps enough for its own head controls.
+  var VS_LOUPE_MIN = 200, VS_STACK_MIN = 220;
   try {
     _vsLoupe = localStorage.getItem('ps_vsloupe') === '1';
     var _vlz = parseFloat(localStorage.getItem('ps_vsloupez'));
     if (_vlz >= 1.5 && _vlz <= 8) _vsLoupeZ = _vlz;
   } catch (e) {}
   function _saveLoupe() { try { localStorage.setItem('ps_vsloupe', _vsLoupe ? '1' : '0'); localStorage.setItem('ps_vsloupez', String(_vsLoupeZ)); } catch (e) {} }
+  // ---- Panel size (both windows). Dragging the panel's left edge widens it and narrows the
+  // stacking pane in one gesture; dragging under the magnified drawing sets the panel's height.
+  // null = follow the responsive CSS default, so a planner who never drags keeps today's layout.
+  var _vsLoupeW = null, _vsLoupeH = null;
+  try {
+    var _lw = parseFloat(localStorage.getItem('ps_vsloupew')); if (_lw >= VS_LOUPE_MIN) _vsLoupeW = _lw;
+    var _lh = parseFloat(localStorage.getItem('ps_vsloupeh')); if (_lh >= 140 && _lh <= 1400) _vsLoupeH = _lh;
+  } catch (e) {}
+  function _saveLoupeSize() {
+    try {
+      if (_vsLoupeW == null) localStorage.removeItem('ps_vsloupew'); else localStorage.setItem('ps_vsloupew', String(Math.round(_vsLoupeW)));
+      if (_vsLoupeH == null) localStorage.removeItem('ps_vsloupeh'); else localStorage.setItem('ps_vsloupeh', String(Math.round(_vsLoupeH)));
+    } catch (e) {}
+  }
+  // ⚠️ Clamped against the stage's CURRENT width on every apply, and the corrected value is what
+  // gets stored. A width dragged on a wide window would otherwise be restored verbatim on a narrow
+  // one and collapse the stacking pane to nothing — the exact ps_grid_w trap that once made the
+  // Gantt pane vanish with no way back but editing localStorage.
+  // ⚠️ Mirrors the CSS `max-width:72%` as well as the stacking pane's floor, so the width we STORE
+  // is a width that can actually be displayed. Without the 72% term the drag stored 938px while the
+  // panel rendered 852px, and the number in localStorage described a layout nobody had seen.
+  function _vsLoupeMaxW(avail) {
+    return Math.max(VS_LOUPE_MIN, Math.min(avail - VS_STACK_MIN - 14, avail * 0.72));
+  }
+  function _vsApplyLoupeSize(stage) {
+    if (!stage) return;
+    if (_vsLoupeH != null) stage.style.setProperty('--ps-loupe-h', Math.round(_vsLoupeH) + 'px');
+    else stage.style.removeProperty('--ps-loupe-h');
+    if (_vsLoupeW == null) { stage.style.removeProperty('--ps-loupe-w'); return; }
+    var avail = stage.clientWidth || 0;
+    // With no measurable width yet (hidden pane) leave the stored value alone rather than healing
+    // it to the minimum — that would silently shrink the panel on a background render.
+    if (avail > VS_LOUPE_MIN + VS_STACK_MIN) {
+      _vsLoupeW = Math.min(Math.max(_vsLoupeW, VS_LOUPE_MIN), _vsLoupeMaxW(avail));
+    }
+    stage.style.setProperty('--ps-loupe-w', Math.round(_vsLoupeW) + 'px');
+  }
   // The svg currently cloned into the panel, its clone, and the cell outlined in the LEFT pane.
   // All three are reset by every renderVStack - the DOM they point at is replaced wholesale.
   var _vsLoupeSrc = null, _vsLoupeClone = null, _vsLoupeMark = null;
@@ -10913,12 +10987,83 @@
   }
   // Paint the loupe: point (ux,uy) is in the source svg's USER units, key is the hovered cell (may
   // be null when the pointer is over the label gutter or the gap between zones).
+  // ---- Resize both windows -------------------------------------------------------------------
+  // One horizontal handle, because the two panes share one row: the panel's width is set directly
+  // and the stacking pane takes whatever is left (it is flex:1 1 0), so a single drag resizes both
+  // and they can never disagree about how much room there is.
+  // ⚠️ Pointer events, not mouse: a planner on a touch screen gets the same handle for free, and
+  // setPointerCapture means the drag survives the pointer leaving the 6px strip mid-gesture.
+  function _vsWireLoupeResize(host) {
+    var stage = host.querySelector('.ps-vs-stage'); if (!stage) return;
+    var hx = host.querySelector('#ps-vs-loupe-res');
+    var hy = host.querySelector('#ps-vs-loupe-resb');
+    if (hx) {
+      hx.onpointerdown = function (e) {
+        if (e.button) return;
+        e.preventDefault();
+        var pane = host.querySelector('#ps-vs-loupe'); if (!pane) return;
+        var x0 = e.clientX, w0 = pane.getBoundingClientRect().width;
+        var max = _vsLoupeMaxW(stage.clientWidth || 0);
+        hx.classList.add('drag'); document.body.classList.add('ps-loupe-rz');
+        try { hx.setPointerCapture(e.pointerId); } catch (_e) {}
+        // Dragging LEFT (dx negative) widens the panel — the handle is on its left edge.
+        hx.onpointermove = function (ev) {
+          _vsLoupeW = Math.min(Math.max(w0 + (x0 - ev.clientX), VS_LOUPE_MIN), max);
+          stage.style.setProperty('--ps-loupe-w', Math.round(_vsLoupeW) + 'px');
+        };
+        var done = function () {
+          hx.onpointermove = hx.onpointerup = hx.onpointercancel = null;
+          hx.classList.remove('drag'); document.body.classList.remove('ps-loupe-rz');
+          try { hx.releasePointerCapture(e.pointerId); } catch (_e) {}
+          _saveLoupeSize();
+          // The clone is sized by its BOX, so it has to be repainted at the new size — otherwise
+          // the magnified drawing keeps the aspect ratio of the box it was painted into.
+          _vsLoupeRepaint();
+        };
+        hx.onpointerup = hx.onpointercancel = done;
+      };
+      hx.ondblclick = function () { _vsLoupeW = null; _saveLoupeSize(); _vsApplyLoupeSize(stage); _vsLoupeRepaint(); };
+    }
+    if (hy) {
+      hy.onpointerdown = function (e) {
+        if (e.button) return;
+        e.preventDefault();
+        var st = host.querySelector('#ps-vs-loupe-stage'); if (!st) return;
+        var y0 = e.clientY, h0 = st.getBoundingClientRect().height;
+        hy.classList.add('drag'); document.body.classList.add('ps-loupe-rzv');
+        try { hy.setPointerCapture(e.pointerId); } catch (_e) {}
+        hy.onpointermove = function (ev) {
+          _vsLoupeH = Math.min(Math.max(h0 + (ev.clientY - y0), 140), 1400);
+          stage.style.setProperty('--ps-loupe-h', Math.round(_vsLoupeH) + 'px');
+        };
+        var done2 = function () {
+          hy.onpointermove = hy.onpointerup = hy.onpointercancel = null;
+          hy.classList.remove('drag'); document.body.classList.remove('ps-loupe-rzv');
+          try { hy.releasePointerCapture(e.pointerId); } catch (_e) {}
+          _saveLoupeSize(); _vsLoupeRepaint();
+        };
+        hy.onpointerup = hy.onpointercancel = done2;
+      };
+      hy.ondblclick = function () { _vsLoupeH = null; _saveLoupeSize(); _vsApplyLoupeSize(stage); _vsLoupeRepaint(); };
+    }
+  }
+  // Re-paint the panel at the box's new size, from the last cell that was hovered. Silent when
+  // nothing has been hovered yet — the hint is still showing and there is nothing to re-scale.
+  var _vsLoupeLast = null;
+  function _vsLoupeRepaint() {
+    var L = _vsLoupeLast;
+    if (!L || !L.sv || !L.sv.isConnected) return;
+    _vsLoupePaint(L.sv, L.ux, L.uy, L.key);
+  }
   function _vsLoupePaint(sv, ux, uy, key) {
     if (!_vsLoupe) return;
     var stage = document.getElementById('ps-vs-loupe-stage'); if (!stage || !sv) return;
     var vb = (sv.getAttribute('viewBox') || '').split(/[\s,]+/);
     var W = parseFloat(vb[2]), H = parseFloat(vb[3]);
     if (!(W > 0) || !(H > 0)) return;
+    // Remembered so a resize can re-scale the panel to its new box without waiting for the next
+    // hover — a resized panel that keeps the old box's aspect ratio reads as a rendering fault.
+    _vsLoupeLast = { sv: sv, ux: ux, uy: uy, key: key };
     // Clone once per tower, then only the viewBox moves - re-cloning on every mousemove would
     // rebuild thousands of rects a second at detail 3.
     if (_vsLoupeSrc !== sv) {
@@ -11098,7 +11243,7 @@
       'or file them under a WBS branch. Actions → Diagnose data… lists them.</div>';
 
     _vsCells = {}; _vsHatchSeen = {};
-    _vsLoupeSrc = _vsLoupeClone = _vsLoupeMark = null;   // the DOM they point at is replaced below
+    _vsLoupeSrc = _vsLoupeClone = _vsLoupeMark = _vsLoupeLast = null;   // the DOM they point at is replaced below
     var towers;
     if (!acts.length) {
       towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.</div>';
@@ -11139,12 +11284,14 @@
       '<div class="ps-vs-stage' + (_vsLoupe ? ' is-loupe-on' : '') + '"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
       // The magnifier panel is part of the same flex row, so the towers narrow to make room for it
       // rather than being covered by it.
-      (_vsLoupe ? '<aside class="ps-vs-loupe" id="ps-vs-loupe">' +
+      (_vsLoupe ? '<div class="ps-vs-loupe-res" id="ps-vs-loupe-res" title="Drag to resize both windows — double-click to reset"></div>' +
+        '<aside class="ps-vs-loupe" id="ps-vs-loupe">' +
         '<div class="ps-vs-loupe-head"><span class="t"><span data-ico="search" data-ico-size="14"></span>Magnifier</span>' +
           '<span class="ps-vs-seg"><button id="ps-vs-lzout" title="Less magnification">&#8722;</button>' +
           '<button id="ps-vs-lzin" title="More magnification">+</button></span>' +
           '<span class="ps-vs-note">' + _vsLoupeZ.toFixed(1) + '&times;</span></div>' +
         '<div class="ps-vs-loupe-stage" id="ps-vs-loupe-stage"><div class="ps-vs-loupe-hint">Hover a zone in the building on the left &mdash; it is magnified here, with its dates and progress underneath.</div></div>' +
+        '<div class="ps-vs-loupe-resb" id="ps-vs-loupe-resb" title="Drag to resize the magnified view — double-click to reset"></div>' +
         '<div class="ps-vs-loupe-info" id="ps-vs-loupe-info"><div class="r">Nothing hovered yet.</div></div></aside>' : '') +
       '</div>';
     // Stagger the entrance, capped: past the 8th tower the delay stops growing, so a trade-heavy
@@ -11175,6 +11322,8 @@
     if (lb) lb.onclick = function () { _vsLoupe = !_vsLoupe; _saveLoupe(); renderVStack(); };
     var lzo = host.querySelector('#ps-vs-lzout'); if (lzo) lzo.onclick = function () { _vsLoupeZ = Math.max(1.5, Math.round((_vsLoupeZ - 0.5) * 10) / 10); _saveLoupe(); renderVStack(); };
     var lzi = host.querySelector('#ps-vs-lzin'); if (lzi) lzi.onclick = function () { _vsLoupeZ = Math.min(8, Math.round((_vsLoupeZ + 0.5) * 10) / 10); _saveLoupe(); renderVStack(); };
+    _vsApplyLoupeSize(host.querySelector('.ps-vs-stage'));
+    _vsWireLoupeResize(host);
     _vsWireLoupe(host);
     host.querySelectorAll('.ps-vs-cell').forEach(function (el) { el.addEventListener('click', function () { openVsCell(el.getAttribute('data-vsk')); }); });
     if (window.Icons) Icons.hydrate(host);
